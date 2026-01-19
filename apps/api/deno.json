@@ -1,8 +1,9 @@
 {
-  "name": "api",
+  "name": "ar-eye-hunter-api",
   "version": "0.1.0",
 
   "imports": {
+    "@/": "./",
     "@shared/": "../../packages/shared/"
   },
 
@@ -10,9 +11,15 @@
     "dev": "deno run --watch --allow-net --allow-env src/main.ts",
     "start": "deno run --allow-net --allow-env src/main.ts",
     "check": "deno check src/main.ts",
+
     "fmt": "deno fmt",
     "lint": "deno lint",
     "test": "deno test"
+  },
+
+  "compilerOptions": {
+    "strict": true,
+    "lib": ["deno.ns", "dom"]
   },
 
   "lint": {
