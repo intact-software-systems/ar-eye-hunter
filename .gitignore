@@ -1,0 +1,14 @@
+.idea
+
+node_modules/
+/apps/web/node_modules
+/node_modules
+
+/apps/web/src/main.js
+
+apps/web/dist
+
+deno.lock
+
+.DS_Store
+

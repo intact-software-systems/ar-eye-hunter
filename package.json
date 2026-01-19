@@ -1,0 +1,30 @@
+{
+  "name": "ar-platform-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+
+  "scripts": {
+    "dev": "npm run dev --workspaces",
+    "build": "npm run build --workspaces",
+    "lint": "npm run lint --workspaces",
+    "test": "npm run test --workspaces",
+
+    "dev:web": "npm --workspace apps/web run dev",
+    "build:web": "npm --workspace apps/web run build",
+
+    "dev:api": "cd apps/api && deno task dev",
+    "deploy:api": "cd apps/api && deno task deploy"
+  },
+
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "eslint": "^8.56.0",
+    "prettier": "^3.2.5"
+  }
+}

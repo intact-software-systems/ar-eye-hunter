@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "ESNext",
+
+    "strict": true,
+//    "declaration": true,
+//    "emitDeclarationOnly": true,
+
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true
+  },
+  "include": ["**/*.ts"]
+}
