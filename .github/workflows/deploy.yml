@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  deployments: write
+
 jobs:
   # ----------------------------
   # Web SPA → Cloudflare Pages
@@ -28,14 +32,21 @@ jobs:
           npm ci
           npm run build
 
-      - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
+#      - name: Deploy to Cloudflare Pages
+#        uses: cloudflare/pages-action@v1
+#        with:
+#          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+#          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+#          projectName: ar-eye-hunter
+#          directory: apps/web/dist
+#          branch: main
+#
+      - name: Deploy with Wrangler
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: ar-eye-hunter
-          directory: apps/web/dist
-          branch: main
+          command: pages deploy apps/web/dist --project-name=ar-eye-hunter
 
   # ----------------------------
   # API → Deno Deploy
