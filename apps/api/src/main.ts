@@ -1,16 +1,18 @@
-import { health } from "./routes/health.ts";
+import { health } from './routes/health.ts';
+import { tictactoeWebRtcWebSocketHandler } from './services/tictactoe-webrtc-req-handler.ts';
 
-Deno.serve((req) => {
+Deno.serve(
+  (req) => {
     const url = new URL(req.url);
 
-    if (url.pathname === '/api/health') {
-        return health();
+    if (url.pathname === '/health') {
+      return health();
     }
 
-    if (req.url.endsWith("/health")) {
-        return health();
+    if (url.pathname === '/signaling') {
+      return tictactoeWebRtcWebSocketHandler(req);
     }
 
-
-    return new Response("Not Found", { status: 404 });
-});
+    return new Response('Not Found', { status: 404 });
+  },
+);
