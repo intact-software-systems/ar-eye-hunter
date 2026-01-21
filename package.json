@@ -3,27 +3,26 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
-
   "scripts": {
     "dev": "npm run dev --workspaces",
     "build": "npm run build --workspaces",
     "lint": "npm run lint --workspaces",
-    "test": "npm run test --workspaces",
-
+    "run:test": "npm run test --workspaces",
     "dev:web": "npm --workspace apps/web run dev",
     "build:web": "npm --workspace apps/web run build",
+    "dev:api": "cd apps/api && deno task dev",
 
-    "dev:api": "cd apps/api && deno task dev"
+    "test": "vitest run"
   },
-
   "devDependencies": {
-    "typescript": "^5.3.3",
+    "@vitest/ui": "^4.0.17",
     "eslint": "^8.56.0",
-    "prettier": "^3.2.5"
+    "prettier": "^3.2.5",
+    "typescript": "^5.3.3",
+    "vitest": "^4.0.17"
   }
 }

@@ -10,6 +10,23 @@
     {
       "path": "apps/api"
     }
+  ],
+  "compilerOptions": {
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "strict": true,
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
 
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": [
+        "packages/shared/*"
+      ]
+    }
+  },
+  "exclude": [
+    "packages/tests"
   ]
 }

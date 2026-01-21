@@ -1,26 +1,51 @@
 <!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8"/>
+    <meta charset="UTF-8" />
+    <title>Tic Tac Toe</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <meta name="viewport" content="width=device-width, initial-scale=1"/>
-    <meta name="color-scheme" content="light dark"/>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            display: flex;
+            justify-content: center;
+            margin-top: 40px;
+        }
 
-    <title>Hello World</title>
+        .game {
+            text-align: center;
+        }
 
-    <!-- Optional but recommended -->
-    <link rel="icon" href="/favicon.svg"/>
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, 80px);
+            gap: 6px;
+            margin-top: 16px;
+        }
+
+        button.cell {
+            width: 80px;
+            height: 80px;
+            font-size: 32px;
+            cursor: pointer;
+        }
+
+        .status {
+            margin-top: 16px;
+            font-weight: bold;
+        }
+    </style>
 </head>
-
 <body>
-<noscript>
-    This application requires JavaScript to run.
-</noscript>
+<div class="game">
+    <h1>Tic Tac Toe</h1>
 
-<!-- SPA root -->
-<div id="app"></div>
+    <div id="board" class="board"></div>
 
-<!-- Entry point -->
+    <div id="status" class="status"></div>
+</div>
+
 <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
