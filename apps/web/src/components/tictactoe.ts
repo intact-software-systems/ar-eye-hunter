@@ -10,10 +10,6 @@ import {
   Player,
 } from "@shared/game/tictactoe.ts";
 
-/* ------------------------------------------------------------------ */
-/* Initial Game State                                                  */
-/* ------------------------------------------------------------------ */
-
 let state: GameState = {
   board: Array(9).fill(Cell.Empty),
   currentPlayer: Player.X,
@@ -24,16 +20,8 @@ let state: GameState = {
   },
 };
 
-/* ------------------------------------------------------------------ */
-/* DOM Elements                                                        */
-/* ------------------------------------------------------------------ */
-
 const boardEl = document.getElementById("board") as HTMLDivElement;
 const statusEl = document.getElementById("status") as HTMLDivElement;
-
-/* ------------------------------------------------------------------ */
-/* Rendering                                                           */
-/* ------------------------------------------------------------------ */
 
 function render(): void {
   boardEl.innerHTML = "";
@@ -67,10 +55,6 @@ function statusText(): string {
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* Event Handling                                                      */
-/* ------------------------------------------------------------------ */
-
 function onCellClick(index: number): void {
   const humanResult = applyMove(state, index);
 
@@ -97,9 +81,5 @@ function onCellClick(index: number): void {
     }
   }
 }
-
-/* ------------------------------------------------------------------ */
-/* Boot                                                                */
-/* ------------------------------------------------------------------ */
 
 render();

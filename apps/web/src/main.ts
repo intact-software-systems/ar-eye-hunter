@@ -1,1 +1,1 @@
-import './tictactoe.ts'
+import './components/tictactoe.ts'
