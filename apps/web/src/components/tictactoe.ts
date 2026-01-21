@@ -10,18 +10,40 @@ import {
   Player,
 } from "@shared/game/tictactoe.ts";
 
-let state: GameState = {
-  board: Array(9).fill(Cell.Empty),
-  currentPlayer: Player.X,
-  result: GameResult.InProgress,
-  mode: {
-    type: GameModeType.Cpu,
-    difficulty: CpuDifficulty.Easy,
-  },
-};
+/* ------------------------------------------------------------------ */
+/* State Factory                                                       */
+/* ------------------------------------------------------------------ */
+
+function createInitialState(mode: GameState["mode"]): GameState {
+  return {
+    board: Array(9).fill(Cell.Empty),
+    currentPlayer: Player.X,
+    result: GameResult.InProgress,
+    mode,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Initial State                                                       */
+/* ------------------------------------------------------------------ */
+
+let state: GameState = createInitialState({
+  type: GameModeType.Cpu,
+  difficulty: CpuDifficulty.Easy,
+});
+
+/* ------------------------------------------------------------------ */
+/* DOM Elements                                                        */
+/* ------------------------------------------------------------------ */
 
 const boardEl = document.getElementById("board") as HTMLDivElement;
 const statusEl = document.getElementById("status") as HTMLDivElement;
+const modeSelect = document.getElementById("modeSelect") as HTMLSelectElement;
+const resetBtn = document.getElementById("resetBtn") as HTMLButtonElement;
+
+/* ------------------------------------------------------------------ */
+/* Rendering                                                           */
+/* ------------------------------------------------------------------ */
 
 function render(): void {
   boardEl.innerHTML = "";
@@ -55,6 +77,10 @@ function statusText(): string {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Event Handling                                                      */
+/* ------------------------------------------------------------------ */
+
 function onCellClick(index: number): void {
   const humanResult = applyMove(state, index);
 
@@ -68,11 +94,9 @@ function onCellClick(index: number): void {
   // CPU turn
   if (
     state.result === GameResult.InProgress &&
-    state.mode.type === GameModeType.Cpu &&
-    state.currentPlayer !== Player.NA
+    state.mode.type === GameModeType.Cpu
   ) {
     const cpuMove = computeCpuMove(state);
-
     const cpuResult = applyMove(state, cpuMove);
 
     if (cpuResult.move === BoardMove.Succes) {
@@ -81,5 +105,38 @@ function onCellClick(index: number): void {
     }
   }
 }
+
+function parseMode(value: string): GameState["mode"] {
+  switch (value) {
+    case "CpuEasy":
+      return { type: GameModeType.Cpu, difficulty: CpuDifficulty.Easy };
+    case "CpuMedium":
+      return { type: GameModeType.Cpu, difficulty: CpuDifficulty.Medium };
+    case "CpuHard":
+      return { type: GameModeType.Cpu, difficulty: CpuDifficulty.Hard };
+    case "LocalHuman":
+      return { type: GameModeType.LocalHuman, difficulty: CpuDifficulty.Hard };
+    default:
+      return { type: GameModeType.Cpu, difficulty: CpuDifficulty.Easy };
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Controls                                                            */
+/* ------------------------------------------------------------------ */
+
+modeSelect.addEventListener("change", () => {
+  state = createInitialState(parseMode(modeSelect.value));
+  render();
+});
+
+resetBtn.addEventListener("click", () => {
+  state = createInitialState(state.mode);
+  render();
+});
+
+/* ------------------------------------------------------------------ */
+/* Boot                                                                */
+/* ------------------------------------------------------------------ */
 
 render();

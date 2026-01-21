@@ -17,6 +17,10 @@
             text-align: center;
         }
 
+        .controls {
+            margin-bottom: 16px;
+        }
+
         .board {
             display: grid;
             grid-template-columns: repeat(3, 80px);
@@ -40,6 +44,20 @@
 <body>
 <div class="game">
     <h1>Tic Tac Toe</h1>
+
+    <div class="controls">
+        <label>
+            Game mode:
+            <select id="modeSelect">
+                <option value="CpuEasy">CPU – Easy</option>
+                <option value="CpuMedium">CPU – Medium</option>
+                <option value="CpuHard">CPU – Hard</option>
+                <option value="LocalHuman">Local Human</option>
+            </select>
+        </label>
+
+        <button id="resetBtn">Reset</button>
+    </div>
 
     <div id="board" class="board"></div>
 
