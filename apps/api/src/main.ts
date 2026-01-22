@@ -1,5 +1,5 @@
-import { tictactoeWebRtcWebSocketHandler } from './services/tictactoe-webrtc-req-handler.ts';
-import { route, type Route } from 'jsr:@std/http/unstable-route';
+import {tictactoeWebRtcWebSocketHandler} from './services/tictactoe-webrtc-req-handler.ts';
+import {route, type Route} from 'jsr:@std/http/unstable-route';
 
 import {
     CreateGameRequest,
@@ -11,18 +11,24 @@ import {
     MakeMoveResponse,
 } from "@shared/mod.ts";
 
-import { createGame, getGame, joinGame, makeMove } from "./services/tictactoe-game.ts";
+import {createGame, getGame, joinGame, makeMove} from "./services/tictactoe-game.ts";
+
+const SIGNALLING_URL = new URLPattern({pathname: '/signalling'});
+const CREATE_GAME_URL = new URLPattern({pathname: "/api/games"});
+const JOIN_GAME_URL = new URLPattern({pathname: "/api/games/:id/join"});
+const GET_GAME_URL = new URLPattern({pathname: "/api/games/:id"});
+const MOVE_IN_GAME_URL = new URLPattern({pathname: "/api/games/:id/move"});
 
 const routes: Route[] = [
     {
         method: "POST",
-        pattern: new URLPattern({pathname: '/signalling'}),
+        pattern: SIGNALLING_URL,
         handler: (req, _info) =>
             tictactoeWebRtcWebSocketHandler(req)
     },
     {
         method: "POST",
-        pattern: new URLPattern({ pathname: "/api/games" }),
+        pattern: CREATE_GAME_URL,
         handler: async (req) => {
             const body = await readJson<CreateGameRequest>(req);
             if (!body.clientId) return badRequest("Missing clientId");
@@ -39,9 +45,10 @@ const routes: Route[] = [
 
     {
         method: "POST",
-        pattern: new URLPattern({ pathname: "/api/games/:id/join" }),
-        handler: async (req, _info, match) => {
-            const gameId = match?.pathname.groups.id ?? "";
+        pattern: JOIN_GAME_URL,
+        handler: async (req) => {
+            const gameId = JOIN_GAME_URL.exec(req.url)?.pathname?.groups?.id ?? "";
+
             if (!gameId) return badRequest("Missing game id");
 
             const body = await readJson<JoinGameRequest>(req);
@@ -61,22 +68,22 @@ const routes: Route[] = [
 
     {
         method: "GET",
-        pattern: new URLPattern({ pathname: "/api/games/:id" }),
-        handler: (req, _info, match) => {
-            const gameId = match?.pathname.groups.id ?? "";
+        pattern: GET_GAME_URL,
+        handler: (req) => {
+            const gameId = GET_GAME_URL.exec(req.url)?.pathname?.groups?.id ?? "";
             if (!gameId) return badRequest("Missing game id");
 
             const game = getGame(gameId);
-            const res: GetGameResponse = { gameId: game.id, state: game.state };
+            const res: GetGameResponse = {gameId: game.id, state: game.state};
             return json(res);
         },
     },
 
     {
         method: "POST",
-        pattern: new URLPattern({ pathname: "/api/games/:id/move" }),
-        handler: async (req, _info, match) => {
-            const gameId = match?.pathname.groups.id ?? "";
+        pattern: MOVE_IN_GAME_URL,
+        handler: async (req) => {
+            const gameId = MOVE_IN_GAME_URL.exec(req.url)?.pathname?.groups?.id ?? "";
             if (!gameId) return badRequest("Missing game id");
 
             const body = await readJson<MakeMoveRequest>(req);
@@ -96,9 +103,7 @@ const routes: Route[] = [
     },
 ];
 
-Deno.serve(route(routes, () => new Response("Not Found", { status: 404 })));
-
-
+Deno.serve(route(routes, () => new Response("Not Found", {status: 404})));
 
 function json<T>(data: T, status = 200): Response {
     return Response.json(data, {
@@ -112,7 +117,7 @@ function json<T>(data: T, status = 200): Response {
 }
 
 function badRequest(message: string): Response {
-    return json({ message }, 400);
+    return json({message}, 400);
 }
 
 async function readJson<T>(req: Request): Promise<T> {
