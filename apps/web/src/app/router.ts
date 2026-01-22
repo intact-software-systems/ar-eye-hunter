@@ -4,15 +4,27 @@ export enum Route {
     Multi = 'multi'
 }
 
+function normalizeHashToPath(hash: string): string {
+    // Examples:
+    // "#/multi?gameId=123" -> "/multi"
+    // "#/single"           -> "/single"
+    // "#/" or ""           -> "/"
+    const raw = hash.startsWith('#') ? hash.slice(1) : hash;
+    const pathWithQuery = raw.length > 0 ? raw : '/';
+    const qIndex = pathWithQuery.indexOf('?');
+    const path = qIndex >= 0 ? pathWithQuery.slice(0, qIndex) : pathWithQuery;
+    return path.endsWith('/') && path.length > 1 ? path.slice(0, -1) : path;
+}
+
 export function getRouteFromHash(hash: string): Route {
-    const h = hash.startsWith('#') ? hash.slice(1) : hash;
-    switch (h) {
+    const path = normalizeHashToPath(hash);
+
+    switch (path) {
         case '/single':
             return Route.Single;
         case '/multi':
             return Route.Multi;
         case '/':
-        case '':
         default:
             return Route.Landing;
     }

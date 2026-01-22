@@ -40,6 +40,17 @@ function emptyState(): GameState {
     };
 }
 
+function readGameIdFromHash(): string {
+    // hash example: "#/multi?gameId=abc"
+    const hash = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
+    const qIndex = hash.indexOf('?');
+    if (qIndex < 0) return '';
+
+    const query = hash.slice(qIndex + 1);
+    const params = new URLSearchParams(query);
+    return params.get('gameId') ?? '';
+}
+
 /**
  * NOTE:
  * If your `GameModeType.LocalHuman` enum is in @shared/mod, you can replace:
@@ -73,6 +84,14 @@ export class EhMultiScreen extends HTMLElement {
     connectedCallback(): void {
         this.render();
         this.wire();
+
+        const joinInput = mustEl<HTMLInputElement>(this, '#joinInput');
+        const sharedId = readGameIdFromHash();
+        if (sharedId.length > 0) {
+            joinInput.value = sharedId;
+            this.setStatus('Game ID prefilled from share link. Click Join.');
+        }
+
         this.updateView();
     }
 
@@ -96,8 +115,9 @@ export class EhMultiScreen extends HTMLElement {
 
         <div class="row muted">
           <div>
-            Game ID: <strong id="gameIdText">${NAString.NA}</strong>
-            <button id="copyIdBtn" style="margin-left:8px;">Copy</button>
+             Game ID: <strong id="gameIdText">${NAString.NA}</strong>
+             <button id="copyIdBtn" style="margin-left:8px;">Copy</button>
+             <button id="shareBtn" style="margin-left:8px;">Share link</button>
           </div>
           <div>You: <strong id="playerText">${Player.NA}</strong></div>
           <div>Turn: <strong id="turnText">${Player.NA}</strong></div>
@@ -118,12 +138,14 @@ export class EhMultiScreen extends HTMLElement {
         const joinInput = mustEl<HTMLInputElement>(this, '#joinInput');
         const board = mustEl<HTMLElement>(this, '#board');
         const copyIdBtn = mustEl<HTMLButtonElement>(this, '#copyIdBtn');
+        const shareBtn = mustEl<HTMLButtonElement>(this, '#shareBtn');
 
         createBtn.addEventListener('click', () => void this.onCreate());
         joinBtn.addEventListener('click', () => void this.onJoin(joinInput.value.trim()));
         leaveBtn.addEventListener('click', () => this.onLeave());
 
         copyIdBtn.addEventListener('click', () => void this.onCopyGameId());
+        shareBtn.addEventListener('click', () => void this.onShareLink());
 
         board.addEventListener('cell-click', (e: Event) => {
             const ce = e as CustomEvent<CellClickDetail>;
@@ -138,6 +160,7 @@ export class EhMultiScreen extends HTMLElement {
         const syncText = mustEl<HTMLSpanElement>(this, '#syncText');
         const statusEl = mustEl<HTMLDivElement>(this, '#status');
         const copyIdBtn = mustEl<HTMLButtonElement>(this, '#copyIdBtn');
+        const shareBtn = mustEl<HTMLButtonElement>(this, '#shareBtn');
 
         const hasGameId = this.ui.gameId !== NAString.NA;
 
@@ -147,6 +170,7 @@ export class EhMultiScreen extends HTMLElement {
         syncText.textContent = this.ui.isPolling ? 'polling' : 'stopped';
 
         copyIdBtn.disabled = !hasGameId;
+        shareBtn.disabled = !hasGameId;
 
         statusEl.textContent = this.ui.statusText;
 
@@ -344,6 +368,46 @@ export class EhMultiScreen extends HTMLElement {
         } catch (err) {
             this.setStatus(`Copy failed: ${(err as Error).message}`);
         }
+    }
+
+    private async onShareLink(): Promise<void> {
+        if (this.ui.gameId === NAString.NA) {
+            this.setStatus('No game id to share.');
+            return;
+        }
+
+        const url = this.buildShareUrl(this.ui.gameId);
+
+        try {
+            if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                await navigator.clipboard.writeText(url);
+                this.setStatus('Share link copied to clipboard.');
+                return;
+            }
+
+            const ta = document.createElement('textarea');
+            ta.value = url;
+            ta.setAttribute('readonly', 'true');
+            ta.style.position = 'absolute';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+
+            const ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+
+            this.setStatus(ok ? 'Share link copied to clipboard.' : 'Copy failed.');
+        } catch (err) {
+            this.setStatus(`Share failed: ${(err as Error).message}`);
+        }
+    }
+
+    private buildShareUrl(gameId: string): string {
+        // Example output:
+        // https://your.pages.dev/#/multi?gameId=<id>
+        const base = `${location.origin}${location.pathname}`;
+        const encoded = encodeURIComponent(gameId);
+        return `${base}#/multi?gameId=${encoded}`;
     }
 }
 
