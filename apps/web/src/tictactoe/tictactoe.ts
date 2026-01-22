@@ -1,4 +1,4 @@
-import { applyMove, computeCpuMove } from "@shared/game/tictactoe.ts";
+import { applyMove, computeCpuMove } from "@shared/tictactoe/tictactoe.ts";
 
 import {
   BoardMove,
@@ -8,7 +8,7 @@ import {
   GameResult,
   type GameState,
   Player,
-} from "@shared/game/tictactoe.ts";
+} from "@shared/tictactoe/tictactoe.ts";
 
 /* ------------------------------------------------------------------ */
 /* State Factory                                                       */
@@ -115,7 +115,7 @@ function parseMode(value: string): GameState["mode"] {
     case "CpuHard":
       return { type: GameModeType.Cpu, difficulty: CpuDifficulty.Hard };
     case "LocalHuman":
-      return { type: GameModeType.LocalHuman, difficulty: CpuDifficulty.Hard };
+      return { type: GameModeType.LocalHuman, difficulty: CpuDifficulty.Empty };
     default:
       return { type: GameModeType.Cpu, difficulty: CpuDifficulty.Easy };
   }
