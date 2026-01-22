@@ -2,66 +2,70 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <title>Tic Tac Toe</title>
+    <title>EyeHunter – Tic Tac Toe</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
 
     <style>
         body {
             font-family: system-ui, sans-serif;
+            margin: 0;
+            padding: 24px;
             display: flex;
             justify-content: center;
-            margin-top: 40px;
         }
-
-        .game {
-            text-align: center;
+        .app {
+            width: 720px;
+            max-width: 100%;
         }
-
-        .controls {
-            margin-bottom: 16px;
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 12px;
         }
-
-        .board {
-            display: grid;
-            grid-template-columns: repeat(3, 80px);
-            gap: 6px;
-            margin-top: 16px;
+        .row {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin: 12px 0;
         }
-
-        button.cell {
-            width: 80px;
-            height: 80px;
-            font-size: 32px;
+        button {
+            padding: 10px 14px;
             cursor: pointer;
         }
-
-        .status {
+        a {
+            color: inherit;
+        }
+        .muted {
+            color: #555;
+        }
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, 84px);
+            gap: 8px;
             margin-top: 16px;
-            font-weight: bold;
+        }
+        .cell {
+            width: 84px;
+            height: 84px;
+            font-size: 36px;
+            cursor: pointer;
+        }
+        .status {
+            margin-top: 12px;
+            font-weight: 600;
+            min-height: 24px;
+        }
+        select {
+            padding: 8px;
         }
     </style>
 </head>
+
 <body>
-<div class="game">
-    <h1>Tic Tac Toe</h1>
-
-    <div class="controls">
-        <label>
-            Game mode:
-            <select id="modeSelect">
-                <option value="CpuEasy">CPU – Easy</option>
-                <option value="CpuMedium">CPU – Medium</option>
-                <option value="CpuHard">CPU – Hard</option>
-                <option value="LocalHuman">Local Human</option>
-            </select>
-        </label>
-
-        <button id="resetBtn">Reset</button>
-    </div>
-
-    <div id="board" class="board"></div>
-
-    <div id="status" class="status"></div>
+<div class="app">
+    <eh-app></eh-app>
 </div>
 
 <script type="module" src="/src/main.ts"></script>
