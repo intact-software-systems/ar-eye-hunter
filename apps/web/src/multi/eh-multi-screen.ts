@@ -95,7 +95,10 @@ export class EhMultiScreen extends HTMLElement {
         </div>
 
         <div class="row muted">
-          <div>Game ID: <strong id="gameIdText">${NAString.NA}</strong></div>
+          <div>
+            Game ID: <strong id="gameIdText">${NAString.NA}</strong>
+            <button id="copyIdBtn" style="margin-left:8px;">Copy</button>
+          </div>
           <div>You: <strong id="playerText">${Player.NA}</strong></div>
           <div>Turn: <strong id="turnText">${Player.NA}</strong></div>
           <div>Sync: <strong id="syncText">stopped</strong></div>
@@ -114,10 +117,13 @@ export class EhMultiScreen extends HTMLElement {
         const leaveBtn = mustEl<HTMLButtonElement>(this, '#leaveBtn');
         const joinInput = mustEl<HTMLInputElement>(this, '#joinInput');
         const board = mustEl<HTMLElement>(this, '#board');
+        const copyIdBtn = mustEl<HTMLButtonElement>(this, '#copyIdBtn');
 
         createBtn.addEventListener('click', () => void this.onCreate());
         joinBtn.addEventListener('click', () => void this.onJoin(joinInput.value.trim()));
         leaveBtn.addEventListener('click', () => this.onLeave());
+
+        copyIdBtn.addEventListener('click', () => void this.onCopyGameId());
 
         board.addEventListener('cell-click', (e: Event) => {
             const ce = e as CustomEvent<CellClickDetail>;
@@ -131,20 +137,24 @@ export class EhMultiScreen extends HTMLElement {
         const turnText = mustEl<HTMLSpanElement>(this, '#turnText');
         const syncText = mustEl<HTMLSpanElement>(this, '#syncText');
         const statusEl = mustEl<HTMLDivElement>(this, '#status');
+        const copyIdBtn = mustEl<HTMLButtonElement>(this, '#copyIdBtn');
 
-        gameIdText.textContent = this.ui.gameId === NAString.NA ? NAString.NA : this.ui.gameId;
+        const hasGameId = this.ui.gameId !== NAString.NA;
+
+        gameIdText.textContent = hasGameId ? this.ui.gameId : NAString.NA;
         playerText.textContent = this.ui.assignedPlayer;
         turnText.textContent = this.ui.serverState.currentPlayer;
         syncText.textContent = this.ui.isPolling ? 'polling' : 'stopped';
 
+        copyIdBtn.disabled = !hasGameId;
+
         statusEl.textContent = this.ui.statusText;
 
-        // Update board component
         const board = mustEl<any>(this, '#board');
         board.state = this.ui.serverState;
 
         const canInteract =
-            this.ui.gameId !== NAString.NA &&
+            hasGameId &&
             this.ui.serverState.result === GameResult.InProgress &&
             this.ui.assignedPlayer !== Player.NA &&
             this.ui.serverState.currentPlayer === this.ui.assignedPlayer;
@@ -300,6 +310,40 @@ export class EhMultiScreen extends HTMLElement {
             isPolling: false,
         };
         this.updateView();
+    }
+
+    private async onCopyGameId(): Promise<void> {
+        if (this.ui.gameId === NAString.NA) {
+            this.setStatus('No game id to copy.');
+            return;
+        }
+
+        const text = this.ui.gameId;
+
+        try {
+            // Prefer Clipboard API
+            if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                await navigator.clipboard.writeText(text);
+                this.setStatus(`Copied game id: ${text}`);
+                return;
+            }
+
+            // Fallback: hidden textarea + execCommand
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', 'true');
+            ta.style.position = 'absolute';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+
+            const ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+
+            this.setStatus(ok ? `Copied game id: ${text}` : 'Copy failed.');
+        } catch (err) {
+            this.setStatus(`Copy failed: ${(err as Error).message}`);
+        }
     }
 }
 
