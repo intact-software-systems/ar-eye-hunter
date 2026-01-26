@@ -1,7 +1,8 @@
 export enum Route {
     Landing = 'landing',
     Single = 'single',
-    Multi = 'multi'
+    Multi = 'multi',
+    P2P = 'p2p',
 }
 
 function normalizeHashToPath(hash: string): string {
@@ -24,6 +25,8 @@ export function getRouteFromHash(hash: string): Route {
             return Route.Single;
         case '/multi':
             return Route.Multi;
+        case '/p2p':
+            return Route.P2P;
         case '/':
         default:
             return Route.Landing;
@@ -37,6 +40,9 @@ export function navigate(route: Route): void {
             return;
         case Route.Multi:
             location.hash = '#/multi';
+            return;
+        case Route.P2P:
+            location.hash = '#/p2p';
             return;
         case Route.Landing:
         default:

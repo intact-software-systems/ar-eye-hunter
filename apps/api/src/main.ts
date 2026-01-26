@@ -13,6 +13,7 @@ import {
 
 import {createGame, getGame, joinGame, makeMove} from "./services/tictactoe-game.ts";
 import {handleWebSocket} from "./ws/ws_hub.ts";
+import {p2pRoutes} from "./p2p/p2p_routes.ts";
 
 const ALLOWED_ORIGINS = new Set<string>([
     'http://localhost:5173',
@@ -147,6 +148,8 @@ const routes: Route[] = [
         },
     }
 ];
+
+routes.push(...p2pRoutes())
 
 let handler = route(routes, () => new Response("Not Found", {status: 404}));
 

@@ -3,3 +3,4 @@ import './components/eh-landing.ts';
 import './components/eh-ttt-board.ts';
 import './single/eh-single-screen.ts';
 import './multi/eh-multi-screen.ts';
+import './p2p/eh-p2p-multi-screen.ts';

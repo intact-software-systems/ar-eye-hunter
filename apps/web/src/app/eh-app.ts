@@ -52,7 +52,9 @@ export class EhApp extends HTMLElement {
             case Route.Multi:
                 host.innerHTML = `<eh-multi-screen></eh-multi-screen>`;
                 return;
-
+            case Route.P2P:
+                host.innerHTML = `<eh-p2p-multi-screen></eh-p2p-multi-screen>`;
+                return;
             case Route.Landing:
             default:
                 host.innerHTML = `<eh-landing></eh-landing>`;

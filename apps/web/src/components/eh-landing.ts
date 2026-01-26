@@ -17,6 +17,7 @@ export class EhLanding extends HTMLElement {
         <div class="row">
           <button id="singleBtn">Single-player (offline)</button>
           <button id="multiBtn">Two-player (server)</button>
+          <button id="p2pBtn">P2P-player (server)</button>
         </div>
       </div>
     `;
@@ -25,10 +26,12 @@ export class EhLanding extends HTMLElement {
     private wire(): void {
         const singleBtn = this.querySelector('#singleBtn');
         const multiBtn = this.querySelector('#multiBtn');
-        if (!singleBtn || !multiBtn) throw new Error('Landing buttons missing');
+        const p2pBtn = this.querySelector('#p2pBtn');
+        if (!singleBtn || !multiBtn || !p2pBtn) throw new Error('Landing buttons missing');
 
         singleBtn.addEventListener('click', () => navigate(Route.Single));
         multiBtn.addEventListener('click', () => navigate(Route.Multi));
+        p2pBtn.addEventListener('click', () => navigate(Route.P2P));
     }
 }
 
