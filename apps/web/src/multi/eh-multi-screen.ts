@@ -1,9 +1,23 @@
-import {ClientId, CreateGameRequest, GameId, GameModeType, JoinGameRequest, MakeMoveRequest,} from '@shared/mod.ts';
-import {BoardMove, Cell, CpuDifficulty, GameResult, type GameState, Player,} from '@shared/mod.ts';
+import type {ClientId, CreateGameRequest, GameId, JoinGameRequest, MakeMoveRequest,} from '@shared/mod.ts';
+import {
+    Cell,
+    CpuDifficulty,
+    GameModeType,
+    GameResult,
+    type GameState,
+    Player,
+    type WsClientMessage,
+    WsClientMsgType,
+    type WsServerMessage,
+    WsServerMsgType,
+} from '@shared/mod.ts';
 
 import {createGamesApi, NAString} from './apiClient.ts';
-
 import type {CellClickDetail} from '../components/eh-ttt-board.ts';
+
+/* ======================================================
+   Utilities (no nulls)
+   ====================================================== */
 
 function mustEl<T extends HTMLElement>(root: ParentNode, selector: string): T {
     const el = root.querySelector(selector);
@@ -20,83 +34,99 @@ function getOrCreateClientId(): ClientId {
     return created;
 }
 
-function apiBaseUrl(): string {
-    // Use VITE_API_BASE_URL in production (e.g. https://your-project.deno.dev)
-    // In dev you can keep it empty + use Vite proxy for /api.
-    const env = (import.meta as any).env;
-    const raw = (env?.VITE_API_BASE_URL as string) || '';
-    return raw.length > 0 ? raw : '';
-}
-
 function emptyState(): GameState {
     return {
         board: Array(9).fill(Cell.Empty),
         currentPlayer: Player.NA,
         result: GameResult.InProgress,
-        // mode is not needed for rendering the board; but GameState requires it.
-        // Your server will provide the real mode. For this placeholder "not connected" state,
-        // we keep an explicit structure while avoiding null.
-        mode: {type: GameModeType.LocalHuman, difficulty: CpuDifficulty.Empty}, // see note below
+        mode: {type: GameModeType.LocalHuman, difficulty: CpuDifficulty.Empty},
     };
 }
 
-function readGameIdFromHash(): string {
-    // hash example: "#/multi?gameId=abc"
-    const hash = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
-    const qIndex = hash.indexOf('?');
-    if (qIndex < 0) return '';
-
-    const query = hash.slice(qIndex + 1);
-    const params = new URLSearchParams(query);
-    return params.get('gameId') ?? '';
+enum PendingMove {
+    None = 'None',
+    Waiting = 'Waiting',
 }
 
-/**
- * NOTE:
- * If your `GameModeType.LocalHuman` enum is in @shared/mod, you can replace:
- *   mode: { type: GameModeType.LocalHuman }
- * Here I used `as any` only to avoid guessing how you export/import it in your actual repo layout.
- * If you want, paste your current @shared/mod exports and I’ll make this 100% strict (no `any`).
- */
+enum WsConnKind {
+    None = 'None',
+    Connecting = 'Connecting',
+    Open = 'Open',
+}
+
+type WsConn =
+    | { kind: WsConnKind.None }
+    | { kind: WsConnKind.Connecting; ws: WebSocket }
+    | { kind: WsConnKind.Open; ws: WebSocket };
+
+function readGameIdFromHash(): string {
+    // hash: "#/multi?gameId=abc"
+    const raw = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
+    const qIndex = raw.indexOf('?');
+    if (qIndex < 0) return '';
+    const query = raw.slice(qIndex + 1);
+    const params = new URLSearchParams(query);
+    const v = params.get('gameId');
+    return v ? v : '';
+}
+
+async function copyToClipboard(text: string): Promise<boolean> {
+    try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', 'true');
+        ta.style.position = 'absolute';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return ok;
+    } catch {
+        return false;
+    }
+}
+
+/* ======================================================
+   Component
+   ====================================================== */
 
 type MultiUiState = {
     gameId: GameId | NAString;
     assignedPlayer: Player;
-    serverState: GameState; // always defined; "not connected" uses explicit placeholder
+    serverState: GameState; // always present (placeholder when not connected)
     statusText: string;
-    isPolling: boolean;
+    pendingMove: PendingMove;
+    wsConn: WsConn;
 };
 
 export class EhMultiScreen extends HTMLElement {
     private readonly clientId: ClientId = getOrCreateClientId();
-    private readonly api = createGamesApi(apiBaseUrl());
+    private readonly api = createGamesApi();
 
     private ui: MultiUiState = {
         gameId: NAString.NA,
         assignedPlayer: Player.NA,
         serverState: emptyState(),
         statusText: 'Create a game or join an existing game.',
-        isPolling: false,
+        pendingMove: PendingMove.None,
+        wsConn: {kind: WsConnKind.None},
     };
-
-    private pollTimerId: number | NAString = NAString.NA;
 
     connectedCallback(): void {
         this.render();
         this.wire();
-
-        const joinInput = mustEl<HTMLInputElement>(this, '#joinInput');
-        const sharedId = readGameIdFromHash();
-        if (sharedId.length > 0) {
-            joinInput.value = sharedId;
-            this.setStatus('Game ID prefilled from share link. Click Join.');
-        }
-
+        this.prefillFromShareLink();
         this.updateView();
     }
 
     disconnectedCallback(): void {
-        this.stopPolling();
+        this.closeWs();
     }
 
     private render(): void {
@@ -115,13 +145,13 @@ export class EhMultiScreen extends HTMLElement {
 
         <div class="row muted">
           <div>
-             Game ID: <strong id="gameIdText">${NAString.NA}</strong>
-             <button id="copyIdBtn" style="margin-left:8px;">Copy</button>
-             <button id="shareBtn" style="margin-left:8px;">Share link</button>
+            Game ID: <strong id="gameIdText">${NAString.NA}</strong>
+            <button id="copyIdBtn" style="margin-left:8px;">Copy</button>
+            <button id="shareBtn" style="margin-left:8px;">Share link</button>
           </div>
           <div>You: <strong id="playerText">${Player.NA}</strong></div>
           <div>Turn: <strong id="turnText">${Player.NA}</strong></div>
-          <div>Sync: <strong id="syncText">stopped</strong></div>
+          <div>WS: <strong id="wsText">closed</strong></div>
         </div>
 
         <eh-ttt-board id="board"></eh-ttt-board>
@@ -136,9 +166,11 @@ export class EhMultiScreen extends HTMLElement {
         const joinBtn = mustEl<HTMLButtonElement>(this, '#joinBtn');
         const leaveBtn = mustEl<HTMLButtonElement>(this, '#leaveBtn');
         const joinInput = mustEl<HTMLInputElement>(this, '#joinInput');
-        const board = mustEl<HTMLElement>(this, '#board');
+
         const copyIdBtn = mustEl<HTMLButtonElement>(this, '#copyIdBtn');
         const shareBtn = mustEl<HTMLButtonElement>(this, '#shareBtn');
+
+        const board = mustEl<HTMLElement>(this, '#board');
 
         createBtn.addEventListener('click', () => void this.onCreate());
         joinBtn.addEventListener('click', () => void this.onJoin(joinInput.value.trim()));
@@ -153,12 +185,22 @@ export class EhMultiScreen extends HTMLElement {
         });
     }
 
+    private prefillFromShareLink(): void {
+        const joinInput = mustEl<HTMLInputElement>(this, '#joinInput');
+        const sharedId = readGameIdFromHash();
+        if (sharedId.length > 0) {
+            joinInput.value = sharedId;
+            this.setStatus('Game ID prefilled from share link. Click Join.');
+        }
+    }
+
     private updateView(): void {
         const gameIdText = mustEl<HTMLSpanElement>(this, '#gameIdText');
         const playerText = mustEl<HTMLSpanElement>(this, '#playerText');
         const turnText = mustEl<HTMLSpanElement>(this, '#turnText');
-        const syncText = mustEl<HTMLSpanElement>(this, '#syncText');
+        const wsText = mustEl<HTMLSpanElement>(this, '#wsText');
         const statusEl = mustEl<HTMLDivElement>(this, '#status');
+
         const copyIdBtn = mustEl<HTMLButtonElement>(this, '#copyIdBtn');
         const shareBtn = mustEl<HTMLButtonElement>(this, '#shareBtn');
 
@@ -167,7 +209,8 @@ export class EhMultiScreen extends HTMLElement {
         gameIdText.textContent = hasGameId ? this.ui.gameId : NAString.NA;
         playerText.textContent = this.ui.assignedPlayer;
         turnText.textContent = this.ui.serverState.currentPlayer;
-        syncText.textContent = this.ui.isPolling ? 'polling' : 'stopped';
+
+        wsText.textContent = this.ui.wsConn.kind === WsConnKind.Open ? 'open' : 'closed';
 
         copyIdBtn.disabled = !hasGameId;
         shareBtn.disabled = !hasGameId;
@@ -179,6 +222,8 @@ export class EhMultiScreen extends HTMLElement {
 
         const canInteract =
             hasGameId &&
+            this.ui.wsConn.kind === WsConnKind.Open &&
+            this.ui.pendingMove === PendingMove.None &&
             this.ui.serverState.result === GameResult.InProgress &&
             this.ui.assignedPlayer !== Player.NA &&
             this.ui.serverState.currentPlayer === this.ui.assignedPlayer;
@@ -191,49 +236,126 @@ export class EhMultiScreen extends HTMLElement {
         this.updateView();
     }
 
-    private startPolling(gameId: GameId): void {
-        this.stopPolling();
+    /* ======================================================
+       WS management
+       ====================================================== */
 
-        this.ui = {...this.ui, isPolling: true};
+    private openWs(gameId: GameId): void {
+        this.closeWs();
+
+        const ws = new WebSocket(this.api.wsUrl);
+
+        this.ui = {...this.ui, wsConn: {kind: WsConnKind.Connecting, ws}};
         this.updateView();
 
-        this.pollTimerId = window.setInterval(async () => {
-            if (this.ui.gameId === NAString.NA) {
-                this.stopPolling();
+        ws.addEventListener('open', () => {
+            this.ui = {...this.ui, wsConn: {kind: WsConnKind.Open, ws}};
+            this.updateView();
+
+            const hello: WsClientMessage = {
+                type: WsClientMsgType.Hello,
+                clientId: this.clientId,
+                gameId,
+            };
+            ws.send(JSON.stringify(hello));
+            this.setStatus('Open. Waiting for updates…');
+        });
+
+        ws.addEventListener('message', (ev) => {
+            const raw = typeof ev.data === 'string' ? ev.data : '';
+            const parsed = this.safeParseServerMessage(raw);
+
+            if (parsed.kind === 'Invalid') {
+                this.setStatus('Received invalid WS message.');
                 return;
             }
 
-            try {
-                const res = await this.api.getGame(gameId);
-                this.ui = {...this.ui, serverState: res.state};
+            this.handleServerMessage(parsed.msg);
+        });
 
-                if (res.state.result === GameResult.InProgress) {
-                    const turn = res.state.currentPlayer;
-                    if (turn === this.ui.assignedPlayer) {
-                        this.ui = {...this.ui, statusText: `Your turn (${this.ui.assignedPlayer}).`};
-                    } else {
-                        this.ui = {...this.ui, statusText: `Waiting for opponent… (turn: ${turn})`};
-                    }
-                } else {
-                    this.ui = {...this.ui, statusText: this.resultText(res.state.result)};
-                }
+        ws.addEventListener('close', () => {
+            this.ui = {...this.ui, wsConn: {kind: WsConnKind.None}};
+            this.setStatus('WebSocket closed.');
+            this.updateView();
+        });
 
-                this.updateView();
-            } catch (err) {
-                this.setStatus(`Polling failed: ${(err as Error).message}`);
-            }
-        }, 1000);
+        ws.addEventListener('error', () => {
+            this.ui = {...this.ui, wsConn: {kind: WsConnKind.None}};
+            this.setStatus('WebSocket error.');
+            this.updateView();
+        });
     }
 
-    private stopPolling(): void {
-        if (this.pollTimerId !== NAString.NA) {
-            clearInterval(this.pollTimerId);
-            this.pollTimerId = NAString.NA;
+    private closeWs(): void {
+        if (this.ui.wsConn.kind === WsConnKind.Open) {
+            try {
+                this.ui.wsConn.ws.close();
+            } catch {
+                // ignore
+            }
         }
-        if (this.ui.isPolling) {
-            this.ui = {...this.ui, isPolling: false};
-            this.updateView();
+        this.ui = {...this.ui, wsConn: {kind: WsConnKind.None}, pendingMove: PendingMove.None};
+        this.updateView();
+    }
+
+    private safeParseServerMessage(raw: string): { kind: 'Ok'; msg: WsServerMessage } | { kind: 'Invalid' } {
+        try {
+            const msg = JSON.parse(raw) as WsServerMessage;
+            return {kind: 'Ok', msg};
+        } catch {
+            return {kind: 'Invalid'};
         }
+    }
+
+    private handleServerMessage(msg: WsServerMessage): void {
+        // Ignore messages not matching the current game
+        if (this.ui.gameId === NAString.NA) return;
+        if (msg.gameId !== this.ui.gameId) return;
+
+        switch (msg.type) {
+            case WsServerMsgType.Welcome: {
+                this.ui = {
+                    ...this.ui,
+                    serverState: msg.state,
+                    pendingMove: PendingMove.None,
+                    statusText: this.inProgressText(msg.state),
+                };
+                this.updateView();
+                return;
+            }
+
+            case WsServerMsgType.StateUpdate: {
+                const nextStatus =
+                    msg.state.result === GameResult.InProgress
+                        ? this.inProgressText(msg.state)
+                        : this.resultText(msg.state.result);
+
+                this.ui = {
+                    ...this.ui,
+                    serverState: msg.state,
+                    pendingMove: PendingMove.None,
+                    statusText: nextStatus,
+                };
+                this.updateView();
+                return;
+            }
+
+            case WsServerMsgType.Error: {
+                this.ui = {
+                    ...this.ui,
+                    pendingMove: PendingMove.None,
+                    statusText: `Server error: ${msg.message}`,
+                };
+                this.updateView();
+                return;
+            }
+        }
+    }
+
+    private inProgressText(state: GameState): string {
+        if (this.ui.assignedPlayer === Player.NA) return 'Waiting for player assignment…';
+        if (state.currentPlayer === this.ui.assignedPlayer) return `Your turn (${this.ui.assignedPlayer}).`;
+        return `Waiting for opponent… (turn: ${state.currentPlayer})`;
     }
 
     private resultText(result: GameResult): string {
@@ -250,6 +372,10 @@ export class EhMultiScreen extends HTMLElement {
         }
     }
 
+    /* ======================================================
+       Actions
+       ====================================================== */
+
     private async onCreate(): Promise<void> {
         try {
             const req: CreateGameRequest = {clientId: this.clientId};
@@ -261,10 +387,11 @@ export class EhMultiScreen extends HTMLElement {
                 assignedPlayer: res.assignedPlayer,
                 serverState: res.state,
                 statusText: `Game created. Share ID with opponent: ${res.gameId}`,
+                pendingMove: PendingMove.None,
             };
 
             this.updateView();
-            this.startPolling(res.gameId);
+            this.openWs(res.gameId);
         } catch (err) {
             this.setStatus(`Create failed: ${(err as Error).message}`);
         }
@@ -278,7 +405,7 @@ export class EhMultiScreen extends HTMLElement {
 
         try {
             const req: JoinGameRequest = {clientId: this.clientId};
-            const res = await this.api.joinGame(gameId, req);
+            const res = await this.api.joinGame(gameId as GameId, req);
 
             this.ui = {
                 ...this.ui,
@@ -286,10 +413,11 @@ export class EhMultiScreen extends HTMLElement {
                 assignedPlayer: res.assignedPlayer,
                 serverState: res.state,
                 statusText: `Joined game ${res.gameId} as ${res.assignedPlayer}.`,
+                pendingMove: PendingMove.None,
             };
 
             this.updateView();
-            this.startPolling(res.gameId);
+            this.openWs(res.gameId);
         } catch (err) {
             this.setStatus(`Join failed: ${(err as Error).message}`);
         }
@@ -297,77 +425,75 @@ export class EhMultiScreen extends HTMLElement {
 
     private async onCellClick(index: number): Promise<void> {
         if (this.ui.gameId === NAString.NA) return;
+        if (this.ui.wsConn.kind !== WsConnKind.Open) return;
+        if (this.ui.wsConn.ws.readyState !== WebSocket.OPEN) {
+            this.setStatus('WebSocket not open yet. Please wait…');
+            return;
+        }
 
-        // Only allow if it’s your turn and game is active (board is also locked, but double-check here)
+        // Must be your turn
         if (this.ui.serverState.result !== GameResult.InProgress) return;
         if (this.ui.assignedPlayer === Player.NA) return;
         if (this.ui.serverState.currentPlayer !== this.ui.assignedPlayer) return;
 
+        // Mark pending to avoid double-send
+        this.ui = {...this.ui, pendingMove: PendingMove.Waiting};
+        this.updateView();
+
+        const req: MakeMoveRequest = {clientId: this.clientId, moveIndex: index};
+
+        const msg: WsClientMessage = {
+            type: WsClientMsgType.MakeMove,
+            clientId: req.clientId,
+            gameId: this.ui.gameId,
+            moveIndex: req.moveIndex,
+        };
+
         try {
-            const req: MakeMoveRequest = {clientId: this.clientId, moveIndex: index};
-            const res = await this.api.makeMove(this.ui.gameId, req);
-
-            // Server is authoritative
-            this.ui = {...this.ui, serverState: res.state};
-
-            if (res.move === BoardMove.Failed) {
-                this.ui = {...this.ui, statusText: 'Move rejected by server.'};
-            } else if (res.state.result === GameResult.InProgress) {
-                this.ui = {...this.ui, statusText: `Waiting for opponent… (turn: ${res.state.currentPlayer})`};
-            } else {
-                this.ui = {...this.ui, statusText: this.resultText(res.state.result)};
-            }
-
-            this.updateView();
-        } catch (err) {
-            this.setStatus(`Move failed: ${(err as Error).message}`);
+            this.ui.wsConn.ws.send(JSON.stringify(msg));
+            // We’ll clear pending when the server broadcasts StateUpdate (or Error).
+        } catch (e) {
+            this.ui = {...this.ui, pendingMove: PendingMove.None};
+            this.setStatus('Failed to send move over WebSocket.');
+            console.error(e);
         }
     }
 
     private onLeave(): void {
-        this.stopPolling();
+        this.closeWs();
+
         this.ui = {
             gameId: NAString.NA,
             assignedPlayer: Player.NA,
             serverState: emptyState(),
             statusText: 'Left game. Create a game or join an existing game.',
-            isPolling: false,
+            pendingMove: PendingMove.None,
+            wsConn: {kind: WsConnKind.None},
         };
+
+        const joinInput = mustEl<HTMLInputElement>(this, '#joinInput');
+        joinInput.value = '';
+
         this.updateView();
     }
+
+    /* ======================================================
+       Copy / Share
+       ====================================================== */
 
     private async onCopyGameId(): Promise<void> {
         if (this.ui.gameId === NAString.NA) {
             this.setStatus('No game id to copy.');
             return;
         }
+        const ok = await copyToClipboard(this.ui.gameId);
+        this.setStatus(ok ? `Copied game id: ${this.ui.gameId}` : 'Copy failed.');
+    }
 
-        const text = this.ui.gameId;
-
-        try {
-            // Prefer Clipboard API
-            if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-                await navigator.clipboard.writeText(text);
-                this.setStatus(`Copied game id: ${text}`);
-                return;
-            }
-
-            // Fallback: hidden textarea + execCommand
-            const ta = document.createElement('textarea');
-            ta.value = text;
-            ta.setAttribute('readonly', 'true');
-            ta.style.position = 'absolute';
-            ta.style.left = '-9999px';
-            document.body.appendChild(ta);
-            ta.select();
-
-            const ok = document.execCommand('copy');
-            document.body.removeChild(ta);
-
-            this.setStatus(ok ? `Copied game id: ${text}` : 'Copy failed.');
-        } catch (err) {
-            this.setStatus(`Copy failed: ${(err as Error).message}`);
-        }
+    private buildShareUrl(gameId: string): string {
+        const base = `${location.origin}${location.pathname}`;
+        const encoded = encodeURIComponent(gameId);
+        return `${base}#/multi?gameId=${encoded}`;
     }
 
     private async onShareLink(): Promise<void> {
@@ -375,39 +501,9 @@ export class EhMultiScreen extends HTMLElement {
             this.setStatus('No game id to share.');
             return;
         }
-
         const url = this.buildShareUrl(this.ui.gameId);
-
-        try {
-            if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-                await navigator.clipboard.writeText(url);
-                this.setStatus('Share link copied to clipboard.');
-                return;
-            }
-
-            const ta = document.createElement('textarea');
-            ta.value = url;
-            ta.setAttribute('readonly', 'true');
-            ta.style.position = 'absolute';
-            ta.style.left = '-9999px';
-            document.body.appendChild(ta);
-            ta.select();
-
-            const ok = document.execCommand('copy');
-            document.body.removeChild(ta);
-
-            this.setStatus(ok ? 'Share link copied to clipboard.' : 'Copy failed.');
-        } catch (err) {
-            this.setStatus(`Share failed: ${(err as Error).message}`);
-        }
-    }
-
-    private buildShareUrl(gameId: string): string {
-        // Example output:
-        // https://your.pages.dev/#/multi?gameId=<id>
-        const base = `${location.origin}${location.pathname}`;
-        const encoded = encodeURIComponent(gameId);
-        return `${base}#/multi?gameId=${encoded}`;
+        const ok = await copyToClipboard(url);
+        this.setStatus(ok ? 'Share link copied to clipboard.' : 'Copy failed.');
     }
 }
 

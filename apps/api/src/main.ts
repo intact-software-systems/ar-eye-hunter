@@ -12,6 +12,37 @@ import {
 } from "@shared/mod.ts";
 
 import {createGame, getGame, joinGame, makeMove} from "./services/tictactoe-game.ts";
+import {handleWebSocket} from "./ws/ws_hub.ts";
+
+const ALLOWED_ORIGINS = new Set<string>([
+    'http://localhost:5173',
+    // add your Cloudflare Pages origin here later, e.g.
+    'https://ar-eye-hunter.pages.dev',
+]);
+
+function corsHeaders(req: Request): Headers {
+    const headers = new Headers();
+
+    const origin = req.headers.get('origin') ?? '';
+    if (ALLOWED_ORIGINS.has(origin)) {
+        headers.set('access-control-allow-origin', origin);
+        headers.set('vary', 'origin');
+    }
+
+    headers.set('access-control-allow-methods', 'GET,POST,OPTIONS');
+    headers.set('access-control-allow-headers', 'content-type');
+    // headers.set('access-control-allow-headers', 'content-type, authorization');
+    headers.set('access-control-max-age', '86400');
+
+    return headers;
+}
+
+function withCors(req: Request, res: Response): Response {
+    const h = new Headers(res.headers);
+    const cors = corsHeaders(req);
+    cors.forEach((v, k) => h.set(k, v));
+    return new Response(res.body, {status: res.status, headers: h});
+}
 
 const SIGNALLING_URL = new URLPattern({pathname: '/signalling'});
 const CREATE_GAME_URL = new URLPattern({pathname: "/api/games"});
@@ -19,6 +50,7 @@ const JOIN_GAME_URL = new URLPattern({pathname: "/api/games/:id/join"});
 const GET_GAME_URL = new URLPattern({pathname: "/api/games/:id"});
 const MOVE_IN_GAME_URL = new URLPattern({pathname: "/api/games/:id/move"});
 
+const WEB_SOCKET_CREATE = new URLPattern({pathname: "/api/ws"});
 const routes: Route[] = [
     {
         method: "POST",
@@ -101,17 +133,39 @@ const routes: Route[] = [
             return json(res);
         },
     },
+    {
+        method: "GET",
+        pattern: WEB_SOCKET_CREATE,
+        handler: (req) => {
+            if (req.headers.get("upgrade") !== "websocket") {
+                return new Response("Expected websocket", {status: 426});
+            }
+
+            const {socket, response} = Deno.upgradeWebSocket(req);
+            handleWebSocket(socket);
+            return response; // must be this exact response  [oai_citation:3‡GitHub](https://github.com/denoland/deno/issues/22333?utm_source=chatgpt.com)
+        },
+    }
 ];
 
-Deno.serve(route(routes, () => new Response("Not Found", {status: 404})));
+let handler = route(routes, () => new Response("Not Found", {status: 404}));
+
+Deno.serve(async (req) => {
+    // Handle preflight
+    if (req.method === 'OPTIONS') {
+        return new Response(null, {status: 204, headers: corsHeaders(req)});
+    }
+
+    const res = await handler(req);
+
+    return withCors(req, res);
+});
 
 function json<T>(data: T, status = 200): Response {
     return Response.json(data, {
         status,
         headers: {
-            "content-type": "application/json",
-            // tighten later; for now keep it simple
-            "access-control-allow-origin": "*",
+            "content-type": "application/json"
         },
     });
 }
