@@ -3,3 +3,4 @@ export * from './tictactoe/types.ts'
 export * from './tictactoe/tictactoe-api.ts'
 export * from './contracts/ws.ts'
 export * from './contracts/p2p.ts'
+export * from "./contracts/p2p_ws.ts";

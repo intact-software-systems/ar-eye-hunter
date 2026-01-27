@@ -1,5 +1,4 @@
 import "jsr:@std/dotenv/load";
-import {tictactoeWebRtcWebSocketHandler} from './services/tictactoe-webrtc-req-handler.ts';
 import {route, type Route} from 'jsr:@std/http/unstable-route';
 
 import {
@@ -13,9 +12,16 @@ import {
 } from "@shared/mod.ts";
 
 import {createGame, getGame, joinGame, makeMove} from "./services/tictactoe-game.ts";
-import {handleWebSocket} from "./ws/ws_hub.ts";
 import {p2pRoutes} from "./p2p/p2p_routes.ts";
 import {iceRoutes} from "./webrtc/ice_routes.ts";
+import {handleP2pWs} from "./p2p/p2p_ws_hub.ts";
+import {handleWebSocket as handleServerGameWs} from "./ws/ws_hub.ts"; // your existing one
+
+function handleUnifiedWs(ws: WebSocket): void {
+    // Both handlers ignore messages they don’t recognize by channel/type
+    void handleP2pWs(ws);
+    handleServerGameWs(ws);
+}
 
 const ALLOWED_ORIGINS = new Set<string>([
     'http://localhost:5173',
@@ -46,7 +52,6 @@ function withCors(req: Request, res: Response): Response {
     return new Response(res.body, {status: res.status, headers: h});
 }
 
-const SIGNALLING_URL = new URLPattern({pathname: '/signalling'});
 const CREATE_GAME_URL = new URLPattern({pathname: "/api/games"});
 const JOIN_GAME_URL = new URLPattern({pathname: "/api/games/:id/join"});
 const GET_GAME_URL = new URLPattern({pathname: "/api/games/:id"});
@@ -54,12 +59,6 @@ const MOVE_IN_GAME_URL = new URLPattern({pathname: "/api/games/:id/move"});
 
 const WEB_SOCKET_CREATE = new URLPattern({pathname: "/api/ws"});
 const routes: Route[] = [
-    {
-        method: "POST",
-        pattern: SIGNALLING_URL,
-        handler: (req, _info) =>
-            tictactoeWebRtcWebSocketHandler(req)
-    },
     {
         method: "POST",
         pattern: CREATE_GAME_URL,
@@ -144,7 +143,7 @@ const routes: Route[] = [
             }
 
             const {socket, response} = Deno.upgradeWebSocket(req);
-            handleWebSocket(socket);
+            handleUnifiedWs(socket);
             return response; // must be this exact response  [oai_citation:3‡GitHub](https://github.com/denoland/deno/issues/22333?utm_source=chatgpt.com)
         },
     }

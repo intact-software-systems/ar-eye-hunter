@@ -1,15 +1,14 @@
 import {
     P2pRole,
     P2pSignalType,
-    type ClientId,
     type P2pSessionId,
-    type P2pSignalRecord,
 } from '@shared/mod.ts';
 
-import {
-    P2pSignalingClient,
-    SignalingStateKind,
-} from './signalingClient.ts';
+
+export type SignalTransport = {
+    send: (signalType: P2pSignalType, payload: unknown) => void;
+    onSignal: (handler: (signalType: P2pSignalType, payload: unknown) => void) => void;
+};
 
 /* =========================================================
    Types (no null/undefined exposed)
@@ -111,14 +110,6 @@ function parseCandidate(payload: unknown): ParsedCandidate {
     return { kind: 'Ok', cand: out };
 }
 
-function mustReadySignaling(sig: P2pSignalingClient): { sessionId: P2pSessionId; role: P2pRole } {
-    const st = sig.getState();
-    if (st.kind !== SignalingStateKind.Ready) {
-        throw new Error('Signaling client is not ready. Call createSession/joinSession first.');
-    }
-    return { sessionId: st.sessionId, role: st.role };
-}
-
 /* =========================================================
    Session class
    ========================================================= */
@@ -136,20 +127,20 @@ export class WebRtcSession {
     private onError: WebRtcErrorHandler = () => {};
 
     private readonly config: WebRtcSessionConfig;
-    private readonly signaling: P2pSignalingClient;
-
-    private readonly clientId: ClientId;
+    private readonly transport: SignalTransport;
+    private readonly session: WebRtcSessionInfo;
+    private transportBound: boolean = false;
 
     public constructor(args: {
-        clientId: ClientId;
-        signaling: P2pSignalingClient;
+        session: WebRtcSessionInfo;
+        transport: SignalTransport;
         config?: WebRtcSessionConfig;
         onMessage?: WebRtcMessageHandler;
         onStatus?: WebRtcStatusHandler;
         onError?: WebRtcErrorHandler;
     }) {
-        this.clientId = args.clientId;
-        this.signaling = args.signaling;
+        this.session = args.session;
+        this.transport = args.transport;
         this.config = args.config ? args.config : DefaultWebRtcSessionConfig;
 
         if (args.onMessage) this.onMessage = args.onMessage;
@@ -162,15 +153,14 @@ export class WebRtcSession {
     }
 
     public getInfo(): WebRtcSessionInfo {
-        const { sessionId, role } = mustReadySignaling(this.signaling);
-        return { sessionId, role };
+        return this.session;
     }
 
     /** Initiator flow: assumes signaling has already created the session (role=Initiator). */
     public async startInitiator(): Promise<WebRtcSessionInfo> {
-        const { sessionId, role } = mustReadySignaling(this.signaling);
+        const { sessionId, role } = this.session;
         if (role !== P2pRole.Initiator) {
-            throw new Error('startInitiator called but signaling role is not Initiator.');
+            throw new Error('startInitiator called but session role is not Initiator.');
         }
 
         this.setStatus(WebRtcSessionStatus.Connecting);
@@ -181,9 +171,7 @@ export class WebRtcSession {
         // Initiator creates the data channel
         const dc = pc.createDataChannel(this.config.dataChannelLabel);
         this.attachDataChannel(dc);
-
-        // Start signaling pump and handle incoming Answer + ICE
-        this.signaling.startPump((sig) => void this.handleSignal(sig), this.config.signalingPollMs);
+        this.bindTransportOnce();
 
         // Create + send offer
         const offer = await pc.createOffer();
@@ -195,16 +183,16 @@ export class WebRtcSession {
             return { sessionId, role };
         }
 
-        await this.signaling.postSignal(P2pSignalType.Offer, local);
+        this.transport.send(P2pSignalType.Offer, local);
 
         return { sessionId, role };
     }
 
     /** Responder flow: assumes signaling has already joined the session (role=Responder). */
     public async startResponder(): Promise<WebRtcSessionInfo> {
-        const { sessionId, role } = mustReadySignaling(this.signaling);
+        const { sessionId, role } = this.session;
         if (role !== P2pRole.Responder) {
-            throw new Error('startResponder called but signaling role is not Responder.');
+            throw new Error('startResponder called but session role is not Responder.');
         }
 
         this.setStatus(WebRtcSessionStatus.Connecting);
@@ -216,15 +204,13 @@ export class WebRtcSession {
         pc.ondatachannel = (ev) => {
             this.attachDataChannel(ev.channel);
         };
-
-        // Start signaling pump and wait for Offer + ICE
-        this.signaling.startPump((sig) => void this.handleSignal(sig), this.config.signalingPollMs);
+        this.bindTransportOnce();
 
         return { sessionId, role };
     }
 
     public close(): void {
-        this.signaling.stopPump();
+        // Removed signaling.stopPump();
 
         if (this.dcRef.kind === DcKind.Open || this.dcRef.kind === DcKind.Connecting) {
             try {
@@ -270,6 +256,14 @@ export class WebRtcSession {
        Internals
        ========================================================= */
 
+    private bindTransportOnce(): void {
+        if (this.transportBound) return;
+        this.transportBound = true;
+        this.transport.onSignal((signalType, payload) => {
+            void this.handleSignal(signalType, payload);
+        });
+    }
+
     private setStatus(status: WebRtcSessionStatus): void {
         this.status = status;
         this.onStatus(status);
@@ -287,9 +281,11 @@ export class WebRtcSession {
             // Trickle ICE: send candidate as it arrives
             if (!ev.candidate) return;
             const init = ev.candidate.toJSON();
-            void this.signaling.postSignal(P2pSignalType.IceCandidate, init).catch((e) => {
-                this.onError(`Failed to post ICE candidate: ${(e as Error).message}`);
-            });
+            try {
+                this.transport.send(P2pSignalType.IceCandidate, init);
+            } catch (e) {
+                this.onError(`Failed to send ICE candidate: ${(e as Error).message}`);
+            }
         };
 
         pc.onconnectionstatechange = () => {
@@ -298,9 +294,7 @@ export class WebRtcSession {
             if (s === 'connected') {
                 // Once connected, signaling is no longer needed for setup.
                 // If you want to be extra-safe, you can stop only when dc is open.
-                if (this.dcRef.kind === DcKind.Open) {
-                    this.signaling.stopPump();
-                }
+                // Removed signaling.stopPump() call here
                 this.setStatus(WebRtcSessionStatus.Open);
             }
 
@@ -323,7 +317,7 @@ export class WebRtcSession {
             this.dcRef = { kind: DcKind.Open, dc };
             // If PC is already connected, stop signaling now.
             if (this.pcRef.kind === PcKind.Active && this.pcRef.pc.connectionState === 'connected') {
-                this.signaling.stopPump();
+                // Removed signaling.stopPump() call here
                 this.setStatus(WebRtcSessionStatus.Open);
             }
         };
@@ -342,15 +336,15 @@ export class WebRtcSession {
         };
     }
 
-    private async handleSignal(sig: P2pSignalRecord): Promise<void> {
+    private async handleSignal(signalType: P2pSignalType, payload: unknown): Promise<void> {
         if (this.pcRef.kind !== PcKind.Active) return;
 
         const pc = this.pcRef.pc;
 
-        switch (sig.type) {
+        switch (signalType) {
             case P2pSignalType.Offer: {
                 // Responder: receive offer, set remote, create answer, send answer
-                const parsed = parseSdp(sig.payload);
+                const parsed = parseSdp(payload);
                 if (parsed.kind === 'Invalid' || parsed.sdp.type !== 'offer') return;
 
                 // If already set, ignore duplicates
@@ -368,13 +362,13 @@ export class WebRtcSession {
                     return;
                 }
 
-                await this.signaling.postSignal(P2pSignalType.Answer, local);
+                this.transport.send(P2pSignalType.Answer, local);
                 return;
             }
 
             case P2pSignalType.Answer: {
                 // Initiator: receive answer, set remote
-                const parsed = parseSdp(sig.payload);
+                const parsed = parseSdp(payload);
                 if (parsed.kind === 'Invalid' || parsed.sdp.type !== 'answer') return;
 
                 // If already set, ignore duplicates
@@ -386,7 +380,7 @@ export class WebRtcSession {
             }
 
             case P2pSignalType.IceCandidate: {
-                const parsed = parseCandidate(sig.payload);
+                const parsed = parseCandidate(payload);
                 if (parsed.kind === 'Invalid') return;
 
                 // If remote description isn't set yet, queue candidates.

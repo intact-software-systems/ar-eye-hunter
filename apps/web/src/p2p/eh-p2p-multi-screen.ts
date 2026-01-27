@@ -3,7 +3,7 @@ import {
     type GameState,
     P2pRole,
     Player,
-} from '@shared/mod.ts';
+} from '@shared/mod';
 
 import {
     emptyState,
@@ -24,13 +24,15 @@ import {
     type P2pHelloMsg,
     type P2pResyncRequestMsg,
     type P2pStateSyncMsg,
-} from './p2pProtocol.ts';
+} from './p2pProtocol';
 
-import {P2pSignalingClient, SignalingStateKind} from './signalingClient.ts';
-import {DefaultWebRtcSessionConfig, WebRtcSession, WebRtcSessionStatus} from './webrtcSession.ts';
+import {P2pSignalingClient, SignalingStateKind} from './signalingClient';
+import {DefaultWebRtcSessionConfig, WebRtcSession, WebRtcSessionStatus} from './webrtcSession';
 
-import type {CellClickDetail} from '../components/eh-ttt-board.ts';
-import {fetchIceConfig} from "./iceClient.ts";
+import type {CellClickDetail} from '../components/eh-ttt-board';
+import {fetchIceConfig} from './iceClient';
+
+import {WsSignalingClient} from './wsSignalingClient';
 
 /* ======================================================
    Utilities
@@ -50,15 +52,6 @@ function getOrCreateClientId(): string {
     localStorage.setItem(key, created);
     return created;
 }
-
-// function emptyState(): GameState {
-//     return {
-//         board: Array(9).fill(Cell.Empty),
-//         currentPlayer: Player.X,
-//         result: GameResult.InProgress,
-//         mode: { type: GameModeType.LocalHuman, difficulty: CpuDifficulty.Empty },
-//     };
-// }
 
 function readSessionIdFromHash(): string {
     // hash: "#/p2p?sessionId=abc"
@@ -113,6 +106,7 @@ export class EhP2pMultiScreen extends HTMLElement {
     private readonly clientId = getOrCreateClientId();
 
     private signaling: P2pSignalingClient = new P2pSignalingClient();
+    private wsSig: WsSignalingClient | undefined = undefined;
     private rtc: WebRtcSession | undefined = undefined;
 
     private ui: UiState = {
@@ -260,6 +254,10 @@ export class EhP2pMultiScreen extends HTMLElement {
             this.rtc.close();
             this.rtc = undefined;
         }
+        if (this.wsSig) {
+            this.wsSig.close();
+            this.wsSig = undefined;
+        }
         this.signaling.reset();
     }
 
@@ -301,11 +299,21 @@ export class EhP2pMultiScreen extends HTMLElement {
             };
             this.updateView();
 
-            const ice = await fetchIceConfig(this.clientId);
+            const ice = await fetchIceConfig();
+
+            this.wsSig = new WsSignalingClient({
+                onOpen: () => this.setStatus('Signaling WS connected.'),
+                onWelcome: (role) => this.setStatus(`Signaling welcome as ${role}.`),
+                onSignal: () => {
+                },
+                onError: (m) => this.setStatus(`Signaling WS error: ${m}`),
+                onClose: () => this.setStatus('Signaling WS closed.'),
+            });
+            this.wsSig.connect(st.sessionId, st.token);
 
             this.rtc = new WebRtcSession({
-                clientId: this.clientId,
-                signaling: this.signaling,
+                session: {sessionId: st.sessionId, role: st.role},
+                transport: this.wsSig.asTransport(),
                 config: {
                     ...DefaultWebRtcSessionConfig,
                     iceServers: ice.iceServers,
@@ -316,7 +324,7 @@ export class EhP2pMultiScreen extends HTMLElement {
                     this.updateView();
 
                     if (s === WebRtcSessionStatus.Open) {
-                        this.rtc?.sendJson({ type: P2pMsgType.Hello, role: P2pRole.Initiator });
+                        this.rtc?.sendJson({type: P2pMsgType.Hello, role: P2pRole.Initiator});
                     }
                 },
                 onError: (m) => this.setStatus(`WebRTC error: ${m}`),
@@ -353,16 +361,32 @@ export class EhP2pMultiScreen extends HTMLElement {
             };
             this.updateView();
 
+            const ice = await fetchIceConfig();
+
+            this.wsSig = new WsSignalingClient({
+                onOpen: () => this.setStatus('Signaling WS connected.'),
+                onWelcome: (role) => this.setStatus(`Signaling welcome as ${role}.`),
+                onSignal: () => {
+                },
+                onError: (m) => this.setStatus(`Signaling WS error: ${m}`),
+                onClose: () => this.setStatus('Signaling WS closed.'),
+            });
+            this.wsSig.connect(st.sessionId, st.token);
+
             this.rtc = new WebRtcSession({
-                clientId: this.clientId,
-                signaling: this.signaling,
+                session: {sessionId: st.sessionId, role: st.role},
+                transport: this.wsSig.asTransport(),
+                config: {
+                    ...DefaultWebRtcSessionConfig,
+                    iceServers: ice.iceServers,
+                },
                 onMessage: (txt) => this.onRemoteMessage(txt),
                 onStatus: (s) => {
                     this.ui = {...this.ui, rtcStatus: s};
                     this.updateView();
 
                     if (s === WebRtcSessionStatus.Open) {
-                        this.rtc?.sendJson({ type: P2pMsgType.Hello, role: P2pRole.Responder });
+                        this.rtc?.sendJson({type: P2pMsgType.Hello, role: P2pRole.Responder});
                     }
                 },
                 onError: (m) => this.setStatus(`WebRTC error: ${m}`),
