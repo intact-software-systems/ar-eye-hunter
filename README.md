@@ -24,11 +24,6 @@ CLOUDFLARE_ACCOUNT_ID = ar-eye-hunter
 
 ## WebRTC and ICE/TURN
 
-```text
-TURN_URLS = turns:turn.yourdomain.com:443?transport=tcp,turn:turn.yourdomain.com:3478?transport=udp 
-TURN_SHARED_SECRET = B9B027AC-F7F3-4BDB-9DBC-3300AF6E6DED
-TURN_TTL_SECONDS = 600
-```
 
 #### TURN server
 
