@@ -1,3 +1,4 @@
+import "jsr:@std/dotenv/load";
 import {tictactoeWebRtcWebSocketHandler} from './services/tictactoe-webrtc-req-handler.ts';
 import {route, type Route} from 'jsr:@std/http/unstable-route';
 
@@ -14,6 +15,7 @@ import {
 import {createGame, getGame, joinGame, makeMove} from "./services/tictactoe-game.ts";
 import {handleWebSocket} from "./ws/ws_hub.ts";
 import {p2pRoutes} from "./p2p/p2p_routes.ts";
+import {iceRoutes} from "./webrtc/ice_routes.ts";
 
 const ALLOWED_ORIGINS = new Set<string>([
     'http://localhost:5173',
@@ -31,8 +33,7 @@ function corsHeaders(req: Request): Headers {
     }
 
     headers.set('access-control-allow-methods', 'GET,POST,OPTIONS');
-    headers.set('access-control-allow-headers', 'content-type');
-    // headers.set('access-control-allow-headers', 'content-type, authorization');
+    headers.set('access-control-allow-headers', 'content-type, x-client-id, authorization');
     headers.set('access-control-max-age', '86400');
 
     return headers;
@@ -150,6 +151,7 @@ const routes: Route[] = [
 ];
 
 routes.push(...p2pRoutes())
+routes.push(...iceRoutes())
 
 let handler = route(routes, () => new Response("Not Found", {status: 404}));
 

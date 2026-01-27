@@ -45,7 +45,6 @@ function parseLimit(url: URL): number {
 const POST_P2P_SESSIONS = new URLPattern({pathname: '/api/p2p/sessions'});
 const POST_P2P_SESSIONS_JOIN = new URLPattern({pathname: '/api/p2p/sessions/:sessionId/join'});
 const POST_P2P_SESSION_ID_SIGNAL = new URLPattern({pathname: '/api/p2p/sessions/:sessionId/signals'});
-
 const GET_P2P_SESSION_ID_SIGNAL = new URLPattern({pathname: '/api/p2p/sessions/:sessionId/signals'});
 
 export function p2pRoutes(): Route[] {

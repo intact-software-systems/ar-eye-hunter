@@ -27,9 +27,10 @@ import {
 } from './p2pProtocol.ts';
 
 import {P2pSignalingClient, SignalingStateKind} from './signalingClient.ts';
-import {WebRtcSession, WebRtcSessionStatus} from './webrtcSession.ts';
+import {DefaultWebRtcSessionConfig, WebRtcSession, WebRtcSessionStatus} from './webrtcSession.ts';
 
 import type {CellClickDetail} from '../components/eh-ttt-board.ts';
+import {fetchIceConfig} from "./iceClient.ts";
 
 /* ======================================================
    Utilities
@@ -300,21 +301,28 @@ export class EhP2pMultiScreen extends HTMLElement {
             };
             this.updateView();
 
+            const ice = await fetchIceConfig(this.clientId);
+
             this.rtc = new WebRtcSession({
                 clientId: this.clientId,
                 signaling: this.signaling,
+                config: {
+                    ...DefaultWebRtcSessionConfig,
+                    iceServers: ice.iceServers,
+                },
                 onMessage: (txt) => this.onRemoteMessage(txt),
                 onStatus: (s) => {
                     this.ui = {...this.ui, rtcStatus: s};
                     this.updateView();
+
+                    if (s === WebRtcSessionStatus.Open) {
+                        this.rtc?.sendJson({ type: P2pMsgType.Hello, role: P2pRole.Initiator });
+                    }
                 },
                 onError: (m) => this.setStatus(`WebRTC error: ${m}`),
             });
 
             await this.rtc.startInitiator();
-
-            // Minimal hello message
-            this.rtc.sendJson({type: P2pMsgType.Hello, role: P2pRole.Initiator} satisfies P2pHelloMsg);
         } catch (e) {
             this.setStatus(`Create failed: ${(e as Error).message}`);
         }
@@ -352,6 +360,10 @@ export class EhP2pMultiScreen extends HTMLElement {
                 onStatus: (s) => {
                     this.ui = {...this.ui, rtcStatus: s};
                     this.updateView();
+
+                    if (s === WebRtcSessionStatus.Open) {
+                        this.rtc?.sendJson({ type: P2pMsgType.Hello, role: P2pRole.Responder });
+                    }
                 },
                 onError: (m) => this.setStatus(`WebRTC error: ${m}`),
             });
@@ -380,19 +392,6 @@ export class EhP2pMultiScreen extends HTMLElement {
         if (!this.rtc) return;
         if (this.ui.rtcStatus !== WebRtcSessionStatus.Open) return;
         if (this.ui.role === NAString.NA) return;
-        // if (this.ui.game.result !== GameResult.InProgress) return;
-
-        // const myPlayer =
-        //     this.ui.role === P2pRole.Initiator ? Player.X :
-        //         this.ui.role === P2pRole.Responder ? Player.O :
-        //             Player.NA;
-        //
-        // if (myPlayer === Player.NA) return;
-        // if (this.ui.game.currentPlayer !== myPlayer) return;
-
-        // const res = applyMove(this.ui.game, moveIndex);
-        // if (res.move === BoardMove.Failed) return;
-
 
         const d = applyLocalMove({state: this.ui.game, myRole: this.ui.role, moveIndex});
 

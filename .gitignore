@@ -12,3 +12,6 @@ deno.lock
 
 .DS_Store
 
+/apps/api/.env.local
+/apps/api/.env
+/apps/web/.env.local
