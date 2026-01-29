@@ -4,3 +4,6 @@ export * from './tictactoe/tictactoe-api.ts'
 export * from './contracts/ws.ts'
 export * from './contracts/p2p.ts'
 export * from "./contracts/p2p_ws.ts";
+export * from "./whack/engine/types.ts";
+export * from "./whack/engine/rng.ts";
+export * from "./whack/engine/engine.ts";

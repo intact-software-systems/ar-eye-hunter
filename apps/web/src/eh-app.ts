@@ -49,7 +49,10 @@ export class EhApp extends HTMLElement {
                 host.innerHTML = `<eh-landing></eh-landing>`;
                 return;
             case Route.WhackAWorm:
-                host.innerHTML = `<eh-whack-screen></eh-whack-screen>`;
+                host.innerHTML = `<eh-whack-home-screen></eh-whack-home-screen>`;
+                return;
+            case Route.WhackSingle:
+                host.innerHTML = `<eh-whack-single-screen></eh-whack-single-screen>`;
                 return;
             case Route.Single:
                 host.innerHTML = `<eh-single-screen></eh-single-screen>`;

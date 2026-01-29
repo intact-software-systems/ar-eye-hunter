@@ -9,4 +9,6 @@ import './tictactoe/single/eh-single-screen.ts';
 import './tictactoe/multi/eh-multi-screen.ts';
 import './tictactoe/p2p/eh-p2p-multi-screen.ts';
 
-import './whackaworm/eh-whackaworm-screen.ts'
+import './whack/eh-whack-home-screen.ts';
+import './whack/eh-whack-single-screen.ts';
+import './whack/eh-whack-canvas.ts';
