@@ -13,7 +13,7 @@ import {
     type PostP2pSignalResponse,
     type GetP2pSignalsResponse,
     type P2pSignalRecord,
-} from '@shared/mod';
+} from '@shared/mod.ts';
 
 export enum NAString {
     NA = 'NA',

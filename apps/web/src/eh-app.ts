@@ -45,10 +45,15 @@ export class EhApp extends HTMLElement {
         const host = mustEl<HTMLDivElement>(this, '#screenHost');
 
         switch (this.currentRoute) {
+            case Route.TicTacToe:
+                host.innerHTML = `<eh-landing></eh-landing>`;
+                return;
+            case Route.WhackAWorm:
+                host.innerHTML = `<eh-whack-screen></eh-whack-screen>`;
+                return;
             case Route.Single:
                 host.innerHTML = `<eh-single-screen></eh-single-screen>`;
                 return;
-
             case Route.Multi:
                 host.innerHTML = `<eh-multi-screen></eh-multi-screen>`;
                 return;
@@ -57,7 +62,7 @@ export class EhApp extends HTMLElement {
                 return;
             case Route.Landing:
             default:
-                host.innerHTML = `<eh-landing></eh-landing>`;
+                host.innerHTML = `<eh-landing-screen></eh-landing-screen>`;
                 return;
         }
     }

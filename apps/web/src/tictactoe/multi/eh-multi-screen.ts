@@ -13,7 +13,7 @@ import {
 } from '@shared/mod.ts';
 
 import {createGamesApi, NAString} from './apiClient.ts';
-import type {CellClickDetail} from '../components/eh-ttt-board.ts';
+import type {CellClickDetail} from '../eh-ttt-board.ts';
 
 /* ======================================================
    Utilities (no nulls)

@@ -3,7 +3,7 @@ import {
     type GameState,
     P2pRole,
     Player,
-} from '@shared/mod';
+} from '@shared/mod.ts';
 
 import {
     emptyState,
@@ -24,15 +24,15 @@ import {
     type P2pHelloMsg,
     type P2pResyncRequestMsg,
     type P2pStateSyncMsg,
-} from './p2pProtocol';
+} from './p2pProtocol.ts';
 
-import {P2pSignalingClient, SignalingStateKind} from './signalingClient';
-import {DefaultWebRtcSessionConfig, WebRtcSession, WebRtcSessionStatus} from './webrtcSession';
+import {P2pSignalingClient, SignalingStateKind} from './signalingClient.ts';
+import {DefaultWebRtcSessionConfig, WebRtcSession, WebRtcSessionStatus} from './webrtcSession.ts';
 
-import type {CellClickDetail} from '../components/eh-ttt-board';
-import {fetchIceConfig} from './iceClient';
+import type {CellClickDetail} from '../eh-ttt-board.ts';
+import {fetchIceConfig} from './iceClient.ts';
 
-import {WsSignalingClient} from './wsSignalingClient';
+import {WsSignalingClient} from './wsSignalingClient.ts';
 
 /* ======================================================
    Utilities

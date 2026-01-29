@@ -10,7 +10,7 @@ import {
 } from '@shared/mod.ts';
 
 import {applyMove, computeCpuMove} from '@shared/tictactoe/tictactoe.ts';
-import type {CellClickDetail} from '../components/eh-ttt-board.ts';
+import type {CellClickDetail} from '../eh-ttt-board.ts';
 
 function mustEl<T extends HTMLElement>(root: ParentNode, selector: string): T {
     const el = root.querySelector(selector);

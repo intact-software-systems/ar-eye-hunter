@@ -1,6 +1,6 @@
-import { Route, navigate } from '../app/router.ts';
+import { Route, navigate } from '../router.ts';
 
-export class EhLanding extends HTMLElement {
+export class EhTictactoeLanding extends HTMLElement {
     connectedCallback(): void {
         this.render();
         this.wire();
@@ -35,4 +35,4 @@ export class EhLanding extends HTMLElement {
     }
 }
 
-customElements.define('eh-landing', EhLanding);
+customElements.define('eh-landing', EhTictactoeLanding);

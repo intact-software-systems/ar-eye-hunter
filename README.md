@@ -2,6 +2,11 @@
 AR game POC
 
 
+## P2P version
+
+Online game without a trace. Data is born when you enter and is gone when you leave, and most of the data was created and only lived on your device.
+
+
 ## apps/api server
 
 Deno web server 

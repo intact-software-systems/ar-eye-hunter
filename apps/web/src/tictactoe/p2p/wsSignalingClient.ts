@@ -8,7 +8,7 @@ import {
     type P2pToken,
     type P2pWsServerMessage,
     type P2pWsClientMessage,
-} from "@shared/mod";
+} from "@shared/mod.ts";
 
 export enum WsSigStatus {
     Closed = "Closed",

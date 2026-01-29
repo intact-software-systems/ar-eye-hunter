@@ -60,6 +60,42 @@
         select {
             padding: 8px;
         }
+
+        .game-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .game-card {
+            text-align: left;
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 12px;
+            padding: 12px;
+            background: rgba(255,255,255,0.04);
+            cursor: pointer;
+        }
+
+        .game-card:hover { background: rgba(255,255,255,0.06); }
+
+        .game-card__top {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .game-card__title { font-weight: 700; }
+        .game-card__badge {
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            border: 1px solid rgba(255,255,255,0.18);
+            opacity: 0.9;
+        }
+        .game-card__desc { opacity: 0.85; font-size: 13px; }
     </style>
 </head>
 
