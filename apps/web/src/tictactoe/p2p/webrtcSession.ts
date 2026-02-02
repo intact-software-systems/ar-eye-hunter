@@ -183,6 +183,7 @@ export class WebRtcSession {
             return { sessionId, role };
         }
 
+        // WsSignalingClient send
         this.transport.send(P2pSignalType.Offer, local);
 
         return { sessionId, role };

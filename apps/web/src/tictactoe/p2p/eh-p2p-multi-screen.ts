@@ -309,6 +309,8 @@ export class EhP2pMultiScreen extends HTMLElement {
                 onError: (m) => this.setStatus(`Signaling WS error: ${m}`),
                 onClose: () => this.setStatus('Signaling WS closed.'),
             });
+
+            // WebSocket connect to API
             this.wsSig.connect(st.sessionId, st.token);
 
             this.rtc = new WebRtcSession({

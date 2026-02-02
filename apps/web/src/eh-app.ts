@@ -10,13 +10,13 @@ export class EhApp extends HTMLElement {
     private currentRoute: Route = Route.Landing;
 
     connectedCallback(): void {
-        window.addEventListener('hashchange', this.onHashChange);
+        self.window.addEventListener('hashchange', this.onHashChange);
         this.currentRoute = getRouteFromHash(location.hash);
         this.render();
     }
 
     disconnectedCallback(): void {
-        window.removeEventListener('hashchange', this.onHashChange);
+        self.window.removeEventListener('hashchange', this.onHashChange);
     }
 
     private onHashChange = (): void => {

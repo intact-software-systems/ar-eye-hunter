@@ -20,6 +20,11 @@ Framework free front-end
 
 Deployed as static CDN using Cloudflare
 
+
+### Resilient inbox and outbox in SPA
+
+Implement in typescript so it can be used both on server and front-end.
+
 ## API tokens
 
 ```text
@@ -35,3 +40,6 @@ CLOUDFLARE_ACCOUNT_ID = ar-eye-hunter
 Use [Metered](https://dashboard.metered.ca/turnserver/app/69787c9391a10f7b2c9cb989)
 
 Free plan
+
+
+
