@@ -1,5 +1,12 @@
 {
+  "tasks": {
+    "test:queue": "deno run -A --unstable-temporal npm:vitest run packages/tests/queue.test.ts",
+    "test:debug": "deno run -A --unstable-temporal npm:vitest run",
+    "qbox": "deno run -A --unstable-temporal npm:vitest run --inspect-brk=127.0.0.1:53287 packages/tests/queue.test.ts --no-file-parallelism"
+  },
+  "unstable": ["temporal"],
   "imports": {
-    "@shared/": "./packages/shared/"
+    "@shared/": "./packages/shared/",
+    "@std/assert": "jsr:@std/assert@^1.0.18"
   }
 }

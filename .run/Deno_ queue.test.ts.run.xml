@@ -1,0 +1,6 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Deno: queue.test.ts" type="DenoConfigurationType" nameIsGenerated="true" inputPath="$PROJECT_DIR$/packages/tests/queue.test.ts" programParameters="run -A --unstable-temporal npm:vitest run" workingDirectory="$PROJECT_DIR$/packages/tests">
+    <option name="applicationArguments" value="--no-file-parallelism" />
+    <method v="2" />
+  </configuration>
+</component>
