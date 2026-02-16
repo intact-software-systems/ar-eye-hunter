@@ -9,6 +9,9 @@
     },
     {
       "path": "apps/api"
+    },
+    {
+      "path": "apps/api-v1"
     }
   ],
   "compilerOptions": {
@@ -18,7 +21,10 @@
     "strict": true,
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
-
+    "types": [
+      "deno.ns",
+      "deno.unstable"
+    ],
     "baseUrl": ".",
     "paths": {
       "@shared/*": [

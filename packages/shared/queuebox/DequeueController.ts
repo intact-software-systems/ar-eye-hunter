@@ -1,8 +1,10 @@
-import { Either, EitherCollectors } from "../resilience/Either.ts";
+import {Either, EitherCollectors} from "../resilience/Either.ts";
 
 export interface Logger {
     debug(message: string, ...args: unknown[]): void;
+
     warn(message: string, ...args: unknown[]): void;
+
     error(message: string, ...args: unknown[]): void;
 }
 
@@ -43,7 +45,8 @@ export class FailureDto<K, V> {
         public readonly key: K,
         public readonly value: V,
         public readonly exception: Error,
-    ) {}
+    ) {
+    }
 }
 
 export class SuccessDto<K, V, T> {
@@ -51,12 +54,14 @@ export class SuccessDto<K, V, T> {
         public readonly key: K,
         public readonly value: V,
         public readonly computedValue: T,
-    ) {}
+    ) {
+    }
 }
 
 export class DequeueController<K, V, T> {
-    static readonly DEFAULT_MAX_NUM_TO_DEQUEUE = 1000;
-    static readonly DEFAULT_MAX_NUM_TO_RESERVE = 1;
+    public static readonly DEFAULT_MAX_NUM_TO_DEQUEUE = 1000;
+    public static readonly DEFAULT_MAX_NUM_TO_RESERVE = 1;
+    public static readonly DEFAULT_MAX_RETRY = 20;
 
     private static readonly MAX_CONSECUTIVE_FAILURE_RETRY = 5;
     private static readonly MAX_NO_PROGRESSION = 5;
@@ -71,17 +76,17 @@ export class DequeueController<K, V, T> {
     private typesToDequeue: () => Set<string> = () => new Set<string>();
     private checkIsTypesToDequeue: (types: Set<string>) => boolean = () => true;
 
-    private newReservator?: (types: Set<string>, numToReserve: number) => Map<K, V>;
-    private retryReservator?: (types: Set<string>, numToReserve: number) => Map<K, V>;
-    private failedReservator?: (types: Set<string>, numToReserve: number) => Map<K, V>;
-    private timeoutReservator?: (types: Set<string>, numToReserve: number) => Map<K, V>;
+    private newReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
+    private retryReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
+    private failedReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
+    private timeoutReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>;
 
-    private successReleaser?: (m: Map<K, SuccessDto<K, V, T>>) => Map<K, SuccessDto<K, V, T>>;
-    private failureReleaser?: (m: Map<K, FailureDto<K, V>>) => Map<K, FailureDto<K, V>>;
+    private successReleaser?: (m: Map<K, SuccessDto<K, V, T>>) => Promise<Map<K, SuccessDto<K, V, T>>>;
+    private failureReleaser?: (m: Map<K, FailureDto<K, V>>) => Promise<Map<K, FailureDto<K, V>>>;
 
     private onCompleted?: (m: Map<K, SuccessDto<K, V, T>>) => void;
     private onFailed?: (m: Map<K, FailureDto<K, V>>) => void;
-    private onPreProcessingReserved?: (m: Map<K, V>) => Map<K, V>;
+    private onPreProcessingReserved?: (m: Map<K, V>) => Promise<Map<K, V>>;
 
     private constructor(logger: Logger = defaultLogger) {
         this.log = logger;
@@ -119,29 +124,29 @@ export class DequeueController<K, V, T> {
         return this;
     }
 
-    onNewEntriesReserveDo(reservator: (types: Set<string>, numToReserve: number) => Map<K, V>): this {
+    onNewEntriesReserveDo(reservator: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>): this {
         this.newReservator = requireNonNull(reservator);
         return this;
     }
 
-    onRetryEntriesReserveDo(retryReservator?: (types: Set<string>, numToReserve: number) => Map<K, V>): this {
+    onRetryEntriesReserveDo(retryReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>): this {
         this.retryReservator = retryReservator ?? undefined;
         return this;
     }
 
-    onFailedEntriesReserveDo(failedReservator?: (types: Set<string>, numToReserve: number) => Map<K, V>): this {
+    onFailedEntriesReserveDo(failedReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>): this {
         this.failedReservator = failedReservator ?? undefined;
         return this;
     }
 
-    onTimeoutEntriesReserveDo(timeoutReservator?: (types: Set<string>, numToReserve: number) => Map<K, V>): this {
+    onTimeoutEntriesReserveDo(timeoutReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>): this {
         this.timeoutReservator = timeoutReservator ?? undefined;
         return this;
     }
 
     onReleaseEntriesDo(
-        successReleaser: (m: Map<K, SuccessDto<K, V, T>>) => Map<K, SuccessDto<K, V, T>>,
-        failureReleaser: (m: Map<K, FailureDto<K, V>>) => Map<K, FailureDto<K, V>>,
+        successReleaser: (m: Map<K, SuccessDto<K, V, T>>) => Promise<Map<K, SuccessDto<K, V, T>>>,
+        failureReleaser: (m: Map<K, FailureDto<K, V>>) => Promise<Map<K, FailureDto<K, V>>>,
     ): this {
         this.successReleaser = requireNonNull(successReleaser);
         this.failureReleaser = requireNonNull(failureReleaser);
@@ -158,7 +163,7 @@ export class DequeueController<K, V, T> {
         return this;
     }
 
-    onPreProcessingReservedEntries(onPreProcessingReservedEntries?: (m: Map<K, V>) => Map<K, V>): this {
+    onPreProcessingReservedEntries(onPreProcessingReservedEntries?: (m: Map<K, V>) => Promise<Map<K, V>>): this {
         this.onPreProcessingReserved = onPreProcessingReservedEntries ?? undefined;
         return this;
     }
@@ -277,13 +282,13 @@ export class DequeueController<K, V, T> {
         typesToDequeue: () => Set<string>,
         returnDequeuedEntries: boolean,
         isWorkForTypes: (types: Set<string>) => boolean,
-        reservator: (types: Set<string>, numToReserve: number) => Map<K, V>,
+        reservator: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>,
         computer: (key: K, value: V) => T,
-        successReleaser: (m: Map<K, SuccessDto<K, V, T>>) => Map<K, SuccessDto<K, V, T>>,
-        failureReleaser: (m: Map<K, FailureDto<K, V>>) => Map<K, FailureDto<K, V>>,
+        successReleaser: (m: Map<K, SuccessDto<K, V, T>>) => Promise<Map<K, SuccessDto<K, V, T>>>,
+        failureReleaser: (m: Map<K, FailureDto<K, V>>) => Promise<Map<K, FailureDto<K, V>>>,
         onCompleted?: (m: Map<K, SuccessDto<K, V, T>>) => void,
         onFailed?: (m: Map<K, FailureDto<K, V>>) => void,
-        onPreProcessingReservedEntries?: (m: Map<K, V>) => Map<K, V>,
+        onPreProcessingReservedEntries?: (m: Map<K, V>) => Promise<Map<K, V>>,
         log: Logger = defaultLogger,
     ): Promise<Map<K, Either<FailureDto<K, V>, SuccessDto<K, V, T>>>> {
         let consecutiveFailureCounter = 0;
@@ -300,8 +305,11 @@ export class DequeueController<K, V, T> {
                     return allComputed;
                 }
 
-                const reserved = reservator(typesToDequeue(), numToReserve) ?? new Map<K, V>();
-                const preProcessed = onPreProcessingReservedEntries ? onPreProcessingReservedEntries(reserved) : reserved;
+                const reserved = await reservator(typesToDequeue(), numToReserve) ?? new Map<K, V>();
+                const preProcessed =
+                    onPreProcessingReservedEntries
+                        ? await onPreProcessingReservedEntries(reserved)
+                        : reserved;
 
                 // Compute results
                 const computed = new Map<K, Either<FailureDto<K, V>, SuccessDto<K, V, T>>>();
@@ -323,7 +331,7 @@ export class DequeueController<K, V, T> {
                 // success handling
                 {
                     if (successByKey.size > 0) {
-                        const released = successReleaser(successByKey);
+                        const released = await successReleaser(successByKey);
                         for (const [k, successDto] of released.entries()) {
                             computed.set(k, Either.ofRight(successDto));
                         }
@@ -342,7 +350,7 @@ export class DequeueController<K, V, T> {
                 // failure handling
                 {
                     if (failureByKey.size > 0) {
-                        const released = failureReleaser(failureByKey);
+                        const released = await failureReleaser(failureByKey);
                         for (const [k, failureDto] of released.entries()) {
                             computed.set(k, Either.ofLeft(failureDto));
                         }

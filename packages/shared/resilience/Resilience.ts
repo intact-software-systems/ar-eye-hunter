@@ -294,16 +294,16 @@ export class CircuitBreaker {
         );
     }
 
-    static tryToExecute<T>(
+    static async tryToExecute<T>(
         circuitBreaker: CircuitBreaker,
-        supplier: () => T,
-    ): Either<Error, T> {
+        supplier: () => Promise<T>,
+    ): Promise<Either<Error, T>> {
         try {
             if (!circuitBreaker.allow()) {
                 return Either.ofLeft(new Error("Not allowed to execute"));
             }
 
-            const value = supplier();
+            const value = await supplier();
             circuitBreaker.success();
 
             return Either.ofRight(value);
@@ -313,16 +313,16 @@ export class CircuitBreaker {
         }
     }
 
-    static tryToExecuteBooleanSupplier(
+    static async tryToExecuteBooleanSupplier(
         circuitBreaker: CircuitBreaker,
-        supplier: () => boolean,
-    ): boolean {
+        supplier: () => Promise<boolean>
+    ): Promise<boolean> {
         try {
             if (!circuitBreaker.allow()) {
                 return false;
             }
 
-            const isSuccess = supplier();
+            const isSuccess = await supplier();
 
             if (isSuccess) {
                 circuitBreaker.success();
@@ -331,8 +331,9 @@ export class CircuitBreaker {
             }
 
             return isSuccess;
-        } catch {
+        } catch (error) {
             circuitBreaker.failure();
+            console.error("Execution failed:", error);
             return false;
         }
     }
@@ -547,15 +548,15 @@ export class RateLimiter {
         );
     }
 
-    static tryToExecuteOrDefault<T>(
+    static async tryToExecuteOrDefault<T>(
         rateLimiter: RateLimiter,
-        supplier: () => T,
+        supplier: () => Promise<T>,
         defaultValue: T,
-    ): T {
+    ): Promise<T> {
         if (!rateLimiter.allow()) {
             return defaultValue;
         }
-        return supplier();
+        return await supplier();
     }
 
     allow(): boolean {

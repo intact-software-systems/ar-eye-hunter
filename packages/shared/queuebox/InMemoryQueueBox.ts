@@ -1,6 +1,7 @@
+// deno-lint-ignore-file require-await
+
 import {RateLimiter} from "../resilience/Resilience.ts";
-import {DequeueResourceEntryRepository, TimeUnit} from "./DequeueResourceEntryRepository.ts";
-import {EnqueueResourceEntryController} from "./EnqueueResourceEntryController.ts";
+import {QueueBoxResourceEntryRepository} from "./QueueBoxTypes.ts";
 import {
     EntityStatus,
     FAILED_STATUS,
@@ -10,25 +11,21 @@ import {
     TIMEOUT_ON_NON_RESPONSIVE_ENTRY
 } from "./ResourceEntry.ts";
 
-// Unordered in memory
-export class UnorderedInMemoryQueueBox implements DequeueResourceEntryRepository, EnqueueResourceEntryController {
-
-    // If I want ordered then
-    // private ordered: Map<bigint, ResourceEntry> where the number is an ever-increasing identifier
+export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     private readonly data: Map<Key, ResourceEntry>;
 
-    constructor(data: Map<Key, ResourceEntry>) {
+    constructor(data: Map<Key, ResourceEntry> = new Map<Key, ResourceEntry>()) {
         this.data = data;
     }
 
-    put(resourceEntry: ResourceEntry): ResourceEntry | undefined {
+    async enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined> {
         const prev = this.data.get(resourceEntry.key)
         this.data.set(resourceEntry.key, resourceEntry);
 
         return prev
     }
 
-    putIfAbsent(resourceEntry: ResourceEntry): ResourceEntry {
+    async enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry> {
         const prev = this.data.get(resourceEntry.key)
 
         if (!prev) {
@@ -39,11 +36,11 @@ export class UnorderedInMemoryQueueBox implements DequeueResourceEntryRepository
         return prev;
     }
 
-    releaseEntries(
+    async releaseEntries(
         resources: ResourceEntry[],
         entityStatus: EntityStatus,
-        exponentialBackoffSteps?: TimeUnit
-    ): Map<Key, ResourceEntry> {
+        exponentialBackoffSteps?: Temporal.TimeUnit
+    ): Promise<Map<Key, ResourceEntry>> {
         return new Map(
             resources
                 .map(
@@ -65,11 +62,11 @@ export class UnorderedInMemoryQueueBox implements DequeueResourceEntryRepository
         );
     }
 
-    reserveTimeoutEntries(
+    async reserveTimeoutEntries(
         typeIds: Set<string>,
         maxToReserve: number,
         timeSinceStartTs: Temporal.Duration
-    ): Map<Key, ResourceEntry> {
+    ): Promise<Map<Key, ResourceEntry>> {
         const timedOut = new Map<Key, ResourceEntry>();
 
         for (const [key, entry] of this.data) {
@@ -95,11 +92,11 @@ export class UnorderedInMemoryQueueBox implements DequeueResourceEntryRepository
         return timedOut;
     }
 
-    reserveEntries(
+    async reserveEntries(
         typeIds: Set<string>,
         statusIds: Set<EntityStatus>,
         maxToReserve: number
-    ): Map<Key, ResourceEntry> {
+    ): Promise<Map<Key, ResourceEntry>> {
         const reserved = new Map<Key, ResourceEntry>();
 
         for (const [key, entry] of this.data) {
@@ -122,7 +119,7 @@ export class UnorderedInMemoryQueueBox implements DequeueResourceEntryRepository
         return reserved;
     }
 
-    isAnyEntryToLock(typeIds: Set<string>, checkTimeout: RateLimiter, checkFailed: RateLimiter): boolean {
+    async isAnyEntryToLock(typeIds: Set<string>, checkTimeout: RateLimiter, checkFailed: RateLimiter): Promise<boolean> {
         const isFailedEntryToLock =
             RateLimiter.tryToExecuteOrDefault(
                 checkFailed,
@@ -180,10 +177,10 @@ export class UnorderedInMemoryQueueBox implements DequeueResourceEntryRepository
         return false
     }
 
-    private toExponentialBackoffInstant(timeUnit: string, attempts: number): Temporal.Instant {
+    private toExponentialBackoffInstant(timeUnit: Temporal.TimeUnit, attempts: number): Temporal.Instant {
         const num = this.toExponentialBackoff(attempts)
 
-        return timeUnit == "seconds"
+        return timeUnit == "second"
             ? Temporal.Now.instant().add({seconds: num})
             : Temporal.Now.instant().add({minutes: num})
     }

@@ -1,6 +1,6 @@
 import {describe, expect, it} from "vitest";
-import {DequeueResourceEntryController} from "@shared/queuebox/DequeueResourceEntryController.ts";
-import {UnorderedInMemoryQueueBox} from "@shared/queuebox/UnorderedInMemoryQueueBox.ts";
+import {DequeueResourceEntryController, ResilienceDto} from "@shared/queuebox/DequeueResourceEntryController.ts";
+import {InMemoryQueueBox} from "@shared/queuebox/InMemoryQueueBox.ts";
 import {CircuitBreakerPolicy} from "@shared/resilience/Resilience.ts";
 import {EntityStatus, Key, ResourceEntry} from "@shared/queuebox/ResourceEntry.ts";
 import {SuccessDto} from "@shared/queuebox/DequeueController.ts";
@@ -8,7 +8,7 @@ import {SuccessDto} from "@shared/queuebox/DequeueController.ts";
 describe("enqueue and dequeue", () => {
 
     it('data successfully queued', async () => {
-        const queue = new UnorderedInMemoryQueueBox(new Map())
+        const queue = new InMemoryQueueBox(new Map())
         const typeId = "WHACK";
         const types = new Set<string>([typeId])
         const duration = Temporal.Duration.from({seconds: 10});
@@ -26,7 +26,7 @@ describe("enqueue and dequeue", () => {
             )
 
         const resilienceDto =
-            DequeueResourceEntryController.ResilienceDto.toResilienceDto(
+            ResilienceDto.toResilienceDto(
                 circuitBreakerPolicy,
                 initialRate,
                 maxRate,
@@ -64,7 +64,7 @@ describe("enqueue and dequeue", () => {
             db: undefined
         }
 
-        queue.put(newEntry)
+        queue.enqueue(newEntry)
 
         const dequeued =
             await DequeueResourceEntryController.toDequeuer<string>(

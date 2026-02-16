@@ -1,3 +1,4 @@
+/// <reference lib="deno.unstable" />
 import "jsr:@std/dotenv/load";
 import {route, type Route} from 'jsr:@std/http/unstable-route';
 
@@ -56,8 +57,8 @@ const CREATE_GAME_URL = new URLPattern({pathname: "/api/games"});
 const JOIN_GAME_URL = new URLPattern({pathname: "/api/games/:id/join"});
 const GET_GAME_URL = new URLPattern({pathname: "/api/games/:id"});
 const MOVE_IN_GAME_URL = new URLPattern({pathname: "/api/games/:id/move"});
-
 const WEB_SOCKET_CREATE = new URLPattern({pathname: "/api/ws"});
+
 const routes: Route[] = [
     {
         method: "POST",

@@ -1,7 +1,7 @@
 import { assertEquals } from "@std/assert";
 
 import { DequeueResourceEntryController } from "@shared/queuebox/DequeueResourceEntryController.ts";
-import { UnorderedInMemoryQueueBox } from "@shared/queuebox/UnorderedInMemoryQueueBox.ts";
+import { UnorderedInMemoryQueueBox } from "../shared/queuebox/InMemoryQueueBox.ts";
 import { CircuitBreakerPolicy } from "@shared/resilience/Resilience.ts";
 import { EntityStatus, Key, ResourceEntry } from "@shared/queuebox/ResourceEntry.ts";
 import { SuccessDto } from "@shared/queuebox/DequeueController.ts";

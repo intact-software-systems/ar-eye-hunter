@@ -103,3 +103,26 @@ export function isCompleted(status: EntityStatus): boolean {
 }
 
 export const TIMEOUT_ON_NON_RESPONSIVE_ENTRY: Temporal.Duration = Temporal.Duration.from({minutes: 5});
+
+
+export function toResourceEntry<T>(typeId: string, resource: T): ResourceEntry {
+    return {
+        key: {
+            topicId: typeId,
+            resourceId: crypto.randomUUID().toString(),
+            contextId: "test"
+        },
+        resource: JSON.stringify(resource),
+        typeId: typeId,
+        audit: {
+            date: Temporal.Now.plainTimeISO(),
+            createdBy: "test",
+            createdTs: Temporal.Now.plainDateTimeISO()
+        },
+        status: EntityStatus.NEW,
+        dequeueAudit: {
+            attempts: 0
+        },
+        db: undefined
+    }
+}
