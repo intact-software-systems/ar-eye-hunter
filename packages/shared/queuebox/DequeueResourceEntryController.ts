@@ -9,7 +9,7 @@ import {
 import {DequeueController, FailureDto, Reservator, SuccessDto} from "./DequeueController.ts";
 import {DequeueResourceEntryRepository} from "./QueueBoxTypes.ts";
 import * as Resource from "./ResourceEntry.ts";
-import {EntityStatus, ResourceEntry} from "./ResourceEntry.ts";
+import {EntityStatus, isKeysEqual, ResourceEntry} from "./ResourceEntry.ts";
 
 // -----------------------------------------
 // Minimal domain contracts (adjust/import)
@@ -209,21 +209,29 @@ export class DequeueResourceEntryController {
             .onReleaseEntriesDo(
                 // successReleaser
                 async (successByKey) => {
+
                     const released =
                         await dequeueResourceEntryRepository.releaseEntries(
-                            Array.from(successByKey.values()).map((dto) => dto.value),
+                            Array.from(successByKey.values())
+                                .map((dto) => dto.value),
                             EntityStatus.COMPLETED,
                             undefined,
                         );
 
                     const out = new Map<Resource.Key, SuccessDto<Resource.Key, ResourceEntry, V>>();
+
                     for (const [k, v] of released.entries()) {
-                        const original = successByKey.get(k);
+                        const original =
+                            successByKey.values()
+                                .find((dto) => isKeysEqual(dto.key, k));
+
                         if (!original) {
                             throw new Error(`Missing success dto for key: ${String(k)}`);
                         }
+
                         out.set(k, new SuccessDto(k, v, original.computedValue));
                     }
+
                     return out;
                 },
 
@@ -259,10 +267,14 @@ export class DequeueResourceEntryController {
                             );
 
                         for (const [k, v] of released.entries()) {
-                            const original = failureByKey.get(k);
+                            const original =
+                                failureByKey.values()
+                                    .find((dto) => isKeysEqual(dto.key, k));
+
                             if (!original) {
                                 throw new Error(`Missing failure dto for key: ${String(k)}`);
                             }
+
                             out.set(k, new FailureDto(k, v, original.exception));
                         }
                     }

@@ -47,7 +47,7 @@ export class ResourceInboxRepository {
      */
     async begin<T>(fn: (repo: ResourceInboxRepository) => Promise<T>): Promise<T> {
         const newVar = await this.sql.begin<T>(
-            async (sql : TransactionSql) => {
+            async (sql: TransactionSql) => {
                 return await fn(new ResourceInboxRepository(sql as unknown as Sql));
             }
         );
@@ -334,15 +334,15 @@ function toDomain(r: ResourceInboxRow): ResourceEntry {
         typeId: r.ri_type_id,
         audit: {
             // date is not stored separately in the table; keep it derived from created_ts
-            date: Temporal.PlainTime.from(parseTemporalPlainDateTime(r.created_ts).toPlainTime().toString()),
+            date: Temporal.PlainTime.from(parseTemporalPlainDateTime(r.created_ts.toString()).toPlainTime().toString()),
             createdBy: r.created_by,
-            createdTs: parseTemporalPlainDateTime(r.created_ts),
+            createdTs: parseTemporalPlainDateTime(r.created_ts.toString()),
         },
         status: r.ri_status as EntityStatus,
         dequeueAudit: {
-            startTs: r.start_ts ? Temporal.Instant.from(ensureIsoInstant(r.start_ts)) : undefined,
-            endTs: r.end_ts ? Temporal.Instant.from(ensureIsoInstant(r.end_ts)) : undefined,
-            nextTs: r.next_ts ? Temporal.Instant.from(ensureIsoInstant(r.next_ts)) : undefined,
+            startTs: r.start_ts ? toInstant(r.start_ts) : undefined,
+            endTs: r.end_ts ? toInstant(r.end_ts) : undefined,
+            nextTs: r.next_ts ? toInstant(r.next_ts) : undefined,
             attempts,
         },
         db: {
@@ -365,16 +365,10 @@ function toPgTimestamp(t: Temporal.PlainDateTime | Temporal.Instant): string {
 }
 
 function parseTemporalPlainDateTime(ts: string): Temporal.PlainDateTime {
-    // Postgres may return "YYYY-MM-DD HH:mm:ss" or ISO-ish strings.
-    // Normalize space to 'T' so Temporal.PlainDateTime can parse.
-    const normalized = ts.includes("T") ? ts : ts.replace(" ", "T");
-    return Temporal.PlainDateTime.from(normalized);
+    const instant = Temporal.Instant.from(new Date(ts).toISOString());
+    return instant.toZonedDateTimeISO("UTC").toPlainDateTime();
 }
 
-function ensureIsoInstant(ts: string): string {
-    // Temporal.Instant requires an offset (e.g. Z). If Postgres returned a naive timestamp,
-    // assume UTC by appending 'Z'.
-    if (ts.endsWith("Z") || ts.includes("+") || ts.includes("-")) return ts;
-    const normalized = ts.includes("T") ? ts : ts.replace(" ", "T");
-    return `${normalized}Z`;
+function toInstant(ts: string): Temporal.Instant {
+    return Temporal.Instant.from(new Date(ts).toISOString());
 }

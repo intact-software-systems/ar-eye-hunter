@@ -6,29 +6,33 @@ import {
     FAILED_STATUS,
     Key,
     NEW_AND_RETRY_STATUSES,
-    ResourceEntry,
-    TIMEOUT_ON_NON_RESPONSIVE_ENTRY
+    ResourceEntry, ResourceEntryKeyString,
+    TIMEOUT_ON_NON_RESPONSIVE_ENTRY, toKeyAsString, toResourceEntryKey
 } from "./ResourceEntry.ts";
 
 export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
-    private readonly data: Map<Key, ResourceEntry>;
+    private readonly data: Map<ResourceEntryKeyString, ResourceEntry>;
 
-    constructor(data: Map<Key, ResourceEntry> = new Map<Key, ResourceEntry>()) {
-        this.data = data;
+    constructor(input: Map<Key, ResourceEntry> = new Map<Key, ResourceEntry>()) {
+        this.data = new Map<ResourceEntryKeyString, ResourceEntry>();
+
+        for (const [key, entry] of input) {
+            this.data.set(toKeyAsString(key), entry);
+        }
     }
 
     async enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined> {
-        const prev = this.data.get(resourceEntry.key)
-        this.data.set(resourceEntry.key, resourceEntry);
+        const prev = this.data.get(toKeyAsString(resourceEntry.key))
+        this.data.set(toKeyAsString(resourceEntry.key), resourceEntry);
 
         return prev
     }
 
     async enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry> {
-        const prev = this.data.get(resourceEntry.key)
+        const prev = this.data.get(toKeyAsString(resourceEntry.key))
 
         if (!prev) {
-            this.data.set(resourceEntry.key, resourceEntry);
+            this.data.set(toKeyAsString(resourceEntry.key), resourceEntry);
             return resourceEntry
         }
 
@@ -54,6 +58,8 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                             attempts: resource.dequeueAudit.attempts
                         };
                         resource.status = entityStatus;
+
+                        this.data.set(toKeyAsString(resource.key), resource);
 
                         return [resource.key, resource];
                     }
@@ -82,7 +88,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 };
 
                 timedOut.set(
-                    key,
+                    toResourceEntryKey(key),
                     entry
                 );
             }
@@ -111,7 +117,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                     attempts: entry.dequeueAudit.attempts + 1
                 };
 
-                reserved.set(key, entry);
+                reserved.set(toResourceEntryKey(key), entry);
             }
         }
 
@@ -139,7 +145,6 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     private isAnyToLock(typeIds: Set<string>, statusesToFind: ReadonlySet<EntityStatus>) {
-        // isNewAndRetryEntryToLock
         for (const entry of this.data.values()) {
             if (typeIds.has(entry.typeId) && statusesToFind.has(entry.status)) {
                 return true;

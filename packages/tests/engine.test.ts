@@ -10,21 +10,21 @@ describe("engine", () => {
 
     it('', async () => {
 
-        const abortController = new AbortController();
+        // const abortController = new AbortController();
 
-        // 1. Start the Server
-        const server =
-            Deno.serve({
-                port: 8080,
-                signal: abortController.signal
-            }, (req) => {
-                if (req.headers.get("upgrade") !== "websocket") {
-                    return new Response(null, {status: 426});
-                }
-                const {socket, response} = Deno.upgradeWebSocket(req);
-                socket.onmessage = (e) => socket.send(`Echo: ${e.data}`);
-                return response;
-            });
+        // // 1. Start the Server
+        // const server =
+        //     Deno.serve({
+        //         port: 8080,
+        //         signal: abortController.signal
+        //     }, (req) => {
+        //         if (req.headers.get("upgrade") !== "websocket") {
+        //             return new Response(null, {status: 426});
+        //         }
+        //         const {socket, response} = Deno.upgradeWebSocket(req);
+        //         socket.onmessage = (e) => socket.send(`Echo: ${e.data}`);
+        //         return response;
+        //     });
 
         const typeId = "WHACK";
         const types = new Set<string>([typeId])
@@ -56,7 +56,7 @@ describe("engine", () => {
             new WsQueueBoxClientService(
                 new InMemoryQueueBox(),
                 new InMemoryQueueBox(),
-                new JsonWebSocketClient("ws://localhost:8080"),
+                new JsonWebSocketClient("ws://localhost:8000/api/ws/testClientId"),
                 {
                     typeId: typeId
                 })
@@ -136,6 +136,6 @@ describe("engine", () => {
 
         expect(isSuccess).toBe(true);
 
-        abortController.abort();
+        // abortController.abort();
     })
 })

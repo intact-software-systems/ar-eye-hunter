@@ -4,7 +4,8 @@
     "test:debug": "deno run -A --unstable-temporal npm:vitest run",
     "qbox": "deno run -A --unstable-temporal npm:vitest run --inspect-brk=127.0.0.1:53287 packages/tests/queue.test.ts --no-file-parallelism",
     "async": "deno run -A --unstable-temporal npm:vitest run --inspect-brk=127.0.0.1:53287 packages/tests/ComputeAsynctask.test.ts --no-file-parallelism",
-    "engine": "deno run -A --unstable-temporal npm:vitest run --inspect-brk=127.0.0.1:53287 packages/tests/engine.test.ts --no-file-parallelism"
+    "engine": "deno run -A --unstable-temporal npm:vitest run --inspect-brk=127.0.0.1:53287 packages/tests/engine.test.ts --no-file-parallelism",
+    "date": "deno run -A --unstable-temporal npm:vitest run --inspect-brk=127.0.0.1:53287 packages/tests/date.test.ts --no-file-parallelism"
   },
   "unstable": ["temporal", "kv"],
   "imports": {

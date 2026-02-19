@@ -4,6 +4,25 @@ export type Key = {
     readonly contextId: string
 }
 
+export type ResourceEntryKeyString = string
+
+export function toKeyAsString(key: Key): string {
+    return `${key.topicId}/${key.resourceId}/${key.contextId}`
+}
+
+export function toResourceEntryKey(keyAsString: string): Key {
+    const [topicId, resourceId, contextId] = keyAsString.split("/");
+    return {topicId, resourceId, contextId}
+}
+
+export function isKeysEqual(key1: Key, key2: Key): boolean {
+    return (
+        key1.topicId === key2.topicId &&
+        key1.resourceId === key2.resourceId &&
+        key1.contextId === key2.contextId
+    )
+}
+
 export enum EntityStatus {
     NEW = "NEW",
     RETRY = "RETRY",

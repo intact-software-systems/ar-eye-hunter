@@ -30,11 +30,11 @@ app.use(
 );
 
 // Your routes now don't need to worry about OPTIONS
-app.post("/api/game/setup", (c) => c.json({ok: true}));
+// app.post("/api/game/setup", (c) => c.json({ok: true}));
 
 wsRelayer.initialise(app)
 
 Deno.serve(app.fetch)
-console.log("Server started on port 8080");
+console.log("Server started on port 8000");
 
 
