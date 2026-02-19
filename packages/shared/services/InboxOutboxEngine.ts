@@ -34,7 +34,6 @@ export class InboxOutboxEngine {
         return this.tasks.delete(id)
     }
 
-    // start a self scheduling loop
     start(): void {
         if (this.running) {
             return;
@@ -44,7 +43,6 @@ export class InboxOutboxEngine {
         this.scheduleEngine(0);
     }
 
-    // stop the self scheduling loop
     stop(): void {
         this.running = false;
         if (this.timer !== NOT_SET) {
@@ -57,7 +55,6 @@ export class InboxOutboxEngine {
         return await this.executeTaskEngine()
     }
 
-    // ---------------- internals ----------------
 
     private scheduleEngine(delayMs: number): void {
         this.timer = self.setTimeout(() => void this.selfSchedulingTaskEngine(), delayMs);

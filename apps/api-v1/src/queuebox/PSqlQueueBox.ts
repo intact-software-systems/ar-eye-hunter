@@ -11,10 +11,12 @@ import {
 } from "@shared/queuebox/ResourceEntry.ts";
 import {ResourceInboxRepository} from "../repository/ResourceInboxRepository.ts";
 
+const resourceInboxRepository = new ResourceInboxRepository();
+
 export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
 
     constructor(
-        public readonly repo: ResourceInboxRepository = new ResourceInboxRepository()
+        public readonly repo: ResourceInboxRepository = resourceInboxRepository
     ) {
     }
 
