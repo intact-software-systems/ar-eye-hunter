@@ -2,16 +2,7 @@ import {Hono} from "jsr:@hono/hono";
 import {cors} from "jsr:@hono/hono/cors";
 import {qboxEngine} from "./utils/qbox-engine.ts";
 import * as wsRelayer from "./websocket/ws-routes.ts";
-
-// -------------------------------------
-// Initialise
-// -------------------------------------
-
-qboxEngine.start()
-
-// -------------------------------------
-// App with routes
-// -------------------------------------
+import * as iceRoutes from "./webrtc/ice_routes.ts";
 
 const app: Hono = new Hono();
 
@@ -29,10 +20,10 @@ app.use(
     )
 );
 
-// Your routes now don't need to worry about OPTIONS
-// app.post("/api/game/setup", (c) => c.json({ok: true}));
-
 wsRelayer.initialise(app)
+iceRoutes.initialise(app)
+
+qboxEngine.start()
 
 Deno.serve(app.fetch)
 console.log("Server started on port 8000");
