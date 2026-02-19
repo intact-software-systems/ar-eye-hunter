@@ -1,24 +1,40 @@
-/// <reference lib="deno.unstable" />
-import "jsr:@std/dotenv/load";
-import {route} from 'jsr:@std/http/unstable-route';
-import {toCorsHeaders, toNotFoundResponse, withCors} from "./utils/utils.ts";
-import {iceRoutes} from "./webrtc/ice_routes.ts";
+import {Hono} from "jsr:@hono/hono";
+import {cors} from "jsr:@hono/hono/cors";
+import {qboxEngine} from "./utils/qbox-engine.ts";
+import * as wsRelayer from "./websocket/ws-routes.ts";
 
-let handleRequest = route(
-    [
-        ...iceRoutes()
-    ],
-    () => toNotFoundResponse()
+// -------------------------------------
+// Initialise
+// -------------------------------------
+
+qboxEngine.start()
+
+// -------------------------------------
+// App with routes
+// -------------------------------------
+
+const app: Hono = new Hono();
+
+app.use(
+    "/api/*",
+    cors(
+        {
+            origin: "http://localhost:3000", // Your SPA's address
+            allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            allowHeaders: ["Content-Type", "Authorization"],
+            exposeHeaders: ["Content-Length"],
+            maxAge: 600, // Cache the preflight for 10 minutes
+            credentials: true,
+        }
+    )
 );
 
-Deno.serve(async (req) => {
-    // Handle preflight
-    if (req.method === 'OPTIONS') {
-        return new Response(null, {status: 204, headers: toCorsHeaders(req)});
-    }
+// Your routes now don't need to worry about OPTIONS
+app.post("/api/game/setup", (c) => c.json({ok: true}));
 
-    const res = await handleRequest(req);
+wsRelayer.initialise(app)
 
-    return withCors(req, res);
-});
+Deno.serve(app.fetch)
+console.log("Server started on port 8080");
+
 

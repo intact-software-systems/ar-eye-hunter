@@ -16,7 +16,6 @@
     "build:web": "npm --workspace apps/web run build",
     "dev:api": "cd apps/api && deno task dev",
     "dev:api-v1": "cd apps/api-v1 && deno task dev",
-
     "test": "vitest run"
   },
   "devDependencies": {

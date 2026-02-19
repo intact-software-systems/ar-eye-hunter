@@ -20,6 +20,10 @@ export class JsonWebSocketClient {
         this.url = url;
     }
 
+    // --------------------
+    // Callback registry
+    // --------------------
+
     onWebSocketMessageDo(
         id: string,
         onMessage: OnWebSocketMessageCallback
@@ -43,6 +47,10 @@ export class JsonWebSocketClient {
     removeOnMessageCallbackById(id: string): boolean {
         return this.onMessageCallbacks.delete(id);
     }
+
+    // --------------------
+    // Connect, send and close
+    // --------------------
 
     async connect(): Promise<void> {
         if (this?.ws?.readyState === WebSocket.OPEN) {

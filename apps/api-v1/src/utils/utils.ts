@@ -1,8 +1,9 @@
-const ALLOWED_ORIGINS = new Set<string>([
-    'http://localhost:5173',
-    // add your Cloudflare Pages origin here later, e.g.
-    'https://ar-eye-hunter.pages.dev',
-]);
+const ALLOWED_ORIGINS =
+    new Set<string>([
+            'http://localhost:5173',
+            'https://ar-eye-hunter.pages.dev'
+        ]
+    );
 
 export function toCorsHeaders(req: Request): Headers {
     const headers = new Headers();
@@ -40,3 +41,21 @@ export function toNotFoundResponse() {
         }
     );
 }
+
+export async function readJson<T>(req: Request): Promise<T> {
+    // If you want strict validation later, add a schema validator.
+    return (await req.json()) as T;
+}
+
+export function toJsonResponse<T>(data: T, status = 200): Response {
+    return Response.json(
+        data,
+        {
+            status,
+            headers: {
+                "content-type": "application/json"
+            },
+        }
+    );
+}
+

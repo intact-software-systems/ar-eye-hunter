@@ -36,7 +36,9 @@ export interface DequeueResourceEntryRepository {
 export interface EnqueueResourceEntryController {
     enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry>
 
-    enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined>;
+    enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined>
+
+    //enqueueAll(resourceEntries: ResourceEntry[]): Promise<ResourceEntry[] | undefined>;
 }
 
 export interface QueueBoxResourceEntryRepository

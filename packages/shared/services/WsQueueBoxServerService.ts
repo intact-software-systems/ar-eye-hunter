@@ -37,8 +37,9 @@ export class WsQueueBoxServerService {
         this.socket.onMessageDo(
             this.input.typeId,
             {
-                onMessage: (ctx, data) => {
-                    this.inbox.enqueue(
+                onMessage: async (ctx, data) => {
+                    // TODO: Enqueue one entry for each type?
+                    await this.inbox.enqueue(
                         toResourceEntry<WsQueueBoxInboxDto>(
                             this.input.typeId,
                             {
@@ -83,10 +84,10 @@ export class WsQueueBoxServerService {
                 _ => resilience.success()
             )
             .dequeueForCompute(
-                (key, entry) => {
+                async (key, entry) => {
                     for (const callback of this.onInboxWebSocketMessageCallbacks.values()) {
                         try {
-                            callback.onMessage(
+                            await callback.onMessage(
                                 JSON.parse(entry.resource),
                                 entry,
                                 this.socket

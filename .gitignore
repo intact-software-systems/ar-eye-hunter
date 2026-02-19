@@ -15,3 +15,5 @@ deno.lock
 /apps/api/.env.local
 /apps/api/.env
 /apps/web/.env.local
+
+.env

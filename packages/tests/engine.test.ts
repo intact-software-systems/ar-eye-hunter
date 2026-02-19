@@ -66,7 +66,7 @@ describe("engine", () => {
             .onOutboxMessageDo(
                 typeId,
                 {
-                    onMessage: (entry, socket) => {
+                    onMessage: async (entry, socket) => {
                         console.log(entry.resource);
                         socket.send(entry.resource);
                     }
@@ -129,8 +129,7 @@ describe("engine", () => {
             }
         }
 
-        wsQueueBox.outbox.enqueue(wsQueueBox.toEntry(new TestData(helloWorld)))
-
+        await wsQueueBox.outbox.enqueue(wsQueueBox.toEntry(new TestData(helloWorld)))
 
         const isSuccess = await engine.executeOnce();
 

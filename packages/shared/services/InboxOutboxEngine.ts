@@ -5,12 +5,13 @@ const NOT_SET = -1;
 
 export class InboxOutboxEngine {
     private static readonly defaultDuration: Temporal.Duration = Temporal.Duration.from({seconds: 10})
+    private static readonly defaultSlidingWindowDuration: Temporal.Duration = Temporal.Duration.from({minutes: 10})
     private static readonly circuitBreakerPolicy: CircuitBreakerPolicy =
         new CircuitBreakerPolicy(
             10,
             InboxOutboxEngine.defaultDuration,
             InboxOutboxEngine.defaultDuration,
-            InboxOutboxEngine.defaultDuration
+            InboxOutboxEngine.defaultSlidingWindowDuration
         )
     private static readonly circuitBreaker: CircuitBreaker = CircuitBreaker.create(InboxOutboxEngine.circuitBreakerPolicy)
 
@@ -66,7 +67,7 @@ export class InboxOutboxEngine {
         try {
             await this.executeTaskEngine();
         } finally {
-            this.scheduleEngine(InboxOutboxEngine.FIXED_DELAY_SCHEDULED_ENGINE.milliseconds);
+            this.scheduleEngine(InboxOutboxEngine.FIXED_DELAY_SCHEDULED_ENGINE.total({unit: "milliseconds"}));
         }
     }
 
@@ -103,7 +104,7 @@ export class InboxOutboxEngine {
     ) {
         return {
             tasks: tasks,
-            maxBackoffMs: InboxOutboxEngine.MAX_BACKOFF.milliseconds,
+            maxBackoffMs: InboxOutboxEngine.MAX_BACKOFF.total({unit: "milliseconds"}),
             maxIsWorkIterations: InboxOutboxEngine.MAX_IS_WORK_CHECKS,
             maxSuccessiveNoTasksCreated: InboxOutboxEngine.MAX_SUCCESSIVE_NO_TASKS_CREATED
         }

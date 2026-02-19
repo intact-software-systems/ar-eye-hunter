@@ -1,5 +1,4 @@
 // deno-lint-ignore-file require-await
-
 import {RateLimiter} from "../resilience/Resilience.ts";
 import {QueueBoxResourceEntryRepository} from "./QueueBoxTypes.ts";
 import {
@@ -121,16 +120,16 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
 
     async isAnyEntryToLock(typeIds: Set<string>, checkTimeout: RateLimiter, checkFailed: RateLimiter): Promise<boolean> {
         const isFailedEntryToLock =
-            RateLimiter.tryToExecuteOrDefault(
+            await RateLimiter.tryToExecuteOrDefault(
                 checkFailed,
-                () => this.isAnyToLock(typeIds, FAILED_STATUS),
+                async () => this.isAnyToLock(typeIds, FAILED_STATUS),
                 false
             )
 
         const isTimedOutEntryToLock =
-            RateLimiter.tryToExecuteOrDefault(
+            await RateLimiter.tryToExecuteOrDefault(
                 checkTimeout,
-                () => this.isAnyReservedEntryTimedOut(typeIds, TIMEOUT_ON_NON_RESPONSIVE_ENTRY),
+                async () => this.isAnyReservedEntryTimedOut(typeIds, TIMEOUT_ON_NON_RESPONSIVE_ENTRY),
                 false
             )
 

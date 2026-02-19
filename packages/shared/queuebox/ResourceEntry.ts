@@ -126,3 +126,48 @@ export function toResourceEntry<T>(typeId: string, resource: T): ResourceEntry {
         db: undefined
     }
 }
+
+export function toResourceEntryWithKey(
+    key: Key,
+    typeId: string,
+    resource: string
+): ResourceEntry {
+    return {
+        key: key,
+        resource: resource,
+        typeId: typeId,
+        audit: {
+            date: Temporal.Now.plainTimeISO(),
+            createdBy: "test",
+            createdTs: Temporal.Now.plainDateTimeISO()
+        },
+        status: EntityStatus.NEW,
+        dequeueAudit: {
+            attempts: 0
+        },
+        db: undefined
+    }
+}
+
+
+export function toUpdatedResourceEntry(
+    entry: ResourceEntry,
+    entityStatus: EntityStatus,
+    endTimestamp: Temporal.Instant,
+    nextTimestamp?: Temporal.Instant
+): ResourceEntry {
+    return {
+        key: entry.key,
+        resource: entry.resource,
+        typeId: entry.typeId,
+        audit: entry.audit,
+        status: entityStatus,
+        dequeueAudit: {
+            startTs: entry.dequeueAudit.startTs,
+            endTs: endTimestamp,
+            nextTs: nextTimestamp,
+            attempts: entry.dequeueAudit.attempts,
+        },
+        db: entry.db
+    }
+}

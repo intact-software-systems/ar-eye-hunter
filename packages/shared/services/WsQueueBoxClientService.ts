@@ -109,10 +109,10 @@ export class WsQueueBoxClientService {
                 _ => resilience.success()
             )
             .dequeueForCompute(
-                (key, entry) => {
+                async (key, entry) => {
                     for (const callback of this.onOutboxMessageCallbacks.values()) {
                         try {
-                            callback.onMessage(entry, this.socket)
+                            await callback.onMessage(entry, this.socket)
                         } catch (e) {
                             console.error("Error calling onMessage callback", e)
                         }

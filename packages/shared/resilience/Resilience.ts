@@ -128,7 +128,9 @@ export class SlidingWindowCounter {
                 break;
             }
         }
-        if (!matchBucket) throw new Error("No bucket found");
+        if (!matchBucket) {
+            throw new Error("No bucket found");
+        }
 
         const existingStatus = requireNonNull(windowCounter.counterByBucket.get(matchBucket));
 
@@ -285,8 +287,8 @@ export class CircuitBreaker {
         return new CircuitBreaker(
             new AtomicReference<CircuitBreakerState>(CircuitBreakerState.CLOSE),
             SlidingWindowCounter.init(
-                policy.slidingWindow.milliseconds,
-                Math.floor(policy.slidingWindow.milliseconds / 10),
+                policy.slidingWindow.total({unit: "milliseconds"}),
+                Math.floor(policy.slidingWindow.total({unit: "milliseconds"}) / 10),
             ),
             new AtomicLong(CircuitBreaker.RESET_VALUE),
             new AtomicLong(CircuitBreaker.RESET_VALUE),
@@ -378,7 +380,7 @@ export class CircuitBreaker {
         if (this.state.get() === CircuitBreakerState.OPEN) {
             const timeSinceOpened = nowMs() - this.timestampOpen.get();
 
-            if (timeSinceOpened > this.policy.resetTimeout.milliseconds) {
+            if (timeSinceOpened > this.policy.resetTimeout.total({unit: "milliseconds"})) {
                 const previous = this.state.getAndSet(CircuitBreakerState.HALF_OPEN);
                 if (previous === CircuitBreakerState.OPEN) {
                     // This thread set circuit to half open and is allowed through
@@ -390,7 +392,7 @@ export class CircuitBreaker {
             // check if state has been in half open too long
             const timeSinceHalfOpened = nowMs() - this.timestampHalfOpen.get();
 
-            if (timeSinceHalfOpened > this.policy.halfOpenTimeout.milliseconds) {
+            if (timeSinceHalfOpened > this.policy.halfOpenTimeout.total({unit: "milliseconds"})) {
                 this.failureCount(1);
             }
         }
@@ -402,12 +404,12 @@ export class CircuitBreaker {
     isAllowedThrough(): boolean {
         if (this.state.get() === CircuitBreakerState.OPEN) {
             const timeSinceOpened = nowMs() - this.timestampOpen.get();
-            if (timeSinceOpened > this.policy.resetTimeout.milliseconds) {
+            if (timeSinceOpened > this.policy.resetTimeout.total({unit: "milliseconds"})) {
                 return true;
             }
         } else if (this.state.get() === CircuitBreakerState.HALF_OPEN) {
             const timeSinceHalfOpened = nowMs() - this.timestampHalfOpen.get();
-            if (timeSinceHalfOpened > this.policy.halfOpenTimeout.milliseconds) {
+            if (timeSinceHalfOpened > this.policy.halfOpenTimeout.total({unit: "milliseconds"})) {
                 return true;
             }
         }

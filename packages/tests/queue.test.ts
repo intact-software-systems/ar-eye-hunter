@@ -64,7 +64,7 @@ describe("enqueue and dequeue", () => {
             db: undefined
         }
 
-        queue.enqueue(newEntry)
+        await queue.enqueue(newEntry)
 
         const dequeued =
             await DequeueResourceEntryController.toDequeuer<string>(
@@ -77,9 +77,9 @@ describe("enqueue and dequeue", () => {
                 )
                 .withReturnDequeuedEntries(true)
                 .dequeueForCompute(
-                    (key, entry) => {
+                    async (_: Key, entry: ResourceEntry) => {
+                        const testData: TestData = await JSON.parse(entry.resource)
 
-                        const testData: TestData = JSON.parse(entry.resource)
                         expect(testData.name).toEqual(helloWorld);
 
                         return helloWorld;
@@ -87,7 +87,6 @@ describe("enqueue and dequeue", () => {
                 )
 
         const successes: Array<SuccessDto<Key, ResourceEntry, string>> = DequeueResourceEntryController.toSuccesses(dequeued);
-
 
         console.log(JSON.stringify(successes))
 

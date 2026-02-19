@@ -169,7 +169,7 @@ export class DequeueController<K, V, T> {
     }
 
     async dequeueForCompute(
-        computer: (key: K, value: V) => T,
+        computer: (key: K, value: V) => Promise<T>,
     ): Promise<Map<Reservator, Map<K, Either<FailureDto<K, V>, SuccessDto<K, V, T>>>>> {
         if (this.typesToDequeue().size === 0) {
             this.log.warn("No types provided for callbacks: [newReservator, retryReservator, failedReservator].");
@@ -283,7 +283,7 @@ export class DequeueController<K, V, T> {
         returnDequeuedEntries: boolean,
         isWorkForTypes: (types: Set<string>) => boolean,
         reservator: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>,
-        computer: (key: K, value: V) => T,
+        computer: (key: K, value: V) => Promise<T>,
         successReleaser: (m: Map<K, SuccessDto<K, V, T>>) => Promise<Map<K, SuccessDto<K, V, T>>>,
         failureReleaser: (m: Map<K, FailureDto<K, V>>) => Promise<Map<K, FailureDto<K, V>>>,
         onCompleted?: (m: Map<K, SuccessDto<K, V, T>>) => void,
@@ -315,7 +315,7 @@ export class DequeueController<K, V, T> {
                 const computed = new Map<K, Either<FailureDto<K, V>, SuccessDto<K, V, T>>>();
                 for (const [k, v] of preProcessed.entries()) {
                     try {
-                        const computedValue = computer(k, v);
+                        const computedValue = await computer(k, v);
                         computed.set(k, Either.ofRight(new SuccessDto(k, v, computedValue)));
                     } catch (e) {
                         const err = e instanceof Error ? e : new Error(String(e));

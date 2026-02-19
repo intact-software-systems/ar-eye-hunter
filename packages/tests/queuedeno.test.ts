@@ -1,10 +1,9 @@
 import { assertEquals } from "@std/assert";
-
-import { DequeueResourceEntryController } from "@shared/queuebox/DequeueResourceEntryController.ts";
-import { UnorderedInMemoryQueueBox } from "../shared/queuebox/InMemoryQueueBox.ts";
-import { CircuitBreakerPolicy } from "@shared/resilience/Resilience.ts";
-import { EntityStatus, Key, ResourceEntry } from "@shared/queuebox/ResourceEntry.ts";
 import { SuccessDto } from "@shared/queuebox/DequeueController.ts";
+import { DequeueResourceEntryController, ResilienceDto } from "@shared/queuebox/DequeueResourceEntryController.ts";
+import { InMemoryQueueBox } from "@shared/queuebox/InMemoryQueueBox.ts";
+import { EntityStatus, Key, ResourceEntry } from "@shared/queuebox/ResourceEntry.ts";
+import { CircuitBreakerPolicy } from "@shared/resilience/Resilience.ts";
 
 class TestData {
     public readonly name: string;
@@ -17,10 +16,10 @@ class TestData {
 }
 
 Deno.test('data successfully queued', async () => {
-    const queue = new UnorderedInMemoryQueueBox(new Map())
+    const queue = new InMemoryQueueBox()
     const typeId = "WHACK";
     const types = new Set<string>([typeId])
-    const duration = Temporal.Duration.from({ seconds: 10 });
+    const duration = Temporal.Duration.from({seconds: 10});
     const initialRate = 1;
     const maxRate = 10;
     const concurrencyIncreaseStep = 1;
@@ -35,7 +34,7 @@ Deno.test('data successfully queued', async () => {
         )
 
     const resilienceDto =
-        DequeueResourceEntryController.ResilienceDto.toResilienceDto(
+        ResilienceDto.toResilienceDto(
             circuitBreakerPolicy,
             initialRate,
             maxRate,
@@ -66,22 +65,22 @@ Deno.test('data successfully queued', async () => {
         db: undefined
     }
 
-    queue.put(newEntry)
+    await queue.enqueue(newEntry)
 
     const dequeued =
         await DequeueResourceEntryController.toDequeuer<string>(
-            queue,
-            () => types,
-            () => 1,
-            20,
-            100,
-            resilienceDto
-        )
+                queue,
+                () => types,
+                () => 1,
+                20,
+                100,
+                resilienceDto
+            )
             .withReturnDequeuedEntries(true)
             .dequeueForCompute(
-                (key, entry) => {
+                async (key, entry) => {
 
-                    const testData: TestData = JSON.parse(entry.resource)
+                    const testData: TestData = await JSON.parse(entry.resource)
                     assertEquals(testData.name, helloWorld);
 
                     return helloWorld;
