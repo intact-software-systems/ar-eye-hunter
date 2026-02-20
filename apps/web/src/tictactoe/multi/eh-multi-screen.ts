@@ -55,9 +55,9 @@ enum WsConnKind {
 }
 
 type WsConn =
-    | { kind: WsConnKind.None }
     | { kind: WsConnKind.Connecting; ws: WebSocket }
-    | { kind: WsConnKind.Open; ws: WebSocket };
+    | { kind: WsConnKind.Open; ws: WebSocket }
+    | { kind: WsConnKind.None }
 
 function readGameIdFromHash(): string {
     // hash: "#/multi?gameId=abc"
