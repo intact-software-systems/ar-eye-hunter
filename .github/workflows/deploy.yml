@@ -60,17 +60,17 @@ jobs:
 
       - name: Prisma validate
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: deno run -A npm:prisma@latest validate
 
       - name: Prisma generate
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: deno run -A npm:prisma@latest generate
 
       - name: Prisma migrate deploy
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: deno run -A npm:prisma@latest migrate deploy
 
       - name: Trigger Deno Deploy
