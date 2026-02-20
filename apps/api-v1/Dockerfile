@@ -1,4 +1,4 @@
-# apps/api/Dockerfile
+# apps/api-v1/Dockerfile
 FROM denoland/deno:alpine
 
 WORKDIR /app

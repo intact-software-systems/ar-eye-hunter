@@ -54,24 +54,27 @@ jobs:
           path: |
             ~/.cache/deno
             ~/.npm
-          key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
+          key: ${{ runner.os }}-deno-${{ hashFiles('apps/api-v1/deno.lock') }}
           restore-keys: |
             ${{ runner.os }}-deno-
 
       - name: Prisma validate
+        working-directory: apps/api-v1
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: deno run -A npm:prisma@latest validate
+        run: deno task prisma validate
 
       - name: Prisma generate
+        working-directory: apps/api-v1
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: deno run -A npm:prisma@latest generate
+        run: deno task prisma generate
 
       - name: Prisma migrate deploy
+        working-directory: apps/api-v1
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: deno run -A npm:prisma@latest migrate deploy
+        run: deno task prisma migrate deploy
 
       - name: Trigger Deno Deploy
         run: |
