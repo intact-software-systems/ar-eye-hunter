@@ -58,7 +58,8 @@ describe("engine", () => {
                 new InMemoryQueueBox(),
                 new JsonWebSocketClient("ws://localhost:8000/api/ws/testClientId"),
                 {
-                    typeId: typeId
+                    inboxTypeId: typeId,
+                    outboxTypeId: typeId
                 })
                 .enableReconnect();
 
@@ -77,7 +78,7 @@ describe("engine", () => {
             .onWebSocketMessageDo(
                 typeId,
                 {
-                    onMessage: data => {
+                    onMessage: async data => {
                         console.log(data);
                     }
                 }
@@ -85,8 +86,8 @@ describe("engine", () => {
             .onWebSocketMessageDo(
                 "enqueue" + typeId,
                 {
-                    onMessage: data => {
-                        wsQueueBox.inbox.enqueue(wsQueueBox.toEntry(data));
+                    onMessage: async data => {
+                        await wsQueueBox.inbox.enqueue(wsQueueBox.toEntry(typeId, data));
                     }
                 }
             )
@@ -115,7 +116,7 @@ describe("engine", () => {
                                 resilience.checkFailed.isEntryRateLimiter
                             ),
                 runnable:
-                    () => wsQueueBox.dequeueOutboxToSend(resilience),
+                    () => wsQueueBox.dequeueOutbox(resilience),
                 ongoingTasks: [],
             }
         )
@@ -129,7 +130,7 @@ describe("engine", () => {
             }
         }
 
-        await wsQueueBox.outbox.enqueue(wsQueueBox.toEntry(new TestData(helloWorld)))
+        await wsQueueBox.outbox.enqueue(wsQueueBox.toEntry(typeId, new TestData(helloWorld)))
 
         const isSuccess = await engine.executeOnce();
 

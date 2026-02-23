@@ -9,3 +9,7 @@ export interface OnOutboxWebSocketMessageCallback {
 export interface OnInboxWebSocketMessageCallback<T> {
     onMessage: (value: T, entry: ResourceEntry, server: JsonWebSocketServer) => Promise<void>
 }
+
+export interface OnMessageCallback {
+    onMessage: (entry: ResourceEntry) => Promise<void>
+}

@@ -1,10 +1,9 @@
-import {Route, getRouteFromHash} from './router.ts';
-
-function mustEl<T extends HTMLElement>(root: ParentNode, selector: string): T {
-    const el = root.querySelector(selector);
-    if (!el) throw new Error(`Missing element: ${selector}`);
-    return el as T;
-}
+import {getRouteFromHash, Route} from './router.ts';
+import {findEl} from "./utils/utils.ts";
+import type {ChatScreen} from './chat/chat-screen.ts';
+import {addWebSocketDataHandler} from "./transport/websocket-data-router.ts";
+import {webSocketClientId, webSocketQueueBox} from "./transport/websocket-engine.ts";
+import {toResourceEntry} from "@shared/queuebox/ResourceEntry.ts";
 
 export class EhApp extends HTMLElement {
     private currentRoute: Route = Route.Landing;
@@ -28,21 +27,22 @@ export class EhApp extends HTMLElement {
     };
 
     private render(): void {
-        this.innerHTML = `
-      <div class="card">
-        <div class="row">
-          <strong>EyeHunter</strong>
-          <span class="muted">/ Tic-Tac-Toe</span>
-          <span style="margin-left:auto" class="muted">
-            <a href="#/">Home</a>
-          </span>
-        </div>
-      </div>
+        this.innerHTML =
+            `
+              <div class="card">
+                <div class="row">
+                  <strong>EyeHunter</strong>
+                  <span class="muted">/ Tic-Tac-Toe</span>
+                  <span style="margin-left:auto" class="muted">
+                    <a href="#/">Home</a>
+                  </span>
+                </div>
+              </div>
+        
+              <div id="screenHost"></div>
+            `;
 
-      <div id="screenHost"></div>
-    `;
-
-        const host = mustEl<HTMLDivElement>(this, '#screenHost');
+        const host = findEl<HTMLDivElement>(this, '#screenHost');
 
         switch (this.currentRoute) {
             case Route.TicTacToe:
@@ -54,6 +54,50 @@ export class EhApp extends HTMLElement {
             case Route.WhackSingle:
                 host.innerHTML = `<eh-whack-single-screen></eh-whack-single-screen>`;
                 return;
+            case Route.Chat: {
+                host.innerHTML = `<chat-screen></chat-screen>`;
+
+                const chat = document.querySelector('chat-screen') as ChatScreen | null;
+                if (!chat) {
+                    throw new Error('chat-screen not found');
+                }
+
+                chat.configure({
+                    onSend: async (text) => {
+                        const data =
+                            {
+                                clientId: webSocketClientId,
+                                message: text
+                            }
+
+                        console.log(`Sending message: ` + JSON.stringify(data));
+                        await webSocketQueueBox.outbox.enqueue(toResourceEntry(webSocketQueueBox.input.outboxTypeId, data))
+                    },
+                    onReady: (api) => {
+                        api.addMessage({role: 'peer', text: 'Connected.'});
+                    }
+                });
+
+                addWebSocketDataHandler(
+                    Route.Chat,
+                    (data) => {
+                        console.log(`Received message: ` + JSON.stringify(data));
+
+                        if (data.message === undefined) {
+                            console.error('Invalid message received from server');
+                            return;
+                        }
+                        if (data.clientId === webSocketClientId) {
+                            console.error('Received back my own message. Ignoring it');
+                            return;
+                        }
+
+                        chat.addMessage({role: 'peer', text: data.message});
+                    }
+                )
+
+                return;
+            }
             case Route.Single:
                 host.innerHTML = `<eh-single-screen></eh-single-screen>`;
                 return;

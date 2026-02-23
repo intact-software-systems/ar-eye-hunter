@@ -13,7 +13,7 @@ export default defineConfig({
         strictPort: true,
         proxy: {
             '/api': {
-                target: 'http://localhost:8000', // your Deno API local port
+                target: 'http://localhost:8080', // your Deno API local port
                 changeOrigin: true,
                 // ws: true,
             },

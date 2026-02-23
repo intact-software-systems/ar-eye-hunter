@@ -10,7 +10,7 @@ export interface WebSocketServerCallbacks {
     onParseError?: (ctx: ConnectionContext, rawText: string, error: unknown) => void;
 }
 
-export interface OnMessageCallback {
+export interface WebSocketServerOnMessageCallback {
     onMessage: (ctx: ConnectionContext, data: unknown, ev: MessageEvent) => Promise<void>;
 }
 
@@ -28,7 +28,7 @@ export class ConnectionContext {
 
 export class JsonWebSocketServer {
     private readonly webSocketServerCallbacks = new Map<string, WebSocketServerCallbacks>();
-    private readonly onMessageCallbacks = new Map<string, OnMessageCallback>();
+    private readonly onMessageCallbacks = new Map<string, WebSocketServerOnMessageCallback>();
 
     public readonly connections = new Map<string, ConnectionContext>();
 
@@ -36,7 +36,7 @@ export class JsonWebSocketServer {
     // Callback registry
     // --------------------
 
-    onMessageDo(id: string, onMessage: OnMessageCallback): this {
+    onMessageDo(id: string, onMessage: WebSocketServerOnMessageCallback): this {
         this.onMessageCallbacks.set(id, onMessage);
         return this;
     }

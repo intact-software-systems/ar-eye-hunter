@@ -1,6 +1,7 @@
 export enum GameId {
     TicTacToe = 'tictactoe',
     WhackAWorm = 'whackaworm',
+    Chat = 'chat',
 }
 
 export type GameDefinition = {
@@ -25,5 +26,12 @@ export const GAMES: readonly GameDefinition[] = [
         description: 'Coming next.',
         href: '#/whackaworm',
         badge: 'New',
+    },
+    {
+        id: GameId.Chat,
+        title: 'Chat',
+        description: 'Transport-agnostic callback-based chat UI.',
+        href: '#/chat',
+        badge: 'Prototype',
     },
 ];

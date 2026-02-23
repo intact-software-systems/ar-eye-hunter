@@ -1,6 +1,7 @@
 import {Hono} from "jsr:@hono/hono";
 import {cors} from "jsr:@hono/hono/cors";
 import {qboxEngine} from "./utils/qbox-engine.ts";
+import * as configRoutes from "./config-route.ts";
 import * as wsRelayer from "./websocket/ws-routes.ts";
 import * as iceRoutes from "./webrtc/ice_routes.ts";
 
@@ -10,7 +11,7 @@ app.use(
     "/api/*",
     cors(
         {
-            origin: "http://localhost:3000", // Your SPA's address
+            origin: "http://localhost:5173", // Your SPA's address
             allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             allowHeaders: ["Content-Type", "Authorization"],
             exposeHeaders: ["Content-Length"],
@@ -20,12 +21,12 @@ app.use(
     )
 );
 
+configRoutes.initialise(app)
 wsRelayer.initialise(app)
 iceRoutes.initialise(app)
 
 qboxEngine.start()
 
-Deno.serve(app.fetch)
-console.log("Server started on port 8000");
-
+Deno.serve({port: 8080}, app.fetch)
+console.log("Server started on port 8080");
 

@@ -78,14 +78,9 @@ export class InboxOutboxEngine {
                             InboxOutboxEngine.toAsyncTaskInput([...this.tasks.values()])
                         )
 
-                    this.tasks =
-                        new Map(
-                            computedDto.tasks
-                                .map(
-                                    t =>
-                                        [t.inputTask.name, t.inputTask]
-                                )
-                        )
+                    for (const task of computedDto.tasks) {
+                        this.tasks.set(task.inputTask.name, task.inputTask)
+                    }
 
                     return computedDto.totalNumTasksCreated > 0;
                 } catch (e) {

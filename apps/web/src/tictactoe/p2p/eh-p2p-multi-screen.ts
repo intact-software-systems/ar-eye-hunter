@@ -33,16 +33,11 @@ import type {CellClickDetail} from '../eh-ttt-board.ts';
 import {fetchIceConfig} from './iceClient.ts';
 
 import {WsSignalingClient} from './wsSignalingClient.ts';
+import {findEl} from "../../utils/utils.ts";
 
 /* ======================================================
    Utilities
    ====================================================== */
-
-function mustEl<T extends HTMLElement>(root: ParentNode, selector: string): T {
-    const el = root.querySelector(selector);
-    if (!el) throw new Error(`Missing element: ${selector}`);
-    return el as T;
-}
 
 function getOrCreateClientId(): string {
     const key = 'clientId';
@@ -164,16 +159,16 @@ export class EhP2pMultiScreen extends HTMLElement {
     }
 
     private wire(): void {
-        const createBtn = mustEl<HTMLButtonElement>(this, '#createBtn');
-        const joinBtn = mustEl<HTMLButtonElement>(this, '#joinBtn');
-        const joinInput = mustEl<HTMLInputElement>(this, '#joinInput');
-        const leaveBtn = mustEl<HTMLButtonElement>(this, '#leaveBtn');
-        const resetBtn = mustEl<HTMLButtonElement>(this, '#resetBtn');
+        const createBtn = findEl<HTMLButtonElement>(this, '#createBtn');
+        const joinBtn = findEl<HTMLButtonElement>(this, '#joinBtn');
+        const joinInput = findEl<HTMLInputElement>(this, '#joinInput');
+        const leaveBtn = findEl<HTMLButtonElement>(this, '#leaveBtn');
+        const resetBtn = findEl<HTMLButtonElement>(this, '#resetBtn');
 
-        const copyBtn = mustEl<HTMLButtonElement>(this, '#copyBtn');
-        const shareBtn = mustEl<HTMLButtonElement>(this, '#shareBtn');
+        const copyBtn = findEl<HTMLButtonElement>(this, '#copyBtn');
+        const shareBtn = findEl<HTMLButtonElement>(this, '#shareBtn');
 
-        const board = mustEl<HTMLElement>(this, '#board');
+        const board = findEl<HTMLElement>(this, '#board');
 
         createBtn.addEventListener('click', () => void this.onCreate());
         joinBtn.addEventListener('click', () => void this.onJoin(joinInput.value.trim()));
@@ -190,13 +185,13 @@ export class EhP2pMultiScreen extends HTMLElement {
     }
 
     private updateView(): void {
-        const sessionText = mustEl<HTMLSpanElement>(this, '#sessionText');
-        const roleText = mustEl<HTMLSpanElement>(this, '#roleText');
-        const rtcText = mustEl<HTMLSpanElement>(this, '#rtcText');
-        const statusEl = mustEl<HTMLDivElement>(this, '#status');
+        const sessionText = findEl<HTMLSpanElement>(this, '#sessionText');
+        const roleText = findEl<HTMLSpanElement>(this, '#roleText');
+        const rtcText = findEl<HTMLSpanElement>(this, '#rtcText');
+        const statusEl = findEl<HTMLDivElement>(this, '#status');
 
-        const copyBtn = mustEl<HTMLButtonElement>(this, '#copyBtn');
-        const shareBtn = mustEl<HTMLButtonElement>(this, '#shareBtn');
+        const copyBtn = findEl<HTMLButtonElement>(this, '#copyBtn');
+        const shareBtn = findEl<HTMLButtonElement>(this, '#shareBtn');
 
         const hasSession = this.ui.sessionId !== NAString.NA;
 
@@ -208,7 +203,7 @@ export class EhP2pMultiScreen extends HTMLElement {
         copyBtn.disabled = !hasSession;
         shareBtn.disabled = !hasSession;
 
-        const board = mustEl<any>(this, '#board');
+        const board = findEl<any>(this, '#board');
         board.state = this.ui.game;
 
         const isConnected = this.ui.rtcStatus === WebRtcSessionStatus.Open;
@@ -270,7 +265,7 @@ export class EhP2pMultiScreen extends HTMLElement {
             statusText: 'Left session.',
             game: emptyState(),
         };
-        const joinInput = mustEl<HTMLInputElement>(this, '#joinInput');
+        const joinInput = findEl<HTMLInputElement>(this, '#joinInput');
         joinInput.value = '';
         this.updateView();
     }
@@ -545,7 +540,7 @@ export class EhP2pMultiScreen extends HTMLElement {
     }
 
     private prefillFromShareLink(): void {
-        const joinInput = mustEl<HTMLInputElement>(this, '#joinInput');
+        const joinInput = findEl<HTMLInputElement>(this, '#joinInput');
         const id = readSessionIdFromHash();
         if (id.length > 0) {
             joinInput.value = id;

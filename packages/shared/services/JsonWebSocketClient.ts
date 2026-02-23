@@ -5,7 +5,7 @@ export interface WebSocketClientCallbacks {
 }
 
 export interface OnWebSocketMessageCallback {
-    onMessage: (data: unknown, ev: MessageEvent) => void
+    onMessage: (data: unknown, ev: MessageEvent) => Promise<void>
 }
 
 export class JsonWebSocketClient {
@@ -85,10 +85,10 @@ export class JsonWebSocketClient {
 
                     this.ws.addEventListener(
                         "message",
-                        (ev: MessageEvent) => {
+                        async (ev: MessageEvent) => {
                             for (const callback of this.onMessageCallbacks.values()) {
                                 try {
-                                    callback.onMessage(ev.data, ev)
+                                    await callback.onMessage(JSON.parse(ev.data), ev)
                                 } catch (e) {
                                     console.error("Callback onMessage failed:", e);
                                 }
@@ -150,6 +150,14 @@ export class JsonWebSocketClient {
         }
 
         this.ws.send(JSON.stringify(data));
+    }
+
+    sendAsJsonString(data: string): void {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            throw new Error("WebSocketClient: cannot send; socket is not open.");
+        }
+
+        this.ws.send(data);
     }
 
     close(code?: number, reason?: string): void {
