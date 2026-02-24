@@ -34,5 +34,7 @@ async function loadConfig(env: string): Promise<object> {
     }
 }
 
-export const configuration: ApiConfig = await loadConfig('dev') as ApiConfig;
+const env = Deno.env.get("ENVIRONMENT") || 'dev';
+
+export const configuration: ApiConfig = await loadConfig(env) as ApiConfig;
 

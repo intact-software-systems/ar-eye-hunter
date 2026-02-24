@@ -1,6 +1,6 @@
 {
-  "apiBaseUrl": "http://localhost:8080",
-  "wsBaseUrl": "ws://localhost:8080",
+  "apiBaseUrl": "https://ar-eye-hunter-v1.intact-software-systems.deno.net",
+  "wsBaseUrl": "wss://ar-eye-hunter-v1.intact-software-systems.deno.net",
   "endpoints": {
     "createWs": "/api/ws/:id"
   }
