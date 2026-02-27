@@ -8,14 +8,26 @@ export function getKv(): Promise<Deno.Kv> {
     return kvPromise;
 }
 
+const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
+export const kvExpiryOptions = {expireIn: SESSION_TTL_MS};
+
+
+const clients = "clients";
+const sessions = "sessions";
+
+
+export function toClientsPrefix() {
+    return {prefix: [clients]}
+}
+
+export function toSessionsPrefix() {
+    return {prefix: [sessions]}
+}
+
 export function toClientKey(id: string): Deno.KvKey {
-    return ["client", id]
+    return [clients, id]
 }
 
 export function toSessionKey(id: string): Deno.KvKey {
-    return ["session", id]
+    return [sessions, id]
 }
-
-const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
-export const kvExpiryOptions = { expireIn: SESSION_TTL_MS };
-

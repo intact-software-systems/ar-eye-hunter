@@ -1,8 +1,9 @@
 import {getRouteFromHash, Route} from './router.ts';
 import {findEl} from "./utils/utils.ts";
 import type {ChatScreen} from './chat/chat-screen.ts';
-import {initialiseChatTransport} from "./chat/chat-transport.ts";
+import {initialiseChatTransport} from "./middleware/chat-transport.ts";
 import {ChatTopicId} from "@shared/api/api-config.ts";
+import {appClientData} from "./middleware/config.ts";
 
 export class EhApp extends HTMLElement {
     private currentRoute: Route = Route.Landing;
@@ -61,7 +62,7 @@ export class EhApp extends HTMLElement {
                     throw new Error('chat-screen not found');
                 }
 
-                initialiseChatTransport(chatScreen, ChatTopicId)
+                initialiseChatTransport(chatScreen, ChatTopicId, appClientData.clientId)
 
                 return;
             }

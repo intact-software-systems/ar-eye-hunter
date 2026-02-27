@@ -1,5 +1,5 @@
-import {apiBaseUrl} from "../utils/config.ts";
-import {ApiConfig} from "@shared/api/api-config.ts";
+import {apiBaseUrl} from "./config.ts";
+import {ApiConfig, ClientData} from "@shared/api/api-config.ts";
 
 async function readTextOrElse(res: Response, orElse: () => string): Promise<string> {
     try {
@@ -44,6 +44,24 @@ export async function readApiConfig(): Promise<ApiConfig> {
     return await executeHttpRequest<void, ApiConfig>(
         apiBaseUrl,
         '/api/config',
+        'GET',
+        undefined
+    )
+}
+
+export async function postClientData(clientData: ClientData): Promise<void> {
+    return await executeHttpRequest<ClientData, void>(
+        apiBaseUrl,
+        '/api/client/' + clientData.clientId,
+        'POST',
+        clientData
+    )
+}
+
+export async function readClients(): Promise<ClientData[]> {
+    return await executeHttpRequest<void, ClientData[]>(
+        apiBaseUrl,
+        '/api/read/clients',
         'GET',
         undefined
     )

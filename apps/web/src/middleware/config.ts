@@ -1,7 +1,6 @@
 import {CircuitBreakerPolicy} from "@shared/resilience/Resilience.ts";
 import {ResilienceDto} from "@shared/queuebox/DequeueResourceEntryController.ts";
-import {readApiConfig} from "../integration/api-integration.ts";
-import {ApiConfig} from "@shared/api/api-config.ts";
+import {ClientData} from "@shared/api/api-config.ts";
 
 const env = (import.meta as any).env;
 export const apiBaseUrl = (env?.API_BASE_URL as string) || 'http://localhost:8080';
@@ -30,8 +29,12 @@ export function toResilienceDto() {
     )
 }
 
-export const apiConfig: ApiConfig = await readApiConfig();
+const clientId = crypto.randomUUID().toString();
+const sessionId = clientId;
 
-export function toCreateWsEndpoint(id: string) {
-    return apiConfig.wsBaseUrl + apiConfig.endpoints.createWs.replace(":id", id);
+export const appClientData: ClientData = {
+    clientId,
+    sessionId
 }
+
+console.log(`Client id: ${clientId}`)

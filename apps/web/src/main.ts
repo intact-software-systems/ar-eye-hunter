@@ -5,8 +5,14 @@ import './eh-landing-screen.ts'
 import './games.ts'
 import './router.ts'
 
-import './utils/config.ts';
 import './utils/utils.ts';
+
+import './middleware/config.ts';
+import './middleware/api-integration.ts';
+import './middleware/chat-transport.ts';
+import './middleware/qbox-engine.ts'
+import './middleware/ws-message-router.ts'
+import './middleware/ws-engine.ts'
 
 import './tictactoe/eh-tictactoe-landing.ts';
 import './tictactoe/eh-ttt-board.ts';
@@ -20,6 +26,3 @@ import './whack/eh-whack-canvas.ts';
 
 import './chat/chat-screen.ts';
 
-import './transport/qbox-engine.ts'
-import './transport/websocket-data-router.ts'
-import './transport/websocket-engine.ts'

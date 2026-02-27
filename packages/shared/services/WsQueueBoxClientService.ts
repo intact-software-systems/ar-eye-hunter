@@ -8,8 +8,7 @@ import {ALMessage} from "../al-contracts/al-contract.ts";
 import {ResourceEntry, toResourceEntry} from "../queuebox/ResourceEntry.ts";
 
 export type WsQueueBoxClientServiceInputDto = {
-    readonly inboxTypeId: string;
-    readonly outboxTypeId: string;
+    readonly clientId: string;
 }
 
 export class WsQueueBoxClientService {
@@ -18,17 +17,12 @@ export class WsQueueBoxClientService {
     private readonly onOutboxMessageCallbacks: Map<string, OnOutboxWebSocketMessageCallback> = new Map<string, OnOutboxWebSocketMessageCallback>();
     private readonly onMessageCallbacks: Map<string, OnMessageCallback> = new Map<string, OnMessageCallback>();
 
-    public readonly inboxTypesToDequeue: Set<string>;
-    public readonly outboxTypesToDequeue: Set<string>;
-
     constructor(
         public readonly inbox: QueueBoxResourceEntryRepository,
         public readonly outbox: QueueBoxResourceEntryRepository,
         public readonly socket: JsonWebSocketClient,
         public readonly input: WsQueueBoxClientServiceInputDto
     ) {
-        this.inboxTypesToDequeue = new Set([this.input.inboxTypeId]);
-        this.outboxTypesToDequeue = new Set([this.input.outboxTypeId]);
     }
 
     onOutboxMessageDo(id: string, callback: OnOutboxWebSocketMessageCallback): WsQueueBoxClientService {
@@ -52,7 +46,7 @@ export class WsQueueBoxClientService {
     enableReconnect(): WsQueueBoxClientService {
         this.socket
             .onWebsocketCallbacksDo(
-                "WsQueueBoxClientService-" + this.input.inboxTypeId,
+                this.input.clientId,
                 {
                     onOpen: () => {
                         // TODO: Anything to do?
@@ -67,10 +61,10 @@ export class WsQueueBoxClientService {
     enableDefaultCallbacks(): WsQueueBoxClientService {
         this
             .onOutboxMessageDo(
-                this.input.outboxTypeId,
+                this.input.clientId + "-outbox",
                 {
                     onMessage: (entry, socket) => {
-                        console.log(`${this.input.outboxTypeId}: ${entry.resource}`);
+                        console.log(`${this.input.clientId} outbox: ${entry.resource}`);
                         socket.sendAsJsonString(entry.resource);
 
                         return Promise.resolve();
@@ -80,11 +74,19 @@ export class WsQueueBoxClientService {
 
         this.socket
             .onWebSocketMessageDo(
-                this.input.inboxTypeId,
+                this.input.clientId + "-inbox",
                 {
                     onMessage: async (data) => {
-                        console.log(`${this.input.inboxTypeId}:  ${data}`);
-                        await this.inbox.enqueue(QueueBoxUtilities.toResourceEntry(this.input.inboxTypeId, data));
+                        console.log(`${this.input.clientId} inbox:  ${data}`);
+
+                        const message = JSON.parse(data as string) as ALMessage;
+
+                        await this.inbox.enqueue(
+                            QueueBoxUtilities.toResourceEntry(
+                                message.payload.typeId,
+                                data
+                            )
+                        );
                     }
                 }
             )
@@ -110,13 +112,13 @@ export class WsQueueBoxClientService {
     }
 
     async enqueueOutboxIfAbsent(message: ALMessage): Promise<ResourceEntry> {
-        return await this.outbox.enqueueIfAbsent(toResourceEntry(this.input.outboxTypeId, message))
+        return await this.outbox.enqueueIfAbsent(toResourceEntry(message.payload.typeId, message))
     }
 
-    async dequeueOutbox(resilience: ResilienceDto) {
+    async dequeueOutbox(typesToDequeue: Set<string>, resilience: ResilienceDto) {
         await QueueBoxUtilities.defaultDequeue(
             this.outbox,
-            this.outboxTypesToDequeue,
+            typesToDequeue,
             resilience,
             async (entry) => {
                 for (const callback of this.onOutboxMessageCallbacks.values()) {
@@ -130,10 +132,10 @@ export class WsQueueBoxClientService {
         )
     }
 
-    async dequeueInbox(resilience: ResilienceDto) {
+    async dequeueInbox(typesToDequeue: Set<string>, resilience: ResilienceDto) {
         await QueueBoxUtilities.defaultDequeue(
             this.inbox,
-            this.inboxTypesToDequeue,
+            typesToDequeue,
             resilience,
             async (entry) => {
                 for (const callback of this.onMessageCallbacks.values()) {

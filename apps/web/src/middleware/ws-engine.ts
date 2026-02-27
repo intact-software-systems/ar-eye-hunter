@@ -2,19 +2,19 @@ import {WsQueueBoxClientService} from "@shared/services/WsQueueBoxClientService.
 import {InMemoryQueueBox} from "@shared/queuebox/InMemoryQueueBox.ts";
 import {JsonWebSocketClient} from "@shared/websocket/JsonWebSocketClient.ts";
 import {qboxEngine} from "./qbox-engine.ts";
-import {toCreateWsEndpoint, toResilienceDto} from "../utils/config.ts";
+import {appClientData, toResilienceDto} from "./config.ts";
+import {toCreateWsEndpoint} from "./data-caches.ts";
+import {allTopicIds} from "@shared/api/api-config.ts";
 
 const resilience = toResilienceDto();
 
 const typeId = "WS";
 
-export const webSocketClientId = crypto.randomUUID().toString();
-
-export const webSocketQueueBox = await initialise(typeId, webSocketClientId);
+export const webSocketQueueBox = await initialise(typeId, appClientData.clientId);
 
 async function initialise(typeId: string, clientId: string) {
 
-    console.log(`WebSocket client ID: ${webSocketClientId}`);
+    console.log(`WebSocket client ID: ${(clientId)}`);
 
     const wsQueueBox =
         new WsQueueBoxClientService(
@@ -22,8 +22,7 @@ async function initialise(typeId: string, clientId: string) {
             new InMemoryQueueBox(),
             new JsonWebSocketClient(toCreateWsEndpoint(clientId)),
             {
-                inboxTypeId: typeId,
-                outboxTypeId: typeId
+                clientId: clientId,
             }
         )
             .enableReconnect()
@@ -41,7 +40,6 @@ export function includeToEngine(
     wsQueueBox: WsQueueBoxClientService
 ) {
 
-    const inboxTypeId = typeId + "-inbox";
     const outboxTypeId = typeId + "-outbox";
 
     qboxEngine.includeTask(
@@ -54,15 +52,17 @@ export function includeToEngine(
                     wsQueueBox
                         .outbox
                         .isAnyEntryToLock(
-                            wsQueueBox.outboxTypesToDequeue,
+                            allTopicIds,
                             resilience.checkReserveTimeouts.isEntryRateLimiter,
                             resilience.checkFailed.isEntryRateLimiter
                         ),
             runnable:
-                () => wsQueueBox.dequeueOutbox(resilience),
+                () => wsQueueBox.dequeueOutbox(allTopicIds, resilience),
             ongoingTasks: [],
         }
     )
+
+    const inboxTypeId = typeId + "-inbox";
 
     qboxEngine.includeTask(
         inboxTypeId,
@@ -74,12 +74,12 @@ export function includeToEngine(
                     wsQueueBox
                         .inbox
                         .isAnyEntryToLock(
-                            wsQueueBox.inboxTypesToDequeue,
+                            allTopicIds,
                             resilience.checkReserveTimeouts.isEntryRateLimiter,
                             resilience.checkFailed.isEntryRateLimiter
                         ),
             runnable:
-                () => wsQueueBox.dequeueInbox(resilience),
+                () => wsQueueBox.dequeueInbox(allTopicIds, resilience),
             ongoingTasks: [],
         }
     )

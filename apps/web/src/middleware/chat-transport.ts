@@ -1,21 +1,22 @@
-import {ChatScreen} from "./chat-screen.ts";
+import {ChatScreen} from "../chat/chat-screen.ts";
 import {ALPayload, toALMessage} from "@shared/al-contracts/al-contract.ts";
-import {webSocketClientId, webSocketQueueBox} from "../transport/websocket-engine.ts";
-import {addWebSocketInboxCallback} from "../transport/websocket-data-router.ts";
+import {webSocketQueueBox} from "./ws-engine.ts";
+import {addWebSocketInboxCallback} from "./ws-message-router.ts";
 
 export function initialiseChatTransport(
     chat: ChatScreen,
-    typeId: string
+    typeId: string,
+    clientId: string
 ) {
     chat.configure({
         onSend: async (text) => {
 
             const message =
                 toALMessage(
-                    webSocketClientId,
+                    clientId,
                     typeId,
                     {
-                        clientId: webSocketClientId,
+                        clientId: clientId,
                         message: text
                     }
                 );
@@ -39,7 +40,7 @@ export function initialiseChatTransport(
                 console.error('Invalid message received from server');
                 return;
             }
-            if (data.clientId === webSocketClientId) {
+            if (data.clientId === clientId) {
                 console.error('Received back my own message. Ignoring it');
                 return;
             }

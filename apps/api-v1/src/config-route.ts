@@ -1,6 +1,6 @@
 import {Hono} from "jsr:@hono/hono";
 import {configuration} from "./utils/config-repo.ts";
-import {getKv, kvExpiryOptions, toClientKey, toSessionKey} from "./utils/kv.ts";
+import {getKv, kvExpiryOptions, toClientKey, toClientsPrefix, toSessionKey} from "./utils/kv.ts";
 import {ClientData} from "@shared/api/api-config.ts";
 
 export function init(app: Hono) {
@@ -28,6 +28,22 @@ export function init(app: Hono) {
                     success: true
                 }
             )
+        }
+    )
+
+    app.get(
+        "api/read/clients",
+        async c => {
+
+            const db = await getKv();
+            const entries = db.list(toClientsPrefix());
+
+            const clients = [];
+            for await (const entry of entries) {
+                clients.push(entry.value as ClientData)
+            }
+
+            return c.json(clients)
         }
     )
 }

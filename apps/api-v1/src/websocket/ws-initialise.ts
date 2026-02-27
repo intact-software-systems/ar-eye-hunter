@@ -1,14 +1,14 @@
-import {WsQueueBoxServerService} from "@shared/services/WsQueueBoxServerService.ts";
-import {PSqlQueueBox} from "../queuebox/PSqlQueueBox.ts";
-import {JsonWebSocketServer} from "@shared/websocket/JsonWebSocketServer.ts";
-import {qboxEngine as engine} from "../utils/qbox-engine.ts";
-import {CircuitBreakerPolicy} from "@shared/resilience/Resilience.ts";
+import {allTopicIds} from "@shared/api/api-config.ts";
 import {ResilienceDto} from "@shared/queuebox/DequeueResourceEntryController.ts";
 import {ResourceEntry, toResourceEntryWithKey} from "@shared/queuebox/ResourceEntry.ts";
+import {CircuitBreakerPolicy} from "@shared/resilience/Resilience.ts";
+import {WsQueueBoxServerService} from "@shared/services/WsQueueBoxServerService.ts";
+import {JsonWebSocketServer} from "@shared/websocket/JsonWebSocketServer.ts";
+import {PSqlQueueBox} from "../queuebox/PSqlQueueBox.ts";
+import * as dbListen from "../repository/db-listen.ts";
 import * as dbNotify from "../repository/db-notify.ts";
 import {myPublisherId, PublishMessage} from "../repository/db-notify.ts";
-import * as dbListen from "../repository/db-listen.ts";
-import {allTopicIds} from "@shared/api/api-config.ts";
+import {qboxEngine as engine} from "../utils/qbox-engine.ts";
 
 const dbWsChannelId = "ws-channel";
 
@@ -49,6 +49,23 @@ export const wsQBoxServerService: WsQueueBoxServerService =
     )
 
 wsQBoxServerService.onAllInboxMessagesDo(
+    {
+        onMessage: async (_, entry: ResourceEntry, __) => {
+            await dbNotify.notify(
+                dbWsChannelId,
+                {
+                    key: entry.key,
+                    channel: dbWsChannelId,
+                    publisherId: myPublisherId,
+                    typeId: entry.typeId,
+                    payload: entry.resource
+                }
+            );
+        }
+    }
+)
+
+wsQBoxServerService.onAllOutboxMessagesDo(
     {
         onMessage: async (_, entry: ResourceEntry, __) => {
             await dbNotify.notify(

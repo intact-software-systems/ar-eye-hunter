@@ -2,7 +2,7 @@ import type {QueueBoxResourceEntryRepository,} from "../queuebox/QueueBoxTypes.t
 import {ConnectionContext, JsonWebSocketServer} from "../websocket/JsonWebSocketServer.ts";
 import {ResourceEntry, toResourceEntry} from "../queuebox/ResourceEntry.ts";
 import {ResilienceDto} from "../queuebox/DequeueResourceEntryController.ts";
-import {OnInboxWebSocketMessageCallback} from "./InboxOutboxContracts.ts";
+import {OnWebSocketServerMessageCallback} from "./InboxOutboxContracts.ts";
 import {ALMessage} from "../al-contracts/al-contract.ts";
 import {QueueBoxUtilities} from "./QueueBoxUtilities.ts";
 
@@ -14,7 +14,8 @@ export type WsQueueBoxInboxDto = {
 export class WsQueueBoxServerService {
     private static readonly ALL_IN: string = "*"
 
-    private readonly onInboxWebSocketMessageCallbacks = new Map<string, OnInboxWebSocketMessageCallback<WsQueueBoxInboxDto>>();
+    private readonly onInboxWebSocketMessageCallbacks = new Map<string, OnWebSocketServerMessageCallback<WsQueueBoxInboxDto>>();
+    private readonly onOutboxWebSocketMessageCallbacks = new Map<string, OnWebSocketServerMessageCallback<WsQueueBoxInboxDto>>();
 
     constructor(
         public readonly inbox: QueueBoxResourceEntryRepository,
@@ -42,12 +43,17 @@ export class WsQueueBoxServerService {
         )
     }
 
-    onAllInboxMessagesDo(callback: OnInboxWebSocketMessageCallback<WsQueueBoxInboxDto>): WsQueueBoxServerService {
+    onAllInboxMessagesDo(callback: OnWebSocketServerMessageCallback<WsQueueBoxInboxDto>): WsQueueBoxServerService {
         this.onInboxWebSocketMessageCallbacks.set(WsQueueBoxServerService.ALL_IN, callback);
         return this;
     }
 
-    onInboxMessageDo(id: string, callback: OnInboxWebSocketMessageCallback<WsQueueBoxInboxDto>): WsQueueBoxServerService {
+    onAllOutboxMessagesDo(callback: OnWebSocketServerMessageCallback<WsQueueBoxInboxDto>): WsQueueBoxServerService {
+        this.onOutboxWebSocketMessageCallbacks.set(WsQueueBoxServerService.ALL_IN, callback);
+        return this;
+    }
+
+    onInboxMessageDo(id: string, callback: OnWebSocketServerMessageCallback<WsQueueBoxInboxDto>): WsQueueBoxServerService {
         this.onInboxWebSocketMessageCallbacks.set(id, callback);
         return this;
     }
@@ -65,8 +71,19 @@ export class WsQueueBoxServerService {
             this.outbox,
             typesToDequeue,
             resilience,
-            (entry) => {
-                console.warn(`WARNING! wsQueueBoxServer dequeue outbox has no handler for: ${entry.typeId}: ${entry.resource}`);
+            async (entry) => {
+                const message = JSON.parse(entry.resource) as WsQueueBoxInboxDto;
+
+                {
+                    const callback = this.onOutboxWebSocketMessageCallbacks.get(message.data.payload.typeId);
+                    await this.onMessageIfPresent(callback, message, entry);
+                }
+
+                {
+                    const wildcard = this.onOutboxWebSocketMessageCallbacks.get(WsQueueBoxServerService.ALL_IN)
+                    await this.onMessageIfPresent(wildcard, message, entry);
+                }
+
                 return Promise.resolve();
             }
         )
@@ -95,7 +112,7 @@ export class WsQueueBoxServerService {
     }
 
     private async onMessageIfPresent(
-        callback: OnInboxWebSocketMessageCallback<WsQueueBoxInboxDto> | undefined,
+        callback: OnWebSocketServerMessageCallback<WsQueueBoxInboxDto> | undefined,
         message: WsQueueBoxInboxDto,
         entry: ResourceEntry
     ) {

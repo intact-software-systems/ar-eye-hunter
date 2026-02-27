@@ -1,4 +1,4 @@
-import {webSocketQueueBox} from "./websocket-engine.ts";
+import {webSocketQueueBox} from "./ws-engine.ts";
 import {ALMessage, ALPayload} from "@shared/al-contracts/al-contract.ts";
 
 const webSocketInboxCallbacks = new Map<string, (data: ALPayload) => void>();
@@ -13,10 +13,10 @@ export function removeWebSocketInboxCallback(typeId: string) {
 
 webSocketQueueBox
     .onInboxMessageDo(
-        "websocket-data-router",
+        "ws-message-router",
         {
             onMessage: async (entry) => {
-                console.log(`websocket-data-router: ${entry.resource}`);
+                console.log(`ws-message-router: ${entry.resource}`);
 
                 const data = JSON.parse(entry.resource) as ALMessage;
 
@@ -29,8 +29,6 @@ webSocketQueueBox
                     console.warn(`No handler for typeId: ${data.payload.typeId}`);
                     console.warn(JSON.stringify(data));
                 }
-
-                // TODO: Add handler to log all websocket data to a UI
             }
         }
     )
