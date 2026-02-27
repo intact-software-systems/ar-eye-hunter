@@ -4,7 +4,8 @@ import {InMemoryQueueBox} from "@shared/queuebox/InMemoryQueueBox.ts";
 import {CircuitBreakerPolicy} from "@shared/resilience/Resilience.ts";
 import {InboxOutboxEngine} from "@shared/services/InboxOutboxEngine.ts";
 import {WsQueueBoxClientService} from "@shared/services/WsQueueBoxClientService.ts";
-import {JsonWebSocketClient} from "@shared/services/JsonWebSocketClient.ts";
+import {JsonWebSocketClient} from "../shared/websocket/JsonWebSocketClient.ts";
+import {QueueBoxUtilities} from "../shared/services/QueueBoxUtilities.ts";
 
 describe("engine", () => {
 
@@ -87,7 +88,7 @@ describe("engine", () => {
                 "enqueue" + typeId,
                 {
                     onMessage: async data => {
-                        await wsQueueBox.inbox.enqueue(wsQueueBox.toEntry(typeId, data));
+                        await wsQueueBox.inbox.enqueue(QueueBoxUtilities.toResourceEntry(typeId, data));
                     }
                 }
             )
@@ -130,7 +131,7 @@ describe("engine", () => {
             }
         }
 
-        await wsQueueBox.outbox.enqueue(wsQueueBox.toEntry(typeId, new TestData(helloWorld)))
+        await wsQueueBox.outbox.enqueue(QueueBoxUtilities.toResourceEntry(typeId, new TestData(helloWorld)))
 
         const isSuccess = await engine.executeOnce();
 

@@ -5,3 +5,14 @@ export type ApiConfig = {
         readonly createWs: string;
     };
 };
+
+export const ChatTopicId = "chat";
+export const RtcSignalingTopicId = "rtc-signaling";
+
+export const allTopicIds = new Set([ChatTopicId, RtcSignalingTopicId]);
+
+
+export type ClientData = {
+    readonly clientId: string;
+    readonly sessionId: string;
+}

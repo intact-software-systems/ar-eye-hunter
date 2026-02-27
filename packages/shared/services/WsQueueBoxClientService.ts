@@ -1,10 +1,11 @@
-import {DequeueController} from "../queuebox/DequeueController.ts";
-import {DequeueResourceEntryController, ResilienceDto} from "../queuebox/DequeueResourceEntryController.ts";
+import {ResilienceDto} from "../queuebox/DequeueResourceEntryController.ts";
 import {QueueBoxResourceEntryRepository} from "../queuebox/QueueBoxTypes.ts";
-import {EntityStatus, Key, ResourceEntry} from "../queuebox/ResourceEntry.ts";
-import {JsonWebSocketClient} from "./JsonWebSocketClient.ts";
 import {tryWith} from "../resilience/TryWith.ts";
-import {OnMessageCallback, OnOutboxWebSocketMessageCallback} from "./inbox-outbox-contracts.ts";
+import {OnMessageCallback, OnOutboxWebSocketMessageCallback} from "./InboxOutboxContracts.ts";
+import {JsonWebSocketClient} from "../websocket/JsonWebSocketClient.ts";
+import {QueueBoxUtilities} from "./QueueBoxUtilities.ts";
+import {ALMessage} from "../al-contracts/al-contract.ts";
+import {ResourceEntry, toResourceEntry} from "../queuebox/ResourceEntry.ts";
 
 export type WsQueueBoxClientServiceInputDto = {
     readonly inboxTypeId: string;
@@ -68,9 +69,11 @@ export class WsQueueBoxClientService {
             .onOutboxMessageDo(
                 this.input.outboxTypeId,
                 {
-                    onMessage: async (entry, socket) => {
+                    onMessage: (entry, socket) => {
                         console.log(`${this.input.outboxTypeId}: ${entry.resource}`);
                         socket.sendAsJsonString(entry.resource);
+
+                        return Promise.resolve();
                     }
                 }
             )
@@ -81,7 +84,7 @@ export class WsQueueBoxClientService {
                 {
                     onMessage: async (data) => {
                         console.log(`${this.input.inboxTypeId}:  ${data}`);
-                        await this.inbox.enqueue(this.toEntry(this.input.inboxTypeId, data));
+                        await this.inbox.enqueue(QueueBoxUtilities.toResourceEntry(this.input.inboxTypeId, data));
                     }
                 }
             )
@@ -106,35 +109,12 @@ export class WsQueueBoxClientService {
             )
     }
 
-    toEntry<T>(typeId: string, resource: T): ResourceEntry {
-        return {
-            key: {
-                topicId: typeId,
-                resourceId: crypto.randomUUID().toString(),
-                contextId: "test"
-            },
-            resource: JSON.stringify(resource),
-            typeId: typeId,
-            audit: {
-                date: Temporal.Now.plainTimeISO(),
-                createdBy: "test",
-                createdTs: Temporal.Now.plainDateTimeISO()
-            },
-            status: EntityStatus.NEW,
-            dequeueAudit: {
-                attempts: 0
-            },
-            db: undefined
-        }
+    async enqueueOutboxIfAbsent(message: ALMessage): Promise<ResourceEntry> {
+        return await this.outbox.enqueueIfAbsent(toResourceEntry(this.input.outboxTypeId, message))
     }
 
     async dequeueOutbox(resilience: ResilienceDto) {
-        if (resilience.isNotAllowedThroughToDequeue()) {
-            console.warn("Dequeue blocked {}, circuit state {}", this.outboxTypesToDequeue, resilience.circuitBreaker.state.get());
-            return;
-        }
-
-        await WsQueueBoxClientService.dequeue(
+        await QueueBoxUtilities.defaultDequeue(
             this.outbox,
             this.outboxTypesToDequeue,
             resilience,
@@ -151,12 +131,7 @@ export class WsQueueBoxClientService {
     }
 
     async dequeueInbox(resilience: ResilienceDto) {
-        if (resilience.isNotAllowedThroughToDequeue()) {
-            console.warn("Dequeue blocked {}, circuit state {}", this.inboxTypesToDequeue, resilience.circuitBreaker.state.get());
-            return;
-        }
-
-        await WsQueueBoxClientService.dequeue(
+        await QueueBoxUtilities.defaultDequeue(
             this.inbox,
             this.inboxTypesToDequeue,
             resilience,
@@ -171,33 +146,4 @@ export class WsQueueBoxClientService {
             }
         )
     }
-
-    private static async dequeue(
-        qbox: QueueBoxResourceEntryRepository,
-        typesToDequeue: Set<string>,
-        resilience: ResilienceDto,
-        onDequeuedDo: (entry: ResourceEntry) => Promise<void>
-    ) {
-        await DequeueResourceEntryController.toDequeuer<Key>(
-                qbox,
-                () => typesToDequeue,
-                () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE,
-                DequeueController.DEFAULT_MAX_RETRY,
-                DequeueController.DEFAULT_MAX_NUM_TO_DEQUEUE,
-                resilience
-            )
-            .onFailedEntries(
-                _ => resilience.failure()
-            )
-            .onCompletedEntries(
-                _ => resilience.success()
-            )
-            .dequeueForCompute(
-                async (key, entry) => {
-                    await onDequeuedDo(entry)
-                    return key
-                }
-            )
-    }
-
 }

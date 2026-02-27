@@ -1,22 +1,21 @@
 import {WsQueueBoxClientService} from "@shared/services/WsQueueBoxClientService.ts";
 import {InMemoryQueueBox} from "@shared/queuebox/InMemoryQueueBox.ts";
-import {JsonWebSocketClient} from "@shared/services/JsonWebSocketClient.ts";
+import {JsonWebSocketClient} from "@shared/websocket/JsonWebSocketClient.ts";
 import {qboxEngine} from "./qbox-engine.ts";
 import {toCreateWsEndpoint, toResilienceDto} from "../utils/config.ts";
 
 const resilience = toResilienceDto();
 
-const typeId = "CHAT";
-export const inboxTypeId = typeId + "-inbox";
-export const outboxTypeId = typeId + "-outbox";
+const typeId = "WS";
 
 export const webSocketClientId = crypto.randomUUID().toString();
-
-console.log(`WebSocket client ID: ${webSocketClientId}`);
 
 export const webSocketQueueBox = await initialise(typeId, webSocketClientId);
 
 async function initialise(typeId: string, clientId: string) {
+
+    console.log(`WebSocket client ID: ${webSocketClientId}`);
+
     const wsQueueBox =
         new WsQueueBoxClientService(
             new InMemoryQueueBox(),
@@ -30,14 +29,21 @@ async function initialise(typeId: string, clientId: string) {
             .enableReconnect()
             .enableDefaultCallbacks();
 
-    includeToEngine(wsQueueBox);
+    includeToEngine(typeId, wsQueueBox);
 
     await wsQueueBox.socket.connect();
 
     return wsQueueBox;
 }
 
-export function includeToEngine(wsQueueBox: WsQueueBoxClientService) {
+export function includeToEngine(
+    typeId: string,
+    wsQueueBox: WsQueueBoxClientService
+) {
+
+    const inboxTypeId = typeId + "-inbox";
+    const outboxTypeId = typeId + "-outbox";
+
     qboxEngine.includeTask(
         outboxTypeId,
         {

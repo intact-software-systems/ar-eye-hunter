@@ -65,69 +65,77 @@ export class JsonWebSocketServer {
     }
 
     private addAllEventListeners(ctx: ConnectionContext) {
-        ctx.socket.addEventListener("open", (_: Event) => {
-            for (const cb of this.webSocketServerCallbacks.values()) {
-                try {
-                    cb.onConnection?.(ctx);
-                } catch (e) {
-                    console.error("Callback onConnection failed:", e);
+
+        ctx.socket.addEventListener(
+            "open",
+            (_: Event) => {
+                for (const cb of this.webSocketServerCallbacks.values()) {
+                    try {
+                        cb.onConnection?.(ctx);
+                    } catch (e) {
+                        console.error("Callback onConnection failed:", e);
+                    }
                 }
             }
-        });
+        );
 
-        ctx.socket.addEventListener("message", async (ev: MessageEvent) => {
-            // Typical is string payload for JSON.
-            const raw = ev.data;
+        ctx.socket.addEventListener(
+            "message",
+            async (ev: MessageEvent) => {
 
-            // Pass unknown as-is if not a string (binary frames etc.)
-            let decoded: unknown = raw;
-            if (typeof raw === "string") {
-                try {
-                    decoded = JSON.parse(raw);
-                } catch (e) {
-                    // Give the caller a chance to handle parse errors
-                    for (const cb of this.webSocketServerCallbacks.values()) {
-                        try {
-                            cb.onParseError?.(ctx, raw, e);
-                        } catch (e2) {
-                            console.error("Callback onParseError failed:", e2);
+                let decoded: unknown = ev.data;
+
+                if (typeof ev.data === "string") {
+                    try {
+                        decoded = JSON.parse(ev.data);
+                    } catch (e) {
+                        for (const cb of this.webSocketServerCallbacks.values()) {
+                            try {
+                                cb.onParseError?.(ctx, ev.data, e);
+                            } catch (e2) {
+                                console.error("Callback onParseError failed:", e2);
+                            }
                         }
                     }
-                    // Keep decoded as raw string (so message handlers still see something)
-                    decoded = raw;
+                }
+
+                for (const cb of this.onMessageCallbacks.values()) {
+                    try {
+                        await cb.onMessage(ctx, decoded, ev);
+                    } catch (e) {
+                        console.error("Callback onMessage failed:", e);
+                    }
                 }
             }
+        );
 
-            for (const cb of this.onMessageCallbacks.values()) {
-                try {
-                    await cb.onMessage(ctx, decoded, ev);
-                } catch (e) {
-                    console.error("Callback onMessage failed:", e);
+        ctx.socket.addEventListener(
+            "error",
+            (ev: Event) => {
+                for (const cb of this.webSocketServerCallbacks.values()) {
+                    try {
+                        cb.onError?.(ctx, ev);
+                    } catch (e) {
+                        console.error("Callback onError failed:", e);
+                    }
                 }
             }
-        });
+        );
 
-        ctx.socket.addEventListener("error", (ev: Event) => {
-            for (const cb of this.webSocketServerCallbacks.values()) {
-                try {
-                    cb.onError?.(ctx, ev);
-                } catch (e) {
-                    console.error("Callback onError failed:", e);
+        ctx.socket.addEventListener(
+            "close",
+            (ev: CloseEvent) => {
+                this.connections.delete(ctx.id);
+
+                for (const cb of this.webSocketServerCallbacks.values()) {
+                    try {
+                        cb.onClose?.(ctx, ev);
+                    } catch (e) {
+                        console.error("Callback onClose failed:", e);
+                    }
                 }
             }
-        });
-
-        ctx.socket.addEventListener("close", (ev: CloseEvent) => {
-            this.connections.delete(ctx.id);
-
-            for (const cb of this.webSocketServerCallbacks.values()) {
-                try {
-                    cb.onClose?.(ctx, ev);
-                } catch (e) {
-                    console.error("Callback onClose failed:", e);
-                }
-            }
-        });
+        );
     }
 
     // --------------------

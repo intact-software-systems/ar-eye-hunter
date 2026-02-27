@@ -36,6 +36,9 @@ Peers can join group by asking group owner (can be AUTO).
 
 The SPA builds a local cache of public groups.
 
+## Web RTC session
+
+Session id with objects stored in Postgres DB.  
 
 
 ### Resilient inbox and outbox in SPA

@@ -1,9 +1,16 @@
 import {Hono} from "jsr:@hono/hono";
 import {cors} from "jsr:@hono/hono/cors";
+
+import {ChatTopicId, RtcSignalingTopicId} from "@shared/api/api-config.ts";
 import {qboxEngine} from "./utils/qbox-engine.ts";
-import * as configRoutes from "./config-route.ts";
-import * as wsRelayer from "./websocket/ws-routes.ts";
+import {wsQBoxServerService} from "./websocket/ws-initialise.ts";
+
+import * as chatTransport from "./websocket/ws-chat-transport.ts";
+import * as rtcSignaling from "./websocket/ws-rtc-signaling.ts";
+
 import * as iceRoutes from "./webrtc/ice_routes.ts";
+import * as wsRelayer from "./websocket/ws-routes.ts";
+import * as configRoutes from "./config-route.ts";
 
 const app: Hono = new Hono();
 
@@ -21,9 +28,12 @@ app.use(
     )
 );
 
-configRoutes.initialise(app)
-wsRelayer.initialise(app)
-iceRoutes.initialise(app)
+chatTransport.initChatTransport(ChatTopicId, wsQBoxServerService)
+rtcSignaling.initWsRtcSignaling(RtcSignalingTopicId, wsQBoxServerService)
+
+configRoutes.init(app)
+wsRelayer.init(app)
+iceRoutes.init(app)
 
 qboxEngine.start()
 

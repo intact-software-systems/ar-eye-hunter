@@ -12,7 +12,7 @@ export type ALMessageId = Readonly<{
     msgId: string;     // UUID; used for dedup + idempotency
     ts: number;        // sender timestamp (epoch ms)
     sender: string;    // stable sender identity (clientId / principalId / nodeId)
-    sessionId: string; // changes on reconnect; helps trace
+    sessionId?: string; // changes on reconnect; helps trace
     traceId?: string;  // optional end-to-end tracing
 }>;
 
@@ -68,23 +68,53 @@ export type ALMessageHistory = Readonly<{
 }>;
 
 // 10) The wire message
-export type ALRouting = Readonly<{
+export type ALMessage = Readonly<{
     id: ALMessageId;
     key: ALMessageKey;
 
-    targets: ALTargets;
+    targets?: ALTargets;
     constraints?: ALConstraints;
     ordering?: ALOrdering;
 
-    qos: ALMessageQoS;
+    qos?: ALMessageQoS;
     actions?: ALMessageActions;
 
     payload: ALPayload;
 
-    audit: Readonly<{
+    audit?: Readonly<{
         createdBy: string;
         createdTs: number;
     }>;
 
     history?: ALMessageHistory;
 }>;
+
+export function toALMessage<T>(
+    sender: string,
+    typeId: string,
+    resource: T
+): ALMessage {
+    const msgId = crypto.randomUUID().toString();
+
+    return {
+        id: {
+            v: 1,
+            msgId: msgId,
+            ts: Date.now(),
+            sender: sender,
+        },
+        key: {
+            topicId: typeId,
+            resourceId: msgId,
+            contextId: "test"
+        },
+        payload: {
+            typeId: typeId,
+            resource: JSON.stringify(resource),
+        },
+        audit: {
+            createdBy: sender,
+            createdTs: Date.now(),
+        },
+    }
+}

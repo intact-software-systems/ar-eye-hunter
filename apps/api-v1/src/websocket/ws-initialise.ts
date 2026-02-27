@@ -1,6 +1,6 @@
-import {WsQueueBoxInboxDto, WsQueueBoxServerService} from "@shared/services/WsQueueBoxServerService.ts";
+import {WsQueueBoxServerService} from "@shared/services/WsQueueBoxServerService.ts";
 import {PSqlQueueBox} from "../queuebox/PSqlQueueBox.ts";
-import {JsonWebSocketServer} from "@shared/services/JsonWebSocketServer.ts";
+import {JsonWebSocketServer} from "@shared/websocket/JsonWebSocketServer.ts";
 import {qboxEngine as engine} from "../utils/qbox-engine.ts";
 import {CircuitBreakerPolicy} from "@shared/resilience/Resilience.ts";
 import {ResilienceDto} from "@shared/queuebox/DequeueResourceEntryController.ts";
@@ -8,12 +8,10 @@ import {ResourceEntry, toResourceEntryWithKey} from "@shared/queuebox/ResourceEn
 import * as dbNotify from "../repository/db-notify.ts";
 import {myPublisherId, PublishMessage} from "../repository/db-notify.ts";
 import * as dbListen from "../repository/db-listen.ts";
+import {allTopicIds} from "@shared/api/api-config.ts";
 
-const NA = "NA";
-const typeId = NA;
-const wsChannelId = "ws-channel";
+const dbWsChannelId = "ws-channel";
 
-const types = new Set<string>([typeId])
 const duration = Temporal.Duration.from({seconds: 10});
 const slidingWindowDuration = Temporal.Duration.from({minutes: 10});
 const initialRate = 1;
@@ -42,31 +40,25 @@ const resilience =
 const queueBox = new PSqlQueueBox();
 const webSocketServer = new JsonWebSocketServer();
 
-export const wsQBoxServerService =
+export const wsQBoxServerService: WsQueueBoxServerService =
     new WsQueueBoxServerService(
         queueBox,
         queueBox,
         webSocketServer,
-        {
-            typeId: NA
-        }
+        "default-qbox-server"
     )
 
-
-wsQBoxServerService.onInboxMessageDo(
-    typeId,
+wsQBoxServerService.onAllInboxMessagesDo(
     {
-        onMessage: async (value: WsQueueBoxInboxDto, entry: ResourceEntry, server: JsonWebSocketServer) => {
-            server.broadcast(value.data);
-
+        onMessage: async (_, entry: ResourceEntry, __) => {
             await dbNotify.notify(
-                wsChannelId,
+                dbWsChannelId,
                 {
                     key: entry.key,
-                    channel: wsChannelId,
+                    channel: dbWsChannelId,
                     publisherId: myPublisherId,
                     typeId: entry.typeId,
-                    payload: JSON.stringify(value.data)
+                    payload: entry.resource
                 }
             );
         }
@@ -74,7 +66,7 @@ wsQBoxServerService.onInboxMessageDo(
 )
 
 dbListen.startListening(
-        wsChannelId,
+        dbWsChannelId,
         async (message: PublishMessage) => {
             console.log(`Received message: ${message}`);
 
@@ -92,23 +84,48 @@ dbListen.startListening(
     })
 
 
+const wsInboxId = "ws-inbox";
+
 engine.includeTask(
-    typeId,
+    wsInboxId,
     {
-        name: typeId,
+        name: wsInboxId,
         maxConcurrency: () => 1,
         isWork:
             () =>
                 wsQBoxServerService
                     .inbox
                     .isAnyEntryToLock(
-                        types,
+                        allTopicIds,
                         resilience.checkReserveTimeouts.isEntryRateLimiter,
                         resilience.checkFailed.isEntryRateLimiter
                     ),
         runnable:
-            () => wsQBoxServerService.dequeueInboxToSend(resilience),
+            () => wsQBoxServerService.dequeueInbox(allTopicIds, resilience),
         ongoingTasks: [],
     }
 )
+
+const wsOutboxId = "ws-outbox";
+
+engine.includeTask(
+    wsOutboxId,
+    {
+        name: wsOutboxId,
+        maxConcurrency: () => 1,
+        isWork:
+            () =>
+                wsQBoxServerService
+                    .outbox
+                    .isAnyEntryToLock(
+                        allTopicIds,
+                        resilience.checkReserveTimeouts.isEntryRateLimiter,
+                        resilience.checkFailed.isEntryRateLimiter
+                    ),
+        runnable:
+            () => wsQBoxServerService.dequeueOutbox(allTopicIds, resilience),
+        ongoingTasks: [],
+    }
+)
+
 

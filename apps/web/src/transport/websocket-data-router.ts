@@ -1,37 +1,36 @@
 import {webSocketQueueBox} from "./websocket-engine.ts";
+import {ALMessage, ALPayload} from "@shared/al-contracts/al-contract.ts";
 
-const websocketDataHandlers = new Map<string, (data: any) => void>();
+const webSocketInboxCallbacks = new Map<string, (data: ALPayload) => void>();
 
-addWebSocketDataRouter();
+export function addWebSocketInboxCallback(typeId: string, handler: (data: ALPayload) => void) {
+    webSocketInboxCallbacks.set(typeId, handler);
+}
 
-export function addWebSocketDataRouter() {
-    webSocketQueueBox
-        .onInboxMessageDo(
-            "websocket-data-router",
-            {
-                onMessage: async (entry) => {
-                    console.log(`websocket-data-router: ${entry.resource}`);
+export function removeWebSocketInboxCallback(typeId: string) {
+    webSocketInboxCallbacks.delete(typeId);
+}
 
-                    // TODO: route to correct handler but how?
-                    const data = JSON.parse(entry.resource);
+webSocketQueueBox
+    .onInboxMessageDo(
+        "websocket-data-router",
+        {
+            onMessage: async (entry) => {
+                console.log(`websocket-data-router: ${entry.resource}`);
 
-                    for (const handler of websocketDataHandlers.values()) {
-                        try {
-                            handler(data);
-                        } catch (e) {
-                            console.error(`Error handling websocket data: ${e}`);
-                        }
-                    }
+                const data = JSON.parse(entry.resource) as ALMessage;
+
+                const handler = webSocketInboxCallbacks.get(data.payload.typeId);
+
+                if (handler) {
+                    handler(data.payload);
+                    return;
+                } else {
+                    console.warn(`No handler for typeId: ${data.payload.typeId}`);
+                    console.warn(JSON.stringify(data));
                 }
+
+                // TODO: Add handler to log all websocket data to a UI
             }
-        )
-
-}
-
-export function addWebSocketDataHandler(typeId: string, handler: (data: any) => void) {
-    websocketDataHandlers.set(typeId, handler);
-}
-
-export function removeWebSocketDataHandler(typeId: string) {
-    websocketDataHandlers.delete(typeId);
-}
+        }
+    )

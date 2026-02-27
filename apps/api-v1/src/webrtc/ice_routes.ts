@@ -24,7 +24,7 @@ let cache:
 
 const CACHE_MS = 60_000; // 60s is plenty
 
-export function initialise(app: Hono): void {
+export function init(app: Hono): void {
     app.get(
         'api/webrtc/ice',
         async (c) => {

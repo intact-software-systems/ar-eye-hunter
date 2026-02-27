@@ -1,8 +1,8 @@
-import {ConnectionContext} from "@shared/services/JsonWebSocketServer.ts";
+import {ConnectionContext} from "@shared/websocket/JsonWebSocketServer.ts";
 import {Hono} from "jsr:@hono/hono";
 import {wsQBoxServerService} from "./ws-initialise.ts";
 
-export function initialise(app: Hono): void {
+export function init(app: Hono): void {
     app.get(
         "/api/ws/:id",
         c => {
