@@ -1,7 +1,7 @@
 import {WsQueueBoxInboxDto, WsQueueBoxServerService} from "@shared/services/WsQueueBoxServerService.ts";
 import {ResourceEntry} from "@shared/queuebox/ResourceEntry.ts";
 import {JsonWebSocketServer} from "@shared/websocket/JsonWebSocketServer.ts";
-import {QRtcSignalingClientMessage, QRtcSignalingClientMsgType} from "@shared/webrtc/QRtcSignalingContracts.ts";
+import {QRtcSignalingMessage,} from "@shared/webrtc/QRtcSignalingContracts.ts";
 
 export function initWsRtcSignaling(
     topicId: string,
@@ -11,25 +11,21 @@ export function initWsRtcSignaling(
         .onInboxMessageDo(
             topicId,
             {
-                onMessage: async (value: WsQueueBoxInboxDto, _: ResourceEntry, __: JsonWebSocketServer) => {
+                onMessage: (value: WsQueueBoxInboxDto, _: ResourceEntry, server: JsonWebSocketServer) => {
 
-                    const msg = JSON.parse(value.data.payload.resource) as QRtcSignalingClientMessage;
+                    const msg = JSON.parse(value.data.payload.resource) as QRtcSignalingMessage;
                     if (msg === undefined) {
-                        return;
+                        return Promise.reject("Invalid signaling message:");
                     }
 
-                    switch (msg.type) {
-                        case QRtcSignalingClientMsgType.Hello: {
-                            // TODO: Disregard for now
-                            break;
-                        }
+                    console.log(`Received signaling message: ${JSON.stringify(msg)}`)
 
-                        case QRtcSignalingClientMsgType.Signal: {
+                    // TODO: Check if toId is a client
+                    // TODO: Update ALM protocol info, ttl, hopcounts, etc.
 
+                    server.send(msg.toId, value.data)
 
-                            break;
-                        }
-                    }
+                    return Promise.resolve();
                 }
             }
         )

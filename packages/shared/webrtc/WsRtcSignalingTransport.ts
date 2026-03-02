@@ -1,16 +1,18 @@
+import {ALMessage, toALMessage} from "../al-contracts/al-contract.ts";
+import {JsonWebSocketClient} from "../websocket/JsonWebSocketClient.ts";
 import {
-    QRtcSignalingClientMessage,
+    QRtcSignalingMessage,
     QRtcSignalingTransport,
     QRtcSignalingTransportInputDto
 } from "./QRtcSignalingContracts.ts";
-import {JsonWebSocketClient} from "../websocket/JsonWebSocketClient.ts";
 
 export class WsRtcSignalingTransport implements QRtcSignalingTransport {
 
     private readonly id: string = "signaling-ws-" + crypto.randomUUID().toString();
 
     constructor(
-        public readonly socket: JsonWebSocketClient
+        public readonly socket: JsonWebSocketClient,
+        public readonly typeId: string
     ) {
     }
 
@@ -47,7 +49,14 @@ export class WsRtcSignalingTransport implements QRtcSignalingTransport {
             {
                 onMessage: async (data: unknown, _: MessageEvent): Promise<void> => {
                     try {
-                        await input.callbacks.onMessage(input.sessionId, input.token, data)
+                        const message = JSON.parse(data as string) as ALMessage;
+
+                        if (message.payload.typeId !== this.typeId) {
+                            console.log("Ignoring message for typeId: ", message.payload.typeId)
+                            return
+                        }
+
+                        await input.callbacks.onMessage(input.sessionId, input.token, message)
                     } catch (e) {
                         console.error("Error in onMessage handler", e)
                     }
@@ -60,7 +69,13 @@ export class WsRtcSignalingTransport implements QRtcSignalingTransport {
         return this.socket.connect()
     }
 
-    send(payload: QRtcSignalingClientMessage): void {
-        this.socket.send(payload)
+    send(payload: QRtcSignalingMessage): void {
+        this.socket.send(
+            toALMessage(
+                payload.fromId,
+                this.typeId,
+                payload
+            )
+        )
     }
 }

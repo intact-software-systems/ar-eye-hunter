@@ -1,8 +1,8 @@
-import {ConnectionContext} from "@shared/websocket/JsonWebSocketServer.ts";
 import {Hono} from "jsr:@hono/hono";
-import {wsQBoxServerService} from "./ws-initialise.ts";
+import {ConnectionContext} from "@shared/websocket/JsonWebSocketServer.ts";
 import {toALMessage} from "@shared/al-contracts/al-contract.ts";
-import {ClientData, ClientTopicId} from "@shared/api/api-config.ts";
+import {ClientData, clientTopicId} from "@shared/api/api-config.ts";
+import {wsQBoxServerService} from "./ws-initialise.ts";
 
 export function init(app: Hono): void {
     app.get(
@@ -22,7 +22,7 @@ export function init(app: Hono): void {
                 await wsQBoxServerService.enqueueOutboxIfAbsent(
                     toALMessage<ClientData>(
                         id,
-                        ClientTopicId,
+                        clientTopicId,
                         {
                             clientId: id,
                             sessionId: id

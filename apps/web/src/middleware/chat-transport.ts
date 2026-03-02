@@ -1,10 +1,11 @@
-import {ChatScreen} from "../chat/chat-screen.ts";
 import {ALPayload, toALMessage} from "@shared/al-contracts/al-contract.ts";
-import {webSocketQueueBox} from "./ws-engine.ts";
-import {addWebSocketInboxCallback} from "./ws-message-router.ts";
+import {WsQueueBoxClientService} from "@shared/services/WsQueueBoxClientService.ts";
+import {ChatScreen} from "../chat/chat-screen.ts";
+import {addWebSocketInboxCallback, removeWebSocketInboxCallback} from "./ws-message-router.ts";
 
-export function initialiseChatTransport(
+export function connectTransport(
     chat: ChatScreen,
+    webSocketQueueBox: WsQueueBoxClientService,
     typeId: string,
     clientId: string
 ) {
@@ -38,14 +39,20 @@ export function initialiseChatTransport(
 
             if (data.message === undefined) {
                 console.error('Invalid message received from server');
-                return;
+                return Promise.reject('Invalid message received from server');
             }
             if (data.clientId === clientId) {
                 console.error('Received back my own message. Ignoring it');
-                return;
+                return Promise.resolve();
             }
 
             chat.addMessage({role: 'peer', text: data.message});
+
+            return Promise.resolve();
         }
     )
+}
+
+export function disconnectTransport(typeId: string) {
+    removeWebSocketInboxCallback(typeId)
 }

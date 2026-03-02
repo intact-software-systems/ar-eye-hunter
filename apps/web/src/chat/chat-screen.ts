@@ -1,4 +1,8 @@
 import {findEl} from "../utils/utils.ts";
+import {chatTopicId} from "@shared/api/api-config.ts";
+import {appClientData} from "../middleware/config.ts";
+import {middleware} from "../middleware/middleware.ts";
+import * as ChatTransport from "../middleware/chat-transport.ts";
 
 type ChatRole = 'me' | 'peer' | 'system';
 
@@ -39,6 +43,17 @@ export class ChatScreen extends HTMLElement {
         this.wire();
         this.callbacks.onReady?.(this.api);
         this.renderMessages();
+
+        ChatTransport.connectTransport(
+            this,
+            middleware.webSocketQueueBox,
+            chatTopicId,
+            appClientData.clientId
+        )
+    }
+
+    disconnectedCallback(): void {
+        ChatTransport.disconnectTransport(chatTopicId);
     }
 
     public configure(callbacks: ChatScreenCallbacks): void {

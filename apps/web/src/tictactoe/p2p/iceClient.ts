@@ -1,7 +1,4 @@
-export type IceConfig = {
-    readonly iceServers: readonly RTCIceServer[];
-    readonly expiresAtEpochMs: number;
-};
+import {IceConfig} from "@shared/api/api-config.ts";
 
 function httpBaseUrl(): string {
     const env = (import.meta as any).env;

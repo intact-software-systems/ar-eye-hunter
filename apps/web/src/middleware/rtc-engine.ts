@@ -1,29 +1,35 @@
-import {ClientData} from "@shared/api/api-config.ts";
-import {ResilienceDto} from "@shared/queuebox/DequeueResourceEntryController.ts";
+import {ClientData, IceConfig} from "@shared/api/api-config.ts";
 import {InMemoryQueueBox} from "@shared/queuebox/InMemoryQueueBox.ts";
-import {WsQueueBoxClientService} from "@shared/services/WsQueueBoxClientService.ts";
-import {JsonWebSocketClient} from "@shared/websocket/JsonWebSocketClient.ts";
+import {WebRtcQueueBoxClientService} from "@shared/services/WebRtcQueueBoxClientService.ts";
+import {ResilienceDto} from "@shared/queuebox/DequeueResourceEntryController.ts";
 import {InboxOutboxEngine} from "@shared/services/InboxOutboxEngine.ts";
+import {JsonWebSocketClient} from "@shared/websocket/JsonWebSocketClient.ts";
 
-export async function initialise(
+export function initialise(
     qboxEngine: InboxOutboxEngine,
     socket: JsonWebSocketClient,
     typeId: string,
-    appClientData: ClientData,
+    clientData: ClientData,
     resilience: ResilienceDto,
+    iceCandidates: IceConfig,
+    dataChannelName: string,
     allTopicIds: Set<string>,
+    rtcSignalingTopicId: string
 ) {
-    const wsQueueBox =
-        new WsQueueBoxClientService(
+    const rtcQBox =
+        new WebRtcQueueBoxClientService(
             new InMemoryQueueBox(),
             new InMemoryQueueBox(),
             socket,
             {
-                clientId: appClientData.clientId,
+                clientId: clientData.clientId,
+                sessionId: clientData.sessionId,
+                token: "NOT_CREATED_YET",
+                iceCandidates: iceCandidates,
+                dataChannelName: dataChannelName,
+                rtcSignalingTopicId: rtcSignalingTopicId,
             }
-        )
-            .enableReconnect()
-            .enableDefaultCallbacks();
+        );
 
     const outboxTypeId = typeId + "-outbox";
 
@@ -34,7 +40,7 @@ export async function initialise(
             maxConcurrency: () => 1,
             isWork:
                 () =>
-                    wsQueueBox
+                    rtcQBox
                         .outbox
                         .isAnyEntryToLock(
                             allTopicIds,
@@ -42,7 +48,7 @@ export async function initialise(
                             resilience.checkFailed.isEntryRateLimiter
                         ),
             runnable:
-                () => wsQueueBox.dequeueOutbox(allTopicIds, resilience),
+                () => rtcQBox.dequeueOutbox(allTopicIds, resilience),
             ongoingTasks: [],
         }
     )
@@ -56,7 +62,7 @@ export async function initialise(
             maxConcurrency: () => 1,
             isWork:
                 () =>
-                    wsQueueBox
+                    rtcQBox
                         .inbox
                         .isAnyEntryToLock(
                             allTopicIds,
@@ -64,12 +70,11 @@ export async function initialise(
                             resilience.checkFailed.isEntryRateLimiter
                         ),
             runnable:
-                () => wsQueueBox.dequeueInbox(allTopicIds, resilience),
+                () => rtcQBox.dequeueInbox(allTopicIds, resilience),
             ongoingTasks: [],
         }
     )
 
-    await wsQueueBox.socket.connect();
-
-    return wsQueueBox;
+    return rtcQBox;
 }
+

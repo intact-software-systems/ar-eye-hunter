@@ -79,7 +79,7 @@ export class WsQueueBoxClientService {
                     onMessage: async (data) => {
                         console.log(`${this.input.clientId} inbox:  ${data}`);
 
-                        const message = JSON.parse(data as string) as ALMessage;
+                        const message = data as ALMessage;
 
                         await this.inbox.enqueue(
                             QueueBoxUtilities.toResourceEntry(

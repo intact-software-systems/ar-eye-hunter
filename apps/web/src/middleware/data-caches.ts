@@ -1,30 +1,25 @@
 import {ALMessage} from "@shared/al-contracts/al-contract.ts";
-import {webSocketQueueBox} from "./ws-engine.ts";
-import {ApiConfig, ChatTopicId, ClientData, ClientTopicId, RtcSignalingTopicId} from "@shared/api/api-config.ts";
-import {postClientData, readApiConfig, readClients} from "./api-integration.ts";
-import {appClientData} from "./config.ts";
-
-//------------------------------------------
-// Config from Api
-//------------------------------------------
-
-export const apiConfig: ApiConfig = await readApiConfig();
-
-export function toCreateWsEndpoint(id: string) {
-    return apiConfig.wsBaseUrl + apiConfig.endpoints.createWs.replace(":id", id);
-}
-
-//------------------------------------------
-// Data caches
-//------------------------------------------
+import {chatTopicId, ClientData, clientTopicId, rtcSignalingTopicId} from "@shared/api/api-config.ts";
+import {postClientData, readClients} from "./api-integration.ts";
+import {WsQueueBoxClientService} from "@shared/services/WsQueueBoxClientService.ts";
+import {WebRtcQueueBoxClientService} from "@shared/services/WebRtcQueueBoxClientService.ts";
 
 export const chatMessageById = new Map<string, ALMessage>();
 export const clientDataById = new Map<string, ClientData>();
 
-await initClientData()
+export async function initialise(
+    webSocketQueueBox: WsQueueBoxClientService,
+    webRtcQueueBox: WebRtcQueueBoxClientService,
+    appClientData: ClientData
+) {
+    await postAndReadClientData(appClientData)
 
-async function initClientData() {
+    connectWsCallbacksToCache(webSocketQueueBox, appClientData, webRtcQueueBox);
+}
 
+async function postAndReadClientData(
+    appClientData: ClientData
+) {
     await postClientData(appClientData)
 
     const clientsFromApi: ClientData[] = await readClients()
@@ -34,39 +29,44 @@ async function initClientData() {
     }
 }
 
-webSocketQueueBox
-    .onInboxMessageDo(
-        "ws-data-cache-router",
-        {
-            onMessage: (entry) => {
-                console.log(`ws-data-cache-router: ${entry.resource}`);
+function connectWsCallbacksToCache(
+    webSocketQueueBox: WsQueueBoxClientService,
+    appClientData: ClientData,
+    webRtcQueueBox: WebRtcQueueBoxClientService
+) {
+    webSocketQueueBox
+        .onInboxMessageDo(
+            "ws-data-cache-router",
+            {
+                onMessage: async (entry) => {
+                    console.log(`ws-data-cache-router: ${entry.resource}`);
 
-                const data = JSON.parse(entry.resource) as ALMessage;
+                    const data = JSON.parse(entry.resource) as ALMessage;
 
-                switch (data.payload.typeId) {
-                    case ChatTopicId: {
-                        chatMessageById.set(data.id.sender, data)
-                        break;
-                    }
-                    case ClientTopicId: {
-                        const client = JSON.parse(data.payload.resource) as ClientData;
-                        clientDataById.set(client.clientId, client)
-
-                        if(client.clientId === appClientData.clientId) {
-                            console.log('Received my own client data. Ignoring it')
+                    switch (data.payload.typeId) {
+                        case chatTopicId: {
+                            chatMessageById.set(data.id.sender, data)
+                            break;
                         }
-                        else {
-                            // TODO: Connect RTC to new client
+                        case clientTopicId: {
+                            const peer = JSON.parse(data.payload.resource) as ClientData;
+                            clientDataById.set(peer.clientId, peer)
 
+                            if (peer.clientId === appClientData.clientId) {
+                                console.log('Received my own client data. Ignoring it')
+                            } else {
+                                await webRtcQueueBox.connectToPeer(peer.clientId)
+                            }
+
+                            break;
                         }
+                        case rtcSignalingTopicId:
+                            console.log('Received rtc signaling message')
 
-                        break;
+                            break
                     }
-                    case RtcSignalingTopicId:
-                        break
                 }
-
-                return Promise.resolve();
             }
-        }
-    )
+        )
+}
+

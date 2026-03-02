@@ -6,13 +6,18 @@ export type ApiConfig = {
     };
 };
 
-export const ChatTopicId = "chat";
-export const RtcSignalingTopicId = "rtc-signaling";
-export const ClientTopicId = "client";
+export const chatTopicId = "chat";
+export const rtcSignalingTopicId = "rtc-signaling";
+export const clientTopicId = "client";
 
-export const allTopicIds = new Set([ChatTopicId, RtcSignalingTopicId, ClientTopicId]);
+export const allTopicIds = new Set([chatTopicId, rtcSignalingTopicId, clientTopicId]);
 
 export type ClientData = {
     readonly clientId: string;
     readonly sessionId: string;
 }
+
+export type IceConfig = {
+    readonly iceServers: readonly RTCIceServer[];
+    readonly expiresAtEpochMs: number;
+};

@@ -27,7 +27,7 @@ export class WsQueueBoxServerService {
             name,
             {
                 onMessage: async (ctx: ConnectionContext, data: unknown, _) => {
-                    const message = JSON.parse(data as string) as ALMessage;
+                    const message = data as ALMessage;
 
                     await this.inbox.enqueue(
                         toResourceEntry<WsQueueBoxInboxDto>(
@@ -63,7 +63,15 @@ export class WsQueueBoxServerService {
     }
 
     async enqueueOutboxIfAbsent(message: ALMessage): Promise<ResourceEntry> {
-        return await this.outbox.enqueueIfAbsent(toResourceEntry(message.payload.typeId, message))
+        return await this.outbox.enqueueIfAbsent(
+            toResourceEntry(
+                message.payload.typeId,
+                {
+                    id: message.id.sender,
+                    data: message
+                }
+            )
+        )
     }
 
     async dequeueOutbox(typesToDequeue: Set<string>, resilience: ResilienceDto) {

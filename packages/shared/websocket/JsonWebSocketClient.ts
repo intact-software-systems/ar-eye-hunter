@@ -13,8 +13,8 @@ export class JsonWebSocketClient {
     public ws?: WebSocket = undefined;
     private connectPromise?: Promise<void> = undefined;
 
-    private readonly webSocketClientCallbacks: Map<string, WebSocketClientCallbacks> = new Map<string, WebSocketClientCallbacks>();
-    private readonly onMessageCallbacks: Map<string, OnWebSocketMessageCallback> = new Map<string, OnWebSocketMessageCallback>();
+    private readonly webSocketClientCallbacks = new Map<string, WebSocketClientCallbacks>();
+    private readonly onMessageCallbacks = new Map<string, OnWebSocketMessageCallback>();
 
     constructor(url: string) {
         this.url = url;

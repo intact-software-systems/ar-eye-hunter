@@ -1,9 +1,11 @@
-import {webSocketQueueBox} from "./ws-engine.ts";
 import {ALMessage, ALPayload} from "@shared/al-contracts/al-contract.ts";
+import {WsQueueBoxClientService} from "@shared/services/WsQueueBoxClientService.ts";
 
-const webSocketInboxCallbacks = new Map<string, (data: ALPayload) => void>();
+export type WsInboxCallback = (data: ALPayload) => Promise<void>
 
-export function addWebSocketInboxCallback(typeId: string, handler: (data: ALPayload) => void) {
+const webSocketInboxCallbacks = new Map<string, WsInboxCallback>();
+
+export function addWebSocketInboxCallback(typeId: string, handler: WsInboxCallback) {
     webSocketInboxCallbacks.set(typeId, handler);
 }
 
@@ -11,24 +13,27 @@ export function removeWebSocketInboxCallback(typeId: string) {
     webSocketInboxCallbacks.delete(typeId);
 }
 
-webSocketQueueBox
-    .onInboxMessageDo(
-        "ws-message-router",
-        {
-            onMessage: async (entry) => {
-                console.log(`ws-message-router: ${entry.resource}`);
+export function initialise(
+    webSocketQueueBox: WsQueueBoxClientService
+) {
+    webSocketQueueBox
+        .onInboxMessageDo(
+            "ws-message-router",
+            {
+                onMessage: async (entry) => {
+                    console.log(`ws-message-router: ${entry.resource}`);
 
-                const data = JSON.parse(entry.resource) as ALMessage;
+                    const data = JSON.parse(entry.resource) as ALMessage;
 
-                const handler = webSocketInboxCallbacks.get(data.payload.typeId);
+                    const handler = webSocketInboxCallbacks.get(data.payload.typeId);
 
-                if (handler) {
-                    handler(data.payload);
-                    return;
-                } else {
-                    console.warn(`No handler for typeId: ${data.payload.typeId}`);
-                    console.warn(JSON.stringify(data));
+                    if (handler) {
+                        await handler(data.payload);
+                    } else {
+                        console.warn(`No handler for typeId: ${data.payload.typeId}`);
+                        console.warn(JSON.stringify(data));
+                    }
                 }
             }
-        }
-    )
+        )
+}

@@ -1,5 +1,5 @@
 import {apiBaseUrl} from "./config.ts";
-import {ApiConfig, ClientData} from "@shared/api/api-config.ts";
+import {ApiConfig, ClientData, IceConfig} from "@shared/api/api-config.ts";
 
 async function readTextOrElse(res: Response, orElse: () => string): Promise<string> {
     try {
@@ -62,6 +62,15 @@ export async function readClients(): Promise<ClientData[]> {
     return await executeHttpRequest<void, ClientData[]>(
         apiBaseUrl,
         '/api/read/clients',
+        'GET',
+        undefined
+    )
+}
+
+export async function readIceCandidates(): Promise<IceConfig> {
+    return await executeHttpRequest<void, IceConfig>(
+        apiBaseUrl,
+        '/api/webrtc/ice',
         'GET',
         undefined
     )

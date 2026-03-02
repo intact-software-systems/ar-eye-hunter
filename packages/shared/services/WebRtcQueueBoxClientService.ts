@@ -1,43 +1,39 @@
 import {QueueBoxResourceEntryRepository} from "../queuebox/QueueBoxTypes.ts";
-import {MyWebRtcChannel} from "../webrtc/MyWebRtcChannel.ts";
+import {QRtcDataChannel} from "../webrtc/QRtcDataChannel.ts";
 import {OnMessageCallback, OnOutboxWebRtcMessageCallback} from "./InboxOutboxContracts.ts";
 import {QueueBoxUtilities} from "./QueueBoxUtilities.ts";
 import {ResilienceDto} from "../queuebox/DequeueResourceEntryController.ts";
+import {WsRtcSignalingTransport} from "../webrtc/WsRtcSignalingTransport.ts";
+import {IceConfig} from "../api/api-config.ts";
+import {ALMessage} from "../al-contracts/al-contract.ts";
+import {ResourceEntry} from "../queuebox/ResourceEntry.ts";
+import {JsonWebSocketClient} from "../websocket/JsonWebSocketClient.ts";
 
 
 export type WebRtcQueueBoxClientServiceInputDto = {
-    readonly inboxTypeId: string;
-    readonly outboxTypeId: string;
+    readonly clientId: string
+    readonly sessionId: string
+    readonly token: string
+    readonly iceCandidates: IceConfig
+    readonly dataChannelName: string
+    readonly rtcSignalingTopicId: string
 }
 
-
-// 1: WebSocket signaling to exchange SDP information
-// 2. Set up WebRTC connection
-
-export type SendToPeerDto = {
-    peerId: string,
-    data: unknown
-}
+type PeerId = string
 
 export class WebRtcQueueBoxClientService {
 
     private readonly onOutboxMessageCallbacks: Map<string, OnOutboxWebRtcMessageCallback> = new Map<string, OnOutboxWebRtcMessageCallback>();
     private readonly onMessageCallbacks: Map<string, OnMessageCallback> = new Map<string, OnMessageCallback>();
 
-    public readonly inboxTypesToDequeue: Set<string>;
-    public readonly outboxTypesToDequeue: Set<string>;
-
-    // peerId -> JsonWebRtcClient
-    readonly connectedPeers: Map<string, MyWebRtcChannel> = new Map<string, MyWebRtcChannel>();
+    private readonly connectedPeers: Map<PeerId, QRtcDataChannel> = new Map<string, QRtcDataChannel>();
 
     constructor(
-        private readonly inbox: QueueBoxResourceEntryRepository,
-        private readonly outbox: QueueBoxResourceEntryRepository,
-        private readonly webrtc: MyWebRtcChannel,
+        public readonly inbox: QueueBoxResourceEntryRepository,
+        public readonly outbox: QueueBoxResourceEntryRepository,
+        public readonly socket: JsonWebSocketClient,
         public readonly input: WebRtcQueueBoxClientServiceInputDto
     ) {
-        this.inboxTypesToDequeue = new Set([this.input.inboxTypeId]);
-        this.outboxTypesToDequeue = new Set([this.input.outboxTypeId]);
     }
 
     onOutboxMessageDo(id: string, callback: OnOutboxWebRtcMessageCallback): WebRtcQueueBoxClientService {
@@ -58,71 +54,93 @@ export class WebRtcQueueBoxClientService {
         return this.onMessageCallbacks.delete(id);
     }
 
-    acceptFromPeer(peerId: string, client: MyWebRtcChannel) {
+    acceptFromPeer(peerId: string, client: QRtcDataChannel) {
         this.connectedPeers.set(peerId, client)
     }
 
-    // aka. call-peer
-    connectToPeer(peerId: string): MyWebRtcChannel {
-        // TODO: implement
-        return new MyWebRtcChannel()
-    }
-
-    enableDefaultCallbacks(): WebRtcQueueBoxClientService {
-        this.onOutboxMessageDo(
-            this.input.outboxTypeId,
+    async connectToPeer(peerId: string): Promise<WebRtcQueueBoxClientService> {
+        const channel = new QRtcDataChannel(
+            new WsRtcSignalingTransport(
+                this.socket,
+                this.input.rtcSignalingTopicId
+            ),
             {
-                onMessage: async (entry, channel) => {
-                    console.log(`${this.input.outboxTypeId}: ${entry.resource}`);
-                    // TODO: channel.sendAsJsonString(entry.resource);
+                clientId: this.input.clientId,
+                sessionId: this.input.sessionId,
+                token: this.input.token,
+                remoteClientId: peerId,
+                iceCandidates: this.input.iceCandidates,
+                dataChannelName: this.input.dataChannelName
+            }
+        );
+
+        channel.onRtcMessageDo(
+            this.input.clientId + "-" + peerId + "-rtc-inbox",
+            {
+                onMessage: async (data) => {
+                    console.log(`From ${peerId}:  ${data}`);
+
+                    const msg = JSON.parse(data as string) as ALMessage
+
+                    await this.inbox.enqueueIfAbsent(
+                        QueueBoxUtilities.toResourceEntry(
+                            msg.payload.typeId,
+                            msg
+                        )
+                    )
                 }
             }
         )
 
-        for (const [peerId, channel] of this.connectedPeers.entries()) {
+        await channel.connect()
 
-            // channel.onMessageDo(
-            //     this.input.inboxTypeId,
-            //     {
-            //         onMessage: async (data) => {
-            //             console.log(`${this.input.inboxTypeId}:  ${data}`);
-            //             await this.inbox.enqueue(QueueBoxUtilities.toResourceEntry(this.input.inboxTypeId, data));
-            //         }
-            //     }
-            // )
-        }
+        return this;
+    }
 
+    enableDefaultCallbacks(): WebRtcQueueBoxClientService {
+        this.onOutboxMessageDo(
+            this.input.clientId + "-rtc-outbox",
+            {
+                onMessage: async (entry, channel) => {
+                    console.log(`Sending ${this.input.clientId}: ${entry.typeId} ${entry.resource}`);
+                    await channel.sendAsJsonString(entry.resource);
+                }
+            }
+        )
         return this
     }
 
-    async sendToPeer(data: SendToPeerDto) {
-        return await this.outbox.enqueue(QueueBoxUtilities.toResourceEntry(this.input.outboxTypeId, data));
+    async enqueueOutboxIfAbsent(msg: ALMessage): Promise<ResourceEntry> {
+        return await this.outbox.enqueueIfAbsent(QueueBoxUtilities.toResourceEntry(msg.payload.typeId, msg));
     }
 
-    async dequeueOutbox(resilience: ResilienceDto) {
+    async dequeueOutbox(typesToDequeue: Set<string>, resilience: ResilienceDto) {
         await QueueBoxUtilities.defaultDequeue(
             this.outbox,
-            this.outboxTypesToDequeue,
+            typesToDequeue,
             resilience,
             async (entry) => {
 
-                // TODO: Entry resource with routing info
+                // TODO: Use ALMRoute info to find channel to route to
 
                 for (const callback of this.onOutboxMessageCallbacks.values()) {
-                    try {
-                        // await callback.onMessage(entry, this.socket)
-                    } catch (e) {
-                        console.error("Error calling onMessage callback", e)
+
+                    for (const channel of this.connectedPeers.values()) {
+                        try {
+                            await callback.onMessage(entry, channel)
+                        } catch (e) {
+                            console.error("Error calling onMessage callback", e)
+                        }
                     }
                 }
             }
         )
     }
 
-    async dequeueInbox(resilience: ResilienceDto) {
+    async dequeueInbox(typesToDequeue: Set<string>, resilience: ResilienceDto) {
         await QueueBoxUtilities.defaultDequeue(
             this.inbox,
-            this.inboxTypesToDequeue,
+            typesToDequeue,
             resilience,
             async (entry) => {
                 for (const callback of this.onMessageCallbacks.values()) {
@@ -135,6 +153,4 @@ export class WebRtcQueueBoxClientService {
             }
         )
     }
-
-
 }

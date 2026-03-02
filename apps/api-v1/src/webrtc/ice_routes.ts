@@ -1,10 +1,6 @@
 import {Hono} from "jsr:@hono/hono";
 import * as metered from "./metered.ts";
-
-type IceConfig = {
-    readonly iceServers: readonly RTCIceServer[];
-    readonly expiresAtEpochMs: number;
-};
+import {IceConfig} from "@shared/api/api-config.ts";
 
 function toJsonResponse<T>(data: T, status = 200): Response {
     return Response.json(

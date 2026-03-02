@@ -5,6 +5,16 @@ import {ClientData} from "@shared/api/api-config.ts";
 const env = (import.meta as any).env;
 export const apiBaseUrl = (env?.API_BASE_URL as string) || 'http://localhost:8080';
 
+const clientId = crypto.randomUUID().toString();
+const sessionId = clientId;
+
+export const appClientData: ClientData = {
+    clientId: clientId,
+    sessionId: sessionId
+}
+
+console.log(`Client id: ${clientId}`)
+
 const duration = Temporal.Duration.from({seconds: 10});
 const initialRate = 1;
 const maxRate = 10;
@@ -29,12 +39,3 @@ export function toResilienceDto() {
     )
 }
 
-const clientId = crypto.randomUUID().toString();
-const sessionId = clientId;
-
-export const appClientData: ClientData = {
-    clientId,
-    sessionId
-}
-
-console.log(`Client id: ${clientId}`)
