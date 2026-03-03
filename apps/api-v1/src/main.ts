@@ -2,10 +2,11 @@ import "jsr:@std/dotenv/load";
 import {Hono} from "jsr:@hono/hono";
 import {cors} from "jsr:@hono/hono/cors";
 
-import {chatTopicId, rtcSignalingTopicId} from "@shared/api/api-config.ts";
+import {chatTopicId, clientTopicId, rtcSignalingTopicId} from "@shared/api/api-config.ts";
 import {qboxEngine} from "./utils/qbox-engine.ts";
 import {wsQBoxServerService} from "./websocket/ws-initialise.ts";
 
+import * as clientTransport from "./websocket/ws-client-transport.ts";
 import * as chatTransport from "./websocket/ws-chat-transport.ts";
 import * as rtcSignaling from "./websocket/ws-rtc-signaling.ts";
 
@@ -29,6 +30,7 @@ app.use(
     )
 );
 
+clientTransport.initClientTransport(clientTopicId, wsQBoxServerService)
 chatTransport.initChatTransport(chatTopicId, wsQBoxServerService)
 rtcSignaling.initWsRtcSignaling(rtcSignalingTopicId, wsQBoxServerService)
 

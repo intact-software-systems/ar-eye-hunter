@@ -35,10 +35,11 @@ type QRtcDataChannelStatus = {
     isPolite: boolean
     makingOffer: boolean
     ignoreOffer: boolean
+    iceCandidateQueue: RTCIceCandidateInit[]
     readonly signalerInput: QRtcSignalingTransportInputDto
 }
 
-type QRtcDataExchanged = {
+export type QRtcDataExchanged = {
     description: RTCSessionDescription | null
     candidate: RTCIceCandidateInit | null
 }
@@ -46,7 +47,7 @@ type QRtcDataExchanged = {
 
 export class QRtcDataChannel {
     private readonly configuration;
-    private readonly status: QRtcDataChannelStatus;
+    public readonly status: QRtcDataChannelStatus;
 
     private readonly clientCallbacks = new Map<string, QRtcClientCallbacks>();
     private readonly onMessageCallbacks = new Map<string, OnQRtcMessageCallback>();
@@ -59,19 +60,24 @@ export class QRtcDataChannel {
             iceServers: [...this.input.iceCandidates.iceServers]
         };
 
-        this.status = {
+        this.status = this.initialStatus()
+    }
+
+    initialStatus() {
+        return {
             state: RtcSessionState.Idle,
             pc: undefined,
             dc: undefined,
             isPolite: this.input.clientId < this.input.remoteClientId,
             makingOffer: false,
             ignoreOffer: false,
+            iceCandidateQueue: [],
             signalerInput: {
                 sessionId: this.input.sessionId,
                 token: this.input.token,
                 callbacks: this.toSignalingProtocol()
             }
-        }
+        };
     }
 
     private toSignalingProtocol(): QRtcSignalingTransportCallbacks {
@@ -170,11 +176,12 @@ export class QRtcDataChannel {
                 this.status.makingOffer = true;
                 await pc.setLocalDescription();
 
-                const description: RTCSessionDescription | null = pc.localDescription;
+                console.log("Offer negotiation: " + JSON.stringify(pc.localDescription))
+
                 this.sendSignal(
                     QRtcSignalingType.Offer,
                     {
-                        description: description,
+                        description: pc.localDescription,
                         candidate: null
                     }
                 );
@@ -187,8 +194,6 @@ export class QRtcDataChannel {
 
         pc.onicecandidate = (event) => {
             if (event.candidate) {
-                console.log("ICE Candidate: " + JSON.stringify(event.candidate))
-
                 this.sendSignal(
                     QRtcSignalingType.IceCandidate,
                     {
@@ -206,6 +211,8 @@ export class QRtcDataChannel {
         // Handle incoming Data Channels
         pc.ondatachannel =
             event => {
+                console.log("Data channel created: " + event.channel.label)
+
                 this.status.dc = event.channel;
 
                 this.setupDataChannelCallbacks(event.channel);
@@ -218,35 +225,68 @@ export class QRtcDataChannel {
     }
 
     async handleSignal(signal: QRtcSignalingType, msg: QRtcDataExchanged) {
-
         const pc = this.status.pc;
         if (!pc) {
             return Promise.reject("PeerConnection not initialized");
         }
 
-        if (msg.description) {
+        console.log("Handling signal: " + signal + ": " + JSON.stringify(msg))
 
-            const offerCollision =
-                signal === QRtcSignalingType.Offer && (this.status.makingOffer || pc.signalingState !== "stable");
+        switch (signal) {
+            case QRtcSignalingType.Answer: {
+                if (!msg.description) {
+                    throw new Error("signal answer should have description")
+                }
 
-            this.status.ignoreOffer = !this.status.isPolite && offerCollision;
+                if (pc.signalingState !== 'have-local-offer') {
+                    console.warn("Received answer in wrong state: " + pc.signalingState + " expected have-local-offer. Ignoring....")
+                    return
+                }
 
-            if (this.status.ignoreOffer) {
-                return;
+                try {
+                    await pc.setRemoteDescription(msg.description);
+                } catch (err) {
+                    console.error("Error setting remote description", err);
+                    throw err;
+                }
+
+                while (this.status.iceCandidateQueue.length) {
+                    const queuedCandidate = this.status.iceCandidateQueue.shift();
+                    await pc.addIceCandidate(queuedCandidate);
+                }
+
+                break
             }
+            case QRtcSignalingType.Offer: {
+                if (!msg.description) {
+                    throw new Error("signal answer should have description")
+                }
 
-            if (offerCollision) {
-                await Promise.all(
-                    [
-                        pc.setLocalDescription({type: "rollback"}),
-                        pc.setRemoteDescription(msg.description)
-                    ]
-                );
-            } else {
-                await pc.setRemoteDescription(msg.description);
-            }
+                const offerCollision = this.status.makingOffer || pc.signalingState !== "stable";
 
-            if (signal === QRtcSignalingType.Offer) {
+                this.status.ignoreOffer = !this.status.isPolite && offerCollision;
+
+                if (this.status.ignoreOffer) {
+                    console.log("Ignoring offer from " + this.input.remoteClientId + " because we are not polite")
+                    return;
+                }
+
+                if (offerCollision) {
+                    await Promise.all(
+                        [
+                            pc.setLocalDescription({type: "rollback"}),
+                            pc.setRemoteDescription(msg.description)
+                        ]
+                    );
+                } else {
+                    await pc.setRemoteDescription(msg.description);
+                }
+
+                while (this.status.iceCandidateQueue.length) {
+                    const queuedCandidate = this.status.iceCandidateQueue.shift();
+                    await pc.addIceCandidate(queuedCandidate);
+                }
+
                 await pc.setLocalDescription();
 
                 this.sendSignal(
@@ -256,18 +296,26 @@ export class QRtcDataChannel {
                         candidate: null,
                     }
                 );
+                break
             }
-        }
 
-
-        if (msg.candidate) {
-            try {
-                await pc.addIceCandidate(msg.candidate);
-
-            } catch (err) {
-                if (!this.status.ignoreOffer) {
-                    throw err;
+            case QRtcSignalingType.IceCandidate: {
+                if (!msg.candidate) {
+                    throw new Error("signal ice candidate should have candidate")
                 }
+
+                try {
+                    if (pc.remoteDescription && pc.remoteDescription.type) {
+                        await pc.addIceCandidate(msg.candidate);
+                    } else {
+                        this.status.iceCandidateQueue.push(msg.candidate);
+                    }
+                } catch (err) {
+                    if (!this.status.ignoreOffer) {
+                        throw err;
+                    }
+                }
+                break
             }
         }
     }
@@ -276,19 +324,27 @@ export class QRtcDataChannel {
         return this.status.state === RtcSessionState.Open;
     }
 
+    isReadyToConnect() {
+        return this.status.state === RtcSessionState.Idle ||
+            this.status.state === RtcSessionState.Failed ||
+            this.status.state === RtcSessionState.Closed;
+    }
+
     sendSignal(signalType: QRtcSignalingType, payload: QRtcDataExchanged): void {
-        this.signaler.send(
-            {
-                channel: QRtcSignalingChannel.RtcSignal,
-                type: QRtcSignalingMsgType.Signal,
-                fromId: this.input.clientId,
-                toId: this.input.remoteClientId,
-                sessionId: this.input.sessionId,
-                token: this.input.token,
-                signalType: signalType,
-                payload: payload
-            }
-        );
+        const signal = {
+            channel: QRtcSignalingChannel.RtcSignal,
+            type: QRtcSignalingMsgType.Signal,
+            fromId: this.input.clientId,
+            toId: this.input.remoteClientId,
+            sessionId: this.input.sessionId,
+            token: this.input.token,
+            signalType: signalType,
+            payload: payload
+        };
+
+        console.log("Sending signal: " + JSON.stringify(signal))
+
+        this.signaler.send(signal);
     }
 
     private setupStateChangeCallbacks(pc: RTCPeerConnection) {
@@ -346,9 +402,15 @@ export class QRtcDataChannel {
         };
 
         dc.onmessage = async event => {
+            console.log("WebRTC Received: " + JSON.stringify(event.data))
+
             for (const callback of this.onMessageCallbacks.values()) {
                 try {
-                    await callback.onMessage(event.data, event)
+                    if (typeof event.data == "string") {
+                        await callback.onMessage(JSON.parse(event.data), event)
+                    } else {
+                        await callback.onMessage(event.data, event)
+                    }
                 } catch (e) {
                     console.error("Callback onMessage failed:", e);
                 }

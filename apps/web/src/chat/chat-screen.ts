@@ -46,7 +46,7 @@ export class ChatScreen extends HTMLElement {
 
         ChatTransport.connectTransport(
             this,
-            middleware.webSocketQueueBox,
+            middleware,
             chatTopicId,
             appClientData.clientId
         )

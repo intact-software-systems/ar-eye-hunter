@@ -28,8 +28,8 @@ export function initialise(
                 iceCandidates: iceCandidates,
                 dataChannelName: dataChannelName,
                 rtcSignalingTopicId: rtcSignalingTopicId,
-            }
-        );
+            })
+            .enableDefaultCallbacks();
 
     const outboxTypeId = typeId + "-outbox";
 

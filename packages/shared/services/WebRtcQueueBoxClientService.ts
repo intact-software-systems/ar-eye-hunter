@@ -1,5 +1,5 @@
 import {QueueBoxResourceEntryRepository} from "../queuebox/QueueBoxTypes.ts";
-import {QRtcDataChannel} from "../webrtc/QRtcDataChannel.ts";
+import {QRtcDataChannel, QRtcDataExchanged} from "../webrtc/QRtcDataChannel.ts";
 import {OnMessageCallback, OnOutboxWebRtcMessageCallback} from "./InboxOutboxContracts.ts";
 import {QueueBoxUtilities} from "./QueueBoxUtilities.ts";
 import {ResilienceDto} from "../queuebox/DequeueResourceEntryController.ts";
@@ -8,6 +8,7 @@ import {IceConfig} from "../api/api-config.ts";
 import {ALMessage} from "../al-contracts/al-contract.ts";
 import {ResourceEntry} from "../queuebox/ResourceEntry.ts";
 import {JsonWebSocketClient} from "../websocket/JsonWebSocketClient.ts";
+import {QRtcSignalingMessage} from "../webrtc/QRtcSignalingContracts.ts";
 
 
 export type WebRtcQueueBoxClientServiceInputDto = {
@@ -54,11 +55,41 @@ export class WebRtcQueueBoxClientService {
         return this.onMessageCallbacks.delete(id);
     }
 
-    acceptFromPeer(peerId: string, client: QRtcDataChannel) {
-        this.connectedPeers.set(peerId, client)
+    async acceptPeerIfAbsent(peerId: string, message: QRtcSignalingMessage) {
+        let channel = this.connectedPeers.get(peerId);
+
+        if (channel && !channel.isReadyToConnect()) {
+            console.log(`Peer ${peerId} in state ${channel.status.state}. Ignoring signal ${JSON.stringify(message)}`);
+            return channel;
+        }
+        else if(channel) {
+            console.log(`Peer ${peerId} in state ${channel.status.state}. Replacing signal ${JSON.stringify(message)}`);
+            channel.initialStatus() // TODO: Reset to avoid memory leaks?
+        }
+        else {
+            console.log(`Peer ${peerId} does not exist. Creating new channel`);
+            channel = this.createPeerChannel(peerId);
+            this.connectedPeers.set(peerId, channel);
+        }
+
+        await channel.connect()
+        await channel.handleSignal(message.signalType, message.payload as QRtcDataExchanged);
+
+        return channel;
     }
 
     async connectToPeer(peerId: string): Promise<WebRtcQueueBoxClientService> {
+        const channel = this.createPeerChannel(peerId);
+        this.connectedPeers.set(peerId, channel);
+
+        await channel.connect()
+
+        return this;
+    }
+
+    private createPeerChannel(peerId: string) {
+        console.log(`Creating peer channel for ${peerId}`);
+
         const channel = new QRtcDataChannel(
             new WsRtcSignalingTransport(
                 this.socket,
@@ -80,7 +111,7 @@ export class WebRtcQueueBoxClientService {
                 onMessage: async (data) => {
                     console.log(`From ${peerId}:  ${data}`);
 
-                    const msg = JSON.parse(data as string) as ALMessage
+                    const msg = data as ALMessage
 
                     await this.inbox.enqueueIfAbsent(
                         QueueBoxUtilities.toResourceEntry(
@@ -91,10 +122,7 @@ export class WebRtcQueueBoxClientService {
                 }
             }
         )
-
-        await channel.connect()
-
-        return this;
+        return channel;
     }
 
     enableDefaultCallbacks(): WebRtcQueueBoxClientService {

@@ -3,6 +3,7 @@ import {chatTopicId, ClientData, clientTopicId, rtcSignalingTopicId} from "@shar
 import {postClientData, readClients} from "./api-integration.ts";
 import {WsQueueBoxClientService} from "@shared/services/WsQueueBoxClientService.ts";
 import {WebRtcQueueBoxClientService} from "@shared/services/WebRtcQueueBoxClientService.ts";
+import {QRtcSignalingMessage} from "@shared/webrtc/QRtcSignalingContracts.ts";
 
 export const chatMessageById = new Map<string, ALMessage>();
 export const clientDataById = new Map<string, ClientData>();
@@ -36,11 +37,9 @@ function connectWsCallbacksToCache(
 ) {
     webSocketQueueBox
         .onInboxMessageDo(
-            "ws-data-cache-router",
+            "ws-topic-router",
             {
                 onMessage: async (entry) => {
-                    console.log(`ws-data-cache-router: ${entry.resource}`);
-
                     const data = JSON.parse(entry.resource) as ALMessage;
 
                     switch (data.payload.typeId) {
@@ -55,14 +54,15 @@ function connectWsCallbacksToCache(
                             if (peer.clientId === appClientData.clientId) {
                                 console.log('Received my own client data. Ignoring it')
                             } else {
+                                console.log(`Connect to peer over RTC: ${peer.clientId}`);
                                 await webRtcQueueBox.connectToPeer(peer.clientId)
                             }
 
                             break;
                         }
                         case rtcSignalingTopicId:
-                            console.log('Received rtc signaling message')
-
+                            console.log('Received rtc signaling message. Accepting peer if absent? Should I really?')
+                            await webRtcQueueBox.acceptPeerIfAbsent(data.id.sender, JSON.parse(data.payload.resource) as QRtcSignalingMessage)
                             break
                     }
                 }

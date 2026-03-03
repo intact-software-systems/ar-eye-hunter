@@ -24,13 +24,11 @@ export async function startListening(
                 .listen(
                     channel,
                     (payload: string) => {
-                        console.log(`[LISTEN ${channel}]`, payload)
-
                         const publisherPayload: PublishMessage = JSON.parse(payload);
 
                         if (publisherPayload.publisherId === myPublisherId) {
                             // I sent it so ignore it
-                            console.log(`Ignoring my own message: ${payload}`)
+                            // console.log(`Ignoring my own message: ${payload}`)
                             return;
                         }
 

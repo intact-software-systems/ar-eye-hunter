@@ -10,6 +10,7 @@ import * as qbox from "./qbox-engine.ts";
 import * as rtcEngine from "./rtc-engine.ts";
 import * as wsEngine from "./ws-engine.ts";
 import * as wsMessageRouter from "./ws-message-router.ts";
+import * as rtcMessageRouter from "./rtc-message-router.ts";
 
 export const apiConfig: ApiConfig = await readApiConfig();
 
@@ -19,6 +20,14 @@ function toCreateWsUrl(id: string) {
 
 const wsJsonSocketClient: JsonWebSocketClient =
     new JsonWebSocketClient(toCreateWsUrl(appClientData.clientId));
+
+await wsJsonSocketClient
+    .connect()
+    .catch((error) => {
+        console.error("Failed to connect WebSocket client:", error);
+        process.exit(1);
+    });
+
 
 const qboxEngine: InboxOutboxEngine = qbox.initialise();
 
@@ -48,6 +57,8 @@ const webRtcQueueBox: WebRtcQueueBoxClientService =
         allTopicIds,
         rtcSignalingTopicId
     );
+
+rtcMessageRouter.initialise(webRtcQueueBox);
 
 await cache.initialise(
     webSocketQueueBox,

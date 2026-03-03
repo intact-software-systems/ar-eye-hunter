@@ -49,7 +49,7 @@ export class WsRtcSignalingTransport implements QRtcSignalingTransport {
             {
                 onMessage: async (data: unknown, _: MessageEvent): Promise<void> => {
                     try {
-                        const message = JSON.parse(data as string) as ALMessage;
+                        const message = data as ALMessage;
 
                         if (message.payload.typeId !== this.typeId) {
                             console.log("Ignoring message for typeId: ", message.payload.typeId)
