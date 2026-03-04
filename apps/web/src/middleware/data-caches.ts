@@ -1,12 +1,13 @@
 import {ALMessage} from "@shared/al-contracts/al-contract.ts";
-import {chatTopicId, ClientData, clientTopicId, rtcSignalingTopicId} from "@shared/api/api-config.ts";
-import {postClientData, readClients} from "./api-integration.ts";
+import {AppTopics, ClientData, RoomDetails} from "@shared/api/api-config.ts";
+import {readClients} from "./api-integration.ts";
 import {WsQueueBoxClientService} from "@shared/services/WsQueueBoxClientService.ts";
 import {WebRtcQueueBoxClientService} from "@shared/services/WebRtcQueueBoxClientService.ts";
 import {QRtcSignalingMessage} from "@shared/webrtc/QRtcSignalingContracts.ts";
 
 export const chatMessageById = new Map<string, ALMessage>();
 export const clientDataById = new Map<string, ClientData>();
+export const roomDataById = new Map<string, RoomDetails>();
 
 export async function initialise(
     webSocketQueueBox: WsQueueBoxClientService,
@@ -21,7 +22,7 @@ export async function initialise(
 async function postAndReadClientData(
     appClientData: ClientData
 ) {
-    await postClientData(appClientData)
+    //await postClientData(appClientData)
 
     const clientsFromApi: ClientData[] = await readClients()
 
@@ -43,11 +44,12 @@ function connectWsCallbacksToCache(
                     const data = JSON.parse(entry.resource) as ALMessage;
 
                     switch (data.payload.typeId) {
-                        case chatTopicId: {
+                        case AppTopics.chat: {
                             chatMessageById.set(data.id.sender, data)
                             break;
                         }
-                        case clientTopicId: {
+
+                        case AppTopics.client: {
                             const peer = JSON.parse(data.payload.resource) as ClientData;
                             clientDataById.set(peer.clientId, peer)
 
@@ -60,10 +62,22 @@ function connectWsCallbacksToCache(
 
                             break;
                         }
-                        case rtcSignalingTopicId:
-                            console.log('Received rtc signaling message. Accepting peer if absent? Should I really?')
+
+                        case AppTopics.rtcSignaling: {
+                            console.log('Received rtc signaling message. Accept peer if absent.')
                             await webRtcQueueBox.acceptPeerIfAbsent(data.id.sender, JSON.parse(data.payload.resource) as QRtcSignalingMessage)
+
                             break
+                        }
+
+                        case AppTopics.rooms: {
+                            const roomDetails = JSON.parse(data.payload.resource) as RoomDetails;
+
+                            console.log(`Received room details: ${JSON.stringify(roomDetails)}`)
+
+                            roomDataById.set(roomDetails.name, roomDetails)
+                            break
+                        }
                     }
                 }
             }

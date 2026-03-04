@@ -70,7 +70,7 @@ export async function postClientData(clientData: ClientData): Promise<void> {
 export async function readClients(): Promise<ClientData[]> {
     return await executeHttpRequest<void, ClientData[]>(
         apiBaseUrl,
-        '/api/read/clients',
+        '/api/read/mock/clients',
         'GET',
         undefined
     )

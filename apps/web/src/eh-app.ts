@@ -1,20 +1,30 @@
 import {getRouteFromHash, Route} from './router.ts';
 import {findHtmlEl} from './utils/utils.ts';
-import {isLoggedIn} from './auth/auth.ts';
+import {isLoggedIn} from './middleware/auth.ts';
+import {initMiddleware, isMiddlewareReady} from "./app-context.ts";
 
 export class EhApp extends HTMLElement {
     private currentRoute: Route = Route.Landing;
 
-    connectedCallback(): void {
+    async connectedCallback(): Promise<void> {
         self.window.addEventListener('hashchange', this.onHashChange);
 
         const next = getRouteFromHash(location.hash);
-        if (!this.isPublicRoute(next) && !isLoggedIn()) {
-            this.redirectToLogin();
-            this.currentRoute = Route.Login;
-            this.render();
-            return;
+        if (!this.isPublicRoute(next)) {
+
+            if (!isLoggedIn()) {
+                this.redirectToLogin();
+                this.currentRoute = Route.Login;
+                this.render();
+                return;
+            }
+
+            // after you confirm isLoggedIn()
+            if (!isMiddlewareReady()) {
+                await initMiddleware()
+            }
         }
+
 
         this.currentRoute = next;
         this.render();
@@ -42,17 +52,27 @@ export class EhApp extends HTMLElement {
         location.hash = `#/login?next=${encoded}`;
     }
 
-    private onHashChange = (): void => {
+    private onHashChange = async (): Promise<void> => {
         const next = getRouteFromHash(location.hash);
 
         // Route guard: if the user is not logged in, force login for protected routes.
-        if (!this.isPublicRoute(next) && !isLoggedIn()) {
-            if (this.currentRoute !== Route.Login) {
+        if (!this.isPublicRoute(next)) {
+
+            if (!isLoggedIn()) {
+                // Always rewrite the hash to include the intended next route.
                 this.redirectToLogin();
-                this.currentRoute = Route.Login;
-                this.render();
+
+                if (this.currentRoute !== Route.Login) {
+                    this.currentRoute = Route.Login;
+                    this.render();
+                }
+
+                return;
             }
-            return;
+
+            if (!isMiddlewareReady()) {
+                await initMiddleware();
+            }
         }
 
         if (next !== this.currentRoute) {

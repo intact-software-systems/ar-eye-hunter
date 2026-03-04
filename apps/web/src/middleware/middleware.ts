@@ -1,10 +1,10 @@
-import {allTopicIds, ApiConfig, IceConfig, rtcSignalingTopicId} from "@shared/api/api-config.ts";
+import {ApiConfig, ClientData, IceConfig} from "@shared/api/api-config.ts";
 import {InboxOutboxEngine} from "@shared/services/InboxOutboxEngine.ts";
 import {WebRtcQueueBoxClientService} from "@shared/services/WebRtcQueueBoxClientService.ts";
 import {WsQueueBoxClientService} from "@shared/services/WsQueueBoxClientService.ts";
 import {JsonWebSocketClient} from "@shared/websocket/JsonWebSocketClient.ts";
 import {readApiConfig, readIceCandidates} from "./api-integration.ts";
-import {appClientData, toResilienceDto} from "./config.ts";
+import {toResilienceDto} from "./config.ts";
 import * as cache from "./data-caches.ts";
 import * as qbox from "./qbox-engine.ts";
 import * as rtcEngine from "./rtc-engine.ts";
@@ -18,62 +18,66 @@ function toCreateWsUrl(id: string) {
     return apiConfig.wsBaseUrl + apiConfig.endpoints.createWs.replace(":id", id);
 }
 
-const wsJsonSocketClient: JsonWebSocketClient =
-    new JsonWebSocketClient(toCreateWsUrl(appClientData.clientId));
-
-await wsJsonSocketClient
-    .connect()
-    .catch((error) => {
-        console.error("Failed to connect WebSocket client:", error);
-        process.exit(1);
-    });
-
-
-const qboxEngine: InboxOutboxEngine = qbox.initialise();
-
-const webSocketQueueBox: WsQueueBoxClientService =
-    await wsEngine.initialise(
-        qboxEngine,
-        wsJsonSocketClient,
-        "WS",
-        appClientData,
-        toResilienceDto(),
-        allTopicIds
-    );
-
-wsMessageRouter.initialise(webSocketQueueBox);
-
-const iceCandidates: IceConfig = await readIceCandidates();
-
-const webRtcQueueBox: WebRtcQueueBoxClientService =
-    rtcEngine.initialise(
-        qboxEngine,
-        wsJsonSocketClient,
-        "RTC",
-        appClientData,
-        toResilienceDto(),
-        iceCandidates,
-        "rtc-data-channel",
-        allTopicIds,
-        rtcSignalingTopicId
-    );
-
-rtcMessageRouter.initialise(webRtcQueueBox);
-
-await cache.initialise(
-    webSocketQueueBox,
-    webRtcQueueBox,
-    appClientData
-)
-
 export type Middleware = {
     qboxEngine: InboxOutboxEngine,
     webSocketQueueBox: WsQueueBoxClientService,
     webRtcQueueBox: WebRtcQueueBoxClientService,
 }
 
-export const middleware: Middleware = {
-    qboxEngine: qboxEngine,
-    webSocketQueueBox: webSocketQueueBox,
-    webRtcQueueBox: webRtcQueueBox,
+export async function initialise(
+    clientData: ClientData,
+    rtcSignalingTopicId: string,
+    topicIds: Set<string>
+): Promise<Middleware> {
+
+    const socket = new JsonWebSocketClient(toCreateWsUrl(clientData.clientId));
+
+    await socket.connect()
+        .catch((error) => {
+            console.error("Failed to connect WebSocket client:", error);
+            throw error;
+        });
+
+    const qboxEngine: InboxOutboxEngine = qbox.initialise();
+
+    const webSocketQueueBox: WsQueueBoxClientService =
+        await wsEngine.initialise(
+            qboxEngine,
+            socket,
+            "WS",
+            clientData,
+            toResilienceDto(),
+            topicIds
+        );
+
+    wsMessageRouter.initialise(webSocketQueueBox);
+
+    const iceCandidates: IceConfig = await readIceCandidates();
+
+    const webRtcQueueBox: WebRtcQueueBoxClientService =
+        rtcEngine.initialise(
+            qboxEngine,
+            socket,
+            "RTC",
+            clientData,
+            toResilienceDto(),
+            iceCandidates,
+            "rtc-data-channel",
+            topicIds,
+            rtcSignalingTopicId
+        );
+
+    rtcMessageRouter.initialise(webRtcQueueBox);
+
+    await cache.initialise(
+        webSocketQueueBox,
+        webRtcQueueBox,
+        clientData
+    )
+
+    return {
+        qboxEngine: qboxEngine,
+        webSocketQueueBox: webSocketQueueBox,
+        webRtcQueueBox: webRtcQueueBox,
+    }
 }

@@ -1,8 +1,8 @@
 import {findHtmlEl} from "../utils/utils.ts";
-import {chatTopicId} from "@shared/api/api-config.ts";
-import {appClientData} from "../middleware/config.ts";
-import {middleware} from "../middleware/middleware.ts";
+import {AppTopics} from "@shared/api/api-config.ts";
 import * as ChatTransport from "../middleware/chat-transport.ts";
+import {readSessionAsClientData} from "../middleware/auth.ts";
+import {getMiddleware} from "../app-context.ts";
 
 type ChatRole = 'me' | 'peer' | 'system';
 
@@ -46,14 +46,14 @@ export class ChatScreen extends HTMLElement {
 
         ChatTransport.connectTransport(
             this,
-            middleware,
-            chatTopicId,
-            appClientData.clientId
+            getMiddleware().middleware,
+            AppTopics.chat,
+            readSessionAsClientData().clientId
         )
     }
 
     disconnectedCallback(): void {
-        ChatTransport.disconnectTransport(chatTopicId);
+        ChatTransport.disconnectTransport(AppTopics.chat);
     }
 
     public configure(callbacks: ChatScreenCallbacks): void {

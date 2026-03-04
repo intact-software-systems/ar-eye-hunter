@@ -2,15 +2,16 @@ import "jsr:@std/dotenv/load";
 import {Hono} from "jsr:@hono/hono";
 import {cors} from "jsr:@hono/hono/cors";
 
-import {chatTopicId, clientTopicId, rtcSignalingTopicId} from "@shared/api/api-config.ts";
+import {AppTopics} from "@shared/api/api-config.ts";
 import {qboxEngine} from "./utils/qbox-engine.ts";
 import {wsQBoxServerService} from "./websocket/ws-initialise.ts";
 
 import * as clientTransport from "./websocket/ws-client-transport.ts";
+import * as roomTransport from "./websocket/ws-rooms-transport.ts";
 import * as chatTransport from "./websocket/ws-chat-transport.ts";
 import * as rtcSignaling from "./websocket/ws-rtc-signaling.ts";
 
-import * as iceRoutes from "./webrtc/ice_routes.ts";
+import * as iceRoutes from "./webrtc/ice-route.ts";
 import * as wsRelayer from "./websocket/ws-routes.ts";
 import * as configRoutes from "./config-route.ts";
 
@@ -30,9 +31,10 @@ app.use(
     )
 );
 
-clientTransport.initClientTransport(clientTopicId, wsQBoxServerService)
-chatTransport.initChatTransport(chatTopicId, wsQBoxServerService)
-rtcSignaling.initWsRtcSignaling(rtcSignalingTopicId, wsQBoxServerService)
+clientTransport.initClientTransport(AppTopics.client, wsQBoxServerService)
+roomTransport.initRoomTransport(AppTopics.rooms, wsQBoxServerService)
+chatTransport.initChatTransport(AppTopics.chat, wsQBoxServerService)
+rtcSignaling.initWsRtcSignaling(AppTopics.rtcSignaling, wsQBoxServerService)
 
 configRoutes.init(app)
 wsRelayer.init(app)

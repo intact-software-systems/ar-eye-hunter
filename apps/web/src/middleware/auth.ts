@@ -1,3 +1,5 @@
+import {ClientData} from "@shared/api/api-config.ts";
+
 export type AuthSession = {
     readonly clientId: string;
     readonly accessToken: string;
@@ -16,6 +18,18 @@ export function readSession(): AuthSession | undefined {
         return s;
     } catch {
         return undefined;
+    }
+}
+
+export function readSessionAsClientData(): ClientData {
+    const session = readSession()
+    if (!session) {
+        throw new Error('Cannot read session as client data: no session.')
+    }
+
+    return {
+        clientId: session.clientId,
+        sessionId: session.clientId,
     }
 }
 

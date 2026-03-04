@@ -1,12 +1,9 @@
 import {Hono} from "jsr:@hono/hono";
-import {ConnectionContext} from "@shared/websocket/JsonWebSocketServer.ts";
-import {toALMessage} from "@shared/al-contracts/al-contract.ts";
-import {ClientData, clientTopicId} from "@shared/api/api-config.ts";
-import {wsQBoxServerService} from "./ws-initialise.ts";
+import * as clientTransport from "./ws-client-transport.ts";
 
 export function init(app: Hono): void {
     app.get(
-        "/api/ws/:id",
+        "/api/ws/:clientId",
         async c => {
             if (c.req.header("upgrade") !== "websocket") {
                 return c.text("Expected Upgrade: websocket", 426);
@@ -15,22 +12,11 @@ export function init(app: Hono): void {
             try {
                 const {socket, response} = Deno.upgradeWebSocket(c.req.raw);
 
-                const id = c.req.param("id");
+                const clientId = c.req.param("clientId");
 
-                wsQBoxServerService.socket.addConnection(new ConnectionContext(id, socket))
+                await clientTransport.addWsAndPublishClient(clientId, socket);
 
-                await wsQBoxServerService.enqueueOutboxIfAbsent(
-                    toALMessage<ClientData>(
-                        id,
-                        clientTopicId,
-                        {
-                            clientId: id,
-                            sessionId: id
-                        }
-                    )
-                )
-
-                console.log(`Upgrading connection for ID: ${id}`);
+                console.log(`Upgrading connection for ID: ${clientId}`);
 
                 return response;
             } catch (err) {

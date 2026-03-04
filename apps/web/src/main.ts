@@ -8,6 +8,7 @@ import './router.ts'
 import './utils/utils.ts';
 
 import './middleware/config.ts';
+import './middleware/middleware.ts';
 import './middleware/api-integration.ts';
 import './middleware/chat-transport.ts';
 import './middleware/qbox-engine.ts'
@@ -26,6 +27,6 @@ import './whack/eh-whack-canvas.ts';
 
 import './chat/chat-screen.ts';
 
-import './auth/eh-login-screen.ts';
+import './eh-login-screen.ts';
 
 

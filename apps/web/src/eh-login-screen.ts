@@ -1,6 +1,7 @@
-import {writeSession} from './auth.ts';
-import {findHtmlEl, readNextFromHash} from "../utils/utils.ts";
-import {loginToApi} from "../middleware/api-integration.ts";
+import {loginToApi} from "./middleware/api-integration.ts";
+import {writeSession} from './middleware/auth.ts';
+import {findHtmlEl, readNextFromHash} from "./utils/utils.ts";
+import {initMiddleware} from "./app-context.ts";
 
 export class EhLoginScreen extends HTMLElement {
     connectedCallback(): void {
@@ -57,6 +58,8 @@ export class EhLoginScreen extends HTMLElement {
                     accessToken: res.accessToken,
                     username: res.username,
                 });
+
+                await initMiddleware();
 
                 const next = readNextFromHash();
                 location.hash = `#${next}`;

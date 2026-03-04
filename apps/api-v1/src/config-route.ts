@@ -1,7 +1,9 @@
 import {Hono} from "jsr:@hono/hono";
-import {authorisedClients, configuration} from "./utils/config-repo.ts";
-import {getKv, kvExpiryOptions, toClientKey, toClientsPrefix, toSessionKey} from "./utils/kv.ts";
 import {ClientData, LoginRequest} from "@shared/api/api-config.ts";
+import {configuration} from "./utils/config-repo.ts";
+import {getKv, kvExpiryOptions, toClientKey, toClientsPrefix, toSessionKey} from "./utils/kv.ts";
+import * as loginRepository from "./clients/client-repository.ts";
+import {mockedClients} from "./clients/client-repository.ts";
 
 export function init(app: Hono) {
 
@@ -36,22 +38,19 @@ export function init(app: Hono) {
         async c => {
             const loginRequest = await c.req.json() as LoginRequest;
 
-            for (const client of authorisedClients) {
-                if (client.username === loginRequest.username && client.password === loginRequest.password) {
-                    return c.json({
-                        clientId: client.clientId,
-                        accessToken: crypto.randomUUID().substring(0, 10),
-                        username: client.username,
-                    })
-                }
-            }
+            const loginResponse = loginRepository.login(loginRequest)
 
-            return c.json(
-                {
-                    error: "Invalid username or password"
-                },
-                401
-            )
+            return loginResponse
+                ?
+                c.json(loginResponse)
+                :
+                c.json(
+                    {
+                        error: "Invalid username or password"
+                    },
+                    401
+                );
+
         }
     )
 
@@ -68,6 +67,13 @@ export function init(app: Hono) {
             }
 
             return c.json(clients)
+        }
+    )
+
+    app.get(
+        "/api/read/mock/clients",
+        async c => {
+            return c.json(mockedClients())
         }
     )
 }

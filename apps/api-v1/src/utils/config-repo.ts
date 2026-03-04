@@ -39,9 +39,9 @@ export const configuration: ApiConfig = await loadConfig(env) as ApiConfig;
 
 
 export type LoginClientData = {
-    clientId: string,
-    username: string,
-    password: string
+    readonly clientId: string,
+    readonly username: string,
+    readonly password: string
 }
 
 export const authorisedClients: LoginClientData[] = await loadJsonFile('../../resources/authorised-clients.json')

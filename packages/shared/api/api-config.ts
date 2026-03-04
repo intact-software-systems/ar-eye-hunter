@@ -6,11 +6,14 @@ export type ApiConfig = {
     };
 };
 
-export const chatTopicId = "chat";
-export const rtcSignalingTopicId = "rtc-signaling";
-export const clientTopicId = "client";
+export enum AppTopics {
+    chat = "chat",
+    rtcSignaling = "rtc-signaling",
+    client = "client",
+    rooms = "rooms",
+}
 
-export const allTopicIds = new Set([chatTopicId, rtcSignalingTopicId, clientTopicId]);
+export const allTopicIds = new Set(Object.values(AppTopics).map(v => v.toString()));
 
 export type ClientData = {
     readonly clientId: string;
@@ -31,4 +34,17 @@ export type LoginResponse = {
     clientId: string;
     accessToken: string;
     username: string;
+};
+
+
+export type RoomCreate = {
+    name: string
+    createdBy: string
+};
+
+export type RoomDetails = {
+    name: string
+    createdBy: string
+    createdAtEpochMs: number
+    members: readonly string[]
 };
