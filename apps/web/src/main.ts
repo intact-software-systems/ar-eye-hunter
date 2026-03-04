@@ -26,3 +26,6 @@ import './whack/eh-whack-canvas.ts';
 
 import './chat/chat-screen.ts';
 
+import './auth/eh-login-screen.ts';
+
+

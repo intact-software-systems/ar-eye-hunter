@@ -33,7 +33,7 @@ import type {CellClickDetail} from '../eh-ttt-board.ts';
 import {fetchIceConfig} from './iceClient.ts';
 
 import {WsSignalingClient} from './wsSignalingClient.ts';
-import {findEl} from "../../utils/utils.ts";
+import {findHtmlEl} from "../../utils/utils.ts";
 
 /* ======================================================
    Utilities
@@ -159,16 +159,16 @@ export class EhP2pMultiScreen extends HTMLElement {
     }
 
     private wire(): void {
-        const createBtn = findEl<HTMLButtonElement>(this, '#createBtn');
-        const joinBtn = findEl<HTMLButtonElement>(this, '#joinBtn');
-        const joinInput = findEl<HTMLInputElement>(this, '#joinInput');
-        const leaveBtn = findEl<HTMLButtonElement>(this, '#leaveBtn');
-        const resetBtn = findEl<HTMLButtonElement>(this, '#resetBtn');
+        const createBtn = findHtmlEl<HTMLButtonElement>(this, '#createBtn');
+        const joinBtn = findHtmlEl<HTMLButtonElement>(this, '#joinBtn');
+        const joinInput = findHtmlEl<HTMLInputElement>(this, '#joinInput');
+        const leaveBtn = findHtmlEl<HTMLButtonElement>(this, '#leaveBtn');
+        const resetBtn = findHtmlEl<HTMLButtonElement>(this, '#resetBtn');
 
-        const copyBtn = findEl<HTMLButtonElement>(this, '#copyBtn');
-        const shareBtn = findEl<HTMLButtonElement>(this, '#shareBtn');
+        const copyBtn = findHtmlEl<HTMLButtonElement>(this, '#copyBtn');
+        const shareBtn = findHtmlEl<HTMLButtonElement>(this, '#shareBtn');
 
-        const board = findEl<HTMLElement>(this, '#board');
+        const board = findHtmlEl<HTMLElement>(this, '#board');
 
         createBtn.addEventListener('click', () => void this.onCreate());
         joinBtn.addEventListener('click', () => void this.onJoin(joinInput.value.trim()));
@@ -185,13 +185,13 @@ export class EhP2pMultiScreen extends HTMLElement {
     }
 
     private updateView(): void {
-        const sessionText = findEl<HTMLSpanElement>(this, '#sessionText');
-        const roleText = findEl<HTMLSpanElement>(this, '#roleText');
-        const rtcText = findEl<HTMLSpanElement>(this, '#rtcText');
-        const statusEl = findEl<HTMLDivElement>(this, '#status');
+        const sessionText = findHtmlEl<HTMLSpanElement>(this, '#sessionText');
+        const roleText = findHtmlEl<HTMLSpanElement>(this, '#roleText');
+        const rtcText = findHtmlEl<HTMLSpanElement>(this, '#rtcText');
+        const statusEl = findHtmlEl<HTMLDivElement>(this, '#status');
 
-        const copyBtn = findEl<HTMLButtonElement>(this, '#copyBtn');
-        const shareBtn = findEl<HTMLButtonElement>(this, '#shareBtn');
+        const copyBtn = findHtmlEl<HTMLButtonElement>(this, '#copyBtn');
+        const shareBtn = findHtmlEl<HTMLButtonElement>(this, '#shareBtn');
 
         const hasSession = this.ui.sessionId !== NAString.NA;
 
@@ -203,7 +203,7 @@ export class EhP2pMultiScreen extends HTMLElement {
         copyBtn.disabled = !hasSession;
         shareBtn.disabled = !hasSession;
 
-        const board = findEl<any>(this, '#board');
+        const board = findHtmlEl<any>(this, '#board');
         board.state = this.ui.game;
 
         const isConnected = this.ui.rtcStatus === WebRtcSessionStatus.Open;
@@ -265,7 +265,7 @@ export class EhP2pMultiScreen extends HTMLElement {
             statusText: 'Left session.',
             game: emptyState(),
         };
-        const joinInput = findEl<HTMLInputElement>(this, '#joinInput');
+        const joinInput = findHtmlEl<HTMLInputElement>(this, '#joinInput');
         joinInput.value = '';
         this.updateView();
     }
@@ -540,7 +540,7 @@ export class EhP2pMultiScreen extends HTMLElement {
     }
 
     private prefillFromShareLink(): void {
-        const joinInput = findEl<HTMLInputElement>(this, '#joinInput');
+        const joinInput = findHtmlEl<HTMLInputElement>(this, '#joinInput');
         const id = readSessionIdFromHash();
         if (id.length > 0) {
             joinInput.value = id;

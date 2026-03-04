@@ -1,4 +1,4 @@
-import {findEl} from "../utils/utils.ts";
+import {findHtmlEl} from "../utils/utils.ts";
 import {chatTopicId} from "@shared/api/api-config.ts";
 import {appClientData} from "../middleware/config.ts";
 import {middleware} from "../middleware/middleware.ts";
@@ -159,8 +159,8 @@ export class ChatScreen extends HTMLElement {
     }
 
     private wire(): void {
-        const composer = findEl<HTMLFormElement>(this, '#composer');
-        const input = findEl<HTMLInputElement>(this, '#messageInput');
+        const composer = findHtmlEl<HTMLFormElement>(this, '#composer');
+        const input = findHtmlEl<HTMLInputElement>(this, '#messageInput');
 
         composer.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -186,7 +186,7 @@ export class ChatScreen extends HTMLElement {
     private renderMessages(): void {
         if (!this.isConnected) return;
 
-        const list = findEl<HTMLDivElement>(this, '#messages');
+        const list = findHtmlEl<HTMLDivElement>(this, '#messages');
 
         if (this.messages.length === 0) {
             list.innerHTML = `<div class="muted">No messages yet.</div>`;

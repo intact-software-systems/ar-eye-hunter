@@ -18,7 +18,6 @@ async function loadConfigDev(): Promise<object> {
     return await loadJsonFile('../../resources/web-config-dev.json')
 }
 
-
 async function loadConfigProd(): Promise<object> {
     return await loadJsonFile('../../resources/web-prod-config.json')
 }
@@ -38,3 +37,11 @@ const env = Deno.env.get("ENVIRONMENT") || 'dev';
 
 export const configuration: ApiConfig = await loadConfig(env) as ApiConfig;
 
+
+export type LoginClientData = {
+    clientId: string,
+    username: string,
+    password: string
+}
+
+export const authorisedClients: LoginClientData[] = await loadJsonFile('../../resources/authorised-clients.json')

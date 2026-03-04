@@ -1,5 +1,5 @@
 import {apiBaseUrl} from "./config.ts";
-import {ApiConfig, ClientData, IceConfig} from "@shared/api/api-config.ts";
+import {ApiConfig, ClientData, IceConfig, LoginRequest, LoginResponse} from "@shared/api/api-config.ts";
 
 async function readTextOrElse(res: Response, orElse: () => string): Promise<string> {
     try {
@@ -46,6 +46,15 @@ export async function readApiConfig(): Promise<ApiConfig> {
         '/api/config',
         'GET',
         undefined
+    )
+}
+
+export async function loginToApi(req: LoginRequest): Promise<LoginResponse> {
+    return await executeHttpRequest<LoginRequest, LoginResponse>(
+        apiBaseUrl,
+        '/api/auth/login',
+        'POST',
+        req
     )
 }
 

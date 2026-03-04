@@ -1,0 +1,27 @@
+[
+  {
+    "username": "admin",
+    "password": "admin",
+    "clientId": "admin"
+  },
+  {
+    "username": "user",
+    "password": "user",
+    "clientId": "user"
+  },
+  {
+    "username": "guest",
+    "password": "guest",
+    "clientId": "guest"
+  },
+  {
+    "username": "test",
+    "password": "test",
+    "clientId": "test"
+  },
+  {
+    "username": "test2",
+    "password": "test2",
+    "clientId": "test2"
+  }
+]

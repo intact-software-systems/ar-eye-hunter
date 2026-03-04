@@ -3,6 +3,7 @@ export enum Route {
     WhackAWorm = 'whackaworm',
     WhackSingle = 'whack-single',
     Chat = 'chat',
+    Login = 'login',
     Landing = 'landing',
     Single = 'single',
     Multi = 'multi',
@@ -33,6 +34,8 @@ export function getRouteFromHash(hash: string): Route {
             return Route.WhackAWorm;
         case '/chat':
             return Route.Chat;
+        case '/login':
+            return Route.Login;
         case '/single':
             return Route.Single;
         case '/multi':
@@ -58,6 +61,9 @@ export function navigate(route: Route): void {
             return;
         case Route.Chat:
             location.hash = '#/chat';
+            return;
+        case Route.Login:
+            location.hash = '#/login';
             return;
         case Route.Single:
             location.hash = '#/single';
