@@ -9,7 +9,7 @@ export async function initialise(
     qboxEngine: InboxOutboxEngine,
     socket: JsonWebSocketClient,
     typeId: string,
-    appClientData: ClientData,
+    clientData: ClientData,
     resilience: ResilienceDto,
     allTopicIds: Set<string>,
 ) {
@@ -19,7 +19,7 @@ export async function initialise(
             new InMemoryQueueBox(),
             socket,
             {
-                clientId: appClientData.clientId,
+                sessionId: clientData.sessionId,
             }
         )
             .enableReconnect()

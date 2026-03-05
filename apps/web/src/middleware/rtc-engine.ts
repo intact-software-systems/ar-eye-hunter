@@ -22,7 +22,6 @@ export function initialise(
             new InMemoryQueueBox(),
             socket,
             {
-                clientId: clientData.clientId,
                 sessionId: clientData.sessionId,
                 token: "NOT_CREATED_YET",
                 iceCandidates: iceCandidates,

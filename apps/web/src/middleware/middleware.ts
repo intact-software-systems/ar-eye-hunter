@@ -30,7 +30,7 @@ export async function initialise(
     topicIds: Set<string>
 ): Promise<Middleware> {
 
-    const socket = new JsonWebSocketClient(toCreateWsUrl(clientData.clientId));
+    const socket = new JsonWebSocketClient(toCreateWsUrl(clientData.sessionId));
 
     await socket.connect()
         .catch((error) => {
@@ -69,11 +69,7 @@ export async function initialise(
 
     rtcMessageRouter.initialise(webRtcQueueBox);
 
-    await cache.initialise(
-        webSocketQueueBox,
-        webRtcQueueBox,
-        clientData
-    )
+    cache.initialise(webSocketQueueBox, webRtcQueueBox, clientData)
 
     return {
         qboxEngine: qboxEngine,

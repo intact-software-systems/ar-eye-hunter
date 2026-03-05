@@ -10,6 +10,7 @@ export type ApiMiddleware = {
 };
 
 let ctx: ApiMiddleware | undefined = undefined;
+let initPromise: Promise<ApiMiddleware> | undefined = undefined;
 
 export function getMiddleware(): ApiMiddleware {
     if (!ctx) {
@@ -24,37 +25,58 @@ export function isMiddlewareReady(): boolean {
 }
 
 export async function initMiddleware(): Promise<ApiMiddleware> {
-    const session = readSession();
-    if (!session) {
-        throw new Error('Cannot init middleware: no auth session.');
+    // Fast path: already initialized
+    if (ctx) {
+        return ctx;
     }
 
-    // Build an auth-aware fetch wrapper (or a richer client)
-    const authFetch:
-        ApiMiddleware['authFetch'] =
-        (input, init) => {
+    // Single-flight: if an initialization is already in progress, await it
+    if (initPromise) {
+        return await initPromise;
+    }
+
+    initPromise = (async () => {
+        const session = readSession();
+        if (!session) {
+            throw new Error('Cannot init middleware: no auth session.');
+        }
+
+        // Build an auth-aware fetch wrapper (or a richer client)
+        const authFetch: ApiMiddleware['authFetch'] = (input, init) => {
             const headers = new Headers(init?.headers);
             headers.set('authorization', `Bearer ${session.accessToken}`);
             headers.set('x-client-id', session.clientId);
             return fetch(input, {...init, headers});
         };
 
-    ctx = {
-        session: session,
-        authFetch: authFetch,
-        middleware: await middleware.initialise(
+        const mw = await middleware.initialise(
             {
                 clientId: session.clientId,
-                sessionId: session.accessToken
+                sessionId: session.sessionId,
             },
             AppTopics.rtcSignaling,
-            allTopicIds
-        )
-    };
+            allTopicIds,
+        );
 
-    return ctx;
+        ctx = {
+            session,
+            authFetch,
+            middleware: mw,
+        };
+
+        return ctx;
+    })();
+
+    try {
+        return await initPromise;
+    } catch (e) {
+        // If init failed, allow a future retry
+        initPromise = undefined;
+        throw e;
+    }
 }
 
 export function clearMiddleware(): void {
     ctx = undefined;
+    initPromise = undefined;
 }

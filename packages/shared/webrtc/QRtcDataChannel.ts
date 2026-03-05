@@ -20,10 +20,9 @@ enum RtcSessionState {
 }
 
 export type RtcDataChannelInputDto = {
-    readonly clientId: string,
     readonly sessionId: string
     readonly token: string
-    readonly remoteClientId: string
+    readonly peerId: string
     readonly iceCandidates: IceConfig
     readonly dataChannelName: string
 }
@@ -68,7 +67,7 @@ export class QRtcDataChannel {
             state: RtcSessionState.Idle,
             pc: undefined,
             dc: undefined,
-            isPolite: this.input.clientId < this.input.remoteClientId,
+            isPolite: this.input.sessionId < this.input.peerId,
             makingOffer: false,
             ignoreOffer: false,
             iceCandidateQueue: [],
@@ -99,7 +98,7 @@ export class QRtcDataChannel {
 
                 const msg: QRtcSignalingMessage = JSON.parse(message.payload.resource) as QRtcSignalingMessage
 
-                if (msg.toId !== this.input.clientId) {
+                if (msg.toId !== this.input.sessionId) {
                     console.log("Message not for us, ignoring: " + message.payload.resource)
                     return
                 }
@@ -267,7 +266,7 @@ export class QRtcDataChannel {
                 this.status.ignoreOffer = !this.status.isPolite && offerCollision;
 
                 if (this.status.ignoreOffer) {
-                    console.log("Ignoring offer from " + this.input.remoteClientId + " because we are not polite")
+                    console.log("Ignoring offer from " + this.input.peerId + " because we are not polite")
                     return;
                 }
 
@@ -334,8 +333,8 @@ export class QRtcDataChannel {
         const signal = {
             channel: QRtcSignalingChannel.RtcSignal,
             type: QRtcSignalingMsgType.Signal,
-            fromId: this.input.clientId,
-            toId: this.input.remoteClientId,
+            fromId: this.input.sessionId,
+            toId: this.input.peerId,
             sessionId: this.input.sessionId,
             token: this.input.token,
             signalType: signalType,

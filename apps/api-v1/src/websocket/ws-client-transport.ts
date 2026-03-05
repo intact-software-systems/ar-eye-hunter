@@ -6,17 +6,17 @@ import {wsQBoxServerService} from "./ws-initialise.ts";
 import {toALMessage} from "../../../../packages/shared/al-contracts/al-contract.ts";
 import {findClientById} from "../clients/client-repository.ts";
 
-export async function addWsAndPublishClient(clientId: string, socket: WebSocket): Promise<void> {
-    const clientData = findClientById(clientId)
+export async function addWsAndPublishClient(sessionId: string, socket: WebSocket): Promise<void> {
+    const clientData = findClientById(sessionId)
     if (clientData === undefined) {
-        throw new Error("Client not found")
+        throw new Error("Client not found: " + sessionId)
     }
 
-    wsQBoxServerService.socket.addConnection(new ConnectionContext(clientId, socket))
+    wsQBoxServerService.socket.addConnection(new ConnectionContext(sessionId, socket))
 
     await wsQBoxServerService.enqueueOutboxIfAbsent(
         toALMessage<ClientData>(
-            clientId,
+            sessionId,
             AppTopics.client,
             clientData
         )

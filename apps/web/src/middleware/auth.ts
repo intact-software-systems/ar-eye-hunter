@@ -4,6 +4,7 @@ export type AuthSession = {
     readonly clientId: string;
     readonly accessToken: string;
     readonly username: string;
+    readonly sessionId: string
 };
 
 const KEY = 'auth.session';
@@ -29,7 +30,7 @@ export function readSessionAsClientData(): ClientData {
 
     return {
         clientId: session.clientId,
-        sessionId: session.clientId,
+        sessionId: session.sessionId,
     }
 }
 

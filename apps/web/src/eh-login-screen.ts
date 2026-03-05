@@ -40,6 +40,7 @@ export class EhLoginScreen extends HTMLElement {
         const loginBtn = findHtmlEl(this, '#loginBtn');
 
         const submit = async (): Promise<void> => {
+
             this.setStatus('Logging in…');
 
             try {
@@ -57,6 +58,7 @@ export class EhLoginScreen extends HTMLElement {
                     clientId: res.clientId,
                     accessToken: res.accessToken,
                     username: res.username,
+                    sessionId: res.sessionId,
                 });
 
                 await initMiddleware();

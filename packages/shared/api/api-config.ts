@@ -34,6 +34,7 @@ export type LoginResponse = {
     clientId: string;
     accessToken: string;
     username: string;
+    sessionId: string;
 };
 
 

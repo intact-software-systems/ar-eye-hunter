@@ -12,7 +12,6 @@ import {QRtcSignalingMessage} from "../webrtc/QRtcSignalingContracts.ts";
 
 
 export type WebRtcQueueBoxClientServiceInputDto = {
-    readonly clientId: string
     readonly sessionId: string
     readonly token: string
     readonly iceCandidates: IceConfig
@@ -61,12 +60,10 @@ export class WebRtcQueueBoxClientService {
         if (channel && !channel.isReadyToConnect()) {
             console.log(`Peer ${peerId} in state ${channel.status.state}. Ignoring signal ${JSON.stringify(message)}`);
             return channel;
-        }
-        else if(channel) {
+        } else if (channel) {
             console.log(`Peer ${peerId} in state ${channel.status.state}. Replacing signal ${JSON.stringify(message)}`);
             channel.initialStatus() // TODO: Reset to avoid memory leaks?
-        }
-        else {
+        } else {
             console.log(`Peer ${peerId} does not exist. Creating new channel`);
             channel = this.createPeerChannel(peerId);
             this.connectedPeers.set(peerId, channel);
@@ -96,17 +93,16 @@ export class WebRtcQueueBoxClientService {
                 this.input.rtcSignalingTopicId
             ),
             {
-                clientId: this.input.clientId,
                 sessionId: this.input.sessionId,
                 token: this.input.token,
-                remoteClientId: peerId,
+                peerId: peerId,
                 iceCandidates: this.input.iceCandidates,
                 dataChannelName: this.input.dataChannelName
             }
         );
 
         channel.onRtcMessageDo(
-            this.input.clientId + "-" + peerId + "-rtc-inbox",
+            this.input.sessionId + "-" + peerId + "-rtc-inbox",
             {
                 onMessage: async (data) => {
                     console.log(`From ${peerId}:  ${data}`);
@@ -127,10 +123,10 @@ export class WebRtcQueueBoxClientService {
 
     enableDefaultCallbacks(): WebRtcQueueBoxClientService {
         this.onOutboxMessageDo(
-            this.input.clientId + "-rtc-outbox",
+            this.input.sessionId + "-rtc-outbox",
             {
                 onMessage: async (entry, channel) => {
-                    console.log(`Sending ${this.input.clientId}: ${entry.typeId} ${entry.resource}`);
+                    console.log(`Sending ${this.input.sessionId}: ${entry.typeId} ${entry.resource}`);
                     await channel.sendAsJsonString(entry.resource);
                 }
             }

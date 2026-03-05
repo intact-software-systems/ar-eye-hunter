@@ -8,7 +8,7 @@ import {ALMessage} from "../al-contracts/al-contract.ts";
 import {ResourceEntry, toResourceEntry} from "../queuebox/ResourceEntry.ts";
 
 export type WsQueueBoxClientServiceInputDto = {
-    readonly clientId: string;
+    readonly sessionId: string;
 }
 
 export class WsQueueBoxClientService {
@@ -46,7 +46,7 @@ export class WsQueueBoxClientService {
     enableReconnect(): WsQueueBoxClientService {
         this.socket
             .onWebsocketCallbacksDo(
-                this.input.clientId,
+                this.input.sessionId,
                 {
                     onOpen: () => {
                         // TODO: Anything to do?
@@ -61,10 +61,10 @@ export class WsQueueBoxClientService {
     enableDefaultCallbacks(): WsQueueBoxClientService {
         this
             .onOutboxMessageDo(
-                this.input.clientId + "-outbox",
+                this.input.sessionId + "-outbox",
                 {
                     onMessage: (entry, socket) => {
-                        console.log(`${this.input.clientId} outbox: ${entry.resource}`);
+                        console.log(`${this.input.sessionId} outbox: ${entry.resource}`);
                         socket.sendAsJsonString(entry.resource);
 
                         return Promise.resolve();
@@ -74,10 +74,10 @@ export class WsQueueBoxClientService {
 
         this.socket
             .onWebSocketMessageDo(
-                this.input.clientId + "-inbox",
+                this.input.sessionId + "-inbox",
                 {
                     onMessage: async (data) => {
-                        console.log(`${this.input.clientId} inbox:  ${data}`);
+                        console.log(`${this.input.sessionId} inbox:  ${data}`);
 
                         const message = data as ALMessage;
 

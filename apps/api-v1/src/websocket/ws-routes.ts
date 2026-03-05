@@ -3,7 +3,7 @@ import * as clientTransport from "./ws-client-transport.ts";
 
 export function init(app: Hono): void {
     app.get(
-        "/api/ws/:clientId",
+        "/api/ws/:sessionId",
         async c => {
             if (c.req.header("upgrade") !== "websocket") {
                 return c.text("Expected Upgrade: websocket", 426);
@@ -12,11 +12,11 @@ export function init(app: Hono): void {
             try {
                 const {socket, response} = Deno.upgradeWebSocket(c.req.raw);
 
-                const clientId = c.req.param("clientId");
+                const sessionId = c.req.param("sessionId");
 
-                await clientTransport.addWsAndPublishClient(clientId, socket);
+                await clientTransport.addWsAndPublishClient(sessionId, socket);
 
-                console.log(`Upgrading connection for ID: ${clientId}`);
+                console.log(`Upgrading connection for ID: ${sessionId}`);
 
                 return response;
             } catch (err) {

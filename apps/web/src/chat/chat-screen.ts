@@ -4,11 +4,9 @@ import * as ChatTransport from "../middleware/chat-transport.ts";
 import {readSessionAsClientData} from "../middleware/auth.ts";
 import {getMiddleware} from "../app-context.ts";
 
-type ChatRole = 'me' | 'peer' | 'system';
-
 export interface ChatMessage {
     id: string;
-    role: ChatRole;
+    role: string;
     text: string;
     createdAt: number;
 }
@@ -48,7 +46,7 @@ export class ChatScreen extends HTMLElement {
             this,
             getMiddleware().middleware,
             AppTopics.chat,
-            readSessionAsClientData().clientId
+            readSessionAsClientData()
         )
     }
 
@@ -61,6 +59,15 @@ export class ChatScreen extends HTMLElement {
         if (this.isConnected) {
             this.callbacks.onReady?.(this.api);
         }
+    }
+
+    public addPeerMessage(id: string, message: string) {
+        this.addMessage(
+            {
+                role: id,
+                text: message,
+            }
+        );
     }
 
     public addMessage(message: Omit<ChatMessage, 'id' | 'createdAt'> & Partial<Pick<ChatMessage, 'id' | 'createdAt'>>): void {

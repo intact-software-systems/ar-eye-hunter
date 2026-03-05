@@ -11,9 +11,9 @@ import * as roomTransport from "./websocket/ws-rooms-transport.ts";
 import * as chatTransport from "./websocket/ws-chat-transport.ts";
 import * as rtcSignaling from "./websocket/ws-rtc-signaling.ts";
 
-import * as iceRoutes from "./webrtc/ice-route.ts";
-import * as wsRelayer from "./websocket/ws-routes.ts";
 import * as configRoutes from "./config-route.ts";
+import * as wsRoutes from "./websocket/ws-routes.ts";
+import * as iceRoutes from "./webrtc/ice-route.ts";
 
 const app: Hono = new Hono();
 
@@ -37,7 +37,7 @@ chatTransport.initChatTransport(AppTopics.chat, wsQBoxServerService)
 rtcSignaling.initWsRtcSignaling(AppTopics.rtcSignaling, wsQBoxServerService)
 
 configRoutes.init(app)
-wsRelayer.init(app)
+wsRoutes.init(app)
 iceRoutes.init(app)
 
 qboxEngine.start()
