@@ -69,7 +69,7 @@ export async function initialise(
 
     rtcMessageRouter.initialise(webRtcQueueBox);
 
-    cache.initialise(webSocketQueueBox, webRtcQueueBox, clientData)
+    await cache.initialise(webSocketQueueBox, webRtcQueueBox, clientData)
 
     return {
         qboxEngine: qboxEngine,

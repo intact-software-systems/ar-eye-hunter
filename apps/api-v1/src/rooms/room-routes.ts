@@ -18,7 +18,7 @@ export function init(app: Hono) {
     )
 
     app.get(
-        "/api/rooms/list",
+        "/api/rooms",
         async c => {
             return c.json(await roomRepository.listRooms())
         }
@@ -35,7 +35,7 @@ export function init(app: Hono) {
         }
     )
 
-    app.post(
+    app.get(
         "/api/rooms/:roomName/join/:clientId",
         async c => {
             const roomName = c.req.param("roomName");
@@ -53,7 +53,7 @@ export function init(app: Hono) {
         }
     )
 
-    app.post(
+    app.get(
         "/api/rooms/:roomName/leave/:clientId",
         async c => {
             const roomName = c.req.param("roomName");

@@ -1,5 +1,13 @@
 import {apiBaseUrl} from "./config.ts";
-import {ApiConfig, ClientData, IceConfig, LoginRequest, LoginResponse} from "@shared/api/api-config.ts";
+import {
+    ApiConfig,
+    ClientData,
+    IceConfig,
+    LoginRequest,
+    LoginResponse,
+    RoomCreate,
+    RoomDetails
+} from "@shared/api/api-config.ts";
 
 async function readTextOrElse(res: Response, orElse: () => string): Promise<string> {
     try {
@@ -80,6 +88,51 @@ export async function readIceCandidates(): Promise<IceConfig> {
     return await executeHttpRequest<void, IceConfig>(
         apiBaseUrl,
         '/api/webrtc/ice',
+        'GET',
+        undefined
+    )
+}
+
+export async function createRoom(roomCreate: RoomCreate): Promise<RoomDetails> {
+    return await executeHttpRequest<RoomCreate, RoomDetails>(
+        apiBaseUrl,
+        '/api/rooms',
+        'POST',
+        roomCreate
+    )
+}
+
+export async function findRoom(roomId: string): Promise<RoomDetails> {
+    return await executeHttpRequest<void, RoomDetails>(
+        apiBaseUrl,
+        '/api/rooms/' + roomId,
+        'GET',
+        undefined
+    )
+}
+
+export async function listRooms(): Promise<RoomDetails[]> {
+    return await executeHttpRequest<void, RoomDetails[]>(
+        apiBaseUrl,
+        '/api/rooms',
+        'GET',
+        undefined
+    )
+}
+
+export async function joinRoom(roomName: string, sessionId: string): Promise<RoomDetails> {
+    return await executeHttpRequest<void, RoomDetails>(
+        apiBaseUrl,
+        '/api/rooms/' + roomName + '/join/' + sessionId,
+        'GET',
+        undefined
+    )
+}
+
+export async function leaveRoom(roomName: string, sessionId: string): Promise<RoomDetails> {
+    return await executeHttpRequest<void, RoomDetails>(
+        apiBaseUrl,
+        '/api/rooms/' + roomName + '/leave/' + sessionId,
         'GET',
         undefined
     )

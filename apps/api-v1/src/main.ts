@@ -14,6 +14,7 @@ import * as rtcSignaling from "./websocket/ws-rtc-signaling.ts";
 import * as configRoutes from "./config-route.ts";
 import * as wsRoutes from "./websocket/ws-routes.ts";
 import * as iceRoutes from "./webrtc/ice-route.ts";
+import * as roomRoutes from "./rooms/room-routes.ts";
 
 const app: Hono = new Hono();
 
@@ -39,6 +40,7 @@ rtcSignaling.initWsRtcSignaling(AppTopics.rtcSignaling, wsQBoxServerService)
 configRoutes.init(app)
 wsRoutes.init(app)
 iceRoutes.init(app)
+roomRoutes.init(app)
 
 qboxEngine.start()
 

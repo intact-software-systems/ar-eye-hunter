@@ -89,6 +89,7 @@ export class EhApp extends HTMLElement {
                   <strong>EyeHunter</strong>
                   <span class="muted">/ Games</span>
                   <span style="margin-left:auto" class="muted">
+                    <a href="#/rooms" style="margin-right:12px;">Rooms</a>
                     <a href="#/">Home</a>
                   </span>
                 </div>
@@ -111,6 +112,9 @@ export class EhApp extends HTMLElement {
                 return;
             case Route.Chat:
                 host.innerHTML = `<chat-screen></chat-screen>`;
+                return;
+            case Route.Rooms:
+                host.innerHTML = `<eh-rooms-screen></eh-rooms-screen>`;
                 return;
             case Route.Single:
                 host.innerHTML = `<eh-single-screen></eh-single-screen>`;

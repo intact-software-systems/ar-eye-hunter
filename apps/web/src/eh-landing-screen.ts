@@ -27,7 +27,12 @@ export class EhLandingScreen extends HTMLElement {
 
         this.innerHTML = `
       <div class="card">
-        <h2>Games</h2>
+        <div class="row">
+          <h2 style="margin:0;">Games</h2>
+          <span style="margin-left:auto" class="muted">
+            <a href="#/rooms">Rooms</a>
+          </span>
+        </div>
         <p class="muted">Choose a game to play.</p>
 
         <div class="game-grid">

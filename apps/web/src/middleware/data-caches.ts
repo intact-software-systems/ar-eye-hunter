@@ -1,18 +1,31 @@
 import {ALMessage} from "@shared/al-contracts/al-contract.ts";
 import {AppTopics, ClientData, RoomDetails} from "@shared/api/api-config.ts";
-import {WsQueueBoxClientService} from "@shared/services/WsQueueBoxClientService.ts";
 import {WebRtcQueueBoxClientService} from "@shared/services/WebRtcQueueBoxClientService.ts";
+import {WsQueueBoxClientService} from "@shared/services/WsQueueBoxClientService.ts";
 import {QRtcSignalingMessage} from "@shared/webrtc/QRtcSignalingContracts.ts";
+import {listRooms} from "./api-integration.ts";
+import {ChatMessage} from "../chat/chat-screen.ts";
 
-export const chatMessageById = new Map<string, ALMessage>();
-export const clientDataById = new Map<string, ClientData>();
-export const roomDataById = new Map<string, RoomDetails>();
+export const cachedChatMessageById = new Map<string, ChatMessage>();
+export const cachedClientDataById = new Map<string, ClientData>();
+export const cachedRoomDataById = new Map<string, RoomDetails>();
 
-export function initialise(
+export async function initialise(
     webSocketQueueBox: WsQueueBoxClientService,
     webRtcQueueBox: WebRtcQueueBoxClientService,
     clientData: ClientData
 ) {
+
+    // TODO: Is it necessary to do this?
+    try {
+        (await listRooms())
+            .forEach(room => {
+                cachedRoomDataById.set(room.name, room)
+            })
+    } catch (e) {
+        console.error("Failed to list rooms:", e)
+    }
+
     webSocketQueueBox
         .onInboxMessageDo(
             "ws-topic-router",
@@ -22,13 +35,15 @@ export function initialise(
 
                     switch (data.payload.typeId) {
                         case AppTopics.chat: {
-                            chatMessageById.set(data.id.sender, data)
+                            const chatMessage = JSON.parse(data.payload.resource) as ChatMessage;
+
+                            cachedChatMessageById.set(data.id.sender, chatMessage)
                             break;
                         }
 
                         case AppTopics.client: {
                             const peer = JSON.parse(data.payload.resource) as ClientData;
-                            clientDataById.set(peer.clientId, peer)
+                            cachedClientDataById.set(peer.clientId, peer)
 
                             if (peer.sessionId === clientData.sessionId) {
                                 console.log('Received my own client data. Ignoring it: ' + JSON.stringify(peer));
@@ -52,7 +67,7 @@ export function initialise(
 
                             console.log(`Received room details: ${JSON.stringify(roomDetails)}`)
 
-                            roomDataById.set(roomDetails.name, roomDetails)
+                            cachedRoomDataById.set(roomDetails.name, roomDetails)
                             break
                         }
                     }

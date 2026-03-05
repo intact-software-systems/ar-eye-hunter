@@ -29,4 +29,7 @@ import './chat/chat-screen.ts';
 
 import './eh-login-screen.ts';
 
-
+import './rooms/eh-room-lobby.ts';
+import './rooms/eh-rooms-screen.ts';
+import './rooms/room-ui-types.ts';
+import './rooms/room-transport.ts';

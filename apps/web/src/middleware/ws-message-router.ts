@@ -29,10 +29,11 @@ export function initialise(
 
                     if (handler) {
                         await handler(data.payload);
-                    } else {
-                        console.warn(`No handler for typeId: ${data.payload.typeId}`);
-                        console.warn(JSON.stringify(data));
                     }
+                    // else {
+                    //     console.warn(`No handler for typeId: ${data.payload.typeId}`);
+                    //     console.warn(JSON.stringify(data));
+                    // }
                 }
             }
         )

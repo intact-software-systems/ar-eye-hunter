@@ -1,13 +1,14 @@
 import {ALPayload, toALMessage} from "@shared/al-contracts/al-contract.ts";
 import {ClientData} from "@shared/api/api-config.ts";
-import {ChatScreen} from "../chat/chat-screen.ts";
-import {addWebSocketInboxCallback, removeWebSocketInboxCallback} from "./ws-message-router.ts";
+import {ChatMessage, ChatScreen} from "../chat/chat-screen.ts";
+import {removeWebSocketInboxCallback} from "./ws-message-router.ts";
 import {Middleware} from "./middleware.ts";
 import {addRtcInboxCallback, removeRtcInboxCallback} from "./rtc-message-router.ts";
+import {cachedChatMessageById} from "./data-caches.ts";
 
-type ChatMessage = {
+type ChatMessageDto = {
     sessionId: string,
-    message: string
+    message: ChatMessage
 }
 
 export function connectTransport(
@@ -20,50 +21,42 @@ export function connectTransport(
         onSend: async (text) => {
 
             const message =
-                toALMessage<ChatMessage>(
+                toALMessage<ChatMessageDto>(
                     clientData.sessionId,
                     typeId,
                     {
                         sessionId: clientData.sessionId,
-                        message: text
+                        message: {
+                            id: crypto.randomUUID().toString(),
+                            role: clientData.sessionId,
+                            text: text,
+                            createdAt: Date.now()
+                        }
                     }
                 );
 
             console.log(`Sending message: ` + JSON.stringify(message));
 
-            // await middleware.webSocketQueueBox.enqueueOutboxIfAbsent(message)
             await middleware.webRtcQueueBox.enqueueOutboxIfAbsent(message)
         },
         onReady: (api) => {
-            api.addMessage({role: 'peer', text: 'Connected.'});
+            cachedChatMessageById
+                .forEach(message => {
+                        api.addMessage(
+                            {
+                                role: message.role,
+                                text: message.text
+                            }
+                        )
+                    }
+                )
         }
     });
-
-    addWebSocketInboxCallback(
-        typeId,
-        (payload: ALPayload) => {
-            const data = JSON.parse(payload.resource) as ChatMessage;
-            console.log(`Received message: ` + JSON.stringify(data));
-
-            if (data.message === undefined) {
-                console.error('Invalid message received from server');
-                return Promise.reject('Invalid message received from server');
-            }
-            if (data.sessionId === clientData.sessionId) {
-                console.error('Received back my own message. Ignoring it');
-                return Promise.resolve();
-            }
-
-            chat.addPeerMessage(data.sessionId, data.message);
-
-            return Promise.resolve();
-        }
-    )
 
     addRtcInboxCallback(
         typeId,
         (payload: ALPayload) => {
-            const data = JSON.parse(payload.resource) as ChatMessage;
+            const data = JSON.parse(payload.resource) as ChatMessageDto;
             console.log(`Received message: ` + JSON.stringify(data));
 
             if (data.message === undefined) {
@@ -75,7 +68,7 @@ export function connectTransport(
                 return Promise.resolve();
             }
 
-            chat.addPeerMessage(data.sessionId, data.message);
+            chat.addPeerMessage(data.message.id, data.message.text);
 
             return Promise.resolve();
         }
