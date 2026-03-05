@@ -132,7 +132,7 @@ export class WsQueueBoxServerService {
         }
 
         if (!callback) {
-            console.warn("No callback for typeId {}", message.data.payload.typeId);
+            console.warn("No callback for typeId ", message.data.payload.typeId);
         }
     }
 }

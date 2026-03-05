@@ -40,6 +40,11 @@ export function connectTransport(
             await middleware.webRtcQueueBox.enqueueOutboxIfAbsent(message)
         },
         onReady: (api) => {
+
+            if (cachedChatMessageById.size > 0) {
+                api.clearMessages()
+            }
+
             cachedChatMessageById
                 .forEach(message => {
                         api.addMessage(

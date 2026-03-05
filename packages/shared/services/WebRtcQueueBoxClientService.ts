@@ -75,13 +75,24 @@ export class WebRtcQueueBoxClientService {
         return channel;
     }
 
-    async connectToPeer(peerId: string): Promise<WebRtcQueueBoxClientService> {
-        const channel = this.createPeerChannel(peerId);
-        this.connectedPeers.set(peerId, channel);
+    async connectToPeer(peerId: string): Promise<QRtcDataChannel> {
+        let channel = this.connectedPeers.get(peerId);
+
+        if (channel && !channel.isReadyToConnect()) {
+            console.log(`Peer ${peerId} in state ${channel.status.state}. Ignoring RTC connect`);
+            return channel;
+        } else if (channel) {
+            console.log(`Peer ${peerId} in state ${channel.status.state}. Resetting RTC channel`);
+            channel.initialStatus() // TODO: Reset to avoid memory leaks?
+        } else {
+            console.log(`Peer ${peerId} does not exist. Creating new channel`);
+            channel = this.createPeerChannel(peerId);
+            this.connectedPeers.set(peerId, channel);
+        }
 
         await channel.connect()
 
-        return this;
+        return channel;
     }
 
     private createPeerChannel(peerId: string) {

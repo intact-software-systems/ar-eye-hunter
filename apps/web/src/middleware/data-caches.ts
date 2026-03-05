@@ -36,38 +36,40 @@ export async function initialise(
                     switch (data.payload.typeId) {
                         case AppTopics.chat: {
                             const chatMessage = JSON.parse(data.payload.resource) as ChatMessage;
-
-                            cachedChatMessageById.set(data.id.sender, chatMessage)
+                            cachedChatMessageById.set(chatMessage.id, chatMessage)
                             break;
                         }
 
                         case AppTopics.client: {
                             const peer = JSON.parse(data.payload.resource) as ClientData;
                             cachedClientDataById.set(peer.clientId, peer)
-
-                            if (peer.sessionId === clientData.sessionId) {
-                                console.log('Received my own client data. Ignoring it: ' + JSON.stringify(peer));
-                            } else {
-                                console.log(`Connect to peer over RTC: ${JSON.stringify(peer)}`);
-                                await webRtcQueueBox.connectToPeer(peer.sessionId)
-                            }
-
                             break;
                         }
 
                         case AppTopics.rtcSignaling: {
-                            console.log('Received rtc signaling message. Accept peer if absent.')
-                            await webRtcQueueBox.acceptPeerIfAbsent(data.id.sender, JSON.parse(data.payload.resource) as QRtcSignalingMessage)
+                            const signal = JSON.parse(data.payload.resource) as QRtcSignalingMessage;
+                            console.log('Received rtc signaling message. Accept peer if absent.' + JSON.stringify(signal))
 
+                            await webRtcQueueBox.acceptPeerIfAbsent(data.id.sender, signal)
                             break
                         }
 
                         case AppTopics.rooms: {
                             const roomDetails = JSON.parse(data.payload.resource) as RoomDetails;
+                            cachedRoomDataById.set(roomDetails.name, roomDetails)
 
                             console.log(`Received room details: ${JSON.stringify(roomDetails)}`)
 
-                            cachedRoomDataById.set(roomDetails.name, roomDetails)
+                            if (
+                                roomDetails.members.map(member => member === clientData.sessionId)
+                            ) {
+                                console.log(clientData.sessionId + ' is a member of the room. Connecting to peers: ' + roomDetails.members)
+
+                                for (const member of roomDetails.members) {
+                                    await webRtcQueueBox.connectToPeer(member)
+                                }
+                            }
+
                             break
                         }
                     }
