@@ -62,9 +62,9 @@ export async function joinRoom(roomName: string, clientId: string): Promise<Room
 
     const existingRoom = entry.value;
 
-    const updatedRoom = {
+    const updatedRoom: RoomDetails = {
         ...existingRoom,
-        members: [...existingRoom.members, clientId]
+        members: [...new Set([...existingRoom.members, clientId])]
     }
 
     const commit =

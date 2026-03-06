@@ -76,8 +76,8 @@ export class WsQueueBoxClientService {
             .onWebSocketMessageDo(
                 this.input.sessionId + "-inbox",
                 {
-                    onMessage: async (data) => {
-                        console.log(`${this.input.sessionId} inbox:  ${data}`);
+                    onMessage: async data => {
+                        console.log(`${this.input.sessionId} inbox:  ${JSON.stringify(data)}`);
 
                         const message = data as ALMessage;
 
