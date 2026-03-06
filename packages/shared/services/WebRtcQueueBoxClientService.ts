@@ -9,7 +9,7 @@ import {ALMessage} from "../al-contracts/al-contract.ts";
 import {ResourceEntry} from "../queuebox/ResourceEntry.ts";
 import {JsonWebSocketClient} from "../websocket/JsonWebSocketClient.ts";
 import {QRtcSignalingMessage} from "../webrtc/QRtcSignalingContracts.ts";
-
+import {QRtcPeerConnection} from "../webrtc/QRtcPeerConnection.ts";
 
 export type WebRtcQueueBoxClientServiceInputDto = {
     readonly sessionId: string
@@ -21,12 +21,18 @@ export type WebRtcQueueBoxClientServiceInputDto = {
 
 type PeerId = string
 
+type QRtcPeerDto = {
+    peerId: PeerId
+    connection: QRtcPeerConnection
+    channel: QRtcDataChannel | undefined
+}
+
 export class WebRtcQueueBoxClientService {
 
     private readonly onOutboxMessageCallbacks: Map<string, OnOutboxWebRtcMessageCallback> = new Map<string, OnOutboxWebRtcMessageCallback>();
     private readonly onMessageCallbacks: Map<string, OnMessageCallback> = new Map<string, OnMessageCallback>();
 
-    private readonly connectedPeers: Map<PeerId, QRtcDataChannel> = new Map<string, QRtcDataChannel>();
+    private readonly connectedPeers: Map<PeerId, QRtcPeerDto> = new Map<string, QRtcPeerDto>();
 
     constructor(
         public readonly inbox: QueueBoxResourceEntryRepository,
@@ -55,81 +61,119 @@ export class WebRtcQueueBoxClientService {
     }
 
     async acceptPeerIfAbsent(peerId: string, message: QRtcSignalingMessage) {
-        let channel = this.connectedPeers.get(peerId);
+        const rtcPeerDto =
+            this.computePeerDataChannelIfNecessary(
+                this.computeRtcPeerDtoIfAbsent(peerId)
+            );
 
-        if (channel && !channel.isReadyToConnect()) {
-            console.log(`Peer ${peerId} in state ${channel.status.state}. Ignoring signal ${JSON.stringify(message)}`);
-            return channel;
-        } else if (channel) {
-            console.log(`Peer ${peerId} in state ${channel.status.state}. Replacing signal ${JSON.stringify(message)}`);
-            channel.initialStatus() // TODO: Reset to avoid memory leaks?
-        } else {
-            console.log(`Peer ${peerId} does not exist. Creating new channel`);
-            channel = this.createPeerChannel(peerId);
-            this.connectedPeers.set(peerId, channel);
+        if (!rtcPeerDto.channel) {
+            throw new Error(`No data channel for peer ${peerId}`)
         }
 
-        await channel.connect()
-        await channel.handleSignal(message.signalType, message.payload as QRtcDataExchanged);
+        await rtcPeerDto.channel.connect(false)
+        await rtcPeerDto.connection.handleSignal(message.signalType, message.payload as QRtcDataExchanged);
 
-        return channel;
+        return rtcPeerDto.channel;
     }
 
     async connectToPeer(peerId: string): Promise<QRtcDataChannel> {
-        let channel = this.connectedPeers.get(peerId);
 
-        if (channel && !channel.isReadyToConnect()) {
-            console.log(`Peer ${peerId} in state ${channel.status.state}. Ignoring RTC connect`);
-            return channel;
-        } else if (channel) {
-            console.log(`Peer ${peerId} in state ${channel.status.state}. Resetting RTC channel`);
-            channel.initialStatus() // TODO: Reset to avoid memory leaks?
-        } else {
-            console.log(`Peer ${peerId} does not exist. Creating new channel`);
-            channel = this.createPeerChannel(peerId);
-            this.connectedPeers.set(peerId, channel);
+        const rtcPeerDto =
+            this.computePeerDataChannelIfNecessary(
+                this.computeRtcPeerDtoIfAbsent(peerId)
+            );
+
+        if (!rtcPeerDto.channel) {
+            throw new Error(`No data channel for peer ${peerId}`)
         }
 
-        await channel.connect()
+        await rtcPeerDto.channel.connect(true)
 
-        return channel;
+        return rtcPeerDto.channel;
     }
 
-    private createPeerChannel(peerId: string) {
-        console.log(`Creating peer channel for ${peerId}`);
+    private computePeerDataChannelIfNecessary(rtcPeerDto: QRtcPeerDto): QRtcPeerDto {
+        const peerId = rtcPeerDto.peerId;
 
-        const channel = new QRtcDataChannel(
-            new WsRtcSignalingTransport(
-                this.socket,
-                this.input.rtcSignalingTopicId
-            ),
-            {
-                sessionId: this.input.sessionId,
-                token: this.input.token,
-                peerId: peerId,
-                iceCandidates: this.input.iceCandidates,
-                dataChannelName: this.input.dataChannelName
+        // Is there an existing channel?
+        {
+            const existingChannel: QRtcDataChannel | undefined = rtcPeerDto.channel;
+
+            if (existingChannel && !existingChannel.isReadyToConnect()) {
+                console.log(`Data channel to ${peerId} exists in valid state ${existingChannel.status.state}. Reuse existing channel`);
+
+                return rtcPeerDto;
             }
-        );
+            // If the data channel exists and is ready to connect (failed, closed or idle), then reset
+            else if (existingChannel) {
+                console.log(`Data channel to ${peerId} exists in state ${existingChannel.status.state}. Resetting data channel`);
+                existingChannel.reset()
 
-        channel.onRtcMessageDo(
-            this.input.sessionId + "-" + peerId + "-rtc-inbox",
-            {
-                onMessage: async (data) => {
-                    console.log(`From ${peerId}:  ${data}`);
-
-                    const msg = data as ALMessage
-
-                    await this.inbox.enqueueIfAbsent(
-                        QueueBoxUtilities.toResourceEntry(
-                            msg.payload.typeId,
-                            msg
-                        )
-                    )
-                }
+                return rtcPeerDto;
             }
-        )
-        return channel;
+        }
+
+        rtcPeerDto.channel =
+            new QRtcDataChannel(
+                rtcPeerDto.connection,
+                {
+                    peerId: peerId,
+                    dataChannelName: this.input.dataChannelName
+                })
+                .onRtcMessageDo(
+                    this.input.sessionId + "-" + peerId + "-rtc-inbox",
+                    {
+                        onMessage: async (data) => {
+                            console.log(`From ${peerId}:  ${data}`);
+
+                            const msg = data as ALMessage
+
+                            await this.inbox.enqueueIfAbsent(
+                                QueueBoxUtilities.toResourceEntry(
+                                    msg.payload.typeId,
+                                    msg
+                                )
+                            )
+                        }
+                    }
+                );
+
+        console.log(`Data channel to ${peerId} created`);
+
+        return rtcPeerDto;
+    }
+
+    private computeRtcPeerDtoIfAbsent(peerId: string): QRtcPeerDto {
+        {
+            const rtcPeer: QRtcPeerDto | undefined = this.connectedPeers.get(peerId);
+            if (rtcPeer !== undefined) {
+                return rtcPeer
+            }
+        }
+
+        console.log(`Creating peer connection for ${peerId}`);
+
+        const rtcPeerDto = {
+            peerId: peerId,
+            connection:
+                new QRtcPeerConnection(
+                    new WsRtcSignalingTransport(
+                        this.socket,
+                        this.input.rtcSignalingTopicId
+                    ),
+                    {
+                        sessionId: this.input.sessionId,
+                        token: this.input.token,
+                        peerSessionId: peerId,
+                        iceCandidates: this.input.iceCandidates,
+                    }
+                ),
+            channel: undefined
+        };
+
+        this.connectedPeers.set(peerId, rtcPeerDto);
+
+        return rtcPeerDto
     }
 
     enableDefaultCallbacks(): WebRtcQueueBoxClientService {
@@ -156,13 +200,23 @@ export class WebRtcQueueBoxClientService {
             resilience,
             async (entry) => {
 
+                if (this.connectedPeers.size === 0) {
+                    console.warn("No peers connected. Skipping callback")
+                    return
+                }
+
                 // TODO: Use ALMRoute info to find channel to route to
 
                 for (const callback of this.onOutboxMessageCallbacks.values()) {
 
-                    for (const channel of this.connectedPeers.values()) {
+                    for (const rtcPeer of this.connectedPeers.values()) {
+                        if (!rtcPeer.channel) {
+                            console.warn(`No data channel for peer ${rtcPeer.peerId}. Skipping callback`)
+                            continue
+                        }
+
                         try {
-                            await callback.onMessage(entry, channel)
+                            await callback.onMessage(entry, rtcPeer.channel)
                         } catch (e) {
                             console.error("Error calling onMessage callback", e)
                         }
