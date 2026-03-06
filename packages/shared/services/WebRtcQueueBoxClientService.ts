@@ -9,7 +9,7 @@ import {ALMessage} from "../al-contracts/al-contract.ts";
 import {ResourceEntry} from "../queuebox/ResourceEntry.ts";
 import {JsonWebSocketClient} from "../websocket/JsonWebSocketClient.ts";
 import {QRtcSignalingMessage} from "../webrtc/QRtcSignalingContracts.ts";
-import {QRtcPeerConnection} from "../webrtc/QRtcPeerConnection.ts";
+import {QRtcMediaPolicy, QRtcPeerConnection} from "../webrtc/QRtcPeerConnection.ts";
 import {QRtcMediaChannel} from "../webrtc/QRtcMediaChannel.ts";
 
 export type WebRtcQueueBoxClientServiceInputDto = {
@@ -30,9 +30,10 @@ type QRtcPeerDto = {
 }
 
 type WebRtcQueueBoxClientServiceStatus = {
-    localMediaStream: MediaStream | undefined;
+    localMediaStream: MediaStream | undefined
     localAudioEnabled: boolean
     localVideoEnabled: boolean
+    mediaPolicy: QRtcMediaPolicy | undefined
 }
 
 export class WebRtcQueueBoxClientService {
@@ -54,7 +55,8 @@ export class WebRtcQueueBoxClientService {
         this.status = {
             localMediaStream: undefined,
             localAudioEnabled: false,
-            localVideoEnabled: false
+            localVideoEnabled: false,
+            mediaPolicy: undefined
         }
     }
 
@@ -120,6 +122,14 @@ export class WebRtcQueueBoxClientService {
     stopLocalMedia(kind: 'audio' | 'video' | 'all'): void {
         for (const peer of this.connectedPeers.values()) {
             peer.media?.stopLocalMedia(kind);
+        }
+    }
+
+    setMediaPolicy(policy: QRtcMediaPolicy): void {
+        this.status.mediaPolicy = policy;
+
+        for (const peer of this.connectedPeers.values()) {
+            peer.connection.applyMediaPolicy(policy);
         }
     }
 
@@ -200,10 +210,8 @@ export class WebRtcQueueBoxClientService {
         // is there an existing media channel?
         {
             const existing: QRtcMediaChannel | undefined = rtcPeerDto.media;
-            if (existing && !existing.isReadyToConnect()) {
-                return rtcPeerDto;
-            } else if (existing) {
-                existing.reset();
+            if (existing) {
+                console.log(`Media channel to ${peerId} exists in state ${existing.status.state}. Reuse existing channel`);
                 return rtcPeerDto;
             }
         }
@@ -310,6 +318,10 @@ export class WebRtcQueueBoxClientService {
             channel: undefined,
             media: undefined
         };
+
+        if (this.status.mediaPolicy) {
+            rtcPeerDto.connection.applyMediaPolicy(this.status.mediaPolicy);
+        }
 
         this.connectedPeers.set(peerId, rtcPeerDto);
 

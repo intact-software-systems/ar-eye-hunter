@@ -19,6 +19,34 @@ enum QRtcSessionState {
     Failed = 'Failed',
 }
 
+export type QRtcDataExchanged = {
+    description: RTCSessionDescription | null
+    candidate: RTCIceCandidateInit | null
+}
+
+export type QRtcOnDataChannelCallback = (event: RTCDataChannelEvent) => Promise<void>;
+export type QRtcOnTrackCallback = (event: RTCTrackEvent) => Promise<void>;
+export type QRtcOnRemoteStreamCallback = (stream: MediaStream, event: RTCTrackEvent) => Promise<void>;
+
+export type RtcCodecMimeType = string;
+
+export type QRtcMediaPolicy = {
+    // Bitrate caps (bps)
+    readonly maxAudioBitrateBps?: number;
+    readonly maxVideoBitrateBps?: number;
+
+    // Video scaling/framerate (best-effort via sender parameters)
+    readonly maxVideoFramerate?: number;
+    readonly scaleResolutionDownBy?: number;
+
+    // Browser adaptation preference (best-effort)
+    readonly degradationPreference?: 'maintain-framerate' | 'maintain-resolution' | 'balanced';
+
+    // Codec preferences in priority order (best-effort)
+    readonly preferredVideoCodecs?: readonly RtcCodecMimeType[]; // e.g. ['video/H264','video/VP8']
+    readonly preferredAudioCodecs?: readonly RtcCodecMimeType[]; // e.g. ['audio/opus']
+};
+
 export type QRtcPeerConnectionInputDto = {
     readonly sessionId: string
     readonly token: string
@@ -32,21 +60,13 @@ type QRtcPeerConnectionStatus = {
     localStream: MediaStream | undefined
     localSenders: Map<string, RTCRtpSender>
     remoteStreams: Map<string, MediaStream>
+    mediaPolicy: QRtcMediaPolicy | undefined
     isPolite: boolean
     makingOffer: boolean
     ignoreOffer: boolean
     iceCandidateQueue: RTCIceCandidateInit[]
     readonly signalerInput: QRtcSignalingTransportInputDto
 }
-
-export type QRtcDataExchanged = {
-    description: RTCSessionDescription | null
-    candidate: RTCIceCandidateInit | null
-}
-
-export type QRtcOnDataChannelCallback = (event: RTCDataChannelEvent) => Promise<void>;
-export type QRtcOnTrackCallback = (event: RTCTrackEvent) => Promise<void>;
-export type QRtcOnRemoteStreamCallback = (stream: MediaStream, event: RTCTrackEvent) => Promise<void>;
 
 export class QRtcPeerConnection {
     private readonly configuration;
@@ -69,24 +89,25 @@ export class QRtcPeerConnection {
 
     reset(): QRtcPeerConnectionStatus {
         this.closePeerConnectionIfPresent();
-        const resetStatus = this.toInitialStatus();
+        this.status = this.toInitialStatus();
 
-        this.status = resetStatus;
+        return this.status;
+    }
 
+    clearCallbacks() {
         this.onDataChannelCallbacks.clear();
         this.onTrackCallbacks.clear();
         this.onRemoteStreamCallbacks.clear();
-
-        return resetStatus;
     }
 
-    private toInitialStatus() {
+    private toInitialStatus(): QRtcPeerConnectionStatus {
         return {
             state: QRtcSessionState.Idle,
             pc: undefined,
             localStream: undefined,
             localSenders: new Map<string, RTCRtpSender>(),
             remoteStreams: new Map<string, MediaStream>(),
+            mediaPolicy: undefined,
             isPolite: this.input.sessionId < this.input.peerSessionId,
             makingOffer: false,
             ignoreOffer: false,
@@ -209,6 +230,10 @@ export class QRtcPeerConnection {
                 this.status.localSenders.set(key, newSender);
             }
         }
+
+        if (this.status.mediaPolicy) {
+            this.applyMediaPolicy(this.status.mediaPolicy);
+        }
     }
 
     setLocalAudioEnabled(enabled: boolean): void {
@@ -251,6 +276,146 @@ export class QRtcPeerConnection {
             } catch {
                 // ignore
             }
+        }
+    }
+
+    applyMediaPolicy(policy: QRtcMediaPolicy): void {
+        this.status.mediaPolicy = policy;
+
+        const pc = this.status.pc;
+        if (!pc) {
+            return;
+        }
+
+        // Ensure transceivers exist before setting codec preferences.
+        this.ensureTransceiversForPolicy(policy);
+
+        if (policy.preferredVideoCodecs && policy.preferredVideoCodecs.length > 0) {
+            this.applyCodecPreferences('video', policy.preferredVideoCodecs);
+        }
+        if (policy.preferredAudioCodecs && policy.preferredAudioCodecs.length > 0) {
+            this.applyCodecPreferences('audio', policy.preferredAudioCodecs);
+        }
+
+        if (
+            policy.maxVideoBitrateBps ||
+            policy.maxVideoFramerate ||
+            policy.scaleResolutionDownBy ||
+            policy.degradationPreference
+        ) {
+            void this.applySenderEncodingParams(
+                'video',
+                {
+                    maxBitrateBps: policy.maxVideoBitrateBps,
+                    maxFramerate: policy.maxVideoFramerate,
+                    scaleResolutionDownBy: policy.scaleResolutionDownBy,
+                    degradationPreference: policy.degradationPreference,
+                }
+            );
+        }
+
+        if (policy.maxAudioBitrateBps) {
+            void this.applySenderEncodingParams(
+                'audio',
+                {
+                    maxBitrateBps: policy.maxAudioBitrateBps,
+                }
+            );
+        }
+    }
+
+    private ensureTransceiversForPolicy(policy: QRtcMediaPolicy): void {
+        const pc = this.status.pc;
+        if (!pc) return;
+
+        const needAudio = !!(policy.preferredAudioCodecs && policy.preferredAudioCodecs.length > 0);
+        const needVideo = !!(policy.preferredVideoCodecs && policy.preferredVideoCodecs.length > 0);
+
+        if (needAudio && !pc.getTransceivers().some(t => t.receiver?.track?.kind === 'audio')) {
+            pc.addTransceiver('audio', {direction: 'sendrecv'});
+        }
+        if (needVideo && !pc.getTransceivers().some(t => t.receiver?.track?.kind === 'video')) {
+            pc.addTransceiver('video', {direction: 'sendrecv'});
+        }
+    }
+
+    private applyCodecPreferences(
+        kind: 'audio' | 'video',
+        preferredMimeTypes: readonly RtcCodecMimeType[]
+    ): void {
+        const pc = this.status.pc;
+        if (!pc) {
+            return;
+        }
+
+        const caps = RTCRtpSender.getCapabilities(kind);
+        if (!caps) {
+            return;
+        }
+
+        const codecs = caps.codecs
+            .filter(
+                c => preferredMimeTypes.includes(c.mimeType)
+            )
+            .sort(
+                (a, b) =>
+                    preferredMimeTypes.indexOf(a.mimeType) - preferredMimeTypes.indexOf(b.mimeType)
+            );
+
+        const transceiver = pc.getTransceivers().find(t => t.receiver?.track?.kind === kind);
+        if (!transceiver || codecs.length === 0) {
+            return;
+        }
+
+        try {
+            transceiver.setCodecPreferences(codecs);
+        } catch (e) {
+            console.warn('setCodecPreferences not supported or failed', e);
+        }
+    }
+
+    private async applySenderEncodingParams(
+        kind: 'audio' | 'video',
+        args: {
+            maxBitrateBps?: number;
+            maxFramerate?: number;
+            scaleResolutionDownBy?: number;
+            degradationPreference?: 'maintain-framerate' | 'maintain-resolution' | 'balanced';
+        }
+    ): Promise<void> {
+        const pc = this.status.pc;
+        if (!pc) {
+            return;
+        }
+
+        const sender = pc.getSenders().find(s => s.track?.kind === kind);
+        if (!sender) {
+            return;
+        }
+
+        const params = sender.getParameters();
+        params.encodings = params.encodings && params.encodings.length > 0 ? params.encodings : [{}];
+
+        const enc = params.encodings[0] as RTCRtpEncodingParameters;
+
+        if (args.maxBitrateBps !== undefined) {
+            enc.maxBitrate = args.maxBitrateBps;
+        }
+
+        if (kind === 'video') {
+            if (args.maxFramerate !== undefined) enc.maxFramerate = args.maxFramerate;
+            if (args.scaleResolutionDownBy !== undefined) enc.scaleResolutionDownBy = args.scaleResolutionDownBy;
+
+            if (args.degradationPreference !== undefined) {
+                // Best-effort: supported in many browsers but not always typed
+                params.degradationPreference = args.degradationPreference;
+            }
+        }
+
+        try {
+            await sender.setParameters(params);
+        } catch (e) {
+            console.warn('setParameters failed', e);
         }
     }
 

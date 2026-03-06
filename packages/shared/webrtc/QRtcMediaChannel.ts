@@ -35,7 +35,11 @@ export class QRtcMediaChannel {
         public readonly peerConnection: QRtcPeerConnection,
         public readonly input: RtcMediaChannelInputDto,
     ) {
-        this.status = {
+        this.status = this.toInitialStatus();
+    }
+
+    private toInitialStatus(): QRtcMediaChannelStatus {
+        return {
             state: MediaSessionState.Idle,
             localAudioEnabled: true,
             localVideoEnabled: true,
@@ -45,10 +49,16 @@ export class QRtcMediaChannel {
 
     reset(): void {
         this.unsubscribe();
+        this.clearRemoteStreams()
 
         this.status.state = MediaSessionState.Idle;
-        this.status.remoteStreams = new Map<string, MediaStream>();
+    }
 
+    clearRemoteStreams(): void {
+        this.status.remoteStreams = new Map<string, MediaStream>();
+    }
+
+    clearCallbacks(): void {
         this.onTrackCallbacks.clear();
         this.onRemoteStreamCallbacks.clear();
     }
@@ -94,7 +104,7 @@ export class QRtcMediaChannel {
 
         this.subscribe();
 
-        // Mark open when underlying pc is connected
+        // Mark open when the underlying pc is connected
         if (this.peerConnection.isOpen()) {
             this.status.state = MediaSessionState.Open;
         }
