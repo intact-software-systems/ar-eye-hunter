@@ -10,6 +10,7 @@ import {ResourceEntry} from "../queuebox/ResourceEntry.ts";
 import {JsonWebSocketClient} from "../websocket/JsonWebSocketClient.ts";
 import {QRtcSignalingMessage} from "../webrtc/QRtcSignalingContracts.ts";
 import {QRtcPeerConnection} from "../webrtc/QRtcPeerConnection.ts";
+import {QRtcMediaChannel} from "../webrtc/QRtcMediaChannel.ts";
 
 export type WebRtcQueueBoxClientServiceInputDto = {
     readonly sessionId: string
@@ -25,12 +26,22 @@ type QRtcPeerDto = {
     peerId: PeerId
     connection: QRtcPeerConnection
     channel: QRtcDataChannel | undefined
+    media: QRtcMediaChannel | undefined
+}
+
+type WebRtcQueueBoxClientServiceStatus = {
+    localMediaStream: MediaStream | undefined;
+    localAudioEnabled: boolean
+    localVideoEnabled: boolean
 }
 
 export class WebRtcQueueBoxClientService {
 
     private readonly onOutboxMessageCallbacks: Map<string, OnOutboxWebRtcMessageCallback> = new Map<string, OnOutboxWebRtcMessageCallback>();
     private readonly onMessageCallbacks: Map<string, OnMessageCallback> = new Map<string, OnMessageCallback>();
+    private readonly onRemoteStreamCallbacks: Map<string, (peerId: string, stream: MediaStream, event: RTCTrackEvent) => Promise<void>> = new Map();
+
+    private status: WebRtcQueueBoxClientServiceStatus;
 
     private readonly connectedPeers: Map<PeerId, QRtcPeerDto> = new Map<string, QRtcPeerDto>();
 
@@ -40,6 +51,11 @@ export class WebRtcQueueBoxClientService {
         public readonly socket: JsonWebSocketClient,
         public readonly input: WebRtcQueueBoxClientServiceInputDto
     ) {
+        this.status = {
+            localMediaStream: undefined,
+            localAudioEnabled: false,
+            localVideoEnabled: false
+        }
     }
 
     onOutboxMessageDo(id: string, callback: OnOutboxWebRtcMessageCallback): WebRtcQueueBoxClientService {
@@ -60,36 +76,159 @@ export class WebRtcQueueBoxClientService {
         return this.onMessageCallbacks.delete(id);
     }
 
+    // --- Media/remote stream callback registry and local media controls ---
+    onRemoteStreamDo(id: string, cb: (peerId: string, stream: MediaStream, event: RTCTrackEvent) => Promise<void>): WebRtcQueueBoxClientService {
+        this.onRemoteStreamCallbacks.set(id, cb);
+        return this;
+    }
+
+    removeOnRemoteStreamCallbackById(id: string): boolean {
+        return this.onRemoteStreamCallbacks.delete(id);
+    }
+
+    async setLocalMediaStream(stream: MediaStream): Promise<void> {
+        this.status.localMediaStream = stream;
+
+        for (const peer of this.connectedPeers.values()) {
+            const dto = this.computePeerMediaChannelIfNecessary(peer);
+
+            if (dto.media) {
+                await dto.media.setLocalMediaStream(stream);
+
+                dto.media.setLocalAudioEnabled(this.status.localAudioEnabled);
+                dto.media.setLocalVideoEnabled(this.status.localVideoEnabled);
+            }
+        }
+    }
+
+    setLocalAudioEnabled(enabled: boolean): void {
+        this.status.localAudioEnabled = enabled;
+
+        for (const peer of this.connectedPeers.values()) {
+            peer.media?.setLocalAudioEnabled(enabled);
+        }
+    }
+
+    setLocalVideoEnabled(enabled: boolean): void {
+        this.status.localVideoEnabled = enabled;
+
+        for (const peer of this.connectedPeers.values()) {
+            peer.media?.setLocalVideoEnabled(enabled);
+        }
+    }
+
+    stopLocalMedia(kind: 'audio' | 'video' | 'all'): void {
+        for (const peer of this.connectedPeers.values()) {
+            peer.media?.stopLocalMedia(kind);
+        }
+    }
+
+    removePeerIfPresent(peerId: string): boolean {
+        const rtcPeer: QRtcPeerDto | undefined = this.connectedPeers.get(peerId);
+        if (rtcPeer === undefined) {
+            return false
+        }
+
+        rtcPeer.media?.reset();
+        rtcPeer?.channel?.reset();
+        rtcPeer.connection.reset();
+
+        return this.connectedPeers.delete(peerId);
+    }
+
     async acceptPeerIfAbsent(peerId: string, message: QRtcSignalingMessage) {
         const rtcPeerDto =
-            this.computePeerDataChannelIfNecessary(
-                this.computeRtcPeerDtoIfAbsent(peerId)
+            this.computePeerMediaChannelIfNecessary(
+                this.computePeerDataChannelIfNecessary(
+                    this.computeRtcPeerDtoIfAbsent(peerId)
+                )
             );
 
         if (!rtcPeerDto.channel) {
             throw new Error(`No data channel for peer ${peerId}`)
         }
+        if (!rtcPeerDto.media) {
+            throw new Error(`No media channel for peer ${peerId}`)
+        }
 
         await rtcPeerDto.channel.connect(false)
+
+        await rtcPeerDto.media.connect();
+
+        if (this.status.localMediaStream) {
+            await rtcPeerDto.media.setLocalMediaStream(this.status.localMediaStream);
+            rtcPeerDto.media.setLocalAudioEnabled(this.status.localAudioEnabled);
+            rtcPeerDto.media.setLocalVideoEnabled(this.status.localVideoEnabled);
+        }
+
         await rtcPeerDto.connection.handleSignal(message.signalType, message.payload as QRtcDataExchanged);
 
         return rtcPeerDto.channel;
     }
 
     async connectToPeer(peerId: string): Promise<QRtcDataChannel> {
-
         const rtcPeerDto =
-            this.computePeerDataChannelIfNecessary(
-                this.computeRtcPeerDtoIfAbsent(peerId)
+            this.computePeerMediaChannelIfNecessary(
+                this.computePeerDataChannelIfNecessary(
+                    this.computeRtcPeerDtoIfAbsent(peerId)
+                )
             );
 
         if (!rtcPeerDto.channel) {
             throw new Error(`No data channel for peer ${peerId}`)
         }
+        if (!rtcPeerDto.media) {
+            throw new Error(`No media channel for peer ${peerId}`)
+        }
 
         await rtcPeerDto.channel.connect(true)
 
+        await rtcPeerDto.media.connect();
+
+        if (this.status.localMediaStream) {
+            await rtcPeerDto.media.setLocalMediaStream(this.status.localMediaStream);
+            rtcPeerDto.media.setLocalAudioEnabled(this.status.localAudioEnabled);
+            rtcPeerDto.media.setLocalVideoEnabled(this.status.localVideoEnabled);
+        }
+
         return rtcPeerDto.channel;
+    }
+
+    private computePeerMediaChannelIfNecessary(rtcPeerDto: QRtcPeerDto): QRtcPeerDto {
+        const peerId = rtcPeerDto.peerId;
+
+        // is there an existing media channel?
+        {
+            const existing: QRtcMediaChannel | undefined = rtcPeerDto.media;
+            if (existing && !existing.isReadyToConnect()) {
+                return rtcPeerDto;
+            } else if (existing) {
+                existing.reset();
+                return rtcPeerDto;
+            }
+        }
+
+        rtcPeerDto.media =
+            new QRtcMediaChannel(
+                rtcPeerDto.connection,
+                {
+                    peerId: peerId
+                })
+                // Forward remote streams to service-level callbacks
+                .onRemoteStreamDo(
+                    this.input.sessionId + '-' + peerId + '-rtc-media-remote-stream',
+                    async (stream, event) => {
+                        for (const cb of this.onRemoteStreamCallbacks.values()) {
+                            try {
+                                await cb(peerId, stream, event);
+                            } catch (e) {
+                                console.error('Error calling onRemoteStream callback', e);
+                            }
+                        }
+                    }
+                );
+
+        return rtcPeerDto;
     }
 
     private computePeerDataChannelIfNecessary(rtcPeerDto: QRtcPeerDto): QRtcPeerDto {
@@ -153,7 +292,7 @@ export class WebRtcQueueBoxClientService {
 
         console.log(`Creating peer connection for ${peerId}`);
 
-        const rtcPeerDto = {
+        const rtcPeerDto: QRtcPeerDto = {
             peerId: peerId,
             connection:
                 new QRtcPeerConnection(
@@ -168,7 +307,8 @@ export class WebRtcQueueBoxClientService {
                         iceCandidates: this.input.iceCandidates,
                     }
                 ),
-            channel: undefined
+            channel: undefined,
+            media: undefined
         };
 
         this.connectedPeers.set(peerId, rtcPeerDto);

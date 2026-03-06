@@ -43,6 +43,9 @@ export class QRtcDataChannel {
     reset() {
         this.closeDataChannelIfPresent();
         this.status.state = RtcSessionState.Idle;
+
+        this.clientCallbacks.clear();
+        this.onMessageCallbacks.clear();
     }
 
     private closeDataChannelIfPresent() {

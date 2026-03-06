@@ -29,6 +29,9 @@ export type QRtcPeerConnectionInputDto = {
 type QRtcPeerConnectionStatus = {
     state: QRtcSessionState | undefined
     pc: RTCPeerConnection | undefined
+    localStream: MediaStream | undefined
+    localSenders: Map<string, RTCRtpSender>
+    remoteStreams: Map<string, MediaStream>
     isPolite: boolean
     makingOffer: boolean
     ignoreOffer: boolean
@@ -42,12 +45,16 @@ export type QRtcDataExchanged = {
 }
 
 export type QRtcOnDataChannelCallback = (event: RTCDataChannelEvent) => Promise<void>;
+export type QRtcOnTrackCallback = (event: RTCTrackEvent) => Promise<void>;
+export type QRtcOnRemoteStreamCallback = (stream: MediaStream, event: RTCTrackEvent) => Promise<void>;
 
 export class QRtcPeerConnection {
     private readonly configuration;
     public status: QRtcPeerConnectionStatus;
 
     private readonly onDataChannelCallbacks = new Map<string, QRtcOnDataChannelCallback>()
+    private readonly onTrackCallbacks = new Map<string, QRtcOnTrackCallback>()
+    private readonly onRemoteStreamCallbacks = new Map<string, QRtcOnRemoteStreamCallback>()
 
     constructor(
         public readonly signaler: QRtcSignalingTransport,
@@ -66,6 +73,10 @@ export class QRtcPeerConnection {
 
         this.status = resetStatus;
 
+        this.onDataChannelCallbacks.clear();
+        this.onTrackCallbacks.clear();
+        this.onRemoteStreamCallbacks.clear();
+
         return resetStatus;
     }
 
@@ -73,6 +84,9 @@ export class QRtcPeerConnection {
         return {
             state: QRtcSessionState.Idle,
             pc: undefined,
+            localStream: undefined,
+            localSenders: new Map<string, RTCRtpSender>(),
+            remoteStreams: new Map<string, MediaStream>(),
             isPolite: this.input.sessionId < this.input.peerSessionId,
             makingOffer: false,
             ignoreOffer: false,
@@ -141,6 +155,24 @@ export class QRtcPeerConnection {
         return this.onDataChannelCallbacks.delete(id);
     }
 
+    onTrackDo(id: string, onTrack: QRtcOnTrackCallback): QRtcPeerConnection {
+        this.onTrackCallbacks.set(id, onTrack);
+        return this
+    }
+
+    removeOnTrackCallbackById(id: string): boolean {
+        return this.onTrackCallbacks.delete(id);
+    }
+
+    onRemoteStreamDo(id: string, cb: QRtcOnRemoteStreamCallback): QRtcPeerConnection {
+        this.onRemoteStreamCallbacks.set(id, cb);
+        return this
+    }
+
+    removeOnRemoteStreamCallbackById(id: string): boolean {
+        return this.onRemoteStreamCallbacks.delete(id);
+    }
+
     async connect() {
         await this.signaler.connect(this.status.signalerInput)
 
@@ -154,6 +186,72 @@ export class QRtcPeerConnection {
         }
 
         return pc.createDataChannel(label);
+    }
+
+    async setLocalMediaStream(stream: MediaStream): Promise<void> {
+        const pc = this.status.pc;
+        if (!pc) {
+            throw new Error('PeerConnection not initialized');
+        }
+
+        // Replace local stream reference
+        this.status.localStream = stream;
+
+        // Add or replace tracks per kind (audio/video). ReplaceTrack supports device switching.
+        for (const track of stream.getTracks()) {
+            const key = track.kind;
+            const sender = this.status.localSenders.get(key);
+
+            if (sender) {
+                await sender.replaceTrack(track);
+            } else {
+                const newSender = pc.addTrack(track, stream);
+                this.status.localSenders.set(key, newSender);
+            }
+        }
+    }
+
+    setLocalAudioEnabled(enabled: boolean): void {
+        const stream = this.status.localStream;
+        if (!stream) {
+            return;
+        }
+
+        for (const t of stream.getAudioTracks()) {
+            t.enabled = enabled;
+        }
+    }
+
+    setLocalVideoEnabled(enabled: boolean): void {
+        const stream = this.status.localStream;
+        if (!stream) {
+            return;
+        }
+
+        for (const t of stream.getVideoTracks()) {
+            t.enabled = enabled;
+        }
+    }
+
+    stopLocalMedia(kind: 'audio' | 'video' | 'all'): void {
+        const stream = this.status.localStream;
+        if (!stream) {
+            return;
+        }
+
+        const tracks = kind === 'all'
+            ? stream.getTracks()
+            : kind === 'audio'
+                ? stream.getAudioTracks()
+                : stream.getVideoTracks();
+
+        for (const t of tracks) {
+            try {
+                t.stop();
+            } catch {
+                // ignore
+            }
+        }
     }
 
     private initialiseRtc() {
@@ -173,6 +271,11 @@ export class QRtcPeerConnection {
         // When pc.createDataChannel is called, it will trigger this event
         pc.onnegotiationneeded = async () => {
             try {
+                if (pc.signalingState !== 'stable') {
+                    // Avoid creating offers while not stable; perfect negotiation resolves convergence.
+                    return;
+                }
+
                 this.status.makingOffer = true;
                 await pc.setLocalDescription();
 
@@ -218,6 +321,33 @@ export class QRtcPeerConnection {
                     }
                 }
             };
+
+        pc.ontrack = async (event) => {
+            const stream: MediaStream | undefined =
+                event.streams && event.streams.length > 0
+                    ? event.streams[0]
+                    : undefined;
+
+            if (stream) {
+                this.status.remoteStreams.set(stream.id, stream);
+
+                for (const cb of this.onRemoteStreamCallbacks.values()) {
+                    try {
+                        await cb(stream, event);
+                    } catch (e) {
+                        console.error('Callback onRemoteStream failed:', e);
+                    }
+                }
+            }
+
+            for (const cb of this.onTrackCallbacks.values()) {
+                try {
+                    await cb(event);
+                } catch (e) {
+                    console.error('Callback onTrack failed:', e);
+                }
+            }
+        }
 
         this.setupStateChangeCallbacks(pc);
     }
