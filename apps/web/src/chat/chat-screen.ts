@@ -1,8 +1,8 @@
-import {findHtmlEl} from "../utils/utils.ts";
-import {AppTopics} from "@shared/api/api-config.ts";
-import * as ChatTransport from "../middleware/chat-transport.ts";
-import {readSessionAsClientData} from "../middleware/auth.ts";
-import {getMiddleware} from "../app-context.ts";
+import { findHtmlEl } from '../utils/utils';
+import { AppTopics } from '@shared/api/api-config';
+import * as ChatTransport from '../middleware/chat-transport';
+import { readSessionAsClientData } from '../middleware/auth';
+import { getMiddleware } from '../app-context';
 
 export interface ChatMessage {
     id: string;
@@ -46,8 +46,8 @@ export class ChatScreen extends HTMLElement {
             this,
             getMiddleware().middleware,
             AppTopics.chat,
-            readSessionAsClientData()
-        )
+            readSessionAsClientData(),
+        );
     }
 
     disconnectedCallback(): void {

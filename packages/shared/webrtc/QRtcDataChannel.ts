@@ -134,7 +134,6 @@ export class QRtcDataChannel {
 
         await this.peerConnection.connect()
 
-        // TODO: If I am accepting do I need to create the data channel?
         if (isInitiator) {
             this.status.dc = this.peerConnection.createDataChannel(this.input.dataChannelName);
 

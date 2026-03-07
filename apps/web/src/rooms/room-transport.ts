@@ -75,7 +75,7 @@ class RoomTransport implements RoomDriver {
             rooms: this.toRooms(this.roomDataById),
             selectedRoomId: this.selectedRoom?.name || 'NA',
             selectedRoomName: this.selectedRoom?.name || 'NA',
-            members: this.toRoomMembers(this.roomDataById),
+            members: this.toRoomMembers(this.selectedRoom),
             message: 'Ready'
         });
     }
@@ -94,18 +94,17 @@ class RoomTransport implements RoomDriver {
         return rooms;
     }
 
-    private toRoomMembers(roomDataById: Map<string, RoomDetails>): RoomMember[] {
-        const roomMembers: RoomMember[] = [];
-        for (const room of roomDataById.values()) {
-            roomMembers.push({
-                clientId: room.name,
-                username: room.createdBy,
-                isOnline: true,
-                isOwner: false
-            });
+    private toRoomMembers(selectedRoom: RoomDetails | undefined): RoomMember[] {
+        if (!selectedRoom) {
+            return [];
         }
 
-        return roomMembers;
+        return selectedRoom.members.map((memberId) => ({
+            clientId: memberId,
+            username: memberId,
+            isOwner: memberId === selectedRoom.createdBy,
+            isOnline: true,
+        }));
     }
 
 

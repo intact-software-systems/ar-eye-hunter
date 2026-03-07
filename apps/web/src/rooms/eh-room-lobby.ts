@@ -42,9 +42,39 @@ export class EhRoomLobby extends HTMLElement {
         this.driver?.dispose();
     }
 
+    private emitRoomEvent(type: 'room:joined' | 'room:left' | 'room:members', detail: unknown): void {
+        this.dispatchEvent(
+            new CustomEvent(type, {
+                detail,
+                bubbles: true,
+                composed: true,
+            }),
+        );
+    }
+
     private setState(s: RoomUiState): void {
+        const prevSelected = this.state.selectedRoomId;
         this.state = s;
         this.update();
+
+        // Emit joined/left events based on selectedRoomId transitions.
+        const nextSelected = s.selectedRoomId;
+        if (prevSelected !== nextSelected) {
+            if (prevSelected !== NA && nextSelected === NA) {
+                this.emitRoomEvent('room:left', { roomId: prevSelected });
+            }
+            if (nextSelected !== NA) {
+                this.emitRoomEvent('room:joined', { roomId: nextSelected, roomName: s.selectedRoomName });
+            }
+        }
+
+        // Always emit members updates for the currently selected room.
+        if (nextSelected !== NA) {
+            this.emitRoomEvent('room:members', {
+                roomId: nextSelected,
+                members: s.members,
+            });
+        }
     }
 
     private render(): void {
