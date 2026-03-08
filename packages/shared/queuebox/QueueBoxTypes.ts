@@ -1,6 +1,6 @@
 import * as Resource from "./ResourceEntry.ts";
-import {ResourceEntry} from "./ResourceEntry.ts";
-import {RateLimiter} from "../resilience/Resilience.ts";
+import { ResourceEntry } from "./ResourceEntry.ts";
+import { RateLimiter } from "../resilience/Resilience.ts";
 
 export interface DequeueResourceEntryRepository {
 
@@ -37,8 +37,6 @@ export interface EnqueueResourceEntryController {
     enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry>
 
     enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined>
-
-    //enqueueAll(resourceEntries: ResourceEntry[]): Promise<ResourceEntry[] | undefined>;
 }
 
 export interface QueueBoxResourceEntryRepository

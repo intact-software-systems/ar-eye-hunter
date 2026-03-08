@@ -1,13 +1,16 @@
 // deno-lint-ignore-file require-await
-import {RateLimiter} from "../resilience/Resilience.ts";
-import {QueueBoxResourceEntryRepository} from "./QueueBoxTypes.ts";
+import { RateLimiter } from "../resilience/Resilience.ts";
+import { QueueBoxResourceEntryRepository } from "./QueueBoxTypes.ts";
 import {
     EntityStatus,
     FAILED_STATUS,
     Key,
     NEW_AND_RETRY_STATUSES,
-    ResourceEntry, ResourceEntryKeyString,
-    TIMEOUT_ON_NON_RESPONSIVE_ENTRY, toKeyAsString, toResourceEntryKey
+    ResourceEntry,
+    ResourceEntryKeyString,
+    TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
+    toKeyAsString,
+    toResourceEntryKey
 } from "./ResourceEntry.ts";
 
 export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
@@ -34,6 +37,8 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         if (!prev) {
             this.data.set(toKeyAsString(resourceEntry.key), resourceEntry);
             return resourceEntry
+        } else {
+            console.log("Entry already exists: ", resourceEntry.key)
         }
 
         return prev;

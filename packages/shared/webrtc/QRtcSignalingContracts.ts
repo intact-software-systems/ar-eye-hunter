@@ -38,8 +38,10 @@ export type QRtcSignalingTransportInputDto = {
     readonly token: string
 }
 
-export interface QRtcSignalingTransport {
-    connect(input: QRtcSignalingTransportInputDto): Promise<void>;
+export interface QRtcSignalingSender {
+    send(payload: QRtcSignalingMessage): Promise<void>;
+}
 
-    send(payload: QRtcSignalingMessage): void;
+export interface QRtcSignalingTransport extends QRtcSignalingSender {
+    connect(input: QRtcSignalingTransportInputDto): Promise<void>;
 }

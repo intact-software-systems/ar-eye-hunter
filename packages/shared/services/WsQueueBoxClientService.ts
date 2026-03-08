@@ -1,11 +1,11 @@
-import {ResilienceDto} from "../queuebox/DequeueResourceEntryController.ts";
-import {QueueBoxResourceEntryRepository} from "../queuebox/QueueBoxTypes.ts";
-import {tryWith} from "../resilience/TryWith.ts";
-import {OnMessageCallback, OnOutboxWebSocketMessageCallback} from "./InboxOutboxContracts.ts";
-import {JsonWebSocketClient} from "../websocket/JsonWebSocketClient.ts";
-import {QueueBoxUtilities} from "./QueueBoxUtilities.ts";
-import {ALMessage} from "../al-contracts/al-contract.ts";
-import {ResourceEntry, toResourceEntry} from "../queuebox/ResourceEntry.ts";
+import { ResilienceDto } from "../queuebox/DequeueResourceEntryController.ts";
+import { QueueBoxResourceEntryRepository } from "../queuebox/QueueBoxTypes.ts";
+import { tryWith } from "../resilience/TryWith.ts";
+import { OnMessageCallback, OnOutboxWebSocketMessageCallback } from "./InboxOutboxContracts.ts";
+import { JsonWebSocketClient } from "../websocket/JsonWebSocketClient.ts";
+import { QueueBoxUtilities } from "./QueueBoxUtilities.ts";
+import { ALMessage } from "../al-contracts/al-contract.ts";
+import { ResourceEntry, toResourceEntry } from "../queuebox/ResourceEntry.ts";
 
 export type WsQueueBoxClientServiceInputDto = {
     readonly sessionId: string;
@@ -79,13 +79,10 @@ export class WsQueueBoxClientService {
                     onMessage: async data => {
                         console.log(`${this.input.sessionId} inbox:  ${JSON.stringify(data)}`);
 
-                        const message = data as ALMessage;
+                        const message: ALMessage = data as ALMessage;
 
-                        await this.inbox.enqueue(
-                            QueueBoxUtilities.toResourceEntry(
-                                message.payload.typeId,
-                                data
-                            )
+                        await this.inbox.enqueueIfAbsent(
+                            QueueBoxUtilities.toResourceEntryFromMsg(message)
                         );
                     }
                 }

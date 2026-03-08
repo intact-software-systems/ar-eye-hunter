@@ -55,9 +55,9 @@ export async function initialise(
     const iceCandidates: IceConfig = await readIceCandidates();
 
     const webRtcQueueBox: WebRtcQueueBoxClientService =
-        rtcEngine.initialise(
+        await rtcEngine.initialise(
             qboxEngine,
-            socket,
+            webSocketQueueBox,
             "RTC",
             clientData,
             toResilienceDto(),

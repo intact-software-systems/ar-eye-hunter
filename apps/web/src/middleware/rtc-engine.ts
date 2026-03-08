@@ -1,13 +1,14 @@
-import {ClientData, IceConfig} from "@shared/api/api-config.ts";
-import {InMemoryQueueBox} from "@shared/queuebox/InMemoryQueueBox.ts";
-import {WebRtcQueueBoxClientService} from "@shared/services/WebRtcQueueBoxClientService.ts";
-import {ResilienceDto} from "@shared/queuebox/DequeueResourceEntryController.ts";
-import {InboxOutboxEngine} from "@shared/services/InboxOutboxEngine.ts";
-import {JsonWebSocketClient} from "@shared/websocket/JsonWebSocketClient.ts";
+import { ClientData, IceConfig } from "@shared/api/api-config.ts";
+import { InMemoryQueueBox } from "@shared/queuebox/InMemoryQueueBox.ts";
+import { WebRtcQueueBoxClientService } from "@shared/services/WebRtcQueueBoxClientService.ts";
+import { ResilienceDto } from "@shared/queuebox/DequeueResourceEntryController.ts";
+import { InboxOutboxEngine } from "@shared/services/InboxOutboxEngine.ts";
+import { WsRtcSignalingTransportUsingWsQBox } from "@shared/webrtc/WsRtcSignalingTransportUsingWsQBox.ts";
+import { WsQueueBoxClientService } from "@shared/services/WsQueueBoxClientService.ts";
 
-export function initialise(
+export async function initialise(
     qboxEngine: InboxOutboxEngine,
-    socket: JsonWebSocketClient,
+    webSocketQueueBox: WsQueueBoxClientService,
     typeId: string,
     clientData: ClientData,
     resilience: ResilienceDto,
@@ -17,10 +18,10 @@ export function initialise(
     rtcSignalingTopicId: string
 ) {
     const rtcQBox =
-        new WebRtcQueueBoxClientService(
+        await new WebRtcQueueBoxClientService(
             new InMemoryQueueBox(),
             new InMemoryQueueBox(),
-            socket,
+            new WsRtcSignalingTransportUsingWsQBox(webSocketQueueBox, rtcSignalingTopicId),
             {
                 sessionId: clientData.sessionId,
                 token: "NOT_CREATED_YET",
@@ -28,7 +29,8 @@ export function initialise(
                 dataChannelName: dataChannelName,
                 rtcSignalingTopicId: rtcSignalingTopicId,
             })
-            .enableDefaultCallbacks();
+            .enableDefaultCallbacks()
+            .connectSignaler();
 
     const outboxTypeId = typeId + "-outbox";
 

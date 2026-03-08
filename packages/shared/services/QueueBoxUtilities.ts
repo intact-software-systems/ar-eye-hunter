@@ -2,6 +2,7 @@ import {DequeueResourceEntryController, ResilienceDto} from "../queuebox/Dequeue
 import {DequeueController} from "../queuebox/DequeueController.ts";
 import {QueueBoxResourceEntryRepository} from "../queuebox/QueueBoxTypes.ts";
 import {EntityStatus, Key, ResourceEntry} from "../queuebox/ResourceEntry.ts";
+import { ALMessage } from "../al-contracts/al-contract.ts";
 
 export class QueueBoxUtilities {
 
@@ -51,6 +52,28 @@ export class QueueBoxUtilities {
             audit: {
                 date: Temporal.Now.plainTimeISO(),
                 createdBy: "test",
+                createdTs: Temporal.Now.plainDateTimeISO()
+            },
+            status: EntityStatus.NEW,
+            dequeueAudit: {
+                attempts: 0
+            },
+            db: undefined
+        }
+    }
+
+    static toResourceEntryFromMsg(msg: ALMessage): ResourceEntry {
+        return {
+            key: {
+                topicId: msg.key.topicId,
+                resourceId: msg.key.resourceId,
+                contextId: msg.key.contextId
+            },
+            resource: JSON.stringify(msg),
+            typeId: msg.payload.typeId,
+            audit: {
+                date: Temporal.Now.plainTimeISO(),
+                createdBy: msg.audit?.createdBy ?? "test",
                 createdTs: Temporal.Now.plainDateTimeISO()
             },
             status: EntityStatus.NEW,

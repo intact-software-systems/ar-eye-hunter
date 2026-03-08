@@ -30,8 +30,11 @@ export * from "./services/WsQueueBoxServerService.ts"
 
 export * from "./webrtc/QRtcClientCallbacks.ts"
 export * from "./webrtc/QRtcSignalingContracts.ts"
+export * from "./webrtc/QRtcPeerConnection.ts"
 export * from "./webrtc/QRtcDataChannel.ts"
+export * from "./webrtc/QRtcMediaChannel.ts"
 export * from "./webrtc/WsRtcSignalingTransport.ts"
+export * from "./webrtc/WsRtcSignalingTransportUsingWsQBox.ts"
 
 export * from "./whack/engine/types.ts";
 export * from "./whack/engine/rng.ts";

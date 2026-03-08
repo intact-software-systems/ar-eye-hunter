@@ -1,4 +1,4 @@
-import {QRtcOnRemoteStreamCallback, QRtcOnTrackCallback, QRtcPeerConnection,} from "./QRtcPeerConnection.ts";
+import { QRtcOnRemoteStreamCallback, QRtcOnTrackCallback, QRtcPeerConnection, } from "./QRtcPeerConnection.ts";
 
 export enum MediaSessionState {
     Idle = "Idle",
@@ -93,14 +93,8 @@ export class QRtcMediaChannel {
      * Ensures the underlying PeerConnection exists and subscribes to remote track/stream events.
      * Media does not require creating a DataChannel.
      */
-    async connect(): Promise<void> {
-        if (!this.isReadyToConnect()) {
-            return;
-        }
-
+    connect() {
         this.status.state = MediaSessionState.Connecting;
-
-        await this.peerConnection.connect();
 
         this.subscribe();
 
@@ -166,6 +160,16 @@ export class QRtcMediaChannel {
     // ----------------------------------------
     // Local media attachment & toggles
     // ----------------------------------------
+
+    async setParameters(
+        stream: MediaStream,
+        audioEnabled: boolean,
+        videoEnabled: boolean,
+    ) {
+        await this.setLocalMediaStream(stream);
+        this.setLocalAudioEnabled(audioEnabled);
+        this.setLocalVideoEnabled(videoEnabled);
+    }
 
     /**
      * Attach or replace the local MediaStream on this peer connection.

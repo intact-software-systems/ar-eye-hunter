@@ -1,14 +1,18 @@
-import {ALMessage} from "@shared/al-contracts/al-contract.ts";
-import {AppTopics, ClientData, RoomDetails} from "@shared/api/api-config.ts";
-import {WebRtcQueueBoxClientService} from "@shared/services/WebRtcQueueBoxClientService.ts";
-import {WsQueueBoxClientService} from "@shared/services/WsQueueBoxClientService.ts";
-import {QRtcSignalingMessage} from "@shared/webrtc/QRtcSignalingContracts.ts";
-import {listRooms} from "./api-integration.ts";
-import {ChatMessage} from "../chat/chat-screen.ts";
+import { ALMessage } from "@shared/al-contracts/al-contract.ts";
+import { AppTopics, ClientData, RoomDetails } from "@shared/api/api-config.ts";
+import { WebRtcQueueBoxClientService } from "@shared/services/WebRtcQueueBoxClientService.ts";
+import { WsQueueBoxClientService } from "@shared/services/WsQueueBoxClientService.ts";
+import { QRtcSignalingMessage } from "@shared/webrtc/QRtcSignalingContracts.ts";
+import { listRooms } from "./api-integration.ts";
+import { ChatMessage } from "../chat/chat-screen.ts";
+
+// TODO: Add version and timestamps on every shared message type
 
 export const cachedChatMessageById = new Map<string, ChatMessage>();
 export const cachedClientDataById = new Map<string, ClientData>();
 export const cachedRoomDataById = new Map<string, RoomDetails>();
+
+// export const cachedRtcSignalingMessages = new Map<string, QRtcSignalingMessage>();
 
 export async function initialise(
     webSocketQueueBox: WsQueueBoxClientService,
@@ -48,9 +52,8 @@ export async function initialise(
 
                         case AppTopics.rtcSignaling: {
                             const signal = JSON.parse(data.payload.resource) as QRtcSignalingMessage;
-                            console.log('Received rtc signaling message. Accept peer if absent.' + JSON.stringify(signal))
-
-                            await webRtcQueueBox.acceptPeerIfAbsent(data.id.sender, signal)
+                            console.log('RTC signaling message :' + JSON.stringify(signal))
+                            // cachedRtcSignalingMessages.set(data.key.resourceId, signal)
                             break
                         }
 

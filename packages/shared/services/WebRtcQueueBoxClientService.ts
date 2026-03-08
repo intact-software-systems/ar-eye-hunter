@@ -1,16 +1,18 @@
-import {QueueBoxResourceEntryRepository} from "../queuebox/QueueBoxTypes.ts";
-import {QRtcDataChannel, QRtcDataExchanged} from "../webrtc/QRtcDataChannel.ts";
-import {OnMessageCallback, OnOutboxWebRtcMessageCallback} from "./InboxOutboxContracts.ts";
-import {QueueBoxUtilities} from "./QueueBoxUtilities.ts";
-import {ResilienceDto} from "../queuebox/DequeueResourceEntryController.ts";
-import {WsRtcSignalingTransport} from "../webrtc/WsRtcSignalingTransport.ts";
-import {IceConfig} from "../api/api-config.ts";
-import {ALMessage} from "../al-contracts/al-contract.ts";
-import {ResourceEntry} from "../queuebox/ResourceEntry.ts";
-import {JsonWebSocketClient} from "../websocket/JsonWebSocketClient.ts";
-import {QRtcSignalingMessage} from "../webrtc/QRtcSignalingContracts.ts";
-import {QRtcMediaPolicy, QRtcPeerConnection} from "../webrtc/QRtcPeerConnection.ts";
-import {QRtcMediaChannel} from "../webrtc/QRtcMediaChannel.ts";
+import { ALMessage } from "../al-contracts/al-contract.ts";
+import { IceConfig } from "../api/api-config.ts";
+import { ResilienceDto } from "../queuebox/DequeueResourceEntryController.ts";
+import { QueueBoxResourceEntryRepository } from "../queuebox/QueueBoxTypes.ts";
+import { ResourceEntry } from "../queuebox/ResourceEntry.ts";
+import { QRtcDataChannel } from "../webrtc/QRtcDataChannel.ts";
+import { QRtcMediaChannel } from "../webrtc/QRtcMediaChannel.ts";
+import { QRtcDataExchanged, QRtcMediaPolicy, QRtcPeerConnection } from "../webrtc/QRtcPeerConnection.ts";
+import {
+    QRtcSignalingMessage,
+    QRtcSignalingTransport,
+    QRtcSignalingTransportCallbacks
+} from "../webrtc/QRtcSignalingContracts.ts";
+import { OnMessageCallback, OnOutboxWebRtcMessageCallback } from "./InboxOutboxContracts.ts";
+import { QueueBoxUtilities } from "./QueueBoxUtilities.ts";
 
 export type WebRtcQueueBoxClientServiceInputDto = {
     readonly sessionId: string
@@ -49,7 +51,7 @@ export class WebRtcQueueBoxClientService {
     constructor(
         public readonly inbox: QueueBoxResourceEntryRepository,
         public readonly outbox: QueueBoxResourceEntryRepository,
-        public readonly socket: JsonWebSocketClient,
+        public readonly signaler: QRtcSignalingTransport,
         public readonly input: WebRtcQueueBoxClientServiceInputDto
     ) {
         this.status = {
@@ -146,7 +148,75 @@ export class WebRtcQueueBoxClientService {
         return this.connectedPeers.delete(peerId);
     }
 
-    async acceptPeerIfAbsent(peerId: string, message: QRtcSignalingMessage) {
+    isPeerPresent(peerId: string): boolean {
+        return this.connectedPeers.has(peerId);
+    }
+
+    async connectSignaler(): Promise<WebRtcQueueBoxClientService> {
+        await this.signaler.connect(
+            {
+                sessionId: this.input.sessionId,
+                token: this.input.token,
+                callbacks: this.toSignalingProtocol()
+            }
+        )
+
+        console.log(`Signaling transport connected for ${this.input.sessionId} and ${this.input.token}`)
+        return this
+    }
+
+    private toSignalingProtocol(): QRtcSignalingTransportCallbacks {
+        return {
+            onOpen: (sessionId: string, token: string) => {
+                console.log(`Signaling transport open for ${sessionId} and ${token}`)
+                return Promise.resolve()
+            },
+
+            onError: (_: string, __: string, message: string) => {
+                console.error("Signaling transport error: " + message)
+                return Promise.resolve()
+            },
+
+            onClose: (sessionId: string, token: string) => {
+                console.log(`Signaling transport closed for ${sessionId} and ${token}`)
+                return Promise.resolve()
+            },
+
+            onMessage: async (sessionId: string, token: string, message: ALMessage) => {
+                console.log(`Message received for ${sessionId} and ${token} ${message.payload.resource}`)
+
+                const msg: QRtcSignalingMessage = JSON.parse(message.payload.resource) as QRtcSignalingMessage
+
+                if (msg.toId !== this.input.sessionId) {
+                    console.log("Message not for us, ignoring: " + message.payload.resource)
+                    return Promise.resolve()
+                }
+                else if(msg.fromId === this.input.sessionId) {
+                    console.log("Ignoring message from self", new Error().stack)
+                    return Promise.resolve()
+                }
+
+                const peerDto = this.connectedPeers.get(msg.fromId);
+                if (!peerDto) {
+                    await this.acceptPeerIfAbsent(msg.fromId, msg)
+                } else {
+                    await peerDto.connection.handleSignal(
+                        msg.signalType,
+                        msg.payload as QRtcDataExchanged
+                    )
+                }
+
+                return Promise.resolve()
+            }
+        };
+    }
+
+    async acceptPeerIfAbsent(peerId: string, message: QRtcSignalingMessage): Promise<void> {
+        if(peerId === this.input.sessionId) {
+            console.error("Ignoring connect to peer with identical sessionId from self", new Error().stack)
+            return
+        }
+
         const rtcPeerDto =
             this.computePeerMediaChannelIfNecessary(
                 this.computePeerDataChannelIfNecessary(
@@ -161,19 +231,19 @@ export class WebRtcQueueBoxClientService {
             throw new Error(`No media channel for peer ${peerId}`)
         }
 
-        await rtcPeerDto.channel.connect(false)
-
-        await rtcPeerDto.media.connect();
+        rtcPeerDto.connection.connect()
+        rtcPeerDto.channel.connect(false)
+        rtcPeerDto.media.connect();
 
         if (this.status.localMediaStream) {
-            await rtcPeerDto.media.setLocalMediaStream(this.status.localMediaStream);
-            rtcPeerDto.media.setLocalAudioEnabled(this.status.localAudioEnabled);
-            rtcPeerDto.media.setLocalVideoEnabled(this.status.localVideoEnabled);
+            await rtcPeerDto.media.setParameters(
+                this.status.localMediaStream,
+                this.status.localAudioEnabled,
+                this.status.localVideoEnabled
+            )
         }
 
         await rtcPeerDto.connection.handleSignal(message.signalType, message.payload as QRtcDataExchanged);
-
-        return rtcPeerDto.channel;
     }
 
     async connectToPeer(peerId: string): Promise<QRtcDataChannel> {
@@ -184,16 +254,14 @@ export class WebRtcQueueBoxClientService {
                 )
             );
 
-        if (!rtcPeerDto.channel) {
-            throw new Error(`No data channel for peer ${peerId}`)
-        }
-        if (!rtcPeerDto.media) {
-            throw new Error(`No media channel for peer ${peerId}`)
+        if (!rtcPeerDto.channel || !rtcPeerDto.media) {
+            throw new Error(`No data channel or media channel for peer ${peerId}`)
         }
 
-        await rtcPeerDto.channel.connect(true)
-
-        await rtcPeerDto.media.connect();
+        // TODO: Do await for connection to open?
+        rtcPeerDto.connection.connect()
+        rtcPeerDto.channel.connect(true)
+        rtcPeerDto.media.connect();
 
         if (this.status.localMediaStream) {
             await rtcPeerDto.media.setLocalMediaStream(this.status.localMediaStream);
@@ -246,16 +314,8 @@ export class WebRtcQueueBoxClientService {
         {
             const existingChannel: QRtcDataChannel | undefined = rtcPeerDto.channel;
 
-            if (existingChannel && !existingChannel.isReadyToConnect()) {
-                console.log(`Data channel to ${peerId} exists in valid state ${existingChannel.status.state}. Reuse existing channel`);
-
-                return rtcPeerDto;
-            }
-            // If the data channel exists and is ready to connect (failed, closed or idle), then reset
-            else if (existingChannel) {
-                console.log(`Data channel to ${peerId} exists in state ${existingChannel.status.state}. Resetting data channel`);
-                existingChannel.reset()
-
+            if (existingChannel) {
+                console.log(`Data channel to ${peerId} exists in state ${existingChannel.status.state}. Reuse existing channel`);
                 return rtcPeerDto;
             }
         }
@@ -304,10 +364,7 @@ export class WebRtcQueueBoxClientService {
             peerId: peerId,
             connection:
                 new QRtcPeerConnection(
-                    new WsRtcSignalingTransport(
-                        this.socket,
-                        this.input.rtcSignalingTopicId
-                    ),
+                    this.signaler,
                     {
                         sessionId: this.input.sessionId,
                         token: this.input.token,

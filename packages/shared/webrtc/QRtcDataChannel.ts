@@ -1,5 +1,5 @@
-import {OnQRtcMessageCallback, QRtcClientCallbacks} from "./QRtcClientCallbacks.ts";
-import {QRtcPeerConnection} from "./QRtcPeerConnection.ts";
+import { OnQRtcMessageCallback, QRtcClientCallbacks } from "./QRtcClientCallbacks.ts";
+import { QRtcPeerConnection } from "./QRtcPeerConnection.ts";
 
 enum RtcSessionState {
     Idle = 'Idle',
@@ -9,6 +9,12 @@ enum RtcSessionState {
     Failed = 'Failed',
 }
 
+enum RtcRole {
+    None = 'None',
+    Initiator = 'Initiator',
+    Receiver = 'Receiver',
+}
+
 export type RtcDataChannelInputDto = {
     readonly peerId: string
     readonly dataChannelName: string
@@ -16,12 +22,8 @@ export type RtcDataChannelInputDto = {
 
 type QRtcDataChannelStatus = {
     state: RtcSessionState | undefined
+    role: RtcRole
     dc: RTCDataChannel | undefined
-}
-
-export type QRtcDataExchanged = {
-    description: RTCSessionDescription | null
-    candidate: RTCIceCandidateInit | null
 }
 
 export class QRtcDataChannel {
@@ -36,6 +38,7 @@ export class QRtcDataChannel {
     ) {
         this.status = {
             state: RtcSessionState.Idle,
+            role: RtcRole.None,
             dc: undefined
         }
     }
@@ -106,16 +109,15 @@ export class QRtcDataChannel {
     // Connection logic
     // ----------------------------------------
 
-    async connect(isInitiator: boolean) {
-        if (this.isOpen()) {
-            console.log("Data connection already open")
-            return
-        } else if (!this.isReadyToConnect()) {
-            console.log("Data connection is in progress and not ready to connect")
+    connect(isInitiator: boolean) {
+        if (this.isOpen() || (!this.isReadyToConnect() && !this.peerConnection.isReadyToConnect())) {
+            console.log("Ignoring connect, data connection is in progress and not ready to connect: " + this.status.state + " role " + this.status.role +
+                " peerId " + this.input.peerId + " dataChannelName " + this.input.dataChannelName)
             return
         }
 
         this.status.state = RtcSessionState.Connecting;
+        this.status.role = isInitiator ? RtcRole.Initiator : RtcRole.Receiver;
 
         this.peerConnection
             .onDataChannelDo(
@@ -132,19 +134,21 @@ export class QRtcDataChannel {
                 }
             )
 
-        await this.peerConnection.connect()
-
         if (isInitiator) {
             this.status.dc = this.peerConnection.createDataChannel(this.input.dataChannelName);
 
             console.log("Data channel created: " + this.status.dc.label)
 
             this.setupDataChannelCallbacks(this.status.dc);
+        } else {
+            console.log("Waiting for data channel to be created for " + this.input.dataChannelName + " and " + this.input.peerId + " peer")
         }
     }
 
     private setupDataChannelCallbacks(dc: RTCDataChannel) {
         dc.onopen = () => {
+            console.log("Data channel open for " + this.input.dataChannelName + " and " + this.input.peerId + " peer")
+
             this.status.state = RtcSessionState.Open
 
             for (const callback of this.clientCallbacks.values()) {
@@ -173,6 +177,8 @@ export class QRtcDataChannel {
         };
 
         dc.onclose = async () => {
+            console.error("Data channel closed for " + this.input.dataChannelName + " and " + this.input.peerId + " peer", new Error().stack ?? "")
+
             this.status.state = RtcSessionState.Closed;
 
             for (const callback of this.clientCallbacks.values()) {
@@ -185,6 +191,8 @@ export class QRtcDataChannel {
         };
 
         dc.onerror = async () => {
+            console.log("Data channel error for " + this.input.dataChannelName + " and " + this.input.peerId + " peer")
+
             this.status.state = RtcSessionState.Failed;
 
             for (const callback of this.clientCallbacks.values()) {
