@@ -190,8 +190,7 @@ export class WebRtcQueueBoxClientService {
                 if (msg.toId !== this.input.sessionId) {
                     console.log("Message not for us, ignoring: " + message.payload.resource)
                     return Promise.resolve()
-                }
-                else if(msg.fromId === this.input.sessionId) {
+                } else if (msg.fromId === this.input.sessionId) {
                     console.log("Ignoring message from self", new Error().stack)
                     return Promise.resolve()
                 }
@@ -212,7 +211,7 @@ export class WebRtcQueueBoxClientService {
     }
 
     async acceptPeerIfAbsent(peerId: string, message: QRtcSignalingMessage): Promise<void> {
-        if(peerId === this.input.sessionId) {
+        if (peerId === this.input.sessionId) {
             console.error("Ignoring connect to peer with identical sessionId from self", new Error().stack)
             return
         }
@@ -331,16 +330,15 @@ export class WebRtcQueueBoxClientService {
                     this.input.sessionId + "-" + peerId + "-rtc-inbox",
                     {
                         onMessage: async (data) => {
-                            console.log(`From ${peerId}:  ${data}`);
+                            console.log(`From ${peerId}: ${JSON.stringify(data)}`);
 
                             const msg = data as ALMessage
 
-                            await this.inbox.enqueueIfAbsent(
-                                QueueBoxUtilities.toResourceEntry(
-                                    msg.payload.typeId,
-                                    msg
-                                )
-                            )
+                            if (msg.id.sender !== peerId) {
+                                console.warn(`Message from ${msg.id.sender} does not match peerId ${peerId}. `)
+                            }
+
+                            await this.inbox.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(msg))
                         }
                     }
                 );
@@ -399,7 +397,7 @@ export class WebRtcQueueBoxClientService {
     }
 
     async enqueueOutboxIfAbsent(msg: ALMessage): Promise<ResourceEntry> {
-        return await this.outbox.enqueueIfAbsent(QueueBoxUtilities.toResourceEntry(msg.payload.typeId, msg));
+        return await this.outbox.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(msg));
     }
 
     async dequeueOutbox(typesToDequeue: Set<string>, resilience: ResilienceDto) {

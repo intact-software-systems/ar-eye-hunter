@@ -87,7 +87,7 @@ dbListen.startListening(
         async (message: PublishMessage) => {
             console.log(`Received message: ${message}`);
 
-            await wsQBoxServerService.inbox.enqueue(
+            await wsQBoxServerService.inbox.enqueueIfAbsent(
                 toResourceEntryWithKey(
                     message.key,
                     message.typeId,

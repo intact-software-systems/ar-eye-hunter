@@ -1,10 +1,10 @@
-import type {QueueBoxResourceEntryRepository,} from "../queuebox/QueueBoxTypes.ts";
-import {ConnectionContext, JsonWebSocketServer} from "../websocket/JsonWebSocketServer.ts";
-import {ResourceEntry, toResourceEntry} from "../queuebox/ResourceEntry.ts";
-import {ResilienceDto} from "../queuebox/DequeueResourceEntryController.ts";
-import {OnWebSocketServerMessageCallback} from "./InboxOutboxContracts.ts";
-import {ALMessage} from "../al-contracts/al-contract.ts";
-import {QueueBoxUtilities} from "./QueueBoxUtilities.ts";
+import type { QueueBoxResourceEntryRepository, } from "../queuebox/QueueBoxTypes.ts";
+import { ConnectionContext, JsonWebSocketServer } from "../websocket/JsonWebSocketServer.ts";
+import { ResourceEntry, toResourceEntryWithKey } from "../queuebox/ResourceEntry.ts";
+import { ResilienceDto } from "../queuebox/DequeueResourceEntryController.ts";
+import { OnWebSocketServerMessageCallback } from "./InboxOutboxContracts.ts";
+import { ALMessage } from "../al-contracts/al-contract.ts";
+import { QueueBoxUtilities } from "./QueueBoxUtilities.ts";
 
 export type WsQueueBoxInboxDto = {
     id: string,
@@ -29,8 +29,9 @@ export class WsQueueBoxServerService {
                 onMessage: async (ctx: ConnectionContext, data: unknown, _) => {
                     const message = data as ALMessage;
 
-                    await this.inbox.enqueue(
-                        toResourceEntry<WsQueueBoxInboxDto>(
+                    await this.inbox.enqueueIfAbsent(
+                        toResourceEntryWithKey<WsQueueBoxInboxDto>(
+                            message.key,
                             message.payload.typeId,
                             {
                                 id: ctx.id,
@@ -64,7 +65,8 @@ export class WsQueueBoxServerService {
 
     async enqueueOutboxIfAbsent(message: ALMessage): Promise<ResourceEntry> {
         return await this.outbox.enqueueIfAbsent(
-            toResourceEntry(
+            toResourceEntryWithKey<WsQueueBoxInboxDto>(
+                message.key,
                 message.payload.typeId,
                 {
                     id: message.id.sender,

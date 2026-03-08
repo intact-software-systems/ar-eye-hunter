@@ -5,7 +5,7 @@ import { OnMessageCallback, OnOutboxWebSocketMessageCallback } from "./InboxOutb
 import { JsonWebSocketClient } from "../websocket/JsonWebSocketClient.ts";
 import { QueueBoxUtilities } from "./QueueBoxUtilities.ts";
 import { ALMessage } from "../al-contracts/al-contract.ts";
-import { ResourceEntry, toResourceEntry } from "../queuebox/ResourceEntry.ts";
+import { ResourceEntry } from "../queuebox/ResourceEntry.ts";
 
 export type WsQueueBoxClientServiceInputDto = {
     readonly sessionId: string;
@@ -109,7 +109,7 @@ export class WsQueueBoxClientService {
     }
 
     async enqueueOutboxIfAbsent(message: ALMessage): Promise<ResourceEntry> {
-        return await this.outbox.enqueueIfAbsent(toResourceEntry(message.payload.typeId, message))
+        return await this.outbox.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(message))
     }
 
     async dequeueOutbox(typesToDequeue: Set<string>, resilience: ResilienceDto) {

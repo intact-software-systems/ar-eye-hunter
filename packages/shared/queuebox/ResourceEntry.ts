@@ -146,14 +146,14 @@ export function toResourceEntry<T>(typeId: string, resource: T): ResourceEntry {
     }
 }
 
-export function toResourceEntryWithKey(
+export function toResourceEntryWithKey<T>(
     key: Key,
     typeId: string,
-    resource: string
+    resource: T
 ): ResourceEntry {
     return {
         key: key,
-        resource: resource,
+        resource: JSON.stringify(resource),
         typeId: typeId,
         audit: {
             date: Temporal.Now.plainTimeISO(),
