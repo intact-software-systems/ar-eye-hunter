@@ -100,6 +100,11 @@ export class QRtcDataChannel {
             throw new Error("Data channel not open");
         }
 
+        if(this.status.dc.readyState !== "open") {
+            console.error("Data channel not open for " + this.input.dataChannelName + " and " + this.input.peerId + " peer", new Error().stack ?? "")
+            throw new Error("Data channel not open");
+        }
+
         this.status.dc.send(data)
 
         return Promise.resolve()

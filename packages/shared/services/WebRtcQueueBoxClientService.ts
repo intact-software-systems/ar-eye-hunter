@@ -184,20 +184,25 @@ export class WebRtcQueueBoxClientService {
 
             onMessage: async (sessionId: string, token: string, message: ALMessage) => {
                 console.log(`Message received for ${sessionId} and ${token} ${message.payload.resource}`)
+                if (this.input.sessionId !== sessionId) {
+                    throw new Error("Message received for wrong session id: " + sessionId + " expected: " + this.input.sessionId)
+                }
 
                 const msg: QRtcSignalingMessage = JSON.parse(message.payload.resource) as QRtcSignalingMessage
 
-                if (msg.toId !== this.input.sessionId) {
+                const peerId = msg.fromId;
+
+                if (msg.toId !== sessionId) {
                     console.log("Message not for us, ignoring: " + message.payload.resource)
                     return Promise.resolve()
-                } else if (msg.fromId === this.input.sessionId) {
-                    console.log("Ignoring message from self", new Error().stack)
+                } else if (peerId === sessionId) {
+                    console.log("Ignoring message from self msg.fromId" + peerId + " my session id" + sessionId, new Error().stack)
                     return Promise.resolve()
                 }
 
-                const peerDto = this.connectedPeers.get(msg.fromId);
+                const peerDto = this.connectedPeers.get(peerId);
                 if (!peerDto) {
-                    await this.acceptPeerIfAbsent(msg.fromId, msg)
+                    await this.acceptPeerIfAbsent(peerId, msg)
                 } else {
                     await peerDto.connection.handleSignal(
                         msg.signalType,
@@ -212,7 +217,7 @@ export class WebRtcQueueBoxClientService {
 
     async acceptPeerIfAbsent(peerId: string, message: QRtcSignalingMessage): Promise<void> {
         if (peerId === this.input.sessionId) {
-            console.error("Ignoring connect to peer with identical sessionId from self", new Error().stack)
+            console.warn("Ignoring acceptPeerIfAbsent with identical sessionId with self " + peerId, new Error().stack)
             return
         }
 
@@ -245,7 +250,12 @@ export class WebRtcQueueBoxClientService {
         await rtcPeerDto.connection.handleSignal(message.signalType, message.payload as QRtcDataExchanged);
     }
 
-    async connectToPeer(peerId: string): Promise<QRtcDataChannel> {
+    async connectToPeerIfAbsent(peerId: string): Promise<void> {
+        if (peerId === this.input.sessionId) {
+            console.warn("Ignoring connectToPeerIfAbsent with identical sessionId with self " + peerId, new Error().stack)
+            return
+        }
+
         const rtcPeerDto =
             this.computePeerMediaChannelIfNecessary(
                 this.computePeerDataChannelIfNecessary(
@@ -267,8 +277,6 @@ export class WebRtcQueueBoxClientService {
             rtcPeerDto.media.setLocalAudioEnabled(this.status.localAudioEnabled);
             rtcPeerDto.media.setLocalVideoEnabled(this.status.localVideoEnabled);
         }
-
-        return rtcPeerDto.channel;
     }
 
     private computePeerMediaChannelIfNecessary(rtcPeerDto: QRtcPeerDto): QRtcPeerDto {

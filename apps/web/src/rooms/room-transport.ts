@@ -1,12 +1,14 @@
-import {RoomMember, RoomSummary, RoomUiState, RoomUiStatus} from './room-ui-types.ts';
+import { RoomMember, RoomSummary, RoomUiState, RoomUiStatus } from './room-ui-types.ts';
 import * as roomApi from '../middleware/api-integration.ts'
-import {addWebSocketInboxCallback} from "../middleware/ws-message-router.ts";
-import {AppTopics, RoomDetails} from "@shared/api/api-config.ts";
-import {ALPayload} from "@shared/al-contracts/al-contract.ts";
-import {cachedRoomDataById} from "../middleware/data-caches.ts";
+import { addWebSocketInboxCallback } from "../middleware/ws-message-router.ts";
+import { AppTopics, RoomDetails } from "@shared/api/api-config.ts";
+import { ALPayload } from "@shared/al-contracts/al-contract.ts";
+import { cachedRoomDataById } from "../middleware/data-caches.ts";
+import { ApiMiddleware } from "../app-context.ts";
+import { WebRtcQueueBoxClientService } from "@shared/services/WebRtcQueueBoxClientService.ts";
 
-export function createRoomDriverWs(sessionId: string): RoomDriver {
-    const roomTransport = new RoomTransport(sessionId);
+export function createRoomDriverWs(mw: ApiMiddleware): RoomDriver {
+    const roomTransport = new RoomTransport(mw.middleware.webRtcQueueBox, mw.session.sessionId);
     roomTransport.addRooms(cachedRoomDataById)
 
     addWebSocketInboxCallback(
@@ -49,9 +51,11 @@ class RoomTransport implements RoomDriver {
     public roomDataById = new Map<string, RoomDetails>();
 
     public selectedRoom: RoomDetails | undefined = undefined;
+    public leftRoom: RoomDetails | undefined = undefined;
     public sink: (state: RoomUiState) => void;
 
     constructor(
+        public readonly webRtcQueueBox: WebRtcQueueBoxClientService,
         public readonly sessionId: string
     ) {
         this.sink = _ => {
@@ -69,7 +73,35 @@ class RoomTransport implements RoomDriver {
         this.sink = sink;
     }
 
-    sinkToUi(): void {
+    sinkToUi(roomIsUpdated: boolean = false): void {
+        if (roomIsUpdated) {
+            console.log('RoomTransport sinkToUi called with roomIsUpdated=true');
+
+            if (this.selectedRoom !== undefined) {
+                for (const memberId of this.selectedRoom.members) {
+                    if (memberId === this.sessionId) {
+                        continue;
+                    }
+
+                    this.webRtcQueueBox.connectToPeerIfAbsent(memberId)
+                        .then(
+                            () => console.log(`Connecting to peer ${memberId}`)
+                        )
+                        .catch(
+                            e => console.error(`Failed to connect to peer ${memberId}: ${e}`)
+                        )
+                }
+            }
+            if (this.leftRoom !== undefined) {
+                for (const memberId of this.leftRoom.members) {
+                    if (memberId === this.sessionId) {
+                        continue;
+                    }
+                    console.log(`TODO implement disconnect from peer ${memberId}`)
+                }
+            }
+        }
+
         this.sink({
             status: RoomUiStatus.Ready,
             rooms: this.toRooms(this.roomDataById),
@@ -99,12 +131,15 @@ class RoomTransport implements RoomDriver {
             return [];
         }
 
-        return selectedRoom.members.map((memberId) => ({
-            clientId: memberId,
-            username: memberId,
-            isOwner: memberId === selectedRoom.createdBy,
-            isOnline: true,
-        }));
+        return selectedRoom.members
+            .map(memberId =>
+                ({
+                    clientId: memberId,
+                    username: memberId,
+                    isOwner: memberId === selectedRoom.createdBy,
+                    isOnline: true,
+                })
+            );
     }
 
 
@@ -120,6 +155,7 @@ class RoomTransport implements RoomDriver {
         return roomApi.leaveRoom(this.selectedRoom.name, this.sessionId)
             .then(
                 _ => {
+                    this.leftRoom = this.selectedRoom;
                     this.selectedRoom = undefined;
                     this.sinkToUi()
                 }
@@ -133,6 +169,7 @@ class RoomTransport implements RoomDriver {
             )
             .then(
                 room => {
+                    this.leftRoom = this.selectedRoom;
                     this.selectedRoom = room;
                     this.sinkToUi()
                 }
@@ -145,6 +182,7 @@ class RoomTransport implements RoomDriver {
                 createdBy: this.sessionId
             })
             .then(room => {
+                this.leftRoom = this.selectedRoom;
                 this.selectedRoom = room;
                 this.sinkToUi()
             })
@@ -155,6 +193,10 @@ class RoomTransport implements RoomDriver {
             .then(rooms => {
                 for (const room of rooms) {
                     this.roomDataById.set(room.name, room);
+
+                    if (room.members.includes(this.sessionId)) {
+                        this.selectedRoom = room;
+                    }
                 }
 
                 this.sinkToUi()

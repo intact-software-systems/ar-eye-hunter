@@ -69,7 +69,7 @@ export async function initialise(
                                 console.log(clientData.sessionId + ' is a member of the room. Connecting to peers: ' + roomDetails.members)
 
                                 for (const member of roomDetails.members) {
-                                    await webRtcQueueBox.connectToPeer(member)
+                                    await webRtcQueueBox.connectToPeerIfAbsent(member)
                                 }
                             }
 

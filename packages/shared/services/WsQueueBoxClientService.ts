@@ -81,6 +81,11 @@ export class WsQueueBoxClientService {
 
                         const message: ALMessage = data as ALMessage;
 
+                        if(message.id.sender === this.input.sessionId) {
+                            console.warn("Received message originating from self: " + this.input.sessionId + " ignoring it");
+                            return;
+                        }
+
                         await this.inbox.enqueueIfAbsent(
                             QueueBoxUtilities.toResourceEntryFromMsg(message)
                         );
