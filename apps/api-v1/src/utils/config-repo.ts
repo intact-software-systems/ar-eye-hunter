@@ -33,6 +33,8 @@ async function loadConfig(env: string): Promise<object> {
     }
 }
 
+export const myServerId = "server-" + crypto.randomUUID().substring(0, 8);
+
 const env = Deno.env.get("ENVIRONMENT") || 'dev';
 
 export const configuration: ApiConfig = await loadConfig(env) as ApiConfig;

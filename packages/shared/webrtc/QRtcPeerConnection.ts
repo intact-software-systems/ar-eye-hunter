@@ -58,8 +58,6 @@ type QRtcPeerConnectionStatus = {
     mediaPolicy: QRtcMediaPolicy | undefined
     isPolite: boolean
     makingOffer: boolean
-    ignoreOffer: boolean
-    iceCandidateQueue: RTCIceCandidateInit[]
 }
 
 export class QRtcPeerConnection {
@@ -104,8 +102,6 @@ export class QRtcPeerConnection {
             mediaPolicy: undefined,
             isPolite: this.input.sessionId < this.input.peerSessionId,
             makingOffer: false,
-            ignoreOffer: false,
-            iceCandidateQueue: [],
         };
     }
 
@@ -150,7 +146,13 @@ export class QRtcPeerConnection {
     connect() {
         if (this.isOpen() || !this.isReadyToConnect()) {
             console.log("Ignore connect, peer connection in state: " + this.status.state)
+            console.log("Peer connection is not ready to current peer connection state: " + this.status.pc?.connectionState + " current pc signaling state " + this.status?.pc?.signalingState)
             return
+        }
+
+        if (this.status.pc) {
+            console.log("Peer connection already exists. Resetting peer connection.")
+            this.reset()
         }
 
         this.status.state = QRtcSessionState.Connecting;
@@ -161,11 +163,6 @@ export class QRtcPeerConnection {
         // When pc.createDataChannel is called, it will trigger this event
         pc.onnegotiationneeded = async () => {
             try {
-                if (pc.signalingState !== 'stable') {
-                    // Avoid creating offers while not stable; perfect negotiation resolves convergence.
-                    return;
-                }
-
                 this.status.makingOffer = true;
                 await pc.setLocalDescription();
 
@@ -201,10 +198,6 @@ export class QRtcPeerConnection {
 
         pc.ondatachannel =
             async event => {
-                if (this.onDataChannelCallbacks.size === 0) {
-                    return Promise.reject(new Error("No data channel callbacks registered. Ignoring..."))
-                }
-
                 console.log("Data channel created: " + event.channel.label)
 
                 for (const callback of this.onDataChannelCallbacks.values()) {
@@ -465,11 +458,24 @@ export class QRtcPeerConnection {
         }
     }
 
+    private signalingChain = Promise.resolve();
+
     async handleSignal(signal: QRtcSignalingType, msg: QRtcDataExchanged) {
+        this.signalingChain =
+            this.signalingChain
+                .then(async () => {
+                    await this.processSignal(signal, msg);
+                })
+                .catch(err => console.error("Signaling chain error", err));
+    }
+
+    private async processSignal(signal: QRtcSignalingType, msg: QRtcDataExchanged) {
         const pc = this.status.pc;
         if (!pc) {
             return Promise.reject("PeerConnection not initialized");
         }
+
+        let ignoreOffer = false;
 
         console.log("Handling signal: " + signal + ": " + JSON.stringify(msg))
 
@@ -478,24 +484,7 @@ export class QRtcPeerConnection {
                 if (!msg.description) {
                     return Promise.reject(new Error("signal answer should have description"));
                 }
-
-                if (pc.signalingState !== 'have-local-offer') {
-                    console.warn("Received answer in wrong state: " + pc.signalingState + " expected have-local-offer. Ignoring....")
-                    return Promise.resolve()
-                }
-
-                try {
-                    await pc.setRemoteDescription(msg.description);
-                } catch (err) {
-                    console.error("Error setting remote description", err);
-                    return Promise.reject(err);
-                }
-
-                while (this.status.iceCandidateQueue.length) {
-                    const queuedCandidate = this.status.iceCandidateQueue.shift();
-                    await pc.addIceCandidate(queuedCandidate);
-                }
-
+                await pc.setRemoteDescription(msg.description);
                 break
             }
             case QRtcSignalingType.Offer: {
@@ -505,32 +494,22 @@ export class QRtcPeerConnection {
 
                 const offerCollision = this.status.makingOffer || pc.signalingState !== "stable";
 
-                this.status.ignoreOffer = !this.status.isPolite && offerCollision;
+                ignoreOffer = !this.status.isPolite && offerCollision;
 
-                if (this.status.ignoreOffer) {
+                if (ignoreOffer) {
                     console.log("Ignoring offer from " + this.input.peerSessionId + " because we are not polite")
-                    return Promise.resolve()
+                    return
                 }
 
                 if (offerCollision) {
                     console.log("Accepting offer from " + this.input.peerSessionId + " because we are polite = " + this.status.isPolite)
-
-                    await Promise.all(
-                        [
-                            pc.setLocalDescription({type: "rollback"}),
-                            pc.setRemoteDescription(msg.description)
-                        ]
-                    );
+                    await pc.setLocalDescription({type: "rollback"})
+                    await pc.setRemoteDescription(msg.description)
                 } else {
                     await pc.setRemoteDescription(msg.description);
                 }
 
-                while (this.status.iceCandidateQueue.length) {
-                    const queuedCandidate = this.status.iceCandidateQueue.shift();
-                    await pc.addIceCandidate(queuedCandidate);
-                }
-
-                await pc.setLocalDescription();
+                await pc.setLocalDescription(); // Automatically creates an answer
 
                 await this.sendSignal(
                     QRtcSignalingType.Answer,
@@ -550,12 +529,10 @@ export class QRtcPeerConnection {
                 try {
                     if (pc.remoteDescription && pc.remoteDescription.type) {
                         await pc.addIceCandidate(msg.candidate);
-                    } else {
-                        this.status.iceCandidateQueue.push(msg.candidate);
                     }
                 } catch (err) {
-                    if (!this.status.ignoreOffer) {
-                        return Promise.reject(err);
+                    if (!ignoreOffer) {
+                        throw err
                     }
                 }
                 break

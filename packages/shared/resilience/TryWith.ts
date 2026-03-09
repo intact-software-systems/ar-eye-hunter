@@ -44,3 +44,47 @@ export function tryWith<T>(
         tryToExecute(retryIntervalMsecs, 1)
     })
 }
+
+export function tryRunInIntervals<T>(
+    handler: () => T,
+    intervalMsecs: number = 60000,
+    retryIntervalMsecs: number = 10000,
+    maxAttempts: number = Number.MAX_VALUE
+) {
+    return new Promise((resolve, reject) => {
+        const tryToExecute =
+            (
+                currentRetryIntervalMsecs: number,
+                attempts: number
+            ) => {
+                try {
+                    resolve(handler())
+
+                    setTimeout(
+                        () =>
+                            tryToExecute(
+                                retryIntervalMsecs,
+                                attempts + 1
+                            ),
+                        intervalMsecs
+                    )
+
+                } catch (_) {
+                    if (attempts >= maxAttempts) {
+                        reject({error: 'Unable to do it'})
+                    }
+
+                    setTimeout(
+                        () =>
+                            tryToExecute(
+                                backoffDelayMs(attempts, currentRetryIntervalMsecs),
+                                attempts + 1
+                            ),
+                        currentRetryIntervalMsecs
+                    )
+                }
+            }
+
+        tryToExecute(retryIntervalMsecs, 1)
+    })
+}

@@ -1,10 +1,9 @@
-import {ALPayload, toALMessage} from "@shared/al-contracts/al-contract.ts";
-import {ClientData} from "@shared/api/api-config.ts";
-import {ChatMessage, ChatScreen} from "../chat/chat-screen.ts";
-import {removeWebSocketInboxCallback} from "./ws-message-router.ts";
-import {Middleware} from "./middleware.ts";
-import {addRtcInboxCallback, removeRtcInboxCallback} from "./rtc-message-router.ts";
-import {cachedChatMessageById} from "./data-caches.ts";
+import { ALPayload, toALMessage } from "@shared/al-contracts/al-contract.ts";
+import { ClientData } from "@shared/api/api-config.ts";
+import { ChatMessage, ChatScreen } from "../chat/chat-screen.ts";
+import { removeWebSocketInboxCallback } from "./ws-message-router.ts";
+import { Middleware } from "./middleware.ts";
+import { addRtcInboxCallback, removeRtcInboxCallback } from "./rtc-message-router.ts";
 
 type ChatMessageDto = {
     sessionId: string,
@@ -40,21 +39,12 @@ export function connectTransport(
             await middleware.webRtcQueueBox.enqueueOutboxIfAbsent(message)
         },
         onReady: (api) => {
-
-            if (cachedChatMessageById.size > 0) {
-                api.clearMessages()
-            }
-
-            cachedChatMessageById
-                .forEach(message => {
-                        api.addMessage(
-                            {
-                                role: message.role,
-                                text: message.text
-                            }
-                        )
-                    }
-                )
+            api.addMessage(
+                {
+                    role: clientData.sessionId,
+                    text: "Connected"
+                }
+            )
         }
     });
 
@@ -73,7 +63,7 @@ export function connectTransport(
                 return Promise.resolve();
             }
 
-            chat.addPeerMessage(data.message.id, data.message.text);
+            chat.addPeerMessage(data.message.role, data.message.text);
 
             return Promise.resolve();
         }

@@ -4,27 +4,19 @@ import { WebRtcQueueBoxClientService } from "@shared/services/WebRtcQueueBoxClie
 import { WsQueueBoxClientService } from "@shared/services/WsQueueBoxClientService.ts";
 import { QRtcSignalingMessage } from "@shared/webrtc/QRtcSignalingContracts.ts";
 import { listRooms } from "./api-integration.ts";
-import { ChatMessage } from "../chat/chat-screen.ts";
 
-// TODO: Add version and timestamps on every shared message type
-
-export const cachedChatMessageById = new Map<string, ChatMessage>();
-export const cachedClientDataById = new Map<string, ClientData>();
-export const cachedRoomDataById = new Map<string, RoomDetails>();
-
-// export const cachedRtcSignalingMessages = new Map<string, QRtcSignalingMessage>();
+import * as clientsRepository from "../repository/clients-repository.ts";
+import * as roomsRepository from "../repository/rooms-repository.ts";
 
 export async function initialise(
     webSocketQueueBox: WsQueueBoxClientService,
     webRtcQueueBox: WebRtcQueueBoxClientService,
     clientData: ClientData
 ) {
-
-    // TODO: Is it necessary to do this?
     try {
         (await listRooms())
             .forEach(room => {
-                cachedRoomDataById.set(room.name, room)
+                roomsRepository.setRoomDataById(room.name, room)
             })
     } catch (e) {
         console.error("Failed to list rooms:", e)
@@ -39,27 +31,34 @@ export async function initialise(
 
                     switch (data.payload.typeId) {
                         case AppTopics.chat: {
-                            const chatMessage = JSON.parse(data.payload.resource) as ChatMessage;
-                            cachedChatMessageById.set(chatMessage.id, chatMessage)
+                            console.log(`Received chat message: ${data.payload.resource}`)
                             break;
                         }
 
                         case AppTopics.client: {
                             const peer = JSON.parse(data.payload.resource) as ClientData;
-                            cachedClientDataById.set(peer.clientId, peer)
+                            clientsRepository.setClientDataById(peer.clientId, peer)
                             break;
                         }
 
                         case AppTopics.rtcSignaling: {
                             const signal = JSON.parse(data.payload.resource) as QRtcSignalingMessage;
                             console.log('RTC signaling message :' + JSON.stringify(signal))
-                            // cachedRtcSignalingMessages.set(data.key.resourceId, signal)
+                            break
+                        }
+
+                        case AppTopics.clients: {
+                            console.log(`Received client list: ${data.payload.resource}`)
+                            const clients = JSON.parse(data.payload.resource) as ClientData[];
+                            clients.forEach(client => {
+                                clientsRepository.setClientDataById(client.clientId, client)
+                            })
                             break
                         }
 
                         case AppTopics.rooms: {
                             const roomDetails = JSON.parse(data.payload.resource) as RoomDetails;
-                            cachedRoomDataById.set(roomDetails.name, roomDetails)
+                            roomsRepository.setRoomDataById(roomDetails.name, roomDetails)
 
                             console.log(`Received room details: ${JSON.stringify(roomDetails)}`)
 
@@ -69,6 +68,12 @@ export async function initialise(
                                 console.log(clientData.sessionId + ' is a member of the room. Connecting to peers: ' + roomDetails.members)
 
                                 for (const member of roomDetails.members) {
+
+                                    if(clientsRepository.findClientDataById(member) === undefined) {
+                                        console.log(`Client ${member} not found in cache, skipping connection attempt`)
+                                        continue
+                                    }
+
                                     await webRtcQueueBox.connectToPeerIfAbsent(member)
                                 }
                             }

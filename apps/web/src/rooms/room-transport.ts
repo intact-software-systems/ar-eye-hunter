@@ -3,13 +3,13 @@ import * as roomApi from '../middleware/api-integration.ts'
 import { addWebSocketInboxCallback } from "../middleware/ws-message-router.ts";
 import { AppTopics, RoomDetails } from "@shared/api/api-config.ts";
 import { ALPayload } from "@shared/al-contracts/al-contract.ts";
-import { cachedRoomDataById } from "../middleware/data-caches.ts";
 import { ApiMiddleware } from "../app-context.ts";
 import { WebRtcQueueBoxClientService } from "@shared/services/WebRtcQueueBoxClientService.ts";
+import * as roomsRepository from "../repository/rooms-repository.ts";
 
 export function createRoomDriverWs(mw: ApiMiddleware): RoomDriver {
     const roomTransport = new RoomTransport(mw.middleware.webRtcQueueBox, mw.session.sessionId);
-    roomTransport.addRooms(cachedRoomDataById)
+    roomTransport.addRooms(roomsRepository.getAllRoomData())
 
     addWebSocketInboxCallback(
         AppTopics.rooms,
@@ -63,8 +63,8 @@ class RoomTransport implements RoomDriver {
         };
     }
 
-    addRooms(roomDataById: Map<string, RoomDetails>) {
-        for (const room of roomDataById.values()) {
+    addRooms(rooms: RoomDetails[]) {
+        for (const room of rooms) {
             this.roomDataById.set(room.name, room);
         }
     }
@@ -157,7 +157,7 @@ class RoomTransport implements RoomDriver {
                 _ => {
                     this.leftRoom = this.selectedRoom;
                     this.selectedRoom = undefined;
-                    this.sinkToUi()
+                    this.sinkToUi(true)
                 }
             )
     }
@@ -171,7 +171,7 @@ class RoomTransport implements RoomDriver {
                 room => {
                     this.leftRoom = this.selectedRoom;
                     this.selectedRoom = room;
-                    this.sinkToUi()
+                    this.sinkToUi(true)
                 }
             )
     }
@@ -184,7 +184,7 @@ class RoomTransport implements RoomDriver {
             .then(room => {
                 this.leftRoom = this.selectedRoom;
                 this.selectedRoom = room;
-                this.sinkToUi()
+                this.sinkToUi(true)
             })
     }
 

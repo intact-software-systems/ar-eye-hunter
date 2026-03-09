@@ -100,7 +100,7 @@ export class QRtcDataChannel {
             throw new Error("Data channel not open");
         }
 
-        if(this.status.dc.readyState !== "open") {
+        if (this.status.dc.readyState !== "open") {
             console.error("Data channel not open for " + this.input.dataChannelName + " and " + this.input.peerId + " peer", new Error().stack ?? "")
             throw new Error("Data channel not open");
         }
@@ -128,7 +128,14 @@ export class QRtcDataChannel {
             .onDataChannelDo(
                 this.input.peerId,
                 event => {
-                    this.closeDataChannelIfPresent()
+
+                    if (event.channel.label !== this.input.dataChannelName) {
+                        console.error("Received data channel for different data channel name: " + event.channel.label + " vs " + this.input.dataChannelName)
+                        return Promise.resolve()
+                    }
+                    if (this.status.dc && this.status.dc !== event.channel) {
+                        this.closeDataChannelIfPresent()
+                    }
 
                     this.status.dc = event.channel;
 
@@ -152,6 +159,11 @@ export class QRtcDataChannel {
 
     private setupDataChannelCallbacks(dc: RTCDataChannel) {
         dc.onopen = () => {
+            if (this.status.dc !== dc) {
+                console.warn("Received data channel open event for different data channel: " + dc.label + " vs " + this.status.dc?.label)
+                return
+            }
+
             console.log("Data channel open for " + this.input.dataChannelName + " and " + this.input.peerId + " peer")
 
             this.status.state = RtcSessionState.Open
@@ -166,6 +178,11 @@ export class QRtcDataChannel {
         };
 
         dc.onmessage = async event => {
+            if (this.status.dc !== dc) {
+                console.warn("Received data message for a different channel: " + dc.label + " vs " + this.status.dc?.label)
+                return
+            }
+
             console.log("WebRTC Received: " + JSON.stringify(event.data))
 
             for (const callback of this.onMessageCallbacks.values()) {
@@ -182,6 +199,11 @@ export class QRtcDataChannel {
         };
 
         dc.onclose = async () => {
+            if (this.status.dc !== dc) {
+                console.warn("Received data channel close event for different data channel: " + dc.label + " vs " + this.status.dc?.label)
+                return
+            }
+
             console.error("Data channel closed for " + this.input.dataChannelName + " and " + this.input.peerId + " peer", new Error().stack ?? "")
 
             this.status.state = RtcSessionState.Closed;
@@ -196,6 +218,11 @@ export class QRtcDataChannel {
         };
 
         dc.onerror = async () => {
+            if (this.status.dc !== dc) {
+                console.warn("Received data channel error event for different data channel: " + dc.label + " vs " + this.status.dc?.label)
+                return
+            }
+
             console.log("Data channel error for " + this.input.dataChannelName + " and " + this.input.peerId + " peer")
 
             this.status.state = RtcSessionState.Failed;

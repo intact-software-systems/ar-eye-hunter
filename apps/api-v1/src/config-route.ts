@@ -2,8 +2,8 @@ import {Hono} from "jsr:@hono/hono";
 import {ClientData, LoginRequest} from "@shared/api/api-config.ts";
 import {configuration} from "./utils/config-repo.ts";
 import {getKv, kvExpiryOptions, toClientKey, toClientsPrefix, toSessionKey} from "./utils/kv.ts";
-import * as loginRepository from "./clients/client-repository.ts";
-import {mockedClients} from "./clients/client-repository.ts";
+import * as loginRepository from "./repository/client-repository.ts";
+import {mockedClients} from "./repository/client-repository.ts";
 
 export function init(app: Hono) {
 

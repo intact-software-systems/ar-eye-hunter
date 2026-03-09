@@ -17,6 +17,17 @@ Then, click a button to init RTC connections with all clients.
     - Games
 ```
 
+## Detect client online presence
+
+Each SPA periodically sends a ping to the server to notify it is alive.
+
+Server updates client online status in the database.
+
+Each server instance keeps a list of all clients.
+
+Whenever a client requests a WebSocket connection, this client is added to the local in memory
+list and broadcasted to the other server instances, which in
+turn updates their local in-memory list and sends updates to its connected clients.
 
 
 

@@ -1,6 +1,4 @@
 /// <reference lib="deno.unstable" />
-import {RoomCreate} from "../../../../packages/shared/api/api-config.ts";
-
 let kvPromise: Promise<Deno.Kv> | undefined = undefined;
 
 export function getKv(): Promise<Deno.Kv> {

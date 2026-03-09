@@ -203,7 +203,7 @@ export class ChatScreen extends HTMLElement {
         list.innerHTML = this.messages
             .map((message) => {
                 const roleClass = `chat-msg--${message.role}`;
-                const roleLabel = message.role === 'me' ? 'You' : message.role === 'peer' ? 'Peer' : 'System';
+                const roleLabel = message.role ?? 'Peer';
                 const text = escapeHtml(message.text);
                 const time = new Date(message.createdAt).toLocaleTimeString([], {
                     hour: '2-digit',

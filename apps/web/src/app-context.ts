@@ -53,6 +53,7 @@ export async function initMiddleware(): Promise<ApiMiddleware> {
             {
                 clientId: session.clientId,
                 sessionId: session.sessionId,
+                isOnline: true,
             },
             AppTopics.rtcSignaling,
             allTopicIds,

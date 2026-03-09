@@ -10,14 +10,20 @@ export enum AppTopics {
     chat = "chat",
     rtcSignaling = "rtc-signaling",
     client = "client",
+    clients = "clients",
     rooms = "rooms",
 }
 
 export const allTopicIds = new Set(Object.values(AppTopics).map(v => v.toString()));
 
+
+// TODO: Add version and timestamps on every shared message type
+// TODO: Conflict free replicated data types, how to model?
+
 export type ClientData = {
     readonly clientId: string;
     readonly sessionId: string;
+    readonly isOnline: boolean;
 }
 
 export type IceConfig = {
