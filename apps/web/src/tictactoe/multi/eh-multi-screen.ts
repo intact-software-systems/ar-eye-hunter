@@ -1,4 +1,4 @@
-import type {ClientId, CreateGameRequest, GameId, JoinGameRequest, MakeMoveRequest,} from '@shared/mod.ts';
+import type { ClientId, CreateGameRequest, GameId, JoinGameRequest, MakeMoveRequest, } from '@shared/mod.ts';
 import {
     Cell,
     CpuDifficulty,
@@ -12,34 +12,20 @@ import {
     WsServerMsgType,
 } from '@shared/mod.ts';
 
-import {createGamesApi, NAString} from './apiClient.ts';
-import type {CellClickDetail} from '../eh-ttt-board.ts';
+import { createGamesApi, NAString } from './apiClient.ts';
+import type { CellClickDetail } from '../eh-ttt-board.ts';
+import { copyTextToClipboard, getOrCreateLocalId, mustEl, readHashParam, } from '../../utils/utils.ts';
 
 /* ======================================================
    Utilities (no nulls)
    ====================================================== */
-
-function mustEl<T extends HTMLElement>(root: ParentNode, selector: string): T {
-    const el = root.querySelector(selector);
-    if (!el) throw new Error(`Missing element: ${selector}`);
-    return el as T;
-}
-
-function getOrCreateClientId(): ClientId {
-    const key = 'clientId';
-    const existing = localStorage.getItem(key);
-    if (existing && existing.length > 0) return existing;
-    const created = crypto.randomUUID();
-    localStorage.setItem(key, created);
-    return created;
-}
 
 function emptyState(): GameState {
     return {
         board: Array(9).fill(Cell.Empty),
         currentPlayer: Player.NA,
         result: GameResult.InProgress,
-        mode: {type: GameModeType.LocalHuman, difficulty: CpuDifficulty.Empty},
+        mode: { type: GameModeType.LocalHuman, difficulty: CpuDifficulty.Empty },
     };
 }
 
@@ -59,39 +45,6 @@ type WsConn =
     | { kind: WsConnKind.Open; ws: WebSocket }
     | { kind: WsConnKind.None }
 
-function readGameIdFromHash(): string {
-    // hash: "#/multi?gameId=abc"
-    const raw = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
-    const qIndex = raw.indexOf('?');
-    if (qIndex < 0) return '';
-    const query = raw.slice(qIndex + 1);
-    const params = new URLSearchParams(query);
-    const v = params.get('gameId');
-    return v ? v : '';
-}
-
-async function copyToClipboard(text: string): Promise<boolean> {
-    try {
-        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-            await navigator.clipboard.writeText(text);
-            return true;
-        }
-
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        ta.setAttribute('readonly', 'true');
-        ta.style.position = 'absolute';
-        ta.style.left = '-9999px';
-        document.body.appendChild(ta);
-        ta.select();
-        const ok = document.execCommand('copy');
-        document.body.removeChild(ta);
-        return ok;
-    } catch {
-        return false;
-    }
-}
-
 /* ======================================================
    Component
    ====================================================== */
@@ -106,7 +59,7 @@ type MultiUiState = {
 };
 
 export class EhMultiScreen extends HTMLElement {
-    private readonly clientId: ClientId = getOrCreateClientId();
+    private readonly clientId = getOrCreateLocalId<ClientId>('clientId');
     private readonly api = createGamesApi();
 
     private ui: MultiUiState = {
@@ -115,7 +68,7 @@ export class EhMultiScreen extends HTMLElement {
         serverState: emptyState(),
         statusText: 'Create a game or join an existing game.',
         pendingMove: PendingMove.None,
-        wsConn: {kind: WsConnKind.None},
+        wsConn: { kind: WsConnKind.None },
     };
 
     connectedCallback(): void {
@@ -187,7 +140,7 @@ export class EhMultiScreen extends HTMLElement {
 
     private prefillFromShareLink(): void {
         const joinInput = mustEl<HTMLInputElement>(this, '#joinInput');
-        const sharedId = readGameIdFromHash();
+        const sharedId = readHashParam('gameId');
         if (sharedId.length > 0) {
             joinInput.value = sharedId;
             this.setStatus('Game ID prefilled from share link. Click Join.');
@@ -232,7 +185,7 @@ export class EhMultiScreen extends HTMLElement {
     }
 
     private setStatus(text: string): void {
-        this.ui = {...this.ui, statusText: text};
+        this.ui = { ...this.ui, statusText: text };
         this.updateView();
     }
 
@@ -245,11 +198,11 @@ export class EhMultiScreen extends HTMLElement {
 
         const ws = new WebSocket(this.api.wsUrl);
 
-        this.ui = {...this.ui, wsConn: {kind: WsConnKind.Connecting, ws}};
+        this.ui = { ...this.ui, wsConn: { kind: WsConnKind.Connecting, ws } };
         this.updateView();
 
         ws.addEventListener('open', () => {
-            this.ui = {...this.ui, wsConn: {kind: WsConnKind.Open, ws}};
+            this.ui = { ...this.ui, wsConn: { kind: WsConnKind.Open, ws } };
             this.updateView();
 
             const hello: WsClientMessage = {
@@ -274,13 +227,13 @@ export class EhMultiScreen extends HTMLElement {
         });
 
         ws.addEventListener('close', () => {
-            this.ui = {...this.ui, wsConn: {kind: WsConnKind.None}};
+            this.ui = { ...this.ui, wsConn: { kind: WsConnKind.None } };
             this.setStatus('WebSocket closed.');
             this.updateView();
         });
 
         ws.addEventListener('error', () => {
-            this.ui = {...this.ui, wsConn: {kind: WsConnKind.None}};
+            this.ui = { ...this.ui, wsConn: { kind: WsConnKind.None } };
             this.setStatus('WebSocket error.');
             this.updateView();
         });
@@ -294,16 +247,16 @@ export class EhMultiScreen extends HTMLElement {
                 // ignore
             }
         }
-        this.ui = {...this.ui, wsConn: {kind: WsConnKind.None}, pendingMove: PendingMove.None};
+        this.ui = { ...this.ui, wsConn: { kind: WsConnKind.None }, pendingMove: PendingMove.None };
         this.updateView();
     }
 
     private safeParseServerMessage(raw: string): { kind: 'Ok'; msg: WsServerMessage } | { kind: 'Invalid' } {
         try {
             const msg = JSON.parse(raw) as WsServerMessage;
-            return {kind: 'Ok', msg};
+            return { kind: 'Ok', msg };
         } catch {
-            return {kind: 'Invalid'};
+            return { kind: 'Invalid' };
         }
     }
 
@@ -378,7 +331,7 @@ export class EhMultiScreen extends HTMLElement {
 
     private async onCreate(): Promise<void> {
         try {
-            const req: CreateGameRequest = {clientId: this.clientId};
+            const req: CreateGameRequest = { clientId: this.clientId };
             const res = await this.api.createGame(req);
 
             this.ui = {
@@ -404,7 +357,7 @@ export class EhMultiScreen extends HTMLElement {
         }
 
         try {
-            const req: JoinGameRequest = {clientId: this.clientId};
+            const req: JoinGameRequest = { clientId: this.clientId };
             const res = await this.api.joinGame(gameId as GameId, req);
 
             this.ui = {
@@ -426,7 +379,9 @@ export class EhMultiScreen extends HTMLElement {
     private async onCellClick(index: number): Promise<void> {
         if (this.ui.gameId === NAString.NA) return;
         if (this.ui.wsConn.kind !== WsConnKind.Open) return;
-        if (this.ui.wsConn.ws.readyState !== WebSocket.OPEN) {
+        const ws = this.ui.wsConn.ws;
+
+        if (ws.readyState !== WebSocket.OPEN) {
             this.setStatus('WebSocket not open yet. Please wait…');
             return;
         }
@@ -437,10 +392,10 @@ export class EhMultiScreen extends HTMLElement {
         if (this.ui.serverState.currentPlayer !== this.ui.assignedPlayer) return;
 
         // Mark pending to avoid double-send
-        this.ui = {...this.ui, pendingMove: PendingMove.Waiting};
+        this.ui = { ...this.ui, pendingMove: PendingMove.Waiting };
         this.updateView();
 
-        const req: MakeMoveRequest = {clientId: this.clientId, moveIndex: index};
+        const req: MakeMoveRequest = { clientId: this.clientId, moveIndex: index };
 
         const msg: WsClientMessage = {
             type: WsClientMsgType.MakeMove,
@@ -450,10 +405,10 @@ export class EhMultiScreen extends HTMLElement {
         };
 
         try {
-            this.ui.wsConn.ws.send(JSON.stringify(msg));
+            ws.send(JSON.stringify(msg));
             // We’ll clear pending when the server broadcasts StateUpdate (or Error).
         } catch (e) {
-            this.ui = {...this.ui, pendingMove: PendingMove.None};
+            this.ui = { ...this.ui, pendingMove: PendingMove.None };
             this.setStatus('Failed to send move over WebSocket.');
             console.error(e);
         }
@@ -468,7 +423,7 @@ export class EhMultiScreen extends HTMLElement {
             serverState: emptyState(),
             statusText: 'Left game. Create a game or join an existing game.',
             pendingMove: PendingMove.None,
-            wsConn: {kind: WsConnKind.None},
+            wsConn: { kind: WsConnKind.None },
         };
 
         const joinInput = mustEl<HTMLInputElement>(this, '#joinInput');
@@ -486,7 +441,7 @@ export class EhMultiScreen extends HTMLElement {
             this.setStatus('No game id to copy.');
             return;
         }
-        const ok = await copyToClipboard(this.ui.gameId);
+        const ok = await copyTextToClipboard(this.ui.gameId);
         this.setStatus(ok ? `Copied game id: ${this.ui.gameId}` : 'Copy failed.');
     }
 
@@ -502,7 +457,7 @@ export class EhMultiScreen extends HTMLElement {
             return;
         }
         const url = this.buildShareUrl(this.ui.gameId);
-        const ok = await copyToClipboard(url);
+        const ok = await copyTextToClipboard(url);
         this.setStatus(ok ? 'Share link copied to clipboard.' : 'Copy failed.');
     }
 }

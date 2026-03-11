@@ -5,5 +5,5 @@ export interface QRtcClientCallbacks {
 }
 
 export interface OnQRtcMessageCallback {
-    onMessage: (data: unknown, ev: MessageEvent) => Promise<void>
+    onMessage: (data: unknown, ev: MessageEvent) => Promise<void>;
 }

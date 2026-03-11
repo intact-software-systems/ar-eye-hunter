@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "noEmit": true,
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "jsx": "react-jsx",
+    "allowImportingTsExtensions": true,
+    "lib": [
+      "ES2023",
+      "DOM"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@shared-web/*": [
+        "../../packages/shared-web/*"
+      ],
+      "@shared-graph/*": [
+        "../../packages/shared-graph/*"
+      ],
+      "@shared/*": [
+        "../../packages/shared/*"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "src/**/*.d.ts",
+    "../../types/**/*.d.ts"
+  ]
+}

@@ -1302,8 +1302,17 @@
       "apps/web": {
         "packageJson": {
           "dependencies": [
+            "npm:@js-temporal/polyfill@~0.5.1",
+            "npm:graphology@0.26",
             "npm:typescript@^5.3.3",
             "npm:vite@5"
+          ]
+        }
+      },
+      "packages/shared-graph": {
+        "packageJson": {
+          "dependencies": [
+            "npm:graphology@0.26.0"
           ]
         }
       }

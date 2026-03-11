@@ -1,8 +1,4 @@
-import {
-    P2pRole,
-    P2pSignalType,
-    type P2pSessionId,
-} from '@shared/mod.ts';
+import { P2pRole, type P2pSessionId, P2pSignalType, } from '@shared/mod.ts';
 
 
 export type SignalTransport = {
@@ -122,9 +118,12 @@ export class WebRtcSession {
 
     private remoteCandidateQueue: RTCIceCandidateInit[] = [];
 
-    private onMessage: WebRtcMessageHandler = () => {};
-    private onStatus: WebRtcStatusHandler = () => {};
-    private onError: WebRtcErrorHandler = () => {};
+    private onMessage: WebRtcMessageHandler = () => {
+    };
+    private onStatus: WebRtcStatusHandler = () => {
+    };
+    private onError: WebRtcErrorHandler = () => {
+    };
 
     private readonly config: WebRtcSessionConfig;
     private readonly transport: SignalTransport;

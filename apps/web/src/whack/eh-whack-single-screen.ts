@@ -1,15 +1,17 @@
 import {
     ColorId,
-    WhackOutcome,
-    createInitialState,
     computeNextState,
-    makeMulberry32,
-    whackAtNormalizedPoint,
+    createInitialState,
     type EngineParams,
     type EngineState,
+    makeMulberry32,
+    whackAtNormalizedPoint,
+    WhackOutcome,
 } from '@shared/mod';
 
 import type { WhackDetail } from './eh-whack-canvas';
+import { navigate, Route } from '../router.ts';
+import { mustEl } from '../utils/utils.ts';
 
 const DefaultParams: EngineParams = {
     tickMs: 250,
@@ -54,13 +56,9 @@ export class EhWhackSingleScreen extends HTMLElement {
       </div>
     `;
 
-        const canvas = this.querySelector('#canvas') as HTMLElement | null;
-        const restartBtn = this.querySelector('#restartBtn') as HTMLButtonElement | null;
-        const backBtn = this.querySelector('#backBtn') as HTMLButtonElement | null;
-
-        if (!canvas) throw new Error('Missing #canvas');
-        if (!restartBtn) throw new Error('Missing #restartBtn');
-        if (!backBtn) throw new Error('Missing #backBtn');
+        const canvas = mustEl<HTMLElement>(this, '#canvas');
+        const restartBtn = mustEl<HTMLButtonElement>(this, '#restartBtn');
+        const backBtn = mustEl<HTMLButtonElement>(this, '#backBtn');
 
         canvas.addEventListener('whack', (e: Event) => {
             const ce = e as CustomEvent<WhackDetail>;
@@ -68,7 +66,7 @@ export class EhWhackSingleScreen extends HTMLElement {
         });
 
         restartBtn.addEventListener('click', () => this.restart());
-        backBtn.addEventListener('click', () => (location.hash = '#/whack'));
+        backBtn.addEventListener('click', () => navigate(Route.WhackAWorm));
 
         this.startLoop();
         this.render();
@@ -123,19 +121,14 @@ export class EhWhackSingleScreen extends HTMLElement {
     }
 
     private setStatus(text: string): void {
-        const el = this.querySelector('#status') as HTMLDivElement | null;
-        if (!el) throw new Error('Missing #status');
+        const el = mustEl<HTMLDivElement>(this, '#status');
         el.textContent = text;
     }
 
     private render(): void {
-        const scoreEl = this.querySelector('#score') as HTMLSpanElement | null;
-        const wormsEl = this.querySelector('#worms') as HTMLSpanElement | null;
-        const canvas = this.querySelector('#canvas') as any;
-
-        if (!scoreEl) throw new Error('Missing #score');
-        if (!wormsEl) throw new Error('Missing #worms');
-        if (!canvas) throw new Error('Missing #canvas');
+        const scoreEl = mustEl<HTMLSpanElement>(this, '#score');
+        const wormsEl = mustEl<HTMLSpanElement>(this, '#worms');
+        const canvas = mustEl<any>(this, '#canvas');
 
         scoreEl.textContent = String(this.score);
         wormsEl.textContent = String(this.state.wormsById.size);

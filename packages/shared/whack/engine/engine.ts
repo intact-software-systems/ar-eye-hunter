@@ -1,18 +1,18 @@
 import {
-    WormIdNA,
-    WriteDecision,
-    WhackOutcome,
     type ColorId,
     type EngineParams,
     type EngineState,
     type PlayerId,
     type UpsertResult,
+    WhackOutcome,
+    type WhackResult,
     type Worm,
     type WormId,
-    type WhackResult,
+    WormIdNA,
+    WriteDecision,
 } from './types.ts';
 
-import {Rng} from './rng.ts';
+import { Rng } from './rng.ts';
 
 function clamp01(v: number): number {
     if (v < 0) return 0;

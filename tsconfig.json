@@ -5,18 +5,15 @@
       "path": "packages/shared"
     },
     {
+      "path": "packages/shared-graph"
+    },
+    {
       "path": "apps/web"
-    },
-    {
-      "path": "apps/api"
-    },
-    {
-      "path": "apps/api-v1"
     }
   ],
   "compilerOptions": {
     "noEmit": true,
-    "target": "ES2022",
+    "target": "ES2023",
     "module": "ESNext",
     "strict": true,
     "moduleResolution": "Bundler",
@@ -25,8 +22,19 @@
       "deno.ns",
       "deno.unstable"
     ],
+    "lib": [
+      "ES2023",
+      "DOM",
+      "WebWorker"
+    ],
     "baseUrl": ".",
     "paths": {
+      "@shared-web/*": [
+        "packages/shared-web/*"
+      ],
+      "@shared-graph/*": [
+        "packages/shared-graph/*"
+      ],
       "@shared/*": [
         "packages/shared/*"
       ]

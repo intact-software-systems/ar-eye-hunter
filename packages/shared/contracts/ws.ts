@@ -1,14 +1,14 @@
-import { BoardMove, GameState, Player } from '../tictactoe/types.ts'
+import { BoardMove, GameState, Player } from '../tictactoe/types.ts';
 
 export enum WsClientMsgType {
-    Hello = "Hello",
-    MakeMove = "MakeMove",
+    Hello = 'Hello',
+    MakeMove = 'MakeMove',
 }
 
 export enum WsServerMsgType {
-    Welcome = "Welcome",
-    StateUpdate = "StateUpdate",
-    Error = "Error",
+    Welcome = 'Welcome',
+    StateUpdate = 'StateUpdate',
+    Error = 'Error',
 }
 
 export type WsClientMessage =

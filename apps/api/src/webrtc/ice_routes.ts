@@ -32,7 +32,10 @@ export function iceRoutes(): Route[] {
                 try {
                     const now = Date.now();
                     if (cache && cache.expiresAtEpochMs > now) {
-                        return json<IceConfig>({ iceServers: cache.iceServers, expiresAtEpochMs: cache.expiresAtEpochMs });
+                        return json<IceConfig>({
+                            iceServers: cache.iceServers,
+                            expiresAtEpochMs: cache.expiresAtEpochMs
+                        });
                     }
 
                     const appName = mustEnv('METERED_APP_NAME');

@@ -1,5 +1,6 @@
-import {Either} from "./Either.ts";
-import {PartitionRange} from "./PartitionRange.ts";
+import type { Temporal } from '@js-temporal/polyfill';
+import { Either } from './Either.ts';
+import { PartitionRange } from './PartitionRange.ts';
 
 export class AtomicLong {
     private v: number;
@@ -58,7 +59,7 @@ export class AtomicReference<T> {
 
 function requireNonNull<T>(v: T | null | undefined): T {
     if (v === null || v === undefined) {
-        throw new Error("Value was null/undefined");
+        throw new Error('Value was null/undefined');
     }
     return v;
 }
@@ -129,7 +130,7 @@ export class SlidingWindowCounter {
             }
         }
         if (!matchBucket) {
-            throw new Error("No bucket found");
+            throw new Error('No bucket found');
         }
 
         const existingStatus = requireNonNull(windowCounter.counterByBucket.get(matchBucket));
@@ -244,7 +245,7 @@ export class SlidingWindowCounter {
         for (const bucket of buckets) {
             const key = `${bucket.from}-${bucket.to}`;
             if (seen.has(key)) {
-                throw new Error("No duplicate buckets allowed");
+                throw new Error('No duplicate buckets allowed');
             }
             seen.add(key);
 
@@ -256,9 +257,9 @@ export class SlidingWindowCounter {
 }
 
 export enum CircuitBreakerState {
-    OPEN = "OPEN",
-    CLOSE = "CLOSE",
-    HALF_OPEN = "HALF_OPEN",
+    OPEN = 'OPEN',
+    CLOSE = 'CLOSE',
+    HALF_OPEN = 'HALF_OPEN',
 }
 
 export class CircuitBreakerPolicy {
@@ -287,8 +288,8 @@ export class CircuitBreaker {
         return new CircuitBreaker(
             new AtomicReference<CircuitBreakerState>(CircuitBreakerState.CLOSE),
             SlidingWindowCounter.init(
-                policy.slidingWindow.total({unit: "milliseconds"}),
-                Math.floor(policy.slidingWindow.total({unit: "milliseconds"}) / 10),
+                policy.slidingWindow.total({ unit: 'milliseconds' }),
+                Math.floor(policy.slidingWindow.total({ unit: 'milliseconds' }) / 10),
             ),
             new AtomicLong(CircuitBreaker.RESET_VALUE),
             new AtomicLong(CircuitBreaker.RESET_VALUE),
@@ -302,7 +303,7 @@ export class CircuitBreaker {
     ): Promise<Either<Error, T>> {
         try {
             if (!circuitBreaker.allow()) {
-                return Either.ofLeft(new Error("Not allowed to execute"));
+                return Either.ofLeft(new Error('Not allowed to execute'));
             }
 
             const value = await supplier();
@@ -335,7 +336,7 @@ export class CircuitBreaker {
             return isSuccess;
         } catch (error) {
             circuitBreaker.failure();
-            console.error("Execution failed:", error);
+            console.error('Execution failed:', error);
             return false;
         }
     }
@@ -380,7 +381,7 @@ export class CircuitBreaker {
         if (this.state.get() === CircuitBreakerState.OPEN) {
             const timeSinceOpened = nowMs() - this.timestampOpen.get();
 
-            if (timeSinceOpened > this.policy.resetTimeout.total({unit: "milliseconds"})) {
+            if (timeSinceOpened > this.policy.resetTimeout.total({ unit: 'milliseconds' })) {
                 const previous = this.state.getAndSet(CircuitBreakerState.HALF_OPEN);
                 if (previous === CircuitBreakerState.OPEN) {
                     // This thread set circuit to half open and is allowed through
@@ -392,7 +393,7 @@ export class CircuitBreaker {
             // check if state has been in half open too long
             const timeSinceHalfOpened = nowMs() - this.timestampHalfOpen.get();
 
-            if (timeSinceHalfOpened > this.policy.halfOpenTimeout.total({unit: "milliseconds"})) {
+            if (timeSinceHalfOpened > this.policy.halfOpenTimeout.total({ unit: 'milliseconds' })) {
                 this.failureCount(1);
             }
         }
@@ -404,12 +405,12 @@ export class CircuitBreaker {
     isAllowedThrough(): boolean {
         if (this.state.get() === CircuitBreakerState.OPEN) {
             const timeSinceOpened = nowMs() - this.timestampOpen.get();
-            if (timeSinceOpened > this.policy.resetTimeout.total({unit: "milliseconds"})) {
+            if (timeSinceOpened > this.policy.resetTimeout.total({ unit: 'milliseconds' })) {
                 return true;
             }
         } else if (this.state.get() === CircuitBreakerState.HALF_OPEN) {
             const timeSinceHalfOpened = nowMs() - this.timestampHalfOpen.get();
-            if (timeSinceHalfOpened > this.policy.halfOpenTimeout.total({unit: "milliseconds"})) {
+            if (timeSinceHalfOpened > this.policy.halfOpenTimeout.total({ unit: 'milliseconds' })) {
                 return true;
             }
         }

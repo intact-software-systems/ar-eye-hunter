@@ -6,9 +6,10 @@ import {
     GameMode,
     GameModeType,
     GameResult,
-    GameState, MoveIndex,
+    GameState,
+    MoveIndex,
     Player
-} from "./types.ts";
+} from './types.ts';
 
 const EMPTY_BOARD: readonly Cell[] = Array(9).fill(Cell.Empty);
 

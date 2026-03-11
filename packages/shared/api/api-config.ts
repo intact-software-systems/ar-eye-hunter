@@ -6,25 +6,41 @@ export type ApiConfig = {
     };
 };
 
-export enum AppTopics {
-    chat = "chat",
-    rtcSignaling = "rtc-signaling",
-    client = "client",
-    clients = "clients",
-    rooms = "rooms",
+export type AuthSession = {
+    readonly clientId: string;
+    readonly accessToken: string;
+    readonly username: string;
+    readonly sessionId: string;
+    readonly expiresAtEpochMs: number;
+};
+
+export enum EnqueuedType {
+    WS_INBOX = 'WS_INBOX',
+    WS_OUTBOX = 'WS_OUTBOX',
+    RTC_INBOX = 'RTC_INBOX',
+    RTC_OUTBOX = 'RTC_OUTBOX',
 }
 
-export const allTopicIds = new Set(Object.values(AppTopics).map(v => v.toString()));
+export enum AppTopics {
+    chat = 'chat',
+    rtcSignaling = 'rtc-signaling',
+    clientStateSnapshot = 'client-state.snapshot',
+    clientStateEvent = 'client-state.event',
+    groupStateSnapshot = 'group-state.snapshot',
+    groupStateEvent = 'group-state.event',
+    graphs = 'graphs',
+    rtt = 'rtt',
+}
 
-
-// TODO: Add version and timestamps on every shared message type
 // TODO: Conflict free replicated data types, how to model?
 
-export type ClientData = {
-    readonly clientId: string;
+export type PeerId = string;
+
+export type ClientInfo = {
+    readonly clientId: PeerId;
     readonly sessionId: string;
     readonly isOnline: boolean;
-}
+};
 
 export type IceConfig = {
     readonly iceServers: readonly RTCIceServer[];
@@ -36,22 +52,55 @@ export type LoginRequest = {
     password: string;
 };
 
+export type RegisterRequest = {
+    username: string;
+    password: string;
+    displayName?: string;
+};
+
 export type LoginResponse = {
-    clientId: string;
+    clientId: PeerId;
     accessToken: string;
     username: string;
     sessionId: string;
+    expiresAtEpochMs: number;
 };
 
-
-export type RoomCreate = {
-    name: string
-    createdBy: string
+export type RegisterResponse = {
+    clientId: PeerId;
+    username: string;
+    displayName?: string;
+    registeredAtEpochMs: number;
 };
 
-export type RoomDetails = {
-    name: string
-    createdBy: string
-    createdAtEpochMs: number
-    members: readonly string[]
+export type LogoutResponse = {
+    loggedOut: boolean;
+};
+
+export type WebSocketTicketResponse = {
+    ticket: string;
+    sessionId: string;
+    expiresAtEpochMs: number;
+};
+
+export type GroupId = string;
+
+export type OverlayId = GroupId;
+
+export type OverlayInfo = {
+    readonly overlayId: OverlayId;
+    readonly name: string;
+    readonly createdByClientId: string;
+    readonly createdAtEpochMs: number;
+    readonly nextHopSessionIds: readonly string[];
+    readonly overlayVersion: number;
+    readonly updatedAtEpochMs: number;
+};
+
+export type RttMeasurementInfo = {
+    readonly sessionIdFrom: string;
+    readonly sessionIdTo: string;
+    readonly rttMs: number;
+    readonly createdAtEpochMs: number;
+    readonly version: number;
 };

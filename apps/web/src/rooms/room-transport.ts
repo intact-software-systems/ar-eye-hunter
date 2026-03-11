@@ -1,206 +1,244 @@
-import { RoomMember, RoomSummary, RoomUiState, RoomUiStatus } from './room-ui-types.ts';
-import * as roomApi from '../middleware/api-integration.ts'
-import { addWebSocketInboxCallback } from "../middleware/ws-message-router.ts";
-import { AppTopics, RoomDetails } from "@shared/api/api-config.ts";
-import { ALPayload } from "@shared/al-contracts/al-contract.ts";
-import { ApiMiddleware } from "../app-context.ts";
-import { WebRtcQueueBoxClientService } from "@shared/services/WebRtcQueueBoxClientService.ts";
-import * as roomsRepository from "../repository/rooms-repository.ts";
+import { AppTopics, ClientInfo } from '@shared/api/api-config.ts';
+import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { ALPayload } from '@shared/al-contracts/al-contract.ts';
+import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
+import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
+import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import * as roomApi from '@shared-web/browser/api-workflows.ts';
+import { addWebSocketInboxCallback } from '@shared-web/browser/ws-message-router.ts';
+import { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import * as stateCaches from '@shared-web/browser/data-caches.ts';
+import { RoomMember, RoomSummary, RoomUiState, RoomUiStatus, } from './room-ui-types.ts';
 
 export function createRoomDriverWs(mw: ApiMiddleware): RoomDriver {
-    const roomTransport = new RoomTransport(mw.middleware.webRtcQueueBox, mw.session.sessionId);
-    roomTransport.addRooms(roomsRepository.getAllRoomData())
+    const myOwnClientData: ClientInfo = {
+        clientId: mw.session.clientId,
+        sessionId: mw.session.sessionId,
+        isOnline: true,
+    };
+    const roomTransport = new RoomTransport(
+        mw.middleware.webRtcGroupManager,
+        myOwnClientData,
+    );
+    roomTransport.addRooms(
+        groupStateSnapshotsRepository.getAllGroupStateSnapshots(),
+    );
+    roomTransport.refreshSelectedGroupFromRooms();
 
     addWebSocketInboxCallback(
-        AppTopics.rooms,
+        AppTopics.groupStateSnapshot,
         (payload: ALPayload) => {
-            const roomDetails = JSON.parse(payload.resource) as RoomDetails
-            console.log(`Received message: ` + JSON.stringify(roomDetails));
-
-            roomTransport.roomDataById.set(roomDetails.name, roomDetails);
-            roomTransport.sinkToUi()
-
+            const groupSnapshot = JSON.parse(payload.resource) as GroupSnapshot;
+            roomTransport.addRooms([groupSnapshot]);
+            roomTransport.refreshSelectedGroupFromRooms();
+            roomTransport.sinkToUi();
             return Promise.resolve();
-        }
-    )
+        },
+    );
+
+    addWebSocketInboxCallback(
+        AppTopics.clientStateSnapshot,
+        (_payload: ALPayload) => {
+            roomTransport.refreshSelectedGroupFromRooms();
+            roomTransport.sinkToUi();
+            return Promise.resolve();
+        },
+    );
 
     return roomTransport;
 }
 
 export interface RoomDriver {
-    /** UI registers a single state callback. Driver pushes state updates. */
     setStateSink(sink: (state: RoomUiState) => void): void;
 
-    /** list rooms */
     listRooms(): Promise<void>;
 
-    /** create a room by name */
     createRoom(name: string): Promise<void>;
 
-    /** join an existing room */
     joinRoom(roomId: string): Promise<void>;
 
-    /** leave current room */
     leaveRoom(): Promise<void>;
 
-    /** cleanup (close sockets etc.) */
     dispose(): void;
 }
 
 class RoomTransport implements RoomDriver {
-    public roomDataById = new Map<string, RoomDetails>();
-
-    public selectedRoom: RoomDetails | undefined = undefined;
-    public leftRoom: RoomDetails | undefined = undefined;
+    public roomDataById = new Map<string, GroupSnapshot>();
+    public selectedGroup: GroupSnapshot | undefined = undefined;
     public sink: (state: RoomUiState) => void;
 
     constructor(
-        public readonly webRtcQueueBox: WebRtcQueueBoxClientService,
-        public readonly sessionId: string
+        public readonly webRtcGroupManager: WebRtcGroupManager,
+        public readonly myOwnClientData: ClientInfo,
     ) {
-        this.sink = _ => {
+        this.sink = () => {
             console.log('RoomTransport sink not set');
         };
     }
 
-    addRooms(rooms: RoomDetails[]) {
+    addRooms(rooms: readonly GroupSnapshot[]): void {
         for (const room of rooms) {
-            this.roomDataById.set(room.name, room);
+            if (room.group.status !== 'active') {
+                this.roomDataById.delete(room.group.groupId);
+                continue;
+            }
+
+            this.roomDataById.set(room.group.groupId, room);
         }
+    }
+
+    refreshSelectedGroupFromRooms(): void {
+        if (this.selectedGroup) {
+            this.selectedGroup = this.roomDataById.get(
+                this.selectedGroup.group.groupId,
+            );
+        }
+
+        if (this.selectedGroup && this.isMySessionInGroup(this.selectedGroup)) {
+            return;
+        }
+
+        this.selectedGroup = [...this.roomDataById.values()]
+            .find((group) => this.isMySessionInGroup(group));
     }
 
     setStateSink(sink: (state: RoomUiState) => void): void {
         this.sink = sink;
     }
 
-    sinkToUi(roomIsUpdated: boolean = false): void {
-        if (roomIsUpdated) {
-            console.log('RoomTransport sinkToUi called with roomIsUpdated=true');
-
-            if (this.selectedRoom !== undefined) {
-                for (const memberId of this.selectedRoom.members) {
-                    if (memberId === this.sessionId) {
-                        continue;
-                    }
-
-                    this.webRtcQueueBox.connectToPeerIfAbsent(memberId)
-                        .then(
-                            () => console.log(`Connecting to peer ${memberId}`)
-                        )
-                        .catch(
-                            e => console.error(`Failed to connect to peer ${memberId}: ${e}`)
-                        )
-                }
-            }
-            if (this.leftRoom !== undefined) {
-                for (const memberId of this.leftRoom.members) {
-                    if (memberId === this.sessionId) {
-                        continue;
-                    }
-                    console.log(`TODO implement disconnect from peer ${memberId}`)
-                }
-            }
-        }
-
+    sinkToUi(): void {
         this.sink({
             status: RoomUiStatus.Ready,
             rooms: this.toRooms(this.roomDataById),
-            selectedRoomId: this.selectedRoom?.name || 'NA',
-            selectedRoomName: this.selectedRoom?.name || 'NA',
-            members: this.toRoomMembers(this.selectedRoom),
-            message: 'Ready'
+            selectedRoomId: this.selectedGroup?.group.groupId || 'NA',
+            selectedRoomName: this.selectedGroup?.group.displayName || 'NA',
+            members: this.toRoomMembers(this.selectedGroup),
+            message: 'Ready',
         });
     }
 
-    private toRooms(roomDataById: Map<string, RoomDetails>): RoomSummary[] {
-        const rooms: RoomSummary[] = [];
-
-        for (const room of roomDataById.values()) {
-            rooms.push({
-                roomId: room.name,
-                name: room.name,
-                memberCount: room.members.length
-            });
-        }
-
-        return rooms;
+    dispose(): void {
+        console.log('RoomTransport dispose called but not implemented');
     }
 
-    private toRoomMembers(selectedRoom: RoomDetails | undefined): RoomMember[] {
-        if (!selectedRoom) {
+    async leaveRoom(): Promise<void> {
+        if (!this.selectedGroup) {
+            return;
+        }
+
+        const groupId = this.selectedGroup.group.groupId;
+        const updatedGroup = await roomApi.leaveStateGroup(
+            groupId,
+            this.myOwnClientData.clientId,
+            this.myOwnClientData.sessionId,
+        );
+
+        await this.acceptSnapshots([], [updatedGroup]);
+        this.selectedGroup = undefined;
+        this.sinkToUi();
+    }
+
+    async joinRoom(roomId: string): Promise<void> {
+        if (this.selectedGroup?.group.groupId === roomId) {
+            this.sinkToUi();
+            return;
+        }
+
+        await this.leaveRoom();
+
+        const group = await roomApi.joinStateGroup(
+            roomId,
+            this.myOwnClientData.clientId,
+            this.myOwnClientData.sessionId,
+        );
+
+        await this.acceptSnapshots([], [group]);
+        this.selectedGroup = this.roomDataById.get(group.group.groupId) ?? group;
+        this.sinkToUi();
+    }
+
+    async createRoom(name: string): Promise<void> {
+        const group = await roomApi.createAndJoinStateGroup(
+            name,
+            this.myOwnClientData.clientId,
+            this.myOwnClientData.sessionId,
+        );
+
+        await this.acceptSnapshots([], [group]);
+        this.selectedGroup = this.roomDataById.get(group.group.groupId) ?? group;
+        this.sinkToUi();
+    }
+
+    async listRooms(): Promise<void> {
+        const { clients, groups } = await roomApi.refreshStateSnapshots();
+
+        await this.acceptSnapshots(clients, groups);
+        this.sinkToUi();
+    }
+
+    private async acceptSnapshots(
+        clientSnapshots: readonly ClientSnapshot[],
+        groupSnapshots: readonly GroupSnapshot[],
+    ): Promise<void> {
+        await stateCaches.hydrateStateCaches(
+            this.webRtcGroupManager,
+            this.myOwnClientData,
+            clientSnapshots,
+            groupSnapshots,
+        );
+
+        this.addRooms(groupSnapshots);
+        this.refreshSelectedGroupFromRooms();
+    }
+
+    private toRooms(groupById: Map<string, GroupSnapshot>): RoomSummary[] {
+        return [...groupById.values()]
+            .sort((left, right) =>
+                left.group.displayName.localeCompare(right.group.displayName)
+            )
+            .map((group) => ({
+                roomId: group.group.groupId,
+                name: group.group.displayName,
+                memberCount: group.memberCount,
+            }));
+    }
+
+    private toRoomMembers(
+        selectedGroup: GroupSnapshot | undefined,
+    ): RoomMember[] {
+        if (!selectedGroup) {
             return [];
         }
 
-        return selectedRoom.members
-            .map(memberId =>
-                ({
-                    clientId: memberId,
-                    username: memberId,
-                    isOwner: memberId === selectedRoom.createdBy,
-                    isOnline: true,
-                })
-            );
-    }
+        const onlinePrincipalIds = new Set(
+            selectedGroup.activeSessions.map((session) => session.principalId),
+        );
 
-
-    dispose(): void {
-        console.log('RoomTransport disposed called but not implemented');
-    }
-
-    leaveRoom(): Promise<void> {
-        if (this.selectedRoom === undefined) {
-            return Promise.resolve();
-        }
-
-        return roomApi.leaveRoom(this.selectedRoom.name, this.sessionId)
-            .then(
-                _ => {
-                    this.leftRoom = this.selectedRoom;
-                    this.selectedRoom = undefined;
-                    this.sinkToUi(true)
-                }
+        return selectedGroup.members
+            .filter((member) =>
+                member.status === 'active' || member.status === 'invited'
             )
+            .map((member) => {
+                const clientSnapshot = clientStateSnapshotsRepository
+                    .findClientStateSnapshotByPrincipalId(
+                        member.principalId,
+                    );
+
+                return {
+                    clientId: member.principalId,
+                    username: clientSnapshot?.principal.displayName ??
+                        clientSnapshot?.principal.username ??
+                        member.principalId,
+                    isOwner: member.role === 'owner',
+                    isOnline: onlinePrincipalIds.has(member.principalId),
+                };
+            });
     }
 
-    joinRoom(roomId: string): Promise<void> {
-        return this.leaveRoom()
-            .then(
-                () => roomApi.joinRoom(roomId, this.sessionId)
-            )
-            .then(
-                room => {
-                    this.leftRoom = this.selectedRoom;
-                    this.selectedRoom = room;
-                    this.sinkToUi(true)
-                }
-            )
-    }
-
-    createRoom(name: string): Promise<void> {
-        return roomApi.createRoom({
-                name: name,
-                createdBy: this.sessionId
-            })
-            .then(room => {
-                this.leftRoom = this.selectedRoom;
-                this.selectedRoom = room;
-                this.sinkToUi(true)
-            })
-    }
-
-    listRooms(): Promise<void> {
-        return roomApi.listRooms()
-            .then(rooms => {
-                for (const room of rooms) {
-                    this.roomDataById.set(room.name, room);
-
-                    if (room.members.includes(this.sessionId)) {
-                        this.selectedRoom = room;
-                    }
-                }
-
-                this.sinkToUi()
-            })
+    private isMySessionInGroup(group: GroupSnapshot): boolean {
+        return group.activeSessions.some((session) =>
+            session.sessionId === this.myOwnClientData.sessionId
+        );
     }
 }
-

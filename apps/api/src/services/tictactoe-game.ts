@@ -9,7 +9,7 @@ import {
     Player,
 } from '@shared/mod.ts';
 
-import {applyMove} from '@shared/tictactoe/tictactoe.ts';
+import { applyMove } from '@shared/tictactoe/tictactoe.ts';
 
 type GameId = string;
 type ClientId = string;
@@ -28,7 +28,7 @@ function newGameState(): GameState {
         board: Array(9).fill(Cell.Empty),
         currentPlayer: Player.X,
         result: GameResult.InProgress,
-        mode: {type: GameModeType.LocalHuman, difficulty: CpuDifficulty.Empty},
+        mode: { type: GameModeType.LocalHuman, difficulty: CpuDifficulty.Empty },
     };
 }
 
@@ -37,8 +37,8 @@ export function createGame(clientId: ClientId): ServerGame {
     const game: ServerGame = {
         id,
         state: newGameState(),
-        players: {X: Player.X, O: Player.O},
-        owners: {X: clientId, O: ''},
+        players: { X: Player.X, O: Player.O },
+        owners: { X: clientId, O: '' },
     };
     games.set(id, game);
     return game;
@@ -73,17 +73,17 @@ export function makeMove(gameId: GameId, clientId: ClientId, moveIndex: number):
 
     // Must be joined by both players (you can relax this later)
     if (game.owners.O === '') {
-        return {move: BoardMove.Failed, state: game.state};
+        return { move: BoardMove.Failed, state: game.state };
     }
 
     const actingPlayer = clientToPlayer(game, clientId);
     if (actingPlayer === Player.NA) {
-        return {move: BoardMove.Failed, state: game.state};
+        return { move: BoardMove.Failed, state: game.state };
     }
 
     // Enforce turn ownership
     if (game.state.currentPlayer !== actingPlayer) {
-        return {move: BoardMove.Failed, state: game.state};
+        return { move: BoardMove.Failed, state: game.state };
     }
 
     const result: ApplyMoveResult = applyMove(game.state, moveIndex);
@@ -92,5 +92,5 @@ export function makeMove(gameId: GameId, clientId: ClientId, moveIndex: number):
         game.state = result.output; // server is authoritative
     }
 
-    return {move: result.move, state: game.state};
+    return { move: result.move, state: game.state };
 }

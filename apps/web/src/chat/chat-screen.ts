@@ -1,8 +1,8 @@
-import { findHtmlEl } from '../utils/utils';
 import { AppTopics } from '@shared/api/api-config';
-import * as ChatTransport from '../middleware/chat-transport';
-import { readSessionAsClientData } from '../middleware/auth';
-import { getMiddleware } from '../app-context';
+import { findHtmlEl } from '../utils/utils';
+import * as ChatTransport from './chat-transport.ts';
+import { readSessionAsClientInfo } from '@shared/api/auth.ts';
+import { getMiddleware } from '@shared-web/browser/app-context.ts';
 
 export interface ChatMessage {
     id: string;
@@ -28,7 +28,7 @@ function escapeHtml(input: string): string {
         .replaceAll('<', '&lt;')
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#39;');
+        .replaceAll('\'', '&#39;');
 }
 
 export class ChatScreen extends HTMLElement {
@@ -46,7 +46,7 @@ export class ChatScreen extends HTMLElement {
             this,
             getMiddleware().middleware,
             AppTopics.chat,
-            readSessionAsClientData(),
+            readSessionAsClientInfo(),
         );
     }
 
@@ -175,7 +175,7 @@ export class ChatScreen extends HTMLElement {
             const text = input.value.trim();
             if (!text) return;
 
-            this.addMessage({role: 'me', text});
+            this.addMessage({ role: 'me', text });
             input.value = '';
             input.focus();
 

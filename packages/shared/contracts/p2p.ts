@@ -1,4 +1,4 @@
-import type {ClientId} from "../tictactoe/tictactoe-api.ts";
+import type { ClientId } from '../tictactoe/tictactoe-api.ts';
 
 export type P2pSessionId = string;
 

@@ -1,19 +1,16 @@
-import './polyfill.ts'
+import './polyfill.ts';
+
+import '@shared/mod.ts';
+import '@shared-graph//mod.ts';
+import '@shared-web/mod.ts';
 
 import './eh-app.ts';
-import './eh-landing-screen.ts'
-import './games.ts'
-import './router.ts'
+import './eh-landing-screen.ts';
+import './games.ts';
+import './router.ts';
 
 import './utils/utils.ts';
-
-import './middleware/config.ts';
-import './middleware/middleware.ts';
-import './middleware/api-integration.ts';
-import './middleware/chat-transport.ts';
-import './middleware/qbox-engine.ts'
-import './middleware/ws-message-router.ts'
-import './middleware/ws-engine.ts'
+import './chat/chat-transport.ts';
 
 import './tictactoe/eh-tictactoe-landing.ts';
 import './tictactoe/eh-ttt-board.ts';

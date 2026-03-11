@@ -1,10 +1,6 @@
-import { NA, RoomUiStatus, type RoomUiState } from './room-ui-types';
+import { NA, type RoomUiState, RoomUiStatus } from './room-ui-types';
 import type { RoomDriver } from './room-transport';
-import { findEl } from '../utils/utils';
-
-function mustEl<T extends Element>(root: ParentNode, selector: string): T {
-    return findEl(root, selector);
-}
+import { mustEl } from '../utils/utils';
 
 const InitialState: RoomUiState = {
     status: RoomUiStatus.Idle,

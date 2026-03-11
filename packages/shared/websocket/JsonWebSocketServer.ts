@@ -67,25 +67,25 @@ export class JsonWebSocketServer {
     private addAllEventListeners(ctx: ConnectionContext) {
 
         ctx.socket.addEventListener(
-            "open",
+            'open',
             (_: Event) => {
                 for (const cb of this.webSocketServerCallbacks.values()) {
                     try {
                         cb.onConnection?.(ctx);
                     } catch (e) {
-                        console.error("Callback onConnection failed:", e);
+                        console.error('Callback onConnection failed:', e);
                     }
                 }
             }
         );
 
         ctx.socket.addEventListener(
-            "message",
+            'message',
             async (ev: MessageEvent) => {
 
                 let decoded: unknown = ev.data;
 
-                if (typeof ev.data === "string") {
+                if (typeof ev.data === 'string') {
                     try {
                         decoded = JSON.parse(ev.data);
                     } catch (e) {
@@ -93,7 +93,7 @@ export class JsonWebSocketServer {
                             try {
                                 cb.onParseError?.(ctx, ev.data, e);
                             } catch (e2) {
-                                console.error("Callback onParseError failed:", e2);
+                                console.error('Callback onParseError failed:', e2);
                             }
                         }
                     }
@@ -103,27 +103,27 @@ export class JsonWebSocketServer {
                     try {
                         await cb.onMessage(ctx, decoded, ev);
                     } catch (e) {
-                        console.error("Callback onMessage failed:", e);
+                        console.error('Callback onMessage failed:', e);
                     }
                 }
             }
         );
 
         ctx.socket.addEventListener(
-            "error",
+            'error',
             (ev: Event) => {
                 for (const cb of this.webSocketServerCallbacks.values()) {
                     try {
                         cb.onError?.(ctx, ev);
                     } catch (e) {
-                        console.error("Callback onError failed:", e);
+                        console.error('Callback onError failed:', e);
                     }
                 }
             }
         );
 
         ctx.socket.addEventListener(
-            "close",
+            'close',
             (ev: CloseEvent) => {
                 this.connections.delete(ctx.id);
 
@@ -131,7 +131,7 @@ export class JsonWebSocketServer {
                     try {
                         cb.onClose?.(ctx, ev);
                     } catch (e) {
-                        console.error("Callback onClose failed:", e);
+                        console.error('Callback onClose failed:', e);
                     }
                 }
             }
@@ -164,7 +164,7 @@ export class JsonWebSocketServer {
                 ctx.socket.send(encoded);
                 count += 1;
             } catch (e) {
-                console.error("Broadcast send failed:", e);
+                console.error('Broadcast send failed:', e);
             }
         }
         return count;

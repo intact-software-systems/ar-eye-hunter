@@ -1,5 +1,6 @@
-import {QueueBoxResourceEntryRepository} from "@shared/queuebox/QueueBoxTypes.ts";
-import {RateLimiter} from "@shared/resilience/Resilience.ts";
+import { QueueBoxResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
+import type { PersistenceSetItemOptions } from '@shared/persistence/PersistenceProvider.ts';
+import { RateLimiter } from '@shared/resilience/Resilience.ts';
 import {
     EntityStatus,
     FAILED_STATUS,
@@ -8,8 +9,8 @@ import {
     ResourceEntry,
     TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
     toUpdatedResourceEntry
-} from "@shared/queuebox/ResourceEntry.ts";
-import {ResourceInboxRepository} from "../repository/ResourceInboxRepository.ts";
+} from '@shared/queuebox/ResourceEntry.ts';
+import { ResourceInboxRepository } from '../repository/ResourceInboxRepository.ts';
 
 const resourceInboxRepository = new ResourceInboxRepository();
 
@@ -18,6 +19,12 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     constructor(
         public readonly repo: ResourceInboxRepository = resourceInboxRepository
     ) {
+    }
+
+    cleanup(): void {
+        void this.deleteExpired().catch((error) => {
+            console.error('Failed to cleanup expired resource_inbox rows', error);
+        });
     }
 
     async isAnyEntryToLock(typeIds: Set<string>, checkTimeout: RateLimiter, checkFailed: RateLimiter): Promise<boolean> {
@@ -62,37 +69,41 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                 const reservedEntries = new Map<Key, ResourceEntry>();
 
                 for (const e of foundEntries.values()) {
-                    const entry = await txRepo.startProcessingEntity(e);
-                    if (!entry) {
-                        throw new Error("Entry was not updated in startProcessingEntity")
-                    }
-
-                    reservedEntries.set(e.key, entry);
+                    const reserved = await txRepo.startProcessingEntity(e);
+                    reserved.fold(
+                        () => undefined,
+                        (entry) => {
+                            reservedEntries.set(e.key, entry);
+                            return undefined;
+                        },
+                    );
                 }
 
                 return reservedEntries;
-            })
+            });
     }
 
     async reserveTimeoutEntries(typeIds: Set<string>, maxToReserve: number, timeSinceStartTs: Temporal.Duration): Promise<Map<Key, ResourceEntry>> {
         return await this.repo.begin(
             async (txRepo: ResourceInboxRepository) => {
 
-                const foundEntries = await txRepo.findTimedOutReservedEntriesSkipLocked(typeIds, timeSinceStartTs.total({unit: "milliseconds"}), maxToReserve);
+                const foundEntries = await txRepo.findTimedOutReservedEntriesSkipLocked(typeIds, timeSinceStartTs.total({ unit: 'milliseconds' }), maxToReserve);
 
                 const reservedEntries = new Map<Key, ResourceEntry>();
 
                 for (const e of foundEntries.values()) {
-                    const entry = await txRepo.startProcessingEntity(e);
-                    if (!entry) {
-                        throw new Error("Entry was not updated in startProcessingEntity")
-                    }
-
-                    reservedEntries.set(e.key, entry);
+                    const reserved = await txRepo.startProcessingEntity(e);
+                    reserved.fold(
+                        () => undefined,
+                        (entry) => {
+                            reservedEntries.set(e.key, entry);
+                            return undefined;
+                        },
+                    );
                 }
 
                 return reservedEntries;
-            })
+            });
     }
 
     async releaseEntries(resources: ResourceEntry[], entityStatus: EntityStatus, exponentialBackoffSteps?: Temporal.TimeUnit): Promise<Map<Key, ResourceEntry>> {
@@ -106,11 +117,11 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                     const backoff =
                         exponentialBackoffSteps
                             ? PSqlQueueBox.toBackoff(exponentialBackoffSteps, entry.dequeueAudit.attempts)
-                            : undefined
+                            : undefined;
 
-                    const updated = await txRepo.updateResourceEntry(entry.key, entityStatus, backoff ? backoff.total({unit: "milliseconds"}) : undefined);
-                    if (updated <= 0) {
-                        throw new Error("Entry was not updated in updateResourceEntry " + JSON.stringify(entry.key))
+                    const updated = await txRepo.updateResourceEntry(entry.key, entityStatus, backoff ? backoff.total({ unit: 'milliseconds' }) : undefined);
+                    if (updated <= 0 && Temporal.Instant.compare(Temporal.Now.instant(), entry.audit.expiryTs) < 0) {
+                        throw new Error('Entry was not updated in updateResourceEntry ' + JSON.stringify(entry.key));
                     }
 
                     releasedEntries.set(
@@ -123,38 +134,72 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                                 ? Temporal.Now.instant().add(backoff)
                                 : undefined
                         )
-                    )
+                    );
                 }
 
                 return releasedEntries;
-            })
+            });
     }
 
 
     static toBackoff(exponentialBackoffSteps: Temporal.TimeUnit, attempts: number) {
         switch (exponentialBackoffSteps) {
-            case "hour":
-                return Temporal.Duration.from({hours: Math.pow(2, attempts)})
-            case "minute":
-                return Temporal.Duration.from({minutes: Math.pow(2, attempts)})
-            case "second":
-                return Temporal.Duration.from({seconds: Math.pow(2, attempts)})
-            case "millisecond":
-            case "microsecond":
-            case "nanosecond":
-                return Temporal.Duration.from({milliseconds: Math.pow(2, attempts)})
+            case 'hour':
+                return Temporal.Duration.from({ hours: Math.pow(2, attempts) });
+            case 'minute':
+                return Temporal.Duration.from({ minutes: Math.pow(2, attempts) });
+            case 'second':
+                return Temporal.Duration.from({ seconds: Math.pow(2, attempts) });
+            case 'millisecond':
+            case 'microsecond':
+            case 'nanosecond':
+                return Temporal.Duration.from({ milliseconds: Math.pow(2, attempts) });
         }
     }
 
-    enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined> {
-        return this.enqueueIfAbsent(resourceEntry);
+    async enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined> {
+        return await this.repo.begin(
+            async (txRepo: ResourceInboxRepository) => {
+                const previous = await txRepo.findAnyByKey(resourceEntry.key);
+                await txRepo.replace(resourceEntry);
+
+                return previous ?? undefined;
+            }
+        );
     }
 
     async enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry> {
         return await this.repo.begin(
             async (txRepo: ResourceInboxRepository) => {
-                return await txRepo.write(resourceEntry)
+                return await txRepo.writeIfAbsentOrReplaceExpired(resourceEntry);
             }
-        )
+        );
+    }
+
+    async getItem(key: Key): Promise<ResourceEntry | undefined> {
+        return await this.repo.findByKey(key) ?? undefined;
+    }
+
+    async setItem(
+        key: Key,
+        value: ResourceEntry,
+        _options: PersistenceSetItemOptions,
+    ): Promise<void> {
+        await this.repo.upsert({
+            ...value,
+            key,
+        });
+    }
+
+    async removeItem(key: Key): Promise<void> {
+        await this.repo.deleteByKey(key);
+    }
+
+    async getAllKeys(): Promise<Key[]> {
+        return await this.repo.findAllKeys();
+    }
+
+    async deleteExpired(): Promise<number> {
+        return await this.repo.deleteExpired();
     }
 }

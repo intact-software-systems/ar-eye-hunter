@@ -4,6 +4,8 @@ import path from 'node:path';
 export default defineConfig({
     resolve: {
         alias: {
+            '@shared-web': path.resolve(__dirname, '../../packages/shared-web'),
+            '@shared-graph': path.resolve(__dirname, '../../packages/shared-graph'),
             '@shared': path.resolve(__dirname, '../../packages/shared'),
         },
     },
@@ -23,6 +25,6 @@ export default defineConfig({
     build: {
         outDir: 'dist',
         emptyOutDir: true,
-        target: 'es2022',
+        target: 'es2023',
     },
 });

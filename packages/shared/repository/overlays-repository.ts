@@ -1,0 +1,206 @@
+import { OverlayInfo } from '@shared/api/api-config.ts';
+import {
+    type AnyGroupPresence,
+    readGroupCreatedAtEpochMs,
+    readGroupCreatedByPrincipalId,
+    readGroupDisplayName,
+    readGroupId,
+    readGroupMemberSessionIds,
+    readGroupUpdatedAtEpochMs,
+    readGroupVersion,
+} from '@shared/api/group-client-views.ts';
+import {
+    configureObservableLatestRepository,
+    newObservableLatestRepositoryToken,
+    readAllObservableLatestRepository,
+    readObservableLatestRepositoryValue,
+    requireObservableLatestRepository,
+} from '@shared/cache/LatestRepositoryHelpers.ts';
+import {
+    ObservableLatestRepository,
+    type ObservableLatestRepositoryOptions,
+} from '@shared/cache/ObservableLatestRepository.ts';
+import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
+import {
+    type ObservableKeyedValueEvent,
+    ObservableValueEventType,
+    type ReadableKeyedValues,
+} from '@shared/cache/RepositoryInterfaces.ts';
+
+export type OverlayRepositoryOptions =
+    & Omit<
+        ObservableLatestRepositoryOptions<string, OverlayInfo>,
+        'ttlMs' | 'equals'
+    >
+    & { ttlMs: number };
+
+export type OverlayRepositoryChange = Readonly<{
+    kind: ObservableValueEventType;
+    overlayId: string;
+    overlay?: OverlayInfo;
+    previous?: OverlayInfo;
+    version: number;
+    previousVersion?: number;
+    manager?: RepositoryManager;
+}>;
+
+export type OverlayRepositoryChangeListener = (
+    change: OverlayRepositoryChange,
+) => void | Promise<void>;
+
+export const overlayRepositoryToken = newObservableLatestRepositoryToken<string, OverlayInfo>(
+    'shared.repository.overlays',
+    'Overlay repository is not configured',
+);
+
+export function configureOverlayRepository(
+    options: OverlayRepositoryOptions,
+    manager?: RepositoryManager,
+): ObservableLatestRepository<string, OverlayInfo> {
+    return configureObservableLatestRepository(
+        overlayRepositoryToken,
+        {
+            ...options,
+            equals: (left, right) => left.overlayVersion === right.overlayVersion,
+        },
+        manager,
+    );
+}
+
+export function onOverlayChange(
+    listener: OverlayRepositoryChangeListener,
+    manager?: RepositoryManager,
+): () => void {
+    const subscription = requireOverlayRepository(manager)
+        .onChangeDo(async (event) => {
+            await listener(toOverlayRepositoryChange(event, manager));
+        });
+
+    return () => {
+        subscription.unsubscribe();
+    };
+}
+
+export async function waitForOverlayChangesIdle(
+    manager?: RepositoryManager,
+): Promise<void> {
+    await requireOverlayRepository(manager).whenIdle();
+}
+
+function requireOverlayRepository(
+    manager?: RepositoryManager,
+): ObservableLatestRepository<string, OverlayInfo> {
+    return requireObservableLatestRepository(overlayRepositoryToken, manager);
+}
+
+export function readableOverlayCache(
+    manager?: RepositoryManager,
+): ReadableKeyedValues<
+    string,
+    OverlayInfo
+> {
+    return requireOverlayRepository(manager).readable();
+}
+
+export function createAndSetStarOverlays(
+    groups: readonly AnyGroupPresence[],
+    manager?: RepositoryManager,
+): void {
+    for (const group of groups) {
+        const overlay = toStarOverlay(group);
+        setOverlayById(overlay.overlayId, overlay, manager);
+    }
+}
+
+export function updateNextHopSessionIds(
+    overlayId: string,
+    nextHopSessionIds: string[],
+    manager?: RepositoryManager,
+): OverlayInfo | undefined {
+    const overlay: OverlayInfo | undefined = findOverlayById(overlayId, manager);
+    if (overlay === undefined) {
+        return undefined;
+    }
+
+    setOverlayById(overlayId, {
+        ...overlay,
+        nextHopSessionIds: nextHopSessionIds,
+        overlayVersion: overlay.overlayVersion + 1,
+        updatedAtEpochMs: Math.max(Date.now(), overlay.updatedAtEpochMs + 1),
+    }, manager);
+
+    return overlay;
+}
+
+export function removeOverlayById(
+    overlayId: string,
+    manager?: RepositoryManager,
+): boolean {
+    return requireOverlayRepository(manager).delete(overlayId);
+}
+
+export function findOverlayById(
+    id: string,
+    manager?: RepositoryManager,
+): OverlayInfo | undefined {
+    return readObservableLatestRepositoryValue(overlayRepositoryToken, id, manager);
+}
+
+export function setOverlayById(
+    id: string,
+    overlay: OverlayInfo,
+    manager?: RepositoryManager,
+): void {
+    const repository = requireOverlayRepository(manager);
+    const current = repository.read(id);
+    if (!current) {
+        repository.set(id, overlay);
+        return;
+    }
+
+    if (overlay.overlayVersion > current.overlayVersion) {
+        console.log(`Received updated overlay details: ${JSON.stringify(overlay)}`);
+        repository.set(id, overlay);
+        return;
+    }
+
+    console.log(
+        'Received stale overlay data: ' +
+        JSON.stringify(overlay) +
+        ' vs ' +
+        JSON.stringify(current),
+    );
+}
+
+export function getAllOverlays(
+    manager?: RepositoryManager,
+): OverlayInfo[] {
+    return readAllObservableLatestRepository(overlayRepositoryToken, manager);
+}
+
+function toOverlayRepositoryChange(
+    event: ObservableKeyedValueEvent<string, OverlayInfo>,
+    manager?: RepositoryManager,
+): OverlayRepositoryChange {
+    return {
+        kind: event.type,
+        overlayId: event.key,
+        overlay: event.value,
+        previous: event.previous,
+        version: event.value?.overlayVersion ?? event.previous?.overlayVersion ?? 0,
+        previousVersion: event.previous?.overlayVersion,
+        manager,
+    };
+}
+
+function toStarOverlay(group: AnyGroupPresence): OverlayInfo {
+    return {
+        name: readGroupDisplayName(group),
+        overlayId: readGroupId(group),
+        createdByClientId: readGroupCreatedByPrincipalId(group),
+        createdAtEpochMs: readGroupCreatedAtEpochMs(group),
+        nextHopSessionIds: readGroupMemberSessionIds(group),
+        overlayVersion: readGroupVersion(group),
+        updatedAtEpochMs: readGroupUpdatedAtEpochMs(group),
+    };
+}

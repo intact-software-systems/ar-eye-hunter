@@ -19,7 +19,7 @@ export class Either<L, R> {
         const hasRight = right !== undefined;
 
         if (hasLeft === hasRight) {
-            throw new Error("Either must contain exactly one of left or right");
+            throw new Error('Either must contain exactly one of left or right');
         }
     }
 
@@ -50,7 +50,7 @@ export class Either<L, R> {
             return mapLeft(this.left);
         }
         // Should be unreachable due to invariant in ctor
-        throw new Error("Invalid Either: neither left nor right is present");
+        throw new Error('Invalid Either: neither left nor right is present');
     }
 
     foldRight<T>(mapRight: (r: R) => T): T | undefined {
@@ -68,7 +68,7 @@ export class Either<L, R> {
         if (this.left !== undefined) {
             return Either.ofLeft<T, U>(mapLeft(this.left));
         }
-        throw new Error("Invalid Either: neither left nor right is present");
+        throw new Error('Invalid Either: neither left nor right is present');
     }
 
     mapRight<R2>(mapRight: (r: R) => R2): Either<L, R2> {
@@ -86,7 +86,7 @@ export class Either<L, R> {
         if (this.left !== undefined) {
             return mapLeft(this.left);
         }
-        throw new Error("Invalid Either: neither left nor right is present");
+        throw new Error('Invalid Either: neither left nor right is present');
     }
 }
 
@@ -98,14 +98,16 @@ export class FoldComputedDto<K, L, R> {
     constructor(
         public readonly leftByKey: Map<K, L>,
         public readonly rightByKey: Map<K, R>,
-    ) {}
+    ) {
+    }
 }
 
 export class FoldListComputedDto<K, L, R> {
     constructor(
         public readonly leftsByKey: Map<K, L[]>,
         public readonly rightsByKey: Map<K, R[]>,
-    ) {}
+    ) {
+    }
 }
 
 export class EitherCollectors {

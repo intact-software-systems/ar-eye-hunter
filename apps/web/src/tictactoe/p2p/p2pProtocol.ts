@@ -9,7 +9,7 @@ import {
     Player,
 } from '@shared/mod.ts';
 
-import {applyMove} from '@shared/tictactoe/tictactoe.ts';
+import { applyMove } from '@shared/tictactoe/tictactoe.ts';
 
 export enum ProtocolDecision {
     Applied = 'Applied',

@@ -1,84 +1,37 @@
-import {
-    GameResult,
-    type GameState,
-    P2pRole,
-    Player,
-} from '@shared/mod.ts';
+import { GameResult, type GameState, P2pRole, Player, } from '@shared/mod.ts';
 
 import {
-    emptyState,
-    myPlayerFromRole,
     applyLocalMove,
     applyRemoteMove,
-    ProtocolDecision,
-    RejectionReason,
-    P2pMsgType,
-    parseP2pMsg,
-    stateHash,
+    emptyState,
     makeMoveMsg,
     makeResyncRequestMsg,
     makeStateSyncMsg,
-    validateStateSync,
+    myPlayerFromRole,
     type P2pMoveMsg,
+    P2pMsgType,
     type P2pResetMsg,
-    type P2pHelloMsg,
     type P2pResyncRequestMsg,
     type P2pStateSyncMsg,
+    parseP2pMsg,
+    ProtocolDecision,
+    RejectionReason,
+    stateHash,
+    validateStateSync,
 } from './p2pProtocol.ts';
 
-import {P2pSignalingClient, SignalingStateKind} from './signalingClient.ts';
-import {DefaultWebRtcSessionConfig, WebRtcSession, WebRtcSessionStatus} from './webrtcSession.ts';
+import { P2pSignalingClient, SignalingStateKind } from './signalingClient.ts';
+import { DefaultWebRtcSessionConfig, WebRtcSession, WebRtcSessionStatus } from './webrtcSession.ts';
 
-import type {CellClickDetail} from '../eh-ttt-board.ts';
-import {fetchIceConfig} from './iceClient.ts';
+import type { CellClickDetail } from '../eh-ttt-board.ts';
+import { fetchIceConfig } from './iceClient.ts';
 
-import {WsSignalingClient} from './wsSignalingClient.ts';
-import {findHtmlEl} from "../../utils/utils.ts";
+import { WsSignalingClient } from './wsSignalingClient.ts';
+import { copyTextToClipboard, findHtmlEl, getOrCreateLocalId, readHashParam, } from '../../utils/utils.ts';
 
 /* ======================================================
    Utilities
    ====================================================== */
-
-function getOrCreateClientId(): string {
-    const key = 'clientId';
-    const existing = localStorage.getItem(key);
-    if (existing && existing.length > 0) return existing;
-    const created = crypto.randomUUID();
-    localStorage.setItem(key, created);
-    return created;
-}
-
-function readSessionIdFromHash(): string {
-    // hash: "#/p2p?sessionId=abc"
-    const raw = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
-    const qIndex = raw.indexOf('?');
-    if (qIndex < 0) return '';
-    const query = raw.slice(qIndex + 1);
-    const params = new URLSearchParams(query);
-    const v = params.get('sessionId');
-    return v ? v : '';
-}
-
-async function copyToClipboard(text: string): Promise<boolean> {
-    try {
-        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-            await navigator.clipboard.writeText(text);
-            return true;
-        }
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        ta.setAttribute('readonly', 'true');
-        ta.style.position = 'absolute';
-        ta.style.left = '-9999px';
-        document.body.appendChild(ta);
-        ta.select();
-        const ok = document.execCommand('copy');
-        document.body.removeChild(ta);
-        return ok;
-    } catch {
-        return false;
-    }
-}
 
 /* ======================================================
    UI state
@@ -98,7 +51,7 @@ type UiState = {
 };
 
 export class EhP2pMultiScreen extends HTMLElement {
-    private readonly clientId = getOrCreateClientId();
+    private readonly clientId = getOrCreateLocalId('clientId');
 
     private signaling: P2pSignalingClient = new P2pSignalingClient();
     private wsSig: WsSignalingClient | undefined = undefined;
@@ -236,7 +189,7 @@ export class EhP2pMultiScreen extends HTMLElement {
     }
 
     private setStatus(text: string): void {
-        this.ui = {...this.ui, statusText: text};
+        this.ui = { ...this.ui, statusText: text };
         this.updateView();
     }
 
@@ -309,7 +262,7 @@ export class EhP2pMultiScreen extends HTMLElement {
             this.wsSig.connect(st.sessionId, st.token);
 
             this.rtc = new WebRtcSession({
-                session: {sessionId: st.sessionId, role: st.role},
+                session: { sessionId: st.sessionId, role: st.role },
                 transport: this.wsSig.asTransport(),
                 config: {
                     ...DefaultWebRtcSessionConfig,
@@ -317,11 +270,11 @@ export class EhP2pMultiScreen extends HTMLElement {
                 },
                 onMessage: (txt) => this.onRemoteMessage(txt),
                 onStatus: (s) => {
-                    this.ui = {...this.ui, rtcStatus: s};
+                    this.ui = { ...this.ui, rtcStatus: s };
                     this.updateView();
 
                     if (s === WebRtcSessionStatus.Open) {
-                        this.rtc?.sendJson({type: P2pMsgType.Hello, role: P2pRole.Initiator});
+                        this.rtc?.sendJson({ type: P2pMsgType.Hello, role: P2pRole.Initiator });
                     }
                 },
                 onError: (m) => this.setStatus(`WebRTC error: ${m}`),
@@ -371,7 +324,7 @@ export class EhP2pMultiScreen extends HTMLElement {
             this.wsSig.connect(st.sessionId, st.token);
 
             this.rtc = new WebRtcSession({
-                session: {sessionId: st.sessionId, role: st.role},
+                session: { sessionId: st.sessionId, role: st.role },
                 transport: this.wsSig.asTransport(),
                 config: {
                     ...DefaultWebRtcSessionConfig,
@@ -379,11 +332,11 @@ export class EhP2pMultiScreen extends HTMLElement {
                 },
                 onMessage: (txt) => this.onRemoteMessage(txt),
                 onStatus: (s) => {
-                    this.ui = {...this.ui, rtcStatus: s};
+                    this.ui = { ...this.ui, rtcStatus: s };
                     this.updateView();
 
                     if (s === WebRtcSessionStatus.Open) {
-                        this.rtc?.sendJson({type: P2pMsgType.Hello, role: P2pRole.Responder});
+                        this.rtc?.sendJson({ type: P2pMsgType.Hello, role: P2pRole.Responder });
                     }
                 },
                 onError: (m) => this.setStatus(`WebRTC error: ${m}`),
@@ -401,11 +354,11 @@ export class EhP2pMultiScreen extends HTMLElement {
 
     private async onReset(): Promise<void> {
         // local reset + notify peer (only if connected)
-        this.ui = {...this.ui, game: emptyState()};
+        this.ui = { ...this.ui, game: emptyState() };
         this.updateView();
 
         if (this.rtc && this.ui.rtcStatus === WebRtcSessionStatus.Open) {
-            this.rtc.sendJson({type: P2pMsgType.Reset} satisfies P2pResetMsg);
+            this.rtc.sendJson({ type: P2pMsgType.Reset } satisfies P2pResetMsg);
         }
     }
 
@@ -414,7 +367,7 @@ export class EhP2pMultiScreen extends HTMLElement {
         if (this.ui.rtcStatus !== WebRtcSessionStatus.Open) return;
         if (this.ui.role === NAString.NA) return;
 
-        const d = applyLocalMove({state: this.ui.game, myRole: this.ui.role, moveIndex});
+        const d = applyLocalMove({ state: this.ui.game, myRole: this.ui.role, moveIndex });
 
         if (d.decision === ProtocolDecision.Rejected) {
             if (d.reason === RejectionReason.NotYourTurn) this.setStatus('Not your turn.');
@@ -422,7 +375,7 @@ export class EhP2pMultiScreen extends HTMLElement {
         }
 
 
-        this.ui = {...this.ui, game: d.next};
+        this.ui = { ...this.ui, game: d.next };
         this.updateView();
 
         const msg: P2pMoveMsg = makeMoveMsg(moveIndex, d.next);
@@ -445,7 +398,7 @@ export class EhP2pMultiScreen extends HTMLElement {
                 return;
 
             case P2pMsgType.Reset:
-                this.ui = {...this.ui, game: emptyState()};
+                this.ui = { ...this.ui, game: emptyState() };
                 this.updateView();
                 this.setStatus('Game reset by peer.');
                 return;
@@ -465,7 +418,7 @@ export class EhP2pMultiScreen extends HTMLElement {
                     return;
                 }
 
-                this.ui = {...this.ui, game: d.next};
+                this.ui = { ...this.ui, game: d.next };
                 this.updateView();
 
                 // Divergence detection:
@@ -494,7 +447,7 @@ export class EhP2pMultiScreen extends HTMLElement {
                     return;
                 }
 
-                this.ui = {...this.ui, game: v.state};
+                this.ui = { ...this.ui, game: v.state };
                 this.updateView();
                 this.setStatus('State synced with peer.');
                 return;
@@ -518,7 +471,7 @@ export class EhP2pMultiScreen extends HTMLElement {
             this.setStatus('No session id to copy.');
             return;
         }
-        const ok = await copyToClipboard(this.ui.sessionId);
+        const ok = await copyTextToClipboard(this.ui.sessionId);
         this.setStatus(ok ? `Copied session id.` : 'Copy failed.');
     }
 
@@ -535,13 +488,13 @@ export class EhP2pMultiScreen extends HTMLElement {
             return;
         }
         const url = this.buildShareUrl(this.ui.sessionId);
-        const ok = await copyToClipboard(url);
+        const ok = await copyTextToClipboard(url);
         this.setStatus(ok ? 'Share link copied to clipboard.' : 'Copy failed.');
     }
 
     private prefillFromShareLink(): void {
         const joinInput = findHtmlEl<HTMLInputElement>(this, '#joinInput');
-        const id = readSessionIdFromHash();
+        const id = readHashParam('sessionId');
         if (id.length > 0) {
             joinInput.value = id;
             this.setStatus('Session ID prefilled from share link. Click Join.');

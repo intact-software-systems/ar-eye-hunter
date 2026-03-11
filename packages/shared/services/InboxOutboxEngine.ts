@@ -1,24 +1,24 @@
-import * as ComputeAsyncTask from "../resilience/ComputeAsyncTask.ts";
-import {CircuitBreaker, CircuitBreakerPolicy} from "../resilience/Resilience.ts";
+import * as ComputeAsyncTask from '../resilience/ComputeAsyncTask.ts';
+import { CircuitBreaker, CircuitBreakerPolicy } from '../resilience/Resilience.ts';
 
 const NOT_SET = -1;
 
 export class InboxOutboxEngine {
-    private static readonly defaultDuration: Temporal.Duration = Temporal.Duration.from({seconds: 10})
-    private static readonly defaultSlidingWindowDuration: Temporal.Duration = Temporal.Duration.from({minutes: 10})
+    private static readonly defaultDuration: Temporal.Duration = Temporal.Duration.from({ seconds: 10 });
+    private static readonly defaultSlidingWindowDuration: Temporal.Duration = Temporal.Duration.from({ minutes: 10 });
     private static readonly circuitBreakerPolicy: CircuitBreakerPolicy =
         new CircuitBreakerPolicy(
             10,
             InboxOutboxEngine.defaultDuration,
             InboxOutboxEngine.defaultDuration,
             InboxOutboxEngine.defaultSlidingWindowDuration
-        )
-    private static readonly circuitBreaker: CircuitBreaker = CircuitBreaker.create(InboxOutboxEngine.circuitBreakerPolicy)
+        );
+    private static readonly circuitBreaker: CircuitBreaker = CircuitBreaker.create(InboxOutboxEngine.circuitBreakerPolicy);
 
-    private static readonly MAX_BACKOFF: Temporal.Duration = Temporal.Duration.from({seconds: 1})
+    private static readonly MAX_BACKOFF: Temporal.Duration = Temporal.Duration.from({ seconds: 1 });
     private static readonly MAX_IS_WORK_CHECKS: number = 1000;
     private static readonly MAX_SUCCESSIVE_NO_TASKS_CREATED: number = 10;
-    private static readonly FIXED_DELAY_SCHEDULED_ENGINE: Temporal.Duration = Temporal.Duration.from({seconds: 1})
+    private static readonly FIXED_DELAY_SCHEDULED_ENGINE: Temporal.Duration = Temporal.Duration.from({ seconds: 1 });
 
     private running = false;
     private timer: number = NOT_SET;
@@ -31,7 +31,7 @@ export class InboxOutboxEngine {
     }
 
     excludeTask(id: string): boolean {
-        return this.tasks.delete(id)
+        return this.tasks.delete(id);
     }
 
     start(): void {
@@ -52,7 +52,7 @@ export class InboxOutboxEngine {
     }
 
     async executeOnce() {
-        return await this.executeTaskEngine()
+        return await this.executeTaskEngine();
     }
 
 
@@ -64,7 +64,7 @@ export class InboxOutboxEngine {
         try {
             await this.executeTaskEngine();
         } finally {
-            this.scheduleEngine(InboxOutboxEngine.FIXED_DELAY_SCHEDULED_ENGINE.total({unit: "milliseconds"}));
+            this.scheduleEngine(InboxOutboxEngine.FIXED_DELAY_SCHEDULED_ENGINE.total({ unit: 'milliseconds' }));
         }
     }
 
@@ -76,19 +76,19 @@ export class InboxOutboxEngine {
                     const computedDto =
                         await ComputeAsyncTask.Loops.runWhileWork(
                             InboxOutboxEngine.toAsyncTaskInput([...this.tasks.values()])
-                        )
+                        );
 
                     for (const task of computedDto.tasks) {
-                        this.tasks.set(task.inputTask.name, task.inputTask)
+                        this.tasks.set(task.inputTask.name, task.inputTask);
                     }
 
                     return computedDto.totalNumTasksCreated > 0;
                 } catch (e) {
-                    console.error("TaskEngine error", e);
-                    return false
+                    console.error('TaskEngine error', e);
+                    return false;
                 }
             }
-        )
+        );
     }
 
     private static toAsyncTaskInput(
@@ -96,9 +96,9 @@ export class InboxOutboxEngine {
     ) {
         return {
             tasks: tasks,
-            maxBackoffMs: InboxOutboxEngine.MAX_BACKOFF.total({unit: "milliseconds"}),
+            maxBackoffMs: InboxOutboxEngine.MAX_BACKOFF.total({ unit: 'milliseconds' }),
             maxIsWorkIterations: InboxOutboxEngine.MAX_IS_WORK_CHECKS,
             maxSuccessiveNoTasksCreated: InboxOutboxEngine.MAX_SUCCESSIVE_NO_TASKS_CREATED
-        }
+        };
     }
 }

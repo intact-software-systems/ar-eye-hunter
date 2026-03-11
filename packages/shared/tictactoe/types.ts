@@ -1,7 +1,7 @@
 export enum Player {
-    X = "X",
-    O = "O",
-    NA = "NA",
+    X = 'X',
+    O = 'O',
+    NA = 'NA',
 }
 
 export enum MoveIndex {
@@ -9,33 +9,33 @@ export enum MoveIndex {
 }
 
 export enum Cell {
-    X = "X",
-    O = "O",
-    Empty = "Empty",
+    X = 'X',
+    O = 'O',
+    Empty = 'Empty',
 }
 
 export enum GameResult {
-    InProgress = "InProgress",
-    Draw = "Draw",
-    XWins = "XWins",
-    OWins = "OWins",
+    InProgress = 'InProgress',
+    Draw = 'Draw',
+    XWins = 'XWins',
+    OWins = 'OWins',
 }
 
 export enum CpuDifficulty {
-    Easy = "Easy",
-    Medium = "Medium",
-    Hard = "Hard",
-    Empty = "Empty",
+    Easy = 'Easy',
+    Medium = 'Medium',
+    Hard = 'Hard',
+    Empty = 'Empty',
 }
 
 export enum GameModeType {
-    Cpu = "Cpu",
-    LocalHuman = "LocalHuman",
+    Cpu = 'Cpu',
+    LocalHuman = 'LocalHuman',
 }
 
 export enum BoardMove {
-    Succes = "Succes",
-    Failed = "Failed",
+    Succes = 'Succes',
+    Failed = 'Failed',
 }
 
 export type GameMode =

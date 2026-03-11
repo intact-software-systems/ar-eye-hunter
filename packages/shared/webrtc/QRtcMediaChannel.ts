@@ -1,11 +1,11 @@
-import { QRtcOnRemoteStreamCallback, QRtcOnTrackCallback, QRtcPeerConnection, } from "./QRtcPeerConnection.ts";
+import { QRtcOnRemoteStreamCallback, QRtcOnTrackCallback, QRtcPeerConnection, } from './QRtcPeerConnection.ts';
 
 export enum MediaSessionState {
-    Idle = "Idle",
-    Connecting = "Connecting",
-    Open = "Open",
-    Closed = "Closed",
-    Failed = "Failed",
+    Idle = 'Idle',
+    Connecting = 'Connecting',
+    Open = 'Open',
+    Closed = 'Closed',
+    Failed = 'Failed',
 }
 
 export type RtcMediaChannelInputDto = {
@@ -49,7 +49,7 @@ export class QRtcMediaChannel {
 
     reset(): void {
         this.unsubscribe();
-        this.clearRemoteStreams()
+        this.clearRemoteStreams();
 
         this.status.state = MediaSessionState.Idle;
     }
@@ -104,7 +104,7 @@ export class QRtcMediaChannel {
         }
     }
 
-    private subscriptionId(kind: "track" | "stream"): string {
+    private subscriptionId(kind: 'track' | 'stream'): string {
         // stable per-peer, used to overwrite rather than accumulate callbacks
         return `${this.input.peerId}:media:${kind}`;
     }
@@ -117,7 +117,7 @@ export class QRtcMediaChannel {
         this.subscribed = true;
 
         this.peerConnection.onRemoteStreamDo(
-            this.subscriptionId("stream"),
+            this.subscriptionId('stream'),
             async (stream, event) => {
                 // Cache for UI convenience (drawing remote videos, etc.)
                 this.status.remoteStreams.set(stream.id, stream);
@@ -126,20 +126,20 @@ export class QRtcMediaChannel {
                     try {
                         await cb(stream, event);
                     } catch (e) {
-                        console.error("QRtcMediaChannel onRemoteStream callback failed", e);
+                        console.error('QRtcMediaChannel onRemoteStream callback failed', e);
                     }
                 }
             },
         );
 
         this.peerConnection.onTrackDo(
-            this.subscriptionId("track"),
+            this.subscriptionId('track'),
             async (event) => {
                 for (const cb of this.onTrackCallbacks.values()) {
                     try {
                         await cb(event);
                     } catch (e) {
-                        console.error("QRtcMediaChannel onTrack callback failed", e);
+                        console.error('QRtcMediaChannel onTrack callback failed', e);
                     }
                 }
             },
@@ -153,8 +153,8 @@ export class QRtcMediaChannel {
 
         this.subscribed = false;
 
-        this.peerConnection.removeOnRemoteStreamCallbackById(this.subscriptionId("stream"));
-        this.peerConnection.removeOnTrackCallbackById(this.subscriptionId("track"));
+        this.peerConnection.removeOnRemoteStreamCallbackById(this.subscriptionId('stream'));
+        this.peerConnection.removeOnTrackCallbackById(this.subscriptionId('track'));
     }
 
     // ----------------------------------------
@@ -193,7 +193,7 @@ export class QRtcMediaChannel {
         this.peerConnection.setLocalVideoEnabled(enabled);
     }
 
-    stopLocalMedia(kind: "audio" | "video" | "all"): void {
+    stopLocalMedia(kind: 'audio' | 'video' | 'all'): void {
         this.peerConnection.stopLocalMedia(kind);
     }
 

@@ -1,11 +1,38 @@
 {
   "compilerOptions": {
     "noEmit": true,
-    "target": "ES2022",
+    "target": "ESNext",
     "module": "ESNext",
-
     "strict": true,
     "moduleResolution": "Bundler",
-    "allowImportingTsExtensions": true
-  }
+    "allowImportingTsExtensions": true,
+    "lib": [
+      "ESNext",
+      "DOM"
+    ],
+    "baseUrl": "../..",
+    "paths": {
+      "@shared-web/*": [
+        "packages/shared-web/*"
+      ],
+      "@shared-graph/*": [
+        "packages/shared-graph/*"
+      ],
+      "@shared/*": [
+        "packages/shared/*"
+      ]
+    },
+    "skipLibCheck": true,
+    "types": [
+      "vitest/globals"
+    ]
+  },
+  "include": [
+    "**/*.test.ts",
+    "**/*.d.ts",
+    "../../types/**/*.d.ts"
+  ],
+  "exclude": [
+    "**/dummy.test.ts"
+  ]
 }

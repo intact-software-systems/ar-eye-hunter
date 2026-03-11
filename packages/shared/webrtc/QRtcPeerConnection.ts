@@ -1,10 +1,10 @@
-import { IceConfig } from "../api/api-config.ts";
+import { IceConfig } from '../api/api-config.ts';
 import {
     QRtcSignalingChannel,
     QRtcSignalingMsgType,
     QRtcSignalingSender,
     QRtcSignalingType
-} from "./QRtcSignalingContracts.ts";
+} from './QRtcSignalingContracts.ts';
 
 enum QRtcSessionState {
     Idle = 'Idle',
@@ -22,6 +22,19 @@ export type QRtcDataExchanged = {
 export type QRtcOnDataChannelCallback = (event: RTCDataChannelEvent) => Promise<void>;
 export type QRtcOnTrackCallback = (event: RTCTrackEvent) => Promise<void>;
 export type QRtcOnRemoteStreamCallback = (stream: MediaStream, event: RTCTrackEvent) => Promise<void>;
+
+export type QRtcPeerConnectionStateCallbacks = {
+    onConnected?: () => Promise<void>
+    onDisconnected?: () => Promise<void>
+    onFailed?: () => Promise<void>
+    onClosed?: (peerId: string) => Promise<void>
+    onOffer?: (offer: RTCSessionDescriptionInit) => Promise<void>
+    onAnswer?: (answer: RTCSessionDescriptionInit) => Promise<void>
+    onIceCandidate?: (candidate: RTCIceCandidateInit) => Promise<void>
+    onDataChannel?: (channel: RTCDataChannel) => Promise<void>
+    onTrack?: (track: MediaStreamTrack) => Promise<void>
+    onRemoteStream?: (stream: MediaStream) => Promise<void>
+}
 
 export type RtcCodecMimeType = string;
 
@@ -47,6 +60,7 @@ export type QRtcPeerConnectionInputDto = {
     readonly token: string
     readonly peerSessionId: string
     readonly iceCandidates: IceConfig
+    readonly isPolite: boolean
 }
 
 type QRtcPeerConnectionStatus = {
@@ -56,17 +70,28 @@ type QRtcPeerConnectionStatus = {
     localSenders: Map<string, RTCRtpSender>
     remoteStreams: Map<string, MediaStream>
     mediaPolicy: QRtcMediaPolicy | undefined
-    isPolite: boolean
     makingOffer: boolean
+    ignoreOffer: boolean
+    iceCandidateQueue: RTCIceCandidateInit[]
+    reconnectAttempts: number
+    reconnectTimer: ReturnType<typeof setTimeout> | undefined
+    disconnectTimer: ReturnType<typeof setTimeout> | undefined
+    callbacks: QRtcPeerConnectionStateCallbacks
 }
 
 export class QRtcPeerConnection {
+    private readonly MAX_RECONNECT_ATTEMPTS: number = 5;
+    private readonly DISCONNECT_TIMEOUT_MSECS: number = 5000;
+
+    private signalingChain = Promise.resolve();
+    private outboundSignalingChain = Promise.resolve();
+
     private readonly configuration;
     public status: QRtcPeerConnectionStatus;
 
-    private readonly onDataChannelCallbacks = new Map<string, QRtcOnDataChannelCallback>()
-    private readonly onTrackCallbacks = new Map<string, QRtcOnTrackCallback>()
-    private readonly onRemoteStreamCallbacks = new Map<string, QRtcOnRemoteStreamCallback>()
+    private readonly onDataChannelCallbacks = new Map<string, QRtcOnDataChannelCallback>();
+    private readonly onTrackCallbacks = new Map<string, QRtcOnTrackCallback>();
+    private readonly onRemoteStreamCallbacks = new Map<string, QRtcOnRemoteStreamCallback>();
 
     constructor(
         public readonly signaler: QRtcSignalingSender,
@@ -76,7 +101,7 @@ export class QRtcPeerConnection {
             iceServers: [...this.input.iceCandidates.iceServers]
         };
 
-        this.status = this.toInitialStatus()
+        this.status = this.toInitialStatus();
     }
 
     reset(): QRtcPeerConnectionStatus {
@@ -84,12 +109,6 @@ export class QRtcPeerConnection {
         this.status = this.toInitialStatus();
 
         return this.status;
-    }
-
-    clearCallbacks() {
-        this.onDataChannelCallbacks.clear();
-        this.onTrackCallbacks.clear();
-        this.onRemoteStreamCallbacks.clear();
     }
 
     private toInitialStatus(): QRtcPeerConnectionStatus {
@@ -100,25 +119,62 @@ export class QRtcPeerConnection {
             localSenders: new Map<string, RTCRtpSender>(),
             remoteStreams: new Map<string, MediaStream>(),
             mediaPolicy: undefined,
-            isPolite: this.input.sessionId < this.input.peerSessionId,
             makingOffer: false,
+            ignoreOffer: false,
+            iceCandidateQueue: [],
+            reconnectAttempts: 0,
+            reconnectTimer: undefined,
+            disconnectTimer: undefined,
+            callbacks: {}
         };
     }
 
     private closePeerConnectionIfPresent() {
         if (this.status?.pc) {
             try {
-                console.log("Closing peer connection for peer: " + this.input.peerSessionId + " (state: " + this.status.state + ")")
-                this.status?.pc?.close?.()
+                console.log('Closing peer connection for peer: ' + this.input.peerSessionId + ' (state: ' + this.status.state + ')');
+
+                const pc = this.status.pc;
+
+                // Stop all Transceivers/Tracks associated with this peer
+                pc.getTransceivers()
+                    .forEach(transceiver => {
+                        if (transceiver.stop) {
+                            transceiver.stop();
+                        }
+                    });
+
+                // Remove event listeners to prevent memory leaks
+                pc.onicecandidate = null;
+                pc.onnegotiationneeded = null;
+                pc.onconnectionstatechange = null;
+                pc.ontrack = null;
+
+                // Close the PeerConnection itself
+                if (pc.connectionState !== 'closed') {
+                    pc.close();
+                }
+
+                if (this.status.reconnectTimer) {
+                    clearTimeout(this.status.reconnectTimer);
+                }
+                if (this.status.disconnectTimer) {
+                    clearTimeout(this.status.disconnectTimer);
+                }
+
             } catch (e) {
-                console.error("Error closing peer connection. Ignoring ...", e)
+                console.error('Error closing peer connection. Ignoring ...', e);
             }
         }
     }
 
+    // ----------------------------------------
+    // Callback registry
+    // ----------------------------------------
+
     onDataChannelDo(id: string, onDataChannel: QRtcOnDataChannelCallback): QRtcPeerConnection {
         this.onDataChannelCallbacks.set(id, onDataChannel);
-        return this
+        return this;
     }
 
     removeDataChannelCallbackById(id: string): boolean {
@@ -127,7 +183,7 @@ export class QRtcPeerConnection {
 
     onTrackDo(id: string, onTrack: QRtcOnTrackCallback): QRtcPeerConnection {
         this.onTrackCallbacks.set(id, onTrack);
-        return this
+        return this;
     }
 
     removeOnTrackCallbackById(id: string): boolean {
@@ -136,37 +192,50 @@ export class QRtcPeerConnection {
 
     onRemoteStreamDo(id: string, cb: QRtcOnRemoteStreamCallback): QRtcPeerConnection {
         this.onRemoteStreamCallbacks.set(id, cb);
-        return this
+        return this;
     }
 
     removeOnRemoteStreamCallbackById(id: string): boolean {
         return this.onRemoteStreamCallbacks.delete(id);
     }
 
-    connect() {
+    // ----------------------------------------
+    // Connect logic
+    // ----------------------------------------
+
+    connect(callbacks: QRtcPeerConnectionStateCallbacks = {}) {
         if (this.isOpen() || !this.isReadyToConnect()) {
-            console.log("Ignore connect, peer connection in state: " + this.status.state)
-            console.log("Peer connection is not ready to current peer connection state: " + this.status.pc?.connectionState + " current pc signaling state " + this.status?.pc?.signalingState)
-            return
+            console.log('Ignore connect, peer connection in state: ' + this.status.state);
+            console.log('Peer connection is not ready to current peer connection state: ' + this.status.pc?.connectionState + ' current pc signaling state ' + this.status?.pc?.signalingState);
+            return;
         }
 
         if (this.status.pc) {
-            console.log("Peer connection already exists. Resetting peer connection.")
-            this.reset()
+            console.log('Peer connection already exists. Resetting peer connection.');
+            this.reset();
         }
 
         this.status.state = QRtcSessionState.Connecting;
 
         const pc = new RTCPeerConnection(this.configuration);
-        this.status.pc = pc
+
+        this.status.pc = pc;
 
         // When pc.createDataChannel is called, it will trigger this event
         pc.onnegotiationneeded = async () => {
             try {
+                // 1. GATE-KEEPER: If we are already negotiating or not in a stable state,
+                // we must abort. Perfect Negotiation will re-trigger this event
+                // automatically once the state returns to 'stable'.
+                if (this.status.makingOffer || pc.signalingState !== 'stable') {
+                    console.log('Ignoring negotiation needed because we are already negotiating or not in a stable state');
+                    return;
+                }
+
                 this.status.makingOffer = true;
                 await pc.setLocalDescription();
 
-                console.log("Offer negotiation: " + JSON.stringify(pc.localDescription))
+                console.log('Offer negotiation: ' + JSON.stringify(pc.localDescription));
 
                 await this.sendSignal(
                     QRtcSignalingType.Offer,
@@ -176,7 +245,7 @@ export class QRtcPeerConnection {
                     }
                 );
             } catch (err) {
-                console.error("Negotiation error", err);
+                console.error('Negotiation error', err);
             } finally {
                 this.status.makingOffer = false;
             }
@@ -184,27 +253,31 @@ export class QRtcPeerConnection {
 
         pc.onicecandidate = async event => {
             if (event.candidate) {
-                await this.sendSignal(
-                    QRtcSignalingType.IceCandidate,
-                    {
-                        description: null,
-                        candidate: event.candidate
-                    }
-                )
+                try {
+                    await this.sendSignal(
+                        QRtcSignalingType.IceCandidate,
+                        {
+                            description: null,
+                            candidate: event.candidate
+                        }
+                    );
+                } catch (err) {
+                    console.error('ICE candidate signaling error', err);
+                }
             } else {
-                console.log("ICE Gathering Complete")
+                console.log('ICE Gathering Complete');
             }
-        }
+        };
 
         pc.ondatachannel =
             async event => {
-                console.log("Data channel created: " + event.channel.label)
+                console.log('Data channel created: ' + event.channel.label);
 
                 for (const callback of this.onDataChannelCallbacks.values()) {
                     try {
-                        await callback(event)
+                        await callback(event);
                     } catch (e) {
-                        console.error("Callback onDataChannel failed:", e);
+                        console.error('Callback onDataChannel failed:', e);
                     }
                 }
             };
@@ -234,18 +307,327 @@ export class QRtcPeerConnection {
                     console.error('Callback onTrack failed:', e);
                 }
             }
-        }
+        };
 
-        this.setupStateChangeCallbacks(pc);
+        this.setupStateChangeCallbacks(pc, callbacks);
+
+        this.status.callbacks = callbacks;
     }
 
-    createDataChannel(label: string): RTCDataChannel {
+    private setupStateChangeCallbacks(pc: RTCPeerConnection, callbacks: QRtcPeerConnectionStateCallbacks) {
+        pc.oniceconnectionstatechange = () => {
+            console.log('ICE Connection State: ' + pc.iceConnectionState);
+        };
+
+        pc.onsignalingstatechange = () => console.log('Signaling', pc.signalingState);
+
+        pc.onconnectionstatechange = () => {
+            console.log('Peer Connection State: ' + pc.connectionState);
+
+            switch (pc.connectionState) {
+                case 'connected': {
+                    this.status.state = QRtcSessionState.Open;
+                    this.status.reconnectAttempts = 0;
+
+                    if (this.status.reconnectTimer) {
+                        clearTimeout(this.status.reconnectTimer);
+                        this.status.reconnectTimer = undefined;
+                    }
+
+                    callbacks.onConnected?.();
+                    break;
+                }
+                case 'disconnected':
+
+                    this.status.disconnectTimer =
+                        setTimeout(
+                            () => {
+                                if (pc.connectionState === 'disconnected') {
+                                    this.handleReconnect()
+                                        .catch(err => console.error('Error handling reconnect', err));
+                                }
+                            },
+                            this.DISCONNECT_TIMEOUT_MSECS
+                        );
+
+                    callbacks.onDisconnected?.();
+                    break;
+                case 'failed':
+                    this.status.state = QRtcSessionState.Failed;
+
+                    this.handleReconnect()
+                        .catch(err => console.error('Error handling reconnect', err));
+
+                    callbacks.onFailed?.();
+                    break;
+                case 'closed':
+                    this.status.state = QRtcSessionState.Closed;
+
+                    callbacks.onClosed?.(this.input.peerSessionId);
+                    break;
+                case 'connecting':
+                case 'new':
+                    break;
+            }
+        };
+
+        pc.addEventListener(
+            'icegatheringstatechange',
+            _ => {
+                switch (pc.iceGatheringState) {
+                    case 'new':
+                        console.log('ICE Gathering State: New');
+                        break;
+                    case 'gathering':
+                        console.log('ICE Gathering State: Gathering');
+                        break;
+                    case 'complete':
+                        console.log('ICE Gathering State: Complete');
+                        break;
+                }
+            }
+        );
+    }
+
+    createDataChannel(
+        label: string,
+        dataChannelDict?: RTCDataChannelInit,
+    ): RTCDataChannel {
         const pc = this.status.pc;
         if (!pc) {
-            throw new Error("PeerConnection not initialized");
+            throw new Error('PeerConnection not initialized');
         }
 
-        return pc.createDataChannel(label);
+        return dataChannelDict === undefined
+            ? pc.createDataChannel(label)
+            : pc.createDataChannel(label, dataChannelDict);
+    }
+
+    async handleSignal(signal: QRtcSignalingType, msg: QRtcDataExchanged) {
+        const run =
+            this.signalingChain
+                .then(
+                    async () => await this.processSignal(signal, msg)
+                );
+        this.signalingChain = run.catch(err => {
+            console.error('Signaling chain error', err);
+        });
+        await run;
+    }
+
+    private async processSignal(signal: QRtcSignalingType, msg: QRtcDataExchanged) {
+        const pc = this.status.pc;
+        if (!pc) {
+            return Promise.reject('PeerConnection not initialized');
+        }
+
+        console.log('Handling signal: ' + signal + ': ' + JSON.stringify(msg));
+
+        switch (signal) {
+            case QRtcSignalingType.Answer: {
+                if (!msg.description) {
+                    return Promise.reject(new Error('signal answer should have description'));
+                }
+
+                await pc.setRemoteDescription(msg.description);
+                await this.flushIceCandidateQueue(pc);
+                this.status.makingOffer = false;
+                this.status.ignoreOffer = false;
+                break;
+            }
+            case QRtcSignalingType.Offer: {
+                if (!msg.description) {
+                    return Promise.reject(new Error('signal answer should have description'));
+                }
+
+                const offerCollision = this.status.makingOffer || pc.signalingState !== 'stable';
+                this.status.ignoreOffer = !this.input.isPolite && offerCollision;
+
+                if (this.status.ignoreOffer) {
+                    console.log('Ignoring offer from ' + this.input.peerSessionId + ' because we are not polite');
+                    return;
+                }
+
+                if (offerCollision) {
+                    console.log('Accepting offer from ' + this.input.peerSessionId + ' because we are polite = ' + this.input.isPolite);
+                    await Promise.all([
+                        pc.setLocalDescription({ type: 'rollback' }),
+                        pc.setRemoteDescription(msg.description)
+                    ]);
+                } else {
+                    await pc.setRemoteDescription(msg.description);
+                }
+
+                await this.flushIceCandidateQueue(pc);
+                await pc.setLocalDescription(); // Automatically creates an answer
+
+                this.status.makingOffer = false;
+                this.status.ignoreOffer = false;
+
+                await this.sendSignal(
+                    QRtcSignalingType.Answer,
+                    {
+                        description: pc.localDescription,
+                        candidate: null,
+                    }
+                );
+                break;
+            }
+
+            case QRtcSignalingType.IceCandidate: {
+                if (!msg.candidate) {
+                    return Promise.reject(new Error('signal ice candidate should have candidate'));
+                }
+
+                if (this.status.ignoreOffer) {
+                    console.log('Ignoring ICE candidate from ' + this.input.peerSessionId + ' because we are not polite');
+                    return;
+                }
+
+                try {
+                    if (pc.remoteDescription && pc.remoteDescription.type) {
+                        await pc.addIceCandidate(msg.candidate);
+                    } else {
+                        this.status.iceCandidateQueue.push(msg.candidate);
+                    }
+                } catch (err) {
+                    if (!this.status.ignoreOffer) {
+                        throw err;
+                    }
+                }
+                break;
+            }
+        }
+
+        return Promise.resolve();
+    }
+
+    private async flushIceCandidateQueue(pc: RTCPeerConnection) {
+        while (this.status.iceCandidateQueue.length > 0) {
+            const candidate = this.status.iceCandidateQueue.shift();
+            try {
+                await pc.addIceCandidate(candidate);
+            } catch (e) {
+                console.warn('Failed to add queued candidate:', e);
+            }
+        }
+    }
+
+    async handleReconnect() {
+        if (this.status.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
+            console.warn(`Gitt opp etter ${this.status.reconnectAttempts} forsøk. Lukker peeren.`);
+            this.reset(); // Funksjon som lukker PC og fjerner UI
+            return;
+        }
+
+        // 2. Already reconnecting?
+        if (this.status.reconnectTimer) {
+            return;
+        }
+
+        this.status.reconnectAttempts++;
+
+        // Exponential backoffs: 2s, 4s, 8s, 16s...
+        const delay = Math.pow(2, this.status.reconnectAttempts) * 1000;
+        console.log(`Try again ${this.status.reconnectAttempts} in ${delay / 1000} seconds...`);
+
+        this.status.reconnectTimer =
+            setTimeout(
+                async () => {
+                    this.status.reconnectTimer = undefined;
+
+                    try {
+                        // Sjekk om vi ble koblet til i ventetiden (f.eks. ved et innkommende anrop)
+                        if (this.isConnectedOrInProgress(this.status.pc)) {
+                            this.status.reconnectAttempts = 0;
+                            return;
+                        }
+
+                        console.log('Performing ICE restart...');
+
+                        // Enqueue to avoid race conditions
+                        this.signalingChain =
+                            this.signalingChain
+                                .then(
+                                    async () => {
+                                        if (this.isConnectedOrInProgress(this.status.pc)) {
+                                            this.status.reconnectAttempts = 0;
+                                            return;
+                                        }
+
+                                        this.status?.pc?.restartIce();
+                                    }
+                                );
+
+                    } catch (err) {
+                        console.error('Error during reconnect:', err);
+                    }
+                },
+                delay
+            );
+    }
+
+    private isConnectedOrInProgress(pc: RTCPeerConnection | undefined): boolean {
+        return pc !== undefined && (
+            pc.connectionState === 'connected' ||
+            pc.connectionState === 'connecting' ||
+            pc.connectionState === 'new'
+        );
+    }
+
+    private async sendSignal(signalType: QRtcSignalingType, payload: QRtcDataExchanged): Promise<void> {
+        const signal = {
+            channel: QRtcSignalingChannel.RtcSignal,
+            type: QRtcSignalingMsgType.Signal,
+            fromId: this.input.sessionId,
+            toId: this.input.peerSessionId,
+            sessionId: this.input.sessionId,
+            token: this.input.token,
+            signalType: signalType,
+            payload: payload
+        };
+
+        const run =
+            this.outboundSignalingChain
+                .then(async () => {
+                    console.log('Sending signal: ' + JSON.stringify(signal));
+                    await this.signaler.send(signal);
+                });
+
+        this.outboundSignalingChain = run.catch(err => {
+            console.error('Outbound signaling chain error', err);
+        });
+        await run;
+    }
+
+    isOpen() {
+        return this.status.state === QRtcSessionState.Open;
+    }
+
+    isReadyToConnect() {
+        return this.status.state === QRtcSessionState.Idle ||
+            this.status.state === QRtcSessionState.Failed ||
+            this.status.state === QRtcSessionState.Closed;
+    }
+
+    isAlreadyActiveOrConnecting() {
+        return this.status.state === QRtcSessionState.Open ||
+            this.status.state === QRtcSessionState.Connecting ||
+            this.status.pc?.connectionState === 'connecting' ||
+            this.status.pc?.connectionState === 'connected';
+    }
+
+    isPeerActive() {
+        return this.status.pc &&
+            this.status.pc.connectionState !== 'closed' &&
+            this.status.pc.connectionState !== 'failed';
+    }
+
+    private stopReconnectTimer() {
+        if (this.status.disconnectTimer) {
+            clearTimeout(this.status.disconnectTimer);
+            this.status.disconnectTimer = undefined;
+        }
     }
 
     async setLocalMediaStream(stream: MediaStream): Promise<void> {
@@ -371,10 +753,10 @@ export class QRtcPeerConnection {
         const needVideo = !!(policy.preferredVideoCodecs && policy.preferredVideoCodecs.length > 0);
 
         if (needAudio && !pc.getTransceivers().some(t => t.receiver?.track?.kind === 'audio')) {
-            pc.addTransceiver('audio', {direction: 'sendrecv'});
+            pc.addTransceiver('audio', { direction: 'sendrecv' });
         }
         if (needVideo && !pc.getTransceivers().some(t => t.receiver?.track?.kind === 'video')) {
-            pc.addTransceiver('video', {direction: 'sendrecv'});
+            pc.addTransceiver('video', { direction: 'sendrecv' });
         }
     }
 
@@ -456,161 +838,5 @@ export class QRtcPeerConnection {
         } catch (e) {
             console.warn('setParameters failed', e);
         }
-    }
-
-    private signalingChain = Promise.resolve();
-
-    async handleSignal(signal: QRtcSignalingType, msg: QRtcDataExchanged) {
-        this.signalingChain =
-            this.signalingChain
-                .then(async () => {
-                    await this.processSignal(signal, msg);
-                })
-                .catch(err => console.error("Signaling chain error", err));
-    }
-
-    private async processSignal(signal: QRtcSignalingType, msg: QRtcDataExchanged) {
-        const pc = this.status.pc;
-        if (!pc) {
-            return Promise.reject("PeerConnection not initialized");
-        }
-
-        let ignoreOffer = false;
-
-        console.log("Handling signal: " + signal + ": " + JSON.stringify(msg))
-
-        switch (signal) {
-            case QRtcSignalingType.Answer: {
-                if (!msg.description) {
-                    return Promise.reject(new Error("signal answer should have description"));
-                }
-                await pc.setRemoteDescription(msg.description);
-                break
-            }
-            case QRtcSignalingType.Offer: {
-                if (!msg.description) {
-                    return Promise.reject(new Error("signal answer should have description"))
-                }
-
-                const offerCollision = this.status.makingOffer || pc.signalingState !== "stable";
-
-                ignoreOffer = !this.status.isPolite && offerCollision;
-
-                if (ignoreOffer) {
-                    console.log("Ignoring offer from " + this.input.peerSessionId + " because we are not polite")
-                    return
-                }
-
-                if (offerCollision) {
-                    console.log("Accepting offer from " + this.input.peerSessionId + " because we are polite = " + this.status.isPolite)
-                    await pc.setLocalDescription({type: "rollback"})
-                    await pc.setRemoteDescription(msg.description)
-                } else {
-                    await pc.setRemoteDescription(msg.description);
-                }
-
-                await pc.setLocalDescription(); // Automatically creates an answer
-
-                await this.sendSignal(
-                    QRtcSignalingType.Answer,
-                    {
-                        description: pc.localDescription,
-                        candidate: null,
-                    }
-                );
-                break
-            }
-
-            case QRtcSignalingType.IceCandidate: {
-                if (!msg.candidate) {
-                    return Promise.reject(new Error("signal ice candidate should have candidate"))
-                }
-
-                try {
-                    if (pc.remoteDescription && pc.remoteDescription.type) {
-                        await pc.addIceCandidate(msg.candidate);
-                    }
-                } catch (err) {
-                    if (!ignoreOffer) {
-                        throw err
-                    }
-                }
-                break
-            }
-        }
-
-        return Promise.resolve()
-    }
-
-    private async sendSignal(signalType: QRtcSignalingType, payload: QRtcDataExchanged): Promise<void> {
-        const signal = {
-            channel: QRtcSignalingChannel.RtcSignal,
-            type: QRtcSignalingMsgType.Signal,
-            fromId: this.input.sessionId,
-            toId: this.input.peerSessionId,
-            sessionId: this.input.sessionId,
-            token: this.input.token,
-            signalType: signalType,
-            payload: payload
-        };
-
-        console.log("Sending signal: " + JSON.stringify(signal))
-
-        await this.signaler.send(signal);
-    }
-
-    private setupStateChangeCallbacks(pc: RTCPeerConnection) {
-        pc.oniceconnectionstatechange = () => {
-            console.log("ICE Connection State: " + pc.iceConnectionState)
-        }
-
-        pc.onsignalingstatechange = () => console.log("Signaling", pc.signalingState);
-
-        pc.onconnectionstatechange = () => {
-            console.log("Peer Connection State: " + pc.connectionState)
-
-            switch (pc.connectionState) {
-                case "connected":
-                    this.status.state = QRtcSessionState.Open;
-                    break;
-                case "disconnected":
-                case "closed":
-                    this.status.state = QRtcSessionState.Closed;
-                    break;
-                case "failed":
-                    this.status.state = QRtcSessionState.Failed;
-                    break;
-                case "connecting":
-                case "new":
-                    break;
-            }
-        };
-
-        pc.addEventListener(
-            "icegatheringstatechange",
-            _ => {
-                switch (pc.iceGatheringState) {
-                    case "new":
-                        console.log("ICE Gathering State: New")
-                        break;
-                    case "gathering":
-                        console.log("ICE Gathering State: Gathering")
-                        break;
-                    case "complete":
-                        console.log("ICE Gathering State: Complete")
-                        break;
-                }
-            }
-        );
-    }
-
-    isOpen() {
-        return this.status.state === QRtcSessionState.Open;
-    }
-
-    isReadyToConnect() {
-        return this.status.state === QRtcSessionState.Idle ||
-            this.status.state === QRtcSessionState.Failed ||
-            this.status.state === QRtcSessionState.Closed;
     }
 }

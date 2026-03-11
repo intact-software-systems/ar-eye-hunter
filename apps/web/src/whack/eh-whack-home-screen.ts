@@ -1,3 +1,6 @@
+import { navigate, Route } from '../router.ts';
+import { mustEl } from '../utils/utils.ts';
+
 export class EhWhackHomeScreen extends HTMLElement {
     connectedCallback(): void {
         this.innerHTML = `
@@ -12,14 +15,11 @@ export class EhWhackHomeScreen extends HTMLElement {
       </div>
     `;
 
-        const singleBtn = this.querySelector('#singleBtn') as HTMLButtonElement | null;
-        const backBtn = this.querySelector('#backBtn') as HTMLButtonElement | null;
+        const singleBtn = mustEl<HTMLButtonElement>(this, '#singleBtn');
+        const backBtn = mustEl<HTMLButtonElement>(this, '#backBtn');
 
-        if (!singleBtn) throw new Error('Missing #singleBtn');
-        if (!backBtn) throw new Error('Missing #backBtn');
-
-        singleBtn.addEventListener('click', () => (location.hash = '#/whackaworm/single'));
-        backBtn.addEventListener('click', () => (location.hash = '#/'));
+        singleBtn.addEventListener('click', () => navigate(Route.WhackSingle));
+        backBtn.addEventListener('click', () => navigate(Route.Landing));
     }
 }
 

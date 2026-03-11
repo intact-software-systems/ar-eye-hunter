@@ -1,4 +1,5 @@
-You are tasked with designing and implementing a WebRTC integration for a tic-tac-toe game. The system consists of a web SPA (Single Page Application) and a Deno web server that will facilitate peer-to-peer connections between players.
+You are tasked with designing and implementing a WebRTC integration for a tic-tac-toe game. The system consists of a web
+SPA (Single Page Application) and a Deno web server that will facilitate peer-to-peer connections between players.
 
 Here is the current code for your reference:
 <current_code>
@@ -10,7 +11,8 @@ Here are the specific requirements and constraints:
 {{REQUIREMENTS}}
 </requirements>
 
-Your goal is to provide a complete implementation plan and code for integrating WebRTC into this system. The integration should allow two players to connect peer-to-peer through the Deno server acting as a signaling server.
+Your goal is to provide a complete implementation plan and code for integrating WebRTC into this system. The integration
+should allow two players to connect peer-to-peer through the Deno server acting as a signaling server.
 
 Before providing your implementation, use a scratchpad to think through the architecture:
 
@@ -28,6 +30,7 @@ After your analysis, provide your implementation in the following sections:
 
 <architecture_overview>
 Provide a high-level overview of how the WebRTC integration works, including:
+
 - The role of the Deno server in the signaling process
 - How peers discover and connect to each other
 - How game moves are transmitted between peers
@@ -35,6 +38,7 @@ Provide a high-level overview of how the WebRTC integration works, including:
 
 <server_implementation>
 Provide the Deno server code including:
+
 - API endpoints for signaling (creating/joining rooms, exchanging offers/answers/ICE candidates)
 - In-memory data structures for caching room information and peer connections
 - Any WebSocket implementation if needed
@@ -43,6 +47,7 @@ Provide the Deno server code including:
 
 <client_implementation>
 Provide the web SPA code including:
+
 - UI elements for collecting necessary user input (room ID, player name, etc.)
 - WebRTC connection setup code (RTCPeerConnection configuration)
 - Signaling logic to communicate with the Deno server
@@ -53,12 +58,14 @@ Provide the web SPA code including:
 
 <usage_instructions>
 Provide step-by-step instructions for:
+
 1. How to run the Deno server
 2. How players use the web interface to connect and play
 3. Any configuration or environment variables needed
    </usage_instructions>
 
 Make sure your implementation:
+
 - Uses only in-memory storage on the server (no database)
 - Handles edge cases like disconnections or when a room is full
 - Includes proper error handling

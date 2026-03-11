@@ -1,19 +1,19 @@
 import {
     P2pRole,
-    WsChannel,
-    P2pWsClientMsgType,
-    P2pWsServerMsgType,
-    P2pSignalType,
     type P2pSessionId,
+    P2pSignalType,
     type P2pToken,
-    type P2pWsServerMessage,
     type P2pWsClientMessage,
-} from "@shared/mod.ts";
+    P2pWsClientMsgType,
+    type P2pWsServerMessage,
+    P2pWsServerMsgType,
+    WsChannel,
+} from '@shared/mod.ts';
 
 export enum WsSigStatus {
-    Closed = "Closed",
-    Connecting = "Connecting",
-    Open = "Open",
+    Closed = 'Closed',
+    Connecting = 'Connecting',
+    Open = 'Open',
 }
 
 export type WsSigHandlers = {
@@ -33,11 +33,11 @@ export type SignalTransport = {
 
 function wsUrl(): string {
     const env = (import.meta as any).env;
-    const base = (env?.VITE_API_BASE_URL as string) || "";
-    if (base.startsWith("https://")) return `wss://${base.slice("https://".length)}/api/ws`;
-    if (base.startsWith("http://")) return `ws://${base.slice("http://".length)}/api/ws`;
+    const base = (env?.VITE_API_BASE_URL as string) || '';
+    if (base.startsWith('https://')) return `wss://${base.slice('https://'.length)}/api/ws`;
+    if (base.startsWith('http://')) return `ws://${base.slice('http://'.length)}/api/ws`;
 
-    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${proto}//${location.host}/api/ws`;
 }
 
@@ -48,11 +48,13 @@ export class WsSignalingClient {
     private sessionId: P2pSessionId | undefined = undefined;
     private token: P2pToken | undefined = undefined;
 
-    private transportHandler: P2pSignalHandler = () => {};
+    private transportHandler: P2pSignalHandler = () => {
+    };
 
     private pending: Array<{ signalType: P2pSignalType; payload: unknown }> = [];
 
-    constructor(private readonly handlers: WsSigHandlers) {}
+    constructor(private readonly handlers: WsSigHandlers) {
+    }
 
     getStatus(): WsSigStatus {
         return this.status;
@@ -79,7 +81,7 @@ export class WsSignalingClient {
         const ws = new WebSocket(wsUrl());
         this.ws = ws;
 
-        ws.addEventListener("open", () => {
+        ws.addEventListener('open', () => {
             this.status = WsSigStatus.Open;
             this.handlers.onOpen();
 
@@ -99,8 +101,8 @@ export class WsSignalingClient {
             }
         });
 
-        ws.addEventListener("message", (ev) => {
-            const raw = typeof ev.data === "string" ? ev.data : "";
+        ws.addEventListener('message', (ev) => {
+            const raw = typeof ev.data === 'string' ? ev.data : '';
             let msg: P2pWsServerMessage;
             try {
                 msg = JSON.parse(raw) as P2pWsServerMessage;
@@ -127,13 +129,13 @@ export class WsSignalingClient {
             }
         });
 
-        ws.addEventListener("close", () => {
+        ws.addEventListener('close', () => {
             this.status = WsSigStatus.Closed;
             this.handlers.onClose();
         });
 
-        ws.addEventListener("error", () => {
-            this.handlers.onError("WebSocket error");
+        ws.addEventListener('error', () => {
+            this.handlers.onError('WebSocket error');
         });
     }
 

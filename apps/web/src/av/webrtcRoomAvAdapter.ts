@@ -1,5 +1,5 @@
-import { WebRtcQueueBoxClientService } from '@shared/services/WebRtcQueueBoxClientService';
 import type { RemoteStreamUpdate, RoomAvAdapter } from './roomAvAdapter';
+import { WebRtcRxStreamerService } from '@shared/services/WebRtcRxStreamerService.ts';
 
 export class WebRtcRoomAvAdapter implements RoomAvAdapter {
     private joined = false;
@@ -9,10 +9,10 @@ export class WebRtcRoomAvAdapter implements RoomAvAdapter {
     private peerLeftCb: (peerId: string) => void = () => {
     };
 
-    constructor(private readonly rtc: WebRtcQueueBoxClientService) {
+    constructor(private readonly rtc: WebRtcRxStreamerService) {
         // forward remote streams from rtc service
         rtc.onRemoteStreamDo('ui-av', async (peerId, stream) => {
-                this.remoteCb({peerId, stream});
+                this.remoteCb({ peerId, stream });
             }
         );
     }

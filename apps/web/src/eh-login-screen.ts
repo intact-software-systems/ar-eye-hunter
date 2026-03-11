@@ -1,7 +1,5 @@
-import {loginToApi} from "./middleware/api-integration.ts";
-import {writeSession} from './middleware/auth.ts';
-import {findHtmlEl, readNextFromHash} from "./utils/utils.ts";
-import {initMiddleware} from "./app-context.ts";
+import { findHtmlEl, readNextFromHash } from './utils/utils.ts';
+import { rallar } from '@shared-web/browser/rallar.ts';
 
 export class EhLoginScreen extends HTMLElement {
     connectedCallback(): void {
@@ -35,12 +33,11 @@ export class EhLoginScreen extends HTMLElement {
     }
 
     private wire(): void {
-        const usernameEl = findHtmlEl(this, '#username');
-        const passwordEl = findHtmlEl(this, '#password');
+        const usernameEl = findHtmlEl<HTMLInputElement>(this, '#username');
+        const passwordEl = findHtmlEl<HTMLInputElement>(this, '#password');
         const loginBtn = findHtmlEl(this, '#loginBtn');
 
         const submit = async (): Promise<void> => {
-
             this.setStatus('Logging in…');
 
             try {
@@ -52,16 +49,8 @@ export class EhLoginScreen extends HTMLElement {
                     return;
                 }
 
-                const res = await loginToApi({username, password});
-
-                writeSession({
-                    clientId: res.clientId,
-                    accessToken: res.accessToken,
-                    username: res.username,
-                    sessionId: res.sessionId,
-                });
-
-                await initMiddleware();
+                await rallar.auth.login({ username, password });
+                await rallar.connect();
 
                 const next = readNextFromHash();
                 location.hash = `#${next}`;

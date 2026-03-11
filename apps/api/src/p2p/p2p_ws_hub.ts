@@ -1,16 +1,16 @@
 import {
     P2pRole,
-    P2pSignalType,
-    WsChannel,
-    P2pWsClientMsgType,
-    P2pWsServerMsgType,
-    type P2pWsClientMessage,
-    type P2pWsServerMessage,
     type P2pSessionId,
-} from "@shared/mod.ts";
+    P2pSignalType,
+    type P2pWsClientMessage,
+    P2pWsClientMsgType,
+    type P2pWsServerMessage,
+    P2pWsServerMsgType,
+    WsChannel,
+} from '@shared/mod.ts';
 
-import { requireRole } from "./p2p_service.ts";
-import { getKv } from "./kv.ts";
+import { requireRole } from './p2p_service.ts';
+import { getKv } from './kv.ts';
 
 type RoleSockets = { initiator?: WebSocket; responder?: WebSocket };
 const hub = new Map<P2pSessionId, RoleSockets>();
@@ -25,15 +25,15 @@ function other(role: P2pRole): P2pRole {
 
 /** Optional buffering if peer not connected */
 function bufferKey(sessionId: string, toRole: P2pRole, ts: number, id: string): Deno.KvKey {
-    return ["p2p", "session", sessionId, "wsbuffer", toRole, ts, id];
+    return ['p2p', 'session', sessionId, 'wsbuffer', toRole, ts, id];
 }
 
 export async function handleP2pWs(ws: WebSocket): Promise<void> {
-    let sessionId: string = "";
+    let sessionId: string = '';
     let myRole: P2pRole | null = null;
 
-    ws.addEventListener("message", async (ev) => {
-        const raw = typeof ev.data === "string" ? ev.data : "";
+    ws.addEventListener('message', async (ev) => {
+        const raw = typeof ev.data === 'string' ? ev.data : '';
         let msg: P2pWsClientMessage;
         try {
             msg = JSON.parse(raw) as P2pWsClientMessage;
@@ -63,7 +63,7 @@ export async function handleP2pWs(ws: WebSocket): Promise<void> {
 
                 // Drain any buffered messages waiting for me
                 const kv = await getKv();
-                const prefix: Deno.KvKey = ["p2p", "session", sessionId, "wsbuffer", myRole];
+                const prefix: Deno.KvKey = ['p2p', 'session', sessionId, 'wsbuffer', myRole];
                 for await (const entry of kv.list<P2pWsServerMessage>({ prefix })) {
                     send(ws, entry.value);
                     await kv.delete(entry.key);
@@ -92,7 +92,7 @@ export async function handleP2pWs(ws: WebSocket): Promise<void> {
                         channel: WsChannel.P2pSignal,
                         type: P2pWsServerMsgType.Error,
                         sessionId: msg.sessionId,
-                        message: "Invalid signal type",
+                        message: 'Invalid signal type',
                     });
                     return;
                 }
@@ -143,6 +143,6 @@ export async function handleP2pWs(ws: WebSocket): Promise<void> {
         else hub.set(sessionId, slot);
     };
 
-    ws.addEventListener("close", cleanup);
-    ws.addEventListener("error", cleanup);
+    ws.addEventListener('close', cleanup);
+    ws.addEventListener('error', cleanup);
 }

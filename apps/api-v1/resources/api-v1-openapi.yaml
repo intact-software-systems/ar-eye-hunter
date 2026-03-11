@@ -1,0 +1,1864 @@
+openapi: 3.1.0
+info:
+  title: AR Eye Hunter API
+  version: 1.1.0
+  description: |
+    HTTP and websocket endpoints for configuration, authentication, runtime state,
+    ICE lookup, graph snapshots, and embedded Swagger docs.
+
+    The legacy flat `/api/client`, `/api/read/*`, and `/api/groups*` endpoints are
+    no longer part of the active API surface. The authoritative client and group
+    model now lives under `/api/state/apps/{applicationId}/workspaces/{workspaceId}`.
+
+servers:
+  - url: http://localhost:8080
+
+tags:
+  - name: Config
+  - name: Auth
+  - name: WebRTC
+  - name: Client State
+  - name: Group State
+  - name: Graph
+  - name: Docs
+
+paths:
+  /api/config:
+    get:
+      tags: [ Config ]
+      summary: Read runtime configuration
+      responses:
+        '200':
+          description: Application runtime configuration consumed by the web client.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiConfig'
+
+  /api/auth/login:
+    post:
+      tags: [ Auth ]
+      summary: Login client
+      description: |
+        Authenticates a configured client and issues an access token plus a
+        websocket/session identifier and expiry. The returned `accessToken` must be sent as
+        `Authorization: Bearer <token>`, and `clientId` must also be sent in the
+        `x-client-id` header for protected endpoints.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/auth/register:
+    post:
+      tags: [ Auth ]
+      summary: Register client
+      description: |
+        Creates a runtime-backed user that can subsequently authenticate with
+        `/api/auth/login`. Deployments can require an admin auth session for
+        this endpoint with `AUTH_REGISTRATION_MODE=admin`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Registration accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Admin auth session required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Username already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/auth/logout:
+    post:
+      tags: [ Auth ]
+      summary: Logout current session
+      description: Revokes the authenticated server-side auth session.
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      responses:
+        '200':
+          description: Session revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogoutResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/auth/ws-ticket:
+    post:
+      tags: [ Auth ]
+      summary: Create websocket auth ticket
+      description: |
+        Creates a short-lived one-time ticket for `/api/ws/{sessionId}`. This
+        avoids putting the long-lived access token in the websocket URL.
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      responses:
+        '200':
+          description: Websocket ticket issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebSocketTicketResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/webrtc/ice:
+    get:
+      tags: [ WebRTC ]
+      summary: Read ICE servers
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      responses:
+        '200':
+          description: ICE configuration and cache expiry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IceConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '502':
+          description: Upstream ICE provider failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/ws/{sessionId}:
+    get:
+      tags: [ WebRTC ]
+      summary: Upgrade to websocket
+      description: |
+        Upgrades the connection to a websocket after validating the `sessionId`
+        path parameter against a short-lived one-time `ticket` query parameter.
+      security:
+        - wsTicket: [ ]
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '101':
+          description: Websocket upgrade accepted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '426':
+          description: '`Upgrade: websocket` header missing.'
+        '400':
+          description: Invalid websocket upgrade request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients:
+    get:
+      tags: [ Client State ]
+      summary: List client snapshots
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Client snapshots for the requested scope.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ClientSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}:
+    get:
+      tags: [ Client State ]
+      summary: Read a client snapshot
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/PrincipalId'
+      responses:
+        '200':
+          description: Client snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/presence:
+    get:
+      tags: [ Client State ]
+      summary: Read client presence snapshot
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/PrincipalId'
+      responses:
+        '200':
+          description: Client presence snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientPresenceSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/events:
+    get:
+      tags: [ Client State ]
+      summary: List client events
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/PrincipalId'
+      responses:
+        '200':
+          description: Client event stream for the principal.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ClientEvent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/principal:
+    put:
+      tags: [ Client State ]
+      summary: Upsert the authenticated client principal
+      description: |
+        Updates the client principal record. The authenticated `clientId`
+        must match the `{principalId}` path parameter.
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/PrincipalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertClientPrincipalRequest'
+      responses:
+        '200':
+          description: Updated client snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}:
+    put:
+      tags: [ Client State ]
+      summary: Upsert an authenticated client instance
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/ClientInstanceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertClientInstanceRequest'
+      responses:
+        '200':
+          description: Updated client snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}/sessions/{sessionId}:
+    put:
+      tags: [ Client State ]
+      summary: Connect an authenticated client session
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/ClientInstanceId'
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectClientSessionRequest'
+      responses:
+        '200':
+          description: Updated client snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}/sessions/{sessionId}/heartbeat:
+    post:
+      tags: [ Client State ]
+      summary: Heartbeat an authenticated client session
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/ClientInstanceId'
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HeartbeatClientSessionRequest'
+      responses:
+        '200':
+          description: Updated client snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}/sessions/{sessionId}/disconnect:
+    post:
+      tags: [ Client State ]
+      summary: Disconnect an authenticated client session
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/ClientInstanceId'
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisconnectClientSessionRequest'
+      responses:
+        '200':
+          description: Updated client snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups:
+    get:
+      tags: [ Group State ]
+      summary: List group snapshots
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Group snapshots for the requested scope.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GroupSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [ Group State ]
+      summary: Create a group
+      description: |
+        Creates a group and automatically inserts the authenticated client as an
+        active `owner` member. `createdByPrincipalId` and actor fields are
+        derived from the authenticated session.
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGroupRequest'
+      responses:
+        '201':
+          description: Created group snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}:
+    get:
+      tags: [ Group State ]
+      summary: Read a group snapshot
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      responses:
+        '200':
+          description: Group snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [ Group State ]
+      summary: Update a group
+      description: |
+        Only active group `owner` or `admin` members may update group metadata
+        and status.
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateGroupRequest'
+      responses:
+        '200':
+          description: Updated group snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events:
+    get:
+      tags: [ Group State ]
+      summary: List group events
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      responses:
+        '200':
+          description: Group event stream.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GroupEvent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}:
+    put:
+      tags: [ Group State ]
+      summary: Update self membership state for a group
+      description: |
+        Self-service membership transitions only allow `active` and `left`.
+        Role changes are ignored by the route layer, so an existing `owner` or
+        `admin` role is preserved across leave/rejoin.
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/PrincipalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelfUpsertGroupMemberRequest'
+      responses:
+        '200':
+          description: Updated group snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}:
+    put:
+      tags: [ Group State ]
+      summary: Connect self presence session in a group
+      description: |
+        Creates or refreshes live group presence for the authenticated session.
+        The caller must already have an `active` membership in the group.
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectGroupPresenceSessionRequest'
+      responses:
+        '200':
+          description: Updated group snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/heartbeat:
+    post:
+      tags: [ Group State ]
+      summary: Heartbeat self group presence session
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HeartbeatGroupPresenceSessionRequest'
+      responses:
+        '200':
+          description: Updated group snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/disconnect:
+    post:
+      tags: [ Group State ]
+      summary: Disconnect self group presence session
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisconnectGroupPresenceSessionRequest'
+      responses:
+        '200':
+          description: Updated group snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/graph:
+    get:
+      tags: [ Graph ]
+      summary: Read the global graph snapshot
+      responses:
+        '200':
+          description: Measured and predicted graph snapshot for all active sessions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphInfoSnapshot'
+
+  /api/graph/tree/{groupId}:
+    get:
+      tags: [ Graph ]
+      summary: Read the graph snapshot for a group
+      parameters:
+        - $ref: '#/components/parameters/GroupId'
+      responses:
+        '200':
+          description: Graph snapshot for the group.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphInfoSnapshot'
+        '400':
+          description: Invalid group state for graph computation, including group not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/openapi.json:
+    get:
+      tags: [ Docs ]
+      summary: Read the OpenAPI specification JSON
+      responses:
+        '200':
+          description: OpenAPI document rendered as JSON.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /openapi.json:
+    get:
+      tags: [ Docs ]
+      summary: Read the OpenAPI specification JSON without the `/api` prefix
+      responses:
+        '200':
+          description: OpenAPI document rendered as JSON.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/docs:
+    get:
+      tags: [ Docs ]
+      summary: Read Swagger UI
+      responses:
+        '200':
+          description: Swagger UI HTML shell.
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /swagger-ui:
+    get:
+      tags: [ Docs ]
+      summary: Read Swagger UI without the `/api` prefix
+      responses:
+        '200':
+          description: Swagger UI HTML shell.
+          content:
+            text/html:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: Access token returned from `/api/auth/login`.
+    clientIdHeader:
+      type: apiKey
+      in: header
+      name: x-client-id
+      description: Client identifier returned from `/api/auth/login`.
+    wsTicket:
+      type: apiKey
+      in: query
+      name: ticket
+      description: Short-lived one-time ticket returned from `/api/auth/ws-ticket`.
+
+  parameters:
+    ApplicationId:
+      name: applicationId
+      in: path
+      required: true
+      description: Application scope identifier.
+      schema:
+        type: string
+        example: ar-eye-hunter
+    WorkspaceId:
+      name: workspaceId
+      in: path
+      required: true
+      description: Workspace scope identifier.
+      schema:
+        type: string
+        example: default
+    PrincipalId:
+      name: principalId
+      in: path
+      required: true
+      schema:
+        type: string
+    ClientInstanceId:
+      name: clientInstanceId
+      in: path
+      required: true
+      schema:
+        type: string
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+    GroupId:
+      name: groupId
+      in: path
+      required: true
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Request is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Missing or invalid authentication credentials.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Authenticated, but not allowed to perform the requested operation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Requested resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Request conflicts with existing state.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [ error ]
+      properties:
+        error:
+          type: string
+
+    ApiConfig:
+      type: object
+      required: [ apiBaseUrl, wsBaseUrl, endpoints ]
+      properties:
+        apiBaseUrl:
+          type: string
+          format: uri
+        wsBaseUrl:
+          type: string
+          format: uri
+        endpoints:
+          $ref: '#/components/schemas/ApiEndpoints'
+      additionalProperties: true
+
+    ApiEndpoints:
+      type: object
+      required: [ createWs ]
+      properties:
+        createWs:
+          type: string
+          example: /api/ws/:id
+      additionalProperties: true
+
+    LoginRequest:
+      type: object
+      required: [ username, password ]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+
+    RegisterRequest:
+      type: object
+      required: [ username, password ]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+        displayName:
+          type: string
+
+    LoginResponse:
+      type: object
+      required: [ clientId, accessToken, username, sessionId, expiresAtEpochMs ]
+      properties:
+        clientId:
+          type: string
+        accessToken:
+          type: string
+        username:
+          type: string
+        sessionId:
+          type: string
+        expiresAtEpochMs:
+          type: integer
+          format: int64
+
+    RegisterResponse:
+      type: object
+      required: [ clientId, username, registeredAtEpochMs ]
+      properties:
+        clientId:
+          type: string
+        username:
+          type: string
+        displayName:
+          type: string
+        registeredAtEpochMs:
+          type: integer
+          format: int64
+
+    LogoutResponse:
+      type: object
+      required: [ loggedOut ]
+      properties:
+        loggedOut:
+          type: boolean
+
+    WebSocketTicketResponse:
+      type: object
+      required: [ ticket, sessionId, expiresAtEpochMs ]
+      properties:
+        ticket:
+          type: string
+        sessionId:
+          type: string
+        expiresAtEpochMs:
+          type: integer
+          format: int64
+
+    IceConfig:
+      type: object
+      required: [ iceServers, expiresAtEpochMs ]
+      properties:
+        iceServers:
+          type: array
+          items:
+            $ref: '#/components/schemas/IceServer'
+        expiresAtEpochMs:
+          type: integer
+          format: int64
+
+    IceServer:
+      type: object
+      properties:
+        urls:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        username:
+          type: string
+        credential:
+          type: string
+        credentialType:
+          type: string
+      additionalProperties: true
+
+    AuditStamp:
+      type: object
+      required: [ atEpochMs ]
+      properties:
+        atEpochMs:
+          type: integer
+          format: int64
+        byPrincipalId:
+          type: string
+        bySessionId:
+          type: string
+        byServiceId:
+          type: string
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    EventActor:
+      type: object
+      properties:
+        principalId:
+          type: string
+        sessionId:
+          type: string
+        serviceId:
+          type: string
+
+    ClientPrincipal:
+      type: object
+      required:
+        - applicationId
+        - workspaceId
+        - principalId
+        - username
+        - status
+        - roles
+        - metadata
+        - profileVersion
+        - presenceVersion
+        - created
+        - updated
+      properties:
+        applicationId:
+          type: string
+        workspaceId:
+          type: string
+        principalId:
+          type: string
+        username:
+          type: string
+        displayName:
+          type: string
+        avatarUrl:
+          type: string
+        status:
+          type: string
+          enum: [ active, disabled, deleted ]
+        authProvider:
+          type: string
+        externalSubjectId:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        profileVersion:
+          type: integer
+          format: int64
+        presenceVersion:
+          type: integer
+          format: int64
+        created:
+          $ref: '#/components/schemas/AuditStamp'
+        updated:
+          $ref: '#/components/schemas/AuditStamp'
+        disabled:
+          $ref: '#/components/schemas/AuditStamp'
+        deleted:
+          $ref: '#/components/schemas/AuditStamp'
+        lastSeenAtEpochMs:
+          type: integer
+          format: int64
+
+    ClientInstance:
+      type: object
+      required:
+        - applicationId
+        - workspaceId
+        - principalId
+        - clientInstanceId
+        - status
+        - platform
+        - capabilities
+        - registered
+        - updated
+      properties:
+        applicationId:
+          type: string
+        workspaceId:
+          type: string
+        principalId:
+          type: string
+        clientInstanceId:
+          type: string
+        status:
+          type: string
+          enum: [ active, revoked, retired ]
+        platform:
+          type: string
+          enum: [ web, ios, android, desktop, server, unknown ]
+        deviceLabel:
+          type: string
+        appVersion:
+          type: string
+        userAgent:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        registered:
+          $ref: '#/components/schemas/AuditStamp'
+        updated:
+          $ref: '#/components/schemas/AuditStamp'
+        revoked:
+          $ref: '#/components/schemas/AuditStamp'
+
+    ClientSession:
+      type: object
+      required:
+        - applicationId
+        - workspaceId
+        - principalId
+        - clientInstanceId
+        - sessionId
+        - status
+        - presenceState
+        - transport
+        - authenticatedAtEpochMs
+        - connectedAtEpochMs
+        - lastHeartbeatAtEpochMs
+        - expiresAtEpochMs
+      properties:
+        applicationId:
+          type: string
+        workspaceId:
+          type: string
+        principalId:
+          type: string
+        clientInstanceId:
+          type: string
+        sessionId:
+          type: string
+        status:
+          type: string
+          enum: [ active, disconnected, expired ]
+        presenceState:
+          type: string
+          enum: [ online, offline, away, busy ]
+        transport:
+          type: string
+          enum: [ ws, http, rtc, unknown ]
+        connectionId:
+          type: string
+        authenticatedAtEpochMs:
+          type: integer
+          format: int64
+        connectedAtEpochMs:
+          type: integer
+          format: int64
+        lastHeartbeatAtEpochMs:
+          type: integer
+          format: int64
+        expiresAtEpochMs:
+          type: integer
+          format: int64
+        disconnectedAtEpochMs:
+          type: integer
+          format: int64
+        disconnectReason:
+          type: string
+
+    ClientPresenceSnapshot:
+      type: object
+      required:
+        - applicationId
+        - workspaceId
+        - principalId
+        - presenceVersion
+        - isOnline
+        - presenceState
+        - activeSessions
+      properties:
+        applicationId:
+          type: string
+        workspaceId:
+          type: string
+        principalId:
+          type: string
+        presenceVersion:
+          type: integer
+          format: int64
+        isOnline:
+          type: boolean
+        presenceState:
+          type: string
+          enum: [ online, offline, away, busy ]
+        activeSessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClientSession'
+        lastSeenAtEpochMs:
+          type: integer
+          format: int64
+
+    ClientSnapshot:
+      type: object
+      required:
+        - principal
+        - instances
+        - activeSessions
+        - isOnline
+        - activeSessionCount
+      properties:
+        principal:
+          $ref: '#/components/schemas/ClientPrincipal'
+        instances:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClientInstance'
+        activeSessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClientSession'
+        isOnline:
+          type: boolean
+        activeSessionCount:
+          type: integer
+          format: int64
+        lastSeenAtEpochMs:
+          type: integer
+          format: int64
+
+    ClientEvent:
+      type: object
+      required:
+        - applicationId
+        - workspaceId
+        - principalId
+        - eventId
+        - eventType
+        - occurredAtEpochMs
+        - actor
+      properties:
+        applicationId:
+          type: string
+        workspaceId:
+          type: string
+        principalId:
+          type: string
+        eventId:
+          type: string
+        eventType:
+          type: string
+          enum:
+            - principal-created
+            - principal-updated
+            - principal-disabled
+            - principal-deleted
+            - instance-registered
+            - instance-updated
+            - instance-revoked
+            - session-authenticated
+            - session-connected
+            - session-heartbeat
+            - session-disconnected
+            - session-expired
+        clientInstanceId:
+          type: string
+        sessionId:
+          type: string
+        occurredAtEpochMs:
+          type: integer
+          format: int64
+        actor:
+          $ref: '#/components/schemas/EventActor'
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+
+    Group:
+      type: object
+      required:
+        - applicationId
+        - workspaceId
+        - groupId
+        - displayName
+        - kind
+        - status
+        - joinMode
+        - metadata
+        - metadataVersion
+        - rosterVersion
+        - presenceVersion
+        - created
+        - updated
+      properties:
+        applicationId:
+          type: string
+        workspaceId:
+          type: string
+        groupId:
+          type: string
+        slug:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        kind:
+          type: string
+          enum: [ party, room, team, custom ]
+        status:
+          type: string
+          enum: [ active, archived, deleted ]
+        joinMode:
+          type: string
+          enum: [ invite-only, code, open ]
+        maxMembers:
+          type: integer
+          format: int64
+        maxSessionsPerMember:
+          type: integer
+          format: int64
+        metadata:
+          type: object
+          additionalProperties: true
+        metadataVersion:
+          type: integer
+          format: int64
+        rosterVersion:
+          type: integer
+          format: int64
+        presenceVersion:
+          type: integer
+          format: int64
+        created:
+          $ref: '#/components/schemas/AuditStamp'
+        updated:
+          $ref: '#/components/schemas/AuditStamp'
+        archived:
+          $ref: '#/components/schemas/AuditStamp'
+        deleted:
+          $ref: '#/components/schemas/AuditStamp'
+        expiresAtEpochMs:
+          type: integer
+          format: int64
+        emptySinceEpochMs:
+          type: integer
+          format: int64
+        purgeAfterEpochMs:
+          type: integer
+          format: int64
+
+    GroupMember:
+      type: object
+      required:
+        - applicationId
+        - workspaceId
+        - groupId
+        - principalId
+        - role
+        - status
+        - joined
+        - updated
+      properties:
+        applicationId:
+          type: string
+        workspaceId:
+          type: string
+        groupId:
+          type: string
+        principalId:
+          type: string
+        role:
+          type: string
+          enum: [ owner, admin, member ]
+        status:
+          type: string
+          enum: [ invited, active, left, removed, banned ]
+        joined:
+          $ref: '#/components/schemas/AuditStamp'
+        updated:
+          $ref: '#/components/schemas/AuditStamp'
+        left:
+          $ref: '#/components/schemas/AuditStamp'
+        removed:
+          $ref: '#/components/schemas/AuditStamp'
+        banned:
+          $ref: '#/components/schemas/AuditStamp'
+        invitedByPrincipalId:
+          type: string
+        invitationExpiresAtEpochMs:
+          type: integer
+          format: int64
+
+    GroupPresenceSession:
+      type: object
+      required:
+        - applicationId
+        - workspaceId
+        - groupId
+        - sessionId
+        - principalId
+        - connectedAtEpochMs
+        - lastHeartbeatAtEpochMs
+        - expiresAtEpochMs
+      properties:
+        applicationId:
+          type: string
+        workspaceId:
+          type: string
+        groupId:
+          type: string
+        sessionId:
+          type: string
+        principalId:
+          type: string
+        connectedAtEpochMs:
+          type: integer
+          format: int64
+        lastHeartbeatAtEpochMs:
+          type: integer
+          format: int64
+        expiresAtEpochMs:
+          type: integer
+          format: int64
+        disconnectedAtEpochMs:
+          type: integer
+          format: int64
+        disconnectReason:
+          type: string
+
+    GroupSnapshot:
+      type: object
+      required: [ group, members, activeSessions, memberCount, onlineMemberCount ]
+      properties:
+        group:
+          $ref: '#/components/schemas/Group'
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupMember'
+        activeSessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupPresenceSession'
+        memberCount:
+          type: integer
+          format: int64
+        onlineMemberCount:
+          type: integer
+          format: int64
+
+    GroupEvent:
+      type: object
+      required:
+        - applicationId
+        - workspaceId
+        - groupId
+        - eventId
+        - eventType
+        - occurredAtEpochMs
+        - actor
+      properties:
+        applicationId:
+          type: string
+        workspaceId:
+          type: string
+        groupId:
+          type: string
+        eventId:
+          type: string
+        eventType:
+          type: string
+          enum:
+            - group-created
+            - group-updated
+            - group-archived
+            - group-deleted
+            - member-invited
+            - member-joined
+            - member-left
+            - member-removed
+            - member-banned
+            - session-connected
+            - session-heartbeat
+            - session-disconnected
+        occurredAtEpochMs:
+          type: integer
+          format: int64
+        actor:
+          $ref: '#/components/schemas/EventActor'
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+
+    UpsertClientPrincipalRequest:
+      type: object
+      required: [ username ]
+      properties:
+        username:
+          type: string
+        displayName:
+          type: string
+        avatarUrl:
+          type: string
+        status:
+          type: string
+          enum: [ active, disabled, deleted ]
+        authProvider:
+          type: string
+        externalSubjectId:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        lastSeenAtEpochMs:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    UpsertClientInstanceRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ active, revoked, retired ]
+        platform:
+          type: string
+          enum: [ web, ios, android, desktop, server, unknown ]
+        deviceLabel:
+          type: string
+        appVersion:
+          type: string
+        userAgent:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    ConnectClientSessionRequest:
+      type: object
+      properties:
+        presenceState:
+          type: string
+          enum: [ online, offline, away, busy ]
+        transport:
+          type: string
+          enum: [ ws, http, rtc, unknown ]
+        connectionId:
+          type: string
+        authenticatedAtEpochMs:
+          type: integer
+          format: int64
+        connectedAtEpochMs:
+          type: integer
+          format: int64
+        lastHeartbeatAtEpochMs:
+          type: integer
+          format: int64
+        expiresAtEpochMs:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    HeartbeatClientSessionRequest:
+      type: object
+      properties:
+        presenceState:
+          type: string
+          enum: [ online, offline, away, busy ]
+        lastHeartbeatAtEpochMs:
+          type: integer
+          format: int64
+        expiresAtEpochMs:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    DisconnectClientSessionRequest:
+      type: object
+      properties:
+        disconnectedAtEpochMs:
+          type: integer
+          format: int64
+        lastHeartbeatAtEpochMs:
+          type: integer
+          format: int64
+        expiresAtEpochMs:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    CreateGroupRequest:
+      type: object
+      required: [ groupId, displayName, kind ]
+      properties:
+        groupId:
+          type: string
+        slug:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        kind:
+          type: string
+          enum: [ party, room, team, custom ]
+        joinMode:
+          type: string
+          enum: [ invite-only, code, open ]
+        maxMembers:
+          type: integer
+          format: int64
+        maxSessionsPerMember:
+          type: integer
+          format: int64
+        metadata:
+          type: object
+          additionalProperties: true
+        expiresAtEpochMs:
+          type: integer
+          format: int64
+        purgeAfterEpochMs:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    UpdateGroupRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        kind:
+          type: string
+          enum: [ party, room, team, custom ]
+        status:
+          type: string
+          enum: [ active, archived, deleted ]
+        joinMode:
+          type: string
+          enum: [ invite-only, code, open ]
+        maxMembers:
+          type: integer
+          format: int64
+        maxSessionsPerMember:
+          type: integer
+          format: int64
+        metadata:
+          type: object
+          additionalProperties: true
+        expiresAtEpochMs:
+          type: integer
+          format: int64
+        emptySinceEpochMs:
+          type: integer
+          format: int64
+        purgeAfterEpochMs:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    SelfUpsertGroupMemberRequest:
+      type: object
+      required: [ status ]
+      properties:
+        status:
+          type: string
+          enum: [ active, left ]
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    ConnectGroupPresenceSessionRequest:
+      type: object
+      properties:
+        connectedAtEpochMs:
+          type: integer
+          format: int64
+        lastHeartbeatAtEpochMs:
+          type: integer
+          format: int64
+        expiresAtEpochMs:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    HeartbeatGroupPresenceSessionRequest:
+      type: object
+      properties:
+        lastHeartbeatAtEpochMs:
+          type: integer
+          format: int64
+        expiresAtEpochMs:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    DisconnectGroupPresenceSessionRequest:
+      type: object
+      properties:
+        disconnectedAtEpochMs:
+          type: integer
+          format: int64
+        lastHeartbeatAtEpochMs:
+          type: integer
+          format: int64
+        expiresAtEpochMs:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    GraphObject:
+      type: object
+      additionalProperties: true
+      description: Serialized weighted graph payload produced by the graph service.
+
+    GraphInfo:
+      type: object
+      required: [ graphId, graph, groupGraph, coreNodes ]
+      properties:
+        graphId:
+          type: string
+        graph:
+          $ref: '#/components/schemas/GraphObject'
+        groupGraph:
+          $ref: '#/components/schemas/GraphObject'
+        coreNodes:
+          type: array
+          items:
+            type: string
+
+    GraphInfoSnapshot:
+      type: object
+      required: [ graphId, predicted, createdAtEpochMs, version ]
+      properties:
+        graphId:
+          type: string
+        measured:
+          $ref: '#/components/schemas/GraphInfo'
+        predicted:
+          $ref: '#/components/schemas/GraphInfo'
+        createdAtEpochMs:
+          type: integer
+          format: int64
+        version:
+          type: integer
+          format: int64

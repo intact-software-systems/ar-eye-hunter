@@ -1,4 +1,4 @@
-import {Either, EitherCollectors} from "../resilience/Either.ts";
+import { Either, EitherCollectors } from '../resilience/Either.ts';
 
 export interface Logger {
     debug(message: string, ...args: unknown[]): void;
@@ -14,7 +14,7 @@ const defaultLogger: Logger = {
     error: (m, ...a) => console.error(m, ...a),
 };
 
-function requireNonNull<T>(v: T | null | undefined, message = "Value was null/undefined"): T {
+function requireNonNull<T>(v: T | null | undefined, message = 'Value was null/undefined'): T {
     if (v === null || v === undefined) throw new Error(message);
     return v;
 }
@@ -34,10 +34,10 @@ function toExponentialBackoffSeconds(failureCounter: number, maxSeconds = 60): n
 }
 
 export enum Reservator {
-    NEW = "NEW",
-    RETRY = "RETRY",
-    FAILED = "FAILED",
-    TIMEOUT = "TIMEOUT",
+    NEW = 'NEW',
+    RETRY = 'RETRY',
+    FAILED = 'FAILED',
+    TIMEOUT = 'TIMEOUT',
 }
 
 export class FailureDto<K, V> {
@@ -172,19 +172,19 @@ export class DequeueController<K, V, T> {
         computer: (key: K, value: V) => Promise<T>,
     ): Promise<Map<Reservator, Map<K, Either<FailureDto<K, V>, SuccessDto<K, V, T>>>>> {
         if (this.typesToDequeue().size === 0) {
-            this.log.warn("No types provided for callbacks: [newReservator, retryReservator, failedReservator].");
+            this.log.warn('No types provided for callbacks: [newReservator, retryReservator, failedReservator].');
         }
         if (!this.retryReservator) {
-            this.log.warn("No retry reservator configured. Retries are not performed.");
+            this.log.warn('No retry reservator configured. Retries are not performed.');
         }
         if (!this.failedReservator) {
-            this.log.warn("No failed reservator configured. Retries on failed resources are not performed.");
+            this.log.warn('No failed reservator configured. Retries on failed resources are not performed.');
         }
 
         requireNonNull(computer);
-        const newReservator = requireNonNull(this.newReservator, "newReservator is required");
-        const successReleaser = requireNonNull(this.successReleaser, "successReleaser is required");
-        const failureReleaser = requireNonNull(this.failureReleaser, "failureReleaser is required");
+        const newReservator = requireNonNull(this.newReservator, 'newReservator is required');
+        const successReleaser = requireNonNull(this.successReleaser, 'successReleaser is required');
+        const failureReleaser = requireNonNull(this.failureReleaser, 'failureReleaser is required');
 
         const byReservator = new Map<
             Reservator,
@@ -301,7 +301,7 @@ export class DequeueController<K, V, T> {
             try {
                 const numToReserve = maxNumToReserve();
                 if (numToReserve <= 0) {
-                    log.debug(`Number to reserve for ${Array.from(typesToDequeue()).join(",")} was ${numToReserve}. Returning.`);
+                    log.debug(`Number to reserve for ${Array.from(typesToDequeue()).join(',')} was ${numToReserve}. Returning.`);
                     return allComputed;
                 }
 
@@ -389,17 +389,17 @@ export class DequeueController<K, V, T> {
                 consecutiveFailureCounter = 0;
 
                 if (computed.size === 0) {
-                    log.debug(`No more work to do on ${Array.from(typesToDequeue()).join(",")}. Returning.`);
+                    // log.debug(`No more work to do on ${Array.from(typesToDequeue()).join(",")}. Returning.`);
                     return allComputed;
                 }
             } catch (e) {
                 const err = e instanceof Error ? e : new Error(String(e));
-                log.error(`Exception caught while working on queue with these types: ${Array.from(typesToDequeue()).join(",")}`, err);
+                log.error(`Exception caught while working on queue with these types: ${Array.from(typesToDequeue()).join(',')}`, err);
                 consecutiveFailureCounter += 1;
 
                 const ok = await DequeueController.backoffWithSleep(consecutiveFailureCounter, log);
                 if (!ok) {
-                    log.warn("Backoff with sleep interrupted, returning quietly.");
+                    log.warn('Backoff with sleep interrupted, returning quietly.');
                     break;
                 }
             }
@@ -419,7 +419,7 @@ export class DequeueController<K, V, T> {
             await sleep(sleepSeconds * 1000);
             return true;
         } catch (e) {
-            log.warn("Exception caught in backoff", e);
+            log.warn('Exception caught in backoff', e);
             return false;
         }
     }

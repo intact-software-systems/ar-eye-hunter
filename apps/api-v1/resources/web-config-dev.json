@@ -3,9 +3,5 @@
   "wsBaseUrl": "ws://localhost:8080",
   "endpoints": {
     "createWs": "/api/ws/:id"
-  },
-  "metered": {
-    "appName": "ar-eye-hunter",
-    "apiKey": "579c463a2bc5d160cb4231e37edb7e4433c2"
   }
 }

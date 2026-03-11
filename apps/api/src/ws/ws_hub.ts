@@ -1,5 +1,7 @@
-import type {WsClientMessage, WsServerMessage} from "@shared/mod.ts";
-import {WsClientMsgType, WsServerMsgType, Player} from "@shared/mod.ts";
+import type { WsClientMessage, WsServerMessage } from '@shared/mod.ts';
+import { Player, WsClientMsgType, WsServerMsgType } from '@shared/mod.ts';
+// You already have these service functions:
+import { getGame, makeMove } from '../services/tictactoe-game.ts';
 
 type GameId = string;
 
@@ -44,18 +46,15 @@ function safeParse(text: string): WsClientMessage | null {
     }
 }
 
-// You already have these service functions:
-import {getGame, makeMove} from "../services/tictactoe-game.ts";
-
 export function handleWebSocket(ws: WebSocket): void {
-    let subscribedGameId: GameId | "" = "";
+    let subscribedGameId: GameId | '' = '';
 
-    ws.addEventListener("message", (ev) => {
-        const raw = typeof ev.data === "string" ? ev.data : "";
+    ws.addEventListener('message', (ev) => {
+        const raw = typeof ev.data === 'string' ? ev.data : '';
         const msg = safeParse(raw);
 
         if (!msg) {
-            send(ws, {type: WsServerMsgType.Error, gameId: subscribedGameId || "", message: "Invalid JSON"});
+            send(ws, { type: WsServerMsgType.Error, gameId: subscribedGameId || '', message: 'Invalid JSON' });
             return;
         }
 
@@ -80,7 +79,7 @@ export function handleWebSocket(ws: WebSocket): void {
                     };
                     send(ws, welcome);
                 } catch (e) {
-                    send(ws, {type: WsServerMsgType.Error, gameId, message: (e as Error).message});
+                    send(ws, { type: WsServerMsgType.Error, gameId, message: (e as Error).message });
                 }
                 return;
             }
@@ -90,7 +89,7 @@ export function handleWebSocket(ws: WebSocket): void {
 
                 // Ensure subscription (optional strictness)
                 if (subscribedGameId !== gameId) {
-                    send(ws, {type: WsServerMsgType.Error, gameId, message: "Not subscribed to this gameId"});
+                    send(ws, { type: WsServerMsgType.Error, gameId, message: 'Not subscribed to this gameId' });
                     return;
                 }
 
@@ -106,20 +105,20 @@ export function handleWebSocket(ws: WebSocket): void {
 
                     broadcast(gameId, update);
                 } catch (e) {
-                    send(ws, {type: WsServerMsgType.Error, gameId, message: (e as Error).message});
+                    send(ws, { type: WsServerMsgType.Error, gameId, message: (e as Error).message });
                 }
                 return;
             }
         }
     });
 
-    ws.addEventListener("close", () => {
+    ws.addEventListener('close', () => {
         if (subscribedGameId) {
             removeSocket(subscribedGameId, ws);
         }
     });
 
-    ws.addEventListener("error", () => {
+    ws.addEventListener('error', () => {
         if (subscribedGameId) {
             removeSocket(subscribedGameId, ws);
         }

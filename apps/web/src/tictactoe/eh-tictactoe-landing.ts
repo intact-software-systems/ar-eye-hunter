@@ -1,4 +1,5 @@
-import { Route, navigate } from '../router.ts';
+import { navigate, Route } from '../router.ts';
+import { mustEl } from '../utils/utils.ts';
 
 export class EhTictactoeLanding extends HTMLElement {
     connectedCallback(): void {
@@ -24,10 +25,9 @@ export class EhTictactoeLanding extends HTMLElement {
     }
 
     private wire(): void {
-        const singleBtn = this.querySelector('#singleBtn');
-        const multiBtn = this.querySelector('#multiBtn');
-        const p2pBtn = this.querySelector('#p2pBtn');
-        if (!singleBtn || !multiBtn || !p2pBtn) throw new Error('Landing buttons missing');
+        const singleBtn = mustEl<HTMLButtonElement>(this, '#singleBtn');
+        const multiBtn = mustEl<HTMLButtonElement>(this, '#multiBtn');
+        const p2pBtn = mustEl<HTMLButtonElement>(this, '#p2pBtn');
 
         singleBtn.addEventListener('click', () => navigate(Route.Single));
         multiBtn.addEventListener('click', () => navigate(Route.Multi));

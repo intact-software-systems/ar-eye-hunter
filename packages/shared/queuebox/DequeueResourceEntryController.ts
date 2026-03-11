@@ -1,15 +1,15 @@
-import {Either, EitherCollectors} from "../resilience/Either.ts";
+import { Either, EitherCollectors } from '../resilience/Either.ts';
 import {
     CircuitBreaker,
     CircuitBreakerPolicy,
     RateAdjuster,
     RateAdjusterPolicy,
     RateLimiter
-} from "../resilience/Resilience.ts";
-import {DequeueController, FailureDto, Reservator, SuccessDto} from "./DequeueController.ts";
-import {DequeueResourceEntryRepository} from "./QueueBoxTypes.ts";
-import * as Resource from "./ResourceEntry.ts";
-import {EntityStatus, isKeysEqual, ResourceEntry} from "./ResourceEntry.ts";
+} from '../resilience/Resilience.ts';
+import { DequeueController, FailureDto, Reservator, SuccessDto } from './DequeueController.ts';
+import { DequeueResourceEntryRepository } from './QueueBoxTypes.ts';
+import * as Resource from './ResourceEntry.ts';
+import { EntityStatus, isKeysEqual, ResourceEntry } from './ResourceEntry.ts';
 
 // -----------------------------------------
 // Minimal domain contracts (adjust/import)
@@ -18,7 +18,7 @@ import {EntityStatus, isKeysEqual, ResourceEntry} from "./ResourceEntry.ts";
 export class NonRetryableException extends Error {
     constructor(message?: string) {
         super(message);
-        this.name = "NonRetryableException";
+        this.name = 'NonRetryableException';
     }
 }
 
@@ -138,10 +138,10 @@ export class ResilienceDto {
 // -----------------------------------------
 
 export class DequeueResourceEntryController {
-    static readonly TIMEOUT_ON_NON_RESPONSIVE_ENTRY_MS = Temporal.Duration.from({milliseconds: 5 * 60 * 1000});
+    static readonly TIMEOUT_ON_NON_RESPONSIVE_ENTRY_MS = Temporal.Duration.from({ milliseconds: 5 * 60 * 1000 });
 
-    private static readonly RETRY_EXPONENTIAL_BACKOFF_STEPS: Temporal.TimeUnit = "second";
-    private static readonly FAILED_EXPONENTIAL_BACKOFF_STEPS: Temporal.TimeUnit = "hour";
+    private static readonly RETRY_EXPONENTIAL_BACKOFF_STEPS: Temporal.TimeUnit = 'second';
+    private static readonly FAILED_EXPONENTIAL_BACKOFF_STEPS: Temporal.TimeUnit = 'hour';
 
     // -------------------------
     // Java record ResilienceDto
@@ -200,7 +200,7 @@ export class DequeueResourceEntryController {
 
                 if (reservedTimeoutEntries.size > 0) {
                     console.info(
-                        `${Array.from(types).join(",")} Reserved entries that DNF before TIMEOUT ${DequeueResourceEntryController.TIMEOUT_ON_NON_RESPONSIVE_ENTRY_MS}ms, entries: ${Array.from(reservedTimeoutEntries.keys()).join(",")}`,
+                        `${Array.from(types).join(',')} Reserved entries that DNF before TIMEOUT ${DequeueResourceEntryController.TIMEOUT_ON_NON_RESPONSIVE_ENTRY_MS}ms, entries: ${Array.from(reservedTimeoutEntries.keys()).join(',')}`,
                     );
                 }
 
@@ -209,7 +209,6 @@ export class DequeueResourceEntryController {
             .onReleaseEntriesDo(
                 // successReleaser
                 async (successByKey) => {
-
                     const released =
                         await dequeueResourceEntryRepository.releaseEntries(
                             Array.from(successByKey.values())
@@ -222,7 +221,7 @@ export class DequeueResourceEntryController {
 
                     for (const [k, v] of released.entries()) {
                         const original =
-                            successByKey.values()
+                            Array.from(successByKey.values())
                                 .find((dto) => isKeysEqual(dto.key, k));
 
                         if (!original) {
@@ -268,7 +267,7 @@ export class DequeueResourceEntryController {
 
                         for (const [k, v] of released.entries()) {
                             const original =
-                                failureByKey.values()
+                                Array.from(failureByKey.values())
                                     .find((dto) => isKeysEqual(dto.key, k));
 
                             if (!original) {

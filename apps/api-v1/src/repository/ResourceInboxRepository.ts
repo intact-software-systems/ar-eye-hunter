@@ -1,6 +1,8 @@
-import {sql as defaultSql} from "./db.ts";
-import {Sql, TransactionSql} from "postgres";
-import {EntityStatus, type Key, type ResourceEntry,} from "@shared/queuebox/ResourceEntry.ts";
+import { sql as defaultSql } from '../db/db.ts';
+import { Sql, TransactionSql } from 'postgres';
+import { Either } from '@shared/resilience/Either.ts';
+import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
+import { EntityStatus, type Key, NEVER_EXPIRE_TS, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
 
 /**
  * Repository for table `resource_inbox`.
@@ -14,6 +16,7 @@ import {EntityStatus, type Key, type ResourceEntry,} from "@shared/queuebox/Reso
  * - status          <-> ri_status
  * - audit.createdBy <-> created_by
  * - audit.createdTs <-> created_ts
+ * - audit.expiryTs  <-> expire_ts
  * - dequeueAudit.startTs/endTs/nextTs <-> start_ts/end_ts/next_ts
  * - dequeueAudit.attempts            <-> ri_attempts
  */
@@ -29,11 +32,19 @@ export type ResourceInboxRow = {
     system_date: string; // DATE
     created_by: string;
     created_ts: string; // timestamp without time zone
+    expire_ts: string; // timestamp without time zone
     start_ts: string | null;
     end_ts: string | null;
     next_ts: string | null;
     ri_attempts: bigint | null;
 };
+
+export const RESOURCE_INBOX_EXPIRY_EVICTION_INTERVAL_MS = 15_000;
+
+export type StartProcessingEntitySkipped = Readonly<{
+    kind: 'expired-or-missing';
+    key: Key;
+}>;
 
 export class ResourceInboxRepository {
     static readonly MAX_ROWS_TO_RETURN = 50;
@@ -73,6 +84,7 @@ export class ResourceInboxRepository {
                                         system_date,
                                         created_by,
                                         created_ts,
+                                        expire_ts,
                                         start_ts,
                                         end_ts,
                                         next_ts,
@@ -86,6 +98,7 @@ export class ResourceInboxRepository {
                     ${systemDate},
                     ${entry.audit.createdBy},
                     ${toPgTimestamp(entry.audit.createdTs)},
+                    ${toPgTimestamp(entry.audit.expiryTs)},
                     ${entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null},
                     ${entry.dequeueAudit.endTs ? toPgTimestamp(entry.dequeueAudit.endTs) : null},
                     ${entry.dequeueAudit.nextTs ? toPgTimestamp(entry.dequeueAudit.nextTs) : null},
@@ -93,11 +106,137 @@ export class ResourceInboxRepository {
             returning *
         `;
 
-        if (rows.length !== 1) throw new Error("Insert failed: expected exactly one row");
+        if (rows.length !== 1) throw new Error('Insert failed: expected exactly one row');
         return toDomain(rows[0]);
     }
 
+    async replace(entry: ResourceEntry): Promise<ResourceEntry> {
+        const systemDate = toSystemDate(entry);
+
+        const rows = await this.sql<ResourceInboxRow[]>`
+            insert into resource_inbox (ri_resource_id,
+                                        ri_topic_id,
+                                        ri_resource,
+                                        ri_type_id,
+                                        ri_status,
+                                        fk_ext_bank_id,
+                                        system_date,
+                                        created_by,
+                                        created_ts,
+                                        expire_ts,
+                                        start_ts,
+                                        end_ts,
+                                        next_ts,
+                                        ri_attempts)
+            values (${entry.key.resourceId},
+                    ${entry.key.topicId},
+                    ${entry.resource},
+                    ${entry.typeId},
+                    ${entry.status},
+                    ${entry.key.contextId},
+                    ${systemDate},
+                    ${entry.audit.createdBy},
+                    ${toPgTimestamp(entry.audit.createdTs)},
+                    ${toPgTimestamp(entry.audit.expiryTs)},
+                    ${entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null},
+                    ${entry.dequeueAudit.endTs ? toPgTimestamp(entry.dequeueAudit.endTs) : null},
+                    ${entry.dequeueAudit.nextTs ? toPgTimestamp(entry.dequeueAudit.nextTs) : null},
+                    ${entry.dequeueAudit.attempts ?? 0})
+            on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id)
+                do update set ri_resource = excluded.ri_resource,
+                              ri_type_id  = excluded.ri_type_id,
+                              ri_status   = excluded.ri_status,
+                              system_date = excluded.system_date,
+                              created_by  = excluded.created_by,
+                              created_ts  = excluded.created_ts,
+                              expire_ts   = excluded.expire_ts,
+                              start_ts    = excluded.start_ts,
+                              end_ts      = excluded.end_ts,
+                              next_ts     = excluded.next_ts,
+                              ri_attempts = excluded.ri_attempts
+            returning *
+        `;
+
+        if (rows.length !== 1) throw new Error('Replace failed: expected exactly one row');
+        return toDomain(rows[0]);
+    }
+
+    async writeIfAbsentOrReplaceExpired(entry: ResourceEntry): Promise<ResourceEntry> {
+        const systemDate = toSystemDate(entry);
+
+        const rows = await this.sql<ResourceInboxRow[]>`
+            insert into resource_inbox (ri_resource_id,
+                                        ri_topic_id,
+                                        ri_resource,
+                                        ri_type_id,
+                                        ri_status,
+                                        fk_ext_bank_id,
+                                        system_date,
+                                        created_by,
+                                        created_ts,
+                                        expire_ts,
+                                        start_ts,
+                                        end_ts,
+                                        next_ts,
+                                        ri_attempts)
+            values (${entry.key.resourceId},
+                    ${entry.key.topicId},
+                    ${entry.resource},
+                    ${entry.typeId},
+                    ${entry.status},
+                    ${entry.key.contextId},
+                    ${systemDate},
+                    ${entry.audit.createdBy},
+                    ${toPgTimestamp(entry.audit.createdTs)},
+                    ${toPgTimestamp(entry.audit.expiryTs)},
+                    ${entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null},
+                    ${entry.dequeueAudit.endTs ? toPgTimestamp(entry.dequeueAudit.endTs) : null},
+                    ${entry.dequeueAudit.nextTs ? toPgTimestamp(entry.dequeueAudit.nextTs) : null},
+                    ${entry.dequeueAudit.attempts ?? 0})
+            on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id)
+                do update set ri_resource = excluded.ri_resource,
+                              ri_type_id  = excluded.ri_type_id,
+                              ri_status   = excluded.ri_status,
+                              system_date = excluded.system_date,
+                              created_by  = excluded.created_by,
+                              created_ts  = excluded.created_ts,
+                              expire_ts   = excluded.expire_ts,
+                              start_ts    = excluded.start_ts,
+                              end_ts      = excluded.end_ts,
+                              next_ts     = excluded.next_ts,
+                              ri_attempts = excluded.ri_attempts
+            where resource_inbox.expire_ts <= now()
+            returning *
+        `;
+
+        if (rows.length === 1) {
+            return toDomain(rows[0]);
+        }
+
+        const existing = await this.findAnyByKey(entry.key);
+        if (existing) {
+            return existing;
+        }
+
+        throw new Error('Write-if-absent failed: conflicting row was not returned and no active row exists');
+    }
+
     async findByKey(key: Key): Promise<ResourceEntry | null> {
+        const now = new Date();
+        const rows = await this.sql<ResourceInboxRow[]>`
+            select *
+            from resource_inbox
+            where ri_topic_id = ${key.topicId}
+              and ri_resource_id = ${key.resourceId}
+              and fk_ext_bank_id = ${key.contextId}
+              and expire_ts > ${now}
+            limit 1
+        `;
+
+        return rows.length === 0 ? null : toDomain(rows[0]);
+    }
+
+    async findAnyByKey(key: Key): Promise<ResourceEntry | null> {
         const rows = await this.sql<ResourceInboxRow[]>`
             select *
             from resource_inbox
@@ -110,11 +249,29 @@ export class ResourceInboxRepository {
         return rows.length === 0 ? null : toDomain(rows[0]);
     }
 
+    async findAllKeys(): Promise<Key[]> {
+        const now = new Date();
+        const rows = await this.sql<Pick<ResourceInboxRow, 'ri_topic_id' | 'ri_resource_id' | 'fk_ext_bank_id'>[]>`
+            select ri_topic_id, ri_resource_id, fk_ext_bank_id
+            from resource_inbox
+            where expire_ts > ${now}
+            order by ri_row_id
+        `;
+
+        return rows.map(row => ({
+            topicId: row.ri_topic_id,
+            resourceId: row.ri_resource_id,
+            contextId: row.fk_ext_bank_id,
+        }));
+    }
+
     async findByTopicId(topicId: string): Promise<Map<string, ResourceEntry>> {
+        const now = new Date();
         const rows = await this.sql<ResourceInboxRow[]>`
             select *
             from resource_inbox
             where ri_topic_id = ${topicId}
+              and expire_ts > ${now}
             order by ri_row_id
             limit ${ResourceInboxRepository.MAX_ROWS_TO_RETURN}
         `;
@@ -122,10 +279,12 @@ export class ResourceInboxRepository {
     }
 
     async findByTypeId(typeId: string): Promise<Map<string, ResourceEntry>> {
+        const now = new Date();
         const rows = await this.sql<ResourceInboxRow[]>`
             select *
             from resource_inbox
             where ri_type_id = ${typeId}
+              and expire_ts > ${now}
             order by ri_row_id
             limit ${ResourceInboxRepository.MAX_ROWS_TO_RETURN}
         `;
@@ -150,6 +309,7 @@ export class ResourceInboxRepository {
             from resource_inbox
             where ri_type_id in ${this.sql([...typeIds])}
               and ri_status in ${this.sql([...statusIds])}
+              and expire_ts > ${now}
               and (start_ts is null or next_ts < ${now})
             order by ri_row_id
                 for update skip locked
@@ -167,12 +327,14 @@ export class ResourceInboxRepository {
         if (typeIds.size === 0) return new Map();
 
         const timedOutBefore = new Date(Date.now() - timeSinceStartMs);
+        const now = new Date();
 
         const rows = await this.sql<ResourceInboxRow[]>`
             select *
             from resource_inbox
             where ri_type_id in ${this.sql([...typeIds])}
               and ri_status = ${EntityStatus.RESERVED}
+              and expire_ts > ${now}
               and start_ts is not null
               and start_ts < ${timedOutBefore}
             order by ri_row_id
@@ -196,6 +358,7 @@ export class ResourceInboxRepository {
             from resource_inbox
             where ri_type_id in ${this.sql([...typeIds])}
               and ri_status in ${this.sql([...statusIds])}
+              and expire_ts > ${now}
               and (start_ts is null or next_ts < ${now})
             limit 1
         `;
@@ -205,11 +368,13 @@ export class ResourceInboxRepository {
 
     async isAnyWithStatuses(statuses: ReadonlySet<EntityStatus>): Promise<boolean> {
         if (statuses.size === 0) return false;
+        const now = new Date();
 
         const rows = await this.sql<{ one: number }[]>`
             select 1 as one
             from resource_inbox
             where ri_status in ${this.sql([...statuses])}
+              and expire_ts > ${now}
             limit 1
         `;
 
@@ -230,6 +395,7 @@ export class ResourceInboxRepository {
                     from resource_inbox
                     where ri_type_id in ${this.sql([...typeIds])}
                       and ri_status in ${this.sql([EntityStatus.RESERVED])}
+                      and expire_ts > ${now}
                       and start_ts is not null
                       and next_ts < ${timeoutTs}
                     limit 1
@@ -242,7 +408,9 @@ export class ResourceInboxRepository {
     // State transitions
     // ---------------------------------
 
-    async startProcessingEntity(entry: ResourceEntry): Promise<ResourceEntry | null> {
+    async startProcessingEntity(
+        entry: ResourceEntry,
+    ): Promise<Either<StartProcessingEntitySkipped, ResourceEntry>> {
         const serverStart = new Date();
         const attempts = (entry.dequeueAudit.attempts ?? 0) + 1;
 
@@ -256,10 +424,16 @@ export class ResourceInboxRepository {
             where ri_topic_id = ${entry.key.topicId}
               and ri_resource_id = ${entry.key.resourceId}
               and fk_ext_bank_id = ${entry.key.contextId}
+              and expire_ts > now()
             returning *
         `;
 
-        return rows.length === 0 ? null : toDomain(rows[0]);
+        return rows.length === 0
+            ? Either.ofLeft<StartProcessingEntitySkipped, ResourceEntry>({
+                kind: 'expired-or-missing',
+                key: entry.key,
+            })
+            : Either.ofRight<StartProcessingEntitySkipped, ResourceEntry>(toDomain(rows[0]));
     }
 
     async updateResourceEntry(
@@ -284,6 +458,53 @@ export class ResourceInboxRepository {
         return rows.length;
     }
 
+    async upsert(entry: ResourceEntry): Promise<ResourceEntry> {
+        const systemDate = toSystemDate(entry);
+
+        const rows = await this.sql<ResourceInboxRow[]>`
+            insert into resource_inbox (ri_resource_id,
+                                        ri_topic_id,
+                                        ri_resource,
+                                        ri_type_id,
+                                        ri_status,
+                                        fk_ext_bank_id,
+                                        system_date,
+                                        created_by,
+                                        created_ts,
+                                        expire_ts,
+                                        start_ts,
+                                        end_ts,
+                                        next_ts,
+                                        ri_attempts)
+            values (${entry.key.resourceId},
+                    ${entry.key.topicId},
+                    ${entry.resource},
+                    ${entry.typeId},
+                    ${entry.status},
+                    ${entry.key.contextId},
+                    ${systemDate},
+                    ${entry.audit.createdBy},
+                    ${toPgTimestamp(entry.audit.createdTs)},
+                    ${toPgTimestamp(entry.audit.expiryTs)},
+                    ${entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null},
+                    ${entry.dequeueAudit.endTs ? toPgTimestamp(entry.dequeueAudit.endTs) : null},
+                    ${entry.dequeueAudit.nextTs ? toPgTimestamp(entry.dequeueAudit.nextTs) : null},
+                    ${entry.dequeueAudit.attempts ?? 0})
+            on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id)
+                do update set ri_resource = excluded.ri_resource,
+                              ri_type_id  = excluded.ri_type_id,
+                              ri_status   = excluded.ri_status,
+                              start_ts    = excluded.start_ts,
+                              end_ts      = excluded.end_ts,
+                              next_ts     = excluded.next_ts,
+                              ri_attempts = excluded.ri_attempts
+            returning *
+        `;
+
+        if (rows.length !== 1) throw new Error('Upsert failed: expected exactly one row');
+        return toDomain(rows[0]);
+    }
+
     // ---------------------------------
     // Deletes
     // ---------------------------------
@@ -299,6 +520,17 @@ export class ResourceInboxRepository {
         `;
 
         return rows.length === 1;
+    }
+
+    async deleteExpired(): Promise<number> {
+        const rows = await this.sql<{ ri_row_id: bigint }[]>`
+            delete
+            from resource_inbox
+            where expire_ts <= now()
+            returning ri_row_id
+        `;
+
+        return rows.length;
     }
 }
 
@@ -337,6 +569,9 @@ function toDomain(r: ResourceInboxRow): ResourceEntry {
             date: Temporal.PlainTime.from(parseTemporalPlainDateTime(r.created_ts.toString()).toPlainTime().toString()),
             createdBy: r.created_by,
             createdTs: parseTemporalPlainDateTime(r.created_ts.toString()),
+            expiryTs: r.expire_ts
+                ? toInstant(r.expire_ts.toString())
+                : NEVER_EXPIRE_TS,
         },
         status: r.ri_status as EntityStatus,
         dequeueAudit: {
@@ -366,9 +601,24 @@ function toPgTimestamp(t: Temporal.PlainDateTime | Temporal.Instant): string {
 
 function parseTemporalPlainDateTime(ts: string): Temporal.PlainDateTime {
     const instant = Temporal.Instant.from(new Date(ts).toISOString());
-    return instant.toZonedDateTimeISO("UTC").toPlainDateTime();
+    return instant.toZonedDateTimeISO('UTC').toPlainDateTime();
 }
 
 function toInstant(ts: string): Temporal.Instant {
     return Temporal.Instant.from(new Date(ts).toISOString());
+}
+
+export async function initResourceInboxExpiryEviction(
+    repository: ResourceInboxRepository = new ResourceInboxRepository(),
+    intervalMs: number = RESOURCE_INBOX_EXPIRY_EVICTION_INTERVAL_MS,
+): Promise<void> {
+    await tryRunInIntervals(
+        async () => {
+            const removed = await repository.deleteExpired();
+            if (removed > 0) {
+                console.log(`Evicted expired resource_inbox rows: ${removed}`);
+            }
+        },
+        intervalMs,
+    );
 }

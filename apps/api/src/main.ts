@@ -1,6 +1,6 @@
 /// <reference lib="deno.unstable" />
-import "jsr:@std/dotenv/load";
-import {route, type Route} from 'jsr:@std/http/unstable-route';
+import 'jsr:@std/dotenv/load';
+import { route, type Route } from 'jsr:@std/http/unstable-route';
 
 import {
     CreateGameRequest,
@@ -10,13 +10,13 @@ import {
     JoinGameResponse,
     MakeMoveRequest,
     MakeMoveResponse,
-} from "@shared/mod.ts";
+} from '@shared/mod.ts';
 
-import {createGame, getGame, joinGame, makeMove} from "./services/tictactoe-game.ts";
-import {p2pRoutes} from "./p2p/p2p_routes.ts";
-import {iceRoutes} from "./webrtc/ice_routes.ts";
-import {handleP2pWs} from "./p2p/p2p_ws_hub.ts";
-import {handleWebSocket as handleServerGameWs} from "./ws/ws_hub.ts"; // your existing one
+import { createGame, getGame, joinGame, makeMove } from './services/tictactoe-game.ts';
+import { p2pRoutes } from './p2p/p2p_routes.ts';
+import { iceRoutes } from './webrtc/ice_routes.ts';
+import { handleP2pWs } from './p2p/p2p_ws_hub.ts';
+import { handleWebSocket as handleServerGameWs } from './ws/ws_hub.ts'; // your existing one
 
 function handleUnifiedWs(ws: WebSocket): void {
     // Both handlers ignore messages they don’t recognize by channel/type
@@ -50,22 +50,22 @@ function withCors(req: Request, res: Response): Response {
     const h = new Headers(res.headers);
     const cors = corsHeaders(req);
     cors.forEach((v, k) => h.set(k, v));
-    return new Response(res.body, {status: res.status, headers: h});
+    return new Response(res.body, { status: res.status, headers: h });
 }
 
-const CREATE_GAME_URL = new URLPattern({pathname: "/api/games"});
-const JOIN_GAME_URL = new URLPattern({pathname: "/api/games/:id/join"});
-const GET_GAME_URL = new URLPattern({pathname: "/api/games/:id"});
-const MOVE_IN_GAME_URL = new URLPattern({pathname: "/api/games/:id/move"});
-const WEB_SOCKET_CREATE = new URLPattern({pathname: "/api/ws"});
+const CREATE_GAME_URL = new URLPattern({ pathname: '/api/games' });
+const JOIN_GAME_URL = new URLPattern({ pathname: '/api/games/:id/join' });
+const GET_GAME_URL = new URLPattern({ pathname: '/api/games/:id' });
+const MOVE_IN_GAME_URL = new URLPattern({ pathname: '/api/games/:id/move' });
+const WEB_SOCKET_CREATE = new URLPattern({ pathname: '/api/ws' });
 
 const routes: Route[] = [
     {
-        method: "POST",
+        method: 'POST',
         pattern: CREATE_GAME_URL,
         handler: async (req) => {
             const body = await readJson<CreateGameRequest>(req);
-            if (!body.clientId) return badRequest("Missing clientId");
+            if (!body.clientId) return badRequest('Missing clientId');
 
             const game = createGame(body.clientId);
             const res: CreateGameResponse = {
@@ -78,15 +78,15 @@ const routes: Route[] = [
     },
 
     {
-        method: "POST",
+        method: 'POST',
         pattern: JOIN_GAME_URL,
         handler: async (req) => {
-            const gameId = JOIN_GAME_URL.exec(req.url)?.pathname?.groups?.id ?? "";
+            const gameId = JOIN_GAME_URL.exec(req.url)?.pathname?.groups?.id ?? '';
 
-            if (!gameId) return badRequest("Missing game id");
+            if (!gameId) return badRequest('Missing game id');
 
             const body = await readJson<JoinGameRequest>(req);
-            if (!body.clientId) return badRequest("Missing clientId");
+            if (!body.clientId) return badRequest('Missing clientId');
 
             const game = joinGame(gameId, body.clientId);
 
@@ -101,27 +101,27 @@ const routes: Route[] = [
     },
 
     {
-        method: "GET",
+        method: 'GET',
         pattern: GET_GAME_URL,
         handler: (req) => {
-            const gameId = GET_GAME_URL.exec(req.url)?.pathname?.groups?.id ?? "";
-            if (!gameId) return badRequest("Missing game id");
+            const gameId = GET_GAME_URL.exec(req.url)?.pathname?.groups?.id ?? '';
+            if (!gameId) return badRequest('Missing game id');
 
             const game = getGame(gameId);
-            const res: GetGameResponse = {gameId: game.id, state: game.state};
+            const res: GetGameResponse = { gameId: game.id, state: game.state };
             return json(res);
         },
     },
 
     {
-        method: "POST",
+        method: 'POST',
         pattern: MOVE_IN_GAME_URL,
         handler: async (req) => {
-            const gameId = MOVE_IN_GAME_URL.exec(req.url)?.pathname?.groups?.id ?? "";
-            if (!gameId) return badRequest("Missing game id");
+            const gameId = MOVE_IN_GAME_URL.exec(req.url)?.pathname?.groups?.id ?? '';
+            if (!gameId) return badRequest('Missing game id');
 
             const body = await readJson<MakeMoveRequest>(req);
-            if (!body.clientId) return badRequest("Missing clientId");
+            if (!body.clientId) return badRequest('Missing clientId');
 
             const result = makeMove(gameId, body.clientId, body.moveIndex);
 
@@ -136,29 +136,29 @@ const routes: Route[] = [
         },
     },
     {
-        method: "GET",
+        method: 'GET',
         pattern: WEB_SOCKET_CREATE,
         handler: (req) => {
-            if (req.headers.get("upgrade") !== "websocket") {
-                return new Response("Expected websocket", {status: 426});
+            if (req.headers.get('upgrade') !== 'websocket') {
+                return new Response('Expected websocket', { status: 426 });
             }
 
-            const {socket, response} = Deno.upgradeWebSocket(req);
+            const { socket, response } = Deno.upgradeWebSocket(req);
             handleUnifiedWs(socket);
             return response; // must be this exact response  [oai_citation:3‡GitHub](https://github.com/denoland/deno/issues/22333?utm_source=chatgpt.com)
         },
     }
 ];
 
-routes.push(...p2pRoutes())
-routes.push(...iceRoutes())
+routes.push(...p2pRoutes());
+routes.push(...iceRoutes());
 
-let handler = route(routes, () => new Response("Not Found", {status: 404}));
+let handler = route(routes, () => new Response('Not Found', { status: 404 }));
 
 Deno.serve(async (req) => {
     // Handle preflight
     if (req.method === 'OPTIONS') {
-        return new Response(null, {status: 204, headers: corsHeaders(req)});
+        return new Response(null, { status: 204, headers: corsHeaders(req) });
     }
 
     const res = await handler(req);
@@ -170,13 +170,13 @@ function json<T>(data: T, status = 200): Response {
     return Response.json(data, {
         status,
         headers: {
-            "content-type": "application/json"
+            'content-type': 'application/json'
         },
     });
 }
 
 function badRequest(message: string): Response {
-    return json({message}, 400);
+    return json({ message }, 400);
 }
 
 async function readJson<T>(req: Request): Promise<T> {

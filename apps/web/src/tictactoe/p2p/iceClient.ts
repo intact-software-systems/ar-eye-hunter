@@ -1,4 +1,4 @@
-import {IceConfig} from "@shared/api/api-config.ts";
+import { IceConfig } from '@shared/api/api-config.ts';
 
 function httpBaseUrl(): string {
     const env = (import.meta as any).env;

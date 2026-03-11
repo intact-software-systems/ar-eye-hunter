@@ -1,7 +1,6 @@
-import {getRouteFromHash, Route} from './router.ts';
-import {findHtmlEl} from './utils/utils.ts';
-import {isLoggedIn} from './middleware/auth.ts';
-import {initMiddleware, isMiddlewareReady} from "./app-context.ts";
+import { getRouteFromHash, Route } from './router.ts';
+import { findHtmlEl, getHashPath } from './utils/utils.ts';
+import { rallar } from '@shared-web/browser/rallar.ts';
 
 export class EhApp extends HTMLElement {
     private currentRoute: Route = Route.Landing;
@@ -11,20 +10,17 @@ export class EhApp extends HTMLElement {
 
         const next = getRouteFromHash(location.hash);
         if (!this.isPublicRoute(next)) {
-
-            if (!isLoggedIn()) {
+            if (!rallar.auth.isLoggedIn()) {
                 this.redirectToLogin();
                 this.currentRoute = Route.Login;
                 this.render();
                 return;
             }
 
-            // after you confirm isLoggedIn()
-            if (!isMiddlewareReady()) {
-                await initMiddleware()
+            if (!rallar.isConnected()) {
+                await rallar.connect();
             }
         }
-
 
         this.currentRoute = next;
         this.render();
@@ -39,11 +35,7 @@ export class EhApp extends HTMLElement {
     }
 
     private getNextPathFromHash(hash: string): string {
-        // hash like "#/login?next=%2Fp2p" or "#/multi"
-        const raw = hash.startsWith('#') ? hash.slice(1) : hash;
-        const qIndex = raw.indexOf('?');
-        const path = qIndex >= 0 ? raw.slice(0, qIndex) : raw;
-        return path.length > 0 ? path : '/';
+        return getHashPath(hash);
     }
 
     private redirectToLogin(): void {
@@ -57,8 +49,7 @@ export class EhApp extends HTMLElement {
 
         // Route guard: if the user is not logged in, force login for protected routes.
         if (!this.isPublicRoute(next)) {
-
-            if (!isLoggedIn()) {
+            if (!rallar.auth.isLoggedIn()) {
                 // Always rewrite the hash to include the intended next route.
                 this.redirectToLogin();
 
@@ -70,8 +61,8 @@ export class EhApp extends HTMLElement {
                 return;
             }
 
-            if (!isMiddlewareReady()) {
-                await initMiddleware();
+            if (!rallar.isConnected()) {
+                await rallar.connect();
             }
         }
 
@@ -82,8 +73,7 @@ export class EhApp extends HTMLElement {
     };
 
     private render(): void {
-        this.innerHTML =
-            `
+        this.innerHTML = `
               <div class="card">
                 <div class="row">
                   <strong>EyeHunter</strong>

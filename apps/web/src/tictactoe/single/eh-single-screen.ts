@@ -9,14 +9,9 @@ import {
     Player
 } from '@shared/mod.ts';
 
-import {applyMove, computeCpuMove} from '@shared/tictactoe/tictactoe.ts';
-import type {CellClickDetail} from '../eh-ttt-board.ts';
-
-function mustEl<T extends HTMLElement>(root: ParentNode, selector: string): T {
-    const el = root.querySelector(selector);
-    if (!el) throw new Error(`Missing element: ${selector}`);
-    return el as T;
-}
+import { applyMove, computeCpuMove } from '@shared/tictactoe/tictactoe.ts';
+import type { CellClickDetail } from '../eh-ttt-board.ts';
+import { mustEl } from '../../utils/utils.ts';
 
 enum SingleModeUiValue {
     VsCpu = 'VsCpu',
@@ -35,7 +30,7 @@ function createInitialState(mode: GameMode): GameState {
 function modeFromUi(modeValue: string, difficultyValue: string): GameMode {
     switch (modeValue) {
         case SingleModeUiValue.LocalHuman:
-            return {type: GameModeType.LocalHuman, difficulty: CpuDifficulty.Empty};
+            return { type: GameModeType.LocalHuman, difficulty: CpuDifficulty.Empty };
 
         case SingleModeUiValue.VsCpu:
         default:
@@ -155,8 +150,7 @@ export class EhSingleScreen extends HTMLElement {
 
         boardEl.state = this.state;
 
-        const locked = this.state.result !== GameResult.InProgress;
-        boardEl.locked = locked;
+        boardEl.locked = this.state.result !== GameResult.InProgress;
 
         statusEl.textContent = this.statusText();
     }

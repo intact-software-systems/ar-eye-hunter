@@ -1,0 +1,195 @@
+import type { Sql, TransactionSql } from 'postgres';
+
+export type RuntimeStateEntry = Readonly<{
+    key: string;
+    value: string;
+    expireAtTimestamp: number;
+    updatedTimestamp: string;
+    revision: number;
+}>;
+
+export type RuntimeStateRepositoryLike = Readonly<{
+    findEntry(
+        namespace: string,
+        key: string,
+    ): Promise<RuntimeStateEntry | undefined>;
+    findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]>;
+    upsert(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+    ): Promise<void>;
+    deleteByKey(namespace: string, key: string): Promise<void>;
+    deleteExpired(namespace: string): Promise<number>;
+}>;
+
+export type RuntimeStateTransactionalRepositoryLike =
+    & RuntimeStateRepositoryLike
+    & Readonly<{
+    begin<T>(
+        fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
+    ): Promise<T>;
+    findEntriesByPrefix(
+        namespace: string,
+        keyPrefix: string,
+    ): Promise<readonly RuntimeStateEntry[]>;
+    lockKey(namespace: string, key: string): Promise<void>;
+}>;
+
+type RuntimeStateRow = Readonly<{
+    store_namespace: string;
+    store_key: string;
+    store_value: string;
+    updated_ts: string;
+    expire_at_ts: string;
+    revision: number | string;
+}>;
+
+export class RuntimeStateRepository
+    implements RuntimeStateTransactionalRepositoryLike {
+    constructor(
+        private readonly sql: Sql,
+    ) {
+    }
+
+    async begin<T>(
+        fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
+    ): Promise<T> {
+        return await this.sql.begin(
+            async (sql: TransactionSql) =>
+                await fn(new RuntimeStateRepository(sql as unknown as Sql)),
+        ) as T;
+    }
+
+    async findEntry(
+        namespace: string,
+        key: string,
+    ): Promise<RuntimeStateEntry | undefined> {
+        const rows = await this.sql<RuntimeStateRow[]>`
+            select store_value, store_namespace, store_key, updated_ts, expire_at_ts, revision
+            from runtime_state_store
+            where store_namespace = ${namespace}
+              and store_key = ${key}
+            limit 1
+        `;
+
+        return rows[0] ? toEntry(rows[0]) : undefined;
+    }
+
+    async findAllEntries(
+        namespace: string,
+    ): Promise<readonly RuntimeStateEntry[]> {
+        const rows = await this.sql<RuntimeStateRow[]>`
+            select store_key, store_value, updated_ts, expire_at_ts, store_namespace, revision
+            from runtime_state_store
+            where store_namespace = ${namespace}
+            order by store_key
+        `;
+
+        return rows.map(toEntry);
+    }
+
+    async findEntriesByPrefix(
+        namespace: string,
+        keyPrefix: string,
+    ): Promise<readonly RuntimeStateEntry[]> {
+        const rows = await this.sql<RuntimeStateRow[]>`
+            select store_key, store_value, updated_ts, expire_at_ts, store_namespace, revision
+            from runtime_state_store
+            where store_namespace = ${namespace}
+              and store_key like ${`${keyPrefix}%`}
+            order by store_key
+        `;
+
+        return rows.map(toEntry);
+    }
+
+    async lockKey(namespace: string, key: string): Promise<void> {
+        await this.sql`
+            select pg_advisory_xact_lock(hashtextextended(${`${namespace}:${key}`}, 0))
+        `;
+    }
+
+    async upsert(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+    ): Promise<void> {
+        await this.sql`
+            insert into runtime_state_store (store_namespace,
+                                             store_key,
+                                             store_value,
+                                             expire_at_ts,
+                                             updated_ts,
+                                             revision)
+            values (${namespace},
+                    ${key},
+                    ${value},
+                    ${toPgDate(expireAtTimestamp)},
+                    now(),
+                    0)
+            on conflict (store_namespace, store_key)
+                do update set store_value  = excluded.store_value,
+                              expire_at_ts = excluded.expire_at_ts,
+                              updated_ts   = now(),
+                              revision     = runtime_state_store.revision + 1
+        `;
+    }
+
+    async deleteByKey(namespace: string, key: string): Promise<void> {
+        await this.sql`
+            delete
+            from runtime_state_store
+            where store_namespace = ${namespace}
+              and store_key = ${key}
+        `;
+    }
+
+    async deleteExpired(namespace: string): Promise<number> {
+        const rows = await this.sql<{ store_key: string }[]>`
+            delete
+            from runtime_state_store
+            where store_namespace = ${namespace}
+              and expire_at_ts is not null
+              and expire_at_ts <= now()
+            returning store_key
+        `;
+
+        return rows.length;
+    }
+}
+
+export function isRuntimeStateTransactionalRepositoryLike(
+    repository: RuntimeStateRepositoryLike,
+): repository is RuntimeStateTransactionalRepositoryLike {
+    return 'begin' in repository &&
+        'findEntriesByPrefix' in repository &&
+        'lockKey' in repository;
+}
+
+function toEntry(row: RuntimeStateRow): RuntimeStateEntry {
+    const expireAtTimestamp = Date.parse(row.expire_at_ts);
+    if (!Number.isFinite(expireAtTimestamp)) {
+        throw new Error(
+            `Invalid expire_at_ts for runtime_state_store row ${row.store_namespace}/${row.store_key}`,
+        );
+    }
+
+    return {
+        key: row.store_key,
+        value: row.store_value,
+        expireAtTimestamp,
+        updatedTimestamp: row.updated_ts,
+        revision: Number(row.revision),
+    };
+}
+
+function toPgDate(timestamp: number): Date {
+    if (!Number.isFinite(timestamp)) {
+        throw new Error('expireAtTimestamp must be a finite number');
+    }
+
+    return new Date(timestamp);
+}

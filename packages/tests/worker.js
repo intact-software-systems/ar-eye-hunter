@@ -1,7 +1,7 @@
 // worker.js
-self.onmessage = function(e) {
+self.onmessage = function (e) {
     const n = e.data;
-    console.log("Worker: Starter beregning for " + n);
+    console.log('Worker: Starter beregning for ' + n);
 
     const result = fibonacci(n);
 

@@ -1,10 +1,4 @@
-import type {
-    CreateGameRequest,
-    CreateGameResponse,
-    JoinGameRequest,
-    JoinGameResponse,
-    GameId,
-} from '@shared/mod.ts';
+import type { CreateGameRequest, CreateGameResponse, GameId, JoinGameRequest, JoinGameResponse, } from '@shared/mod.ts';
 
 export enum NAString {
     NA = 'NA',

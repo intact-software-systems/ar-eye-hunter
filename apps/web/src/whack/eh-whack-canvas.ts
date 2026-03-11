@@ -1,15 +1,10 @@
 import { ColorId, type EngineState, type Worm } from '@shared/mod';
+import { mustEl } from '../utils/utils.ts';
 
 export type WhackDetail = {
     readonly x01: number;
     readonly y01: number;
 };
-
-function mustEl<T extends Element>(root: ParentNode, selector: string): T {
-    const el = root.querySelector(selector);
-    if (!el) throw new Error(`Missing element: ${selector}`);
-    return el as T;
-}
 
 export class EhWhackCanvas extends HTMLElement {
     private state: EngineState | undefined = undefined;

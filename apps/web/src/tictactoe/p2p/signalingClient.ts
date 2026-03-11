@@ -1,18 +1,18 @@
 import {
-    P2pCursor,
-    P2pRole,
-    P2pSignalType,
     type ClientId,
-    type P2pSessionId,
-    type P2pToken,
     type CreateP2pSessionRequest,
     type CreateP2pSessionResponse,
+    type GetP2pSignalsResponse,
     type JoinP2pSessionRequest,
     type JoinP2pSessionResponse,
+    P2pCursor,
+    P2pRole,
+    type P2pSessionId,
+    type P2pSignalRecord,
+    P2pSignalType,
+    type P2pToken,
     type PostP2pSignalRequest,
     type PostP2pSignalResponse,
-    type GetP2pSignalsResponse,
-    type P2pSignalRecord,
 } from '@shared/mod.ts';
 
 export enum NAString {

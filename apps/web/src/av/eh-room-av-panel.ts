@@ -1,10 +1,5 @@
 import type { RoomAvAdapter } from './roomAvAdapter';
-
-function mustEl<T extends Element>(root: ParentNode, selector: string): T {
-    const el = root.querySelector(selector);
-    if (!el) throw new Error(`Missing element: ${selector}`);
-    return el as T;
-}
+import { mustEl } from '../utils/utils.ts';
 
 type RemoteTile = {
     readonly peerId: string;
@@ -133,7 +128,8 @@ export class EhRoomAvPanel extends HTMLElement {
 
         video.srcObject = s;
         // play() may fail if no gesture; join click is a gesture so should be ok
-        void video.play().catch(() => {});
+        void video.play().catch(() => {
+        });
     }
 
     private clearLocalPreview(): void {
@@ -148,7 +144,8 @@ export class EhRoomAvPanel extends HTMLElement {
         const existing = this.remoteTiles.get(peerId);
         if (existing) {
             existing.video.srcObject = stream;
-            void existing.video.play().catch(() => {});
+            void existing.video.play().catch(() => {
+            });
             return;
         }
 
@@ -169,7 +166,8 @@ export class EhRoomAvPanel extends HTMLElement {
         video.style.background = 'rgba(255,255,255,0.06)';
 
         video.srcObject = stream;
-        void video.play().catch(() => {});
+        void video.play().catch(() => {
+        });
 
         wrap.appendChild(label);
         wrap.appendChild(video);

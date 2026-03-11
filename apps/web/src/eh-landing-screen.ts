@@ -1,10 +1,5 @@
 import { GAMES } from './games.ts';
-
-function mustEl<T extends HTMLElement>(root: ParentNode, selector: string): T {
-    const el = root.querySelector(selector);
-    if (!el) throw new Error(`Missing element: ${selector}`);
-    return el as T;
-}
+import { mustEl } from './utils/utils.ts';
 
 export class EhLandingScreen extends HTMLElement {
     connectedCallback(): void {

@@ -5,16 +5,26 @@ export interface WebSocketClientCallbacks {
 }
 
 export interface OnWebSocketMessageCallback {
-    onMessage: (data: unknown, ev: MessageEvent) => Promise<void>
+    onMessage: (data: unknown, ev: MessageEvent) => Promise<void>;
 }
+
+export type WebSocketConnectOptions = Readonly<{
+    signal?: AbortSignal;
+}>;
 
 export class JsonWebSocketClient {
     public readonly url: string;
     public ws?: WebSocket = undefined;
     private connectPromise?: Promise<void> = undefined;
 
-    private readonly webSocketClientCallbacks = new Map<string, WebSocketClientCallbacks>();
-    private readonly onMessageCallbacks = new Map<string, OnWebSocketMessageCallback>();
+    private readonly webSocketClientCallbacks = new Map<
+        string,
+        WebSocketClientCallbacks
+    >();
+    private readonly onMessageCallbacks = new Map<
+        string,
+        OnWebSocketMessageCallback
+    >();
 
     constructor(url: string) {
         this.url = url;
@@ -26,18 +36,18 @@ export class JsonWebSocketClient {
 
     onWebSocketMessageDo(
         id: string,
-        onMessage: OnWebSocketMessageCallback
+        onMessage: OnWebSocketMessageCallback,
     ) {
         this.onMessageCallbacks.set(id, onMessage);
-        return this
+        return this;
     }
 
     onWebsocketCallbacksDo(
         id: string,
-        webSocketClientCallbacks: WebSocketClientCallbacks
+        webSocketClientCallbacks: WebSocketClientCallbacks,
     ) {
         this.webSocketClientCallbacks.set(id, webSocketClientCallbacks);
-        return this
+        return this;
     }
 
     removeWebsocketCallbackById(id: string): boolean {
@@ -52,9 +62,13 @@ export class JsonWebSocketClient {
     // Connect, send and close
     // --------------------
 
-    async connect(): Promise<void> {
+    async connect(options: WebSocketConnectOptions = {}): Promise<void> {
         if (this?.ws?.readyState === WebSocket.OPEN) {
             return Promise.resolve();
+        }
+
+        if (options.signal?.aborted) {
+            throw new Error('WebSocket connect aborted.');
         }
 
         if (!this.connectPromise) {
@@ -62,91 +76,123 @@ export class JsonWebSocketClient {
                 (resolve, reject) => {
                     this.ws = new WebSocket(this.url);
 
-                    let isOpened = false
+                    let isOpened = false;
                     let isRejected = false;
 
+                    const cleanupAbortListener = () => {
+                        options.signal?.removeEventListener('abort', abortConnect);
+                    };
+
+                    const abortConnect = () => {
+                        if (isOpened || isRejected) {
+                            return;
+                        }
+
+                        isRejected = true;
+                        cleanupAbortListener();
+                        this.connectPromise = undefined;
+                        this.ws?.close(1000, 'connect-aborted');
+                        reject(new Error('WebSocket connect aborted.'));
+                    };
+
+                    options.signal?.addEventListener('abort', abortConnect, {
+                        once: true,
+                    });
+                    if (options.signal?.aborted) {
+                        abortConnect();
+                    }
+
                     this.ws.addEventListener(
-                        "open",
+                        'open',
                         (ev: Event) => {
-                            isOpened = true
+                            isOpened = true;
+                            cleanupAbortListener();
 
                             for (const callback of this.webSocketClientCallbacks.values()) {
                                 try {
-                                    callback?.onOpen?.(ev)
+                                    callback?.onOpen?.(ev);
                                 } catch (e) {
-                                    console.error("Callback onOpen failed:", e);
+                                    console.error('Callback onOpen failed:', e);
                                 }
                             }
-                            resolve()
+                            resolve();
 
-                            this.connectPromise = undefined
-                        }
-                    )
+                            this.connectPromise = undefined;
+                        },
+                    );
 
                     this.ws.addEventListener(
-                        "message",
+                        'message',
                         async (ev: MessageEvent) => {
                             for (const callback of this.onMessageCallbacks.values()) {
                                 try {
-                                    await callback.onMessage(JSON.parse(ev.data), ev)
+                                    await callback.onMessage(JSON.parse(ev.data), ev);
                                 } catch (e) {
-                                    console.error("Callback onMessage failed:", e);
+                                    console.error('Callback onMessage failed:', e);
                                 }
                             }
-                        }
-                    )
+                        },
+                    );
 
                     this.ws.addEventListener(
-                        "error",
+                        'error',
                         (ev: Event) => {
+                            cleanupAbortListener();
+
                             for (const callback of this.webSocketClientCallbacks.values()) {
                                 try {
-                                    callback?.onError?.(ev)
+                                    callback?.onError?.(ev);
                                 } catch (e) {
-                                    console.error("Callback onError failed:", e);
+                                    console.error('Callback onError failed:', e);
                                 }
                             }
 
-                            this.connectPromise = undefined
+                            this.connectPromise = undefined;
 
                             if (!isOpened && !isRejected) {
-                                isRejected = true
-                                reject(new Error("WebSocket error. Type: " + ev.type));
+                                isRejected = true;
+                                reject(new Error('WebSocket error. Type: ' + ev.type));
                             }
-                        }
-                    )
+                        },
+                    );
 
                     this.ws.addEventListener(
-                        "close",
+                        'close',
                         (ev: CloseEvent) => {
+                            cleanupAbortListener();
 
                             for (const callback of this.webSocketClientCallbacks.values()) {
                                 try {
-                                    callback?.onClose?.(ev)
+                                    callback?.onClose?.(ev);
                                 } catch (e) {
-                                    console.error("Callback onClose failed:", e);
+                                    console.error('Callback onClose failed:', e);
                                 }
                             }
 
-                            this.connectPromise = undefined
-                            this.ws = undefined
+                            this.connectPromise = undefined;
+                            this.ws = undefined;
 
                             if (!isOpened && !isRejected) {
-                                isRejected = true
-                                reject(new Error("WebSocket is closed. Code: " + ev.code + " Reason " + ev.reason));
+                                isRejected = true;
+                                reject(
+                                    new Error(
+                                        'WebSocket is closed. Code: ' + ev.code + ' Reason ' +
+                                        ev.reason,
+                                    ),
+                                );
                             }
-                        }
-                    )
-                }
+                        },
+                    );
+                },
             );
         }
 
-        return await this.connectPromise
+        return await this.connectPromise;
     }
 
     send(data: unknown): void {
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-            throw new Error("WebSocketClient: cannot send; socket is not open.");
+            throw new Error('WebSocketClient: cannot send; socket is not open.');
         }
 
         this.ws.send(JSON.stringify(data));
@@ -154,7 +200,7 @@ export class JsonWebSocketClient {
 
     sendAsJsonString(data: string): void {
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-            throw new Error("WebSocketClient: cannot send; socket is not open.");
+            throw new Error('WebSocketClient: cannot send; socket is not open.');
         }
 
         this.ws.send(data);

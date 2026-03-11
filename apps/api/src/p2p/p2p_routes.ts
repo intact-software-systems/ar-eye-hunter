@@ -1,22 +1,21 @@
-import type {Route} from 'jsr:@std/http/unstable-route';
+import type { Route } from 'jsr:@std/http/unstable-route';
 import {
-    P2pCursor,
-    P2pRole,
-    P2pSessionStatus,
-    P2pSignalType,
     type CreateP2pSessionRequest,
     type CreateP2pSessionResponse,
+    type GetP2pSignalsResponse,
     type JoinP2pSessionRequest,
     type JoinP2pSessionResponse,
+    P2pCursor,
+    P2pRole,
+    P2pSignalType,
     type PostP2pSignalRequest,
     type PostP2pSignalResponse,
-    type GetP2pSignalsResponse,
 } from '@shared/mod.ts';
 
-import {createSession, joinSession, postSignal, listSignalsFromPeer} from './p2p_service.ts';
+import { createSession, joinSession, listSignalsFromPeer, postSignal } from './p2p_service.ts';
 
 function json<T>(data: T, status = 200): Response {
-    return Response.json(data, {status, headers: {'content-type': 'application/json'}});
+    return Response.json(data, { status, headers: { 'content-type': 'application/json' } });
 }
 
 async function readJson<T>(req: Request): Promise<T> {
@@ -24,15 +23,15 @@ async function readJson<T>(req: Request): Promise<T> {
 }
 
 function badRequest(msg: string): Response {
-    return json({error: msg}, 400);
+    return json({ error: msg }, 400);
 }
 
 function unauthorized(msg: string): Response {
-    return json({error: msg}, 403);
+    return json({ error: msg }, 403);
 }
 
 function serverError(msg: string): Response {
-    return json({error: msg}, 500);
+    return json({ error: msg }, 500);
 }
 
 function parseLimit(url: URL): number {
@@ -42,10 +41,10 @@ function parseLimit(url: URL): number {
     return Number.isFinite(n) ? n : 50;
 }
 
-const POST_P2P_SESSIONS = new URLPattern({pathname: '/api/p2p/sessions'});
-const POST_P2P_SESSIONS_JOIN = new URLPattern({pathname: '/api/p2p/sessions/:sessionId/join'});
-const POST_P2P_SESSION_ID_SIGNAL = new URLPattern({pathname: '/api/p2p/sessions/:sessionId/signals'});
-const GET_P2P_SESSION_ID_SIGNAL = new URLPattern({pathname: '/api/p2p/sessions/:sessionId/signals'});
+const POST_P2P_SESSIONS = new URLPattern({ pathname: '/api/p2p/sessions' });
+const POST_P2P_SESSIONS_JOIN = new URLPattern({ pathname: '/api/p2p/sessions/:sessionId/join' });
+const POST_P2P_SESSION_ID_SIGNAL = new URLPattern({ pathname: '/api/p2p/sessions/:sessionId/signals' });
+const GET_P2P_SESSION_ID_SIGNAL = new URLPattern({ pathname: '/api/p2p/sessions/:sessionId/signals' });
 
 export function p2pRoutes(): Route[] {
     return [
@@ -98,8 +97,8 @@ export function p2pRoutes(): Route[] {
                     return json(res);
                 } catch (e) {
                     const msg = (e as Error).message;
-                    if (msg.includes('not found')) return json({error: msg}, 404);
-                    if (msg.includes('already')) return json({error: msg}, 409);
+                    if (msg.includes('not found')) return json({ error: msg }, 404);
+                    if (msg.includes('already')) return json({ error: msg }, 409);
                     return serverError(msg);
                 }
             },
@@ -122,7 +121,7 @@ export function p2pRoutes(): Route[] {
 
                     await postSignal(sessionId, body.token, body.type, body.payload);
 
-                    const res: PostP2pSignalResponse = {ok: true};
+                    const res: PostP2pSignalResponse = { ok: true };
                     return json(res);
                 } catch (e) {
                     const msg = (e as Error).message;
@@ -150,7 +149,10 @@ export function p2pRoutes(): Route[] {
 
                     const limit = parseLimit(url);
 
-                    const {signals, nextCursor} = await listSignalsFromPeer(sessionId, tokenValue, cursorValue, limit);
+                    const {
+                        signals,
+                        nextCursor
+                    } = await listSignalsFromPeer(sessionId, tokenValue, cursorValue, limit);
 
                     const res: GetP2pSignalsResponse = {
                         signals,

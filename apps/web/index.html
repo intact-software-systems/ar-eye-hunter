@@ -1,9 +1,9 @@
 <!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
+    <meta charset="UTF-8"/>
     <title>EyeHunter – Tic Tac Toe</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
 
     <style>
         body {
@@ -13,16 +13,19 @@
             display: flex;
             justify-content: center;
         }
+
         .app {
             width: 720px;
             max-width: 100%;
         }
+
         .card {
             border: 1px solid #ddd;
             border-radius: 12px;
             padding: 16px;
             margin-top: 12px;
         }
+
         .row {
             display: flex;
             gap: 12px;
@@ -30,33 +33,40 @@
             flex-wrap: wrap;
             margin: 12px 0;
         }
+
         button {
             padding: 10px 14px;
             cursor: pointer;
         }
+
         a {
             color: inherit;
         }
+
         .muted {
             color: #555;
         }
+
         .board {
             display: grid;
             grid-template-columns: repeat(3, 84px);
             gap: 8px;
             margin-top: 16px;
         }
+
         .cell {
             width: 84px;
             height: 84px;
             font-size: 36px;
             cursor: pointer;
         }
+
         .status {
             margin-top: 12px;
             font-weight: 600;
             min-height: 24px;
         }
+
         select {
             padding: 8px;
         }
@@ -70,14 +80,16 @@
 
         .game-card {
             text-align: left;
-            border: 1px solid rgba(255,255,255,0.12);
+            border: 1px solid rgba(255, 255, 255, 0.12);
             border-radius: 12px;
             padding: 12px;
-            background: rgba(255,255,255,0.04);
+            background: rgba(255, 255, 255, 0.04);
             cursor: pointer;
         }
 
-        .game-card:hover { background: rgba(255,255,255,0.06); }
+        .game-card:hover {
+            background: rgba(255, 255, 255, 0.06);
+        }
 
         .game-card__top {
             display: flex;
@@ -87,23 +99,31 @@
             margin-bottom: 6px;
         }
 
-        .game-card__title { font-weight: 700; }
+        .game-card__title {
+            font-weight: 700;
+        }
+
         .game-card__badge {
             font-size: 12px;
             padding: 2px 8px;
             border-radius: 999px;
-            border: 1px solid rgba(255,255,255,0.18);
+            border: 1px solid rgba(255, 255, 255, 0.18);
             opacity: 0.9;
         }
-        .game-card__desc { opacity: 0.85; font-size: 13px; }
+
+        .game-card__desc {
+            opacity: 0.85;
+            font-size: 13px;
+        }
 
         .whack-canvas-wrap {
             width: 100%;
             height: 420px;
             border-radius: 12px;
             overflow: hidden;
-            border: 1px solid rgba(255,255,255,0.12);
+            border: 1px solid rgba(255, 255, 255, 0.12);
         }
+
         .whack-canvas {
             width: 100%;
             height: 100%;

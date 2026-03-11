@@ -1,4 +1,4 @@
-import {BoardMove, GameState, Player} from "./types.ts";
+import { BoardMove, GameState, Player } from './types.ts';
 
 export type GameId = string;
 export type ClientId = string;

@@ -1,6 +1,6 @@
 import { WebRtcRoomAvAdapter } from '../av/webrtcRoomAvAdapter';
 import { EhRoomLobby } from './eh-room-lobby';
-import { getMiddleware } from '../app-context';
+import { getMiddleware } from '@shared-web/browser/app-context.ts';
 import { createRoomDriverWs } from './room-transport';
 
 export class EhRoomsScreen extends HTMLElement {
@@ -21,12 +21,14 @@ export class EhRoomsScreen extends HTMLElement {
         let avAdapter: WebRtcRoomAvAdapter | undefined = undefined;
 
         lobby.addEventListener('room:joined', () => {
+            console.log('joined room');
+
             // Show the panel when a room is selected/joined.
             av.style.display = '';
 
             // Wire the A/V UI to the existing WebRTC service (peer manager) from middleware.
             if (!avAdapter) {
-                avAdapter = new WebRtcRoomAvAdapter(mw.middleware.webRtcQueueBox);
+                avAdapter = new WebRtcRoomAvAdapter(mw.middleware.rtcRxStreamer);
             }
             avPanel.roomAvAdapter = avAdapter;
         });

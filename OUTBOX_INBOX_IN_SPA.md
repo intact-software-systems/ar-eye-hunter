@@ -1,5 +1,14 @@
 # Outbox and inbox in SPA
 
+Ensure all services are idempotent
+
+- ALInboundMessageRuntime
+- ALOutboundMessageRuntime
+
+## Optimistic locking in RTC reception/sending
+
+Introduce a storage table for peers with a version number. One row for each peer.
+
 ## Outbox API
 
 ```typescript
@@ -35,10 +44,9 @@ type ResourceEntry = {
 
 interface OutboxQueue<K, V> {
     enqueue(key: K, value: V)
-    
-    
-}
 
+
+}
 
 
 class OutboxQueueReader {

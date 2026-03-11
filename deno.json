@@ -7,7 +7,9 @@
     "engine": "deno run -A --unstable-temporal npm:vitest run --inspect-brk=127.0.0.1:53287 packages/tests/engine.test.ts --no-file-parallelism",
     "date": "deno run -A --unstable-temporal npm:vitest run --inspect-brk=127.0.0.1:53287 packages/tests/date.test.ts --no-file-parallelism"
   },
-  "unstable": ["temporal", "kv"],
+  "unstable": [
+    "kv"
+  ],
   "imports": {
     "@shared/": "./packages/shared/",
     "@std/assert": "jsr:@std/assert@^1.0.18",

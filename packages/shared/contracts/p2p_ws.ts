@@ -1,19 +1,19 @@
-import { P2pRole, P2pSignalType, type P2pSessionId, type P2pToken } from "./p2p.ts";
+import { P2pRole, type P2pSessionId, P2pSignalType, type P2pToken } from './p2p.ts';
 
 export enum WsChannel {
-    ServerGame = "ServerGame",
-    P2pSignal = "P2pSignal",
+    ServerGame = 'ServerGame',
+    P2pSignal = 'P2pSignal',
 }
 
 export enum P2pWsClientMsgType {
-    Hello = "Hello",
-    Signal = "Signal",
+    Hello = 'Hello',
+    Signal = 'Signal',
 }
 
 export enum P2pWsServerMsgType {
-    Welcome = "Welcome",
-    Signal = "Signal",
-    Error = "Error",
+    Welcome = 'Welcome',
+    Signal = 'Signal',
+    Error = 'Error',
 }
 
 export type P2pWsClientMessage =

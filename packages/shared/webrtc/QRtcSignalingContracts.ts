@@ -1,4 +1,4 @@
-import {ALMessage} from "../al-contracts/al-contract.ts";
+import { ALMessage } from '../al-contracts/al-contract.ts';
 
 export enum QRtcSignalingType {
     Offer = 'Offer',
@@ -7,11 +7,11 @@ export enum QRtcSignalingType {
 }
 
 export enum QRtcSignalingChannel {
-    RtcSignal = "RtcSignal",
+    RtcSignal = 'RtcSignal',
 }
 
 export enum QRtcSignalingMsgType {
-    Signal = "Signal",
+    Signal = 'Signal',
 }
 
 export type QRtcSignalingMessage = {
