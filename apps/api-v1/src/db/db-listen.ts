@@ -1,7 +1,7 @@
 import type { Sql } from 'postgres';
 import postgres from 'postgres';
 import { tryWith } from '@shared/resilience/TryWith.ts';
-import { myPublisherId, PublishMessage } from './db-notify.ts';
+import type { QueueBoxPubSubMessage } from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
 
 let listenSqlInstance: Sql | undefined;
 
@@ -28,24 +28,27 @@ export function getListenSql(): Sql {
 
 export async function startListening(
     channel: string,
-    onMessage: (payload: PublishMessage) => void,
+    options: Readonly<{
+        publisherId: string;
+        onMessage: (payload: QueueBoxPubSubMessage) => void | Promise<void>;
+    }>,
 ) {
     await tryWith(
         async () => {
             return await getListenSql()
                 .listen(
                     channel,
-                    (payload: string) => {
-                        const publisherPayload: PublishMessage = JSON.parse(payload);
+                    async (payload: string) => {
+                        const publisherPayload = JSON.parse(payload) as QueueBoxPubSubMessage;
 
-                        if (publisherPayload.publisherId === myPublisherId) {
+                        if (publisherPayload.publisherId === options.publisherId) {
                             // I sent it so ignore it
                             // console.log(`Ignoring my own message: ${payload}`)
                             return;
                         }
 
                         try {
-                            onMessage(publisherPayload);
+                            await options.onMessage(publisherPayload);
                         } catch (e) {
                             console.error(e);
                         }

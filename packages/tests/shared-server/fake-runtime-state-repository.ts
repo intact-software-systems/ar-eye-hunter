@@ -1,0 +1,108 @@
+import type {
+    RuntimeStateEntry,
+    RuntimeStateTransactionalRepositoryLike,
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+
+export class FakeRuntimeStateRepository
+    implements RuntimeStateTransactionalRepositoryLike {
+    readonly data = new Map<string, RuntimeStateEntry>();
+    readonly locks: Array<Readonly<{ namespace: string; key: string }>> = [];
+
+    async begin<T>(
+        fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
+    ): Promise<T> {
+        return await fn(this);
+    }
+
+    findEntry(
+        namespace: string,
+        key: string,
+    ): Promise<RuntimeStateEntry | undefined> {
+        const entry = this.data.get(this.toKey(namespace, key));
+        return Promise.resolve(entry ? { ...entry } : undefined);
+    }
+
+    findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]> {
+        return Promise.resolve(
+            [...this.data.entries()]
+                .filter(([compositeKey]) => this.toNamespace(compositeKey) === namespace)
+                .map(([, entry]) => ({ ...entry }))
+                .sort((left, right) => left.key.localeCompare(right.key)),
+        );
+    }
+
+    findEntriesByPrefix(
+        namespace: string,
+        keyPrefix: string,
+    ): Promise<readonly RuntimeStateEntry[]> {
+        return Promise.resolve(
+            [...this.data.entries()]
+                .filter(
+                    ([compositeKey]) =>
+                        this.toNamespace(compositeKey) === namespace &&
+                        this.toStoreKey(compositeKey).startsWith(keyPrefix),
+                )
+                .map(([, entry]) => ({ ...entry }))
+                .sort((left, right) => left.key.localeCompare(right.key)),
+        );
+    }
+
+    upsert(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+    ): Promise<void> {
+        const compositeKey = this.toKey(namespace, key);
+        const current = this.data.get(compositeKey);
+        this.data.set(compositeKey, {
+            key,
+            value,
+            expireAtTimestamp,
+            updatedTimestamp: new Date().toISOString(),
+            revision: current ? current.revision + 1 : 0,
+        });
+        return Promise.resolve();
+    }
+
+    deleteByKey(namespace: string, key: string): Promise<void> {
+        this.data.delete(this.toKey(namespace, key));
+        return Promise.resolve();
+    }
+
+    deleteExpired(namespace: string): Promise<number> {
+        let deleted = 0;
+
+        for (const [compositeKey, entry] of this.data.entries()) {
+            if (this.toNamespace(compositeKey) !== namespace) {
+                continue;
+            }
+
+            if (entry.expireAtTimestamp > Date.now()) {
+                continue;
+            }
+
+            this.data.delete(compositeKey);
+            deleted += 1;
+        }
+
+        return Promise.resolve(deleted);
+    }
+
+    lockKey(namespace: string, key: string): Promise<void> {
+        this.locks.push({ namespace, key });
+        return Promise.resolve();
+    }
+
+    private toKey(namespace: string, key: string): string {
+        return `${namespace}::${key}`;
+    }
+
+    private toNamespace(compositeKey: string): string {
+        return compositeKey.split('::', 1)[0] ?? '';
+    }
+
+    private toStoreKey(compositeKey: string): string {
+        return compositeKey.slice(this.toNamespace(compositeKey).length + 2);
+    }
+}

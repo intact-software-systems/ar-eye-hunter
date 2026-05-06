@@ -1,3 +1,39 @@
 datasource db {
   provider = "postgresql"
 }
+
+model resource_inbox {
+  ri_row_id      BigInt    @id(map: "ri_pk") @default(autoincrement())
+  ri_resource_id String    @db.VarChar(36)
+  ri_topic_id    String    @db.VarChar(36)
+  ri_resource    String
+  ri_type_id     String    @db.VarChar(36)
+  ri_status      String    @db.VarChar(36)
+  fk_ext_bank_id String    @db.VarChar(35)
+  system_date    DateTime  @db.Date
+  created_by     String    @db.VarChar(16)
+  created_ts     DateTime  @db.Timestamp(6)
+  start_ts       DateTime? @db.Timestamp(6)
+  end_ts         DateTime? @db.Timestamp(6)
+  next_ts        DateTime? @db.Timestamp(6)
+  ri_attempts    BigInt?
+  expire_ts      DateTime  @db.Timestamp(6)
+
+  @@unique([fk_ext_bank_id, ri_resource_id, ri_topic_id], map: "resource_inbox_unique_k")
+  @@index([expire_ts], map: "resource_inbox_expire_ts_ix")
+  @@index([ri_status, ri_type_id], map: "resource_inbox_ix")
+}
+
+model runtime_state_store {
+  store_namespace String
+  store_key       String
+  store_value     String
+  updated_ts      DateTime @default(now()) @db.Timestamptz(6)
+  expire_at_ts    DateTime @db.Timestamptz(6)
+  revision        BigInt   @default(0)
+
+  @@id([store_namespace, store_key], map: "runtime_state_store_pk")
+  @@index([expire_at_ts], map: "runtime_state_store_expire_at_ix")
+  @@index([store_namespace, expire_at_ts], map: "runtime_state_store_namespace_expire_at_ix")
+  @@index([store_namespace], map: "runtime_state_store_namespace_ix")
+}

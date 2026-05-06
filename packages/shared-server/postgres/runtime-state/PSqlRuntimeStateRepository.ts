@@ -2,7 +2,10 @@ import type {
     RuntimeStateEntry,
     RuntimeStateTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
 import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
+
+const RUNTIME_STATE_EXPIRY_EVICTION_INTERVAL_MS = 60_000;
 
 type RuntimeStateRow = Readonly<{
     store_namespace: string;
@@ -110,9 +113,19 @@ export class PSqlRuntimeStateRepository implements RuntimeStateTransactionalRepo
             delete
             from runtime_state_store
             where store_namespace = ${namespace}
-              and expire_at_ts is not null
               and expire_at_ts <= now()
             returning store_key
+        `;
+
+        return rows.length;
+    }
+
+    async deleteAllExpired(): Promise<number> {
+        const rows = await this.sql<{ store_namespace: string; store_key: string }[]>`
+            delete
+            from runtime_state_store
+            where expire_at_ts <= now()
+            returning store_namespace, store_key
         `;
 
         return rows.length;
@@ -120,6 +133,29 @@ export class PSqlRuntimeStateRepository implements RuntimeStateTransactionalRepo
 }
 
 export { PSqlRuntimeStateRepository as RuntimeStateRepository };
+
+export async function evictExpiredRuntimeStateRows(
+    repository: Pick<PSqlRuntimeStateRepository, 'deleteAllExpired'>,
+): Promise<number> {
+    const removed = await repository.deleteAllExpired();
+    if (removed > 0) {
+        console.log(`Evicted expired runtime_state_store rows: ${removed}`);
+    }
+
+    return removed;
+}
+
+export async function initRuntimeStateExpiryEviction(
+    repository: Pick<PSqlRuntimeStateRepository, 'deleteAllExpired'>,
+    intervalMs: number = RUNTIME_STATE_EXPIRY_EVICTION_INTERVAL_MS,
+): Promise<void> {
+    await tryRunInIntervals(
+        async () => {
+            await evictExpiredRuntimeStateRows(repository);
+        },
+        intervalMs,
+    );
+}
 
 function toEntry(row: RuntimeStateRow): RuntimeStateEntry {
     const expireAtTimestamp = Date.parse(row.expire_at_ts);

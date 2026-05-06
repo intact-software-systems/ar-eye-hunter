@@ -6,7 +6,7 @@ import type { StateSyncPublisher } from '../../src/services/state-sync-service.t
 import type {
     RuntimeStateEntry,
     RuntimeStateTransactionalRepositoryLike,
-} from '../../src/repository/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
 const TEST_SCOPE: StateScope = {
     applicationId: 'app-1',

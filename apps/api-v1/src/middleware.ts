@@ -1,6 +1,3 @@
-import { ResourceEntry, toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
-import { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
@@ -8,6 +5,10 @@ import {
     initResourceInboxExpiryEviction,
     ResourceInboxRepository,
 } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import {
+    initRuntimeStateExpiryEviction,
+    PSqlRuntimeStateRepository,
+} from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import {
     configureServerWsQBoxALRuntimeStores,
     resolveServerWsQBoxALInboundRuntimeStores,
@@ -17,9 +18,9 @@ import {
     createRallarMiddleware,
     type RallarMiddlewareRuntime,
 } from '@shared-server/rallar-system/middleware/RallarMiddleware.ts';
-import * as dbListen from './db/db-listen.ts';
-import * as dbNotify from './db/db-notify.ts';
-import { myPublisherId, PublishMessage } from './db/db-notify.ts';
+import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
+import { createPostgresQueuePubSubBridge } from './db/postgres-queue-pubsub-bridge.ts';
+import { myPublisherId } from './runtime/runtime-identity.ts';
 import { toResilienceDto } from './middleware-resilience.ts';
 import { createClientStateRepository, createGroupStateRepository, } from './repository/createStateRepositories.ts';
 import { sql } from './db/db.ts';
@@ -55,6 +56,9 @@ function initialise(): Middleware {
     initResourceInboxExpiryEviction(queueBox.repo).catch((e) =>
         console.error('Failed to initialise resource inbox expiry eviction:', e)
     );
+    initRuntimeStateExpiryEviction(new PSqlRuntimeStateRepository(postgresSql)).catch((e) =>
+        console.error('Failed to initialise runtime state expiry eviction:', e)
+    );
 
     const runtime = createRallarMiddleware({
         inbox: queueBox,
@@ -72,57 +76,12 @@ function initialise(): Middleware {
         groupsRepository: createGroupStateRepository(sql),
     });
 
-    runtime.wsQBoxServerService.onAllInboxMessagesDo({
-        onMessage: async (_, entry: ResourceEntry, __) => {
-            await dbNotify.notify(dbWsChannelId, {
-                key: entry.key,
-                channel: dbWsChannelId,
-                publisherId: myPublisherId,
-                typeId: entry.typeId,
-                payload: entry.resource,
-            });
-        },
+    installQueueBoxPubSubBridge({
+        wsQBoxServerService: runtime.wsQBoxServerService,
+        bridge: createPostgresQueuePubSubBridge(myPublisherId),
+        channel: dbWsChannelId,
+        publisherId: myPublisherId,
     });
-
-    runtime.wsQBoxServerService.onAllOutboxMessagesDo({
-        onMessage: async (_, entry: ResourceEntry, __) => {
-            await dbNotify.notify(
-                dbWsChannelId,
-                {
-                    key: entry.key,
-                    channel: dbWsChannelId,
-                    publisherId: myPublisherId,
-                    typeId: entry.typeId,
-                    payload: entry.resource,
-                },
-            );
-        },
-    });
-
-    dbListen
-        .startListening(dbWsChannelId, async (message: PublishMessage) => {
-            console.log(`Received message: ${message}`);
-
-            let entry: ResourceEntry;
-
-            try {
-                entry = QueueBoxUtilities.toResourceEntryFromMsg(
-                    JSON.parse(message.payload) as ALMessage,
-                    message.typeId,
-                );
-            } catch (error) {
-                console.warn(
-                    'Failed to parse published payload as ALMessage. Falling back to raw queue entry reconstruction.',
-                    error,
-                );
-                entry = toResourceEntryWithKey(message.key, message.typeId, message.payload);
-            }
-
-            await runtime.wsQBoxServerService.inbox.enqueueIfAbsent(entry);
-        })
-        .finally(() => {
-            // is it finished if it reaches here?
-        });
 
     return runtime;
 }

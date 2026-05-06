@@ -4,7 +4,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateTransactionalRepositoryLike,
-} from '../../src/repository/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { createClientStateService } from '../../src/services/client-state-service.ts';
 import type { StateSyncPublisher } from '../../src/services/state-sync-service.ts';
 
