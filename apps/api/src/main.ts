@@ -1,4 +1,3 @@
-/// <reference lib="deno.unstable" />
 import 'jsr:@std/dotenv/load';
 import { route, type Route } from 'jsr:@std/http/unstable-route';
 

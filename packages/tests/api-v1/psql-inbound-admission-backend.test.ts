@@ -5,8 +5,8 @@ import {
     newALAckControlMessage,
     newALUnicastMessage,
 } from '@shared/mod.ts';
-import { PSqlInboundAdmissionBackend } from '../../../apps/api-v1/src/persistence/PSqlInboundAdmissionBackend.ts';
-import { PSqlOutboundAdmissionBackend } from '../../../apps/api-v1/src/persistence/PSqlOutboundAdmissionBackend.ts';
+import { PSqlInboundAdmissionBackend } from '@shared-server/postgres/al-runtime/PSqlInboundAdmissionBackend.ts';
+import { PSqlOutboundAdmissionBackend } from '@shared-server/postgres/al-runtime/PSqlOutboundAdmissionBackend.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateTransactionalRepositoryLike,
@@ -236,13 +236,9 @@ describe('PSqlOutboundAdmissionBackend', () => {
     });
 
     it('wires PostgreSQL outbound admission into the server runtime store factory', async () => {
-        vi.stubGlobal('Deno', {
-            env: {
-                get: () => 'postgres://postgres:postgres@localhost:5432/postgres',
-            },
-        });
-        const { createPSqlALOutboundRuntimeStores } =
-            await import('../../../apps/api-v1/src/persistence/createPSqlALRuntimeStores.ts');
+        const { createPSqlALOutboundRuntimeStores } = await import(
+            '@shared-server/postgres/al-runtime/createPSqlALRuntimeStores.ts'
+            );
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:factory';
         const stores = createPSqlALOutboundRuntimeStores({

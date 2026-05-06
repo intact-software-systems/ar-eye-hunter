@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../apps/api-v1/src/db/db.ts', () => ({
-    sql: {},
-}));
-
 describe('Resource inbox expiry eviction', () => {
     afterEach(() => {
         vi.useRealTimers();
@@ -18,7 +14,7 @@ describe('Resource inbox expiry eviction', () => {
         const log = vi.spyOn(console, 'log').mockImplementation(() => {
         });
         const { initResourceInboxExpiryEviction } = await import(
-            '../../../apps/api-v1/src/repository/ResourceInboxRepository.ts'
+            '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts'
             );
 
         await initResourceInboxExpiryEviction(repo as never, 1_000);

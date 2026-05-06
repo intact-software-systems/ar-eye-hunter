@@ -1,4 +1,3 @@
-import type { Sql } from 'postgres';
 import type { ALSupersedencePersistenceValue } from '@shared/al-contracts/al-runtime.ts';
 import { PersistentALSupersedenceStore } from '@shared/al-contracts/al-runtime.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/ALInboundMessageRuntime.ts';
@@ -18,14 +17,14 @@ import {
     resolveALInboundRuntimeStores,
     resolveALOutboundRuntimeStores,
 } from '@shared/alm/ALRuntimeStoreRegistry.ts';
-import { sql as defaultSql } from '../db/db.ts';
 import {
     isRuntimeStateTransactionalRepositoryLike,
     type RuntimeStateRepositoryLike,
     type RuntimeStateTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-import { RuntimeStateRepository } from '../repository/RuntimeStateRepository.ts';
-import { PSqlJsonPersistenceProvider } from './PSqlJsonPersistenceProvider.ts';
+import type { PSqlSql } from '../PostgresSqlClient.ts';
+import { PSqlRuntimeStateRepository } from '../runtime-state/PSqlRuntimeStateRepository.ts';
+import { PSqlJsonPersistenceProvider } from '../runtime-state/PSqlJsonPersistenceProvider.ts';
 import { PSqlInboundAdmissionBackend } from './PSqlInboundAdmissionBackend.ts';
 import { PSqlOutboundAdmissionBackend } from './PSqlOutboundAdmissionBackend.ts';
 
@@ -35,6 +34,7 @@ export type PSqlALRuntimeStoreFactoryOptions = Readonly<{
     supersedenceTrackTtlMs?: number;
     retention?: ALRuntimeStoreRetentionConfig;
     repository?: RuntimeStateRepositoryLike;
+    sql?: PSqlSql;
 }>;
 
 const DEFAULT_NAMESPACE = 'al-runtime';
@@ -52,9 +52,13 @@ function resolvePSqlRuntimeStoreContext(
     repository: RuntimeStateTransactionalRepositoryLike;
     namespace: string;
 }> {
-    const repository =
-        options.repository ?? new RuntimeStateRepository(defaultSql as unknown as Sql);
+    const repository = options.repository ??
+        (options.sql ? new PSqlRuntimeStateRepository(options.sql) : undefined);
     const namespace = options.namespace ?? DEFAULT_NAMESPACE;
+
+    if (!repository) {
+        throw new Error(`PSql ${direction} runtime stores require a repository or sql client`);
+    }
 
     if (!isRuntimeStateTransactionalRepositoryLike(repository)) {
         throw new Error(

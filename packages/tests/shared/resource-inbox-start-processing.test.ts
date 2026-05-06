@@ -1,15 +1,11 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { Temporal } from '@js-temporal/polyfill';
 import { EntityStatus, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
 
 (globalThis as { Temporal?: typeof Temporal }).Temporal ??= Temporal;
 
-vi.mock('../../../apps/api-v1/src/db/db.ts', () => ({
-    sql: {},
-}));
-
 type ResourceInboxRepositoryModule =
-    typeof import('../../../apps/api-v1/src/repository/ResourceInboxRepository.ts');
+    typeof import('@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts');
 
 type ResourceInboxRow = {
     ri_row_id: bigint;
@@ -33,7 +29,7 @@ let repositoryModule: ResourceInboxRepositoryModule;
 
 beforeAll(async () => {
     repositoryModule = await import(
-        '../../../apps/api-v1/src/repository/ResourceInboxRepository.ts'
+        '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts'
         );
 });
 

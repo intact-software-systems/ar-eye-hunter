@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import { PSqlJsonPersistenceProvider } from '../../../apps/api-v1/src/persistence/PSqlJsonPersistenceProvider.ts';
+import { PSqlJsonPersistenceProvider } from '@shared-server/postgres/runtime-state/PSqlJsonPersistenceProvider.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateRepositoryLike,

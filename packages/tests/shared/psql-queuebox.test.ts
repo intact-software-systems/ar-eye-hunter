@@ -1,11 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Either } from '@shared/resilience/Either.ts';
 import { EntityStatus, type Key, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
-import { PSqlQueueBox } from '../../../apps/api-v1/src/queuebox/PSqlQueueBox.ts';
-
-vi.mock('../../../apps/api-v1/src/db/db.ts', () => ({
-    sql: {},
-}));
+import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 
 describe('PSqlQueueBox', () => {
     it('enqueue replaces the stored row and returns the previous entry', async () => {

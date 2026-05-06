@@ -10,14 +10,12 @@ import {
     TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
     toUpdatedResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
-import { ResourceInboxRepository } from '../repository/ResourceInboxRepository.ts';
-
-const resourceInboxRepository = new ResourceInboxRepository();
+import { ResourceInboxRepository } from '../resource-inbox/ResourceInboxRepository.ts';
 
 export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
 
     constructor(
-        public readonly repo: ResourceInboxRepository = resourceInboxRepository
+        public readonly repo: ResourceInboxRepository
     ) {
     }
 

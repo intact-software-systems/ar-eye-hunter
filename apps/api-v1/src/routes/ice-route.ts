@@ -2,7 +2,7 @@ import { Hono } from 'jsr:@hono/hono';
 import * as metered from '../integration/metered-api.ts';
 import { IceConfig } from '@shared/api/api-config.ts';
 import { requireApiAuthSession, toAuthErrorResponse } from '../services/request-auth-service.ts';
-import { readRateLimiter } from '../services/rate-limit-service.ts';
+import { readRateLimiter } from '@shared-server/http/rate-limit-service.ts';
 import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
 import { LoanedValue } from '@shared/cache/LoanedValue.ts';
 

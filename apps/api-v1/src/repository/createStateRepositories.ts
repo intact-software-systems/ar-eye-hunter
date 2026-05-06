@@ -3,43 +3,46 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/repositories
 import { AuthUserRepository } from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import {
+    createAuthSessionRepository as createSharedAuthSessionRepository,
+    createAuthUserRepository as createSharedAuthUserRepository,
+    createClientStateRepository as createSharedClientStateRepository,
+    createGroupStateRepository as createSharedGroupStateRepository,
+    createRuntimeStateRepository as createSharedRuntimeStateRepository,
+} from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { sql as defaultSql } from '../db/db.ts';
-import { RuntimeStateRepository } from './RuntimeStateRepository.ts';
+
+export { PSqlRuntimeStateRepository as RuntimeStateRepository };
 
 export function createRuntimeStateRepository(
     sql: Sql = defaultSql as unknown as Sql,
-): RuntimeStateRepository {
-    return new RuntimeStateRepository(sql);
+): PSqlRuntimeStateRepository {
+    return createSharedRuntimeStateRepository(sql as unknown as PSqlSql);
 }
 
 export function createClientStateRepository(
-    sql: Sql = defaultSql as unknown as Sql,
+    input: RuntimeStateRepositoryLike | Sql = defaultSql as unknown as Sql,
 ): ClientStateRepository {
-    return new ClientStateRepository(createRuntimeStateRepository(sql));
+    return createSharedClientStateRepository(input as RuntimeStateRepositoryLike | PSqlSql);
 }
 
 export function createAuthSessionRepository(
-    input: RuntimeStateRepository | Sql = defaultSql as unknown as Sql,
+    input: RuntimeStateRepositoryLike | Sql = defaultSql as unknown as Sql,
 ): AuthSessionRepository {
-    if (input instanceof RuntimeStateRepository) {
-        return new AuthSessionRepository(input);
-    }
-
-    return new AuthSessionRepository(createRuntimeStateRepository(input));
+    return createSharedAuthSessionRepository(input as RuntimeStateRepositoryLike | PSqlSql);
 }
 
 export function createAuthUserRepository(
-    input: RuntimeStateRepository | Sql = defaultSql as unknown as Sql,
+    input: RuntimeStateRepositoryLike | Sql = defaultSql as unknown as Sql,
 ): AuthUserRepository {
-    if (input instanceof RuntimeStateRepository) {
-        return new AuthUserRepository(input);
-    }
-
-    return new AuthUserRepository(createRuntimeStateRepository(input));
+    return createSharedAuthUserRepository(input as RuntimeStateRepositoryLike | PSqlSql);
 }
 
 export function createGroupStateRepository(
-    sql: Sql = defaultSql as unknown as Sql,
+    input: RuntimeStateRepositoryLike | Sql = defaultSql as unknown as Sql,
 ): GroupStateRepository {
-    return new GroupStateRepository(createRuntimeStateRepository(sql));
+    return createSharedGroupStateRepository(input as RuntimeStateRepositoryLike | PSqlSql);
 }

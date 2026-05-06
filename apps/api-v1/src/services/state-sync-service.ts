@@ -4,7 +4,7 @@ import {
     type StateSyncPublisher,
 } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { getMiddleware } from '../middleware.ts';
-import { myServerId } from '../config-repo.ts';
+import { myServerId } from '../runtime/runtime-identity.ts';
 
 export type { StateSyncPublisher };
 

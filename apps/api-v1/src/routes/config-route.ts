@@ -11,7 +11,7 @@ import { configuration } from '../config-repo.ts';
 import * as loginRepository from '../repository/login-repository.ts';
 import { createAuthSessionRepository } from '../repository/createStateRepositories.ts';
 import { requireApiAuthSession, toAuthErrorResponse, toAuthSession, } from '../services/request-auth-service.ts';
-import { readRateLimiter, readRequestClientKey } from '../services/rate-limit-service.ts';
+import { readRateLimiter, readRequestClientKey } from '@shared-server/http/rate-limit-service.ts';
 import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
 
 const AUTH_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;

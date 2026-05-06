@@ -1,32 +1,5 @@
-/// <reference lib="deno.unstable" />
 import { parse } from 'jsr:@std/yaml';
 import { ApiConfig } from '@shared/api/api-config.ts';
-import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-
-const duration = Temporal.Duration.from({ seconds: 10 });
-const initialRate = 1;
-const maxRate = 10;
-const concurrencyIncreaseStep = 1;
-const concurrencyReduceStep = 1;
-
-const circuitBreakerPolicy =
-    new CircuitBreakerPolicy(
-        10,
-        duration,
-        duration,
-        duration
-    );
-
-export function toResilienceDto() {
-    return ResilienceDto.toResilienceDto(
-        circuitBreakerPolicy,
-        initialRate,
-        maxRate,
-        concurrencyIncreaseStep,
-        concurrencyReduceStep
-    );
-}
 
 async function loadJsonFile(fileName: string) {
     return await import (
@@ -74,8 +47,6 @@ async function loadConfig(env: string): Promise<object> {
             throw new Error(`Unknown environment: ${env}`);
     }
 }
-
-export const myServerId = 'server-' + crypto.randomUUID().substring(0, 8);
 
 const env = Deno.env.get('ENVIRONMENT') || 'dev';
 

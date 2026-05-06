@@ -1,15 +1,8 @@
-import type { Sql, TransactionSql } from 'postgres';
 import type {
     RuntimeStateEntry,
     RuntimeStateTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-
-export type {
-    RuntimeStateEntry,
-    RuntimeStateRepositoryLike,
-    RuntimeStateTransactionalRepositoryLike,
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-export { isRuntimeStateTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
 
 type RuntimeStateRow = Readonly<{
     store_namespace: string;
@@ -20,15 +13,15 @@ type RuntimeStateRow = Readonly<{
     revision: number | string;
 }>;
 
-export class RuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {
-    constructor(private readonly sql: Sql) {}
+export class PSqlRuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {
+    constructor(private readonly sql: PSqlSql) {}
 
     async begin<T>(
         fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
     ): Promise<T> {
         return (await this.sql.begin(
-            async (sql: TransactionSql) =>
-                await fn(new RuntimeStateRepository(sql as unknown as Sql)),
+            async (sql: PSqlTransactionSql) =>
+                await fn(new PSqlRuntimeStateRepository(sql)),
         )) as T;
     }
 
@@ -125,6 +118,8 @@ export class RuntimeStateRepository implements RuntimeStateTransactionalReposito
         return rows.length;
     }
 }
+
+export { PSqlRuntimeStateRepository as RuntimeStateRepository };
 
 function toEntry(row: RuntimeStateRow): RuntimeStateEntry {
     const expireAtTimestamp = Date.parse(row.expire_at_ts);

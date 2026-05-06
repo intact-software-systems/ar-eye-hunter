@@ -1,4 +1,3 @@
-import type { Temporal } from '@js-temporal/polyfill';
 import { Either } from './Either.ts';
 import { PartitionRange } from './PartitionRange.ts';
 
@@ -129,7 +128,7 @@ export class SlidingWindowCounter {
                 break;
             }
         }
-        if (!matchBucket) {
+        if (matchBucket === undefined) {
             throw new Error('No bucket found');
         }
 

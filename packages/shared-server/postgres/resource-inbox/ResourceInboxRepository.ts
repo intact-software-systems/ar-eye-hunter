@@ -1,8 +1,7 @@
-import { sql as defaultSql } from '../db/db.ts';
-import { Sql, TransactionSql } from 'postgres';
 import { Either } from '@shared/resilience/Either.ts';
 import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
 import { EntityStatus, type Key, NEVER_EXPIRE_TS, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
+import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
 
 /**
  * Repository for table `resource_inbox`.
@@ -49,7 +48,7 @@ export type StartProcessingEntitySkipped = Readonly<{
 export class ResourceInboxRepository {
     static readonly MAX_ROWS_TO_RETURN = 50;
 
-    constructor(private readonly sql: Sql = defaultSql as unknown as Sql) {
+    constructor(private readonly sql: PSqlSql) {
     }
 
     /**
@@ -58,8 +57,8 @@ export class ResourceInboxRepository {
      */
     async begin<T>(fn: (repo: ResourceInboxRepository) => Promise<T>): Promise<T> {
         const newVar = await this.sql.begin<T>(
-            async (sql: TransactionSql) => {
-                return await fn(new ResourceInboxRepository(sql as unknown as Sql));
+            async (sql: PSqlTransactionSql) => {
+                return await fn(new ResourceInboxRepository(sql));
             }
         );
 
@@ -609,7 +608,7 @@ function toInstant(ts: string): Temporal.Instant {
 }
 
 export async function initResourceInboxExpiryEviction(
-    repository: ResourceInboxRepository = new ResourceInboxRepository(),
+    repository: Pick<ResourceInboxRepository, 'deleteExpired'>,
     intervalMs: number = RESOURCE_INBOX_EXPIRY_EVICTION_INTERVAL_MS,
 ): Promise<void> {
     await tryRunInIntervals(

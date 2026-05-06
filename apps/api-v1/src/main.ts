@@ -1,10 +1,9 @@
-/// <reference lib="deno.unstable" />
 import 'jsr:@std/dotenv/load';
 import { Hono } from 'jsr:@hono/hono';
 import { cors } from 'jsr:@hono/hono/cors';
 
 import { requireApiAuthSession, toAuthErrorResponse } from './services/request-auth-service.ts';
-import { createRallarServer } from './rallar-server.ts';
+import { createRallarServer } from './create-rallar-server.ts';
 
 const app: Hono = new Hono();
 const corsOrigins = readCorsOrigins();
