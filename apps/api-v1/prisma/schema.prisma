@@ -37,3 +37,19 @@ model runtime_state_store {
   @@index([store_namespace, expire_at_ts], map: "runtime_state_store_namespace_expire_at_ix")
   @@index([store_namespace], map: "runtime_state_store_namespace_ix")
 }
+
+model app_data_store {
+  app_namespace  String
+  store_name     String
+  data_key       String
+  data_value     String
+  schema_version Int      @default(1)
+  expire_at_ts   DateTime @db.Timestamptz(6)
+  updated_ts     DateTime @default(now()) @db.Timestamptz(6)
+  revision       BigInt   @default(0)
+
+  @@id([app_namespace, store_name, data_key], map: "app_data_store_pk")
+  @@index([app_namespace, store_name], map: "app_data_store_store_ix")
+  @@index([expire_at_ts], map: "app_data_store_expire_at_ix")
+  @@index([app_namespace, expire_at_ts], map: "app_data_store_namespace_expire_at_ix")
+}

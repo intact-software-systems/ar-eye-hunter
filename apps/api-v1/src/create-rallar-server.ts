@@ -1,11 +1,17 @@
 import type { Hono } from 'jsr:@hono/hono';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
+import type { AppDataRepositoryLike } from '@shared-server/app-data/AppDataRepository.ts';
+import { PSqlAppDataRepository } from '@shared-server/postgres/app-data/PSqlAppDataRepository.ts';
+import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
     createRallarServerApplication,
     type RallarServerApplication,
 } from '@shared-server/rallar-facade/RallarServerApplication.ts';
-import { RallarServerDataFacade, RallarServerSystemFacade, } from '@shared-server/rallar-facade/RallarServer.ts';
+import {
+    RallarServerDataFacade,
+    RallarServerSystemFacade,
+} from '@shared-server/rallar-facade/RallarServer.ts';
 import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
 import type { RallarServerWsFacadeOptions } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import type { Middleware } from './middleware.ts';
@@ -19,8 +25,9 @@ import * as groupStateRoutes from './routes/group-state-routes.ts';
 import * as graphRoutes from './routes/graph-routes.ts';
 import * as swaggerRoutes from './routes/swagger-routes.ts';
 import {
-    initWsLifecycle as initSharedWsLifecycle
+    initWsLifecycle as initSharedWsLifecycle,
 } from '@shared-server/rallar-system/services/ws-lifecycle-service.ts';
+import { sql } from './db/db.ts';
 import { getClientStateService } from './services/client-state-service.ts';
 import { getGroupStateService } from './services/group-state-service.ts';
 
@@ -29,10 +36,13 @@ export { RallarServerDataFacade, RallarServerSystemFacade };
 export type CreateRallarServerOptions = Readonly<{
     middleware?: Middleware;
     repositories?: RepositoryManager;
+    appDataRepository?: AppDataRepositoryLike;
     ws?: RallarServerWsFacadeOptions;
 }>;
 
-export function createRallarServer(options: CreateRallarServerOptions = {}): RallarServerApplication<Middleware, Hono> {
+export function createRallarServer(
+    options: CreateRallarServerOptions = {},
+): RallarServerApplication<Middleware, Hono> {
     const middleware = options.middleware ?? initialiseMiddleware();
 
     return createRallarServerApplication({
@@ -41,6 +51,10 @@ export function createRallarServer(options: CreateRallarServerOptions = {}): Ral
         ws: {
             authorizeRoomMessage: authorizeApiV1RoomWsMessage,
             ...options.ws,
+        },
+        appData: {
+            repository: options.appDataRepository
+                ?? new PSqlAppDataRepository(sql as unknown as PSqlSql),
         },
         system: {
             installDefaultMiddlewareTopics: (runtime) => {

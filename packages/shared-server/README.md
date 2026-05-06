@@ -44,10 +44,21 @@ means api-v1 owns:
 client/group presence, and AL runtime bookkeeping. Rows are isolated by `store_namespace`, and expired rows are evicted
 both lazily on read and periodically by the Postgres runtime-state expiry evictor.
 
-Application-specific durable data should not write directly into middleware namespaces. If server-side custom data is
-needed, expose it through an explicit app-data facade with app-owned namespace rules or, preferably, a separate
-app-data table/package once the persistence API is stable. Keeping app data separate avoids retention, backup, and
-schema-evolution coupling with middleware state.
+Application-specific durable data should not write directly into middleware namespaces. Server-side custom data uses
+the explicit app-data facade (`server.data.open(...)`) backed by `app_data_store`, with `app_namespace`, `store_name`,
+and `data_key` as the isolation boundary. Keeping app data separate avoids retention, backup, and schema-evolution
+coupling with middleware state.
+
+## App Data Storage
+
+`app_data_store` is for server-side application data, not Rallar middleware state. The shared contract lives in
+`app-data/AppDataRepository.ts`, and the current Postgres adapter is
+`postgres/app-data/PSqlAppDataRepository.ts`. API apps can inject a different repository into
+`createRallarServerApplication(...)`, or use the API-v1 default Postgres adapter.
+
+The facade keeps a process-local memory cache and persists JSON values in Postgres rows. Stores are opened
+by name, can be scoped with `namespace` and `keyPrefix`, and can configure `ttlMs`, `expireAtFor`, `schemaVersion`, and
+a lightweight `migrate` callback.
 
 ## Deliberate Temporary Coupling
 

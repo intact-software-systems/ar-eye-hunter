@@ -1,6 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
+import type { AppDataRepositoryLike } from '../app-data/AppDataRepository.ts';
 import {
     createRallarServerFacade,
     type RallarServer as RallarServerFacadeCore,
@@ -29,6 +30,9 @@ export type CreateRallarServerApplicationOptions<
     repositories?: RepositoryManager;
     ws?: RallarServerWsFacadeOptions;
     system?: RallarServerSystemInstallers<TRuntime>;
+    appData?: Readonly<{
+        repository?: AppDataRepositoryLike;
+    }>;
     routes?: Readonly<{
         ws?: RallarServerRouteInstaller<TApp>;
         rest?: readonly RallarServerRouteInstaller<TApp>[];
@@ -78,6 +82,7 @@ export function createRallarServerApplication<
         repositories: options.repositories ?? defaultRepositoryManager,
         ws: options.ws,
         system: options.system,
+        appData: options.appData,
     });
 
     return new RallarServerApplication(core, options.routes);

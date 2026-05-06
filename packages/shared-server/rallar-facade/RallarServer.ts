@@ -3,6 +3,13 @@ import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 import type { RepositoryToken } from '@shared/cache/RepositoryToken.ts';
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import type { AppDataRepositoryLike } from '../app-data/AppDataRepository.ts';
+import {
+    RallarServerAppDataFacade,
+    type RallarServerAppDataStore,
+    type RallarServerAppDataStoreDefinition,
+    type RallarServerAppDataStoreOptions,
+} from '../app-data/RallarServerAppData.ts';
 import {
     RallarServerWsFacade,
     type RallarServerWsFacadeOptions,
@@ -39,6 +46,9 @@ export type CreateRallarServerFacadeOptions<
     repositories?: RepositoryManager;
     ws?: RallarServerWsFacadeOptions;
     system?: RallarServerSystemInstallers<TRuntime>;
+    appData?: Readonly<{
+        repository?: AppDataRepositoryLike;
+    }>;
 }>;
 
 export class RallarServer<TRuntime extends RallarServerRuntime = RallarServerRuntime> {
@@ -51,6 +61,7 @@ export class RallarServer<TRuntime extends RallarServerRuntime = RallarServerRun
         repositories: RepositoryManager = defaultRepositoryManager,
         wsOptions: RallarServerWsFacadeOptions = {},
         systemInstallers: RallarServerSystemInstallers<TRuntime> = {},
+        appDataRepository?: AppDataRepositoryLike,
     ) {
         const wsTopicsFacade = new RallarServerWsFacade(
             runtime.wsQBoxServerService,
@@ -63,7 +74,7 @@ export class RallarServer<TRuntime extends RallarServerRuntime = RallarServerRun
             wsTopicsFacade,
             systemInstallers,
         );
-        this.data = new RallarServerDataFacade(repositories);
+        this.data = new RallarServerDataFacade(repositories, appDataRepository);
     }
 
     start(): void {
@@ -81,6 +92,7 @@ export function createRallarServerFacade<
         options.repositories ?? defaultRepositoryManager,
         options.ws,
         options.system,
+        options.appData?.repository,
     );
 }
 
@@ -157,7 +169,44 @@ export class RallarServerWebSocketFacade {
 }
 
 export class RallarServerDataFacade {
-    constructor(readonly repositories: RepositoryManager) {
+    private readonly appData: RallarServerAppDataFacade;
+
+    constructor(
+        readonly repositories: RepositoryManager,
+        appDataRepository?: AppDataRepositoryLike,
+    ) {
+        this.appData = new RallarServerAppDataFacade(
+            repositories,
+            appDataRepository,
+        );
+    }
+
+    define<V>(
+        name: string,
+        options?: RallarServerAppDataStoreOptions<V>,
+    ): RallarServerAppDataStoreDefinition<V> {
+        return this.appData.define(name, options);
+    }
+
+    open<V>(
+        input: string | RallarServerAppDataStoreDefinition<V>,
+        options?: RallarServerAppDataStoreOptions<V>,
+    ): Promise<RallarServerAppDataStore<V>> {
+        return this.appData.open(input, options);
+    }
+
+    lookupStore<V>(
+        input: string | RallarServerAppDataStoreDefinition<V>,
+        options?: RallarServerAppDataStoreOptions<V>,
+    ): RallarServerAppDataStore<V> | undefined {
+        return this.appData.lookup(input, options);
+    }
+
+    closeStore<V>(
+        input: string | RallarServerAppDataStoreDefinition<V>,
+        options?: RallarServerAppDataStoreOptions<V>,
+    ): Promise<boolean> {
+        return this.appData.close(input, options);
     }
 
     has(token: RepositoryToken<unknown>): boolean;
