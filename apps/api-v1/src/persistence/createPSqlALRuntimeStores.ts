@@ -1,6 +1,6 @@
 import type { Sql } from 'postgres';
 import type { ALSupersedencePersistenceValue } from '@shared/al-contracts/al-runtime.ts';
-import { PersistentALSupersedenceStore, } from '@shared/al-contracts/al-runtime.ts';
+import { PersistentALSupersedenceStore } from '@shared/al-contracts/al-runtime.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/ALInboundMessageRuntime.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import type {
@@ -8,7 +8,7 @@ import type {
     ALOutboundRepairAttemptSnapshot,
     ALOutboundSentMessageSnapshot,
 } from '@shared/alm/ALRuntimeStateStores.ts';
-import { PersistentALOutboundRuntimeStateStore, } from '@shared/alm/ALRuntimeStateStores.ts';
+import { PersistentALOutboundRuntimeStateStore } from '@shared/alm/ALRuntimeStateStores.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/ALInboundAdmissionStore.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/ALOutboundAdmissionStore.ts';
 import type { ALRuntimeStoreRetentionConfig } from '@shared/alm/ALStoreRetention.ts';
@@ -21,10 +21,10 @@ import {
 import { sql as defaultSql } from '../db/db.ts';
 import {
     isRuntimeStateTransactionalRepositoryLike,
-    RuntimeStateRepository,
     type RuntimeStateRepositoryLike,
     type RuntimeStateTransactionalRepositoryLike,
-} from '../repository/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import { RuntimeStateRepository } from '../repository/RuntimeStateRepository.ts';
 import { PSqlJsonPersistenceProvider } from './PSqlJsonPersistenceProvider.ts';
 import { PSqlInboundAdmissionBackend } from './PSqlInboundAdmissionBackend.ts';
 import { PSqlOutboundAdmissionBackend } from './PSqlOutboundAdmissionBackend.ts';
@@ -80,10 +80,7 @@ function createPSqlALRuntimeStores(
     direction: RuntimeStoreDirection,
     options: PSqlALRuntimeStoreFactoryOptions = {},
 ): ALInboundRuntimeStores | ALOutboundRuntimeStores {
-    const { repository, namespace } = resolvePSqlRuntimeStoreContext(
-        direction,
-        options,
-    );
+    const { repository, namespace } = resolvePSqlRuntimeStoreContext(direction, options);
 
     if (direction === 'inbound') {
         return {
@@ -113,13 +110,25 @@ function createPSqlALRuntimeStores(
             retention: options.retention,
         }),
         supersedenceStore: new PersistentALSupersedenceStore(
-            new PSqlJsonPersistenceProvider<ALSupersedencePersistenceValue>(repository, `${namespace}:outbound:supersedence`),
+            new PSqlJsonPersistenceProvider<ALSupersedencePersistenceValue>(
+                repository,
+                `${namespace}:outbound:supersedence`,
+            ),
             options.supersedenceTrackTtlMs,
         ),
         stateStore: new PersistentALOutboundRuntimeStateStore(
-            new PSqlJsonPersistenceProvider<ALOutboundSentMessageSnapshot>(repository, `${namespace}:outbound:sent`),
-            new PSqlJsonPersistenceProvider<ALOutboundPendingAckSnapshot>(repository, `${namespace}:outbound:pending-acks`),
-            new PSqlJsonPersistenceProvider<ALOutboundRepairAttemptSnapshot>(repository, `${namespace}:outbound:repair-attempts`),
+            new PSqlJsonPersistenceProvider<ALOutboundSentMessageSnapshot>(
+                repository,
+                `${namespace}:outbound:sent`,
+            ),
+            new PSqlJsonPersistenceProvider<ALOutboundPendingAckSnapshot>(
+                repository,
+                `${namespace}:outbound:pending-acks`,
+            ),
+            new PSqlJsonPersistenceProvider<ALOutboundRepairAttemptSnapshot>(
+                repository,
+                `${namespace}:outbound:repair-attempts`,
+            ),
             options.retention,
         ),
     };
@@ -184,14 +193,10 @@ export function configureServerWsQBoxALRuntimeStores(
     ]);
 }
 
-export function resolveServerWsQBoxALInboundRuntimeStores(
-    name: string,
-): ALInboundRuntimeStores {
+export function resolveServerWsQBoxALInboundRuntimeStores(name: string): ALInboundRuntimeStores {
     return resolveServerWsQBoxALRuntimeStores('inbound', name);
 }
 
-export function resolveServerWsQBoxALOutboundRuntimeStores(
-    name: string,
-): ALOutboundRuntimeStores {
+export function resolveServerWsQBoxALOutboundRuntimeStores(name: string): ALOutboundRuntimeStores {
     return resolveServerWsQBoxALRuntimeStores('outbound', name);
 }

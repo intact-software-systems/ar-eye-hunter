@@ -40,10 +40,7 @@ import type {
     RtcDataChannelSendOptions,
     RtcDataChannelSendResult,
 } from '@shared/webrtc/QRtcDataChannel.ts';
-import type {
-    QRtcPeerDto,
-    RtcDataChannelLaneConfig,
-} from '@shared/services/WebRtcConnectionService.ts';
+import type { QRtcPeerDto, RtcDataChannelLaneConfig, } from '@shared/services/WebRtcConnectionService.ts';
 import {
     type ApiMiddleware,
     clearMiddleware,
@@ -54,12 +51,37 @@ import {
 import {
     configureApiClient,
     normalizeApiBaseUrl,
-    readApiBaseUrl,
     type RallarApiClientConfig,
+    readApiBaseUrl,
 } from '@shared-web/browser/api-client-config.ts';
 import * as api from '@shared-web/browser/api-integration.ts';
 import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
 import * as stateCaches from '@shared-web/browser/data-caches.ts';
+import {
+    createRallarDataFacade,
+    type RallarDataFacade,
+    type RallarDataScope,
+} from '@shared-web/browser/rallar-data.ts';
+
+export {
+    createRallarDataFacade,
+    defineRallarDataStore,
+} from '@shared-web/browser/rallar-data.ts';
+
+export type {
+    RallarDataChangeEvent,
+    RallarDataChangeListener,
+    RallarDataDurability,
+    RallarDataFacade,
+    RallarDataHydration,
+    RallarDataMigration,
+    RallarDataMigrationContext,
+    RallarDataScope,
+    RallarDataStorageEstimate,
+    RallarDataStore,
+    RallarDataStoreDefinition,
+    RallarDataStoreOptions,
+} from '@shared-web/browser/rallar-data.ts';
 
 const RALLAR_REMOTE_STREAM_CALLBACK_ID = 'rallar:remote-stream';
 const RALLAR_WS_ANY_MESSAGE_CALLBACK_ID = 'rallar:ws:any-message';
@@ -303,6 +325,7 @@ export type RallarFacade = Readonly<{
     isConnected(): boolean;
     session(): AuthSession | undefined;
     flow<K, V>(policies?: RallarFlowPolicies<V>): RallarFlow<K, V>;
+    data: RallarDataFacade;
     auth: Readonly<{
         login(
             request: LoginRequest,
@@ -431,6 +454,9 @@ class BrowserRallarFacade implements RallarFacade {
         (remote: RallarRemoteStream) => void | Promise<void>
     >();
     private remoteStreamCallbackRegistered = false;
+    readonly data = createRallarDataFacade({
+        resolveScopeKey: (scope) => this.resolveDataScopeKey(scope),
+    });
 
     configure(config: RallarApiClientConfig): void {
         const nextApiBaseUrl = normalizeApiBaseUrl(config.apiBaseUrl ?? '');
@@ -457,6 +483,7 @@ class BrowserRallarFacade implements RallarFacade {
             if (this.ctx || isMiddlewareReady()) {
                 await this.disconnect();
             }
+            await this.closeAuthenticatedDataScopes();
             writeSession(response);
             return response;
         },
@@ -491,6 +518,7 @@ class BrowserRallarFacade implements RallarFacade {
         logout: async (options: RallarOperationOptions = {}): Promise<void> => {
             const session = readSession();
             let disconnectError: unknown;
+            let dataCleanupError: unknown;
             try {
                 try {
                     await this.disconnect();
@@ -504,11 +532,19 @@ class BrowserRallarFacade implements RallarFacade {
                     );
                 }
             } finally {
+                try {
+                    await this.closeAuthenticatedDataScopes();
+                } catch (error) {
+                    dataCleanupError = error;
+                }
                 clearSession();
                 this.emitState();
             }
             if (disconnectError) {
                 throw disconnectError;
+            }
+            if (dataCleanupError) {
+                throw dataCleanupError;
             }
         },
         restore: (): AuthSession | undefined => readSession(),
@@ -1645,6 +1681,33 @@ class BrowserRallarFacade implements RallarFacade {
         }
 
         return session;
+    }
+
+    private async closeAuthenticatedDataScopes(): Promise<void> {
+        if (!readSession()) {
+            return;
+        }
+
+        await Promise.all([
+            this.data.closeScope('session'),
+            this.data.closeScope('principal'),
+        ]);
+    }
+
+    private resolveDataScopeKey(scope: RallarDataScope): string {
+        if (scope === 'app') {
+            return 'app';
+        }
+
+        if (scope === 'principal') {
+            return `principal:${this.requireSession().clientId}`;
+        }
+
+        if (scope === 'session') {
+            return `session:${this.requireSession().sessionId}`;
+        }
+
+        return String(scope);
     }
 }
 

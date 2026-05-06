@@ -11,10 +11,7 @@ type ScopedRef = Readonly<{
 }>;
 
 export class RuntimeStateJsonStore {
-    constructor(
-        protected readonly repository: RuntimeStateRepositoryLike,
-    ) {
-    }
+    constructor(protected readonly repository: RuntimeStateRepositoryLike) {}
 
     protected async putValue(
         namespace: string,
@@ -22,18 +19,10 @@ export class RuntimeStateJsonStore {
         value: unknown,
         expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP,
     ): Promise<void> {
-        await this.repository.upsert(
-            namespace,
-            key,
-            JSON.stringify(value),
-            expireAtTimestamp,
-        );
+        await this.repository.upsert(namespace, key, JSON.stringify(value), expireAtTimestamp);
     }
 
-    protected async getValue<T>(
-        namespace: string,
-        key: string,
-    ): Promise<T | undefined> {
+    protected async getValue<T>(namespace: string, key: string): Promise<T | undefined> {
         const entry = await this.repository.findEntry(namespace, key);
         if (!entry) {
             return undefined;
@@ -42,10 +31,7 @@ export class RuntimeStateJsonStore {
         return await this.toLiveValue<T>(namespace, entry);
     }
 
-    protected async listValues<T>(
-        namespace: string,
-        keyPrefix?: string,
-    ): Promise<readonly T[]> {
+    protected async listValues<T>(namespace: string, keyPrefix?: string): Promise<readonly T[]> {
         const entries = await this.listEntries(namespace, keyPrefix);
         const values: T[] = [];
 
@@ -59,10 +45,7 @@ export class RuntimeStateJsonStore {
         return values;
     }
 
-    protected async deleteValue(
-        namespace: string,
-        key: string,
-    ): Promise<void> {
+    protected async deleteValue(namespace: string, key: string): Promise<void> {
         await this.repository.deleteByKey(namespace, key);
     }
 
@@ -89,10 +72,7 @@ export class RuntimeStateJsonStore {
         namespace: string,
         keyPrefix?: string,
     ): Promise<readonly RuntimeStateEntry[]> {
-        if (
-            keyPrefix !== undefined &&
-            isRuntimeStateTransactionalRepositoryLike(this.repository)
-        ) {
+        if (keyPrefix !== undefined && isRuntimeStateTransactionalRepositoryLike(this.repository)) {
             return await this.repository.findEntriesByPrefix(namespace, keyPrefix);
         }
 

@@ -5,6 +5,7 @@ export default defineConfig({
     resolve: {
         alias: {
             '@shared-web': path.resolve(__dirname, 'packages/shared-web'),
+            '@shared-server': path.resolve(__dirname, 'packages/shared-server'),
             '@shared': path.resolve(__dirname, 'packages/shared'),
             '@shared-graph': path.resolve(__dirname, 'packages/shared-graph'),
         },

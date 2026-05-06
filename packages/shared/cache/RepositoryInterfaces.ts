@@ -46,8 +46,8 @@ export interface ObservableValue<T> {
 export type ObservableKeyedValueEvent<K, V> =
     & ObservableValueEvent<V>
     & Readonly<{
-        key: K;
-    }>;
+    key: K;
+}>;
 
 export type ObservableKeyedValueListener<K, V> = (
     event: ObservableKeyedValueEvent<K, V>,

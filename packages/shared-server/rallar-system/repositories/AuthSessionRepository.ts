@@ -2,19 +2,18 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import {
     isRuntimeStateTransactionalRepositoryLike,
     type RuntimeStateRepositoryLike,
-} from './RuntimeStateRepository.ts';
-import { RuntimeStateJsonStore } from './RuntimeStateJsonStore.ts';
+} from '../../runtime-state/RuntimeStateRepository.ts';
+import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
 
 const AUTH_SESSIONS_BY_TOKEN_NAMESPACE = 'auth-sessions:by-token';
 const AUTH_SESSIONS_BY_SESSION_NAMESPACE = 'auth-sessions:by-session';
 const WS_AUTH_TICKETS_NAMESPACE = 'auth-sessions:ws-tickets';
 
-export type IssuedAuthSession =
-    & AuthSession
-    & Readonly<{
-    issuedAtEpochMs: number;
-    expiresAtEpochMs: number;
-}>;
+export type IssuedAuthSession = AuthSession &
+    Readonly<{
+        issuedAtEpochMs: number;
+        expiresAtEpochMs: number;
+    }>;
 
 export type IssuedWebSocketTicket = Readonly<{
     ticket: string;
@@ -44,18 +43,14 @@ export class AuthSessionRepository extends RuntimeStateJsonStore {
         );
     }
 
-    async findByAccessToken(
-        accessToken: string,
-    ): Promise<IssuedAuthSession | undefined> {
+    async findByAccessToken(accessToken: string): Promise<IssuedAuthSession | undefined> {
         return await this.getValue<IssuedAuthSession>(
             AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
             this.tokenKey(accessToken),
         );
     }
 
-    async findBySessionId(
-        sessionId: string,
-    ): Promise<IssuedAuthSession | undefined> {
+    async findBySessionId(sessionId: string): Promise<IssuedAuthSession | undefined> {
         return await this.getValue<IssuedAuthSession>(
             AUTH_SESSIONS_BY_SESSION_NAMESPACE,
             this.sessionKey(sessionId),
@@ -82,16 +77,15 @@ export class AuthSessionRepository extends RuntimeStateJsonStore {
         );
     }
 
-    async consumeWebSocketTicket(
-        ticket: string,
-    ): Promise<IssuedAuthSession | undefined> {
+    async consumeWebSocketTicket(ticket: string): Promise<IssuedAuthSession | undefined> {
         const ticketKey = this.ticketKey(ticket);
 
         if (isRuntimeStateTransactionalRepositoryLike(this.repository)) {
             return await this.repository.begin(async (repository) => {
                 await repository.lockKey(WS_AUTH_TICKETS_NAMESPACE, ticketKey);
-                return await new AuthSessionRepository(repository)
-                    .consumeWebSocketTicketByKey(ticketKey);
+                return await new AuthSessionRepository(repository).consumeWebSocketTicketByKey(
+                    ticketKey,
+                );
             });
         }
 

@@ -1,9 +1,5 @@
 import { LatestValue, LatestValueOptions } from './LatestValue.ts';
-import {
-    PushKeyedValues,
-    type ReadableKeyedValues,
-    type UpdateIfNewerOptions,
-} from './RepositoryInterfaces.ts';
+import { PushKeyedValues, type ReadableKeyedValues, type UpdateIfNewerOptions, } from './RepositoryInterfaces.ts';
 
 export interface LatestRepositoryOptions<V> {
     ttlMs?: number;

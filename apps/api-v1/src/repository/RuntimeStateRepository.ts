@@ -1,41 +1,15 @@
 import type { Sql, TransactionSql } from 'postgres';
+import type {
+    RuntimeStateEntry,
+    RuntimeStateTransactionalRepositoryLike,
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
-export type RuntimeStateEntry = Readonly<{
-    key: string;
-    value: string;
-    expireAtTimestamp: number;
-    updatedTimestamp: string;
-    revision: number;
-}>;
-
-export type RuntimeStateRepositoryLike = Readonly<{
-    findEntry(
-        namespace: string,
-        key: string,
-    ): Promise<RuntimeStateEntry | undefined>;
-    findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]>;
-    upsert(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number,
-    ): Promise<void>;
-    deleteByKey(namespace: string, key: string): Promise<void>;
-    deleteExpired(namespace: string): Promise<number>;
-}>;
-
-export type RuntimeStateTransactionalRepositoryLike =
-    & RuntimeStateRepositoryLike
-    & Readonly<{
-    begin<T>(
-        fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
-    ): Promise<T>;
-    findEntriesByPrefix(
-        namespace: string,
-        keyPrefix: string,
-    ): Promise<readonly RuntimeStateEntry[]>;
-    lockKey(namespace: string, key: string): Promise<void>;
-}>;
+export type {
+    RuntimeStateEntry,
+    RuntimeStateRepositoryLike,
+    RuntimeStateTransactionalRepositoryLike,
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+export { isRuntimeStateTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
 type RuntimeStateRow = Readonly<{
     store_namespace: string;
@@ -46,26 +20,19 @@ type RuntimeStateRow = Readonly<{
     revision: number | string;
 }>;
 
-export class RuntimeStateRepository
-    implements RuntimeStateTransactionalRepositoryLike {
-    constructor(
-        private readonly sql: Sql,
-    ) {
-    }
+export class RuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {
+    constructor(private readonly sql: Sql) {}
 
     async begin<T>(
         fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
     ): Promise<T> {
-        return await this.sql.begin(
+        return (await this.sql.begin(
             async (sql: TransactionSql) =>
                 await fn(new RuntimeStateRepository(sql as unknown as Sql)),
-        ) as T;
+        )) as T;
     }
 
-    async findEntry(
-        namespace: string,
-        key: string,
-    ): Promise<RuntimeStateEntry | undefined> {
+    async findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {
         const rows = await this.sql<RuntimeStateRow[]>`
             select store_value, store_namespace, store_key, updated_ts, expire_at_ts, revision
             from runtime_state_store
@@ -77,9 +44,7 @@ export class RuntimeStateRepository
         return rows[0] ? toEntry(rows[0]) : undefined;
     }
 
-    async findAllEntries(
-        namespace: string,
-    ): Promise<readonly RuntimeStateEntry[]> {
+    async findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]> {
         const rows = await this.sql<RuntimeStateRow[]>`
             select store_key, store_value, updated_ts, expire_at_ts, store_namespace, revision
             from runtime_state_store
@@ -159,14 +124,6 @@ export class RuntimeStateRepository
 
         return rows.length;
     }
-}
-
-export function isRuntimeStateTransactionalRepositoryLike(
-    repository: RuntimeStateRepositoryLike,
-): repository is RuntimeStateTransactionalRepositoryLike {
-    return 'begin' in repository &&
-        'findEntriesByPrefix' in repository &&
-        'lockKey' in repository;
 }
 
 function toEntry(row: RuntimeStateRow): RuntimeStateEntry {

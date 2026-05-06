@@ -1,6 +1,12 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { AuthSessionRepository, IssuedAuthSession, } from '../repository/AuthSessionRepository.ts';
-import { createAuthSessionRepository, createRuntimeStateRepository, } from '../repository/createStateRepositories.ts';
+import type {
+    AuthSessionRepository,
+    IssuedAuthSession,
+} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import {
+    createAuthSessionRepository,
+    createRuntimeStateRepository,
+} from '../repository/createStateRepositories.ts';
 
 const BEARER_PREFIX = 'Bearer ';
 
@@ -8,9 +14,7 @@ export async function requireApiAuthSession(
     req: {
         header(name: string): string | undefined;
     },
-    repository: AuthSessionRepository = createAuthSessionRepository(
-        createRuntimeStateRepository(),
-    ),
+    repository: AuthSessionRepository = createAuthSessionRepository(createRuntimeStateRepository()),
 ): Promise<IssuedAuthSession> {
     const accessToken = readBearerToken(req.header('authorization'));
     if (!accessToken) {
@@ -40,9 +44,7 @@ export async function requireWsAuthSession(
         sessionId: string;
         ticket?: string;
     },
-    repository: AuthSessionRepository = createAuthSessionRepository(
-        createRuntimeStateRepository(),
-    ),
+    repository: AuthSessionRepository = createAuthSessionRepository(createRuntimeStateRepository()),
 ): Promise<IssuedAuthSession> {
     if (!input.ticket) {
         throw unauthorized('Missing websocket auth ticket');

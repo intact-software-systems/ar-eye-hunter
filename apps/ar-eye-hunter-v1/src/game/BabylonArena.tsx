@@ -1,4 +1,4 @@
-import { useEffect, useRef, type MutableRefObject } from 'react';
+import { type MutableRefObject, useEffect, useRef } from 'react';
 import { Engine } from '@babylonjs/core/Engines/engine.js';
 import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera.js';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight.js';
@@ -46,15 +46,15 @@ type ArenaRuntime = Readonly<{
 const ARENA_SIZE = 42;
 
 export function BabylonArena({
-    localUsername,
-    localColor,
-    roomReady,
-    remotePlayers,
-    remoteShots,
-    onLocalPose,
-    onLocalShot,
-    onScoreChange,
-}: BabylonArenaProps) {
+                                 localUsername,
+                                 localColor,
+                                 roomReady,
+                                 remotePlayers,
+                                 remoteShots,
+                                 onLocalPose,
+                                 onLocalShot,
+                                 onScoreChange,
+                             }: BabylonArenaProps) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const runtimeRef = useRef<ArenaRuntime | undefined>(undefined);
     const remotePlayersRef = useRef(remotePlayers);
@@ -171,7 +171,7 @@ export function BabylonArena({
                 </div>
             )}
             <div className="crosshair" aria-hidden="true">
-                <span />
+                <span/>
             </div>
         </div>
     );

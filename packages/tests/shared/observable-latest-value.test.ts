@@ -1,8 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-    ObservableLatestValue,
-    type ObservableValueEvent,
-} from '@shared/cache/ObservableLatestValue.ts';
+import { ObservableLatestValue, type ObservableValueEvent, } from '@shared/cache/ObservableLatestValue.ts';
 
 describe('ObservableLatestValue', () => {
     afterEach(() => {

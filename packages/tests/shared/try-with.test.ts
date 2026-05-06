@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
     RetryableConflictError,
-    TryWithExhaustedError,
-    TryWithPolicy,
     tryRunInIntervals,
     tryWith,
+    TryWithExhaustedError,
+    TryWithPolicy,
     tryWithPolicy,
 } from '@shared/resilience/TryWith.ts';
 

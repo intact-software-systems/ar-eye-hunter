@@ -12,8 +12,8 @@ import {
 } from '@shared/cache/ObservableLatestRepository.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import {
-    ObservableValueEventType,
     type ObservableKeyedValueEvent,
+    ObservableValueEventType,
     type ReadableKeyedValues,
 } from '@shared/cache/RepositoryInterfaces.ts';
 
@@ -176,8 +176,8 @@ function toClientStateSnapshotChange(
         version: event.value
             ? toClientSnapshotVersion(event.value)
             : event.previous
-            ? toClientSnapshotVersion(event.previous)
-            : 0,
+                ? toClientSnapshotVersion(event.previous)
+                : 0,
         previousVersion: event.previous
             ? toClientSnapshotVersion(event.previous)
             : undefined,

@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { AuthUserRepository } from '../src/repository/AuthUserRepository.ts';
+import { AuthUserRepository } from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
 import { login, register } from '../src/repository/login-repository.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateTransactionalRepositoryLike,
-} from '../src/repository/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
 Deno.test('register creates a runtime user that can log in', async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();

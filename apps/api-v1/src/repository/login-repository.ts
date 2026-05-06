@@ -1,12 +1,14 @@
-import authorisedClientsJson from '../../resources/authorised-clients.json' with {
-        type: 'json',
-        };
+import authorisedClientsJson from '../../resources/authorised-clients.json' with { type: 'json' };
 import { LoginRequest, LoginResponse, RegisterRequest, RegisterResponse, } from '@shared/api/api-config.ts';
-import { AuthUser, AuthUserRepository, normalizeUsername } from './AuthUserRepository.ts';
+import {
+    AuthUser,
+    AuthUserRepository,
+    normalizeUsername,
+} from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
 import {
     isRuntimeStateTransactionalRepositoryLike,
     type RuntimeStateRepositoryLike,
-} from './RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { createAuthUserRepository, createRuntimeStateRepository, } from './createStateRepositories.ts';
 
 type LoginSessionSeed = Omit<LoginResponse, 'expiresAtEpochMs'>;
@@ -44,13 +46,12 @@ export async function register(
     request: RegisterRequest,
     options: RegisterOptions = {},
 ): Promise<RegisterResponse> {
-    const runtimeRepository = options.runtimeRepository ??
-        createRuntimeStateRepository();
+    const runtimeRepository = options.runtimeRepository ?? createRuntimeStateRepository();
     const now = options.now ?? (() => Date.now());
 
     if (isRuntimeStateTransactionalRepositoryLike(runtimeRepository)) {
-        return await runtimeRepository.begin(async (repository) =>
-            await registerWithRepository(request, repository, now)
+        return await runtimeRepository.begin(
+            async (repository) => await registerWithRepository(request, repository, now),
         );
     }
 
@@ -62,9 +63,7 @@ export async function login(
     options: LoginOptions = {},
 ): Promise<LoginSessionSeed | undefined> {
     const userRepository = options.userRepository ?? createAuthUserRepository();
-    const registeredUser = await userRepository.findByUsername(
-        loginRequest.username,
-    );
+    const registeredUser = await userRepository.findByUsername(loginRequest.username);
 
     if (registeredUser) {
         if (
@@ -99,8 +98,10 @@ async function registerWithRepository(
     }
 
     if (
-        await userRepository.findByNormalizedUsername(normalizedUsername) ||
-        authorisedClients.some((client) => normalizeUsername(client.username) === normalizedUsername)
+        (await userRepository.findByNormalizedUsername(normalizedUsername)) ||
+        authorisedClients.some(
+            (client) => normalizeUsername(client.username) === normalizedUsername,
+        )
     ) {
         throw new Error(`Auth user already exists: ${username}`);
     }
@@ -127,9 +128,7 @@ async function registerWithRepository(
     return toRegisterResponse(user);
 }
 
-function loginStaticClient(
-    loginRequest: LoginRequest,
-): LoginSessionSeed | undefined {
+function loginStaticClient(loginRequest: LoginRequest): LoginSessionSeed | undefined {
     const normalizedUsername = normalizeUsername(loginRequest.username);
     for (const client of authorisedClients) {
         if (
@@ -208,9 +207,7 @@ function validateDisplayName(displayName: string | undefined): string | undefine
     return trimmed;
 }
 
-async function hashPassword(
-    password: string,
-): Promise<{ hash: string; salt: string }> {
+async function hashPassword(password: string): Promise<{ hash: string; salt: string }> {
     const salt = crypto.getRandomValues(new Uint8Array(PASSWORD_SALT_BYTES));
     const hash = await derivePasswordHash(password, salt, PASSWORD_ITERATIONS);
 
@@ -220,21 +217,14 @@ async function hashPassword(
     };
 }
 
-async function verifyPassword(
-    password: string,
-    user: AuthUser,
-): Promise<boolean> {
+async function verifyPassword(password: string, user: AuthUser): Promise<boolean> {
     if (user.passwordAlgorithm !== PASSWORD_ALGORITHM) {
         return false;
     }
 
     const salt = fromBase64(user.passwordSalt);
     const expectedHash = fromBase64(user.passwordHash);
-    const actualHash = await derivePasswordHash(
-        password,
-        salt,
-        user.passwordIterations,
-    );
+    const actualHash = await derivePasswordHash(password, salt, user.passwordIterations);
 
     return constantTimeEqual(actualHash, expectedHash);
 }

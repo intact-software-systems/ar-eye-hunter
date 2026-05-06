@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { type FormEvent, useMemo, useState } from 'react';
 
 import { BabylonArena } from './game/BabylonArena.tsx';
 import { colorForId } from './game/color.ts';
@@ -50,7 +50,7 @@ export default function App() {
 
             <section className="hud hud--top">
                 <div className="brand">
-                    <span className="brand__mark" />
+                    <span className="brand__mark"/>
                     <div>
                         <h1>AR Eye Hunter</h1>
                         <p>{currentRoom?.name ?? 'No arena room selected'}</p>
@@ -58,8 +58,8 @@ export default function App() {
                 </div>
 
                 <div className="status-strip">
-                    <StatusPill label="Rallar" value={arena.connectionState} />
-                    <StatusPill label="Score" value={String(localScore)} />
+                    <StatusPill label="Rallar" value={arena.connectionState}/>
+                    <StatusPill label="Score" value={String(localScore)}/>
                     <StatusPill
                         label="Peers"
                         value={String(arena.remotePlayers.size)}

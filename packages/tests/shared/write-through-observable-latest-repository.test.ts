@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-    WriteThroughObservableLatestRepository,
-} from '@shared/cache/WriteThroughObservableLatestRepository.ts';
+import { WriteThroughObservableLatestRepository, } from '@shared/cache/WriteThroughObservableLatestRepository.ts';
 import { ObservableValueEventType } from '@shared/cache/RepositoryInterfaces.ts';
 import {
     InMemoryPersistenceProvider,
@@ -68,8 +66,10 @@ describe('WriteThroughObservableLatestRepository', () => {
                     resolveHydrateRead = resolveRead;
                 });
             },
-            setItem: async () => {},
-            removeItem: async () => {},
+            setItem: async () => {
+            },
+            removeItem: async () => {
+            },
             deleteExpired: async () => 0,
         } satisfies PersistenceProvider<string, number>;
         const repository = new WriteThroughObservableLatestRepository<string, number>({
@@ -109,7 +109,8 @@ describe('WriteThroughObservableLatestRepository', () => {
                 await Promise.resolve(); // simulate async work
                 order.push(value);
             },
-            removeItem: async () => {},
+            removeItem: async () => {
+            },
             deleteExpired: async () => 0,
         };
         const repository = new WriteThroughObservableLatestRepository<string, number>({
@@ -137,7 +138,8 @@ describe('WriteThroughObservableLatestRepository', () => {
             getAllKeys: async () => [],
             getItem: async () => undefined,
             setItem,
-            removeItem: async () => {},
+            removeItem: async () => {
+            },
             deleteExpired: async () => 0,
         };
         const repository = new WriteThroughObservableLatestRepository<string, number>({
@@ -314,7 +316,8 @@ describe('WriteThroughObservableLatestRepository', () => {
             setItem: async (_key, _value, options) => {
                 captured.push(options);
             },
-            removeItem: async () => {},
+            removeItem: async () => {
+            },
             deleteExpired: async () => 0,
         };
         const repository = new WriteThroughObservableLatestRepository<string, number>({
@@ -341,7 +344,8 @@ describe('WriteThroughObservableLatestRepository', () => {
             setItem: async () => {
                 await persistRelease;
             },
-            removeItem: async () => {},
+            removeItem: async () => {
+            },
             deleteExpired: async () => 0,
         };
         const repository = new WriteThroughObservableLatestRepository<string, number>({

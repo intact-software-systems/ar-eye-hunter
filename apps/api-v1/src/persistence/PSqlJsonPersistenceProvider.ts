@@ -1,12 +1,14 @@
-import type { PersistenceProvider, PersistenceSetItemOptions, } from '@shared/persistence/PersistenceProvider.ts';
-import type { RuntimeStateRepositoryLike } from '../repository/RuntimeStateRepository.ts';
+import type {
+    PersistenceProvider,
+    PersistenceSetItemOptions,
+} from '@shared/persistence/PersistenceProvider.ts';
+import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
 export class PSqlJsonPersistenceProvider<V> implements PersistenceProvider<string, V> {
     constructor(
         private readonly repository: RuntimeStateRepositoryLike,
         private readonly namespace: string,
-    ) {
-    }
+    ) {}
 
     async getItem(key: string): Promise<V | undefined> {
         const entry = await this.repository.findEntry(this.namespace, key);
@@ -22,11 +24,7 @@ export class PSqlJsonPersistenceProvider<V> implements PersistenceProvider<strin
         return JSON.parse(entry.value) as V;
     }
 
-    async setItem(
-        key: string,
-        value: V,
-        options: PersistenceSetItemOptions,
-    ): Promise<void> {
+    async setItem(key: string, value: V, options: PersistenceSetItemOptions): Promise<void> {
         await this.repository.upsert(
             this.namespace,
             key,

@@ -6,7 +6,7 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvid
 import type {
     RuntimeStateEntry,
     RuntimeStateTransactionalRepositoryLike,
-} from '../repository/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
 export class PSqlInboundAdmissionBackend implements ALInboundAdmissionBackend {
     constructor(
@@ -22,17 +22,17 @@ export class PSqlInboundAdmissionBackend implements ALInboundAdmissionBackend {
         return await this.readValue<V>(this.repository, key);
     }
 
-    async list<V>(prefix: string): Promise<readonly Readonly<{ key: string; value: V; }>[]> {
+    async list<V>(prefix: string): Promise<readonly Readonly<{ key: string; value: V }>[]> {
         return await this.readPrefix<V>(this.repository, prefix);
     }
 
     async write<T>(fn: (tx: ALInboundAdmissionWriteContext) => Promise<T>): Promise<T> {
         return await this.repository.begin(
-            async txRepository =>
+            async (txRepository) =>
                 await fn({
-                    get: async key => await this.readValue(txRepository, key),
-                    list: async prefix => await this.readPrefix(txRepository, prefix),
-                    lock: async key => {
+                    get: async (key) => await this.readValue(txRepository, key),
+                    list: async (prefix) => await this.readPrefix(txRepository, prefix),
+                    lock: async (key) => {
                         await txRepository.lockKey(this.namespace, key);
                     },
                     set: async (key, value, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP) => {
@@ -43,7 +43,7 @@ export class PSqlInboundAdmissionBackend implements ALInboundAdmissionBackend {
                             expireAtTimestamp,
                         );
                     },
-                    remove: async key => {
+                    remove: async (key) => {
                         await txRepository.deleteByKey(this.namespace, key);
                     },
                 }),
@@ -70,8 +70,8 @@ export class PSqlInboundAdmissionBackend implements ALInboundAdmissionBackend {
     private async readPrefix<V>(
         repository: RuntimeStateTransactionalRepositoryLike,
         prefix: string,
-    ): Promise<readonly Readonly<{ key: string; value: V; }>[]> {
-        const values: Array<Readonly<{ key: string; value: V; }>> = [];
+    ): Promise<readonly Readonly<{ key: string; value: V }>[]> {
+        const values: Array<Readonly<{ key: string; value: V }>> = [];
 
         for (const entry of await repository.findEntriesByPrefix(this.namespace, prefix)) {
             if (isExpired(entry)) {

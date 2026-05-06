@@ -171,7 +171,7 @@ export class TryWithPolicy {
                 if (
                     this.options.maxElapsedMsecs !== undefined &&
                     context.elapsedMsecs + delayMsecs >
-                        this.options.maxElapsedMsecs
+                    this.options.maxElapsedMsecs
                 ) {
                     throw this.toExhaustedError(context, error);
                 }
@@ -217,7 +217,7 @@ export class TryWithPolicy {
         const raw = Math.min(
             this.options.maxRetryIntervalMsecs,
             this.options.retryIntervalMsecs *
-                Math.pow(this.options.backoffFactor, Math.max(0, attempt - 1)),
+            Math.pow(this.options.backoffFactor, Math.max(0, attempt - 1)),
         );
         const jitter = raw * this.options.jitterRatio;
         const delta = (Math.random() * 2 - 1) * jitter;

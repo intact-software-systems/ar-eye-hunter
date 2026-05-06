@@ -8,6 +8,9 @@
       "path": "packages/shared-graph"
     },
     {
+      "path": "packages/shared-server"
+    },
+    {
       "path": "apps/web"
     }
   ],
@@ -31,6 +34,9 @@
     "paths": {
       "@shared-web/*": [
         "packages/shared-web/*"
+      ],
+      "@shared-server/*": [
+        "packages/shared-server/*"
       ],
       "@shared-graph/*": [
         "packages/shared-graph/*"

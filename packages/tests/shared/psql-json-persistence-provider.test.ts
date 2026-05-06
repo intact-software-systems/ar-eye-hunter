@@ -4,7 +4,7 @@ import { PSqlJsonPersistenceProvider } from '../../../apps/api-v1/src/persistenc
 import type {
     RuntimeStateEntry,
     RuntimeStateRepositoryLike,
-} from '../../../apps/api-v1/src/repository/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
 describe('PSqlJsonPersistenceProvider', () => {
     it('stores, lists, and removes values within a namespace', async () => {
@@ -14,8 +14,16 @@ describe('PSqlJsonPersistenceProvider', () => {
             'al-runtime:inbound:dedup',
         );
 
-        await provider.setItem('msg-1', { value: 1 }, { expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
-        await provider.setItem('msg-2', { value: 2 }, { expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
+        await provider.setItem(
+            'msg-1',
+            { value: 1 },
+            { expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP },
+        );
+        await provider.setItem(
+            'msg-2',
+            { value: 2 },
+            { expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP },
+        );
 
         expect(await provider.getItem('msg-1')).toEqual({ value: 1 });
         expect(await provider.getAllKeys()).toEqual(['msg-1', 'msg-2']);
@@ -72,8 +80,16 @@ describe('PSqlJsonPersistenceProvider', () => {
             'al-runtime:outbound:supersedence',
         );
 
-        await inbound.setItem('presence:room-1', { value: 1 }, { expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
-        await outbound.setItem('presence:room-1', { value: 2 }, { expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP });
+        await inbound.setItem(
+            'presence:room-1',
+            { value: 1 },
+            { expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP },
+        );
+        await outbound.setItem(
+            'presence:room-1',
+            { value: 2 },
+            { expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP },
+        );
 
         expect(await inbound.getItem('presence:room-1')).toEqual({ value: 1 });
         expect(await outbound.getItem('presence:room-1')).toEqual({ value: 2 });

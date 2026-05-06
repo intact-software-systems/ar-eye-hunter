@@ -6,10 +6,7 @@ import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.t
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import {
-    type RtcDataChannelLaneConfig,
-    WebRtcConnectionService,
-} from '@shared/services/WebRtcConnectionService.ts';
+import { type RtcDataChannelLaneConfig, WebRtcConnectionService, } from '@shared/services/WebRtcConnectionService.ts';
 import { WebRtcRxStreamerService } from '@shared/services/WebRtcRxStreamerService.ts';
 import { WsQueueBoxClientService } from '@shared/services/WsQueueBoxClientService.ts';
 import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/WsRtcSignalingTransportUsingWsQBox.ts';

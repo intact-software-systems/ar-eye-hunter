@@ -1,10 +1,10 @@
 import type { Sql } from 'postgres';
+import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { AuthUserRepository } from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { sql as defaultSql } from '../db/db.ts';
-import { AuthSessionRepository } from './AuthSessionRepository.ts';
 import { RuntimeStateRepository } from './RuntimeStateRepository.ts';
-import { ClientStateRepository } from './ClientStateRepository.ts';
-import { GroupStateRepository } from './GroupStateRepository.ts';
-import { AuthUserRepository } from './AuthUserRepository.ts';
 
 export function createRuntimeStateRepository(
     sql: Sql = defaultSql as unknown as Sql,

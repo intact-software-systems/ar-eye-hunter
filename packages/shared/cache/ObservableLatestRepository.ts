@@ -4,11 +4,11 @@ import {
     type ValueEqualityChecker,
 } from './ObservableLatestValue.ts';
 import {
-    ObservableValueEventType,
     type ObservableKeyedValueErrorHandler,
     type ObservableKeyedValueEvent,
     type ObservableKeyedValueListener,
     type ObservableKeyedValues,
+    ObservableValueEventType,
     type PushKeyedValues,
     type ReadableKeyedValues,
     type Unsubscribe,

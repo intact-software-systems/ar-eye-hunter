@@ -1,11 +1,5 @@
-import {
-    NEVER_EXPIRE_AT_TIMESTAMP,
-    type PersistenceProvider,
-} from '../persistence/PersistenceProvider.ts';
-import {
-    ObservableLatestRepository,
-    type ObservableLatestRepositoryOptions,
-} from './ObservableLatestRepository.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP, type PersistenceProvider, } from '../persistence/PersistenceProvider.ts';
+import { ObservableLatestRepository, type ObservableLatestRepositoryOptions, } from './ObservableLatestRepository.ts';
 import type { ObservableLatestValue } from './ObservableLatestValue.ts';
 import {
     type ObservableKeyedValueListener,
@@ -16,13 +10,13 @@ import {
 export type WriteThroughObservableLatestRepositoryOptions<K, V> =
     & ObservableLatestRepositoryOptions<K, V>
     & Readonly<{
-        persistence: PersistenceProvider<K, V>;
-        /**
-         * Maps a written value to its absolute on-disk expiry timestamp.
-         * Default: now + ttlMs when ttlMs is set, otherwise NEVER_EXPIRE_AT_TIMESTAMP.
-         */
-        expireAtFor?: (value: V) => number;
-    }>;
+    persistence: PersistenceProvider<K, V>;
+    /**
+     * Maps a written value to its absolute on-disk expiry timestamp.
+     * Default: now + ttlMs when ttlMs is set, otherwise NEVER_EXPIRE_AT_TIMESTAMP.
+     */
+    expireAtFor?: (value: V) => number;
+}>;
 
 /**
  * Write-through cache: writes are committed to the persistence layer first,

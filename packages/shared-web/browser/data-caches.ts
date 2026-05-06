@@ -27,9 +27,9 @@ const stateRepositoryObserverTasks = new Set<Promise<void>>();
 let stateRepositoryObserversUnsubscribe: (() => void) | undefined;
 let stateRepositoryObserverContext:
     | Readonly<{
-        webRtcGroupManager: WebRtcGroupManager;
-        sessionId: string;
-    }>
+    webRtcGroupManager: WebRtcGroupManager;
+    sessionId: string;
+}>
     | undefined;
 
 export function onStateCacheChange(

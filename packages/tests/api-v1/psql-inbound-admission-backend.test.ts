@@ -10,7 +10,7 @@ import { PSqlOutboundAdmissionBackend } from '../../../apps/api-v1/src/persisten
 import type {
     RuntimeStateEntry,
     RuntimeStateTransactionalRepositoryLike,
-} from '../../../apps/api-v1/src/repository/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
 afterEach(() => {
     vi.unstubAllGlobals();
@@ -46,10 +46,7 @@ describe('PSqlInboundAdmissionBackend', () => {
             key: `${namespace}:version:peer-1`,
         });
 
-        const versionEntry = await repository.findEntry(
-            namespace,
-            `${namespace}:version:peer-1`,
-        );
+        const versionEntry = await repository.findEntry(namespace, `${namespace}:version:peer-1`);
         expect(versionEntry).toBeDefined();
         expect(JSON.parse(versionEntry!.value)).toEqual({
             senderId: 'peer-1',
@@ -91,19 +88,13 @@ describe('PSqlInboundAdmissionBackend', () => {
             key: `${namespace}:version:peer-1`,
         });
 
-        const versionEntry = await repository.findEntry(
-            namespace,
-            `${namespace}:version:peer-1`,
-        );
+        const versionEntry = await repository.findEntry(namespace, `${namespace}:version:peer-1`);
         expect(JSON.parse(versionEntry!.value)).toEqual({
             senderId: 'peer-1',
             version: 2,
         });
 
-        const ackEntry = await repository.findEntry(
-            namespace,
-            `${namespace}:control:acks:msg-1`,
-        );
+        const ackEntry = await repository.findEntry(namespace, `${namespace}:control:acks:msg-1`);
         expect(ackEntry).toBeDefined();
     });
 });
@@ -155,10 +146,7 @@ describe('PSqlOutboundAdmissionBackend', () => {
             key: `${namespace}:version:self`,
         });
 
-        const versionEntry = await repository.findEntry(
-            namespace,
-            `${namespace}:version:self`,
-        );
+        const versionEntry = await repository.findEntry(namespace, `${namespace}:version:self`);
         expect(JSON.parse(versionEntry!.value)).toEqual({
             senderId: 'self',
             version: 1,
@@ -234,10 +222,7 @@ describe('PSqlOutboundAdmissionBackend', () => {
             key: `${namespace}:version:self`,
         });
 
-        const versionEntry = await repository.findEntry(
-            namespace,
-            `${namespace}:version:self`,
-        );
+        const versionEntry = await repository.findEntry(namespace, `${namespace}:version:self`);
         expect(JSON.parse(versionEntry!.value)).toEqual({
             senderId: 'self',
             version: 2,
@@ -256,9 +241,8 @@ describe('PSqlOutboundAdmissionBackend', () => {
                 get: () => 'postgres://postgres:postgres@localhost:5432/postgres',
             },
         });
-        const { createPSqlALOutboundRuntimeStores } = await import(
-            '../../../apps/api-v1/src/persistence/createPSqlALRuntimeStores.ts'
-            );
+        const { createPSqlALOutboundRuntimeStores } =
+            await import('../../../apps/api-v1/src/persistence/createPSqlALRuntimeStores.ts');
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:factory';
         const stores = createPSqlALOutboundRuntimeStores({
@@ -314,8 +298,7 @@ type TestPreparedOutboundSend = Readonly<{
     msgId: string;
 }>;
 
-class FakeRuntimeStateRepository
-    implements RuntimeStateTransactionalRepositoryLike {
+class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {
     readonly data = new Map<string, RuntimeStateEntry>();
     readonly lockedKeys: Array<Readonly<{ namespace: string; key: string }>> = [];
 
@@ -325,10 +308,7 @@ class FakeRuntimeStateRepository
         return await fn(this);
     }
 
-    async findEntry(
-        namespace: string,
-        key: string,
-    ): Promise<RuntimeStateEntry | undefined> {
+    async findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {
         const entry = this.data.get(this.toKey(namespace, key));
         return entry ? { ...entry } : undefined;
     }

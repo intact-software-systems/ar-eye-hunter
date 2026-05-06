@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { AuthSessionRepository } from '../src/repository/AuthSessionRepository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateTransactionalRepositoryLike,
-} from '../src/repository/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { requireApiAuthSession, requireWsAuthSession } from '../src/services/request-auth-service.ts';
 
 Deno.test('requireApiAuthSession validates bearer token and client id', async () => {

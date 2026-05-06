@@ -1,9 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ObservableLatestRepository } from '@shared/cache/ObservableLatestRepository.ts';
-import {
-    ObservableValueEventType,
-    type ObservableKeyedValueEvent,
-} from '@shared/cache/RepositoryInterfaces.ts';
+import { type ObservableKeyedValueEvent, ObservableValueEventType, } from '@shared/cache/RepositoryInterfaces.ts';
 
 describe('ObservableLatestRepository', () => {
     afterEach(() => {

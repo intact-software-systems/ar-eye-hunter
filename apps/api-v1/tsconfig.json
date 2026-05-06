@@ -20,6 +20,9 @@
       "@shared-web/*": [
         "../../packages/shared-web/*"
       ],
+      "@shared-server/*": [
+        "../../packages/shared-server/*"
+      ],
       "@shared-graph/*": [
         "../../packages/shared-graph/*"
       ],

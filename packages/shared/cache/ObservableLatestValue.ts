@@ -1,14 +1,10 @@
-import {
-    LatestValue,
-    type LatestValueOptions,
-    type ValueSink,
-} from './LatestValue.ts';
+import { LatestValue, type LatestValueOptions, type ValueSink, } from './LatestValue.ts';
 import type { ReadableValue } from './ReadableValue.ts';
 import {
-    ObservableValueEventType,
     type ObservableValue,
     type ObservableValueErrorHandler,
     type ObservableValueEvent,
+    ObservableValueEventType,
     type ObservableValueListener,
     type Unsubscribe,
 } from './RepositoryInterfaces.ts';

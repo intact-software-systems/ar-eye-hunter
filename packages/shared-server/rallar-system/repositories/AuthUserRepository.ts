@@ -1,5 +1,5 @@
-import { RuntimeStateJsonStore } from './RuntimeStateJsonStore.ts';
-import type { RuntimeStateRepositoryLike } from './RuntimeStateRepository.ts';
+import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
+import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
 
 const AUTH_USERS_BY_USERNAME_NAMESPACE = 'auth-users:by-username';
 const AUTH_USERS_BY_CLIENT_ID_NAMESPACE = 'auth-users:by-client-id';
@@ -43,9 +43,7 @@ export class AuthUserRepository extends RuntimeStateJsonStore {
         return await this.findByNormalizedUsername(normalizeUsername(username));
     }
 
-    async findByNormalizedUsername(
-        normalizedUsername: string,
-    ): Promise<AuthUser | undefined> {
+    async findByNormalizedUsername(normalizedUsername: string): Promise<AuthUser | undefined> {
         return await this.getValue<AuthUser>(
             AUTH_USERS_BY_USERNAME_NAMESPACE,
             this.normalizedUsernameKey(normalizedUsername),

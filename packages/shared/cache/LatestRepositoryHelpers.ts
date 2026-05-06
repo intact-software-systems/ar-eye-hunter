@@ -1,9 +1,6 @@
 import { defaultRepositoryManager } from './defaultRepositoryManager.ts';
 import { LatestRepository, type LatestRepositoryOptions } from './LatestRepository.ts';
-import {
-    ObservableLatestRepository,
-    type ObservableLatestRepositoryOptions,
-} from './ObservableLatestRepository.ts';
+import { ObservableLatestRepository, type ObservableLatestRepositoryOptions, } from './ObservableLatestRepository.ts';
 import type { RepositoryManager } from './RepositoryManager.ts';
 import { RepositoryToken } from './RepositoryToken.ts';
 

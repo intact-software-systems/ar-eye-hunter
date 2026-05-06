@@ -1,12 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-    WriteBehindObservableLatestRepository,
-    type WriteBehindObservableLatestRepositoryOptions,
-} from '@shared/cache/WriteBehindObservableLatestRepository.ts';
-import {
-    ObservableValueEventType,
-    type ObservableKeyedValueEvent,
-} from '@shared/cache/RepositoryInterfaces.ts';
+import { WriteBehindObservableLatestRepository, } from '@shared/cache/WriteBehindObservableLatestRepository.ts';
+import { type ObservableKeyedValueEvent, ObservableValueEventType, } from '@shared/cache/RepositoryInterfaces.ts';
 import {
     InMemoryPersistenceProvider,
     NEVER_EXPIRE_AT_TIMESTAMP,
@@ -138,7 +132,8 @@ describe('WriteBehindObservableLatestRepository', () => {
             getAllKeys: async () => [],
             getItem: async () => undefined,
             setItem: () => Promise.reject(new Error('boom')),
-            removeItem: async () => {},
+            removeItem: async () => {
+            },
             deleteExpired: async () => 0,
         };
 
@@ -172,7 +167,8 @@ describe('WriteBehindObservableLatestRepository', () => {
             setItem: async (_key, _value, options) => {
                 captured.push(options);
             },
-            removeItem: async () => {},
+            removeItem: async () => {
+            },
             deleteExpired: async () => 0,
         };
 
@@ -197,7 +193,8 @@ describe('WriteBehindObservableLatestRepository', () => {
             setItem: async (_key, _value, options) => {
                 captured.push(options);
             },
-            removeItem: async () => {},
+            removeItem: async () => {
+            },
             deleteExpired: async () => 0,
         };
 
@@ -241,7 +238,8 @@ describe('WriteBehindObservableLatestRepository', () => {
             setItem: async () => {
                 events.push('setItem-resolved');
             },
-            removeItem: async () => {},
+            removeItem: async () => {
+            },
             deleteExpired: async () => 0,
         };
         const repository = new WriteBehindObservableLatestRepository<string, number>({

@@ -12,8 +12,8 @@ import {
 } from '@shared/cache/ObservableLatestRepository.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import {
-    ObservableValueEventType,
     type ObservableKeyedValueEvent,
+    ObservableValueEventType,
     type ReadableKeyedValues,
 } from '@shared/cache/RepositoryInterfaces.ts';
 
@@ -184,8 +184,8 @@ function toGroupStateSnapshotChange(
         version: event.value
             ? toGroupSnapshotVersion(event.value)
             : event.previous
-            ? toGroupSnapshotVersion(event.previous)
-            : 0,
+                ? toGroupSnapshotVersion(event.previous)
+                : 0,
         previousVersion: event.previous
             ? toGroupSnapshotVersion(event.previous)
             : undefined,

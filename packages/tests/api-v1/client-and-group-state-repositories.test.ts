@@ -1,13 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import type { ClientEvent, ClientInstance, ClientPrincipal, ClientSession, } from '@shared/api/client-types.ts';
-import type { Group, GroupEvent, GroupMember, GroupPresenceSession, } from '@shared/api/group-types.ts';
-import { ClientStateRepository } from '../../../apps/api-v1/src/repository/ClientStateRepository.ts';
-import { GroupStateRepository } from '../../../apps/api-v1/src/repository/GroupStateRepository.ts';
+import type {
+    ClientEvent,
+    ClientInstance,
+    ClientPrincipal,
+    ClientSession,
+} from '@shared/api/client-types.ts';
+import type {
+    Group,
+    GroupEvent,
+    GroupMember,
+    GroupPresenceSession,
+} from '@shared/api/group-types.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateTransactionalRepositoryLike,
-} from '../../../apps/api-v1/src/repository/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
 describe('ClientStateRepository', () => {
     it('stores durable client records, expires sessions, and assembles snapshots', async () => {
@@ -36,18 +46,22 @@ describe('ClientStateRepository', () => {
         await clientRepository.appendEvent(createClientEvent('evt-2', now + 2_000));
         await clientRepository.appendEvent(createClientEvent('evt-1', now + 1_000));
 
-        expect(await clientRepository.findSession({
-            applicationId: principal.applicationId,
-            workspaceId: principal.workspaceId,
-            principalId: principal.principalId,
-            clientInstanceId: 'instance-b',
-            sessionId: 'session-b',
-        })).toBeUndefined();
+        expect(
+            await clientRepository.findSession({
+                applicationId: principal.applicationId,
+                workspaceId: principal.workspaceId,
+                principalId: principal.principalId,
+                clientInstanceId: 'instance-b',
+                sessionId: 'session-b',
+            }),
+        ).toBeUndefined();
 
-        expect(await clientRepository.listPrincipals({
-            applicationId: principal.applicationId,
-            workspaceId: principal.workspaceId,
-        })).toEqual([principal]);
+        expect(
+            await clientRepository.listPrincipals({
+                applicationId: principal.applicationId,
+                workspaceId: principal.workspaceId,
+            }),
+        ).toEqual([principal]);
 
         const presence = await clientRepository.readPresenceSnapshot({
             applicationId: principal.applicationId,
@@ -77,11 +91,13 @@ describe('ClientStateRepository', () => {
         expect(snapshot?.activeSessions).toEqual([activeSession]);
         expect(snapshot?.activeSessionCount).toBe(1);
         expect(snapshot?.isOnline).toBe(true);
-        expect(await clientRepository.listEvents({
-            applicationId: principal.applicationId,
-            workspaceId: principal.workspaceId,
-            principalId: principal.principalId,
-        })).toEqual([
+        expect(
+            await clientRepository.listEvents({
+                applicationId: principal.applicationId,
+                workspaceId: principal.workspaceId,
+                principalId: principal.principalId,
+            }),
+        ).toEqual([
             createClientEvent('evt-1', now + 1_000),
             createClientEvent('evt-2', now + 2_000),
         ]);
@@ -122,10 +138,15 @@ describe('GroupStateRepository', () => {
         await groupRepository.appendEvent(createGroupEvent('evt-2', now + 2_000));
         await groupRepository.appendEvent(createGroupEvent('evt-1', now + 1_000));
 
-        expect(await groupRepository.findGroupBySlug({
-            applicationId: group.applicationId,
-            workspaceId: group.workspaceId,
-        }, 'party-1')).toEqual(group);
+        expect(
+            await groupRepository.findGroupBySlug(
+                {
+                    applicationId: group.applicationId,
+                    workspaceId: group.workspaceId,
+                },
+                'party-1',
+            ),
+        ).toEqual(group);
 
         const snapshot = await groupRepository.readSnapshot({
             applicationId: group.applicationId,
@@ -141,14 +162,13 @@ describe('GroupStateRepository', () => {
             onlineMemberCount: 1,
         });
 
-        expect(await groupRepository.listEvents({
-            applicationId: group.applicationId,
-            workspaceId: group.workspaceId,
-            groupId: group.groupId,
-        })).toEqual([
-            createGroupEvent('evt-1', now + 1_000),
-            createGroupEvent('evt-2', now + 2_000),
-        ]);
+        expect(
+            await groupRepository.listEvents({
+                applicationId: group.applicationId,
+                workspaceId: group.workspaceId,
+                groupId: group.groupId,
+            }),
+        ).toEqual([createGroupEvent('evt-1', now + 1_000), createGroupEvent('evt-2', now + 2_000)]);
     });
 });
 
@@ -238,10 +258,7 @@ function createGroup(): Group {
     };
 }
 
-function createGroupMember(
-    principalId: string,
-    status: GroupMember['status'],
-): GroupMember {
+function createGroupMember(principalId: string, status: GroupMember['status']): GroupMember {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
@@ -284,8 +301,7 @@ function createGroupEvent(eventId: string, occurredAtEpochMs: number): GroupEven
     };
 }
 
-class FakeRuntimeStateRepository
-    implements RuntimeStateTransactionalRepositoryLike {
+class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {
     readonly data = new Map<string, RuntimeStateEntry>();
 
     async begin<T>(
@@ -294,10 +310,7 @@ class FakeRuntimeStateRepository
         return await fn(this);
     }
 
-    async findEntry(
-        namespace: string,
-        key: string,
-    ): Promise<RuntimeStateEntry | undefined> {
+    async findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {
         const entry = this.data.get(this.toKey(namespace, key));
         return entry ? { ...entry } : undefined;
     }
@@ -363,13 +376,12 @@ class FakeRuntimeStateRepository
         return deleted;
     }
 
-    async lockKey(_namespace: string, _key: string): Promise<void> {
-    }
+    async lockKey(_namespace: string, _key: string): Promise<void> {}
 
     findStoredEntry(namespace: string): RuntimeStateEntry | undefined {
-        return [...this.data.entries()]
-            .find(([compositeKey]) => this.toNamespace(compositeKey) === namespace)
-            ?.[1];
+        return [...this.data.entries()].find(
+            ([compositeKey]) => this.toNamespace(compositeKey) === namespace,
+        )?.[1];
     }
 
     private toKey(namespace: string, key: string): string {
