@@ -19,7 +19,9 @@ import type {
 } from '@relic-hunters/mod.ts';
 import { findRelicCharacter } from '@relic-hunters/mod.ts';
 import { SceneInteractionPrompt } from './scene/SceneInteractionPrompt.tsx';
+import { SceneObjectivePanel } from './scene/SceneObjectivePanel.tsx';
 import {
+    DOOR_WIDTH,
     FLOOR_Y,
     PLAYER_EYE_Y,
     ROOM_SIZE,
@@ -27,10 +29,19 @@ import {
 import { applyPointerLook, isRoamKey, yawToForward } from './scene/controls.ts';
 import { resolveRoomRoam, roomCollisionBoxes } from './scene/collision.ts';
 import {
+    setRuntimePrompt,
+    shouldExitInspection,
+    startInspection,
+    updateScenePrompt,
+} from './scene/interaction.ts';
+import {
+    deriveSceneObjective,
+    roomHasResolvedClue,
+} from './scene/objectives.ts';
+import {
     chooseLookRoom,
-    computeScenePrompt,
+    directionBetweenRooms,
     roomClueHotspot,
-    samePrompt,
 } from './scene/prompts.ts';
 import {
     applyRoomMaterial,
@@ -43,6 +54,7 @@ import {
     type CastleMaterials,
 } from './scene/rooms.ts';
 import type {
+    CardinalDirection,
     CollisionBox,
     InspectionFocus,
     PointerLookState,
@@ -53,6 +65,7 @@ type RelicSceneProps = Readonly<{
     snapshot?: RelicPublicSnapshot;
     localPlayerId?: string;
     selectedRoomId?: string;
+    primedAction?: RelicActionInput;
     onSelectRoom(roomId: string): void;
     onPrimeAction?(action: RelicActionInput): void;
 }>;
@@ -66,6 +79,8 @@ type SceneRuntime = Readonly<{
     snapshot: { value?: RelicPublicSnapshot };
     localPlayerId: { value?: string };
     selectedRoomId: { value?: string };
+    primedAction: { value?: RelicActionInput };
+    objectiveTargetRoomId: { value?: string };
     pressedKeys: Set<string>;
     cameraYaw: { value: number };
     cameraPitch: { value: number };
@@ -94,6 +109,10 @@ type SceneRuntime = Readonly<{
     prompt: { value?: ScenePrompt };
     onPromptChange: { value(prompt?: ScenePrompt): void };
     inspection: { value?: InspectionFocus };
+    doorPromptMarker: Mesh;
+    doorPromptMarkerMaterial: StandardMaterial;
+    escapeMarker: Mesh;
+    escapeMarkerMaterial: StandardMaterial;
 }>;
 
 type TimedEffect = Readonly<{
@@ -107,6 +126,7 @@ export function RelicScene({
     snapshot,
     localPlayerId,
     selectedRoomId,
+    primedAction,
     onSelectRoom,
     onPrimeAction,
 }: RelicSceneProps) {
@@ -117,8 +137,14 @@ export function RelicScene({
     const snapshotRef = useRef(snapshot);
     const localPlayerIdRef = useRef(localPlayerId);
     const selectedRoomIdRef = useRef(selectedRoomId);
+    const primedActionRef = useRef(primedAction);
     const onSelectRoomRef = useRef(onSelectRoom);
     const onPrimeActionRef = useRef(onPrimeAction);
+    const sceneObjective = deriveSceneObjective({
+        snapshot,
+        localPlayerId,
+        primedAction,
+    });
 
     useEffect(() => {
         snapshotRef.current = snapshot;
@@ -131,6 +157,19 @@ export function RelicScene({
     useEffect(() => {
         selectedRoomIdRef.current = selectedRoomId;
     }, [selectedRoomId]);
+
+    useEffect(() => {
+        primedActionRef.current = primedAction;
+        if (runtimeRef.current) {
+            runtimeRef.current.primedAction.value = primedAction;
+        }
+    }, [primedAction]);
+
+    useEffect(() => {
+        if (runtimeRef.current) {
+            runtimeRef.current.objectiveTargetRoomId.value = sceneObjective.targetRoomId;
+        }
+    }, [sceneObjective.targetRoomId]);
 
     useEffect(() => {
         onSelectRoomRef.current = onSelectRoom;
@@ -182,6 +221,40 @@ export function RelicScene({
         const handMaterial = new StandardMaterial('first-person-hands-material', scene);
         const castleMaterials = createCastleMaterials(scene);
         const introMeshes = createIntroCastleScene(scene, castleMaterials);
+        const doorPromptMarkerMaterial = new StandardMaterial('doorway-prompt-marker-material', scene);
+        doorPromptMarkerMaterial.diffuseColor = Color3.FromHexString('#8ee7f5');
+        doorPromptMarkerMaterial.emissiveColor = Color3.FromHexString('#8ee7f5').scale(0.62);
+        doorPromptMarkerMaterial.specularColor = Color3.FromHexString('#fef08a').scale(0.26);
+        doorPromptMarkerMaterial.alpha = 0.72;
+        const doorPromptMarker = MeshBuilder.CreateTorus(
+            'doorway-prompt-marker',
+            {
+                diameter: DOOR_WIDTH * 0.72,
+                thickness: 0.045,
+                tessellation: 42,
+            },
+            scene,
+        );
+        doorPromptMarker.material = doorPromptMarkerMaterial;
+        doorPromptMarker.rotation.x = Math.PI / 2;
+        doorPromptMarker.setEnabled(false);
+        const escapeMarkerMaterial = new StandardMaterial('escape-objective-marker-material', scene);
+        escapeMarkerMaterial.diffuseColor = Color3.FromHexString('#a3e635');
+        escapeMarkerMaterial.emissiveColor = Color3.FromHexString('#a3e635').scale(0.52);
+        escapeMarkerMaterial.specularColor = Color3.FromHexString('#fef08a').scale(0.32);
+        escapeMarkerMaterial.alpha = 0.68;
+        const escapeMarker = MeshBuilder.CreateTorus(
+            'escape-objective-marker',
+            {
+                diameter: 1.52,
+                thickness: 0.052,
+                tessellation: 48,
+            },
+            scene,
+        );
+        escapeMarker.material = escapeMarkerMaterial;
+        escapeMarker.rotation.x = Math.PI / 2;
+        escapeMarker.setEnabled(false);
         const runtime: SceneRuntime = {
             engine,
             scene,
@@ -191,6 +264,8 @@ export function RelicScene({
             snapshot: { value: snapshotRef.current },
             localPlayerId: { value: localPlayerIdRef.current },
             selectedRoomId: { value: selectedRoomIdRef.current },
+            primedAction: { value: primedActionRef.current },
+            objectiveTargetRoomId: { value: sceneObjective.targetRoomId },
             pressedKeys: new Set(),
             cameraYaw: { value: 0 },
             cameraPitch: { value: 0 },
@@ -223,6 +298,10 @@ export function RelicScene({
             prompt: { value: undefined },
             onPromptChange: { value: setScenePrompt },
             inspection: { value: undefined },
+            doorPromptMarker,
+            doorPromptMarkerMaterial,
+            escapeMarker,
+            escapeMarkerMaterial,
         };
         runtimeRef.current = runtime;
         syncScene(
@@ -384,10 +463,13 @@ export function RelicScene({
             <SceneInteractionPrompt
                 prompt={scenePrompt}
                 onPrimeAction={(action) => {
-                    onPrimeActionRef.current?.(action);
-                    if (action.kind === 'move' && action.targetRoomId) {
-                        onSelectRoomRef.current(action.targetRoomId);
-                    }
+                    primeSceneRuntimeAction(runtimeRef.current, action, onPrimeActionRef, onSelectRoomRef);
+                }}
+            />
+            <SceneObjectivePanel
+                objective={sceneObjective}
+                onPrimeAction={(action) => {
+                    primeSceneRuntimeAction(runtimeRef.current, action, onPrimeActionRef, onSelectRoomRef);
                 }}
             />
         </>
@@ -518,6 +600,21 @@ function syncScene(
     syncPlayers(runtime, snapshot, localPlayerId);
     syncRelics(runtime, snapshot);
     syncEventEffects(runtime, snapshot);
+}
+
+function primeSceneRuntimeAction(
+    runtime: SceneRuntime | undefined,
+    action: RelicActionInput,
+    onPrimeActionRef: { current: RelicSceneProps['onPrimeAction'] },
+    onSelectRoomRef: { current(roomId: string): void },
+): void {
+    if (runtime) {
+        spawnPrimeActionEffect(runtime, action);
+    }
+    onPrimeActionRef.current?.(action);
+    if (action.kind === 'move' && action.targetRoomId) {
+        onSelectRoomRef.current(action.targetRoomId);
+    }
 }
 
 function syncLinks(runtime: SceneRuntime, rooms: readonly RelicRoom[]): void {
@@ -905,6 +1002,7 @@ function updateRuntime(runtime: SceneRuntime): void {
     updateSceneVisibility(runtime);
     updatePlayerPositions(runtime);
     updateCameraPose(runtime);
+    updateInteractionHighlights(runtime);
     updateFirstPersonHands(runtime);
     updateLightFlicker(runtime);
     updateEffects(runtime);
@@ -1094,72 +1192,176 @@ function updateLocalRoomRoam(
     return forward;
 }
 
-function hasPressed(runtime: SceneRuntime, key: string): boolean {
-    return runtime.pressedKeys.has(key);
+function updateInteractionHighlights(runtime: SceneRuntime): void {
+    const room = currentLocalRoom(runtime);
+    const prompt = runtime.prompt.value;
+    const now = performance.now();
+
+    updateDoorPromptMarker(runtime, room, prompt, now);
+    updateClueHotspotHighlights(runtime, room, prompt, now);
+    updateEscapeObjectiveMarker(runtime, room, now);
 }
 
-function updateScenePrompt(
+function updateDoorPromptMarker(
     runtime: SceneRuntime,
-    room: RelicRoom,
-    forward: Vector3,
+    room: RelicRoom | undefined,
+    prompt: ScenePrompt | undefined,
+    now: number,
 ): void {
-    setRuntimePrompt(runtime, computeScenePrompt({
-        snapshot: runtime.snapshot.value,
-        localPlayerId: runtime.localPlayerId.value,
-        room,
-        roamOffset: runtime.roamOffset,
-        forward,
-        inspection: runtime.inspection.value,
-    }));
-}
-
-function startInspection(runtime: SceneRuntime): boolean {
-    const snapshot = runtime.snapshot.value;
-    const localPlayerId = runtime.localPlayerId.value;
-    const localPlayer = snapshot?.players.find((player) => player.playerId === localPlayerId);
-    if (!snapshot || !localPlayer || localPlayer.escaped || localPlayer.defeated) {
-        return false;
-    }
-
-    const room = snapshot.map.find((candidate) => candidate.id === localPlayer.roomId);
-    if (!room) {
-        return false;
-    }
-
-    runtime.inspection.value = {
-        roomId: room.id,
-        hotspot: roomClueHotspot(room),
-    };
-    updateScenePrompt(runtime, room, yawToForward(runtime.cameraYaw.value));
-    return true;
-}
-
-function shouldExitInspection(runtime: SceneRuntime, room: RelicRoom): boolean {
-    const inspection = runtime.inspection.value;
-    if (!inspection) {
-        return false;
-    }
-
-    if (inspection.roomId !== room.id) {
-        return true;
-    }
-
-    const distance = new Vector3(
-        inspection.hotspot.x - runtime.roamOffset.x,
-        0,
-        inspection.hotspot.z - runtime.roamOffset.z,
-    ).length();
-
-    return distance > 2.55;
-}
-
-function setRuntimePrompt(runtime: SceneRuntime, prompt: ScenePrompt | undefined): void {
-    if (samePrompt(runtime.prompt.value, prompt)) {
+    const direction = prompt?.kind === 'move'
+        ? prompt.direction
+        : primedMoveDirection(runtime, room) ?? objectiveMoveDirection(runtime, room);
+    if (!room || !direction) {
+        runtime.doorPromptMarker.setEnabled(false);
         return;
     }
 
-    runtime.prompt.value = prompt;
-    runtime.onPromptChange.value(prompt);
+    const roomWorld = roomWorldPosition(room);
+    const local = doorPromptLocalPosition(direction);
+    runtime.doorPromptMarker.position.set(
+        roomWorld.x + local.x,
+        0.22,
+        roomWorld.z + local.z,
+    );
+    const promptActive = prompt?.kind === 'move';
+    const pulse = 1 + Math.sin(now / 120) * 0.08;
+    runtime.doorPromptMarker.scaling.set(pulse, pulse, pulse);
+    runtime.doorPromptMarkerMaterial.alpha = promptActive
+        ? 0.6 + Math.sin(now / 130) * 0.12
+        : 0.34 + Math.sin(now / 170) * 0.06;
+    runtime.doorPromptMarker.setEnabled(true);
+}
+
+function updateClueHotspotHighlights(
+    runtime: SceneRuntime,
+    room: RelicRoom | undefined,
+    prompt: ScenePrompt | undefined,
+    now: number,
+): void {
+    const primedSearch = runtime.primedAction.value?.kind === 'search';
+    const activeClueId = room && (prompt?.kind === 'search' || primedSearch)
+        ? roomClueHotspot(room).id
+        : undefined;
+    const resolvedClue = room && runtime.snapshot.value
+        ? roomHasResolvedClue(runtime.snapshot.value, room.id)
+        : false;
+    const pulse = 1 + Math.sin(now / (prompt?.kind === 'search' && prompt.inspecting ? 95 : 145)) *
+        (prompt?.kind === 'search' && prompt.inspecting ? 0.16 : 0.09);
+
+    for (const props of runtime.props.values()) {
+        for (const mesh of props) {
+            const metadata = mesh.metadata as
+                | Readonly<{ roomId?: unknown; clueHotspotId?: unknown }>
+                | undefined;
+            if (typeof metadata?.clueHotspotId !== 'string') {
+                continue;
+            }
+
+            const active = metadata.clueHotspotId === activeClueId &&
+                metadata.roomId === room?.id;
+            const resolved = resolvedClue && metadata.roomId === room?.id;
+            mesh.visibility = active ? 1 : resolved ? 0.42 : 0.62;
+            mesh.scaling.set(active ? pulse : 1, active ? pulse : 1, active ? pulse : 1);
+        }
+    }
+}
+
+function updateEscapeObjectiveMarker(
+    runtime: SceneRuntime,
+    room: RelicRoom | undefined,
+    now: number,
+): void {
+    const snapshot = runtime.snapshot.value;
+    const localPlayer = snapshot?.players.find((player) =>
+        player.playerId === runtime.localPlayerId.value
+    );
+    if (
+        !snapshot ||
+        !localPlayer ||
+        room?.kind !== 'exit' ||
+        snapshot.phase !== 'planning' ||
+        localPlayer.escaped ||
+        localPlayer.defeated ||
+        snapshot.submittedPlayerIds.includes(localPlayer.playerId)
+    ) {
+        runtime.escapeMarker.setEnabled(false);
+        return;
+    }
+
+    const roomWorld = roomWorldPosition(room);
+    const clue = roomClueHotspot(room);
+    const primed = runtime.primedAction.value?.kind === 'escape';
+    const pulse = 1 + Math.sin(now / (primed ? 92 : 145)) * (primed ? 0.14 : 0.07);
+    runtime.escapeMarker.position.set(
+        roomWorld.x + clue.x,
+        0.24,
+        roomWorld.z + clue.z,
+    );
+    runtime.escapeMarker.scaling.set(pulse, pulse, pulse);
+    runtime.escapeMarkerMaterial.alpha = primed
+        ? 0.66 + Math.sin(now / 110) * 0.12
+        : 0.42 + Math.sin(now / 170) * 0.08;
+    runtime.escapeMarker.setEnabled(true);
+}
+
+function currentLocalRoom(runtime: SceneRuntime): RelicRoom | undefined {
+    const snapshot = runtime.snapshot.value;
+    const localPlayer = snapshot?.players.find((player) =>
+        player.playerId === runtime.localPlayerId.value
+    );
+    if (!snapshot || !localPlayer || localPlayer.escaped || localPlayer.defeated) {
+        return undefined;
+    }
+
+    return snapshot.map.find((room) => room.id === localPlayer.roomId);
+}
+
+function doorPromptLocalPosition(direction: CardinalDirection): Vector3 {
+    const edge = ROOM_SIZE / 2 - 0.42;
+    switch (direction) {
+        case 'north':
+            return new Vector3(0, 0, -edge);
+        case 'south':
+            return new Vector3(0, 0, edge);
+        case 'east':
+            return new Vector3(edge, 0, 0);
+        case 'west':
+            return new Vector3(-edge, 0, 0);
+    }
+}
+
+function primedMoveDirection(
+    runtime: SceneRuntime,
+    room: RelicRoom | undefined,
+): CardinalDirection | undefined {
+    const targetRoomId = runtime.primedAction.value?.kind === 'move'
+        ? runtime.primedAction.value.targetRoomId
+        : undefined;
+    const snapshot = runtime.snapshot.value;
+    if (!room || !snapshot || !targetRoomId || !room.neighbors.includes(targetRoomId)) {
+        return undefined;
+    }
+
+    const target = snapshot.map.find((candidate) => candidate.id === targetRoomId);
+    return target ? directionBetweenRooms(room, target) : undefined;
+}
+
+function objectiveMoveDirection(
+    runtime: SceneRuntime,
+    room: RelicRoom | undefined,
+): CardinalDirection | undefined {
+    const targetRoomId = runtime.objectiveTargetRoomId.value;
+    const snapshot = runtime.snapshot.value;
+    if (!room || !snapshot || !targetRoomId || !room.neighbors.includes(targetRoomId)) {
+        return undefined;
+    }
+
+    const target = snapshot.map.find((candidate) => candidate.id === targetRoomId);
+    return target ? directionBetweenRooms(room, target) : undefined;
+}
+
+function hasPressed(runtime: SceneRuntime, key: string): boolean {
+    return runtime.pressedKeys.has(key);
 }
 
 function moveCameraToward(
@@ -1227,6 +1429,49 @@ function updateEffects(runtime: SceneRuntime): void {
             effect.dispose();
             runtime.effects.splice(index, 1);
         }
+    }
+}
+
+function spawnPrimeActionEffect(runtime: SceneRuntime, action: RelicActionInput): void {
+    if (action.kind === 'move' && action.targetRoomId) {
+        const prompt = runtime.prompt.value;
+        if (prompt?.kind === 'move' && prompt.roomId === action.targetRoomId) {
+            const room = currentLocalRoom(runtime);
+            const center = room
+                ? roomWorldPosition(room).add(doorPromptLocalPosition(prompt.direction))
+                : roomCenter(runtime, action.targetRoomId);
+            spawnPulse(runtime, center, '#8ee7f5', 520, 'low');
+            return;
+        }
+
+        spawnPulse(runtime, roomCenter(runtime, action.targetRoomId), '#8ee7f5', 520, 'low');
+        return;
+    }
+
+    if (action.kind === 'search') {
+        const room = currentLocalRoom(runtime);
+        if (!room) {
+            return;
+        }
+
+        const world = roomWorldPosition(room);
+        const clue = roomClueHotspot(room);
+        const center = new Vector3(world.x + clue.x, 0.4, world.z + clue.z);
+        spawnPulse(runtime, center, '#f2c14e', 600, 'low');
+        spawnGlow(runtime, center.add(new Vector3(0, 0.55, 0)), '#fef08a', 460);
+    }
+
+    if (action.kind === 'escape') {
+        const room = currentLocalRoom(runtime);
+        if (!room) {
+            return;
+        }
+
+        const world = roomWorldPosition(room);
+        const clue = roomClueHotspot(room);
+        const center = new Vector3(world.x + clue.x, 0.32, world.z + clue.z);
+        spawnPulse(runtime, center, '#a3e635', 700, 'medium');
+        spawnGlow(runtime, center.add(new Vector3(0, 0.74, 0)), '#dcfce7', 520);
     }
 }
 

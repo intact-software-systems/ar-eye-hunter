@@ -122,6 +122,79 @@ label {
     line-height: 1.2;
 }
 
+.scene-objective-panel {
+    position: absolute;
+    z-index: 3;
+    left: 22px;
+    top: 104px;
+    width: min(330px, calc(100vw - 410px));
+    min-width: 260px;
+    display: grid;
+    gap: 6px;
+    padding: 12px;
+    border: 1px solid rgba(255, 249, 233, 0.18);
+    border-left: 3px solid rgba(142, 231, 245, 0.8);
+    border-radius: 8px;
+    background: rgba(20, 42, 38, 0.74);
+    box-shadow: 0 16px 40px rgba(7, 18, 16, 0.28);
+    backdrop-filter: blur(12px);
+}
+
+.scene-objective-panel span,
+.scene-objective-panel em {
+    color: #baf5e7;
+    font-size: 0.68rem;
+    font-style: normal;
+    font-weight: 800;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.scene-objective-panel strong {
+    color: #fff9e9;
+    line-height: 1.16;
+}
+
+.scene-objective-panel small {
+    color: #f2ead8;
+    line-height: 1.28;
+}
+
+.scene-objective-panel .scene-objective-note {
+    color: #f6dda0;
+}
+
+.scene-objective-panel .danger-note {
+    color: #fecaca;
+}
+
+.scene-objective-panel button {
+    justify-self: start;
+    min-height: 34px;
+    margin-top: 2px;
+    padding: 0 12px;
+    border-color: rgba(250, 204, 91, 0.66);
+    background: rgba(95, 107, 53, 0.86);
+    font-weight: 700;
+}
+
+.scene-objective-panel.tone-success {
+    border-left-color: rgba(163, 230, 53, 0.86);
+}
+
+.scene-objective-panel.tone-danger,
+.scene-objective-panel.urgent {
+    border-left-color: rgba(248, 113, 113, 0.82);
+}
+
+.scene-objective-panel.tone-mystery {
+    border-left-color: rgba(250, 204, 91, 0.84);
+}
+
+.scene-objective-panel.investigated {
+    background: rgba(26, 50, 45, 0.68);
+}
+
 .relic-scene-fallback {
     overflow: hidden;
     background:
@@ -678,6 +751,12 @@ label {
     outline-offset: 2px;
 }
 
+.castle-map-room.clue-target {
+    border-color: rgba(250, 204, 91, 0.95);
+    background: rgba(104, 92, 38, 0.96);
+    box-shadow: 0 8px 20px rgba(10, 24, 21, 0.22), 0 0 20px rgba(250, 204, 91, 0.28);
+}
+
 .castle-map-room.unstable {
     border-color: rgba(249, 115, 107, 0.72);
 }
@@ -856,6 +935,14 @@ label {
     .scene-interaction-prompt {
         position: fixed;
         bottom: 18px;
+    }
+
+    .scene-objective-panel {
+        position: absolute;
+        left: 12px;
+        top: 64px;
+        width: min(330px, calc(100vw - 24px));
+        min-width: 0;
     }
 
     .topbar,

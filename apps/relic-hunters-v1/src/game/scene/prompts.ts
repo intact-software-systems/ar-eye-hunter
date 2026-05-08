@@ -23,14 +23,14 @@ export function computeScenePrompt({
         return undefined;
     }
 
-    const doorwayPrompt = findDoorwayPrompt(snapshot, room, roamOffset, forward);
-    if (doorwayPrompt) {
-        return doorwayPrompt;
-    }
-
     const alreadySubmitted = snapshot.submittedPlayerIds.includes(localPlayer.playerId);
     if (snapshot.phase !== 'planning' || alreadySubmitted) {
         return undefined;
+    }
+
+    const doorwayPrompt = findDoorwayPrompt(snapshot, room, roamOffset, forward);
+    if (doorwayPrompt) {
+        return doorwayPrompt;
     }
 
     if (inspection && inspection.roomId === room.id) {
@@ -56,7 +56,9 @@ export function samePrompt(left: ScenePrompt | undefined, right: ScenePrompt | u
         return left.roomId === right.roomId && left.direction === right.direction;
     }
     if (left.kind === 'search' && right.kind === 'search') {
-        return left.label === right.label;
+        return left.label === right.label &&
+            left.detail === right.detail &&
+            left.inspecting === right.inspecting;
     }
     return false;
 }

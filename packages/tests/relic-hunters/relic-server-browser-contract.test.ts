@@ -30,6 +30,7 @@ describe('Relic Hunter server browser contract', () => {
             gameId: 'room-1',
         });
         expect(isRelicSnapshot(browserPayload.snapshot)).toBe(true);
+        expect(browserPayload.snapshot.roomInvestigations).toEqual([]);
         expect(browserPayload.snapshot.players[0]).toMatchObject({
             playerId: 'alice-session',
             username: 'Alice',

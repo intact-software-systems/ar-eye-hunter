@@ -3,6 +3,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 type MockBackendOptions = Readonly<{
     rooms?: readonly MockGroupSnapshot[];
     relicSnapshot?: RelicSnapshot;
+    commandSnapshot?: RelicSnapshot;
     requests?: string[];
     commandBodies?: unknown[];
 }>;
@@ -171,6 +172,147 @@ test.describe('Relic Hunters web app', () => {
         await expect(page.getByRole('button', { name: 'Atmosphere' }).first()).toBeVisible();
     });
 
+    test('scene doorway prompt primes a move plan without submitting it', async ({ page }) => {
+        const room = groupSnapshot({ onlineMemberCount: 1 });
+        const commandBodies: unknown[] = [];
+        await installBrowserDoubles(page);
+        await mockBackend(page, {
+            rooms: [room],
+            relicSnapshot: relicSnapshotWithPlayers(1, 'planning'),
+            commandBodies,
+        });
+
+        await page.goto('/');
+        await page.getByRole('button', { name: 'Register' }).click();
+        await page.getByLabel('Username').fill('alice');
+        await page.getByLabel('Display name').fill('Alice');
+        await page.getByLabel('Password').fill('correct-horse');
+        await page.getByRole('button', { name: 'Create Hunter' }).click();
+        await page.getByRole('button', { name: 'Relic Hunters Expedition' }).click();
+
+        const canvas = page.locator('canvas.relic-scene');
+        await expect(canvas).toBeVisible();
+        await expect.poll(() => sceneHasVisiblePixels(page)).toBe(true);
+
+        await page.keyboard.down('w');
+        await expect(page.getByRole('button', { name: /Move to Hallway/ })).toBeVisible();
+        await page.keyboard.up('w');
+        await page.getByRole('button', { name: /Move to Hallway/ }).click();
+
+        await expect(page.getByText('Step into an adjacent room')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Submit Plan' })).toBeEnabled();
+        expect(commandBodies).toHaveLength(0);
+    });
+
+    test('scene objective panel primes the recommended room action', async ({ page }) => {
+        const room = groupSnapshot({ onlineMemberCount: 1 });
+        const commandBodies: unknown[] = [];
+        await installBrowserDoubles(page);
+        await mockBackend(page, {
+            rooms: [room],
+            relicSnapshot: relicSnapshotWithPlayers(1, 'planning'),
+            commandBodies,
+        });
+
+        await page.goto('/');
+        await page.getByRole('button', { name: 'Register' }).click();
+        await page.getByLabel('Username').fill('alice');
+        await page.getByLabel('Display name').fill('Alice');
+        await page.getByLabel('Password').fill('correct-horse');
+        await page.getByRole('button', { name: 'Create Hunter' }).click();
+        await page.getByRole('button', { name: 'Relic Hunters Expedition' }).click();
+
+        const objective = page.locator('[aria-label="Room objective"]');
+        await expect(objective.getByText('Move to Hallway')).toBeVisible();
+        await objective.getByRole('button', { name: 'Prime Move' }).click();
+
+        await expect(page.getByText('Step into an adjacent room')).toBeVisible();
+        await expect(objective.getByText('Submit the plan to commit this turn-based move.')).toBeVisible();
+        expect(commandBodies).toHaveLength(0);
+    });
+
+    test('scene objective panel exposes escape when the hunter reaches the exit', async ({ page }) => {
+        const room = groupSnapshot({ onlineMemberCount: 1 });
+        const commandBodies: unknown[] = [];
+        await installBrowserDoubles(page);
+        await mockBackend(page, {
+            rooms: [room],
+            relicSnapshot: relicSnapshotWithPlayers(1, 'planning', {
+                carryRelic: true,
+                includeExit: true,
+                playerRoomId: 'exit',
+            }),
+            commandBodies,
+        });
+
+        await page.goto('/');
+        await page.getByRole('button', { name: 'Register' }).click();
+        await page.getByLabel('Username').fill('alice');
+        await page.getByLabel('Display name').fill('Alice');
+        await page.getByLabel('Password').fill('correct-horse');
+        await page.getByRole('button', { name: 'Create Hunter' }).click();
+        await page.getByRole('button', { name: 'Relic Hunters Expedition' }).click();
+
+        const objective = page.locator('[aria-label="Room objective"]');
+        await expect(objective.getByText('Escape with your relics')).toBeVisible();
+        await objective.getByRole('button', { name: 'Prime Escape' }).click();
+
+        await expect(page.getByText('Leave from the Exit with your relics')).toBeVisible();
+        await expect(objective.getByText('Escape is primed')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Submit Plan' })).toBeEnabled();
+        expect(commandBodies).toHaveLength(0);
+    });
+
+    test('resolved search marks the room objective as investigated', async ({ page }) => {
+        const room = groupSnapshot({ onlineMemberCount: 1 });
+        await installBrowserDoubles(page);
+        await mockBackend(page, {
+            rooms: [room],
+            relicSnapshot: relicSnapshotWithPlayers(1, 'planning', {
+                includeStorage: true,
+                playerRoomId: 'storage',
+            }),
+            commandSnapshot: relicSnapshotWithPlayers(1, 'planning', {
+                includeStorage: true,
+                playerRoomId: 'storage',
+                roomInvestigations: [
+                    {
+                        roomId: 'storage',
+                        searchedByPlayerId: 'alice-session',
+                        searchedByUsername: 'Alice',
+                        searchedAtRound: 1,
+                        searchedAtEpochMs: Date.now(),
+                        result: 'empty',
+                        summary: 'The crates held a torn supply map, but no relic.',
+                        hint: 'The supply marks point back toward the Entrance and onward through the Trap Room.',
+                        effect: 'map-fragment',
+                        revealedRoomId: 'trap',
+                    },
+                ],
+                round: 2,
+            }),
+        });
+
+        await page.goto('/');
+        await page.getByRole('button', { name: 'Register' }).click();
+        await page.getByLabel('Username').fill('alice');
+        await page.getByLabel('Display name').fill('Alice');
+        await page.getByLabel('Password').fill('correct-horse');
+        await page.getByRole('button', { name: 'Create Hunter' }).click();
+        await page.getByRole('button', { name: 'Relic Hunters Expedition' }).click();
+
+        const objective = page.locator('[aria-label="Room objective"]');
+        await expect(objective.getByText('Search the crates')).toBeVisible();
+        await objective.getByRole('button', { name: 'Prime Search' }).click();
+        await page.getByRole('button', { name: 'Submit Plan' }).click();
+
+        await expect(objective.getByText('Clue trail marked')).toBeVisible();
+        await expect(objective.getByText('The crates held a torn supply map, but no relic.')).toBeVisible();
+        await expect(objective.getByText('Follow the map fragment toward Trap Room')).toBeVisible();
+        await expect(objective.getByText('Next step: Move to Trap Room. The supply marks point back toward the Entrance and onward through the Trap Room.')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Trap Room' })).toHaveClass(/clue-target/);
+    });
+
     test('Rallar browser bootstrap reads server config, state snapshots, and opens WebSocket', async ({ page }) => {
         const requests: string[] = [];
         await installBrowserDoubles(page);
@@ -302,7 +444,7 @@ async function mockBackend(page: Page, options: MockBackendOptions): Promise<voi
 
         if (path === '/api/relic/games/room-1/commands') {
             options.commandBodies?.push(parseJsonBody(request.postData()));
-            return json(route, relicSnapshotWithPlayers(1));
+            return json(route, options.commandSnapshot ?? relicSnapshotWithPlayers(1));
         }
 
         if (path.endsWith('/clients') && request.method() === 'GET') {
@@ -475,18 +617,26 @@ function groupSnapshot(
 function relicSnapshotWithPlayers(
     playerCount: 1 | 2,
     phase: 'lobby' | 'planning' = 'lobby',
+    options: Readonly<{
+        carryRelic?: boolean;
+        includeStorage?: boolean;
+        includeExit?: boolean;
+        playerRoomId?: string;
+        roomInvestigations?: readonly Record<string, unknown>[];
+        round?: number;
+    }> = {},
 ): RelicSnapshot {
     const players = [
         {
             playerId: 'alice-session',
             username: 'Alice',
             characterId: 'kael-ironstride',
-            roomId: 'entrance',
+            roomId: options.playerRoomId ?? 'entrance',
             health: 3,
             escaped: false,
             defeated: false,
             score: 0,
-            relicIds: [],
+            relicIds: options.carryRelic ? ['golden-idol'] : [],
         },
     ];
     if (playerCount === 2) {
@@ -494,7 +644,7 @@ function relicSnapshotWithPlayers(
             playerId: 'bob-session',
             username: 'Bob',
             characterId: 'nyra-vale',
-            roomId: 'entrance',
+            roomId: options.playerRoomId ?? 'entrance',
             health: 3,
             escaped: false,
             defeated: false,
@@ -503,33 +653,79 @@ function relicSnapshotWithPlayers(
         });
     }
 
+    const map = [
+        {
+            id: 'entrance',
+            name: 'Entrance',
+            kind: 'entrance',
+            x: 0,
+            z: -6,
+            neighbors: options.includeStorage ? ['hallway', 'storage'] : ['hallway'],
+        },
+        {
+            id: 'hallway',
+            name: 'Hallway',
+            kind: 'hallway',
+            x: 0,
+            z: -3,
+            neighbors: options.includeExit ? ['entrance', 'exit'] : ['entrance'],
+        },
+        ...(options.includeExit
+            ? [
+                {
+                    id: 'exit',
+                    name: 'Exit',
+                    kind: 'exit',
+                    x: 0,
+                    z: 0,
+                    neighbors: ['hallway'],
+                },
+            ]
+            : []),
+        ...(options.includeStorage
+            ? [
+                {
+                    id: 'storage',
+                    name: 'Storage',
+                    kind: 'storage',
+                    x: -4,
+                    z: -3,
+                    neighbors: ['entrance', 'trap'],
+                },
+                {
+                    id: 'trap',
+                    name: 'Trap Room',
+                    kind: 'trap',
+                    x: -4,
+                    z: 0,
+                    neighbors: ['storage'],
+                },
+            ]
+            : []),
+    ];
+
     return {
         protocolVersion: 1,
         gameId: 'room-1',
         roomId: 'room-1',
         phase,
-        round: 1,
+        round: options.round ?? 1,
         maxRounds: 10,
         updatedAtEpochMs: Date.now(),
-        map: [
-            {
-                id: 'entrance',
-                name: 'Entrance',
-                kind: 'entrance',
-                x: 0,
-                z: -6,
-                neighbors: ['hallway'],
-            },
-            {
-                id: 'hallway',
-                name: 'Hallway',
-                kind: 'hallway',
-                x: 0,
-                z: -3,
-                neighbors: ['entrance'],
-            },
-        ],
-        relics: [],
+        map,
+        relics: options.carryRelic
+            ? [
+                {
+                    id: 'golden-idol',
+                    name: 'Golden Idol',
+                    value: 5,
+                    roomId: 'treasure',
+                    foundBy: 'alice-session',
+                    carriedBy: 'alice-session',
+                },
+            ]
+            : [],
+        roomInvestigations: options.roomInvestigations ?? [],
         players,
         submittedPlayerIds: [],
         events: [],

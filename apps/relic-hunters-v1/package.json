@@ -13,7 +13,8 @@
     "@babylonjs/core": "^8.0.0",
     "@js-temporal/polyfill": "^0.5.1",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "graphology": "^0.26.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

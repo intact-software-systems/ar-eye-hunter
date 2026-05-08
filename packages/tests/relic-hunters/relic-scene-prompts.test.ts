@@ -12,6 +12,7 @@ import { ROOM_SIZE, ROAM_MARGIN } from '../../../apps/relic-hunters-v1/src/game/
 import {
     computeScenePrompt,
     roomClueHotspot,
+    samePrompt,
 } from '../../../apps/relic-hunters-v1/src/game/scene/prompts.ts';
 
 describe('Relic scene prompt computation', () => {
@@ -31,6 +32,45 @@ describe('Relic scene prompt computation', () => {
             roomId: 'hallway',
             roomName: 'Hallway',
             direction: 'south',
+        });
+    });
+
+    it('keeps doorway prompts ahead of clue prompts when both are in reach', () => {
+        const snapshot = planningSnapshot();
+        const exit = {
+            ...room(snapshot, 'exit'),
+            id: 'test-exit',
+            x: 0,
+            z: 0,
+            neighbors: ['south-room'],
+        };
+        const southRoom = {
+            ...room(snapshot, 'hallway'),
+            id: 'south-room',
+            x: 0,
+            z: 1,
+            neighbors: ['test-exit'],
+        };
+        const prompt = computeScenePrompt({
+            snapshot: {
+                ...snapshot,
+                map: [exit, southRoom],
+                players: snapshot.players.map((player) =>
+                    player.playerId === 'alice-session'
+                        ? { ...player, roomId: 'test-exit' }
+                        : player
+                ),
+            },
+            localPlayerId: 'alice-session',
+            room: exit,
+            roamOffset: new Vector3(0, 0, ROOM_SIZE / 2 - ROAM_MARGIN - 0.1),
+            forward: new Vector3(0, 0, 1),
+        });
+
+        expect(prompt).toMatchObject({
+            kind: 'move',
+            roomId: 'south-room',
+            roomName: 'Hallway',
         });
     });
 
@@ -100,6 +140,53 @@ describe('Relic scene prompt computation', () => {
         });
 
         expect(prompt).toBeUndefined();
+    });
+
+    it('does not show doorway prompts before the expedition starts', () => {
+        const snapshot = lobbySnapshot();
+        const entrance = room(snapshot, 'entrance');
+        const prompt = computeScenePrompt({
+            snapshot,
+            localPlayerId: 'alice-session',
+            room: entrance,
+            roamOffset: new Vector3(0, 0, ROOM_SIZE / 2 - ROAM_MARGIN - 0.1),
+            forward: new Vector3(0, 0, 1),
+        });
+
+        expect(prompt).toBeUndefined();
+    });
+
+    it('does not show scene prompts after the hunter has submitted a plan', () => {
+        const snapshot = planningSnapshot();
+        const entrance = room(snapshot, 'entrance');
+        const prompt = computeScenePrompt({
+            snapshot: {
+                ...snapshot,
+                submittedPlayerIds: ['alice-session'],
+            },
+            localPlayerId: 'alice-session',
+            room: entrance,
+            roamOffset: new Vector3(0, 0, ROOM_SIZE / 2 - ROAM_MARGIN - 0.1),
+            forward: new Vector3(0, 0, 1),
+        });
+
+        expect(prompt).toBeUndefined();
+    });
+
+    it('treats inspection prompt detail as a meaningful prompt change', () => {
+        expect(samePrompt(
+            {
+                kind: 'search',
+                label: 'Search the altar',
+                detail: 'Prime a Search plan for this room',
+            },
+            {
+                kind: 'search',
+                label: 'Search the altar',
+                detail: 'The altar glyphs pulse. Esc or back away to leave inspection.',
+                inspecting: true,
+            },
+        )).toBe(false);
     });
 });
 

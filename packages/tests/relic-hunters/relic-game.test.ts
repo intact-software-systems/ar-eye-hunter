@@ -165,6 +165,153 @@ describe('Relic Hunters game rules', () => {
         expect(state.pendingActions).toEqual([]);
     });
 
+    it('marks empty room searches as durable room investigations', () => {
+        let state = createRelicGame('room-1', 'room-1', 1);
+        state = applyRelicCommand(state, join('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 2,
+        }).state;
+        state = applyRelicCommand(state, start('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 3,
+        }).state;
+
+        state = applyRelicCommand(
+            state,
+            submit('alice', 'Alice', { kind: 'search' }),
+            {
+                senderId: 'alice',
+                now: () => 4,
+            },
+        ).state;
+
+        expect(state.roomInvestigations).toHaveLength(1);
+        expect(state.roomInvestigations[0]).toMatchObject({
+            roomId: 'entrance',
+            searchedByPlayerId: 'alice',
+            searchedByUsername: 'Alice',
+            searchedAtRound: 1,
+            searchedAtEpochMs: 4,
+            result: 'empty',
+            summary: 'Entrance was searched clear.',
+            hint: 'Move toward a stronger clue or the Exit.',
+            effect: 'ordinary-search',
+            revealedRoomId: 'storage',
+        });
+        expect(toPublicRelicSnapshot(state).roomInvestigations).toEqual(state.roomInvestigations);
+    });
+
+    it('adds room-specific notes to empty investigations', () => {
+        let state = createRelicGame('room-1', 'room-1', 1);
+        state = {
+            ...state,
+            relics: state.relics.filter((relic) => relic.roomId !== 'storage'),
+        };
+        state = applyRelicCommand(state, join('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 2,
+        }).state;
+        state = applyRelicCommand(state, start('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 3,
+        }).state;
+
+        for (const [index, action] of ([
+            { kind: 'move', targetRoomId: 'storage' },
+            { kind: 'search' },
+        ] as const).entries()) {
+            state = applyRelicCommand(
+                state,
+                submit('alice', 'Alice', action),
+                {
+                    senderId: 'alice',
+                    now: () => 4 + index,
+                },
+            ).state;
+        }
+
+        expect(state.roomInvestigations).toContainEqual(expect.objectContaining({
+            roomId: 'storage',
+            result: 'empty',
+            summary: 'The crates held a torn supply map, but no relic.',
+            hint: 'The supply marks point back toward the Entrance and onward through the Trap Room.',
+            effect: 'map-fragment',
+            revealedRoomId: 'trap',
+        }));
+    });
+
+    it('marks relic discoveries as durable room investigations', () => {
+        let state = createRelicGame('room-1', 'room-1', 1);
+        state = applyRelicCommand(state, join('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 2,
+        }).state;
+        state = applyRelicCommand(state, start('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 3,
+        }).state;
+
+        for (const [index, action] of ([
+            { kind: 'move', targetRoomId: 'storage' },
+            { kind: 'search' },
+        ] as const).entries()) {
+            state = applyRelicCommand(
+                state,
+                submit('alice', 'Alice', action),
+                {
+                    senderId: 'alice',
+                    now: () => 4 + index,
+                },
+            ).state;
+        }
+
+        expect(state.roomInvestigations).toContainEqual({
+            roomId: 'storage',
+            searchedByPlayerId: 'alice',
+            searchedByUsername: 'Alice',
+            searchedAtRound: 2,
+            searchedAtEpochMs: 5,
+            result: 'relic-found',
+            summary: 'Sun Disk was recovered here.',
+            hint: 'Carry the relic toward the Exit before the castle closes.',
+            effect: 'map-fragment',
+            revealedRoomId: 'trap',
+            relicId: 'sun-disk',
+        });
+    });
+
+    it('softens repeated searches in already investigated rooms', () => {
+        let state = createRelicGame('room-1', 'room-1', 1);
+        state = applyRelicCommand(state, join('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 2,
+        }).state;
+        state = applyRelicCommand(state, start('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 3,
+        }).state;
+
+        state = applyRelicCommand(
+            state,
+            submit('alice', 'Alice', { kind: 'search' }),
+            {
+                senderId: 'alice',
+                now: () => 4,
+            },
+        ).state;
+        state = applyRelicCommand(
+            state,
+            submit('alice', 'Alice', { kind: 'search' }),
+            {
+                senderId: 'alice',
+                now: () => 5,
+            },
+        ).state;
+
+        expect(state.roomInvestigations).toHaveLength(1);
+        expect(state.events.at(-3)?.message).toContain('useful clues were already marked');
+    });
+
     it('scores found relics and escape bonus when a hunter exits safely', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = applyRelicCommand(state, join('alice', 'Alice'), {

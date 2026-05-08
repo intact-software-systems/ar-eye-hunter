@@ -100,6 +100,32 @@ export type RelicDefinition = Readonly<{
     escapedBy?: string;
 }>;
 
+export type RelicRoomInvestigationResult = 'empty' | 'relic-found';
+
+export type RelicRoomInvestigationEffect =
+    | 'ordinary-search'
+    | 'map-fragment'
+    | 'rune-reading'
+    | 'safe-path'
+    | 'treasure-trail'
+    | 'monster-trace'
+    | 'exit-route';
+
+export type RelicRoomInvestigation = Readonly<{
+    roomId: string;
+    searchedByPlayerId: string;
+    searchedByUsername: string;
+    searchedAtRound: number;
+    searchedAtEpochMs: number;
+    result: RelicRoomInvestigationResult;
+    summary: string;
+    hint: string;
+    effect: RelicRoomInvestigationEffect;
+    danger?: string;
+    revealedRoomId?: string;
+    relicId?: string;
+}>;
+
 export type RelicPlayer = Readonly<{
     playerId: string;
     username: string;
@@ -146,6 +172,7 @@ export type RelicGameState = Readonly<{
     updatedAtEpochMs: number;
     map: readonly RelicRoom[];
     relics: readonly RelicDefinition[];
+    roomInvestigations: readonly RelicRoomInvestigation[];
     players: readonly RelicPlayer[];
     pendingActions: readonly RelicPendingAction[];
     events: readonly RelicEvent[];
@@ -162,6 +189,7 @@ export type RelicPublicSnapshot = Readonly<{
     updatedAtEpochMs: number;
     map: readonly RelicRoom[];
     relics: readonly RelicDefinition[];
+    roomInvestigations: readonly RelicRoomInvestigation[];
     players: readonly RelicPlayer[];
     submittedPlayerIds: readonly string[];
     events: readonly RelicEvent[];
@@ -197,6 +225,9 @@ export type RelicServerEvent = Readonly<{
 }>;
 
 export function toPublicRelicSnapshot(state: RelicGameState): RelicPublicSnapshot {
+    const maybeLegacy = state as RelicGameState & {
+        roomInvestigations?: readonly RelicRoomInvestigation[];
+    };
     return {
         protocolVersion: state.protocolVersion,
         gameId: state.gameId,
@@ -207,6 +238,7 @@ export function toPublicRelicSnapshot(state: RelicGameState): RelicPublicSnapsho
         updatedAtEpochMs: state.updatedAtEpochMs,
         map: state.map,
         relics: state.relics,
+        roomInvestigations: maybeLegacy.roomInvestigations ?? [],
         players: state.players,
         submittedPlayerIds: state.pendingActions.map((action) => action.playerId),
         events: state.events.slice(-16),
@@ -241,6 +273,7 @@ export function isRelicSnapshot(value: unknown): value is RelicPublicSnapshot {
         value.protocolVersion === RELIC_PROTOCOL_VERSION &&
         typeof value.gameId === 'string' &&
         typeof value.round === 'number' &&
+        Array.isArray(value.roomInvestigations) &&
         Array.isArray(value.players);
 }
 

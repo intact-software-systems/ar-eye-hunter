@@ -39,6 +39,7 @@ export default function App() {
         RELIC_CHARACTERS[0].id,
     );
     const [draft, setDraft] = useState<ActionDraft>({ kind: 'search' });
+    const [scenePrimedAction, setScenePrimedAction] = useState<RelicActionInput | undefined>();
     const [dismissedPartyChangeKey, setDismissedPartyChangeKey] = useState<string | undefined>();
     const [ambientEnabled, setAmbientEnabled] = useState(false);
 
@@ -141,6 +142,10 @@ export default function App() {
         }
     }, [game.session]);
 
+    useEffect(() => {
+        setScenePrimedAction(undefined);
+    }, [currentPlayer?.roomId, game.snapshot?.phase, game.snapshot?.round]);
+
     const submitAuth = async (event: FormEvent) => {
         event.preventDefault();
         if (authMode === 'login') {
@@ -200,11 +205,28 @@ export default function App() {
                 kind: 'move',
                 targetRoomId: action.targetRoomId,
             });
+            setScenePrimedAction(action);
             return;
         }
 
         if (action.kind === 'search') {
             setDraft({ kind: 'search' });
+            setScenePrimedAction(action);
+            return;
+        }
+
+        if (action.kind === 'escape') {
+            setDraft({ kind: 'escape' });
+            setScenePrimedAction(action);
+            return;
+        }
+
+        if (action.kind === 'steal') {
+            setDraft({
+                kind: 'steal',
+                targetPlayerId: action.targetPlayerId,
+            });
+            setScenePrimedAction(action);
         }
     };
 
@@ -224,6 +246,7 @@ export default function App() {
                 snapshot={game.snapshot}
                 localPlayerId={game.session?.sessionId}
                 selectedRoomId={selectedRoomId}
+                primedAction={scenePrimedAction}
                 onSelectRoom={setSelectedRoomId}
                 onPrimeAction={primeSceneAction}
             />
@@ -406,7 +429,22 @@ export default function App() {
                                     className={draft.kind === kind ? 'active' : ''}
                                     onClick={() => {
                                         playUiSound('select');
-                                        setDraft({ kind });
+                                        const nextDraft: ActionDraft = kind === 'move'
+                                            ? {
+                                                kind,
+                                                targetRoomId: selectedRoomId &&
+                                                        moveTargets.includes(selectedRoomId)
+                                                    ? selectedRoomId
+                                                    : moveTargets[0],
+                                            }
+                                            : kind === 'steal'
+                                            ? {
+                                                kind,
+                                                targetPlayerId: stealTargets[0]?.playerId,
+                                            }
+                                            : { kind };
+                                        setDraft(nextDraft);
+                                        setScenePrimedAction(nextDraft);
                                     }}
                                 >
                                     <span>{ACTION_INFO[kind].label}</span>
@@ -425,10 +463,14 @@ export default function App() {
                             <select
                                 value={draft.targetRoomId ?? selectedRoomId ?? moveTargets[0] ?? ''}
                                 onChange={(event) =>
-                                    setDraft({
-                                        kind: 'move',
-                                        targetRoomId: event.target.value,
-                                    })}
+                                    {
+                                        const nextDraft = {
+                                            kind: 'move' as const,
+                                            targetRoomId: event.target.value,
+                                        };
+                                        setDraft(nextDraft);
+                                        setScenePrimedAction(nextDraft);
+                                    }}
                             >
                                 {moveTargets.map((roomId) => (
                                     <option key={roomId} value={roomId}>
@@ -442,10 +484,14 @@ export default function App() {
                             <select
                                 value={draft.targetPlayerId ?? stealTargets[0]?.playerId ?? ''}
                                 onChange={(event) =>
-                                    setDraft({
-                                        kind: 'steal',
-                                        targetPlayerId: event.target.value,
-                                    })}
+                                    {
+                                        const nextDraft = {
+                                            kind: 'steal' as const,
+                                            targetPlayerId: event.target.value,
+                                        };
+                                        setDraft(nextDraft);
+                                        setScenePrimedAction(nextDraft);
+                                    }}
                             >
                                 {stealTargets.map((player) => (
                                     <option key={player.playerId} value={player.playerId}>
@@ -655,6 +701,14 @@ function RoomIntel({
             relic.roomId === currentRoom.id && !relic.carriedBy && !relic.escapedBy
         )
         : [];
+    const investigation = currentRoom && snapshot
+        ? snapshot.roomInvestigations?.find((candidate) =>
+            candidate.roomId === currentRoom.id
+        )
+        : undefined;
+    const revealedRoom = investigation?.revealedRoomId && snapshot
+        ? snapshot.map.find((room) => room.id === investigation.revealedRoomId)
+        : undefined;
 
     return (
         <div className="panel stack room-intel">
@@ -683,8 +737,30 @@ function RoomIntel({
                             <span>Relic Signal</span>
                             <strong>{roomRelics.length > 0
                                 ? roomRelics.map((relic) => relic.name).join(', ')
+                                : investigation
+                                ? investigation.result === 'relic-found'
+                                    ? 'relic trail marked'
+                                    : 'searched clear'
                                 : 'quiet stone'}</strong>
                         </div>
+                        <div>
+                            <span>Investigation</span>
+                            <strong>{investigation
+                                ? investigation.summary
+                                : 'unmarked'}</strong>
+                        </div>
+                        {investigation && (
+                            <div>
+                                <span>Clue Note</span>
+                                <strong>{investigation.danger ?? investigation.hint}</strong>
+                            </div>
+                        )}
+                        {revealedRoom && (
+                            <div>
+                                <span>Clue Target</span>
+                                <strong>{revealedRoom.name}</strong>
+                            </div>
+                        )}
                     </div>
                 </>
             )}
@@ -711,6 +787,11 @@ function CastleMap({
     onSelectRoom(roomId: string): void;
 }>) {
     const bounds = castleMapBounds(snapshot.map);
+    const clueTargetRoomIds = new Set(
+        (snapshot.roomInvestigations ?? [])
+            .map((investigation) => investigation.revealedRoomId)
+            .filter((roomId): roomId is string => !!roomId),
+    );
     const edges = snapshot.map.flatMap((room) =>
         room.neighbors
             .filter((neighborId) => room.id < neighborId)
@@ -760,6 +841,7 @@ function CastleMap({
                                 'castle-map-room',
                                 room.id === selectedRoomId ? 'selected' : '',
                                 local ? 'local' : '',
+                                clueTargetRoomIds.has(room.id) ? 'clue-target' : '',
                                 room.unstable ? 'unstable' : '',
                                 room.collapsed ? 'collapsed' : '',
                             ].filter(Boolean).join(' ')}

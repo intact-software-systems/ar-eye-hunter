@@ -7,6 +7,8 @@ import {
     type RelicGameState,
     type RelicPendingAction,
     type RelicPlayer,
+    type RelicRoomInvestigationEffect,
+    type RelicRoomInvestigation,
     type RelicRoom,
 } from './model.ts';
 import {
@@ -69,6 +71,7 @@ export function createRelicGame(
             { id: 'cursed-mask', name: 'Cursed Mask', value: 8, roomId: 'monster' },
             { id: 'serpent-crown', name: 'Serpent Crown', value: 7, roomId: 'trap' },
         ],
+        roomInvestigations: [],
         players: [],
         pendingActions: [],
         events: [
@@ -81,6 +84,16 @@ export function createRelicGame(
     };
 }
 
+function normalizeGameState(state: RelicGameState): RelicGameState {
+    const maybeLegacy = state as RelicGameState & {
+        roomInvestigations?: readonly RelicRoomInvestigation[];
+    };
+    return {
+        ...state,
+        roomInvestigations: maybeLegacy.roomInvestigations ?? [],
+    };
+}
+
 export function applyRelicCommand(
     previous: RelicGameState | undefined,
     command: RelicCommand,
@@ -88,7 +101,7 @@ export function applyRelicCommand(
 ): RelicApplyCommandResult {
     const now = options.now?.() ?? Date.now();
     const gameId = command.gameId;
-    const state = previous ?? createRelicGame(gameId, gameId, now);
+    const state = normalizeGameState(previous ?? createRelicGame(gameId, gameId, now));
     const joined = ensurePlayer(
         state,
         options.senderId,
@@ -300,21 +313,47 @@ function resolveSearch(
     player: RelicPlayer,
     now: number,
 ): RelicGameState {
+    if (state.roomInvestigations.some((investigation) =>
+        investigation.roomId === player.roomId
+    )) {
+        return withEvent(
+            state,
+            `${player.username} searched ${roomName(state, player.roomId)} again, but the useful clues were already marked.`,
+            now,
+            {
+                type: 'player_searched',
+                animationCue: {
+                    type: 'search_altar',
+                    playerId: player.playerId,
+                    roomId: player.roomId,
+                    durationMs: 520,
+                    intensity: 'low',
+                },
+                tone: 'neutral',
+            },
+        );
+    }
+
     const relic = state.relics.find((candidate) =>
         candidate.roomId === player.roomId && !candidate.foundBy
     );
     if (!relic) {
-        return withEvent(state, `${player.username} searched but found nothing.`, now, {
-            type: 'player_searched',
-            animationCue: {
-                type: 'search_altar',
-                playerId: player.playerId,
-                roomId: player.roomId,
-                durationMs: 700,
-                intensity: 'low',
+        return withEvent(
+            markRoomInvestigated(state, player, now, 'empty'),
+            emptySearchMessage(state, player),
+            now,
+            {
+                type: 'player_searched',
+                animationCue: {
+                    type: 'search_altar',
+                    playerId: player.playerId,
+                    roomId: player.roomId,
+                    durationMs: 700,
+                    intensity: 'low',
+                },
+                tone: 'mystery',
             },
-            tone: 'mystery',
-        });
+        );
     }
 
     const relics = state.relics.map((candidate) =>
@@ -322,12 +361,19 @@ function resolveSearch(
             ? { ...candidate, foundBy: player.playerId, carriedBy: player.playerId }
             : candidate
     );
+    const investigatedState = markRoomInvestigated(
+        {
+            ...state,
+            relics,
+        },
+        player,
+        now,
+        'relic-found',
+        relic.id,
+    );
     return updatePlayer(
         withEvent(
-            {
-                ...state,
-                relics,
-            },
+            investigatedState,
             `${player.username} found the ${relic.name}.`,
             now,
             {
@@ -348,6 +394,180 @@ function resolveSearch(
             relicIds: [...player.relicIds, relic.id],
         },
     );
+}
+
+function emptySearchMessage(state: RelicGameState, player: RelicPlayer): string {
+    const room = state.map.find((candidate) => candidate.id === player.roomId);
+    switch (room?.kind) {
+        case 'storage':
+            return `${player.username} searched the crates and marked a false supply trail.`;
+        case 'shrine':
+            return `${player.username} read the altar runes and marked the empty glyph path.`;
+        case 'trap':
+            return `${player.username} studied the pressure plates and marked the safe edges.`;
+        case 'treasure':
+            return `${player.username} checked the chest and mirror, but the prize was gone.`;
+        case 'monster':
+            return `${player.username} searched the chains and ash, finding only old danger.`;
+        case 'exit':
+            return `${player.username} read the exit runes and marked the way out.`;
+        default:
+            return `${player.username} searched but found nothing.`;
+    }
+}
+
+function markRoomInvestigated(
+    state: RelicGameState,
+    player: RelicPlayer,
+    now: number,
+    result: RelicRoomInvestigation['result'],
+    relicId?: string,
+): RelicGameState {
+    const investigation: RelicRoomInvestigation = {
+        roomId: player.roomId,
+        searchedByPlayerId: player.playerId,
+        searchedByUsername: player.username,
+        searchedAtRound: state.round,
+        searchedAtEpochMs: now,
+        result,
+        ...roomInvestigationDetails(state, player, result, relicId),
+        ...(relicId ? { relicId } : {}),
+    };
+
+    return {
+        ...state,
+        roomInvestigations: [
+            ...state.roomInvestigations.filter((candidate) =>
+                candidate.roomId !== player.roomId
+            ),
+            investigation,
+        ],
+    };
+}
+
+function roomInvestigationDetails(
+    state: RelicGameState,
+    player: RelicPlayer,
+    result: RelicRoomInvestigation['result'],
+    relicId: string | undefined,
+): Readonly<{
+    summary: string;
+    hint: string;
+    effect: RelicRoomInvestigationEffect;
+    danger?: string;
+    revealedRoomId?: string;
+}> {
+    const room = state.map.find((candidate) => candidate.id === player.roomId);
+    const relic = relicId ? state.relics.find((candidate) => candidate.id === relicId) : undefined;
+    const revealedRoomId = revealedRoomForInvestigation(state, player.roomId);
+
+    if (result === 'relic-found' && relic) {
+        return {
+            summary: `${relic.name} was recovered here.`,
+            hint: room?.kind === 'exit'
+                ? 'The exit route is still the safest way to bank the score.'
+                : 'Carry the relic toward the Exit before the castle closes.',
+            effect: investigationEffect(room),
+            ...(room?.kind === 'trap' || room?.kind === 'monster'
+                ? { danger: 'The find stirred a dangerous room.' }
+                : {}),
+            ...(revealedRoomId ? { revealedRoomId } : {}),
+        };
+    }
+
+    switch (room?.kind) {
+        case 'storage':
+            return {
+                summary: 'The crates held a torn supply map, but no relic.',
+                hint: 'The supply marks point back toward the Entrance and onward through the Trap Room.',
+                effect: 'map-fragment',
+                revealedRoomId: revealedRoomId ?? 'trap',
+            };
+        case 'shrine':
+            return {
+                summary: 'The altar runes were read and the empty glyph path was marked.',
+                hint: 'The shrine points toward treasure, but the party should watch the remaining rounds.',
+                effect: 'rune-reading',
+                revealedRoomId: revealedRoomId ?? 'treasure',
+            };
+        case 'trap':
+            return {
+                summary: 'The safe edges of the pressure plates were marked.',
+                hint: 'Move carefully from here; repeated noise can make the room punish the party.',
+                effect: 'safe-path',
+                danger: 'Pressure plates remain unstable.',
+                revealedRoomId: revealedRoomId ?? 'monster',
+            };
+        case 'treasure':
+            return {
+                summary: 'The chest and mirror were checked, but the prize trail was cold.',
+                hint: 'The mirror scratches point back toward rooms the party may have skipped.',
+                effect: 'treasure-trail',
+                revealedRoomId,
+            };
+        case 'monster':
+            return {
+                summary: 'The chains and ash were searched, revealing only old danger.',
+                hint: 'The next useful choice is usually the Exit unless the party needs one last relic.',
+                effect: 'monster-trace',
+                danger: 'Bones and ash suggest the room can turn costly.',
+                revealedRoomId: revealedRoomId ?? 'exit',
+            };
+        case 'exit':
+            return {
+                summary: 'The exit runes were read and the way out was marked.',
+                hint: 'Prime Escape here to bank carried relics and the escape bonus.',
+                effect: 'exit-route',
+            };
+        default:
+            return {
+                summary: `${roomName(state, player.roomId)} was searched clear.`,
+                hint: 'Move toward a stronger clue or the Exit.',
+                effect: 'ordinary-search',
+                ...(revealedRoomId ? { revealedRoomId } : {}),
+            };
+    }
+}
+
+function investigationEffect(room: RelicRoom | undefined): RelicRoomInvestigationEffect {
+    switch (room?.kind) {
+        case 'storage':
+            return 'map-fragment';
+        case 'shrine':
+            return 'rune-reading';
+        case 'trap':
+            return 'safe-path';
+        case 'treasure':
+            return 'treasure-trail';
+        case 'monster':
+            return 'monster-trace';
+        case 'exit':
+            return 'exit-route';
+        default:
+            return 'ordinary-search';
+    }
+}
+
+function revealedRoomForInvestigation(
+    state: RelicGameState,
+    roomId: string,
+): string | undefined {
+    const room = state.map.find((candidate) => candidate.id === roomId);
+    if (!room) {
+        return undefined;
+    }
+
+    const neighbors = room.neighbors
+        .map((neighborId) => state.map.find((candidate) => candidate.id === neighborId))
+        .filter((candidate): candidate is RelicRoom => !!candidate && !candidate.collapsed);
+    return neighbors.find((neighbor) =>
+        state.relics.some((relic) =>
+            relic.roomId === neighbor.id &&
+            !relic.foundBy &&
+            !relic.carriedBy &&
+            !relic.escapedBy
+        )
+    )?.id ?? neighbors[0]?.id;
 }
 
 function resolveSteal(

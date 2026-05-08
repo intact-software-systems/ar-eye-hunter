@@ -26,3 +26,5 @@ apps/web/dist
 
 /playwright-report/
 /test-results/
+
+**.env.local**
