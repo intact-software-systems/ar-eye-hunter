@@ -31,7 +31,7 @@ jobs:
         working-directory: apps/ar-eye-hunter-v1
         run: |
           npm ci
-          npm run build:ar-eye-hunter-v1
+          npm run build
 
   # ----------------------------
   # Web SPA → Cloudflare Pages
@@ -53,7 +53,7 @@ jobs:
         working-directory: apps/relic-hunters-v1
         run: |
           npm ci
-          npm run build:relic-hunters-v1
+          npm run build
 
   # ----------------------------
   # API → Deno Deploy
