@@ -76,6 +76,47 @@ describe('Relic Hunters game rules', () => {
             .toBe('hallway');
     });
 
+    it('maps resolved turn events to scene animation cues', () => {
+        let state = createRelicGame('room-1', 'room-1', 1);
+        state = applyRelicCommand(state, join('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 2,
+        }).state;
+        state = applyRelicCommand(state, join('bob', 'Bob'), {
+            senderId: 'bob',
+            now: () => 3,
+        }).state;
+        state = applyRelicCommand(state, start('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 4,
+        }).state;
+        state = applyRelicCommand(
+            state,
+            submit('alice', 'Alice', { kind: 'search' }),
+            {
+                senderId: 'alice',
+                now: () => 5,
+            },
+        ).state;
+
+        const result = applyRelicCommand(
+            state,
+            submit('bob', 'Bob', { kind: 'move', targetRoomId: 'hallway' }),
+            {
+                senderId: 'bob',
+                now: () => 6,
+            },
+        );
+        const cueByEventType = new Map(
+            result.state.events.map((event) => [event.type, event.animationCue?.type]),
+        );
+
+        expect(cueByEventType.get('action_revealed')).toBe('noise_pulse');
+        expect(cueByEventType.get('player_searched')).toBe('search_altar');
+        expect(cueByEventType.get('player_moved')).toBe('camera_move');
+        expect(cueByEventType.get('noise_pulse')).toBe('noise_pulse');
+    });
+
     it('lets a hunter update their locked plan before the round resolves', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = applyRelicCommand(state, join('alice', 'Alice'), {

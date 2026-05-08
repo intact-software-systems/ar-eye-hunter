@@ -204,6 +204,11 @@ function resolveRound(state: RelicGameState, now: number): RelicGameState {
         ...state,
         events: appendEvent(state, `Round ${state.round} actions are revealed.`, now, {
             type: 'action_revealed',
+            animationCue: {
+                type: 'noise_pulse',
+                durationMs: 620,
+                intensity: 'low',
+            },
             tone: 'mystery',
         }),
     };

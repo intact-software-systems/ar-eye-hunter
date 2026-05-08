@@ -111,7 +111,7 @@ vi.mock('../../../apps/relic-hunters-v1/src/game/RelicScene.tsx', async () => {
 
 vi.mock('../../../apps/relic-hunters-v1/src/game/sound.ts', () => soundMock);
 
-import App from '../../../apps/relic-hunters-v1/src/App.tsx';
+import App, { derivePartyCoordination } from '../../../apps/relic-hunters-v1/src/App.tsx';
 
 describe('Relic Hunters browser app', () => {
     let root: Root | undefined;
@@ -234,6 +234,63 @@ describe('Relic Hunters browser app', () => {
         });
 
         expect(container.textContent).toContain('Look for relics in this room');
+    });
+
+    it('summarizes current-room occupants, readiness, and steal pressure', () => {
+        const snapshot = {
+            ...snapshotWithPlayers(2, 'planning'),
+            submittedPlayerIds: ['alice-session'],
+            players: [
+                {
+                    playerId: 'alice-session',
+                    username: 'Alice',
+                    characterId: 'kael-ironstride',
+                    roomId: 'entrance',
+                    health: 3,
+                    escaped: false,
+                    defeated: false,
+                    score: 0,
+                    relicIds: [],
+                },
+                {
+                    playerId: 'bob-session',
+                    username: 'Bob',
+                    characterId: 'nyra-vale',
+                    roomId: 'entrance',
+                    health: 3,
+                    escaped: false,
+                    defeated: false,
+                    score: 5,
+                    relicIds: ['sun-disk'],
+                },
+                {
+                    playerId: 'cara-session',
+                    username: 'Cara',
+                    characterId: 'oryn-starcoil',
+                    roomId: 'hallway',
+                    health: 2,
+                    escaped: false,
+                    defeated: false,
+                    score: 1,
+                    relicIds: [],
+                },
+            ],
+        } satisfies RelicPublicSnapshot;
+
+        const summary = derivePartyCoordination(snapshot, 'alice-session', 'steal');
+
+        expect(summary).toMatchObject({
+            currentRoomName: 'Entrance',
+            hereCount: 2,
+            elsewhereCount: 1,
+            activeCount: 3,
+            submittedCount: 1,
+            splitLabel: '2 hunters here / 1 elsewhere',
+            readinessLabel: '1/3 plans locked',
+            relicCarrierCount: 1,
+            actionHint: 'Steal is possible here: Bob carries 1 relic.',
+        });
+        expect(summary?.roomOccupants.map((player) => player.username)).toEqual(['Alice', 'Bob']);
     });
 
     async function renderApp(): Promise<void> {

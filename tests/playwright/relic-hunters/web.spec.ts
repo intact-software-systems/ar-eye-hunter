@@ -263,6 +263,55 @@ test.describe('Relic Hunters web app', () => {
         expect(commandBodies).toHaveLength(0);
     });
 
+    test('shows party coordination and map occupancy for a split party', async ({ page }) => {
+        const room = groupSnapshot({ onlineMemberCount: 4 });
+        await installBrowserDoubles(page);
+        await mockBackend(page, {
+            rooms: [room],
+            relicSnapshot: relicSnapshotWithPlayers(4, 'planning', {
+                includeStorage: true,
+                playerRooms: {
+                    'alice-session': 'storage',
+                    'bob-session': 'storage',
+                    'cara-session': 'trap',
+                    'dain-session': 'hallway',
+                },
+                playerRelicIds: {
+                    'bob-session': ['sun-disk'],
+                },
+                playerScores: {
+                    'bob-session': 6,
+                    'cara-session': 1,
+                },
+                submittedPlayerIds: ['alice-session', 'cara-session'],
+            }),
+        });
+
+        await page.goto('/');
+        await page.getByRole('button', { name: 'Register' }).click();
+        await page.getByLabel('Username').fill('alice');
+        await page.getByLabel('Display name').fill('Alice');
+        await page.getByLabel('Password').fill('correct-horse');
+        await page.getByRole('button', { name: 'Create Hunter' }).click();
+        await page.getByRole('button', { name: 'Relic Hunters Expedition' }).click();
+
+        const occupants = page.getByLabel('Room occupants');
+        await expect(occupants).toContainText('2 hunters here / 2 elsewhere');
+        await expect(occupants).toContainText('2/4 plans locked');
+        await expect(occupants).toContainText('Storage');
+        await expect(occupants).toContainText('Bob');
+        await expect(occupants).toContainText('1 relic');
+        await expect(occupants).toContainText('Searching makes noise for 2 hunters in Storage.');
+
+        await expect(page.getByLabel('2 hunters in Storage')).toBeVisible();
+        await expect(page.getByLabel('1 hunter in Trap Room')).toBeVisible();
+        await expect(page.getByLabel('1 hunter in Hallway')).toBeVisible();
+
+        await page.getByRole('button', { name: /Steal/ }).click();
+
+        await expect(occupants).toContainText('Steal is possible here: Bob carries 1 relic.');
+    });
+
     test('resolved search marks the room objective as investigated', async ({ page }) => {
         const room = groupSnapshot({ onlineMemberCount: 1 });
         await installBrowserDoubles(page);
@@ -289,6 +338,57 @@ test.describe('Relic Hunters web app', () => {
                         revealedRoomId: 'trap',
                     },
                 ],
+                events: [
+                    {
+                        id: 'event-reveal-1',
+                        round: 1,
+                        type: 'action_revealed',
+                        message: 'Round 1 actions are revealed.',
+                        animationCue: {
+                            type: 'noise_pulse',
+                            durationMs: 620,
+                            intensity: 'low',
+                        },
+                        tone: 'mystery',
+                        createdAtEpochMs: Date.now(),
+                    },
+                    {
+                        id: 'event-search-1',
+                        round: 1,
+                        type: 'player_searched',
+                        message: 'Alice searched the crates and marked a false supply trail.',
+                        animationCue: {
+                            type: 'search_altar',
+                            playerId: 'alice-session',
+                            roomId: 'storage',
+                            durationMs: 700,
+                            intensity: 'low',
+                        },
+                        tone: 'mystery',
+                        createdAtEpochMs: Date.now(),
+                    },
+                    {
+                        id: 'event-noise-1',
+                        round: 1,
+                        type: 'noise_pulse',
+                        message: 'The ruin hears 2 noise.',
+                        animationCue: {
+                            type: 'noise_pulse',
+                            durationMs: 900,
+                            intensity: 'low',
+                        },
+                        tone: 'mystery',
+                        createdAtEpochMs: Date.now(),
+                    },
+                    {
+                        id: 'event-round-2',
+                        round: 1,
+                        type: 'round_started',
+                        message: 'Round 2 begins.',
+                        tone: 'mystery',
+                        createdAtEpochMs: Date.now(),
+                    },
+                ],
                 round: 2,
             }),
         });
@@ -310,6 +410,8 @@ test.describe('Relic Hunters web app', () => {
         await expect(objective.getByText('The crates held a torn supply map, but no relic.')).toBeVisible();
         await expect(objective.getByText('Follow the map fragment toward Trap Room')).toBeVisible();
         await expect(objective.getByText('Next step: Move to Trap Room. The supply marks point back toward the Entrance and onward through the Trap Room.')).toBeVisible();
+        await expect(page.getByLabel('Turn resolution feedback')).toContainText('Round Resolved');
+        await expect(page.getByLabel('Turn resolution feedback')).toContainText('Alice searched the crates and marked a false supply trail.');
         await expect(page.getByLabel('Discovered clue trails')).toContainText('Storage - Trap Room');
         await expect(page.getByLabel('Discovered clue trails')).toContainText('The crates held a torn supply map, but no relic.');
         await expect(page.getByLabel('Castle room map').getByRole('button', { name: 'Trap Room' })).toHaveClass(/clue-target/);
@@ -617,43 +719,67 @@ function groupSnapshot(
 }
 
 function relicSnapshotWithPlayers(
-    playerCount: 1 | 2,
+    playerCount: 1 | 2 | 4,
     phase: 'lobby' | 'planning' = 'lobby',
     options: Readonly<{
         carryRelic?: boolean;
         includeStorage?: boolean;
         includeExit?: boolean;
         playerRoomId?: string;
+        playerRooms?: Readonly<Record<string, string>>;
+        playerRelicIds?: Readonly<Record<string, readonly string[]>>;
+        playerScores?: Readonly<Record<string, number>>;
         roomInvestigations?: readonly Record<string, unknown>[];
+        events?: readonly Record<string, unknown>[];
+        submittedPlayerIds?: readonly string[];
         round?: number;
     }> = {},
 ): RelicSnapshot {
-    const players = [
-        {
-            playerId: 'alice-session',
-            username: 'Alice',
-            characterId: 'kael-ironstride',
-            roomId: options.playerRoomId ?? 'entrance',
+    const playerSpecs = [
+        ['alice-session', 'Alice', 'kael-ironstride'],
+        ['bob-session', 'Bob', 'nyra-vale'],
+        ['cara-session', 'Cara', 'oryn-starcoil'],
+        ['dain-session', 'Dain', 'vessa-thornlock'],
+    ] as const;
+    const players = playerSpecs.slice(0, playerCount).map(([playerId, username, characterId]) => {
+        const relicIds = options.playerRelicIds?.[playerId] ??
+            (options.carryRelic && playerId === 'alice-session' ? ['golden-idol'] : []);
+        return {
+            playerId,
+            username,
+            characterId,
+            roomId: options.playerRooms?.[playerId] ?? options.playerRoomId ?? 'entrance',
             health: 3,
             escaped: false,
             defeated: false,
-            score: 0,
-            relicIds: options.carryRelic ? ['golden-idol'] : [],
-        },
+            score: options.playerScores?.[playerId] ?? 0,
+            relicIds,
+        };
+    });
+    const carriedRelics = [
+        ...(options.carryRelic
+            ? [
+                {
+                    id: 'golden-idol',
+                    name: 'Golden Idol',
+                    value: 5,
+                    roomId: 'treasure',
+                    foundBy: 'alice-session',
+                    carriedBy: 'alice-session',
+                },
+            ]
+            : []),
+        ...Object.entries(options.playerRelicIds ?? {}).flatMap(([playerId, relicIds]) =>
+            relicIds.map((relicId, index) => ({
+                id: relicId,
+                name: relicId === 'sun-disk' ? 'Sun Disk' : `Relic ${index + 1}`,
+                value: relicId === 'sun-disk' ? 6 : 4,
+                roomId: options.playerRooms?.[playerId] ?? options.playerRoomId ?? 'entrance',
+                foundBy: playerId,
+                carriedBy: playerId,
+            }))
+        ),
     ];
-    if (playerCount === 2) {
-        players.push({
-            playerId: 'bob-session',
-            username: 'Bob',
-            characterId: 'nyra-vale',
-            roomId: options.playerRoomId ?? 'entrance',
-            health: 3,
-            escaped: false,
-            defeated: false,
-            score: 0,
-            relicIds: [],
-        });
-    }
 
     const map = [
         {
@@ -715,22 +841,11 @@ function relicSnapshotWithPlayers(
         maxRounds: 10,
         updatedAtEpochMs: Date.now(),
         map,
-        relics: options.carryRelic
-            ? [
-                {
-                    id: 'golden-idol',
-                    name: 'Golden Idol',
-                    value: 5,
-                    roomId: 'treasure',
-                    foundBy: 'alice-session',
-                    carriedBy: 'alice-session',
-                },
-            ]
-            : [],
+        relics: carriedRelics,
         roomInvestigations: options.roomInvestigations ?? [],
         players,
-        submittedPlayerIds: [],
-        events: [],
+        submittedPlayerIds: options.submittedPlayerIds ?? [],
+        events: options.events ?? [],
         winnerIds: [],
     };
 }
