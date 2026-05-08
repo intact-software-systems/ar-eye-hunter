@@ -1,3 +1,6 @@
+import { Temporal } from '@js-temporal/polyfill';
+(globalThis as any).Temporal = (globalThis as any).Temporal ?? Temporal;
+
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import type {
     RelicActionInput,

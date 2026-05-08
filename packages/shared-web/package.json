@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "dependencies": {
-    "graphology": "0.26.0"
+    "graphology": "0.26.0",
+    "@js-temporal/polyfill": "^0.5.1"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",
