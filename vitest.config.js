@@ -6,8 +6,10 @@ exports.default = (0, config_1.defineConfig)({
     resolve: {
         alias: {
             '@shared-web': node_path_1.default.resolve(__dirname, 'packages/shared-web'),
+            '@shared-server': node_path_1.default.resolve(__dirname, 'packages/shared-server'),
             '@shared': node_path_1.default.resolve(__dirname, 'packages/shared'),
             '@shared-graph': node_path_1.default.resolve(__dirname, 'packages/shared-graph'),
+            '@relic-hunters': node_path_1.default.resolve(__dirname, 'packages/relic-hunters'),
         },
     },
     test: {

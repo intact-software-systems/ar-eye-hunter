@@ -1,0 +1,11 @@
+export const WORLD_SCALE = 3.2;
+export const ROOM_SIZE = 7.4;
+export const WALL_HEIGHT = 4.72;
+export const WALL_THICKNESS = 0.18;
+export const DOOR_WIDTH = 2.1;
+export const CEILING_Y = 5.02;
+export const FLOOR_Y = 0.03;
+export const PLAYER_EYE_Y = 1.66;
+export const ROAM_MARGIN = 0.52;
+export const PLAYER_RADIUS = 0.32;
+export const POINTER_LOOK_SENSITIVITY = 0.0022;

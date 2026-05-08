@@ -2,6 +2,7 @@
   "version": "5",
   "specifiers": {
     "jsr:@std/assert@^1.0.18": "1.0.18",
+    "jsr:@std/dotenv@0.225.6": "0.225.6",
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "npm:@vitest/ui@^4.0.17": "4.0.18_vitest@4.0.18__@vitest+ui@4.0.18__vite@7.3.1___picomatch@4.0.3",
     "npm:prettier@^3.2.5": "3.8.1",
@@ -15,6 +16,9 @@
       "dependencies": [
         "jsr:@std/internal"
       ]
+    },
+    "@std/dotenv@0.225.6": {
+      "integrity": "1d6f9db72f565bd26790fa034c26e45ecb260b5245417be76c2279e5734c421b"
     },
     "@std/internal@1.0.12": {
       "integrity": "972a634fd5bc34b242024402972cd5143eac68d8dffaca5eaa4dba30ce17b027"
@@ -1286,19 +1290,51 @@
   },
   "workspace": {
     "dependencies": [
-      "jsr:@std/assert@^1.0.18",
-      "npm:@deno/kv@0.10.0"
+      "jsr:@std/assert@^1.0.18"
     ],
     "packageJson": {
       "dependencies": [
         "npm:@vitest/ui@^4.0.17",
         "npm:eslint@9.26.0",
+        "npm:fake-indexeddb@^6.2.5",
+        "npm:happy-dom@^20.9.0",
         "npm:prettier@^3.2.5",
+        "npm:tsx@^4.21.0",
         "npm:typescript@^5.3.3",
         "npm:vitest@^4.0.17"
       ]
     },
     "members": {
+      "apps/ar-eye-hunter-v1": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@babylonjs/core@8",
+            "npm:@js-temporal/polyfill@~0.5.1",
+            "npm:@types/react-dom@19",
+            "npm:@types/react@19",
+            "npm:@vitejs/plugin-react@5",
+            "npm:react-dom@19",
+            "npm:react@19",
+            "npm:typescript@^5.3.3",
+            "npm:vite@5"
+          ]
+        }
+      },
+      "apps/relic-hunters-v1": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@babylonjs/core@8",
+            "npm:@js-temporal/polyfill@~0.5.1",
+            "npm:@types/react-dom@19",
+            "npm:@types/react@19",
+            "npm:@vitejs/plugin-react@5",
+            "npm:react-dom@19",
+            "npm:react@19",
+            "npm:typescript@^5.3.3",
+            "npm:vite@5"
+          ]
+        }
+      },
       "apps/web": {
         "packageJson": {
           "dependencies": [
@@ -1310,6 +1346,13 @@
         }
       },
       "packages/shared-graph": {
+        "packageJson": {
+          "dependencies": [
+            "npm:graphology@0.26.0"
+          ]
+        }
+      },
+      "packages/shared-web": {
         "packageJson": {
           "dependencies": [
             "npm:graphology@0.26.0"

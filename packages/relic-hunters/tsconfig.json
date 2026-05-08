@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "noEmit": true,
+    "target": "ES2023",
+    "module": "ESNext",
+    "lib": [
+      "ES2023",
+      "DOM"
+    ],
+    "strict": true,
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "baseUrl": "../..",
+    "paths": {
+      "@relic-hunters/*": [
+        "packages/relic-hunters/*"
+      ],
+      "@shared-web/*": [
+        "packages/shared-web/*"
+      ],
+      "@shared-server/*": [
+        "packages/shared-server/*"
+      ],
+      "@shared-graph/*": [
+        "packages/shared-graph/*"
+      ],
+      "@shared/*": [
+        "packages/shared/*"
+      ]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.d.ts",
+    "../../types/**/*.d.ts"
+  ]
+}

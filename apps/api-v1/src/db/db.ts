@@ -8,13 +8,8 @@ export function getSql(): Sql {
         return sqlInstance;
     }
 
-    const DATABASE_URL = Deno.env.get('DATABASE_URL');
-    if (!DATABASE_URL) {
-        throw new Error('DATABASE_URL missing');
-    }
-
     sqlInstance = postgres(
-        DATABASE_URL,
+        readPostgresConnectionUrl(),
         {
             max: 5, // pool size
             idle_timeout: 20,
@@ -22,6 +17,30 @@ export function getSql(): Sql {
     );
 
     return sqlInstance;
+}
+
+export function readPostgresConnectionUrl(): string {
+    const databaseUrl = Deno.env.get('DATABASE_URL');
+    if (!databaseUrl) {
+        throw new Error('DATABASE_URL missing');
+    }
+
+    return toPostgresJsConnectionUrl(databaseUrl);
+}
+
+export function toPostgresJsConnectionUrl(databaseUrl: string): string {
+    const url = new URL(databaseUrl);
+    const schema = url.searchParams.get('schema');
+    if (!schema) {
+        return databaseUrl;
+    }
+
+    url.searchParams.delete('schema');
+    if (!url.searchParams.has('search_path')) {
+        url.searchParams.set('search_path', schema);
+    }
+
+    return url.toString();
 }
 
 export const sql = new Proxy(

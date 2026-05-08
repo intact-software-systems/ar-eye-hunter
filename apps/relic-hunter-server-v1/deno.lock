@@ -1,0 +1,56 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@hono/hono@*": "4.11.9",
+    "jsr:@std/dotenv@*": "0.225.6",
+    "jsr:@std/yaml@*": "1.0.12",
+    "npm:@js-temporal/polyfill@~0.5.1": "0.5.1",
+    "npm:graphology@0.26.0": "0.26.0_graphology-types@0.24.8",
+    "npm:postgres@^3.4.9": "3.4.9"
+  },
+  "jsr": {
+    "@hono/hono@4.11.9": {
+      "integrity": "c82c6b846abc3c1879d921d8365287d77cdef8073019f509ff80bf53033bdcba"
+    },
+    "@std/dotenv@0.225.6": {
+      "integrity": "1d6f9db72f565bd26790fa034c26e45ecb260b5245417be76c2279e5734c421b"
+    },
+    "@std/yaml@1.0.12": {
+      "integrity": "7deabca4545bcedd07c5f69ea53acea71b8b4c67562f224e17b90d75944cb20c"
+    }
+  },
+  "npm": {
+    "@js-temporal/polyfill@0.5.1": {
+      "integrity": "sha512-hloP58zRVCRSpgDxmqCWJNlizAlUgJFqG2ypq79DCvyv9tHjRYMDOcPFjzfl/A1/YxDvRCZz8wvZvmapQnKwFQ==",
+      "dependencies": [
+        "jsbi"
+      ]
+    },
+    "events@3.3.0": {
+      "integrity": "sha512-mQw+2fkQbALzQ7V0MY0IqdnXNOeTtP4r0lN9z7AAawCXgqea7bDii20AYrIBrFd/Hx0M2Ocz6S111CaFkUcb0Q=="
+    },
+    "graphology-types@0.24.8": {
+      "integrity": "sha512-hDRKYXa8TsoZHjgEaysSRyPdT6uB78Ci8WnjgbStlQysz7xR52PInxNsmnB7IBOM1BhikxkNyCVEFgmPKnpx3Q=="
+    },
+    "graphology@0.26.0_graphology-types@0.24.8": {
+      "integrity": "sha512-8SSImzgUUYC89Z042s+0r/vMibY7GX/Emz4LDO5e7jYXhuoWfHISPFJYjpRLUSJGq6UQ6xlenvX1p/hJdfXuXg==",
+      "dependencies": [
+        "events",
+        "graphology-types"
+      ]
+    },
+    "jsbi@4.3.2": {
+      "integrity": "sha512-9fqMSQbhJykSeii05nxKl4m6Eqn2P6rOlYiS+C5Dr/HPIU/7yZxu5qzbs40tgaFORiw2Amd0mirjxatXYMkIew=="
+    },
+    "postgres@3.4.9": {
+      "integrity": "sha512-GD3qdB0x1z9xgFI6cdRD6xu2Sp2WCOEoe3mtnyB5Ee0XrrL5Pe+e4CCnJrRMnL1zYtRDZmQQVbvOttLnKDLnaw=="
+    }
+  },
+  "workspace": {
+    "dependencies": [
+      "npm:@js-temporal/polyfill@~0.5.1",
+      "npm:graphology@0.26.0",
+      "npm:postgres@^3.4.9"
+    ]
+  }
+}

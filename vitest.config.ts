@@ -8,6 +8,7 @@ export default defineConfig({
             '@shared-server': path.resolve(__dirname, 'packages/shared-server'),
             '@shared': path.resolve(__dirname, 'packages/shared'),
             '@shared-graph': path.resolve(__dirname, 'packages/shared-graph'),
+            '@relic-hunters': path.resolve(__dirname, 'packages/relic-hunters'),
         },
     },
 

@@ -2,6 +2,7 @@
 
 /apps/web/dist/
 /apps/web/node_modules/
+/apps/relic-hunters-v1/dist/
 node_modules/
 
 apps/**/**/*.js
@@ -22,3 +23,6 @@ apps/web/dist
 .env
 
 *.tsbuildinfo
+
+/playwright-report/
+/test-results/

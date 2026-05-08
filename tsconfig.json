@@ -11,6 +11,9 @@
       "path": "packages/shared-server"
     },
     {
+      "path": "packages/relic-hunters"
+    },
+    {
       "path": "apps/web"
     }
   ],
@@ -43,6 +46,9 @@
       ],
       "@shared/*": [
         "packages/shared/*"
+      ],
+      "@relic-hunters/*": [
+        "packages/relic-hunters/*"
       ]
     }
   },
