@@ -1,6 +1,6 @@
-import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
-import path from 'node:path';
+import react from '@vitejs/plugin-react';
+import path from 'path';
 
 export default defineConfig({
     plugins: [react()],
@@ -28,11 +28,13 @@ export default defineConfig({
         outDir: 'dist',
         emptyOutDir: true,
         target: 'es2023',
-        rollupOptions: {
+        rolldownOptions: {
             output: {
-                manualChunks: {
-                    babylon: ['@babylonjs/core'],
-                    react: ['react', 'react-dom'],
+                manualChunks(id) {
+                    if (id.includes('@babylonjs/core')) return 'babylon';
+                    if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/')) {
+                        return 'react';
+                    }
                 },
             },
         },
