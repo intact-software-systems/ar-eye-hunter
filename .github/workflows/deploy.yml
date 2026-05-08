@@ -14,8 +14,8 @@ jobs:
   # ----------------------------
   # Web SPA → Cloudflare Pages
   # ----------------------------
-  deploy-web:
-    name: Deploy Web (Cloudflare Pages)
+  deploy-eye-hunter:
+    name: Deploy Eye Hunter Web (Cloudflare Pages)
     runs-on: ubuntu-latest
 
     steps:
@@ -28,10 +28,32 @@ jobs:
           node-version: 20
 
       - name: Install & build web
-        working-directory: apps/web
+        working-directory: apps/ar-eye-hunter-v1
         run: |
           npm ci
-          npm run build
+          npm run build:ar-eye-hunter-v1
+
+  # ----------------------------
+  # Web SPA → Cloudflare Pages
+  # ----------------------------
+  deploy-relic-web:
+    name: Deploy Relic Hunter Web (Cloudflare Pages)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install & build Relic web
+        working-directory: apps/relic-hunters-v1
+        run: |
+          npm ci
+          npm run build:relic-hunters-v1
 
   # ----------------------------
   # API → Deno Deploy
