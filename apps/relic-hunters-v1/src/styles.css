@@ -766,6 +766,49 @@ label {
     background: rgba(57, 52, 44, 0.94);
 }
 
+.clue-journal {
+    background: rgba(36, 57, 43, 0.84);
+}
+
+.clue-journal-list {
+    display: grid;
+    gap: 7px;
+}
+
+.clue-journal-entry {
+    display: grid;
+    gap: 4px;
+    height: auto;
+    min-height: 72px;
+    padding: 9px 10px;
+    text-align: left;
+    border-color: rgba(250, 204, 91, 0.26);
+    background: rgba(56, 73, 52, 0.72);
+}
+
+.clue-journal-entry:hover:not(:disabled) {
+    border-color: rgba(250, 204, 91, 0.72);
+    background: rgba(75, 91, 55, 0.82);
+}
+
+.clue-journal-entry span {
+    color: #baf5e7;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.clue-journal-entry strong {
+    color: #fff9e9;
+    line-height: 1.16;
+}
+
+.clue-journal-entry small {
+    color: #f2ddb0;
+    line-height: 1.25;
+}
+
 .castle-map-hunter {
     position: absolute;
     width: 12px;

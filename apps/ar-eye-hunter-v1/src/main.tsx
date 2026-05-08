@@ -1,4 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
+(globalThis as any).Temporal = (globalThis as any).Temporal ?? Temporal;
+
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 

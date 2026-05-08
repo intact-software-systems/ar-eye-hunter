@@ -310,7 +310,9 @@ test.describe('Relic Hunters web app', () => {
         await expect(objective.getByText('The crates held a torn supply map, but no relic.')).toBeVisible();
         await expect(objective.getByText('Follow the map fragment toward Trap Room')).toBeVisible();
         await expect(objective.getByText('Next step: Move to Trap Room. The supply marks point back toward the Entrance and onward through the Trap Room.')).toBeVisible();
-        await expect(page.getByRole('button', { name: 'Trap Room' })).toHaveClass(/clue-target/);
+        await expect(page.getByLabel('Discovered clue trails')).toContainText('Storage - Trap Room');
+        await expect(page.getByLabel('Discovered clue trails')).toContainText('The crates held a torn supply map, but no relic.');
+        await expect(page.getByLabel('Castle room map').getByRole('button', { name: 'Trap Room' })).toHaveClass(/clue-target/);
     });
 
     test('Rallar browser bootstrap reads server config, state snapshots, and opens WebSocket', async ({ page }) => {

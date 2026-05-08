@@ -23,6 +23,7 @@ export type ScenePrompt =
     }>
     | Readonly<{
         kind: 'search';
+        hotspotId?: string;
         label: string;
         detail: string;
         inspecting?: boolean;
@@ -33,8 +34,10 @@ export type ClueHotspot = Readonly<{
     x: number;
     z: number;
     label: string;
+    promptLabel: string;
     detail: string;
     inspectionDetail: string;
+    discoveredLabel: string;
 }>;
 
 export type InspectionFocus = Readonly<{

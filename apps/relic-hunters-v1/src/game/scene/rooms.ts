@@ -15,8 +15,8 @@ import {
     WALL_THICKNESS,
     WORLD_SCALE,
 } from './constants.ts';
-import { directionBetweenRooms, roomClueHotspot } from './prompts.ts';
-import type { CardinalDirection } from './types.ts';
+import { directionBetweenRooms, roomClueHotspots } from './prompts.ts';
+import type { CardinalDirection, ClueHotspot } from './types.ts';
 
 export type CastleMaterials = Readonly<{
     wall: StandardMaterial;
@@ -794,22 +794,37 @@ function addClueHotspot(
     room: RelicRoom,
     materials: CastleMaterials,
 ): void {
-    const clue = roomClueHotspot(room);
-    const markInspectable = (mesh: Mesh) => {
+    for (const clue of roomClueHotspots(room)) {
+        addInspectableHotspot(add, room, clue, materials);
+    }
+}
+
+function addInspectableHotspot(
+    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    room: RelicRoom,
+    clue: ClueHotspot,
+    materials: CastleMaterials,
+): void {
+    const markInspectable = (mesh: Mesh, resolvedOnly = false) => {
         mesh.metadata = {
             ...(mesh.metadata ?? {}),
             roomId: room.id,
             clueHotspotId: clue.id,
             primeAction: 'search',
+            resolvedOnly,
         };
+        if (resolvedOnly) {
+            mesh.isPickable = false;
+            mesh.visibility = 0;
+        }
         return mesh;
     };
 
     const ring = markInspectable(add(MeshBuilder.CreateTorus(
         `clue-ring-${clue.id}`,
         {
-            diameter: room.kind === 'trap' ? 1.42 : 0.88,
-            thickness: 0.035,
+            diameter: room.kind === 'trap' && clue.id.endsWith('-plates') ? 1.42 : 0.58,
+            thickness: 0.03,
             tessellation: 34,
         },
         materials.portal.getScene(),
@@ -819,12 +834,30 @@ function addClueHotspot(
 
     const focus = markInspectable(add(MeshBuilder.CreateSphere(
         `clue-focus-${clue.id}`,
-        { diameter: room.kind === 'exit' ? 0.3 : 0.22, segments: 14 },
+        { diameter: room.kind === 'exit' ? 0.28 : 0.18, segments: 14 },
         materials.portal.getScene(),
     ), room.kind === 'treasure' ? materials.gold : materials.portal));
     focus.position.set(clue.x, room.kind === 'exit' ? 1.15 : 0.64, clue.z);
 
-    if (room.kind === 'storage') {
+    const discovered = markInspectable(add(MeshBuilder.CreateTorus(
+        `clue-discovered-${clue.id}`,
+        { diameter: 0.42, thickness: 0.045, tessellation: 30 },
+        materials.gold.getScene(),
+    ), materials.gold), true);
+    discovered.position.set(clue.x, 0.95, clue.z);
+    discovered.rotation.x = Math.PI / 2;
+
+    addHotspotProp(add, room, clue, materials, markInspectable);
+}
+
+function addHotspotProp(
+    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    room: RelicRoom,
+    clue: ClueHotspot,
+    materials: CastleMaterials,
+    markInspectable: (mesh: Mesh, resolvedOnly?: boolean) => Mesh,
+): void {
+    if (clue.id.endsWith('-crates')) {
         const lockbox = markInspectable(add(MeshBuilder.CreateBox(
             `clue-lockbox-${clue.id}`,
             { width: 0.42, height: 0.22, depth: 0.32 },
@@ -842,7 +875,38 @@ function addClueHotspot(
         parchment.rotation.y = -0.28;
     }
 
-    if (room.kind === 'shrine' || room.kind === 'exit') {
+    if (clue.id.endsWith('-wax-seal')) {
+        const ledger = markInspectable(add(MeshBuilder.CreateBox(
+            `clue-ledger-${clue.id}`,
+            { width: 0.5, height: 0.035, depth: 0.62 },
+            materials.wood.getScene(),
+        ), materials.wood));
+        ledger.position.set(clue.x, 0.48, clue.z);
+        ledger.rotation.y = 0.22;
+
+        const seal = markInspectable(add(MeshBuilder.CreateCylinder(
+            `clue-seal-${clue.id}`,
+            { height: 0.03, diameter: 0.18, tessellation: 16 },
+            materials.clothCoral.getScene(),
+        ), materials.clothCoral));
+        seal.position.set(clue.x + 0.08, 0.54, clue.z - 0.08);
+        seal.rotation.x = Math.PI / 2;
+    }
+
+    if (clue.id.endsWith('-broken-crate')) {
+        for (let index = 0; index < 3; index += 1) {
+            const slat = markInspectable(add(MeshBuilder.CreateBox(
+                `clue-crate-slat-${clue.id}-${index}`,
+                { width: 0.46, height: 0.055, depth: 0.12 },
+                materials.wood.getScene(),
+            ), materials.wood));
+            slat.position.set(clue.x + index * 0.08, 0.28 + index * 0.08, clue.z);
+            slat.rotation.y = -0.55 + index * 0.34;
+            slat.rotation.z = 0.18;
+        }
+    }
+
+    if (clue.id.endsWith('-altar') || clue.id.endsWith('-runes')) {
         for (let index = 0; index < 3; index += 1) {
             const rune = markInspectable(add(MeshBuilder.CreateBox(
                 `clue-rune-${clue.id}-${index}`,
@@ -854,7 +918,35 @@ function addClueHotspot(
         }
     }
 
-    if (room.kind === 'trap') {
+    if (clue.id.endsWith('-rune-wall')) {
+        for (let index = 0; index < 4; index += 1) {
+            const rune = markInspectable(add(MeshBuilder.CreateBox(
+                `clue-wall-rune-${clue.id}-${index}`,
+                { width: 0.08, height: 0.28, depth: 0.026 },
+                materials.portal.getScene(),
+            ), materials.portal));
+            rune.position.set(clue.x + index * 0.12, 1.16 + index * 0.08, clue.z);
+            rune.rotation.z = -0.48 + index * 0.26;
+        }
+    }
+
+    if (clue.id.endsWith('-cracked-statue')) {
+        const statue = markInspectable(add(MeshBuilder.CreateCylinder(
+            `clue-cracked-statue-${clue.id}`,
+            { height: 0.78, diameterTop: 0.26, diameterBottom: 0.44, tessellation: 7 },
+            materials.rubble.getScene(),
+        ), materials.rubble));
+        statue.position.set(clue.x, 0.54, clue.z);
+        const crack = markInspectable(add(MeshBuilder.CreateBox(
+            `clue-statue-crack-${clue.id}`,
+            { width: 0.035, height: 0.58, depth: 0.026 },
+            materials.portal.getScene(),
+        ), materials.portal));
+        crack.position.set(clue.x + 0.04, 0.64, clue.z - 0.16);
+        crack.rotation.z = 0.18;
+    }
+
+    if (clue.id.endsWith('-plates')) {
         for (let index = 0; index < 4; index += 1) {
             const plate = markInspectable(add(MeshBuilder.CreateBox(
                 `clue-pressure-plate-${clue.id}-${index}`,
@@ -867,6 +959,9 @@ function addClueHotspot(
                 (index < 2 ? -0.35 : 0.35),
             );
         }
+    }
+
+    if (clue.id.endsWith('-wall-scratches')) {
         for (let index = 0; index < 3; index += 1) {
             const scratch = markInspectable(add(MeshBuilder.CreateBox(
                 `clue-trap-scratch-${clue.id}-${index}`,
@@ -878,27 +973,49 @@ function addClueHotspot(
         }
     }
 
-    if (room.kind === 'treasure') {
+    if (clue.id.endsWith('-loose-tile')) {
+        const tile = markInspectable(add(MeshBuilder.CreateBox(
+            `clue-loose-tile-${clue.id}`,
+            { width: 0.62, height: 0.035, depth: 0.62 },
+            materials.trim.getScene(),
+        ), materials.trim));
+        tile.position.set(clue.x, 0.15, clue.z);
+        tile.rotation.y = 0.18;
+        tile.rotation.z = 0.04;
+    }
+
+    if (clue.id.endsWith('-mirror')) {
         const plaque = markInspectable(add(MeshBuilder.CreateBox(
             `clue-mirror-plaque-${clue.id}`,
             { width: 0.64, height: 0.5, depth: 0.045 },
             materials.metal.getScene(),
         ), materials.metal));
-        plaque.position.set(clue.x + 0.95, 1.18, clue.z - 0.52);
+        plaque.position.set(clue.x, 1.18, clue.z);
         plaque.rotation.y = -0.34;
+    }
 
+    if (clue.id.endsWith('-coin-trail')) {
         for (let index = 0; index < 5; index += 1) {
             const coin = markInspectable(add(MeshBuilder.CreateCylinder(
                 `clue-coin-trail-${clue.id}-${index}`,
                 { height: 0.026, diameter: 0.16, tessellation: 14 },
                 materials.gold.getScene(),
             ), materials.gold));
-            coin.position.set(clue.x - 0.72 + index * 0.28, 0.16, clue.z + 0.62 + (index % 2) * 0.16);
+            coin.position.set(clue.x - 0.48 + index * 0.22, 0.16, clue.z + (index % 2) * 0.12);
             coin.rotation.x = Math.PI / 2;
         }
     }
 
-    if (room.kind === 'monster') {
+    if (clue.id.endsWith('-chest')) {
+        const latch = markInspectable(add(MeshBuilder.CreateBox(
+            `clue-chest-latch-${clue.id}`,
+            { width: 0.2, height: 0.18, depth: 0.06 },
+            materials.gold.getScene(),
+        ), materials.gold));
+        latch.position.set(clue.x, 0.74, clue.z - 0.38);
+    }
+
+    if (clue.id.endsWith('-bone-altar')) {
         for (const side of [-1, 1]) {
             const chain = markInspectable(add(MeshBuilder.CreateTorus(
                 `clue-chain-link-${clue.id}-${side}`,
@@ -919,13 +1036,56 @@ function addClueHotspot(
         }
     }
 
-    if (room.kind === 'exit') {
+    if (clue.id.endsWith('-claw-marks')) {
+        for (let index = 0; index < 4; index += 1) {
+            const mark = markInspectable(add(MeshBuilder.CreateBox(
+                `clue-claw-mark-${clue.id}-${index}`,
+                { width: 0.58, height: 0.026, depth: 0.035 },
+                materials.crack.getScene(),
+            ), materials.crack));
+            mark.position.set(clue.x, 1.15 + index * 0.12, clue.z + index * 0.035);
+            mark.rotation.y = 0.65;
+            mark.rotation.z = -0.28;
+        }
+    }
+
+    if (clue.id.endsWith('-ash-pile')) {
+        const ash = markInspectable(add(MeshBuilder.CreateCylinder(
+            `clue-ash-pile-${clue.id}`,
+            { height: 0.12, diameterTop: 0.68, diameterBottom: 0.86, tessellation: 12 },
+            materials.rubble.getScene(),
+        ), materials.rubble));
+        ash.position.set(clue.x, 0.16, clue.z);
+        ash.scaling.y = 0.45;
+    }
+
+    if (clue.id.endsWith('-daylight-slit')) {
         const daylight = markInspectable(add(MeshBuilder.CreateBox(
             `clue-daylight-slit-${clue.id}`,
             { width: 0.2, height: 1.15, depth: 0.035 },
             materials.portal.getScene(),
         ), materials.portal));
         daylight.position.set(clue.x, 1.82, clue.z + 0.16);
+    }
+
+    if (clue.id.endsWith('-threshold')) {
+        const glyph = markInspectable(add(MeshBuilder.CreateTorus(
+            `clue-threshold-glyph-${clue.id}`,
+            { diameter: 0.52, thickness: 0.035, tessellation: 26 },
+            materials.portal.getScene(),
+        ), materials.portal));
+        glyph.position.set(clue.x, 0.16, clue.z);
+        glyph.rotation.x = Math.PI / 2;
+    }
+
+    if (room.kind === 'hallway' || room.kind === 'entrance') {
+        const chalk = markInspectable(add(MeshBuilder.CreateBox(
+            `clue-chalk-${clue.id}`,
+            { width: 0.62, height: 0.022, depth: 0.08 },
+            materials.portal.getScene(),
+        ), materials.portal));
+        chalk.position.set(clue.x, 0.16, clue.z);
+        chalk.rotation.y = 0.5;
     }
 }
 

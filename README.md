@@ -70,8 +70,9 @@ In an inbox that means, forward message to peers as well as local SPA.
 ```text
 CLOUDFLARE_API_TOKEN = D081AEEA-4248-4B04-BBF3-B86CE074BC18
 CLOUDFLARE_ACCOUNT_ID = ar-eye-hunter 
-```
 
+DATABASE_URL="postgresql://app:app@localhost:5432/appdb?schema=public"
+```
 
 ## WebRTC and ICE/TURN
 

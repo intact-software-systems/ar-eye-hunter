@@ -12,6 +12,7 @@ import { ROOM_SIZE, ROAM_MARGIN } from '../../../apps/relic-hunters-v1/src/game/
 import {
     computeScenePrompt,
     roomClueHotspot,
+    roomClueHotspots,
     samePrompt,
 } from '../../../apps/relic-hunters-v1/src/game/scene/prompts.ts';
 
@@ -94,7 +95,35 @@ describe('Relic scene prompt computation', () => {
 
         expect(prompt).toMatchObject({
             kind: 'search',
-            label: 'Search the crates',
+            hotspotId: 'storage-crates',
+            label: 'Inspect map fragment',
+        });
+    });
+
+    it('selects the nearest room-specific clue hotspot', () => {
+        const snapshot = planningSnapshot();
+        const storage = room(snapshot, 'storage');
+        const hotspots = roomClueHotspots(storage);
+        const prompt = computeScenePrompt({
+            snapshot: {
+                ...snapshot,
+                players: snapshot.players.map((player) =>
+                    player.playerId === 'alice-session'
+                        ? { ...player, roomId: 'storage' }
+                        : player
+                ),
+            },
+            localPlayerId: 'alice-session',
+            room: storage,
+            roamOffset: new Vector3(0.92, 0, 0.1),
+            forward: new Vector3(0, 0, 1),
+        });
+
+        expect(hotspots.map((hotspot) => hotspot.discoveredLabel)).toContain('Marked wax seal');
+        expect(prompt).toMatchObject({
+            kind: 'search',
+            hotspotId: 'storage-wax-seal',
+            label: 'Inspect wax seal',
         });
     });
 
@@ -122,7 +151,8 @@ describe('Relic scene prompt computation', () => {
 
         expect(prompt).toMatchObject({
             kind: 'search',
-            label: 'Search the altar',
+            hotspotId: 'shrine-altar',
+            label: 'Inspect altar runes',
             inspecting: true,
         });
         expect(prompt?.detail).toContain('altar glyphs pulse');
@@ -177,11 +207,13 @@ describe('Relic scene prompt computation', () => {
         expect(samePrompt(
             {
                 kind: 'search',
+                hotspotId: 'shrine-altar',
                 label: 'Search the altar',
                 detail: 'Prime a Search plan for this room',
             },
             {
                 kind: 'search',
+                hotspotId: 'shrine-altar',
                 label: 'Search the altar',
                 detail: 'The altar glyphs pulse. Esc or back away to leave inspection.',
                 inspecting: true,

@@ -317,10 +317,15 @@ export function RelicScene({
             }
 
             const metadata = event.pickInfo?.pickedMesh?.metadata as
-                | Readonly<{ roomId?: unknown; primeAction?: unknown }>
+                | Readonly<{ roomId?: unknown; primeAction?: unknown; clueHotspotId?: unknown }>
                 | undefined;
             if (metadata?.primeAction === 'search') {
-                const started = startInspection(runtime);
+                const started = startInspection(
+                    runtime,
+                    typeof metadata.clueHotspotId === 'string'
+                        ? metadata.clueHotspotId
+                        : undefined,
+                );
                 if (!started) {
                     onPrimeActionRef.current?.({ kind: 'search' });
                 }
@@ -1239,7 +1244,9 @@ function updateClueHotspotHighlights(
     now: number,
 ): void {
     const primedSearch = runtime.primedAction.value?.kind === 'search';
-    const activeClueId = room && (prompt?.kind === 'search' || primedSearch)
+    const activeClueId = room && prompt?.kind === 'search'
+        ? prompt.hotspotId ?? roomClueHotspot(room).id
+        : room && primedSearch
         ? roomClueHotspot(room).id
         : undefined;
     const resolvedClue = room && runtime.snapshot.value
@@ -1251,16 +1258,25 @@ function updateClueHotspotHighlights(
     for (const props of runtime.props.values()) {
         for (const mesh of props) {
             const metadata = mesh.metadata as
-                | Readonly<{ roomId?: unknown; clueHotspotId?: unknown }>
+                | Readonly<{ roomId?: unknown; clueHotspotId?: unknown; resolvedOnly?: unknown }>
                 | undefined;
             if (typeof metadata?.clueHotspotId !== 'string') {
                 continue;
             }
 
+            const sameRoom = metadata.roomId === room?.id;
+            const resolvedOnly = metadata.resolvedOnly === true;
+            if (resolvedOnly) {
+                mesh.setEnabled(!!sameRoom && resolvedClue);
+                mesh.visibility = sameRoom && resolvedClue ? 0.78 : 0;
+                mesh.scaling.set(pulse, pulse, pulse);
+                continue;
+            }
+
             const active = metadata.clueHotspotId === activeClueId &&
-                metadata.roomId === room?.id;
-            const resolved = resolvedClue && metadata.roomId === room?.id;
-            mesh.visibility = active ? 1 : resolved ? 0.42 : 0.62;
+                sameRoom;
+            const resolved = resolvedClue && sameRoom;
+            mesh.visibility = active ? 1 : resolved ? 0.72 : 0.52;
             mesh.scaling.set(active ? pulse : 1, active ? pulse : 1, active ? pulse : 1);
         }
     }

@@ -523,6 +523,13 @@ export default function App() {
                     />
                 )}
 
+                {game.session && game.roomId && game.snapshot && (
+                    <ClueJournal
+                        snapshot={game.snapshot}
+                        onSelectRoom={setSelectedRoomId}
+                    />
+                )}
+
                 {showPartyChangePrompt && game.snapshot && currentRoomSummary && (
                     <PartyChangePrompt
                         expeditionPlayers={game.snapshot.players.length}
@@ -764,6 +771,58 @@ function RoomIntel({
                     </div>
                 </>
             )}
+        </div>
+    );
+}
+
+function ClueJournal({
+    snapshot,
+    onSelectRoom,
+}: Readonly<{
+    snapshot: RelicPublicSnapshot;
+    onSelectRoom(roomId: string): void;
+}>) {
+    const investigations = [...(snapshot.roomInvestigations ?? [])]
+        .sort((left, right) => left.searchedAtRound - right.searchedAtRound);
+
+    if (investigations.length === 0) {
+        return null;
+    }
+
+    return (
+        <div className="panel stack clue-journal" aria-label="Discovered clue trails">
+            <div>
+                <span className="panel-label">Discovered Trails</span>
+                <strong>{investigations.length} marked clue{investigations.length === 1 ? '' : 's'}</strong>
+            </div>
+            <div className="clue-journal-list">
+                {investigations.map((investigation) => {
+                    const room = snapshot.map.find((candidate) =>
+                        candidate.id === investigation.roomId
+                    );
+                    const target = investigation.revealedRoomId
+                        ? snapshot.map.find((candidate) =>
+                            candidate.id === investigation.revealedRoomId
+                        )
+                        : undefined;
+                    return (
+                        <button
+                            type="button"
+                            key={`${investigation.roomId}-${investigation.searchedAtRound}`}
+                            className="clue-journal-entry"
+                            onClick={() => onSelectRoom(target?.id ?? investigation.roomId)}
+                        >
+                            <span>
+                                Round {investigation.searchedAtRound} / {investigation.searchedByUsername}
+                            </span>
+                            <strong>
+                                {room?.name ?? investigation.roomId} - {target?.name ?? 'No target'}
+                            </strong>
+                            <small>{investigation.summary}</small>
+                        </button>
+                    );
+                })}
+            </div>
         </div>
     );
 }

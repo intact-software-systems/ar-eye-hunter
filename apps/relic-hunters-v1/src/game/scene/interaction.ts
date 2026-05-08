@@ -1,7 +1,7 @@
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import type { RelicPublicSnapshot, RelicRoom } from '@relic-hunters/mod.ts';
 import { yawToForward } from './controls.ts';
-import { computeScenePrompt, roomClueHotspot, samePrompt } from './prompts.ts';
+import { computeScenePrompt, roomClueHotspot, roomClueHotspots, samePrompt } from './prompts.ts';
 import type { InspectionFocus, ScenePrompt } from './types.ts';
 
 export type SceneInteractionState = Readonly<{
@@ -29,7 +29,10 @@ export function updateScenePrompt(
     }));
 }
 
-export function startInspection(state: SceneInteractionState): boolean {
+export function startInspection(
+    state: SceneInteractionState,
+    hotspotId?: string,
+): boolean {
     const local = localPlayerRoom(state.snapshot.value, state.localPlayerId.value);
     if (!local) {
         return false;
@@ -41,9 +44,16 @@ export function startInspection(state: SceneInteractionState): boolean {
         return false;
     }
 
+    const promptHotspotId = state.prompt.value?.kind === 'search'
+        ? state.prompt.value.hotspotId
+        : undefined;
+    const focusedHotspot = roomClueHotspots(local.room).find((hotspot) =>
+        hotspot.id === (hotspotId ?? promptHotspotId)
+    ) ?? roomClueHotspot(local.room);
+
     state.inspection.value = {
         roomId: local.room.id,
-        hotspot: roomClueHotspot(local.room),
+        hotspot: focusedHotspot,
     };
     updateScenePrompt(state, local.room, yawToForward(state.cameraYaw.value));
     return true;
