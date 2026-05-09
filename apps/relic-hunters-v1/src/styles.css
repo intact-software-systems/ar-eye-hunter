@@ -240,8 +240,9 @@ label {
     margin-top: 2px;
 }
 
-.turn-feedback-events p {
-    margin: 0;
+.turn-event-card {
+    display: grid;
+    gap: 2px;
     border: 1px solid rgba(255, 249, 233, 0.14);
     border-radius: 7px;
     padding: 6px 8px;
@@ -1082,11 +1083,22 @@ label {
     gap: 6px;
 }
 
-.chronicle p {
-    margin: 0 0 6px;
+.chronicle-entry {
     color: #f0ddb0;
-    line-height: 1.32;
+    display: grid;
+    gap: 1px;
     animation: chronicleIn 260ms ease-out both;
+}
+
+.narrator-voice {
+    font-style: italic;
+    font-size: 0.8em;
+    line-height: 1.3;
+    opacity: 0.72;
+}
+
+.chronicle-message {
+    line-height: 1.32;
 }
 
 .tone-success {

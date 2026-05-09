@@ -1,9 +1,11 @@
 import { PointLight } from '@babylonjs/core/Lights/pointLight.js';
-import { Color3 } from '@babylonjs/core/Maths/math.color.js';
+import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
-import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
+import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial.js';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
+import { ParticleSystem } from '@babylonjs/core/Particles/particleSystem.js';
 import { Scene } from '@babylonjs/core/scene.js';
 import type { RelicRoom } from '@relic-hunters/mod.ts';
 import {
@@ -19,18 +21,18 @@ import { directionBetweenRooms, roomClueHotspots } from './prompts.ts';
 import type { CardinalDirection, ClueHotspot } from './types.ts';
 
 export type CastleMaterials = Readonly<{
-    wall: StandardMaterial;
-    ceiling: StandardMaterial;
-    wood: StandardMaterial;
-    trim: StandardMaterial;
-    metal: StandardMaterial;
-    gold: StandardMaterial;
-    clothBlue: StandardMaterial;
-    clothCoral: StandardMaterial;
-    torch: StandardMaterial;
-    crack: StandardMaterial;
-    rubble: StandardMaterial;
-    portal: StandardMaterial;
+    wall: PBRMaterial;
+    ceiling: PBRMaterial;
+    wood: PBRMaterial;
+    trim: PBRMaterial;
+    metal: PBRMaterial;
+    gold: PBRMaterial;
+    clothBlue: PBRMaterial;
+    clothCoral: PBRMaterial;
+    torch: PBRMaterial;
+    crack: PBRMaterial;
+    rubble: PBRMaterial;
+    portal: PBRMaterial;
 }>;
 
 export type RoomRuntime = Readonly<{
@@ -41,23 +43,23 @@ export type RoomRuntime = Readonly<{
 
 export function createCastleMaterials(scene: Scene): CastleMaterials {
     return {
-        wall: castleMaterial(scene, 'castle-wall-stone', '#b7c0ad', 0.025),
-        ceiling: castleMaterial(scene, 'castle-ceiling-stone', '#98a99b', 0.018),
-        wood: castleMaterial(scene, 'castle-oak', '#946b3c', 0.015),
-        trim: castleMaterial(scene, 'castle-trim', '#d5b86f', 0.04),
-        metal: castleMaterial(scene, 'castle-iron', '#9aa7ae', 0.018),
-        gold: castleMaterial(scene, 'castle-gold', '#f1c453', 0.12),
-        clothBlue: castleMaterial(scene, 'castle-blue-cloth', '#3db7d6', 0.08),
-        clothCoral: castleMaterial(scene, 'castle-coral-cloth', '#f9736b', 0.07),
-        torch: castleMaterial(scene, 'castle-torch-flame', '#ffbf5c', 0.72),
-        crack: castleMaterial(scene, 'castle-crack-shadow', '#2f2d28', 0.005),
-        rubble: castleMaterial(scene, 'castle-rubble', '#756b5d', 0.012),
-        portal: castleMaterial(scene, 'castle-portal-light', '#8ee7f5', 0.32),
+        wall: castleMaterial(scene, 'castle-wall-stone', '#b7c0ad', 0.025, 0, 0.92),
+        ceiling: castleMaterial(scene, 'castle-ceiling-stone', '#98a99b', 0.018, 0, 0.94),
+        wood: castleMaterial(scene, 'castle-oak', '#946b3c', 0.015, 0, 0.88),
+        trim: castleMaterial(scene, 'castle-trim', '#d5b86f', 0.04, 0.1, 0.75),
+        metal: castleMaterial(scene, 'castle-iron', '#9aa7ae', 0.018, 0.6, 0.65),
+        gold: castleMaterial(scene, 'castle-gold', '#f1c453', 0.12, 0.9, 0.2),
+        clothBlue: castleMaterial(scene, 'castle-blue-cloth', '#3db7d6', 0.08, 0, 0.95),
+        clothCoral: castleMaterial(scene, 'castle-coral-cloth', '#f9736b', 0.07, 0, 0.95),
+        torch: castleMaterial(scene, 'castle-torch-flame', '#ffbf5c', 0.72, 0, 1.0),
+        crack: castleMaterial(scene, 'castle-crack-shadow', '#2f2d28', 0.005, 0, 1.0),
+        rubble: castleMaterial(scene, 'castle-rubble', '#756b5d', 0.012, 0, 0.88),
+        portal: castleMaterial(scene, 'castle-portal-light', '#8ee7f5', 0.32, 0.15, 0.45),
     };
 }
 
 export function applyRoomMaterial(
-    material: StandardMaterial,
+    material: PBRMaterial,
     room: RelicRoom,
     selected: boolean,
 ): void {
@@ -80,15 +82,13 @@ export function applyRoomMaterial(
         : room.kind === 'storage'
         ? '#c69b5f'
         : '#93b7aa';
-    material.diffuseColor = Color3.FromHexString(base);
-    material.specularColor = new Color3(0.22, 0.19, 0.12);
-    material.emissiveColor = room.collapsed
-        ? new Color3(0.035, 0.028, 0.018)
-        : room.unstable
-        ? new Color3(0.2, 0.07, 0.025)
-        : selected
-        ? new Color3(0.18, 0.12, 0.035)
+    material.albedoColor = Color3.FromHexString(base);
+    material.emissiveColor = room.collapsed ? new Color3(0.035, 0.028, 0.018)
+        : room.unstable ? new Color3(0.2, 0.07, 0.025)
+        : selected ? new Color3(0.18, 0.12, 0.035)
         : new Color3(0.035, 0.035, 0.026);
+    material.metallic = 0;
+    material.roughness = 0.9;
 }
 
 export function createIntroCastleScene(
@@ -96,7 +96,7 @@ export function createIntroCastleScene(
     materials: CastleMaterials,
 ): readonly Mesh[] {
     const meshes: Mesh[] = [];
-    const add = (mesh: Mesh, material: StandardMaterial) => {
+    const add = (mesh: Mesh, material: PBRMaterial) => {
         mesh.material = material;
         meshes.push(mesh);
         return mesh;
@@ -241,7 +241,7 @@ export function createCastleCorridor(
 
     const meshes: Mesh[] = [];
     const corridorWidth = 1.18;
-    const add = (mesh: Mesh, material: StandardMaterial) => {
+    const add = (mesh: Mesh, material: PBRMaterial) => {
         mesh.position.addInPlace(center);
         mesh.material = material;
         meshes.push(mesh);
@@ -319,7 +319,7 @@ export function createRoomProps(
 ): readonly Mesh[] {
     const props: Mesh[] = [];
     const materials = runtime.castleMaterials;
-    const add = (mesh: Mesh, material: StandardMaterial = materials.wall) => {
+    const add = (mesh: Mesh, material: PBRMaterial = materials.wall) => {
         mesh.parent = root;
         mesh.metadata = { roomId: room.id };
         mesh.material = material;
@@ -411,18 +411,21 @@ function castleMaterial(
     name: string,
     hex: string,
     emissiveScale: number,
-): StandardMaterial {
-    const material = new StandardMaterial(name, scene);
+    metallic: number,
+    roughness: number,
+): PBRMaterial {
+    const material = new PBRMaterial(name, scene);
     const color = Color3.FromHexString(hex);
-    material.diffuseColor = color;
+    material.albedoColor = color;
     material.emissiveColor = color.scale(emissiveScale);
-    material.specularColor = color.scale(0.14);
+    material.metallic = metallic;
+    material.roughness = roughness;
     return material;
 }
 
 function addRoomKindProps(
     runtime: RoomRuntime,
-    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     room: RelicRoom,
     materials: CastleMaterials,
 ): void {
@@ -456,7 +459,7 @@ function addRoomKindProps(
 
 function addEntranceProps(
     runtime: RoomRuntime,
-    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     room: RelicRoom,
     materials: CastleMaterials,
 ): void {
@@ -480,7 +483,7 @@ function addEntranceProps(
 
 function addHallwayProps(
     runtime: RoomRuntime,
-    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     room: RelicRoom,
     materials: CastleMaterials,
 ): void {
@@ -505,7 +508,7 @@ function addHallwayProps(
 
 function addStorageProps(
     runtime: RoomRuntime,
-    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     room: RelicRoom,
     materials: CastleMaterials,
 ): void {
@@ -530,7 +533,7 @@ function addStorageProps(
 
 function addShrineProps(
     runtime: RoomRuntime,
-    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     room: RelicRoom,
     materials: CastleMaterials,
 ): void {
@@ -552,7 +555,7 @@ function addShrineProps(
 
 function addTrapProps(
     runtime: RoomRuntime,
-    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     room: RelicRoom,
     materials: CastleMaterials,
 ): void {
@@ -576,7 +579,7 @@ function addTrapProps(
 
 function addTreasureProps(
     runtime: RoomRuntime,
-    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     room: RelicRoom,
     materials: CastleMaterials,
 ): void {
@@ -598,7 +601,7 @@ function addTreasureProps(
 
 function addMonsterProps(
     runtime: RoomRuntime,
-    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     room: RelicRoom,
     materials: CastleMaterials,
 ): void {
@@ -623,7 +626,7 @@ function addMonsterProps(
 
 function addExitProps(
     runtime: RoomRuntime,
-    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     room: RelicRoom,
     materials: CastleMaterials,
 ): void {
@@ -644,7 +647,7 @@ function addExitProps(
 }
 
 function addCastleWall(
-    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     direction: CardinalDirection,
     hasDoor: boolean,
     materials: CastleMaterials,
@@ -704,7 +707,7 @@ function addCastleWall(
 }
 
 function addCastleCeiling(
-    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     materials: CastleMaterials,
 ): void {
     const ceiling = add(MeshBuilder.CreateBox(
@@ -726,7 +729,7 @@ function addCastleCeiling(
 }
 
 function addHighFantasyRoomDecor(
-    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     room: RelicRoom,
     materials: CastleMaterials,
 ): void {
@@ -777,20 +780,10 @@ function addHighFantasyRoomDecor(
     ), materials.metal);
     chandelier.position.set(0, CEILING_Y - 0.58, 0);
     chandelier.rotation.x = Math.PI / 2;
-
-    for (let index = 0; index < 4; index += 1) {
-        const angle = (Math.PI * 2 * index) / 4;
-        const flame = add(MeshBuilder.CreateSphere(
-            `castle-room-chandelier-flame-${room.id}-${index}`,
-            { diameter: 0.14, segments: 10 },
-            materials.torch.getScene(),
-        ), materials.torch);
-        flame.position.set(Math.cos(angle) * 0.52, CEILING_Y - 0.68, Math.sin(angle) * 0.52);
-    }
 }
 
 function addClueHotspot(
-    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     room: RelicRoom,
     materials: CastleMaterials,
 ): void {
@@ -800,7 +793,7 @@ function addClueHotspot(
 }
 
 function addInspectableHotspot(
-    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     room: RelicRoom,
     clue: ClueHotspot,
     materials: CastleMaterials,
@@ -851,7 +844,7 @@ function addInspectableHotspot(
 }
 
 function addHotspotProp(
-    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     room: RelicRoom,
     clue: ClueHotspot,
     materials: CastleMaterials,
@@ -1090,7 +1083,7 @@ function addHotspotProp(
 }
 
 function addStoneCourseDetail(
-    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     room: RelicRoom,
     materials: CastleMaterials,
 ): void {
@@ -1137,7 +1130,7 @@ function addStoneCourseDetail(
 }
 
 function addCastleColumns(
-    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     materials: CastleMaterials,
 ): void {
     for (const x of [-1, 1]) {
@@ -1157,7 +1150,7 @@ function addCastleColumns(
 }
 
 function addCastleCracks(
-    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     room: RelicRoom,
     materials: CastleMaterials,
 ): void {
@@ -1184,7 +1177,7 @@ function addCastleCracks(
 }
 
 function addCastleDoorLight(
-    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     room: RelicRoom,
     materials: CastleMaterials,
 ): void {
@@ -1197,18 +1190,11 @@ function addCastleDoorLight(
         ), materials.wood);
         bracket.position.set(x, 1.26, side * (ROOM_SIZE / 2 - 0.08));
         bracket.rotation.x = Math.PI / 2;
-
-        const flame = add(MeshBuilder.CreateSphere(
-            `castle-torch-flame-${room.id}-${x}`,
-            { diameter: 0.18, segments: 12 },
-            materials.torch.getScene(),
-        ), materials.torch);
-        flame.position.set(x, 1.48, side * (ROOM_SIZE / 2 - 0.14));
     }
 }
 
 function addRubblePile(
-    add: (mesh: Mesh, material?: StandardMaterial) => Mesh,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     room: RelicRoom,
     materials: CastleMaterials,
 ): void {
@@ -1243,4 +1229,87 @@ function roomDoorDirections(room: RelicRoom, rooms: readonly RelicRoom[]): Set<C
     }
 
     return directions;
+}
+
+export function createFlameTexture(scene: Scene): DynamicTexture {
+    const size = 32;
+    const texture = new DynamicTexture('torch-flame-texture', { width: size, height: size }, scene, false);
+    const ctx = texture.getContext() as CanvasRenderingContext2D;
+    const half = size / 2;
+    const gradient = ctx.createRadialGradient(half, half, 0, half, half, half);
+    gradient.addColorStop(0, 'rgba(255, 248, 200, 1)');
+    gradient.addColorStop(0.3, 'rgba(255, 165, 40, 0.9)');
+    gradient.addColorStop(0.65, 'rgba(255, 60, 0, 0.5)');
+    gradient.addColorStop(1, 'rgba(180, 20, 0, 0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+    texture.update();
+    return texture;
+}
+
+export function createRoomTorchParticles(
+    scene: Scene,
+    room: RelicRoom,
+    texture: DynamicTexture,
+): readonly ParticleSystem[] {
+    const world = roomWorldPosition(room);
+    const side = room.kind === 'exit' ? 1 : -1;
+    const particles: ParticleSystem[] = [];
+
+    // Wall torch flames (matching addCastleDoorLight positions)
+    for (const x of [-0.8, 0.8]) {
+        const pos = new Vector3(world.x + x, 1.48, world.z + side * (ROOM_SIZE / 2 - 0.14));
+        particles.push(spawnTorchFlame(scene, pos, texture, false));
+    }
+
+    // Chandelier flames (matching addHighFantasyRoomDecor positions)
+    for (let index = 0; index < 4; index += 1) {
+        const angle = (Math.PI * 2 * index) / 4;
+        const pos = new Vector3(
+            world.x + Math.cos(angle) * 0.52,
+            CEILING_Y - 0.68,
+            world.z + Math.sin(angle) * 0.52,
+        );
+        particles.push(spawnTorchFlame(scene, pos, texture, true));
+    }
+
+    return particles;
+}
+
+function spawnTorchFlame(
+    scene: Scene,
+    position: Vector3,
+    texture: DynamicTexture,
+    small: boolean,
+): ParticleSystem {
+    const system = new ParticleSystem(
+        `torch-flame-${position.x.toFixed(1)}-${position.y.toFixed(1)}-${position.z.toFixed(1)}-${Date.now()}`,
+        small ? 30 : 60,
+        scene,
+    );
+    system.particleTexture = texture;
+    system.emitter = position.clone();
+    system.minEmitBox = new Vector3(-0.03, 0, -0.03);
+    system.maxEmitBox = new Vector3(0.03, 0, 0.03);
+
+    system.color1 = new Color4(1.0, 0.8, 0.25, 1.0);
+    system.color2 = new Color4(1.0, 0.45, 0.1, 0.85);
+    system.colorDead = new Color4(0.4, 0.1, 0.0, 0.0);
+
+    system.minSize = small ? 0.04 : 0.07;
+    system.maxSize = small ? 0.1 : 0.18;
+    system.minLifeTime = 0.2;
+    system.maxLifeTime = small ? 0.42 : 0.58;
+    system.emitRate = small ? 50 : 90;
+
+    system.direction1 = new Vector3(-0.06, 1.0, -0.06);
+    system.direction2 = new Vector3(0.06, 1.0, 0.06);
+    system.minEmitPower = small ? 0.18 : 0.28;
+    system.maxEmitPower = small ? 0.45 : 0.75;
+    system.updateSpeed = 0.025;
+
+    system.gravity = new Vector3(0, -0.15, 0);
+    system.blendMode = ParticleSystem.BLENDMODE_ADD;
+    system.start();
+    return system;
 }

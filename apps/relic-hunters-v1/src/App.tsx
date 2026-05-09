@@ -7,6 +7,7 @@ import type {
     RelicActionKind,
     RelicCharacterId,
     RelicEvent,
+    RelicEventType,
     RelicPlayer,
     RelicPublicSnapshot,
 } from '@relic-hunters/mod.ts';
@@ -1012,11 +1013,15 @@ function TurnFeedbackOverlay({
             <small>{feedback.detail}</small>
             {feedback.events.length > 0 && (
                 <div className="turn-feedback-events">
-                    {feedback.events.map((event) => (
-                        <p className={toneClass(event)} key={event.id}>
-                            {event.message}
-                        </p>
-                    ))}
+                    {feedback.events.map((event) => {
+                        const narLine = narratorLine(event);
+                        return (
+                            <div className={`turn-event-card ${toneClass(event)}`} key={event.id}>
+                                {narLine && <em className="narrator-voice">{narLine}</em>}
+                                <span>{event.message}</span>
+                            </div>
+                        );
+                    })}
                 </div>
             )}
         </section>
@@ -1138,27 +1143,27 @@ function isTurnResultEvent(event: RelicEvent): boolean {
 function turnEventHeadline(event: RelicEvent): string {
     switch (event.type) {
         case 'player_moved':
-            return 'A hunter changed rooms';
+            return 'A hunter slips through the dark';
         case 'player_searched':
-            return 'A clue was searched';
+            return 'Desperate hands search the room';
         case 'relic_found':
-            return 'A relic was found';
+            return 'Ancient gold catches the light';
         case 'steal_succeeded':
-            return 'A relic changed hands';
+            return 'A relic changes hands in shadow';
         case 'steal_failed':
-            return 'A steal failed';
+            return 'A theft attempt comes up empty';
         case 'escape_failed':
-            return 'Escape failed';
+            return 'The castle refuses to release';
         case 'player_escaped':
-            return 'A hunter escaped';
+            return 'A hunter breaks for daylight';
         case 'noise_pulse':
-            return 'The castle heard the round';
+            return 'The ruin stirs with the sound';
         case 'player_damaged':
-            return 'Falling stone hit a hunter';
+            return 'Stone and shadow take their toll';
         case 'room_unstable':
-            return 'A room became unstable';
+            return 'A room begins to crack and groan';
         case 'room_collapsed':
-            return 'A room collapsed';
+            return 'A chamber surrenders to ruin';
         default:
             return event.message;
     }
@@ -1339,9 +1344,15 @@ function RoundChronicle({
                 <strong>{chronicleHeadline(lastEvent, phase)}</strong>
             </div>
             <div className="chronicle-list">
-                {recent.map((event) => (
-                    <p className={toneClass(event)} key={event.id}>{event.message}</p>
-                ))}
+                {recent.map((event) => {
+                    const narLine = narratorLine(event);
+                    return (
+                        <div className={`chronicle-entry ${toneClass(event)}`} key={event.id}>
+                            {narLine && <em className="narrator-voice">{narLine}</em>}
+                            <span className="chronicle-message">{event.message}</span>
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );
@@ -1585,19 +1596,100 @@ function chronicleHeadline(
     }
 
     switch (event.type) {
+        case 'game_waiting':
+            return 'The castle holds its breath.';
+        case 'player_joined':
+            return 'A new hunter enters the ruin.';
+        case 'round_started':
+            return 'The expedition presses on.';
+        case 'action_submitted':
+            return 'A plan sealed in silence.';
+        case 'action_revealed':
+            return 'The fates are set in motion.';
+        case 'player_moved':
+            return 'Footsteps echo through the dark.';
+        case 'player_searched':
+            return 'The ruin yields its secrets slowly.';
         case 'relic_found':
             return 'Treasure breaks the silence.';
-        case 'room_collapsed':
-            return 'Stone gives way.';
+        case 'steal_succeeded':
+            return 'Trust is the first casualty.';
+        case 'steal_failed':
+            return 'Some things resist the taking.';
+        case 'escape_failed':
+            return 'The castle holds fast.';
         case 'player_escaped':
             return 'Daylight is close.';
         case 'noise_pulse':
             return 'The ruin hears everything.';
+        case 'player_damaged':
+            return 'The castle draws blood.';
+        case 'room_unstable':
+            return 'The walls begin to speak.';
+        case 'room_collapsed':
+            return 'Stone gives way.';
         case 'game_finished':
             return 'The expedition is over.';
         default:
             return event.message;
     }
+}
+
+const NARRATOR_LINES: Partial<Record<RelicEventType, readonly string[]>> = {
+    game_waiting: ['The ruin holds its breath.'],
+    player_joined: ['Another soul answers the call.', 'The expedition grows bolder.'],
+    round_started: ["The torches hold their breath.", "A new round stirs the castle's bones."],
+    action_submitted: ['A plan is whispered into the dark.', 'Choices made in silence.'],
+    action_revealed: ['Plans unravel in the flickering dark.', 'The castle watches as fates unfold.'],
+    player_moved: [
+        'Footfalls fade into shadow.',
+        'The corridor swallows another hunter.',
+        'Stone whispers of passage.',
+    ],
+    player_searched: [
+        'Dust disturbed by desperate hands.',
+        'Old secrets resist new fingers.',
+        'Every clue costs time.',
+    ],
+    relic_found: [
+        'The ancient stirs. Something answers.',
+        'Fortune paid in danger.',
+        'Gold gleams where none expected.',
+    ],
+    steal_succeeded: ["Trust collapses in the dark.", "One hunter's prize becomes another's."],
+    steal_failed: ['Greed grasps and finds only air.', 'Some things are not so easily taken.'],
+    escape_failed: ['The ruin holds fast.', 'The castle will not release you yet.'],
+    player_escaped: ['Daylight claims another soul.', 'The ruin loosens its grip.'],
+    noise_pulse: [
+        'The walls remember every whisper.',
+        'Stone carries sound to distant ears.',
+        'Something in the dark takes note.',
+    ],
+    player_damaged: [
+        'The castle exacts its toll.',
+        "Pain is the ruin's oldest currency.",
+        'Stone and shadow take their due.',
+    ],
+    room_unstable: [
+        'A crack traces the ceiling like a curse.',
+        'The walls breathe wrong.',
+        'This room will not last.',
+    ],
+    room_collapsed: [
+        'Dust and darkness swallow the chamber.',
+        'What stood for centuries surrenders.',
+        'The ruin reclaims what it lent.',
+    ],
+    game_finished: [
+        'The expedition breathes its last.',
+        'What was sought is either found or lost forever.',
+    ],
+};
+
+function narratorLine(event: RelicEvent): string {
+    const lines = NARRATOR_LINES[event.type];
+    if (!lines || lines.length === 0) return '';
+    return lines[event.id.charCodeAt(event.id.length - 1) % lines.length];
 }
 
 function toneClass(event: RelicEvent | undefined): string {

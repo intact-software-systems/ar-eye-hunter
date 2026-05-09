@@ -7,6 +7,11 @@ import { Engine } from '@babylonjs/core/Engines/engine.js';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight.js';
 import { PointLight } from '@babylonjs/core/Lights/pointLight.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
+import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial.js';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
+import { DefaultRenderingPipeline } from '@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline.js';
+import { GlowLayer } from '@babylonjs/core/Layers/glowLayer.js';
+import { ParticleSystem } from '@babylonjs/core/Particles/particleSystem.js';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
 import { Scene } from '@babylonjs/core/scene.js';
@@ -28,13 +33,15 @@ import { deriveSceneObjective, roomHasResolvedClue, } from './scene/objectives.t
 import { chooseLookRoom, directionBetweenRooms, roomClueHotspot, } from './scene/prompts.ts';
 import {
     applyRoomMaterial,
-    type CastleMaterials,
     createCastleCorridor,
     createCastleMaterials,
+    createFlameTexture,
     createIntroCastleScene,
     createRoomLights,
     createRoomProps,
+    createRoomTorchParticles,
     roomWorldPosition,
+    type CastleMaterials,
 } from './scene/rooms.ts';
 import type {
     CardinalDirection,
@@ -71,19 +78,21 @@ type SceneRuntime = Readonly<{
     roamOffset: Vector3;
     roamRoomId: { value?: string };
     rooms: Map<string, Mesh>;
-    roomMaterials: Map<string, StandardMaterial>;
+    roomMaterials: Map<string, PBRMaterial>;
     roomBlockers: Map<string, readonly CollisionBox[]>;
     roomLights: Map<string, readonly PointLight[]>;
     players: Map<string, Mesh>;
-    playerMaterials: Map<string, StandardMaterial>;
+    playerMaterials: Map<string, PBRMaterial>;
     playerCharacterIds: Map<string, string>;
     playerTargets: Map<string, Vector3>;
     avatarParts: Map<string, readonly Mesh[]>;
-    avatarMaterials: Map<string, readonly StandardMaterial[]>;
+    avatarMaterials: Map<string, readonly PBRMaterial[]>;
     relics: Map<string, Mesh>;
     props: Map<string, readonly Mesh[]>;
     hands: readonly Mesh[];
-    handMaterial: StandardMaterial;
+    handMaterial: PBRMaterial;
+    flameTexture: DynamicTexture;
+    roomParticles: Map<string, readonly ParticleSystem[]>;
     links: Mesh[];
     flickerLights: PointLight[];
     effects: TimedEffect[];
@@ -197,11 +206,29 @@ export function RelicScene({
         camera.minZ = 0.05;
         camera.maxZ = 80;
 
+        // Post-processing pipeline
+        const pipeline = new DefaultRenderingPipeline('relic-pipeline', true, scene, [camera]);
+        pipeline.bloomEnabled = true;
+        pipeline.bloomThreshold = 0.8;
+        pipeline.bloomWeight = 0.42;
+        pipeline.bloomKernel = 64;
+        pipeline.bloomScale = 0.5;
+        pipeline.sharpenEnabled = true;
+        pipeline.sharpen.edgeAmount = 0.25;
+        pipeline.imageProcessingEnabled = true;
+        pipeline.imageProcessing.contrast = 1.12;
+        pipeline.imageProcessing.exposure = 1.06;
+
+        const glowLayer = new GlowLayer('relic-glow', scene);
+        glowLayer.intensity = 0.65;
+
+        const flameTexture = createFlameTexture(scene);
+
         const light = new HemisphericLight('ruin-light', new Vector3(0.2, 1, 0.25), scene);
         light.intensity = 1.05;
         light.groundColor = new Color3(0.32, 0.24, 0.12);
 
-        const handMaterial = new StandardMaterial('first-person-hands-material', scene);
+        const handMaterial = new PBRMaterial('first-person-hands-material', scene);
         const castleMaterials = createCastleMaterials(scene);
         const introMeshes = createIntroCastleScene(scene, castleMaterials);
         const doorPromptMarkerMaterial = new StandardMaterial('doorway-prompt-marker-material', scene);
@@ -273,6 +300,8 @@ export function RelicScene({
             props: new Map(),
             hands: createFirstPersonHands(scene, handMaterial),
             handMaterial,
+            flameTexture,
+            roomParticles: new Map(),
             links: [],
             flickerLights: [],
             effects: [],
@@ -656,11 +685,12 @@ function syncRooms(
             runtime.props.set(room.id, createRoomProps(runtime, room, rooms, mesh));
             runtime.roomBlockers.set(room.id, roomCollisionBoxes(room));
             runtime.roomLights.set(room.id, createRoomLights(runtime, room));
+            runtime.roomParticles.set(room.id, createRoomTorchParticles(runtime.scene, room, runtime.flameTexture));
         }
 
         let material = runtime.roomMaterials.get(room.id);
         if (!material) {
-            material = new StandardMaterial(`room-material-${room.id}`, runtime.scene);
+            material = new PBRMaterial(`room-material-${room.id}`, runtime.scene);
             runtime.roomMaterials.set(room.id, material);
         }
         applyRoomMaterial(material, room, room.id === selectedRoomId);
@@ -725,7 +755,7 @@ function createPlayerAvatar(
 ): Readonly<{
     root: Mesh;
     parts: readonly Mesh[];
-    materials: readonly StandardMaterial[];
+    materials: readonly PBRMaterial[];
 }> {
     const character = findRelicCharacter(player.characterId);
     const primary = materialFromHex(
@@ -761,7 +791,7 @@ function createPlayerAvatar(
     root.metadata = { playerId: player.playerId };
 
     const parts: Mesh[] = [root];
-    const addPart = (mesh: Mesh, material: StandardMaterial) => {
+    const addPart = (mesh: Mesh, material: PBRMaterial) => {
         mesh.parent = root;
         mesh.material = material;
         mesh.metadata = { playerId: player.playerId };
@@ -808,7 +838,7 @@ function addSignatureProp(
     root: Mesh,
     character: RelicCharacter,
     playerId: string,
-    material: StandardMaterial,
+    material: PBRMaterial,
 ): readonly Mesh[] {
     const parts: Mesh[] = [];
     const add = (mesh: Mesh) => {
@@ -948,11 +978,12 @@ function syncRelics(runtime: SceneRuntime, snapshot: RelicPublicSnapshot): void 
 
 function createFirstPersonHands(
     scene: Scene,
-    material: StandardMaterial,
+    material: PBRMaterial,
 ): readonly Mesh[] {
-    material.diffuseColor = Color3.FromHexString('#0f766e');
+    material.albedoColor = Color3.FromHexString('#0f766e');
     material.emissiveColor = Color3.FromHexString('#f2c14e').scale(0.08);
-    material.specularColor = new Color3(0.18, 0.14, 0.08);
+    material.metallic = 0.05;
+    material.roughness = 0.85;
 
     return [-1, 1].map((side) => {
         const hand = MeshBuilder.CreateCapsule(
@@ -1035,6 +1066,15 @@ function updateSceneVisibility(runtime: SceneRuntime): void {
     for (const lights of runtime.roomLights.values()) {
         for (const light of lights) {
             light.setEnabled(!showIntro);
+        }
+    }
+    for (const particles of runtime.roomParticles.values()) {
+        for (const system of particles) {
+            if (showIntro) {
+                if (system.isStarted()) system.stop();
+            } else {
+                if (!system.isStarted()) system.start();
+            }
         }
     }
 }
@@ -1396,7 +1436,7 @@ function updateFirstPersonHands(runtime: SceneRuntime): void {
     }
 
     const character = findRelicCharacter(localPlayer.characterId);
-    runtime.handMaterial.diffuseColor = Color3.FromHexString(character.colors.secondary);
+    runtime.handMaterial.albedoColor = Color3.FromHexString(character.colors.secondary);
     runtime.handMaterial.emissiveColor = Color3.FromHexString(character.colors.accent).scale(0.08);
 
     const forward = runtime.camera.getForwardRay().direction.normalize();
@@ -1760,12 +1800,13 @@ function materialFromHex(
     name: string,
     hex: string,
     emissiveScale: number,
-): StandardMaterial {
-    const material = new StandardMaterial(name, scene);
+): PBRMaterial {
+    const material = new PBRMaterial(name, scene);
     const color = Color3.FromHexString(hex);
-    material.diffuseColor = color;
+    material.albedoColor = color;
     material.emissiveColor = color.scale(emissiveScale);
-    material.specularColor = color.scale(0.16);
+    material.metallic = 0.1;
+    material.roughness = 0.72;
     return material;
 }
 
