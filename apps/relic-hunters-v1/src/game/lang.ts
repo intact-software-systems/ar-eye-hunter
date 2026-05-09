@@ -48,6 +48,9 @@ export type UIStrings = Readonly<{
     keeperAwaits: string;
     heedingTheCall: string;
     bound: string;
+    heedTheCall: string;
+    readyConfirmed: string;
+    beginTheHunt: string;
     objectiveLobby: string;
     objectiveJoin: string;
     objectiveEscaped: string;
@@ -65,7 +68,7 @@ export const UI: Record<Lang, UIStrings> = {
         phaseConnected: 'Choose a room',
         phaseConnecting: 'Opening the gate',
         phaseSignedOut: 'Sign in',
-        phaseBannerPlanning: 'The Keeper commands the hunters forward!',
+        phaseBannerPlanning: '⚔  The Hunt Begins!',
         submitButton: 'Heed the Keeper',
         boundButton: 'Bound — awaiting the others...',
         huntersSummoned: 'Hunters Summoned',
@@ -73,6 +76,9 @@ export const UI: Record<Lang, UIStrings> = {
         keeperAwaits: 'The Keeper awaits more hunters…',
         heedingTheCall: 'heeding the call',
         bound: 'bound',
+        heedTheCall: 'Heed the Call',
+        readyConfirmed: '✓ Ready',
+        beginTheHunt: 'Begin the Hunt',
         objectiveLobby: 'The Keeper watches. Gather hunters, then enter the castle.',
         objectiveJoin: 'Join the expedition to enter the ruin.',
         objectiveEscaped: 'You escaped. Watch whether the others can beat your score.',
@@ -88,7 +94,7 @@ export const UI: Record<Lang, UIStrings> = {
         phaseConnected: 'Velg et rom',
         phaseConnecting: 'Åpner porten',
         phaseSignedOut: 'Logg inn',
-        phaseBannerPlanning: 'Vokteren befaler jegerne fremover!',
+        phaseBannerPlanning: '⚔  Jakten begynner!',
         submitButton: 'Adlyd Vokteren',
         boundButton: 'Bundet — venter på de andre...',
         huntersSummoned: 'Jegere innkalt',
@@ -96,6 +102,9 @@ export const UI: Record<Lang, UIStrings> = {
         keeperAwaits: 'Vokteren venter på flere jegere…',
         heedingTheCall: 'adlyder kallet',
         bound: 'bundet',
+        heedTheCall: 'Adlyd kallet',
+        readyConfirmed: '✓ Klar',
+        beginTheHunt: 'Start jakten',
         objectiveLobby: 'Vokteren ser på. Samle jegere, gå inn i slottet.',
         objectiveJoin: 'Bli med i ekspedisjonen for å entre ruinen.',
         objectiveEscaped: 'Du unnslapp. Se om de andre kan slå poengsummen din.',

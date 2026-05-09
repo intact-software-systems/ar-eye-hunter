@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { rallar } from '@shared-web/browser/rallar.ts';
 import '@babylonjs/core/Culling/ray.js';
 import '@babylonjs/core/Rendering/geometryBufferRendererSceneComponent.js';
 import { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera.js';
@@ -53,6 +54,13 @@ import type {
     PointerLookState,
     ScenePrompt,
 } from './scene/types.ts';
+
+const POS_TYPE_ID = 'relic.pos';
+const POS_BROADCAST_INTERVAL_MS = 80;
+const POS_MAX_AGE_MS = 2500;
+
+type RelicPosUpdate = Readonly<{ x: number; z: number; r: number }>;
+type RemotePosEntry = { x: number; z: number; yaw: number; t: number };
 
 type RelicSceneProps = Readonly<{
     snapshot?: RelicPublicSnapshot;
@@ -113,6 +121,8 @@ type SceneRuntime = Readonly<{
     doorPromptMarkerMaterial: StandardMaterial;
     escapeMarker: Mesh;
     escapeMarkerMaterial: StandardMaterial;
+    remotePositions: Map<string, RemotePosEntry>;
+    lastPosBroadcastMs: { value: number };
 }>;
 
 type TimedEffect = Readonly<{
@@ -351,6 +361,8 @@ export function RelicScene({
             doorPromptMarkerMaterial,
             escapeMarker,
             escapeMarkerMaterial,
+            remotePositions: new Map(),
+            lastPosBroadcastMs: { value: 0 },
         };
         runtimeRef.current = runtime;
         syncScene(
@@ -471,6 +483,12 @@ export function RelicScene({
         document.addEventListener('pointerlockchange', pointerlockchange);
         window.addEventListener('keydown', keydown);
         window.addEventListener('keyup', keyup);
+
+        const unsubPos = rallar.messages.rtc.onMessage<RelicPosUpdate>(POS_TYPE_ID, (msg) => {
+            const { x, z, r } = msg.payload;
+            runtime.remotePositions.set(msg.senderId, { x, z, yaw: r, t: performance.now() });
+        });
+
         engine.runRenderLoop(() => {
             updateRuntime(runtime);
             scene.render();
@@ -485,6 +503,7 @@ export function RelicScene({
             document.removeEventListener('pointerlockchange', pointerlockchange);
             window.removeEventListener('keydown', keydown);
             window.removeEventListener('keyup', keyup);
+            unsubPos();
             scene.dispose();
             engine.dispose();
             runtimeRef.current = undefined;
@@ -828,7 +847,7 @@ function syncPlayers(
 
         if (snapshot.phase === 'lobby') {
             // Show all hunters lined up in the castle courtyard, visible from lobby camera
-            const spacing = 1.2;
+            const spacing = 1.8;
             const totalWidth = (snapshot.players.length - 1) * spacing;
             const startX = -totalWidth / 2;
             const target = new Vector3(startX + index * spacing, 0.65, 1.8);
@@ -838,6 +857,10 @@ function syncPlayers(
             runtime.playerTargets.set(player.playerId, target);
             mesh.scaling.setAll(1.0);
             setAvatarEnabled(runtime, player.playerId, true);
+        } else if (player.playerId === localPlayerId) {
+            // Local player: shown in 3rd person, position tracked from roamOffset each frame
+            mesh.scaling.setAll(1.0);
+            setAvatarEnabled(runtime, player.playerId, !player.escaped && !player.defeated);
         } else {
             const room = snapshot.map.find((candidate) => candidate.id === player.roomId);
             if (room) {
@@ -849,13 +872,8 @@ function syncPlayers(
                 }
                 runtime.playerTargets.set(player.playerId, target);
             }
-            const scale = player.playerId === localPlayerId ? 1.14 : 1;
-            mesh.scaling.set(scale, scale, scale);
-            setAvatarEnabled(
-                runtime,
-                player.playerId,
-                player.playerId !== localPlayerId && !player.escaped && !player.defeated,
-            );
+            mesh.scaling.setAll(1.0);
+            setAvatarEnabled(runtime, player.playerId, !player.escaped && !player.defeated);
         }
     }
 
@@ -894,12 +912,13 @@ function createPlayerAvatar(
         0.12,
     );
 
+    // Hakama (lower robe) — wider bottom
     const root = MeshBuilder.CreateCylinder(
         `avatar-body-${player.playerId}`,
         {
-            height: 0.86,
-            diameterTop: character.silhouette === 'bulwark' ? 0.52 : 0.42,
-            diameterBottom: character.silhouette === 'scout' ? 0.34 : 0.48,
+            height: 0.52,
+            diameterTop: 0.36,
+            diameterBottom: character.silhouette === 'bulwark' ? 0.62 : 0.52,
             tessellation: 8,
         },
         runtime.scene,
@@ -916,29 +935,102 @@ function createPlayerAvatar(
         return mesh;
     };
 
-    const head = addPart(
-        MeshBuilder.CreateSphere(
-            `avatar-head-${player.playerId}`,
-            { diameter: 0.28, segments: 14 },
-            runtime.scene,
-        ),
-        accent,
-    );
-    head.position.set(0, 0.55, 0);
-
-    const shoulders = addPart(
+    // Do-maru (chest armour)
+    const chest = addPart(
         MeshBuilder.CreateBox(
-            `avatar-shoulders-${player.playerId}`,
-            {
-                width: character.silhouette === 'bulwark' ? 0.82 : 0.62,
-                height: 0.16,
-                depth: 0.22,
-            },
+            `avatar-chest-${player.playerId}`,
+            { width: 0.34, height: 0.36, depth: 0.24 },
             runtime.scene,
         ),
         secondary,
     );
-    shoulders.position.set(0, 0.22, 0);
+    chest.position.set(0, 0.44, 0);
+
+    // Sode — left pauldron
+    const leftPauldron = addPart(
+        MeshBuilder.CreateBox(
+            `avatar-lpauldron-${player.playerId}`,
+            { width: 0.12, height: 0.28, depth: 0.22 },
+            runtime.scene,
+        ),
+        secondary,
+    );
+    leftPauldron.position.set(-0.28, 0.44, 0);
+    leftPauldron.rotation.z = 0.22;
+
+    // Sode — right pauldron
+    const rightPauldron = addPart(
+        MeshBuilder.CreateBox(
+            `avatar-rpauldron-${player.playerId}`,
+            { width: 0.12, height: 0.28, depth: 0.22 },
+            runtime.scene,
+        ),
+        secondary,
+    );
+    rightPauldron.position.set(0.28, 0.44, 0);
+    rightPauldron.rotation.z = -0.22;
+
+    // Kabuto dome
+    const kabuto = addPart(
+        MeshBuilder.CreateSphere(
+            `avatar-kabuto-${player.playerId}`,
+            { diameter: 0.30, segments: 10 },
+            runtime.scene,
+        ),
+        accent,
+    );
+    kabuto.position.set(0, 0.78, 0);
+    kabuto.scaling.y = 0.78;
+
+    // Kabuto brim (shikoro neckguard)
+    const brim = addPart(
+        MeshBuilder.CreateDisc(
+            `avatar-brim-${player.playerId}`,
+            { radius: 0.22, tessellation: 18 },
+            runtime.scene,
+        ),
+        accent,
+    );
+    brim.position.set(0, 0.65, 0);
+    brim.rotation.x = Math.PI / 2;
+
+    // Maedate — front crest on kabuto
+    const crest = addPart(
+        MeshBuilder.CreateBox(
+            `avatar-crest-${player.playerId}`,
+            { width: 0.05, height: 0.16, depth: 0.04 },
+            runtime.scene,
+        ),
+        accent,
+    );
+    crest.position.set(0, 0.90, 0.13);
+    crest.rotation.x = -0.28;
+
+    // Katana sheath on back (universal)
+    const sheath = addPart(
+        MeshBuilder.CreateBox(
+            `avatar-sheath-${player.playerId}`,
+            { width: 0.06, height: 0.76, depth: 0.08 },
+            runtime.scene,
+        ),
+        primary,
+    );
+    sheath.position.set(-0.14, 0.28, -0.22);
+    sheath.rotation.z = 0.42;
+    sheath.rotation.y = 0.32;
+
+    // Tsuka (handle)
+    const tsuka = addPart(
+        MeshBuilder.CreateBox(
+            `avatar-tsuka-${player.playerId}`,
+            { width: 0.07, height: 0.22, depth: 0.09 },
+            runtime.scene,
+        ),
+        accent,
+    );
+    tsuka.position.set(-0.06, 0.58, -0.22);
+    tsuka.rotation.z = 0.42;
+    tsuka.rotation.y = 0.32;
 
     const signature = addSignatureProp(runtime, root, character, player.playerId, accent);
     parts.push(...signature);
@@ -1232,6 +1324,30 @@ function updateRuntime(runtime: SceneRuntime): void {
     updateRelics(runtime);
     updateAvatarCompulsionState(runtime);
     updateDynamicPostProcess(runtime);
+    broadcastLocalPosition(runtime);
+}
+
+function broadcastLocalPosition(runtime: SceneRuntime): void {
+    const now = performance.now();
+    if (now - runtime.lastPosBroadcastMs.value < POS_BROADCAST_INTERVAL_MS) return;
+    const snapshot = runtime.snapshot.value;
+    const localPlayerId = runtime.localPlayerId.value;
+    if (!localPlayerId || !snapshot) return;
+    const localPlayer = snapshot.players.find((p) => p.playerId === localPlayerId);
+    if (!localPlayer || localPlayer.escaped || localPlayer.defeated) return;
+    const room = snapshot.map.find((r) => r.id === localPlayer.roomId);
+    if (!room) return;
+    runtime.lastPosBroadcastMs.value = now;
+    const world = roomWorldPosition(room);
+    void rallar.messages.rtc.send<RelicPosUpdate>({
+        typeId: POS_TYPE_ID,
+        payload: {
+            x: world.x + runtime.roamOffset.x,
+            z: world.z + runtime.roamOffset.z,
+            r: runtime.cameraYaw.value,
+        },
+        reliability: 'best-effort',
+    });
 }
 
 function updateSceneVisibility(runtime: SceneRuntime): void {
@@ -1281,23 +1397,51 @@ function updateSceneVisibility(runtime: SceneRuntime): void {
 }
 
 function updatePlayerPositions(runtime: SceneRuntime): void {
-    const factor = Math.min(1, runtime.engine.getDeltaTime() / 180);
-    for (const [playerId, mesh] of runtime.players.entries()) {
-        const target = runtime.playerTargets.get(playerId);
-        if (!target) {
-            continue;
-        }
+    const snapshot = runtime.snapshot.value;
+    const localPlayerId = runtime.localPlayerId.value;
+    const localPlayer = snapshot?.players.find((p) => p.playerId === localPlayerId);
+    const dt = runtime.engine.getDeltaTime();
+    const factor = Math.min(1, dt / 180);
+    const rtcFactor = Math.min(1, dt / 55);
+    const now = performance.now();
 
-        const delta = target.subtract(mesh.position);
-        if (delta.lengthSquared() < 0.0008) {
-            mesh.position.copyFrom(target);
+    for (const [playerId, mesh] of runtime.players.entries()) {
+        if (playerId === localPlayerId && localPlayer && !localPlayer.escaped && !localPlayer.defeated) {
+            // Local avatar: positioned directly from roamOffset so it matches the camera without lag
+            const room = snapshot?.map.find((r) => r.id === localPlayer.roomId);
+            if (room) {
+                const world = roomWorldPosition(room);
+                mesh.position.set(
+                    world.x + runtime.roamOffset.x,
+                    0.65,
+                    world.z + runtime.roamOffset.z,
+                );
+                mesh.rotation.y = runtime.cameraYaw.value;
+            }
         } else {
-            mesh.position.addInPlace(delta.scale(factor));
+            const remote = runtime.remotePositions.get(playerId);
+            if (remote && now - remote.t < POS_MAX_AGE_MS) {
+                // Live WebRTC position — lerp quickly toward it
+                mesh.position.x += (remote.x - mesh.position.x) * rtcFactor;
+                mesh.position.y += (0.65 - mesh.position.y) * rtcFactor;
+                mesh.position.z += (remote.z - mesh.position.z) * rtcFactor;
+                mesh.rotation.y = remote.yaw;
+            } else {
+                // Fallback: lerp to snapshot-derived room centre target
+                const target = runtime.playerTargets.get(playerId);
+                if (!target) continue;
+                const delta = target.subtract(mesh.position);
+                if (delta.lengthSquared() < 0.0008) {
+                    mesh.position.copyFrom(target);
+                } else {
+                    mesh.position.addInPlace(delta.scale(factor));
+                }
+            }
         }
 
         const label = runtime.playerLabels.get(playerId);
         if (label?.isEnabled()) {
-            label.position.set(mesh.position.x, mesh.position.y + 0.92, mesh.position.z);
+            label.position.set(mesh.position.x, mesh.position.y + 1.4, mesh.position.z);
         }
     }
 }
@@ -1380,20 +1524,16 @@ function updateCameraPose(runtime: SceneRuntime): void {
         return;
     }
 
+    // 3rd-person follow camera — stays behind and above the avatar
+    const camDistance = 5.5 + Math.cos(runtime.cameraPitch.value) * 2.0;
+    const camHeight = 3.8 + Math.sin(runtime.cameraPitch.value) * 2.5;
     const desiredPosition = new Vector3(
-        playerPosition.x,
-        PLAYER_EYE_Y,
-        playerPosition.z,
+        playerPosition.x - roamForward.x * camDistance,
+        playerPosition.y + camHeight,
+        playerPosition.z - roamForward.z * camDistance,
     );
-    const lookDistance = 3.25;
-    const flatDistance = Math.cos(runtime.cameraPitch.value) * lookDistance;
-    const desiredTarget = new Vector3(
-        playerPosition.x + roamForward.x * flatDistance,
-        PLAYER_EYE_Y + Math.sin(runtime.cameraPitch.value) * lookDistance,
-        playerPosition.z + roamForward.z * flatDistance,
-    );
-
-    moveCameraToward(runtime, desiredPosition, desiredTarget, 90);
+    const lookTarget = new Vector3(playerPosition.x, playerPosition.y + 1.1, playerPosition.z);
+    moveCameraToward(runtime, desiredPosition, lookTarget, 90);
 }
 
 function updateLocalRoomRoam(
@@ -1649,29 +1789,9 @@ function moveCameraToward(
 }
 
 function updateFirstPersonHands(runtime: SceneRuntime): void {
-    const snapshot = runtime.snapshot.value;
-    const localPlayerId = runtime.localPlayerId.value;
-    const localPlayer = snapshot?.players.find((player) => player.playerId === localPlayerId);
-    const enabled = !!localPlayer && !localPlayer.escaped && !localPlayer.defeated;
+    // Hands are not used in 3rd-person mode
     for (const hand of runtime.hands) {
-        hand.setEnabled(enabled);
-    }
-    if (!localPlayer) {
-        return;
-    }
-
-    const character = findRelicCharacter(localPlayer.characterId);
-    runtime.handMaterial.albedoColor = Color3.FromHexString(character.colors.secondary);
-    runtime.handMaterial.emissiveColor = Color3.FromHexString(character.colors.accent).scale(0.08);
-
-    const forward = runtime.camera.getForwardRay().direction.normalize();
-    const right = Vector3.Cross(forward, Vector3.Up()).normalize();
-    const base = runtime.camera.position.add(forward.scale(0.82)).add(new Vector3(0, -0.34, 0));
-    for (const [index, hand] of runtime.hands.entries()) {
-        const side = index === 0 ? -1 : 1;
-        hand.position.copyFrom(base.add(right.scale(side * 0.27)));
-        hand.rotation.copyFrom(runtime.camera.rotation);
-        hand.rotation.z += side * 0.42;
+        hand.setEnabled(false);
     }
 }
 

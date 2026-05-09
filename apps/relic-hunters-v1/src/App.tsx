@@ -296,12 +296,13 @@ export default function App() {
         const phase = game.snapshot?.phase;
         if (!phase) { prevPhaseRef.current = undefined; return; }
         if (prevPhaseRef.current && prevPhaseRef.current !== phase) {
+            const isGameStart = prevPhaseRef.current === 'lobby' && phase === 'planning';
             const msg = phase === 'planning' ? UI[lang].phaseBannerPlanning
                 : phase === 'finished' ? 'The ruin falls silent.'
                 : null;
             if (msg) {
-                setPhaseBanner(msg);
-                const t = window.setTimeout(() => setPhaseBanner(null), 2400);
+                setPhaseBanner(isGameStart ? `game-start:${msg}` : msg);
+                const t = window.setTimeout(() => setPhaseBanner(null), isGameStart ? 4000 : 2400);
                 return () => clearTimeout(t);
             }
         }
@@ -650,35 +651,53 @@ export default function App() {
                             )}
                         </div>
 
-                        <div className="button-grid">
+                        {game.snapshot && game.snapshot.phase === 'lobby' && (
+                            <LobbyPartyPanel
+                                snapshot={game.snapshot}
+                                localPlayerId={game.session.sessionId}
+                                onlineMemberCount={currentRoomSummary?.onlineMemberCount}
+                                lang={lang}
+                            />
+                        )}
+
+                        {(!game.snapshot || game.snapshot.phase === 'lobby') ? (
+                            <div className="lobby-ready-zone">
+                                {currentPlayer ? (
+                                    <button type="button" className="lobby-ready-confirmed" disabled>
+                                        {UI[lang].readyConfirmed}
+                                    </button>
+                                ) : (
+                                    <button type="button" className="primary lobby-ready-btn" onClick={joinExpedition}>
+                                        {UI[lang].heedTheCall}
+                                    </button>
+                                )}
+                                {currentPlayer && (
+                                    <button type="button" className="primary lobby-begin-btn" onClick={startExpedition}>
+                                        {UI[lang].beginTheHunt}
+                                    </button>
+                                )}
+                            </div>
+                        ) : (
                             <button type="button" onClick={joinExpedition}>
-                                {currentPlayer ? 'Update Hunter' : `Join as ${selectedCharacter.name}`}
+                                Update Hunter
                             </button>
-                            <button type="button" onClick={startExpedition}>
-                                Start
-                            </button>
+                        )}
+
+                        <div className="button-grid">
                             <button type="button" onClick={resetExpedition}>
-                                Reset
+                                {lang === 'no' ? 'Tilbakestill' : 'Reset'}
                             </button>
                             <button
                                 type="button"
                                 className={ambientEnabled ? 'active' : ''}
                                 onClick={toggleAmbient}
                             >
-                                Atmosphere
+                                {lang === 'no' ? 'Atmosfære' : 'Atmosphere'}
                             </button>
                             <button type="button" onClick={toggleLang} title="Switch language / Bytt språk">
                                 {lang === 'en' ? 'Norsk' : 'English'}
                             </button>
                         </div>
-
-                        {game.snapshot && game.snapshot.phase === 'lobby' && (
-                            <LobbyPartyPanel
-                                snapshot={game.snapshot}
-                                localPlayerId={game.session.sessionId}
-                                lang={lang}
-                            />
-                        )}
 
                         {isLocked && lockedAction
                             ? (
@@ -1008,9 +1027,20 @@ export default function App() {
                 }}/>
             )}
 
-            {game.snapshot && game.snapshot.phase !== 'lobby' && (
-                <div className="scene-crosshair" aria-hidden="true">
-                    <div className="scene-crosshair-dot"/>
+            {game.snapshot && game.snapshot.phase === 'planning' && game.session && currentPlayer && !currentPlayer.escaped && !currentPlayer.defeated && (
+                <div className="controls-hud" aria-hidden="true">
+                    <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</span>
+                    <span><kbd>Q</kbd><kbd>E</kbd> Turn</span>
+                    <span><kbd>1</kbd>–<kbd>4</kbd> Pick action</span>
+                    <span><kbd>↵</kbd> Submit</span>
+                </div>
+            )}
+
+            {game.snapshot && game.snapshot.phase === 'planning' && game.session && currentPlayer && !currentPlayer.escaped && !currentPlayer.defeated && !game.snapshot.submittedPlayerIds.includes(game.session.sessionId) && (
+                <div className="action-nudge" aria-live="polite">
+                    {currentRoom
+                        ? <RoomActionNudge room={currentRoom} lang={lang} />
+                        : <span>Pick an action and submit</span>}
                 </div>
             )}
 
@@ -1022,8 +1052,13 @@ export default function App() {
             )}
 
             {phaseBanner && (
-                <div className="phase-banner" role="status" aria-live="assertive" aria-atomic="true">
-                    {phaseBanner}
+                <div
+                    className={`phase-banner${phaseBanner.startsWith('game-start:') ? ' phase-banner-start' : ''}`}
+                    role="status"
+                    aria-live="assertive"
+                    aria-atomic="true"
+                >
+                    {phaseBanner.startsWith('game-start:') ? phaseBanner.slice('game-start:'.length) : phaseBanner}
                 </div>
             )}
 
@@ -1141,35 +1176,88 @@ function CharacterSelect({
     );
 }
 
+function RoomActionNudge({
+    room,
+    lang,
+}: Readonly<{ room: RelicPublicSnapshot['map'][number]; lang: Lang }>) {
+    const hints: Record<string, string> = lang === 'no' ? {
+        monster: '⚔️ Monsterrom — Søk for å bekjempe, eller flytt deg',
+        trap: '⚠️ Fellrom — Søk med forsiktighet, eller flytt deg',
+        treasure: '💎 Skattkammer — Søk etter en relikvie!',
+        shrine: '🌀 Helligdom — Søk for mystiske gaver',
+        entrance: '🏯 Inngang — Velg en rute inn i slottet',
+        exit: '🚪 Utgang — Bruk Unnslippe-handlingen hvis du har relikvier!',
+        hallway: '🔦 Korridor — Fortsett inn i slottet',
+    } : {
+        monster: '⚔️ Monster room — Search to fight, or move away',
+        trap: '⚠️ Trap room — Search carefully, or move away',
+        treasure: '💎 Treasure room — Search for a relic!',
+        shrine: '🌀 Shrine room — Search for mysterious gifts',
+        entrance: '🏯 Entrance — Choose a route into the castle',
+        exit: '🚪 Exit — Use Escape action if you carry relics!',
+        hallway: '🔦 Corridor — Press onward into the castle',
+    };
+    const hint = hints[room.kind] ?? (lang === 'no' ? 'Velg en handling' : 'Choose an action');
+    return <span>{hint}</span>;
+}
+
 function LobbyPartyPanel({
     snapshot,
     localPlayerId,
+    onlineMemberCount,
     lang,
-}: Readonly<{ snapshot: RelicPublicSnapshot; localPlayerId?: string; lang: Lang }>) {
-    if (snapshot.phase !== 'lobby' || snapshot.players.length === 0) return null;
+}: Readonly<{ snapshot: RelicPublicSnapshot; localPlayerId?: string; onlineMemberCount?: number; lang: Lang }>) {
+    if (snapshot.phase !== 'lobby') return null;
     const u = UI[lang];
+    const readyCount = snapshot.players.length;
+    const totalCount = Math.max(readyCount, onlineMemberCount ?? 0);
+    const allReady = readyCount > 0 && readyCount >= totalCount;
+    const waitingCount = totalCount - readyCount;
     return (
         <div className="panel lobby-party-panel">
-            <span className="panel-label">{u.huntersSummoned}</span>
-            <p className="lobby-keeper-watch">{u.keeperWatches}</p>
-            <div className="lobby-party-list">
-                {snapshot.players.map((player) => {
-                    const char = findRelicCharacter(player.characterId);
-                    const isLocal = player.playerId === localPlayerId;
-                    return (
-                        <div key={player.playerId} className={`lobby-party-row${isLocal ? ' local' : ''}`}>
-                            <span
-                                className="lobby-party-swatch"
-                                style={{ background: char.colors.accent }}
-                            />
-                            <span className="lobby-party-name">{player.username}</span>
-                            <span className="lobby-party-char">{char.name}</span>
-                            {isLocal && <span className="lobby-party-you">you</span>}
-                        </div>
-                    );
-                })}
+            <div className="lobby-ready-header">
+                <span className="panel-label">{u.huntersSummoned}</span>
+                {totalCount > 0 && (
+                    <span className={`lobby-ready-count${allReady ? ' all-ready' : ''}`}>
+                        {readyCount}/{totalCount} {lang === 'no' ? 'klare' : 'ready'}
+                    </span>
+                )}
             </div>
-            {snapshot.players.length < 2 && (
+            <p className="lobby-keeper-watch">{u.keeperWatches}</p>
+            {snapshot.players.length > 0 && (
+                <div className="lobby-party-list">
+                    {snapshot.players.map((player) => {
+                        const char = findRelicCharacter(player.characterId);
+                        const isLocal = player.playerId === localPlayerId;
+                        return (
+                            <div key={player.playerId} className={`lobby-party-row${isLocal ? ' local' : ''}`}>
+                                <span
+                                    className="lobby-party-swatch"
+                                    style={{ background: char.colors.accent }}
+                                />
+                                <span className="lobby-party-name">{player.username}</span>
+                                <span className="lobby-party-char">{char.name}</span>
+                                <span className="lobby-ready-badge">
+                                    {lang === 'no' ? 'KLAR' : 'READY'}
+                                </span>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+            {allReady && readyCount >= 2 ? (
+                <small className="lobby-all-ready-hint">
+                    {lang === 'no'
+                        ? 'Alle jegere klare — start jakten!'
+                        : 'All hunters ready — begin the hunt!'}
+                </small>
+            ) : waitingCount > 0 ? (
+                <small className="lobby-party-hint">
+                    {lang === 'no'
+                        ? `Venter på ${waitingCount} jeger${waitingCount === 1 ? '' : 'e'}…`
+                        : `Waiting for ${waitingCount} more hunter${waitingCount === 1 ? '' : 's'}…`}
+                </small>
+            ) : (
                 <small className="lobby-party-hint">{u.keeperAwaits}</small>
             )}
         </div>

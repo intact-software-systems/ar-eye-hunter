@@ -35,6 +35,16 @@ export async function installRelicHunterGame(
     },
   );
 
+  // Serialize writes per game to prevent read-modify-write races when two
+  // players submit actions simultaneously.
+  const gameQueues = new Map<string, Promise<unknown>>();
+  function enqueueForGame<T>(gameId: string, work: () => Promise<T>): Promise<T> {
+    const prev = (gameQueues.get(gameId) ?? Promise.resolve()).catch(() => {});
+    const next: Promise<T> = prev.then(work);
+    gameQueues.set(gameId, next.catch(() => {}));
+    return next;
+  }
+
   async function publishSnapshot(state: RelicGameState): Promise<void> {
     const snapshot = toPublicRelicSnapshot(state);
     const event: RelicServerEvent = {
@@ -67,13 +77,13 @@ export async function installRelicHunterGame(
     command: RelicCommand,
     senderId: string,
   ): Promise<RelicPublicSnapshot> {
-    const previous = await games.get(command.gameId);
-    const result = applyRelicCommand(previous, command, {
-      senderId,
+    return enqueueForGame(command.gameId, async () => {
+      const previous = await games.get(command.gameId);
+      const result = applyRelicCommand(previous, command, { senderId });
+      await games.set(command.gameId, result.state);
+      await publishSnapshot(result.state);
+      return toPublicRelicSnapshot(result.state);
     });
-    await games.set(command.gameId, result.state);
-    await publishSnapshot(result.state);
-    return toPublicRelicSnapshot(result.state);
   }
 
   rallar.ws.defineTopic<RelicCommand>({
