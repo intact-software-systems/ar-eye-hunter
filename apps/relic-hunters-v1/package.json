@@ -11,10 +11,11 @@
   },
   "dependencies": {
     "@babylonjs/core": "^8.0.0",
+    "@babylonjs/loaders": "^8.56.2",
     "@js-temporal/polyfill": "^0.5.1",
+    "graphology": "^0.26.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "graphology": "^0.26.0"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

@@ -7,6 +7,8 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
 import { ParticleSystem } from '@babylonjs/core/Particles/particleSystem.js';
 import { Scene } from '@babylonjs/core/scene.js';
+import { SceneLoader } from '@babylonjs/core/Loading/sceneLoader.js';
+import '@babylonjs/loaders/glTF/index.js';
 import type { RelicRoom } from '@relic-hunters/mod.ts';
 import {
     CEILING_Y,
@@ -1326,4 +1328,303 @@ function spawnTorchFlame(
     system.blendMode = ParticleSystem.BLENDMODE_ADD;
     system.start();
     return system;
+}
+
+// --- GLB lobby loader ---
+// Drop a GLB file at /public/models/lobby.glb and it will replace the procedural lobby.
+export async function tryLoadLobbyGlb(scene: Scene): Promise<readonly Mesh[] | null> {
+    try {
+        const result = await SceneLoader.ImportMeshAsync('', '/models/', 'lobby.glb', scene);
+        if (result.meshes.length === 0) return null;
+        // Place the imported model at origin
+        const root = result.meshes[0];
+        root.position.set(0, FLOOR_Y, 0);
+        return result.meshes as Mesh[];
+    } catch {
+        return null;
+    }
+}
+
+// --- Japanese castle lobby scene ---
+
+function jpMaterial(
+    scene: Scene,
+    name: string,
+    hex: string,
+    emissiveScale: number,
+    metallic: number,
+    roughness: number,
+): PBRMaterial {
+    const mat = new PBRMaterial(`jp-${name}`, scene);
+    const col = Color3.FromHexString(hex);
+    mat.albedoColor = col;
+    mat.emissiveColor = col.scale(emissiveScale);
+    mat.metallic = metallic;
+    mat.roughness = roughness;
+    return mat;
+}
+
+export function createJapaneseLobbyScene(scene: Scene): readonly Mesh[] {
+    const meshes: Mesh[] = [];
+    const add = (mesh: Mesh, mat: PBRMaterial) => {
+        mesh.material = mat;
+        meshes.push(mesh);
+        return mesh;
+    };
+
+    const matDarkWood    = jpMaterial(scene, 'dark-wood',    '#1c0d05', 0.018, 0,    0.60);
+    const matRedLacquer  = jpMaterial(scene, 'red-lacquer',  '#8b1800', 0.06,  0,    0.42);
+    const matStone       = jpMaterial(scene, 'stone',        '#6b7882', 0.010, 0.02, 0.92);
+    const matGold        = jpMaterial(scene, 'gold',         '#c8941a', 0.14,  0.72, 0.28);
+    const matShoji       = jpMaterial(scene, 'shoji',        '#f5e8cc', 0.36,  0,    0.96);
+    const matLanternRed  = jpMaterial(scene, 'lantern-red',  '#ff4010', 0.88,  0,    0.92);
+    const matLanternAmb  = jpMaterial(scene, 'lantern-amb',  '#ffb030', 0.72,  0,    0.90);
+    const matCrimson     = jpMaterial(scene, 'crimson',      '#8a0000', 0.05,  0,    0.82);
+    const matNavy        = jpMaterial(scene, 'navy',         '#0a1a3a', 0.03,  0,    0.82);
+    const matWhiteWall   = jpMaterial(scene, 'white-wall',   '#e2d4b8', 0.04,  0,    0.90);
+    const matDarkCeiling = jpMaterial(scene, 'dark-ceil',    '#110803', 0.008, 0,    0.88);
+    const matAltarWood   = jpMaterial(scene, 'altar-wood',   '#28160a', 0.04,  0,    0.50);
+
+    // === FLOOR: dark polished wood ===
+    add(MeshBuilder.CreateBox('jl-floor', { width: 14, height: 0.14, depth: 26 }, scene), matDarkWood)
+        .position.set(0, FLOOR_Y, 0);
+
+    // Gold tatami border
+    for (const [fw, fd, fx, fz] of [
+        [14, 0.36, 0, -12.8], [14, 0.36, 0, 12.8],
+        [0.36, 26, -6.9, 0],  [0.36, 26, 6.9, 0],
+    ] as [number, number, number, number][]) {
+        add(MeshBuilder.CreateBox(`jl-tatami-border-${fx}-${fz}`, { width: fw, height: 0.05, depth: fd }, scene), matGold)
+            .position.set(fx, FLOOR_Y + 0.04, fz);
+    }
+
+    // === CEILING: dark timber rafters ===
+    add(MeshBuilder.CreateBox('jl-ceiling', { width: 14.4, height: 0.18, depth: 26 }, scene), matDarkCeiling)
+        .position.set(0, CEILING_Y + 0.04, 0);
+
+    // Long rafter beams (N-S)
+    for (const x of [-3.4, 0, 3.4]) {
+        add(MeshBuilder.CreateBox(`jl-rafter-ns-${x}`, { width: 0.28, height: 0.32, depth: 26 }, scene), matDarkWood)
+            .position.set(x, CEILING_Y - 0.16, 0);
+    }
+    // Cross-beams (E-W every 4 units)
+    for (let i = 0; i < 7; i++) {
+        add(MeshBuilder.CreateBox(`jl-rafter-ew-${i}`, { width: 14.4, height: 0.24, depth: 0.22 }, scene), matDarkWood)
+            .position.set(0, CEILING_Y - 0.12, -12 + i * 4);
+    }
+
+    // === SIDE WALLS ===
+    for (const side of [-1, 1]) {
+        // Lower white plaster
+        add(MeshBuilder.CreateBox(`jl-wall-plaster-${side}`, { width: 0.22, height: 2.3, depth: 26 }, scene), matWhiteWall)
+            .position.set(side * 6.95, 1.15, 0);
+        // Upper dark timber
+        add(MeshBuilder.CreateBox(`jl-wall-timber-${side}`, { width: 0.2, height: 2.7, depth: 26 }, scene), matDarkWood)
+            .position.set(side * 6.95, 3.65, 0);
+        // Red lacquer divider rail
+        add(MeshBuilder.CreateBox(`jl-wall-rail-${side}`, { width: 0.24, height: 0.13, depth: 26 }, scene), matRedLacquer)
+            .position.set(side * 6.95, 2.35, 0);
+
+        // Shoji panels (backlit warm glow) – 6 pairs
+        for (let i = 0; i < 6; i++) {
+            const z = -10 + i * 4;
+            add(MeshBuilder.CreateBox(`jl-shoji-${side}-${i}`, { width: 0.05, height: 1.9, depth: 2.8 }, scene), matShoji)
+                .position.set(side * 6.92, 2.6, z);
+        }
+
+        // Vertical divider posts between shoji panels
+        for (let i = 0; i <= 6; i++) {
+            const z = -12 + i * 4;
+            add(MeshBuilder.CreateBox(`jl-shoji-post-${side}-${i}`, { width: 0.12, height: 2.2, depth: 0.12 }, scene), matDarkWood)
+                .position.set(side * 6.93, 2.5, z);
+        }
+    }
+
+    // === BACK WALL with torii opening ===
+    for (const [bw, bx] of [[3.5, -5.25], [3.5, 5.25]] as [number, number][]) {
+        add(MeshBuilder.CreateBox(`jl-back-wall-${bx}`, { width: bw, height: 5.5, depth: 0.24 }, scene), matWhiteWall)
+            .position.set(bx, 2.75, 12.88);
+    }
+    add(MeshBuilder.CreateBox('jl-back-wall-top', { width: 14, height: 1.8, depth: 0.22 }, scene), matWhiteWall)
+        .position.set(0, 4.4, 12.88);
+    add(MeshBuilder.CreateBox('jl-back-dado', { width: 14, height: 0.92, depth: 0.2 }, scene), matDarkWood)
+        .position.set(0, 0.46, 12.88);
+
+    // === FRONT ENTRANCE GATE FRAME ===
+    for (const side of [-1, 1]) {
+        add(MeshBuilder.CreateBox(`jl-gate-post-${side}`, { width: 0.34, height: 4.6, depth: 0.34 }, scene), matDarkWood)
+            .position.set(side * 2.6, 2.3, -12.88);
+    }
+    add(MeshBuilder.CreateBox('jl-gate-lintel', { width: 5.6, height: 0.42, depth: 0.34 }, scene), matDarkWood)
+        .position.set(0, 4.62, -12.88);
+    add(MeshBuilder.CreateBox('jl-gate-brace', { width: 5.6, height: 0.16, depth: 0.28 }, scene), matRedLacquer)
+        .position.set(0, 4.2, -12.86);
+
+    // === LACQUERED PILLARS (4 pairs) ===
+    for (const side of [-1, 1]) {
+        for (let i = 0; i < 4; i++) {
+            const z = -6 + i * 4;
+            // Column
+            add(MeshBuilder.CreateCylinder(`jl-pillar-${side}-${i}`, { height: 4.9, diameter: 0.46, tessellation: 14 }, scene), matRedLacquer)
+                .position.set(side * 4.2, 2.45, z);
+            // Stone base pedestal
+            add(MeshBuilder.CreateBox(`jl-pillar-base-${side}-${i}`, { width: 0.66, height: 0.2, depth: 0.66 }, scene), matStone)
+                .position.set(side * 4.2, FLOOR_Y + 0.1, z);
+            // Gold bracket cap (斗)
+            add(MeshBuilder.CreateBox(`jl-pillar-cap-${side}-${i}`, { width: 0.72, height: 0.26, depth: 0.72 }, scene), matGold)
+                .position.set(side * 4.2, CEILING_Y - 0.3, z);
+            // Arm brace (肘木 — horizontal arm from cap)
+            add(MeshBuilder.CreateBox(`jl-pillar-arm-${side}-${i}`, { width: 1.4, height: 0.14, depth: 0.34 }, scene), matDarkWood)
+                .position.set(side * 4.2, CEILING_Y - 0.18, z);
+        }
+    }
+
+    // === TORII GATE (大鳥居) at rear, z ≈ 11.0 ===
+    const toriiZ = 11.0;
+    for (const side of [-1, 1]) {
+        // Main pillar
+        add(MeshBuilder.CreateCylinder(`jl-torii-post-${side}`, { height: 4.8, diameter: 0.4, tessellation: 14 }, scene), matRedLacquer)
+            .position.set(side * 2.6, 2.4, toriiZ);
+        // Cap sphere at top
+        add(MeshBuilder.CreateSphere(`jl-torii-cap-${side}`, { diameter: 0.46, segments: 10 }, scene), matRedLacquer)
+            .position.set(side * 2.6, 4.86, toriiZ);
+    }
+    // Kasagi (top beam) — slight upward curve at ends via angled end caps
+    add(MeshBuilder.CreateBox('jl-torii-kasagi', { width: 5.9, height: 0.3, depth: 0.35 }, scene), matRedLacquer)
+        .position.set(0, 4.82, toriiZ);
+    for (const side of [-1, 1]) {
+        const endPiece = add(MeshBuilder.CreateBox(`jl-torii-kasagi-end-${side}`, { width: 0.44, height: 0.22, depth: 0.32 }, scene), matRedLacquer);
+        endPiece.position.set(side * 3.17, 4.9, toriiZ);
+        endPiece.rotation.z = side * 0.14;
+    }
+    // Nuki (second crossbeam, lower)
+    add(MeshBuilder.CreateBox('jl-torii-nuki', { width: 5.4, height: 0.17, depth: 0.24 }, scene), matRedLacquer)
+        .position.set(0, 3.96, toriiZ);
+    // Shimagi wedge blocks (gold accent pins)
+    for (const side of [-1, 1]) {
+        add(MeshBuilder.CreateBox(`jl-torii-peg-${side}`, { width: 0.12, height: 0.14, depth: 0.12 }, scene), matGold)
+            .position.set(side * 2.0, 4.07, toriiZ - 0.06);
+    }
+    // Shimenawa rope (sacred straw rope, horizontal between posts)
+    add(MeshBuilder.CreateBox('jl-torii-rope', { width: 5.3, height: 0.06, depth: 0.06 }, scene), matGold)
+        .position.set(0, 4.24, toriiZ - 0.14);
+
+    // === STONE LANTERNS 灯籠 (4 pairs symmetrically placed) ===
+    for (const [lx, lz] of [[-3.4, -5.5], [3.4, -5.5], [-3.4, 2.5], [3.4, 2.5]] as [number, number][]) {
+        const n = `jl-toro-${lx}-${lz}`;
+        add(MeshBuilder.CreateBox(`${n}-slab`, { width: 0.64, height: 0.11, depth: 0.64 }, scene), matStone)
+            .position.set(lx, FLOOR_Y + 0.055, lz);
+        add(MeshBuilder.CreateCylinder(`${n}-stem`, { height: 0.78, diameter: 0.2, tessellation: 6 }, scene), matStone)
+            .position.set(lx, 0.45, lz);
+        add(MeshBuilder.CreateCylinder(`${n}-mid`, { height: 0.11, diameter: 0.46, tessellation: 6 }, scene), matStone)
+            .position.set(lx, 0.88, lz);
+        // Lantern body — shoji material so it glows
+        add(MeshBuilder.CreateCylinder(`${n}-body`, { height: 0.54, diameter: 0.48, tessellation: 6 }, scene), matShoji)
+            .position.set(lx, 1.17, lz);
+        add(MeshBuilder.CreateCylinder(`${n}-umbrella`, { height: 0.22, diameterTop: 0.1, diameterBottom: 0.64, tessellation: 6 }, scene), matStone)
+            .position.set(lx, 1.52, lz);
+        add(MeshBuilder.CreateSphere(`${n}-finial`, { diameter: 0.12, segments: 6 }, scene), matStone)
+            .position.set(lx, 1.7, lz);
+    }
+
+    // === HANGING CHŌCHIN 提灯 (7 paper lanterns) ===
+    const chochinPos: [number, number, number][] = [
+        [0, 4.32, -8],
+        [-3.0, 4.24, -4], [3.0, 4.24, -4],
+        [0, 4.36, 0],
+        [-3.0, 4.28, 4],  [3.0, 4.28, 4],
+        [0, 4.32, 9],
+    ];
+    for (let i = 0; i < chochinPos.length; i++) {
+        const [x, y, z] = chochinPos[i];
+        const n = `jl-chochin-${i}`;
+        // Cord
+        add(MeshBuilder.CreateCylinder(`${n}-cord`, { height: 0.5, diameter: 0.018, tessellation: 4 }, scene), matDarkWood)
+            .position.set(x, y + 0.25, z);
+        // Lantern body (oblate sphere, alternating red/amber)
+        const lanternMesh = add(
+            MeshBuilder.CreateSphere(`${n}-body`, { diameter: 0.46, segments: 10 }, scene),
+            i % 2 === 0 ? matLanternRed : matLanternAmb,
+        );
+        lanternMesh.position.set(x, y, z);
+        lanternMesh.scaling.set(1, 1.38, 1);
+        // Tassel (tiny inverted cone)
+        add(MeshBuilder.CreateCylinder(`${n}-tassel`, { height: 0.16, diameterTop: 0.0, diameterBottom: 0.06, tessellation: 6 }, scene), matRedLacquer)
+            .position.set(x, y - 0.34, z);
+        // Top rim ring
+        add(MeshBuilder.CreateTorus(`${n}-ring`, { diameter: 0.12, thickness: 0.025, tessellation: 10 }, scene), matDarkWood)
+            .position.set(x, y + 0.24, z);
+    }
+
+    // === ALTAR PLATFORM 神壇 (at rear, behind torii) ===
+    const altarZ = 12.0;
+    add(MeshBuilder.CreateBox('jl-altar-step1', { width: 8, height: 0.3, depth: 2.6 }, scene), matDarkWood)
+        .position.set(0, 0.15, altarZ);
+    add(MeshBuilder.CreateBox('jl-altar-step2', { width: 6.4, height: 0.26, depth: 2.2 }, scene), matAltarWood)
+        .position.set(0, 0.43, altarZ);
+    add(MeshBuilder.CreateBox('jl-altar-surface', { width: 5.4, height: 0.12, depth: 1.8 }, scene), matGold)
+        .position.set(0, 0.62, altarZ);
+    // Sacred vessel (三方 mishiki offering stand)
+    add(MeshBuilder.CreateCylinder('jl-altar-vessel-tray', { height: 0.12, diameter: 0.56, tessellation: 8 }, scene), matGold)
+        .position.set(0, 0.75, altarZ);
+    add(MeshBuilder.CreateCylinder('jl-altar-vessel-stem', { height: 0.28, diameter: 0.12, tessellation: 8 }, scene), matGold)
+        .position.set(0, 0.97, altarZ);
+    add(MeshBuilder.CreateCylinder('jl-altar-vessel-bowl', { height: 0.24, diameterTop: 0.54, diameterBottom: 0.36, tessellation: 8 }, scene), matGold)
+        .position.set(0, 1.18, altarZ);
+    // Flanking candles
+    for (const cx of [-1.4, 1.4]) {
+        add(MeshBuilder.CreateCylinder(`jl-candle-${cx}`, { height: 0.34, diameter: 0.08, tessellation: 6 }, scene), matShoji)
+            .position.set(cx, 0.79, altarZ);
+        // Flame sphere
+        const flame = add(MeshBuilder.CreateSphere(`jl-flame-${cx}`, { diameter: 0.12, segments: 6 }, scene), matLanternAmb);
+        flame.position.set(cx, 1.0, altarZ);
+        flame.scaling.set(1, 1.4, 1);
+    }
+    // Side offering vases
+    for (const vx of [-2.2, 2.2]) {
+        add(MeshBuilder.CreateCylinder(`jl-vase-${vx}`, { height: 0.42, diameterTop: 0.26, diameterBottom: 0.18, tessellation: 8 }, scene), matGold)
+            .position.set(vx, 0.84, altarZ);
+    }
+
+    // === HANGING BANNERS on side walls ===
+    for (const [bside, bz, bmat] of [
+        [-1, -9, matCrimson], [1, -9, matNavy],
+        [-1, -1, matNavy],   [1, -1, matCrimson],
+        [-1,  7, matCrimson], [1,  7, matNavy],
+    ] as [number, number, PBRMaterial][]) {
+        add(MeshBuilder.CreateBox(`jl-banner-${bside}-${bz}`, { width: 0.04, height: 2.2, depth: 0.88 }, scene), bmat)
+            .position.set(bside * 6.8, 3.1, bz);
+    }
+    // Back wall center banner
+    add(MeshBuilder.CreateBox('jl-center-banner', { width: 1.8, height: 0.04, depth: 3.2 }, scene), matCrimson)
+        .position.set(0, 3.5, 12.8);
+
+    // === MOON WINDOW 円窓 on back wall ===
+    const moonRing = add(MeshBuilder.CreateTorus('jl-moon-window', { diameter: 2.0, thickness: 0.11, tessellation: 36 }, scene), matGold);
+    moonRing.rotation.x = Math.PI / 2;
+    moonRing.position.set(0, 3.9, 12.8);
+    // Moon fill (shoji-lit, warm glow)
+    const moonFill = add(MeshBuilder.CreateDisc('jl-moon-fill', { radius: 0.98, tessellation: 36 }, scene), matShoji);
+    moonFill.rotation.x = -Math.PI / 2;
+    moonFill.position.set(0, 3.9, 12.75);
+
+    // === ENTRY STONE STEP ===
+    add(MeshBuilder.CreateBox('jl-entry-stone', { width: 5.4, height: 0.1, depth: 1.4 }, scene), matStone)
+        .position.set(0, FLOOR_Y + 0.05, -11.4);
+
+    // === DECORATIVE TRIM on ceiling edge ===
+    for (const side of [-1, 1]) {
+        add(MeshBuilder.CreateBox(`jl-cornice-${side}`, { width: 0.18, height: 0.26, depth: 26 }, scene), matRedLacquer)
+            .position.set(side * 6.8, CEILING_Y - 0.14, 0);
+    }
+    // Ceiling center boss at beam intersections
+    for (let i = 0; i < 4; i++) {
+        for (const side of [-1, 1]) {
+            const z = -6 + i * 4;
+            add(MeshBuilder.CreateBox(`jl-boss-${side}-${i}`, { width: 0.36, height: 0.18, depth: 0.36 }, scene), matGold)
+                .position.set(side * 3.4, CEILING_Y - 0.04, z);
+        }
+    }
+
+    return meshes;
 }

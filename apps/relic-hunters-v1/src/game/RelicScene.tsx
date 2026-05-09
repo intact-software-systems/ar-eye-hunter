@@ -36,7 +36,7 @@ import {
     createCastleCorridor,
     createCastleMaterials,
     createFlameTexture,
-    createIntroCastleScene,
+    createJapaneseLobbyScene,
     createRoomLights,
     createRoomProps,
     createRoomTorchParticles,
@@ -202,11 +202,11 @@ export function RelicScene({
             return;
         }
         const scene = new Scene(engine);
-        scene.clearColor = new Color4(0.08, 0.1, 0.09, 1);
-        scene.ambientColor = new Color3(0.54, 0.46, 0.34);
+        scene.clearColor = new Color4(0.04, 0.05, 0.09, 1);
+        scene.ambientColor = new Color3(0.44, 0.38, 0.52);
         scene.fogMode = Scene.FOGMODE_EXP2;
-        scene.fogColor = new Color3(0.18, 0.2, 0.17);
-        scene.fogDensity = 0.012;
+        scene.fogColor = new Color3(0.07, 0.07, 0.13);
+        scene.fogDensity = 0.013;
         const camera = new UniversalCamera(
             'relic-camera',
             new Vector3(0, PLAYER_EYE_Y, -9),
@@ -220,28 +220,29 @@ export function RelicScene({
         // Post-processing pipeline
         const pipeline = new DefaultRenderingPipeline('relic-pipeline', true, scene, [camera]);
         pipeline.bloomEnabled = true;
-        pipeline.bloomThreshold = 0.8;
-        pipeline.bloomWeight = 0.42;
-        pipeline.bloomKernel = 64;
+        pipeline.bloomThreshold = 0.72;
+        pipeline.bloomWeight = 0.52;
+        pipeline.bloomKernel = 80;
         pipeline.bloomScale = 0.5;
         pipeline.sharpenEnabled = true;
-        pipeline.sharpen.edgeAmount = 0.25;
+        pipeline.sharpen.edgeAmount = 0.22;
         pipeline.imageProcessingEnabled = true;
-        pipeline.imageProcessing.contrast = 1.12;
-        pipeline.imageProcessing.exposure = 1.06;
+        pipeline.imageProcessing.contrast = 1.15;
+        pipeline.imageProcessing.exposure = 1.04;
 
         const glowLayer = new GlowLayer('relic-glow', scene);
-        glowLayer.intensity = 0.65;
+        glowLayer.intensity = 0.82;
 
         const flameTexture = createFlameTexture(scene);
 
-        const light = new HemisphericLight('ruin-light', new Vector3(0.2, 1, 0.25), scene);
-        light.intensity = 1.05;
-        light.groundColor = new Color3(0.32, 0.24, 0.12);
+        const light = new HemisphericLight('ruin-light', new Vector3(0.15, 1, 0.2), scene);
+        light.intensity = 0.96;
+        light.diffuse = new Color3(0.82, 0.78, 0.98);
+        light.groundColor = new Color3(0.38, 0.22, 0.14);
 
         const handMaterial = new PBRMaterial('first-person-hands-material', scene);
         const castleMaterials = createCastleMaterials(scene);
-        const introMeshes = createIntroCastleScene(scene, castleMaterials);
+        const introMeshes = createJapaneseLobbyScene(scene);
         const doorPromptMarkerMaterial = new StandardMaterial('doorway-prompt-marker-material', scene);
         doorPromptMarkerMaterial.diffuseColor = Color3.FromHexString('#8ee7f5');
         doorPromptMarkerMaterial.emissiveColor = Color3.FromHexString('#8ee7f5').scale(0.62);
@@ -1257,9 +1258,9 @@ function updateCameraPose(runtime: SceneRuntime): void {
         setRuntimePrompt(runtime, undefined);
         moveCameraToward(
             runtime,
-            new Vector3(0, 1.72, -7.6),
-            new Vector3(0, 1.65, 1.4),
-            520,
+            new Vector3(0.8, 1.88, -10.2),
+            new Vector3(0, 2.4, 7.5),
+            480,
         );
         return;
     }
