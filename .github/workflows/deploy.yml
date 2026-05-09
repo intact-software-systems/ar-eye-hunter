@@ -30,6 +30,7 @@ jobs:
       - name: Install & build web
         working-directory: apps/ar-eye-hunter-v1
         run: |
+          npm install
           npm run build
 
   # ----------------------------
@@ -51,6 +52,7 @@ jobs:
       - name: Install & build Relic web
         working-directory: apps/relic-hunters-v1
         run: |
+          npm install
           npm run build
 
   # ----------------------------
