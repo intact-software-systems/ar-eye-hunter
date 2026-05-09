@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 (globalThis as any).Temporal = (globalThis as any).Temporal ?? Temporal;
 
-import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
     RelicActionInput,
     RelicActionKind,
@@ -46,6 +46,28 @@ export default function App() {
     const [scenePrimedAction, setScenePrimedAction] = useState<RelicActionInput | undefined>();
     const [dismissedPartyChangeKey, setDismissedPartyChangeKey] = useState<string | undefined>();
     const [ambientEnabled, setAmbientEnabled] = useState(false);
+    const [revealedEvents, setRevealedEvents] = useState<readonly RelicEvent[]>([]);
+    const [showOnboarding, setShowOnboarding] = useState(
+        () => !localStorage.getItem('relic-onboarding-v1'),
+    );
+    const [digestEvents, setDigestEvents] = useState<readonly RelicEvent[]>([]);
+    const [showDigest, setShowDigest] = useState(false);
+    const lastDigestEventIdRef = useRef<string | undefined>(undefined);
+    const [personalFlash, setPersonalFlash] = useState<{ tone: 'good' | 'bad'; key: number } | null>(null);
+    const personalFlashKeyRef = useRef(0);
+    const [lockedAction, setLockedAction] = useState<RelicActionInput | undefined>();
+    const [showTensionBeat, setShowTensionBeat] = useState(false);
+    const [showHelpOverlay, setShowHelpOverlay] = useState(false);
+    const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
+    const [phaseBanner, setPhaseBanner] = useState<string | null>(null);
+    const [roomEntryFlash, setRoomEntryFlash] = useState<{ room: string; key: number } | null>(null);
+    const roomEntryKeyRef = useRef(0);
+    const prevPhaseRef = useRef<RelicPublicSnapshot['phase'] | undefined>(undefined);
+    const prevRoomIdRef = useRef<string | undefined>(undefined);
+    const tensionTimerRef = useRef<number | null>(null);
+    const revealQueueRef = useRef<RelicEvent[]>([]);
+    const revealTimerRef = useRef<number | null>(null);
+    const revealNextRef = useRef<() => void>(null!);
 
     const currentPlayer = useMemo(
         () =>
@@ -71,6 +93,10 @@ export default function App() {
             .filter((room) => currentRoom?.neighbors.includes(room.id) && !room.collapsed)
             .map((room) => room.id)
         : [];
+    const exitDistances = useMemo(
+        () => game.snapshot ? castleMapExitDistances(game.snapshot.map) : new Map<string, number>(),
+        [game.snapshot],
+    );
     const stealTargets = game.snapshot?.players.filter((player) =>
         currentPlayer &&
         player.playerId !== currentPlayer.playerId &&
@@ -81,7 +107,18 @@ export default function App() {
     const rooms = game.rooms.filter((room) =>
         room.name.toLowerCase().includes('relic hunters')
     );
-    const lastEvent = game.snapshot?.events.at(-1);
+    const lastEvent = revealedEvents.at(-1);
+    const eventFocusRoomId = useMemo(() => {
+        if (!lastEvent || !game.snapshot) return undefined;
+        if (!isTurnResultEvent(lastEvent) && lastEvent.type !== 'action_revealed') return undefined;
+        if (lastEvent.animationCue?.roomId) return lastEvent.animationCue.roomId;
+        if (lastEvent.animationCue?.playerId) {
+            return game.snapshot.players.find(
+                (p) => p.playerId === lastEvent.animationCue?.playerId,
+            )?.roomId;
+        }
+        return undefined;
+    }, [lastEvent, game.snapshot]);
     const progress = game.snapshot
         ? toProgress(game.snapshot, currentPlayer?.playerId)
         : undefined;
@@ -100,6 +137,13 @@ export default function App() {
         !!currentPlayer &&
         !game.snapshot.submittedPlayerIds.includes(currentPlayer.playerId) &&
         !submitBlocker;
+    const isLocked = !!(currentPlayer && game.snapshot &&
+        game.snapshot.submittedPlayerIds.includes(currentPlayer.playerId));
+    const roundNoiseCount = game.snapshot
+        ? revealedEvents.filter(
+            (e) => e.round === game.snapshot!.round - 1 && e.type === 'noise_pulse',
+        ).length
+        : 0;
     const partyChangeKey = game.snapshot &&
             currentRoomSummary &&
             game.snapshot.phase !== 'finished' &&
@@ -116,25 +160,109 @@ export default function App() {
         !!game.session &&
         !!game.roomId;
 
+    // Latest-ref pattern: updated each render so the timer closure always calls the current version.
+    revealNextRef.current = () => {
+        const next = revealQueueRef.current.shift();
+        if (!next) return;
+        setRevealedEvents((prev) => [...prev, next]);
+        playRelicEventSound(next);
+        if (isPersonalEvent(next, game.session?.sessionId)) {
+            personalFlashKeyRef.current += 1;
+            setPersonalFlash({
+                tone: next.tone === 'danger' ? 'bad' : 'good',
+                key: personalFlashKeyRef.current,
+            });
+        }
+        if (revealQueueRef.current.length > 0) {
+            revealTimerRef.current = window.setTimeout(() => {
+                revealTimerRef.current = null;
+                revealNextRef.current();
+            }, 750);
+        }
+    };
+
+    const scheduleReveal = useCallback(() => {
+        if (revealTimerRef.current !== null || revealQueueRef.current.length === 0) return;
+        revealTimerRef.current = window.setTimeout(() => {
+            revealTimerRef.current = null;
+            revealNextRef.current();
+        }, 400);
+    }, []);
+
     useEffect(() => {
         const events = game.snapshot?.events ?? [];
         const seen = playedEventIdsRef.current;
+
         if (seen.size === 0) {
-            for (const event of events) {
-                seen.add(event.id);
-            }
+            // First load: show all historical events immediately, no animation.
+            for (const event of events) seen.add(event.id);
+            setRevealedEvents(events);
             return;
         }
 
+        const newEvents: RelicEvent[] = [];
         for (const event of events) {
-            if (seen.has(event.id)) {
-                continue;
+            if (!seen.has(event.id)) {
+                seen.add(event.id);
+                newEvents.push(event);
             }
-
-            seen.add(event.id);
-            playRelicEventSound(event);
         }
-    }, [game.snapshot?.events]);
+
+        if (newEvents.length > 0) {
+            const wasIdle = revealQueueRef.current.length === 0 && revealTimerRef.current === null;
+            revealQueueRef.current.push(...newEvents);
+            const hasTurnEvents = newEvents.some(
+                (e) => isTurnResultEvent(e) || e.type === 'action_revealed',
+            );
+            if (wasIdle && hasTurnEvents) {
+                setShowTensionBeat(true);
+                tensionTimerRef.current = window.setTimeout(() => {
+                    tensionTimerRef.current = null;
+                    setShowTensionBeat(false);
+                    scheduleReveal();
+                }, 1200);
+            } else {
+                scheduleReveal();
+            }
+        }
+    }, [game.snapshot?.events, scheduleReveal]);
+
+    useEffect(() => {
+        return () => {
+            if (revealTimerRef.current !== null) clearTimeout(revealTimerRef.current);
+            if (tensionTimerRef.current !== null) clearTimeout(tensionTimerRef.current);
+        };
+    }, []);
+
+    useEffect(() => {
+        setLockedAction(undefined);
+    }, [game.snapshot?.round]);
+
+    // Show post-round digest when reveal queue drains on a round_started event.
+    useEffect(() => {
+        if (revealQueueRef.current.length > 0 || revealTimerRef.current !== null) return;
+        const lastRevealed = revealedEvents.at(-1);
+        if (!lastRevealed || lastRevealed.type !== 'round_started') return;
+        if (lastRevealed.id === lastDigestEventIdRef.current) return;
+        if (game.snapshot?.phase === 'finished') return;
+        let prevRoundStartedIdx = -1;
+        for (let i = revealedEvents.length - 2; i >= 0; i--) {
+            if (revealedEvents[i].type === 'round_started') { prevRoundStartedIdx = i; break; }
+        }
+        const roundEvents = revealedEvents
+            .slice(prevRoundStartedIdx + 1, revealedEvents.length - 1)
+            .filter(isTurnResultEvent);
+        if (roundEvents.length === 0) return;
+        lastDigestEventIdRef.current = lastRevealed.id;
+        setDigestEvents(roundEvents);
+        setShowDigest(true);
+    }, [revealedEvents, game.snapshot?.phase]);
+
+    useEffect(() => {
+        if (!showDigest) return;
+        const timer = window.setTimeout(() => setShowDigest(false), 4000);
+        return () => clearTimeout(timer);
+    }, [showDigest]);
 
     useEffect(() => {
         if (currentPlayer) {
@@ -152,6 +280,35 @@ export default function App() {
     useEffect(() => {
         setScenePrimedAction(undefined);
     }, [currentPlayer?.roomId, game.snapshot?.phase, game.snapshot?.round]);
+
+    useEffect(() => {
+        const phase = game.snapshot?.phase;
+        if (!phase) { prevPhaseRef.current = undefined; return; }
+        if (prevPhaseRef.current && prevPhaseRef.current !== phase) {
+            const msg = phase === 'planning' ? 'The expedition begins!'
+                : phase === 'finished' ? 'The ruin falls silent.'
+                : null;
+            if (msg) {
+                setPhaseBanner(msg);
+                const t = window.setTimeout(() => setPhaseBanner(null), 2400);
+                return () => clearTimeout(t);
+            }
+        }
+        prevPhaseRef.current = phase;
+    }, [game.snapshot?.phase]);
+
+    useEffect(() => {
+        const roomId = currentPlayer?.roomId;
+        if (!roomId) { prevRoomIdRef.current = undefined; return; }
+        if (prevRoomIdRef.current !== undefined && prevRoomIdRef.current !== roomId) {
+            const room = game.snapshot?.map.find((r) => r.id === roomId);
+            if (room) {
+                roomEntryKeyRef.current += 1;
+                setRoomEntryFlash({ room: room.name, key: roomEntryKeyRef.current });
+            }
+        }
+        prevRoomIdRef.current = roomId;
+    }, [currentPlayer?.roomId, game.snapshot?.map]);
 
     const submitAuth = async (event: FormEvent) => {
         event.preventDefault();
@@ -179,12 +336,60 @@ export default function App() {
             }
             : { kind: draft.kind };
 
+        setLockedAction(action);
         playActionSound(action.kind);
         if (!isAmbientSoundPlaying()) {
             setAmbientEnabled(startAmbientSound());
         }
         await game.submitAction(action);
     };
+
+    // Stable ref so the keyboard handler always calls the latest submitAction.
+    const submitActionRef = useRef(submitAction);
+    submitActionRef.current = submitAction;
+
+    useEffect(() => {
+        const ACTION_KEYS: Record<string, RelicActionKind> = {
+            '1': 'move', '2': 'search', '3': 'steal', '4': 'escape',
+        };
+        const handler = (e: KeyboardEvent) => {
+            const target = e.target;
+            const isTyping = target instanceof HTMLInputElement ||
+                target instanceof HTMLTextAreaElement ||
+                (target instanceof HTMLElement && target.isContentEditable);
+            if (isTyping) return;
+            if (!game.snapshot || game.snapshot.phase !== 'planning') return;
+
+            const kind = ACTION_KEYS[e.key] as RelicActionKind | undefined;
+            if (kind) {
+                e.preventDefault();
+                playUiSound('select');
+                setDraft((prev) => {
+                    if (prev.kind === kind) return prev;
+                    if (kind === 'move') return { kind, targetRoomId: moveTargets[0] };
+                    if (kind === 'steal') return { kind, targetPlayerId: stealTargets[0]?.playerId };
+                    return { kind };
+                });
+                return;
+            }
+
+            if (e.key === 'Enter' && canSubmit) {
+                e.preventDefault();
+                void submitActionRef.current();
+            }
+
+            if (e.key === '?' || e.key === 'F1') {
+                e.preventDefault();
+                setShowHelpOverlay((v) => !v);
+            }
+
+            if (e.key === 'Escape') {
+                setShowHelpOverlay(false);
+            }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [game.snapshot, canSubmit, moveTargets, stealTargets]);
 
     const joinExpedition = async () => {
         playUiSound('join');
@@ -254,6 +459,7 @@ export default function App() {
                 localPlayerId={game.session?.sessionId}
                 selectedRoomId={selectedRoomId}
                 primedAction={scenePrimedAction}
+                focusRoomId={eventFocusRoomId}
                 onSelectRoom={setSelectedRoomId}
                 onPrimeAction={primeSceneAction}
             />
@@ -261,6 +467,7 @@ export default function App() {
                 <TurnFeedbackOverlay
                     snapshot={game.snapshot}
                     localPlayerId={game.session?.sessionId}
+                    revealedEvents={revealedEvents}
                 />
             )}
 
@@ -273,18 +480,32 @@ export default function App() {
                     </div>
                 </div>
                 <div className="status-row">
-                    <Status label="Round" value={game.snapshot
-                        ? `${game.snapshot.round}/${game.snapshot.maxRounds}`
-                        : '-'}
-                    />
+                    {game.snapshot
+                        ? <RoundStatus round={game.snapshot.round} maxRounds={game.snapshot.maxRounds}/>
+                        : <Status label="Round" value="-"/>
+                    }
                     <Status label="Hunters" value={String(game.snapshot?.players.length ?? 0)}/>
                     <Status label="Submitted" value={String(game.snapshot?.submittedPlayerIds.length ?? 0)}/>
-                    <Status label="Relics" value={progress?.relics ?? '-'}/>
-                    <Status label="Escape" value={progress?.escape ?? '-'}/>
+                    <RelicProgressPill relics={game.snapshot?.relics}/>
+                    <WinLeader snapshot={game.snapshot}/>
+                    <button
+                        type="button"
+                        className="help-toggle"
+                        aria-label="Keyboard shortcuts"
+                        onClick={() => setShowHelpOverlay((v) => !v)}
+                    >?</button>
                 </div>
             </section>
 
-            <section className="side-panel">
+            <section className={`side-panel${sidePanelCollapsed ? ' collapsed' : ''}`}>
+                <button
+                    type="button"
+                    className="side-panel-toggle"
+                    onClick={() => setSidePanelCollapsed((v) => !v)}
+                    title={sidePanelCollapsed ? 'Expand panel' : 'Collapse panel'}
+                >
+                    {sidePanelCollapsed ? '▶ Panel' : '◀ Collapse'}
+                </button>
                 {!game.session || game.connectionState === 'signed-out'
                     ? (
                         <form className="panel stack" onSubmit={submitAuth}>
@@ -434,36 +655,70 @@ export default function App() {
                             </button>
                         </div>
 
+                        {game.snapshot && game.snapshot.phase === 'lobby' && (
+                            <LobbyPartyPanel
+                                snapshot={game.snapshot}
+                                localPlayerId={game.session.sessionId}
+                            />
+                        )}
+
+                        {isLocked && lockedAction
+                            ? (
+                                <LockedPlanCard
+                                    action={lockedAction}
+                                    snapshot={game.snapshot}
+                                    localPlayerId={game.session.sessionId}
+                                />
+                            )
+                            : (
+                            <>
+
                         <div className="action-picker">
-                            {(['move', 'search', 'steal', 'escape'] as const).map((kind) => (
-                                <button
-                                    type="button"
-                                    key={kind}
-                                    className={draft.kind === kind ? 'active' : ''}
-                                    onClick={() => {
-                                        playUiSound('select');
-                                        const nextDraft: ActionDraft = kind === 'move'
-                                            ? {
-                                                kind,
-                                                targetRoomId: selectedRoomId &&
-                                                        moveTargets.includes(selectedRoomId)
-                                                    ? selectedRoomId
-                                                    : moveTargets[0],
-                                            }
-                                            : kind === 'steal'
-                                            ? {
-                                                kind,
-                                                targetPlayerId: stealTargets[0]?.playerId,
-                                            }
-                                            : { kind };
-                                        setDraft(nextDraft);
-                                        setScenePrimedAction(nextDraft);
-                                    }}
-                                >
-                                    <span>{ACTION_INFO[kind].label}</span>
-                                    <small>{ACTION_INFO[kind].noise}</small>
-                                </button>
-                            ))}
+                            {(['move', 'search', 'steal', 'escape'] as const).map((kind) => {
+                                const cq = actionConsequence(
+                                    kind, game.snapshot, currentRoom,
+                                    moveTargets, stealTargets, currentPlayer,
+                                );
+                                const isEscapeUrgent = kind === 'escape' &&
+                                    currentRoom?.kind === 'exit' &&
+                                    (currentPlayer?.relicIds.length ?? 0) > 0;
+                                return (
+                                    <button
+                                        type="button"
+                                        key={kind}
+                                        className={[
+                                            draft.kind === kind ? 'active' : '',
+                                            isEscapeUrgent ? 'action-escape-urgent' : '',
+                                        ].filter(Boolean).join(' ')}
+                                        onClick={() => {
+                                            playUiSound('select');
+                                            const nextDraft: ActionDraft = kind === 'move'
+                                                ? {
+                                                    kind,
+                                                    targetRoomId: selectedRoomId &&
+                                                            moveTargets.includes(selectedRoomId)
+                                                        ? selectedRoomId
+                                                        : moveTargets[0],
+                                                }
+                                                : kind === 'steal'
+                                                ? {
+                                                    kind,
+                                                    targetPlayerId: stealTargets[0]?.playerId,
+                                                }
+                                                : { kind };
+                                            setDraft(nextDraft);
+                                            setScenePrimedAction(nextDraft);
+                                        }}
+                                    >
+                                        <span>
+                                            {ACTION_INFO[kind].label}
+                                            <kbd className="action-key">{(['move','search','steal','escape'] as const).indexOf(kind) + 1}</kbd>
+                                        </span>
+                                        <small>{ACTION_INFO[kind].noise}</small>
+                                        <em className={`action-cq action-cq-${cq.status}`}>{cq.text}</em>
+                                    </button>
+                                );
+                            })}
                         </div>
 
                         <div className="action-brief">
@@ -471,6 +726,14 @@ export default function App() {
                             <span>{actionInfo.description}</span>
                             {submitBlocker && <small>{submitBlocker}</small>}
                             {partyCoordination && <small>{partyCoordination.actionHint}</small>}
+                            {(() => {
+                                const inv = game.snapshot?.roomInvestigations?.find(
+                                    (i) => i.roomId === currentRoom?.id,
+                                );
+                                return inv?.danger && draft.kind === 'search'
+                                    ? <small className="action-brief-danger">! {inv.danger}</small>
+                                    : null;
+                            })()}
                         </div>
 
                         {draft.kind === 'move' && (
@@ -486,11 +749,22 @@ export default function App() {
                                         setScenePrimedAction(nextDraft);
                                     }}
                             >
-                                {moveTargets.map((roomId) => (
-                                    <option key={roomId} value={roomId}>
-                                        {roomName(game.snapshot, roomId)}
-                                    </option>
-                                ))}
+                                {moveTargets.map((roomId) => {
+                                    const room = game.snapshot?.map.find((r) => r.id === roomId);
+                                    const dist = exitDistances.get(roomId);
+                                    const hasRelic = game.snapshot?.relics.some(
+                                        (r) => r.roomId === roomId && !r.foundBy && !r.carriedBy && !r.escapedBy,
+                                    );
+                                    const parts = [roomName(game.snapshot, roomId)];
+                                    if (room?.kind && room.kind !== 'hallway' && room.kind !== 'entrance') parts.push(`[${room.kind}]`);
+                                    if (dist !== undefined) parts.push(`${dist}→exit`);
+                                    if (hasRelic) parts.push('◆ relic');
+                                    return (
+                                        <option key={roomId} value={roomId}>
+                                            {parts.join(' · ')}
+                                        </option>
+                                    );
+                                })}
                             </select>
                         )}
 
@@ -515,6 +789,29 @@ export default function App() {
                             </select>
                         )}
 
+                            </>
+                            )}
+
+                        {roundNoiseCount > 0 && (
+                            <div className={`noise-meter ${roundNoiseCount >= 3 ? 'noise-high' : roundNoiseCount >= 2 ? 'noise-medium' : 'noise-low'}`}>
+                                <span>Last round noise</span>
+                                <span className="noise-pips">
+                                    {Array.from({ length: Math.min(5, roundNoiseCount) }, (_, i) => (
+                                        <span key={i} className="noise-pip"/>
+                                    ))}
+                                </span>
+                                <small>{roundNoiseCount >= 3 ? 'Rooms destabilising' : 'Some disruption'}</small>
+                            </div>
+                        )}
+
+                        {game.snapshot && game.snapshot.maxRounds - game.snapshot.round <= 1 && (
+                            <div className={`round-warning ${game.snapshot.round >= game.snapshot.maxRounds ? 'round-warning-final' : ''}`}>
+                                {game.snapshot.round >= game.snapshot.maxRounds
+                                    ? 'Final round — escape or be lost to the ruin.'
+                                    : `${game.snapshot.maxRounds - game.snapshot.round} round${game.snapshot.maxRounds - game.snapshot.round === 1 ? '' : 's'} remaining — the ruin closes soon.`}
+                            </div>
+                        )}
+
                         <button
                             type="button"
                             className="primary"
@@ -523,9 +820,23 @@ export default function App() {
                         >
                             {game.snapshot?.submittedPlayerIds.includes(game.session.sessionId)
                                 ? 'Plan Locked'
-                                : 'Submit Plan'}
+                                : <>Submit Plan <kbd className="action-key action-key-enter">↵</kbd></>}
                         </button>
                     </div>
+                )}
+
+                {game.session && game.roomId && game.snapshot && (
+                    <EscapeDecisionPanel
+                        snapshot={game.snapshot}
+                        localPlayerId={game.session.sessionId}
+                    />
+                )}
+
+                {game.session && game.roomId && (
+                    <PersonalRoundCard
+                        events={revealedEvents}
+                        localPlayerId={game.session.sessionId}
+                    />
                 )}
 
                 {game.session && game.roomId && game.snapshot && partyCoordination && (
@@ -543,6 +854,21 @@ export default function App() {
                         selectedRoomId={selectedRoomId}
                         lastEvent={lastEvent}
                         onSelectRoom={setSelectedRoomId}
+                    />
+                )}
+
+                {game.session && game.roomId && game.snapshot && selectedRoomId && (
+                    <RoomDetailCard
+                        snapshot={game.snapshot}
+                        roomId={selectedRoomId}
+                        localPlayerId={game.session.sessionId}
+                        exitDistances={exitDistances}
+                        onPrimeMove={(targetRoomId) => {
+                            const next = { kind: 'move' as const, targetRoomId };
+                            setDraft(next);
+                            setScenePrimedAction(next);
+                        }}
+                        onDismiss={() => setSelectedRoomId(undefined)}
                     />
                 )}
 
@@ -580,15 +906,118 @@ export default function App() {
                     phase={game.snapshot?.phase}
                     submittedPlayerIds={game.snapshot?.submittedPlayerIds ?? []}
                 />
+                <TurnDiffStrip events={revealedEvents}/>
                 <RoundChronicle
-                    events={game.snapshot?.events ?? []}
+                    events={revealedEvents}
                     phase={game.snapshot?.phase}
                     lastEvent={lastEvent}
+                    localPlayerId={game.session?.sessionId}
                 />
             </section>
 
+            {personalFlash && (
+                <div
+                    key={personalFlash.key}
+                    className={`personal-event-flash flash-${personalFlash.tone}`}
+                    onAnimationEnd={() => setPersonalFlash(null)}
+                    aria-hidden="true"
+                />
+            )}
+
+            {currentPlayer && currentPlayer.health === 1 && !currentPlayer.escaped && !currentPlayer.defeated && (
+                <div className="low-health-banner" role="alert">
+                    One hit from defeat — move carefully.
+                </div>
+            )}
+
+            {showHelpOverlay && (
+                <div
+                    className="help-overlay"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Keyboard shortcuts"
+                    onClick={() => setShowHelpOverlay(false)}
+                >
+                    <div className="help-card" onClick={(e) => e.stopPropagation()}>
+                        <span className="panel-label">Controls</span>
+                        <div className="help-grid">
+                            <kbd>WASD</kbd><span>Move in 3D scene</span>
+                            <kbd>Mouse</kbd><span>Look around</span>
+                            <kbd>1 – 4</kbd><span>Select action (Move/Search/Steal/Escape)</span>
+                            <kbd>↵</kbd><span>Submit plan</span>
+                            <kbd>? / F1</kbd><span>Toggle this help</span>
+                            <kbd>Esc</kbd><span>Close overlays</span>
+                        </div>
+                        <button type="button" className="primary" onClick={() => setShowHelpOverlay(false)}>
+                            Close
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {currentPlayer?.defeated && game.snapshot?.phase === 'planning' && (
+                <div className="defeated-overlay" aria-live="polite">
+                    <div className="defeated-card">
+                        <span className="panel-label">Fallen</span>
+                        <strong>You are down</strong>
+                        <p>The castle keeps your relics. Watch the others — the expedition may still turn.</p>
+                        <small>Your score: {currentPlayer.score} pts</small>
+                    </div>
+                </div>
+            )}
+
+            {showTensionBeat && (
+                <div className="tension-beat" aria-live="assertive" role="status">
+                    <span>The castle answers…</span>
+                </div>
+            )}
+
+            {showDigest && (
+                <PostRoundDigest events={digestEvents} onDismiss={() => setShowDigest(false)}/>
+            )}
+
             {game.snapshot?.phase === 'finished' && (
                 <VictoryPanel snapshot={game.snapshot}/>
+            )}
+
+            {showOnboarding &&
+                game.snapshot?.phase === 'planning' &&
+                game.snapshot.round === 1 && (
+                <OnboardingOverlay onDismiss={() => {
+                    localStorage.setItem('relic-onboarding-v1', '1');
+                    setShowOnboarding(false);
+                }}/>
+            )}
+
+            {game.snapshot && game.snapshot.phase !== 'lobby' && (
+                <div className="scene-crosshair" aria-hidden="true">
+                    <div className="scene-crosshair-dot"/>
+                </div>
+            )}
+
+            {game.snapshot && (
+                <SceneMinimapOverlay
+                    snapshot={game.snapshot}
+                    localPlayerId={game.session?.sessionId}
+                />
+            )}
+
+            {phaseBanner && (
+                <div className="phase-banner" role="status" aria-live="assertive" aria-atomic="true">
+                    {phaseBanner}
+                </div>
+            )}
+
+            {roomEntryFlash && (
+                <div
+                    key={roomEntryFlash.key}
+                    className="room-entry-flash"
+                    onAnimationEnd={() => setRoomEntryFlash(null)}
+                    aria-live="polite"
+                    aria-atomic="true"
+                >
+                    {roomEntryFlash.room}
+                </div>
             )}
         </main>
     );
@@ -689,6 +1118,38 @@ function CharacterSelect({
     );
 }
 
+function LobbyPartyPanel({
+    snapshot,
+    localPlayerId,
+}: Readonly<{ snapshot: RelicPublicSnapshot; localPlayerId?: string }>) {
+    if (snapshot.phase !== 'lobby' || snapshot.players.length === 0) return null;
+    return (
+        <div className="panel lobby-party-panel">
+            <span className="panel-label">Party</span>
+            <div className="lobby-party-list">
+                {snapshot.players.map((player) => {
+                    const char = findRelicCharacter(player.characterId);
+                    const isLocal = player.playerId === localPlayerId;
+                    return (
+                        <div key={player.playerId} className={`lobby-party-row${isLocal ? ' local' : ''}`}>
+                            <span
+                                className="lobby-party-swatch"
+                                style={{ background: char.colors.accent }}
+                            />
+                            <span className="lobby-party-name">{player.username}</span>
+                            <span className="lobby-party-char">{char.name}</span>
+                            {isLocal && <span className="lobby-party-you">you</span>}
+                        </div>
+                    );
+                })}
+            </div>
+            {snapshot.players.length < 2 && (
+                <small className="lobby-party-hint">Waiting for at least one more hunter…</small>
+            )}
+        </div>
+    );
+}
+
 function PartyChangePrompt({
     expeditionPlayers,
     onlinePlayers,
@@ -728,6 +1189,7 @@ function RoomIntel({
     moveTargets: readonly string[];
     snapshot?: RelicPublicSnapshot;
 }>) {
+    const [open, setOpen] = useState(false);
     const roomRelics = currentRoom && snapshot
         ? snapshot.relics.filter((relic) =>
             relic.roomId === currentRoom.id && !relic.carriedBy && !relic.escapedBy
@@ -744,11 +1206,14 @@ function RoomIntel({
 
     return (
         <div className="panel stack room-intel">
-            <div>
-                <span className="panel-label">Current Room</span>
-                <strong>{currentRoom?.name ?? 'No hunter in the ruin'}</strong>
-            </div>
-            {currentRoom && (
+            <button type="button" className="collapsible-header" onClick={() => setOpen((v) => !v)}>
+                <div>
+                    <span className="panel-label">Current Room</span>
+                    <strong>{currentRoom?.name ?? 'No hunter in the ruin'}</strong>
+                </div>
+                <span className="collapse-chevron">{open ? '▲' : '▼'}</span>
+            </button>
+            {open && currentRoom && (
                 <>
                     <div className="tag-row">
                         <span className={`tag ${currentRoom.unstable ? 'danger' : ''}`}>
@@ -936,8 +1401,9 @@ function ClueJournal({
     snapshot: RelicPublicSnapshot;
     onSelectRoom(roomId: string): void;
 }>) {
+    const [open, setOpen] = useState(true);
     const investigations = [...(snapshot.roomInvestigations ?? [])]
-        .sort((left, right) => left.searchedAtRound - right.searchedAtRound);
+        .sort((left, right) => right.searchedAtRound - left.searchedAtRound);
 
     if (investigations.length === 0) {
         return null;
@@ -945,38 +1411,44 @@ function ClueJournal({
 
     return (
         <div className="panel stack clue-journal" aria-label="Discovered clue trails">
-            <div>
-                <span className="panel-label">Discovered Trails</span>
-                <strong>{investigations.length} marked clue{investigations.length === 1 ? '' : 's'}</strong>
-            </div>
-            <div className="clue-journal-list">
-                {investigations.map((investigation) => {
-                    const room = snapshot.map.find((candidate) =>
-                        candidate.id === investigation.roomId
-                    );
-                    const target = investigation.revealedRoomId
-                        ? snapshot.map.find((candidate) =>
-                            candidate.id === investigation.revealedRoomId
-                        )
-                        : undefined;
-                    return (
-                        <button
-                            type="button"
-                            key={`${investigation.roomId}-${investigation.searchedAtRound}`}
-                            className="clue-journal-entry"
-                            onClick={() => onSelectRoom(target?.id ?? investigation.roomId)}
-                        >
-                            <span>
-                                Round {investigation.searchedAtRound} / {investigation.searchedByUsername}
-                            </span>
-                            <strong>
-                                {room?.name ?? investigation.roomId} - {target?.name ?? 'No target'}
-                            </strong>
-                            <small>{investigation.summary}</small>
-                        </button>
-                    );
-                })}
-            </div>
+            <button type="button" className="collapsible-header" onClick={() => setOpen((v) => !v)}>
+                <div>
+                    <span className="panel-label">Discovered Trails</span>
+                    <strong>{investigations.length} marked clue{investigations.length === 1 ? '' : 's'}</strong>
+                </div>
+                <span className="collapse-chevron">{open ? '▲' : '▼'}</span>
+            </button>
+            {open && (
+                <div className="clue-journal-list">
+                    {investigations.map((investigation) => {
+                        const room = snapshot.map.find((candidate) =>
+                            candidate.id === investigation.roomId
+                        );
+                        const target = investigation.revealedRoomId
+                            ? snapshot.map.find((candidate) =>
+                                candidate.id === investigation.revealedRoomId
+                            )
+                            : undefined;
+                        return (
+                            <button
+                                type="button"
+                                key={`${investigation.roomId}-${investigation.searchedAtRound}`}
+                                className={`clue-journal-entry${target ? ' has-target' : ''}`}
+                                onClick={() => onSelectRoom(target?.id ?? investigation.roomId)}
+                            >
+                                <span>
+                                    Round {investigation.searchedAtRound} · {investigation.searchedByUsername}
+                                </span>
+                                <strong>
+                                    {room?.name ?? investigation.roomId}
+                                    {target ? ` → ${target.name}` : ' — no target'}
+                                </strong>
+                                <small>{investigation.summary}</small>
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
         </div>
     );
 }
@@ -994,11 +1466,13 @@ type TurnFeedback = Readonly<{
 function TurnFeedbackOverlay({
     snapshot,
     localPlayerId,
+    revealedEvents,
 }: Readonly<{
     snapshot: RelicPublicSnapshot;
     localPlayerId?: string;
+    revealedEvents: readonly RelicEvent[];
 }>) {
-    const feedback = deriveTurnFeedback(snapshot, localPlayerId);
+    const feedback = deriveTurnFeedback(snapshot, localPlayerId, revealedEvents);
     if (!feedback) {
         return null;
     }
@@ -1015,8 +1489,12 @@ function TurnFeedbackOverlay({
                 <div className="turn-feedback-events">
                     {feedback.events.map((event) => {
                         const narLine = narratorLine(event);
+                        const personal = isPersonalEvent(event, localPlayerId);
                         return (
-                            <div className={`turn-event-card ${toneClass(event)}`} key={event.id}>
+                            <div
+                                className={`turn-event-card ${toneClass(event)} ${personal ? 'personal' : ''}`}
+                                key={event.id}
+                            >
                                 {narLine && <em className="narrator-voice">{narLine}</em>}
                                 <span>{event.message}</span>
                             </div>
@@ -1031,6 +1509,7 @@ function TurnFeedbackOverlay({
 function deriveTurnFeedback(
     snapshot: RelicPublicSnapshot,
     localPlayerId: string | undefined,
+    events: readonly RelicEvent[],
 ): TurnFeedback | undefined {
     const active = snapshot.players.filter((player) => !player.escaped && !player.defeated);
     const submittedCount = snapshot.submittedPlayerIds.length;
@@ -1051,12 +1530,12 @@ function deriveTurnFeedback(
         };
     }
 
-    const lastTurnEvent = [...snapshot.events].reverse().find(isTurnFeedbackEvent);
+    const lastTurnEvent = [...events].reverse().find(isTurnFeedbackEvent);
     if (!lastTurnEvent) {
         return undefined;
     }
 
-    const resultEvents = snapshot.events
+    const resultEvents = events
         .filter(isTurnResultEvent)
         .slice(-4)
         .reverse();
@@ -1169,6 +1648,42 @@ function turnEventHeadline(event: RelicEvent): string {
     }
 }
 
+type ConsequenceStatus = 'ok' | 'warn' | 'block';
+type ActionConsequence = Readonly<{ text: string; status: ConsequenceStatus }>;
+
+function actionConsequence(
+    kind: RelicActionKind,
+    snapshot: RelicPublicSnapshot | undefined,
+    currentRoom: RelicPublicSnapshot['map'][number] | undefined,
+    moveTargets: readonly string[],
+    stealTargets: readonly RelicPlayer[],
+    currentPlayer: RelicPlayer | undefined,
+): ActionConsequence {
+    if (!snapshot || !currentPlayer) return { text: '—', status: 'ok' };
+    switch (kind) {
+        case 'move':
+            return moveTargets.length > 0
+                ? { text: `${moveTargets.length} path${moveTargets.length === 1 ? '' : 's'} open`, status: 'ok' }
+                : { text: 'all paths blocked', status: 'block' };
+        case 'search': {
+            const searched = snapshot.roomInvestigations?.some(
+                (inv) => inv.roomId === currentPlayer.roomId,
+            );
+            return searched
+                ? { text: 'already searched here', status: 'warn' }
+                : { text: 'room not yet searched', status: 'ok' };
+        }
+        case 'steal':
+            return stealTargets.length > 0
+                ? { text: `${stealTargets.length} hunter${stealTargets.length === 1 ? '' : 's'} here`, status: 'ok' }
+                : { text: 'no targets here', status: 'block' };
+        case 'escape':
+            return currentRoom?.kind === 'exit'
+                ? { text: 'exit door in reach', status: 'ok' }
+                : { text: 'not at exit room', status: 'block' };
+    }
+}
+
 type CastleMapBounds = Readonly<{
     minX: number;
     maxX: number;
@@ -1190,6 +1705,26 @@ function CastleMap({
     onSelectRoom(roomId: string): void;
 }>) {
     const bounds = castleMapBounds(snapshot.map);
+    const exitDistances = castleMapExitDistances(snapshot.map);
+    const localPlayer = snapshot.players.find((p) => p.playerId === localPlayerId);
+    const localRoom = localPlayer ? snapshot.map.find((r) => r.id === localPlayer.roomId) : undefined;
+    const isActivePlanning = snapshot.phase === 'planning' &&
+        !!localPlayer &&
+        !localPlayer.escaped &&
+        !localPlayer.defeated &&
+        !snapshot.submittedPlayerIds.includes(localPlayer.playerId);
+    const reachableIds = isActivePlanning
+        ? new Set(
+            (localRoom?.neighbors ?? []).filter((nId) => {
+                const n = snapshot.map.find((r) => r.id === nId);
+                return n && !n.collapsed;
+            }),
+        )
+        : new Set<string>();
+    const exitPath = localPlayer && localPlayer.relicIds.length > 0 &&
+        !localPlayer.escaped && !localPlayer.defeated
+        ? castleMapExitPath(snapshot.map, localPlayer.roomId)
+        : undefined;
     const clueTargetRoomIds = new Set(
         (snapshot.roomInvestigations ?? [])
             .map((investigation) => investigation.revealedRoomId)
@@ -1217,6 +1752,13 @@ function CastleMap({
             }> => !!edge.to)
     );
 
+    const clueTrails = (snapshot.roomInvestigations ?? []).filter(
+        (inv) => inv.revealedRoomId,
+    );
+    const relicRooms = snapshot.relics.filter(
+        (r) => !r.carriedBy && !r.escapedBy && r.foundBy && r.roomId,
+    );
+
     return (
         <div className="panel castle-map-panel">
             <div className="castle-map-title">
@@ -1235,6 +1777,49 @@ function CastleMap({
                                 y1={from.y}
                                 x2={to.x}
                                 y2={to.y}
+                            />
+                        );
+                    })}
+                    {exitPath && exitPath.length > 1 && exitPath.slice(0, -1).map((roomId, i) => {
+                        const from = snapshot.map.find((r) => r.id === roomId);
+                        const to = snapshot.map.find((r) => r.id === exitPath[i + 1]);
+                        if (!from || !to) return null;
+                        const fp = castleMapPoint(from, bounds);
+                        const tp = castleMapPoint(to, bounds);
+                        return (
+                            <line
+                                key={`exit-route-${roomId}`}
+                                className="castle-map-exit-route"
+                                x1={fp.x} y1={fp.y}
+                                x2={tp.x} y2={tp.y}
+                            />
+                        );
+                    })}
+                    {clueTrails.map((inv) => {
+                        const from = snapshot.map.find((r) => r.id === inv.roomId);
+                        const to = snapshot.map.find((r) => r.id === inv.revealedRoomId);
+                        if (!from || !to) return null;
+                        const fp = castleMapPoint(from, bounds);
+                        const tp = castleMapPoint(to, bounds);
+                        return (
+                            <line
+                                key={`clue-${inv.roomId}-${inv.revealedRoomId}`}
+                                className="castle-map-clue-trail"
+                                x1={fp.x} y1={fp.y}
+                                x2={tp.x} y2={tp.y}
+                            />
+                        );
+                    })}
+                    {relicRooms.map((relic) => {
+                        const room = snapshot.map.find((r) => r.id === relic.roomId);
+                        if (!room) return null;
+                        const pt = castleMapPoint(room, bounds);
+                        return (
+                            <circle
+                                key={relic.id}
+                                className="castle-map-relic-dot"
+                                cx={pt.x} cy={pt.y}
+                                r="3.8"
                             />
                         );
                     })}
@@ -1257,6 +1842,7 @@ function CastleMap({
                                 'castle-map-room',
                                 room.id === selectedRoomId ? 'selected' : '',
                                 local ? 'local' : '',
+                                reachableIds.has(room.id) ? 'reachable' : '',
                                 occupants.length > 0 ? 'occupied' : '',
                                 hasOtherHunters ? 'has-others' : '',
                                 clueTargetRoomIds.has(room.id) ? 'clue-target' : '',
@@ -1266,10 +1852,19 @@ function CastleMap({
                             style={{
                                 left: `${point.x}%`,
                                 top: `${point.y}%`,
+                                background: roomKindMapColor(room),
                             }}
                             onClick={() => onSelectRoom(room.id)}
                         >
                             <span className="castle-map-room-name">{room.name}</span>
+                            {exitDistances.has(room.id) && (
+                                <span
+                                    className={`castle-map-exit-dist ${room.kind === 'exit' ? 'at-exit' : ''}`}
+                                    aria-label={`${exitDistances.get(room.id)} steps from exit`}
+                                >
+                                    {exitDistances.get(room.id)}
+                                </span>
+                            )}
                             {occupants.length > 0 && (
                                 <span
                                     className="castle-map-occupancy"
@@ -1331,29 +1926,299 @@ function RoundChronicle({
     events,
     phase,
     lastEvent,
+    localPlayerId,
 }: Readonly<{
     events: readonly RelicEvent[];
     phase?: RelicPublicSnapshot['phase'];
     lastEvent?: RelicEvent;
+    localPlayerId?: string;
 }>) {
-    const recent = events.slice(-6).reverse();
+    const roundGroups = useMemo(() => {
+        const groups = new Map<number, RelicEvent[]>();
+        for (const e of events) {
+            const list = groups.get(e.round) ?? [];
+            list.push(e);
+            groups.set(e.round, list);
+        }
+        return [...groups.entries()]
+            .sort((a, b) => b[0] - a[0])
+            .slice(0, 3);
+    }, [events]);
+
     return (
         <div className={`chronicle ${toneClass(lastEvent)}`}>
             <div className="chronicle-title">
                 <span>{phase === 'finished' ? 'Expedition End' : 'Round Chronicle'}</span>
                 <strong>{chronicleHeadline(lastEvent, phase)}</strong>
             </div>
-            <div className="chronicle-list">
-                {recent.map((event) => {
-                    const narLine = narratorLine(event);
+            <div className="chronicle-list chronicle-grouped">
+                {roundGroups.map(([round, roundEvents]) => (
+                    <div key={round} className="chronicle-round-group">
+                        <div className="chronicle-round-header">Round {round}</div>
+                        {roundEvents
+                            .filter((e) => isTurnResultEvent(e) || e.type === 'action_revealed' || e.type === 'round_started')
+                            .slice(-5)
+                            .reverse()
+                            .map((event) => {
+                                const narLine = narratorLine(event);
+                                const personal = isPersonalEvent(event, localPlayerId);
+                                return (
+                                    <div
+                                        key={event.id}
+                                        className={`chronicle-entry ${toneClass(event)} ${personal ? 'personal' : ''}`}
+                                    >
+                                        {narLine && <em className="narrator-voice">{narLine}</em>}
+                                        <span className="chronicle-message">{event.message}</span>
+                                    </div>
+                                );
+                            })}
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function OnboardingOverlay({ onDismiss }: Readonly<{ onDismiss(): void }>) {
+    return (
+        <div className="onboarding-overlay" role="dialog" aria-modal="true" aria-label="How to play">
+            <div className="onboarding-card">
+                <span className="panel-label">First Expedition</span>
+                <h2 className="onboarding-title">The Ruin Awaits</h2>
+                <div className="onboarding-steps">
+                    <div className="onboarding-step">
+                        <div className="onboarding-step-number">I</div>
+                        <div>
+                            <strong>Plan in secret</strong>
+                            <p>Each round, pick one action — Move, Search, Steal, or Escape — without seeing what others chose. Plans are locked simultaneously.</p>
+                        </div>
+                    </div>
+                    <div className="onboarding-step">
+                        <div className="onboarding-step-number">II</div>
+                        <div>
+                            <strong>All revealed at once</strong>
+                            <p>When every hunter submits, all plans resolve at the same time. Positions shift, relics change hands, rooms may collapse. Expect chaos.</p>
+                        </div>
+                    </div>
+                    <div className="onboarding-step">
+                        <div className="onboarding-step-number">III</div>
+                        <div>
+                            <strong>Collect and escape</strong>
+                            <p>Find relics, reach the Exit room, and submit Escape before the ruin closes. The hunter who escapes with the highest score claims the Heart Relic.</p>
+                        </div>
+                    </div>
+                </div>
+                <button type="button" className="primary onboarding-dismiss" onClick={onDismiss}>
+                    Into the ruin
+                </button>
+            </div>
+        </div>
+    );
+}
+
+function PostRoundDigest({
+    events,
+    onDismiss,
+}: Readonly<{
+    events: readonly RelicEvent[];
+    onDismiss(): void;
+}>) {
+    const relicsFound = events.filter((e) => e.type === 'relic_found').length;
+    const damagedCount = events.filter((e) => e.type === 'player_damaged').length;
+    const escapedCount = events.filter((e) => e.type === 'player_escaped').length;
+    const collapsedCount = events.filter((e) => e.type === 'room_collapsed').length;
+    const stealCount = events.filter((e) => e.type === 'steal_succeeded').length;
+
+    return (
+        <div className="digest-overlay" onClick={onDismiss} role="status" aria-live="polite">
+            <div className="digest-card">
+                <span className="panel-label">Round Complete</span>
+                <div className="digest-events">
+                    {relicsFound > 0 && (
+                        <div className="digest-event digest-event-relic">
+                            {relicsFound} relic{relicsFound === 1 ? '' : 's'} claimed from the ruin
+                        </div>
+                    )}
+                    {stealCount > 0 && (
+                        <div className="digest-event digest-event-steal">
+                            {stealCount} relic{stealCount === 1 ? '' : 's'} changed hands in shadow
+                        </div>
+                    )}
+                    {escapedCount > 0 && (
+                        <div className="digest-event digest-event-escape">
+                            {escapedCount} hunter{escapedCount === 1 ? '' : 's'} broke for daylight
+                        </div>
+                    )}
+                    {damagedCount > 0 && (
+                        <div className="digest-event digest-event-damage">
+                            {damagedCount} hunter{damagedCount === 1 ? '' : 's'} took the castle's toll
+                        </div>
+                    )}
+                    {collapsedCount > 0 && (
+                        <div className="digest-event digest-event-collapse">
+                            {collapsedCount} chamber{collapsedCount === 1 ? '' : 's'} surrendered to ruin
+                        </div>
+                    )}
+                    {relicsFound === 0 && escapedCount === 0 && damagedCount === 0 &&
+                        collapsedCount === 0 && stealCount === 0 && (
+                        <div className="digest-event">The ruin stayed quiet this round.</div>
+                    )}
+                </div>
+                <span className="digest-hint">tap to dismiss</span>
+                <div className="digest-progress"/>
+            </div>
+        </div>
+    );
+}
+
+function LockedPlanCard({
+    action,
+    snapshot,
+    localPlayerId,
+}: Readonly<{
+    action: RelicActionInput;
+    snapshot: RelicPublicSnapshot;
+    localPlayerId?: string;
+}>) {
+    const active = snapshot.players.filter((p) => !p.escaped && !p.defeated);
+    const submitted = active.filter((p) => snapshot.submittedPlayerIds.includes(p.playerId));
+    const waiting = active.filter((p) => !snapshot.submittedPlayerIds.includes(p.playerId));
+
+    const actionLabel = (): string => {
+        switch (action.kind) {
+            case 'move': {
+                const target = snapshot.map.find((r) => r.id === action.targetRoomId);
+                return `Move → ${target?.name ?? action.targetRoomId}`;
+            }
+            case 'search':
+                return 'Search this room';
+            case 'steal': {
+                const target = snapshot.players.find((p) => p.playerId === action.targetPlayerId);
+                return `Steal from ${target?.username ?? '—'}`;
+            }
+            case 'escape':
+                return 'Escape the ruin';
+        }
+    };
+
+    return (
+        <div className="locked-plan-card">
+            <span className="panel-label">Plan Locked</span>
+            <strong className="locked-action-label">{actionLabel()}</strong>
+            <div className="locked-waiting-list">
+                {submitted.map((p) => (
+                    <span
+                        key={p.playerId}
+                        className={`locked-player locked-player-done${p.playerId === localPlayerId ? ' local' : ''}`}
+                    >
+                        {p.username}
+                    </span>
+                ))}
+                {waiting.map((p) => (
+                    <span key={p.playerId} className="locked-player locked-player-waiting">
+                        {p.username}
+                    </span>
+                ))}
+            </div>
+            {waiting.length > 0
+                ? <small>{waiting.length} {plural('hunter', waiting.length)} still choosing…</small>
+                : <small>All plans locked. The castle is about to answer.</small>}
+        </div>
+    );
+}
+
+function EscapeDecisionPanel({
+    snapshot,
+    localPlayerId,
+}: Readonly<{
+    snapshot: RelicPublicSnapshot;
+    localPlayerId?: string;
+}>) {
+    const sortedPlayers = [...snapshot.players].sort((a, b) => b.score - a.score);
+    const localPlayer = snapshot.players.find((p) => p.playerId === localPlayerId);
+    const localRank = sortedPlayers.findIndex((p) => p.playerId === localPlayerId) + 1;
+    const carriedRelics = snapshot.relics.filter((r) => r.carriedBy === localPlayerId);
+    const escapeScore = localPlayer && !localPlayer.escaped && !localPlayer.defeated
+        ? localPlayer.score + carriedRelics.reduce((sum, r) => sum + r.value, 0)
+        : undefined;
+    const roundsLeft = snapshot.maxRounds - snapshot.round + 1;
+    const hiddenRelicTotal = snapshot.relics
+        .filter((r) => !r.foundBy && !r.carriedBy && !r.escapedBy)
+        .reduce((sum, r) => sum + r.value, 0);
+
+    return (
+        <div className="panel stack escape-decision">
+            <div>
+                <span className="panel-label">Score Tracker</span>
+                <strong>
+                    {localPlayer?.escaped
+                        ? 'You escaped safe'
+                        : localPlayer?.defeated
+                        ? 'You are down'
+                        : `Rank ${localRank} of ${snapshot.players.length}`}
+                </strong>
+                {carriedRelics.length > 0 && (
+                    <small>Carrying {carriedRelics.length} {plural('relic', carriedRelics.length)}</small>
+                )}
+            </div>
+            {carriedRelics.length > 0 && (
+                <div className="relic-inventory">
+                    {carriedRelics.map((r) => (
+                        <div key={r.id} className="relic-item">
+                            <span className="relic-item-name">◆ {r.name}</span>
+                            <span className="relic-item-value">+{r.value}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
+            <div className="score-board">
+                {sortedPlayers.map((player, rank) => {
+                    const character = findRelicCharacter(player.characterId);
+                    const isLocal = player.playerId === localPlayerId;
+                    const maxHealth = 3 + (character.healthBonus ?? 0);
                     return (
-                        <div className={`chronicle-entry ${toneClass(event)}`} key={event.id}>
-                            {narLine && <em className="narrator-voice">{narLine}</em>}
-                            <span className="chronicle-message">{event.message}</span>
+                        <div
+                            key={player.playerId}
+                            className={`score-row${isLocal ? ' local' : ''}`}
+                        >
+                            <span className="score-rank" style={{ color: character.colors.accent }}>
+                                {rank + 1}
+                            </span>
+                            <span className="score-name">{player.username}</span>
+                            <span className="score-health" aria-label={`${player.health} health`}>
+                                {Array.from({ length: maxHealth }, (_, i) => (
+                                    <span
+                                        key={i}
+                                        className={`health-pip ${i < player.health ? 'pip-full' : 'pip-empty'} ${player.health === 1 && i === 0 ? 'pip-critical' : ''}`}
+                                    />
+                                ))}
+                            </span>
+                            <strong className="score-value">{player.score}</strong>
+                            {player.relicIds.length > 0 && (
+                                <span className="score-relics">◆{player.relicIds.length}</span>
+                            )}
+                            {player.escaped && <em className="score-status">out</em>}
+                            {player.defeated && <em className="score-status score-status-down">down</em>}
                         </div>
                     );
                 })}
             </div>
+            {escapeScore !== undefined && snapshot.phase === 'planning' && (
+                <div className="escape-projection">
+                    <div className="escape-proj-row">
+                        <span>Safe now</span>
+                        <strong className="proj-safe">{escapeScore} pts</strong>
+                    </div>
+                    <div className="escape-proj-row">
+                        <span>Still in ruin</span>
+                        <strong>~{hiddenRelicTotal} pts</strong>
+                    </div>
+                    <div className={`escape-proj-row${roundsLeft <= 2 ? ' proj-urgent' : ''}`}>
+                        <span>Rounds left</span>
+                        <strong>{roundsLeft}</strong>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -1363,24 +2228,233 @@ function VictoryPanel({ snapshot }: Readonly<{ snapshot: RelicPublicSnapshot }>)
         snapshot.winnerIds.includes(player.playerId)
     );
     const sortedPlayers = [...snapshot.players].sort((left, right) => right.score - left.score);
+    const confettiPieces = useMemo(() =>
+        Array.from({ length: 20 }, (_, i) => ({
+            key: i,
+            color: ['#facc5b', '#4ade80', '#7dd3fc', '#c4b5fd', '#fb7185'][i % 5],
+            left: `${5 + ((i * 73 + 17) % 90)}%`,
+            delay: `${(i * 137) % 2200}ms`,
+            duration: `${1800 + (i * 79) % 1400}ms`,
+            size: `${6 + (i * 31) % 9}px`,
+        })),
+    []);
 
     return (
         <section className="victory-panel">
+            <div className="victory-confetti" aria-hidden="true">
+                {confettiPieces.map((p) => (
+                    <div
+                        key={p.key}
+                        className="confetti-piece"
+                        style={{
+                            left: p.left,
+                            background: p.color,
+                            animationDelay: p.delay,
+                            animationDuration: p.duration,
+                            width: p.size,
+                            height: p.size,
+                        }}
+                    />
+                ))}
+            </div>
             <div>
                 <span>The Heart Relic has chosen</span>
                 <h2>{winners.map((winner) => winner.username).join(', ') || 'No hunter'}</h2>
                 <p>Final score: {winners[0]?.score ?? 0}</p>
             </div>
             <div className="scoreboard">
-                {sortedPlayers.map((player) => (
-                    <div key={player.playerId}>
-                        <span>{player.username}</span>
-                        <strong>{player.score}</strong>
-                    </div>
-                ))}
+                {sortedPlayers.map((player) => {
+                    const char = findRelicCharacter(player.characterId);
+                    const escapedRelics = snapshot.relics.filter((r) => r.escapedBy === player.playerId);
+                    return (
+                        <div key={player.playerId} className="final-score-row">
+                            <span
+                                className="final-score-swatch"
+                                style={{ background: char.colors.accent }}
+                            />
+                            <span className="final-score-name">{player.username}</span>
+                            <div className="final-score-details">
+                                {escapedRelics.length > 0 && (
+                                    <span className="final-score-relics">
+                                        {escapedRelics.map((r) => `◆ ${r.name} (+${r.value})`).join('  ')}
+                                    </span>
+                                )}
+                                {player.defeated && <span className="final-score-tag danger">fallen</span>}
+                                {player.escaped && <span className="final-score-tag success">escaped</span>}
+                                {!player.defeated && !player.escaped && <span className="final-score-tag">still inside</span>}
+                            </div>
+                            <strong className="final-score-value">{player.score}</strong>
+                        </div>
+                    );
+                })}
             </div>
         </section>
     );
+}
+
+function RoomDetailCard({
+    snapshot,
+    roomId,
+    localPlayerId,
+    exitDistances,
+    onPrimeMove,
+    onDismiss,
+}: Readonly<{
+    snapshot: RelicPublicSnapshot;
+    roomId: string;
+    localPlayerId?: string;
+    exitDistances: Map<string, number>;
+    onPrimeMove(roomId: string): void;
+    onDismiss(): void;
+}>) {
+    const room = snapshot.map.find((r) => r.id === roomId);
+    if (!room) return null;
+
+    const localPlayer = snapshot.players.find((p) => p.playerId === localPlayerId);
+    const localRoom = localPlayer ? snapshot.map.find((r) => r.id === localPlayer.roomId) : undefined;
+    const isReachable = !room.collapsed && !!(localRoom?.neighbors.includes(roomId));
+    const isCurrentRoom = localPlayer?.roomId === roomId;
+    const canPrimeMove = isReachable &&
+        !isCurrentRoom &&
+        snapshot.phase === 'planning' &&
+        !!localPlayer &&
+        !localPlayer.escaped &&
+        !localPlayer.defeated &&
+        !snapshot.submittedPlayerIds.includes(localPlayer.playerId);
+
+    const occupants = snapshot.players.filter(
+        (p) => p.roomId === roomId && !p.escaped && !p.defeated,
+    );
+    const investigations = (snapshot.roomInvestigations ?? []).filter(
+        (inv) => inv.roomId === roomId,
+    );
+    const foundRelics = snapshot.relics.filter(
+        (r) => r.roomId === roomId && r.foundBy && !r.carriedBy && !r.escapedBy,
+    );
+    const dist = exitDistances.get(roomId);
+
+    return (
+        <div className="panel room-detail-card">
+            <div className="room-detail-header">
+                <strong>{room.name}</strong>
+                <span className={`room-kind-pill room-kind-${room.kind}`}>{room.kind}</span>
+                {dist !== undefined && (
+                    <span className="room-detail-dist">{dist}→exit</span>
+                )}
+                <button
+                    type="button"
+                    className="room-detail-close"
+                    aria-label="Close room detail"
+                    onClick={onDismiss}
+                >×</button>
+            </div>
+            {room.collapsed && (
+                <p className="room-detail-status danger">This room has collapsed.</p>
+            )}
+            {room.unstable && !room.collapsed && (
+                <p className="room-detail-status warn">Unstable — may collapse next round.</p>
+            )}
+            {occupants.length > 0 && (
+                <div className="room-detail-occupants">
+                    {occupants.map((player) => {
+                        const char = findRelicCharacter(player.characterId);
+                        return (
+                            <span
+                                key={player.playerId}
+                                className="room-detail-occupant"
+                                style={{ borderColor: char.colors.accent }}
+                            >
+                                {player.username}
+                                {player.relicIds.length > 0 && ` ◆${player.relicIds.length}`}
+                            </span>
+                        );
+                    })}
+                </div>
+            )}
+            {investigations.map((inv) => (
+                <div key={`${inv.roomId}-${inv.searchedAtRound}`} className="room-detail-intel">
+                    <em>{inv.searchedByUsername} searched round {inv.searchedAtRound}</em>
+                    <span>{inv.summary}</span>
+                    {inv.hint && <small>{inv.hint}</small>}
+                </div>
+            ))}
+            {foundRelics.map((r) => (
+                <div key={r.id} className="room-detail-relic">◆ {r.name} — unclaimed</div>
+            ))}
+            {canPrimeMove && (
+                <button type="button" className="primary" onClick={() => onPrimeMove(roomId)}>
+                    Prime Move → {room.name}
+                </button>
+            )}
+        </div>
+    );
+}
+
+function TurnDiffStrip({ events }: Readonly<{ events: readonly RelicEvent[] }>) {
+    const lastTurnRound = [...events].reverse().find(isTurnResultEvent)?.round;
+    if (lastTurnRound === undefined) return null;
+
+    const diffEvents = events.filter(
+        (e) => e.round === lastTurnRound && isTurnResultEvent(e),
+    );
+    if (diffEvents.length === 0) return null;
+
+    return (
+        <div className="turn-diff-strip" aria-label={`Round ${lastTurnRound} results`}>
+            <span className="turn-diff-label">R{lastTurnRound}</span>
+            {diffEvents.map((e) => (
+                <span key={e.id} className={`turn-diff-event tone-${e.tone ?? 'neutral'}`}>
+                    {turnDiffSymbol(e.type)} {e.message}
+                </span>
+            ))}
+        </div>
+    );
+}
+
+function PersonalRoundCard({
+    events,
+    localPlayerId,
+}: Readonly<{ events: readonly RelicEvent[]; localPlayerId?: string }>) {
+    if (!localPlayerId) return null;
+
+    const lastTurnRound = [...events].reverse().find(isTurnResultEvent)?.round;
+    if (lastTurnRound === undefined) return null;
+
+    const personal = events.filter(
+        (e) => e.round === lastTurnRound && isTurnResultEvent(e) && isPersonalEvent(e, localPlayerId),
+    );
+    if (personal.length === 0) return null;
+
+    return (
+        <div className="panel personal-round-card">
+            <span className="panel-label">Your Round {lastTurnRound}</span>
+            <div className="personal-round-list">
+                {personal.map((e) => (
+                    <div key={e.id} className={`personal-round-entry tone-${e.tone ?? 'neutral'}`}>
+                        <span className="personal-round-symbol">{turnDiffSymbol(e.type)}</span>
+                        <span>{e.message}</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function turnDiffSymbol(type: RelicEventType): string {
+    switch (type) {
+        case 'player_moved': return '→';
+        case 'player_searched': return '?';
+        case 'relic_found': return '◆';
+        case 'steal_succeeded': return '^';
+        case 'steal_failed': return 'x';
+        case 'escape_failed': return 'x';
+        case 'player_escaped': return '+';
+        case 'player_damaged': return '!';
+        case 'room_collapsed': return '#';
+        case 'room_unstable': return '~';
+        case 'noise_pulse': return '~';
+        default: return '·';
+    }
 }
 
 function HunterList({
@@ -1421,6 +2495,7 @@ function HunterChip({
     submitted: boolean;
 }>) {
     const character = findRelicCharacter(player.characterId);
+    const maxHealth = 3 + (character.healthBonus ?? 0);
     const status = player.escaped
         ? 'escaped'
         : player.defeated
@@ -1436,6 +2511,7 @@ function HunterChip({
                 'hunter-chip',
                 player.playerId === localPlayerId ? 'active' : '',
                 submitted ? 'submitted' : '',
+                player.defeated ? 'defeated' : '',
             ].filter(Boolean).join(' ')}
         >
             <span
@@ -1444,6 +2520,16 @@ function HunterChip({
             />
             <strong>{player.username}</strong>
             <span>{player.score}</span>
+            {!player.escaped && !player.defeated && (
+                <span className="hunter-chip-health" aria-label={`${player.health} health`}>
+                    {Array.from({ length: maxHealth }, (_, i) => (
+                        <span
+                            key={i}
+                            className={`hunter-chip-pip${i >= player.health ? ' empty' : ''}${player.health === 1 && i === 0 ? ' critical' : ''}`}
+                        />
+                    ))}
+                </span>
+            )}
             <small>
                 {character.role} / {status}
             </small>
@@ -1692,6 +2778,12 @@ function narratorLine(event: RelicEvent): string {
     return lines[event.id.charCodeAt(event.id.length - 1) % lines.length];
 }
 
+function isPersonalEvent(event: RelicEvent, localPlayerId: string | undefined): boolean {
+    if (!localPlayerId) return false;
+    return event.animationCue?.playerId === localPlayerId ||
+        event.animationCue?.targetPlayerId === localPlayerId;
+}
+
 function toneClass(event: RelicEvent | undefined): string {
     return event?.tone ? `tone-${event.tone}` : 'tone-neutral';
 }
@@ -1728,6 +2820,87 @@ function Status({ label, value }: Readonly<{ label: string; value: string }>) {
     );
 }
 
+function WinLeader({ snapshot }: Readonly<{ snapshot?: RelicPublicSnapshot }>) {
+    if (!snapshot || snapshot.phase === 'lobby') {
+        return <Status label="Leader" value="-"/>;
+    }
+    const leader = [...snapshot.players].sort((a, b) => {
+        const aScore = a.score + snapshot.relics.filter((r) => r.carriedBy === a.playerId).reduce((s, r) => s + r.value, 0);
+        const bScore = b.score + snapshot.relics.filter((r) => r.carriedBy === b.playerId).reduce((s, r) => s + r.value, 0);
+        return bScore - aScore;
+    })[0];
+    if (!leader) return <Status label="Leader" value="-"/>;
+    const projectedScore = leader.score +
+        snapshot.relics.filter((r) => r.carriedBy === leader.playerId).reduce((s, r) => s + r.value, 0);
+    return (
+        <div className="status-pill">
+            <span>Leader</span>
+            <strong>{leader.username.length > 8 ? leader.username.slice(0, 7) + '…' : leader.username} · {projectedScore}</strong>
+        </div>
+    );
+}
+
+function RoundStatus({ round, maxRounds }: Readonly<{ round: number; maxRounds: number }>) {
+    const pct = Math.min(100, (round / maxRounds) * 100);
+    const urgentClass = pct >= 70 ? 'round-urgent' : pct >= 45 ? 'round-near' : '';
+    return (
+        <div className={`status-pill round-status ${urgentClass}`}>
+            <span>Round</span>
+            <strong>{round} / {maxRounds}</strong>
+            <div className="round-bar-track" aria-hidden="true">
+                <div className="round-bar-fill" style={{ width: `${pct}%` }}/>
+            </div>
+        </div>
+    );
+}
+
+function castleMapExitDistances(map: RelicPublicSnapshot['map']): Map<string, number> {
+    const distances = new Map<string, number>();
+    const exitRoom = map.find((room) => room.kind === 'exit');
+    if (!exitRoom) return distances;
+    const queue: string[] = [exitRoom.id];
+    distances.set(exitRoom.id, 0);
+    while (queue.length > 0) {
+        const currentId = queue.shift()!;
+        const current = map.find((room) => room.id === currentId);
+        if (!current) continue;
+        for (const neighborId of current.neighbors) {
+            if (distances.has(neighborId)) continue;
+            const neighbor = map.find((room) => room.id === neighborId);
+            if (!neighbor || neighbor.collapsed) continue;
+            distances.set(neighborId, distances.get(currentId)! + 1);
+            queue.push(neighborId);
+        }
+    }
+    return distances;
+}
+
+function castleMapExitPath(
+    map: RelicPublicSnapshot['map'],
+    fromRoomId: string,
+): readonly string[] | undefined {
+    const exitRoom = map.find((r) => r.kind === 'exit');
+    if (!exitRoom) return undefined;
+    if (fromRoomId === exitRoom.id) return [fromRoomId];
+    const visited = new Set<string>([fromRoomId]);
+    const queue: Array<readonly string[]> = [[fromRoomId]];
+    while (queue.length > 0) {
+        const path = queue.shift()!;
+        const current = map.find((r) => r.id === path[path.length - 1]);
+        if (!current) continue;
+        for (const neighborId of current.neighbors) {
+            if (visited.has(neighborId)) continue;
+            const neighbor = map.find((r) => r.id === neighborId);
+            if (!neighbor || neighbor.collapsed) continue;
+            const next = [...path, neighborId];
+            if (neighborId === exitRoom.id) return next;
+            visited.add(neighborId);
+            queue.push(next);
+        }
+    }
+    return undefined;
+}
+
 function castleMapBounds(map: RelicPublicSnapshot['map']): CastleMapBounds {
     const xs = map.map((room) => room.x);
     const zs = map.map((room) => room.z);
@@ -1760,6 +2933,20 @@ function castleMapPlayerOffset(index: number): Readonly<{ x: number; y: number }
     };
 }
 
+function roomKindMapColor(room: RelicPublicSnapshot['map'][number]): string {
+    if (room.collapsed) return '#514a3f';
+    if (room.unstable) return '#df7a4560';
+    switch (room.kind) {
+        case 'exit': return '#7dd3fc30';
+        case 'treasure': return '#b7e66e30';
+        case 'shrine': return '#b9a7f430';
+        case 'monster': return '#b86f7f30';
+        case 'trap': return '#f19a6430';
+        case 'storage': return '#c69b5f30';
+        default: return '#93b7aa18';
+    }
+}
+
 function roomName(
     snapshot: { map: readonly { id: string; name: string }[] } | undefined,
     roomId: string,
@@ -1769,4 +2956,99 @@ function roomName(
 
 function shortId(id: string): string {
     return id.length <= 8 ? id : id.slice(0, 8);
+}
+
+function RelicProgressPill({ relics }: Readonly<{
+    relics?: RelicPublicSnapshot['relics'];
+}>) {
+    if (!relics) return <Status label="Relics" value="-"/>;
+    const found = relics.filter((r) => r.foundBy).length;
+    const escaped = relics.filter((r) => r.escapedBy).length;
+    const total = relics.length;
+    const pct = total > 0 ? Math.round((found / total) * 100) : 0;
+    const escapedPct = total > 0 ? Math.round((escaped / total) * 100) : 0;
+    return (
+        <div className="status-pill relic-progress-pill">
+            <span>Relics</span>
+            <strong>{found}/{total}</strong>
+            {escaped > 0 && <small>{escaped} safe</small>}
+            <div className="relic-bar-track" aria-hidden="true">
+                <div className="relic-bar-fill" style={{ width: `${pct}%` }}/>
+                {escaped > 0 && (
+                    <div className="relic-bar-escaped" style={{ width: `${escapedPct}%` }}/>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function SceneMinimapOverlay({
+    snapshot,
+    localPlayerId,
+}: Readonly<{ snapshot: RelicPublicSnapshot; localPlayerId?: string }>) {
+    if (snapshot.phase === 'lobby') return null;
+    const bounds = castleMapBounds(snapshot.map);
+    const localPlayer = snapshot.players.find((p) => p.playerId === localPlayerId);
+
+    const edges = snapshot.map.flatMap((room) =>
+        room.neighbors
+            .filter((nId) => room.id < nId)
+            .map((nId) => {
+                const neighbor = snapshot.map.find((r) => r.id === nId);
+                if (!neighbor) return null;
+                const from = castleMapPoint(room, bounds);
+                const to = castleMapPoint(neighbor, bounds);
+                return { key: `${room.id}-${nId}`, from, to };
+            })
+            .filter((e): e is NonNullable<typeof e> => e !== null)
+    );
+
+    return (
+        <div className="scene-minimap" aria-hidden="true">
+            <svg viewBox="0 0 100 100">
+                {edges.map((e) => (
+                    <line
+                        key={e.key}
+                        x1={e.from.x} y1={e.from.y}
+                        x2={e.to.x} y2={e.to.y}
+                        className="minimap-edge"
+                    />
+                ))}
+                {snapshot.map.map((room) => {
+                    const pt = castleMapPoint(room, bounds);
+                    const isLocal = localPlayer?.roomId === room.id;
+                    return (
+                        <circle
+                            key={room.id}
+                            cx={pt.x} cy={pt.y}
+                            r={isLocal ? 4.5 : 2.8}
+                            className={[
+                                'minimap-room',
+                                `minimap-${room.kind}`,
+                                isLocal ? 'minimap-local' : '',
+                                room.collapsed ? 'minimap-collapsed' : '',
+                            ].filter(Boolean).join(' ')}
+                        />
+                    );
+                })}
+                {snapshot.players
+                    .filter((p) => !p.escaped && !p.defeated && p.playerId !== localPlayerId)
+                    .map((p) => {
+                        const room = snapshot.map.find((r) => r.id === p.roomId);
+                        if (!room) return null;
+                        const pt = castleMapPoint(room, bounds);
+                        const char = findRelicCharacter(p.characterId);
+                        return (
+                            <circle
+                                key={p.playerId}
+                                cx={pt.x} cy={pt.y}
+                                r={2.2}
+                                fill={char.colors.accent}
+                                className="minimap-player"
+                            />
+                        );
+                    })}
+            </svg>
+        </div>
+    );
 }

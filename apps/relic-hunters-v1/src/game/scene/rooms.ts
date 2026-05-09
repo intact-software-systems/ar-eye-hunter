@@ -372,30 +372,44 @@ export function createRoomLights(runtime: RoomRuntime, room: RelicRoom): readonl
         return light;
     };
 
-    const warm = Color3.FromHexString('#ffbf5c');
+    const torchColor = room.kind === 'monster'
+        ? Color3.FromHexString('#ff6060')
+        : room.kind === 'trap'
+        ? Color3.FromHexString('#ff8c3a')
+        : Color3.FromHexString('#ffbf5c');
     const mystery = room.kind === 'exit'
         ? Color3.FromHexString('#8ee7f5')
         : room.kind === 'shrine'
         ? Color3.FromHexString('#b9a7f4')
         : room.kind === 'treasure'
         ? Color3.FromHexString('#f1c453')
+        : room.kind === 'monster'
+        ? Color3.FromHexString('#ff8080')
+        : room.kind === 'trap'
+        ? Color3.FromHexString('#f19a64')
         : Color3.FromHexString('#ffd08a');
     const torchZ = room.kind === 'exit' ? ROOM_SIZE / 2 - 0.28 : -ROOM_SIZE / 2 + 0.28;
+    const torchIntensity = room.kind === 'monster' ? 0.72 : room.kind === 'trap' ? 0.64 : 0.58;
     for (const x of [-1.35, 1.35]) {
         addLight(
             `room-torch-light-${room.id}-${x}`,
             new Vector3(x, 1.8, torchZ),
-            warm,
-            0.58,
+            torchColor,
+            torchIntensity,
             6.4,
         );
     }
 
+    const centerIntensity = room.kind === 'shrine' ? 0.52
+        : room.kind === 'treasure' ? 0.48
+        : room.kind === 'exit' ? 0.46
+        : room.kind === 'hallway' ? 0.22
+        : 0.34;
     addLight(
         `room-clue-light-${room.id}`,
         new Vector3(0, 1.25, 0),
         mystery,
-        room.kind === 'hallway' ? 0.22 : 0.34,
+        centerIntensity,
         5.2,
     );
 

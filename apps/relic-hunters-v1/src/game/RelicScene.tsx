@@ -56,6 +56,7 @@ type RelicSceneProps = Readonly<{
     localPlayerId?: string;
     selectedRoomId?: string;
     primedAction?: RelicActionInput;
+    focusRoomId?: string;
     onSelectRoom(roomId: string): void;
     onPrimeAction?(action: RelicActionInput): void;
 }>;
@@ -87,6 +88,8 @@ type SceneRuntime = Readonly<{
     playerTargets: Map<string, Vector3>;
     avatarParts: Map<string, readonly Mesh[]>;
     avatarMaterials: Map<string, readonly PBRMaterial[]>;
+    playerLabels: Map<string, Mesh>;
+    playerLabelTextures: Map<string, DynamicTexture>;
     relics: Map<string, Mesh>;
     props: Map<string, readonly Mesh[]>;
     hands: readonly Mesh[];
@@ -98,6 +101,7 @@ type SceneRuntime = Readonly<{
     effects: TimedEffect[];
     seenEventIds: Set<string>;
     eventPlaybackPrimed: { value: boolean };
+    focusRoomId: { value?: string };
     prompt: { value?: ScenePrompt };
     onPromptChange: { value(prompt?: ScenePrompt): void };
     inspection: { value?: InspectionFocus };
@@ -119,6 +123,7 @@ export function RelicScene({
                                localPlayerId,
                                selectedRoomId,
                                primedAction,
+                               focusRoomId,
                                onSelectRoom,
                                onPrimeAction,
                            }: RelicSceneProps) {
@@ -170,6 +175,12 @@ export function RelicScene({
     useEffect(() => {
         onPrimeActionRef.current = onPrimeAction;
     }, [onPrimeAction]);
+
+    useEffect(() => {
+        if (runtimeRef.current) {
+            runtimeRef.current.focusRoomId.value = focusRoomId;
+        }
+    }, [focusRoomId]);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -296,6 +307,8 @@ export function RelicScene({
             playerTargets: new Map(),
             avatarParts: new Map(),
             avatarMaterials: new Map(),
+            playerLabels: new Map(),
+            playerLabelTextures: new Map(),
             relics: new Map(),
             props: new Map(),
             hands: createFirstPersonHands(scene, handMaterial),
@@ -307,6 +320,7 @@ export function RelicScene({
             effects: [],
             seenEventIds: new Set(),
             eventPlaybackPrimed: { value: false },
+            focusRoomId: { value: undefined },
             prompt: { value: undefined },
             onPromptChange: { value: setScenePrompt },
             inspection: { value: undefined },
@@ -463,6 +477,11 @@ export function RelicScene({
         syncScene(runtime, snapshot, localPlayerId, selectedRoomId);
     }, [localPlayerId, selectedRoomId, snapshot]);
 
+    const roomStateKey = [localPlayerId, snapshot?.players.find((p) => p.playerId === localPlayerId)?.roomId].join(':');
+    const localPlayerActive = snapshot?.players.some(
+        (p) => p.playerId === localPlayerId && !p.escaped && !p.defeated,
+    ) ?? false;
+
     if (sceneError) {
         return (
             <FallbackRelicScene
@@ -483,6 +502,8 @@ export function RelicScene({
                 aria-label="Relic Hunters castle"
                 tabIndex={0}
             />
+            <RoomStateOverlay key={roomStateKey} snapshot={snapshot} localPlayerId={localPlayerId}/>
+            <TouchDPad active={localPlayerActive}/>
             <SceneInteractionPrompt
                 prompt={scenePrompt}
                 onPrimeAction={(action) => {
@@ -495,6 +516,41 @@ export function RelicScene({
                     primeSceneRuntimeAction(runtimeRef.current, action, onPrimeActionRef, onSelectRoomRef);
                 }}
             />
+        </>
+    );
+}
+
+function RoomStateOverlay({
+    snapshot,
+    localPlayerId,
+}: Readonly<{
+    snapshot?: RelicPublicSnapshot;
+    localPlayerId?: string;
+}>) {
+    if (!snapshot) return null;
+    const localPlayer = snapshot.players.find((p) => p.playerId === localPlayerId);
+    if (!localPlayer || localPlayer.escaped || localPlayer.defeated) return null;
+    const room = snapshot.map.find((r) => r.id === localPlayer.roomId);
+    if (!room) return null;
+    const isSearched = snapshot.roomInvestigations?.some((inv) => inv.roomId === room.id);
+
+    return (
+        <>
+            {room.unstable && !room.collapsed && (
+                <div className="room-vignette vignette-unstable" aria-hidden="true"/>
+            )}
+            {room.kind === 'exit' && !localPlayer.escaped && (
+                <div className="room-vignette vignette-exit" aria-hidden="true"/>
+            )}
+            <div className="room-kind-strip" aria-label="Room state">
+                <span className={`room-kind-pill room-kind-${room.kind}`}>{room.kind}</span>
+                {isSearched && (
+                    <span className="room-kind-pill room-state-searched">searched</span>
+                )}
+                {room.unstable && !room.collapsed && (
+                    <span className="room-kind-pill room-state-unstable">unstable</span>
+                )}
+            </div>
         </>
     );
 }
@@ -721,6 +777,21 @@ function syncPlayers(
             runtime.avatarMaterials.set(player.playerId, avatar.materials);
             runtime.playerMaterials.set(player.playerId, avatar.materials[0]);
             runtime.playerCharacterIds.set(player.playerId, player.characterId);
+            const { plane, texture } = createPlayerLabel(runtime, player);
+            runtime.playerLabels.set(player.playerId, plane);
+            runtime.playerLabelTextures.set(player.playerId, texture);
+        }
+
+        const character = findRelicCharacter(player.characterId);
+        const labelTexture = runtime.playerLabelTextures.get(player.playerId);
+        if (labelTexture) {
+            drawPlayerLabel(
+                labelTexture,
+                player.username,
+                player.health,
+                player.relicIds.length,
+                character.colors.accent,
+            );
         }
 
         const room = snapshot.map.find((candidate) => candidate.id === player.roomId);
@@ -920,10 +991,83 @@ function addSignatureProp(
     return parts;
 }
 
+function createPlayerLabel(
+    runtime: SceneRuntime,
+    player: RelicPublicSnapshot['players'][number],
+): { plane: Mesh; texture: DynamicTexture } {
+    const texture = new DynamicTexture(
+        `label-texture-${player.playerId}`,
+        { width: 256, height: 64 },
+        runtime.scene,
+        false,
+    );
+    const mat = new StandardMaterial(`label-mat-${player.playerId}`, runtime.scene);
+    mat.diffuseTexture = texture;
+    mat.emissiveTexture = texture;
+    mat.emissiveColor = Color3.White();
+    mat.backFaceCulling = false;
+    mat.useAlphaFromDiffuseTexture = true;
+    mat.alpha = 0.92;
+
+    const plane = MeshBuilder.CreatePlane(
+        `label-plane-${player.playerId}`,
+        { width: 1.0, height: 0.25 },
+        runtime.scene,
+    );
+    plane.billboardMode = Mesh.BILLBOARDMODE_ALL;
+    plane.material = mat;
+    plane.setEnabled(false);
+    return { plane, texture };
+}
+
+function drawPlayerLabel(
+    texture: DynamicTexture,
+    username: string,
+    health: number,
+    relicCount: number,
+    accentHex: string,
+): void {
+    const ctx = texture.getContext() as unknown as CanvasRenderingContext2D;
+    const w = 256;
+    const h = 64;
+    ctx.clearRect(0, 0, w, h);
+
+    ctx.fillStyle = 'rgba(14, 12, 10, 0.78)';
+    ctx.fillRect(4, 4, w - 8, h - 8);
+
+    ctx.font = 'bold 17px sans-serif';
+    ctx.fillStyle = accentHex;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    const label = username.length > 14 ? `${username.slice(0, 12)}…` : username;
+    ctx.fillText(label, w / 2, 8);
+
+    const barX = 18;
+    const barY = 38;
+    const barW = w - 36;
+    const barH = 8;
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+    ctx.fillRect(barX, barY, barW, barH);
+    const hFrac = Math.max(0, Math.min(1, health / 3));
+    ctx.fillStyle = hFrac > 0.65 ? '#4ade80' : hFrac > 0.32 ? '#fbbf24' : '#f87171';
+    ctx.fillRect(barX, barY, Math.round(barW * hFrac), barH);
+
+    if (relicCount > 0) {
+        ctx.font = '11px sans-serif';
+        ctx.fillStyle = '#f2c14e';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'top';
+        ctx.fillText(`◆${relicCount}`, w - 18, 8);
+    }
+
+    texture.update();
+}
+
 function setAvatarEnabled(runtime: SceneRuntime, playerId: string, enabled: boolean): void {
     for (const part of runtime.avatarParts.get(playerId) ?? []) {
         part.setEnabled(enabled);
     }
+    runtime.playerLabels.get(playerId)?.setEnabled(enabled);
 }
 
 function disposeAvatar(runtime: SceneRuntime, playerId: string): void {
@@ -933,12 +1077,16 @@ function disposeAvatar(runtime: SceneRuntime, playerId: string): void {
     for (const material of runtime.avatarMaterials.get(playerId) ?? []) {
         material.dispose();
     }
+    runtime.playerLabels.get(playerId)?.dispose();
+    runtime.playerLabelTextures.get(playerId)?.dispose();
     runtime.players.delete(playerId);
     runtime.playerMaterials.delete(playerId);
     runtime.playerTargets.delete(playerId);
     runtime.playerCharacterIds.delete(playerId);
     runtime.avatarParts.delete(playerId);
     runtime.avatarMaterials.delete(playerId);
+    runtime.playerLabels.delete(playerId);
+    runtime.playerLabelTextures.delete(playerId);
 }
 
 function syncRelics(runtime: SceneRuntime, snapshot: RelicPublicSnapshot): void {
@@ -1090,10 +1238,14 @@ function updatePlayerPositions(runtime: SceneRuntime): void {
         const delta = target.subtract(mesh.position);
         if (delta.lengthSquared() < 0.0008) {
             mesh.position.copyFrom(target);
-            continue;
+        } else {
+            mesh.position.addInPlace(delta.scale(factor));
         }
 
-        mesh.position.addInPlace(delta.scale(factor));
+        const label = runtime.playerLabels.get(playerId);
+        if (label?.isEnabled()) {
+            label.position.set(mesh.position.x, mesh.position.y + 0.92, mesh.position.z);
+        }
     }
 }
 
@@ -1115,6 +1267,23 @@ function updateCameraPose(runtime: SceneRuntime): void {
     const room = snapshot.map.find((candidate) => candidate.id === localPlayer.roomId);
     if (!room) {
         return;
+    }
+
+    // Spectator camera: pan to event focus room when no keys are held.
+    const focusRoomId = runtime.focusRoomId.value;
+    const isRoaming = runtime.pressedKeys.size > 0;
+    if (focusRoomId && !isRoaming && !runtime.inspection.value) {
+        const focusRoom = snapshot.map.find((candidate) => candidate.id === focusRoomId);
+        if (focusRoom) {
+            const fw = roomWorldPosition(focusRoom);
+            moveCameraToward(
+                runtime,
+                new Vector3(fw.x - 0.6, 5.4, fw.z - 4.2),
+                new Vector3(fw.x, 0.8, fw.z),
+                220,
+            );
+            return;
+        }
     }
 
     const targetRoom = chooseLookRoom(snapshot, room, runtime.selectedRoomId.value);
@@ -1850,4 +2019,41 @@ function toPlayerOffset(index: number): Readonly<{ x: number; z: number }> {
         x: Math.cos(angle) * 0.42,
         z: Math.sin(angle) * 0.42,
     };
+}
+
+function TouchDPad({ active }: Readonly<{ active: boolean }>) {
+    if (!active) return null;
+
+    function fireKey(key: string, down: boolean) {
+        window.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', { key, bubbles: true }));
+    }
+
+    const dirs = [
+        { key: 'w', label: '↑', col: 2, row: 1 },
+        { key: 'a', label: '←', col: 1, row: 2 },
+        { key: 's', label: '↓', col: 2, row: 3 },
+        { key: 'd', label: '→', col: 3, row: 2 },
+    ] as const;
+
+    return (
+        <div className="touch-dpad" aria-label="Movement controls">
+            {dirs.map(({ key, label, col, row }) => (
+                <button
+                    key={key}
+                    type="button"
+                    className="dpad-btn"
+                    style={{ gridColumn: col, gridRow: row }}
+                    onPointerDown={(e) => {
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                        fireKey(key, true);
+                    }}
+                    onPointerUp={() => fireKey(key, false)}
+                    onPointerCancel={() => fireKey(key, false)}
+                    onPointerLeave={() => fireKey(key, false)}
+                >
+                    {label}
+                </button>
+            ))}
+        </div>
+    );
 }
