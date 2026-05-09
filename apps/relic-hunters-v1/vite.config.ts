@@ -4,6 +4,7 @@ import path from 'path';
 
 export default defineConfig({
     plugins: [react()],
+    envPrefix: ['VITE_', 'API_'],
     resolve: {
         alias: {
             '@relic-hunters': path.resolve(__dirname, '../../packages/relic-hunters'),

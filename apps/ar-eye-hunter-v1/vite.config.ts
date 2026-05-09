@@ -4,6 +4,7 @@ import path from 'node:path';
 
 export default defineConfig({
     plugins: [react()],
+    envPrefix: ['VITE_', 'API_'],
     resolve: {
         alias: {
             '@shared-web': path.resolve(__dirname, '../../packages/shared-web'),
