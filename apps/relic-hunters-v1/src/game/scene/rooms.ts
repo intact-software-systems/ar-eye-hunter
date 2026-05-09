@@ -1292,6 +1292,65 @@ export function createRoomTorchParticles(
     return particles;
 }
 
+export function createRoomAtmosphereParticles(
+    scene: Scene,
+    room: RelicRoom,
+    flameTexture: DynamicTexture,
+): readonly ParticleSystem[] {
+    const world = roomWorldPosition(room);
+    switch (room.kind) {
+        case 'shrine':  return [spawnAtmoSystem(scene, `shrine-orbs-${room.id}`,  world, new Vector3(1.0, 0.4, 1.0), new Color4(0.68, 0.28, 1.0, 0.78), new Color4(0.9, 0.6, 1.0, 0.55), new Color4(0.4, 0.1, 0.8, 0), 0.11, 0.21, 3.8, 5.8, 3,  new Vector3(-0.05, 0.28, -0.05), new Vector3(0.05, 0.55, 0.05), 0.04, 0.11, new Vector3(0, -0.018, 0), flameTexture)];
+        case 'monster': return [spawnAtmoSystem(scene, `monster-wisps-${room.id}`, world, new Vector3(1.5, 0.1, 1.5), new Color4(0.55, 0.06, 0.06, 0.52), new Color4(0.3, 0.08, 0.06, 0.35), new Color4(0.06, 0.02, 0.02, 0), 0.22, 0.42, 2.8, 4.5, 3,  new Vector3(-0.04, 0.12, -0.04), new Vector3(0.04, 0.28, 0.04), 0.03, 0.08, new Vector3(0, -0.006, 0), flameTexture)];
+        case 'treasure':return [spawnAtmoSystem(scene, `treasure-sparks-${room.id}`,new Vector3(world.x, world.y + 0.45, world.z + 0.3), new Vector3(0.5, 0.5, 0.4), new Color4(1.0, 0.88, 0.22, 0.92), new Color4(1.0, 0.7, 0.14, 0.72), new Color4(0.8, 0.5, 0.08, 0), 0.04, 0.09, 0.9, 2.0, 12, new Vector3(-0.12, 0.5, -0.1), new Vector3(0.12, 1.2, 0.1), 0.08, 0.24, new Vector3(0, -0.38, 0), flameTexture)];
+        case 'exit':    return [spawnAtmoSystem(scene, `exit-beams-${room.id}`,    new Vector3(world.x, world.y + 0.2, world.z + ROOM_SIZE / 2 - 0.5), new Vector3(0.8, 0.2, 0.2), new Color4(0.68, 0.96, 1.0, 0.76), new Color4(0.85, 1.0, 1.0, 0.55), new Color4(0.5, 0.8, 1.0, 0), 0.06, 0.14, 1.6, 3.2, 6,  new Vector3(-0.04, 1.0, -0.04), new Vector3(0.04, 2.2, 0.04), 0.1,  0.28, new Vector3(0, -0.04, 0), flameTexture)];
+        default: return [];
+    }
+}
+
+function spawnAtmoSystem(
+    scene: Scene,
+    name: string,
+    emitter: Vector3,
+    box: Vector3,
+    color1: Color4,
+    color2: Color4,
+    colorDead: Color4,
+    minSize: number,
+    maxSize: number,
+    minLife: number,
+    maxLife: number,
+    emitRate: number,
+    dir1: Vector3,
+    dir2: Vector3,
+    minPower: number,
+    maxPower: number,
+    gravity: Vector3,
+    texture: DynamicTexture,
+): ParticleSystem {
+    const sys = new ParticleSystem(name, emitRate * Math.ceil(maxLife) + 4, scene);
+    sys.particleTexture = texture;
+    sys.emitter = emitter.clone();
+    sys.minEmitBox = box.negate();
+    sys.maxEmitBox = new Vector3(box.x, box.y, box.z);
+    sys.color1 = color1;
+    sys.color2 = color2;
+    sys.colorDead = colorDead;
+    sys.minSize = minSize;
+    sys.maxSize = maxSize;
+    sys.minLifeTime = minLife;
+    sys.maxLifeTime = maxLife;
+    sys.emitRate = emitRate;
+    sys.direction1 = dir1;
+    sys.direction2 = dir2;
+    sys.minEmitPower = minPower;
+    sys.maxEmitPower = maxPower;
+    sys.updateSpeed = 0.012;
+    sys.gravity = gravity;
+    sys.blendMode = ParticleSystem.BLENDMODE_ADD;
+    sys.start();
+    return sys;
+}
+
 function spawnTorchFlame(
     scene: Scene,
     position: Vector3,

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import '@babylonjs/core/Culling/ray.js';
+import '@babylonjs/core/Rendering/geometryBufferRendererSceneComponent.js';
 import { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera.js';
+import { SSAO2RenderingPipeline } from '@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/ssao2RenderingPipeline.js';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { Engine } from '@babylonjs/core/Engines/engine.js';
@@ -37,6 +39,7 @@ import {
     createCastleMaterials,
     createFlameTexture,
     createJapaneseLobbyScene,
+    createRoomAtmosphereParticles,
     createRoomLights,
     createRoomProps,
     createRoomTorchParticles,
@@ -65,6 +68,7 @@ type SceneRuntime = Readonly<{
     engine: Engine;
     scene: Scene;
     camera: UniversalCamera;
+    pipeline: DefaultRenderingPipeline;
     castleMaterials: CastleMaterials;
     introMeshes: readonly Mesh[];
     snapshot: { value?: RelicPublicSnapshot };
@@ -229,6 +233,23 @@ export function RelicScene({
         pipeline.imageProcessingEnabled = true;
         pipeline.imageProcessing.contrast = 1.15;
         pipeline.imageProcessing.exposure = 1.04;
+        pipeline.depthOfFieldEnabled = true;
+        pipeline.depthOfField.fStop = 1.4;
+        pipeline.depthOfField.focalLength = 50;
+        pipeline.depthOfField.focusDistance = 5200;
+        pipeline.depthOfFieldBlurLevel = 0; // low = fast
+
+        // SSAO2 for ambient occlusion — makes stone corners look solid and 3-dimensional
+        try {
+            const ssao = new SSAO2RenderingPipeline('relic-ssao', scene, { ssaoRatio: 0.5, blurRatio: 1 }, [camera]);
+            ssao.radius = 3.5;
+            ssao.totalStrength = 1.0;
+            ssao.base = 0.1;
+            ssao.maxZ = 40;
+            ssao.samples = 16;
+        } catch {
+            // SSAO2 not available in this context — continue without it
+        }
 
         const glowLayer = new GlowLayer('relic-glow', scene);
         glowLayer.intensity = 0.82;
@@ -281,6 +302,7 @@ export function RelicScene({
             engine,
             scene,
             camera,
+            pipeline,
             castleMaterials,
             introMeshes,
             snapshot: { value: snapshotRef.current },
@@ -748,7 +770,10 @@ function syncRooms(
             runtime.props.set(room.id, createRoomProps(runtime, room, rooms, mesh));
             runtime.roomBlockers.set(room.id, roomCollisionBoxes(room));
             runtime.roomLights.set(room.id, createRoomLights(runtime, room));
-            runtime.roomParticles.set(room.id, createRoomTorchParticles(runtime.scene, room, runtime.flameTexture));
+            runtime.roomParticles.set(room.id, [
+                ...createRoomTorchParticles(runtime.scene, room, runtime.flameTexture),
+                ...createRoomAtmosphereParticles(runtime.scene, room, runtime.flameTexture),
+            ]);
         }
 
         let material = runtime.roomMaterials.get(room.id);
@@ -1191,6 +1216,7 @@ function updateRuntime(runtime: SceneRuntime): void {
     updateLightFlicker(runtime);
     updateEffects(runtime);
     updateRelics(runtime);
+    updateDynamicPostProcess(runtime);
 }
 
 function updateSceneVisibility(runtime: SceneRuntime): void {
@@ -1642,6 +1668,35 @@ function updateRelics(runtime: SceneRuntime): void {
         mesh.rotation.y = now / 1400 + seed;
         mesh.rotation.x = Math.sin(now / 1100 + seed) * 0.28;
     }
+}
+
+function updateDynamicPostProcess(runtime: SceneRuntime): void {
+    const room = currentLocalRoom(runtime);
+    const now = performance.now();
+
+    // Depth of field: on in lobby (cinematic), off in-game
+    const inLobby = !runtime.snapshot.value || !runtime.localPlayerId.value ||
+        !runtime.snapshot.value.players.find((p) => p.playerId === runtime.localPlayerId.value);
+    if (inLobby) {
+        runtime.pipeline.depthOfFieldEnabled = true;
+        runtime.pipeline.depthOfField.focusDistance = 4800 + Math.sin(now / 9000) * 1200;
+    } else {
+        runtime.pipeline.depthOfFieldEnabled = false;
+    }
+
+    // Exposure and contrast: smoothly transition per room kind
+    const [tExp, tContrast] = !room ? [1.04, 1.15]
+        : room.kind === 'monster' ? [0.84, 1.44]
+        : room.kind === 'trap' ? [0.91, 1.30]
+        : room.kind === 'shrine' ? [1.10, 1.08]
+        : room.kind === 'treasure' ? [1.18, 1.05]
+        : room.kind === 'exit' ? [1.22, 1.02]
+        : [1.04, 1.15];
+
+    const lerpSpeed = Math.min(1, runtime.engine.getDeltaTime() / 550);
+    const ip = runtime.pipeline.imageProcessing;
+    ip.exposure += (tExp - ip.exposure) * lerpSpeed;
+    ip.contrast += (tContrast - ip.contrast) * lerpSpeed;
 }
 
 function updateLightFlicker(runtime: SceneRuntime): void {
