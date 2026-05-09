@@ -16,7 +16,7 @@ import './styles.css';
 
 const env = (import.meta as { env?: Record<string, string | undefined> }).env ?? {};
 rallar.configure({
-    apiBaseUrl: env['VITE_RALLAR_API_BASE_URL'] ?? env['VITE_API_BASE_URL'] ?? '',
+    apiBaseUrl: env['VITE_RALLAR_API_BASE_URL'] ?? env['API_BASE_URL'] ?? '',
 });
 
 const root = document.getElementById('root');
