@@ -543,6 +543,12 @@ function RoomStateOverlay({
             {room.kind === 'exit' && !localPlayer.escaped && (
                 <div className="room-vignette vignette-exit" aria-hidden="true"/>
             )}
+            {room.kind === 'monster' && !room.collapsed && (
+                <div className="room-vignette vignette-monster" aria-hidden="true"/>
+            )}
+            {room.kind === 'trap' && !room.collapsed && (
+                <div className="room-vignette vignette-trap" aria-hidden="true"/>
+            )}
             <div className="room-kind-strip" aria-label="Room state">
                 <span className={`room-kind-pill room-kind-${room.kind}`}>{room.kind}</span>
                 {isSearched && (
@@ -1101,19 +1107,23 @@ function syncRelics(runtime: SceneRuntime, snapshot: RelicPublicSnapshot): void 
         if (!mesh) {
             mesh = MeshBuilder.CreateBox(
                 `relic-${relic.id}`,
-                { size: 0.35 },
+                { size: 0.3 },
                 runtime.scene,
             );
-            const material = new StandardMaterial(`relic-material-${relic.id}`, runtime.scene);
-            material.diffuseColor = new Color3(0.95, 0.66, 0.22);
-            material.emissiveColor = new Color3(0.14, 0.08, 0.01);
+            const material = new PBRMaterial(`relic-material-${relic.id}`, runtime.scene);
+            material.albedoColor = Color3.FromHexString('#f1c453');
+            material.emissiveColor = Color3.FromHexString('#f2c14e').scale(0.52);
+            material.metallic = 0.82;
+            material.roughness = 0.18;
             mesh.material = material;
+            mesh.position.y = 0.72;
             runtime.relics.set(relic.id, mesh);
         }
         const room = snapshot.map.find((candidate) => candidate.id === relic.roomId);
         if (room) {
             const world = roomWorldPosition(room);
-            mesh.position.set(world.x, 0.72, world.z);
+            mesh.position.x = world.x;
+            mesh.position.z = world.z;
         }
     }
 
@@ -1180,6 +1190,7 @@ function updateRuntime(runtime: SceneRuntime): void {
     updateFirstPersonHands(runtime);
     updateLightFlicker(runtime);
     updateEffects(runtime);
+    updateRelics(runtime);
 }
 
 function updateSceneVisibility(runtime: SceneRuntime): void {
@@ -1256,12 +1267,15 @@ function updateCameraPose(runtime: SceneRuntime): void {
     const localPlayer = snapshot?.players.find((player) => player.playerId === localPlayerId);
     if (!snapshot || !localPlayer) {
         setRuntimePrompt(runtime, undefined);
-        moveCameraToward(
-            runtime,
-            new Vector3(0.8, 1.88, -10.2),
-            new Vector3(0, 2.4, 7.5),
-            480,
-        );
+        // Cinematic slow orbit around the Japanese lobby
+        const t = performance.now() / 1000;
+        const camX = Math.sin(t * 0.18) * 5.2;
+        const camZ = -9.4 + Math.sin(t * 0.11) * 1.8;
+        const camY = 1.76 + Math.sin(t * 0.14) * 0.32;
+        const lookX = Math.sin(t * 0.08) * 1.4;
+        const lookZ = 5.2 + Math.sin(t * 0.13) * 2.2;
+        const lookY = 2.6 + Math.sin(t * 0.09) * 0.38;
+        moveCameraToward(runtime, new Vector3(camX, camY, camZ), new Vector3(lookX, lookY, lookZ), 1800);
         return;
     }
 
@@ -1620,6 +1634,16 @@ function updateFirstPersonHands(runtime: SceneRuntime): void {
     }
 }
 
+function updateRelics(runtime: SceneRuntime): void {
+    const now = performance.now();
+    for (const [relicId, mesh] of runtime.relics.entries()) {
+        const seed = relicId.charCodeAt(0) * 0.618;
+        mesh.position.y = 0.72 + Math.sin(now / 820 + seed) * 0.14;
+        mesh.rotation.y = now / 1400 + seed;
+        mesh.rotation.x = Math.sin(now / 1100 + seed) * 0.28;
+    }
+}
+
 function updateLightFlicker(runtime: SceneRuntime): void {
     const now = performance.now();
     for (const light of runtime.flickerLights) {
@@ -1709,6 +1733,7 @@ function spawnCueEffect(runtime: SceneRuntime, cue: RelicAnimationCue): void {
         case 'relic_reveal':
             spawnPulse(runtime, center, '#a3e635', durationMs, cue.intensity);
             spawnGlow(runtime, center.add(new Vector3(0, 0.9, 0)), '#f2c14e', durationMs);
+            spawnRelicFireworks(runtime, center, durationMs);
             break;
         case 'steal_attempt':
             spawnPulse(runtime, center, '#fb7185', durationMs, cue.intensity);
@@ -1943,6 +1968,48 @@ function spawnPlayerJolt(
             mesh.position.copyFrom(target);
         },
     });
+}
+
+function spawnRelicFireworks(runtime: SceneRuntime, center: Vector3, durationMs: number): void {
+    const colors = ['#f2c14e', '#fef08a', '#a3e635', '#fbbf24'];
+    for (let i = 0; i < 12; i++) {
+        const angle = (Math.PI * 2 * i) / 12;
+        const elevation = Math.PI / 4 + (i % 3) * 0.18;
+        const dir = new Vector3(
+            Math.cos(angle) * Math.cos(elevation),
+            Math.sin(elevation),
+            Math.sin(angle) * Math.cos(elevation),
+        );
+        const speed = 1.4 + (i % 4) * 0.35;
+        const hex = colors[i % colors.length];
+        const mesh = MeshBuilder.CreateSphere(
+            `effect-spark-${i}-${Date.now()}`,
+            { diameter: 0.1, segments: 6 },
+            runtime.scene,
+        );
+        mesh.position.copyFrom(center.add(new Vector3(0, 0.5, 0)));
+        const material = effectMaterial(runtime.scene, `spark-mat-${i}-${Date.now()}`, hex, 0.92);
+        mesh.material = material;
+        const captured = { dir, speed };
+        runtime.effects.push({
+            startedAt: performance.now(),
+            durationMs,
+            update(progress) {
+                const eased = easeOut(progress);
+                const drop = -2.8 * progress * progress;
+                mesh.position.copyFrom(center.add(new Vector3(
+                    captured.dir.x * eased * captured.speed,
+                    0.5 + captured.dir.y * eased * captured.speed * 0.72 + drop,
+                    captured.dir.z * eased * captured.speed,
+                )));
+                material.alpha = Math.max(0, (1 - easeOut(progress)) * 0.92);
+            },
+            dispose() {
+                mesh.dispose();
+                material.dispose();
+            },
+        });
+    }
 }
 
 function spawnHeartRelic(runtime: SceneRuntime, durationMs: number): void {
