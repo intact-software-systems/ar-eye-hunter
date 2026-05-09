@@ -17,29 +17,11 @@ import {
     createWizardHost,
     createWizardAmbientParticles,
 } from './scene/castleExterior.ts';
+import { AUTO_COMPLETE_MS, INTRO_DIALOGUE, pickSpeechVoice, type Lang } from './lang.ts';
 
-type DialogueLine = Readonly<{
-    text: string;
-    delayMs: number;
-    isCast?: boolean;
-}>;
+type IntroSceneProps = Readonly<{ onComplete: () => void; lang: Lang }>;
 
-const DIALOGUE: readonly DialogueLine[] = [
-    { text: 'Welcome... brave hunters.', delayMs: 1000 },
-    { text: 'The Castle of Yamashiro has stood for a thousand years, hiding relics of immense power.', delayMs: 4200 },
-    { text: 'You are not alone in this quest. Others seek the same relics.', delayMs: 9200 },
-    { text: 'Navigate the treacherous halls. Decipher ancient clues. Claim what you can carry.', delayMs: 13200 },
-    { text: 'But be warned — monsters stir in the dark. Traps are set. And not every hunter... plays fair.', delayMs: 17800 },
-    { text: 'Only the cunning, the bold, and the lucky shall escape with their prize.', delayMs: 23200 },
-    { text: '...', delayMs: 27200 },
-    { text: 'Now go. Find the relics.', delayMs: 28000 },
-    { text: 'And may the ruin... remember your name!', delayMs: 30200, isCast: true },
-];
-const AUTO_COMPLETE_MS = 34000;
-
-type IntroSceneProps = Readonly<{ onComplete: () => void }>;
-
-export function IntroScene({ onComplete }: IntroSceneProps) {
+export function IntroScene({ onComplete, lang }: IntroSceneProps) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const [lineIndex, setLineIndex] = useState(-1);
     const [casting, setCasting] = useState(false);
@@ -47,6 +29,22 @@ export function IntroScene({ onComplete }: IntroSceneProps) {
     const castTriggerRef = useRef<(() => void) | null>(null);
     const completeRef = useRef(onComplete);
     completeRef.current = onComplete;
+    const langRef = useRef(lang);
+    langRef.current = lang;
+    const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
+
+    // Load speech voice (voices may be async)
+    useEffect(() => {
+        if (!('speechSynthesis' in window)) return;
+        const loadVoice = () => {
+            voiceRef.current = pickSpeechVoice(langRef.current);
+        };
+        loadVoice();
+        window.speechSynthesis.addEventListener('voiceschanged', loadVoice);
+        return () => {
+            window.speechSynthesis.removeEventListener('voiceschanged', loadVoice);
+        };
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // BabylonJS scene
     useEffect(() => {
@@ -255,12 +253,28 @@ export function IntroScene({ onComplete }: IntroSceneProps) {
         };
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Dialogue timing
+    // Dialogue timing + speech synthesis
     useEffect(() => {
+        const dialogue = INTRO_DIALOGUE[langRef.current];
+        const speechLang = langRef.current === 'no' ? 'nb-NO' : 'en-GB';
+        const hasSpeech = 'speechSynthesis' in window;
+
+        const speak = (text: string) => {
+            if (!hasSpeech || text === '...') return;
+            window.speechSynthesis.cancel();
+            const utter = new SpeechSynthesisUtterance(text);
+            utter.lang = speechLang;
+            utter.rate = 0.88;
+            utter.pitch = 0.78;
+            if (voiceRef.current) utter.voice = voiceRef.current;
+            window.speechSynthesis.speak(utter);
+        };
+
         const timers: number[] = [];
-        for (const [index, line] of DIALOGUE.entries()) {
+        for (const [index, line] of dialogue.entries()) {
             timers.push(window.setTimeout(() => {
                 setLineIndex(index);
+                speak(line.text);
                 if (line.isCast) {
                     setCasting(true);
                     castTriggerRef.current?.();
@@ -268,10 +282,14 @@ export function IntroScene({ onComplete }: IntroSceneProps) {
             }, line.delayMs));
         }
         timers.push(window.setTimeout(() => completeRef.current(), AUTO_COMPLETE_MS));
-        return () => timers.forEach(clearTimeout);
+        return () => {
+            timers.forEach(clearTimeout);
+            if (hasSpeech) window.speechSynthesis.cancel();
+        };
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const currentText = lineIndex >= 0 ? DIALOGUE[lineIndex]?.text ?? '' : '';
+    const dialogue = INTRO_DIALOGUE[lang];
+    const currentText = lineIndex >= 0 ? dialogue[lineIndex]?.text ?? '' : '';
 
     return (
         <>
@@ -288,7 +306,10 @@ export function IntroScene({ onComplete }: IntroSceneProps) {
                 <button
                     type="button"
                     className="intro-skip-btn"
-                    onClick={() => completeRef.current()}
+                    onClick={() => {
+                        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+                        completeRef.current();
+                    }}
                 >
                     Skip intro
                 </button>

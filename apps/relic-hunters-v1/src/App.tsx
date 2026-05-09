@@ -14,6 +14,7 @@ import type {
 import { RELIC_CHARACTERS, findRelicCharacter } from '@relic-hunters/mod.ts';
 import { IntroScene } from './game/IntroScene.tsx';
 import { RelicScene } from './game/RelicScene.tsx';
+import { UI, type Lang } from './game/lang.ts';
 import { useRelicHunters } from './game/useRelicHunters.ts';
 import { colorForId } from './game/color.ts';
 import {
@@ -34,6 +35,14 @@ type ActionDraft = Readonly<{
 
 export default function App() {
     const [introComplete, setIntroComplete] = useState(false);
+    const [lang, setLang] = useState<Lang>(
+        () => (localStorage.getItem('relic-lang') as Lang | null) ?? 'en',
+    );
+    const toggleLang = () => setLang((l) => {
+        const next: Lang = l === 'en' ? 'no' : 'en';
+        localStorage.setItem('relic-lang', next);
+        return next;
+    });
     const game = useRelicHunters();
     const playedEventIdsRef = useRef<Set<string>>(new Set());
     const [authMode, setAuthMode] = useState<AuthMode>('login');
@@ -128,7 +137,7 @@ export default function App() {
         ? derivePartyCoordination(game.snapshot, game.session?.sessionId, draft.kind)
         : undefined;
     const objective = game.snapshot
-        ? toObjective(game.snapshot, currentPlayer)
+        ? toObjective(game.snapshot, currentPlayer, lang)
         : 'Create or join a room to begin the expedition.';
     const actionInfo = ACTION_INFO[draft.kind];
     const submitBlocker = game.snapshot && currentPlayer
@@ -287,7 +296,7 @@ export default function App() {
         const phase = game.snapshot?.phase;
         if (!phase) { prevPhaseRef.current = undefined; return; }
         if (prevPhaseRef.current && prevPhaseRef.current !== phase) {
-            const msg = phase === 'planning' ? 'The expedition begins!'
+            const msg = phase === 'planning' ? UI[lang].phaseBannerPlanning
                 : phase === 'finished' ? 'The ruin falls silent.'
                 : null;
             if (msg) {
@@ -478,7 +487,7 @@ export default function App() {
                     <span className="brand-mark"/>
                     <div>
                         <h1>Relic Hunters</h1>
-                        <p>{phaseLabel(game.snapshot?.phase ?? game.connectionState)}</p>
+                        <p>{phaseLabel(game.snapshot?.phase ?? game.connectionState, lang)}</p>
                     </div>
                 </div>
                 <div className="status-row">
@@ -590,6 +599,9 @@ export default function App() {
                                 >
                                     Atmosphere
                                 </button>
+                                <button type="button" onClick={toggleLang} title="Switch language / Bytt språk">
+                                    {lang === 'en' ? 'Norsk' : 'English'}
+                                </button>
                             </div>
 
                             <div className="room-list">
@@ -655,12 +667,16 @@ export default function App() {
                             >
                                 Atmosphere
                             </button>
+                            <button type="button" onClick={toggleLang} title="Switch language / Bytt språk">
+                                {lang === 'en' ? 'Norsk' : 'English'}
+                            </button>
                         </div>
 
                         {game.snapshot && game.snapshot.phase === 'lobby' && (
                             <LobbyPartyPanel
                                 snapshot={game.snapshot}
                                 localPlayerId={game.session.sessionId}
+                                lang={lang}
                             />
                         )}
 
@@ -821,8 +837,8 @@ export default function App() {
                             onClick={submitAction}
                         >
                             {game.snapshot?.submittedPlayerIds.includes(game.session.sessionId)
-                                ? 'Plan Locked'
-                                : <>Submit Plan <kbd className="action-key action-key-enter">↵</kbd></>}
+                                ? UI[lang].boundButton
+                                : <>{UI[lang].submitButton} <kbd className="action-key action-key-enter">↵</kbd></>}
                         </button>
                     </div>
                 )}
@@ -907,6 +923,7 @@ export default function App() {
                     localPlayerId={game.session?.sessionId}
                     phase={game.snapshot?.phase}
                     submittedPlayerIds={game.snapshot?.submittedPlayerIds ?? []}
+                    lang={lang}
                 />
                 <TurnDiffStrip events={revealedEvents}/>
                 <RoundChronicle
@@ -1023,7 +1040,7 @@ export default function App() {
             )}
 
             {!introComplete && (
-                <IntroScene onComplete={() => setIntroComplete(true)} />
+                <IntroScene onComplete={() => setIntroComplete(true)} lang={lang} />
             )}
         </main>
     );
@@ -1127,11 +1144,14 @@ function CharacterSelect({
 function LobbyPartyPanel({
     snapshot,
     localPlayerId,
-}: Readonly<{ snapshot: RelicPublicSnapshot; localPlayerId?: string }>) {
+    lang,
+}: Readonly<{ snapshot: RelicPublicSnapshot; localPlayerId?: string; lang: Lang }>) {
     if (snapshot.phase !== 'lobby' || snapshot.players.length === 0) return null;
+    const u = UI[lang];
     return (
         <div className="panel lobby-party-panel">
-            <span className="panel-label">Party</span>
+            <span className="panel-label">{u.huntersSummoned}</span>
+            <p className="lobby-keeper-watch">{u.keeperWatches}</p>
             <div className="lobby-party-list">
                 {snapshot.players.map((player) => {
                     const char = findRelicCharacter(player.characterId);
@@ -1150,7 +1170,7 @@ function LobbyPartyPanel({
                 })}
             </div>
             {snapshot.players.length < 2 && (
-                <small className="lobby-party-hint">Waiting for at least one more hunter…</small>
+                <small className="lobby-party-hint">{u.keeperAwaits}</small>
             )}
         </div>
     );
@@ -2468,11 +2488,13 @@ function HunterList({
     localPlayerId,
     phase,
     submittedPlayerIds,
+    lang,
 }: Readonly<{
     players: readonly RelicPlayer[];
     localPlayerId?: string;
     phase?: RelicPublicSnapshot['phase'];
     submittedPlayerIds: readonly string[];
+    lang: Lang;
 }>) {
     return (
         <div className="hunter-list">
@@ -2483,6 +2505,7 @@ function HunterList({
                     localPlayerId={localPlayerId}
                     phase={phase}
                     submitted={submittedPlayerIds.includes(player.playerId)}
+                    lang={lang}
                 />
             ))}
         </div>
@@ -2494,22 +2517,25 @@ function HunterChip({
     localPlayerId,
     phase,
     submitted,
+    lang,
 }: Readonly<{
     player: RelicPlayer;
     localPlayerId?: string;
     phase?: RelicPublicSnapshot['phase'];
     submitted: boolean;
+    lang: Lang;
 }>) {
     const character = findRelicCharacter(player.characterId);
     const maxHealth = 3 + (character.healthBonus ?? 0);
+    const u = UI[lang];
     const status = player.escaped
         ? 'escaped'
         : player.defeated
         ? 'down'
         : phase === 'planning'
         ? submitted
-            ? 'submitted'
-            : 'choosing'
+            ? u.bound
+            : u.heedingTheCall
         : player.roomId;
     return (
         <div
@@ -2562,38 +2588,42 @@ function toProgress(
 function toObjective(
     snapshot: RelicPublicSnapshot,
     currentPlayer: RelicPlayer | undefined,
+    lang: Lang,
 ): string {
+    const u = UI[lang];
     if (snapshot.phase === 'finished') {
-        return snapshot.winnerIds.length > 0
-            ? 'The highest score has claimed the Heart Relic.'
-            : 'The ruin has gone silent.';
+        return snapshot.winnerIds.length > 0 ? u.objectiveWon : u.objectiveSilent;
     }
 
     if (!currentPlayer) {
-        return 'Join the expedition to enter the ruin.';
+        return u.objectiveJoin;
     }
 
     if (snapshot.phase === 'lobby') {
-        return 'Gather hunters, then start the expedition.';
+        return u.objectiveLobby;
     }
 
     if (currentPlayer.escaped) {
-        return 'You escaped. Watch whether the others can beat your score.';
+        return u.objectiveEscaped;
     }
 
     if (currentPlayer.defeated) {
-        return 'You are down. The ruin keeps your relics.';
+        return u.objectiveDefeated;
     }
 
     if (snapshot.submittedPlayerIds.includes(currentPlayer.playerId)) {
         const waiting = activePlayerCount(snapshot) - snapshot.submittedPlayerIds.length;
         return waiting > 0
-            ? `Plan locked. Waiting for ${waiting} hunter${waiting === 1 ? '' : 's'}.`
-            : 'All plans are locked. The ruin is about to answer.';
+            ? (lang === 'no'
+                ? `Plan låst. Venter på ${waiting} jeger${waiting === 1 ? '' : 'e'}.`
+                : `Plan locked. Waiting for ${waiting} hunter${waiting === 1 ? '' : 's'}.`)
+            : u.objectiveAllLocked;
     }
 
     const roundsLeft = snapshot.maxRounds - snapshot.round + 1;
-    return `Find relics, then escape within ${roundsLeft} round${roundsLeft === 1 ? '' : 's'}.`;
+    return lang === 'no'
+        ? `Finn relikvier, unnslipp innen ${roundsLeft} runde${roundsLeft === 1 ? '' : 'r'}.`
+        : `Find relics, then escape within ${roundsLeft} round${roundsLeft === 1 ? '' : 's'}.`;
 }
 
 function activePlayerCount(snapshot: RelicPublicSnapshot): number {
@@ -2798,22 +2828,16 @@ function plural(word: string, count: number): string {
     return count === 1 ? word : `${word}s`;
 }
 
-function phaseLabel(value: string): string {
+function phaseLabel(value: string, lang: Lang): string {
+    const u = UI[lang];
     switch (value) {
-        case 'lobby':
-            return 'Gather hunters';
-        case 'planning':
-            return 'Choose secretly';
-        case 'finished':
-            return 'Expedition complete';
-        case 'connected':
-            return 'Choose a room';
-        case 'connecting':
-            return 'Opening the gate';
-        case 'signed-out':
-            return 'Sign in';
-        default:
-            return value;
+        case 'lobby':     return u.phaseLobby;
+        case 'planning':  return u.phasePlanning;
+        case 'finished':  return u.phaseFinished;
+        case 'connected': return u.phaseConnected;
+        case 'connecting':return u.phaseConnecting;
+        case 'signed-out':return u.phaseSignedOut;
+        default:          return value;
     }
 }
 

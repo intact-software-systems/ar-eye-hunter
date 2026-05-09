@@ -826,23 +826,37 @@ function syncPlayers(
             );
         }
 
-        const room = snapshot.map.find((candidate) => candidate.id === player.roomId);
-        if (room) {
-            const world = roomWorldPosition(room);
-            const offset = toPlayerOffset(index);
-            const target = new Vector3(world.x + offset.x, 0.65, world.z + offset.z);
+        if (snapshot.phase === 'lobby') {
+            // Show all hunters lined up in the castle courtyard, visible from lobby camera
+            const spacing = 1.2;
+            const totalWidth = (snapshot.players.length - 1) * spacing;
+            const startX = -totalWidth / 2;
+            const target = new Vector3(startX + index * spacing, 0.65, 1.8);
             if (!runtime.playerTargets.has(player.playerId)) {
                 mesh.position.copyFrom(target);
             }
             runtime.playerTargets.set(player.playerId, target);
+            mesh.scaling.setAll(1.0);
+            setAvatarEnabled(runtime, player.playerId, true);
+        } else {
+            const room = snapshot.map.find((candidate) => candidate.id === player.roomId);
+            if (room) {
+                const world = roomWorldPosition(room);
+                const offset = toPlayerOffset(index);
+                const target = new Vector3(world.x + offset.x, 0.65, world.z + offset.z);
+                if (!runtime.playerTargets.has(player.playerId)) {
+                    mesh.position.copyFrom(target);
+                }
+                runtime.playerTargets.set(player.playerId, target);
+            }
+            const scale = player.playerId === localPlayerId ? 1.14 : 1;
+            mesh.scaling.set(scale, scale, scale);
+            setAvatarEnabled(
+                runtime,
+                player.playerId,
+                player.playerId !== localPlayerId && !player.escaped && !player.defeated,
+            );
         }
-        const scale = player.playerId === localPlayerId ? 1.14 : 1;
-        mesh.scaling.set(scale, scale, scale);
-        setAvatarEnabled(
-            runtime,
-            player.playerId,
-            player.playerId !== localPlayerId && !player.escaped && !player.defeated,
-        );
     }
 
     for (const [playerId, mesh] of runtime.players.entries()) {
@@ -1216,6 +1230,7 @@ function updateRuntime(runtime: SceneRuntime): void {
     updateLightFlicker(runtime);
     updateEffects(runtime);
     updateRelics(runtime);
+    updateAvatarCompulsionState(runtime);
     updateDynamicPostProcess(runtime);
 }
 
@@ -1667,6 +1682,35 @@ function updateRelics(runtime: SceneRuntime): void {
         mesh.position.y = 0.72 + Math.sin(now / 820 + seed) * 0.14;
         mesh.rotation.y = now / 1400 + seed;
         mesh.rotation.x = Math.sin(now / 1100 + seed) * 0.28;
+    }
+}
+
+function updateAvatarCompulsionState(runtime: SceneRuntime): void {
+    const snapshot = runtime.snapshot.value;
+    if (!snapshot || snapshot.phase !== 'planning') return;
+    const now = performance.now();
+
+    for (const [playerId, materials] of runtime.avatarMaterials.entries()) {
+        const primary = materials[0];
+        if (!primary) continue;
+
+        if (snapshot.submittedPlayerIds.includes(playerId)) {
+            // Bound by the Keeper — cool blue-purple settled glow
+            const v = 0.10 + Math.sin(now / 2200) * 0.025;
+            primary.emissiveColor = Color3.Lerp(
+                primary.emissiveColor,
+                new Color3(v * 0.4, v * 0.3, v * 2.0),
+                0.06,
+            );
+        } else {
+            // Compelled to act — gold pulse urging action
+            const v = 0.30 + Math.sin(now / 480) * 0.18;
+            primary.emissiveColor = Color3.Lerp(
+                primary.emissiveColor,
+                new Color3(v, v * 0.72, 0.02),
+                0.08,
+            );
+        }
     }
 }
 
