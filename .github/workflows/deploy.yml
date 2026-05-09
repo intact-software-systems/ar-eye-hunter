@@ -81,6 +81,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-deno-
 
+      - name: Cache Deno + npm
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/deno
+            ~/.npm
+          key: ${{ runner.os }}-deno-${{ hashFiles('apps/relic-hunter-server-v1/deno.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-deno-
+
       - name: Prisma validate
         working-directory: apps/api-v1
         env:
