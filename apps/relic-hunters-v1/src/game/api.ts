@@ -1,4 +1,5 @@
 import { readSession } from '@shared/api/auth.ts';
+import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
 import type { RelicCommand, RelicPublicSnapshot } from '@relic-hunters/mod.ts';
 
 export async function fetchRelicSnapshot(gameId: string): Promise<RelicPublicSnapshot | undefined> {
@@ -7,7 +8,7 @@ export async function fetchRelicSnapshot(gameId: string): Promise<RelicPublicSna
         return undefined;
     }
 
-    const response = await fetch(`/api/relic/games/${encodeURIComponent(gameId)}`, {
+    const response = await fetch(`${readApiBaseUrl()}/api/relic/games/${encodeURIComponent(gameId)}`, {
         headers: {
             authorization: `Bearer ${session.accessToken}`,
             'x-client-id': session.clientId,
@@ -29,7 +30,7 @@ export async function resetRelicGame(gameId: string): Promise<RelicPublicSnapsho
         return undefined;
     }
 
-    const response = await fetch(`/api/relic/games/${encodeURIComponent(gameId)}/reset`, {
+    const response = await fetch(`${readApiBaseUrl()}/api/relic/games/${encodeURIComponent(gameId)}/reset`, {
         method: 'POST',
         headers: {
             authorization: `Bearer ${session.accessToken}`,
@@ -52,7 +53,7 @@ export async function sendRelicCommand(
         return undefined;
     }
 
-    const response = await fetch(`/api/relic/games/${encodeURIComponent(gameId)}/commands`, {
+    const response = await fetch(`${readApiBaseUrl()}/api/relic/games/${encodeURIComponent(gameId)}/commands`, {
         method: 'POST',
         headers: {
             authorization: `Bearer ${session.accessToken}`,
