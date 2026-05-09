@@ -33,26 +33,25 @@
       "DOM",
       "WebWorker"
     ],
-    "baseUrl": ".",
     "paths": {
       "@shared-web/*": [
-        "packages/shared-web/*"
+        "./packages/shared-web/*"
       ],
       "@shared-server/*": [
-        "packages/shared-server/*"
+        "./packages/shared-server/*"
       ],
       "@shared-graph/*": [
-        "packages/shared-graph/*"
+        "./packages/shared-graph/*"
       ],
       "@shared/*": [
-        "packages/shared/*"
+        "./packages/shared/*"
       ],
       "@relic-hunters/*": [
-        "packages/relic-hunters/*"
+        "./packages/relic-hunters/*"
       ]
     }
   },
   "exclude": [
-    "packages/tests"
+    "./packages/tests"
   ]
 }

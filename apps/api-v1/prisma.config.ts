@@ -1,11 +1,4 @@
-// prisma.config.ts
-import { defineConfig, env } from 'prisma/config';
-
-declare const process: {
-    loadEnvFile?: (path?: string) => void;
-};
-
-process.loadEnvFile?.('.env');
+import { defineConfig } from 'prisma/config';
 
 export default defineConfig({
     schema: 'prisma/schema.prisma',
@@ -13,6 +6,6 @@ export default defineConfig({
         path: 'prisma/migrations',
     },
     datasource: {
-        url: env('DATABASE_URL'),
+        url: Deno.env.get('DATABASE_URL'),
     },
 });

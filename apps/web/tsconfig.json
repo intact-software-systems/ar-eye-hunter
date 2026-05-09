@@ -10,7 +10,6 @@
       "ES2023",
       "DOM"
     ],
-    "baseUrl": ".",
     "paths": {
       "@shared-web/*": [
         "../../packages/shared-web/*"

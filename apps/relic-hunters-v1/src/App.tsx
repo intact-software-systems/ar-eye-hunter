@@ -12,6 +12,7 @@ import type {
     RelicPublicSnapshot,
 } from '@relic-hunters/mod.ts';
 import { RELIC_CHARACTERS, findRelicCharacter } from '@relic-hunters/mod.ts';
+import { IntroScene } from './game/IntroScene.tsx';
 import { RelicScene } from './game/RelicScene.tsx';
 import { useRelicHunters } from './game/useRelicHunters.ts';
 import { colorForId } from './game/color.ts';
@@ -32,6 +33,7 @@ type ActionDraft = Readonly<{
 }>;
 
 export default function App() {
+    const [introComplete, setIntroComplete] = useState(false);
     const game = useRelicHunters();
     const playedEventIdsRef = useRef<Set<string>>(new Set());
     const [authMode, setAuthMode] = useState<AuthMode>('login');
@@ -1018,6 +1020,10 @@ export default function App() {
                 >
                     {roomEntryFlash.room}
                 </div>
+            )}
+
+            {!introComplete && (
+                <IntroScene onComplete={() => setIntroComplete(true)} />
             )}
         </main>
     );
