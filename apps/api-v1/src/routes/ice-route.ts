@@ -68,7 +68,13 @@ async function readIceConfig(): Promise<Response> {
 }
 
 async function readFreshIceConfig(): Promise<IceConfig> {
-    const res = await metered.getIceCandidates();
+    let res: Response;
+    try {
+        res = await metered.getIceCandidates();
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new MeteredIceFetchError(0, message);
+    }
 
     if (!res.ok) {
         const txt = await res.text().catch(() => '');

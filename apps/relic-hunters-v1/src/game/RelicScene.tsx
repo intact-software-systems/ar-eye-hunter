@@ -20,38 +20,21 @@ import type {
 import { findRelicCharacter } from '@relic-hunters/mod.ts';
 import { SceneInteractionPrompt } from './scene/SceneInteractionPrompt.tsx';
 import { SceneObjectivePanel } from './scene/SceneObjectivePanel.tsx';
-import {
-    DOOR_WIDTH,
-    FLOOR_Y,
-    PLAYER_EYE_Y,
-    ROOM_SIZE,
-} from './scene/constants.ts';
+import { DOOR_WIDTH, FLOOR_Y, PLAYER_EYE_Y, ROOM_SIZE, } from './scene/constants.ts';
 import { applyPointerLook, isRoamKey, yawToForward } from './scene/controls.ts';
 import { resolveRoomRoam, roomCollisionBoxes } from './scene/collision.ts';
-import {
-    setRuntimePrompt,
-    shouldExitInspection,
-    startInspection,
-    updateScenePrompt,
-} from './scene/interaction.ts';
-import {
-    deriveSceneObjective,
-    roomHasResolvedClue,
-} from './scene/objectives.ts';
-import {
-    chooseLookRoom,
-    directionBetweenRooms,
-    roomClueHotspot,
-} from './scene/prompts.ts';
+import { setRuntimePrompt, shouldExitInspection, startInspection, updateScenePrompt, } from './scene/interaction.ts';
+import { deriveSceneObjective, roomHasResolvedClue, } from './scene/objectives.ts';
+import { chooseLookRoom, directionBetweenRooms, roomClueHotspot, } from './scene/prompts.ts';
 import {
     applyRoomMaterial,
+    type CastleMaterials,
     createCastleCorridor,
     createCastleMaterials,
     createIntroCastleScene,
     createRoomLights,
     createRoomProps,
     roomWorldPosition,
-    type CastleMaterials,
 } from './scene/rooms.ts';
 import type {
     CardinalDirection,
@@ -123,13 +106,13 @@ type TimedEffect = Readonly<{
 }>;
 
 export function RelicScene({
-    snapshot,
-    localPlayerId,
-    selectedRoomId,
-    primedAction,
-    onSelectRoom,
-    onPrimeAction,
-}: RelicSceneProps) {
+                               snapshot,
+                               localPlayerId,
+                               selectedRoomId,
+                               primedAction,
+                               onSelectRoom,
+                               onPrimeAction,
+                           }: RelicSceneProps) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const runtimeRef = useRef<SceneRuntime | undefined>(undefined);
     const [sceneError, setSceneError] = useState<string | undefined>();
@@ -361,7 +344,7 @@ export function RelicScene({
             } else {
                 canvas.setPointerCapture(event.pointerId);
             }
-            };
+        };
         const pointermove = (event: PointerEvent) => {
             const lookScale = runtime.inspection.value ? 0.35 : 1;
             if (document.pointerLockElement === canvas) {
@@ -394,13 +377,19 @@ export function RelicScene({
             runtime.pointerLook.active = document.pointerLockElement === canvas;
         };
         const keydown = (event: KeyboardEvent) => {
+            const target = event.target;
+
+            const isTyping = target instanceof HTMLInputElement ||
+                target instanceof HTMLTextAreaElement ||
+                (target instanceof HTMLElement && target.isContentEditable);
+
             if (event.key === 'Escape' && runtime.inspection.value) {
                 runtime.inspection.value = undefined;
                 setRuntimePrompt(runtime, undefined);
                 event.preventDefault();
                 return;
             }
-            if (isRoamKey(event.key)) {
+            if (!isTyping && isRoamKey(event.key)) {
                 runtime.pressedKeys.add(event.key.toLowerCase());
                 event.preventDefault();
             }
@@ -482,12 +471,12 @@ export function RelicScene({
 }
 
 function FallbackRelicScene({
-    snapshot,
-    localPlayerId,
-    selectedRoomId,
-    onSelectRoom,
-    reason,
-}: RelicSceneProps & Readonly<{ reason: string }>) {
+                                snapshot,
+                                localPlayerId,
+                                selectedRoomId,
+                                onSelectRoom,
+                                reason,
+                            }: RelicSceneProps & Readonly<{ reason: string }>) {
     if (!snapshot) {
         return (
             <div className="relic-scene relic-scene-fallback" aria-label="Relic Hunters tactical view">
@@ -1247,8 +1236,8 @@ function updateClueHotspotHighlights(
     const activeClueId = room && prompt?.kind === 'search'
         ? prompt.hotspotId ?? roomClueHotspot(room).id
         : room && primedSearch
-        ? roomClueHotspot(room).id
-        : undefined;
+            ? roomClueHotspot(room).id
+            : undefined;
     const resolvedClue = room && runtime.snapshot.value
         ? roomHasResolvedClue(runtime.snapshot.value, room.id)
         : false;
@@ -1496,8 +1485,8 @@ function spawnCueEffect(runtime: SceneRuntime, cue: RelicAnimationCue): void {
     const center = cue.roomId
         ? roomCenter(runtime, cue.roomId)
         : cue.playerId
-        ? playerCenter(runtime, cue.playerId)
-        : new Vector3(0, 0.2, 0);
+            ? playerCenter(runtime, cue.playerId)
+            : new Vector3(0, 0.2, 0);
 
     switch (cue.type) {
         case 'camera_move':

@@ -114,7 +114,9 @@ function resolveCorsOrigin(
 
 function loadEnvironment(): void {
   loadEnvFileIfPresent(new URL('../.env', import.meta.url));
+  loadEnvFileIfPresent(new URL('../.env.local', import.meta.url));
   loadEnvFileIfPresent(new URL('../../api-v1/.env', import.meta.url));
+  loadEnvFileIfPresent(new URL('../../api-v1/.env.local', import.meta.url));
 }
 
 function loadEnvFileIfPresent(envPath: URL): void {

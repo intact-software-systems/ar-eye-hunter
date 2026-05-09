@@ -1,3 +1,5 @@
+import { Temporal } from '@js-temporal/polyfill';
+
 export type Key = {
     readonly topicId: string
     readonly resourceId: string

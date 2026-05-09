@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import * as ComputeAsyncTask from '../resilience/ComputeAsyncTask.ts';
 import { CircuitBreaker, CircuitBreakerPolicy } from '../resilience/Resilience.ts';
 

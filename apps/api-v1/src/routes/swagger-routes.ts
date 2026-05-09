@@ -16,7 +16,8 @@ function swaggerHtml(openApiUrl: string): string {
     <script>
       window.ui = SwaggerUIBundle({
         url: ${JSON.stringify(openApiUrl)},
-        dom_id: '#swagger-ui'
+        dom_id: '#swagger-ui',
+        persistAuthorization: true
       });
     </script>
   </body>
