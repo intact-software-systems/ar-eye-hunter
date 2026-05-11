@@ -20,7 +20,8 @@ type ConnectionState = 'signed-out' | 'connecting' | 'connected' | 'error';
 type RelicCommandDraft =
     | Readonly<{ kind: 'join-expedition'; characterId?: RelicCharacterId }>
     | Readonly<{ kind: 'start-expedition' }>
-    | Readonly<{ kind: 'submit-action'; action: RelicActionInput }>;
+    | Readonly<{ kind: 'submit-action'; action: RelicActionInput }>
+    | Readonly<{ kind: 'set-round-limit'; timeLimitMs: number }>;
 
 export type RelicHuntersConnection = Readonly<{
     session?: AuthSession;
@@ -38,6 +39,7 @@ export type RelicHuntersConnection = Readonly<{
     joinExpedition(characterId?: RelicCharacterId): Promise<void>;
     startExpedition(): Promise<void>;
     submitAction(action: RelicActionInput): Promise<void>;
+    setRoundLimit(timeLimitMs: number): Promise<void>;
     resetExpedition(): Promise<void>;
 }>;
 
@@ -254,6 +256,10 @@ export function useRelicHunters(): RelicHuntersConnection {
         });
     }, [sendCommand]);
 
+    const setRoundLimit = useCallback(async (timeLimitMs: number) => {
+        await sendCommand({ kind: 'set-round-limit', timeLimitMs });
+    }, [sendCommand]);
+
     const resetExpedition = useCallback(async () => {
         const currentRoomId = roomIdRef.current;
         if (!currentRoomId) {
@@ -279,6 +285,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         joinExpedition,
         startExpedition,
         submitAction,
+        setRoundLimit,
         resetExpedition,
     }), [
         session,
@@ -296,6 +303,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         joinExpedition,
         startExpedition,
         submitAction,
+        setRoundLimit,
         resetExpedition,
     ]);
 }

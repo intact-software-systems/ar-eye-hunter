@@ -58,6 +58,10 @@ export type UIStrings = Readonly<{
     objectiveAllLocked: string;
     objectiveWon: string;
     objectiveSilent: string;
+    timerLabel: string;
+    timerAutoSubmit: string;
+    setTimerTitle: string;
+    waitingForKeeper: string;
 }>;
 
 export const UI: Record<Lang, UIStrings> = {
@@ -86,6 +90,10 @@ export const UI: Record<Lang, UIStrings> = {
         objectiveAllLocked: 'All plans are locked. The ruin is about to answer.',
         objectiveWon: 'The highest score has claimed the Heart Relic.',
         objectiveSilent: 'The ruin has gone silent.',
+        timerLabel: 'Time left',
+        timerAutoSubmit: 'Time is up — submitting your plan…',
+        setTimerTitle: 'Round Time Limit',
+        waitingForKeeper: 'Waiting for the Keeper to begin the hunt…',
     },
     no: {
         phaseLobby: 'Vokteren samler jegere',
@@ -112,6 +120,10 @@ export const UI: Record<Lang, UIStrings> = {
         objectiveAllLocked: 'Alle planer er låst. Ruinen er i ferd med å svare.',
         objectiveWon: 'Høyeste poengsum har krevd Hjerterelikkiet.',
         objectiveSilent: 'Ruinen har stilnet.',
+        timerLabel: 'Tid igjen',
+        timerAutoSubmit: 'Tiden er ute — sender inn planen din…',
+        setTimerTitle: 'Tidsbegrensning per runde',
+        waitingForKeeper: 'Venter på at Vokteren skal starte jakten…',
     },
 };
 

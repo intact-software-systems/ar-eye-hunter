@@ -20,6 +20,12 @@ import {
     WORLD_SCALE,
 } from './constants.ts';
 import { directionBetweenRooms, roomClueHotspots } from './prompts.ts';
+import {
+    applyNormalMap,
+    applyClearCoat,
+    applySheen,
+    createCastleSurfaceTextures,
+} from './textures.ts';
 import type { CardinalDirection, ClueHotspot } from './types.ts';
 
 export type CastleMaterials = Readonly<{
@@ -44,20 +50,44 @@ export type RoomRuntime = Readonly<{
 }>;
 
 export function createCastleMaterials(scene: Scene): CastleMaterials {
-    return {
-        wall: castleMaterial(scene, 'castle-wall-stone', '#b7c0ad', 0.025, 0, 0.92),
-        ceiling: castleMaterial(scene, 'castle-ceiling-stone', '#98a99b', 0.018, 0, 0.94),
-        wood: castleMaterial(scene, 'castle-oak', '#946b3c', 0.015, 0, 0.88),
-        trim: castleMaterial(scene, 'castle-trim', '#d5b86f', 0.04, 0.1, 0.75),
-        metal: castleMaterial(scene, 'castle-iron', '#9aa7ae', 0.018, 0.6, 0.65),
-        gold: castleMaterial(scene, 'castle-gold', '#f1c453', 0.12, 0.9, 0.2),
-        clothBlue: castleMaterial(scene, 'castle-blue-cloth', '#3db7d6', 0.08, 0, 0.95),
-        clothCoral: castleMaterial(scene, 'castle-coral-cloth', '#f9736b', 0.07, 0, 0.95),
-        torch: castleMaterial(scene, 'castle-torch-flame', '#ffbf5c', 0.72, 0, 1.0),
-        crack: castleMaterial(scene, 'castle-crack-shadow', '#2f2d28', 0.005, 0, 1.0),
-        rubble: castleMaterial(scene, 'castle-rubble', '#756b5d', 0.012, 0, 0.88),
-        portal: castleMaterial(scene, 'castle-portal-light', '#8ee7f5', 0.32, 0.15, 0.45),
-    };
+    const { stoneNormal, woodNormal, metalNormal } = createCastleSurfaceTextures(scene);
+
+    const wall      = castleMaterial(scene, 'castle-wall-stone',    '#b7c0ad', 0.018, 0.02, 0.86);
+    const ceiling   = castleMaterial(scene, 'castle-ceiling-stone', '#8a9a8d', 0.012, 0.02, 0.90);
+    const wood      = castleMaterial(scene, 'castle-oak',           '#946b3c', 0.012, 0.00, 0.80);
+    const trim      = castleMaterial(scene, 'castle-trim',          '#d5b86f', 0.06,  0.18, 0.62);
+    const metal     = castleMaterial(scene, 'castle-iron',          '#9aa7ae', 0.014, 0.85, 0.38);
+    const gold      = castleMaterial(scene, 'castle-gold',          '#f1c453', 0.20,  0.92, 0.14);
+    const clothBlue = castleMaterial(scene, 'castle-blue-cloth',    '#3db7d6', 0.06,  0.00, 0.90);
+    const clothCoral= castleMaterial(scene, 'castle-coral-cloth',   '#f9736b', 0.055, 0.00, 0.90);
+    const torch     = castleMaterial(scene, 'castle-torch-flame',   '#ffbf5c', 1.85,  0,    1.0);
+    const crack     = castleMaterial(scene, 'castle-crack-shadow',  '#2f2d28', 0.003, 0,    1.0);
+    const rubble    = castleMaterial(scene, 'castle-rubble',        '#756b5d', 0.010, 0.04, 0.82);
+    const portal    = castleMaterial(scene, 'castle-portal-light',  '#8ee7f5', 0.58,  0.12, 0.35);
+
+    // Stone surfaces — brick-course bump adds mortar joints and per-stone dome
+    applyNormalMap(wall,    stoneNormal, 4, 3);
+    applyNormalMap(ceiling, stoneNormal, 4, 4);
+    applyNormalMap(rubble,  stoneNormal, 3, 3);
+    applyNormalMap(trim,    stoneNormal, 3, 3, 0.55);
+
+    // Wood — horizontal grain lines along beam length
+    applyNormalMap(wood, woodNormal, 1, 6);
+
+    // Metal — fine machining scratches; gold gets a subtle version
+    applyNormalMap(metal, metalNormal, 2, 2);
+    applyNormalMap(gold,  metalNormal, 2, 2, 0.35);
+
+    // Lacquer / jewellery clear coat — thin glossy layer on top of the PBR base
+    applyClearCoat(gold,   0.88, 0.05); // mirror-like gilded surface
+    applyClearCoat(trim,   0.48, 0.22); // polished stone/gilt trim
+    applyClearCoat(portal, 0.38, 0.14); // magical glass-like glow
+
+    // Woven cloth sheen — fabric micro-fibres catch grazing light
+    applySheen(clothBlue,  0.88, 0.62);
+    applySheen(clothCoral, 0.88, 0.62);
+
+    return { wall, ceiling, wood, trim, metal, gold, clothBlue, clothCoral, torch, crack, rubble, portal };
 }
 
 export function applyRoomMaterial(
@@ -362,7 +392,7 @@ export function createRoomLights(runtime: RoomRuntime, room: RelicRoom): readonl
             runtime.scene,
         );
         light.diffuse = color;
-        light.specular = color.scale(0.45);
+        light.specular = color.scale(0.65);
         light.intensity = intensity;
         light.range = range;
         light.metadata = {
@@ -391,28 +421,28 @@ export function createRoomLights(runtime: RoomRuntime, room: RelicRoom): readonl
         ? Color3.FromHexString('#f19a64')
         : Color3.FromHexString('#ffd08a');
     const torchZ = room.kind === 'exit' ? ROOM_SIZE / 2 - 0.28 : -ROOM_SIZE / 2 + 0.28;
-    const torchIntensity = room.kind === 'monster' ? 0.72 : room.kind === 'trap' ? 0.64 : 0.58;
+    const torchIntensity = room.kind === 'monster' ? 1.10 : room.kind === 'trap' ? 0.98 : 0.88;
     for (const x of [-1.35, 1.35]) {
         addLight(
             `room-torch-light-${room.id}-${x}`,
             new Vector3(x, 1.8, torchZ),
             torchColor,
             torchIntensity,
-            6.4,
+            9.5,
         );
     }
 
-    const centerIntensity = room.kind === 'shrine' ? 0.52
-        : room.kind === 'treasure' ? 0.48
-        : room.kind === 'exit' ? 0.46
-        : room.kind === 'hallway' ? 0.22
-        : 0.34;
+    const centerIntensity = room.kind === 'shrine' ? 0.78
+        : room.kind === 'treasure' ? 0.70
+        : room.kind === 'exit' ? 0.65
+        : room.kind === 'hallway' ? 0.32
+        : 0.52;
     addLight(
         `room-clue-light-${room.id}`,
         new Vector3(0, 1.25, 0),
         mystery,
         centerIntensity,
-        5.2,
+        7.5,
     );
 
     return lights;
@@ -1443,6 +1473,27 @@ export function createJapaneseLobbyScene(scene: Scene): readonly Mesh[] {
     const matWhiteWall   = jpMaterial(scene, 'white-wall',   '#e2d4b8', 0.04,  0,    0.90);
     const matDarkCeiling = jpMaterial(scene, 'dark-ceil',    '#110803', 0.008, 0,    0.88);
     const matAltarWood   = jpMaterial(scene, 'altar-wood',   '#28160a', 0.04,  0,    0.50);
+
+    // Surface enhancements for the lobby
+    const { stoneNormal, woodNormal, metalNormal } = createCastleSurfaceTextures(scene);
+
+    // Dark polished wood — grain lines + high-gloss lacquer coat
+    applyNormalMap(matDarkWood,   woodNormal, 1, 5);
+    applyNormalMap(matAltarWood,  woodNormal, 1, 4, 0.8);
+    // Red lacquer — signature Japanese wet-lacquer finish
+    applyClearCoat(matRedLacquer, 0.95, 0.04);
+    applyNormalMap(matRedLacquer, woodNormal, 1, 5, 0.4);
+    // Gold — mirror-like metallic coat
+    applyClearCoat(matGold, 0.90, 0.06);
+    applyNormalMap(matGold, metalNormal, 2, 2, 0.3);
+    // Stone — mortar-joint bump
+    applyNormalMap(matStone,     stoneNormal, 3, 3);
+    applyNormalMap(matWhiteWall, stoneNormal, 3, 3, 0.55);
+    // Shoji paper — soft translucent sheen like rice paper
+    applySheen(matShoji, 0.65, 0.85);
+    // Silk hangings — woven micro-fibre sheen
+    applySheen(matCrimson, 0.82, 0.65);
+    applySheen(matNavy,    0.82, 0.65);
 
     // === FLOOR: dark polished wood ===
     add(MeshBuilder.CreateBox('jl-floor', { width: 14, height: 0.14, depth: 26 }, scene), matDarkWood)

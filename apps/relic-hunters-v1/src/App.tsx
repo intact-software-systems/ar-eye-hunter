@@ -70,6 +70,8 @@ export default function App() {
     const [showTensionBeat, setShowTensionBeat] = useState(false);
     const [showHelpOverlay, setShowHelpOverlay] = useState(false);
     const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
+    const [timeRemainingMs, setTimeRemainingMs] = useState<number | null>(null);
+    const autoSubmittedForRoundRef = useRef<number | undefined>(undefined);
     const [phaseBanner, setPhaseBanner] = useState<string | null>(null);
     const [roomEntryFlash, setRoomEntryFlash] = useState<{ room: string; key: number } | null>(null);
     const roomEntryKeyRef = useRef(0);
@@ -150,6 +152,7 @@ export default function App() {
         !submitBlocker;
     const isLocked = !!(currentPlayer && game.snapshot &&
         game.snapshot.submittedPlayerIds.includes(currentPlayer.playerId));
+    const isAdmin = currentPlayer?.playerId === game.snapshot?.adminPlayerId;
     const roundNoiseCount = game.snapshot
         ? revealedEvents.filter(
             (e) => e.round === game.snapshot!.round - 1 && e.type === 'noise_pulse',
@@ -248,6 +251,27 @@ export default function App() {
     useEffect(() => {
         setLockedAction(undefined);
     }, [game.snapshot?.round]);
+
+    useEffect(() => {
+        if (game.snapshot?.phase !== 'planning' || !game.snapshot.roundStartedAtEpochMs) {
+            setTimeRemainingMs(null);
+            return;
+        }
+        const startMs = game.snapshot.roundStartedAtEpochMs;
+        const limitMs = game.snapshot.roundTimeLimitMs;
+        const round = game.snapshot.round;
+        const tick = () => {
+            const remaining = startMs + limitMs - Date.now();
+            setTimeRemainingMs(remaining);
+            if (remaining <= 0 && autoSubmittedForRoundRef.current !== round && canSubmitRef.current) {
+                autoSubmittedForRoundRef.current = round;
+                void submitActionRef.current();
+            }
+        };
+        tick();
+        const interval = window.setInterval(tick, 250);
+        return () => clearInterval(interval);
+    }, [game.snapshot?.phase, game.snapshot?.roundStartedAtEpochMs, game.snapshot?.roundTimeLimitMs, game.snapshot?.round]);
 
     // Show post-round digest when reveal queue drains on a round_started event.
     useEffect(() => {
@@ -356,9 +380,11 @@ export default function App() {
         await game.submitAction(action);
     };
 
-    // Stable ref so the keyboard handler always calls the latest submitAction.
+    // Stable refs so closures (keyboard handler, timer) always call the latest versions.
     const submitActionRef = useRef(submitAction);
     submitActionRef.current = submitAction;
+    const canSubmitRef = useRef(canSubmit);
+    canSubmitRef.current = canSubmit;
 
     useEffect(() => {
         const ACTION_KEYS: Record<string, RelicActionKind> = {
@@ -671,10 +697,32 @@ export default function App() {
                                         {UI[lang].heedTheCall}
                                     </button>
                                 )}
-                                {currentPlayer && (
+                                {currentPlayer && isAdmin && game.snapshot && (
+                                    <div className="timer-limit-selector">
+                                        <span className="panel-label">{UI[lang].setTimerTitle}</span>
+                                        <div className="segmented">
+                                            {([60_000, 180_000, 300_000] as const).map((ms) => (
+                                                <button
+                                                    key={ms}
+                                                    type="button"
+                                                    className={game.snapshot!.roundTimeLimitMs === ms ? 'active' : ''}
+                                                    onClick={() => void game.setRoundLimit(ms)}
+                                                >
+                                                    {ms === 60_000 ? '1 min' : ms === 180_000 ? '3 min' : '5 min'}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {currentPlayer && isAdmin && (
                                     <button type="button" className="primary lobby-begin-btn" onClick={startExpedition}>
                                         {UI[lang].beginTheHunt}
                                     </button>
+                                )}
+                                {currentPlayer && !isAdmin && (
+                                    <div className="lobby-waiting-admin">
+                                        {UI[lang].waitingForKeeper}
+                                    </div>
                                 )}
                             </div>
                         ) : (
@@ -847,6 +895,10 @@ export default function App() {
                                     ? 'Final round — escape or be lost to the ruin.'
                                     : `${game.snapshot.maxRounds - game.snapshot.round} round${game.snapshot.maxRounds - game.snapshot.round === 1 ? '' : 's'} remaining — the ruin closes soon.`}
                             </div>
+                        )}
+
+                        {timeRemainingMs !== null && (
+                            <RoundTimer timeRemainingMs={timeRemainingMs} lang={lang}/>
                         )}
 
                         <button
@@ -1025,6 +1077,14 @@ export default function App() {
                     localStorage.setItem('relic-onboarding-v1', '1');
                     setShowOnboarding(false);
                 }}/>
+            )}
+
+            {timeRemainingMs !== null && timeRemainingMs > 0 && timeRemainingMs <= 10_000 &&
+                game.snapshot?.phase === 'planning' && !isLocked && (
+                <div className="round-countdown-overlay" role="status" aria-live="assertive">
+                    <span className="round-countdown-number">{Math.ceil(timeRemainingMs / 1000)}</span>
+                    <span className="round-countdown-label">s</span>
+                </div>
             )}
 
             {game.snapshot && game.snapshot.phase === 'planning' && game.session && currentPlayer && !currentPlayer.escaped && !currentPlayer.defeated && (
@@ -1260,6 +1320,23 @@ function LobbyPartyPanel({
             ) : (
                 <small className="lobby-party-hint">{u.keeperAwaits}</small>
             )}
+        </div>
+    );
+}
+
+function RoundTimer({
+    timeRemainingMs,
+    lang,
+}: Readonly<{ timeRemainingMs: number; lang: Lang }>) {
+    const totalSecs = Math.max(0, Math.ceil(timeRemainingMs / 1000));
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    const display = `${mins}:${String(secs).padStart(2, '0')}`;
+    const isUrgent = totalSecs <= 10;
+    return (
+        <div className={`round-timer${isUrgent ? ' round-timer-urgent' : ''}`}>
+            <span>{UI[lang].timerLabel}</span>
+            <strong>{display}</strong>
         </div>
     );
 }

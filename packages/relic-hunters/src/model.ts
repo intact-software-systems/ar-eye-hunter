@@ -170,6 +170,9 @@ export type RelicGameState = Readonly<{
     maxRounds: number;
     createdAtEpochMs: number;
     updatedAtEpochMs: number;
+    adminPlayerId?: string;
+    roundTimeLimitMs: number;
+    roundStartedAtEpochMs?: number;
     map: readonly RelicRoom[];
     relics: readonly RelicDefinition[];
     roomInvestigations: readonly RelicRoomInvestigation[];
@@ -187,6 +190,9 @@ export type RelicPublicSnapshot = Readonly<{
     round: number;
     maxRounds: number;
     updatedAtEpochMs: number;
+    adminPlayerId?: string;
+    roundTimeLimitMs: number;
+    roundStartedAtEpochMs?: number;
     map: readonly RelicRoom[];
     relics: readonly RelicDefinition[];
     roomInvestigations: readonly RelicRoomInvestigation[];
@@ -216,6 +222,13 @@ export type RelicCommand =
         gameId: string;
         username: string;
         action: RelicActionInput;
+    }>
+    | Readonly<{
+        protocolVersion: typeof RELIC_PROTOCOL_VERSION;
+        kind: 'set-round-limit';
+        gameId: string;
+        username: string;
+        timeLimitMs: number;
     }>;
 
 export type RelicServerEvent = Readonly<{
@@ -236,6 +249,9 @@ export function toPublicRelicSnapshot(state: RelicGameState): RelicPublicSnapsho
         round: state.round,
         maxRounds: state.maxRounds,
         updatedAtEpochMs: state.updatedAtEpochMs,
+        adminPlayerId: state.adminPlayerId,
+        roundTimeLimitMs: state.roundTimeLimitMs,
+        roundStartedAtEpochMs: state.roundStartedAtEpochMs,
         map: state.map,
         relics: state.relics,
         roomInvestigations: maybeLegacy.roomInvestigations ?? [],
@@ -261,6 +277,11 @@ export function isRelicCommand(value: unknown): value is RelicCommand {
 
     if (value.kind === 'start-expedition') {
         return true;
+    }
+
+    if (value.kind === 'set-round-limit') {
+        return typeof value.timeLimitMs === 'number' &&
+            [60_000, 180_000, 300_000].includes(value.timeLimitMs as number);
     }
 
     return value.kind === 'submit-action' &&

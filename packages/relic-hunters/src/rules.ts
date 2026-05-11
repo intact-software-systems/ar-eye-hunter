@@ -63,13 +63,31 @@ export function createRelicGame(
         maxRounds: MAX_ROUNDS,
         createdAtEpochMs: now,
         updatedAtEpochMs: now,
+        adminPlayerId: undefined,
+        roundTimeLimitMs: 60_000,
+        roundStartedAtEpochMs: undefined,
         map: RELIC_MVP_MAP,
         relics: [
-            { id: 'golden-idol', name: 'Golden Idol', value: 5, roomId: 'treasure' },
-            { id: 'oracle-stone', name: 'Oracle Stone', value: 4, roomId: 'shrine' },
-            { id: 'sun-disk', name: 'Sun Disk', value: 6, roomId: 'storage' },
-            { id: 'cursed-mask', name: 'Cursed Mask', value: 8, roomId: 'monster' },
-            { id: 'serpent-crown', name: 'Serpent Crown', value: 7, roomId: 'trap' },
+            // Treasure Chamber — three prizes of descending value
+            { id: 'golden-idol',   name: 'Golden Idol',      value: 5, roomId: 'treasure' },
+            { id: 'jade-dragon',   name: 'Jade Dragon',       value: 3, roomId: 'treasure' },
+            { id: 'pearl-netsuke', name: 'Pearl Netsuke',     value: 2, roomId: 'treasure' },
+            // Shrine — two sacred artefacts
+            { id: 'oracle-stone',  name: 'Oracle Stone',      value: 4, roomId: 'shrine' },
+            { id: 'moonstone',     name: 'Moonstone Pendant', value: 3, roomId: 'shrine' },
+            // Storage — hidden cache, second piece buried deeper
+            { id: 'sun-disk',      name: 'Sun Disk',          value: 6, roomId: 'storage' },
+            { id: 'bronze-mirror', name: 'Bronze Mirror',     value: 3, roomId: 'storage' },
+            // Monster Lair — great risk, two rewards
+            { id: 'cursed-mask',   name: 'Cursed Mask',       value: 8, roomId: 'monster' },
+            { id: 'bone-seal',     name: 'Bone Seal',         value: 4, roomId: 'monster' },
+            // Trap Room — two relics worth braving the spikes
+            { id: 'serpent-crown', name: 'Serpent Crown',     value: 7, roomId: 'trap' },
+            { id: 'rusted-tanto',  name: 'Rusted Tantō',      value: 3, roomId: 'trap' },
+            // Hallway — scattered find for sharp-eyed hunters
+            { id: 'copper-coin',   name: 'Copper Coin',       value: 2, roomId: 'hallway' },
+            // Entrance — a small prize for the first brave step
+            { id: 'iron-lantern',  name: 'Iron Lantern',      value: 1, roomId: 'entrance' },
         ],
         roomInvestigations: [],
         players: [],
@@ -87,10 +105,13 @@ export function createRelicGame(
 function normalizeGameState(state: RelicGameState): RelicGameState {
     const maybeLegacy = state as RelicGameState & {
         roomInvestigations?: readonly RelicRoomInvestigation[];
+        roundTimeLimitMs?: number;
     };
     return {
         ...state,
         roomInvestigations: maybeLegacy.roomInvestigations ?? [],
+        adminPlayerId: state.adminPlayerId ?? state.players[0]?.playerId,
+        roundTimeLimitMs: maybeLegacy.roundTimeLimitMs ?? 60_000,
     };
 }
 
@@ -118,10 +139,12 @@ export function applyRelicCommand(
     }
 
     if (command.kind === 'start-expedition') {
+        const starting = joined.state.phase === 'lobby';
         return {
             state: touch({
                 ...joined.state,
-                phase: joined.state.phase === 'lobby' ? 'planning' : joined.state.phase,
+                phase: starting ? 'planning' : joined.state.phase,
+                roundStartedAtEpochMs: starting ? now : joined.state.roundStartedAtEpochMs,
                 events: appendEvent(
                     joined.state,
                     `${joined.player.username} started the expedition.`,
@@ -131,6 +154,19 @@ export function applyRelicCommand(
                         tone: 'success',
                     },
                 ),
+            }, now),
+            resolvedRound: false,
+        };
+    }
+
+    if (command.kind === 'set-round-limit') {
+        if (joined.state.adminPlayerId && joined.state.adminPlayerId !== options.senderId) {
+            throw new Error('Only the administrator can change the round time limit.');
+        }
+        return {
+            state: touch({
+                ...joined.state,
+                roundTimeLimitMs: command.timeLimitMs,
             }, now),
             resolvedRound: false,
         };
@@ -233,6 +269,7 @@ function resolveRound(state: RelicGameState, now: number): RelicGameState {
         round: finished ? next.round : nextRound,
         phase: finished ? 'finished' : 'planning',
         pendingActions: [],
+        roundStartedAtEpochMs: finished ? next.roundStartedAtEpochMs : now,
         winnerIds: finished ? calculateWinnerIds(next) : [],
         events: finished
             ? appendEvent(next, 'The expedition is over.', now, {
@@ -318,9 +355,12 @@ function resolveSearch(
     player: RelicPlayer,
     now: number,
 ): RelicGameState {
-    if (state.roomInvestigations.some((investigation) =>
-        investigation.roomId === player.roomId
-    )) {
+    const hasUnfoundRelics = state.relics.some(
+        (r) => r.roomId === player.roomId && !r.foundBy,
+    );
+
+    // Block further searching only once the room is fully looted
+    if (!hasUnfoundRelics && state.roomInvestigations.some((i) => i.roomId === player.roomId)) {
         return withEvent(
             state,
             `${player.username} searched ${roomName(state, player.roomId)} again, but the useful clues were already marked.`,
@@ -366,20 +406,22 @@ function resolveSearch(
             ? { ...candidate, foundBy: player.playerId, carriedBy: player.playerId }
             : candidate
     );
-    const investigatedState = markRoomInvestigated(
-        {
-            ...state,
-            relics,
-        },
-        player,
-        now,
-        'relic-found',
-        relic.id,
-    );
+    const stateWithRelic = { ...state, relics };
+
+    // Only seal the room once all its relics have been found
+    const moreRemain = relics.some((r) => r.roomId === player.roomId && !r.foundBy);
+    const investigatedState = moreRemain
+        ? stateWithRelic
+        : markRoomInvestigated(stateWithRelic, player, now, 'relic-found', relic.id);
+
+    const message = moreRemain
+        ? `${player.username} found the ${relic.name}. The room still hides more…`
+        : `${player.username} found the ${relic.name}.`;
+
     return updatePlayer(
         withEvent(
             investigatedState,
-            `${player.username} found the ${relic.name}.`,
+            message,
             now,
             {
                 type: 'relic_found',
@@ -837,6 +879,7 @@ function ensurePlayer(
     return {
         state: {
             ...state,
+            adminPlayerId: state.adminPlayerId ?? playerId,
             players: [...state.players, player],
             events: appendEvent(state, `${username} joined as ${findRelicCharacter(player.characterId).name}.`, now, {
                 type: 'player_joined',

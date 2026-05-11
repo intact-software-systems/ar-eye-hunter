@@ -26,6 +26,9 @@ export function IntroScene({ onComplete, lang }: IntroSceneProps) {
     const [lineIndex, setLineIndex] = useState(-1);
     const [casting, setCasting] = useState(false);
     const [flash, setFlash] = useState(false);
+    const [soundOn, setSoundOn] = useState(false);
+    const soundOnRef = useRef(false);
+    soundOnRef.current = soundOn;
     const castTriggerRef = useRef<(() => void) | null>(null);
     const completeRef = useRef(onComplete);
     completeRef.current = onComplete;
@@ -78,7 +81,7 @@ export function IntroScene({ onComplete, lang }: IntroSceneProps) {
 
         // Wizard aura light
         const wizLight = new PointLight('wiz-light', new Vector3(0.3, 2.9, -1.4), scene);
-        wizLight.diffuse = new Color3(0.55, 0.38, 1.0);
+        wizLight.diffuse = new Color3(0.96, 0.68, 0.18);
         wizLight.intensity = 1.3;
         wizLight.range = 9;
 
@@ -119,7 +122,11 @@ export function IntroScene({ onComplete, lang }: IntroSceneProps) {
         // Scene content (procedural + optional GLBs)
         const hostPos = new Vector3(0, 0.22, -1);
         let orbMaterialRef: { emissiveColor: { set(r: number, g: number, b: number): void } } | null = null;
-        let staffOrbPos = new Vector3(0.54 + Math.sin(0.15) * 1.35, 0.22 + 1.35 + Math.cos(0.15) * 1.35 + 0.22, -1 - 0.26);
+        let staffOrbPos = new Vector3(
+            0.52 + Math.sin(0.12) * 1.26,
+            0.22 + (0.22 + 1.26 + Math.cos(0.12) * 1.26 + 0.46),
+            -1.22,
+        );
 
         const buildProceduralCastle = () => { createCastleExteriorScene(scene); };
         const buildProceduralWizard = () => {
@@ -156,7 +163,7 @@ export function IntroScene({ onComplete, lang }: IntroSceneProps) {
                 t = Math.min(1, t + 0.08);
                 if (orbMaterialRef) {
                     const v = 0.92 + t * 2.2;
-                    orbMaterialRef.emissiveColor = new Color3(0.4 * v, 0.72 * v, 1.0 * v) as unknown as { set(r: number, g: number, b: number): void };
+                    orbMaterialRef.emissiveColor = new Color3(1.0 * v, 0.55 * v, 0.09 * v) as unknown as { set(r: number, g: number, b: number): void };
                 }
                 if (t >= 1) clearInterval(intensify);
             }, 40);
@@ -260,7 +267,7 @@ export function IntroScene({ onComplete, lang }: IntroSceneProps) {
         const hasSpeech = 'speechSynthesis' in window;
 
         const speak = (text: string) => {
-            if (!hasSpeech || text === '...') return;
+            if (!hasSpeech || text === '...' || !soundOnRef.current) return;
             window.speechSynthesis.cancel();
             const utter = new SpeechSynthesisUtterance(text);
             utter.lang = speechLang;
@@ -303,16 +310,25 @@ export function IntroScene({ onComplete, lang }: IntroSceneProps) {
                         </p>
                     )}
                 </div>
-                <button
-                    type="button"
-                    className="intro-skip-btn"
-                    onClick={() => {
-                        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-                        completeRef.current();
-                    }}
-                >
-                    Skip intro
-                </button>
+                <div className="intro-btn-row">
+                    <button
+                        type="button"
+                        className={`intro-sound-btn${soundOn ? ' active' : ''}`}
+                        onClick={() => setSoundOn(s => !s)}
+                    >
+                        {soundOn ? 'Narrator: ON' : 'Narrator: OFF'}
+                    </button>
+                    <button
+                        type="button"
+                        className="intro-skip-btn"
+                        onClick={() => {
+                            if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+                            completeRef.current();
+                        }}
+                    >
+                        Skip intro
+                    </button>
+                </div>
             </div>
             {flash && <div className="intro-flash" aria-hidden="true"/>}
         </>

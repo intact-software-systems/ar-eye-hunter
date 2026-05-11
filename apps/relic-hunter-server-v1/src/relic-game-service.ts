@@ -98,6 +98,7 @@ export async function installRelicHunterGame(
       value.gameId === context.roomId,
   });
 
+
   rallar.ws.on<RelicCommand>(
     {
       topicId: RELIC_TOPICS.command,

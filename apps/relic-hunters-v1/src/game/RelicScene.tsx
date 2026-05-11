@@ -3,7 +3,9 @@ import { rallar } from '@shared-web/browser/rallar.ts';
 import '@babylonjs/core/Culling/ray.js';
 import '@babylonjs/core/Rendering/geometryBufferRendererSceneComponent.js';
 import { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera.js';
-import { SSAO2RenderingPipeline } from '@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/ssao2RenderingPipeline.js';
+import {
+    SSAO2RenderingPipeline
+} from '@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/ssao2RenderingPipeline.js';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { Engine } from '@babylonjs/core/Engines/engine.js';
@@ -12,8 +14,16 @@ import { PointLight } from '@babylonjs/core/Lights/pointLight.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial.js';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
-import { DefaultRenderingPipeline } from '@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline.js';
+import {
+    DefaultRenderingPipeline
+} from '@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline.js';
+import { ColorCurves } from '@babylonjs/core/Materials/colorCurves.js';
+import { ImageProcessingConfiguration } from '@babylonjs/core/Materials/imageProcessingConfiguration.js';
+import { CubeTexture } from '@babylonjs/core/Materials/Textures/cubeTexture.js';
 import { GlowLayer } from '@babylonjs/core/Layers/glowLayer.js';
+import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight.js';
+import { ShadowGenerator } from '@babylonjs/core/Lights/Shadows/shadowGenerator.js';
+import '@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent.js';
 import { ParticleSystem } from '@babylonjs/core/Particles/particleSystem.js';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
@@ -36,6 +46,7 @@ import { deriveSceneObjective, roomHasResolvedClue, } from './scene/objectives.t
 import { chooseLookRoom, directionBetweenRooms, roomClueHotspot, } from './scene/prompts.ts';
 import {
     applyRoomMaterial,
+    type CastleMaterials,
     createCastleCorridor,
     createCastleMaterials,
     createFlameTexture,
@@ -45,7 +56,6 @@ import {
     createRoomProps,
     createRoomTorchParticles,
     roomWorldPosition,
-    type CastleMaterials,
 } from './scene/rooms.ts';
 import type {
     CardinalDirection,
@@ -59,7 +69,7 @@ const POS_TYPE_ID = 'relic.pos';
 const POS_BROADCAST_INTERVAL_MS = 80;
 const POS_MAX_AGE_MS = 2500;
 
-type RelicPosUpdate = Readonly<{ x: number; z: number; r: number }>;
+type RelicPosUpdate = Readonly<{ pid: string; x: number; z: number; r: number }>;
 type RemotePosEntry = { x: number; z: number; yaw: number; t: number };
 
 type RelicSceneProps = Readonly<{
@@ -77,6 +87,7 @@ type SceneRuntime = Readonly<{
     scene: Scene;
     camera: UniversalCamera;
     pipeline: DefaultRenderingPipeline;
+    shadows: ShadowGenerator;
     castleMaterials: CastleMaterials;
     introMeshes: readonly Mesh[];
     snapshot: { value?: RelicPublicSnapshot };
@@ -233,43 +244,106 @@ export function RelicScene({
 
         // Post-processing pipeline
         const pipeline = new DefaultRenderingPipeline('relic-pipeline', true, scene, [camera]);
-        pipeline.bloomEnabled = true;
-        pipeline.bloomThreshold = 0.72;
-        pipeline.bloomWeight = 0.52;
-        pipeline.bloomKernel = 80;
-        pipeline.bloomScale = 0.5;
-        pipeline.sharpenEnabled = true;
-        pipeline.sharpen.edgeAmount = 0.22;
-        pipeline.imageProcessingEnabled = true;
-        pipeline.imageProcessing.contrast = 1.15;
-        pipeline.imageProcessing.exposure = 1.04;
-        pipeline.depthOfFieldEnabled = true;
-        pipeline.depthOfField.fStop = 1.4;
-        pipeline.depthOfField.focalLength = 50;
-        pipeline.depthOfField.focusDistance = 5200;
-        pipeline.depthOfFieldBlurLevel = 0; // low = fast
 
-        // SSAO2 for ambient occlusion — makes stone corners look solid and 3-dimensional
+        // Bloom — raised threshold to avoid blooming geometry edges
+        pipeline.bloomEnabled = true;
+        pipeline.bloomThreshold = 0.52;
+        pipeline.bloomWeight = 0.55;
+        pipeline.bloomKernel = 64;
+        pipeline.bloomScale = 0.5;
+
+        pipeline.sharpenEnabled = true;
+        pipeline.sharpen.edgeAmount = 0.38;
+
+        pipeline.imageProcessingEnabled = true;
+        pipeline.imageProcessing.contrast = 1.18;
+        pipeline.imageProcessing.exposure = 1.06;
+
+        // ACES filmic tone mapping — rich blacks, bright highlights, cinematic look
+        pipeline.imageProcessing.toneMappingEnabled = true;
+        pipeline.imageProcessing.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
+
+        // Color grading: warm orange/amber highlights, cool blue-purple shadows
+        const curves = new ColorCurves();
+        curves.globalSaturation = 18;
+        curves.highlightsHue = 35;
+        curves.highlightsDensity = 22;
+        curves.shadowsHue = 215;
+        curves.shadowsDensity = 26;
+        pipeline.imageProcessing.colorCurvesEnabled = true;
+        pipeline.imageProcessing.colorCurves = curves;
+
+        // Vignette — darkens edges for a cinematic feel; weight is updated per room
+        pipeline.imageProcessing.vignetteEnabled = true;
+        pipeline.imageProcessing.vignetteWeight = 2.4;
+        pipeline.imageProcessing.vignetteStretch = 0.55;
+        pipeline.imageProcessing.vignetteCameraFov = camera.fov;
+        pipeline.imageProcessing.vignetteColor = new Color4(0.04, 0.02, 0.07, 0);
+
+        // Subtle grain for texture without softness
+        pipeline.grainEnabled = true;
+        pipeline.grain.intensity = 6;
+        pipeline.grain.animated = true;
+
+        // SSAO2 for ambient occlusion at full resolution to avoid blur smear
         try {
-            const ssao = new SSAO2RenderingPipeline('relic-ssao', scene, { ssaoRatio: 0.5, blurRatio: 1 }, [camera]);
-            ssao.radius = 3.5;
-            ssao.totalStrength = 1.0;
-            ssao.base = 0.1;
+            const ssao = new SSAO2RenderingPipeline('relic-ssao', scene, { ssaoRatio: 1.0, blurRatio: 1 }, [camera]);
+            ssao.radius = 2.0;
+            ssao.totalStrength = 0.9;
+            ssao.base = 0.08;
             ssao.maxZ = 40;
-            ssao.samples = 16;
+            ssao.samples = 8;
         } catch {
             // SSAO2 not available in this context — continue without it
         }
 
         const glowLayer = new GlowLayer('relic-glow', scene);
-        glowLayer.intensity = 0.82;
+        glowLayer.intensity = 1.45;
+
+        // Directional sun/moon light for hard-edged shadows and specular highlights on armour
+        const sunLight = new DirectionalLight('relic-sun', new Vector3(-0.55, -1.35, -0.45), scene);
+        sunLight.position = new Vector3(25, 48, 25);
+        sunLight.intensity = 2.0;
+        sunLight.diffuse = new Color3(1.0, 0.93, 0.80);
+        sunLight.specular = new Color3(1.0, 0.96, 0.88);
+
+        const shadows = new ShadowGenerator(1024, sunLight);
+        shadows.useBlurExponentialShadowMap = true;
+        shadows.blurKernel = 20;
+        shadows.darkness = 0.42;
+
+        // Auto-register every new mesh for shadow casting/receiving
+        scene.onNewMeshAddedObservable.add((mesh) => {
+            if (mesh.name.startsWith('relic-skybox') || mesh.name.startsWith('label-')) return;
+            shadows.addShadowCaster(mesh, false);
+            mesh.receiveShadows = true;
+        });
+
+        // Procedural sky CubeTexture — castle dusk atmosphere
+        const envTexture = buildSkyEnvironmentTexture(scene);
+        scene.environmentTexture = envTexture;
+        scene.environmentIntensity = 0.30;
+
+        // Skybox mesh — visible background sky
+        const skybox = MeshBuilder.CreateBox('relic-skybox', { size: 750 }, scene);
+        const skyMat = new StandardMaterial('relic-skybox-mat', scene);
+        skyMat.backFaceCulling = false;
+        skyMat.disableLighting = true;
+        const skyboxTex = envTexture.clone();
+        skyboxTex.coordinatesMode = 5; // Texture.SKYBOX_MODE
+        skyMat.reflectionTexture = skyboxTex;
+        skyMat.diffuseColor = new Color3(0, 0, 0);
+        skyMat.specularColor = new Color3(0, 0, 0);
+        skybox.material = skyMat;
+        skybox.infiniteDistance = true;
+        skybox.isPickable = false;
 
         const flameTexture = createFlameTexture(scene);
 
         const light = new HemisphericLight('ruin-light', new Vector3(0.15, 1, 0.2), scene);
-        light.intensity = 0.96;
-        light.diffuse = new Color3(0.82, 0.78, 0.98);
-        light.groundColor = new Color3(0.38, 0.22, 0.14);
+        light.intensity = 0.68;
+        light.diffuse = new Color3(0.76, 0.70, 0.96);
+        light.groundColor = new Color3(0.22, 0.12, 0.06);
 
         const handMaterial = new PBRMaterial('first-person-hands-material', scene);
         const castleMaterials = createCastleMaterials(scene);
@@ -313,6 +387,7 @@ export function RelicScene({
             scene,
             camera,
             pipeline,
+            shadows,
             castleMaterials,
             introMeshes,
             snapshot: { value: snapshotRef.current },
@@ -485,8 +560,8 @@ export function RelicScene({
         window.addEventListener('keyup', keyup);
 
         const unsubPos = rallar.messages.rtc.onMessage<RelicPosUpdate>(POS_TYPE_ID, (msg) => {
-            const { x, z, r } = msg.payload;
-            runtime.remotePositions.set(msg.senderId, { x, z, yaw: r, t: performance.now() });
+            const { pid, x, z, r } = msg.payload;
+            runtime.remotePositions.set(pid, { x, z, yaw: r, t: performance.now() });
         });
 
         engine.runRenderLoop(() => {
@@ -563,9 +638,9 @@ export function RelicScene({
 }
 
 function RoomStateOverlay({
-    snapshot,
-    localPlayerId,
-}: Readonly<{
+                              snapshot,
+                              localPlayerId,
+                          }: Readonly<{
     snapshot?: RelicPublicSnapshot;
     localPlayerId?: string;
 }>) {
@@ -893,153 +968,190 @@ function createPlayerAvatar(
     materials: readonly PBRMaterial[];
 }> {
     const character = findRelicCharacter(player.characterId);
-    const primary = materialFromHex(
-        runtime.scene,
-        `avatar-primary-${player.playerId}`,
-        character.colors.primary,
-        0.05,
-    );
-    const secondary = materialFromHex(
-        runtime.scene,
-        `avatar-secondary-${player.playerId}`,
-        character.colors.secondary,
-        0.035,
-    );
-    const accent = materialFromHex(
-        runtime.scene,
-        `avatar-accent-${player.playerId}`,
-        character.colors.accent,
-        0.12,
-    );
+    const pid = player.playerId;
+    const isBulwark = character.silhouette === 'bulwark';
 
-    // Hakama (lower robe) — wider bottom
-    const root = MeshBuilder.CreateCylinder(
-        `avatar-body-${player.playerId}`,
-        {
-            height: 0.52,
-            diameterTop: 0.36,
-            diameterBottom: character.silhouette === 'bulwark' ? 0.62 : 0.52,
-            tessellation: 8,
-        },
-        runtime.scene,
-    );
+    // Three-tier PBR materials: cloth (soft), armour plate (semi-metal), gold trim (mirror)
+    const primary   = materialFromHex(runtime.scene, `av-pri-${pid}`, character.colors.primary,   0.04, 0.04, 0.80);
+    const secondary = materialFromHex(runtime.scene, `av-sec-${pid}`, character.colors.secondary, 0.02, 0.58, 0.42);
+    const accent    = materialFromHex(runtime.scene, `av-acc-${pid}`, character.colors.accent,    0.20, 0.90, 0.16);
+    const blade     = materialFromHex(runtime.scene, `av-bld-${pid}`, '#a8b8bc',                  0.01, 0.84, 0.30);
+
+    // === ROOT: Hakama (wide pleated lower robe) ===
+    const root = MeshBuilder.CreateCylinder(`av-body-${pid}`, {
+        height: 0.54,
+        diameterTop:    isBulwark ? 0.44 : 0.38,
+        diameterBottom: isBulwark ? 0.66 : 0.58,
+        tessellation: 10,
+    }, runtime.scene);
     root.material = primary;
-    root.metadata = { playerId: player.playerId };
+    root.metadata = { playerId: pid };
 
     const parts: Mesh[] = [root];
+    const mats: PBRMaterial[] = [primary, secondary, accent, blade];
+
     const addPart = (mesh: Mesh, material: PBRMaterial) => {
         mesh.parent = root;
         mesh.material = material;
-        mesh.metadata = { playerId: player.playerId };
+        mesh.metadata = { playerId: pid };
         parts.push(mesh);
         return mesh;
     };
 
-    // Do-maru (chest armour)
-    const chest = addPart(
-        MeshBuilder.CreateBox(
-            `avatar-chest-${player.playerId}`,
-            { width: 0.34, height: 0.36, depth: 0.24 },
-            runtime.scene,
-        ),
-        secondary,
-    );
-    chest.position.set(0, 0.44, 0);
+    // Hakama fold accent band
+    addPart(MeshBuilder.CreateCylinder(`av-band-${pid}`, {
+        height: 0.07, diameterTop: isBulwark ? 0.48 : 0.42, diameterBottom: isBulwark ? 0.48 : 0.42, tessellation: 10,
+    }, runtime.scene), accent).position.y = 0.12;
 
-    // Sode — left pauldron
-    const leftPauldron = addPart(
-        MeshBuilder.CreateBox(
-            `avatar-lpauldron-${player.playerId}`,
-            { width: 0.12, height: 0.28, depth: 0.22 },
-            runtime.scene,
-        ),
-        secondary,
-    );
-    leftPauldron.position.set(-0.28, 0.44, 0);
-    leftPauldron.rotation.z = 0.22;
+    // === LEGS ===
+    for (const [side, xOff] of [[-1, -0.10], [1, 0.10]] as [number, number][]) {
+        // Suneate (shin guard)
+        addPart(MeshBuilder.CreateCylinder(`av-shin-${side}-${pid}`, {
+            height: 0.30, diameterTop: 0.14, diameterBottom: 0.12, tessellation: 7,
+        }, runtime.scene), secondary).position.set(xOff, -0.27, 0.01);
 
-    // Sode — right pauldron
-    const rightPauldron = addPart(
-        MeshBuilder.CreateBox(
-            `avatar-rpauldron-${player.playerId}`,
-            { width: 0.12, height: 0.28, depth: 0.22 },
-            runtime.scene,
-        ),
-        secondary,
-    );
-    rightPauldron.position.set(0.28, 0.44, 0);
-    rightPauldron.rotation.z = -0.22;
+        // Tabi boot
+        const boot = addPart(MeshBuilder.CreateBox(`av-boot-${side}-${pid}`, {
+            width: 0.15, height: 0.10, depth: 0.22,
+        }, runtime.scene), primary);
+        boot.position.set(xOff, -0.45, 0.04);
+    }
 
-    // Kabuto dome
-    const kabuto = addPart(
-        MeshBuilder.CreateSphere(
-            `avatar-kabuto-${player.playerId}`,
-            { diameter: 0.30, segments: 10 },
-            runtime.scene,
-        ),
-        accent,
-    );
-    kabuto.position.set(0, 0.78, 0);
-    kabuto.scaling.y = 0.78;
+    // === TORSO ===
+    // Koshi-obi (hip sash)
+    addPart(MeshBuilder.CreateCylinder(`av-waist-${pid}`, {
+        height: 0.11, diameterTop: isBulwark ? 0.50 : 0.44, diameterBottom: isBulwark ? 0.52 : 0.46, tessellation: 10,
+    }, runtime.scene), accent).position.y = 0.34;
 
-    // Kabuto brim (shikoro neckguard)
-    const brim = addPart(
-        MeshBuilder.CreateDisc(
-            `avatar-brim-${player.playerId}`,
-            { radius: 0.22, tessellation: 18 },
-            runtime.scene,
-        ),
-        accent,
-    );
-    brim.position.set(0, 0.65, 0);
-    brim.rotation.x = Math.PI / 2;
+    // Dō (chest armour plate)
+    const chest = addPart(MeshBuilder.CreateBox(`av-chest-${pid}`, {
+        width: isBulwark ? 0.46 : 0.40, height: 0.40, depth: 0.27,
+    }, runtime.scene), secondary);
+    chest.position.y = 0.65;
 
-    // Maedate — front crest on kabuto
-    const crest = addPart(
-        MeshBuilder.CreateBox(
-            `avatar-crest-${player.playerId}`,
-            { width: 0.05, height: 0.16, depth: 0.04 },
-            runtime.scene,
-        ),
-        accent,
-    );
-    crest.position.set(0, 0.90, 0.13);
-    crest.rotation.x = -0.28;
+    // Lamellar rows on chest (two horizontal accent strips)
+    addPart(MeshBuilder.CreateBox(`av-chest-rim1-${pid}`, {
+        width: isBulwark ? 0.48 : 0.42, height: 0.055, depth: 0.28,
+    }, runtime.scene), accent).position.y = 0.70;
+    addPart(MeshBuilder.CreateBox(`av-chest-rim2-${pid}`, {
+        width: isBulwark ? 0.48 : 0.42, height: 0.05, depth: 0.28,
+    }, runtime.scene), accent).position.y = 0.52;
 
-    // Katana sheath on back (universal)
-    const sheath = addPart(
-        MeshBuilder.CreateBox(
-            `avatar-sheath-${player.playerId}`,
-            { width: 0.06, height: 0.76, depth: 0.08 },
-            runtime.scene,
-        ),
-        primary,
-    );
-    sheath.position.set(-0.14, 0.28, -0.22);
-    sheath.rotation.z = 0.42;
-    sheath.rotation.y = 0.32;
+    // Neck cylinder
+    addPart(MeshBuilder.CreateCylinder(`av-neck-${pid}`, {
+        height: 0.14, diameter: 0.17, tessellation: 8,
+    }, runtime.scene), primary).position.y = 0.94;
 
-    // Tsuka (handle)
-    const tsuka = addPart(
-        MeshBuilder.CreateBox(
-            `avatar-tsuka-${player.playerId}`,
-            { width: 0.07, height: 0.22, depth: 0.09 },
-            runtime.scene,
-        ),
-        accent,
-    );
-    tsuka.position.set(-0.06, 0.58, -0.22);
-    tsuka.rotation.z = 0.42;
-    tsuka.rotation.y = 0.32;
+    // === ARMS (left and right) ===
+    for (const [side, sign] of [[-1, -1], [1, 1]] as [number, number][]) {
+        // Ō-sode (large shoulder board)
+        const sode = addPart(MeshBuilder.CreateBox(`av-sode-${side}-${pid}`, {
+            width: 0.10, height: 0.34, depth: 0.27,
+        }, runtime.scene), secondary);
+        sode.position.set(sign * 0.31, 0.72, -0.02);
+        sode.rotation.z = sign * 0.28;
 
-    const signature = addSignatureProp(runtime, root, character, player.playerId, accent);
+        // Sode lamellar accent
+        const sodeRim = addPart(MeshBuilder.CreateBox(`av-sode-rim-${side}-${pid}`, {
+            width: 0.11, height: 0.055, depth: 0.27,
+        }, runtime.scene), accent);
+        sodeRim.position.set(sign * 0.31, 0.62, -0.02);
+        sodeRim.rotation.z = sign * 0.28;
+
+        // Upper arm
+        const uArm = addPart(MeshBuilder.CreateCylinder(`av-uarm-${side}-${pid}`, {
+            height: 0.24, diameterTop: 0.10, diameterBottom: 0.13, tessellation: 7,
+        }, runtime.scene), primary);
+        uArm.position.set(sign * 0.30, 0.55, 0.01);
+        uArm.rotation.z = sign * 0.75;
+
+        // Lower arm / kote (armoured gauntlet)
+        const lArm = addPart(MeshBuilder.CreateCylinder(`av-larm-${side}-${pid}`, {
+            height: 0.22, diameterTop: 0.09, diameterBottom: 0.11, tessellation: 7,
+        }, runtime.scene), secondary);
+        lArm.position.set(sign * 0.40, 0.40, 0.04);
+        lArm.rotation.z = sign * 0.94;
+        lArm.rotation.x = 0.12;
+    }
+
+    // === HEAD ===
+    // Kabuto dome (flattened sphere)
+    const kabuto = addPart(MeshBuilder.CreateSphere(`av-kabuto-${pid}`, {
+        diameter: 0.37, segments: 12,
+    }, runtime.scene), accent);
+    kabuto.position.y = 1.14;
+    kabuto.scaling.set(1.0, 0.72, 1.0);
+
+    // Hachi brow ridge
+    addPart(MeshBuilder.CreateBox(`av-hachi-${pid}`, {
+        width: 0.38, height: 0.07, depth: 0.33,
+    }, runtime.scene), secondary).position.y = 1.06;
+
+    // Shikoro — inner neckguard disc
+    const shikoro = addPart(MeshBuilder.CreateDisc(`av-shikoro-${pid}`, {
+        radius: 0.26, tessellation: 20,
+    }, runtime.scene), secondary);
+    shikoro.position.y = 1.00;
+    shikoro.rotation.x = Math.PI / 2;
+
+    // Shikoro outer accent ring
+    const shikoroRing = addPart(MeshBuilder.CreateDisc(`av-shikoro-ring-${pid}`, {
+        radius: 0.30, tessellation: 20,
+    }, runtime.scene), accent);
+    shikoroRing.position.y = 0.97;
+    shikoroRing.rotation.x = Math.PI / 2;
+
+    // Fukigaeshi — ear flap plates (left and right)
+    for (const [side, sign] of [[-1, -1], [1, 1]] as [number, number][]) {
+        const fuki = addPart(MeshBuilder.CreateBox(`av-fuki-${side}-${pid}`, {
+            width: 0.06, height: 0.16, depth: 0.14,
+        }, runtime.scene), secondary);
+        fuki.position.set(sign * 0.20, 1.10, -0.01);
+        fuki.rotation.z = sign * 0.55;
+    }
+
+    // Menpo — lower face mask
+    const menpo = addPart(MeshBuilder.CreateBox(`av-menpo-${pid}`, {
+        width: 0.26, height: 0.19, depth: 0.17,
+    }, runtime.scene), secondary);
+    menpo.position.set(0, 1.00, 0.10);
+
+    // Menpo nose bridge
+    const noseBridge = addPart(MeshBuilder.CreateBox(`av-nose-${pid}`, {
+        width: 0.055, height: 0.09, depth: 0.09,
+    }, runtime.scene), accent);
+    noseBridge.position.set(0, 1.06, 0.19);
+
+    // Maedate (front crest — tall dramatic plate)
+    const crest = addPart(MeshBuilder.CreateBox(`av-crest-${pid}`, {
+        width: 0.06, height: 0.26, depth: 0.05,
+    }, runtime.scene), accent);
+    crest.position.set(0, 1.28, 0.14);
+    crest.rotation.x = -0.22;
+
+    // === KATANA at hip (daisho carry) ===
+    const saya = addPart(MeshBuilder.CreateBox(`av-saya-${pid}`, {
+        width: 0.05, height: 0.66, depth: 0.07,
+    }, runtime.scene), primary);
+    saya.position.set(-0.22, 0.30, 0.14);
+    saya.rotation.z = 0.30;
+
+    const tsuba = addPart(MeshBuilder.CreateCylinder(`av-tsuba-${pid}`, {
+        height: 0.025, diameter: 0.11, tessellation: 10,
+    }, runtime.scene), accent);
+    tsuba.position.set(-0.10, 0.56, 0.14);
+    tsuba.rotation.x = Math.PI / 2;
+
+    const tsuka = addPart(MeshBuilder.CreateBox(`av-tsuka-${pid}`, {
+        width: 0.045, height: 0.20, depth: 0.07,
+    }, runtime.scene), primary);
+    tsuka.position.set(-0.03, 0.64, 0.14);
+    tsuka.rotation.z = 0.30;
+
+    const signature = addSignatureProp(runtime, root, character, pid, accent, blade);
     parts.push(...signature);
 
-    return {
-        root,
-        parts,
-        materials: [primary, secondary, accent],
-    };
+    return { root, parts, materials: mats };
 }
 
 function addSignatureProp(
@@ -1048,11 +1160,12 @@ function addSignatureProp(
     character: RelicCharacter,
     playerId: string,
     material: PBRMaterial,
+    bladeMaterial: PBRMaterial,
 ): readonly Mesh[] {
     const parts: Mesh[] = [];
-    const add = (mesh: Mesh) => {
+    const add = (mesh: Mesh, mat: PBRMaterial = material) => {
         mesh.parent = root;
-        mesh.material = material;
+        mesh.material = mat;
         mesh.metadata = { playerId };
         parts.push(mesh);
         return mesh;
@@ -1061,66 +1174,90 @@ function addSignatureProp(
     switch (character.silhouette) {
         case 'vanguard':
         case 'bulwark': {
+            // Large round shield (tate) held at left side
             const shield = add(MeshBuilder.CreateCylinder(
                 `avatar-shield-${playerId}`,
-                { height: 0.08, diameter: 0.46, tessellation: 6 },
+                { height: 0.07, diameter: 0.52, tessellation: 7 },
                 runtime.scene,
             ));
-            shield.position.set(-0.36, 0.05, 0.08);
+            shield.position.set(-0.38, 0.18, 0.10);
             shield.rotation.z = Math.PI / 2;
+            // Shield boss (centre umbo)
+            add(MeshBuilder.CreateSphere(`avatar-shield-boss-${playerId}`, { diameter: 0.12, segments: 8 }, runtime.scene))
+                .position.set(-0.42, 0.18, 0.10);
             break;
         }
         case 'scout':
         case 'stormrunner': {
+            // Paper lantern held at side
             const lantern = add(MeshBuilder.CreateSphere(
                 `avatar-lantern-${playerId}`,
-                { diameter: 0.18, segments: 10 },
+                { diameter: 0.20, segments: 10 },
                 runtime.scene,
             ));
-            lantern.position.set(0.32, -0.08, 0.22);
+            lantern.position.set(0.36, 0.12, 0.22);
+            lantern.scaling.set(1, 1.3, 1);
+            // Lantern cord
+            add(MeshBuilder.CreateCylinder(`avatar-lantern-cord-${playerId}`, { height: 0.14, diameter: 0.02, tessellation: 4 }, runtime.scene))
+                .position.set(0.36, 0.26, 0.22);
             break;
         }
         case 'scholar':
         case 'seer': {
+            // Magical halo ring above head
             const halo = add(MeshBuilder.CreateTorus(
                 `avatar-halo-${playerId}`,
-                { diameter: 0.48, thickness: 0.025, tessellation: 24 },
+                { diameter: 0.52, thickness: 0.03, tessellation: 28 },
                 runtime.scene,
             ));
-            halo.position.set(0, 0.68, 0);
+            halo.position.set(0, 1.38, 0);
             halo.rotation.x = Math.PI / 2;
+            // Inner halo ring (smaller, different accent)
+            add(MeshBuilder.CreateTorus(`avatar-halo-inner-${playerId}`, { diameter: 0.34, thickness: 0.02, tessellation: 20 }, runtime.scene))
+                .position.set(0, 1.42, 0);
+            (parts[parts.length - 1]).rotation.x = Math.PI / 2;
             break;
         }
         case 'trapbreaker': {
+            // Long polearm / tool carried at side
             const tool = add(MeshBuilder.CreateBox(
                 `avatar-tool-${playerId}`,
-                { width: 0.12, height: 0.56, depth: 0.08 },
+                { width: 0.055, height: 0.68, depth: 0.07 },
                 runtime.scene,
             ));
-            tool.position.set(0.36, -0.04, 0);
-            tool.rotation.z = 0.32;
+            tool.position.set(0.40, 0.08, 0);
+            tool.rotation.z = 0.28;
+            // Tool head
+            add(MeshBuilder.CreateBox(`avatar-tool-head-${playerId}`, { width: 0.14, height: 0.11, depth: 0.10 }, runtime.scene), bladeMaterial)
+                .position.set(0.52, 0.48, 0);
             break;
         }
         case 'duelist':
         case 'hexblade': {
-            const blade = add(MeshBuilder.CreateBox(
-                `avatar-blade-${playerId}`,
-                { width: 0.08, height: 0.78, depth: 0.08 },
+            // Second drawn blade held in right hand (nito style)
+            const drawn = add(MeshBuilder.CreateBox(
+                `avatar-drawn-${playerId}`,
+                { width: 0.04, height: 0.72, depth: 0.055 },
                 runtime.scene,
-            ));
-            blade.position.set(0.38, 0.02, 0.02);
-            blade.rotation.z = -0.44;
+            ), bladeMaterial);
+            drawn.position.set(0.38, 0.22, 0.04);
+            drawn.rotation.z = -0.38;
+            // Tsuba on drawn blade
+            add(MeshBuilder.CreateCylinder(`avatar-drawn-tsuba-${playerId}`, { height: 0.022, diameter: 0.10, tessellation: 8 }, runtime.scene))
+                .position.set(0.26, 0.54, 0.04);
+            (parts[parts.length - 1]).rotation.x = Math.PI / 2;
             break;
         }
         case 'trickster': {
+            // Twin kunai knives
             for (const side of [-1, 1]) {
                 const knife = add(MeshBuilder.CreateBox(
                     `avatar-knife-${playerId}-${side}`,
-                    { width: 0.06, height: 0.42, depth: 0.06 },
+                    { width: 0.038, height: 0.36, depth: 0.045 },
                     runtime.scene,
-                ));
-                knife.position.set(side * 0.32, 0, 0.08);
-                knife.rotation.z = side * 0.55;
+                ), bladeMaterial);
+                knife.position.set(side * 0.34, 0.14, 0.10);
+                knife.rotation.z = side * 0.52;
             }
             break;
         }
@@ -1342,6 +1479,7 @@ function broadcastLocalPosition(runtime: SceneRuntime): void {
     void rallar.messages.rtc.send<RelicPosUpdate>({
         typeId: POS_TYPE_ID,
         payload: {
+            pid: localPlayerId,
             x: world.x + runtime.roamOffset.x,
             z: world.z + runtime.roamOffset.z,
             r: runtime.cameraYaw.value,
@@ -1848,19 +1986,20 @@ function updateDynamicPostProcess(runtime: SceneRuntime): void {
         runtime.pipeline.depthOfFieldEnabled = false;
     }
 
-    // Exposure and contrast: smoothly transition per room kind
-    const [tExp, tContrast] = !room ? [1.04, 1.15]
-        : room.kind === 'monster' ? [0.84, 1.44]
-        : room.kind === 'trap' ? [0.91, 1.30]
-        : room.kind === 'shrine' ? [1.10, 1.08]
-        : room.kind === 'treasure' ? [1.18, 1.05]
-        : room.kind === 'exit' ? [1.22, 1.02]
-        : [1.04, 1.15];
+    // Exposure, contrast, vignette: smoothly transition per room kind
+    const [tExp, tContrast, tVignette] = !room ? [1.06, 1.18, 2.4]
+        : room.kind === 'monster' ? [0.82, 1.48, 4.2]
+            : room.kind === 'trap' ? [0.90, 1.34, 3.6]
+                : room.kind === 'shrine' ? [1.12, 1.08, 2.0]
+                    : room.kind === 'treasure' ? [1.20, 1.04, 1.8]
+                        : room.kind === 'exit' ? [1.24, 1.02, 1.5]
+                            : [1.06, 1.18, 2.4];
 
     const lerpSpeed = Math.min(1, runtime.engine.getDeltaTime() / 550);
     const ip = runtime.pipeline.imageProcessing;
     ip.exposure += (tExp - ip.exposure) * lerpSpeed;
     ip.contrast += (tContrast - ip.contrast) * lerpSpeed;
+    ip.vignetteWeight += (tVignette - ip.vignetteWeight) * lerpSpeed;
 }
 
 function updateLightFlicker(runtime: SceneRuntime): void {
@@ -2256,13 +2395,15 @@ function materialFromHex(
     name: string,
     hex: string,
     emissiveScale: number,
+    metallic = 0.1,
+    roughness = 0.72,
 ): PBRMaterial {
     const material = new PBRMaterial(name, scene);
     const color = Color3.FromHexString(hex);
     material.albedoColor = color;
     material.emissiveColor = color.scale(emissiveScale);
-    material.metallic = 0.1;
-    material.roughness = 0.72;
+    material.metallic = metallic;
+    material.roughness = roughness;
     return material;
 }
 
@@ -2279,6 +2420,45 @@ function effectMaterial(
     material.alpha = alpha;
     material.specularColor = color.scale(0.22);
     return material;
+}
+
+// Builds a 6-face CubeTexture from canvas-painted gradients representing a
+// castle dusk sky. This gives PBR metals and gold a meaningful environment
+// to reflect without requiring an external HDR file.
+function buildSkyEnvironmentTexture(scene: Scene): CubeTexture {
+    const size = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+
+    function makeFace(topColor: string, botColor: string): string {
+        const g = ctx.createLinearGradient(0, 0, 0, size);
+        g.addColorStop(0, topColor);
+        g.addColorStop(1, botColor);
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, size, size);
+        return canvas.toDataURL('image/png');
+    }
+
+    // Sky palette: midnight blue zenith fading to warm amber horizon
+    const zenith  = '#07091c';
+    const sky     = '#0d1028';
+    const horizon = '#2e1a0a';
+    const ground  = '#130e06';
+
+    const faces = [
+        makeFace(sky, horizon), // +X
+        makeFace(sky, horizon), // -X
+        makeFace(zenith, sky),  // +Y
+        makeFace(ground, ground), // -Y
+        makeFace(sky, horizon), // +Z
+        makeFace(sky, horizon), // -Z
+    ];
+
+    const tex = CubeTexture.CreateFromImages(faces, scene);
+    tex.coordinatesMode = 3; // CubeTexture.CUBIC_MODE
+    return tex;
 }
 
 function easeOut(value: number): number {
