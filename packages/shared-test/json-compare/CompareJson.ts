@@ -127,13 +127,13 @@ function isValueEqual(expected: unknown, actual: unknown, compareExact = false):
 function isIdenticalArrays(a: string[], b: string[]): ComparisonResult {
     for (const aKey of a) {
         if (!b.some(bKey => bKey === aKey)) {
-            return toNotCompatible(a, b, ' Not exact equal keys in json object', { keyNotExpected: aKey });
+            return toNotCompatible(a, b, ' Not exact equal keys in json object', {keyNotExpected: aKey});
         }
     }
 
     for (const bKey of b) {
         if (!a.some(aKey => aKey === bKey)) {
-            return toNotCompatible(a, b, ' Not exact equal keys in json object', { keyNotExpected: bKey });
+            return toNotCompatible(a, b, ' Not exact equal keys in json object', {keyNotExpected: bKey});
         }
     }
 

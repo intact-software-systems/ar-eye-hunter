@@ -1,0 +1,90 @@
+{
+  "variables": {
+    "url": "https://api.spotify.com/v1"
+  },
+  "execution": {
+    "failFast": true
+  },
+  "defaults": {
+    "timeoutMs": 5000,
+    "comparison": "compatible",
+    "headers": {
+      "Accept": "application/json"
+    },
+    "resilience": {
+      "retry": {
+        "maxAttempts": 3,
+        "backoffMs": 250,
+        "backoffMultiplier": 2,
+        "onStatus": [
+          408,
+          429,
+          500,
+          502,
+          503,
+          504
+        ],
+        "onException": true
+      }
+    }
+  },
+  "connections": {
+    "spotify": {
+      "type": "http",
+      "baseUrl": "{url}",
+      "headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    "spotifyAuth": {
+      "type": "http",
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      }
+    }
+  },
+  "steps": [
+    {
+      "name": "auth",
+      "connection": "spotifyAuth",
+      "request": {
+        "path": "https://accounts.spotify.com/api/token",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Basic {basicAuth}"
+        },
+        "form": {
+          "grant_type": "client_credentials"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "access_token": "string",
+          "token_type": "Bearer",
+          "expires_in": "integer"
+        }
+      },
+      "output": "auth"
+    },
+    {
+      "name": "getNewReleases",
+      "connection": "spotify",
+      "repeat": 10,
+      "request": {
+        "path": "/browse/new-releases",
+        "headers": {
+          "Authorization": "{auth.body.token_type} {auth.body.access_token}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "albums": {
+            "items": "any"
+          }
+        }
+      }
+    }
+  ]
+}
