@@ -4,6 +4,12 @@
 
 The black-box RTC foundation is in a good state.
 
+The current supported RTC test categories are cataloged in:
+
+```text
+packages/shared-test/black-box-runner/black-box-rtc-test-catalog.md
+```
+
 Latest observed test result:
 
 ```text
@@ -21,7 +27,8 @@ The current default `rallar` provider is **not yet full real WebRTC**. It is Web
 | `rallar-stub` | Implemented | Simple fake provider for smoke tests and runner validation. |
 | `rallar-memory` | Implemented | Deterministic multi-peer runtime for direct, broadcast, reconnect, close, and routing tests. |
 | `rallar` | Implemented as signaling-only | Uses global WebSocket for signaling, requires `signalingUrl`, waits for open by default. |
-| Real Rallar RTC adapter | Not integrated yet | Should wrap the existing Rallar RTC implementation instead of reimplementing RTC in the black-box runner. |
+| `rallar-browser` | Browser-backed Rallar provider | Uses Playwright plus the browser Rallar facade. Provider registration, `rtc.connect`, `rtc.close`, event bridging, realtime sends, `messages.rtc` sends, cleanup, diagnostics, and operational docs are implemented at provider-test level. |
+| Real Rallar RTC adapter | In progress | Should wrap the existing Rallar RTC implementation instead of reimplementing RTC in the black-box runner. |
 
 ## Current `rallar` Meaning
 
@@ -322,11 +329,100 @@ Signaling close diagnostics:
 }
 ```
 
+### Browser-backed `rallar-browser`
+
+The `rallar-browser` provider:
+
+- starts or reuses one Playwright Chromium browser per scenario context
+- starts or reuses a Vite harness unless `harness.url`/`harnessUrl` is supplied
+- loads `browser/rallar-browser-harness.html`
+- calls `window.__blackBoxRallar.connect(...)` in the browser page
+- delegates to the existing browser `rallar` facade for auth, room join, and realtime listener setup
+- records browser runtime events in `rtcMessages` and close events in `rtcCloseEvents`
+
+Iteration 2 scope:
+
+- provider name is registered as `rallar-browser`
+- `rtc.connect` opens the headless page and connects the browser runtime
+- `rtc.close` closes the runtime page/session
+- dry-run includes the provider name without launching Playwright
+
+Iteration 3 adds a tested event bridge:
+
+- `window.__blackBoxRallarEmit` browser events are exposed through Playwright
+- browser diagnostics and realtime message events land in `rtcMessages[connectionName]`
+- browser close events land in `rtcCloseEvents[connectionName]`
+- `rtc.wait` with `expect.message` or `expect.close` can match bridged browser events
+
+Iteration 4 adds provider-mode realtime send routing:
+
+- each browser connection stores `connectDiagnostics.sessionId`
+- `rtc.send` receives the current interaction/config/context as optional client args
+- `expect.connection`/`expect.onConnection` resolves to the target browser's Rallar session ID
+- the provider passes that session ID as `peerIds` to `rallar.realtime.sendJson`
+- scenario authors do not need to hardcode volatile Rallar session IDs
+
+Realtime `rtc.send` is now covered with fake-browser tests. A live deployed-service run is still needed before treating the provider as operationally stable.
+
+Iteration 5 adds app-level `messages.rtc` transport:
+
+- browser runtime accepts `transport: "messages.rtc"`
+- browser runtime subscribes with `rallar.messages.rtc.onMessage`
+- browser runtime sends with `rallar.messages.rtc.send`
+- `rallar.typeId` is required for RTC subscriptions
+- `rallar.topicId`, `contextId`, `resourceId`, overlay, reliability, and routing fields can be configured
+- provider maps `expect.connection` to `nextHopPeerIds`
+
+`messages.rtc` is covered with fake-browser provider tests. A live deployed-service run is still needed.
+
+Iteration 6 adds runner cleanup and reuse:
+
+- one Chromium instance is reused per scenario context
+- each RTC connection gets an isolated browser context and page
+- explicit `rtc.close`, runner auto-close, setup failure, and unexpected page close paths clean up browser resources
+- cleanup diagnostics are emitted into `rtcMessages`
+
+Iteration 7 adds robust diagnostics:
+
+- browser page load and runtime-connect failures are reported
+- Rallar auth/connect/join failures are phase-tagged by the browser runtime
+- browser console errors/warnings and failed Rallar API requests are captured
+- realtime peer-not-found, data-channel-not-open, and send-result attention diagnostics are captured
+- provider send failures include the browser send response when available
+
+Iteration 8 adds operational docs and live-run examples:
+
+- `rallar-browser-rtc-runbook.md` covers local, CI, dry-run, live realtime, live `messages.rtc`, timeout, and provider choice guidance
+- `examples/rtc-rallar-browser-realtime.json` covers two-browser realtime delivery
+- `examples/rtc-rallar-browser-messages-rtc.json` covers two-browser app-level RTC delivery
+
+Iteration 9 adds a deployed-service validation harness:
+
+- `rallar-browser-live-validation.mts` runs dry-run or live validation for `realtime`, `messages.rtc`, or both
+- live mode fails early unless deployed Rallar endpoint and credential environment variables are present
+- validation output redacts password fields and known password environment values
+- `--record-dir` writes redacted artifacts for CI/debug capture
+- shared-test exposes `npm --workspace @ar-eye-hunter/shared-test run rtc:browser:validate`
+
+Iteration 10 is documented as future work only:
+
+- long-running soak/monitor mode for browser-backed RTC is not implemented yet
+- the intended shape is a runner that keeps RTC connections open for hours and sends periodic messages
+- planned outputs are rolling metrics, redacted JSONL event logs, and a final summary report
+
+Iteration 11 is documented as future work only:
+
+- seeded random step plans and bounded parallel step groups are not implemented yet
+- the intended shape is deterministic setup, randomized traffic, deterministic cleanup
+- the design must record both seed and expanded executable plan for replay
+- not all events are safe to randomize; connection setup, credentials, room prerequisites, and cleanup should usually remain deterministic
+
 ## Important Naming Distinction
 
 | Factory | Meaning |
 | --- | --- |
 | `createRallarWebRtcWebSocketSignalingProvider()` | Current default CLI `rallar` provider. Uses global WebSocket and is signaling-only. |
+| `createRallarBrowserRtcProvider()` | Opt-in Playwright/Vite browser provider named `rallar-browser`. |
 | `createRallarWebRtcSignalingOnlyProvider(...)` | Test/provider wrapper around an injected signaling factory. |
 | `createRallarWebRtcSignalingOnlyRuntime(...)` | Runtime adapter exposing a signaling session through the generic RTC contract. |
 | `createRallarWebRtcProvider(...)` | Wrapper around the future/real WebRTC runtime. Not the current CLI default. |
@@ -337,26 +433,29 @@ Signaling close diagnostics:
 
 The black-box runner should not reimplement RTC if Rallar already has an implementation.
 
-Not integrated yet:
+Still incomplete:
 
-- existing Rallar RTC implementation as a black-box provider
-- real `RTCPeerConnection` lifecycle through the black-box runner
-- real `RTCDataChannel` lifecycle through the black-box runner
-- offer/answer and ICE behavior through the existing Rallar RTC implementation
 - browser/Deno integration tests around the real implementation
+- first recorded live deployed-service run and failure-mode tuning using `rallar-browser-live-validation.mts --mode=live`
+- Iteration 10 soak/monitor runner implementation
+- Iteration 11 seeded random/parallel step plan implementation
 
 ## Recommended Next Step
 
-The next step should be to add a provider adapter around the existing Rallar RTC implementation.
+The next step should run `rallar-browser-live-validation.mts --mode=live --transport=both --record-dir=.artifacts/rallar-browser-rtc` against deployed Rallar services and capture the first live failure modes.
 
-The adapter should plug into the existing seam:
+The adapter already plugs into the existing runtime/client seam:
 
 ```ts
-createRallarWebRtcProvider({
-  createSession: async (args, dispatcher) => {
-    // create and wrap existing Rallar RTC session here
+createRallarRtcProvider({
+  createClient: (args, config, context) => {
+    return createRallarRtcClientFromRuntime(args, {
+      connect: (runtimeArgs, dispatcher) => {
+        // create and wrap browser-backed Rallar session here
+      }
+    })
   }
 })
 ```
 
-This allows the black-box runner to reuse the existing Rallar implementation instead of duplicating RTC logic.
+Provider-mode realtime sends now resolve `expect.connection` to live browser session IDs. Provider-mode `messages.rtc` sends resolve `expect.connection` to `nextHopPeerIds`. The remaining work is live-service hardening.

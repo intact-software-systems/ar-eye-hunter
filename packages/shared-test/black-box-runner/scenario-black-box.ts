@@ -1,90 +1,156 @@
-import * as sync from './execute-black-box.ts'
-import * as scenarioAlgorithms from './scenario-algorithm.ts'
-import utils from './utils.ts'
+import * as sync from './execute-black-box.ts';
+import type { ScenarioInput } from './scenario-algorithm.ts';
+import * as scenarioAlgorithms from './scenario-algorithm.ts';
+import utils from './utils.ts';
 
-import {Command} from "https://deno.land/x/cmd@v1.2.0/commander/index.ts"
+type CliOptions = {
+    config: string
+    workingDirectory?: string
+    replace?: string
+    execution?: string
+    dryRun?: boolean
+}
 
-const program = new Command()
+function printHelp(): void {
+    console.log('');
+    console.log('Example calls:');
+    console.log('  $ scenario-generate --config config.json');
+    console.log('  $ scenario-generate -c config.json');
+    console.log('  $ scenario-generate -c config.json -e dry');
+    console.log('  $ scenario-generate -c config.json --dry-run');
+    console.log('  $ scenario-generate -c config.json -n');
+    console.log('  $ scenario-generate --config config.json --replace url:=http://localhost:8080/led/api/v1,valuDate:=2022-10-01');
+    console.log('  $ scenario-generate -c config.json -r url:=http://localhost:8080/led/api/v1,valuDate:=2022-10-01');
+    console.log('  $ scenario-generate -c config.json -w ./test-data -r url:=http://localhost:8080/led/api/v1,valuDate:=2022-10-01');
+}
 
-program
-    .requiredOption('-c, --config <config>', 'Config file in json format', value => value)
-    .option('-w, --workingDirectory <workingDirectory>', 'Working directory')
-    .option('-r, --replace <replace>', 'Replace tags. Example: tag1:=value,tag2:=value . No space in string')
-    .option('-e, --execution <execution>', 'Execution style dry or wet. Default is wet. -e dry|wet')
-    .option('-n, --dry-run', 'Execute in dry-run mode without invoking transports/providers')
+function readOptionValue(args: readonly string[], index: number, option: string): string {
+    const value = args[index + 1];
+    if (value === undefined || value.startsWith('-')) {
+        throw new Error('Missing value for ' + option);
+    }
 
-program.on('-h, --help', () => {
-    console.log('')
-    console.log('Example calls:')
-    console.log('  $ scenario-generate --config config.json')
-    console.log('  $ scenario-generate -c config.json')
-    console.log('  $ scenario-generate -c config.json -e dry')
-    console.log('  $ scenario-generate -c config.json --dry-run')
-    console.log('  $ scenario-generate -c config.json -n')
-    console.log('  $ scenario-generate --config config.json --replace url:=http://localhost:8080/led/api/v1,valuDate:=2022-10-01')
-    console.log('  $ scenario-generate -c config.json -r url:=http://localhost:8080/led/api/v1,valuDate:=2022-10-01')
-    console.log('  $ scenario-generate -c config.json -w ./test-data -r url:=http://localhost:8080/led/api/v1,valuDate:=2022-10-01')
-})
+    return value;
+}
 
-program.parse(process.argv)
+function parseCliOptions(args: readonly string[]): CliOptions {
+    const options: Partial<CliOptions> = {};
 
-utils.setWorkingDirectory(program.opts().workingDirectory || '.')
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+        const [option, inlineValue] = arg.includes('=')
+            ? arg.split(/=(.*)/s, 2)
+            : [arg, undefined];
+
+        switch (option) {
+            case '-h':
+            case '--help':
+                printHelp();
+                process.exit(0);
+            case '-c':
+            case '--config':
+                options.config = inlineValue ?? readOptionValue(args, i, option);
+                if (inlineValue === undefined) {
+                    i++;
+                }
+                break;
+            case '-w':
+            case '--workingDirectory':
+                options.workingDirectory = inlineValue ?? readOptionValue(args, i, option);
+                if (inlineValue === undefined) {
+                    i++;
+                }
+                break;
+            case '-r':
+            case '--replace':
+                options.replace = inlineValue ?? readOptionValue(args, i, option);
+                if (inlineValue === undefined) {
+                    i++;
+                }
+                break;
+            case '-e':
+            case '--execution':
+                options.execution = inlineValue ?? readOptionValue(args, i, option);
+                if (inlineValue === undefined) {
+                    i++;
+                }
+                break;
+            case '-n':
+            case '--dry-run':
+                options.dryRun = true;
+                break;
+            default:
+                break;
+        }
+    }
+
+    if (!options.config) {
+        console.error('Missing required option: -c, --config <config>');
+        printHelp();
+        process.exit(1);
+    }
+
+    return options as CliOptions;
+}
+
+const cliOptions = parseCliOptions(process.argv.slice(2));
+
+utils.setWorkingDirectory(cliOptions.workingDirectory || '.');
 
 type JsonRecord = Record<string, unknown>
 
-type ScenarioCliConfig = JsonRecord & {
-    replace?: JsonRecord
+type ScenarioCliConfig = ScenarioInput & {
     variables?: JsonRecord
     execution?: JsonRecord
     steps?: Array<JsonRecord>
 }
 
-const input = utils.openFile(program.opts().config) as ScenarioCliConfig
+const input = utils.openFile(cliOptions.config) as ScenarioCliConfig;
 
-const cliReplacements = utils.inputReplacesToJson(program.opts().replace)
+const cliReplacements = utils.inputReplacesToJson(cliOptions.replace);
 
 input.replace = {
-    ...asRecord(input.replace),
+    ...(input.replace || {}),
     ...cliReplacements,
-}
+};
 
 input.variables = {
     ...asRecord(input.variables),
     ...asRecord(input.replace),
     ...cliReplacements,
-}
+};
 
 function replaceVariables<T>(data: T, variables: Record<string, unknown> = {}): T {
-    let text = JSON.stringify(data)
+    let text = JSON.stringify(data);
 
     Object.entries(variables)
         .forEach(([key, value]) => {
-            text = text.replaceAll('{' + key + '}', String(value))
-        })
+            text = text.replaceAll('{' + key + '}', String(value));
+        });
 
-    return JSON.parse(text)
+    return JSON.parse(text);
 }
 
 function asRecord(value: unknown): JsonRecord {
     return value && typeof value === 'object' && !Array.isArray(value)
         ? value as JsonRecord
-        : {}
+        : {};
 }
 
 function joinUrl(baseUrl: unknown, path: unknown): unknown {
     if (typeof path !== 'string') {
-        return path
+        return path;
     }
 
     if (!baseUrl || typeof baseUrl !== 'string') {
-        return path
+        return path;
     }
 
     if (path.startsWith('http://') || path.startsWith('https://')) {
-        return path
+        return path;
     }
 
-    return baseUrl.replace(/\/$/, '') + '/' + path.replace(/^\//, '')
+    return baseUrl.replace(/\/$/, '') + '/' + path.replace(/^\//, '');
 }
 
 function connectionRequestDefaults(connection: JsonRecord): JsonRecord {
@@ -94,37 +160,37 @@ function connectionRequestDefaults(connection: JsonRecord): JsonRecord {
         baseUrl: _baseUrl,
         url: _url,
         ...requestDefaults
-    } = connection
+    } = connection;
 
-    return requestDefaults
+    return requestDefaults;
 }
 
 function toConnection(config: Record<string, unknown>, step: Record<string, unknown>): JsonRecord {
-    const connections = asRecord(config.connections)
-    const connectionName = step.connection
+    const connections = asRecord(config.connections);
+    const connectionName = step.connection;
 
     if (typeof connectionName !== 'string') {
-        return {}
+        return {};
     }
 
-    return asRecord(connections[connectionName])
+    return asRecord(connections[connectionName]);
 }
 
 function withDefaultsAndConnection(
     step: Record<string, unknown>,
     config: Record<string, unknown>,
 ): Record<string, unknown> {
-    const defaults = asRecord(config.defaults)
-    const connection = toConnection(config, step)
-    const request = asRecord(step.request)
-    const expect = asRecord(step.expect || step.response)
+    const defaults = asRecord(config.defaults);
+    const connection = toConnection(config, step);
+    const request = asRecord(step.request);
+    const expect = asRecord(step.expect || step.response);
 
-    const defaultHeaders = asRecord(defaults.headers)
-    const connectionHeaders = asRecord(connection.headers)
-    const requestHeaders = asRecord(request.headers)
+    const defaultHeaders = asRecord(defaults.headers);
+    const connectionHeaders = asRecord(connection.headers);
+    const requestHeaders = asRecord(request.headers);
 
-    const connectionBaseUrl = connection.baseUrl || defaults.baseUrl
-    const path = joinUrl(connectionBaseUrl, request.path || request.url || connection.url)
+    const connectionBaseUrl = connection.baseUrl || defaults.baseUrl;
+    const path = joinUrl(connectionBaseUrl, request.path || request.url || connection.url);
 
     return {
         ...step,
@@ -153,7 +219,7 @@ function withDefaultsAndConnection(
             ignoreJsonKeys: expect.ignoreJsonKeys || defaults.ignoreJsonKeys,
             ignoreJsonPaths: expect.ignoreJsonPaths || defaults.ignoreJsonPaths,
         },
-    }
+    };
 }
 
 function toExecutableStep(
@@ -161,10 +227,10 @@ function toExecutableStep(
     index: number,
     inferredInputs: string[] = [],
 ): Record<string, unknown> {
-    const request = step.request as Record<string, unknown> || {}
-    const expect = step.expect as Record<string, unknown> || step.response as Record<string, unknown> || {}
+    const request = step.request as Record<string, unknown> || {};
+    const expect = step.expect as Record<string, unknown> || step.response as Record<string, unknown> || {};
 
-    const stepType = String(step.type || 'http').toLowerCase()
+    const stepType = String(step.type || 'http').toLowerCase();
     const technology = stepType.startsWith('assert')
         ? 'ASSERT'
         : stepType.startsWith('set') || stepType.startsWith('derive')
@@ -173,11 +239,11 @@ function toExecutableStep(
                 ? 'WS'
                 : stepType.startsWith('rtc') || stepType.startsWith('webrtc')
                     ? 'RTC'
-                    : 'HTTP'
+                    : 'HTTP';
 
     const action = stepType.includes('.')
         ? stepType.split('.')[1]
-        : request.action || step.action
+        : request.action || step.action;
 
     return {
         [technology]: {
@@ -201,33 +267,33 @@ function toExecutableStep(
             },
         },
         [String(step.name || 'step-' + (index + 1))]: step,
-    }
+    };
 }
 
 function toPlaceholderNames(data: unknown): string[] {
-    const text = JSON.stringify(data)
-    const matches = text.matchAll(/\{([^{}]+)}/g)
+    const text = JSON.stringify(data);
+    const matches = text.matchAll(/\{([^{}]+)}/g);
 
     return [...matches]
         .map(match => match[1])
         .map(path => path.split('.')[0])
-        .filter(name => name.length > 0)
+        .filter(name => name.length > 0);
 }
 
 function toStepOutputName(step: Record<string, unknown>): string | undefined {
-    const request = step.request as Record<string, unknown> || {}
-    const output = request.output || step.output
+    const request = step.request as Record<string, unknown> || {};
+    const output = request.output || step.output;
 
     return typeof output === 'string' && output.length > 0
         ? output
-        : undefined
+        : undefined;
 }
 
 function toKnownOutputNames(steps: Array<Record<string, unknown>>, currentIndex: number): string[] {
     return steps
         .slice(0, currentIndex)
         .map(toStepOutputName)
-        .filter((name): name is string => name !== undefined)
+        .filter((name): name is string => name !== undefined);
 }
 
 function toInferredInputs(
@@ -235,33 +301,33 @@ function toInferredInputs(
     steps: Array<Record<string, unknown>>,
     currentIndex: number,
 ): string[] {
-    const knownOutputs = toKnownOutputNames(steps, currentIndex)
-    const placeholderNames = toPlaceholderNames(step)
+    const knownOutputs = toKnownOutputNames(steps, currentIndex);
+    const placeholderNames = toPlaceholderNames(step);
 
     return [...new Set(
         placeholderNames.filter(name => knownOutputs.includes(name))
-    )]
+    )];
 }
 
 function toRepeatedSteps(steps: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
     return steps.flatMap(step => {
-        const repeat = Number.parseInt(String(step.repeat ?? '1'))
+        const repeat = Number.parseInt(String(step.repeat ?? '1'));
 
         return new Array(Number.isFinite(repeat) && repeat > 0 ? repeat : 1)
             .fill(0)
             .map((_ignored, repeatIndex) => ({
                 ...step,
                 repeatIndex: repeatIndex + 1,
-            }))
-    })
+            }));
+    });
 }
 
 function toExecutableInteractions(config: ScenarioCliConfig): unknown[] {
-    const normalizedConfig = replaceVariables(config, config.variables as Record<string, unknown>)
+    const normalizedConfig = replaceVariables(config, config.variables as Record<string, unknown>);
 
     if (Array.isArray(normalizedConfig.steps)) {
         const steps = toRepeatedSteps(normalizedConfig.steps as Array<Record<string, unknown>>)
-            .map((step: Record<string, unknown>) => withDefaultsAndConnection(step, normalizedConfig as Record<string, unknown>))
+            .map((step: Record<string, unknown>) => withDefaultsAndConnection(step, normalizedConfig as Record<string, unknown>));
 
         return steps
             .map((step: Record<string, unknown>, index: number) => {
@@ -269,40 +335,38 @@ function toExecutableInteractions(config: ScenarioCliConfig): unknown[] {
                     step,
                     index,
                     toInferredInputs(step, steps, index),
-                )
-            })
+                );
+            });
     }
 
-    return scenarioAlgorithms.createScenarios(normalizedConfig).flatMap(a => a)
+    return scenarioAlgorithms.createScenarios(normalizedConfig).flatMap(a => a);
 }
 
-const scenarioJson = toExecutableInteractions(input)
+const scenarioJson = toExecutableInteractions(input);
 
-const executionConfig = asRecord(input.execution)
-const cliOptions = program.opts()
+const executionConfig = asRecord(input.execution);
 
-const failFast = executionConfig.failFast !== false
-const printDryExecutableInteractions = cliOptions.execution && cliOptions.execution.toLowerCase().includes('dry')
-const dryRun = cliOptions.dryRun === true || executionConfig.dryRun === true
+const failFast = executionConfig.failFast !== false;
+const printDryExecutableInteractions = cliOptions.execution?.toLowerCase().includes('dry') === true;
+const dryRun = cliOptions.dryRun === true || executionConfig.dryRun === true;
 
 if (printDryExecutableInteractions) {
-    console.log(JSON.stringify(scenarioJson, null, 2))
-}
-else {
+    console.log(JSON.stringify(scenarioJson, null, 2));
+} else {
     sync.executeBlackBox(scenarioJson, 0, {
             failFast,
             dryRun,
             variables: input.variables || {},
         })
         .then(report => {
-            console.log(JSON.stringify(report, null, 2))
+            console.log(JSON.stringify(report, null, 2));
 
             if (report?.summary?.failure && report.summary.failure > 0) {
-                Deno.exit(1)
+                process.exit(1);
             }
         })
         .catch(e => {
-            console.error(e)
-            Deno.exit(1)
-        })
+            console.error(e);
+            process.exit(1);
+        });
 }

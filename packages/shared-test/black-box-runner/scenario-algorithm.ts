@@ -22,7 +22,7 @@ type ReplaceRule = {
     generateConstants?: GenerateConstant[]
 }
 
-type ScenarioInput = JsonRecord & {
+export type ScenarioInput = JsonRecord & {
     interactions: Record<string, JsonRecord>
     numOfScenarios?: string | number
     generateForEach?: string[]
@@ -170,7 +170,11 @@ function toInteraction(input: JsonRecord): JsonRecord {
     }
 }
 
-function findGeneratedConstant(generateConstants: GenerateConstant[] | undefined, key: string, i: number): unknown {
+function findGeneratedConstant(
+    generateConstants: GenerateConstant[] | undefined,
+    key: string,
+    i: number,
+): string | number | boolean | undefined {
     if (!generateConstants?.length) {
         return undefined
     }
@@ -245,7 +249,7 @@ function toInjectGeneratedValues(
     }
 
     return entries
-        .map(([key, value]) => {
+        .reduce<ReplaceMap>((result, [key, value]) => {
             const valueAsString = String(value)
             const position = toArrayPosition(valueAsString)
             const constantName = toConstantName(valueAsString)
@@ -256,13 +260,12 @@ function toInjectGeneratedValues(
                 position === 'N' || position === 'n' ? i : Number.parseInt(position),
             )
             if (constant === undefined) {
-                return {}
+                return result
             }
-            return {
-                [key]: constant
-            }
-        })
-        .reduce((a, b) => ({...a, ...b}))
+
+            result[key] = constant
+            return result
+        }, {})
 }
 
 function toInteractions(input: JsonRecord, numOfInteractions = 1): Record<string, JsonRecord[]> {
@@ -465,23 +468,11 @@ function createScenariosFromInput(input: ScenarioInput, numOfScenarios = 1): Arr
 
 function toInteractionsWithConfig(input: ScenarioInput, scenarios: Array<Array<Record<string, JsonRecord[]>>>): JsonRecord[] {
     return scenarios
-        .map(scenario => {
-            if (scenario.length <= 0) {
-                return []
-            }
-
+        .flatMap(scenario => {
             return scenario
-                .map(interactionArray => {
-                    return {
-                        interactionArray
-                    }
-                })
-        })
-        .map(allInteractionsWithConfig => {
-            return allInteractionsWithConfig
-                .map(interactionsWithConfig => {
-                    return Object.entries(interactionsWithConfig.interactionArray)
-                        .map(([key, interactions]) => {
+                .flatMap(interactionArray => {
+                    return Object.entries(interactionArray)
+                        .flatMap(([key, interactions]) => {
                             return interactions
                                 .map(interaction => {
                                     return {
@@ -492,9 +483,7 @@ function toInteractionsWithConfig(input: ScenarioInput, scenarios: Array<Array<R
                                 })
                         })
                 })
-                .flatMap(a => a)
         })
-        .flatMap(a => a)
 }
 
 export function createScenarios(input: ScenarioInput): JsonRecord[] {

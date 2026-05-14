@@ -1,0 +1,72 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": "https://api.example.com",
+    "roomId": "room-1",
+    "aliceUsername": "alice",
+    "alicePassword": "secret",
+    "bobUsername": "bob",
+    "bobPassword": "secret"
+  },
+  "connections": {
+    "aliceRtc": {
+      "type": "rtc",
+      "provider": "rallar-browser",
+      "actor": "alice",
+      "roomId": "{roomId}",
+      "browser": {
+        "headless": true,
+        "timeoutMs": 15000
+      },
+      "rallar": {
+        "apiBaseUrl": "{rallarApiBaseUrl}",
+        "username": "{aliceUsername}",
+        "password": "{alicePassword}",
+        "transport": "realtime",
+        "laneId": "realtime",
+        "openTimeoutMs": 10000,
+        "timeoutMs": 15000
+      }
+    },
+    "bobRtc": {
+      "type": "rtc",
+      "provider": "rallar-browser",
+      "actor": "bob",
+      "roomId": "{roomId}",
+      "browser": {
+        "headless": true,
+        "timeoutMs": 15000
+      },
+      "rallar": {
+        "apiBaseUrl": "{rallarApiBaseUrl}",
+        "username": "{bobUsername}",
+        "password": "{bobPassword}",
+        "transport": "realtime",
+        "laneId": "realtime",
+        "openTimeoutMs": 10000,
+        "timeoutMs": 15000
+      }
+    }
+  },
+  "steps": [
+    {
+      "name": "connectAlice",
+      "type": "rtc.connect",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "connectBob",
+      "type": "rtc.connect",
+      "connection": "bobRtc"
+    },
+    {
+      "name": "closeAlice",
+      "type": "rtc.close",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "closeBob",
+      "type": "rtc.close",
+      "connection": "bobRtc"
+    }
+  ]
+}

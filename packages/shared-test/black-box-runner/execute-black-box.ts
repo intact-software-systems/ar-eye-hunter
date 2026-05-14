@@ -10,6 +10,7 @@ import {
 import { createRallarStubRtcProvider } from './rallar-stub-rtc-provider.ts';
 import { createRallarWebRtcWebSocketSignalingProvider } from './rallar-webrtc-runtime.ts';
 import {createRallarInMemoryProvider} from './rallar-in-memory-runtime.ts';
+import { createRallarBrowserRtcProvider } from './rallar-browser-rtc-provider.ts';
 
 const SUCCESS = 'SUCCESS';
 const FAILURE = 'FAILURE';
@@ -19,6 +20,7 @@ function createRtcProviders(): Record<string, RtcProvider> {
         rallar: createRallarWebRtcWebSocketSignalingProvider(),
         'rallar-stub': createRallarStubRtcProvider(),
         'rallar-memory': createRallarInMemoryProvider(),
+        'rallar-browser': createRallarBrowserRtcProvider(),
     };
 }
 

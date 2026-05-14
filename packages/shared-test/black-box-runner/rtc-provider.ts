@@ -13,7 +13,7 @@ export type RtcProvider = {
 
 export type RtcClient = {
     connect: () => Promise<void>
-    send: (message: any) => Promise<void>
+    send: (message: any, interaction?: any, config?: any, context?: any) => Promise<void>
     close: () => Promise<void>
     onMessage?: (handler: (message: any) => void) => void
     onClose?: (handler: (event: any) => void) => void
@@ -519,7 +519,7 @@ export function createRtcProviderFromClientFactory(options: RtcClientProviderOpt
             }
 
             try {
-                await client.send(payload);
+                await client.send(payload, interaction, config, context);
             } catch (e) {
                 return toRtcFailureStatus(config, interaction, 'RTC send failed', {
                     connection: connectionName,

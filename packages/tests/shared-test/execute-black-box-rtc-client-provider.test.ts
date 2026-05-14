@@ -35,6 +35,9 @@ import {
     createRallarInMemoryProvider,
     createRallarInMemoryRuntime,
 } from '../../shared-test/black-box-runner/rallar-in-memory-runtime.ts'
+import {
+    createRallarBrowserRtcProvider,
+} from '../../shared-test/black-box-runner/rallar-browser-rtc-provider.ts'
 
 type FakeRtcClient = RtcClient & {
     connected: boolean
@@ -2288,6 +2291,1331 @@ Deno.test('createRallarWebRtcSignalingOnlyProvider emits group and overlay diagn
     assertEquals(report.rtcMessages.aliceRtc[0].data.overlayId, 'overlay-1')
     assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.groupId, 'group-1')
     assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.overlayId, 'overlay-1')
+})
+
+Deno.test('createRallarBrowserRtcProvider bridges browser runtime events into RTC report', async () => {
+    const pageEvents: Record<string, Array<(event?: any) => void>> = {}
+    let browserCloseCount = 0
+    let contextCloseCount = 0
+    let launchOptions: any
+
+    const page = {
+        exposed: {} as Record<string, (event: any) => void | Promise<void>>,
+
+        async exposeFunction(name: string, handler: (event: any) => void | Promise<void>) {
+            this.exposed[name] = handler
+        },
+
+        on(type: string, handler: (event?: any) => void) {
+            pageEvents[type] = pageEvents[type] || []
+            pageEvents[type].push(handler)
+        },
+
+        async goto(_url: string, _options: any) {
+            // no-op
+        },
+
+        async waitForFunction(_fn: () => boolean, _arg: unknown, _options: any) {
+            // no-op
+        },
+
+        async evaluate(_fn: (...args: any[]) => unknown, input?: any) {
+            if (input?.connection) {
+                await this.exposed.__blackBoxRallarEmit({
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.runtime_loaded',
+                    connection: input.connection,
+                    actor: input.actor,
+                    roomId: input.roomId,
+                    data: {
+                        source: 'fake-browser-runtime',
+                    },
+                })
+                await this.exposed.__blackBoxRallarEmit({
+                    kind: 'message',
+                    topic: 'rallar.browser.realtime.message',
+                    connection: input.connection,
+                    actor: input.actor,
+                    peerId: 'alice-session',
+                    remotePeerId: 'bob-session',
+                    roomId: input.roomId,
+                    laneId: input.rallar?.laneId || 'realtime',
+                    data: {
+                        text: 'hello from browser',
+                    },
+                })
+                return {
+                    status: 'connected',
+                    connection: input.connection,
+                    sessionId: 'alice-session',
+                }
+            }
+
+            await this.exposed.__blackBoxRallarEmit({
+                kind: 'close',
+                topic: 'rallar.browser.closed',
+                connection: 'aliceRtc',
+                actor: 'alice',
+                roomId: 'room-1',
+                data: {
+                    status: 'closed',
+                },
+            })
+            return {
+                status: 'closed',
+            }
+        },
+    }
+
+    const browserContext = {
+        async newPage() {
+            return page
+        },
+
+        async close() {
+            contextCloseCount += 1
+        },
+    }
+
+    const browser = {
+        async newContext() {
+            return browserContext
+        },
+
+        async close() {
+            browserCloseCount += 1
+        },
+    }
+
+    const provider = createRallarBrowserRtcProvider({
+        harnessUrl: 'http://black-box-harness.local/rallar-browser-harness.html',
+        browser: {
+            headless: true,
+        },
+        dependencies: {
+            chromium: {
+                launch: async (options: any) => {
+                    launchOptions = options
+                    return browser
+                },
+            },
+        },
+    })
+
+    const report = await executeBlackBox(
+        [
+            {
+                RTC: {
+                    request: {
+                        action: 'connect',
+                        connection: 'aliceRtc',
+                        provider: 'rallar-browser',
+                        actor: 'alice',
+                        roomId: 'room-1',
+                        rallar: {
+                            apiBaseUrl: 'https://api.example.test',
+                            username: 'alice',
+                            password: 'secret',
+                            transport: 'realtime',
+                            laneId: 'realtime',
+                        },
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 1,
+                    },
+                    response: {},
+                },
+                connectAlice: {},
+            },
+            {
+                RTC: {
+                    request: {
+                        action: 'wait',
+                        connection: 'aliceRtc',
+                        provider: 'rallar-browser',
+                        actor: 'alice',
+                        roomId: 'room-1',
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 2,
+                    },
+                    response: {
+                        connection: 'aliceRtc',
+                        withinMs: 1000,
+                        message: {
+                            kind: 'message',
+                            topic: 'rallar.browser.realtime.message',
+                            data: {
+                                text: 'hello from browser',
+                            },
+                        },
+                    },
+                },
+                waitForBrowserMessage: {},
+            },
+            {
+                RTC: {
+                    request: {
+                        action: 'close',
+                        connection: 'aliceRtc',
+                        provider: 'rallar-browser',
+                        actor: 'alice',
+                        roomId: 'room-1',
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 3,
+                    },
+                    response: {},
+                },
+                closeAlice: {},
+            },
+            {
+                RTC: {
+                    request: {
+                        action: 'wait',
+                        connection: 'aliceRtc',
+                        provider: 'rallar-browser',
+                        actor: 'alice',
+                        roomId: 'room-1',
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 4,
+                    },
+                    response: {
+                        connection: 'aliceRtc',
+                        withinMs: 1000,
+                        close: {
+                            topic: 'rallar.browser.closed',
+                        },
+                    },
+                },
+                waitForBrowserClose: {},
+            },
+        ],
+        0,
+        {
+            rtcProviders: {
+                'rallar-browser': provider,
+            },
+        },
+    )
+
+    assertEquals(report.summary.failure, 0)
+    assertEquals(report.rtcProviderNames.includes('rallar-browser'), true)
+    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS')
+    assertEquals(report.resultsByName.waitForBrowserMessage[0].status, 'SUCCESS')
+    assertEquals(report.resultsByName.closeAlice[0].status, 'SUCCESS')
+    assertEquals(report.resultsByName.waitForBrowserClose[0].status, 'SUCCESS')
+    assertEquals(launchOptions.headless, true)
+    assertEquals(contextCloseCount, 1)
+    assertEquals(browserCloseCount, 1)
+
+    const bridgedEvents = report.rtcMessages.aliceRtc.map((message: any) => message.data)
+    assertEquals(bridgedEvents.some((event: any) => event.topic === 'rallar.browser.runtime_loaded'), true)
+    assertEquals(bridgedEvents.some((event: any) => event.topic === 'rallar.browser.provider.connected'), true)
+    assertEquals(bridgedEvents.some((event: any) =>
+        event.topic === 'rallar.browser.realtime.message' &&
+        event.data?.text === 'hello from browser'
+    ), true)
+
+    const runtimeCloseEvent = report.rtcCloseEvents.aliceRtc
+        .find((event: any) => event.topic === 'rallar.browser.closed')
+    const providerCloseEvent = report.rtcCloseEvents.aliceRtc
+        .find((event: any) => event.closedBy === 'rallar-browser-provider')
+
+    assertEquals(runtimeCloseEvent?.topic, 'rallar.browser.closed')
+    assertEquals(runtimeCloseEvent?.actor, 'alice')
+    assertEquals(providerCloseEvent?.closedBy, 'rallar-browser-provider')
+})
+
+Deno.test('createRallarBrowserRtcProvider auto-closes browser resources at run end', async () => {
+    let browserCloseCount = 0
+    let contextCloseCount = 0
+    let runtimeCloseCount = 0
+
+    const page = {
+        exposed: {} as Record<string, (event: any) => void | Promise<void>>,
+
+        async exposeFunction(name: string, handler: (event: any) => void | Promise<void>) {
+            this.exposed[name] = handler
+        },
+
+        on(_type: string, _handler: (event?: any) => void) {
+            // no-op
+        },
+
+        async goto(_url: string, _options: any) {
+            // no-op
+        },
+
+        async waitForFunction(_fn: () => boolean, _arg: unknown, _options: any) {
+            // no-op
+        },
+
+        async evaluate(_fn: (...args: any[]) => unknown, input?: any) {
+            if (input?.connection) {
+                return {
+                    status: 'connected',
+                    connection: input.connection,
+                    sessionId: 'alice-rallar-session',
+                }
+            }
+
+            runtimeCloseCount += 1
+            return {
+                status: 'closed',
+            }
+        },
+    }
+
+    const provider = createRallarBrowserRtcProvider({
+        harnessUrl: 'http://black-box-harness.local/rallar-browser-harness.html',
+        dependencies: {
+            chromium: {
+                launch: async () => ({
+                    async newContext() {
+                        return {
+                            async newPage() {
+                                return page
+                            },
+
+                            async close() {
+                                contextCloseCount += 1
+                            },
+                        }
+                    },
+
+                    async close() {
+                        browserCloseCount += 1
+                    },
+                }),
+            },
+        },
+    })
+
+    const report = await executeBlackBox(
+        [
+            {
+                RTC: {
+                    request: {
+                        action: 'connect',
+                        connection: 'aliceRtc',
+                        provider: 'rallar-browser',
+                        actor: 'alice',
+                        roomId: 'room-1',
+                        rallar: {
+                            apiBaseUrl: 'https://api.example.test',
+                            username: 'alice',
+                            password: 'secret',
+                            transport: 'realtime',
+                            laneId: 'realtime',
+                        },
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 1,
+                    },
+                    response: {},
+                },
+                connectAlice: {},
+            },
+        ],
+        0,
+        {
+            rtcProviders: {
+                'rallar-browser': provider,
+            },
+        },
+    )
+
+    assertEquals(report.summary.failure, 0)
+    assertEquals(report.rtcConnections, {})
+    assertEquals(runtimeCloseCount, 1)
+    assertEquals(contextCloseCount, 1)
+    assertEquals(browserCloseCount, 1)
+
+    const autoCloseEvent = report.rtcCloseEvents.aliceRtc
+        .find((event: any) => event.autoCloseRequested === true)
+    const providerCloseEvent = report.rtcCloseEvents.aliceRtc
+        .find((event: any) => event.closedBy === 'rallar-browser-provider')
+    const diagnostics = report.rtcMessages.aliceRtc.map((message: any) => message.data)
+
+    assertEquals(autoCloseEvent?.autoCloseSucceeded, true)
+    assertEquals(providerCloseEvent?.closedBy, 'rallar-browser-provider')
+    assertEquals(diagnostics.some((event: any) => event.topic === 'rallar.browser.provider.context_closed'), true)
+    assertEquals(diagnostics.some((event: any) => event.topic === 'rallar.browser.provider.browser_closed'), true)
+})
+
+Deno.test('createRallarBrowserRtcProvider cleans up browser resources when setup fails', async () => {
+    let browserCloseCount = 0
+    let contextCloseCount = 0
+
+    const provider = createRallarBrowserRtcProvider({
+        harnessUrl: 'http://black-box-harness.local/rallar-browser-harness.html',
+        dependencies: {
+            chromium: {
+                launch: async () => ({
+                    async newContext() {
+                        return {
+                            async newPage() {
+                                throw new Error('new page failed')
+                            },
+
+                            async close() {
+                                contextCloseCount += 1
+                            },
+                        }
+                    },
+
+                    async close() {
+                        browserCloseCount += 1
+                    },
+                }),
+            },
+        },
+    })
+
+    const report = await executeBlackBox(
+        [
+            {
+                RTC: {
+                    request: {
+                        action: 'connect',
+                        connection: 'aliceRtc',
+                        provider: 'rallar-browser',
+                        actor: 'alice',
+                        roomId: 'room-1',
+                        rallar: {
+                            apiBaseUrl: 'https://api.example.test',
+                            username: 'alice',
+                            password: 'secret',
+                            transport: 'realtime',
+                            laneId: 'realtime',
+                        },
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 1,
+                    },
+                    response: {},
+                },
+                connectAlice: {},
+            },
+        ],
+        0,
+        {
+            rtcProviders: {
+                'rallar-browser': provider,
+            },
+        },
+    )
+
+    assertEquals(report.summary.failure, 1)
+    assertEquals(report.resultsByName.connectAlice[0].result, 'RTC connect failed')
+    assertEquals(report.resultsByName.connectAlice[0].actual.exception, 'new page failed')
+    assertEquals(contextCloseCount, 1)
+    assertEquals(browserCloseCount, 1)
+
+    const diagnostics = report.rtcMessages.aliceRtc.map((message: any) => message.data)
+    const connectFailed = diagnostics
+        .find((event: any) => event.topic === 'rallar.browser.provider.connect_failed')
+
+    assertEquals(connectFailed?.data?.phase, 'page')
+    assertEquals(diagnostics.some((event: any) => event.topic === 'rallar.browser.provider.browser_closed'), true)
+})
+
+Deno.test('createRallarBrowserRtcProvider cleans up after unexpected page close', async () => {
+    const pageEvents: Record<string, Array<() => void | Promise<void>>> = {}
+    let browserCloseCount = 0
+    let contextCloseCount = 0
+
+    const page = {
+        exposed: {} as Record<string, (event: any) => void | Promise<void>>,
+
+        async exposeFunction(name: string, handler: (event: any) => void | Promise<void>) {
+            this.exposed[name] = handler
+        },
+
+        on(type: string, handler: () => void | Promise<void>) {
+            pageEvents[type] = pageEvents[type] || []
+            pageEvents[type].push(handler)
+        },
+
+        async goto(_url: string, _options: any) {
+            // no-op
+        },
+
+        async waitForFunction(_fn: () => boolean, _arg: unknown, _options: any) {
+            // no-op
+        },
+
+        async evaluate(_fn: (...args: any[]) => unknown, input?: any) {
+            if (input?.connection) {
+                return {
+                    status: 'connected',
+                    connection: input.connection,
+                    sessionId: 'alice-rallar-session',
+                }
+            }
+
+            return {
+                status: 'closed',
+            }
+        },
+    }
+
+    const provider = createRallarBrowserRtcProvider({
+        harnessUrl: 'http://black-box-harness.local/rallar-browser-harness.html',
+        dependencies: {
+            chromium: {
+                launch: async () => ({
+                    async newContext() {
+                        return {
+                            async newPage() {
+                                return page
+                            },
+
+                            async close() {
+                                contextCloseCount += 1
+                            },
+                        }
+                    },
+
+                    async close() {
+                        browserCloseCount += 1
+                    },
+                }),
+            },
+        },
+    })
+    const context = {
+        options: {},
+        rtcConnections: {},
+        rtcMessages: {},
+        rtcCloseEvents: {},
+    } as any
+
+    const interaction = {
+        RTC: {},
+        request: {
+            action: 'connect',
+            connection: 'aliceRtc',
+            provider: 'rallar-browser',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                transport: 'realtime',
+                laneId: 'realtime',
+            },
+        },
+        response: {},
+    }
+
+    const result = await provider.connect(
+        interaction,
+        {
+            interaction,
+            interactionName: 'connectAlice',
+        },
+        context,
+    )
+
+    assertEquals(result.status, 'SUCCESS')
+    await pageEvents.close[0]()
+    await context.rtcConnections.aliceRtc.client.close()
+
+    assertEquals(contextCloseCount, 1)
+    assertEquals(browserCloseCount, 1)
+
+    const pageCloseEvent = context.rtcCloseEvents.aliceRtc
+        .find((event: any) => event.phase === 'page-close')
+    const diagnostics = context.rtcMessages.aliceRtc.map((message: any) => message.data)
+
+    assertEquals(pageCloseEvent?.reason, 'browser page closed')
+    assertEquals(pageCloseEvent?.closedBy, 'rallar-browser-provider')
+    assertEquals(diagnostics.some((event: any) => event.topic === 'rallar.browser.provider.context_closed'), true)
+    assertEquals(diagnostics.some((event: any) => event.topic === 'rallar.browser.provider.browser_closed'), true)
+})
+
+Deno.test('createRallarBrowserRtcProvider records browser console and Rallar request diagnostics', async () => {
+    const pageEvents: Record<string, Array<(event?: any) => void>> = {}
+
+    const page = {
+        exposed: {} as Record<string, (event: any) => void | Promise<void>>,
+
+        async exposeFunction(name: string, handler: (event: any) => void | Promise<void>) {
+            this.exposed[name] = handler
+        },
+
+        on(type: string, handler: (event?: any) => void) {
+            pageEvents[type] = pageEvents[type] || []
+            pageEvents[type].push(handler)
+        },
+
+        async goto(_url: string, _options: any) {
+            pageEvents.console?.[0]?.({
+                type: () => 'error',
+                text: () => 'Rallar request failed in browser',
+                location: () => ({
+                    url: 'http://black-box-harness.local/rallar-browser-harness.html',
+                    lineNumber: 42,
+                    columnNumber: 7,
+                }),
+            })
+            pageEvents.requestfailed?.[0]?.({
+                url: () => 'https://api.example.test/rtc/connect',
+                method: () => 'POST',
+                failure: () => ({
+                    errorText: 'net::ERR_FAILED',
+                }),
+            })
+        },
+
+        async waitForFunction(_fn: () => boolean, _arg: unknown, _options: any) {
+            // no-op
+        },
+
+        async evaluate(_fn: (...args: any[]) => unknown, input?: any) {
+            if (input?.connection) {
+                return {
+                    status: 'connected',
+                    connection: input.connection,
+                    sessionId: 'alice-rallar-session',
+                }
+            }
+
+            return {
+                status: 'closed',
+            }
+        },
+    }
+
+    const provider = createRallarBrowserRtcProvider({
+        harnessUrl: 'http://black-box-harness.local/rallar-browser-harness.html',
+        dependencies: {
+            chromium: {
+                launch: async () => ({
+                    async newContext() {
+                        return {
+                            async newPage() {
+                                return page
+                            },
+
+                            async close() {
+                                // no-op
+                            },
+                        }
+                    },
+
+                    async close() {
+                        // no-op
+                    },
+                }),
+            },
+        },
+    })
+
+    const report = await executeBlackBox(
+        [
+            {
+                RTC: {
+                    request: {
+                        action: 'connect',
+                        connection: 'aliceRtc',
+                        provider: 'rallar-browser',
+                        actor: 'alice',
+                        roomId: 'room-1',
+                        rallar: {
+                            apiBaseUrl: 'https://api.example.test',
+                            username: 'alice',
+                            password: 'secret',
+                            transport: 'realtime',
+                            laneId: 'realtime',
+                        },
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 1,
+                    },
+                    response: {},
+                },
+                connectAlice: {},
+            },
+        ],
+        0,
+        {
+            rtcProviders: {
+                'rallar-browser': provider,
+            },
+        },
+    )
+
+    assertEquals(report.summary.failure, 0)
+
+    const diagnostics = report.rtcMessages.aliceRtc.map((message: any) => message.data)
+    const consoleError = diagnostics
+        .find((event: any) => event.topic === 'rallar.browser.console_error')
+    const requestFailed = diagnostics
+        .find((event: any) => event.topic === 'rallar.browser.rallar_request_failed')
+
+    assertEquals(consoleError?.data?.text, 'Rallar request failed in browser')
+    assertEquals(requestFailed?.data?.url, 'https://api.example.test/rtc/connect')
+    assertEquals(requestFailed?.data?.failure?.errorText, 'net::ERR_FAILED')
+})
+
+Deno.test('createRallarBrowserRtcProvider records page load failure diagnostics', async () => {
+    let browserCloseCount = 0
+    let contextCloseCount = 0
+
+    const page = {
+        async exposeFunction(_name: string, _handler: (event: any) => void | Promise<void>) {
+            // no-op
+        },
+
+        on(_type: string, _handler: (event?: any) => void) {
+            // no-op
+        },
+
+        async goto(_url: string, _options: any) {
+            throw new Error('harness load failed')
+        },
+
+        async waitForFunction(_fn: () => boolean, _arg: unknown, _options: any) {
+            // no-op
+        },
+
+        async evaluate(_fn: (...args: any[]) => unknown, _input?: any) {
+            return {
+                status: 'connected',
+                sessionId: 'alice-rallar-session',
+            }
+        },
+    }
+
+    const provider = createRallarBrowserRtcProvider({
+        harnessUrl: 'http://black-box-harness.local/rallar-browser-harness.html',
+        dependencies: {
+            chromium: {
+                launch: async () => ({
+                    async newContext() {
+                        return {
+                            async newPage() {
+                                return page
+                            },
+
+                            async close() {
+                                contextCloseCount += 1
+                            },
+                        }
+                    },
+
+                    async close() {
+                        browserCloseCount += 1
+                    },
+                }),
+            },
+        },
+    })
+
+    const report = await executeBlackBox(
+        [
+            {
+                RTC: {
+                    request: {
+                        action: 'connect',
+                        connection: 'aliceRtc',
+                        provider: 'rallar-browser',
+                        actor: 'alice',
+                        roomId: 'room-1',
+                        rallar: {
+                            apiBaseUrl: 'https://api.example.test',
+                            username: 'alice',
+                            password: 'secret',
+                            transport: 'realtime',
+                            laneId: 'realtime',
+                        },
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 1,
+                    },
+                    response: {},
+                },
+                connectAlice: {},
+            },
+        ],
+        0,
+        {
+            rtcProviders: {
+                'rallar-browser': provider,
+            },
+        },
+    )
+
+    assertEquals(report.summary.failure, 1)
+    assertEquals(report.resultsByName.connectAlice[0].actual.exception, 'harness load failed')
+    assertEquals(contextCloseCount, 1)
+    assertEquals(browserCloseCount, 1)
+
+    const diagnostics = report.rtcMessages.aliceRtc.map((message: any) => message.data)
+    const pageLoadFailed = diagnostics
+        .find((event: any) => event.topic === 'rallar.browser.provider.page_load_failed')
+    const connectFailed = diagnostics
+        .find((event: any) => event.topic === 'rallar.browser.provider.connect_failed')
+
+    assertEquals(pageLoadFailed?.data?.harnessUrl, 'http://black-box-harness.local/rallar-browser-harness.html')
+    assertEquals(connectFailed?.data?.phase, 'page-load')
+})
+
+Deno.test('createRallarBrowserRtcProvider records runtime send failure diagnostics', async () => {
+    const page = {
+        exposed: {} as Record<string, (event: any) => void | Promise<void>>,
+
+        async exposeFunction(name: string, handler: (event: any) => void | Promise<void>) {
+            this.exposed[name] = handler
+        },
+
+        on(_type: string, _handler: (event?: any) => void) {
+            // no-op
+        },
+
+        async goto(_url: string, _options: any) {
+            // no-op
+        },
+
+        async waitForFunction(_fn: () => boolean, _arg: unknown, _options: any) {
+            // no-op
+        },
+
+        async evaluate(_fn: (...args: any[]) => unknown, input?: any) {
+            if (input?.connection) {
+                return {
+                    status: 'connected',
+                    connection: input.connection,
+                    sessionId: 'alice-rallar-session',
+                }
+            }
+
+            if (input?.data) {
+                await this.exposed.__blackBoxRallarEmit({
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.realtime.data_channel_not_open',
+                    connection: 'aliceRtc',
+                    actor: 'alice',
+                    roomId: 'room-1',
+                    data: {
+                        summary: {
+                            statuses: {
+                                closed: 1,
+                            },
+                        },
+                    },
+                })
+
+                return {
+                    status: 'sent',
+                    connection: 'aliceRtc',
+                    transport: 'realtime',
+                    roomId: 'room-1',
+                    laneId: 'realtime',
+                    peerIds: ['bob-rallar-session'],
+                    results: [
+                        {
+                            peerId: 'bob-rallar-session',
+                            laneId: 'realtime',
+                            result: {
+                                status: 'closed',
+                                bufferedAmount: 0,
+                            },
+                        },
+                    ],
+                    health: [],
+                }
+            }
+
+            return {
+                status: 'closed',
+            }
+        },
+    }
+
+    const provider = createRallarBrowserRtcProvider({
+        harnessUrl: 'http://black-box-harness.local/rallar-browser-harness.html',
+        dependencies: {
+            chromium: {
+                launch: async () => ({
+                    async newContext() {
+                        return {
+                            async newPage() {
+                                return page
+                            },
+
+                            async close() {
+                                // no-op
+                            },
+                        }
+                    },
+
+                    async close() {
+                        // no-op
+                    },
+                }),
+            },
+        },
+    })
+
+    const report = await executeBlackBox(
+        [
+            {
+                RTC: {
+                    request: {
+                        action: 'connect',
+                        connection: 'aliceRtc',
+                        provider: 'rallar-browser',
+                        actor: 'alice',
+                        roomId: 'room-1',
+                        rallar: {
+                            apiBaseUrl: 'https://api.example.test',
+                            username: 'alice',
+                            password: 'secret',
+                            transport: 'realtime',
+                            laneId: 'realtime',
+                        },
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 1,
+                    },
+                    response: {},
+                },
+                connectAlice: {},
+            },
+            {
+                RTC: {
+                    request: {
+                        action: 'send',
+                        connection: 'aliceRtc',
+                        provider: 'rallar-browser',
+                        actor: 'alice',
+                        roomId: 'room-1',
+                        send: {
+                            data: {
+                                text: 'hello bob',
+                            },
+                        },
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 2,
+                    },
+                    response: {},
+                },
+                aliceSendsToBob: {},
+            },
+        ],
+        0,
+        {
+            rtcProviders: {
+                'rallar-browser': provider,
+            },
+        },
+    )
+
+    assertEquals(report.summary.failure, 1)
+    assertEquals(report.resultsByName.aliceSendsToBob[0].result, 'RTC send failed')
+    assertEquals(
+        report.resultsByName.aliceSendsToBob[0].actual.exception,
+        'Rallar browser RTC send failed for 1 peer(s). status=closed',
+    )
+
+    const diagnostics = report.rtcMessages.aliceRtc.map((message: any) => message.data)
+    const runtimeChannelDiagnostic = diagnostics
+        .find((event: any) => event.topic === 'rallar.browser.realtime.data_channel_not_open')
+    const providerSendFailed = diagnostics
+        .find((event: any) => event.topic === 'rallar.browser.provider.send_failed')
+
+    assertEquals(runtimeChannelDiagnostic?.data?.summary?.statuses?.closed, 1)
+    assertEquals(providerSendFailed?.data?.response?.results?.[0]?.result?.status, 'closed')
+    assertEquals(providerSendFailed?.data?.error?.message, 'Rallar browser RTC send failed for 1 peer(s). status=closed')
+})
+
+Deno.test('createRallarBrowserRtcProvider resolves expect.connection to realtime peerIds', async () => {
+    const pagesByConnection: Record<string, any> = {}
+    const sentInputs: any[] = []
+
+    function createPage() {
+        return {
+            exposed: {} as Record<string, (event: any) => void | Promise<void>>,
+
+            async exposeFunction(name: string, handler: (event: any) => void | Promise<void>) {
+                this.exposed[name] = handler
+            },
+
+            on(_type: string, _handler: (event?: any) => void) {
+                // no-op
+            },
+
+            async goto(_url: string, _options: any) {
+                // no-op
+            },
+
+            async waitForFunction(_fn: () => boolean, _arg: unknown, _options: any) {
+                // no-op
+            },
+
+            async evaluate(_fn: (...args: any[]) => unknown, input?: any) {
+                if (input?.connection) {
+                    pagesByConnection[input.connection] = this
+                    return {
+                        status: 'connected',
+                        connection: input.connection,
+                        sessionId: input.connection === 'bobRtc'
+                            ? 'bob-rallar-session'
+                            : 'alice-rallar-session',
+                    }
+                }
+
+                sentInputs.push(input)
+                await pagesByConnection.bobRtc.exposed.__blackBoxRallarEmit({
+                    kind: 'message',
+                    topic: 'rallar.browser.realtime.message',
+                    connection: 'bobRtc',
+                    actor: 'bob',
+                    peerId: 'bob-rallar-session',
+                    remotePeerId: 'alice-rallar-session',
+                    roomId: 'room-1',
+                    laneId: 'realtime',
+                    data: input.data,
+                })
+
+                return {
+                    status: 'sent',
+                    peerIds: input.peerIds,
+                    results: [
+                        {
+                            peerId: input.peerIds?.[0],
+                            laneId: 'realtime',
+                            result: {
+                                status: 'sent',
+                                bufferedAmount: 0,
+                            },
+                        },
+                    ],
+                }
+            },
+        }
+    }
+
+    const pages = [createPage(), createPage()]
+    let pageIndex = 0
+
+    const provider = createRallarBrowserRtcProvider({
+        harnessUrl: 'http://black-box-harness.local/rallar-browser-harness.html',
+        dependencies: {
+            chromium: {
+                launch: async () => ({
+                    async newContext() {
+                        return {
+                            async newPage() {
+                                const page = pages[pageIndex]
+                                pageIndex += 1
+                                return page
+                            },
+
+                            async close() {
+                                // no-op
+                            },
+                        }
+                    },
+
+                    async close() {
+                        // no-op
+                    },
+                }),
+            },
+        },
+    })
+
+    const report = await executeBlackBox(
+        [
+            {
+                RTC: {
+                    request: {
+                        action: 'connect',
+                        connection: 'aliceRtc',
+                        provider: 'rallar-browser',
+                        actor: 'alice',
+                        roomId: 'room-1',
+                        rallar: {
+                            apiBaseUrl: 'https://api.example.test',
+                            username: 'alice',
+                            password: 'secret',
+                            transport: 'realtime',
+                            laneId: 'realtime',
+                        },
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 1,
+                    },
+                    response: {},
+                },
+                connectAlice: {},
+            },
+            {
+                RTC: {
+                    request: {
+                        action: 'connect',
+                        connection: 'bobRtc',
+                        provider: 'rallar-browser',
+                        actor: 'bob',
+                        roomId: 'room-1',
+                        rallar: {
+                            apiBaseUrl: 'https://api.example.test',
+                            username: 'bob',
+                            password: 'secret',
+                            transport: 'realtime',
+                            laneId: 'realtime',
+                        },
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 2,
+                    },
+                    response: {},
+                },
+                connectBob: {},
+            },
+            {
+                RTC: {
+                    request: {
+                        action: 'send',
+                        connection: 'aliceRtc',
+                        provider: 'rallar-browser',
+                        actor: 'alice',
+                        roomId: 'room-1',
+                        send: {
+                            data: {
+                                text: 'hello bob',
+                            },
+                        },
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 3,
+                    },
+                    response: {
+                        connection: 'bobRtc',
+                        withinMs: 1000,
+                        message: {
+                            kind: 'message',
+                            topic: 'rallar.browser.realtime.message',
+                            data: {
+                                text: 'hello bob',
+                            },
+                        },
+                    },
+                },
+                aliceSendsToBob: {},
+            },
+        ],
+        0,
+        {
+            rtcProviders: {
+                'rallar-browser': provider,
+            },
+        },
+    )
+
+    assertEquals(report.summary.failure, 0)
+    assertEquals(report.resultsByName.aliceSendsToBob[0].status, 'SUCCESS')
+    assertEquals(sentInputs[0].peerIds, ['bob-rallar-session'])
+    assertEquals(sentInputs[0].roomId, 'room-1')
+    assertEquals(sentInputs[0].data, {
+        text: 'hello bob',
+    })
+})
+
+Deno.test('createRallarBrowserRtcProvider resolves expect.connection to messages.rtc nextHopPeerIds', async () => {
+    const pagesByConnection: Record<string, any> = {}
+    const sentInputs: any[] = []
+
+    function createPage() {
+        return {
+            exposed: {} as Record<string, (event: any) => void | Promise<void>>,
+
+            async exposeFunction(name: string, handler: (event: any) => void | Promise<void>) {
+                this.exposed[name] = handler
+            },
+
+            on(_type: string, _handler: (event?: any) => void) {
+                // no-op
+            },
+
+            async goto(_url: string, _options: any) {
+                // no-op
+            },
+
+            async waitForFunction(_fn: () => boolean, _arg: unknown, _options: any) {
+                // no-op
+            },
+
+            async evaluate(_fn: (...args: any[]) => unknown, input?: any) {
+                if (input?.connection) {
+                    pagesByConnection[input.connection] = this
+                    return {
+                        status: 'connected',
+                        connection: input.connection,
+                        sessionId: input.connection === 'bobRtc'
+                            ? 'bob-rallar-session'
+                            : 'alice-rallar-session',
+                    }
+                }
+
+                if (input?.nextHopPeerIds) {
+                    sentInputs.push(input)
+                    await pagesByConnection.bobRtc.exposed.__blackBoxRallarEmit({
+                        kind: 'message',
+                        topic: 'rallar.browser.messages.rtc.message',
+                        connection: 'bobRtc',
+                        actor: 'bob',
+                        peerId: 'bob-rallar-session',
+                        remotePeerId: 'alice-rallar-session',
+                        senderId: 'alice-rallar-session',
+                        roomId: 'room-1',
+                        typeId: 'chat.message',
+                        topicId: 'chat',
+                        contextId: 'room-1',
+                        resourceId: 'message-1',
+                        data: input.payload,
+                    })
+
+                    return {
+                        status: 'sent',
+                        nextHopPeerIds: input.nextHopPeerIds,
+                        message: {
+                            payload: {
+                                typeId: 'chat.message',
+                            },
+                        },
+                    }
+                }
+
+                return {
+                    status: 'closed',
+                }
+            },
+        }
+    }
+
+    const pages = [createPage(), createPage()]
+    let pageIndex = 0
+
+    const provider = createRallarBrowserRtcProvider({
+        harnessUrl: 'http://black-box-harness.local/rallar-browser-harness.html',
+        dependencies: {
+            chromium: {
+                launch: async () => ({
+                    async newContext() {
+                        return {
+                            async newPage() {
+                                const page = pages[pageIndex]
+                                pageIndex += 1
+                                return page
+                            },
+
+                            async close() {
+                                // no-op
+                            },
+                        }
+                    },
+
+                    async close() {
+                        // no-op
+                    },
+                }),
+            },
+        },
+    })
+
+    const report = await executeBlackBox(
+        [
+            {
+                RTC: {
+                    request: {
+                        action: 'connect',
+                        connection: 'aliceRtc',
+                        provider: 'rallar-browser',
+                        actor: 'alice',
+                        roomId: 'room-1',
+                        rallar: {
+                            apiBaseUrl: 'https://api.example.test',
+                            username: 'alice',
+                            password: 'secret',
+                            transport: 'messages.rtc',
+                            typeId: 'chat.message',
+                            topicId: 'chat',
+                        },
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 1,
+                    },
+                    response: {},
+                },
+                connectAlice: {},
+            },
+            {
+                RTC: {
+                    request: {
+                        action: 'connect',
+                        connection: 'bobRtc',
+                        provider: 'rallar-browser',
+                        actor: 'bob',
+                        roomId: 'room-1',
+                        rallar: {
+                            apiBaseUrl: 'https://api.example.test',
+                            username: 'bob',
+                            password: 'secret',
+                            transport: 'messages.rtc',
+                            typeId: 'chat.message',
+                            topicId: 'chat',
+                        },
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 2,
+                    },
+                    response: {},
+                },
+                connectBob: {},
+            },
+            {
+                RTC: {
+                    request: {
+                        action: 'send',
+                        connection: 'aliceRtc',
+                        provider: 'rallar-browser',
+                        actor: 'alice',
+                        roomId: 'room-1',
+                        send: {
+                            payload: {
+                                text: 'hello bob',
+                            },
+                        },
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 3,
+                    },
+                    response: {
+                        connection: 'bobRtc',
+                        withinMs: 1000,
+                        message: {
+                            kind: 'message',
+                            topic: 'rallar.browser.messages.rtc.message',
+                            typeId: 'chat.message',
+                            topicId: 'chat',
+                            data: {
+                                text: 'hello bob',
+                            },
+                        },
+                    },
+                },
+                aliceSendsToBob: {},
+            },
+        ],
+        0,
+        {
+            rtcProviders: {
+                'rallar-browser': provider,
+            },
+        },
+    )
+
+    assertEquals(report.summary.failure, 0)
+    assertEquals(report.resultsByName.aliceSendsToBob[0].status, 'SUCCESS')
+    assertEquals(sentInputs[0].nextHopPeerIds, ['bob-rallar-session'])
+    assertEquals(sentInputs[0].peerIds, undefined)
+    assertEquals(sentInputs[0].roomId, 'room-1')
+    assertEquals(sentInputs[0].payload, {
+        text: 'hello bob',
+    })
 })
 
 Deno.test('createRallarWebRtcSignalingOnlyProvider reports send failure when data channel is missing', async () => {

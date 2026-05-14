@@ -1,0 +1,111 @@
+{
+  "browser": {
+    "headless": true,
+    "timeoutMs": 15000
+  },
+  "harness": {
+    "port": 5199
+  },
+  "report": {
+    "outFile": "rallar-browser-spike.report.json",
+    "stdout": true
+  },
+  "connections": {
+    "aliceRtc": {
+      "type": "rtc",
+      "provider": "rallar-browser",
+      "actor": "alice",
+      "roomId": "${RALLAR_ROOM_ID}",
+      "rallar": {
+        "apiBaseUrl": "${RALLAR_API_BASE_URL}",
+        "username": "${RALLAR_ALICE_USERNAME}",
+        "password": "${RALLAR_ALICE_PASSWORD}",
+        "register": "if-needed",
+        "transport": "realtime",
+        "laneId": "realtime",
+        "openTimeoutMs": 10000,
+        "timeoutMs": 15000
+      }
+    },
+    "bobRtc": {
+      "type": "rtc",
+      "provider": "rallar-browser",
+      "actor": "bob",
+      "roomId": "${RALLAR_ROOM_ID}",
+      "rallar": {
+        "apiBaseUrl": "${RALLAR_API_BASE_URL}",
+        "username": "${RALLAR_BOB_USERNAME}",
+        "password": "${RALLAR_BOB_PASSWORD}",
+        "register": "if-needed",
+        "transport": "realtime",
+        "laneId": "realtime",
+        "openTimeoutMs": 10000,
+        "timeoutMs": 15000
+      }
+    }
+  },
+  "steps": [
+    {
+      "name": "connectAlice",
+      "type": "rtc.connect",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "connectBob",
+      "type": "rtc.connect",
+      "connection": "bobRtc"
+    },
+    {
+      "name": "aliceSendsToBob",
+      "type": "rtc.send",
+      "connection": "aliceRtc",
+      "request": {
+        "send": {
+          "data": {
+            "text": "hello bob"
+          }
+        }
+      },
+      "expect": {
+        "connection": "bobRtc",
+        "withinMs": 10000,
+        "message": {
+          "data": {
+            "text": "hello bob"
+          }
+        }
+      }
+    },
+    {
+      "name": "bobSendsToAlice",
+      "type": "rtc.send",
+      "connection": "bobRtc",
+      "request": {
+        "send": {
+          "data": {
+            "text": "hello alice"
+          }
+        }
+      },
+      "expect": {
+        "connection": "aliceRtc",
+        "withinMs": 10000,
+        "message": {
+          "data": {
+            "text": "hello alice"
+          }
+        }
+      }
+    },
+    {
+      "name": "aliceHealth",
+      "type": "rtc.health",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "bobHealth",
+      "type": "rtc.health",
+      "connection": "bobRtc"
+    }
+  ]
+}

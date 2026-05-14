@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
+    "rtc:browser:validate": "deno run -A black-box-runner/rallar-browser-live-validation.mts",
     "test": "node --eval \"process.exit(0)\"",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   }
