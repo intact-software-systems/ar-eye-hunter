@@ -42,6 +42,10 @@ import {
     type ManualWorkbenchTransport,
     type ManualWorkbenchValues,
 } from './manual-workbench.ts';
+import {
+    deriveRtcDiagnostics,
+    type RtcConnectStageStatus,
+} from './rtc-diagnostics.ts';
 
 type CommandQueueRow = Readonly<{
     id: string;
@@ -282,6 +286,17 @@ function actionLabel(action: ManualWorkbenchAction): string {
         case 'reset':
             return 'Reset runtime';
     }
+}
+
+function stageTone(status: RtcConnectStageStatus): string {
+    if (status === 'observed') return 'good';
+    if (status === 'failed') return 'bad';
+    if (status === 'warning') return 'warn';
+    return 'muted';
+}
+
+function formatList(values: readonly string[]): string {
+    return values.length > 0 ? values.join(', ') : '-';
 }
 
 function Header({ state, control, bootstrapping, lastAction }: {
@@ -830,6 +845,189 @@ function ReceivedDataInboxPanel({ state, onSelectCommand }: {
                     </article>
                 ))}
             </div>
+        </section>
+    );
+}
+
+function RtcDiagnosticsPanel({ state, busy, onSelectCommand }: {
+    state: RallarBlackBoxTestState;
+    busy: boolean;
+    onSelectCommand(commandId: string): void;
+}) {
+    const diagnostics = useMemo(() => deriveRtcDiagnostics(state), [state]);
+    const [sequence, setSequence] = useState(1);
+    const [bundleVisible, setBundleVisible] = useState(false);
+    const [localError, setLocalError] = useState<string | undefined>();
+    const bundleText = useMemo(() => json(diagnostics.bundle), [diagnostics.bundle]);
+    const runAction = async (
+        label: string,
+        action: ManualWorkbenchAction | 'reconnect' | 'cleanup',
+    ): Promise<void> => {
+        setLocalError(undefined);
+        const values = manualValuesFromState(state);
+        const startSequence = sequence;
+        const commands = action === 'reconnect'
+            ? [
+                ...buildManualWorkbenchCommands('close', values, null, startSequence),
+                ...buildManualWorkbenchCommands('connect', values, null, startSequence + 1),
+            ]
+            : action === 'cleanup'
+                ? [
+                    ...buildManualWorkbenchCommands('close', values, null, startSequence),
+                    ...buildManualWorkbenchCommands('reset', values, null, startSequence + 1),
+                ]
+                : buildManualWorkbenchCommands(action, values, null, startSequence);
+        setSequence(current => current + commands.length + 1);
+        onSelectCommand(commands.at(-1)?.commandId ?? commands[0]?.commandId ?? label);
+
+        try {
+            await rallarBlackBoxRuntimeStore.executeManualCommands(commands, label);
+        } catch (error) {
+            setLocalError(error instanceof Error ? error.message : String(error));
+        }
+    };
+    const copyBundle = (): void => {
+        if (navigator.clipboard) {
+            void navigator.clipboard.writeText(bundleText);
+        }
+    };
+
+    return (
+        <section className="panel rtc-diagnostics-panel">
+            <div className="panel-heading">
+                <h2>RTC Diagnostics</h2>
+                <span className={`pill ${diagnostics.failure ? 'bad' : 'good'}`}>
+                    {diagnostics.failure ? 'focused' : 'clear'}
+                </span>
+            </div>
+            <div className="rtc-actions">
+                <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void runAction('RTC reconnect check', 'reconnect')}
+                >
+                    Reconnect
+                </button>
+                <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void runAction('RTC rejoin check', 'connect')}
+                >
+                    Rejoin
+                </button>
+                <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void runAction('RTC health check', 'health')}
+                >
+                    Health
+                </button>
+                <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void runAction('RTC close', 'close')}
+                >
+                    Close
+                </button>
+                <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void runAction('RTC cleanup', 'cleanup')}
+                >
+                    Cleanup
+                </button>
+                <button type="button" onClick={copyBundle}>
+                    Copy Bundle
+                </button>
+                <button type="button" onClick={() => setBundleVisible(current => !current)}>
+                    {bundleVisible ? 'Hide Bundle' : 'Show Bundle'}
+                </button>
+            </div>
+            <div className="rtc-latency-grid">
+                <Metric label="Connect" value={formatDuration(diagnostics.latency.connectMs)}/>
+                <Metric label="First payload" value={formatDuration(diagnostics.latency.firstPayloadMs)}/>
+                <Metric
+                    label="From connect"
+                    value={formatDuration(diagnostics.latency.firstPayloadFromConnectMs)}
+                />
+                <Metric label="Last command" value={formatDuration(diagnostics.latency.lastCommandMs)}/>
+                <Metric label="Avg command" value={formatDuration(diagnostics.latency.averageCommandMs)}/>
+                <Metric label="Max command" value={formatDuration(diagnostics.latency.maxCommandMs)}/>
+            </div>
+            <div className="rtc-stage-list">
+                {diagnostics.stages.map(stage => (
+                    <article className="rtc-stage-row" key={stage.stageId}>
+                        <span className={`status-dot ${stage.status === 'observed' ? 'completed' : stage.status}`}/>
+                        <div>
+                            <strong>{stage.label}</strong>
+                            <small>{stage.topic ?? 'waiting for runtime event'}</small>
+                        </div>
+                        <span className={`pill ${stageTone(stage.status)}`}>{stage.status}</span>
+                        <span>{formatDuration(stage.durationFromStartMs)}</span>
+                    </article>
+                ))}
+            </div>
+            <dl className="rtc-membership-list">
+                <div>
+                    <dt>Connection</dt>
+                    <dd>{diagnostics.membership.connection}</dd>
+                </div>
+                <div>
+                    <dt>Actor</dt>
+                    <dd>{diagnostics.membership.actor}</dd>
+                </div>
+                <div>
+                    <dt>Room</dt>
+                    <dd>{diagnostics.membership.roomId}</dd>
+                </div>
+                <div>
+                    <dt>Session</dt>
+                    <dd>{diagnostics.membership.sessionId ?? '-'}</dd>
+                </div>
+                <div>
+                    <dt>Expected</dt>
+                    <dd>{formatList(diagnostics.membership.expectedClients)}</dd>
+                </div>
+                <div>
+                    <dt>Observed</dt>
+                    <dd>{formatList(diagnostics.membership.observedClients)}</dd>
+                </div>
+                <div>
+                    <dt>Missing</dt>
+                    <dd>{formatList(diagnostics.membership.missingClients)}</dd>
+                </div>
+                <div>
+                    <dt>Stale</dt>
+                    <dd>{formatList(diagnostics.membership.staleClients)}</dd>
+                </div>
+                <div>
+                    <dt>Peer Count</dt>
+                    <dd>{diagnostics.membership.peerCount ?? '-'}</dd>
+                </div>
+                <div>
+                    <dt>Lane Health</dt>
+                    <dd>{String(diagnostics.membership.laneHealth ?? '-')}</dd>
+                </div>
+            </dl>
+            {diagnostics.failure && (
+                <div className="rtc-failure">
+                    <strong>{diagnostics.failure.message}</strong>
+                    <small>{diagnostics.failure.topic ?? 'runtime failure'}</small>
+                </div>
+            )}
+            {bundleVisible && (
+                <textarea
+                    className="report-output rtc-bundle-output"
+                    value={bundleText}
+                    readOnly
+                    spellCheck={false}
+                />
+            )}
+            {localError && (
+                <div className="workbench-error" role="status">
+                    {localError}
+                </div>
+            )}
         </section>
     );
 }
@@ -1410,6 +1608,11 @@ export default function App() {
                 />
                 <ReceivedDataInboxPanel
                     state={state}
+                    onSelectCommand={setSelectedCommandId}
+                />
+                <RtcDiagnosticsPanel
+                    state={state}
+                    busy={busy}
                     onSelectCommand={setSelectedCommandId}
                 />
                 <ControlPanel state={state} control={control}/>

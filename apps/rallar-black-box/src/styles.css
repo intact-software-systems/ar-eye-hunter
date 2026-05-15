@@ -176,6 +176,7 @@ h3 {
 .workbench-actions button,
 .manual-command button,
 .manual-action-grid button,
+.rtc-actions button,
 .heading-actions button,
 .manual-command-links button,
 .control-actions button,
@@ -192,6 +193,7 @@ h3 {
 .workbench-actions button,
 .manual-command button,
 .manual-action-grid button,
+.rtc-actions button,
 .heading-actions button,
 .control-actions button,
 .panel-heading button {
@@ -234,6 +236,7 @@ h3 {
 .workbench-panel,
 .manual-rallar-panel,
 .received-inbox-panel,
+.rtc-diagnostics-panel,
 .control-panel,
 .queue-panel,
 .focus-panel,
@@ -249,6 +252,11 @@ h3 {
 }
 
 .manual-rallar-panel {
+    grid-column: span 2;
+    align-self: start;
+}
+
+.rtc-diagnostics-panel {
     grid-column: span 2;
     align-self: start;
 }
@@ -485,6 +493,102 @@ h3 {
     font-size: 0.86rem;
 }
 
+.rtc-actions {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px 14px;
+}
+
+.rtc-actions button {
+    overflow-wrap: anywhere;
+}
+
+.rtc-latency-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
+    padding: 0 14px 12px;
+}
+
+.rtc-stage-list {
+    display: grid;
+    gap: 8px;
+    padding: 12px 14px;
+    border-top: 1px solid #dbe1d8;
+}
+
+.rtc-stage-row {
+    display: grid;
+    grid-template-columns: 12px minmax(0, 1fr) auto minmax(64px, auto);
+    gap: 10px;
+    align-items: center;
+    min-width: 0;
+    min-height: 54px;
+    padding: 9px 10px;
+    border: 1px solid #d8dfd5;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.rtc-stage-row div {
+    display: grid;
+    min-width: 0;
+}
+
+.rtc-stage-row strong,
+.rtc-stage-row small,
+.rtc-stage-row > span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rtc-stage-row small,
+.rtc-stage-row > span:last-child {
+    color: #65746d;
+    font-size: 0.75rem;
+}
+
+.rtc-membership-list {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0;
+    padding: 0 14px 12px;
+}
+
+.rtc-membership-list div {
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid #dbe1d8;
+    border-radius: 6px;
+    background: #f8faf6;
+}
+
+.rtc-failure {
+    display: grid;
+    gap: 4px;
+    margin: 0 14px 12px;
+    padding: 10px;
+    border: 1px solid #e1aaa6;
+    border-radius: 6px;
+    background: #fff4f2;
+}
+
+.rtc-failure strong {
+    color: #a83232;
+}
+
+.rtc-failure small {
+    color: #65746d;
+}
+
+.rtc-bundle-output {
+    min-height: 260px;
+}
+
 .workbench-error {
     margin: 0 14px 14px;
     padding: 10px;
@@ -659,6 +763,14 @@ dd {
 
 .status-dot.failed {
     background: #a83232;
+}
+
+.status-dot.warning {
+    background: #96610d;
+}
+
+.status-dot.pending {
+    background: #9aa79f;
 }
 
 .pill {
@@ -878,12 +990,25 @@ dd {
         grid-column: 1 / 3;
     }
 
+    .rtc-diagnostics-panel {
+        grid-column: 1 / 3;
+    }
+
     .manual-rallar-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .manual-action-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .rtc-actions {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .rtc-latency-grid,
+    .rtc-membership-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
@@ -908,9 +1033,16 @@ dd {
         grid-column: auto;
     }
 
+    .rtc-diagnostics-panel {
+        grid-column: auto;
+    }
+
     .event-filter-grid,
     .manual-rallar-grid,
     .manual-action-grid,
+    .rtc-actions,
+    .rtc-latency-grid,
+    .rtc-membership-list,
     .workbench-actions,
     .control-actions,
     .control-stats {
@@ -923,6 +1055,14 @@ dd {
 
     .manual-command-links {
         justify-content: flex-start;
+    }
+
+    .rtc-stage-row {
+        grid-template-columns: 12px minmax(0, 1fr) auto;
+    }
+
+    .rtc-stage-row > span:last-child {
+        grid-column: 2 / 4;
     }
 
     .queue-row {

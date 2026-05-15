@@ -839,11 +839,18 @@ Rallar test focus:
 
 Make the sensitive RTC connect path easy to investigate from the visible app.
 
-Status: planned.
+Status: completed.
 
 Results:
 
-- Not started.
+- Added `apps/rallar-black-box/src/rtc-diagnostics.ts` with event-derived RTC diagnostics for connect stages, group membership, latency, failure focus, recent runtime events, recent command results, and copyable diagnostic bundles.
+- Added topic and payload-phase mapping for auth, runtime bootstrap, group join, signaling, peer discovery, data-channel readiness, and first-payload stages.
+- Added a visible RTC Diagnostics panel to the SPA with a connect-stage timeline, expected versus observed membership, missing/extra/stale client visibility, latency metrics, focused failure details, and copyable bundle output.
+- Added reconnect, rejoin, health, close, cleanup, copy-bundle, and show-bundle operations from the diagnostics panel while still executing normal `rallar-bb-test` commands.
+- Enriched the local fake RTC connect executor with staged runtime diagnostics so the diagnostics workbench can be exercised without a deployed Rallar service.
+- Added focused tests proving diagnostics are derived from runtime events and command results rather than UI-only state.
+- Verified with `npm --workspace rallar-black-box run build`.
+- Verified with `npm run test -- packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/rallar-black-box/control-client.test.ts packages/tests/rallar-black-box/manual-workbench.test.ts packages/tests/rallar-black-box/rtc-diagnostics.test.ts`.
 
 Deliverables:
 

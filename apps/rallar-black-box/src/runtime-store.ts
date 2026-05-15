@@ -254,6 +254,10 @@ function runtimeDelayFor(command: RallarBlackBoxTestCommand): number {
     }
 }
 
+function commandString(value: unknown, fallback: string): string {
+    return typeof value === 'string' && value.trim().length > 0 ? value : fallback;
+}
+
 async function fakeCommandExecutor(
     command: RallarBlackBoxTestCommand & Readonly<{ commandId: string }>,
     context: RallarBlackBoxTestCommandContext,
@@ -261,7 +265,54 @@ async function fakeCommandExecutor(
     await delay(runtimeDelayFor(command));
 
     switch (command.kind) {
-        case 'rtc.connect':
+        case 'rtc.connect': {
+            const config = context.config();
+            const sessionId = commandString(
+                command.rallar?.sessionId ?? config?.sessionId,
+                'visible-session-alice',
+            );
+            const manualMetadata = command.metadata?.manual as Record<string, unknown> | undefined;
+            const manualExpectedClients = Array.isArray(manualMetadata?.expectedClients)
+                ? manualMetadata.expectedClients.map(String)
+                : [];
+            const expectedClients = manualExpectedClients.length > 0
+                ? manualExpectedClients
+                : [sessionId];
+            const stageBase = {
+                commandId: command.commandId,
+                connection: command.connection,
+                actor: command.actor,
+                transport: command.transport,
+                severity: 'info' as const,
+            };
+            const stages = [
+                ['auth', 'rallar.bb.fake.connect.authenticated'],
+                ['runtime-bootstrap', 'rallar.bb.fake.connect.runtime_bootstrapped'],
+                ['group-join', 'rallar.bb.fake.connect.group_joined'],
+                ['signaling', 'rallar.bb.fake.connect.signaling_ready'],
+                ['peer-discovery', 'rallar.bb.fake.connect.peer_discovered'],
+                ['data-channel', 'rallar.bb.fake.connect.data_channel_ready'],
+            ] as const;
+            for (const [phase, topic] of stages) {
+                context.recordEvent({
+                    ...stageBase,
+                    kind: 'diagnostic',
+                    topic,
+                    payload: {
+                        phase,
+                        roomId: command.roomId,
+                        sessionId,
+                        expectedClients,
+                        observedClients: phase === 'peer-discovery' || phase === 'data-channel'
+                            ? expectedClients
+                            : [sessionId],
+                        peerCount: phase === 'peer-discovery' || phase === 'data-channel'
+                            ? expectedClients.length
+                            : 1,
+                        laneHealth: phase === 'data-channel' ? 'open' : 'opening',
+                    },
+                });
+            }
             context.recordEvent({
                 kind: 'diagnostic',
                 topic: 'rallar.bb.fake.rtc.connected',
@@ -272,8 +323,10 @@ async function fakeCommandExecutor(
                 severity: 'info',
                 payload: {
                     roomId: command.roomId,
-                    sessionId: 'visible-session-alice',
-                    peerCount: 1,
+                    sessionId,
+                    expectedClients,
+                    observedClients: expectedClients,
+                    peerCount: expectedClients.length,
                     laneHealth: 'open',
                 },
             });
@@ -285,10 +338,13 @@ async function fakeCommandExecutor(
                     actor: command.actor,
                     roomId: command.roomId,
                     transport: command.transport,
-                    sessionId: 'visible-session-alice',
+                    sessionId,
+                    expectedClients,
+                    observedClients: expectedClients,
                 },
                 nextStatus: context.state().status,
             };
+        }
         case 'rtc.send':
             context.recordEvent({
                 kind: 'message',
