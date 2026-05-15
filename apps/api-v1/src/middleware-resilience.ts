@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
 
