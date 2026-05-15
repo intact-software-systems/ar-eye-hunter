@@ -1,8 +1,11 @@
 import type { RallarBlackBoxTestTransport } from '@shared-test/rallar-bb-test/types.ts';
 
+export type RallarBlackBoxProviderMode = 'simulated' | 'browser-rallar';
+
 export const RALLAR_BLACK_BOX_CLIENT_DEFAULTS = {
     mode: 'local-workbench',
     autoConnect: false,
+    providerMode: 'simulated' satisfies RallarBlackBoxProviderMode,
     controlUrl: 'ws://localhost:5180/control',
     localRunId: 'local-workbench-run',
     controlRunId: 'control-run-local',
@@ -29,3 +32,11 @@ export const RALLAR_BLACK_BOX_CLIENT_DEFAULTS = {
 } as const;
 
 export type RallarBlackBoxClientDefaults = typeof RALLAR_BLACK_BOX_CLIENT_DEFAULTS;
+
+export function parseRallarBlackBoxProviderMode(
+    value: string | undefined,
+): RallarBlackBoxProviderMode {
+    return value === 'browser-rallar'
+        ? 'browser-rallar'
+        : RALLAR_BLACK_BOX_CLIENT_DEFAULTS.providerMode;
+}

@@ -5,6 +5,7 @@ import type {
     RallarBlackBoxTestTransport,
 } from '@shared-test/rallar-bb-test/types.ts';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from './client-defaults.ts';
+import type { RallarBlackBoxProviderMode } from './client-defaults.ts';
 
 export type ManualWorkbenchTransport = Extract<
     RallarBlackBoxTestTransport,
@@ -38,6 +39,7 @@ export type ManualWorkbenchValues = Readonly<{
     typeId: string;
     topicId: string;
     timeoutMs: number;
+    providerMode: RallarBlackBoxProviderMode;
 }>;
 
 export type ManualPayloadPreset = Readonly<{
@@ -114,6 +116,7 @@ export const DEFAULT_MANUAL_WORKBENCH_VALUES: ManualWorkbenchValues = {
     typeId: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.typeId,
     topicId: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.topicId,
     timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
+    providerMode: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.providerMode,
 };
 
 function clean(value: string): string | undefined {
@@ -194,12 +197,14 @@ export function manualConfigureCommand(
         transport: values.transport === 'ws' ? 'ws' : values.transport,
         control: {
             mode: 'manual-workbench',
+            providerMode: values.providerMode,
             protocolVersion: 1,
             connected: false,
         },
         defaults: {
             timeoutMs: timeoutMs(values),
             connection: clean(values.connection),
+            providerMode: values.providerMode,
         },
     };
 

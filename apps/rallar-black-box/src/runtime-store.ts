@@ -13,7 +13,11 @@ import type {
 } from '@shared-test/rallar-bb-test/types.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES, } from './recipe-fixtures.ts';
 import { RallarBlackBoxControlClient, type RallarBlackBoxControlSnapshot, } from './control-client.ts';
-import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from './client-defaults.ts';
+import {
+    RALLAR_BLACK_BOX_CLIENT_DEFAULTS,
+    parseRallarBlackBoxProviderMode,
+    type RallarBlackBoxProviderMode,
+} from './client-defaults.ts';
 
 type RuntimeStoreSnapshot = Readonly<{
     state: RallarBlackBoxTestState;
@@ -32,6 +36,7 @@ type StoreListener = () => void;
 export type RallarBlackBoxBootstrapConfig = Readonly<{
     mode: 'local-workbench' | 'control-agent';
     autoConnect: boolean;
+    providerMode: RallarBlackBoxProviderMode;
     controlUrl: string;
     runId: string;
     agentId: string;
@@ -44,6 +49,11 @@ export type RallarBlackBoxBootstrapConfig = Readonly<{
     sessionId: string;
     roomId: string;
     transport: 'realtime' | 'messages.rtc';
+    rallarUsername?: string;
+    rallarPassword?: string;
+    rallarToken?: string;
+    rallarRegister: boolean;
+    rallarRestoreSession: boolean;
     source: 'url' | 'environment' | 'default';
 }>;
 
@@ -102,6 +112,18 @@ function numberParamValue(
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : {};
+}
+
+function stringValue(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim().length > 0
+        ? value
+        : undefined;
+}
+
 function controlModeFrom(
     params: URLSearchParams,
     env: Readonly<Record<string, string | undefined>>,
@@ -120,6 +142,8 @@ function bootstrapSource(
         'mode',
         'controlUrl',
         'autoConnect',
+        'provider',
+        'providerMode',
         'runId',
         'agentId',
         'controlToken',
@@ -131,6 +155,11 @@ function bootstrapSource(
         'sessionId',
         'roomId',
         'transport',
+        'rallarUsername',
+        'rallarPassword',
+        'rallarToken',
+        'rallarRegister',
+        'rallarRestoreSession',
     ];
     if (urlKeys.some(key => params.has(key))) {
         return 'url';
@@ -140,6 +169,8 @@ function bootstrapSource(
         'VITE_RALLAR_BOOTSTRAP_MODE',
         'VITE_RALLAR_CONTROL_URL',
         'VITE_RALLAR_AUTO_CONNECT',
+        'VITE_RALLAR_PROVIDER',
+        'VITE_RALLAR_PROVIDER_MODE',
         'VITE_RALLAR_RUN_ID',
         'VITE_RALLAR_AGENT_ID',
         'VITE_RALLAR_CONTROL_TOKEN',
@@ -151,8 +182,66 @@ function bootstrapSource(
         'VITE_RALLAR_SESSION_ID',
         'VITE_RALLAR_ROOM_ID',
         'VITE_RALLAR_TRANSPORT',
+        'VITE_RALLAR_USERNAME',
+        'VITE_RALLAR_PASSWORD',
+        'VITE_RALLAR_TOKEN',
+        'VITE_RALLAR_REGISTER',
+        'VITE_RALLAR_RESTORE_SESSION',
     ];
     return envKeys.some(key => env[key]) ? 'environment' : 'default';
+}
+
+export function rallarBlackBoxProviderModeFromConfig(
+    config: RallarBlackBoxTestConfig | undefined,
+): RallarBlackBoxProviderMode {
+    const control = asRecord(config?.control);
+    const defaults = asRecord(config?.defaults);
+    return parseRallarBlackBoxProviderMode(
+        stringValue(control.providerMode) ??
+        stringValue(control.provider) ??
+        stringValue(defaults.providerMode) ??
+        stringValue(defaults.provider),
+    );
+}
+
+export function validateRallarBlackBoxProviderConfig(
+    config: RallarBlackBoxTestConfig,
+): RallarBlackBoxTestError | undefined {
+    const providerMode = rallarBlackBoxProviderModeFromConfig(config);
+    if (providerMode === 'simulated') {
+        return undefined;
+    }
+
+    if (
+        !config.apiBaseUrl ||
+        config.apiBaseUrl === RALLAR_BLACK_BOX_CLIENT_DEFAULTS.apiBaseUrl
+    ) {
+        return {
+            code: 'RALLAR_BLACK_BOX_PROVIDER_CONFIG_INVALID',
+            message: 'browser-rallar provider requires a real Rallar API base URL.',
+            details: {
+                providerMode,
+                apiBaseUrl: config.apiBaseUrl,
+            },
+        };
+    }
+
+    const rallar = asRecord(config.rallar);
+    const hasToken = Boolean(stringValue(rallar.token));
+    const hasLogin = Boolean(stringValue(rallar.username) && stringValue(rallar.password));
+    const canRestoreSession = rallar.restoreSession === true;
+    if (!hasToken && !hasLogin && !canRestoreSession) {
+        return {
+            code: 'RALLAR_BLACK_BOX_PROVIDER_CONFIG_INVALID',
+            message: 'browser-rallar provider requires rallar token, username/password, or restoreSession=true.',
+            details: {
+                providerMode,
+                hasApiBaseUrl: true,
+            },
+        };
+    }
+
+    return undefined;
 }
 
 export function resolveRallarBlackBoxBootstrapConfig(
@@ -162,6 +251,10 @@ export function resolveRallarBlackBoxBootstrapConfig(
 ): RallarBlackBoxBootstrapConfig {
     const params = searchParams(search);
     const mode = controlModeFrom(params, env);
+    const providerMode = parseRallarBlackBoxProviderMode(
+        paramValue(params, env, 'provider', 'VITE_RALLAR_PROVIDER') ??
+        paramValue(params, env, 'providerMode', 'VITE_RALLAR_PROVIDER_MODE'),
+    );
     const controlUrl = paramValue(
         params,
         env,
@@ -183,6 +276,7 @@ export function resolveRallarBlackBoxBootstrapConfig(
     return {
         mode: autoConnect ? 'control-agent' : mode,
         autoConnect,
+        providerMode,
         controlUrl,
         runId,
         agentId,
@@ -210,8 +304,56 @@ export function resolveRallarBlackBoxBootstrapConfig(
         roomId: paramValue(params, env, 'roomId', 'VITE_RALLAR_ROOM_ID') ??
             RALLAR_BLACK_BOX_CLIENT_DEFAULTS.roomId,
         transport: transport === 'messages.rtc' ? 'messages.rtc' : 'realtime',
+        rallarUsername: paramValue(params, env, 'rallarUsername', 'VITE_RALLAR_USERNAME'),
+        rallarPassword: paramValue(params, env, 'rallarPassword', 'VITE_RALLAR_PASSWORD'),
+        rallarToken: paramValue(params, env, 'rallarToken', 'VITE_RALLAR_TOKEN'),
+        rallarRegister: booleanParamValue(
+            paramValue(params, env, 'rallarRegister', 'VITE_RALLAR_REGISTER'),
+        ),
+        rallarRestoreSession: booleanParamValue(
+            paramValue(params, env, 'rallarRestoreSession', 'VITE_RALLAR_RESTORE_SESSION'),
+        ),
         source: bootstrapSource(params, env),
     };
+}
+
+function rallarConfigFromBootstrap(
+    bootstrap: RallarBlackBoxBootstrapConfig,
+): RallarBlackBoxTestConfig['rallar'] {
+    if (bootstrap.providerMode === 'simulated') {
+        return {
+            username: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.demoUsername,
+            password: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.demoPassword,
+            token: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.demoToken,
+        };
+    }
+
+    const rallar: Record<string, unknown> = {
+        ...(bootstrap.rallarUsername ? { username: bootstrap.rallarUsername } : {}),
+        ...(bootstrap.rallarPassword ? { password: bootstrap.rallarPassword } : {}),
+        ...(bootstrap.rallarToken ? { token: bootstrap.rallarToken } : {}),
+        ...(bootstrap.rallarRegister ? { register: true } : {}),
+        ...(bootstrap.rallarRestoreSession ? { restoreSession: true } : {}),
+    };
+    return Object.keys(rallar).length > 0 ? rallar : undefined;
+}
+
+function recordAndThrowProviderConfigError(
+    runtime: RallarBlackBoxTestRuntime,
+    config: RallarBlackBoxTestConfig,
+): void {
+    const configError = validateRallarBlackBoxProviderConfig(config);
+    if (!configError) {
+        return;
+    }
+
+    runtime.recordEvent({
+        kind: 'diagnostic',
+        topic: 'rallar.bb.provider.browser_rallar.config_invalid',
+        severity: 'error',
+        payload: configError,
+    });
+    throw new Error(configError.message);
 }
 
 function remoteControlConfig(
@@ -219,6 +361,7 @@ function remoteControlConfig(
     runNumber: number,
 ): RallarBlackBoxTestConfig {
     const runId = bootstrap.runId || `${RALLAR_BLACK_BOX_CLIENT_DEFAULTS.controlRunId}-${runNumber}`;
+    const rallar = rallarConfigFromBootstrap(bootstrap);
     return {
         runId,
         agentId: bootstrap.agentId,
@@ -228,8 +371,10 @@ function remoteControlConfig(
         sessionId: bootstrap.sessionId,
         roomId: bootstrap.roomId,
         transport: bootstrap.transport,
+        ...(rallar ? { rallar } : {}),
         control: {
             mode: 'remote-control',
+            providerMode: bootstrap.providerMode,
             protocolVersion: 1,
             connected: bootstrap.autoConnect,
             autoConnect: bootstrap.autoConnect,
@@ -239,6 +384,7 @@ function remoteControlConfig(
         defaults: {
             timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
             connection: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.remoteConnection,
+            providerMode: bootstrap.providerMode,
         },
     };
 }
@@ -266,10 +412,60 @@ function commandString(value: unknown, fallback: string): string {
     return typeof value === 'string' && value.trim().length > 0 ? value : fallback;
 }
 
-async function fakeCommandExecutor(
+function browserRallarProviderNotReadyOutcome(
+    command: RallarBlackBoxTestCommand & Readonly<{ commandId: string }>,
+    context: RallarBlackBoxTestCommandContext,
+): RallarBlackBoxTestCommandOutcome {
+    const config = context.config();
+    if (config) {
+        const configError = validateRallarBlackBoxProviderConfig(config);
+        if (configError) {
+            context.recordEvent({
+                kind: 'diagnostic',
+                topic: 'rallar.bb.provider.browser_rallar.config_invalid',
+                commandId: command.commandId,
+                severity: 'error',
+                payload: configError,
+            });
+            return {
+                status: 'failed',
+                error: configError,
+                nextStatus: 'failed',
+            };
+        }
+    }
+
+    const error: RallarBlackBoxTestError = {
+        code: 'RALLAR_BLACK_BOX_PROVIDER_NOT_IMPLEMENTED',
+        message: 'browser-rallar provider is selected, but the real browser Rallar SPA adapter is planned for Iteration 15B.',
+        details: {
+            providerMode: 'browser-rallar',
+            commandKind: command.kind,
+        },
+    };
+    context.recordEvent({
+        kind: 'diagnostic',
+        topic: 'rallar.bb.provider.browser_rallar.not_ready',
+        commandId: command.commandId,
+        severity: 'error',
+        payload: error,
+    });
+    return {
+        status: 'failed',
+        error,
+        nextStatus: 'failed',
+    };
+}
+
+async function providerCommandExecutor(
     command: RallarBlackBoxTestCommand & Readonly<{ commandId: string }>,
     context: RallarBlackBoxTestCommandContext,
 ): Promise<RallarBlackBoxTestCommandOutcome | undefined> {
+    const providerMode = rallarBlackBoxProviderModeFromConfig(context.config());
+    if (providerMode === 'browser-rallar' && command.kind !== 'reset') {
+        return browserRallarProviderNotReadyOutcome(command, context);
+    }
+
     await delay(runtimeDelayFor(command));
 
     switch (command.kind) {
@@ -341,6 +537,7 @@ async function fakeCommandExecutor(
             return {
                 status: 'ok',
                 value: {
+                    providerMode,
                     connected: true,
                     connection: command.connection,
                     actor: command.actor,
@@ -370,6 +567,7 @@ async function fakeCommandExecutor(
             return {
                 status: 'ok',
                 value: {
+                    providerMode,
                     sent: true,
                     connection: command.connection,
                     transport: command.transport,
@@ -393,6 +591,7 @@ async function fakeCommandExecutor(
             return {
                 status: 'ok',
                 value: {
+                    providerMode,
                     opened: false,
                     simulated: true,
                     connection: command.connection,
@@ -416,6 +615,7 @@ async function fakeCommandExecutor(
             return {
                 status: 'ok',
                 value: {
+                    providerMode,
                     sent: true,
                     simulated: true,
                     connection: command.connection,
@@ -439,6 +639,7 @@ async function fakeCommandExecutor(
             return {
                 status: 'ok',
                 value: {
+                    providerMode,
                     closed: true,
                     simulated: true,
                     connection: command.connection,
@@ -467,6 +668,7 @@ async function fakeCommandExecutor(
             return {
                 status: 'ok',
                 value: {
+                    providerMode,
                     status: 200,
                     ok: true,
                     simulated: true,
@@ -493,7 +695,7 @@ class RallarBlackBoxRuntimeStore {
 
     constructor() {
         this.runtime = createRallarBlackBoxTestRuntime({
-            commandExecutor: fakeCommandExecutor,
+            commandExecutor: providerCommandExecutor,
         });
         this.snapshot = {
             state: this.runtime.state(),
@@ -576,12 +778,24 @@ class RallarBlackBoxRuntimeStore {
     }
 
     async runSample(): Promise<void> {
-        await this.resetForRun('Loading local scaffold recipe');
-        await this.loadRecipe(
-            RALLAR_BLACK_BOX_RECIPE_FIXTURES[0].recipe,
-            RALLAR_BLACK_BOX_RECIPE_FIXTURES[0].fixtureId,
-        );
-        await this.runLoadedRecipe();
+        try {
+            await this.resetForRun('Loading local scaffold recipe');
+            await this.loadRecipe(
+                RALLAR_BLACK_BOX_RECIPE_FIXTURES[0].recipe,
+                RALLAR_BLACK_BOX_RECIPE_FIXTURES[0].fixtureId,
+            );
+            await this.runLoadedRecipe();
+        } catch (error) {
+            this.snapshot = {
+                ...this.snapshot,
+                bootstrapping: false,
+                busy: false,
+                runState: 'failed',
+                lastAction: 'Local sample failed',
+                lastError: toMessage(error),
+            };
+            this.emit();
+        }
     }
 
     async bootstrapControlAgent(): Promise<void> {
@@ -607,6 +821,7 @@ class RallarBlackBoxRuntimeStore {
                 commandId: `configure-control-${runNumber}`,
                 config,
             });
+            recordAndThrowProviderConfigError(this.runtime, config);
 
             this.snapshot = {
                 ...this.snapshot,
@@ -813,34 +1028,35 @@ class RallarBlackBoxRuntimeStore {
     }
 
     private async configureRuntime(runNumber: number): Promise<void> {
+        const rallar = rallarConfigFromBootstrap(this.bootstrapConfig);
+        const config: RallarBlackBoxTestConfig = {
+            runId: this.bootstrapConfig.runId,
+            agentId: this.bootstrapConfig.agentId,
+            environment: this.bootstrapConfig.environment,
+            apiBaseUrl: this.bootstrapConfig.apiBaseUrl,
+            actor: this.bootstrapConfig.actor,
+            sessionId: this.bootstrapConfig.sessionId,
+            roomId: this.bootstrapConfig.roomId,
+            transport: this.bootstrapConfig.transport,
+            ...(rallar ? { rallar } : {}),
+            control: {
+                mode: 'local-workbench',
+                providerMode: this.bootstrapConfig.providerMode,
+                protocolVersion: 1,
+                connected: false,
+            },
+            defaults: {
+                timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
+                connection: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.connection,
+                providerMode: this.bootstrapConfig.providerMode,
+            },
+        };
         await this.runtime.execute({
             kind: 'configure',
             commandId: `configure-local-${runNumber}`,
-            config: {
-                runId: this.bootstrapConfig.runId,
-                agentId: this.bootstrapConfig.agentId,
-                environment: this.bootstrapConfig.environment,
-                apiBaseUrl: this.bootstrapConfig.apiBaseUrl,
-                actor: this.bootstrapConfig.actor,
-                sessionId: this.bootstrapConfig.sessionId,
-                roomId: this.bootstrapConfig.roomId,
-                transport: this.bootstrapConfig.transport,
-                rallar: {
-                    username: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.demoUsername,
-                    password: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.demoPassword,
-                    token: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.demoToken,
-                },
-                control: {
-                    mode: 'local-workbench',
-                    protocolVersion: 1,
-                    connected: false,
-                },
-                defaults: {
-                    timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
-                    connection: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.connection,
-                },
-            },
+            config,
         });
+        recordAndThrowProviderConfigError(this.runtime, config);
     }
 
     private async loadRecipe(

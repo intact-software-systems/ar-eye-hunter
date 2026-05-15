@@ -21,6 +21,7 @@ import type {
 } from '@shared-test/rallar-bb-test/types.ts';
 import {
     type RallarBlackBoxBootstrapConfig,
+    rallarBlackBoxProviderModeFromConfig,
     rallarBlackBoxRuntimeStore,
     useRallarBlackBoxRuntimeStore,
 } from './runtime-store.ts';
@@ -186,10 +187,12 @@ function eventMatchesFilters(event: RallarBlackBoxTestEvent, filters: EventFilte
 }
 
 function createReportSnapshot(state: RallarBlackBoxTestState): unknown {
+    const providerMode = rallarBlackBoxProviderModeFromConfig(state.currentConfig);
     return {
         reportId: `local-report-${state.currentConfig?.runId ?? 'unconfigured'}`,
         runId: state.currentConfig?.runId,
         agentId: state.currentConfig?.agentId,
+        providerMode,
         generatedAtEpochMs: Date.now(),
         status: state.status,
         config: state.currentConfig,
@@ -201,13 +204,17 @@ function createReportSnapshot(state: RallarBlackBoxTestState): unknown {
             }
             : undefined,
         summary: {
+            providerMode,
             commands: state.commandHistory.length,
             failures: state.failures.length,
             events: state.events.length,
             firstFailureCommandId: state.failures[0]?.commandId,
         },
         stats: state.latestStats,
-        results: state.commandHistory,
+        results: state.commandHistory.map(result => ({
+            ...result,
+            providerMode,
+        })),
         events: state.events,
     };
 }
@@ -272,6 +279,7 @@ function manualValuesFromState(state: RallarBlackBoxTestState): ManualWorkbenchV
         groupId: config?.roomId ?? DEFAULT_MANUAL_WORKBENCH_VALUES.groupId,
         connection: String(config?.defaults?.connection ?? DEFAULT_MANUAL_WORKBENCH_VALUES.connection),
         transport: manualTransportFrom(config?.transport),
+        providerMode: rallarBlackBoxProviderModeFromConfig(config),
     };
 }
 
@@ -317,6 +325,10 @@ function Header({ state, control, bootstrapping, lastAction }: {
 }) {
     const config = selectRallarBlackBoxCurrentConfig(state);
     const stats = selectRallarBlackBoxLatestStats(state);
+    const providerMode = rallarBlackBoxProviderModeFromConfig(config);
+    const rallarValue = providerMode === 'simulated'
+        ? 'simulated'
+        : stats?.rallar?.connected ? 'connected' : 'not connected';
 
     return (
         <header className="run-header">
@@ -327,9 +339,10 @@ function Header({ state, control, bootstrapping, lastAction }: {
             <div className="header-grid" aria-label="Run state">
                 <Metric label="Agent" value={config?.agentId ?? 'unassigned'}/>
                 <Metric label="Protocol" value="1"/>
+                <Metric label="Provider" value={providerMode} tone={providerMode === 'simulated' ? 'warn' : 'active'}/>
                 <Metric label="Control" value={control.state} tone={statusTone(control.state)}/>
                 <Metric label="Runtime" value={state.status} tone={statusTone(state.status)}/>
-                <Metric label="Rallar" value={stats?.rallar?.connected ? 'connected' : 'simulated'} tone="active"/>
+                <Metric label="Rallar" value={rallarValue} tone={stats?.rallar?.connected ? 'good' : providerMode === 'simulated' ? 'warn' : 'muted'}/>
                 <Metric label="Environment" value={config?.environment ?? 'local'}/>
                 <Metric label="Actor" value={config?.actor ?? 'none'}/>
                 <Metric label="Session" value={config?.sessionId ?? 'none'}/>
@@ -1315,6 +1328,10 @@ function BootstrapPanel({ bootstrap }: {
                     <dd>{bootstrap.source}</dd>
                 </div>
                 <div>
+                    <dt>Provider</dt>
+                    <dd>{bootstrap.providerMode}</dd>
+                </div>
+                <div>
                     <dt>Auto Connect</dt>
                     <dd>{bootstrap.autoConnect ? 'enabled' : 'disabled'}</dd>
                 </div>
@@ -1350,6 +1367,7 @@ function Metric({ label, value, tone = 'muted' }: {
 
 function ConfigurationPanel({ state }: { state: RallarBlackBoxTestState }) {
     const config = selectRallarBlackBoxCurrentConfig(state);
+    const providerMode = rallarBlackBoxProviderModeFromConfig(config);
 
     return (
         <section className="panel config-panel">
@@ -1358,6 +1376,10 @@ function ConfigurationPanel({ state }: { state: RallarBlackBoxTestState }) {
                 <span className="pill muted">redacted</span>
             </div>
             <dl className="config-list">
+                <div>
+                    <dt>Provider</dt>
+                    <dd>{providerMode}</dd>
+                </div>
                 <div>
                     <dt>API base</dt>
                     <dd>{config?.apiBaseUrl ?? 'not configured'}</dd>

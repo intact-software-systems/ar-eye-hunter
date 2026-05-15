@@ -51,6 +51,27 @@ The repo already has a useful browser-backed RTC foundation:
 The SPA plan should build on this foundation. It should not create a second black-box runtime with different command
 semantics.
 
+## Current Execution Reality After Iteration 14
+
+The visible SPA currently uses the local/fake executor in `apps/rallar-black-box/src/runtime-store.ts`. The UI,
+command/result contract, control WebSocket, diagnostics, reports, received-data inbox, and topology are real, but
+`rtc.connect`, `rtc.send`, `ws.open`, `ws.send`, and `http.request` are simulated by that executor.
+
+The next implementation work should make real Rallar execution an explicit provider mode. The default local workbench can
+remain simulated for offline UI development, but black-box validation against deployed Rallar must use a real
+browser-Rallar provider that calls the browser facade and produces actual RTC signaling, room joins, subscriptions, and
+payload sends.
+
+Target provider modes:
+
+```text
+simulated       -> current fake executor for offline UI and protocol development
+browser-rallar  -> real browser Rallar facade for auth, signaling, RTC, WebSocket, and HTTP behavior
+```
+
+The UI must always show which executor/provider is active so a user cannot mistake simulated loopback events for real
+Rallar RTC delivery.
+
 ## App Shape
 
 Use React plus Vite, consistent with the other app packages.
@@ -901,9 +922,166 @@ Deliverables:
 - filters for active, degraded, and failed links
 - no impact on headless execution
 
-### Iteration 15: Long-running And Randomised Runs
+### Iteration 15A: Runtime Provider Selection
 
-Integrate with the planned soak and seeded-random test work.
+Make the SPA choose between simulated execution and real browser-Rallar execution explicitly.
+
+Status: completed.
+
+Results:
+
+- Added centralized provider-mode defaults in `apps/rallar-black-box/src/client-defaults.ts`.
+- Added provider mode parsing from URL params `provider` / `providerMode` and Vite env
+  `VITE_RALLAR_PROVIDER` / `VITE_RALLAR_PROVIDER_MODE`.
+- Default provider mode remains `simulated`, preserving the out-of-the-box local UI with no backend or login.
+- Added optional real-provider auth bootstrap fields for future `browser-rallar` use: username, password, token,
+  register, and restore-session flags.
+- Added provider mode to bootstrap config, runtime config, manual workbench generated configure commands, control config,
+  defaults, report snapshots, and report result rows.
+- Added header, bootstrap, and configuration UI visibility for the active provider mode.
+- Added provider validation for `browser-rallar`, requiring a non-demo API base URL plus token, username/password, or
+  `restoreSession=true`.
+- Added explicit `browser-rallar` not-ready failures so real-provider mode cannot silently fall back to simulated RTC
+  loopback before Iteration 15B is implemented.
+- Preserved `rallar.bb.fake.*` topics for simulated execution.
+- Added focused tests for default simulated provider behavior, URL/env provider selection, provider config validation,
+  and manual configure command provider propagation.
+- Verified with `npm --workspace rallar-black-box run build`.
+- Verified with `npm run test -- packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/rallar-black-box/manual-workbench.test.ts packages/tests/rallar-black-box/control-client.test.ts`.
+- Verified with `npm run test:e2e:rallar-black-box`.
+
+Deliverables:
+
+- provider mode config through URL, Vite env, and visible UI state: `simulated` or `browser-rallar`
+- default mode remains `simulated` so the UI works out of the box without a backend or login
+- control-agent mode can opt into `browser-rallar` with `provider=browser-rallar` or equivalent env config
+- header/bootstrap/configuration panels show the active provider mode
+- command results and report summaries include the active provider mode
+- simulated events keep the `rallar.bb.fake.*` topics
+- real-provider events must never use `rallar.bb.fake.*` topics
+- provider-specific config validation that fails early when `browser-rallar` is selected without required Rallar config
+- focused tests proving default simulated behavior remains unchanged and real-provider mode is selected only when
+  requested
+
+### Iteration 15B: Browser Rallar Runtime Adapter For The SPA
+
+Wire the existing browser Rallar facade into the SPA runtime.
+
+Status: planned.
+
+Results:
+
+- Not started.
+
+Deliverables:
+
+- create a SPA-safe browser Rallar runtime adapter around `packages/shared-web/browser/rallar.ts` or the reusable pieces
+  from `packages/shared-test/black-box-runner/browser/rallar-browser-runtime.ts`
+- connect the adapter to `createRallarBlackBoxBrowserTestRuntime(...)` from
+  `packages/shared-test/rallar-bb-test/browser-adapter.ts`
+- map `configure` and `rtc.connect` config into real `rallar.configure`, auth restore/login/register, `rallar.connect`,
+  room join, and subscription setup
+- bridge real browser Rallar diagnostics and message callbacks into the shared runtime event stream
+- support real `health`, `close`, and `reset` behavior, including unsubscribe and disconnect cleanup
+- preserve browser-native real `fetch` and `WebSocket` execution for `http.request`, `ws.open`, `ws.send`, and
+  `ws.close`
+- keep the simulated provider isolated so tests and local UI development do not require a deployed Rallar service
+- focused unit tests with mocked Rallar facade proving connect/send/close call the real adapter methods rather than the
+  fake executor
+
+### Iteration 15C: Real RTC Connect And Send Smoke
+
+Prove the SPA can perform actual Rallar RTC signaling and payload sending against a configured environment.
+
+Status: planned.
+
+Results:
+
+- Not started.
+
+Deliverables:
+
+- real `rtc.connect` path that performs auth, Rallar connect, room join, peer discovery subscription, and data-channel or
+  `messages.rtc` subscription
+- real `rtc.send` path for `rallar.realtime.sendJson`
+- real `rtc.send` path for `rallar.messages.rtc.send`
+- direct, multicast, and broadcast send mapping for `realtime` and `messages.rtc`
+- visible distinction between real received messages and simulated loopback messages
+- manual workbench sends use the real provider when `browser-rallar` mode is active
+- RTC diagnostics consume real browser topics such as `rallar.browser.connect.phase_started`,
+  `rallar.browser.connect.phase_completed`, `rallar.browser.connect.phase_failed`, `rallar.browser.realtime.message`,
+  and `rallar.browser.messages.rtc.message`
+- environment-gated smoke tests that run only when Rallar API base URL and credentials/token are provided
+- non-gated tests with mocked Rallar facade proving the command path performs actual connect/send calls
+
+### Iteration 16: Two-agent Real RTC Delivery
+
+Prove real delivery between at least two browser agents.
+
+Status: planned.
+
+Results:
+
+- Not started.
+
+Deliverables:
+
+- Playwright or black-box-runner flow that starts two SPA agents with the same run/room and different actors/sessions
+- control-server orchestration for agent A connect, agent B connect, A sends to B, B sends to A, health, close, and reset
+- received-data inbox shows real inbound payloads on the receiving agent
+- control-server run snapshot captures both agents' command results, message events, diagnostics, stats, and reports
+- topology view derives real room membership and route edges from real event streams
+- direct delivery assertion for `realtime`
+- direct delivery assertion for `messages.rtc`
+- multicast and broadcast assertions when the target Rallar environment supports enough peers
+- timeout diagnostics when one agent is missing, stale, or not joined
+
+### Iteration 17: Real Provider Auth, Permissions, And Cleanup
+
+Make real-provider failures useful and safe to run repeatedly.
+
+Status: planned.
+
+Results:
+
+- Not started.
+
+Deliverables:
+
+- documented config for username/password, restore-session, registration, token, and logout behavior
+- redaction tests for real auth fields, tokens, tickets, authorization headers, and session identifiers
+- negative tests for bad credentials, missing token, forbidden room join, forbidden send target, and expired session
+- real cleanup path for unsubscribe, room leave when available, disconnect, logout when requested, and browser storage
+  cleanup
+- stale-session and duplicate-session diagnostics using real Rallar events where available
+- copyable failure bundles that include provider mode, Rallar environment, actor/session/room, command IDs, connect
+  phases, and redacted auth state
+- control-server rejection remains separate from real Rallar auth/permission failure so the UI can distinguish local
+  command validation from remote service denial
+
+### Iteration 18: Real Provider Runner Parity
+
+Make recipes portable between local visible UI, remote SPA agents, and the existing black-box runner provider.
+
+Status: planned.
+
+Results:
+
+- Not started.
+
+Deliverables:
+
+- recipe examples that can run through the visible SPA provider and the black-box runner `rallar-browser` or
+  `rallar-remote-browser` provider
+- report comparison for local Playwright provider versus remote SPA provider using the shared result/event vocabulary
+- parity checks for connect, direct send, multicast/broadcast metadata, received messages, health, close, and reset
+- provider-specific report fields clearly marked so comparisons do not fail on expected environment differences
+- CLI or test helper documentation for launching the SPA as a real provider agent
+- regression tests that prevent the SPA real-provider command mapping from drifting from the runner mapping
+
+### Iteration 19: Long-running And Randomised Runs
+
+Integrate with the planned soak and seeded-random test work after real provider smoke and two-agent delivery are proven.
 
 Status: planned.
 
@@ -917,7 +1095,10 @@ Deliverables:
 - periodic report checkpoints
 - support for seeded randomized command subsets
 - clear distinction between randomized and non-randomized steps
-- server-side visibility into random seed, iteration, and selected command order
+- provider mode included in random-run metadata
+- server-side visibility into random seed, iteration, selected command order, provider mode, actor/session, and room
+- real-provider cleanup checkpoints between randomized command groups
+- failure bundles that can replay the selected seed and command order against the same provider mode
 
 ## Concerns
 
@@ -946,6 +1127,10 @@ Graph visualisation can become expensive for large runs. It should be sampled, f
   `rallar-browser-runtime.ts` adapter?
 - Should the first remote SPA support only one actor/session per loaded page, or should multi-actor pages be supported
   later through an explicit runtime model?
+- Which real-provider auth mode should be the first supported default: restore existing session, username/password login,
+  registration plus login, short-lived test token, or more than one mode?
+- Should `browser-rallar` mode be allowed from the visible UI controls, or only from URL/env bootstrap so accidental real
+  network traffic is harder to trigger?
 - What default HTTP and WebSocket destination allowlists should browser-native commands use?
 - What report storage format should the server use for long-running test reports?
 

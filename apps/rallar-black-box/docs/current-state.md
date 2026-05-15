@@ -51,6 +51,7 @@ yet perform live Rallar network operations from the SPA.
 
 The client has complete local defaults in `src/client-defaults.ts`:
 
+- provider mode: `simulated`
 - control URL: `ws://localhost:5180/control`
 - local run ID: `local-workbench-run`
 - control run ID: `control-run-local`
@@ -68,6 +69,10 @@ The client has complete local defaults in `src/client-defaults.ts`:
 No login is required for the current local UI. The demo username, password, and token values exist only so the UI,
 redaction, diagnostics, and reports can exercise credential-shaped config. They are not sent to a real Rallar service by
 the current SPA executor.
+
+Provider mode is now explicit. `simulated` mode is the default. `browser-rallar` can be selected through URL or Vite env
+config, but it intentionally fails with provider validation or a not-ready error until the real browser Rallar SPA
+adapter is implemented.
 
 This means the current app is already useful for:
 
@@ -104,6 +109,7 @@ These checks are necessary because the app is a remote browser-control surface.
 The main gaps are:
 
 - the SPA still uses the fake/local executor instead of the real browser Rallar adapter
+- `browser-rallar` provider selection exists, but real connect/send execution is still planned
 - the control server is in-memory and not restart-durable
 - monitor-server ingestion is not connected
 - long-running and seeded-random runs are still planned

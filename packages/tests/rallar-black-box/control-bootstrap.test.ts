@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { resolveRallarBlackBoxBootstrapConfig } from '../../../apps/rallar-black-box/src/runtime-store.ts';
+import {
+    rallarBlackBoxProviderModeFromConfig,
+    resolveRallarBlackBoxBootstrapConfig,
+    validateRallarBlackBoxProviderConfig,
+} from '../../../apps/rallar-black-box/src/runtime-store.ts';
 
 describe('rallar-black-box control bootstrap', () => {
     it('enables remote control mode from URL autoConnect params', () => {
@@ -36,6 +40,7 @@ describe('rallar-black-box control bootstrap', () => {
             mode: 'local-workbench',
             autoConnect: false,
             controlUrl: 'ws://localhost:5180/control',
+            providerMode: 'simulated',
             runId: 'local-workbench-run',
             agentId: 'visible-agent-local',
             environment: 'local',
@@ -86,5 +91,64 @@ describe('rallar-black-box control bootstrap', () => {
             transport: 'messages.rtc',
             source: 'environment',
         });
+    });
+
+    it('selects browser-rallar provider only when requested', () => {
+        const fromUrl = resolveRallarBlackBoxBootstrapConfig(
+            '?provider=browser-rallar&apiBaseUrl=https://api.example.test&rallarUsername=alice&rallarPassword=secret',
+            {},
+        );
+        const fromEnv = resolveRallarBlackBoxBootstrapConfig('', {
+            VITE_RALLAR_PROVIDER: 'browser-rallar',
+            VITE_RALLAR_API_BASE_URL: 'https://api.example.test',
+            VITE_RALLAR_TOKEN: 'token-env',
+        });
+        const invalid = resolveRallarBlackBoxBootstrapConfig('?provider=unknown', {});
+
+        expect(fromUrl.providerMode).toBe('browser-rallar');
+        expect(fromUrl.rallarUsername).toBe('alice');
+        expect(fromUrl.rallarPassword).toBe('secret');
+        expect(fromEnv.providerMode).toBe('browser-rallar');
+        expect(fromEnv.rallarToken).toBe('token-env');
+        expect(invalid.providerMode).toBe('simulated');
+    });
+
+    it('validates browser-rallar provider config before real execution exists', () => {
+        expect(validateRallarBlackBoxProviderConfig({
+            control: {
+                providerMode: 'simulated',
+            },
+        })).toBeUndefined();
+
+        expect(validateRallarBlackBoxProviderConfig({
+            apiBaseUrl: 'https://api.example.invalid',
+            control: {
+                providerMode: 'browser-rallar',
+            },
+        })?.message).toContain('real Rallar API base URL');
+
+        expect(validateRallarBlackBoxProviderConfig({
+            apiBaseUrl: 'https://api.example.test',
+            control: {
+                providerMode: 'browser-rallar',
+            },
+        })?.message).toContain('token, username/password');
+
+        expect(validateRallarBlackBoxProviderConfig({
+            apiBaseUrl: 'https://api.example.test',
+            rallar: {
+                username: 'alice',
+                password: 'secret',
+            },
+            control: {
+                providerMode: 'browser-rallar',
+            },
+        })).toBeUndefined();
+
+        expect(rallarBlackBoxProviderModeFromConfig({
+            defaults: {
+                providerMode: 'browser-rallar',
+            },
+        })).toBe('browser-rallar');
     });
 });

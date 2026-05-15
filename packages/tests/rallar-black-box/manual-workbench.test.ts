@@ -106,6 +106,7 @@ describe('rallar-black-box manual workbench helpers', () => {
             'join',
             {
                 ...DEFAULT_MANUAL_WORKBENCH_VALUES,
+                providerMode: 'browser-rallar',
                 transport: 'ws',
                 wsUrl: 'wss://control.example.test/group',
             },
@@ -115,6 +116,16 @@ describe('rallar-black-box manual workbench helpers', () => {
 
         expect(commands.map(command => command.kind)).toEqual(['configure', 'ws.open']);
         expect(commands[0].commandId).toBe('manual-configure-10');
+        expect(commands[0]).toMatchObject({
+            config: {
+                control: {
+                    providerMode: 'browser-rallar',
+                },
+                defaults: {
+                    providerMode: 'browser-rallar',
+                },
+            },
+        });
         expect(commands[1]).toMatchObject({
             commandId: 'manual-ws-open-11',
             url: 'wss://control.example.test/group',

@@ -42,6 +42,9 @@ http://localhost:5176/
 No login is required for the current local UI. The client starts with demo defaults and the current SPA executor is
 simulated, so the visible workbench, diagnostics, reports, and topology work without a Rallar account or backend login.
 
+The active provider defaults to `simulated`. Real Rallar execution will use `provider=browser-rallar`, but that provider
+currently fails with a clear not-ready message until the browser Rallar SPA adapter is wired in.
+
 Open the SPA as a control agent:
 
 ```text
