@@ -1,0 +1,785 @@
+import { useSyncExternalStore } from 'react';
+import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestCommandContext,
+    RallarBlackBoxTestCommandOutcome,
+    RallarBlackBoxTestConfig,
+    RallarBlackBoxTestError,
+    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestRuntime,
+    RallarBlackBoxTestState,
+} from '@shared-test/rallar-bb-test/types.ts';
+import { RALLAR_BLACK_BOX_RECIPE_FIXTURES, } from './recipe-fixtures.ts';
+import { RallarBlackBoxControlClient, type RallarBlackBoxControlSnapshot, } from './control-client.ts';
+
+type RuntimeStoreSnapshot = Readonly<{
+    state: RallarBlackBoxTestState;
+    control: RallarBlackBoxControlSnapshot;
+    bootstrap: RallarBlackBoxBootstrapConfig;
+    bootstrapping: boolean;
+    busy: boolean;
+    runState: 'waiting' | 'running' | 'passed' | 'failed' | 'cancelled' | 'reset';
+    lastAction?: string;
+    lastError?: string;
+    loadedFixtureId?: string;
+}>;
+
+type StoreListener = () => void;
+
+export type RallarBlackBoxBootstrapConfig = Readonly<{
+    mode: 'local-workbench' | 'control-agent';
+    autoConnect: boolean;
+    controlUrl: string;
+    runId?: string;
+    agentId: string;
+    environment: string;
+    apiBaseUrl: string;
+    actor: string;
+    sessionId: string;
+    roomId: string;
+    transport: 'realtime' | 'messages.rtc';
+    source: 'url' | 'environment' | 'default';
+}>;
+
+function initialControlSnapshot(): RallarBlackBoxControlSnapshot {
+    const bootstrap = resolveRallarBlackBoxBootstrapConfig();
+    return {
+        state: 'idle',
+        url: bootstrap.controlUrl,
+        reconnectAttempt: 0,
+        sentCount: 0,
+        receivedCount: 0,
+    };
+}
+
+function delay(ms: number): Promise<void> {
+    return new Promise(resolve => window.setTimeout(resolve, ms));
+}
+
+function envValue(key: string): string | undefined {
+    return (import.meta as { env?: Record<string, string | undefined> }).env?.[key];
+}
+
+function searchParams(search: string): URLSearchParams {
+    return new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+}
+
+function paramValue(
+    params: URLSearchParams,
+    env: Readonly<Record<string, string | undefined>>,
+    paramName: string,
+    envName: string,
+): string | undefined {
+    const fromUrl = params.get(paramName)?.trim();
+    return fromUrl && fromUrl.length > 0 ? fromUrl : env[envName]?.trim() || undefined;
+}
+
+function booleanParamValue(
+    value: string | undefined,
+    fallback = false,
+): boolean {
+    if (!value) {
+        return fallback;
+    }
+
+    const normalized = value.toLowerCase();
+    return normalized === '1' ||
+        normalized === 'true' ||
+        normalized === 'yes' ||
+        normalized === 'on';
+}
+
+function controlModeFrom(
+    params: URLSearchParams,
+    env: Readonly<Record<string, string | undefined>>,
+): RallarBlackBoxBootstrapConfig['mode'] {
+    const mode = params.get('mode') ?? env.VITE_RALLAR_BOOTSTRAP_MODE;
+    return mode === 'control' || mode === 'control-agent'
+        ? 'control-agent'
+        : 'local-workbench';
+}
+
+function bootstrapSource(
+    params: URLSearchParams,
+    env: Readonly<Record<string, string | undefined>>,
+): RallarBlackBoxBootstrapConfig['source'] {
+    const urlKeys = [
+        'mode',
+        'controlUrl',
+        'autoConnect',
+        'runId',
+        'agentId',
+        'environment',
+        'apiBaseUrl',
+        'actor',
+        'sessionId',
+        'roomId',
+        'transport',
+    ];
+    if (urlKeys.some(key => params.has(key))) {
+        return 'url';
+    }
+
+    const envKeys = [
+        'VITE_RALLAR_BOOTSTRAP_MODE',
+        'VITE_RALLAR_CONTROL_URL',
+        'VITE_RALLAR_AUTO_CONNECT',
+        'VITE_RALLAR_RUN_ID',
+        'VITE_RALLAR_AGENT_ID',
+    ];
+    return envKeys.some(key => env[key]) ? 'environment' : 'default';
+}
+
+export function resolveRallarBlackBoxBootstrapConfig(
+    search = globalThis.window?.location?.search ?? '',
+    env: Readonly<Record<string, string | undefined>> =
+        (import.meta as { env?: Record<string, string | undefined> }).env ?? {},
+): RallarBlackBoxBootstrapConfig {
+    const params = searchParams(search);
+    const mode = controlModeFrom(params, env);
+    const controlUrl = paramValue(
+        params,
+        env,
+        'controlUrl',
+        'VITE_RALLAR_CONTROL_URL',
+    ) ?? 'ws://localhost:5180/control';
+    const autoConnect = booleanParamValue(
+        paramValue(params, env, 'autoConnect', 'VITE_RALLAR_AUTO_CONNECT'),
+        mode === 'control-agent',
+    );
+    const agentId = paramValue(params, env, 'agentId', 'VITE_RALLAR_AGENT_ID') ??
+        'visible-agent-local';
+    const transport = paramValue(params, env, 'transport', 'VITE_RALLAR_TRANSPORT');
+
+    return {
+        mode: autoConnect ? 'control-agent' : mode,
+        autoConnect,
+        controlUrl,
+        runId: paramValue(params, env, 'runId', 'VITE_RALLAR_RUN_ID'),
+        agentId,
+        environment: paramValue(params, env, 'environment', 'VITE_RALLAR_ENVIRONMENT') ??
+            'local',
+        apiBaseUrl: paramValue(params, env, 'apiBaseUrl', 'VITE_RALLAR_API_BASE_URL') ??
+            'https://api.example.invalid',
+        actor: paramValue(params, env, 'actor', 'VITE_RALLAR_ACTOR') ?? 'alice',
+        sessionId: paramValue(params, env, 'sessionId', 'VITE_RALLAR_SESSION_ID') ??
+            `${agentId}-session`,
+        roomId: paramValue(params, env, 'roomId', 'VITE_RALLAR_ROOM_ID') ??
+            'rallar-black-box-room',
+        transport: transport === 'messages.rtc' ? 'messages.rtc' : 'realtime',
+        source: bootstrapSource(params, env),
+    };
+}
+
+function remoteControlConfig(
+    bootstrap: RallarBlackBoxBootstrapConfig,
+    runNumber: number,
+): RallarBlackBoxTestConfig {
+    const runId = bootstrap.runId ?? `control-run-${runNumber}`;
+    return {
+        runId,
+        agentId: bootstrap.agentId,
+        environment: bootstrap.environment,
+        apiBaseUrl: bootstrap.apiBaseUrl,
+        actor: bootstrap.actor,
+        sessionId: bootstrap.sessionId,
+        roomId: bootstrap.roomId,
+        transport: bootstrap.transport,
+        control: {
+            mode: 'remote-control',
+            protocolVersion: 1,
+            connected: bootstrap.autoConnect,
+            autoConnect: bootstrap.autoConnect,
+            url: bootstrap.controlUrl,
+            source: bootstrap.source,
+        },
+        defaults: {
+            timeoutMs: 5_000,
+            connection: 'remoteAgent',
+        },
+    };
+}
+
+function runtimeDelayFor(command: RallarBlackBoxTestCommand): number {
+    const configuredDelay = command.metadata?.localDelayMs;
+    if (typeof configuredDelay === 'number' && Number.isFinite(configuredDelay)) {
+        return Math.max(0, configuredDelay);
+    }
+
+    switch (command.kind) {
+        case 'rtc.connect':
+            return 450;
+        case 'rtc.send':
+            return 260;
+        case 'ws.open':
+        case 'http.request':
+            return 340;
+        default:
+            return 160;
+    }
+}
+
+async function fakeCommandExecutor(
+    command: RallarBlackBoxTestCommand & Readonly<{ commandId: string }>,
+    context: RallarBlackBoxTestCommandContext,
+): Promise<RallarBlackBoxTestCommandOutcome | undefined> {
+    await delay(runtimeDelayFor(command));
+
+    switch (command.kind) {
+        case 'rtc.connect':
+            context.recordEvent({
+                kind: 'diagnostic',
+                topic: 'rallar.bb.fake.rtc.connected',
+                commandId: command.commandId,
+                connection: command.connection,
+                actor: command.actor,
+                transport: command.transport,
+                severity: 'info',
+                payload: {
+                    roomId: command.roomId,
+                    sessionId: 'visible-session-alice',
+                    peerCount: 1,
+                    laneHealth: 'open',
+                },
+            });
+            return {
+                status: 'ok',
+                value: {
+                    connected: true,
+                    connection: command.connection,
+                    actor: command.actor,
+                    roomId: command.roomId,
+                    transport: command.transport,
+                    sessionId: 'visible-session-alice',
+                },
+                nextStatus: context.state().status,
+            };
+        case 'rtc.send':
+            context.recordEvent({
+                kind: 'message',
+                topic: 'rallar.bb.fake.rtc.message',
+                commandId: command.commandId,
+                connection: command.connection,
+                transport: command.transport,
+                severity: 'info',
+                payload: {
+                    direction: 'loopback',
+                    data: command.send,
+                    receivedAtEpochMs: Date.now(),
+                },
+            });
+            return {
+                status: 'ok',
+                value: {
+                    sent: true,
+                    connection: command.connection,
+                    transport: command.transport,
+                    payloadBytes: JSON.stringify(command.send ?? {}).length,
+                },
+                nextStatus: context.state().status,
+            };
+        case 'ws.open':
+            context.recordEvent({
+                kind: 'diagnostic',
+                topic: 'rallar.bb.fake.ws.open_skipped',
+                commandId: command.commandId,
+                connection: command.connection,
+                transport: 'ws',
+                severity: 'warning',
+                payload: {
+                    url: command.url,
+                    reason: 'local scaffold does not open remote sockets',
+                },
+            });
+            return {
+                status: 'ok',
+                value: {
+                    opened: false,
+                    simulated: true,
+                    connection: command.connection,
+                    url: command.url,
+                },
+                nextStatus: context.state().status,
+            };
+        case 'ws.send':
+            context.recordEvent({
+                kind: 'message',
+                topic: 'rallar.bb.fake.ws.message',
+                commandId: command.commandId,
+                connection: command.connection,
+                transport: 'ws',
+                severity: 'info',
+                payload: {
+                    direction: 'loopback',
+                    data: command.data,
+                },
+            });
+            return {
+                status: 'ok',
+                value: {
+                    sent: true,
+                    simulated: true,
+                    connection: command.connection,
+                    data: command.data,
+                },
+                nextStatus: context.state().status,
+            };
+        case 'ws.close':
+            context.recordEvent({
+                kind: 'event',
+                topic: 'rallar.bb.fake.ws.closed',
+                commandId: command.commandId,
+                connection: command.connection,
+                transport: 'ws',
+                severity: 'info',
+                payload: {
+                    code: command.code,
+                    reason: command.reason,
+                },
+            });
+            return {
+                status: 'ok',
+                value: {
+                    closed: true,
+                    simulated: true,
+                    connection: command.connection,
+                },
+                nextStatus: context.state().status,
+            };
+        case 'http.request':
+            if (!command.request.url && !command.request.path) {
+                throw new Error('Local HTTP command requires request.url or request.path.');
+            }
+            context.recordEvent({
+                kind: 'event',
+                topic: 'rallar.bb.fake.http.response',
+                commandId: command.commandId,
+                transport: 'http',
+                severity: 'info',
+                payload: {
+                    status: 200,
+                    ok: true,
+                    request: command.request,
+                    body: {
+                        status: 'ok',
+                    },
+                },
+            });
+            return {
+                status: 'ok',
+                value: {
+                    status: 200,
+                    ok: true,
+                    simulated: true,
+                    request: command.request,
+                    body: {
+                        status: 'ok',
+                    },
+                },
+                nextStatus: context.state().status,
+            };
+        default:
+            return undefined;
+    }
+}
+
+class RallarBlackBoxRuntimeStore {
+    private readonly runtime: RallarBlackBoxTestRuntime;
+    private readonly controlClient: RallarBlackBoxControlClient;
+    private readonly listeners = new Set<StoreListener>();
+    private snapshot: RuntimeStoreSnapshot;
+    private bootstrapStarted = false;
+    private runSequence = 1;
+    private readonly bootstrapConfig = resolveRallarBlackBoxBootstrapConfig();
+
+    constructor() {
+        this.runtime = createRallarBlackBoxTestRuntime({
+            commandExecutor: fakeCommandExecutor,
+        });
+        this.snapshot = {
+            state: this.runtime.state(),
+            control: initialControlSnapshot(),
+            bootstrap: this.bootstrapConfig,
+            bootstrapping: false,
+            busy: false,
+            runState: 'waiting',
+        };
+        this.controlClient = new RallarBlackBoxControlClient({
+            runtime: this.runtime,
+            onSnapshot: control => {
+                this.snapshot = {
+                    ...this.snapshot,
+                    control,
+                };
+                this.emit();
+            },
+        });
+        this.runtime.subscribe(state => {
+            this.snapshot = {
+                ...this.snapshot,
+                state,
+            };
+            this.emit();
+        });
+    }
+
+    getSnapshot = (): RuntimeStoreSnapshot => this.snapshot;
+
+    subscribe = (listener: StoreListener): (() => void) => {
+        this.listeners.add(listener);
+        return () => {
+            this.listeners.delete(listener);
+        };
+    };
+
+    ensureBootstrapped(): void {
+        if (this.bootstrapStarted) {
+            return;
+        }
+
+        this.bootstrapStarted = true;
+        if (this.bootstrapConfig.mode === 'control-agent') {
+            void this.bootstrapControlAgent();
+            return;
+        }
+
+        void this.runSample();
+    }
+
+    connectControl(url: string, runId?: string, agentId?: string): void {
+        const config = this.runtime.state().currentConfig;
+        const effectiveRunId = runId || config?.runId || `local-control-run-${this.runSequence++}`;
+        const effectiveAgentId = agentId || config?.agentId || 'visible-agent-local';
+        this.snapshot = {
+            ...this.snapshot,
+            lastAction: 'Connecting control WebSocket',
+            lastError: undefined,
+        };
+        this.emit();
+        this.controlClient.connect({
+            url,
+            runId: effectiveRunId,
+            agentId: effectiveAgentId,
+        });
+    }
+
+    disconnectControl(): void {
+        this.controlClient.disconnect();
+        this.snapshot = {
+            ...this.snapshot,
+            lastAction: 'Control WebSocket disconnected',
+        };
+        this.emit();
+    }
+
+    async runSample(): Promise<void> {
+        await this.resetForRun('Loading local scaffold recipe');
+        await this.loadRecipe(
+            RALLAR_BLACK_BOX_RECIPE_FIXTURES[0].recipe,
+            RALLAR_BLACK_BOX_RECIPE_FIXTURES[0].fixtureId,
+        );
+        await this.runLoadedRecipe();
+    }
+
+    async bootstrapControlAgent(): Promise<void> {
+        const runNumber = this.runSequence++;
+        const config = remoteControlConfig(this.bootstrapConfig, runNumber);
+        this.snapshot = {
+            ...this.snapshot,
+            bootstrapping: true,
+            busy: true,
+            runState: 'waiting',
+            lastAction: 'Bootstrapping remote control agent',
+            lastError: undefined,
+        };
+        this.emit();
+
+        try {
+            await this.runtime.execute({
+                kind: 'reset',
+                commandId: `reset-control-${runNumber}`,
+            });
+            await this.runtime.execute({
+                kind: 'configure',
+                commandId: `configure-control-${runNumber}`,
+                config,
+            });
+
+            this.snapshot = {
+                ...this.snapshot,
+                bootstrapping: false,
+                busy: false,
+                runState: 'waiting',
+                lastAction: this.bootstrapConfig.autoConnect
+                    ? 'Remote control agent configured; connecting'
+                    : 'Remote control agent configured',
+                lastError: undefined,
+            };
+            this.emit();
+
+            if (this.bootstrapConfig.autoConnect) {
+                this.connectControl(
+                    this.bootstrapConfig.controlUrl,
+                    config.runId,
+                    this.bootstrapConfig.agentId,
+                );
+            }
+        } catch (error) {
+            this.snapshot = {
+                ...this.snapshot,
+                bootstrapping: false,
+                busy: false,
+                runState: 'failed',
+                lastAction: 'Remote control bootstrap failed',
+                lastError: toMessage(error),
+            };
+            this.emit();
+        }
+    }
+
+    async loadRecipeFromJson(recipeJson: string, fixtureId?: string): Promise<void> {
+        const parsed = this.parseJson<RallarBlackBoxTestRecipe>(
+            recipeJson,
+            'Recipe JSON is invalid',
+        );
+        await this.loadRecipe(parsed, fixtureId);
+    }
+
+    async runLoadedRecipe(): Promise<void> {
+        const runNumber = this.runSequence++;
+        this.snapshot = {
+            ...this.snapshot,
+            busy: true,
+            runState: 'running',
+            lastAction: 'Running loaded local recipe',
+            lastError: undefined,
+        };
+        this.emit();
+
+        try {
+            const result = await this.runtime.execute({
+                kind: 'recipe.run',
+                commandId: `recipe-run-local-${runNumber}`,
+            });
+            this.snapshot = {
+                ...this.snapshot,
+                busy: false,
+                bootstrapping: false,
+                runState: result.status === 'cancelled'
+                    ? 'cancelled'
+                    : result.ok
+                        ? 'passed'
+                        : 'failed',
+                lastAction: result.ok
+                    ? 'Local recipe completed'
+                    : 'Local recipe finished with failures',
+                lastError: result.error?.message,
+            };
+        } catch (error) {
+            this.snapshot = {
+                ...this.snapshot,
+                busy: false,
+                bootstrapping: false,
+                runState: 'failed',
+                lastAction: 'Local recipe failed',
+                lastError: toMessage(error),
+            };
+        }
+
+        this.emit();
+    }
+
+    async executeCommandFromJson(commandJson: string): Promise<void> {
+        const command = this.parseJson<RallarBlackBoxTestCommand>(
+            commandJson,
+            'Command JSON is invalid',
+        );
+        this.snapshot = {
+            ...this.snapshot,
+            busy: true,
+            runState: 'running',
+            lastAction: `Executing ${command.kind}`,
+            lastError: undefined,
+        };
+        this.emit();
+
+        const result = await this.runtime.execute(command);
+        this.snapshot = {
+            ...this.snapshot,
+            busy: false,
+            runState: result.ok ? 'passed' : result.status === 'cancelled' ? 'cancelled' : 'failed',
+            lastAction: result.ok
+                ? `Executed ${command.kind}`
+                : `${command.kind} failed`,
+            lastError: result.error?.message,
+        };
+        this.emit();
+    }
+
+    async cancelRecipe(): Promise<void> {
+        const wasBusy = this.snapshot.busy;
+        this.snapshot = {
+            ...this.snapshot,
+            lastAction: 'Requesting recipe cancellation',
+        };
+        this.emit();
+
+        const result = await this.runtime.execute({
+            kind: 'recipe.cancel',
+            commandId: `recipe-cancel-local-${this.runSequence++}`,
+            reason: 'cancelled from local workbench',
+        });
+        this.snapshot = {
+            ...this.snapshot,
+            busy: wasBusy,
+            bootstrapping: false,
+            runState: result.ok ? 'cancelled' : 'failed',
+            lastAction: result.ok
+                ? 'Recipe cancellation requested'
+                : 'Recipe cancellation failed',
+            lastError: result.error?.message,
+        };
+        this.emit();
+    }
+
+    async resetWorkbench(): Promise<void> {
+        await this.resetForRun('Workbench reset');
+        this.snapshot = {
+            ...this.snapshot,
+            busy: false,
+            bootstrapping: false,
+            runState: 'reset',
+            loadedFixtureId: undefined,
+        };
+        this.emit();
+    }
+
+    private async resetForRun(lastAction: string): Promise<void> {
+        const runNumber = this.runSequence++;
+        this.snapshot = {
+            ...this.snapshot,
+            bootstrapping: true,
+            busy: true,
+            runState: 'reset',
+            lastAction,
+            lastError: undefined,
+        };
+        this.emit();
+
+        await this.runtime.execute({
+            kind: 'reset',
+            commandId: `reset-local-${runNumber}`,
+        });
+        await this.configureRuntime(runNumber);
+    }
+
+    private async configureRuntime(runNumber: number): Promise<void> {
+        await this.runtime.execute({
+            kind: 'configure',
+            commandId: `configure-local-${runNumber}`,
+            config: {
+                runId: `local-workbench-run-${runNumber}`,
+                agentId: envValue('VITE_RALLAR_AGENT_ID') ?? 'visible-agent-local',
+                environment: envValue('VITE_RALLAR_ENVIRONMENT') ?? 'local',
+                apiBaseUrl: envValue('VITE_RALLAR_API_BASE_URL') ??
+                    'https://api.example.invalid',
+                actor: 'alice',
+                sessionId: 'visible-session-alice',
+                roomId: 'rallar-black-box-room',
+                transport: 'realtime',
+                rallar: {
+                    username: 'alice',
+                    password: 'local-demo-password',
+                    token: 'local-demo-token',
+                },
+                control: {
+                    mode: 'local-workbench',
+                    protocolVersion: 1,
+                    connected: false,
+                },
+                defaults: {
+                    timeoutMs: 5_000,
+                    connection: 'aliceRtc',
+                },
+            },
+        });
+    }
+
+    private async loadRecipe(
+        recipe: RallarBlackBoxTestRecipe,
+        fixtureId?: string,
+    ): Promise<void> {
+        const loadNumber = this.runSequence++;
+        this.snapshot = {
+            ...this.snapshot,
+            busy: true,
+            runState: 'waiting',
+            lastAction: `Loading recipe ${recipe.recipeId ?? ''}`.trim(),
+            lastError: undefined,
+        };
+        this.emit();
+
+        const result = await this.runtime.execute({
+            kind: 'recipe.load',
+            commandId: `recipe-load-local-${loadNumber}`,
+            recipe,
+        });
+        if (!result.ok) {
+            this.snapshot = {
+                ...this.snapshot,
+                busy: false,
+                bootstrapping: false,
+                runState: 'failed',
+                lastAction: `Recipe ${recipe.recipeId ?? ''} is invalid`.trim(),
+                lastError: result.error?.message,
+            };
+            this.emit();
+            return;
+        }
+
+        this.snapshot = {
+            ...this.snapshot,
+            busy: false,
+            bootstrapping: false,
+            runState: 'waiting',
+            lastAction: `Loaded recipe ${recipe.recipeId}`,
+            loadedFixtureId: fixtureId,
+        };
+        this.emit();
+    }
+
+    private parseJson<T>(input: string, message: string): T {
+        try {
+            return JSON.parse(input) as T;
+        } catch (error) {
+            this.snapshot = {
+                ...this.snapshot,
+                runState: 'failed',
+                lastAction: message,
+                lastError: toMessage(error),
+            };
+            this.emit();
+            throw error;
+        }
+    }
+
+    private emit(): void {
+        this.listeners.forEach(listener => listener());
+    }
+}
+
+export const rallarBlackBoxRuntimeStore = new RallarBlackBoxRuntimeStore();
+
+export function useRallarBlackBoxRuntimeStore(): RuntimeStoreSnapshot {
+    return useSyncExternalStore(
+        rallarBlackBoxRuntimeStore.subscribe,
+        rallarBlackBoxRuntimeStore.getSnapshot,
+        rallarBlackBoxRuntimeStore.getSnapshot,
+    );
+}
+
+function toMessage(error: unknown): string {
+    return (error as RallarBlackBoxTestError | Error | undefined)?.message ??
+        String(error);
+}

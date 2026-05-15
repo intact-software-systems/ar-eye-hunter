@@ -1,0 +1,28 @@
+{
+  "name": "rallar-black-box-control-server",
+  "exports": {},
+  "version": "0.1.0",
+  "imports": {
+    "@shared-test/": "../../packages/shared-test/"
+  },
+  "tasks": {
+    "dev": "deno run --watch --allow-net --allow-env src/main.ts",
+    "start": "deno run --allow-net --allow-env src/main.ts",
+    "check": "deno check src/main.ts test/control-service.test.ts",
+    "test": "deno test"
+  },
+  "compilerOptions": {
+    "strict": true,
+    "lib": [
+      "deno.ns",
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ]
+  },
+  "fmt": {
+    "lineWidth": 100,
+    "semiColons": true,
+    "singleQuote": true
+  }
+}

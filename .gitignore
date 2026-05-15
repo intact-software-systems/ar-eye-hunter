@@ -3,6 +3,9 @@
 /apps/web/dist/
 /apps/web/node_modules/
 /apps/relic-hunters-v1/dist/
+/apps/rallar-black-box/dist/
+/apps/rallar-black-box/test-results/
+/apps/rallar-black-box/playwright-report/
 node_modules/
 
 apps/web/dist

@@ -1,0 +1,687 @@
+import { describe, expect, it } from 'vitest';
+import {
+    createRallarBlackBoxBrowserTestRuntime,
+    createRallarBlackBoxRtcProvider,
+    createRallarBlackBoxTestRuntime,
+    type RallarBlackBoxTestCommand,
+    type RallarBlackBoxTestRecipe,
+    redactRallarBlackBoxValue,
+    selectRallarBlackBoxActiveCommand,
+    selectRallarBlackBoxCommandHistory,
+    selectRallarBlackBoxCurrentConfig,
+    selectRallarBlackBoxDiagnostics,
+    selectRallarBlackBoxEvents,
+    selectRallarBlackBoxFailures,
+    selectRallarBlackBoxFirstFailure,
+    selectRallarBlackBoxLatestStats,
+    selectRallarBlackBoxMessages,
+} from '../../shared-test/rallar-bb-test/mod.ts';
+import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
+
+function createDeterministicRuntime() {
+    let now = 1_000;
+    let sequence = 1;
+    return createRallarBlackBoxTestRuntime({
+        now: () => now++,
+        idFactory: (prefix) => `${prefix}-${sequence++}`,
+    });
+}
+
+describe('rallar-bb-test', () => {
+    it('redacts sensitive keys and configured secret values', () => {
+        const redacted = redactRallarBlackBoxValue(
+            {
+                username: 'alice',
+                password: 'secret',
+                headers: {
+                    authorization: 'Bearer token-123',
+                    traceId: 'trace-1',
+                },
+                nested: {
+                    message: 'this includes deploy-secret',
+                },
+            },
+            {
+                secretValues: ['deploy-secret'],
+            },
+        );
+
+        expect(redacted).toEqual({
+            username: 'alice',
+            password: '<redacted>',
+            headers: {
+                authorization: '<redacted>',
+                traceId: 'trace-1',
+            },
+            nested: {
+                message: '<redacted>',
+            },
+        });
+    });
+
+    it('configures the runtime and exposes UI selectors with redacted config', async () => {
+        const runtime = createDeterministicRuntime();
+
+        const result = await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-1',
+            config: {
+                runId: 'run-1',
+                agentId: 'agent-1',
+                apiBaseUrl: 'https://api.example.test',
+                actor: 'alice',
+                roomId: 'room-1',
+                transport: 'realtime',
+                rallar: {
+                    username: 'alice',
+                    password: 'secret',
+                },
+            },
+        });
+
+        const state = runtime.state();
+        expect(result.status).toBe('ok');
+        expect(state.status).toBe('configured');
+        expect(selectRallarBlackBoxCurrentConfig(state)).toEqual({
+            runId: 'run-1',
+            agentId: 'agent-1',
+            apiBaseUrl: 'https://api.example.test',
+            actor: 'alice',
+            roomId: 'room-1',
+            transport: 'realtime',
+            rallar: {
+                username: 'alice',
+                password: '<redacted>',
+            },
+        });
+        expect(selectRallarBlackBoxActiveCommand(state)).toBeUndefined();
+        expect(selectRallarBlackBoxDiagnostics(state).some((event) =>
+            event.topic === 'rallar.bb.configured'
+        )).toBe(true);
+    });
+
+    it('uses configured redaction rules for later runtime events', async () => {
+        const runtime = createDeterministicRuntime();
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-redaction',
+            config: {
+                redaction: {
+                    secretValues: ['message-secret'],
+                },
+            },
+        });
+        await runtime.execute({
+            kind: 'rtc.send',
+            commandId: 'send-secret',
+            send: {
+                data: {
+                    text: 'contains message-secret',
+                },
+            },
+        });
+
+        const sendDiagnostic = selectRallarBlackBoxDiagnostics(runtime.state())
+            .find((event) => event.topic === 'rallar.bb.fake.rtc.send');
+
+        expect(sendDiagnostic?.payload).toEqual({
+            command: {
+                kind: 'rtc.send',
+                commandId: 'send-secret',
+                send: {
+                    data: {
+                        text: '<redacted>',
+                    },
+                },
+            },
+        });
+    });
+
+    it('loads and runs a recipe through the fake runtime', async () => {
+        const runtime = createDeterministicRuntime();
+        const recipe: RallarBlackBoxTestRecipe = {
+            recipeId: 'recipe-1',
+            commands: [
+                {
+                    kind: 'configure',
+                    commandId: 'configure-1',
+                    config: {
+                        runId: 'run-1',
+                        agentId: 'agent-1',
+                        actor: 'alice',
+                    },
+                },
+                {
+                    kind: 'rtc.connect',
+                    commandId: 'connect-1',
+                    connection: 'aliceRtc',
+                    actor: 'alice',
+                    roomId: 'room-1',
+                    transport: 'realtime',
+                },
+                {
+                    kind: 'stats',
+                    commandId: 'stats-1',
+                },
+            ],
+        };
+
+        const loadResult = await runtime.execute({
+            kind: 'recipe.load',
+            commandId: 'load-1',
+            recipe,
+        });
+        const runResult = await runtime.execute({
+            kind: 'recipe.run',
+            commandId: 'run-1',
+        });
+
+        const state = runtime.state();
+        expect(loadResult.ok).toBe(true);
+        expect(runResult.ok).toBe(true);
+        expect(state.status).toBe('completed');
+        expect(selectRallarBlackBoxCommandHistory(state).map((result) => result.commandId))
+            .toEqual(['load-1', 'configure-1', 'connect-1', 'stats-1', 'run-1']);
+        expect(selectRallarBlackBoxLatestStats(state)?.counters.commands).toBe(3);
+        expect(selectRallarBlackBoxFailures(state)).toEqual([]);
+    });
+
+    it('records validation failures for invalid recipes', async () => {
+        const runtime = createDeterministicRuntime();
+
+        const result = await runtime.execute({
+            kind: 'recipe.load',
+            commandId: 'load-invalid',
+            recipe: {
+                recipeId: 'invalid',
+                commands: [],
+            },
+        });
+
+        const state = runtime.state();
+        expect(result.ok).toBe(false);
+        expect(result.status).toBe('failed');
+        expect(state.status).toBe('failed');
+        expect(selectRallarBlackBoxFirstFailure(state)?.commandId).toBe('load-invalid');
+        expect(result.error?.message).toBe('Recipe requires at least one command.');
+    });
+
+    it('replays cached command results by commandId without duplicating history', async () => {
+        const runtime = createDeterministicRuntime();
+        const command: RallarBlackBoxTestCommand = {
+            kind: 'health',
+            commandId: 'health-1',
+        };
+
+        const first = await runtime.execute(command);
+        const second = await runtime.execute(command);
+
+        expect(first.ok).toBe(true);
+        expect(second.ok).toBe(true);
+        expect(second.replayed).toBe(true);
+        expect(second.value).toEqual(first.value);
+        expect(selectRallarBlackBoxCommandHistory(runtime.state()).map((result) => result.commandId))
+            .toEqual(['health-1']);
+    });
+
+    it('keeps commands and results JSON serializable', async () => {
+        const runtime = createDeterministicRuntime();
+        const command: RallarBlackBoxTestCommand = {
+            kind: 'configure',
+            commandId: 'configure-json',
+            config: {
+                runId: 'run-json',
+                agentId: 'agent-json',
+            },
+        };
+
+        const parsedCommand = JSON.parse(JSON.stringify(command)) as RallarBlackBoxTestCommand;
+        const result = await runtime.execute(parsedCommand);
+        const parsedResult = JSON.parse(JSON.stringify(result));
+
+        expect(parsedResult).toEqual(result);
+        expect(parsedResult.commandId).toBe('configure-json');
+    });
+
+    it('delegates RTC commands to the browser Rallar runtime adapter', async () => {
+        const calls: Array<{ name: string; value?: unknown }> = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            now: (() => {
+                let now = 2_000;
+                return () => now++;
+            })(),
+            idFactory: (() => {
+                let sequence = 1;
+                return (prefix: string) => `${prefix}-${sequence++}`;
+            })(),
+            rallarRuntime: {
+                connect: async config => {
+                    calls.push({ name: 'connect', value: config });
+                    return {
+                        connected: true,
+                        sessionId: 'session-1',
+                    };
+                },
+                send: async input => {
+                    calls.push({ name: 'send', value: input });
+                    return {
+                        sent: true,
+                    };
+                },
+                close: async () => {
+                    calls.push({ name: 'close' });
+                    return {
+                        closed: true,
+                    };
+                },
+                health: async () => {
+                    calls.push({ name: 'health' });
+                    return {
+                        connected: true,
+                    };
+                },
+            },
+        });
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-browser',
+            config: {
+                apiBaseUrl: 'https://api.example.test',
+                actor: 'alice',
+                roomId: 'room-1',
+                transport: 'messages.rtc',
+                rallar: {
+                    typeId: 'chat.message',
+                },
+            },
+        });
+        const connectResult = await runtime.execute({
+            kind: 'rtc.connect',
+            commandId: 'connect-browser',
+            connection: 'aliceRtc',
+        });
+        const sendResult = await runtime.execute({
+            kind: 'rtc.send',
+            commandId: 'send-browser',
+            connection: 'aliceRtc',
+            send: {
+                payload: {
+                    text: 'hello',
+                },
+            },
+        });
+        runtime.receiveRallarBrowserEvent({
+            kind: 'message',
+            topic: 'rallar.browser.messages.rtc.message',
+            connection: 'aliceRtc',
+            actor: 'alice',
+            transport: 'messages.rtc',
+            data: {
+                password: 'secret',
+                text: 'from browser',
+            },
+        });
+        const healthResult = await runtime.execute({
+            kind: 'health',
+            commandId: 'health-browser',
+        });
+        const closeResult = await runtime.execute({
+            kind: 'close',
+            commandId: 'close-browser',
+        });
+
+        expect(connectResult.ok).toBe(true);
+        expect(sendResult.ok).toBe(true);
+        expect(healthResult.ok).toBe(true);
+        expect(closeResult.ok).toBe(true);
+        expect(calls.map(call => call.name)).toEqual([
+            'connect',
+            'send',
+            'health',
+            'close',
+        ]);
+        expect(calls[0].value).toEqual({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                typeId: 'chat.message',
+                transport: 'messages.rtc',
+            },
+        });
+        expect(calls[1].value).toEqual({
+            payload: {
+                text: 'hello',
+            },
+        });
+        expect(selectRallarBlackBoxMessages(runtime.state())[0].payload).toEqual({
+            roomId: undefined,
+            laneId: undefined,
+            peerId: undefined,
+            remotePeerId: undefined,
+            senderId: undefined,
+            typeId: undefined,
+            topicId: undefined,
+            contextId: undefined,
+            resourceId: undefined,
+            data: {
+                password: '<redacted>',
+                text: 'from browser',
+            },
+            error: undefined,
+        });
+    });
+
+    it('executes browser-native HTTP requests through the adapter', async () => {
+        const fetchCalls: unknown[] = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            fetch: (async (input, init) => {
+                fetchCalls.push({ input, init });
+                return new Response(JSON.stringify({
+                    received: true,
+                    token: 'response-token',
+                }), {
+                    status: 201,
+                    statusText: 'Created',
+                    headers: {
+                        authorization: 'Bearer response-token',
+                        'content-type': 'application/json',
+                    },
+                });
+            }) as typeof fetch,
+        });
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-http',
+            config: {
+                apiBaseUrl: 'https://api.example.test/root/',
+            },
+        });
+        const result = await runtime.execute({
+            kind: 'http.request',
+            commandId: 'http-1',
+            request: {
+                path: 'v1/items',
+                method: 'POST',
+                headers: {
+                    authorization: 'Bearer request-token',
+                    'content-type': 'application/json',
+                },
+                body: {
+                    name: 'item-1',
+                },
+            },
+            response: {
+                body: 'json',
+            },
+        });
+
+        expect(fetchCalls).toEqual([
+            {
+                input: 'https://api.example.test/root/v1/items',
+                init: {
+                    method: 'POST',
+                    headers: {
+                        authorization: 'Bearer request-token',
+                        'content-type': 'application/json',
+                    },
+                    body: '{"name":"item-1"}',
+                    credentials: undefined,
+                    mode: undefined,
+                },
+            },
+        ]);
+        expect(result.ok).toBe(true);
+        expect(result.value).toEqual({
+            url: 'https://api.example.test/root/v1/items',
+            status: 201,
+            statusText: 'Created',
+            ok: true,
+            headers: {
+                authorization: '<redacted>',
+                'content-type': 'application/json',
+            },
+            body: {
+                received: true,
+                token: '<redacted>',
+            },
+        });
+        expect(selectRallarBlackBoxEvents(runtime.state()).some((event) =>
+            event.topic === 'rallar.bb.http.response'
+        )).toBe(true);
+    });
+
+    it('executes browser-native WebSocket commands through the adapter', async () => {
+        class FakeSocket {
+            readonly url: string;
+            readonly protocol = '';
+            readyState = 0;
+            readonly sent: unknown[] = [];
+            private readonly listeners = new Map<string, Array<(event: unknown) => void>>();
+
+            constructor(url: string) {
+                this.url = url;
+                queueMicrotask(() => {
+                    this.readyState = 1;
+                    this.emit('open', {});
+                });
+            }
+
+            addEventListener(type: string, listener: (event: unknown) => void): void {
+                this.listeners.set(type, [
+                    ...(this.listeners.get(type) ?? []),
+                    listener,
+                ]);
+            }
+
+            removeEventListener(type: string, listener: (event: unknown) => void): void {
+                this.listeners.set(
+                    type,
+                    (this.listeners.get(type) ?? []).filter(entry => entry !== listener),
+                );
+            }
+
+            send(data: unknown): void {
+                this.sent.push(data);
+                this.emit('message', {
+                    data,
+                });
+            }
+
+            close(code?: number, reason?: string): void {
+                this.readyState = 3;
+                this.emit('close', {
+                    code,
+                    reason,
+                    wasClean: true,
+                });
+            }
+
+            private emit(type: string, event: unknown): void {
+                (this.listeners.get(type) ?? []).forEach(listener => listener(event));
+            }
+        }
+
+        const sockets: FakeSocket[] = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            webSocketFactory: (url) => {
+                const socket = new FakeSocket(url);
+                sockets.push(socket);
+                return socket;
+            },
+        });
+
+        const openResult = await runtime.execute({
+            kind: 'ws.open',
+            commandId: 'ws-open',
+            connection: 'control',
+            url: 'wss://control.example.test/ws',
+        });
+        const sendResult = await runtime.execute({
+            kind: 'ws.send',
+            commandId: 'ws-send',
+            connection: 'control',
+            data: {
+                text: 'hello',
+            },
+        });
+        const closeResult = await runtime.execute({
+            kind: 'ws.close',
+            commandId: 'ws-close',
+            connection: 'control',
+            code: 1000,
+            reason: 'done',
+        });
+
+        expect(openResult.ok).toBe(true);
+        expect(sendResult.ok).toBe(true);
+        expect(closeResult.ok).toBe(true);
+        expect(sockets[0].sent).toEqual(['{"text":"hello"}']);
+        expect(selectRallarBlackBoxMessages(runtime.state())[0].payload).toEqual({
+            data: '{"text":"hello"}',
+        });
+        expect(selectRallarBlackBoxEvents(runtime.state()).some((event) =>
+            event.topic === 'rallar.bb.ws.closed'
+        )).toBe(true);
+    });
+
+    it('drives a black-box runner RTC scenario through the facade adapter', async () => {
+        const runtime = createRallarBlackBoxTestRuntime({
+            commandExecutor: async (command, context) => {
+                if (command.kind === 'rtc.connect') {
+                    return {
+                        status: 'ok',
+                        value: {
+                            connected: true,
+                            connection: command.connection,
+                        },
+                        nextStatus: 'configured',
+                    };
+                }
+
+                if (command.kind === 'rtc.send') {
+                    context.recordEvent({
+                        kind: 'message',
+                        topic: 'rallar.bb.facade.echo',
+                        commandId: command.commandId,
+                        connection: command.connection,
+                        transport: command.transport,
+                        payload: {
+                            data: command.send,
+                        },
+                    });
+                    return {
+                        status: 'ok',
+                        value: {
+                            sent: command.send,
+                        },
+                        nextStatus: context.state().status,
+                    };
+                }
+
+                if (command.kind === 'close') {
+                    context.recordEvent({
+                        kind: 'event',
+                        topic: 'rallar.bb.facade.closed',
+                        commandId: command.commandId,
+                        connection: String(command.metadata?.connection),
+                        payload: {
+                            closed: true,
+                        },
+                    });
+                    return {
+                        status: 'ok',
+                        value: {
+                            closed: true,
+                        },
+                        nextStatus: 'idle',
+                    };
+                }
+
+                return undefined;
+            },
+        });
+        const provider = createRallarBlackBoxRtcProvider(runtime, {
+            commandIdPrefix: 'facade',
+        });
+        const payload = {
+            topic: 'chat.message',
+            payload: {
+                text: 'hello through facade',
+            },
+        };
+
+        const report = await executeBlackBox(
+            [
+                {
+                    RTC: {
+                        request: {
+                            action: 'connect',
+                            connection: 'aliceRtc',
+                            provider: 'rallar-bb',
+                            actor: 'alice',
+                            roomId: 'room-1',
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 1,
+                        },
+                        response: {},
+                    },
+                    connectAlice: {},
+                },
+                {
+                    RTC: {
+                        request: {
+                            action: 'send',
+                            connection: 'aliceRtc',
+                            provider: 'rallar-bb',
+                            actor: 'alice',
+                            roomId: 'room-1',
+                            send: payload,
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 2,
+                        },
+                        response: {
+                            connection: 'aliceRtc',
+                            withinMs: 1000,
+                            message: payload,
+                        },
+                    },
+                    aliceSendsAndReceivesFacadeEcho: {},
+                },
+                {
+                    RTC: {
+                        request: {
+                            action: 'close',
+                            connection: 'aliceRtc',
+                            provider: 'rallar-bb',
+                            actor: 'alice',
+                            roomId: 'room-1',
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 3,
+                        },
+                        response: {},
+                    },
+                    closeAlice: {},
+                },
+            ],
+            0,
+            {
+                rtcProviders: {
+                    'rallar-bb': provider,
+                },
+            },
+        );
+
+        expect(report.summary.failure).toBe(0);
+        expect(report.resultsByName.connectAlice[0].status).toBe('SUCCESS');
+        expect(report.resultsByName.aliceSendsAndReceivesFacadeEcho[0].status)
+            .toBe('SUCCESS');
+        expect(report.resultsByName.closeAlice[0].status).toBe('SUCCESS');
+        expect(selectRallarBlackBoxCommandHistory(runtime.state()).map(result => result.kind))
+            .toEqual(['rtc.connect', 'rtc.send', 'close']);
+    });
+});

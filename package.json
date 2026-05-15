@@ -21,6 +21,12 @@
     "dev:relic-hunter-server-v1": "cd apps/relic-hunter-server-v1 && deno task dev",
     "dev:relic-hunters-v1": "npm --workspace relic-hunters-v1 run dev",
     "build:relic-hunters-v1": "npm --workspace relic-hunters-v1 run build",
+    "dev:rallar-black-box": "npm --workspace rallar-black-box run dev",
+    "build:rallar-black-box": "npm --workspace rallar-black-box run build",
+    "dev:rallar-black-box-control": "cd apps/rallar-black-box-control-server && deno task dev",
+    "check:rallar-black-box-control": "cd apps/rallar-black-box-control-server && deno task check",
+    "test:rallar-black-box-control": "cd apps/rallar-black-box-control-server && deno task test",
+    "test:e2e:rallar-black-box": "playwright test --config apps/rallar-black-box/playwright.config.ts",
     "test": "vitest run",
     "test:playwright": "playwright test",
     "test:playwright:relic": "playwright test tests/playwright/relic-hunters"
