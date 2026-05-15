@@ -692,11 +692,22 @@ Deliverables:
 
 Teach black-box-runner WebSocket and HTTP interactions to execute through the remote SPA agent when requested.
 
-Status: planned.
+Status: completed.
 
 Results:
 
-- Not started.
+- Exported the remote browser control helpers from `packages/shared-test/black-box-runner/rallar-remote-browser-provider.ts` so non-RTC runner actions can reuse the same command enqueueing, result polling, and event synchronization path added in Iteration 9A.
+- Added remote HTTP execution for black-box runner HTTP interactions marked with `provider: rallar-remote-browser`, `remoteProvider: rallar-remote-browser`, `remoteBrowser: true`, or equivalent `control` fields.
+- Mapped runner HTTP requests to `rallar-bb-test` `http.request` commands, including URL/path, method, headers, body/form data, credentials, mode, timeout, and response body mode.
+- Reused the existing runner HTTP response comparison path for remote HTTP results so status-code checks, JSON body comparisons, and failure report fields match local fetch execution.
+- Added remote WebSocket execution for `connect`, `send`, `wait`/`expect`, and `close` actions when the request is marked for the remote browser or when the connection was opened remotely.
+- Mapped runner WebSocket `connect`, `send`, and `close` actions to `rallar-bb-test` `ws.open`, `ws.send`, and `ws.close` commands.
+- Extended remote event synchronization so SPA WebSocket message events populate the runner's existing `wsMessages` buffer and WebSocket close events populate `wsCloseEvents`.
+- Added destination allowlist support for remote HTTP and WebSocket URLs through request/control/options `allowedHosts` and `allowedOrigins`.
+- Added remote payload-size limits through request/control/options `maxPayloadBytes` or `maxRemotePayloadBytes`, with a default 1 MB cap.
+- Added focused tests for remote HTTP command routing, remote WebSocket open/send/close routing, WebSocket message replay, HTTP destination blocking, and WebSocket payload-size blocking.
+- Verified with `npm --workspace @ar-eye-hunter/shared-test run typecheck`.
+- Verified with `npm run test -- packages/tests/shared-test/rallar-remote-browser-provider.test.ts`.
 
 Deliverables:
 

@@ -32,7 +32,7 @@ export type RallarRemoteBrowserProviderOptions = Readonly<{
     timeoutMs?: number;
 }>;
 
-type ControlResultEnvelope = Readonly<{
+export type RallarRemoteBrowserControlResultEnvelope = Readonly<{
     kind: 'result';
     runId: string;
     agentId: string;
@@ -47,7 +47,7 @@ type ControlResultEnvelope = Readonly<{
     replayed?: boolean;
 }>;
 
-type ControlEventEnvelope = Readonly<{
+export type RallarRemoteBrowserControlEventEnvelope = Readonly<{
     kind: 'event' | 'diagnostic' | 'stats' | 'report';
     runId: string;
     agentId: string;
@@ -57,19 +57,24 @@ type ControlEventEnvelope = Readonly<{
     payload: unknown;
 }>;
 
-type ControlRunSnapshot = Readonly<{
+export type RallarRemoteBrowserControlRunSnapshot = Readonly<{
     runId: string;
-    results?: readonly ControlResultEnvelope[];
-    events?: readonly ControlEventEnvelope[];
+    results?: readonly RallarRemoteBrowserControlResultEnvelope[];
+    events?: readonly RallarRemoteBrowserControlEventEnvelope[];
 }>;
 
-type RemoteProviderConfig = Readonly<{
+export type RallarRemoteBrowserConfig = Readonly<{
     controlBaseUrl: string;
     runId: string;
     agentId: string;
     pollIntervalMs: number;
     timeoutMs: number;
 }>;
+
+type ControlResultEnvelope = RallarRemoteBrowserControlResultEnvelope;
+type ControlEventEnvelope = RallarRemoteBrowserControlEventEnvelope;
+type ControlRunSnapshot = RallarRemoteBrowserControlRunSnapshot;
+type RemoteProviderConfig = RallarRemoteBrowserConfig;
 
 const DEFAULT_CONTROL_BASE_URL = 'http://localhost:5180';
 const DEFAULT_AGENT_ID = 'visible-agent-local';
@@ -119,11 +124,11 @@ function remoteState(context: any): {
     return context.rallarRemoteBrowser;
 }
 
-function toRemoteConfig(
+export function resolveRallarRemoteBrowserConfig(
     request: any,
     config: any,
     context: any,
-    options: RallarRemoteBrowserProviderOptions,
+    options: RallarRemoteBrowserProviderOptions = {},
 ): RemoteProviderConfig {
     const remoteOptions = context.options?.rallarRemoteBrowser ??
         context.options?.remoteBrowser ??
@@ -175,7 +180,7 @@ function toRemoteConfig(
     };
 }
 
-function commandIdFor(action: string, interaction: any): string {
+export function toRallarRemoteBrowserCommandId(action: string, interaction: any): string {
     const request = interaction.request ?? {};
     return firstString(
         request.commandId,
@@ -196,6 +201,19 @@ function commandIdFor(action: string, interaction: any): string {
             .filter(value => value !== undefined && value !== null && value !== '')
             .join('-'),
     ) ?? `rallar-remote-browser-${action}-${Date.now()}`;
+}
+
+function toRemoteConfig(
+    request: any,
+    config: any,
+    context: any,
+    options: RallarRemoteBrowserProviderOptions,
+): RemoteProviderConfig {
+    return resolveRallarRemoteBrowserConfig(request, config, context, options);
+}
+
+function commandIdFor(action: string, interaction: any): string {
+    return toRallarRemoteBrowserCommandId(action, interaction);
 }
 
 function toTransport(request: any): 'realtime' | 'messages.rtc' | undefined {
@@ -308,6 +326,40 @@ function eventPayload(event: ControlEventEnvelope): RallarBlackBoxTestEvent | un
         : undefined;
 }
 
+function parseRemoteWsData(data: unknown): unknown {
+    if (typeof data !== 'string') {
+        return data;
+    }
+
+    try {
+        return JSON.parse(data);
+    } catch (_ignored) {
+        return data;
+    }
+}
+
+function rememberRemoteWsMessage(connectionName: string, message: any, context: any): void {
+    if (!context.wsMessages) {
+        context.wsMessages = {};
+    }
+    if (!context.wsMessages[connectionName]) {
+        context.wsMessages[connectionName] = [];
+    }
+
+    context.wsMessages[connectionName].push(message);
+}
+
+function rememberRemoteWsCloseEvent(connectionName: string, closeEvent: any, context: any): void {
+    if (!context.wsCloseEvents) {
+        context.wsCloseEvents = {};
+    }
+    if (!context.wsCloseEvents[connectionName]) {
+        context.wsCloseEvents[connectionName] = [];
+    }
+
+    context.wsCloseEvents[connectionName].push(closeEvent);
+}
+
 function syncRemoteEvents(snapshot: ControlRunSnapshot | undefined, context: any): void {
     const state = remoteState(context);
     for (const event of snapshot?.events ?? []) {
@@ -325,6 +377,16 @@ function syncRemoteEvents(snapshot: ControlRunSnapshot | undefined, context: any
                     'data' in payload.payload
                 ? (payload.payload as { data: unknown }).data
                 : payload.payload;
+            if (payload.transport === 'ws') {
+                rememberRemoteWsMessage(connectionName, {
+                    data: parseRemoteWsData(messagePayload),
+                    receivedAtEpochMs: payload.atEpochMs,
+                    provider: 'rallar-remote-browser',
+                    commandId: payload.commandId,
+                }, context);
+                continue;
+            }
+
             rememberRtcMessage(connectionName, {
                 data: messagePayload,
                 receivedAtEpochMs: payload.atEpochMs,
@@ -333,11 +395,29 @@ function syncRemoteEvents(snapshot: ControlRunSnapshot | undefined, context: any
                 roomId: (payload.payload as { roomId?: unknown } | undefined)?.roomId,
                 commandId: payload.commandId,
             }, context);
+            continue;
+        }
+
+        if (
+            payload?.kind === 'event' &&
+            payload.transport === 'ws' &&
+            payload.topic === 'rallar.bb.ws.closed'
+        ) {
+            const connectionName = payload.connection ?? 'default';
+            const closePayload = payload.payload && typeof payload.payload === 'object'
+                ? payload.payload as Record<string, unknown>
+                : {};
+            rememberRemoteWsCloseEvent(connectionName, {
+                ...closePayload,
+                closedAtEpochMs: payload.atEpochMs,
+                provider: 'rallar-remote-browser',
+                commandId: payload.commandId,
+            }, context);
         }
     }
 }
 
-async function syncEvents(
+export async function syncRallarRemoteBrowserEvents(
     remote: RemoteProviderConfig,
     fetchFn: RallarRemoteBrowserControlFetch,
     context: any,
@@ -345,6 +425,14 @@ async function syncEvents(
     const snapshot = await fetchRunSnapshot(remote, fetchFn);
     syncRemoteEvents(snapshot, context);
     return snapshot;
+}
+
+async function syncEvents(
+    remote: RemoteProviderConfig,
+    fetchFn: RallarRemoteBrowserControlFetch,
+    context: any,
+): Promise<ControlRunSnapshot | undefined> {
+    return await syncRallarRemoteBrowserEvents(remote, fetchFn, context);
 }
 
 async function waitForCommandResult(
@@ -370,7 +458,7 @@ function resultDetails(result: ControlResultEnvelope): any {
     return result.result?.value ?? result.error?.details ?? result.error ?? result.result;
 }
 
-async function executeRemoteCommand(
+export async function executeRallarRemoteBrowserCommand(
     remote: RemoteProviderConfig,
     fetchFn: RallarRemoteBrowserControlFetch,
     context: any,
@@ -378,6 +466,15 @@ async function executeRemoteCommand(
 ): Promise<ControlResultEnvelope> {
     await enqueueCommand(remote, fetchFn, command);
     return await waitForCommandResult(remote, fetchFn, context, command.commandId ?? '');
+}
+
+async function executeRemoteCommand(
+    remote: RemoteProviderConfig,
+    fetchFn: RallarRemoteBrowserControlFetch,
+    context: any,
+    command: RallarBlackBoxTestCommand,
+): Promise<ControlResultEnvelope> {
+    return await executeRallarRemoteBrowserCommand(remote, fetchFn, context, command);
 }
 
 function startEventSync(

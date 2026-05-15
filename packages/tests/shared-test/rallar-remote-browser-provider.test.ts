@@ -94,6 +94,54 @@ class FakeRemoteControlServer {
             });
         }
 
+        if (command.kind === 'ws.send') {
+            this.events.push({
+                kind: 'event',
+                runId,
+                agentId,
+                atEpochMs: now,
+                eventId: `event-${command.commandId}`,
+                commandId: command.commandId ?? 'missing-command',
+                payload: {
+                    eventId: `event-${command.commandId}`,
+                    kind: 'message',
+                    topic: 'rallar.bb.ws.message',
+                    atEpochMs: now,
+                    commandId: command.commandId,
+                    connection: command.connection,
+                    transport: 'ws',
+                    payload: {
+                        data: command.data,
+                    },
+                },
+            });
+        }
+
+        if (command.kind === 'ws.close') {
+            this.events.push({
+                kind: 'event',
+                runId,
+                agentId,
+                atEpochMs: now,
+                eventId: `event-${command.commandId}`,
+                commandId: command.commandId ?? 'missing-command',
+                payload: {
+                    eventId: `event-${command.commandId}`,
+                    kind: 'event',
+                    topic: 'rallar.bb.ws.closed',
+                    atEpochMs: now,
+                    commandId: command.commandId,
+                    connection: command.connection,
+                    transport: 'ws',
+                    payload: {
+                        code: command.code,
+                        reason: command.reason,
+                        wasClean: true,
+                    },
+                },
+            });
+        }
+
         this.results.push({
             kind: 'result',
             runId,
@@ -108,12 +156,33 @@ class FakeRemoteControlServer {
                 startedAtEpochMs: now,
                 endedAtEpochMs: now + 1,
                 durationMs: 1,
-                value: {
-                    accepted: true,
-                    command,
-                },
+                value: this.resultValue(command),
             },
         });
+    }
+
+    private resultValue(command: RallarBlackBoxTestCommand): unknown {
+        if (command.kind === 'http.request') {
+            return {
+                url: command.request.url ?? command.request.path,
+                status: 201,
+                statusText: 'Created',
+                ok: true,
+                headers: {
+                    'content-type': 'application/json',
+                },
+                body: {
+                    ok: true,
+                    method: command.request.method,
+                    body: command.request.body,
+                },
+            };
+        }
+
+        return {
+            accepted: true,
+            command,
+        };
     }
 }
 
@@ -321,5 +390,238 @@ describe('rallar remote browser RTC provider', () => {
             'close',
         ]);
         expect(report.rtcCloseEvents.aliceRtc[0].autoCloseRequested).toBe(true);
+    });
+
+    it('routes remote HTTP interactions through the control server', async () => {
+        const server = new FakeRemoteControlServer();
+
+        const report = await executeBlackBox(
+            [
+                {
+                    HTTP: {
+                        request: {
+                            provider: 'rallar-remote-browser',
+                            path: 'https://api.example.test/widgets',
+                            method: 'POST',
+                            body: {
+                                name: 'remote-widget',
+                            },
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 1,
+                        },
+                        response: {
+                            statusCode: 201,
+                            body: {
+                                ok: true,
+                                method: 'POST',
+                                body: {
+                                    name: 'remote-widget',
+                                },
+                            },
+                        },
+                    },
+                    createRemoteWidget: {},
+                },
+            ],
+            0,
+            {
+                rallarRemoteBrowser: {
+                    controlBaseUrl: 'http://control.example.test',
+                    runId: 'run-remote-http',
+                    agentId: 'agent-remote',
+                    timeoutMs: 500,
+                    pollIntervalMs: 1,
+                    fetch: server.fetch,
+                },
+            },
+        );
+
+        expect(report.summary.failure).toBe(0);
+        expect(server.commands.map(command => command.kind)).toEqual([
+            'http.request',
+        ]);
+        const command = server.commands[0];
+        expect(command.kind).toBe('http.request');
+        if (command.kind === 'http.request') {
+            expect(command.request.path).toBe('https://api.example.test/widgets');
+            expect(command.request.body).toEqual({
+                name: 'remote-widget',
+            });
+        }
+        expect(report.resultsByName.createRemoteWidget[0].actual.statusCode).toBe(201);
+    });
+
+    it('blocks remote HTTP destinations outside the configured allowlist', async () => {
+        const server = new FakeRemoteControlServer();
+
+        const report = await executeBlackBox(
+            [
+                {
+                    HTTP: {
+                        request: {
+                            provider: 'rallar-remote-browser',
+                            path: 'https://blocked.example.test/widgets',
+                            method: 'GET',
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 1,
+                        },
+                        response: {},
+                    },
+                    blockedRemoteHttp: {},
+                },
+            ],
+            0,
+            {
+                rallarRemoteBrowser: {
+                    controlBaseUrl: 'http://control.example.test',
+                    runId: 'run-remote-http-blocked',
+                    agentId: 'agent-remote',
+                    timeoutMs: 500,
+                    pollIntervalMs: 1,
+                    fetch: server.fetch,
+                    allowedHosts: ['api.example.test'],
+                },
+            },
+        );
+
+        expect(report.summary.failure).toBe(1);
+        expect(server.commands).toEqual([]);
+        expect(report.resultsByName.blockedRemoteHttp[0].exception).toContain('destination is not allowed');
+    });
+
+    it('blocks remote WebSocket sends above the configured payload limit', async () => {
+        const server = new FakeRemoteControlServer();
+
+        const report = await executeBlackBox(
+            [
+                {
+                    WS: {
+                        request: {
+                            action: 'connect',
+                            connection: 'controlWs',
+                            provider: 'rallar-remote-browser',
+                            path: 'wss://ws.example.test/control',
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 1,
+                        },
+                        response: {},
+                    },
+                    openLimitedRemoteWs: {},
+                },
+                {
+                    WS: {
+                        request: {
+                            action: 'send',
+                            connection: 'controlWs',
+                            send: 'payload-too-large',
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 2,
+                        },
+                        response: {},
+                    },
+                    sendTooLargeRemoteWs: {},
+                },
+            ],
+            0,
+            {
+                rallarRemoteBrowser: {
+                    controlBaseUrl: 'http://control.example.test',
+                    runId: 'run-remote-ws-limited',
+                    agentId: 'agent-remote',
+                    timeoutMs: 500,
+                    pollIntervalMs: 1,
+                    fetch: server.fetch,
+                    maxPayloadBytes: 4,
+                },
+            },
+        );
+
+        expect(report.summary.failure).toBe(1);
+        expect(server.commands.map(command => command.kind)).toContain('ws.open');
+        expect(server.commands.map(command => command.kind)).not.toContain('ws.send');
+        expect(report.resultsByName.sendTooLargeRemoteWs[0].result).toBe('Remote WebSocket send failed');
+        expect(report.resultsByName.sendTooLargeRemoteWs[0].actual.exception).toContain('payload is too large');
+    });
+
+    it('routes remote WebSocket interactions through the control server', async () => {
+        const server = new FakeRemoteControlServer();
+        const payload = {
+            topic: 'presence.ping',
+            payload: {
+                id: 'ping-1',
+            },
+        };
+
+        const report = await executeBlackBox(
+            [
+                {
+                    WS: {
+                        request: {
+                            action: 'connect',
+                            connection: 'controlWs',
+                            provider: 'rallar-remote-browser',
+                            path: 'wss://ws.example.test/control',
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 1,
+                        },
+                        response: {},
+                    },
+                    openRemoteWs: {},
+                },
+                {
+                    WS: {
+                        request: {
+                            action: 'send',
+                            connection: 'controlWs',
+                            send: payload,
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 2,
+                        },
+                        response: {
+                            connection: 'controlWs',
+                            withinMs: 500,
+                            message: payload,
+                        },
+                    },
+                    sendRemoteWs: {},
+                },
+                {
+                    WS: {
+                        request: {
+                            action: 'close',
+                            connection: 'controlWs',
+                            code: 1000,
+                            reason: 'done',
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 3,
+                        },
+                        response: {},
+                    },
+                    closeRemoteWs: {},
+                },
+            ],
+            0,
+            {
+                rallarRemoteBrowser: {
+                    controlBaseUrl: 'http://control.example.test',
+                    runId: 'run-remote-ws',
+                    agentId: 'agent-remote',
+                    timeoutMs: 500,
+                    pollIntervalMs: 1,
+                    fetch: server.fetch,
+                },
+            },
+        );
+
+        expect(report.summary.failure).toBe(0);
+        expect(server.commands.map(command => command.kind)).toEqual([
+            'ws.open',
+            'ws.send',
+            'ws.close',
+        ]);
+        expect(report.resultsByName.openRemoteWs[0].status).toBe('SUCCESS');
+        expect(report.resultsByName.sendRemoteWs[0].actual.matchedMessage.data).toEqual(payload);
+        expect(report.resultsByName.closeRemoteWs[0].status).toBe('SUCCESS');
+        expect(report.wsCloseEvents.controlWs[0].code).toBe(1000);
     });
 });
