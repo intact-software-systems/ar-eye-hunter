@@ -9,6 +9,7 @@ import type {
 import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '../../rallar-black-box/src/control-protocol.ts';
 import type {
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestCommandKind,
     RallarBlackBoxTestRedactionOptions,
 } from '@shared-test/rallar-bb-test/types.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
@@ -25,6 +26,18 @@ export type RallarBlackBoxControlServiceOptions = Readonly<{
     now?: () => number;
     commandIdFactory?: () => string;
     redaction?: RallarBlackBoxTestRedactionOptions;
+    allowedCommandKinds?: readonly RallarBlackBoxTestCommandKind[];
+    commandRateLimitMax?: number;
+    commandRateLimitWindowMs?: number;
+    runTokenTtlMs?: number;
+}>;
+
+export type ControlRunToken = Readonly<{
+    runId: string;
+    agentId: string;
+    token: string;
+    issuedAtEpochMs: number;
+    expiresAtEpochMs: number;
 }>;
 
 export type RallarBlackBoxControlServiceReceiveResult = Readonly<{
@@ -77,6 +90,7 @@ export type ControlServerSnapshot = Readonly<{
 
 type StoredCommand = {
     envelope: ControlCommandEnvelope;
+    fingerprint: string;
     queuedAtEpochMs: number;
     dispatchedAtEpochMs?: number;
     completedAtEpochMs?: number;
@@ -99,6 +113,15 @@ type StoredAgent = {
     receivedEventCount: number;
     completedCommandIds: Set<string>;
     resumeCompletedCommandIds: Set<string>;
+    commandEnqueueTimestamps: number[];
+};
+
+type StoredToken = {
+    runId: string;
+    agentId: string;
+    token: string;
+    issuedAtEpochMs: number;
+    expiresAtEpochMs: number;
 };
 
 type StoredRun = {
@@ -112,18 +135,29 @@ type StoredRun = {
     stats: ControlEventEnvelope[];
     reports: ControlEventEnvelope[];
     heartbeats: ControlHeartbeatEnvelope[];
+    tokens: Map<string, StoredToken>;
 };
 
 export class RallarBlackBoxControlService {
     private readonly now: () => number;
     private readonly commandIdFactory: () => string;
     private readonly redaction: RallarBlackBoxTestRedactionOptions | undefined;
+    private readonly allowedCommandKinds: Set<RallarBlackBoxTestCommandKind> | undefined;
+    private readonly commandRateLimitMax: number;
+    private readonly commandRateLimitWindowMs: number;
+    private readonly runTokenTtlMs: number;
     private readonly runs = new Map<string, StoredRun>();
 
     constructor(options: RallarBlackBoxControlServiceOptions = {}) {
         this.now = options.now ?? (() => Date.now());
         this.commandIdFactory = options.commandIdFactory ?? (() => crypto.randomUUID());
         this.redaction = options.redaction;
+        this.allowedCommandKinds = options.allowedCommandKinds
+            ? new Set(options.allowedCommandKinds)
+            : undefined;
+        this.commandRateLimitMax = options.commandRateLimitMax ?? 120;
+        this.commandRateLimitWindowMs = options.commandRateLimitWindowMs ?? 60_000;
+        this.runTokenTtlMs = options.runTokenTtlMs ?? 15 * 60_000;
     }
 
     receiveClientEnvelope(
@@ -156,7 +190,8 @@ export class RallarBlackBoxControlService {
 
     enqueueCommand(input: EnqueueControlCommandInput): ControlCommandEnvelope {
         const run = this.ensureRun(input.runId);
-        this.ensureAgent(run, input.agentId);
+        const agent = this.ensureAgent(run, input.agentId);
+        this.assertCommandAllowed(input.command.kind);
         const commandId = input.commandId ?? this.commandIdFactory();
         const envelope: ControlCommandEnvelope = {
             kind: 'command',
@@ -167,14 +202,77 @@ export class RallarBlackBoxControlService {
             command: input.command,
             deadlineEpochMs: input.deadlineEpochMs,
         };
+        const fingerprint = this.commandFingerprint(envelope);
+        const existing = run.commands.get(commandId);
+        if (existing) {
+            if (existing.fingerprint !== fingerprint) {
+                throw new Error(`Command ${commandId} already exists with a different payload.`);
+            }
+            return existing.envelope;
+        }
 
+        this.assertCommandRateLimit(agent);
         run.commands.set(commandId, {
             envelope,
+            fingerprint,
             queuedAtEpochMs: this.now(),
             dispatchCount: 0,
         });
         this.touch(run);
         return envelope;
+    }
+
+    issueRunToken(
+        input: Readonly<{
+            runId: string;
+            agentId: string;
+            ttlMs?: number;
+        }>,
+    ): ControlRunToken {
+        const run = this.ensureRun(input.runId);
+        this.ensureAgent(run, input.agentId);
+        const issuedAtEpochMs = this.now();
+        const token: StoredToken = {
+            runId: input.runId,
+            agentId: input.agentId,
+            token: crypto.randomUUID(),
+            issuedAtEpochMs,
+            expiresAtEpochMs: issuedAtEpochMs + Math.max(1, input.ttlMs ?? this.runTokenTtlMs),
+        };
+        run.tokens.set(token.token, token);
+        this.touch(run);
+        return token;
+    }
+
+    hasActiveRunToken(runId: string, agentId: string): boolean {
+        const run = this.runs.get(runId);
+        if (!run) {
+            return false;
+        }
+
+        const now = this.now();
+        return Array.from(run.tokens.values())
+            .some(token =>
+                token.agentId === agentId &&
+                token.expiresAtEpochMs > now
+            );
+    }
+
+    validateRunToken(
+        runId: string,
+        agentId: string,
+        token: string | undefined,
+    ): boolean {
+        if (!token) {
+            return false;
+        }
+
+        const stored = this.runs.get(runId)?.tokens.get(token);
+        return Boolean(
+            stored &&
+                stored.agentId === agentId &&
+                stored.expiresAtEpochMs > this.now(),
+        );
     }
 
     takeDispatchableCommands(runId: string, agentId: string): readonly ControlCommandEnvelope[] {
@@ -302,6 +400,37 @@ export class RallarBlackBoxControlService {
         };
     }
 
+    private assertCommandAllowed(kind: RallarBlackBoxTestCommandKind): void {
+        if (!this.allowedCommandKinds || this.allowedCommandKinds.has(kind)) {
+            return;
+        }
+
+        throw new Error(`Command kind is not allowed: ${kind}.`);
+    }
+
+    private assertCommandRateLimit(agent: StoredAgent): void {
+        if (this.commandRateLimitMax <= 0) {
+            return;
+        }
+
+        const now = this.now();
+        const windowStart = now - this.commandRateLimitWindowMs;
+        agent.commandEnqueueTimestamps = agent.commandEnqueueTimestamps
+            .filter(timestamp => timestamp >= windowStart);
+        if (agent.commandEnqueueTimestamps.length >= this.commandRateLimitMax) {
+            throw new Error('Command rate limit exceeded.');
+        }
+
+        agent.commandEnqueueTimestamps.push(now);
+    }
+
+    private commandFingerprint(envelope: ControlCommandEnvelope): string {
+        return JSON.stringify({
+            command: envelope.command,
+            deadlineEpochMs: envelope.deadlineEpochMs,
+        });
+    }
+
     private ensureRun(runId: string): StoredRun {
         const existing = this.runs.get(runId);
         if (existing) {
@@ -320,6 +449,7 @@ export class RallarBlackBoxControlService {
             stats: [],
             reports: [],
             heartbeats: [],
+            tokens: new Map(),
         };
         this.runs.set(runId, run);
         return run;
@@ -341,6 +471,7 @@ export class RallarBlackBoxControlService {
             receivedEventCount: 0,
             completedCommandIds: new Set(),
             resumeCompletedCommandIds: new Set(),
+            commandEnqueueTimestamps: [],
         };
         run.agents.set(agentId, agent);
         this.touch(run);

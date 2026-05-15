@@ -33,6 +33,7 @@ export type RallarBlackBoxBootstrapConfig = Readonly<{
     controlUrl: string;
     runId?: string;
     agentId: string;
+    controlToken?: string;
     statsIntervalMs?: number;
     finalReportUploadUrl?: string;
     environment: string;
@@ -123,6 +124,7 @@ function bootstrapSource(
         'autoConnect',
         'runId',
         'agentId',
+        'controlToken',
         'statsIntervalMs',
         'reportUploadUrl',
         'environment',
@@ -142,6 +144,7 @@ function bootstrapSource(
         'VITE_RALLAR_AUTO_CONNECT',
         'VITE_RALLAR_RUN_ID',
         'VITE_RALLAR_AGENT_ID',
+        'VITE_RALLAR_CONTROL_TOKEN',
         'VITE_RALLAR_STATS_INTERVAL_MS',
         'VITE_RALLAR_REPORT_UPLOAD_URL',
     ];
@@ -175,6 +178,7 @@ export function resolveRallarBlackBoxBootstrapConfig(
         controlUrl,
         runId: paramValue(params, env, 'runId', 'VITE_RALLAR_RUN_ID'),
         agentId,
+        controlToken: paramValue(params, env, 'controlToken', 'VITE_RALLAR_CONTROL_TOKEN'),
         statsIntervalMs: numberParamValue(paramValue(
             params,
             env,
@@ -436,6 +440,7 @@ class RallarBlackBoxRuntimeStore {
         };
         this.controlClient = new RallarBlackBoxControlClient({
             runtime: this.runtime,
+            token: this.bootstrapConfig.controlToken,
             statsIntervalMs: this.bootstrapConfig.statsIntervalMs,
             finalReportUploadUrl: this.bootstrapConfig.finalReportUploadUrl,
             onSnapshot: control => {
@@ -492,6 +497,7 @@ class RallarBlackBoxRuntimeStore {
             url,
             runId: effectiveRunId,
             agentId: effectiveAgentId,
+            token: this.bootstrapConfig.controlToken,
         });
     }
 

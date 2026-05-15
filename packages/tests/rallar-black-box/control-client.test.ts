@@ -86,6 +86,19 @@ function commandEnvelope(
     };
 }
 
+function memoryStorage(): Pick<Storage, 'setItem' | 'getItem' | 'clear'> {
+    const values = new Map<string, string>();
+    return {
+        setItem: (key: string, value: string) => {
+            values.set(key, value);
+        },
+        getItem: (key: string) => values.get(key) ?? null,
+        clear: () => {
+            values.clear();
+        },
+    };
+}
+
 function configureCommand(): RallarBlackBoxTestCommand {
     return {
         kind: 'configure',
@@ -132,7 +145,7 @@ describe('rallar-black-box control client', () => {
 
         expect(unsupportedCommand).toEqual({
             ok: false,
-            error: 'Control command payload is invalid.',
+            error: 'Control command payload is invalid: Command must be an object with a supported kind.',
         });
     });
 
@@ -326,11 +339,14 @@ describe('rallar-black-box control client', () => {
         const uploads: Array<{
             url: string;
             body: ControlClientEnvelope;
+            authorization?: string;
         }> = [];
         const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const headers = new Headers(init?.headers);
             uploads.push({
                 url: String(input),
                 body: JSON.parse(String(init?.body ?? '{}')) as ControlClientEnvelope,
+                authorization: headers.get('authorization') ?? undefined,
             });
             return new Response('{}', {
                 status: 202,
@@ -342,6 +358,7 @@ describe('rallar-black-box control client', () => {
             heartbeatIntervalMs: 60_000,
             statsIntervalMs: 0,
             finalReportUploadUrl: 'http://control.example.test/runs/run-1/agents/agent-1/report',
+            token: 'run-token-1',
             webSocketFactory: () => socket,
         });
 
@@ -374,10 +391,48 @@ describe('rallar-black-box control client', () => {
             expect(eventsFor(socket, 'report')).toHaveLength(1);
             expect(uploads[0].url).toBe('http://control.example.test/runs/run-1/agents/agent-1/report');
             expect(uploads[0].body.kind).toBe('report');
+            expect(uploads[0].authorization).toBe('Bearer run-token-1');
             expect(JSON.stringify(uploads[0].body)).not.toContain('secret-token');
             expect(client.currentSnapshot().lastReportAtEpochMs).toBeDefined();
         } finally {
             client.dispose();
+        }
+    });
+
+    it('clears browser storage before executing remote reset commands', async () => {
+        const socket = new FakeControlSocket();
+        const runtime = createRallarBlackBoxTestRuntime();
+        vi.stubGlobal('localStorage', memoryStorage());
+        vi.stubGlobal('sessionStorage', memoryStorage());
+        const client = new RallarBlackBoxControlClient({
+            runtime,
+            heartbeatIntervalMs: 60_000,
+            statsIntervalMs: 0,
+            webSocketFactory: () => socket,
+        });
+
+        try {
+            localStorage.setItem('rallar-secret', 'persisted');
+            sessionStorage.setItem('rallar-session-secret', 'persisted');
+            client.connect({
+                url: 'ws://control.example.test',
+                runId: 'run-1',
+                agentId: 'agent-1',
+            });
+            socket.open();
+            socket.message(JSON.stringify(commandEnvelope('reset-1', {
+                kind: 'reset',
+            })));
+
+            await vi.waitFor(() => {
+                expect(resultsFor(socket, 'reset-1')).toHaveLength(1);
+            });
+
+            expect(localStorage.getItem('rallar-secret')).toBeNull();
+            expect(sessionStorage.getItem('rallar-session-secret')).toBeNull();
+        } finally {
+            client.dispose();
+            vi.unstubAllGlobals();
         }
     });
 });

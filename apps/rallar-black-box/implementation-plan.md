@@ -754,11 +754,29 @@ Deliverables:
 
 Harden the remote-control surface before any broad deployment.
 
-Status: planned.
+Status: completed.
 
 Results:
 
-- Not started.
+- Added strict control-command validation in `apps/rallar-black-box/src/control-protocol.ts`, including per-kind field validation for configure, recipe, RTC, WebSocket, HTTP, health, stats, close, and reset commands.
+- The control server now validates REST-enqueued commands before storing or dispatching them.
+- Added server-side command allowlists through `RALLAR_BLACK_BOX_ALLOWED_COMMANDS`.
+- Added command idempotency rules: repeated enqueue of the same command ID with the same payload returns the existing command, while a different payload is rejected.
+- Added server-side command enqueue rate limiting through `RALLAR_BLACK_BOX_COMMAND_RATE_LIMIT_MAX` and `RALLAR_BLACK_BOX_COMMAND_RATE_LIMIT_WINDOW_MS`.
+- Added request payload-size limits through `RALLAR_BLACK_BOX_MAX_REQUEST_BYTES`.
+- Added optional short-lived run tokens with `POST /runs/:runId/agents/:agentId/tokens`, token expiry, WebSocket register validation, and REST command/report validation.
+- Added run-token propagation from the visible browser agent and remote browser runner provider through bearer authorization headers.
+- Added origin and TLS enforcement hooks through `RALLAR_BLACK_BOX_ALLOWED_ORIGINS` and `RALLAR_BLACK_BOX_REQUIRE_TLS`.
+- Added server-side HTTP/WebSocket destination allowlists for browser-native commands through HTTP/WS allowed host and origin environment variables.
+- Added best-effort browser `localStorage` and `sessionStorage` cleanup before executing remote `reset` commands.
+- Preserved existing result replay after reconnect and covered the adjacent idempotency behavior with tests.
+- Added focused tests for command allowlists, idempotency, rate limits, run token expiry, report auth headers, and browser storage cleanup.
+- Verified with `npm --workspace rallar-black-box run typecheck`.
+- Verified with `npm --workspace @ar-eye-hunter/shared-test run typecheck`.
+- Verified with `npm run check:rallar-black-box-control`.
+- Verified with `npm run test:rallar-black-box-control`.
+- Verified with `npm run test -- packages/tests/rallar-black-box/control-client.test.ts`.
+- Verified with `npm run test -- packages/tests/shared-test/rallar-remote-browser-provider.test.ts`.
 
 Deliverables:
 
@@ -773,7 +791,69 @@ Deliverables:
 - HTTP and WebSocket destination allowlists for browser-native commands
 - clear browser storage cleanup rules between runs
 
-### Iteration 12: Graphology And Sigma Visualisation
+### Iteration 12: Manual Rallar Test Workbench
+
+Add a UI path for quick Rallar testing without authoring or loading a full recipe.
+
+Status: planned.
+
+Results:
+
+- Not started.
+
+Deliverables:
+
+- manual action panel that still emits normal `rallar-bb-test` commands and results
+- controls for environment, actor/session, group/room, connection name, target client, and transport
+- action buttons for create or join group, connect clients in group, disconnect/reset, and health check
+- JSON payload editor with validation, recent payload presets, and generated command preview
+- send JSON to one client in a group over RTC or WebSocket
+- broadcast or multicast JSON to all or selected clients in a group over RTC or WebSocket
+- dedicated received-data inbox grouped by connection, transport, sender, topic, and timestamp
+- links from each manual action to related results, diagnostics, stats, and received messages
+- option to convert manual actions into a recipe snippet for repeatable test runs
+- preservation of existing event-stream filtering for lower-level inspection
+
+Rallar test focus:
+
+- group membership correctness: expected clients, observed clients, missing clients, extra clients, and stale clients
+- RTC versus WebSocket behavior parity for the same actors, groups, payloads, and delivery modes
+- direct, multicast, and broadcast delivery semantics across RTC and WebSocket transports
+- auth and permission negative cases for group creation, group join, client targeting, send, broadcast, and receive
+- cleanup isolation between manual runs so stale sessions, old connections, and previous payloads do not contaminate the next test
+- copyable manual action history that can become a repeatable recipe
+
+### Iteration 13: RTC Connect Diagnostics Workbench
+
+Make the sensitive RTC connect path easy to investigate from the visible app.
+
+Status: planned.
+
+Results:
+
+- Not started.
+
+Deliverables:
+
+- connect-stage timeline for auth, runtime bootstrap, group join, signaling, peer discovery, data-channel readiness, and first payload
+- side-by-side RTC and WebSocket connectivity checks for the same actor/group/client set
+- visible peer/session/group membership state, including expected clients, observed clients, missing clients, and stale clients
+- explicit reconnect, rejoin, close, and cleanup operations with before/after diagnostics
+- connect health snapshot that includes recent diagnostics, stats, lane health, reconnect count, latency, and last received payload
+- structured failure focus for common RTC issues: auth failure, group membership mismatch, peer not found, channel timeout, stale session, reconnect loop, and payload mismatch
+- copyable diagnostic bundle for reproducing a failed connect path in a recipe or black-box runner test
+- tests proving connect diagnostics are derived from runtime events rather than UI-only state
+
+Rallar test focus:
+
+- reconnect, rejoin, stale-session, and duplicate-session cases
+- connect latency, first-payload latency, reconnect latency, and failure timeout timing
+- RTC versus WebSocket connectivity checks for the same payload and target set
+- group membership drift during reconnect and rejoin
+- cleanup isolation after failed connects, cancelled connects, and closed connections
+- copyable failure diagnostics that can become repeatable recipes
+
+### Iteration 14: Graphology And Sigma Visualisation
 
 Add an optional graph view for visible/debug runs.
 
@@ -791,7 +871,7 @@ Deliverables:
 - filters for active, degraded, and failed links
 - no impact on headless execution
 
-### Iteration 13: Long-running And Randomised Runs
+### Iteration 15: Long-running And Randomised Runs
 
 Integrate with the planned soak and seeded-random test work.
 

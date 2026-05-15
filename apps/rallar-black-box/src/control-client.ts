@@ -67,6 +67,7 @@ export type RallarBlackBoxControlClientOptions = Readonly<{
     runtime: RallarBlackBoxTestRuntime;
     webSocketFactory?: RallarBlackBoxControlWebSocketFactory;
     fetch?: RallarBlackBoxControlFetch;
+    token?: string;
     heartbeatIntervalMs?: number;
     statsIntervalMs?: number;
     finalReportUploadUrl?: string;
@@ -79,6 +80,7 @@ export type RallarBlackBoxControlConnectOptions = Readonly<{
     url: string;
     runId: string;
     agentId: string;
+    token?: string;
     finalReportUploadUrl?: string;
 }>;
 
@@ -218,6 +220,20 @@ function toReportSummary(state: RallarBlackBoxTestState): unknown {
     };
 }
 
+function cleanupBrowserStorage(): void {
+    try {
+        globalThis.localStorage?.clear();
+    } catch (_error) {
+        // Storage cleanup is best-effort; reset execution still continues.
+    }
+
+    try {
+        globalThis.sessionStorage?.clear();
+    } catch (_error) {
+        // Storage cleanup is best-effort; reset execution still continues.
+    }
+}
+
 export class RallarBlackBoxControlClient {
     private readonly runtime: RallarBlackBoxTestRuntime;
     private readonly webSocketFactory: RallarBlackBoxControlWebSocketFactory;
@@ -225,6 +241,7 @@ export class RallarBlackBoxControlClient {
     private readonly heartbeatIntervalMs: number;
     private readonly statsIntervalMs: number;
     private readonly finalReportUploadUrl: string | undefined;
+    private readonly token: string | undefined;
     private readonly reconnectBaseMs: number;
     private readonly reconnectMaxMs: number;
     private readonly onSnapshot: ((snapshot: RallarBlackBoxControlSnapshot) => void) | undefined;
@@ -256,6 +273,7 @@ export class RallarBlackBoxControlClient {
             DEFAULT_HEARTBEAT_INTERVAL_MS;
         this.statsIntervalMs = options.statsIntervalMs ?? DEFAULT_STATS_INTERVAL_MS;
         this.finalReportUploadUrl = options.finalReportUploadUrl;
+        this.token = options.token;
         this.reconnectBaseMs = options.reconnectBaseMs ?? DEFAULT_RECONNECT_BASE_MS;
         this.reconnectMaxMs = options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS;
         this.onSnapshot = options.onSnapshot;
@@ -423,6 +441,10 @@ export class RallarBlackBoxControlClient {
             command: envelope.command,
         }, envelope.commandId);
 
+        if (command.kind === 'reset') {
+            cleanupBrowserStorage();
+        }
+
         const result = await this.runtime.execute(command);
         this.sendResult(result);
     }
@@ -434,6 +456,7 @@ export class RallarBlackBoxControlClient {
             protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
             runId: options.runId,
             agentId: options.agentId,
+            token: options.token ?? this.token,
             atEpochMs: Date.now(),
             resume: {
                 completedCommandIds: Object.keys(this.runtime.state().resultCache),
@@ -572,6 +595,7 @@ export class RallarBlackBoxControlClient {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                ...this.authorizationHeader(),
             },
             body: JSON.stringify(envelope),
         })
@@ -684,6 +708,15 @@ export class RallarBlackBoxControlClient {
 
     private canSend(): boolean {
         return this.socket?.readyState === OPEN_STATE;
+    }
+
+    private authorizationHeader(): Record<string, string> {
+        const token = this.options?.token ?? this.token;
+        return token
+            ? {
+                Authorization: `Bearer ${token}`,
+            }
+            : {};
     }
 
     private closeSocket(code?: number, reason?: string): void {

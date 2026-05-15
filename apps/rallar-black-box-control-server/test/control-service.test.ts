@@ -20,6 +20,21 @@ function assertEquals<T>(actual: T, expected: T): void {
     }
 }
 
+function assertThrows(callback: () => unknown, includes: string): void {
+    try {
+        callback();
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        assert(
+            message.includes(includes),
+            `Expected error to include ${includes}, got ${message}`,
+        );
+        return;
+    }
+
+    throw new Error('Expected function to throw.');
+}
+
 function configureCommand(): RallarBlackBoxTestCommand {
     return {
         kind: 'configure',
@@ -120,6 +135,69 @@ Deno.test('control service stores results and suppresses completed resume comman
     assertEquals(run.commands[0].completedAtEpochMs !== undefined, true);
     assertEquals(run.agents[0].completedCommandIds, ['configure-1']);
     assertEquals(run.agents[0].resumeCompletedCommandIds, []);
+});
+
+Deno.test('control service hardens command enqueueing and run tokens', () => {
+    let now = 1_000;
+    const service = createRallarBlackBoxControlService({
+        now: () => now,
+        allowedCommandKinds: ['configure'],
+        commandRateLimitMax: 1,
+        commandRateLimitWindowMs: 1_000,
+        runTokenTtlMs: 5,
+    });
+
+    service.receiveClientEnvelope(registerEnvelope());
+    const first = service.enqueueCommand({
+        runId: 'run-1',
+        agentId: 'agent-1',
+        commandId: 'configure-1',
+        command: configureCommand(),
+    });
+    const duplicate = service.enqueueCommand({
+        runId: 'run-1',
+        agentId: 'agent-1',
+        commandId: 'configure-1',
+        command: configureCommand(),
+    });
+
+    assertEquals(duplicate, first);
+    assertThrows(() => service.enqueueCommand({
+        runId: 'run-1',
+        agentId: 'agent-1',
+        commandId: 'configure-1',
+        command: {
+            kind: 'configure',
+            config: {
+                runId: 'run-1',
+                agentId: 'agent-1',
+                actor: 'bob',
+            },
+        },
+    }), 'different payload');
+    assertThrows(() => service.enqueueCommand({
+        runId: 'run-1',
+        agentId: 'agent-1',
+        commandId: 'stats-1',
+        command: {
+            kind: 'stats',
+        },
+    }), 'not allowed');
+    assertThrows(() => service.enqueueCommand({
+        runId: 'run-1',
+        agentId: 'agent-1',
+        commandId: 'configure-2',
+        command: configureCommand(),
+    }), 'rate limit');
+
+    const token = service.issueRunToken({
+        runId: 'run-1',
+        agentId: 'agent-1',
+    });
+    assertEquals(service.hasActiveRunToken('run-1', 'agent-1'), true);
+    assertEquals(service.validateRunToken('run-1', 'agent-1', token.token), true);
+    now += 6;
+    assertEquals(service.validateRunToken('run-1', 'agent-1', token.token), false);
 });
 
 Deno.test('control service stores heartbeat and event telemetry', () => {

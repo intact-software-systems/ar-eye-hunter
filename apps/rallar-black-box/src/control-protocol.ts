@@ -22,6 +22,7 @@ export type ControlRegisterEnvelope = Readonly<{
     protocolVersion: 1;
     runId: string;
     agentId: string;
+    token?: string;
     atEpochMs: number;
     resume: Readonly<{
         completedCommandIds: readonly string[];
@@ -82,6 +83,10 @@ export type ParseControlClientMessageResult =
     | Readonly<{ ok: true; envelope: ControlClientEnvelope }>
     | Readonly<{ ok: false; error: string }>;
 
+export type ControlCommandValidationResult =
+    | Readonly<{ ok: true }>
+    | Readonly<{ ok: false; error: string }>;
+
 const COMMAND_KINDS: readonly RallarBlackBoxTestCommandKind[] = [
     'configure',
     'recipe.load',
@@ -110,6 +115,298 @@ function isCommandKind(value: unknown): value is RallarBlackBoxTestCommandKind {
 
 function isCommand(value: unknown): value is RallarBlackBoxTestCommand {
     return isRecord(value) && isCommandKind(value.kind);
+}
+
+function unknownKeys(
+    value: Record<string, unknown>,
+    allowed: readonly string[],
+): string[] {
+    return Object.keys(value)
+        .filter(key => !allowed.includes(key));
+}
+
+function fail(message: string): ControlCommandValidationResult {
+    return {
+        ok: false,
+        error: message,
+    };
+}
+
+function validateKeys(
+    value: Record<string, unknown>,
+    allowed: readonly string[],
+    path: string,
+): ControlCommandValidationResult {
+    const unexpected = unknownKeys(value, allowed);
+    return unexpected.length === 0
+        ? { ok: true }
+        : fail(`${path} has unsupported field: ${unexpected[0]}.`);
+}
+
+function validateStringField(
+    value: Record<string, unknown>,
+    key: string,
+    path: string,
+    required = false,
+): ControlCommandValidationResult {
+    if (value[key] === undefined) {
+        return required ? fail(`${path}.${key} is required.`) : { ok: true };
+    }
+
+    return typeof value[key] === 'string'
+        ? { ok: true }
+        : fail(`${path}.${key} must be a string.`);
+}
+
+function validateNumberField(
+    value: Record<string, unknown>,
+    key: string,
+    path: string,
+): ControlCommandValidationResult {
+    return value[key] === undefined || typeof value[key] === 'number'
+        ? { ok: true }
+        : fail(`${path}.${key} must be a number.`);
+}
+
+function validateObjectField(
+    value: Record<string, unknown>,
+    key: string,
+    path: string,
+    required = false,
+): ControlCommandValidationResult {
+    if (value[key] === undefined) {
+        return required ? fail(`${path}.${key} is required.`) : { ok: true };
+    }
+
+    return isRecord(value[key])
+        ? { ok: true }
+        : fail(`${path}.${key} must be an object.`);
+}
+
+function validateHeaders(value: unknown, path: string): ControlCommandValidationResult {
+    if (value === undefined) {
+        return { ok: true };
+    }
+    if (!isRecord(value)) {
+        return fail(`${path} must be an object.`);
+    }
+    const invalid = Object.entries(value)
+        .find(([key, headerValue]) => typeof key !== 'string' || typeof headerValue !== 'string');
+    return invalid
+        ? fail(`${path}.${invalid[0]} must be a string.`)
+        : { ok: true };
+}
+
+function validateBaseCommand(command: Record<string, unknown>): ControlCommandValidationResult {
+    for (const field of ['commandId', 'label']) {
+        const result = validateStringField(command, field, 'command');
+        if (!result.ok) {
+            return result;
+        }
+    }
+    for (const field of ['deadlineEpochMs', 'timeoutMs']) {
+        const result = validateNumberField(command, field, 'command');
+        if (!result.ok) {
+            return result;
+        }
+    }
+    return validateObjectField(command, 'metadata', 'command');
+}
+
+function validateRecipe(value: unknown, path: string): ControlCommandValidationResult {
+    if (!isRecord(value)) {
+        return fail(`${path} must be an object.`);
+    }
+
+    let result = validateKeys(value, [
+        'recipeId',
+        'name',
+        'description',
+        'continueOnFailure',
+        'commands',
+        'metadata',
+    ], path);
+    if (!result.ok) {
+        return result;
+    }
+    result = validateStringField(value, 'recipeId', path, true);
+    if (!result.ok) {
+        return result;
+    }
+    if (!Array.isArray(value.commands)) {
+        return fail(`${path}.commands must be an array.`);
+    }
+    for (const [index, command] of value.commands.entries()) {
+        result = validateRallarBlackBoxTestCommand(command);
+        if (!result.ok) {
+            return fail(`${path}.commands[${index}]: ${result.error}`);
+        }
+    }
+    return { ok: true };
+}
+
+function validateHttpCommand(command: Record<string, unknown>): ControlCommandValidationResult {
+    const request = command.request;
+    if (!isRecord(request)) {
+        return fail('http.request.request is required.');
+    }
+
+    let result = validateKeys(request, [
+        'url',
+        'path',
+        'method',
+        'headers',
+        'body',
+        'credentials',
+        'mode',
+    ], 'http.request.request');
+    if (!result.ok) {
+        return result;
+    }
+    if (request.url === undefined && request.path === undefined) {
+        return fail('http.request.request requires url or path.');
+    }
+    for (const field of ['url', 'path', 'method', 'credentials', 'mode']) {
+        result = validateStringField(request, field, 'http.request.request');
+        if (!result.ok) {
+            return result;
+        }
+    }
+    result = validateHeaders(request.headers, 'http.request.request.headers');
+    if (!result.ok) {
+        return result;
+    }
+
+    if (command.response !== undefined) {
+        if (!isRecord(command.response)) {
+            return fail('http.request.response must be an object.');
+        }
+        result = validateKeys(command.response, ['body', 'maxBodyChars'], 'http.request.response');
+        if (!result.ok) {
+            return result;
+        }
+        if (
+            command.response.body !== undefined &&
+            command.response.body !== 'none' &&
+            command.response.body !== 'text' &&
+            command.response.body !== 'json'
+        ) {
+            return fail('http.request.response.body must be none, text, or json.');
+        }
+        result = validateNumberField(command.response, 'maxBodyChars', 'http.request.response');
+        if (!result.ok) {
+            return result;
+        }
+    }
+    return { ok: true };
+}
+
+function validateWsCommand(command: Record<string, unknown>): ControlCommandValidationResult {
+    let result = validateStringField(command, 'connection', 'ws');
+    if (!result.ok) {
+        return result;
+    }
+
+    if (command.kind === 'ws.open') {
+        result = validateStringField(command, 'url', 'ws.open');
+        if (!result.ok) {
+            return result;
+        }
+        if (
+            command.protocols !== undefined &&
+            typeof command.protocols !== 'string' &&
+            (!Array.isArray(command.protocols) ||
+                !command.protocols.every(protocol => typeof protocol === 'string'))
+        ) {
+            return fail('ws.open.protocols must be a string or string array.');
+        }
+        return validateHeaders(command.headers, 'ws.open.headers');
+    }
+
+    if (command.kind === 'ws.close') {
+        result = validateNumberField(command, 'code', 'ws.close');
+        if (!result.ok) {
+            return result;
+        }
+        return validateStringField(command, 'reason', 'ws.close');
+    }
+
+    return { ok: true };
+}
+
+function validateRtcCommand(command: Record<string, unknown>): ControlCommandValidationResult {
+    for (const field of ['connection', 'actor', 'roomId']) {
+        const result = validateStringField(command, field, 'rtc');
+        if (!result.ok) {
+            return result;
+        }
+    }
+    if (
+        command.transport !== undefined &&
+        command.transport !== 'realtime' &&
+        command.transport !== 'messages.rtc'
+    ) {
+        return fail('rtc.transport must be realtime or messages.rtc.');
+    }
+    return validateObjectField(command, 'rallar', 'rtc');
+}
+
+export function validateRallarBlackBoxTestCommand(
+    value: unknown,
+): ControlCommandValidationResult {
+    if (!isCommand(value)) {
+        return fail('Command must be an object with a supported kind.');
+    }
+
+    const command = value as Record<string, unknown>;
+    let result = validateBaseCommand(command);
+    if (!result.ok) {
+        return result;
+    }
+
+    const base = ['kind', 'commandId', 'label', 'deadlineEpochMs', 'timeoutMs', 'metadata'];
+    switch (value.kind) {
+        case 'configure':
+            result = validateKeys(command, [...base, 'config'], 'configure');
+            return !result.ok ? result : validateObjectField(command, 'config', 'configure', true);
+        case 'recipe.load':
+            result = validateKeys(command, [...base, 'recipe'], 'recipe.load');
+            return !result.ok ? result : validateRecipe(command.recipe, 'recipe.load.recipe');
+        case 'recipe.run':
+            result = validateKeys(command, [...base, 'recipe'], 'recipe.run');
+            if (!result.ok || command.recipe === undefined) {
+                return result;
+            }
+            return validateRecipe(command.recipe, 'recipe.run.recipe');
+        case 'recipe.cancel':
+            result = validateKeys(command, [...base, 'reason'], 'recipe.cancel');
+            return !result.ok ? result : validateStringField(command, 'reason', 'recipe.cancel');
+        case 'rtc.connect':
+            result = validateKeys(command, [...base, 'connection', 'actor', 'roomId', 'transport', 'rallar'], 'rtc.connect');
+            return !result.ok ? result : validateRtcCommand(command);
+        case 'rtc.send':
+            result = validateKeys(command, [...base, 'connection', 'send', 'expect', 'transport'], 'rtc.send');
+            return !result.ok ? result : validateRtcCommand(command);
+        case 'ws.open':
+            result = validateKeys(command, [...base, 'connection', 'url', 'protocols', 'headers'], 'ws.open');
+            return !result.ok ? result : validateWsCommand(command);
+        case 'ws.send':
+            result = validateKeys(command, [...base, 'connection', 'data'], 'ws.send');
+            return !result.ok ? result : validateWsCommand(command);
+        case 'ws.close':
+            result = validateKeys(command, [...base, 'connection', 'code', 'reason'], 'ws.close');
+            return !result.ok ? result : validateWsCommand(command);
+        case 'http.request':
+            result = validateKeys(command, [...base, 'request', 'response'], 'http.request');
+            return !result.ok ? result : validateHttpCommand(command);
+        case 'health':
+        case 'stats':
+        case 'close':
+        case 'reset':
+            return validateKeys(command, base, value.kind);
+        default:
+            return fail('Command kind is not supported.');
+    }
 }
 
 export function parseControlServerMessage(
@@ -156,8 +453,12 @@ export function parseControlServerMessage(
         return { ok: false, error: 'Control command requires commandId.' };
     }
 
-    if (!isCommand(parsed.command)) {
-        return { ok: false, error: 'Control command payload is invalid.' };
+    const commandValidation = validateRallarBlackBoxTestCommand(parsed.command);
+    if (!commandValidation.ok) {
+        return {
+            ok: false,
+            error: `Control command payload is invalid: ${commandValidation.error}`,
+        };
     }
 
     if (
@@ -175,7 +476,7 @@ export function parseControlServerMessage(
             runId: parsed.runId,
             agentId: parsed.agentId,
             commandId: parsed.commandId,
-            command: parsed.command,
+            command: parsed.command as RallarBlackBoxTestCommand,
             deadlineEpochMs: parsed.deadlineEpochMs,
         },
     };
@@ -230,6 +531,7 @@ export function parseControlClientMessage(data: unknown): ParseControlClientMess
                     protocolVersion: 1,
                     runId: parsed.runId,
                     agentId: parsed.agentId,
+                    token: typeof parsed.token === 'string' ? parsed.token : undefined,
                     atEpochMs: parsed.atEpochMs,
                     resume: {
                         completedCommandIds: parsed.resume.completedCommandIds,

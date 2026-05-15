@@ -27,6 +27,7 @@ export type RallarRemoteBrowserProviderOptions = Readonly<{
     controlBaseUrl?: string;
     runId?: string;
     agentId?: string;
+    token?: string;
     fetch?: RallarRemoteBrowserControlFetch;
     pollIntervalMs?: number;
     timeoutMs?: number;
@@ -67,6 +68,7 @@ export type RallarRemoteBrowserConfig = Readonly<{
     controlBaseUrl: string;
     runId: string;
     agentId: string;
+    token?: string;
     pollIntervalMs: number;
     timeoutMs: number;
 }>;
@@ -111,6 +113,14 @@ function joinUrl(baseUrl: string, path: string): string {
 
 function encodePath(value: string): string {
     return encodeURIComponent(value);
+}
+
+function authorizationHeaders(remote: RemoteProviderConfig): Record<string, string> {
+    return remote.token
+        ? {
+            Authorization: `Bearer ${remote.token}`,
+        }
+        : {};
 }
 
 function remoteState(context: any): {
@@ -163,6 +173,15 @@ export function resolveRallarRemoteBrowserConfig(
             options.agentId,
             envValue('RALLAR_BLACK_BOX_AGENT_ID'),
         ) ?? DEFAULT_AGENT_ID,
+        token: firstString(
+            request.token,
+            request.controlToken,
+            requestControl.token,
+            config.token,
+            remoteOptions.token,
+            options.token,
+            envValue('RALLAR_BLACK_BOX_CONTROL_TOKEN'),
+        ),
         pollIntervalMs: toNumber(
             request.pollIntervalMs ??
                 requestControl.pollIntervalMs ??
@@ -286,6 +305,7 @@ async function enqueueCommand(
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                ...authorizationHeaders(remote),
             },
             body: JSON.stringify({
                 commandId: command.commandId,
@@ -308,7 +328,9 @@ async function fetchRunSnapshot(
     remote: RemoteProviderConfig,
     fetchFn: RallarRemoteBrowserControlFetch,
 ): Promise<ControlRunSnapshot | undefined> {
-    const response = await fetchFn(joinUrl(remote.controlBaseUrl, `/runs/${encodePath(remote.runId)}`));
+    const response = await fetchFn(joinUrl(remote.controlBaseUrl, `/runs/${encodePath(remote.runId)}`), {
+        headers: authorizationHeaders(remote),
+    });
     if (response.status === 404) {
         return undefined;
     }
