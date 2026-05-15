@@ -652,17 +652,29 @@ Deliverables:
 - retention rules for command/result/event state
 - deployment decision for production, test orchestration, and monitor-server boundaries
 
-### Iteration 9: Black-box Runner Remote Provider
+### Iteration 9A: Black-box Runner Remote RTC Provider
 
-Teach black-box-runner to target a remote SPA agent in addition to the local Playwright harness.
+Teach black-box-runner RTC scenarios to target a remote SPA agent in addition to the local Playwright harness.
 
-Status: planned.
+Status: completed.
 
 Results:
 
-- Not started.
+- Added `packages/shared-test/black-box-runner/rallar-remote-browser-provider.ts`.
+- Registered the default RTC provider name `rallar-remote-browser`.
+- Added remote RTC `connect`, `send`, `wait`, and `close` support through the minimal control server REST API.
+- Mapped runner RTC connect actions to `rallar-bb-test` `rtc.connect` commands.
+- Mapped runner RTC send actions to `rallar-bb-test` `rtc.send` commands.
+- Mapped runner RTC close and auto-close cleanup to `rallar-bb-test` `close` commands.
+- Added control-server polling for command results through `GET /runs/:runId`.
+- Added remote event synchronization so streamed SPA message events populate the runner's existing `rtcMessages` report and expectation machinery.
+- Preserved existing runner timeout diagnostics by returning RTC failure statuses when the control server rejects commands or does not return a result in time.
+- Added configuration through request fields, runner options, provider options, or environment variables for control base URL, run ID, agent ID, poll interval, and timeout.
+- Added focused tests for provider registration, connect/send/close command mapping, remote message expectations, timeout failures, and auto-close cleanup.
+- Verified with `npm --workspace @ar-eye-hunter/shared-test run typecheck`.
+- Verified with `npx vitest run packages/tests/shared-test/rallar-remote-browser-provider.test.ts`.
 
-Possible provider name:
+Provider name:
 
 ```text
 rallar-remote-browser
@@ -671,10 +683,29 @@ rallar-remote-browser
 Deliverables:
 
 - runner provider that sends facade commands over the control server
-- mapping from black-box runner RTC, WebSocket, and HTTP actions to remote commands
+- mapping from black-box runner RTC actions to remote commands
 - reuse of existing report collection where possible
 - timeout and disconnect diagnostics
-- compatibility tests proving local `rallar-browser` and remote `rallar-remote-browser` report comparable outcomes
+- focused tests proving remote RTC command dispatch and report collection use the existing runner report shape
+
+### Iteration 9B: Remote Runner WebSocket And HTTP Actions
+
+Teach black-box-runner WebSocket and HTTP interactions to execute through the remote SPA agent when requested.
+
+Status: planned.
+
+Results:
+
+- Not started.
+
+Deliverables:
+
+- remote execution mode for black-box runner HTTP actions
+- remote execution mode for black-box runner WebSocket actions
+- mapping from runner HTTP actions to `rallar-bb-test` `http.request` commands
+- mapping from runner WebSocket open/send/close actions to `rallar-bb-test` `ws.open`, `ws.send`, and `ws.close` commands
+- report parity between local runner HTTP/WebSocket execution and remote browser-agent execution
+- destination allowlist and payload-size checks before broad use
 
 ### Iteration 10: Periodic Stats And Report Uploads
 
