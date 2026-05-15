@@ -1,9 +1,13 @@
 import type {
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestEvent,
+    RallarBlackBoxTestReportFragment,
     RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntime,
     RallarBlackBoxTestState,
+    RallarBlackBoxTestStatsSnapshot,
 } from '@shared-test/rallar-bb-test/types.ts';
+import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import {
     type ControlClientEnvelope,
     type ControlCommandEnvelope,
@@ -28,6 +32,9 @@ export type RallarBlackBoxControlSnapshot = Readonly<{
     agentId?: string;
     connectedAtEpochMs?: number;
     lastHeartbeatAtEpochMs?: number;
+    lastStatsAtEpochMs?: number;
+    lastReportAtEpochMs?: number;
+    lastReportUploadAtEpochMs?: number;
     lastMessageAtEpochMs?: number;
     reconnectAttempt: number;
     sentCount: number;
@@ -51,10 +58,18 @@ export type RallarBlackBoxControlWebSocketFactory = (
     url: string,
 ) => WebSocketLike;
 
+export type RallarBlackBoxControlFetch = (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+) => Promise<Response>;
+
 export type RallarBlackBoxControlClientOptions = Readonly<{
     runtime: RallarBlackBoxTestRuntime;
     webSocketFactory?: RallarBlackBoxControlWebSocketFactory;
+    fetch?: RallarBlackBoxControlFetch;
     heartbeatIntervalMs?: number;
+    statsIntervalMs?: number;
+    finalReportUploadUrl?: string;
     reconnectBaseMs?: number;
     reconnectMaxMs?: number;
     onSnapshot?: (snapshot: RallarBlackBoxControlSnapshot) => void;
@@ -64,10 +79,12 @@ export type RallarBlackBoxControlConnectOptions = Readonly<{
     url: string;
     runId: string;
     agentId: string;
+    finalReportUploadUrl?: string;
 }>;
 
 const OPEN_STATE = 1;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 10_000;
+const DEFAULT_STATS_INTERVAL_MS = 5_000;
 const DEFAULT_RECONNECT_BASE_MS = 600;
 const DEFAULT_RECONNECT_MAX_MS = 5_000;
 
@@ -128,20 +145,101 @@ function commandForEnvelope(envelope: ControlCommandEnvelope): RallarBlackBoxTes
     } as RallarBlackBoxTestCommand;
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : {};
+}
+
+function toStatsSnapshot(
+    state: RallarBlackBoxTestState,
+    atEpochMs: number,
+): RallarBlackBoxTestStatsSnapshot {
+    const events = state.events;
+    const config = state.currentConfig;
+    const durations = state.commandHistory.map(result => result.durationMs);
+    const lastRallarDiagnostic = events
+        .filter(event =>
+            event.topic.includes('rtc.connected') ||
+            event.topic.includes('rallar.bb.fake.rtc.connected') ||
+            event.topic.includes('rallar.browser.connect_completed')
+        )
+        .at(-1);
+    const lastRallarPayload = asRecord(lastRallarDiagnostic?.payload);
+
+    return {
+        atEpochMs,
+        runId: config?.runId,
+        agentId: config?.agentId,
+        status: state.status,
+        counters: {
+            commands: state.commandHistory.length,
+            events: events.length,
+            failures: state.failures.length,
+            messages: events.filter((event) => event.kind === 'message').length,
+            diagnostics: events.filter((event) => event.kind === 'diagnostic').length,
+            reconnects: events.filter((event) =>
+                event.topic.toLowerCase().includes('reconnect')
+            ).length,
+        },
+        lastCommandId: state.commandHistory.at(-1)?.commandId,
+        lastEventAtEpochMs: events.at(-1)?.atEpochMs,
+        commandLatency: {
+            count: durations.length,
+            minMs: durations.length > 0 ? Math.min(...durations) : undefined,
+            maxMs: durations.length > 0 ? Math.max(...durations) : undefined,
+            averageMs: durations.length > 0
+                ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length)
+                : undefined,
+            lastMs: durations.at(-1),
+        },
+        rallar: {
+            connected: lastRallarDiagnostic !== undefined,
+            actor: config?.actor,
+            sessionId: config?.sessionId,
+            roomId: config?.roomId,
+            transport: config?.transport,
+            peerCount: typeof lastRallarPayload.peerCount === 'number'
+                ? lastRallarPayload.peerCount
+                : undefined,
+            laneHealth: lastRallarPayload.laneHealth,
+        },
+    };
+}
+
+function toReportSummary(state: RallarBlackBoxTestState): unknown {
+    return {
+        status: state.status,
+        commands: state.commandHistory.length,
+        events: state.events.length,
+        failures: state.failures.length,
+        latestCommandId: state.commandHistory.at(-1)?.commandId,
+        latestEventAtEpochMs: state.events.at(-1)?.atEpochMs,
+    };
+}
+
 export class RallarBlackBoxControlClient {
     private readonly runtime: RallarBlackBoxTestRuntime;
     private readonly webSocketFactory: RallarBlackBoxControlWebSocketFactory;
+    private readonly fetchFn: RallarBlackBoxControlFetch;
     private readonly heartbeatIntervalMs: number;
+    private readonly statsIntervalMs: number;
+    private readonly finalReportUploadUrl: string | undefined;
     private readonly reconnectBaseMs: number;
     private readonly reconnectMaxMs: number;
     private readonly onSnapshot: ((snapshot: RallarBlackBoxControlSnapshot) => void) | undefined;
     private readonly unsubscribeRuntime: () => void;
     private readonly sentEventIds = new Set<string>();
+    private statsEventSequence = 1;
+    private reportSequence = 1;
+    private lastTerminalReportKey: string | undefined;
     private socket: WebSocketLike | undefined;
     private disposers: Array<() => void> = [];
     private heartbeatTimer: number | undefined;
+    private statsTimer: number | undefined;
     private reconnectTimer: number | undefined;
     private manualClose = false;
+    private disconnectReported = false;
     private options: RallarBlackBoxControlConnectOptions | undefined;
     private snapshot: RallarBlackBoxControlSnapshot = {
         state: 'idle',
@@ -153,13 +251,17 @@ export class RallarBlackBoxControlClient {
     constructor(options: RallarBlackBoxControlClientOptions) {
         this.runtime = options.runtime;
         this.webSocketFactory = options.webSocketFactory ?? defaultWebSocketFactory;
+        this.fetchFn = options.fetch ?? fetch;
         this.heartbeatIntervalMs = options.heartbeatIntervalMs ??
             DEFAULT_HEARTBEAT_INTERVAL_MS;
+        this.statsIntervalMs = options.statsIntervalMs ?? DEFAULT_STATS_INTERVAL_MS;
+        this.finalReportUploadUrl = options.finalReportUploadUrl;
         this.reconnectBaseMs = options.reconnectBaseMs ?? DEFAULT_RECONNECT_BASE_MS;
         this.reconnectMaxMs = options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS;
         this.onSnapshot = options.onSnapshot;
         this.unsubscribeRuntime = this.runtime.subscribe(state => {
             this.streamNewEvents(state);
+            this.maybeSendTerminalReport(state);
         });
     }
 
@@ -170,13 +272,19 @@ export class RallarBlackBoxControlClient {
     connect(options: RallarBlackBoxControlConnectOptions): void {
         this.options = options;
         this.manualClose = false;
+        this.disconnectReported = false;
         this.clearReconnect();
         this.openSocket('connecting');
     }
 
     disconnect(): void {
+        if (!this.disconnectReported) {
+            this.sendFinalReport('manual-disconnect');
+            this.disconnectReported = true;
+        }
         this.manualClose = true;
         this.clearHeartbeat();
+        this.clearStats();
         this.clearReconnect();
         this.closeSocket(1000, 'manual disconnect');
         this.setSnapshot({
@@ -232,7 +340,9 @@ export class RallarBlackBoxControlClient {
         this.replayCompletedResults();
         this.streamNewEvents(this.runtime.state());
         this.sendHeartbeat();
+        this.sendStats();
         this.startHeartbeat();
+        this.startStats();
     }
 
     private async onMessage(data: unknown): Promise<void> {
@@ -259,6 +369,7 @@ export class RallarBlackBoxControlClient {
 
     private onClose(): void {
         this.clearHeartbeat();
+        this.clearStats();
         this.closeSocket();
         if (this.manualClose) {
             return;
@@ -355,6 +466,134 @@ export class RallarBlackBoxControlClient {
         }, this.heartbeatIntervalMs);
     }
 
+    private sendStats(): void {
+        const options = this.requireOptions();
+        const atEpochMs = Date.now();
+        const stats = toStatsSnapshot(this.runtime.state(), atEpochMs);
+        const event: RallarBlackBoxTestEvent = {
+            eventId: `control-stats-${this.statsEventSequence++}`,
+            kind: 'stats',
+            topic: 'rallar.bb.stats',
+            atEpochMs,
+            severity: 'info',
+            payload: stats,
+        };
+
+        this.sendEnvelope({
+            kind: 'stats',
+            protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+            runId: options.runId,
+            agentId: options.agentId,
+            atEpochMs,
+            eventId: event.eventId,
+            payload: event,
+        });
+        this.setSnapshot({
+            lastStatsAtEpochMs: atEpochMs,
+        });
+    }
+
+    private startStats(): void {
+        this.clearStats();
+        if (this.statsIntervalMs <= 0) {
+            return;
+        }
+
+        this.statsTimer = window.setInterval(() => {
+            this.sendStats();
+        }, this.statsIntervalMs);
+    }
+
+    private toReport(reason: string): RallarBlackBoxTestReportFragment {
+        const options = this.requireOptions();
+        const state = this.runtime.state();
+        const atEpochMs = Date.now();
+        const report: RallarBlackBoxTestReportFragment = {
+            reportId: `control-report-${this.reportSequence++}`,
+            runId: options.runId,
+            agentId: options.agentId,
+            atEpochMs,
+            summary: {
+                ...asRecord(toReportSummary(state)),
+                reason,
+            },
+            results: state.commandHistory,
+            events: state.events,
+            stats: toStatsSnapshot(state, atEpochMs),
+        };
+
+        return redactRallarBlackBoxValue(report, state.currentConfig?.redaction);
+    }
+
+    private sendFinalReport(reason: string): void {
+        if (!this.options) {
+            return;
+        }
+
+        const options = this.requireOptions();
+        const atEpochMs = Date.now();
+        const report = this.toReport(reason);
+        const event: RallarBlackBoxTestEvent = {
+            eventId: `control-report-event-${report.reportId}`,
+            kind: 'report',
+            topic: 'rallar.bb.report.final',
+            atEpochMs,
+            severity: 'info',
+            payload: report,
+        };
+        const envelope: ControlClientEnvelope = {
+            kind: 'report',
+            protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+            runId: options.runId,
+            agentId: options.agentId,
+            atEpochMs,
+            eventId: event.eventId,
+            payload: event,
+        };
+
+        this.sendEnvelope(envelope);
+        this.uploadFinalReport(envelope);
+        this.setSnapshot({
+            lastReportAtEpochMs: atEpochMs,
+        });
+    }
+
+    private uploadFinalReport(envelope: ControlClientEnvelope): void {
+        if (envelope.kind !== 'report') {
+            return;
+        }
+
+        const uploadUrl = this.options?.finalReportUploadUrl ?? this.finalReportUploadUrl;
+        if (!uploadUrl) {
+            return;
+        }
+
+        void this.fetchFn(uploadUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(envelope),
+        })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Final report upload failed: ${response.status} ${response.statusText}`);
+                }
+                this.setSnapshot({
+                    lastReportUploadAtEpochMs: Date.now(),
+                });
+            })
+            .catch(error => {
+                this.setSnapshot({
+                    lastError: toErrorMessage(error),
+                });
+                this.recordDiagnostic('rallar.bb.control.report_upload_failed', 'warning', {
+                    error: toErrorMessage(error),
+                    uploadUrl,
+                });
+            });
+    }
+
     private replayCompletedResults(): void {
         Object.values(this.runtime.state().resultCache)
             .forEach(result => this.sendResult(result, true));
@@ -396,6 +635,25 @@ export class RallarBlackBoxControlClient {
             this.sentEventIds.add(event.eventId);
             this.sendEnvelope(toControlEventEnvelope(event, options.runId, options.agentId));
         }
+    }
+
+    private maybeSendTerminalReport(state: RallarBlackBoxTestState): void {
+        if (
+            state.status !== 'completed' &&
+            state.status !== 'failed' &&
+            state.status !== 'cancelled'
+        ) {
+            return;
+        }
+
+        const latestCommandId = state.commandHistory.at(-1)?.commandId;
+        const reportKey = `${state.status}:${latestCommandId ?? 'no-command'}:${state.commandHistory.length}`;
+        if (this.lastTerminalReportKey === reportKey) {
+            return;
+        }
+
+        this.lastTerminalReportKey = reportKey;
+        this.sendFinalReport(`runtime-${state.status}`);
     }
 
     private recordDiagnostic(
@@ -446,6 +704,13 @@ export class RallarBlackBoxControlClient {
         if (this.heartbeatTimer !== undefined) {
             window.clearInterval(this.heartbeatTimer);
             this.heartbeatTimer = undefined;
+        }
+    }
+
+    private clearStats(): void {
+        if (this.statsTimer !== undefined) {
+            window.clearInterval(this.statsTimer);
+            this.statsTimer = undefined;
         }
     }
 

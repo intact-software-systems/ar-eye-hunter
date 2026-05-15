@@ -33,6 +33,8 @@ export type RallarBlackBoxBootstrapConfig = Readonly<{
     controlUrl: string;
     runId?: string;
     agentId: string;
+    statsIntervalMs?: number;
+    finalReportUploadUrl?: string;
     environment: string;
     apiBaseUrl: string;
     actor: string;
@@ -90,6 +92,17 @@ function booleanParamValue(
         normalized === 'on';
 }
 
+function numberParamValue(
+    value: string | undefined,
+): number | undefined {
+    if (!value) {
+        return undefined;
+    }
+
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
 function controlModeFrom(
     params: URLSearchParams,
     env: Readonly<Record<string, string | undefined>>,
@@ -110,6 +123,8 @@ function bootstrapSource(
         'autoConnect',
         'runId',
         'agentId',
+        'statsIntervalMs',
+        'reportUploadUrl',
         'environment',
         'apiBaseUrl',
         'actor',
@@ -127,6 +142,8 @@ function bootstrapSource(
         'VITE_RALLAR_AUTO_CONNECT',
         'VITE_RALLAR_RUN_ID',
         'VITE_RALLAR_AGENT_ID',
+        'VITE_RALLAR_STATS_INTERVAL_MS',
+        'VITE_RALLAR_REPORT_UPLOAD_URL',
     ];
     return envKeys.some(key => env[key]) ? 'environment' : 'default';
 }
@@ -158,6 +175,18 @@ export function resolveRallarBlackBoxBootstrapConfig(
         controlUrl,
         runId: paramValue(params, env, 'runId', 'VITE_RALLAR_RUN_ID'),
         agentId,
+        statsIntervalMs: numberParamValue(paramValue(
+            params,
+            env,
+            'statsIntervalMs',
+            'VITE_RALLAR_STATS_INTERVAL_MS',
+        )),
+        finalReportUploadUrl: paramValue(
+            params,
+            env,
+            'reportUploadUrl',
+            'VITE_RALLAR_REPORT_UPLOAD_URL',
+        ),
         environment: paramValue(params, env, 'environment', 'VITE_RALLAR_ENVIRONMENT') ??
             'local',
         apiBaseUrl: paramValue(params, env, 'apiBaseUrl', 'VITE_RALLAR_API_BASE_URL') ??
@@ -407,6 +436,8 @@ class RallarBlackBoxRuntimeStore {
         };
         this.controlClient = new RallarBlackBoxControlClient({
             runtime: this.runtime,
+            statsIntervalMs: this.bootstrapConfig.statsIntervalMs,
+            finalReportUploadUrl: this.bootstrapConfig.finalReportUploadUrl,
             onSnapshot: control => {
                 this.snapshot = {
                     ...this.snapshot,

@@ -722,11 +722,25 @@ Deliverables:
 
 Add periodic stats and final report streaming.
 
-Status: planned.
+Status: completed.
 
 Results:
 
-- Not started.
+- Added configurable periodic stats streaming to `apps/rallar-black-box/src/control-client.ts`.
+- The browser control agent now sends an initial stats envelope after registration and then sends periodic WebSocket `stats` envelopes while connected.
+- Added `statsIntervalMs` bootstrap configuration through URL query parameters and `VITE_RALLAR_STATS_INTERVAL_MS`.
+- Added final report generation from the browser agent's runtime state, including summary, command results, events, and latest stats.
+- Final reports are sent over the existing control WebSocket as `report` envelopes when the runtime reaches a terminal state and during manual disconnect cleanup.
+- Added optional REST final-report upload through `finalReportUploadUrl`, URL query parameter `reportUploadUrl`, or `VITE_RALLAR_REPORT_UPLOAD_URL`.
+- Added `POST /runs/:runId/agents/:agentId/report` to the control server for REST report ingestion.
+- Added server-side in-memory `stats` and `reports` storage alongside the existing events stream in run snapshots.
+- Applied black-box redaction to report payloads before client upload and again before server report storage.
+- Added focused control-client tests for periodic WebSocket stats events and redacted final report upload.
+- Added control-service tests for separate stats/report storage and report redaction.
+- Verified with `npm --workspace rallar-black-box run typecheck`.
+- Verified with `npm run test -- packages/tests/rallar-black-box/control-client.test.ts`.
+- Verified with `npm run check:rallar-black-box-control`.
+- Verified with `npm run test:rallar-black-box-control`.
 
 Deliverables:
 

@@ -156,6 +156,63 @@ Deno.test('control service stores heartbeat and event telemetry', () => {
     assertEquals(run.agents[0].receivedEventCount, 1);
 });
 
+Deno.test('control service stores stats and redacted reports separately', () => {
+    const service = createRallarBlackBoxControlService();
+
+    service.receiveClientEnvelope(registerEnvelope());
+    service.receiveClientEnvelope({
+        kind: 'stats',
+        protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+        runId: 'run-1',
+        agentId: 'agent-1',
+        atEpochMs: 1_700,
+        eventId: 'stats-1',
+        payload: {
+            kind: 'stats',
+            topic: 'rallar.bb.stats',
+            payload: {
+                counters: {
+                    commands: 1,
+                    events: 2,
+                    failures: 0,
+                    messages: 0,
+                    diagnostics: 1,
+                },
+            },
+        },
+    });
+    service.receiveClientEnvelope({
+        kind: 'report',
+        protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+        runId: 'run-1',
+        agentId: 'agent-1',
+        atEpochMs: 1_800,
+        eventId: 'report-1',
+        payload: {
+            kind: 'report',
+            topic: 'rallar.bb.report.final',
+            payload: {
+                reportId: 'report-1',
+                results: [
+                    {
+                        value: {
+                            token: 'secret-token',
+                        },
+                    },
+                ],
+            },
+        },
+    });
+
+    const run = service.snapshotRun('run-1');
+    assert(run);
+    assertEquals(run.events.length, 2);
+    assertEquals(run.stats.length, 1);
+    assertEquals(run.reports.length, 1);
+    assertEquals(JSON.stringify(run.reports).includes('secret-token'), false);
+    assertEquals(JSON.stringify(run.reports).includes('<redacted>'), true);
+});
+
 Deno.test('control protocol parses client envelopes before server ingestion', () => {
     const parsed = parseControlClientMessage(JSON.stringify(registerEnvelope(['configure-1'])));
 

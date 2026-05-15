@@ -52,6 +52,13 @@ Deno.serve({ port }, async (request) => {
         return await enqueueCommand(request, runId, agentId);
     }
 
+    const agentReportMatch = url.pathname.match(/^\/runs\/([^/]+)\/agents\/([^/]+)\/report$/);
+    if (request.method === 'POST' && agentReportMatch) {
+        const runId = decodeURIComponent(agentReportMatch[1]);
+        const agentId = decodeURIComponent(agentReportMatch[2]);
+        return await uploadReport(request, runId, agentId);
+    }
+
     return jsonResponse({ error: 'Not found.' }, 404);
 });
 
@@ -124,6 +131,43 @@ async function enqueueCommand(
     return jsonResponse({
         accepted: true,
         command: envelope,
+    }, 202);
+}
+
+async function uploadReport(
+    request: Request,
+    runId: string,
+    agentId: string,
+): Promise<Response> {
+    let body: unknown;
+    try {
+        body = await request.json();
+    } catch (error) {
+        return jsonResponse({
+            error: error instanceof Error ? error.message : String(error),
+        }, 400);
+    }
+
+    const parsed = parseControlClientMessage(body);
+    if (!parsed.ok) {
+        return jsonResponse({
+            error: parsed.error,
+        }, 400);
+    }
+
+    if (
+        parsed.envelope.kind !== 'report' ||
+        parsed.envelope.runId !== runId ||
+        parsed.envelope.agentId !== agentId
+    ) {
+        return jsonResponse({
+            error: 'Report upload envelope does not match the target run and agent.',
+        }, 400);
+    }
+
+    controlService.receiveClientEnvelope(parsed.envelope);
+    return jsonResponse({
+        accepted: true,
     }, 202);
 }
 

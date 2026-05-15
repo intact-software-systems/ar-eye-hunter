@@ -6,6 +6,7 @@ import { RallarBlackBoxControlClient } from '../../../apps/rallar-black-box/src/
 import {
     type ControlClientEnvelope,
     type ControlCommandEnvelope,
+    type ControlEventEnvelope,
     type ControlResultEnvelope,
     parseControlServerMessage,
 } from '../../../apps/rallar-black-box/src/control-protocol.ts';
@@ -64,6 +65,11 @@ function resultsFor(socket: FakeControlSocket, commandId: string): ControlResult
             envelope.kind === 'result' &&
             envelope.commandId === commandId
         );
+}
+
+function eventsFor(socket: FakeControlSocket, kind: 'stats' | 'report'): ControlEventEnvelope[] {
+    return envelopes(socket)
+        .filter((envelope): envelope is ControlEventEnvelope => envelope.kind === kind);
 }
 
 function commandEnvelope(
@@ -269,6 +275,109 @@ describe('rallar-black-box control client', () => {
         } finally {
             client.dispose();
             vi.useRealTimers();
+        }
+    });
+
+    it('streams periodic stats envelopes over the control WebSocket', async () => {
+        vi.useFakeTimers();
+
+        const socket = new FakeControlSocket();
+        const runtime = createRallarBlackBoxTestRuntime();
+        const client = new RallarBlackBoxControlClient({
+            runtime,
+            heartbeatIntervalMs: 60_000,
+            statsIntervalMs: 25,
+            webSocketFactory: () => socket,
+        });
+
+        try {
+            client.connect({
+                url: 'ws://control.example.test',
+                runId: 'run-1',
+                agentId: 'agent-1',
+            });
+            socket.open();
+
+            expect(eventsFor(socket, 'stats')).toHaveLength(1);
+
+            await runtime.execute({
+                ...configureCommand(),
+                commandId: 'configure-local-1',
+            });
+
+            await vi.advanceTimersByTimeAsync(25);
+
+            const latestStatsEnvelope = eventsFor(socket, 'stats').at(-1);
+            expect(latestStatsEnvelope).toBeDefined();
+            const statsEvent = latestStatsEnvelope?.payload as any;
+            expect(statsEvent.kind).toBe('stats');
+            expect(statsEvent.topic).toBe('rallar.bb.stats');
+            expect(statsEvent.payload.counters.commands).toBe(1);
+            expect(client.currentSnapshot().lastStatsAtEpochMs).toBeDefined();
+        } finally {
+            client.dispose();
+            vi.useRealTimers();
+        }
+    });
+
+    it('sends and uploads a redacted final report', async () => {
+        const socket = new FakeControlSocket();
+        const runtime = createRallarBlackBoxTestRuntime();
+        const uploads: Array<{
+            url: string;
+            body: ControlClientEnvelope;
+        }> = [];
+        const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            uploads.push({
+                url: String(input),
+                body: JSON.parse(String(init?.body ?? '{}')) as ControlClientEnvelope,
+            });
+            return new Response('{}', {
+                status: 202,
+            });
+        });
+        const client = new RallarBlackBoxControlClient({
+            runtime,
+            fetch,
+            heartbeatIntervalMs: 60_000,
+            statsIntervalMs: 0,
+            finalReportUploadUrl: 'http://control.example.test/runs/run-1/agents/agent-1/report',
+            webSocketFactory: () => socket,
+        });
+
+        try {
+            client.connect({
+                url: 'ws://control.example.test',
+                runId: 'run-1',
+                agentId: 'agent-1',
+            });
+            socket.open();
+
+            await runtime.execute({
+                kind: 'configure',
+                commandId: 'configure-secret-1',
+                config: {
+                    runId: 'run-1',
+                    agentId: 'agent-1',
+                    rallar: {
+                        token: 'secret-token',
+                    },
+                },
+            });
+
+            client.disconnect();
+
+            await vi.waitFor(() => {
+                expect(fetch).toHaveBeenCalledTimes(1);
+            });
+
+            expect(eventsFor(socket, 'report')).toHaveLength(1);
+            expect(uploads[0].url).toBe('http://control.example.test/runs/run-1/agents/agent-1/report');
+            expect(uploads[0].body.kind).toBe('report');
+            expect(JSON.stringify(uploads[0].body)).not.toContain('secret-token');
+            expect(client.currentSnapshot().lastReportAtEpochMs).toBeDefined();
+        } finally {
+            client.dispose();
         }
     });
 });

@@ -7,7 +7,11 @@ import type {
     ControlResultEnvelope,
 } from '../../rallar-black-box/src/control-protocol.ts';
 import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '../../rallar-black-box/src/control-protocol.ts';
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRedactionOptions,
+} from '@shared-test/rallar-bb-test/types.ts';
+import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 
 export type EnqueueControlCommandInput = Readonly<{
     runId: string;
@@ -20,6 +24,7 @@ export type EnqueueControlCommandInput = Readonly<{
 export type RallarBlackBoxControlServiceOptions = Readonly<{
     now?: () => number;
     commandIdFactory?: () => string;
+    redaction?: RallarBlackBoxTestRedactionOptions;
 }>;
 
 export type RallarBlackBoxControlServiceReceiveResult = Readonly<{
@@ -61,6 +66,8 @@ export type ControlRunSnapshot = Readonly<{
     commands: readonly ControlQueuedCommandSnapshot[];
     results: readonly ControlResultEnvelope[];
     events: readonly ControlEventEnvelope[];
+    stats: readonly ControlEventEnvelope[];
+    reports: readonly ControlEventEnvelope[];
     heartbeats: readonly ControlHeartbeatEnvelope[];
 }>;
 
@@ -102,17 +109,21 @@ type StoredRun = {
     commands: Map<string, StoredCommand>;
     results: Map<string, ControlResultEnvelope>;
     events: ControlEventEnvelope[];
+    stats: ControlEventEnvelope[];
+    reports: ControlEventEnvelope[];
     heartbeats: ControlHeartbeatEnvelope[];
 };
 
 export class RallarBlackBoxControlService {
     private readonly now: () => number;
     private readonly commandIdFactory: () => string;
+    private readonly redaction: RallarBlackBoxTestRedactionOptions | undefined;
     private readonly runs = new Map<string, StoredRun>();
 
     constructor(options: RallarBlackBoxControlServiceOptions = {}) {
         this.now = options.now ?? (() => Date.now());
         this.commandIdFactory = options.commandIdFactory ?? (() => crypto.randomUUID());
+        this.redaction = options.redaction;
     }
 
     receiveClientEnvelope(
@@ -269,10 +280,26 @@ export class RallarBlackBoxControlService {
     private receiveEvent(envelope: ControlEventEnvelope): void {
         const run = this.ensureRun(envelope.runId);
         const agent = this.ensureAgent(run, envelope.agentId);
+        const storedEnvelope = envelope.kind === 'report'
+            ? this.redactReportEnvelope(envelope)
+            : envelope;
         agent.receivedEventCount += 1;
         agent.lastSeenAtEpochMs = this.now();
-        run.events.push(envelope);
+        run.events.push(storedEnvelope);
+        if (storedEnvelope.kind === 'stats') {
+            run.stats.push(storedEnvelope);
+        }
+        if (storedEnvelope.kind === 'report') {
+            run.reports.push(storedEnvelope);
+        }
         this.touch(run);
+    }
+
+    private redactReportEnvelope(envelope: ControlEventEnvelope): ControlEventEnvelope {
+        return {
+            ...envelope,
+            payload: redactRallarBlackBoxValue(envelope.payload, this.redaction),
+        };
     }
 
     private ensureRun(runId: string): StoredRun {
@@ -290,6 +317,8 @@ export class RallarBlackBoxControlService {
             commands: new Map(),
             results: new Map(),
             events: [],
+            stats: [],
+            reports: [],
             heartbeats: [],
         };
         this.runs.set(runId, run);
@@ -352,6 +381,8 @@ export class RallarBlackBoxControlService {
             })),
             results: Array.from(run.results.values()),
             events: [...run.events],
+            stats: [...run.stats],
+            reports: [...run.reports],
             heartbeats: [...run.heartbeats],
         };
     }
