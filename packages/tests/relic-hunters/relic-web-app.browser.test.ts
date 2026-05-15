@@ -109,6 +109,10 @@ vi.mock('../../../apps/relic-hunters-v1/src/game/RelicScene.tsx', async () => {
     };
 });
 
+vi.mock('../../../apps/relic-hunters-v1/src/game/IntroScene.tsx', () => ({
+    IntroScene: () => null,
+}));
+
 vi.mock('../../../apps/relic-hunters-v1/src/game/sound.ts', () => soundMock);
 
 import App, { derivePartyCoordination } from '../../../apps/relic-hunters-v1/src/App.tsx';

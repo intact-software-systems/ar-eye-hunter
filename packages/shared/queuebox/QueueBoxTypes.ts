@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
 import * as Resource from './ResourceEntry.ts';
 import { ResourceEntry } from './ResourceEntry.ts';

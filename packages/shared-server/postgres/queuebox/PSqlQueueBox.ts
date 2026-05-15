@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { QueueBoxResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
 import type { PersistenceSetItemOptions } from '@shared/persistence/PersistenceProvider.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';

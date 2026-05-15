@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { Either } from './Either.ts';
 import { PartitionRange } from './PartitionRange.ts';
 
