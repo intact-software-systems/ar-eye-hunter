@@ -116,5 +116,5 @@ The tool is currently best for:
 - smoke-testing the browser agent registration and command/result loop
 
 Because the default SPA mode is simulated, local UI runs are not final proof of live deployed Rallar RTC behavior. Use
-`provider=browser-rallar` plus real environment config for live connect/send checks; two-agent delivery is still the
-next proof needed for end-to-end payload receipt.
+`provider=browser-rallar` plus real environment config for the gated one-agent connect/send and two-agent delivery
+smokes.

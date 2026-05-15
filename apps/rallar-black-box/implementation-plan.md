@@ -62,8 +62,8 @@ API base URL and supported auth config, the SPA uses the shared browser adapter,
 and calls the browser facade for auth, connect, room join, subscriptions, RTC send, browser WebSocket, browser HTTP,
 health, close, and reset behavior.
 
-The current live proof is a gated one-agent connect/send smoke. The next meaningful real-provider proof is two-agent
-delivery where one browser receives payloads sent by another browser.
+The current live proof is a gated smoke set: one-agent connect/send plus two-agent realtime and `messages.rtc` delivery
+where one browser receives payloads sent by another browser.
 
 Target provider modes:
 
@@ -1061,11 +1061,39 @@ Deliverables:
 
 Prove real delivery between at least two browser agents.
 
-Status: planned.
+Status: completed for the gated two-agent smoke harness; live execution is skipped unless real Rallar environment
+variables are provided.
 
 Results:
 
-- Not started.
+- Added `tests/playwright/rallar-black-box/browser-rallar-two-agent-smoke.spec.ts`.
+- The new gated Playwright smoke starts two isolated browser contexts as two SPA control agents in the same run and room.
+- Each agent can use explicit two-agent login env vars, generic username/password login env vars in isolated browser
+  contexts, or explicit per-agent restored browser sessions.
+- The realtime smoke connects agent A and agent B, extracts real Rallar session IDs from connect results, sends A to B
+  with `rallar.realtime.sendJson`, sends B to A, and asserts the receiving page's Received Data inbox contains each
+  payload.
+- The `messages.rtc` smoke performs the same two-agent delivery flow with `rallar.messages.rtc.send`, using
+  `VITE_RALLAR_MESSAGES_RTC_TYPE_ID` / `VITE_RALLAR_TYPE_ID` and
+  `VITE_RALLAR_MESSAGES_RTC_TOPIC_ID` / `VITE_RALLAR_TOPIC_ID` when provided.
+- The smoke also runs health, stats, final-report recipe, close, and reset commands for both agents.
+- The control-server run snapshot is asserted to contain both agents, successful command results, both delivery message
+  events, stats envelopes from both agents, final report envelopes from both agents, and no `rallar.bb.fake.*` topics.
+- Fixed topology derivation for real browser received-message events so `remotePeerId` / `senderId` are treated as the
+  sender and `peerId` is treated as the receiving session.
+- Added topology coverage proving real `rallar.browser.realtime.message` and
+  `rallar.browser.messages.rtc.message` events derive sender-to-receiver route edges.
+- Multicast/broadcast real-delivery assertions and missing/stale-agent negative matrices are not exercised by this
+  smoke; they remain better suited to the next real-provider hardening and larger multi-agent iterations.
+- Local verification covered the harness and topology behavior. No live Rallar environment variables were available in
+  this workspace, so the two-agent realtime and `messages.rtc` smokes were not executed against a deployed Rallar
+  service here.
+- Verified with `npm run test -- packages/tests/rallar-black-box/topology-graph.test.ts packages/tests/rallar-black-box/browser-rallar-runtime.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/shared-test/rallar-bb-test.test.ts`.
+- Verified with `npm --workspace rallar-black-box run typecheck`.
+- Verified with `npm --workspace @ar-eye-hunter/shared-test run typecheck`.
+- Verified with `npm --workspace rallar-black-box run build`.
+- Verified with `npm run test:e2e:rallar-black-box`; the one-agent and two-agent live browser-Rallar smokes skipped as
+  intended without real environment variables, and the existing control-agent smoke passed.
 
 Deliverables:
 

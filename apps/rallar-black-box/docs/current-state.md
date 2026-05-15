@@ -6,7 +6,7 @@ actions, remote control commands, runtime events, stats, and reports use one com
 
 ## Implemented
 
-The implementation is complete through Iteration 15C in `implementation-plan.md`.
+The implementation is complete through Iteration 16 in `implementation-plan.md`.
 
 The shared facade exists in `packages/shared-test/rallar-bb-test` and defines:
 
@@ -84,9 +84,9 @@ This means the current app is already useful for:
 - exercising diagnostics, report, received-message, and topology surfaces
 - building repeatable recipes from manual actions
 
-It is not yet sufficient for final delivery validation of real deployed Rallar RTC behavior by itself. A gated
-connect/send smoke exists for configured real environments, but the next meaningful proof is two-agent delivery where
-one browser receives data sent by another browser.
+It has gated real-provider smokes for one-agent connect/send and two-agent delivery. Those smokes are skipped unless a
+real Rallar environment is configured. The next meaningful work is making real-provider auth failures, permission
+failures, stale sessions, and cleanup behavior easier to diagnose and repeat.
 
 ## Security State
 
@@ -110,7 +110,9 @@ These checks are necessary because the app is a remote browser-control surface.
 The main gaps are:
 
 - the default SPA mode is still simulated for offline use
-- the live `browser-rallar` connect/send smoke is environment-gated and skipped unless real Rallar config is supplied
+- the live `browser-rallar` connect/send and two-agent delivery smokes are environment-gated and skipped unless real
+  Rallar config is supplied
+- real multicast/broadcast delivery and missing/stale-agent negative cases still need larger live multi-agent coverage
 - the control server is in-memory and not restart-durable
 - monitor-server ingestion is not connected
 - long-running and seeded-random runs are still planned

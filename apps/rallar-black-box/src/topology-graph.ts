@@ -292,6 +292,17 @@ function addEdge(
 function messageTargets(event: RallarBlackBoxTestEvent): readonly string[] {
     const payload = payloadOf(event);
     const data = nestedDataOf(event);
+    const browserSender = stringValue(payload.senderId) ?? stringValue(payload.remotePeerId);
+    const browserReceiver = stringValue(payload.peerId);
+    if (
+        event.topic.startsWith('rallar.browser.') &&
+        browserSender &&
+        browserReceiver &&
+        browserSender !== browserReceiver
+    ) {
+        return [browserReceiver];
+    }
+
     return unique([
         ...stringArray(payload.peerIds),
         ...stringArray(payload.nextHopPeerIds),
@@ -306,6 +317,15 @@ function messageTargets(event: RallarBlackBoxTestEvent): readonly string[] {
 function senderId(event: RallarBlackBoxTestEvent): string | undefined {
     const payload = payloadOf(event);
     const data = nestedDataOf(event);
+    if (event.topic.startsWith('rallar.browser.')) {
+        return stringValue(payload.senderId) ??
+            stringValue(payload.remotePeerId) ??
+            stringValue(data.senderId) ??
+            stringValue(payload.peerId) ??
+            event.actor ??
+            event.connection;
+    }
+
     return stringValue(payload.senderId) ??
         stringValue(payload.peerId) ??
         stringValue(data.senderId) ??

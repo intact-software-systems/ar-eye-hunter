@@ -109,4 +109,57 @@ describe('rallar-black-box topology graph', () => {
             edges: topology.graph.size,
         });
     });
+
+    it('derives routes from real browser received-message events', () => {
+        const topology = deriveRallarTopologyGraph(baseState([
+            {
+                eventId: 'event-browser-realtime',
+                kind: 'message',
+                topic: 'rallar.browser.realtime.message',
+                atEpochMs: 140,
+                commandId: 'send-alice-bob',
+                connection: 'bobRtc',
+                actor: 'bob',
+                transport: 'realtime',
+                severity: 'info',
+                payload: {
+                    roomId: 'room-1',
+                    peerId: 'bob-session',
+                    remotePeerId: 'alice-session',
+                    data: {
+                        smokeId: 'two-agent-realtime',
+                    },
+                },
+            },
+            {
+                eventId: 'event-browser-messages-rtc',
+                kind: 'message',
+                topic: 'rallar.browser.messages.rtc.message',
+                atEpochMs: 160,
+                commandId: 'send-bob-alice',
+                connection: 'aliceRtc',
+                actor: 'alice',
+                transport: 'messages.rtc',
+                severity: 'info',
+                payload: {
+                    roomId: 'room-1',
+                    peerId: 'alice-session',
+                    remotePeerId: 'bob-session',
+                    senderId: 'bob-session',
+                    data: {
+                        smokeId: 'two-agent-messages-rtc',
+                    },
+                },
+            },
+        ]));
+
+        expect(topology.graph.hasEdge('route:session:alice-session->session:bob-session')).toBe(true);
+        expect(topology.graph.hasEdge('route:session:bob-session->session:alice-session')).toBe(true);
+        expect(topology.summary).toMatchObject({
+            rooms: 1,
+            sessions: 2,
+            routes: 2,
+            failedNodes: 0,
+        });
+    });
 });

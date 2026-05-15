@@ -1,6 +1,6 @@
 # Rallar Black Box Documentation
 
-This folder documents the current state of `apps/rallar-black-box` after Iteration 15C.
+This folder documents the current state of `apps/rallar-black-box` after Iteration 16.
 
 The app is a browser-based black-box test agent and visible debugging workbench for Rallar RTC, WebSocket, and HTTP test
 flows. It uses the shared `rallar-bb-test` command contract, can connect to a WebSocket control server, streams results
@@ -57,7 +57,8 @@ npm run test:e2e:rallar-black-box
 ```
 
 The live browser-Rallar smoke is included in that suite but skipped unless the required `VITE_RALLAR_*` environment
-variables are provided.
+variables are provided. The suite now includes one-agent connect/send smoke plus two-agent realtime and `messages.rtc`
+delivery smokes.
 
 ## Main Source Files
 

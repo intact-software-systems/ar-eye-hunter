@@ -158,8 +158,8 @@ Good signal:
 - received events can be grouped by session and transport
 - topology makes membership or route problems easier to spot
 
-Current caveat: with the fake SPA executor, this validates orchestration and diagnostics. It does not prove actual
-cross-browser Rallar data-channel delivery yet.
+In simulated mode this validates orchestration and diagnostics. With `provider=browser-rallar` and real environment
+config, the two-agent smoke validates actual cross-browser delivery.
 
 ## CI Smoke: Browser Agent Registration
 
@@ -192,6 +192,30 @@ npm run test:e2e:rallar-black-box
 Optional `VITE_RALLAR_REAL_PEER_IDS` can provide comma-separated peer IDs for direct or multicast realtime sends. Without
 peers, the smoke still verifies real connect and a safe no-peer realtime send path. The test is skipped automatically
 when the real environment variables are absent.
+
+## Live Smoke: Two-agent Delivery
+
+Goal: prove two browser agents can join the same Rallar room and exchange payloads over realtime and `messages.rtc`.
+
+Run with one shared login in isolated browser contexts:
+
+```sh
+VITE_RALLAR_API_BASE_URL=https://api.example.test \
+VITE_RALLAR_ROOM_ID=room-to-join \
+VITE_RALLAR_USERNAME=alice \
+VITE_RALLAR_PASSWORD=secret \
+VITE_RALLAR_TYPE_ID=manual.type \
+VITE_RALLAR_TOPIC_ID=manual.topic \
+npm run test:e2e:rallar-black-box
+```
+
+For separate agent credentials, use `VITE_RALLAR_AGENT_A_USERNAME`, `VITE_RALLAR_AGENT_A_PASSWORD`,
+`VITE_RALLAR_AGENT_B_USERNAME`, and `VITE_RALLAR_AGENT_B_PASSWORD`. Restored-session mode is also supported with
+per-agent `VITE_RALLAR_AGENT_A_TOKEN`, `VITE_RALLAR_AGENT_A_CLIENT_ID`, `VITE_RALLAR_AGENT_A_SESSION_ID`,
+`VITE_RALLAR_AGENT_A_USERNAME`, and equivalent agent B values.
+
+The two-agent smoke asserts command results, received-data inbox payloads, control-server message events, stats, final
+reports, close/reset cleanup commands, and absence of simulated `rallar.bb.fake.*` topics.
 
 ## Large Scale: Planned Controlled Runs
 
