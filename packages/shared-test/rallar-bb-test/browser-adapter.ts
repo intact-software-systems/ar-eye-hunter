@@ -368,11 +368,19 @@ class BrowserCommandAdapter {
             configuredRallar.apiBaseUrl,
             config?.apiBaseUrl,
         );
+        const expectedSessionId = firstDefined(
+            commandRallar.expectedSessionId,
+            commandRallar.sessionId,
+            configuredRallar.expectedSessionId,
+            configuredRallar.sessionId,
+            config?.sessionId,
+        );
         const rallar = {
             ...configuredRallar,
             ...commandRallar,
             ...(apiBaseUrl ? { apiBaseUrl } : {}),
             ...(transport ? { transport } : {}),
+            ...(expectedSessionId ? { expectedSessionId } : {}),
         };
 
         return {

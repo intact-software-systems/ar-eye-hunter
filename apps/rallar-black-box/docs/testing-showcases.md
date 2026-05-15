@@ -186,6 +186,7 @@ VITE_RALLAR_API_BASE_URL=https://api.example.test \
 VITE_RALLAR_ROOM_ID=room-to-join \
 VITE_RALLAR_USERNAME=alice \
 VITE_RALLAR_PASSWORD=secret \
+VITE_RALLAR_LOGOUT_ON_CLOSE=true \
 npm run test:e2e:rallar-black-box
 ```
 
@@ -216,6 +217,17 @@ per-agent `VITE_RALLAR_AGENT_A_TOKEN`, `VITE_RALLAR_AGENT_A_CLIENT_ID`, `VITE_RA
 
 The two-agent smoke asserts command results, received-data inbox payloads, control-server message events, stats, final
 reports, close/reset cleanup commands, and absence of simulated `rallar.bb.fake.*` topics.
+
+Cleanup options:
+
+- `VITE_RALLAR_LOGOUT_ON_CLOSE=true`: log out during real-provider close/reset cleanup
+- `VITE_RALLAR_LEAVE_ROOM_ON_CLOSE=false`: skip the default best-effort room leave during cleanup
+- `VITE_RALLAR_REGISTER=true`: register and log in before connecting when the test environment supports disposable users
+
+When auth, room join, send permission, stale session, duplicate session, or cleanup failures occur, inspect the RTC
+Diagnostics panel and copy its bundle. The bundle includes provider mode, environment, API base URL, actor/session/room,
+transport, auth-state flags, command IDs, connect stages, failure source, recent results, and recent real-provider
+events with sensitive fields redacted by the runtime redaction rules.
 
 ## Large Scale: Planned Controlled Runs
 

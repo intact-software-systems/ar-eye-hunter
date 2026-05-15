@@ -430,6 +430,11 @@ describe('rallar-black-box control client', () => {
 
             expect(localStorage.getItem('rallar-secret')).toBeNull();
             expect(sessionStorage.getItem('rallar-session-secret')).toBeNull();
+            expect(envelopes(socket).some(envelope =>
+                envelope.kind === 'diagnostic' &&
+                envelope.commandId === 'reset-1' &&
+                (envelope.payload as any).topic === 'rallar.bb.control.browser_storage_cleaned'
+            )).toBe(true);
         } finally {
             client.dispose();
             vi.unstubAllGlobals();

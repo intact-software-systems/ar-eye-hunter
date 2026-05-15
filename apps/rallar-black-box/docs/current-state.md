@@ -6,7 +6,7 @@ actions, remote control commands, runtime events, stats, and reports use one com
 
 ## Implemented
 
-The implementation is complete through Iteration 16 in `implementation-plan.md`.
+The implementation is complete through Iteration 17 in `implementation-plan.md`.
 
 The shared facade exists in `packages/shared-test/rallar-bb-test` and defines:
 
@@ -74,6 +74,9 @@ redaction, diagnostics, and reports can exercise credential-shaped config. Real 
 Provider mode is explicit. `simulated` mode is the default. `browser-rallar` can be selected through URL or Vite env
 config and requires a real Rallar API base URL plus username/password or `restoreSession=true`. A bare token is not
 currently enough for the SPA provider; restored-session mode expects a complete browser auth session in local storage.
+Real-provider close/reset cleanup unsubscribes browser listeners, leaves the joined room by default, disconnects or logs
+out when `rallarLogoutOnClose=1`, and records cleanup diagnostics. Remote reset commands also clear browser
+`localStorage` and `sessionStorage` on a best-effort basis.
 
 This means the current app is already useful for:
 
@@ -85,8 +88,8 @@ This means the current app is already useful for:
 - building repeatable recipes from manual actions
 
 It has gated real-provider smokes for one-agent connect/send and two-agent delivery. Those smokes are skipped unless a
-real Rallar environment is configured. The next meaningful work is making real-provider auth failures, permission
-failures, stale sessions, and cleanup behavior easier to diagnose and repeat.
+real Rallar environment is configured. Auth, permission, stale-session, duplicate-session, and cleanup failures now emit
+specific diagnostics and appear in the copyable RTC failure bundle.
 
 ## Security State
 
@@ -128,6 +131,7 @@ Focused checks used for the current state:
 npm --workspace rallar-black-box run build
 npm --workspace @ar-eye-hunter/shared-test run typecheck
 npm --workspace rallar-black-box run typecheck
+npm run test -- packages/tests/shared-test/rallar-browser-runtime.test.ts packages/tests/rallar-black-box/rtc-diagnostics.test.ts packages/tests/rallar-black-box/browser-rallar-runtime.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/shared-test/rallar-bb-test.test.ts packages/tests/rallar-black-box/control-client.test.ts
 npm run test -- packages/tests/rallar-black-box/browser-rallar-runtime.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/shared-test/rallar-bb-test.test.ts
 npm run test -- packages/tests/rallar-black-box/topology-graph.test.ts packages/tests/rallar-black-box/rtc-diagnostics.test.ts packages/tests/rallar-black-box/manual-workbench.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/rallar-black-box/control-client.test.ts
 npm run test:e2e:rallar-black-box

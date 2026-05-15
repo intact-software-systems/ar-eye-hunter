@@ -43,6 +43,9 @@ Useful query parameters:
 - `transport`: `realtime`, `messages.rtc`, `ws`, or `http`
 - `rallarUsername` and `rallarPassword`: login credentials for `browser-rallar`
 - `rallarRestoreSession=1`: restore an existing browser auth session for `browser-rallar`
+- `rallarRegister=1`: register and log in before connecting when the target environment supports test-user creation
+- `rallarLogoutOnClose=1`: log out during real-provider close/reset cleanup instead of only disconnecting
+- `rallarLeaveRoomOnClose=0`: opt out of the default best-effort room leave during real-provider close/reset cleanup
 - `statsIntervalMs`: periodic control stats interval
 - `reportUploadUrl`: optional REST endpoint for final reports
 

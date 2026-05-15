@@ -220,18 +220,34 @@ function toReportSummary(state: RallarBlackBoxTestState): unknown {
     };
 }
 
-function cleanupBrowserStorage(): void {
+function cleanupBrowserStorage(): Readonly<{
+    localStorage: 'cleared' | 'failed' | 'unavailable';
+    sessionStorage: 'cleared' | 'failed' | 'unavailable';
+}> {
+    let localStorage: 'cleared' | 'failed' | 'unavailable' = 'unavailable';
     try {
-        globalThis.localStorage?.clear();
+        if (globalThis.localStorage) {
+            globalThis.localStorage.clear();
+            localStorage = 'cleared';
+        }
     } catch (_error) {
-        // Storage cleanup is best-effort; reset execution still continues.
+        localStorage = 'failed';
     }
 
+    let sessionStorage: 'cleared' | 'failed' | 'unavailable' = 'unavailable';
     try {
-        globalThis.sessionStorage?.clear();
+        if (globalThis.sessionStorage) {
+            globalThis.sessionStorage.clear();
+            sessionStorage = 'cleared';
+        }
     } catch (_error) {
-        // Storage cleanup is best-effort; reset execution still continues.
+        sessionStorage = 'failed';
     }
+
+    return {
+        localStorage,
+        sessionStorage,
+    };
 }
 
 export class RallarBlackBoxControlClient {
@@ -442,7 +458,12 @@ export class RallarBlackBoxControlClient {
         }, envelope.commandId);
 
         if (command.kind === 'reset') {
-            cleanupBrowserStorage();
+            this.recordDiagnostic(
+                'rallar.bb.control.browser_storage_cleaned',
+                'info',
+                cleanupBrowserStorage(),
+                envelope.commandId,
+            );
         }
 
         const result = await this.runtime.execute(command);

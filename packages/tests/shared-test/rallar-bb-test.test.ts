@@ -33,6 +33,8 @@ describe('rallar-bb-test', () => {
             {
                 username: 'alice',
                 password: 'secret',
+                accessToken: 'access-token-123',
+                ticket: 'ticket-123',
                 headers: {
                     authorization: 'Bearer token-123',
                     traceId: 'trace-1',
@@ -49,12 +51,35 @@ describe('rallar-bb-test', () => {
         expect(redacted).toEqual({
             username: 'alice',
             password: '<redacted>',
+            accessToken: '<redacted>',
+            ticket: '<redacted>',
             headers: {
                 authorization: '<redacted>',
                 traceId: 'trace-1',
             },
             nested: {
                 message: '<redacted>',
+            },
+        });
+    });
+
+    it('can redact session identifiers when configured for exported reports', () => {
+        expect(redactRallarBlackBoxValue(
+            {
+                sessionId: 'session-1',
+                clientId: 'client-1',
+                nested: {
+                    sessionId: 'session-2',
+                },
+            },
+            {
+                keys: ['sessionId', 'clientId'],
+            },
+        )).toEqual({
+            sessionId: '<redacted>',
+            clientId: '<redacted>',
+            nested: {
+                sessionId: '<redacted>',
             },
         });
     });

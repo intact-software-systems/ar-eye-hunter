@@ -102,6 +102,8 @@ describe('rallar-black-box control bootstrap', () => {
             VITE_RALLAR_PROVIDER: 'browser-rallar',
             VITE_RALLAR_API_BASE_URL: 'https://api.example.test',
             VITE_RALLAR_RESTORE_SESSION: 'true',
+            VITE_RALLAR_LOGOUT_ON_CLOSE: 'true',
+            VITE_RALLAR_LEAVE_ROOM_ON_CLOSE: 'false',
         });
         const invalid = resolveRallarBlackBoxBootstrapConfig('?provider=unknown', {});
 
@@ -110,6 +112,8 @@ describe('rallar-black-box control bootstrap', () => {
         expect(fromUrl.rallarPassword).toBe('secret');
         expect(fromEnv.providerMode).toBe('browser-rallar');
         expect(fromEnv.rallarRestoreSession).toBe(true);
+        expect(fromEnv.rallarLogoutOnClose).toBe(true);
+        expect(fromEnv.rallarLeaveRoomOnClose).toBe(false);
         expect(invalid.providerMode).toBe('simulated');
     });
 

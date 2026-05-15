@@ -89,6 +89,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 config: {
                     apiBaseUrl: 'https://api.example.test',
                     actor: 'alice',
+                    sessionId: 'alice-session',
                     roomId: 'room-1',
                     transport: 'realtime',
                     rallar: {
@@ -145,6 +146,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 config: {
                     apiBaseUrl: 'https://api.example.test',
                     actor: 'alice',
+                    sessionId: 'alice-session',
                     roomId: 'room-1',
                     transport: 'realtime',
                     rallar: {
@@ -187,6 +189,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     username: 'alice',
                     password: 'secret',
                     transport: 'realtime',
+                    expectedSessionId: 'alice-session',
                 },
             });
             expect(send).toHaveBeenCalledWith({

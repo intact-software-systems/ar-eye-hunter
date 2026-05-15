@@ -52,6 +52,7 @@ export type RtcLatencyDiagnostics = Readonly<{
 
 export type RtcFailureDiagnostics = Readonly<{
     stageId?: RtcConnectStageId;
+    source: 'control' | 'provider-config' | 'rallar-auth' | 'rallar-permission' | 'rallar-cleanup' | 'rallar-runtime';
     eventId?: string;
     topic?: string;
     atEpochMs?: number;
@@ -125,6 +126,7 @@ function eventLooksRtcRelated(event: RallarBlackBoxTestEvent): boolean {
         event.transport === 'messages.rtc' ||
         event.kind === 'message' ||
         topic.includes('rtc') ||
+        topic.includes('rallar.bb.control') ||
         topic.includes('rallar.browser') ||
         topic.includes('realtime') ||
         topic.includes('connect') ||
@@ -358,6 +360,35 @@ function failureMessage(event: RallarBlackBoxTestEvent): string {
         event.topic;
 }
 
+function failureSource(event: RallarBlackBoxTestEvent): RtcFailureDiagnostics['source'] {
+    const topic = lowerTopic(event);
+    const phase = String(payloadOf(event).phase ?? '').toLowerCase();
+    if (topic.includes('rallar.bb.control')) {
+        return 'control';
+    }
+    if (topic.includes('provider.browser_rallar.config_invalid')) {
+        return 'provider-config';
+    }
+    if (topic.includes('auth') || topic.includes('login') || topic.includes('session')) {
+        return 'rallar-auth';
+    }
+    if (
+        topic.includes('permission') ||
+        topic.includes('forbidden') ||
+        topic.includes('unauthorized') ||
+        topic.includes('room_join_failed') ||
+        topic.includes('room-join') ||
+        phase.includes('room-join') ||
+        phase.includes('room_join')
+    ) {
+        return 'rallar-permission';
+    }
+    if (topic.includes('cleanup') || topic.includes('close')) {
+        return 'rallar-cleanup';
+    }
+    return 'rallar-runtime';
+}
+
 function deriveFailure(
     events: readonly RallarBlackBoxTestEvent[],
 ): RtcFailureDiagnostics | undefined {
@@ -368,6 +399,7 @@ function deriveFailure(
 
     return {
         stageId: rtcConnectStageIdForEvent(failure),
+        source: failureSource(failure),
         eventId: failure.eventId,
         topic: failure.topic,
         atEpochMs: failure.atEpochMs,
@@ -402,12 +434,25 @@ export function deriveRtcDiagnostics(
         agentId: state.currentConfig?.agentId,
         status: state.status,
         config: {
+            providerMode: state.currentConfig?.control?.providerMode ??
+                state.currentConfig?.defaults?.providerMode,
             environment: state.currentConfig?.environment,
+            apiBaseUrl: state.currentConfig?.apiBaseUrl,
             actor: state.currentConfig?.actor,
             sessionId: state.currentConfig?.sessionId,
             roomId: state.currentConfig?.roomId,
             transport: state.currentConfig?.transport,
+            auth: {
+                hasUsername: Boolean(state.currentConfig?.rallar?.username),
+                hasPassword: Boolean(state.currentConfig?.rallar?.password),
+                hasToken: Boolean(state.currentConfig?.rallar?.token),
+                restoreSession: state.currentConfig?.rallar?.restoreSession === true,
+                register: state.currentConfig?.rallar?.register,
+                logoutOnClose: state.currentConfig?.rallar?.logoutOnClose === true,
+                leaveRoomOnClose: state.currentConfig?.rallar?.leaveRoomOnClose,
+            },
         },
+        commandIds: recentResults.map(result => result.commandId),
         stages,
         membership,
         latency,

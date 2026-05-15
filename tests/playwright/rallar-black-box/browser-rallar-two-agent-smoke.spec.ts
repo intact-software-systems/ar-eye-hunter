@@ -316,6 +316,9 @@ function rallarConnectConfig(transport: TransportUnderTest): Record<string, unkn
     if (booleanEnv('VITE_RALLAR_LOGOUT_ON_CLOSE')) {
         rallar.logoutOnClose = true;
     }
+    if (envValue('VITE_RALLAR_LEAVE_ROOM_ON_CLOSE')) {
+        rallar.leaveRoomOnClose = booleanEnv('VITE_RALLAR_LEAVE_ROOM_ON_CLOSE');
+    }
     if (transport === 'messages.rtc') {
         rallar.typeId = messagesRtcTypeId;
         rallar.topicId = messagesRtcTopicId;

@@ -60,6 +60,8 @@ export type RallarBlackBoxBootstrapConfig = Readonly<{
     rallarToken?: string;
     rallarRegister: boolean;
     rallarRestoreSession: boolean;
+    rallarLogoutOnClose: boolean;
+    rallarLeaveRoomOnClose: boolean;
     source: 'url' | 'environment' | 'default';
 }>;
 
@@ -166,6 +168,8 @@ function bootstrapSource(
         'rallarToken',
         'rallarRegister',
         'rallarRestoreSession',
+        'rallarLogoutOnClose',
+        'rallarLeaveRoomOnClose',
     ];
     if (urlKeys.some(key => params.has(key))) {
         return 'url';
@@ -193,6 +197,8 @@ function bootstrapSource(
         'VITE_RALLAR_TOKEN',
         'VITE_RALLAR_REGISTER',
         'VITE_RALLAR_RESTORE_SESSION',
+        'VITE_RALLAR_LOGOUT_ON_CLOSE',
+        'VITE_RALLAR_LEAVE_ROOM_ON_CLOSE',
     ];
     return envKeys.some(key => env[key]) ? 'environment' : 'default';
 }
@@ -320,6 +326,13 @@ export function resolveRallarBlackBoxBootstrapConfig(
         rallarRestoreSession: booleanParamValue(
             paramValue(params, env, 'rallarRestoreSession', 'VITE_RALLAR_RESTORE_SESSION'),
         ),
+        rallarLogoutOnClose: booleanParamValue(
+            paramValue(params, env, 'rallarLogoutOnClose', 'VITE_RALLAR_LOGOUT_ON_CLOSE'),
+        ),
+        rallarLeaveRoomOnClose: booleanParamValue(
+            paramValue(params, env, 'rallarLeaveRoomOnClose', 'VITE_RALLAR_LEAVE_ROOM_ON_CLOSE'),
+            true,
+        ),
         source: bootstrapSource(params, env),
     };
 }
@@ -340,6 +353,8 @@ function rallarConfigFromBootstrap(
         ...(bootstrap.rallarPassword ? { password: bootstrap.rallarPassword } : {}),
         ...(bootstrap.rallarRegister ? { register: true } : {}),
         ...(bootstrap.rallarRestoreSession ? { restoreSession: true } : {}),
+        ...(bootstrap.rallarLogoutOnClose ? { logoutOnClose: true } : {}),
+        leaveRoomOnClose: bootstrap.rallarLeaveRoomOnClose,
     };
     return Object.keys(rallar).length > 0 ? rallar : undefined;
 }

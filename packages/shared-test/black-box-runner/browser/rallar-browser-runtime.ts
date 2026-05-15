@@ -39,6 +39,8 @@ export type BlackBoxRallarConfig = Readonly<{
     overlayId?: string;
     fanoutLimit?: number;
     dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
+    expectedSessionId?: string;
+    leaveRoomOnClose?: boolean;
     logoutOnClose?: boolean;
 }>;
 
@@ -135,6 +137,13 @@ export type BlackBoxRallarCloseDiagnostics = Readonly<{
     status: 'closed';
     connection?: string;
     actor?: string;
+    transport?: BlackBoxRallarTransport;
+    roomId?: string;
+    unsubscribed: number;
+    leftRoom: boolean;
+    logout: boolean;
+    disconnected: boolean;
+    cleanupErrors: readonly unknown[];
 }>;
 
 export type BlackBoxRallarHealthDiagnostics = Readonly<{
@@ -157,8 +166,11 @@ export type BlackBoxRallarRuntime = Readonly<{
     health(): Promise<BlackBoxRallarHealthDiagnostics>;
 }>;
 
+type RuntimeSessionDiagnostic = Pick<AuthSession, 'clientId' | 'sessionId' | 'username'>;
+
 type RuntimeState = {
     config: BlackBoxRallarConnectionConfig;
+    session: RuntimeSessionDiagnostic;
     unsubscribeRealtime?: () => void;
     unsubscribeMessagesRtc?: () => void;
 };
@@ -278,12 +290,68 @@ function serializeError(error: unknown): unknown {
     return error;
 }
 
-function toSessionDiagnostic(session: LoginResponse | AuthSession): unknown {
+function toSessionDiagnostic(session: RuntimeSessionDiagnostic): unknown {
     return {
         clientId: session.clientId,
         sessionId: session.sessionId,
         username: session.username,
     };
+}
+
+function cleanupRuntimeSubscriptions(
+    runtimeState: RuntimeState | undefined,
+    topicConfig: BlackBoxRallarConnectionConfig | undefined,
+): number {
+    let unsubscribed = 0;
+    if (runtimeState?.unsubscribeMessagesRtc) {
+        runtimeState.unsubscribeMessagesRtc();
+        unsubscribed += 1;
+    }
+    if (runtimeState?.unsubscribeRealtime) {
+        runtimeState.unsubscribeRealtime();
+        unsubscribed += 1;
+    }
+    if (unsubscribed > 0 && topicConfig) {
+        emitDiagnostic(topicConfig, 'rallar.browser.cleanup.unsubscribe_completed', {
+            unsubscribed,
+        });
+    }
+    return unsubscribed;
+}
+
+function emitSessionDiagnostics(
+    config: BlackBoxRallarConnectionConfig,
+    session: LoginResponse | AuthSession,
+    previousState: RuntimeState | undefined,
+): void {
+    const expectedSessionId = config.rallar.expectedSessionId;
+    if (expectedSessionId && expectedSessionId !== session.sessionId) {
+        emitDiagnostic(config, 'rallar.browser.session.expected_mismatch', {
+            expectedSessionId,
+            actualSessionId: session.sessionId,
+            username: session.username,
+        });
+    }
+
+    if (!previousState) {
+        return;
+    }
+
+    if (previousState.session.sessionId === session.sessionId) {
+        emitDiagnostic(config, 'rallar.browser.session.duplicate_detected', {
+            session: toSessionDiagnostic(session),
+            previousConnection: previousState.config.connection,
+            previousRoomId: previousState.config.roomId,
+        });
+        return;
+    }
+
+    emitDiagnostic(config, 'rallar.browser.session.active_replaced', {
+        previousSession: toSessionDiagnostic(previousState.session),
+        nextSession: toSessionDiagnostic(session),
+        previousConnection: previousState.config.connection,
+        previousRoomId: previousState.config.roomId,
+    });
 }
 
 function toDiagnosticObject(data?: unknown): Record<string, unknown> {
@@ -441,6 +509,8 @@ async function connect(
             sessionId: session.sessionId,
             username: session.username,
         });
+        const previousState = state;
+        emitSessionDiagnostics(config, session, previousState);
 
         phase = 'rallar-connect';
         emitConnectPhaseStarted(config, phase, {
@@ -519,9 +589,8 @@ async function connect(
             topicId,
         });
 
-        state?.unsubscribeMessagesRtc?.();
-        state?.unsubscribeRealtime?.();
-        state = { config, unsubscribeRealtime, unsubscribeMessagesRtc };
+        cleanupRuntimeSubscriptions(previousState, config);
+        state = { config, session, unsubscribeRealtime, unsubscribeMessagesRtc };
 
         const diagnostics: BlackBoxRallarConnectDiagnostics = {
             status: 'connected',
@@ -782,19 +851,81 @@ async function sendMessagesRtc(
 async function close(): Promise<BlackBoxRallarCloseDiagnostics> {
     const runtimeState = state;
     const config = runtimeState?.config;
+    const cleanupErrors: unknown[] = [];
+    let unsubscribed = 0;
+    let leftRoom = false;
+    let logout = false;
+    let disconnected = false;
     try {
-        runtimeState?.unsubscribeMessagesRtc?.();
-        runtimeState?.unsubscribeRealtime?.();
+        if (config) {
+            emitDiagnostic(config, 'rallar.browser.cleanup.started', {
+                roomId: config.roomId,
+                logoutOnClose: config.rallar.logoutOnClose === true,
+                leaveRoomOnClose: config.rallar.leaveRoomOnClose !== false,
+            });
+        }
+
+        try {
+            unsubscribed = cleanupRuntimeSubscriptions(runtimeState, config);
+        } catch (error) {
+            cleanupErrors.push(serializeError(error));
+            emitError(config, 'rallar.browser.cleanup.unsubscribe_failed', error);
+        }
+
+        if (config?.roomId && config.rallar.leaveRoomOnClose !== false) {
+            emitDiagnostic(config, 'rallar.browser.cleanup.room_leave_started', {
+                roomId: config.roomId,
+            });
+            try {
+                await rallar.rooms.leave({
+                    roomId: config.roomId,
+                    clearCurrent: true,
+                    timeoutMs: config.rallar.timeoutMs,
+                });
+                leftRoom = true;
+                emitDiagnostic(config, 'rallar.browser.cleanup.room_leave_completed', {
+                    roomId: config.roomId,
+                });
+            } catch (error) {
+                cleanupErrors.push(serializeError(error));
+                emitError(config, 'rallar.browser.cleanup.room_leave_failed', error, {
+                    roomId: config.roomId,
+                });
+            }
+        } else if (config) {
+            emitDiagnostic(config, 'rallar.browser.cleanup.room_leave_skipped', {
+                roomId: config.roomId,
+                leaveRoomOnClose: config.rallar.leaveRoomOnClose,
+            });
+        }
+
         if (config?.rallar.logoutOnClose) {
+            emitDiagnostic(config, 'rallar.browser.cleanup.logout_started');
             await rallar.auth.logout({ timeoutMs: config.rallar.timeoutMs });
+            logout = true;
+            emitDiagnostic(config, 'rallar.browser.cleanup.logout_completed');
         } else {
+            if (config) {
+                emitDiagnostic(config, 'rallar.browser.cleanup.disconnect_started');
+            }
             await rallar.disconnect();
+            disconnected = true;
+            if (config) {
+                emitDiagnostic(config, 'rallar.browser.cleanup.disconnect_completed');
+            }
         }
         state = undefined;
         const diagnostics: BlackBoxRallarCloseDiagnostics = {
             status: 'closed',
             connection: config?.connection,
             actor: config?.actor,
+            transport: config ? transportOf(config) : undefined,
+            roomId: config?.roomId,
+            unsubscribed,
+            leftRoom,
+            logout,
+            disconnected,
+            cleanupErrors,
         };
         emit({
             kind: 'close',

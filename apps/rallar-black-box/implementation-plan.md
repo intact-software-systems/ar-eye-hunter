@@ -1111,11 +1111,43 @@ Deliverables:
 
 Make real-provider failures useful and safe to run repeatedly.
 
-Status: planned.
+Status: completed.
 
 Results:
 
-- Not started.
+- Added real-provider cleanup options and diagnostics to
+  `packages/shared-test/black-box-runner/browser/rallar-browser-runtime.ts`.
+- `close` now unsubscribes realtime and `messages.rtc` listeners, leaves the joined room by default when a room is known,
+  and then either disconnects or logs out when `logoutOnClose` is enabled.
+- Added `leaveRoomOnClose` and `expectedSessionId` support to the browser Rallar runtime config.
+- Passed the configured SPA `sessionId` through the shared browser adapter as `rallar.expectedSessionId` so the real
+  provider can flag restored-session mismatches.
+- Added real-provider diagnostics for expected-session mismatch, duplicate active sessions, active-session replacement,
+  cleanup start, unsubscribe completion/failure, room leave start/completion/failure/skipped, disconnect
+  start/completion, logout start/completion, and close failure.
+- Added bootstrap config for `rallarLogoutOnClose` / `VITE_RALLAR_LOGOUT_ON_CLOSE` and
+  `rallarLeaveRoomOnClose` / `VITE_RALLAR_LEAVE_ROOM_ON_CLOSE`.
+- Remote reset commands now record a `rallar.bb.control.browser_storage_cleaned` diagnostic with best-effort
+  `localStorage` and `sessionStorage` cleanup status.
+- Expanded RTC diagnostics failure bundles with provider mode, API base URL, auth-state flags, command IDs, and a failure
+  source classifier that separates control protocol errors, provider-config errors, Rallar auth failures, permission or
+  room-join failures, cleanup failures, and generic Rallar runtime failures.
+- Added focused browser-runtime tests for missing/restored-session auth failure, bad credentials, room-join failure,
+  forbidden send target failure, room-leave plus logout cleanup, expected-session mismatch, and duplicate-session
+  diagnostics.
+- Added redaction coverage for password, access token, ticket, authorization header, secret values, and opt-in session
+  identifier redaction for exported reports.
+- Added control-client coverage for browser storage cleanup diagnostics.
+- Documented username/password, restore-session, registration, logout, room-leave, token, and failure-bundle behavior.
+- Local verification covered mocked auth failures, mocked permission/cleanup failures, redaction, diagnostics, and control
+  cleanup behavior. No live Rallar environment variables were available in this workspace, so real auth/permission
+  negative cases were not executed against a deployed Rallar service here.
+- Verified with `npm run test -- packages/tests/shared-test/rallar-browser-runtime.test.ts packages/tests/rallar-black-box/rtc-diagnostics.test.ts packages/tests/rallar-black-box/browser-rallar-runtime.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/shared-test/rallar-bb-test.test.ts packages/tests/rallar-black-box/control-client.test.ts`.
+- Verified with `npm --workspace @ar-eye-hunter/shared-test run typecheck`.
+- Verified with `npm --workspace rallar-black-box run typecheck`.
+- Verified with `npm --workspace rallar-black-box run build`.
+- Verified with `npm run test:e2e:rallar-black-box`; the live browser-Rallar smokes skipped as intended without real
+  environment variables, and the existing control-agent smoke passed.
 
 Deliverables:
 

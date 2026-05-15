@@ -44,6 +44,10 @@ real runtime state and realistic diagnostic/message events for offline UI work. 
 selected with real Rallar config, the runtime store uses the browser adapter and calls the browser Rallar facade for
 RTC, WebSocket, HTTP, health, close, and reset behavior.
 
+Real-provider cleanup is observable. Close/reset commands unsubscribe realtime and `messages.rtc` listeners, leave the
+joined room by default, then either disconnect or log out when `rallarLogoutOnClose=1` is configured. Remote reset
+commands also clear browser `localStorage` and `sessionStorage` before executing the runtime reset.
+
 ## Remote Control Path
 
 Remote commands follow this path:

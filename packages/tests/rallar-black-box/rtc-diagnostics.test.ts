@@ -58,6 +58,17 @@ function state(
             sessionId: 'alice-session',
             roomId: 'room-1',
             transport: 'realtime',
+            apiBaseUrl: 'https://api.example.test',
+            control: {
+                providerMode: 'browser-rallar',
+            },
+            rallar: {
+                username: 'alice',
+                password: '<redacted>',
+                restoreSession: true,
+                logoutOnClose: true,
+                leaveRoomOnClose: true,
+            },
             defaults: {
                 connection: 'aliceRtc',
             },
@@ -173,6 +184,19 @@ describe('rallar-black-box RTC diagnostics', () => {
             runId: 'run-1',
             agentId: 'agent-1',
             status: 'completed',
+            config: {
+                providerMode: 'browser-rallar',
+                environment: undefined,
+                apiBaseUrl: 'https://api.example.test',
+                auth: {
+                    hasUsername: true,
+                    hasPassword: true,
+                    restoreSession: true,
+                    logoutOnClose: true,
+                    leaveRoomOnClose: true,
+                },
+            },
+            commandIds: ['connect-1', 'send-1'],
         });
     });
 
@@ -205,8 +229,38 @@ describe('rallar-black-box RTC diagnostics', () => {
         });
         expect(diagnostics.failure).toMatchObject({
             stageId: 'data-channel',
+            source: 'rallar-runtime',
             message: 'channel timeout',
         });
         expect(diagnostics.membership.missingClients).toEqual(['bob-session']);
+    });
+
+    it('classifies control, provider config, auth, permission, and cleanup failures', () => {
+        const cases = [
+            ['rallar.bb.control.protocol_error', 'control'],
+            ['rallar.bb.provider.browser_rallar.config_invalid', 'provider-config'],
+            ['rallar.browser.auth.login_failed', 'rallar-auth'],
+            ['rallar.browser.connect.phase_failed', 'rallar-permission'],
+            ['rallar.browser.cleanup.room_leave_failed', 'rallar-cleanup'],
+        ] as const;
+
+        for (const [topic, source] of cases) {
+            const diagnostics = deriveRtcDiagnostics(state([
+                {
+                    ...event('event-failure', topic, 150, {
+                        phase: topic.includes('phase_failed') ? 'room-join' : undefined,
+                        error: {
+                            message: 'failure',
+                        },
+                    }),
+                    severity: 'error',
+                },
+            ]));
+
+            expect(diagnostics.failure).toMatchObject({
+                source,
+                message: 'failure',
+            });
+        }
     });
 });
