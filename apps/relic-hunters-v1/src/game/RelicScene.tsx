@@ -78,6 +78,7 @@ type RelicSceneProps = Readonly<{
     selectedRoomId?: string;
     primedAction?: RelicActionInput;
     focusRoomId?: string;
+    rtcReady?: boolean;
     onSelectRoom(roomId: string): void;
     onPrimeAction?(action: RelicActionInput): void;
 }>;
@@ -125,6 +126,7 @@ type SceneRuntime = Readonly<{
     seenEventIds: Set<string>;
     eventPlaybackPrimed: { value: boolean };
     focusRoomId: { value?: string };
+    rtcReady: { value: boolean };
     prompt: { value?: ScenePrompt };
     onPromptChange: { value(prompt?: ScenePrompt): void };
     inspection: { value?: InspectionFocus };
@@ -149,6 +151,7 @@ export function RelicScene({
                                selectedRoomId,
                                primedAction,
                                focusRoomId,
+                               rtcReady = false,
                                onSelectRoom,
                                onPrimeAction,
                            }: RelicSceneProps) {
@@ -160,6 +163,7 @@ export function RelicScene({
     const localPlayerIdRef = useRef(localPlayerId);
     const selectedRoomIdRef = useRef(selectedRoomId);
     const primedActionRef = useRef(primedAction);
+    const rtcReadyRef = useRef(rtcReady);
     const onSelectRoomRef = useRef(onSelectRoom);
     const onPrimeActionRef = useRef(onPrimeAction);
     const sceneObjective = deriveSceneObjective({
@@ -186,6 +190,13 @@ export function RelicScene({
             runtimeRef.current.primedAction.value = primedAction;
         }
     }, [primedAction]);
+
+    useEffect(() => {
+        rtcReadyRef.current = rtcReady;
+        if (runtimeRef.current) {
+            runtimeRef.current.rtcReady.value = rtcReady;
+        }
+    }, [rtcReady]);
 
     useEffect(() => {
         if (runtimeRef.current) {
@@ -429,6 +440,7 @@ export function RelicScene({
             seenEventIds: new Set(),
             eventPlaybackPrimed: { value: false },
             focusRoomId: { value: undefined },
+            rtcReady: { value: rtcReadyRef.current },
             prompt: { value: undefined },
             onPromptChange: { value: setScenePrompt },
             inspection: { value: undefined },
@@ -559,11 +571,6 @@ export function RelicScene({
         window.addEventListener('keydown', keydown);
         window.addEventListener('keyup', keyup);
 
-        const unsubPos = rallar.messages.rtc.onMessage<RelicPosUpdate>(POS_TYPE_ID, (msg) => {
-            const { pid, x, z, r } = msg.payload;
-            runtime.remotePositions.set(pid, { x, z, yaw: r, t: performance.now() });
-        });
-
         engine.runRenderLoop(() => {
             updateRuntime(runtime);
             scene.render();
@@ -578,12 +585,27 @@ export function RelicScene({
             document.removeEventListener('pointerlockchange', pointerlockchange);
             window.removeEventListener('keydown', keydown);
             window.removeEventListener('keyup', keyup);
-            unsubPos();
             scene.dispose();
             engine.dispose();
             runtimeRef.current = undefined;
         };
     }, []);
+
+    useEffect(() => {
+        if (!rtcReady) {
+            return;
+        }
+
+        const runtime = runtimeRef.current;
+        if (!runtime) {
+            return;
+        }
+
+        return rallar.messages.rtc.onMessage<RelicPosUpdate>(POS_TYPE_ID, (msg) => {
+            const { pid, x, z, r } = msg.payload;
+            runtime.remotePositions.set(pid, { x, z, yaw: r, t: performance.now() });
+        });
+    }, [rtcReady]);
 
     useEffect(() => {
         const runtime = runtimeRef.current;
@@ -1465,6 +1487,7 @@ function updateRuntime(runtime: SceneRuntime): void {
 }
 
 function broadcastLocalPosition(runtime: SceneRuntime): void {
+    if (!runtime.rtcReady.value) return;
     const now = performance.now();
     if (now - runtime.lastPosBroadcastMs.value < POS_BROADCAST_INTERVAL_MS) return;
     const snapshot = runtime.snapshot.value;

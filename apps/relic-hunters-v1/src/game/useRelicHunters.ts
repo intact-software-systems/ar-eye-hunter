@@ -1,31 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { rallar, type RallarRoomSummary } from '@shared-web/browser/rallar.ts';
+import type { RallarRoomState, RallarRoomSummary } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import {
-    RELIC_PROTOCOL_VERSION,
-    RELIC_TOPICS,
-    RELIC_TYPES,
     type RelicActionInput,
     type RelicCharacterId,
-    type RelicCommand,
     type RelicPublicSnapshot,
     type RelicServerEvent,
     isRelicSnapshot,
 } from '@relic-hunters/mod.ts';
-import { fetchRelicSnapshot, resetRelicGame, sendRelicCommand } from './api.ts';
-
-const ROOM_NAME = 'Relic Hunters Expedition';
-
-type ConnectionState = 'signed-out' | 'connecting' | 'connected' | 'error';
-type RelicCommandDraft =
-    | Readonly<{ kind: 'join-expedition'; characterId?: RelicCharacterId }>
-    | Readonly<{ kind: 'start-expedition' }>
-    | Readonly<{ kind: 'submit-action'; action: RelicActionInput }>
-    | Readonly<{ kind: 'set-round-limit'; timeLimitMs: number }>;
+import {
+    initialRelicDiagnostics,
+    RelicHuntersRuntime,
+    type RelicCommandDraft,
+    type RelicHuntersRuntimePhase,
+    type RelicRuntimeDiagnostics,
+    toErrorMessage,
+} from './relic-hunters-runtime.ts';
+import {
+    type RelicSnapshotSource,
+    shouldAcceptRelicSnapshot,
+} from './relic-snapshot-ordering.ts';
 
 export type RelicHuntersConnection = Readonly<{
     session?: AuthSession;
-    connectionState: ConnectionState;
+    connectionState: RelicHuntersRuntimePhase;
+    diagnostics: RelicRuntimeDiagnostics;
     error?: string;
     roomId?: string;
     rooms: readonly RallarRoomSummary[];
@@ -44,11 +43,17 @@ export type RelicHuntersConnection = Readonly<{
 }>;
 
 export function useRelicHunters(): RelicHuntersConnection {
-    const [session, setSession] = useState<AuthSession | undefined>(() =>
-        rallar.auth.restore()
+    const runtimeRef = useRef<RelicHuntersRuntime | undefined>(undefined);
+    runtimeRef.current ??= new RelicHuntersRuntime();
+    const runtime = runtimeRef.current;
+    const initialSessionRef = useRef<AuthSession | undefined>(runtime.restoreSession());
+
+    const [session, setSession] = useState<AuthSession | undefined>(initialSessionRef.current);
+    const [connectionState, setConnectionState] = useState<RelicHuntersRuntimePhase>(
+        () => initialSessionRef.current ? 'connecting' : 'signed-out',
     );
-    const [connectionState, setConnectionState] = useState<ConnectionState>(
-        () => session ? 'connecting' : 'signed-out',
+    const [diagnostics, setDiagnostics] = useState<RelicRuntimeDiagnostics>(
+        () => initialRelicDiagnostics(initialSessionRef.current),
     );
     const [error, setError] = useState<string | undefined>();
     const [roomId, setRoomId] = useState<string | undefined>();
@@ -56,14 +61,98 @@ export function useRelicHunters(): RelicHuntersConnection {
     const [snapshot, setSnapshot] = useState<RelicPublicSnapshot | undefined>();
     const sessionRef = useRef<AuthSession | undefined>(session);
     const roomIdRef = useRef<string | undefined>(roomId);
+    const snapshotRef = useRef<RelicPublicSnapshot | undefined>(snapshot);
+    const unsubscribeRef = useRef<(() => void) | undefined>(undefined);
+    const commandInFlightRef = useRef<string | undefined>(undefined);
+    const roomSnapshotRequestRef = useRef(0);
+
+    const setPhase = useCallback((
+        phase: RelicHuntersRuntimePhase,
+        patch: Partial<RelicRuntimeDiagnostics> = {},
+    ) => {
+        setConnectionState(phase);
+        setDiagnostics((prev) => ({
+            ...prev,
+            ...patch,
+            phase,
+        }));
+    }, []);
 
     useEffect(() => {
         sessionRef.current = session;
+        setDiagnostics((prev) => ({
+            ...prev,
+            authenticated: !!session,
+        }));
     }, [session]);
 
     useEffect(() => {
         roomIdRef.current = roomId;
+        setDiagnostics((prev) => ({
+            ...prev,
+            roomId,
+            roomReady: !!roomId,
+            rtcReady: prev.middlewareConnected && !!roomId,
+        }));
     }, [roomId]);
+
+    useEffect(() => {
+        snapshotRef.current = snapshot;
+        setDiagnostics((prev) => ({
+            ...prev,
+            snapshotReady: !!snapshot,
+            rtcReady: prev.middlewareConnected && !!roomIdRef.current,
+        }));
+    }, [snapshot]);
+
+    const clearSnapshot = useCallback(() => {
+        snapshotRef.current = undefined;
+        setSnapshot(undefined);
+        setDiagnostics((prev) => ({
+            ...prev,
+            snapshotReady: false,
+            lastSnapshotSource: undefined,
+        }));
+    }, []);
+
+    const acceptSnapshotCandidate = useCallback((
+        next: RelicPublicSnapshot,
+        source: RelicSnapshotSource,
+        expectedRoomId = roomIdRef.current,
+    ): boolean => {
+        if (!shouldAcceptRelicSnapshot({
+            current: snapshotRef.current,
+            candidate: next,
+            expectedRoomId,
+        })) {
+            setDiagnostics((prev) => ({
+                ...prev,
+                ignoredSnapshotCount: prev.ignoredSnapshotCount + 1,
+            }));
+            return false;
+        }
+
+        snapshotRef.current = next;
+        setSnapshot(next);
+        setDiagnostics((prev) => ({
+            ...prev,
+            snapshotReady: true,
+            lastSnapshotSource: source,
+            lastHydratedAtEpochMs: Date.now(),
+        }));
+        return true;
+    }, []);
+
+    const closeSubscriptions = useCallback(() => {
+        unsubscribeRef.current?.();
+        unsubscribeRef.current = undefined;
+        setDiagnostics((prev) => ({
+            ...prev,
+            wsListenerReady: false,
+            roomListenerReady: false,
+            rtcReady: false,
+        }));
+    }, []);
 
     const acceptSnapshot = useCallback((value: unknown) => {
         const next = isRelicServerEvent(value) ? value.snapshot : value;
@@ -71,151 +160,268 @@ export function useRelicHunters(): RelicHuntersConnection {
             return;
         }
 
-        setSnapshot(next);
-    }, []);
+        acceptSnapshotCandidate(next, 'rallar-ws');
+    }, [acceptSnapshotCandidate]);
 
-    const connect = useCallback(async () => {
-        const restored = rallar.auth.restore();
-        if (!restored) {
-            setSession(undefined);
-            setConnectionState('signed-out');
-            return;
-        }
-
-        setConnectionState('connecting');
-        setError(undefined);
+    const hydrateSnapshotForRoom = useCallback(async (nextRoomId: string) => {
+        const requestId = ++roomSnapshotRequestRef.current;
         try {
-            await rallar.connect();
-            const roomState = await rallar.rooms.refresh();
-            const nextRoomId = roomState.currentRoomId;
-            setSession(restored);
-            setRooms(roomState.rooms);
-            setRoomId(nextRoomId);
-            setConnectionState('connected');
-            if (nextRoomId) {
-                setSnapshot(await fetchRelicSnapshot(nextRoomId));
+            const next = await runtime.fetchSnapshot(nextRoomId);
+            if (requestId === roomSnapshotRequestRef.current) {
+                const accepted = next
+                    ? acceptSnapshotCandidate(next, 'room-hydration', nextRoomId)
+                    : false;
+                if (next) {
+                    if (!accepted && snapshotRef.current?.roomId !== nextRoomId) {
+                        clearSnapshot();
+                    }
+                } else {
+                    clearSnapshot();
+                }
+                setDiagnostics((prev) => ({ ...prev, lastError: undefined }));
             }
         } catch (err) {
-            setConnectionState('error');
-            setError(toErrorMessage(err));
+            if (requestId === roomSnapshotRequestRef.current) {
+                setError(toErrorMessage(err));
+                setPhase('degraded', {
+                    lastError: toErrorMessage(err),
+                    snapshotReady: false,
+                });
+            }
         }
-    }, []);
+    }, [acceptSnapshotCandidate, clearSnapshot, runtime, setPhase]);
 
-    useEffect(() => {
-        void connect();
-    }, [connect]);
+    const applyRoomState = useCallback((state: RallarRoomState) => {
+        const nextRoomId = state.currentRoomId;
+        const previousRoomId = roomIdRef.current;
+        roomIdRef.current = nextRoomId;
+        setRooms(state.rooms);
+        setRoomId(nextRoomId);
+        setDiagnostics((prev) => ({
+            ...prev,
+            roomReady: !!nextRoomId,
+            roomId: nextRoomId,
+            rtcReady: prev.middlewareConnected && !!nextRoomId,
+        }));
 
-    useEffect(() => {
-        if (connectionState !== 'connected') {
+        if (!nextRoomId) {
+            clearSnapshot();
             return;
         }
 
-        const unsubscribeSnapshots = rallar.messages.ws.onMessage<RelicServerEvent>(
-            {
-                topicId: RELIC_TOPICS.snapshot,
-                typeId: RELIC_TYPES.snapshot,
-            },
-            (message) => acceptSnapshot(message.payload),
-        );
-        const unsubscribeRooms = rallar.rooms.onChange((state) => {
-            setRooms(state.rooms);
-            setRoomId(state.currentRoomId);
+        if (nextRoomId !== previousRoomId) {
+            clearSnapshot();
+            void hydrateSnapshotForRoom(nextRoomId);
+        }
+    }, [clearSnapshot, hydrateSnapshotForRoom]);
+
+    const connectAndHydrate = useCallback(async () => {
+        const restored = runtime.restoreSession();
+        closeSubscriptions();
+
+        if (!restored) {
+            setSession(undefined);
+            setRooms([]);
+            setRoomId(undefined);
+            roomIdRef.current = undefined;
+            clearSnapshot();
+            setError(undefined);
+            setPhase('signed-out', initialRelicDiagnostics(undefined));
+            return;
+        }
+
+        setSession(restored);
+        setError(undefined);
+        setPhase('connecting', {
+            authenticated: true,
+            middlewareConnected: false,
+            roomReady: false,
+            snapshotReady: false,
+            wsListenerReady: false,
+            roomListenerReady: false,
+            rtcReady: false,
+            lastError: undefined,
         });
 
-        return () => {
-            unsubscribeSnapshots();
-            unsubscribeRooms();
-        };
-    }, [acceptSnapshot, connectionState]);
+        try {
+            const hydration = await runtime.connectAndHydrate(
+                acceptSnapshot,
+                applyRoomState,
+            );
+            if (!hydration) {
+                setPhase('signed-out', initialRelicDiagnostics(undefined));
+                return;
+            }
+
+            unsubscribeRef.current = hydration.unsubscribe;
+            setSession(hydration.session);
+            setRooms(hydration.roomState.rooms);
+            setRoomId(hydration.roomState.currentRoomId);
+            roomIdRef.current = hydration.roomState.currentRoomId;
+            const snapshotAccepted = hydration.snapshot
+                ? acceptSnapshotCandidate(
+                    hydration.snapshot,
+                    'bootstrap',
+                    hydration.roomState.currentRoomId,
+                )
+                : false;
+            if (!hydration.snapshot ||
+                (hydration.roomState.currentRoomId &&
+                    !snapshotAccepted &&
+                    snapshotRef.current?.roomId !== hydration.roomState.currentRoomId)) {
+                clearSnapshot();
+            }
+            const ready = !!hydration.roomState.currentRoomId && snapshotAccepted;
+            setPhase(hydration.degradedError ? 'degraded' : ready ? 'ready' : 'connected', {
+                authenticated: true,
+                middlewareConnected: true,
+                roomReady: !!hydration.roomState.currentRoomId,
+                snapshotReady: snapshotAccepted,
+                wsListenerReady: hydration.snapshotListenerReady,
+                roomListenerReady: hydration.roomListenerReady,
+                rtcReady: !!hydration.roomState.currentRoomId,
+                roomId: hydration.roomState.currentRoomId,
+                lastHydratedAtEpochMs: Date.now(),
+                lastError: hydration.degradedError,
+            });
+            if (hydration.degradedError) {
+                setError(hydration.degradedError);
+            }
+        } catch (err) {
+            const message = toErrorMessage(err);
+            setError(message);
+            setPhase('error', {
+                authenticated: true,
+                middlewareConnected: false,
+                roomReady: false,
+                snapshotReady: false,
+                wsListenerReady: false,
+                roomListenerReady: false,
+                rtcReady: false,
+                lastError: message,
+            });
+        }
+    }, [
+        acceptSnapshot,
+        acceptSnapshotCandidate,
+        applyRoomState,
+        clearSnapshot,
+        closeSubscriptions,
+        runtime,
+        setPhase,
+    ]);
 
     useEffect(() => {
-        if (!session || !roomId || connectionState !== 'connected') {
-            setSnapshot(undefined);
-            return;
-        }
-
-        let active = true;
-        fetchRelicSnapshot(roomId)
-            .then((next) => {
-                if (active) {
-                    setSnapshot(next);
-                }
-            })
-            .catch((err) => {
-                if (active) {
-                    setError(toErrorMessage(err));
-                }
-            });
-
+        void connectAndHydrate();
         return () => {
-            active = false;
+            closeSubscriptions();
         };
-    }, [connectionState, roomId, session]);
+    }, [closeSubscriptions, connectAndHydrate]);
 
     const refreshRooms = useCallback(async () => {
-        const state = await rallar.rooms.refresh();
-        setRooms(state.rooms);
-        setRoomId(state.currentRoomId);
-    }, []);
+        const state = await runtime.refreshRooms();
+        applyRoomState(state);
+    }, [applyRoomState, runtime]);
 
     const login = useCallback(async (username: string, password: string) => {
-        setConnectionState('connecting');
+        closeSubscriptions();
         setError(undefined);
+        setPhase('authenticating', {
+            authenticated: false,
+            middlewareConnected: false,
+            lastError: undefined,
+        });
         try {
-            const response = await rallar.auth.login({ username, password });
-            setSession(response);
-            await connect();
+            setSession(await runtime.login(username, password));
+            await connectAndHydrate();
         } catch (err) {
-            setConnectionState('error');
-            setError(toErrorMessage(err));
+            const message = toErrorMessage(err);
+            setError(message);
+            setPhase('error', { lastError: message });
         }
-    }, [connect]);
+    }, [closeSubscriptions, connectAndHydrate, runtime, setPhase]);
 
     const register = useCallback(async (
         username: string,
         password: string,
         displayName?: string,
     ) => {
-        setConnectionState('connecting');
+        closeSubscriptions();
         setError(undefined);
+        setPhase('authenticating', {
+            authenticated: false,
+            middlewareConnected: false,
+            lastError: undefined,
+        });
         try {
-            const response = await rallar.auth.registerAndLogin({
-                username,
-                password,
-                displayName: displayName || username,
-            });
-            setSession(response);
-            await connect();
+            setSession(await runtime.register(username, password, displayName));
+            await connectAndHydrate();
         } catch (err) {
-            setConnectionState('error');
-            setError(toErrorMessage(err));
+            const message = toErrorMessage(err);
+            setError(message);
+            setPhase('error', { lastError: message });
         }
-    }, [connect]);
+    }, [closeSubscriptions, connectAndHydrate, runtime, setPhase]);
 
     const logout = useCallback(async () => {
-        await rallar.auth.logout();
+        closeSubscriptions();
+        await runtime.logout();
+        commandInFlightRef.current = undefined;
         setSession(undefined);
         setRoomId(undefined);
+        roomIdRef.current = undefined;
         setRooms([]);
-        setSnapshot(undefined);
-        setConnectionState('signed-out');
-    }, []);
+        clearSnapshot();
+        setError(undefined);
+        setPhase('signed-out', initialRelicDiagnostics(undefined));
+    }, [clearSnapshot, closeSubscriptions, runtime, setPhase]);
+
+    const hydrateRoom = useCallback(async (work: () => Promise<{
+        roomId: string;
+        roomState: RallarRoomState;
+        snapshot?: RelicPublicSnapshot;
+    }>) => {
+        setError(undefined);
+        setPhase('joining-room', {
+            lastError: undefined,
+            roomReady: false,
+            snapshotReady: false,
+        });
+        try {
+            const result = await work();
+            setRoomId(result.roomId);
+            setRooms(result.roomState.rooms);
+            roomIdRef.current = result.roomId;
+            const snapshotAccepted = result.snapshot
+                ? acceptSnapshotCandidate(result.snapshot, 'room-hydration', result.roomId)
+                : false;
+            if (!result.snapshot ||
+                (!snapshotAccepted && snapshotRef.current?.roomId !== result.roomId)) {
+                clearSnapshot();
+            }
+            setPhase(snapshotAccepted ? 'ready' : 'degraded', {
+                middlewareConnected: true,
+                roomReady: true,
+                snapshotReady: snapshotAccepted,
+                rtcReady: true,
+                roomId: result.roomId,
+                lastHydratedAtEpochMs: Date.now(),
+                lastError: snapshotAccepted ? undefined : 'No current relic snapshot accepted for room.',
+            });
+        } catch (err) {
+            const message = toErrorMessage(err);
+            setError(message);
+            setPhase('error', { lastError: message });
+        }
+    }, [acceptSnapshotCandidate, clearSnapshot, setPhase]);
 
     const createRoom = useCallback(async () => {
-        const created = await rallar.rooms.create({
-            displayName: ROOM_NAME,
-        });
-        setRoomId(created.group.groupId);
-        setSnapshot(await fetchRelicSnapshot(created.group.groupId));
-        await refreshRooms();
-    }, [refreshRooms]);
+        await hydrateRoom(() => runtime.createRoom());
+    }, [hydrateRoom, runtime]);
 
     const joinRoom = useCallback(async (nextRoomId: string) => {
-        const joined = await rallar.rooms.join(nextRoomId);
-        setRoomId(joined.group.groupId);
-        setSnapshot(await fetchRelicSnapshot(joined.group.groupId));
-        await refreshRooms();
-    }, [refreshRooms]);
+        await hydrateRoom(() => runtime.joinRoom(nextRoomId));
+    }, [hydrateRoom, runtime]);
 
     const sendCommand = useCallback(async (
         input: RelicCommandDraft,
@@ -225,21 +431,43 @@ export function useRelicHunters(): RelicHuntersConnection {
         if (!currentSession || !currentRoomId) {
             return;
         }
-        setError(undefined);
 
-        const command = {
-            protocolVersion: RELIC_PROTOCOL_VERSION,
-            gameId: currentRoomId,
-            username: currentSession.username,
-            ...input,
-        } as RelicCommand;
+        const commandKey = commandInFlightKey(input);
+        if (commandInFlightRef.current === commandKey) {
+            return;
+        }
+
+        commandInFlightRef.current = commandKey;
+        setError(undefined);
+        setDiagnostics((prev) => ({
+            ...prev,
+            commandInFlight: commandKey,
+            lastError: undefined,
+        }));
 
         try {
-            setSnapshot(await sendRelicCommand(currentRoomId, command));
+            const next = await runtime.sendCommand(currentSession, currentRoomId, input);
+            if (next) {
+                acceptSnapshotCandidate(next, 'rest-command', currentRoomId);
+            }
+            const snapshotReady = !!snapshotRef.current;
+            setPhase(snapshotReady ? 'ready' : 'degraded', {
+                snapshotReady,
+                lastHydratedAtEpochMs: Date.now(),
+                lastError: next ? undefined : 'No relic snapshot returned for command.',
+            });
         } catch (err) {
-            setError(toErrorMessage(err));
+            const message = toErrorMessage(err);
+            setError(message);
+            setPhase('degraded', { lastError: message });
+        } finally {
+            commandInFlightRef.current = undefined;
+            setDiagnostics((prev) => ({
+                ...prev,
+                commandInFlight: undefined,
+            }));
         }
-    }, []);
+    }, [acceptSnapshotCandidate, runtime, setPhase]);
 
     const joinExpedition = useCallback(async (characterId?: RelicCharacterId) => {
         await sendCommand({ kind: 'join-expedition', characterId });
@@ -266,12 +494,29 @@ export function useRelicHunters(): RelicHuntersConnection {
             return;
         }
 
-        setSnapshot(await resetRelicGame(currentRoomId));
-    }, []);
+        setError(undefined);
+        try {
+            const next = await runtime.resetExpedition(currentRoomId);
+            if (next) {
+                acceptSnapshotCandidate(next, 'rest-reset', currentRoomId);
+            }
+            const snapshotReady = !!snapshotRef.current;
+            setPhase(snapshotReady ? 'ready' : 'degraded', {
+                snapshotReady,
+                lastHydratedAtEpochMs: Date.now(),
+                lastError: next ? undefined : 'No relic snapshot returned for reset.',
+            });
+        } catch (err) {
+            const message = toErrorMessage(err);
+            setError(message);
+            setPhase('degraded', { lastError: message });
+        }
+    }, [acceptSnapshotCandidate, runtime, setPhase]);
 
     return useMemo(() => ({
         session,
         connectionState,
+        diagnostics,
         error,
         roomId,
         rooms,
@@ -290,6 +535,7 @@ export function useRelicHunters(): RelicHuntersConnection {
     }), [
         session,
         connectionState,
+        diagnostics,
         error,
         roomId,
         rooms,
@@ -314,6 +560,10 @@ function isRelicServerEvent(value: unknown): value is RelicServerEvent {
         'snapshot' in value;
 }
 
-function toErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
+function commandInFlightKey(input: RelicCommandDraft): string {
+    if (input.kind !== 'submit-action') {
+        return input.kind;
+    }
+
+    return `${input.kind}:${JSON.stringify(input.action)}`;
 }

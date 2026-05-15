@@ -14,6 +14,13 @@ import type {
 import { RELIC_CHARACTERS, findRelicCharacter } from '@relic-hunters/mod.ts';
 import { IntroScene } from './game/IntroScene.tsx';
 import { RelicScene } from './game/RelicScene.tsx';
+import { GameHudLayout } from './game/hud/GameHudLayout.tsx';
+import {
+    deriveRelicGameViewModel,
+    RELIC_ACTION_KINDS,
+    type ActionDraft,
+} from './game/game-view-model.ts';
+import type { RelicRuntimeDiagnostics } from './game/relic-hunters-runtime.ts';
 import { UI, type Lang } from './game/lang.ts';
 import { useRelicHunters } from './game/useRelicHunters.ts';
 import { colorForId } from './game/color.ts';
@@ -27,11 +34,7 @@ import {
 } from './game/sound.ts';
 
 type AuthMode = 'login' | 'register';
-type ActionDraft = Readonly<{
-    kind: RelicActionInput['kind'];
-    targetRoomId?: string;
-    targetPlayerId?: string;
-}>;
+const IS_DEV = Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV);
 
 export default function App() {
     const [introComplete, setIntroComplete] = useState(false);
@@ -82,16 +85,18 @@ export default function App() {
     const revealTimerRef = useRef<number | null>(null);
     const revealNextRef = useRef<() => void>(null!);
 
-    const currentPlayer = useMemo(
-        () =>
-            game.snapshot?.players.find((player) =>
-                player.playerId === game.session?.sessionId
-            ),
-        [game.session?.sessionId, game.snapshot?.players],
+    const viewModel = useMemo(
+        () => deriveRelicGameViewModel({
+            snapshot: game.snapshot,
+            localPlayerId: game.session?.sessionId,
+            draft,
+            lang,
+            revealedEvents,
+        }),
+        [draft, game.session?.sessionId, game.snapshot, lang, revealedEvents],
     );
-    const currentRoom = game.snapshot?.map.find((room) =>
-        room.id === currentPlayer?.roomId
-    );
+    const currentPlayer = viewModel.currentPlayer;
+    const currentRoom = viewModel.currentRoom;
     const currentRoomSummary = useMemo(
         () => game.rooms.find((room) => room.roomId === game.roomId),
         [game.roomId, game.rooms],
@@ -101,22 +106,12 @@ export default function App() {
             ? currentPlayer.characterId
             : selectedCharacterId,
     );
-    const moveTargets = currentPlayer && game.snapshot
-        ? game.snapshot.map
-            .filter((room) => currentRoom?.neighbors.includes(room.id) && !room.collapsed)
-            .map((room) => room.id)
-        : [];
+    const moveTargets = viewModel.moveTargets;
     const exitDistances = useMemo(
         () => game.snapshot ? castleMapExitDistances(game.snapshot.map) : new Map<string, number>(),
         [game.snapshot],
     );
-    const stealTargets = game.snapshot?.players.filter((player) =>
-        currentPlayer &&
-        player.playerId !== currentPlayer.playerId &&
-        player.roomId === currentPlayer.roomId &&
-        !player.escaped &&
-        !player.defeated
-    ) ?? [];
+    const stealTargets = viewModel.stealTargets;
     const rooms = game.rooms.filter((room) =>
         room.name.toLowerCase().includes('relic hunters')
     );
@@ -132,32 +127,21 @@ export default function App() {
         }
         return undefined;
     }, [lastEvent, game.snapshot]);
-    const progress = game.snapshot
-        ? toProgress(game.snapshot, currentPlayer?.playerId)
-        : undefined;
+    const progress = viewModel.progress;
     const partyCoordination = game.snapshot
         ? derivePartyCoordination(game.snapshot, game.session?.sessionId, draft.kind)
         : undefined;
-    const objective = game.snapshot
-        ? toObjective(game.snapshot, currentPlayer, lang)
-        : 'Create or join a room to begin the expedition.';
-    const actionInfo = ACTION_INFO[draft.kind];
-    const submitBlocker = game.snapshot && currentPlayer
-        ? actionBlocker(game.snapshot, currentPlayer, draft, moveTargets, stealTargets)
-        : undefined;
-    const canSubmit = !!game.snapshot &&
-        game.snapshot.phase === 'planning' &&
+    const objective = viewModel.objective;
+    const actionInfo = viewModel.actionInfo;
+    const submitBlocker = viewModel.submitBlocker;
+    const canSubmit = viewModel.turnStatus.canSubmit;
+    const isLocked = viewModel.turnStatus.isLocked;
+    const isAdmin = viewModel.isAdmin;
+    const roundNoiseCount = viewModel.roundNoiseCount;
+    const showPlanningControls = game.snapshot?.phase === 'planning' &&
         !!currentPlayer &&
-        !game.snapshot.submittedPlayerIds.includes(currentPlayer.playerId) &&
-        !submitBlocker;
-    const isLocked = !!(currentPlayer && game.snapshot &&
-        game.snapshot.submittedPlayerIds.includes(currentPlayer.playerId));
-    const isAdmin = currentPlayer?.playerId === game.snapshot?.adminPlayerId;
-    const roundNoiseCount = game.snapshot
-        ? revealedEvents.filter(
-            (e) => e.round === game.snapshot!.round - 1 && e.type === 'noise_pulse',
-        ).length
-        : 0;
+        !currentPlayer.escaped &&
+        !currentPlayer.defeated;
     const partyChangeKey = game.snapshot &&
             currentRoomSummary &&
             game.snapshot.phase !== 'finished' &&
@@ -380,6 +364,78 @@ export default function App() {
         await game.submitAction(action);
     };
 
+    const selectActionKind = useCallback((kind: RelicActionKind) => {
+        playUiSound('select');
+        const nextDraft: ActionDraft = kind === 'move'
+            ? {
+                kind,
+                targetRoomId: selectedRoomId && moveTargets.includes(selectedRoomId)
+                    ? selectedRoomId
+                    : moveTargets[0],
+            }
+            : kind === 'steal'
+            ? {
+                kind,
+                targetPlayerId: stealTargets[0]?.playerId,
+            }
+            : { kind };
+        setDraft(nextDraft);
+        setScenePrimedAction(nextDraft);
+        if (nextDraft.kind === 'move' && nextDraft.targetRoomId) {
+            setSelectedRoomId(nextDraft.targetRoomId);
+        }
+    }, [moveTargets, selectedRoomId, stealTargets]);
+
+    const selectMoveTarget = useCallback((targetRoomId: string) => {
+        playUiSound('select');
+        const nextDraft = {
+            kind: 'move' as const,
+            targetRoomId,
+        };
+        setSelectedRoomId(targetRoomId);
+        setDraft(nextDraft);
+        setScenePrimedAction(nextDraft);
+    }, []);
+
+    const selectStealTarget = useCallback((targetPlayerId: string) => {
+        playUiSound('select');
+        const nextDraft = {
+            kind: 'steal' as const,
+            targetPlayerId,
+        };
+        setDraft(nextDraft);
+        setScenePrimedAction(nextDraft);
+    }, []);
+
+    const cycleSelectedTarget = useCallback((direction: -1 | 1) => {
+        if (draft.kind === 'move' && moveTargets.length > 1) {
+            const currentTarget = draft.targetRoomId ??
+                (selectedRoomId && moveTargets.includes(selectedRoomId) ? selectedRoomId : moveTargets[0]);
+            const index = Math.max(0, moveTargets.indexOf(currentTarget));
+            const next = moveTargets[(index + direction + moveTargets.length) % moveTargets.length];
+            selectMoveTarget(next);
+            return;
+        }
+
+        if (draft.kind === 'steal' && stealTargets.length > 1) {
+            const currentTarget = draft.targetPlayerId ?? stealTargets[0]?.playerId;
+            const index = Math.max(0, stealTargets.findIndex((player) =>
+                player.playerId === currentTarget
+            ));
+            const next = stealTargets[(index + direction + stealTargets.length) % stealTargets.length];
+            selectStealTarget(next.playerId);
+        }
+    }, [
+        draft.kind,
+        draft.targetPlayerId,
+        draft.targetRoomId,
+        moveTargets,
+        selectedRoomId,
+        selectMoveTarget,
+        selectStealTarget,
+        stealTargets,
+    ]);
+
     // Stable refs so closures (keyboard handler, timer) always call the latest versions.
     const submitActionRef = useRef(submitAction);
     submitActionRef.current = submitAction;
@@ -401,13 +457,13 @@ export default function App() {
             const kind = ACTION_KEYS[e.key] as RelicActionKind | undefined;
             if (kind) {
                 e.preventDefault();
-                playUiSound('select');
-                setDraft((prev) => {
-                    if (prev.kind === kind) return prev;
-                    if (kind === 'move') return { kind, targetRoomId: moveTargets[0] };
-                    if (kind === 'steal') return { kind, targetPlayerId: stealTargets[0]?.playerId };
-                    return { kind };
-                });
+                selectActionKind(kind);
+                return;
+            }
+
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                e.preventDefault();
+                cycleSelectedTarget(e.key === 'ArrowRight' ? 1 : -1);
                 return;
             }
 
@@ -427,7 +483,7 @@ export default function App() {
         };
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
-    }, [game.snapshot, canSubmit, moveTargets, stealTargets]);
+    }, [canSubmit, cycleSelectedTarget, game.snapshot, selectActionKind]);
 
     const joinExpedition = async () => {
         playUiSound('join');
@@ -491,51 +547,28 @@ export default function App() {
     };
 
     return (
-        <main className="app-root">
-            <RelicScene
-                snapshot={game.snapshot}
-                localPlayerId={game.session?.sessionId}
-                selectedRoomId={selectedRoomId}
-                primedAction={scenePrimedAction}
-                focusRoomId={eventFocusRoomId}
-                onSelectRoom={setSelectedRoomId}
-                onPrimeAction={primeSceneAction}
-            />
-            {game.snapshot && (
-                <TurnFeedbackOverlay
+        <GameHudLayout
+            scene={(
+                <RelicScene
                     snapshot={game.snapshot}
                     localPlayerId={game.session?.sessionId}
-                    revealedEvents={revealedEvents}
+                    selectedRoomId={selectedRoomId}
+                    primedAction={scenePrimedAction}
+                    focusRoomId={eventFocusRoomId}
+                    rtcReady={game.diagnostics.rtcReady}
+                    onSelectRoom={setSelectedRoomId}
+                    onPrimeAction={primeSceneAction}
                 />
             )}
-
-            <section className="topbar">
-                <div className="brand">
-                    <span className="brand-mark"/>
-                    <div>
-                        <h1>Relic Hunters</h1>
-                        <p>{phaseLabel(game.snapshot?.phase ?? game.connectionState, lang)}</p>
-                    </div>
-                </div>
-                <div className="status-row">
-                    {game.snapshot
-                        ? <RoundStatus round={game.snapshot.round} maxRounds={game.snapshot.maxRounds}/>
-                        : <Status label="Round" value="-"/>
-                    }
-                    <Status label="Hunters" value={String(game.snapshot?.players.length ?? 0)}/>
-                    <Status label="Submitted" value={String(game.snapshot?.submittedPlayerIds.length ?? 0)}/>
-                    <RelicProgressPill relics={game.snapshot?.relics}/>
-                    <WinLeader snapshot={game.snapshot}/>
-                    <button
-                        type="button"
-                        className="help-toggle"
-                        aria-label="Keyboard shortcuts"
-                        onClick={() => setShowHelpOverlay((v) => !v)}
-                    >?</button>
-                </div>
-            </section>
-
-            <section className={`side-panel${sidePanelCollapsed ? ' collapsed' : ''}`}>
+            top={(
+                <AppTopBar
+                    phaseText={phaseLabel(game.snapshot?.phase ?? game.connectionState, lang)}
+                    snapshot={game.snapshot}
+                    onToggleHelp={() => setShowHelpOverlay((v) => !v)}
+                />
+            )}
+            side={(
+                <section className={`side-panel${sidePanelCollapsed ? ' collapsed' : ''}`}>
                 <button
                     type="button"
                     className="side-panel-toggle"
@@ -725,11 +758,11 @@ export default function App() {
                                     </div>
                                 )}
                             </div>
-                        ) : (
+                        ) : !currentPlayer ? (
                             <button type="button" onClick={joinExpedition}>
-                                Update Hunter
+                                Join Expedition
                             </button>
-                        )}
+                        ) : null}
 
                         <div className="button-grid">
                             <button type="button" onClick={resetExpedition}>
@@ -747,170 +780,117 @@ export default function App() {
                             </button>
                         </div>
 
-                        {isLocked && lockedAction
-                            ? (
-                                <LockedPlanCard
-                                    action={lockedAction}
+                        {showPlanningControls && game.snapshot && (
+                            <section className="action-command-panel" aria-label="Round plan">
+                                <TurnPlanStatusCard
                                     snapshot={game.snapshot}
                                     localPlayerId={game.session.sessionId}
                                 />
-                            )
-                            : (
-                            <>
 
-                        <div className="action-picker">
-                            {(['move', 'search', 'steal', 'escape'] as const).map((kind) => {
-                                const cq = actionConsequence(
-                                    kind, game.snapshot, currentRoom,
-                                    moveTargets, stealTargets, currentPlayer,
-                                );
-                                const isEscapeUrgent = kind === 'escape' &&
-                                    currentRoom?.kind === 'exit' &&
-                                    (currentPlayer?.relicIds.length ?? 0) > 0;
-                                return (
-                                    <button
-                                        type="button"
-                                        key={kind}
-                                        className={[
-                                            draft.kind === kind ? 'active' : '',
-                                            isEscapeUrgent ? 'action-escape-urgent' : '',
-                                        ].filter(Boolean).join(' ')}
-                                        onClick={() => {
-                                            playUiSound('select');
-                                            const nextDraft: ActionDraft = kind === 'move'
-                                                ? {
-                                                    kind,
-                                                    targetRoomId: selectedRoomId &&
-                                                            moveTargets.includes(selectedRoomId)
-                                                        ? selectedRoomId
-                                                        : moveTargets[0],
-                                                }
-                                                : kind === 'steal'
-                                                ? {
-                                                    kind,
-                                                    targetPlayerId: stealTargets[0]?.playerId,
-                                                }
-                                                : { kind };
-                                            setDraft(nextDraft);
-                                            setScenePrimedAction(nextDraft);
-                                        }}
-                                    >
-                                        <span>
-                                            {ACTION_INFO[kind].label}
-                                            <kbd className="action-key">{(['move','search','steal','escape'] as const).indexOf(kind) + 1}</kbd>
+                                {isLocked
+                                    ? (
+                                        <LockedPlanCard
+                                            action={lockedAction}
+                                            snapshot={game.snapshot}
+                                            localPlayerId={game.session.sessionId}
+                                        />
+                                    )
+                                    : (
+                                        <>
+                                            <div className="action-picker">
+                                                {RELIC_ACTION_KINDS.map((kind, index) => {
+                                                    const option = viewModel.actionOptions[kind];
+                                                    const cq = option.consequence;
+                                                    const isEscapeUrgent = kind === 'escape' &&
+                                                        currentRoom?.kind === 'exit' &&
+                                                        (currentPlayer?.relicIds.length ?? 0) > 0;
+                                                    return (
+                                                        <button
+                                                            type="button"
+                                                            key={kind}
+                                                            className={[
+                                                                draft.kind === kind ? 'active' : '',
+                                                                isEscapeUrgent ? 'action-escape-urgent' : '',
+                                                                !option.legal ? 'action-option-blocked' : '',
+                                                            ].filter(Boolean).join(' ')}
+                                                            aria-pressed={draft.kind === kind}
+                                                            onClick={() => selectActionKind(kind)}
+                                                        >
+                                                            <span>
+                                                                {option.info.label}
+                                                                <kbd className="action-key">{index + 1}</kbd>
+                                                            </span>
+                                                            <small>{option.info.noise}</small>
+                                                            <em className={`action-cq action-cq-${cq.status}`}>{cq.text}</em>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            <div className="action-brief">
+                                                <strong>{actionInfo.label}</strong>
+                                                <span>{actionInfo.description}</span>
+                                                {submitBlocker && <small>{submitBlocker}</small>}
+                                                {partyCoordination && <small>{partyCoordination.actionHint}</small>}
+                                                {viewModel.actionBriefDanger && (
+                                                    <small className="action-brief-danger">! {viewModel.actionBriefDanger}</small>
+                                                )}
+                                            </div>
+
+                                            {draft.kind === 'move' && (
+                                                <MoveTargetChoices
+                                                    snapshot={game.snapshot}
+                                                    moveTargets={moveTargets}
+                                                    selectedRoomId={draft.targetRoomId ?? selectedRoomId ?? moveTargets[0]}
+                                                    exitDistances={exitDistances}
+                                                    onSelect={selectMoveTarget}
+                                                />
+                                            )}
+
+                                            {draft.kind === 'steal' && (
+                                                <StealTargetChoices
+                                                    stealTargets={stealTargets}
+                                                    selectedPlayerId={draft.targetPlayerId ?? stealTargets[0]?.playerId}
+                                                    onSelect={selectStealTarget}
+                                                />
+                                            )}
+                                        </>
+                                    )}
+
+                                {roundNoiseCount > 0 && (
+                                    <div className={`noise-meter ${roundNoiseCount >= 3 ? 'noise-high' : roundNoiseCount >= 2 ? 'noise-medium' : 'noise-low'}`}>
+                                        <span>Last round noise</span>
+                                        <span className="noise-pips">
+                                            {Array.from({ length: Math.min(5, roundNoiseCount) }, (_, i) => (
+                                                <span key={i} className="noise-pip"/>
+                                            ))}
                                         </span>
-                                        <small>{ACTION_INFO[kind].noise}</small>
-                                        <em className={`action-cq action-cq-${cq.status}`}>{cq.text}</em>
-                                    </button>
-                                );
-                            })}
-                        </div>
+                                        <small>{roundNoiseCount >= 3 ? 'Rooms destabilising' : 'Some disruption'}</small>
+                                    </div>
+                                )}
 
-                        <div className="action-brief">
-                            <strong>{actionInfo.label}</strong>
-                            <span>{actionInfo.description}</span>
-                            {submitBlocker && <small>{submitBlocker}</small>}
-                            {partyCoordination && <small>{partyCoordination.actionHint}</small>}
-                            {(() => {
-                                const inv = game.snapshot?.roomInvestigations?.find(
-                                    (i) => i.roomId === currentRoom?.id,
-                                );
-                                return inv?.danger && draft.kind === 'search'
-                                    ? <small className="action-brief-danger">! {inv.danger}</small>
-                                    : null;
-                            })()}
-                        </div>
+                                {viewModel.roundLimitWarning && (
+                                    <div className={`round-warning ${viewModel.roundLimitWarning.severity === 'danger' ? 'round-warning-final' : ''}`}>
+                                        {viewModel.roundLimitWarning.message}
+                                    </div>
+                                )}
 
-                        {draft.kind === 'move' && (
-                            <select
-                                value={draft.targetRoomId ?? selectedRoomId ?? moveTargets[0] ?? ''}
-                                onChange={(event) =>
-                                    {
-                                        const nextDraft = {
-                                            kind: 'move' as const,
-                                            targetRoomId: event.target.value,
-                                        };
-                                        setDraft(nextDraft);
-                                        setScenePrimedAction(nextDraft);
-                                    }}
-                            >
-                                {moveTargets.map((roomId) => {
-                                    const room = game.snapshot?.map.find((r) => r.id === roomId);
-                                    const dist = exitDistances.get(roomId);
-                                    const hasRelic = game.snapshot?.relics.some(
-                                        (r) => r.roomId === roomId && !r.foundBy && !r.carriedBy && !r.escapedBy,
-                                    );
-                                    const parts = [roomName(game.snapshot, roomId)];
-                                    if (room?.kind && room.kind !== 'hallway' && room.kind !== 'entrance') parts.push(`[${room.kind}]`);
-                                    if (dist !== undefined) parts.push(`${dist}→exit`);
-                                    if (hasRelic) parts.push('◆ relic');
-                                    return (
-                                        <option key={roomId} value={roomId}>
-                                            {parts.join(' · ')}
-                                        </option>
-                                    );
-                                })}
-                            </select>
+                                {timeRemainingMs !== null && (
+                                    <RoundTimer timeRemainingMs={timeRemainingMs} lang={lang}/>
+                                )}
+
+                                <button
+                                    type="button"
+                                    className="primary action-submit-button"
+                                    disabled={!canSubmit}
+                                    onClick={submitAction}
+                                >
+                                    {isLocked
+                                        ? UI[lang].boundButton
+                                        : <>{UI[lang].submitButton} <kbd className="action-key action-key-enter">↵</kbd></>}
+                                </button>
+                            </section>
                         )}
-
-                        {draft.kind === 'steal' && (
-                            <select
-                                value={draft.targetPlayerId ?? stealTargets[0]?.playerId ?? ''}
-                                onChange={(event) =>
-                                    {
-                                        const nextDraft = {
-                                            kind: 'steal' as const,
-                                            targetPlayerId: event.target.value,
-                                        };
-                                        setDraft(nextDraft);
-                                        setScenePrimedAction(nextDraft);
-                                    }}
-                            >
-                                {stealTargets.map((player) => (
-                                    <option key={player.playerId} value={player.playerId}>
-                                        {player.username}
-                                    </option>
-                                ))}
-                            </select>
-                        )}
-
-                            </>
-                            )}
-
-                        {roundNoiseCount > 0 && (
-                            <div className={`noise-meter ${roundNoiseCount >= 3 ? 'noise-high' : roundNoiseCount >= 2 ? 'noise-medium' : 'noise-low'}`}>
-                                <span>Last round noise</span>
-                                <span className="noise-pips">
-                                    {Array.from({ length: Math.min(5, roundNoiseCount) }, (_, i) => (
-                                        <span key={i} className="noise-pip"/>
-                                    ))}
-                                </span>
-                                <small>{roundNoiseCount >= 3 ? 'Rooms destabilising' : 'Some disruption'}</small>
-                            </div>
-                        )}
-
-                        {game.snapshot && game.snapshot.maxRounds - game.snapshot.round <= 1 && (
-                            <div className={`round-warning ${game.snapshot.round >= game.snapshot.maxRounds ? 'round-warning-final' : ''}`}>
-                                {game.snapshot.round >= game.snapshot.maxRounds
-                                    ? 'Final round — escape or be lost to the ruin.'
-                                    : `${game.snapshot.maxRounds - game.snapshot.round} round${game.snapshot.maxRounds - game.snapshot.round === 1 ? '' : 's'} remaining — the ruin closes soon.`}
-                            </div>
-                        )}
-
-                        {timeRemainingMs !== null && (
-                            <RoundTimer timeRemainingMs={timeRemainingMs} lang={lang}/>
-                        )}
-
-                        <button
-                            type="button"
-                            className="primary"
-                            disabled={!canSubmit}
-                            onClick={submitAction}
-                        >
-                            {game.snapshot?.submittedPlayerIds.includes(game.session.sessionId)
-                                ? UI[lang].boundButton
-                                : <>{UI[lang].submitButton} <kbd className="action-key action-key-enter">↵</kbd></>}
-                        </button>
                     </div>
                 )}
 
@@ -985,25 +965,31 @@ export default function App() {
                     />
                 )}
 
+                {IS_DEV && game.session && (
+                    <RallarDiagnosticsPanel diagnostics={game.diagnostics}/>
+                )}
+
                 {game.error && <div className="panel error-panel">{game.error}</div>}
             </section>
-
-            <section className="bottom-panel">
-                <HunterList
-                    players={game.snapshot?.players ?? []}
+            )}
+            bottom={(
+                <BottomHudPanel
+                    snapshot={game.snapshot}
                     localPlayerId={game.session?.sessionId}
-                    phase={game.snapshot?.phase}
-                    submittedPlayerIds={game.snapshot?.submittedPlayerIds ?? []}
+                    revealedEvents={revealedEvents}
+                    lastEvent={lastEvent}
                     lang={lang}
                 />
-                <TurnDiffStrip events={revealedEvents}/>
-                <RoundChronicle
-                    events={revealedEvents}
-                    phase={game.snapshot?.phase}
-                    lastEvent={lastEvent}
+            )}
+            floating={(
+                <>
+            {game.snapshot && (
+                <TurnFeedbackOverlay
+                    snapshot={game.snapshot}
                     localPlayerId={game.session?.sessionId}
+                    revealedEvents={revealedEvents}
                 />
-            </section>
+            )}
 
             {personalFlash && (
                 <div
@@ -1014,12 +1000,63 @@ export default function App() {
                 />
             )}
 
-            {currentPlayer && currentPlayer.health === 1 && !currentPlayer.escaped && !currentPlayer.defeated && (
+            {viewModel.lowHealthWarning && (
                 <div className="low-health-banner" role="alert">
-                    One hit from defeat — move carefully.
+                    {viewModel.lowHealthWarning.message}
                 </div>
             )}
 
+            {showPlanningControls && (
+                <div className="controls-hud" aria-hidden="true">
+                    <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</span>
+                    <span><kbd>Q</kbd><kbd>E</kbd> Turn</span>
+                    <span><kbd>1</kbd>–<kbd>4</kbd> Pick action</span>
+                    <span><kbd>←</kbd><kbd>→</kbd> Target</span>
+                    <span><kbd>↵</kbd> Submit</span>
+                </div>
+            )}
+
+            {showPlanningControls && game.snapshot && game.session && !game.snapshot.submittedPlayerIds.includes(game.session.sessionId) && (
+                <div className="action-nudge" aria-live="polite">
+                    {currentRoom
+                        ? <RoomActionNudge room={currentRoom} lang={lang} />
+                        : <span>Pick an action and submit</span>}
+                </div>
+            )}
+
+            {game.snapshot && (
+                <SceneMinimapOverlay
+                    snapshot={game.snapshot}
+                    localPlayerId={game.session?.sessionId}
+                />
+            )}
+
+            {phaseBanner && (
+                <div
+                    className={`phase-banner${phaseBanner.startsWith('game-start:') ? ' phase-banner-start' : ''}`}
+                    role="status"
+                    aria-live="assertive"
+                    aria-atomic="true"
+                >
+                    {phaseBanner.startsWith('game-start:') ? phaseBanner.slice('game-start:'.length) : phaseBanner}
+                </div>
+            )}
+
+            {roomEntryFlash && (
+                <div
+                    key={roomEntryFlash.key}
+                    className="room-entry-flash"
+                    onAnimationEnd={() => setRoomEntryFlash(null)}
+                    aria-live="polite"
+                    aria-atomic="true"
+                >
+                    {roomEntryFlash.room}
+                </div>
+            )}
+                </>
+            )}
+            overlays={(
+                <>
             {showHelpOverlay && (
                 <div
                     className="help-overlay"
@@ -1080,92 +1117,138 @@ export default function App() {
             )}
 
             {timeRemainingMs !== null && timeRemainingMs > 0 && timeRemainingMs <= 10_000 &&
-                game.snapshot?.phase === 'planning' && !isLocked && (
+                showPlanningControls && !isLocked && (
                 <div className="round-countdown-overlay" role="status" aria-live="assertive">
                     <span className="round-countdown-number">{Math.ceil(timeRemainingMs / 1000)}</span>
                     <span className="round-countdown-label">s</span>
                 </div>
             )}
 
-            {game.snapshot && game.snapshot.phase === 'planning' && game.session && currentPlayer && !currentPlayer.escaped && !currentPlayer.defeated && (
-                <div className="controls-hud" aria-hidden="true">
-                    <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</span>
-                    <span><kbd>Q</kbd><kbd>E</kbd> Turn</span>
-                    <span><kbd>1</kbd>–<kbd>4</kbd> Pick action</span>
-                    <span><kbd>↵</kbd> Submit</span>
-                </div>
-            )}
-
-            {game.snapshot && game.snapshot.phase === 'planning' && game.session && currentPlayer && !currentPlayer.escaped && !currentPlayer.defeated && !game.snapshot.submittedPlayerIds.includes(game.session.sessionId) && (
-                <div className="action-nudge" aria-live="polite">
-                    {currentRoom
-                        ? <RoomActionNudge room={currentRoom} lang={lang} />
-                        : <span>Pick an action and submit</span>}
-                </div>
-            )}
-
-            {game.snapshot && (
-                <SceneMinimapOverlay
-                    snapshot={game.snapshot}
-                    localPlayerId={game.session?.sessionId}
-                />
-            )}
-
-            {phaseBanner && (
-                <div
-                    className={`phase-banner${phaseBanner.startsWith('game-start:') ? ' phase-banner-start' : ''}`}
-                    role="status"
-                    aria-live="assertive"
-                    aria-atomic="true"
-                >
-                    {phaseBanner.startsWith('game-start:') ? phaseBanner.slice('game-start:'.length) : phaseBanner}
-                </div>
-            )}
-
-            {roomEntryFlash && (
-                <div
-                    key={roomEntryFlash.key}
-                    className="room-entry-flash"
-                    onAnimationEnd={() => setRoomEntryFlash(null)}
-                    aria-live="polite"
-                    aria-atomic="true"
-                >
-                    {roomEntryFlash.room}
-                </div>
-            )}
-
             {!introComplete && (
                 <IntroScene onComplete={() => setIntroComplete(true)} lang={lang} />
             )}
-        </main>
+                </>
+            )}
+        />
     );
 }
 
-const ACTION_INFO: Record<
-    RelicActionKind,
-    Readonly<{ label: string; noise: string; description: string }>
-> = {
-    move: {
-        label: 'Move',
-        noise: 'quiet',
-        description: 'Step into an adjacent room to reach relics or race toward the exit.',
-    },
-    search: {
-        label: 'Search',
-        noise: 'noisy',
-        description: 'Look for relics in this room. Searching creates danger but wins games.',
-    },
-    steal: {
-        label: 'Steal',
-        noise: 'loud',
-        description: 'Take a relic from another hunter in your room. Failed attempts still make noise.',
-    },
-    escape: {
-        label: 'Escape',
-        noise: 'silent',
-        description: 'Leave from the Exit with your relics. Escaped hunters keep their score safe.',
-    },
-};
+function AppTopBar({
+                       phaseText,
+                       snapshot,
+                       onToggleHelp,
+                   }: Readonly<{
+    phaseText: string;
+    snapshot?: RelicPublicSnapshot;
+    onToggleHelp(): void;
+}>) {
+    return (
+        <section className="topbar">
+            <div className="brand">
+                <span className="brand-mark"/>
+                <div>
+                    <h1>Relic Hunters</h1>
+                    <p>{phaseText}</p>
+                </div>
+            </div>
+            <div className="status-row">
+                {snapshot
+                    ? <RoundStatus round={snapshot.round} maxRounds={snapshot.maxRounds}/>
+                    : <Status label="Round" value="-"/>
+                }
+                <Status label="Hunters" value={String(snapshot?.players.length ?? 0)}/>
+                <Status label="Submitted" value={String(snapshot?.submittedPlayerIds.length ?? 0)}/>
+                <RelicProgressPill relics={snapshot?.relics}/>
+                <WinLeader snapshot={snapshot}/>
+                <button
+                    type="button"
+                    className="help-toggle"
+                    aria-label="Keyboard shortcuts"
+                    onClick={onToggleHelp}
+                >?</button>
+            </div>
+        </section>
+    );
+}
+
+function BottomHudPanel({
+                            snapshot,
+                            localPlayerId,
+                            revealedEvents,
+                            lastEvent,
+                            lang,
+                        }: Readonly<{
+    snapshot?: RelicPublicSnapshot;
+    localPlayerId?: string;
+    revealedEvents: readonly RelicEvent[];
+    lastEvent?: RelicEvent;
+    lang: Lang;
+}>) {
+    const hasPlayers = (snapshot?.players.length ?? 0) > 0;
+
+    return (
+        <section className={`bottom-panel${hasPlayers ? '' : ' compact'}`}>
+            {hasPlayers && (
+                <HunterList
+                    players={snapshot?.players ?? []}
+                    localPlayerId={localPlayerId}
+                    phase={snapshot?.phase}
+                    submittedPlayerIds={snapshot?.submittedPlayerIds ?? []}
+                    lang={lang}
+                />
+            )}
+            <TurnDiffStrip events={revealedEvents}/>
+            <RoundChronicle
+                events={revealedEvents}
+                phase={snapshot?.phase}
+                lastEvent={lastEvent}
+                localPlayerId={localPlayerId}
+            />
+        </section>
+    );
+}
+
+function RallarDiagnosticsPanel({
+                                    diagnostics,
+                                }: Readonly<{ diagnostics: RelicRuntimeDiagnostics }>) {
+    return (
+        <div className="panel stack rallar-diagnostics-panel" aria-label="Rallar diagnostics">
+            <div>
+                <span className="panel-label">Rallar</span>
+                <strong>{diagnostics.phase}</strong>
+            </div>
+            <div className="diagnostic-grid">
+                <DiagnosticFlag label="Auth" active={diagnostics.authenticated}/>
+                <DiagnosticFlag label="Connect" active={diagnostics.middlewareConnected}/>
+                <DiagnosticFlag label="Room" active={diagnostics.roomReady}/>
+                <DiagnosticFlag label="Snapshot" active={diagnostics.snapshotReady}/>
+                <DiagnosticFlag label="WS" active={diagnostics.wsListenerReady}/>
+                <DiagnosticFlag label="Rooms" active={diagnostics.roomListenerReady}/>
+                <DiagnosticFlag label="RTC" active={diagnostics.rtcReady}/>
+            </div>
+            {diagnostics.roomId && <small>Room {diagnostics.roomId}</small>}
+            <small>Commands {diagnostics.commandTransport.toUpperCase()}</small>
+            <small>Snapshots {diagnostics.snapshotTransport}</small>
+            {diagnostics.lastSnapshotSource && <small>Last snapshot {diagnostics.lastSnapshotSource}</small>}
+            {diagnostics.ignoredSnapshotCount > 0 && (
+                <small>Ignored stale snapshots {diagnostics.ignoredSnapshotCount}</small>
+            )}
+            {diagnostics.commandInFlight && <small>Command {diagnostics.commandInFlight}</small>}
+            {diagnostics.lastError && <small className="diagnostic-error">{diagnostics.lastError}</small>}
+        </div>
+    );
+}
+
+function DiagnosticFlag({
+                            label,
+                            active,
+                        }: Readonly<{ label: string; active: boolean }>) {
+    return (
+        <span className={`diagnostic-flag${active ? ' active' : ''}`}>
+            {label}
+        </span>
+    );
+}
 
 function CharacterSelect({
     currentPlayer,
@@ -1337,6 +1420,150 @@ function RoundTimer({
         <div className={`round-timer${isUrgent ? ' round-timer-urgent' : ''}`}>
             <span>{UI[lang].timerLabel}</span>
             <strong>{display}</strong>
+        </div>
+    );
+}
+
+function TurnPlanStatusCard({
+    snapshot,
+    localPlayerId,
+}: Readonly<{
+    snapshot: RelicPublicSnapshot;
+    localPlayerId?: string;
+}>) {
+    const activePlayers = snapshot.players.filter((player) =>
+        !player.escaped && !player.defeated
+    );
+    const submittedPlayers = activePlayers.filter((player) =>
+        snapshot.submittedPlayerIds.includes(player.playerId)
+    );
+    const waitingPlayers = activePlayers.filter((player) =>
+        !snapshot.submittedPlayerIds.includes(player.playerId)
+    );
+    const localSubmitted = !!localPlayerId &&
+        snapshot.submittedPlayerIds.includes(localPlayerId);
+    const waitingCount = waitingPlayers.length;
+    const title = localSubmitted
+        ? 'Plan locked'
+        : waitingCount === 1 && waitingPlayers[0]?.playerId === localPlayerId
+        ? 'Waiting on your plan'
+        : 'Choose this round';
+    const detail = localSubmitted
+        ? waitingCount > 0
+            ? `${waitingCount} ${plural('hunter', waitingCount)} still choosing.`
+            : 'All plans locked.'
+        : `${submittedPlayers.length}/${activePlayers.length} plans locked.`;
+
+    return (
+        <div className={`turn-plan-status${localSubmitted ? ' locked' : ''}`} aria-live="polite">
+            <div>
+                <span className="panel-label">Round {snapshot.round}</span>
+                <strong>{title}</strong>
+                <small>{detail}</small>
+            </div>
+            <div className="turn-plan-counters" aria-label="Planning progress">
+                <span>{submittedPlayers.length} locked</span>
+                <span>{waitingCount} waiting</span>
+            </div>
+        </div>
+    );
+}
+
+function MoveTargetChoices({
+    snapshot,
+    moveTargets,
+    selectedRoomId,
+    exitDistances,
+    onSelect,
+}: Readonly<{
+    snapshot: RelicPublicSnapshot;
+    moveTargets: readonly string[];
+    selectedRoomId?: string;
+    exitDistances: Map<string, number>;
+    onSelect(roomId: string): void;
+}>) {
+    return (
+        <div className="target-choice-section">
+            <span className="panel-label">Move Target</span>
+            {moveTargets.length === 0 ? (
+                <div className="target-empty">No open adjacent paths.</div>
+            ) : (
+                <div className="target-choice-grid">
+                    {moveTargets.map((roomId) => {
+                        const room = snapshot.map.find((candidate) =>
+                            candidate.id === roomId
+                        );
+                        const dist = exitDistances.get(roomId);
+                        const hasRelic = snapshot.relics.some((relic) =>
+                            relic.roomId === roomId &&
+                            !relic.foundBy &&
+                            !relic.carriedBy &&
+                            !relic.escapedBy
+                        );
+                        const selected = selectedRoomId === roomId;
+                        return (
+                            <button
+                                type="button"
+                                key={roomId}
+                                className={`target-option${selected ? ' active' : ''}`}
+                                data-target-room-id={roomId}
+                                aria-pressed={selected}
+                                onClick={() => onSelect(roomId)}
+                            >
+                                <span className="target-option-title">
+                                    {room?.name ?? roomId}
+                                </span>
+                                <span className="target-option-meta">
+                                    {room?.kind ?? 'room'}
+                                    {dist !== undefined ? ` / ${dist} to exit` : ''}
+                                    {hasRelic ? ' / relic signal' : ''}
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function StealTargetChoices({
+    stealTargets,
+    selectedPlayerId,
+    onSelect,
+}: Readonly<{
+    stealTargets: readonly RelicPlayer[];
+    selectedPlayerId?: string;
+    onSelect(playerId: string): void;
+}>) {
+    return (
+        <div className="target-choice-section">
+            <span className="panel-label">Steal Target</span>
+            {stealTargets.length === 0 ? (
+                <div className="target-empty">No active hunter in this room carries a target.</div>
+            ) : (
+                <div className="target-choice-grid">
+                    {stealTargets.map((player) => {
+                        const character = findRelicCharacter(player.characterId);
+                        const selected = selectedPlayerId === player.playerId;
+                        return (
+                            <button
+                                type="button"
+                                key={player.playerId}
+                                className={`target-option${selected ? ' active' : ''}`}
+                                data-target-player-id={player.playerId}
+                                aria-pressed={selected}
+                                onClick={() => onSelect(player.playerId)}
+                            >
+                                <span className="target-option-title">{player.username}</span>
+                                <span className="target-option-meta">
+                                    {character.role} / {player.relicIds.length} {plural('relic', player.relicIds.length)} / {player.score} score
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
         </div>
     );
 }
@@ -1839,42 +2066,6 @@ function turnEventHeadline(event: RelicEvent): string {
     }
 }
 
-type ConsequenceStatus = 'ok' | 'warn' | 'block';
-type ActionConsequence = Readonly<{ text: string; status: ConsequenceStatus }>;
-
-function actionConsequence(
-    kind: RelicActionKind,
-    snapshot: RelicPublicSnapshot | undefined,
-    currentRoom: RelicPublicSnapshot['map'][number] | undefined,
-    moveTargets: readonly string[],
-    stealTargets: readonly RelicPlayer[],
-    currentPlayer: RelicPlayer | undefined,
-): ActionConsequence {
-    if (!snapshot || !currentPlayer) return { text: '—', status: 'ok' };
-    switch (kind) {
-        case 'move':
-            return moveTargets.length > 0
-                ? { text: `${moveTargets.length} path${moveTargets.length === 1 ? '' : 's'} open`, status: 'ok' }
-                : { text: 'all paths blocked', status: 'block' };
-        case 'search': {
-            const searched = snapshot.roomInvestigations?.some(
-                (inv) => inv.roomId === currentPlayer.roomId,
-            );
-            return searched
-                ? { text: 'already searched here', status: 'warn' }
-                : { text: 'room not yet searched', status: 'ok' };
-        }
-        case 'steal':
-            return stealTargets.length > 0
-                ? { text: `${stealTargets.length} hunter${stealTargets.length === 1 ? '' : 's'} here`, status: 'ok' }
-                : { text: 'no targets here', status: 'block' };
-        case 'escape':
-            return currentRoom?.kind === 'exit'
-                ? { text: 'exit door in reach', status: 'ok' }
-                : { text: 'not at exit room', status: 'block' };
-    }
-}
-
 type CastleMapBounds = Readonly<{
     minX: number;
     maxX: number;
@@ -2267,7 +2458,7 @@ function LockedPlanCard({
     snapshot,
     localPlayerId,
 }: Readonly<{
-    action: RelicActionInput;
+    action?: RelicActionInput;
     snapshot: RelicPublicSnapshot;
     localPlayerId?: string;
 }>) {
@@ -2276,6 +2467,10 @@ function LockedPlanCard({
     const waiting = active.filter((p) => !snapshot.submittedPlayerIds.includes(p.playerId));
 
     const actionLabel = (): string => {
+        if (!action) {
+            return 'Plan submitted';
+        }
+
         switch (action.kind) {
             case 'move': {
                 const target = snapshot.map.find((r) => r.id === action.targetRoomId);
@@ -2734,67 +2929,6 @@ function HunterChip({
     );
 }
 
-function toProgress(
-    snapshot: RelicPublicSnapshot,
-    localPlayerId: string | undefined,
-): Readonly<{ relics: string; escape: string }> {
-    const foundCount = snapshot.relics.filter((relic) => relic.foundBy).length;
-    const escapedCount = snapshot.players.filter((player) => player.escaped).length;
-    const localPlayer = snapshot.players.find((player) => player.playerId === localPlayerId);
-
-    return {
-        relics: `${foundCount}/${snapshot.relics.length}`,
-        escape: localPlayer?.escaped
-            ? 'safe'
-            : `${escapedCount}/${Math.max(snapshot.players.length, 1)}`,
-    };
-}
-
-function toObjective(
-    snapshot: RelicPublicSnapshot,
-    currentPlayer: RelicPlayer | undefined,
-    lang: Lang,
-): string {
-    const u = UI[lang];
-    if (snapshot.phase === 'finished') {
-        return snapshot.winnerIds.length > 0 ? u.objectiveWon : u.objectiveSilent;
-    }
-
-    if (!currentPlayer) {
-        return u.objectiveJoin;
-    }
-
-    if (snapshot.phase === 'lobby') {
-        return u.objectiveLobby;
-    }
-
-    if (currentPlayer.escaped) {
-        return u.objectiveEscaped;
-    }
-
-    if (currentPlayer.defeated) {
-        return u.objectiveDefeated;
-    }
-
-    if (snapshot.submittedPlayerIds.includes(currentPlayer.playerId)) {
-        const waiting = activePlayerCount(snapshot) - snapshot.submittedPlayerIds.length;
-        return waiting > 0
-            ? (lang === 'no'
-                ? `Plan låst. Venter på ${waiting} jeger${waiting === 1 ? '' : 'e'}.`
-                : `Plan locked. Waiting for ${waiting} hunter${waiting === 1 ? '' : 's'}.`)
-            : u.objectiveAllLocked;
-    }
-
-    const roundsLeft = snapshot.maxRounds - snapshot.round + 1;
-    return lang === 'no'
-        ? `Finn relikvier, unnslipp innen ${roundsLeft} runde${roundsLeft === 1 ? '' : 'r'}.`
-        : `Find relics, then escape within ${roundsLeft} round${roundsLeft === 1 ? '' : 's'}.`;
-}
-
-function activePlayerCount(snapshot: RelicPublicSnapshot): number {
-    return snapshot.players.filter((player) => !player.escaped && !player.defeated).length;
-}
-
 function partyActionHint({
     actionKind,
     currentRoom,
@@ -2838,40 +2972,6 @@ function partyActionHint({
     return elsewhereCount > 0
         ? `Coordinate before the castle reacts; ${elsewhereCount} ${plural('hunter', elsewhereCount)} ${elsewhereCount === 1 ? 'is' : 'are'} elsewhere.`
         : 'The active party is together in this room.';
-}
-
-function actionBlocker(
-    snapshot: RelicPublicSnapshot,
-    player: RelicPlayer,
-    draft: ActionDraft,
-    moveTargets: readonly string[],
-    stealTargets: readonly RelicPlayer[],
-): string | undefined {
-    if (snapshot.phase !== 'planning') {
-        return 'Start the expedition before locking plans.';
-    }
-
-    if (player.escaped) {
-        return 'You are already safe outside the ruin.';
-    }
-
-    if (player.defeated) {
-        return 'You are down and cannot act this expedition.';
-    }
-
-    if (draft.kind === 'move' && moveTargets.length === 0) {
-        return 'No open adjacent paths from this room.';
-    }
-
-    if (draft.kind === 'steal' && stealTargets.length === 0) {
-        return 'Steal needs another active hunter in this room.';
-    }
-
-    if (draft.kind === 'escape' && player.roomId !== 'exit') {
-        return 'Escape only works from the Exit room.';
-    }
-
-    return undefined;
 }
 
 function chronicleHeadline(
@@ -3002,6 +3102,11 @@ function phaseLabel(value: string, lang: Lang): string {
         case 'connected': return u.phaseConnected;
         case 'connecting':return u.phaseConnecting;
         case 'signed-out':return u.phaseSignedOut;
+        case 'authenticating': return 'Authenticating';
+        case 'joining-room': return 'Joining room';
+        case 'ready': return u.phaseConnected;
+        case 'degraded': return 'Degraded';
+        case 'error': return 'Connection error';
         default:          return value;
     }
 }

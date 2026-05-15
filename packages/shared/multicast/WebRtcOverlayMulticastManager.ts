@@ -95,7 +95,10 @@ export class WebRtcOverlayMulticastManager {
         const enqueued = await this.outboundRuntime.enqueueIfAbsent(msg);
         return enqueued.fold(
             (e) => {
-                console.warn(`Failed to enqueue msg ${msg.id} : ${e}`);
+                if(!e?.includes('Skipping')) {
+                    console.warn(`Failed to enqueue msg ${msg.id} : ${e}`);
+                }
+
                 return [];
             },
             (result) => result.entries,

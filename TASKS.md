@@ -25,5 +25,17 @@ We should also explore the possibility of implementing a connection timeout mech
 
 We should also investigate the impact of network conditions on RTC connection establishment and consider implementing adaptive strategies to handle varying network conditions.
 
+### Rallar.rtc
+
+### setup RTC connection often fails
+
+We have to stabilise the RTC connection establishment. Now it fails too often. Especially when reconnecting occurs.
+
+##### rallar.ts line 735 
+
+enqueueOutboxIfAbsent() might fail, we should handle different cases here. Some are correctly skipped over, 
+but can it happen that some are quitely not enqueued? Investigate.
+
+
 
 

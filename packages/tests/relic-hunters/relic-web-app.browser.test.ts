@@ -215,8 +215,8 @@ describe('Relic Hunters browser app', () => {
             sceneMoveButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
         });
 
-        const moveTarget = container.querySelector('select') as HTMLSelectElement | null;
-        expect(moveTarget?.value).toBe('hallway');
+        const moveTarget = targetRoomButton('hallway');
+        expect(moveTarget?.getAttribute('aria-pressed')).toBe('true');
         expect(container.textContent).toContain('Step into an adjacent room');
     });
 
@@ -238,6 +238,23 @@ describe('Relic Hunters browser app', () => {
         });
 
         expect(container.textContent).toContain('Look for relics in this room');
+    });
+
+    it('shows an explicit locked-plan waiting state after the local plan is submitted', async () => {
+        const snapshot = {
+            ...snapshotWithPlayers(2, 'planning'),
+            submittedPlayerIds: ['alice-session'],
+        };
+        writeSession(session());
+        rallarMock.roomState = roomState(2);
+        stubSnapshotFetch(snapshot);
+
+        await renderApp();
+        await waitFor(() => container.textContent?.includes('Plan locked') === true);
+
+        expect(container.textContent).toContain('Plan locked');
+        expect(container.textContent).toContain('Plan submitted');
+        expect(container.textContent).toContain('1 hunter still choosing');
     });
 
     it('summarizes current-room occupants, readiness, and steal pressure', () => {
@@ -316,6 +333,11 @@ describe('Relic Hunters browser app', () => {
 
     function sceneSearchButton(): HTMLButtonElement | undefined {
         return container.querySelector<HTMLButtonElement>('[data-testid="scene-search-clue"]') ??
+            undefined;
+    }
+
+    function targetRoomButton(roomId: string): HTMLButtonElement | undefined {
+        return container.querySelector<HTMLButtonElement>(`[data-target-room-id="${roomId}"]`) ??
             undefined;
     }
 });

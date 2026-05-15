@@ -86,6 +86,9 @@ export async function installRelicHunterGame(
     });
   }
 
+  // relic-hunters-v1 treats REST as the authoritative browser command path.
+  // Keep the WS command topic registered for server-level compatibility tests
+  // and future transport experiments; browser clients consume WS snapshots.
   rallar.ws.defineTopic<RelicCommand>({
     topicId: RELIC_TOPICS.command,
     typeId: RELIC_TYPES.command,
