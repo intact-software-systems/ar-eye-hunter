@@ -102,7 +102,7 @@ All ingestion endpoints should support batches:
 ```ts
 type IngestEnvelope<T> = {
     protocolVersion: 1
-    source: 'black-box-runner' | 'black-box-rallar' | 'rallar-api' | 'rallar-ws' | 'production-service'
+    source: 'black-box-runner' | 'rallar-black-box' | 'rallar-api' | 'rallar-ws' | 'production-service'
     environment: string
     producerId: string
     sentAtEpochMs: number

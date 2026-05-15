@@ -2,7 +2,7 @@
 
 ## Goal
 
-`apps/black-box-rallar` should become a deployable, remote-controlled browser SPA for black-box Rallar RTC, WebSocket, and HTTP testing.
+`apps/rallar-black-box` should become a deployable, remote-controlled browser SPA for black-box Rallar RTC, WebSocket, and HTTP testing.
 
 The app should let a browser register with a control server, receive test recipes and commands over WebSocket, execute those commands through Rallar or browser-native HTTP/WebSocket APIs, and stream events, diagnostics, stats, and reports back to the server.
 
@@ -12,12 +12,12 @@ The first production shape is still headless-first. A visible UI is useful for d
 
 The existing `packages/shared-test/black-box-runner/browser` harness is not the production app. It is a minimal Playwright harness for local test execution.
 
-`apps/black-box-rallar` should be the deployable browser agent:
+`apps/rallar-black-box` should be the deployable browser agent:
 
 ```text
 black-box runner or control service
     -> WebSocket or REST control plane
-        -> apps/black-box-rallar
+        -> apps/rallar-black-box
             -> shared-test black-box Rallar facade
                 -> browser Rallar facade
                     -> deployed Rallar REST API, signaling, and RTC data paths
@@ -227,7 +227,7 @@ Status: documented.
 
 ### Iteration 2: React App Scaffold
 
-Create `apps/black-box-rallar` as a Vite React app with package scripts, TypeScript config, Vite aliases, and a minimal operational UI.
+Create `apps/rallar-black-box` as a Vite React app with package scripts, TypeScript config, Vite aliases, and a minimal operational UI.
 
 Deliverables:
 
