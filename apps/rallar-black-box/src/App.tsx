@@ -29,6 +29,19 @@ import {
     RALLAR_BLACK_BOX_RECIPE_FIXTURES,
     recipeFixtureText,
 } from './recipe-fixtures.ts';
+import {
+    DEFAULT_MANUAL_WORKBENCH_VALUES,
+    MANUAL_PAYLOAD_PRESETS,
+    buildManualWorkbenchCommands,
+    deriveManualReceivedMessages,
+    manualRecipeSnippet,
+    parseManualPayload,
+    type ManualActionHistoryEntry,
+    type ManualDeliveryMode,
+    type ManualWorkbenchAction,
+    type ManualWorkbenchTransport,
+    type ManualWorkbenchValues,
+} from './manual-workbench.ts';
 
 type CommandQueueRow = Readonly<{
     id: string;
@@ -232,6 +245,45 @@ function useNow(intervalMs: number): number {
     return now;
 }
 
+function manualTransportFrom(
+    transport: RallarBlackBoxTestTransport | undefined,
+): ManualWorkbenchTransport {
+    return transport === 'messages.rtc' || transport === 'ws' ? transport : 'realtime';
+}
+
+function manualValuesFromState(state: RallarBlackBoxTestState): ManualWorkbenchValues {
+    const config = selectRallarBlackBoxCurrentConfig(state);
+    return {
+        ...DEFAULT_MANUAL_WORKBENCH_VALUES,
+        environment: config?.environment ?? DEFAULT_MANUAL_WORKBENCH_VALUES.environment,
+        apiBaseUrl: config?.apiBaseUrl ?? DEFAULT_MANUAL_WORKBENCH_VALUES.apiBaseUrl,
+        actor: config?.actor ?? DEFAULT_MANUAL_WORKBENCH_VALUES.actor,
+        sessionId: config?.sessionId ?? DEFAULT_MANUAL_WORKBENCH_VALUES.sessionId,
+        groupId: config?.roomId ?? DEFAULT_MANUAL_WORKBENCH_VALUES.groupId,
+        connection: String(config?.defaults?.connection ?? DEFAULT_MANUAL_WORKBENCH_VALUES.connection),
+        transport: manualTransportFrom(config?.transport),
+    };
+}
+
+function actionLabel(action: ManualWorkbenchAction): string {
+    switch (action) {
+        case 'configure':
+            return 'Configure group';
+        case 'join':
+            return 'Create and join group';
+        case 'connect':
+            return 'Connect';
+        case 'send':
+            return 'Send payload';
+        case 'health':
+            return 'Health check';
+        case 'close':
+            return 'Close connections';
+        case 'reset':
+            return 'Reset runtime';
+    }
+}
+
 function Header({ state, control, bootstrapping, lastAction }: {
     state: RallarBlackBoxTestState;
     control: RallarBlackBoxControlSnapshot;
@@ -402,6 +454,382 @@ function WorkbenchPanel({ busy, runState, loadedFixtureId, lastError }: {
                     {localError ?? lastError}
                 </div>
             )}
+        </section>
+    );
+}
+
+function ManualRallarWorkbenchPanel({ state, busy, onSelectCommand }: {
+    state: RallarBlackBoxTestState;
+    busy: boolean;
+    onSelectCommand(commandId: string): void;
+}) {
+    const [values, setValues] = useState<ManualWorkbenchValues>(() => manualValuesFromState(state));
+    const [payloadPresetId, setPayloadPresetId] = useState(MANUAL_PAYLOAD_PRESETS[0].presetId);
+    const [payloadText, setPayloadText] = useState(() =>
+        JSON.stringify(MANUAL_PAYLOAD_PRESETS[0].payload, null, 2)
+    );
+    const [sequence, setSequence] = useState(1);
+    const [history, setHistory] = useState<readonly ManualActionHistoryEntry[]>([]);
+    const [localError, setLocalError] = useState<string | undefined>();
+    const [recipeVisible, setRecipeVisible] = useState(false);
+    const events = selectRallarBlackBoxEvents(state);
+    const payloadResult = useMemo(() => parseManualPayload(payloadText), [payloadText]);
+    const previewCommands = useMemo(
+        () => payloadResult.ok
+            ? buildManualWorkbenchCommands('send', values, payloadResult.value, sequence)
+            : [],
+        [payloadResult, sequence, values],
+    );
+    const recipeText = useMemo(() => manualRecipeSnippet(history), [history]);
+
+    const updateValue = <K extends keyof ManualWorkbenchValues>(
+        key: K,
+        value: ManualWorkbenchValues[K],
+    ): void => {
+        setValues(current => ({
+            ...current,
+            [key]: value,
+        }));
+    };
+
+    const selectPreset = (presetId: string): void => {
+        setPayloadPresetId(presetId);
+        const preset = MANUAL_PAYLOAD_PRESETS.find(entry => entry.presetId === presetId);
+        if (preset) {
+            setPayloadText(JSON.stringify(preset.payload, null, 2));
+        }
+    };
+
+    const runManualAction = async (action: ManualWorkbenchAction): Promise<void> => {
+        setLocalError(undefined);
+        if (action === 'send' && !payloadResult.ok) {
+            setLocalError(payloadResult.error);
+            return;
+        }
+
+        const label = actionLabel(action);
+        const startSequence = sequence;
+        const commands = buildManualWorkbenchCommands(
+            action,
+            values,
+            payloadResult.ok ? payloadResult.value : null,
+            startSequence,
+        );
+        const entry: ManualActionHistoryEntry = {
+            actionId: `manual-action-${startSequence}`,
+            label,
+            commandIds: commands.map(command => command.commandId ?? command.kind),
+            commands,
+            atEpochMs: Date.now(),
+        };
+
+        setSequence(current => current + commands.length + 1);
+        setHistory(current => [...current, entry].slice(-12));
+        onSelectCommand(entry.commandIds.at(-1) ?? entry.commandIds[0]);
+
+        try {
+            await rallarBlackBoxRuntimeStore.executeManualCommands(commands, label);
+        } catch (error) {
+            setLocalError(error instanceof Error ? error.message : String(error));
+        }
+    };
+
+    const copyRecipeSnippet = (): void => {
+        if (navigator.clipboard) {
+            void navigator.clipboard.writeText(recipeText);
+        }
+    };
+
+    return (
+        <section className="panel manual-rallar-panel">
+            <div className="panel-heading">
+                <h2>Manual Rallar</h2>
+                <span className={`pill ${payloadResult.ok ? 'good' : 'bad'}`}>
+                    {payloadResult.ok ? 'json valid' : 'json invalid'}
+                </span>
+            </div>
+            <div className="manual-rallar-grid">
+                <label className="field">
+                    <span>Environment</span>
+                    <input
+                        value={values.environment}
+                        onChange={event => updateValue('environment', event.target.value)}
+                        disabled={busy}
+                    />
+                </label>
+                <label className="field">
+                    <span>API Base URL</span>
+                    <input
+                        value={values.apiBaseUrl}
+                        onChange={event => updateValue('apiBaseUrl', event.target.value)}
+                        disabled={busy}
+                    />
+                </label>
+                <label className="field">
+                    <span>Actor</span>
+                    <input
+                        value={values.actor}
+                        onChange={event => updateValue('actor', event.target.value)}
+                        disabled={busy}
+                    />
+                </label>
+                <label className="field">
+                    <span>Session</span>
+                    <input
+                        value={values.sessionId}
+                        onChange={event => updateValue('sessionId', event.target.value)}
+                        disabled={busy}
+                    />
+                </label>
+                <label className="field">
+                    <span>Group</span>
+                    <input
+                        value={values.groupId}
+                        onChange={event => updateValue('groupId', event.target.value)}
+                        disabled={busy}
+                    />
+                </label>
+                <label className="field">
+                    <span>Connection</span>
+                    <input
+                        value={values.connection}
+                        onChange={event => updateValue('connection', event.target.value)}
+                        disabled={busy}
+                    />
+                </label>
+                <label className="field">
+                    <span>Transport</span>
+                    <select
+                        value={values.transport}
+                        onChange={event =>
+                            updateValue('transport', event.target.value as ManualWorkbenchTransport)}
+                        disabled={busy}
+                    >
+                        <option value="realtime">RTC realtime</option>
+                        <option value="messages.rtc">RTC messages</option>
+                        <option value="ws">WebSocket</option>
+                    </select>
+                </label>
+                <label className="field">
+                    <span>Timeout</span>
+                    <input
+                        type="number"
+                        min={0}
+                        value={values.timeoutMs}
+                        onChange={event => updateValue('timeoutMs', Number(event.target.value))}
+                        disabled={busy}
+                    />
+                </label>
+                <label className="field">
+                    <span>Target Client</span>
+                    <input
+                        value={values.targetClient}
+                        onChange={event => updateValue('targetClient', event.target.value)}
+                        disabled={busy || values.deliveryMode !== 'direct'}
+                    />
+                </label>
+                <label className="field">
+                    <span>Multicast Clients</span>
+                    <input
+                        value={values.multicastClients}
+                        onChange={event => updateValue('multicastClients', event.target.value)}
+                        disabled={busy || values.deliveryMode !== 'multicast'}
+                    />
+                </label>
+                <label className="field">
+                    <span>WS URL</span>
+                    <input
+                        value={values.wsUrl}
+                        onChange={event => updateValue('wsUrl', event.target.value)}
+                        disabled={busy || values.transport !== 'ws'}
+                    />
+                </label>
+                <label className="field">
+                    <span>Topic</span>
+                    <input
+                        value={values.topic}
+                        onChange={event => updateValue('topic', event.target.value)}
+                        disabled={busy}
+                    />
+                </label>
+                <label className="field">
+                    <span>Type ID</span>
+                    <input
+                        value={values.typeId}
+                        onChange={event => updateValue('typeId', event.target.value)}
+                        disabled={busy || values.transport !== 'messages.rtc'}
+                    />
+                </label>
+                <label className="field">
+                    <span>Topic ID</span>
+                    <input
+                        value={values.topicId}
+                        onChange={event => updateValue('topicId', event.target.value)}
+                        disabled={busy || values.transport !== 'messages.rtc'}
+                    />
+                </label>
+            </div>
+            <div className="segmented delivery-toggle" role="group" aria-label="Delivery mode">
+                {(['direct', 'multicast', 'broadcast'] as const).map(mode => (
+                    <button
+                        key={mode}
+                        type="button"
+                        className={values.deliveryMode === mode ? 'selected' : ''}
+                        onClick={() => updateValue('deliveryMode', mode as ManualDeliveryMode)}
+                        disabled={busy}
+                    >
+                        {mode}
+                    </button>
+                ))}
+            </div>
+            <div className="payload-toolbar">
+                <label className="field compact-field">
+                    <span>Payload Preset</span>
+                    <select
+                        value={payloadPresetId}
+                        onChange={event => selectPreset(event.target.value)}
+                        disabled={busy}
+                    >
+                        <option value="custom">Custom</option>
+                        {MANUAL_PAYLOAD_PRESETS.map(preset => (
+                            <option key={preset.presetId} value={preset.presetId}>
+                                {preset.label}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+            </div>
+            <label className="json-editor manual-payload-editor">
+                <span>Payload JSON</span>
+                <textarea
+                    value={payloadText}
+                    onChange={event => {
+                        setPayloadPresetId('custom');
+                        setPayloadText(event.target.value);
+                    }}
+                    spellCheck={false}
+                    disabled={busy}
+                />
+            </label>
+            <div className="manual-preview">
+                <div className="section-heading">
+                    <h3>Command Preview</h3>
+                    <span>{previewCommands.length} command</span>
+                </div>
+                <pre className="json-block">
+                    {payloadResult.ok ? json(previewCommands.length === 1 ? previewCommands[0] : previewCommands) : payloadResult.error}
+                </pre>
+            </div>
+            <div className="manual-action-grid">
+                {(['configure', 'join', 'connect', 'send', 'health', 'close', 'reset'] as const).map(action => (
+                    <button
+                        key={action}
+                        type="button"
+                        disabled={busy || (action === 'send' && !payloadResult.ok)}
+                        onClick={() => void runManualAction(action)}
+                    >
+                        {actionLabel(action)}
+                    </button>
+                ))}
+            </div>
+            <div className="manual-history">
+                <div className="section-heading">
+                    <h3>Manual Actions</h3>
+                    <div className="heading-actions">
+                        <button type="button" onClick={() => setRecipeVisible(current => !current)}>
+                            {recipeVisible ? 'Hide Recipe' : 'Show Recipe'}
+                        </button>
+                        <button type="button" onClick={copyRecipeSnippet} disabled={history.length === 0}>
+                            Copy Recipe
+                        </button>
+                    </div>
+                </div>
+                <div className="manual-action-list">
+                    {history.length === 0 && (
+                        <div className="empty-state">No manual actions</div>
+                    )}
+                    {history.slice().reverse().map(entry => {
+                        const relatedEvents = events.filter(event =>
+                            event.commandId && entry.commandIds.includes(event.commandId)
+                        ).length;
+                        return (
+                            <article className="manual-action-row" key={entry.actionId}>
+                                <div>
+                                    <strong>{entry.label}</strong>
+                                    <small>{formatTime(entry.atEpochMs)} - {relatedEvents} events</small>
+                                </div>
+                                <div className="manual-command-links">
+                                    {entry.commandIds.map(commandId => (
+                                        <button
+                                            type="button"
+                                            key={commandId}
+                                            onClick={() => onSelectCommand(commandId)}
+                                        >
+                                            {commandId}
+                                        </button>
+                                    ))}
+                                </div>
+                            </article>
+                        );
+                    })}
+                </div>
+                {recipeVisible && (
+                    <textarea
+                        className="report-output manual-recipe-output"
+                        value={recipeText}
+                        readOnly
+                        spellCheck={false}
+                    />
+                )}
+            </div>
+            {localError && (
+                <div className="workbench-error" role="status">
+                    {localError}
+                </div>
+            )}
+        </section>
+    );
+}
+
+function ReceivedDataInboxPanel({ state, onSelectCommand }: {
+    state: RallarBlackBoxTestState;
+    onSelectCommand(commandId: string): void;
+}) {
+    const received = useMemo(
+        () => deriveManualReceivedMessages(selectRallarBlackBoxEvents(state)),
+        [state],
+    );
+
+    return (
+        <section className="panel received-inbox-panel">
+            <div className="panel-heading">
+                <h2>Received Data</h2>
+                <span>{received.length} messages</span>
+            </div>
+            <div className="received-list">
+                {received.length === 0 && (
+                    <div className="empty-state">No received data</div>
+                )}
+                {received.slice(-24).reverse().map(message => (
+                    <article className="received-row" key={message.eventId}>
+                        <div className="received-topline">
+                            <strong>{message.topic}</strong>
+                            <time>{formatTime(message.atEpochMs)}</time>
+                        </div>
+                        <div className="event-meta">
+                            <span>{message.connection}</span>
+                            <span>{message.transport}</span>
+                            <span>{message.sender}</span>
+                            {message.commandId && (
+                                <button type="button" onClick={() => onSelectCommand(message.commandId!)}>
+                                    {message.commandId}
+                                </button>
+                            )}
+                        </div>
+                        <pre className="mini-json">{json(message.payload)}</pre>
+                    </article>
+                ))}
+            </div>
         </section>
     );
 }
@@ -974,6 +1402,15 @@ export default function App() {
                     runState={runState}
                     loadedFixtureId={loadedFixtureId}
                     lastError={lastError}
+                />
+                <ManualRallarWorkbenchPanel
+                    state={state}
+                    busy={busy}
+                    onSelectCommand={setSelectedCommandId}
+                />
+                <ReceivedDataInboxPanel
+                    state={state}
+                    onSelectCommand={setSelectedCommandId}
                 />
                 <ControlPanel state={state} control={control}/>
                 <BootstrapPanel bootstrap={bootstrap}/>

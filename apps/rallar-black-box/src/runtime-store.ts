@@ -7,6 +7,7 @@ import type {
     RallarBlackBoxTestConfig,
     RallarBlackBoxTestError,
     RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntime,
     RallarBlackBoxTestState,
 } from '@shared-test/rallar-bb-test/types.ts';
@@ -632,25 +633,61 @@ class RallarBlackBoxRuntimeStore {
             commandJson,
             'Command JSON is invalid',
         );
+        await this.executeManualCommand(command, `Executing ${command.kind}`);
+    }
+
+    async executeManualCommand(
+        command: RallarBlackBoxTestCommand,
+        actionLabel = `Executing ${command.kind}`,
+    ): Promise<void> {
+        await this.executeManualCommands([command], actionLabel);
+    }
+
+    async executeManualCommands(
+        commands: readonly RallarBlackBoxTestCommand[],
+        actionLabel: string,
+    ): Promise<void> {
+        if (commands.length === 0) {
+            return;
+        }
+
         this.snapshot = {
             ...this.snapshot,
             busy: true,
             runState: 'running',
-            lastAction: `Executing ${command.kind}`,
+            lastAction: actionLabel,
             lastError: undefined,
         };
         this.emit();
 
-        const result = await this.runtime.execute(command);
-        this.snapshot = {
-            ...this.snapshot,
-            busy: false,
-            runState: result.ok ? 'passed' : result.status === 'cancelled' ? 'cancelled' : 'failed',
-            lastAction: result.ok
-                ? `Executed ${command.kind}`
-                : `${command.kind} failed`,
-            lastError: result.error?.message,
-        };
+        try {
+            let failed: RallarBlackBoxTestResult | undefined;
+            for (const command of commands) {
+                const result = await this.runtime.execute(command);
+                if (!result.ok && !failed) {
+                    failed = result;
+                }
+            }
+
+            this.snapshot = {
+                ...this.snapshot,
+                busy: false,
+                runState: failed
+                    ? failed.status === 'cancelled' ? 'cancelled' : 'failed'
+                    : 'passed',
+                lastAction: failed ? `${actionLabel} failed` : actionLabel,
+                lastError: failed?.error?.message,
+            };
+        } catch (error) {
+            this.snapshot = {
+                ...this.snapshot,
+                busy: false,
+                runState: 'failed',
+                lastAction: `${actionLabel} failed`,
+                lastError: toMessage(error),
+            };
+        }
+
         this.emit();
     }
 

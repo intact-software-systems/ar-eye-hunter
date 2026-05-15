@@ -795,11 +795,23 @@ Deliverables:
 
 Add a UI path for quick Rallar testing without authoring or loading a full recipe.
 
-Status: planned.
+Status: completed.
 
 Results:
 
-- Not started.
+- Added `apps/rallar-black-box/src/manual-workbench.ts` with testable manual command builders, payload JSON parsing, received-message derivation, payload presets, and recipe-snippet generation.
+- Added a structured Manual Rallar panel to the SPA that emits normal `rallar-bb-test` commands for configure, create/join group, connect, send, health, close, and reset actions.
+- Added environment, API base URL, actor, session, group, connection, target client, multicast clients, transport, timeout, WebSocket URL, topic, type ID, and topic ID controls.
+- Added JSON payload presets, live payload validation, and generated command preview for direct, multicast, and broadcast payload sends.
+- Added RTC realtime, RTC `messages.rtc`, and WebSocket send command generation, including direct target, multicast target, and broadcast metadata.
+- Added manual action history with command links back into the existing result, diagnostic, stats, and event inspection surfaces.
+- Added copyable recipe-snippet generation from manual actions so useful manual checks can become repeatable recipes.
+- Added a dedicated received-data inbox derived from runtime message events and grouped by connection, transport, sender, topic, and timestamp.
+- Preserved the existing event-stream filtering and recipe workbench while adding the manual testing surface alongside it.
+- Added focused tests for manual command generation, payload validation, received-message extraction, and recipe-snippet generation.
+- Verified with `npm --workspace rallar-black-box run typecheck`.
+- Verified with `npm --workspace rallar-black-box run build`.
+- Verified with `npm run test -- packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/rallar-black-box/control-client.test.ts packages/tests/rallar-black-box/manual-workbench.test.ts`.
 
 Deliverables:
 

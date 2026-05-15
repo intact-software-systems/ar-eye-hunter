@@ -74,7 +74,8 @@ button:disabled {
 }
 
 h1,
-h2 {
+h2,
+h3 {
     margin: 0;
     letter-spacing: 0;
 }
@@ -89,6 +90,11 @@ h1 {
 h2 {
     color: #17211c;
     font-size: 1rem;
+}
+
+h3 {
+    color: #27322e;
+    font-size: 0.88rem;
 }
 
 .header-grid,
@@ -169,8 +175,12 @@ h2 {
 .segmented button,
 .workbench-actions button,
 .manual-command button,
+.manual-action-grid button,
+.heading-actions button,
+.manual-command-links button,
 .control-actions button,
 .panel-heading button,
+.event-meta button,
 .queue-row {
     border: 1px solid #bdc8c0;
     border-radius: 6px;
@@ -181,6 +191,8 @@ h2 {
 .header-actions button,
 .workbench-actions button,
 .manual-command button,
+.manual-action-grid button,
+.heading-actions button,
 .control-actions button,
 .panel-heading button {
     min-height: 38px;
@@ -220,6 +232,8 @@ h2 {
 
 .config-panel,
 .workbench-panel,
+.manual-rallar-panel,
+.received-inbox-panel,
 .control-panel,
 .queue-panel,
 .focus-panel,
@@ -232,6 +246,11 @@ h2 {
 
 .workbench-panel {
     grid-row: span 2;
+}
+
+.manual-rallar-panel {
+    grid-column: span 2;
+    align-self: start;
 }
 
 .event-panel {
@@ -347,6 +366,123 @@ h2 {
 .manual-command button {
     width: calc(100% - 28px);
     margin: 0 14px;
+}
+
+.manual-rallar-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    padding: 12px 14px;
+}
+
+.payload-toolbar {
+    display: grid;
+    grid-template-columns: minmax(180px, 0.32fr);
+    gap: 10px;
+    padding: 12px 14px 0;
+}
+
+.manual-payload-editor textarea {
+    min-height: 150px;
+}
+
+.manual-preview .json-block {
+    max-height: 260px;
+}
+
+.manual-action-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px 14px;
+}
+
+.manual-action-grid button {
+    overflow-wrap: anywhere;
+}
+
+.section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px 0;
+}
+
+.section-heading span {
+    color: #65746d;
+    font-size: 0.8rem;
+}
+
+.heading-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.manual-action-list,
+.received-list {
+    display: grid;
+    gap: 8px;
+    padding: 12px 14px 14px;
+}
+
+.manual-action-row,
+.received-row {
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid #d8dfd5;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.manual-action-row {
+    display: grid;
+    grid-template-columns: minmax(0, 0.36fr) minmax(0, 0.64fr);
+    gap: 10px;
+    align-items: start;
+}
+
+.manual-action-row strong,
+.manual-action-row small {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.manual-action-row small {
+    color: #65746d;
+    font-size: 0.76rem;
+}
+
+.manual-command-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: flex-end;
+}
+
+.manual-command-links button,
+.event-meta button {
+    min-height: 28px;
+    padding: 3px 8px;
+    color: #40504a;
+    font-size: 0.75rem;
+}
+
+.manual-recipe-output {
+    min-height: 220px;
+}
+
+.empty-state {
+    padding: 12px;
+    border: 1px dashed #c8d0c5;
+    border-radius: 6px;
+    background: #f8faf6;
+    color: #65746d;
+    font-size: 0.86rem;
 }
 
 .workbench-error {
@@ -608,6 +744,7 @@ dd {
 }
 
 .event-topline,
+.received-topline,
 .event-meta {
     display: flex;
     min-width: 0;
@@ -624,7 +761,17 @@ dd {
     white-space: nowrap;
 }
 
-.event-topline time {
+.received-topline strong {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    color: #1c2823;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.event-topline time,
+.received-topline time {
     color: #607069;
     font-size: 0.76rem;
     white-space: nowrap;
@@ -642,6 +789,21 @@ dd {
     background: #eef1ec;
     color: #5b6963;
     font-size: 0.75rem;
+    overflow-wrap: anywhere;
+}
+
+.mini-json {
+    max-height: 150px;
+    margin: 10px 0 0;
+    overflow: auto;
+    padding: 10px;
+    border-radius: 6px;
+    background: #151a18;
+    color: #dce8de;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.75rem;
+    line-height: 1.42;
+    white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
 
@@ -711,6 +873,18 @@ dd {
     .event-filter-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
+
+    .manual-rallar-panel {
+        grid-column: 1 / 3;
+    }
+
+    .manual-rallar-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .manual-action-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
 }
 
 @media (max-width: 760px) {
@@ -730,11 +904,25 @@ dd {
         grid-column: auto;
     }
 
+    .manual-rallar-panel {
+        grid-column: auto;
+    }
+
     .event-filter-grid,
+    .manual-rallar-grid,
+    .manual-action-grid,
     .workbench-actions,
     .control-actions,
     .control-stats {
         grid-template-columns: 1fr;
+    }
+
+    .manual-action-row {
+        grid-template-columns: 1fr;
+    }
+
+    .manual-command-links {
+        justify-content: flex-start;
     }
 
     .queue-row {
