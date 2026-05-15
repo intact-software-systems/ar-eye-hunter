@@ -82,6 +82,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     private readonly commandExecutor: RallarBlackBoxTestCommandExecutor | undefined;
     private readonly listeners = new Set<RallarBlackBoxTestStateListener>();
     private currentState: RallarBlackBoxTestState = initialState();
+    private currentConfig: RallarBlackBoxTestConfig | undefined;
     private currentRedaction: RallarBlackBoxTestConfig['redaction'] | undefined;
     private loadedRecipe: RallarBlackBoxTestRecipe | undefined;
     private cancelRequested = false;
@@ -174,6 +175,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 );
 
                 this.currentState = initialState();
+                this.currentConfig = undefined;
                 this.currentRedaction = undefined;
                 this.loadedRecipe = undefined;
                 this.cancelRequested = false;
@@ -227,13 +229,14 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     private toCommandContext(): RallarBlackBoxTestCommandContext {
         return {
             state: () => this.currentState,
-            config: () => this.currentState.currentConfig,
+            config: () => this.currentConfig,
             recordEvent: event => this.emitEvent(event),
             updateStats: commandId => this.updateStats(commandId),
         };
     }
 
     private configure(config: RallarBlackBoxTestConfig): CommandOutcome {
+        this.currentConfig = config;
         this.currentRedaction = config.redaction;
         const redactedConfig = this.redact(config);
         this.setState({

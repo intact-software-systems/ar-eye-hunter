@@ -113,4 +113,93 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             )).toBe(true);
         });
     });
+
+    it('maps shared connect and send commands to the browser Rallar runtime', async () => {
+        const connect = vi.fn(async () => ({
+            connected: true,
+            connection: 'realRtc',
+            transport: 'realtime',
+            roomId: 'room-1',
+        }));
+        const send = vi.fn(async () => ({
+            status: 'sent',
+            transport: 'realtime',
+            roomId: 'room-1',
+        }));
+
+        await withFakeWindow({
+            __blackBoxRallar: {
+                connect,
+                send,
+                close: vi.fn(),
+                health: vi.fn(),
+            },
+        }, async () => {
+            const runtime = createRallarBlackBoxBrowserTestRuntime({
+                rallarRuntime: createSpaBrowserRallarRuntime(),
+            });
+
+            await runtime.execute({
+                kind: 'configure',
+                commandId: 'configure-real-command-path',
+                config: {
+                    apiBaseUrl: 'https://api.example.test',
+                    actor: 'alice',
+                    roomId: 'room-1',
+                    transport: 'realtime',
+                    rallar: {
+                        username: 'alice',
+                        password: 'secret',
+                        transport: 'realtime',
+                    },
+                    control: {
+                        providerMode: 'browser-rallar',
+                    },
+                },
+            });
+            const connectResult = await runtime.execute({
+                kind: 'rtc.connect',
+                commandId: 'connect-real-command-path',
+                connection: 'realRtc',
+            });
+            const sendResult = await runtime.execute({
+                kind: 'rtc.send',
+                commandId: 'send-real-command-path',
+                connection: 'realRtc',
+                transport: 'realtime',
+                send: {
+                    roomId: 'room-1',
+                    peerIds: ['bob-session'],
+                    data: {
+                        text: 'hello',
+                    },
+                },
+            });
+
+            expect(connectResult.ok).toBe(true);
+            expect(sendResult.ok).toBe(true);
+            expect(connect).toHaveBeenCalledWith({
+                connection: 'realRtc',
+                actor: 'alice',
+                roomId: 'room-1',
+                rallar: {
+                    apiBaseUrl: 'https://api.example.test',
+                    username: 'alice',
+                    password: 'secret',
+                    transport: 'realtime',
+                },
+            });
+            expect(send).toHaveBeenCalledWith({
+                roomId: 'room-1',
+                peerIds: ['bob-session'],
+                data: {
+                    text: 'hello',
+                },
+            });
+            expect(selectRallarBlackBoxDiagnostics(runtime.state()).some(event =>
+                event.topic === 'rallar.bb.rtc.send_completed' &&
+                event.commandId === 'send-real-command-path'
+            )).toBe(true);
+        });
+    });
 });

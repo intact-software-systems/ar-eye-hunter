@@ -1,15 +1,14 @@
 # Rallar Black Box Documentation
 
-This folder documents the current state of `apps/rallar-black-box` after Iteration 14.
+This folder documents the current state of `apps/rallar-black-box` after Iteration 15C.
 
 The app is a browser-based black-box test agent and visible debugging workbench for Rallar RTC, WebSocket, and HTTP test
 flows. It uses the shared `rallar-bb-test` command contract, can connect to a WebSocket control server, streams results
 and runtime events, and provides UI panels for manual testing, diagnostics, received data, reports, and topology.
 
-Important current limitation: the SPA runtime is currently wired to the local/fake command executor. The control
-protocol, command dispatch, result replay, stats, reports, diagnostics, topology, and UI are implemented, but live Rallar
-browser execution still needs the browser adapter wired into the SPA runtime before the app produces real Rallar network
-traffic from this UI.
+The default provider is simulated so the UI works without a backend. Real browser execution is available with
+`provider=browser-rallar`; it uses the browser Rallar runtime for auth, connect, room join, realtime send, browser
+WebSocket, and browser HTTP commands when a real Rallar environment is configured.
 
 ## Documents
 
@@ -43,7 +42,7 @@ No login is required for the current local UI. The client starts with demo defau
 simulated, so the visible workbench, diagnostics, reports, and topology work without a Rallar account or backend login.
 
 The active provider defaults to `simulated`. Real Rallar execution uses `provider=browser-rallar`, which requires a real
-Rallar API base URL and auth config.
+Rallar API base URL plus username/password or a restorable browser auth session.
 
 Open the SPA as a control agent:
 
@@ -56,6 +55,9 @@ Run the browser-agent smoke test:
 ```sh
 npm run test:e2e:rallar-black-box
 ```
+
+The live browser-Rallar smoke is included in that suite but skipped unless the required `VITE_RALLAR_*` environment
+variables are provided.
 
 ## Main Source Files
 

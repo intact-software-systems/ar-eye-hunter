@@ -39,8 +39,10 @@ UI panel
   -> React selectors and panels
 ```
 
-Current implementation detail: the SPA command executor is the local/fake executor in `src/runtime-store.ts`. It creates
-real runtime state and realistic diagnostic/message events, but does not yet call the live browser Rallar facade.
+Current implementation detail: the default provider is the local/fake executor in `src/runtime-store.ts`. It creates
+real runtime state and realistic diagnostic/message events for offline UI work. When `provider=browser-rallar` is
+selected with real Rallar config, the runtime store uses the browser adapter and calls the browser Rallar facade for
+RTC, WebSocket, HTTP, health, close, and reset behavior.
 
 ## Remote Control Path
 

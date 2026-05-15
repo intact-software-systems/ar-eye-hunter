@@ -51,16 +51,19 @@ The repo already has a useful browser-backed RTC foundation:
 The SPA plan should build on this foundation. It should not create a second black-box runtime with different command
 semantics.
 
-## Current Execution Reality After Iteration 14
+## Current Execution Reality After Iteration 15C
 
-The visible SPA currently uses the local/fake executor in `apps/rallar-black-box/src/runtime-store.ts`. The UI,
-command/result contract, control WebSocket, diagnostics, reports, received-data inbox, and topology are real, but
-`rtc.connect`, `rtc.send`, `ws.open`, `ws.send`, and `http.request` are simulated by that executor.
+The visible SPA defaults to the local/fake executor in `apps/rallar-black-box/src/runtime-store.ts`. The UI,
+command/result contract, control WebSocket, diagnostics, reports, received-data inbox, and topology are real, and the
+default simulated provider remains useful for offline UI and protocol development.
 
-The next implementation work should make real Rallar execution an explicit provider mode. The default local workbench can
-remain simulated for offline UI development, but black-box validation against deployed Rallar must use a real
-browser-Rallar provider that calls the browser facade and produces actual RTC signaling, room joins, subscriptions, and
-payload sends.
+Real Rallar execution is now an explicit opt-in provider mode. When `provider=browser-rallar` is selected with a real
+API base URL and supported auth config, the SPA uses the shared browser adapter, lazy-loads the browser Rallar runtime,
+and calls the browser facade for auth, connect, room join, subscriptions, RTC send, browser WebSocket, browser HTTP,
+health, close, and reset behavior.
+
+The current live proof is a gated one-agent connect/send smoke. The next meaningful real-provider proof is two-agent
+delivery where one browser receives payloads sent by another browser.
 
 Target provider modes:
 
@@ -939,7 +942,7 @@ Results:
 - Added provider mode to bootstrap config, runtime config, manual workbench generated configure commands, control config,
   defaults, report snapshots, and report result rows.
 - Added header, bootstrap, and configuration UI visibility for the active provider mode.
-- Added provider validation for `browser-rallar`, requiring a non-demo API base URL plus token, username/password, or
+- Added provider validation for `browser-rallar`, requiring a non-demo API base URL plus username/password or
   `restoreSession=true`.
 - Added explicit `browser-rallar` not-ready failures so real-provider mode cannot silently fall back to simulated RTC
   loopback before Iteration 15B is implemented.
@@ -1007,11 +1010,36 @@ Deliverables:
 
 Prove the SPA can perform actual Rallar RTC signaling and payload sending against a configured environment.
 
-Status: planned.
+Status: completed for the gated smoke harness; live execution is skipped unless real Rallar environment variables are
+provided.
 
 Results:
 
-- Not started.
+- Tightened `browser-rallar` provider validation to match the actual browser runtime auth modes: a real API base URL plus
+  username/password login or `restoreSession=true`.
+- Stopped treating a bare `rallarToken` / `VITE_RALLAR_TOKEN` value as sufficient provider auth. Restored-session mode
+  needs a complete browser auth session, not only an access token.
+- Kept the simulated provider as the out-of-the-box default and kept real-provider mode opt-in through URL or Vite env.
+- Added a non-gated SPA adapter test proving configured `rtc.connect` and `rtc.send` commands call
+  `window.__blackBoxRallar.connect(...)` and `window.__blackBoxRallar.send(...)` instead of the fake executor.
+- Added `tests/playwright/rallar-black-box/browser-rallar-real-smoke.spec.ts`, an environment-gated Playwright smoke that
+  starts a control-agent SPA with `provider=browser-rallar`, enqueues a real `rtc.connect`, enqueues a realtime
+  `rtc.send`, waits for successful command results, and asserts real browser topics are present while
+  `rallar.bb.fake.*` topics are absent.
+- The live smoke is skipped by default and runs only when `VITE_RALLAR_API_BASE_URL`, `VITE_RALLAR_ROOM_ID`, and either
+  `VITE_RALLAR_USERNAME` / `VITE_RALLAR_PASSWORD` or a restorable `VITE_RALLAR_*` browser session are provided.
+- Documented the current provider reality, live-smoke environment variables, and the distinction between simulated local
+  runs and real `browser-rallar` runs.
+- Local verification covered the harness and mocked command path. No live Rallar environment variables were available in
+  this workspace, so the real smoke was not executed against a deployed Rallar service here.
+- Fixed the shared runtime so command executors receive raw config while UI state, reports, events, and results keep
+  redacted config. Without this, `browser-rallar` login would receive a redacted password.
+- Verified with `npm run test -- packages/tests/rallar-black-box/browser-rallar-runtime.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/shared-test/rallar-bb-test.test.ts`.
+- Verified with `npm --workspace @ar-eye-hunter/shared-test run typecheck`.
+- Verified with `npm --workspace rallar-black-box run typecheck`.
+- Verified with `npm --workspace rallar-black-box run build`.
+- Verified with `npm run test:e2e:rallar-black-box`; the live browser-Rallar smoke skipped as intended without real
+  environment variables, and the existing control-agent smoke passed.
 
 Deliverables:
 
@@ -1025,7 +1053,8 @@ Deliverables:
 - RTC diagnostics consume real browser topics such as `rallar.browser.connect.phase_started`,
   `rallar.browser.connect.phase_completed`, `rallar.browser.connect.phase_failed`, `rallar.browser.realtime.message`,
   and `rallar.browser.messages.rtc.message`
-- environment-gated smoke tests that run only when Rallar API base URL and credentials/token are provided
+- environment-gated smoke tests that run only when Rallar API base URL, room ID, and username/password or a restorable
+  browser auth session are provided
 - non-gated tests with mocked Rallar facade proving the command path performs actual connect/send calls
 
 ### Iteration 16: Two-agent Real RTC Delivery

@@ -101,7 +101,7 @@ describe('rallar-black-box control bootstrap', () => {
         const fromEnv = resolveRallarBlackBoxBootstrapConfig('', {
             VITE_RALLAR_PROVIDER: 'browser-rallar',
             VITE_RALLAR_API_BASE_URL: 'https://api.example.test',
-            VITE_RALLAR_TOKEN: 'token-env',
+            VITE_RALLAR_RESTORE_SESSION: 'true',
         });
         const invalid = resolveRallarBlackBoxBootstrapConfig('?provider=unknown', {});
 
@@ -109,7 +109,7 @@ describe('rallar-black-box control bootstrap', () => {
         expect(fromUrl.rallarUsername).toBe('alice');
         expect(fromUrl.rallarPassword).toBe('secret');
         expect(fromEnv.providerMode).toBe('browser-rallar');
-        expect(fromEnv.rallarToken).toBe('token-env');
+        expect(fromEnv.rallarRestoreSession).toBe(true);
         expect(invalid.providerMode).toBe('simulated');
     });
 
@@ -132,13 +132,33 @@ describe('rallar-black-box control bootstrap', () => {
             control: {
                 providerMode: 'browser-rallar',
             },
-        })?.message).toContain('token, username/password');
+        })?.message).toContain('username/password or restoreSession=true');
+
+        expect(validateRallarBlackBoxProviderConfig({
+            apiBaseUrl: 'https://api.example.test',
+            rallar: {
+                token: 'unsupported-bare-token',
+            },
+            control: {
+                providerMode: 'browser-rallar',
+            },
+        })?.message).toContain('username/password or restoreSession=true');
 
         expect(validateRallarBlackBoxProviderConfig({
             apiBaseUrl: 'https://api.example.test',
             rallar: {
                 username: 'alice',
                 password: 'secret',
+            },
+            control: {
+                providerMode: 'browser-rallar',
+            },
+        })).toBeUndefined();
+
+        expect(validateRallarBlackBoxProviderConfig({
+            apiBaseUrl: 'https://api.example.test',
+            rallar: {
+                restoreSession: true,
             },
             control: {
                 providerMode: 'browser-rallar',

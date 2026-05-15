@@ -115,5 +115,6 @@ The tool is currently best for:
 - validating topology and received-message UI behavior
 - smoke-testing the browser agent registration and command/result loop
 
-Because the SPA still uses the fake executor, it is not yet the final tool for proving live deployed Rallar RTC behavior
-through this app. That becomes the next meaningful capability once the browser Rallar adapter is wired into the SPA.
+Because the default SPA mode is simulated, local UI runs are not final proof of live deployed Rallar RTC behavior. Use
+`provider=browser-rallar` plus real environment config for live connect/send checks; two-agent delivery is still the
+next proof needed for end-to-end payload receipt.

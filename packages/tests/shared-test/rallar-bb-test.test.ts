@@ -100,6 +100,47 @@ describe('rallar-bb-test', () => {
         )).toBe(true);
     });
 
+    it('passes raw config to command executors while keeping runtime state redacted', async () => {
+        let capturedPassword: unknown;
+        const runtime = createRallarBlackBoxTestRuntime({
+            commandExecutor: (_command, context) => {
+                const rallarConfig = context.config()?.rallar as { password?: unknown } | undefined;
+                capturedPassword = rallarConfig?.password;
+                return {
+                    status: 'ok',
+                    value: {
+                        password: capturedPassword,
+                    },
+                    nextStatus: context.state().status,
+                };
+            },
+        });
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-raw-executor-config',
+            config: {
+                rallar: {
+                    username: 'alice',
+                    password: 'secret',
+                },
+            },
+        });
+        const result = await runtime.execute({
+            kind: 'health',
+            commandId: 'health-raw-executor-config',
+        });
+
+        expect(capturedPassword).toBe('secret');
+        expect(result.value).toEqual({
+            password: '<redacted>',
+        });
+        expect(selectRallarBlackBoxCurrentConfig(runtime.state())?.rallar).toEqual({
+            username: 'alice',
+            password: '<redacted>',
+        });
+    });
+
     it('uses configured redaction rules for later runtime events', async () => {
         const runtime = createDeterministicRuntime();
 

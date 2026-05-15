@@ -1,8 +1,8 @@
 # Testing Showcases
 
-This document describes how Rallar Black Box can be used from small manual checks to larger controlled runs. The current
-SPA executor is simulated, so the examples validate orchestration, UI, diagnostics, reporting, and command shape today.
-They become live Rallar tests once the browser Rallar adapter is wired into the SPA runtime.
+This document describes how Rallar Black Box can be used from small manual checks to larger controlled runs. The default
+SPA provider is simulated, so local examples validate orchestration, UI, diagnostics, reporting, and command shape. Use
+`provider=browser-rallar` with real environment config when the same command path should exercise live Rallar.
 
 ## Small Scale: Local Visible Smoke
 
@@ -173,6 +173,25 @@ npm run test:e2e:rallar-black-box
 
 The Playwright smoke starts the SPA and control server, opens the SPA in control-agent mode, enqueues a `stats` command,
 and verifies the result is collected by the control server and visible in the app.
+
+## Live Smoke: Browser Rallar Connect And Send
+
+Goal: prove one SPA agent can authenticate, connect to Rallar, join a room, and execute a realtime send command.
+
+Run with a real environment:
+
+```sh
+VITE_RALLAR_PROVIDER=browser-rallar \
+VITE_RALLAR_API_BASE_URL=https://api.example.test \
+VITE_RALLAR_ROOM_ID=room-to-join \
+VITE_RALLAR_USERNAME=alice \
+VITE_RALLAR_PASSWORD=secret \
+npm run test:e2e:rallar-black-box
+```
+
+Optional `VITE_RALLAR_REAL_PEER_IDS` can provide comma-separated peer IDs for direct or multicast realtime sends. Without
+peers, the smoke still verifies real connect and a safe no-peer realtime send path. The test is skipped automatically
+when the real environment variables are absent.
 
 ## Large Scale: Planned Controlled Runs
 

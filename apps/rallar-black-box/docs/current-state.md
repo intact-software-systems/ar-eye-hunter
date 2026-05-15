@@ -6,7 +6,7 @@ actions, remote control commands, runtime events, stats, and reports use one com
 
 ## Implemented
 
-The implementation is complete through Iteration 14 in `implementation-plan.md`.
+The implementation is complete through Iteration 15C in `implementation-plan.md`.
 
 The shared facade exists in `packages/shared-test/rallar-bb-test` and defines:
 
@@ -67,12 +67,13 @@ The client has complete local defaults in `src/client-defaults.ts`:
 - WebSocket URL for manual examples: `wss://control.example.invalid/runs/manual`
 - timeout: `5000` ms
 
-No login is required for the current local UI. The demo username, password, and token values exist only so the UI,
-redaction, diagnostics, and reports can exercise credential-shaped config. They are not sent to a real Rallar service by
-the current SPA executor.
+No login is required for the local UI. The demo username, password, and token values exist so the simulated provider,
+redaction, diagnostics, and reports can exercise credential-shaped config. Real credentials are only used when
+`provider=browser-rallar` is explicitly selected.
 
 Provider mode is explicit. `simulated` mode is the default. `browser-rallar` can be selected through URL or Vite env
-config and requires a real Rallar API base URL plus token, username/password, or `restoreSession=true`.
+config and requires a real Rallar API base URL plus username/password or `restoreSession=true`. A bare token is not
+currently enough for the SPA provider; restored-session mode expects a complete browser auth session in local storage.
 
 This means the current app is already useful for:
 
@@ -83,9 +84,9 @@ This means the current app is already useful for:
 - exercising diagnostics, report, received-message, and topology surfaces
 - building repeatable recipes from manual actions
 
-It is not yet sufficient for final validation of real deployed Rallar RTC behavior by itself. The real-provider adapter
-is wired, but the next implementation step is an environment-gated connect/send smoke against a configured Rallar
-environment, followed by two-agent delivery validation.
+It is not yet sufficient for final delivery validation of real deployed Rallar RTC behavior by itself. A gated
+connect/send smoke exists for configured real environments, but the next meaningful proof is two-agent delivery where
+one browser receives data sent by another browser.
 
 ## Security State
 
@@ -109,7 +110,7 @@ These checks are necessary because the app is a remote browser-control surface.
 The main gaps are:
 
 - the default SPA mode is still simulated for offline use
-- `browser-rallar` is wired, but real connect/send has not yet been smoke-tested against a configured Rallar environment
+- the live `browser-rallar` connect/send smoke is environment-gated and skipped unless real Rallar config is supplied
 - the control server is in-memory and not restart-durable
 - monitor-server ingestion is not connected
 - long-running and seeded-random runs are still planned
@@ -123,6 +124,9 @@ Focused checks used for the current state:
 
 ```sh
 npm --workspace rallar-black-box run build
+npm --workspace @ar-eye-hunter/shared-test run typecheck
+npm --workspace rallar-black-box run typecheck
+npm run test -- packages/tests/rallar-black-box/browser-rallar-runtime.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/shared-test/rallar-bb-test.test.ts
 npm run test -- packages/tests/rallar-black-box/topology-graph.test.ts packages/tests/rallar-black-box/rtc-diagnostics.test.ts packages/tests/rallar-black-box/manual-workbench.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/rallar-black-box/control-client.test.ts
 npm run test:e2e:rallar-black-box
 ```

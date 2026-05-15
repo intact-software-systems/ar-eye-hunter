@@ -233,16 +233,17 @@ export function validateRallarBlackBoxProviderConfig(
     }
 
     const rallar = asRecord(config.rallar);
-    const hasToken = Boolean(stringValue(rallar.token));
     const hasLogin = Boolean(stringValue(rallar.username) && stringValue(rallar.password));
     const canRestoreSession = rallar.restoreSession === true;
-    if (!hasToken && !hasLogin && !canRestoreSession) {
+    if (!hasLogin && !canRestoreSession) {
         return {
             code: 'RALLAR_BLACK_BOX_PROVIDER_CONFIG_INVALID',
-            message: 'browser-rallar provider requires rallar token, username/password, or restoreSession=true.',
+            message: 'browser-rallar provider requires rallar username/password or restoreSession=true.',
             details: {
                 providerMode,
                 hasApiBaseUrl: true,
+                hasUsernamePassword: hasLogin,
+                restoreSession: canRestoreSession,
             },
         };
     }
@@ -337,7 +338,6 @@ function rallarConfigFromBootstrap(
     const rallar: Record<string, unknown> = {
         ...(bootstrap.rallarUsername ? { username: bootstrap.rallarUsername } : {}),
         ...(bootstrap.rallarPassword ? { password: bootstrap.rallarPassword } : {}),
-        ...(bootstrap.rallarToken ? { token: bootstrap.rallarToken } : {}),
         ...(bootstrap.rallarRegister ? { register: true } : {}),
         ...(bootstrap.rallarRestoreSession ? { restoreSession: true } : {}),
     };
