@@ -36,7 +36,14 @@ describe('rallar-black-box control bootstrap', () => {
             mode: 'local-workbench',
             autoConnect: false,
             controlUrl: 'ws://localhost:5180/control',
+            runId: 'local-workbench-run',
             agentId: 'visible-agent-local',
+            environment: 'local',
+            apiBaseUrl: 'https://api.example.invalid',
+            actor: 'alice',
+            sessionId: 'visible-session-alice',
+            roomId: 'rallar-black-box-room',
+            transport: 'realtime',
             source: 'default',
         });
     });
@@ -55,6 +62,28 @@ describe('rallar-black-box control bootstrap', () => {
             controlUrl: 'ws://control.example.test/control',
             runId: 'run-env',
             agentId: 'agent-env',
+            source: 'environment',
+        });
+    });
+
+    it('uses Vite environment values for local identity defaults', () => {
+        const bootstrap = resolveRallarBlackBoxBootstrapConfig('', {
+            VITE_RALLAR_ENVIRONMENT: 'staging',
+            VITE_RALLAR_API_BASE_URL: 'https://api.example.test',
+            VITE_RALLAR_ACTOR: 'bob',
+            VITE_RALLAR_SESSION_ID: 'bob-session',
+            VITE_RALLAR_ROOM_ID: 'room-env',
+            VITE_RALLAR_TRANSPORT: 'messages.rtc',
+        });
+
+        expect(bootstrap).toMatchObject({
+            mode: 'local-workbench',
+            environment: 'staging',
+            apiBaseUrl: 'https://api.example.test',
+            actor: 'bob',
+            sessionId: 'bob-session',
+            roomId: 'room-env',
+            transport: 'messages.rtc',
             source: 'environment',
         });
     });

@@ -13,6 +13,7 @@ import type {
 } from '@shared-test/rallar-bb-test/types.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES, } from './recipe-fixtures.ts';
 import { RallarBlackBoxControlClient, type RallarBlackBoxControlSnapshot, } from './control-client.ts';
+import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from './client-defaults.ts';
 
 type RuntimeStoreSnapshot = Readonly<{
     state: RallarBlackBoxTestState;
@@ -32,7 +33,7 @@ export type RallarBlackBoxBootstrapConfig = Readonly<{
     mode: 'local-workbench' | 'control-agent';
     autoConnect: boolean;
     controlUrl: string;
-    runId?: string;
+    runId: string;
     agentId: string;
     controlToken?: string;
     statsIntervalMs?: number;
@@ -59,10 +60,6 @@ function initialControlSnapshot(): RallarBlackBoxControlSnapshot {
 
 function delay(ms: number): Promise<void> {
     return new Promise(resolve => window.setTimeout(resolve, ms));
-}
-
-function envValue(key: string): string | undefined {
-    return (import.meta as { env?: Record<string, string | undefined> }).env?.[key];
 }
 
 function searchParams(search: string): URLSearchParams {
@@ -148,6 +145,12 @@ function bootstrapSource(
         'VITE_RALLAR_CONTROL_TOKEN',
         'VITE_RALLAR_STATS_INTERVAL_MS',
         'VITE_RALLAR_REPORT_UPLOAD_URL',
+        'VITE_RALLAR_ENVIRONMENT',
+        'VITE_RALLAR_API_BASE_URL',
+        'VITE_RALLAR_ACTOR',
+        'VITE_RALLAR_SESSION_ID',
+        'VITE_RALLAR_ROOM_ID',
+        'VITE_RALLAR_TRANSPORT',
     ];
     return envKeys.some(key => env[key]) ? 'environment' : 'default';
 }
@@ -164,20 +167,24 @@ export function resolveRallarBlackBoxBootstrapConfig(
         env,
         'controlUrl',
         'VITE_RALLAR_CONTROL_URL',
-    ) ?? 'ws://localhost:5180/control';
+    ) ?? RALLAR_BLACK_BOX_CLIENT_DEFAULTS.controlUrl;
     const autoConnect = booleanParamValue(
         paramValue(params, env, 'autoConnect', 'VITE_RALLAR_AUTO_CONNECT'),
         mode === 'control-agent',
     );
     const agentId = paramValue(params, env, 'agentId', 'VITE_RALLAR_AGENT_ID') ??
-        'visible-agent-local';
+        RALLAR_BLACK_BOX_CLIENT_DEFAULTS.agentId;
     const transport = paramValue(params, env, 'transport', 'VITE_RALLAR_TRANSPORT');
+    const runId = paramValue(params, env, 'runId', 'VITE_RALLAR_RUN_ID') ??
+        (mode === 'control-agent'
+            ? RALLAR_BLACK_BOX_CLIENT_DEFAULTS.controlRunId
+            : RALLAR_BLACK_BOX_CLIENT_DEFAULTS.localRunId);
 
     return {
         mode: autoConnect ? 'control-agent' : mode,
         autoConnect,
         controlUrl,
-        runId: paramValue(params, env, 'runId', 'VITE_RALLAR_RUN_ID'),
+        runId,
         agentId,
         controlToken: paramValue(params, env, 'controlToken', 'VITE_RALLAR_CONTROL_TOKEN'),
         statsIntervalMs: numberParamValue(paramValue(
@@ -193,14 +200,15 @@ export function resolveRallarBlackBoxBootstrapConfig(
             'VITE_RALLAR_REPORT_UPLOAD_URL',
         ),
         environment: paramValue(params, env, 'environment', 'VITE_RALLAR_ENVIRONMENT') ??
-            'local',
+            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.environment,
         apiBaseUrl: paramValue(params, env, 'apiBaseUrl', 'VITE_RALLAR_API_BASE_URL') ??
-            'https://api.example.invalid',
-        actor: paramValue(params, env, 'actor', 'VITE_RALLAR_ACTOR') ?? 'alice',
+            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.apiBaseUrl,
+        actor: paramValue(params, env, 'actor', 'VITE_RALLAR_ACTOR') ??
+            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.actor,
         sessionId: paramValue(params, env, 'sessionId', 'VITE_RALLAR_SESSION_ID') ??
-            `${agentId}-session`,
+            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.sessionId,
         roomId: paramValue(params, env, 'roomId', 'VITE_RALLAR_ROOM_ID') ??
-            'rallar-black-box-room',
+            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.roomId,
         transport: transport === 'messages.rtc' ? 'messages.rtc' : 'realtime',
         source: bootstrapSource(params, env),
     };
@@ -210,7 +218,7 @@ function remoteControlConfig(
     bootstrap: RallarBlackBoxBootstrapConfig,
     runNumber: number,
 ): RallarBlackBoxTestConfig {
-    const runId = bootstrap.runId ?? `control-run-${runNumber}`;
+    const runId = bootstrap.runId || `${RALLAR_BLACK_BOX_CLIENT_DEFAULTS.controlRunId}-${runNumber}`;
     return {
         runId,
         agentId: bootstrap.agentId,
@@ -229,8 +237,8 @@ function remoteControlConfig(
             source: bootstrap.source,
         },
         defaults: {
-            timeoutMs: 5_000,
-            connection: 'remoteAgent',
+            timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
+            connection: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.remoteConnection,
         },
     };
 }
@@ -809,19 +817,18 @@ class RallarBlackBoxRuntimeStore {
             kind: 'configure',
             commandId: `configure-local-${runNumber}`,
             config: {
-                runId: `local-workbench-run-${runNumber}`,
-                agentId: envValue('VITE_RALLAR_AGENT_ID') ?? 'visible-agent-local',
-                environment: envValue('VITE_RALLAR_ENVIRONMENT') ?? 'local',
-                apiBaseUrl: envValue('VITE_RALLAR_API_BASE_URL') ??
-                    'https://api.example.invalid',
-                actor: 'alice',
-                sessionId: 'visible-session-alice',
-                roomId: 'rallar-black-box-room',
-                transport: 'realtime',
+                runId: this.bootstrapConfig.runId,
+                agentId: this.bootstrapConfig.agentId,
+                environment: this.bootstrapConfig.environment,
+                apiBaseUrl: this.bootstrapConfig.apiBaseUrl,
+                actor: this.bootstrapConfig.actor,
+                sessionId: this.bootstrapConfig.sessionId,
+                roomId: this.bootstrapConfig.roomId,
+                transport: this.bootstrapConfig.transport,
                 rallar: {
-                    username: 'alice',
-                    password: 'local-demo-password',
-                    token: 'local-demo-token',
+                    username: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.demoUsername,
+                    password: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.demoPassword,
+                    token: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.demoToken,
                 },
                 control: {
                     mode: 'local-workbench',
@@ -829,8 +836,8 @@ class RallarBlackBoxRuntimeStore {
                     connected: false,
                 },
                 defaults: {
-                    timeoutMs: 5_000,
-                    connection: 'aliceRtc',
+                    timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
+                    connection: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.connection,
                 },
             },
         });

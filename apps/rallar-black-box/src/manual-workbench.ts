@@ -4,6 +4,7 @@ import type {
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestTransport,
 } from '@shared-test/rallar-bb-test/types.ts';
+import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from './client-defaults.ts';
 
 export type ManualWorkbenchTransport = Extract<
     RallarBlackBoxTestTransport,
@@ -98,21 +99,21 @@ export const MANUAL_PAYLOAD_PRESETS: readonly ManualPayloadPreset[] = [
 ];
 
 export const DEFAULT_MANUAL_WORKBENCH_VALUES: ManualWorkbenchValues = {
-    environment: 'local',
-    apiBaseUrl: 'https://api.example.invalid',
-    actor: 'alice',
-    sessionId: 'visible-session-alice',
-    groupId: 'rallar-black-box-room',
-    connection: 'aliceRtc',
-    targetClient: 'bob',
-    multicastClients: 'bob,charlie',
-    transport: 'realtime',
+    environment: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.environment,
+    apiBaseUrl: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.apiBaseUrl,
+    actor: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.actor,
+    sessionId: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.sessionId,
+    groupId: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.roomId,
+    connection: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.connection,
+    targetClient: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.targetClient,
+    multicastClients: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.multicastClients,
+    transport: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.transport,
     deliveryMode: 'direct',
-    wsUrl: 'wss://control.example.invalid/runs/manual',
-    topic: 'manual.message',
-    typeId: 'manual.type',
-    topicId: 'manual.topic',
-    timeoutMs: 5_000,
+    wsUrl: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.wsUrl,
+    topic: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.topic,
+    typeId: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.typeId,
+    topicId: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.topicId,
+    timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
 };
 
 function clean(value: string): string | undefined {
