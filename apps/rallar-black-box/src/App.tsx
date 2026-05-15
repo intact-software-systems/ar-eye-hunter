@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import Sigma from 'sigma';
 import {
     selectRallarBlackBoxActiveCommand,
     selectRallarBlackBoxCommandHistory,
@@ -46,6 +47,11 @@ import {
     deriveRtcDiagnostics,
     type RtcConnectStageStatus,
 } from './rtc-diagnostics.ts';
+import {
+    deriveRallarTopologyGraph,
+    visibleTopologyCounts,
+    type RallarTopologyFilter,
+} from './topology-graph.ts';
 
 type CommandQueueRow = Readonly<{
     id: string;
@@ -297,6 +303,10 @@ function stageTone(status: RtcConnectStageStatus): string {
 
 function formatList(values: readonly string[]): string {
     return values.length > 0 ? values.join(', ') : '-';
+}
+
+function topologyFilterLabel(filter: RallarTopologyFilter): string {
+    return filter === 'all' ? 'All' : filter;
 }
 
 function Header({ state, control, bootstrapping, lastAction }: {
@@ -1032,6 +1042,165 @@ function RtcDiagnosticsPanel({ state, busy, onSelectCommand }: {
     );
 }
 
+function TopologyGraphPanel({ state, onSelectCommand }: {
+    state: RallarBlackBoxTestState;
+    onSelectCommand(commandId: string): void;
+}) {
+    const [filter, setFilter] = useState<RallarTopologyFilter>('all');
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    const topology = useMemo(() => deriveRallarTopologyGraph(state), [state]);
+    const visibleCounts = useMemo(
+        () => visibleTopologyCounts(topology.graph, filter),
+        [filter, topology.graph],
+    );
+    const visibleNodes = useMemo(() => {
+        const rows: Array<Readonly<{
+            id: string;
+            label: string;
+            kind: string;
+            status: string;
+            eventCount: number;
+        }>> = [];
+        topology.graph.forEachNode((id, attrs) => {
+            if (filter !== 'all' && attrs.status !== filter) {
+                return;
+            }
+            rows.push({
+                id,
+                label: attrs.label,
+                kind: attrs.kind,
+                status: attrs.status,
+                eventCount: attrs.eventCount,
+            });
+        });
+        return rows
+            .sort((left, right) =>
+                left.kind.localeCompare(right.kind) ||
+                left.label.localeCompare(right.label)
+            )
+            .slice(0, 18);
+    }, [filter, topology.graph]);
+    const routeResults = useMemo(
+        () => state.commandHistory
+            .filter(result => result.kind === 'rtc.send' || result.kind === 'ws.send')
+            .slice(-8)
+            .reverse(),
+        [state.commandHistory],
+    );
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) {
+            return;
+        }
+
+        const renderer = new Sigma(topology.graph, container, {
+            allowInvalidContainer: true,
+            hideEdgesOnMove: false,
+            hideLabelsOnMove: true,
+            labelRenderedSizeThreshold: 8,
+            nodeReducer: (_node, attrs) => ({
+                ...attrs,
+                hidden: filter !== 'all' && attrs.status !== filter,
+                highlighted: attrs.status === 'failed',
+            }),
+            edgeReducer: (_edge, attrs) => ({
+                ...attrs,
+                hidden: filter !== 'all' && attrs.status !== filter,
+            }),
+        });
+
+        return () => renderer.kill();
+    }, [filter, topology.graph]);
+
+    return (
+        <section className="panel topology-panel">
+            <div className="panel-heading">
+                <h2>Topology</h2>
+                <span>{visibleCounts.nodes} nodes</span>
+            </div>
+            <div className="segmented topology-filters" role="group" aria-label="Topology filter">
+                {(['all', 'active', 'degraded', 'failed'] as const).map(entry => (
+                    <button
+                        type="button"
+                        key={entry}
+                        className={filter === entry ? 'selected' : ''}
+                        onClick={() => setFilter(entry)}
+                    >
+                        {topologyFilterLabel(entry)}
+                    </button>
+                ))}
+            </div>
+            <div className="topology-summary-grid">
+                <Metric label="Edges" value={String(visibleCounts.edges)}/>
+                <Metric label="Rooms" value={String(topology.summary.rooms)}/>
+                <Metric label="Sessions" value={String(topology.summary.sessions)}/>
+                <Metric label="Routes" value={String(topology.summary.routes)}/>
+                <Metric
+                    label="Degraded"
+                    value={String(topology.summary.degradedNodes + topology.summary.degradedEdges)}
+                    tone={topology.summary.degradedNodes + topology.summary.degradedEdges > 0 ? 'warn' : 'good'}
+                />
+                <Metric
+                    label="Failed"
+                    value={String(topology.summary.failedNodes + topology.summary.failedEdges)}
+                    tone={topology.summary.failedNodes + topology.summary.failedEdges > 0 ? 'bad' : 'good'}
+                />
+            </div>
+            <div className="sigma-host" ref={containerRef} aria-label="Rallar topology graph"/>
+            <div className="topology-lists">
+                <div className="topology-node-list">
+                    <div className="section-heading">
+                        <h3>Nodes</h3>
+                        <span>{visibleNodes.length} visible</span>
+                    </div>
+                    <div className="topology-list-body">
+                        {visibleNodes.length === 0 && (
+                            <div className="empty-state">No topology nodes</div>
+                        )}
+                        {visibleNodes.map(node => (
+                            <article className="topology-node-row" key={node.id}>
+                                <div>
+                                    <strong>{node.label}</strong>
+                                    <small>{node.kind} - {node.eventCount} events</small>
+                                </div>
+                                <span className={`pill ${node.status === 'failed' ? 'bad' : node.status === 'degraded' ? 'warn' : 'good'}`}>
+                                    {node.status}
+                                </span>
+                            </article>
+                        ))}
+                    </div>
+                </div>
+                <div className="topology-node-list">
+                    <div className="section-heading">
+                        <h3>Routes</h3>
+                        <span>{routeResults.length} commands</span>
+                    </div>
+                    <div className="topology-list-body">
+                        {routeResults.length === 0 && (
+                            <div className="empty-state">No route commands</div>
+                        )}
+                        {routeResults.map(result => (
+                            <button
+                                type="button"
+                                className="topology-route-row"
+                                key={result.commandId}
+                                onClick={() => onSelectCommand(result.commandId)}
+                            >
+                                <span>{result.commandId}</span>
+                                <small>{result.kind}</small>
+                                <span className={`pill ${result.ok ? 'good' : 'bad'}`}>
+                                    {result.status}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </section>
+    );
+}
+
 function ControlPanel({ state, control }: {
     state: RallarBlackBoxTestState;
     control: RallarBlackBoxControlSnapshot;
@@ -1613,6 +1782,10 @@ export default function App() {
                 <RtcDiagnosticsPanel
                     state={state}
                     busy={busy}
+                    onSelectCommand={setSelectedCommandId}
+                />
+                <TopologyGraphPanel
+                    state={state}
                     onSelectCommand={setSelectedCommandId}
                 />
                 <ControlPanel state={state} control={control}/>

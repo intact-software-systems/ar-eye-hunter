@@ -876,11 +876,22 @@ Rallar test focus:
 
 Add an optional graph view for visible/debug runs.
 
-Status: planned.
+Status: completed.
 
 Results:
 
-- Not started.
+- Added `graphology` and `sigma` as direct dependencies of the black-box SPA.
+- Added `apps/rallar-black-box/src/topology-graph.ts` with a graphology topology model derived from runtime config and runtime events.
+- Modelled run, agent, actor, connection, room, session, and message/diagnostic nodes.
+- Modelled control, identity, connection, membership, route, and diagnostic edges.
+- Derived active, degraded, and failed status from event severity and diagnostic topic names, with status-aware node and edge coloring.
+- Added deterministic graph layout by node kind so the view is stable across app renders and test runs.
+- Added a Sigma.js topology panel to the React app with active/degraded/failed filters, summary metrics, visible node list, and recent RTC/WS route command links.
+- Kept graph derivation local to the visible SPA and runtime event history, with no effect on headless command execution.
+- Added focused tests for topology derivation, route edges, failed diagnostics, and filter counts.
+- Verified with `npm --workspace rallar-black-box run build`.
+- Verified with `npm run test -- packages/tests/rallar-black-box/topology-graph.test.ts packages/tests/rallar-black-box/rtc-diagnostics.test.ts packages/tests/rallar-black-box/manual-workbench.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/rallar-black-box/control-client.test.ts`.
+- Verified with `npm run test:e2e:rallar-black-box`.
 
 Deliverables:
 

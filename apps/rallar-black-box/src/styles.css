@@ -237,6 +237,7 @@ h3 {
 .manual-rallar-panel,
 .received-inbox-panel,
 .rtc-diagnostics-panel,
+.topology-panel,
 .control-panel,
 .queue-panel,
 .focus-panel,
@@ -257,6 +258,11 @@ h3 {
 }
 
 .rtc-diagnostics-panel {
+    grid-column: span 2;
+    align-self: start;
+}
+
+.topology-panel {
     grid-column: span 2;
     align-self: start;
 }
@@ -587,6 +593,86 @@ h3 {
 
 .rtc-bundle-output {
     min-height: 260px;
+}
+
+.topology-filters {
+    padding-top: 12px;
+}
+
+.topology-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px 14px;
+}
+
+.sigma-host {
+    position: relative;
+    width: calc(100% - 28px);
+    height: 390px;
+    margin: 0 14px 14px;
+    overflow: hidden;
+    border: 1px solid #d8dfd5;
+    border-radius: 6px;
+    background: #f8faf6;
+}
+
+.topology-lists {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.82fr);
+    gap: 10px;
+    padding-bottom: 14px;
+}
+
+.topology-node-list {
+    min-width: 0;
+}
+
+.topology-list-body {
+    display: grid;
+    gap: 8px;
+    padding: 12px 14px 0;
+}
+
+.topology-node-row,
+.topology-route-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    min-width: 0;
+    min-height: 50px;
+    padding: 9px 10px;
+    border: 1px solid #d8dfd5;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.topology-route-row {
+    grid-template-columns: minmax(0, 1fr) minmax(84px, auto) auto;
+    color: #1f2a25;
+    text-align: left;
+}
+
+.topology-node-row div {
+    display: grid;
+    min-width: 0;
+}
+
+.topology-node-row strong,
+.topology-node-row small,
+.topology-route-row span,
+.topology-route-row small {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.topology-node-row small,
+.topology-route-row small {
+    color: #65746d;
+    font-size: 0.75rem;
 }
 
 .workbench-error {
@@ -994,6 +1080,10 @@ dd {
         grid-column: 1 / 3;
     }
 
+    .topology-panel {
+        grid-column: 1 / 3;
+    }
+
     .manual-rallar-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -1007,8 +1097,13 @@ dd {
     }
 
     .rtc-latency-grid,
-    .rtc-membership-list {
+    .rtc-membership-list,
+    .topology-summary-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .topology-lists {
+        grid-template-columns: 1fr;
     }
 }
 
@@ -1037,12 +1132,17 @@ dd {
         grid-column: auto;
     }
 
+    .topology-panel {
+        grid-column: auto;
+    }
+
     .event-filter-grid,
     .manual-rallar-grid,
     .manual-action-grid,
     .rtc-actions,
     .rtc-latency-grid,
     .rtc-membership-list,
+    .topology-summary-grid,
     .workbench-actions,
     .control-actions,
     .control-stats {
@@ -1063,6 +1163,18 @@ dd {
 
     .rtc-stage-row > span:last-child {
         grid-column: 2 / 4;
+    }
+
+    .sigma-host {
+        height: 320px;
+    }
+
+    .topology-route-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .topology-route-row small {
+        grid-column: 1 / 3;
     }
 
     .queue-row {
