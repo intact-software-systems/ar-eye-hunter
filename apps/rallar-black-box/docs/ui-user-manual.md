@@ -14,11 +14,10 @@ http://localhost:5176/
 In this mode the app loads and runs a local sample recipe so the panels show useful state immediately.
 
 The local UI does not require login. It uses demo defaults and the current simulated SPA executor. Login/auth values are
-only needed when a future or configured real Rallar browser adapter targets an environment that requires authentication.
+only needed when `provider=browser-rallar` targets an environment that requires authentication.
 
-The header, bootstrap panel, configuration panel, and report snapshot show the active provider mode. If
-`browser-rallar` is selected before the real adapter is implemented, commands fail explicitly instead of falling back to
-simulated RTC loopback.
+The header, bootstrap panel, configuration panel, and report snapshot show the active provider mode. `browser-rallar`
+requires a real API base URL and auth config; it does not fall back to simulated RTC loopback.
 
 Control-agent mode configures the browser as a remote agent:
 

@@ -42,8 +42,8 @@ http://localhost:5176/
 No login is required for the current local UI. The client starts with demo defaults and the current SPA executor is
 simulated, so the visible workbench, diagnostics, reports, and topology work without a Rallar account or backend login.
 
-The active provider defaults to `simulated`. Real Rallar execution will use `provider=browser-rallar`, but that provider
-currently fails with a clear not-ready message until the browser Rallar SPA adapter is wired in.
+The active provider defaults to `simulated`. Real Rallar execution uses `provider=browser-rallar`, which requires a real
+Rallar API base URL and auth config.
 
 Open the SPA as a control agent:
 
@@ -60,6 +60,7 @@ npm run test:e2e:rallar-black-box
 ## Main Source Files
 
 - `src/client-defaults.ts`: out-of-the-box default values for local workbench and control-agent bootstrap.
+- `src/browser-rallar-runtime.ts`: lazy bridge from SPA provider mode to the browser Rallar runtime.
 - `src/runtime-store.ts`: app state store, bootstrap modes, local command execution, and control client integration.
 - `src/control-client.ts`: browser WebSocket control client.
 - `src/control-protocol.ts`: protocol envelopes and command validation.

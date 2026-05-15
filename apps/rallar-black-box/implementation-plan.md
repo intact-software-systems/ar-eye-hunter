@@ -967,11 +967,25 @@ Deliverables:
 
 Wire the existing browser Rallar facade into the SPA runtime.
 
-Status: planned.
+Status: completed.
 
 Results:
 
-- Not started.
+- Added `apps/rallar-black-box/src/browser-rallar-runtime.ts` as the SPA-safe bridge to the browser Rallar runtime.
+- The bridge lazily imports `packages/shared-test/black-box-runner/browser/rallar-browser-runtime.ts` only when
+  `browser-rallar` is active, preserving default Node tests and simulated UI startup.
+- Connected `provider=browser-rallar` startup to `createRallarBlackBoxBrowserTestRuntime(...)`.
+- Passed the SPA browser Rallar proxy as `rallarRuntime`, real browser `fetch`, and real browser `WebSocket` factory to
+  the shared browser test runtime.
+- Installed a `window.__blackBoxRallarEmit` bridge so real browser Rallar diagnostics, messages, and close events flow
+  into the shared runtime event stream and existing UI selectors.
+- Preserved the simulated provider as the default runtime path for offline UI and protocol development.
+- Kept provider config validation before local/control bootstrap proceeds with `browser-rallar`.
+- Added focused tests with a mocked `window.__blackBoxRallar` proving the SPA adapter proxies connect, send, health, and
+  close and bridges browser events into runtime diagnostics.
+- Verified with `npm --workspace rallar-black-box run build`.
+- Verified with `npm run test -- packages/tests/rallar-black-box/browser-rallar-runtime.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/rallar-black-box/manual-workbench.test.ts packages/tests/rallar-black-box/control-client.test.ts packages/tests/rallar-black-box/rtc-diagnostics.test.ts packages/tests/rallar-black-box/topology-graph.test.ts`.
+- Verified with `npm run test:e2e:rallar-black-box`.
 
 Deliverables:
 

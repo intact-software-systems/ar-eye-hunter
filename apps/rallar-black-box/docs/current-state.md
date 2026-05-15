@@ -45,9 +45,10 @@ development. Durable storage and monitor-server ingestion are still planned work
 
 ## Runtime Reality
 
-The SPA runtime store currently creates the shared runtime with the local/fake command executor from `src/runtime-store.ts`.
-That executor emits realistic command results, diagnostics, message events, stats, and topology inputs, but it does not
-yet perform live Rallar network operations from the SPA.
+The SPA runtime store defaults to the local/fake command executor from `src/runtime-store.ts`. That executor emits
+realistic command results, diagnostics, message events, stats, and topology inputs for offline UI work. When
+`provider=browser-rallar` is selected, the SPA uses `createRallarBlackBoxBrowserTestRuntime(...)` plus
+`src/browser-rallar-runtime.ts` to bridge to the browser Rallar runtime.
 
 The client has complete local defaults in `src/client-defaults.ts`:
 
@@ -70,9 +71,8 @@ No login is required for the current local UI. The demo username, password, and 
 redaction, diagnostics, and reports can exercise credential-shaped config. They are not sent to a real Rallar service by
 the current SPA executor.
 
-Provider mode is now explicit. `simulated` mode is the default. `browser-rallar` can be selected through URL or Vite env
-config, but it intentionally fails with provider validation or a not-ready error until the real browser Rallar SPA
-adapter is implemented.
+Provider mode is explicit. `simulated` mode is the default. `browser-rallar` can be selected through URL or Vite env
+config and requires a real Rallar API base URL plus token, username/password, or `restoreSession=true`.
 
 This means the current app is already useful for:
 
@@ -83,9 +83,9 @@ This means the current app is already useful for:
 - exercising diagnostics, report, received-message, and topology surfaces
 - building repeatable recipes from manual actions
 
-It is not yet sufficient for final validation of real deployed Rallar RTC behavior through the SPA itself. The next
-implementation step for real traffic is to wire the browser Rallar adapter into the SPA runtime and decide where durable
-run state belongs.
+It is not yet sufficient for final validation of real deployed Rallar RTC behavior by itself. The real-provider adapter
+is wired, but the next implementation step is an environment-gated connect/send smoke against a configured Rallar
+environment, followed by two-agent delivery validation.
 
 ## Security State
 
@@ -108,8 +108,8 @@ These checks are necessary because the app is a remote browser-control surface.
 
 The main gaps are:
 
-- the SPA still uses the fake/local executor instead of the real browser Rallar adapter
-- `browser-rallar` provider selection exists, but real connect/send execution is still planned
+- the default SPA mode is still simulated for offline use
+- `browser-rallar` is wired, but real connect/send has not yet been smoke-tested against a configured Rallar environment
 - the control server is in-memory and not restart-durable
 - monitor-server ingestion is not connected
 - long-running and seeded-random runs are still planned

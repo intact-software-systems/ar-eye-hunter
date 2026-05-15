@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/browser-adapter.ts';
 import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -18,6 +19,11 @@ import {
     parseRallarBlackBoxProviderMode,
     type RallarBlackBoxProviderMode,
 } from './client-defaults.ts';
+import {
+    createBrowserWebSocketFactory,
+    createSpaBrowserRallarRuntime,
+    installSpaBrowserRallarEventBridge,
+} from './browser-rallar-runtime.ts';
 
 type RuntimeStoreSnapshot = Readonly<{
     state: RallarBlackBoxTestState;
@@ -694,9 +700,19 @@ class RallarBlackBoxRuntimeStore {
     private readonly bootstrapConfig = resolveRallarBlackBoxBootstrapConfig();
 
     constructor() {
-        this.runtime = createRallarBlackBoxTestRuntime({
-            commandExecutor: providerCommandExecutor,
-        });
+        if (this.bootstrapConfig.providerMode === 'browser-rallar') {
+            const browserRuntime = createRallarBlackBoxBrowserTestRuntime({
+                rallarRuntime: createSpaBrowserRallarRuntime(),
+                fetch: globalThis.fetch?.bind(globalThis) as typeof fetch | undefined,
+                webSocketFactory: createBrowserWebSocketFactory(),
+            });
+            this.runtime = browserRuntime;
+            installSpaBrowserRallarEventBridge(browserRuntime);
+        } else {
+            this.runtime = createRallarBlackBoxTestRuntime({
+                commandExecutor: providerCommandExecutor,
+            });
+        }
         this.snapshot = {
             state: this.runtime.state(),
             control: initialControlSnapshot(),
