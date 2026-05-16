@@ -4,18 +4,14 @@ import type {
     RelicEvent,
     RelicGameState,
     RelicPublicSnapshot,
-} from '@relic-hunters/mod.ts';
+} from '@ar-eye-hunter/relic-hunters/mod.ts';
 import {
-    RELIC_PROTOCOL_VERSION,
     applyRelicCommand,
     createRelicGame,
+    RELIC_PROTOCOL_VERSION,
     toPublicRelicSnapshot,
-} from '@relic-hunters/mod.ts';
-import {
-    deriveCurrentTurnSummaryModel,
-    isPersonalEvent,
-    turnTimelineCategory,
-} from './turn-summary.ts';
+} from '@ar-eye-hunter/relic-hunters/mod.ts';
+import { deriveCurrentTurnSummaryModel, isPersonalEvent, turnTimelineCategory, } from '../src/game/turn-summary.ts';
 
 const NOW = 1_700_000_000_000;
 

@@ -1,15 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { RallarRoomState } from '@shared-web/browser/rallar.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
-import {
-    RELIC_PROTOCOL_VERSION,
-    createRelicGame,
-    toPublicRelicSnapshot,
-} from '@relic-hunters/mod.ts';
-import {
-    RelicHuntersRuntime,
-    type RelicHuntersRuntimeDeps,
-} from './relic-hunters-runtime.ts';
+import type { RallarRoomState } from '@ar-eye-hunter/shared-web/browser/rallar.ts';
+import type { AuthSession } from 'api/api-config.ts';
+import { createRelicGame, RELIC_PROTOCOL_VERSION, toPublicRelicSnapshot, } from '@ar-eye-hunter/relic-hunters/mod.ts';
+import { RelicHuntersRuntime, type RelicHuntersRuntimeDeps, } from '../src/game/relic-hunters-runtime.ts';
 
 describe('RelicHuntersRuntime', () => {
     it('connects, installs listeners, refreshes rooms, and fetches the current snapshot', async () => {

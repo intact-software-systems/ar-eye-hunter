@@ -51,7 +51,7 @@ Real-server test runs should record enough evidence to debug failures: peer IDs,
 | --- | --- | --- |
 | 0: Baseline evidence and reproduction harness | Completed | `packages/shared-web/tasks-findings-iteration-0-baseline.md`; targeted unit/typecheck runs; full-stack real suite; two-agent real `realtime` and `messages.rtc` smoke. |
 | 1: Read-only diagnostics and status surface | Implemented and locally verified | Added read-only RTC/WS diagnostics APIs and focused tests. Real two-agent smoke still passes. Playwright status snapshot artifacts are still a follow-up. |
-| 2: IndexedDB growth and session isolation proof | Not started | Next evidence-first storage iteration. |
+| 2: IndexedDB growth and session isolation proof | Proof tests and explicit cleanup helpers added | `packages/tests/shared-web/browser-al-runtime-stores.test.ts`; existing generic IndexedDB AL runtime tests still pass. Confirms per-prefix lazy eviction and storage bloat risk, with no cross-session read reproduced for the tested browser AL outbound state path. Added explicit expired-row and session cleanup helpers. |
 
 ## Iteration 0: Baseline Evidence And Reproduction Harness
 
@@ -169,6 +169,29 @@ Goal: verify whether `ar-eye-hunter-al-runtime.entries` grows indefinitely in re
 
 Do not implement cleanup first. Prove the behavior.
 
+Status: proof tests and explicit cleanup helpers added and locally verified on 2026-05-16. No automatic startup, logout, or session-replacement cleanup wiring was implemented in this iteration.
+
+Findings from proof tests:
+
+- Current browser session prefix reads suppress expired outbound state rows through the existing lazy eviction behavior.
+- Expired rows under old browser session prefixes remain in `ar-eye-hunter-al-runtime.entries` until that exact prefix is scanned or a future explicit cleanup path removes them.
+- Expired rows under unrelated browser runtime prefixes also remain when only the current session prefix is scanned.
+- Fresh browser session IDs do not read old-session outbound state rows in the tested path.
+- Reusing the same browser session ID restores unexpired outbound state, which is expected for crash/reload continuity but means same-session stale state can survive until expiry.
+
+Risk classification after proof:
+
+- Confirmed storage bloat risk for expired rows outside active/scanned prefixes.
+- No cross-session read reproduced for browser AL outbound sent-state stores with session-scoped runtime IDs.
+- Same-session restore of unexpired data is confirmed behavior, not a cleanup bug by itself.
+
+Implemented after proof:
+
+- `deleteExpiredBrowserALRuntimeEntries()` sweeps expired rows across browser AL runtime entry prefixes in `ar-eye-hunter-al-runtime.entries`.
+- `deleteExpiredBrowserALRuntimeEntriesForSession(sessionId)` performs the same expired-row cleanup scoped to the three browser runtime prefixes for one session.
+- `deleteBrowserALRuntimeEntriesForSession(sessionId)` purges all browser AL runtime rows for one session and is intended for explicit logout/session-replacement cleanup decisions.
+- Cleanup helpers return `scanned` and `deleted` counts plus the database, store, and prefixes used, so tests and diagnostics can report what happened.
+
 Proof work:
 
 - Add tests that create expired records under:
@@ -182,15 +205,25 @@ Proof work:
 
 Potential implementation only after proof:
 
-- Add explicit cleanup helpers for browser AL runtime prefixes.
-- Add logout/session-replacement cleanup.
-- Add startup/background expired-row sweep for `ar-eye-hunter-al-runtime.entries`.
+- Add explicit cleanup helpers for browser AL runtime prefixes. Implemented.
+- Add logout/session-replacement cleanup. Still pending an explicit lifecycle decision.
+- Add startup/background expired-row sweep for `ar-eye-hunter-al-runtime.entries`. Still pending an explicit lifecycle decision.
 
 Testing:
 
 - Fake IndexedDB unit/integration tests for provider and AL runtime stores.
 - Browser facade logout test proving cleanup behavior after it is implemented.
 - Optional real-browser storage diagnostic in black-box app to count rows by prefix before and after logout.
+
+Verification completed:
+
+- `npm run test -- packages/tests/shared-web/browser-al-runtime-stores.test.ts`
+- `npm run test -- packages/tests/shared/al-indexeddb-runtime-stores.test.ts packages/tests/shared-web/browser-al-runtime-stores.test.ts`
+- `npm --workspace @ar-eye-hunter/shared-web run typecheck`
+
+Additional verification note:
+
+- `npx tsc -p packages/tests/tsconfig.json --noEmit` is not currently a clean targeted gate for this iteration because the broader tests/app graph has existing unrelated TypeScript errors, including Deno globals, missing `@shared-test` path resolution, existing test typing issues, and unrelated relic-hunters type mismatches. Filtering that output showed no errors for `packages/tests/shared-web/browser-al-runtime-stores.test.ts`.
 
 Exit criteria:
 

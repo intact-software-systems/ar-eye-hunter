@@ -1,16 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type {
-    RelicCharacterId,
-    RelicGameState,
-    RelicPublicSnapshot,
-} from '@relic-hunters/mod.ts';
+import type { RelicCharacterId, RelicGameState, RelicPublicSnapshot, } from '@ar-eye-hunter/relic-hunters/mod.ts';
 import {
-    RELIC_PROTOCOL_VERSION,
     applyRelicCommand,
     createRelicGame,
+    RELIC_PROTOCOL_VERSION,
     toPublicRelicSnapshot,
-} from '@relic-hunters/mod.ts';
-import { deriveRelicGameViewModel } from './game-view-model.ts';
+} from '@ar-eye-hunter/relic-hunters/mod.ts';
+import { deriveRelicGameViewModel } from '../src/game/game-view-model.ts';
 
 const NOW = 1_700_000_000_000;
 

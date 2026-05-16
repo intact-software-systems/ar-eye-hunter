@@ -3,11 +3,8 @@ import {
     RELIC_PROTOCOL_VERSION,
     type RelicEvent,
     type RelicPublicSnapshot,
-} from '@relic-hunters/mod.ts';
-import {
-    classifyRelicSnapshotAcceptance,
-    shouldAcceptRelicSnapshot,
-} from './relic-snapshot-ordering.ts';
+} from '@ar-eye-hunter/relic-hunters/mod.ts';
+import { classifyRelicSnapshotAcceptance, shouldAcceptRelicSnapshot, } from '../src/game/relic-snapshot-ordering.ts';
 
 describe('relic snapshot ordering', () => {
     it('rejects snapshots for a different expected room', () => {
