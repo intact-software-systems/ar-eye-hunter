@@ -19,6 +19,7 @@ import {
     deleteBrowserALRuntimeEntriesForSession,
     deleteExpiredBrowserALRuntimeEntries,
     deleteExpiredBrowserALRuntimeEntriesForSession,
+    initBrowserALRuntimeExpiryEviction,
     resolveBrowserWsClientALOutboundRuntimeStores,
     resolveBrowserRtcOverlayALOutboundRuntimeStores,
     toBrowserALRuntimeEntryKeyPrefix,
@@ -40,7 +41,9 @@ describe('Browser AL runtime IndexedDB stores', () => {
     });
 
     afterEach(async () => {
+        vi.clearAllTimers();
         vi.useRealTimers();
+        vi.restoreAllMocks();
         await deleteBrowserALRuntimeDatabase();
     });
 
@@ -318,6 +321,38 @@ describe('Browser AL runtime IndexedDB stores', () => {
         expect(await readBrowserALRuntimeEntryKeys(otherSentPrefix)).toEqual([
             `${otherSentPrefix}:other-ws`,
         ]);
+    });
+
+    it('initialises repeated browser AL runtime expiry eviction', async () => {
+        vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+        vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+        const retention = {
+            sentMessageTtlMs: 20,
+        };
+        const runtimeName = `interval-runtime-${crypto.randomUUID()}`;
+        const stateStore = requireOutboundStateStore(
+            createBrowserALOutboundRuntimeStores(runtimeName, { retention }),
+        );
+        const sentPrefix = toBrowserOutboundSentPrefix(runtimeName);
+
+        await stateStore.setSentMessage(createSentSnapshot('initial-expired'));
+        await vi.advanceTimersByTimeAsync(21);
+
+        await initBrowserALRuntimeExpiryEviction(50);
+
+        expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([]);
+
+        await stateStore.setSentMessage(createSentSnapshot('interval-expired'));
+        await vi.advanceTimersByTimeAsync(21);
+        expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([
+            `${sentPrefix}:interval-expired`,
+        ]);
+
+        await vi.advanceTimersByTimeAsync(29);
+
+        expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([]);
     });
 });
 

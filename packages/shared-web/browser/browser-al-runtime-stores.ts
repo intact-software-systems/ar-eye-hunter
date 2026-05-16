@@ -17,11 +17,13 @@ import {
 } from '@shared/alm/ALRuntimeStores.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/IndexedDbStringPersistenceProvider.ts';
 import { openIndexedDbWithStore } from '@shared/persistence/openIndexedDb.ts';
+import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
 
 export const BROWSER_AL_RUNTIME_DB_NAME = 'ar-eye-hunter-al-runtime';
 export const BROWSER_AL_RUNTIME_STORE_NAME =
     IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME;
 export const BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX = 'browser:';
+export const BROWSER_AL_RUNTIME_EXPIRY_EVICTION_INTERVAL_MS = 60_000;
 
 type BrowserALRuntimeOptions =
     Omit<ALRuntimeStoreFactoryOptions, 'dbName' | 'namespace'>;
@@ -32,6 +34,8 @@ type BrowserALRuntimeStoredEntry = Readonly<{
     key: string;
     expireAtTimestamp: number;
 }>;
+
+let browserALRuntimeExpiryEvictionPromise: Promise<void> | undefined;
 
 export type BrowserALRuntimeCleanupResult = Readonly<{
     dbName: string;
@@ -229,6 +233,40 @@ export async function deleteBrowserALRuntimeEntriesForSession(
         keyPrefixes: toBrowserSessionALRuntimeEntryKeyPrefixes(sessionId),
         shouldDelete: () => true,
     });
+}
+
+export async function evictExpiredBrowserALRuntimeEntries(
+    options: DeleteExpiredBrowserALRuntimeEntriesOptions = {},
+): Promise<BrowserALRuntimeCleanupResult> {
+    const result = await deleteExpiredBrowserALRuntimeEntries(options);
+    if (result.deleted > 0) {
+        console.log(`Evicted expired browser AL runtime rows: ${result.deleted}`);
+    }
+
+    return result;
+}
+
+export async function initBrowserALRuntimeExpiryEviction(
+    intervalMs: number = BROWSER_AL_RUNTIME_EXPIRY_EVICTION_INTERVAL_MS,
+): Promise<void> {
+    if (!browserALRuntimeExpiryEvictionPromise) {
+        const promise = tryRunInIntervals(
+            async () => {
+                await evictExpiredBrowserALRuntimeEntries();
+            },
+            intervalMs,
+        )
+            .then(() => undefined)
+            .catch((error) => {
+                if (browserALRuntimeExpiryEvictionPromise === promise) {
+                    browserALRuntimeExpiryEvictionPromise = undefined;
+                }
+                throw error;
+            });
+        browserALRuntimeExpiryEvictionPromise = promise;
+    }
+
+    return await browserALRuntimeExpiryEvictionPromise;
 }
 
 export function resolveBrowserWsClientALInboundRuntimeStores(

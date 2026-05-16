@@ -51,7 +51,7 @@ Real-server test runs should record enough evidence to debug failures: peer IDs,
 | --- | --- | --- |
 | 0: Baseline evidence and reproduction harness | Completed | `packages/shared-web/tasks-findings-iteration-0-baseline.md`; targeted unit/typecheck runs; full-stack real suite; two-agent real `realtime` and `messages.rtc` smoke. |
 | 1: Read-only diagnostics and status surface | Implemented and locally verified | Added read-only RTC/WS diagnostics APIs and focused tests. Real two-agent smoke still passes. Playwright status snapshot artifacts are still a follow-up. |
-| 2: IndexedDB growth and session isolation proof | Proof tests and explicit cleanup helpers added | `packages/tests/shared-web/browser-al-runtime-stores.test.ts`; existing generic IndexedDB AL runtime tests still pass. Confirms per-prefix lazy eviction and storage bloat risk, with no cross-session read reproduced for the tested browser AL outbound state path. Added explicit expired-row and session cleanup helpers. |
+| 2: IndexedDB growth and session isolation proof | Browser IndexedDB eviction implemented | `packages/tests/shared-web/browser-al-runtime-stores.test.ts`; `packages/tests/shared-web/browser-queuebox-expiry-eviction.test.ts`; existing generic IndexedDB AL runtime tests still pass. Confirms per-prefix lazy eviction and storage bloat risk, with no cross-session read reproduced for the tested browser AL outbound state path. Added explicit cleanup helpers and browser middleware expiry eviction loops. |
 
 ## Iteration 0: Baseline Evidence And Reproduction Harness
 
@@ -169,7 +169,7 @@ Goal: verify whether `ar-eye-hunter-al-runtime.entries` grows indefinitely in re
 
 Do not implement cleanup first. Prove the behavior.
 
-Status: proof tests and explicit cleanup helpers added and locally verified on 2026-05-16. No automatic startup, logout, or session-replacement cleanup wiring was implemented in this iteration.
+Status: proof tests, explicit cleanup helpers, and browser middleware expiry eviction loops added and locally verified on 2026-05-16. Explicit logout/session-replacement purge wiring is still pending a lifecycle decision.
 
 Findings from proof tests:
 
@@ -191,6 +191,9 @@ Implemented after proof:
 - `deleteExpiredBrowserALRuntimeEntriesForSession(sessionId)` performs the same expired-row cleanup scoped to the three browser runtime prefixes for one session.
 - `deleteBrowserALRuntimeEntriesForSession(sessionId)` purges all browser AL runtime rows for one session and is intended for explicit logout/session-replacement cleanup decisions.
 - Cleanup helpers return `scanned` and `deleted` counts plus the database, store, and prefixes used, so tests and diagnostics can report what happened.
+- `initBrowserALRuntimeExpiryEviction()` now mirrors the server `initRuntimeStateExpiryEviction` pattern for browser IndexedDB AL runtime rows.
+- `initBrowserQueueBoxExpiryEviction()` now mirrors the server `initResourceInboxExpiryEviction` pattern for browser IndexedDB `queuebox:*` object stores.
+- Browser middleware starts both eviction loops when middleware is initialized.
 
 Proof work:
 
@@ -207,7 +210,7 @@ Potential implementation only after proof:
 
 - Add explicit cleanup helpers for browser AL runtime prefixes. Implemented.
 - Add logout/session-replacement cleanup. Still pending an explicit lifecycle decision.
-- Add startup/background expired-row sweep for `ar-eye-hunter-al-runtime.entries`. Still pending an explicit lifecycle decision.
+- Add startup/background expired-row sweep for `ar-eye-hunter-al-runtime.entries`. Implemented for browser AL runtime rows and browser queuebox stores.
 
 Testing:
 
@@ -218,7 +221,8 @@ Testing:
 Verification completed:
 
 - `npm run test -- packages/tests/shared-web/browser-al-runtime-stores.test.ts`
-- `npm run test -- packages/tests/shared/al-indexeddb-runtime-stores.test.ts packages/tests/shared-web/browser-al-runtime-stores.test.ts`
+- `npm run test -- packages/tests/shared-web/browser-al-runtime-stores.test.ts packages/tests/shared-web/browser-queuebox-expiry-eviction.test.ts packages/tests/shared/al-indexeddb-runtime-stores.test.ts`
+- `npm run test -- packages/tests/shared-web/rallar-operation-options.test.ts`
 - `npm --workspace @ar-eye-hunter/shared-web run typecheck`
 
 Additional verification note:

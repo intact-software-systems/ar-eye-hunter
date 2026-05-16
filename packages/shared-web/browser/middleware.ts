@@ -33,7 +33,11 @@ import * as rtcEngine from '@shared-web/browser/rtc-engine.ts';
 import * as wsEngine from '@shared-web/browser/ws-engine.ts';
 import * as heartbeat from '@shared-web/browser/heartbeat.ts';
 import { initialiseBrowserCacheRepositories } from '@shared-web/browser/browser-cache-repositories.ts';
-import { configureBrowserALRuntimeStores } from '@shared-web/browser/browser-al-runtime-stores.ts';
+import {
+    configureBrowserALRuntimeStores,
+    initBrowserALRuntimeExpiryEviction,
+} from '@shared-web/browser/browser-al-runtime-stores.ts';
+import { initBrowserQueueBoxExpiryEviction } from '@shared-web/browser/browser-queuebox.ts';
 
 export type Middleware = {
     qboxEngine: InboxOutboxEngine;
@@ -92,6 +96,12 @@ export async function initialiseMiddleware(
     };
     initialiseBrowserCacheRepositories();
     configureBrowserALRuntimeStores(clientData.sessionId);
+    initBrowserALRuntimeExpiryEviction().catch((error) =>
+        console.error('Failed to initialise browser AL runtime expiry eviction:', error)
+    );
+    initBrowserQueueBoxExpiryEviction().catch((error) =>
+        console.error('Failed to initialise browser queuebox expiry eviction:', error)
+    );
 
     const apiConfig = await runMiddlewareCommand(
         (signal) => readApiConfig({ signal }),
