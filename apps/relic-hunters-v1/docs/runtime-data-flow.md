@@ -73,9 +73,15 @@ converge on the same snapshot after each command.
 
 ## RTC Position Flow
 
-`RelicScene` sends local position updates through Rallar RTC only when the
-runtime marks RTC as ready. These updates are cosmetic live-presence signals and
-do not drive authoritative game state.
+`src/game/scene/networking.ts` sends local position updates through Rallar RTC
+only when the runtime marks RTC as ready. It also subscribes to remote position
+updates and writes them into the scene runtime's `remotePositions` map. These
+updates are cosmetic live-presence signals and do not drive authoritative game
+state.
+
+The RTC adapter publishes world-space room coordinates plus local roam offset.
+This keeps remote avatar interpolation aligned with the Babylon room grid while
+leaving authoritative room movement in the turn-based snapshot.
 
 ## Known Data-Flow Gaps
 

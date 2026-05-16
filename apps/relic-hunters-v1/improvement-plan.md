@@ -323,6 +323,14 @@ Exit criteria:
 
 Reduce `RelicScene.tsx` risk.
 
+Status: in progress. First architecture slice complete: the React lifecycle now
+creates Babylon through a `createRelicSceneRuntime` boundary, capped render-loop
+scheduling lives in `src/game/scene/renderLoop.ts`, and cosmetic RTC position
+send/receive lives in `src/game/scene/networking.ts`. `RelicScene.tsx` still
+owns most scene sync, labels, avatars, relic meshes, and event effects, so the
+next useful slice is to move either event effects or player/relic sync behind a
+module boundary.
+
 Deliverables:
 
 - move Babylon scene construction into `createRelicSceneRuntime`

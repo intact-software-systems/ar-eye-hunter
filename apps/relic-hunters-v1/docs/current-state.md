@@ -21,9 +21,14 @@ server in `apps/relic-hunter-server-v1`, and the shared game model/rules in
   turn status, and action blockers.
 - `src/game/relic-hunters-runtime.ts` wraps Rallar/auth/room APIs and relic REST
   calls. React consumes it through `src/game/useRelicHunters.ts`.
-- `src/game/RelicScene.tsx` is a large Babylon scene runtime. It owns scene
-  construction, render-loop updates, effects, local movement, prompts, labels,
-  player/relic meshes, and RTC position updates.
+- `src/game/RelicScene.tsx` is still a large Babylon scene runtime, but the
+  React effect now calls a `createRelicSceneRuntime` boundary for Babylon setup.
+  The same file still owns most sync/effect helpers, local movement, prompts,
+  labels, and player/relic meshes.
+- `src/game/scene/renderLoop.ts` owns the capped render-loop scheduler.
+- `src/game/scene/networking.ts` owns cosmetic RTC position send/receive. The
+  scene consumes it through a small runtime-state shape instead of importing
+  Rallar directly.
 - The full Babylon runtime now mounts only for planning and finished expedition
   phases. Auth and lobby use a static scene backdrop so the HUD stays responsive
   while players register, join rooms, and start the expedition.
@@ -65,7 +70,8 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
 `implementation-plan.md` in this app folder.
 
 - Iterations 1 through 6 are marked complete in the plan.
-- Iteration 7, visual direction and Babylon cleanup, is now in progress.
+- Iteration 7, visual direction and Babylon cleanup, has a first pass complete.
+- Iteration 8, scene architecture, is now in progress.
 - Because the reported failure is that the game is not playable and state is not
   propagating reliably between clients, iteration 7 should be kept narrow and
   paired with data-flow fixes when a concrete propagation bug is found.
@@ -76,6 +82,9 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
   disable `preserveDrawingBuffer`, separate normal player labels from debug
   detail labels, document the scene asset plan, and make route/clue state durable
   in the shared rules.
+- Completed iteration-8 architecture fixes so far: extract
+  `createRelicSceneRuntime`, move the capped render-loop scheduler to
+  `scene/renderLoop.ts`, and move RTC position sync to `scene/networking.ts`.
 
 ## Main Risks
 
@@ -84,8 +93,9 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
 - The runtime has diagnostics and single-browser/server Playwright coverage, but
   there is no automated two-client browser test for submit/wait/resolve
   propagation yet.
-- `RelicScene.tsx` remains risky to change because Babylon runtime setup,
-  networking, labels, event effects, and player controls are tightly coupled.
+- `RelicScene.tsx` remains risky to change because scene sync, labels, event
+  effects, and player controls are still tightly coupled, though Babylon setup,
+  render-loop scheduling, and RTC position sync now have clearer boundaries.
 - The app is visually dense. Even after the HUD layout pass, many panels and
   overlays compete for attention during planning and event reveal.
 - Server rules serialize writes per game, but disconnected/stale players are

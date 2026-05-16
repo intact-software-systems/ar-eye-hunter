@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { rallar } from '@shared-web/browser/rallar.ts';
 import '@babylonjs/core/Culling/ray.js';
 import '@babylonjs/core/Rendering/geometryBufferRendererSceneComponent.js';
 import { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera.js';
@@ -42,8 +41,15 @@ import { DOOR_WIDTH, FLOOR_Y, PLAYER_EYE_Y, ROOM_SIZE, } from './scene/constants
 import { applyPointerLook, isRoamKey, yawToForward } from './scene/controls.ts';
 import { resolveRoomRoam, roomCollisionBoxes } from './scene/collision.ts';
 import { setRuntimePrompt, shouldExitInspection, startInspection, updateScenePrompt, } from './scene/interaction.ts';
+import {
+    broadcastLocalPosition,
+    POS_MAX_AGE_MS,
+    type RemotePosEntry,
+    subscribeRelicScenePositionUpdates,
+} from './scene/networking.ts';
 import { deriveSceneObjective, roomHasResolvedClue, } from './scene/objectives.ts';
 import { chooseLookRoom, directionBetweenRooms, roomClueHotspot, } from './scene/prompts.ts';
+import { startCappedRenderLoop } from './scene/renderLoop.ts';
 import {
     applyRoomMaterial,
     type CastleMaterials,
@@ -65,15 +71,10 @@ import type {
     ScenePrompt,
 } from './scene/types.ts';
 
-const POS_TYPE_ID = 'relic.pos';
-const POS_BROADCAST_INTERVAL_MS = 80;
-const POS_MAX_AGE_MS = 2500;
 const MOVE_PROMPT_HOLD_MS = 1200;
 const SCENE_FRAME_INTERVAL_MS = 1000 / 30;
 const PLAYER_LABEL_MODE: 'names' | 'details' | 'hidden' = 'names';
 
-type RelicPosUpdate = Readonly<{ pid: string; x: number; z: number; r: number }>;
-type RemotePosEntry = { x: number; z: number; yaw: number; t: number };
 type HeldMovePrompt = Readonly<{
     roomId: string;
     prompt: Extract<ScenePrompt, { kind: 'move' }>;
@@ -234,237 +235,24 @@ export function RelicScene({
             return;
         }
 
-        let engine: Engine;
+        let runtime: SceneRuntime;
         try {
-            engine = new Engine(canvas, true, {
-                antialias: true,
-                preserveDrawingBuffer: false,
-                stencil: true,
+            runtime = createRelicSceneRuntime({
+                canvas,
+                snapshot: snapshotRef.current,
+                localPlayerId: localPlayerIdRef.current,
+                selectedRoomId: selectedRoomIdRef.current,
+                primedAction: primedActionRef.current,
+                rtcReady: rtcReadyRef.current,
+                objectiveTargetRoomId: sceneObjective.targetRoomId,
+                onPromptChange: setScenePrompt,
             });
-            engine.setHardwareScalingLevel(1.25);
             setSceneError(undefined);
         } catch (error) {
             setSceneError(error instanceof Error ? error.message : String(error));
             runtimeRef.current = undefined;
             return;
         }
-        const scene = new Scene(engine);
-        scene.clearColor = new Color4(0.04, 0.05, 0.09, 1);
-        scene.ambientColor = new Color3(0.44, 0.38, 0.52);
-        scene.fogMode = Scene.FOGMODE_EXP2;
-        scene.fogColor = new Color3(0.07, 0.07, 0.13);
-        scene.fogDensity = 0.013;
-        const camera = new UniversalCamera(
-            'relic-camera',
-            new Vector3(0, PLAYER_EYE_Y, -9),
-            scene,
-        );
-        camera.setTarget(new Vector3(0, PLAYER_EYE_Y, 0));
-        camera.fov = 1.02;
-        camera.minZ = 0.05;
-        camera.maxZ = 80;
-        renderSceneFrame(scene, canvas);
-
-        // Post-processing pipeline.
-        const pipeline = new DefaultRenderingPipeline('relic-pipeline', true, scene, [camera]);
-
-        // Bloom stays visible without forcing oversized post-processing kernels.
-        pipeline.bloomEnabled = true;
-        pipeline.bloomThreshold = 0.52;
-        pipeline.bloomWeight = 0.55;
-        pipeline.bloomKernel = 48;
-        pipeline.bloomScale = 0.5;
-
-        pipeline.sharpenEnabled = true;
-        pipeline.sharpen.edgeAmount = 0.38;
-
-        pipeline.imageProcessingEnabled = true;
-        pipeline.imageProcessing.contrast = 1.18;
-        pipeline.imageProcessing.exposure = 1.06;
-
-        // ACES filmic tone mapping.
-        pipeline.imageProcessing.toneMappingEnabled = true;
-        pipeline.imageProcessing.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
-
-        // Color grading: warm highlights, cool shadows.
-        const curves = new ColorCurves();
-        curves.globalSaturation = 18;
-        curves.highlightsHue = 35;
-        curves.highlightsDensity = 22;
-        curves.shadowsHue = 215;
-        curves.shadowsDensity = 26;
-        pipeline.imageProcessing.colorCurvesEnabled = true;
-        pipeline.imageProcessing.colorCurves = curves;
-
-        // Vignette weight is updated per room.
-        pipeline.imageProcessing.vignetteEnabled = true;
-        pipeline.imageProcessing.vignetteWeight = 2.4;
-        pipeline.imageProcessing.vignetteStretch = 0.55;
-        pipeline.imageProcessing.vignetteCameraFov = camera.fov;
-        pipeline.imageProcessing.vignetteColor = new Color4(0.04, 0.02, 0.07, 0);
-
-        // Subtle grain for texture without softness.
-        pipeline.grainEnabled = true;
-        pipeline.grain.intensity = 6;
-        pipeline.grain.animated = true;
-
-        // SSAO2 gives depth, but keep it modest so HUD controls stay responsive.
-        try {
-            const ssao = new SSAO2RenderingPipeline('relic-ssao', scene, { ssaoRatio: 0.5, blurRatio: 0.5 }, [camera]);
-            ssao.radius = 2.0;
-            ssao.totalStrength = 0.9;
-            ssao.base = 0.08;
-            ssao.maxZ = 40;
-            ssao.samples = 4;
-        } catch {
-            // SSAO2 is not available in every browser context.
-        }
-
-        const glowLayer = new GlowLayer('relic-glow', scene);
-        glowLayer.intensity = 1.45;
-
-        // Directional sun/moon light for hard-edged shadows and specular highlights.
-        const sunLight = new DirectionalLight('relic-sun', new Vector3(-0.55, -1.35, -0.45), scene);
-        sunLight.position = new Vector3(25, 48, 25);
-        sunLight.intensity = 2.0;
-        sunLight.diffuse = new Color3(1.0, 0.93, 0.80);
-        sunLight.specular = new Color3(1.0, 0.96, 0.88);
-
-        const shadows = new ShadowGenerator(512, sunLight);
-        shadows.useBlurExponentialShadowMap = true;
-        shadows.blurKernel = 12;
-        shadows.darkness = 0.42;
-
-        // Auto-register every new mesh for shadow casting/receiving
-        scene.onNewMeshAddedObservable.add((mesh) => {
-            if (mesh.name.startsWith('relic-skybox') || mesh.name.startsWith('label-')) return;
-            shadows.addShadowCaster(mesh, false);
-            mesh.receiveShadows = true;
-        });
-
-        // Procedural sky CubeTexture — castle dusk atmosphere
-        const envTexture = buildSkyEnvironmentTexture(scene);
-        scene.environmentTexture = envTexture;
-        scene.environmentIntensity = 0.30;
-
-        // Skybox mesh — visible background sky
-        const skybox = MeshBuilder.CreateBox('relic-skybox', { size: 750 }, scene);
-        const skyMat = new StandardMaterial('relic-skybox-mat', scene);
-        skyMat.backFaceCulling = false;
-        skyMat.disableLighting = true;
-        const skyboxTex = envTexture.clone();
-        skyboxTex.coordinatesMode = 5; // Texture.SKYBOX_MODE
-        skyMat.reflectionTexture = skyboxTex;
-        skyMat.diffuseColor = new Color3(0, 0, 0);
-        skyMat.specularColor = new Color3(0, 0, 0);
-        skybox.material = skyMat;
-        skybox.infiniteDistance = true;
-        skybox.isPickable = false;
-
-        const flameTexture = createFlameTexture(scene);
-
-        const light = new HemisphericLight('ruin-light', new Vector3(0.15, 1, 0.2), scene);
-        light.intensity = 0.68;
-        light.diffuse = new Color3(0.76, 0.70, 0.96);
-        light.groundColor = new Color3(0.22, 0.12, 0.06);
-
-        const handMaterial = new PBRMaterial('first-person-hands-material', scene);
-        const castleMaterials = createCastleMaterials(scene);
-        const introMeshes = createJapaneseLobbyScene(scene);
-        const doorPromptMarkerMaterial = new StandardMaterial('doorway-prompt-marker-material', scene);
-        doorPromptMarkerMaterial.diffuseColor = Color3.FromHexString('#8ee7f5');
-        doorPromptMarkerMaterial.emissiveColor = Color3.FromHexString('#8ee7f5').scale(0.62);
-        doorPromptMarkerMaterial.specularColor = Color3.FromHexString('#fef08a').scale(0.26);
-        doorPromptMarkerMaterial.alpha = 0.72;
-        const doorPromptMarker = MeshBuilder.CreateTorus(
-            'doorway-prompt-marker',
-            {
-                diameter: DOOR_WIDTH * 0.72,
-                thickness: 0.045,
-                tessellation: 42,
-            },
-            scene,
-        );
-        doorPromptMarker.material = doorPromptMarkerMaterial;
-        doorPromptMarker.rotation.x = Math.PI / 2;
-        doorPromptMarker.setEnabled(false);
-        const escapeMarkerMaterial = new StandardMaterial('escape-objective-marker-material', scene);
-        escapeMarkerMaterial.diffuseColor = Color3.FromHexString('#a3e635');
-        escapeMarkerMaterial.emissiveColor = Color3.FromHexString('#a3e635').scale(0.52);
-        escapeMarkerMaterial.specularColor = Color3.FromHexString('#fef08a').scale(0.32);
-        escapeMarkerMaterial.alpha = 0.68;
-        const escapeMarker = MeshBuilder.CreateTorus(
-            'escape-objective-marker',
-            {
-                diameter: 1.52,
-                thickness: 0.052,
-                tessellation: 48,
-            },
-            scene,
-        );
-        escapeMarker.material = escapeMarkerMaterial;
-        escapeMarker.rotation.x = Math.PI / 2;
-        escapeMarker.setEnabled(false);
-        const runtime: SceneRuntime = {
-            canvas,
-            engine,
-            scene,
-            camera,
-            pipeline,
-            shadows,
-            castleMaterials,
-            introMeshes,
-            snapshot: { value: snapshotRef.current },
-            localPlayerId: { value: localPlayerIdRef.current },
-            selectedRoomId: { value: selectedRoomIdRef.current },
-            primedAction: { value: primedActionRef.current },
-            objectiveTargetRoomId: { value: sceneObjective.targetRoomId },
-            pressedKeys: new Set(),
-            cameraYaw: { value: 0 },
-            cameraPitch: { value: 0 },
-            pointerLook: {
-                active: false,
-                lastX: 0,
-                lastY: 0,
-            },
-            roamOffset: new Vector3(0, 0, 0),
-            roamRoomId: { value: undefined },
-            rooms: new Map(),
-            roomMaterials: new Map(),
-            roomBlockers: new Map(),
-            roomLights: new Map(),
-            players: new Map(),
-            playerMaterials: new Map(),
-            playerCharacterIds: new Map(),
-            playerTargets: new Map(),
-            avatarParts: new Map(),
-            avatarMaterials: new Map(),
-            playerLabels: new Map(),
-            playerLabelTextures: new Map(),
-            relics: new Map(),
-            props: new Map(),
-            hands: createFirstPersonHands(scene, handMaterial),
-            handMaterial,
-            flameTexture,
-            roomParticles: new Map(),
-            links: [],
-            flickerLights: [],
-            effects: [],
-            seenEventIds: new Set(),
-            eventPlaybackPrimed: { value: false },
-            focusRoomId: { value: undefined },
-            rtcReady: { value: rtcReadyRef.current },
-            prompt: { value: undefined },
-            onPromptChange: { value: setScenePrompt },
-            movePromptHold: { value: undefined },
-            inspection: { value: undefined },
-            doorPromptMarker,
-            doorPromptMarkerMaterial,
-            escapeMarker,
-            escapeMarkerMaterial,
-            remotePositions: new Map(),
-            lastPosBroadcastMs: { value: 0 },
-        };
         runtimeRef.current = runtime;
         syncScene(
             runtime,
@@ -473,7 +261,7 @@ export function RelicScene({
             selectedRoomIdRef.current,
         );
 
-        scene.onPointerObservable.add((event) => {
+        runtime.scene.onPointerObservable.add((event) => {
             if (event.event.type !== 'pointerdown') {
                 return;
             }
@@ -504,7 +292,7 @@ export function RelicScene({
             runtime.inspection.value = undefined;
         });
 
-        const resize = () => engine.resize();
+        const resize = () => runtime.engine.resize();
         const pointerdown = (event: PointerEvent) => {
             if (event.button !== 0 && event.pointerType === 'mouse') {
                 return;
@@ -585,16 +373,9 @@ export function RelicScene({
         window.addEventListener('keydown', keydown);
         window.addEventListener('keyup', keyup);
 
-        renderSceneFrame(scene, canvas);
-        let lastFrameMs = performance.now();
-        engine.runRenderLoop(() => {
-            const now = performance.now();
-            if (now - lastFrameMs < SCENE_FRAME_INTERVAL_MS) {
-                return;
-            }
-            lastFrameMs = now;
+        startCappedRenderLoop(runtime.engine, SCENE_FRAME_INTERVAL_MS, () => {
             updateRuntime(runtime);
-            renderSceneFrame(scene, canvas);
+            renderRuntimeScene(runtime);
         });
 
         return () => {
@@ -607,8 +388,8 @@ export function RelicScene({
             window.removeEventListener('keydown', keydown);
             window.removeEventListener('keyup', keyup);
             delete canvas.dataset.sceneReady;
-            scene.dispose();
-            engine.dispose();
+            runtime.scene.dispose();
+            runtime.engine.dispose();
             runtimeRef.current = undefined;
         };
     }, []);
@@ -623,10 +404,7 @@ export function RelicScene({
             return;
         }
 
-        return rallar.messages.rtc.onMessage<RelicPosUpdate>(POS_TYPE_ID, (msg) => {
-            const { pid, x, z, r } = msg.payload;
-            runtime.remotePositions.set(pid, { x, z, yaw: r, t: performance.now() });
-        });
+        return subscribeRelicScenePositionUpdates(runtime);
     }, [rtcReady]);
 
     useEffect(() => {
@@ -824,6 +602,284 @@ function FallbackRelicScene({
             </div>
         </div>
     );
+}
+
+function createRelicSceneRuntime({
+                                     canvas,
+                                     snapshot,
+                                     localPlayerId,
+                                     selectedRoomId,
+                                     primedAction,
+                                     rtcReady,
+                                     objectiveTargetRoomId,
+                                     onPromptChange,
+                                 }: Readonly<{
+    canvas: HTMLCanvasElement;
+    snapshot?: RelicPublicSnapshot;
+    localPlayerId?: string;
+    selectedRoomId?: string;
+    primedAction?: RelicActionInput;
+    rtcReady: boolean;
+    objectiveTargetRoomId?: string;
+    onPromptChange(prompt?: ScenePrompt): void;
+}>): SceneRuntime {
+    const engine = new Engine(canvas, true, {
+        antialias: true,
+        preserveDrawingBuffer: false,
+        stencil: true,
+    });
+    engine.setHardwareScalingLevel(1.25);
+
+    const scene = new Scene(engine);
+    scene.clearColor = new Color4(0.04, 0.05, 0.09, 1);
+    scene.ambientColor = new Color3(0.44, 0.38, 0.52);
+    scene.fogMode = Scene.FOGMODE_EXP2;
+    scene.fogColor = new Color3(0.07, 0.07, 0.13);
+    scene.fogDensity = 0.013;
+
+    const camera = new UniversalCamera(
+        'relic-camera',
+        new Vector3(0, PLAYER_EYE_Y, -9),
+        scene,
+    );
+    camera.setTarget(new Vector3(0, PLAYER_EYE_Y, 0));
+    camera.fov = 1.02;
+    camera.minZ = 0.05;
+    camera.maxZ = 80;
+    renderSceneFrame(scene, canvas);
+
+    const pipeline = createRelicPostProcess(scene, camera);
+    const shadows = createRelicSceneLighting(scene);
+    installShadowRegistration(scene, shadows);
+    installSkybox(scene);
+
+    const flameTexture = createFlameTexture(scene);
+    const handMaterial = new PBRMaterial('first-person-hands-material', scene);
+    const castleMaterials = createCastleMaterials(scene);
+    const introMeshes = createJapaneseLobbyScene(scene);
+    const {
+        doorPromptMarker,
+        doorPromptMarkerMaterial,
+        escapeMarker,
+        escapeMarkerMaterial,
+    } = createObjectiveMarkers(scene);
+
+    return {
+        canvas,
+        engine,
+        scene,
+        camera,
+        pipeline,
+        shadows,
+        castleMaterials,
+        introMeshes,
+        snapshot: { value: snapshot },
+        localPlayerId: { value: localPlayerId },
+        selectedRoomId: { value: selectedRoomId },
+        primedAction: { value: primedAction },
+        objectiveTargetRoomId: { value: objectiveTargetRoomId },
+        pressedKeys: new Set(),
+        cameraYaw: { value: 0 },
+        cameraPitch: { value: 0 },
+        pointerLook: {
+            active: false,
+            lastX: 0,
+            lastY: 0,
+        },
+        roamOffset: new Vector3(0, 0, 0),
+        roamRoomId: { value: undefined },
+        rooms: new Map(),
+        roomMaterials: new Map(),
+        roomBlockers: new Map(),
+        roomLights: new Map(),
+        players: new Map(),
+        playerMaterials: new Map(),
+        playerCharacterIds: new Map(),
+        playerTargets: new Map(),
+        avatarParts: new Map(),
+        avatarMaterials: new Map(),
+        playerLabels: new Map(),
+        playerLabelTextures: new Map(),
+        relics: new Map(),
+        props: new Map(),
+        hands: createFirstPersonHands(scene, handMaterial),
+        handMaterial,
+        flameTexture,
+        roomParticles: new Map(),
+        links: [],
+        flickerLights: [],
+        effects: [],
+        seenEventIds: new Set(),
+        eventPlaybackPrimed: { value: false },
+        focusRoomId: { value: undefined },
+        rtcReady: { value: rtcReady },
+        prompt: { value: undefined },
+        onPromptChange: { value: onPromptChange },
+        movePromptHold: { value: undefined },
+        inspection: { value: undefined },
+        doorPromptMarker,
+        doorPromptMarkerMaterial,
+        escapeMarker,
+        escapeMarkerMaterial,
+        remotePositions: new Map(),
+        lastPosBroadcastMs: { value: 0 },
+    };
+}
+
+function createRelicPostProcess(
+    scene: Scene,
+    camera: UniversalCamera,
+): DefaultRenderingPipeline {
+    const pipeline = new DefaultRenderingPipeline('relic-pipeline', true, scene, [camera]);
+
+    pipeline.bloomEnabled = true;
+    pipeline.bloomThreshold = 0.52;
+    pipeline.bloomWeight = 0.55;
+    pipeline.bloomKernel = 48;
+    pipeline.bloomScale = 0.5;
+
+    pipeline.sharpenEnabled = true;
+    pipeline.sharpen.edgeAmount = 0.38;
+
+    pipeline.imageProcessingEnabled = true;
+    pipeline.imageProcessing.contrast = 1.18;
+    pipeline.imageProcessing.exposure = 1.06;
+    pipeline.imageProcessing.toneMappingEnabled = true;
+    pipeline.imageProcessing.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
+
+    const curves = new ColorCurves();
+    curves.globalSaturation = 18;
+    curves.highlightsHue = 35;
+    curves.highlightsDensity = 22;
+    curves.shadowsHue = 215;
+    curves.shadowsDensity = 26;
+    pipeline.imageProcessing.colorCurvesEnabled = true;
+    pipeline.imageProcessing.colorCurves = curves;
+
+    pipeline.imageProcessing.vignetteEnabled = true;
+    pipeline.imageProcessing.vignetteWeight = 2.4;
+    pipeline.imageProcessing.vignetteStretch = 0.55;
+    pipeline.imageProcessing.vignetteCameraFov = camera.fov;
+    pipeline.imageProcessing.vignetteColor = new Color4(0.04, 0.02, 0.07, 0);
+
+    pipeline.grainEnabled = true;
+    pipeline.grain.intensity = 6;
+    pipeline.grain.animated = true;
+
+    try {
+        const ssao = new SSAO2RenderingPipeline('relic-ssao', scene, { ssaoRatio: 0.5, blurRatio: 0.5 }, [camera]);
+        ssao.radius = 2.0;
+        ssao.totalStrength = 0.9;
+        ssao.base = 0.08;
+        ssao.maxZ = 40;
+        ssao.samples = 4;
+    } catch {
+        // SSAO2 is not available in every browser context.
+    }
+
+    const glowLayer = new GlowLayer('relic-glow', scene);
+    glowLayer.intensity = 1.45;
+
+    return pipeline;
+}
+
+function createRelicSceneLighting(scene: Scene): ShadowGenerator {
+    const sunLight = new DirectionalLight('relic-sun', new Vector3(-0.55, -1.35, -0.45), scene);
+    sunLight.position = new Vector3(25, 48, 25);
+    sunLight.intensity = 2.0;
+    sunLight.diffuse = new Color3(1.0, 0.93, 0.80);
+    sunLight.specular = new Color3(1.0, 0.96, 0.88);
+
+    const shadows = new ShadowGenerator(512, sunLight);
+    shadows.useBlurExponentialShadowMap = true;
+    shadows.blurKernel = 12;
+    shadows.darkness = 0.42;
+
+    const light = new HemisphericLight('ruin-light', new Vector3(0.15, 1, 0.2), scene);
+    light.intensity = 0.68;
+    light.diffuse = new Color3(0.76, 0.70, 0.96);
+    light.groundColor = new Color3(0.22, 0.12, 0.06);
+
+    return shadows;
+}
+
+function installShadowRegistration(scene: Scene, shadows: ShadowGenerator): void {
+    scene.onNewMeshAddedObservable.add((mesh) => {
+        if (mesh.name.startsWith('relic-skybox') || mesh.name.startsWith('label-')) return;
+        shadows.addShadowCaster(mesh, false);
+        mesh.receiveShadows = true;
+    });
+}
+
+function installSkybox(scene: Scene): void {
+    const envTexture = buildSkyEnvironmentTexture(scene);
+    scene.environmentTexture = envTexture;
+    scene.environmentIntensity = 0.30;
+
+    const skybox = MeshBuilder.CreateBox('relic-skybox', { size: 750 }, scene);
+    const skyMat = new StandardMaterial('relic-skybox-mat', scene);
+    skyMat.backFaceCulling = false;
+    skyMat.disableLighting = true;
+    const skyboxTex = envTexture.clone();
+    skyboxTex.coordinatesMode = 5; // Texture.SKYBOX_MODE
+    skyMat.reflectionTexture = skyboxTex;
+    skyMat.diffuseColor = new Color3(0, 0, 0);
+    skyMat.specularColor = new Color3(0, 0, 0);
+    skybox.material = skyMat;
+    skybox.infiniteDistance = true;
+    skybox.isPickable = false;
+}
+
+function createObjectiveMarkers(scene: Scene): Readonly<{
+    doorPromptMarker: Mesh;
+    doorPromptMarkerMaterial: StandardMaterial;
+    escapeMarker: Mesh;
+    escapeMarkerMaterial: StandardMaterial;
+}> {
+    const doorPromptMarkerMaterial = new StandardMaterial('doorway-prompt-marker-material', scene);
+    doorPromptMarkerMaterial.diffuseColor = Color3.FromHexString('#8ee7f5');
+    doorPromptMarkerMaterial.emissiveColor = Color3.FromHexString('#8ee7f5').scale(0.62);
+    doorPromptMarkerMaterial.specularColor = Color3.FromHexString('#fef08a').scale(0.26);
+    doorPromptMarkerMaterial.alpha = 0.72;
+
+    const doorPromptMarker = MeshBuilder.CreateTorus(
+        'doorway-prompt-marker',
+        {
+            diameter: DOOR_WIDTH * 0.72,
+            thickness: 0.045,
+            tessellation: 42,
+        },
+        scene,
+    );
+    doorPromptMarker.material = doorPromptMarkerMaterial;
+    doorPromptMarker.rotation.x = Math.PI / 2;
+    doorPromptMarker.setEnabled(false);
+
+    const escapeMarkerMaterial = new StandardMaterial('escape-objective-marker-material', scene);
+    escapeMarkerMaterial.diffuseColor = Color3.FromHexString('#a3e635');
+    escapeMarkerMaterial.emissiveColor = Color3.FromHexString('#a3e635').scale(0.52);
+    escapeMarkerMaterial.specularColor = Color3.FromHexString('#fef08a').scale(0.32);
+    escapeMarkerMaterial.alpha = 0.68;
+
+    const escapeMarker = MeshBuilder.CreateTorus(
+        'escape-objective-marker',
+        {
+            diameter: 1.52,
+            thickness: 0.052,
+            tessellation: 48,
+        },
+        scene,
+    );
+    escapeMarker.material = escapeMarkerMaterial;
+    escapeMarker.rotation.x = Math.PI / 2;
+    escapeMarker.setEnabled(false);
+
+    return {
+        doorPromptMarker,
+        doorPromptMarkerMaterial,
+        escapeMarker,
+        escapeMarkerMaterial,
+    };
 }
 
 function renderRuntimeScene(runtime: SceneRuntime): void {
@@ -1548,31 +1604,6 @@ function updateRuntime(runtime: SceneRuntime): void {
     updateAvatarCompulsionState(runtime);
     updateDynamicPostProcess(runtime);
     broadcastLocalPosition(runtime);
-}
-
-function broadcastLocalPosition(runtime: SceneRuntime): void {
-    if (!runtime.rtcReady.value) return;
-    const now = performance.now();
-    if (now - runtime.lastPosBroadcastMs.value < POS_BROADCAST_INTERVAL_MS) return;
-    const snapshot = runtime.snapshot.value;
-    const localPlayerId = runtime.localPlayerId.value;
-    if (!localPlayerId || !snapshot) return;
-    const localPlayer = snapshot.players.find((p) => p.playerId === localPlayerId);
-    if (!localPlayer || localPlayer.escaped || localPlayer.defeated) return;
-    const room = snapshot.map.find((r) => r.id === localPlayer.roomId);
-    if (!room) return;
-    runtime.lastPosBroadcastMs.value = now;
-    const world = roomWorldPosition(room);
-    void rallar.messages.rtc.send<RelicPosUpdate>({
-        typeId: POS_TYPE_ID,
-        payload: {
-            pid: localPlayerId,
-            x: world.x + runtime.roamOffset.x,
-            z: world.z + runtime.roamOffset.z,
-            r: runtime.cameraYaw.value,
-        },
-        reliability: 'best-effort',
-    });
 }
 
 function updateSceneVisibility(runtime: SceneRuntime): void {
