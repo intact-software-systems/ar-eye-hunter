@@ -6,7 +6,7 @@ actions, remote control commands, runtime events, stats, and reports use one com
 
 ## Implemented
 
-The implementation is complete through Iteration 18 in `implementation-plan.md`.
+The implementation is complete through Iteration 21 in `implementation-plan.md`.
 
 The shared facade exists in `packages/shared-test/rallar-bb-test` and defines:
 
@@ -27,6 +27,10 @@ The SPA currently provides:
   final report streaming
 - visible panels for configuration, recipes, command queue, active command, command history, events, stats, failures, and
   report JSON
+- authenticated login gate for `browser-rallar` mode with browser-session restore and logout cleanup
+- tabbed operational shell for `Manual Rallar`, `Topology`, `RTC Diagnostics`, `Local Workbench`, `Event Stream`, and
+  `Rallar Server`
+- persistent global header state for provider, control, runtime, room, active command, first failure, user, and session
 - manual Rallar workbench for quick configure, join, connect, send, health, close, and reset actions
 - received-data inbox derived from runtime message events
 - RTC diagnostics panel for connect phases, membership, latency, failure focus, and copyable diagnostic bundles
@@ -76,11 +80,17 @@ redaction, diagnostics, and reports can exercise credential-shaped config. Real 
 `provider=browser-rallar` is explicitly selected.
 
 Provider mode is explicit. `simulated` mode is the default. `browser-rallar` can be selected through URL or Vite env
-config and requires a real Rallar API base URL plus username/password or `restoreSession=true`. A bare token is not
-currently enough for the SPA provider; restored-session mode expects a complete browser auth session in local storage.
+config and requires a real Rallar API base URL plus username/password or a restorable browser auth session. The visible
+SPA now shows a login screen for `browser-rallar` when no session is restored. A bare token is not currently enough for
+the SPA provider; restored-session mode expects a complete browser auth session in local storage.
 Real-provider close/reset cleanup unsubscribes browser listeners, leaves the joined room by default, disconnects or logs
 out when `rallarLogoutOnClose=1`, and records cleanup diagnostics. Remote reset commands also clear browser
 `localStorage` and `sessionStorage` on a best-effort basis.
+
+The app shell is tabbed. The active tab is stored in the `tab` query parameter, and inactive tab panes remain mounted
+while hidden so manual form edits, recipe JSON, selected commands, topology filters, and event filters survive normal
+navigation. The `Rallar Server` tab currently summarizes the authenticated API context; the REST request workbench is
+planned next.
 
 This means the current app is already useful for:
 
@@ -131,6 +141,7 @@ The main gaps are:
 - long-running and seeded-random runs are still planned
 - large run artifact retention and report browsing are not implemented
 - auth and permission negative testing needs real backend/Rallar integration to become meaningful
+- the Rallar Server tab does not yet execute arbitrary REST API calls
 - topology is derived from runtime events and is not yet performance-tested for very large event streams
 
 ## Verification Commands
@@ -144,6 +155,8 @@ npm --workspace rallar-black-box run typecheck
 npm run test -- packages/tests/shared-test/rallar-browser-runtime.test.ts packages/tests/rallar-black-box/rtc-diagnostics.test.ts packages/tests/rallar-black-box/browser-rallar-runtime.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/shared-test/rallar-bb-test.test.ts packages/tests/rallar-black-box/control-client.test.ts
 npm run test -- packages/tests/rallar-black-box/browser-rallar-runtime.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/shared-test/rallar-bb-test.test.ts
 npm run test -- packages/tests/rallar-black-box/topology-graph.test.ts packages/tests/rallar-black-box/rtc-diagnostics.test.ts packages/tests/rallar-black-box/manual-workbench.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/rallar-black-box/control-client.test.ts
+npm run test -- packages/tests/rallar-black-box/app-tabs.test.ts packages/tests/rallar-black-box/auth-flow.test.ts packages/tests/shared-test/rallar-bb-browser-adapter-auth.test.ts
+npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/tabbed-navigation.spec.ts
 npm run test -- packages/tests/shared-test/rallar-provider-parity.test.ts
 npm run test:e2e:rallar-black-box
 ```

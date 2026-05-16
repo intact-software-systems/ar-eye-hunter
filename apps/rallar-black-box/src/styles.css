@@ -278,11 +278,57 @@ h3 {
     font-weight: 700;
 }
 
+.app-tabs {
+    margin-top: 14px;
+    overflow-x: auto;
+    border: 1px solid #c8d0c5;
+    border-radius: 8px;
+    background: #fbfcf8;
+}
+
+.app-tabs div {
+    display: flex;
+    gap: 6px;
+    min-width: max-content;
+    padding: 8px;
+}
+
+.app-tabs button {
+    min-height: 36px;
+    padding: 7px 12px;
+    border: 1px solid #bdc8c0;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #30403a;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.app-tabs button.selected,
+.app-tabs button[aria-selected="true"] {
+    border-color: #0c6f7b;
+    background: #eaf8f9;
+    color: #0c6f7b;
+}
+
+.app-tabs button:focus-visible {
+    outline: 2px solid #0c6f7b;
+    outline-offset: 2px;
+}
+
+.tab-shell > [hidden] {
+    display: none;
+}
+
 .workspace-grid {
     display: grid;
     grid-template-columns: minmax(280px, 0.9fr) minmax(340px, 1.05fr) minmax(420px, 1.45fr);
     gap: 16px;
     margin-top: 16px;
+}
+
+.tab-workspace {
+    margin-top: 12px;
 }
 
 .panel {
@@ -310,6 +356,7 @@ h3 {
 
 .config-panel,
 .workbench-panel,
+.bootstrap-panel,
 .manual-rallar-panel,
 .received-inbox-panel,
 .rtc-diagnostics-panel,
@@ -320,7 +367,8 @@ h3 {
 .history-panel,
 .stats-panel,
 .failure-panel,
-.report-panel {
+.report-panel,
+.rallar-server-panel {
     align-self: start;
 }
 
@@ -345,6 +393,26 @@ h3 {
 
 .event-panel {
     grid-column: 1 / 4;
+}
+
+.manual-tab-grid {
+    grid-template-columns: minmax(460px, 1.35fr) minmax(320px, 0.85fr);
+}
+
+.manual-tab-grid .manual-rallar-panel {
+    grid-column: 1;
+}
+
+.manual-tab-grid .received-inbox-panel,
+.manual-tab-grid .history-panel {
+    grid-column: 2;
+}
+
+.topology-tab-grid .topology-panel,
+.rtc-tab-grid .rtc-diagnostics-panel,
+.events-tab-grid .event-panel,
+.server-tab-grid .rallar-server-panel {
+    grid-column: 1 / -1;
 }
 
 .workbench-controls {
@@ -763,6 +831,7 @@ h3 {
 }
 
 .config-list,
+.config-grid,
 .result-summary {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -772,6 +841,7 @@ h3 {
 }
 
 .config-list div,
+.config-grid div,
 .result-summary div {
     min-width: 0;
     padding: 8px 10px;
@@ -1160,6 +1230,12 @@ dd {
         grid-column: 1 / 3;
     }
 
+    .manual-tab-grid .manual-rallar-panel,
+    .manual-tab-grid .received-inbox-panel,
+    .manual-tab-grid .history-panel {
+        grid-column: 1 / -1;
+    }
+
     .manual-rallar-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -1210,6 +1286,12 @@ dd {
     }
 
     .topology-panel {
+        grid-column: auto;
+    }
+
+    .manual-tab-grid .manual-rallar-panel,
+    .manual-tab-grid .received-inbox-panel,
+    .manual-tab-grid .history-panel {
         grid-column: auto;
     }
 

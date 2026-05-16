@@ -1,10 +1,11 @@
 # Rallar Black Box Documentation
 
-This folder documents the current state of `apps/rallar-black-box` after Iteration 18.
+This folder documents the current state of `apps/rallar-black-box` after Iteration 21.
 
 The app is a browser-based black-box test agent and visible debugging workbench for Rallar RTC, WebSocket, and HTTP test
 flows. It uses the shared `rallar-bb-test` command contract, can connect to a WebSocket control server, streams results
-and runtime events, and provides UI panels for manual testing, diagnostics, received data, reports, and topology.
+and runtime events, and provides tabbed UI surfaces for manual testing, diagnostics, received data, reports, topology,
+event inspection, and Rallar Server context.
 
 The default provider is simulated so the UI works without a backend. Real browser execution is available with
 `provider=browser-rallar`; it uses the browser Rallar runtime for auth, connect, room join, realtime send, browser
@@ -38,11 +39,12 @@ Open the SPA in local workbench mode:
 http://localhost:5176/
 ```
 
-No login is required for the current local UI. The client starts with demo defaults and the current SPA executor is
-simulated, so the visible workbench, diagnostics, reports, and topology work without a Rallar account or backend login.
+No login is required for the local simulated UI. The client starts with demo defaults and the current SPA executor is
+simulated, so the visible tabs, diagnostics, reports, and topology work without a Rallar account or backend login.
 
 The active provider defaults to `simulated`. Real Rallar execution uses `provider=browser-rallar`, which requires a real
-Rallar API base URL plus username/password or a restorable browser auth session.
+Rallar API base URL plus username/password or a restorable browser auth session. In that mode the SPA shows a login
+screen before entering the tabbed app shell.
 
 Open the SPA as a control agent:
 
@@ -63,6 +65,7 @@ delivery smokes.
 ## Main Source Files
 
 - `src/client-defaults.ts`: out-of-the-box default values for local workbench and control-agent bootstrap.
+- `src/app-tabs.ts`: tab IDs, URL parsing, aliases, and keyboard-order helpers for the operational shell.
 - `src/browser-rallar-runtime.ts`: lazy bridge from SPA provider mode to the browser Rallar runtime.
 - `src/runtime-store.ts`: app state store, bootstrap modes, local command execution, and control client integration.
 - `src/control-client.ts`: browser WebSocket control client.

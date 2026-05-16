@@ -1283,11 +1283,28 @@ Deliverables:
 Reorganize the current dense single-page UI into an operational shell with top-level tabs while keeping the most useful
 status information visible.
 
-Status: planned.
+Status: completed for the operational tab shell and state-preserving navigation.
 
 Results:
 
-- Not started.
+- Added a top-level tab shell with URL-friendly tab state for `manual-rallar`, `topology`, `rtc-diagnostics`,
+  `local-workbench`, `event-stream`, and `rallar-server`.
+- Kept the persistent header outside the tabs and expanded it with room, active command, and first-failure summary
+  fields alongside provider, control, runtime, user, and session state.
+- Moved the Manual Rallar controls, received-data inbox, and completed-command history into the Manual Rallar tab.
+- Moved the Sigma topology graph, topology filters, summary counts, node list, and route list into the Topology tab.
+- Moved RTC connect diagnostics, reconnect/rejoin/cleanup controls, focused failure state, and stats into the RTC
+  Diagnostics tab.
+- Moved recipe fixtures, raw command execution, control-client setup, bootstrap/config snapshots, command queue, and
+  report snapshot into the Local Workbench tab.
+- Moved current focus, completed-command history, stats, failures, event filters, and raw event list into the Event
+  Stream tab.
+- Added a Rallar Server tab with the current API base, provider, auth/session, token-redaction, and control status as
+  the landing surface for the planned REST workbench.
+- Kept tab panes mounted while hidden so manual form values, recipe edits, selected commands, topology filters, and
+  event filters survive tab changes.
+- Added focused tab-helper tests plus Playwright coverage for direct tab URLs, URL updates, and state persistence across
+  tab switches.
 
 Deliverables:
 

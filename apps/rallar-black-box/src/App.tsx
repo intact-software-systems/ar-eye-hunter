@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import Sigma from 'sigma';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
@@ -61,6 +61,13 @@ import {
     visibleTopologyCounts,
     type RallarTopologyFilter,
 } from './topology-graph.ts';
+import {
+    APP_TABS,
+    DEFAULT_APP_TAB_ID,
+    appTabFromValue,
+    nextAppTab,
+    type AppTabId,
+} from './app-tabs.ts';
 
 type CommandQueueRow = Readonly<{
     id: string;
@@ -81,6 +88,25 @@ type EventFilters = Readonly<{
     topic: string;
     severity: string;
 }>;
+
+function readInitialAppTab(): AppTabId {
+    if (typeof window === 'undefined') {
+        return DEFAULT_APP_TAB_ID;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    return appTabFromValue(params.get('tab'));
+}
+
+function writeAppTabToUrl(tab: AppTabId): void {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', tab);
+    window.history.replaceState(null, '', url);
+}
 
 function commandId(command: RallarBlackBoxTestCommand, index: number): string {
     return command.commandId ?? `${command.kind}-${index + 1}`;
@@ -495,6 +521,8 @@ function Header({ state, control, bootstrapping, lastAction, authSession, authBu
 }) {
     const config = selectRallarBlackBoxCurrentConfig(state);
     const stats = selectRallarBlackBoxLatestStats(state);
+    const activeCommand = selectRallarBlackBoxActiveCommand(state);
+    const firstFailure = selectRallarBlackBoxFirstFailure(state);
     const providerMode = rallarBlackBoxProviderModeFromConfig(config);
     const rallarValue = providerMode === 'simulated'
         ? 'simulated'
@@ -514,8 +542,11 @@ function Header({ state, control, bootstrapping, lastAction, authSession, authBu
                 <Metric label="Runtime" value={state.status} tone={statusTone(state.status)}/>
                 <Metric label="Rallar" value={rallarValue} tone={stats?.rallar?.connected ? 'good' : providerMode === 'simulated' ? 'warn' : 'muted'}/>
                 <Metric label="Environment" value={config?.environment ?? 'local'}/>
+                <Metric label="Room" value={config?.roomId ?? 'not joined'}/>
                 <Metric label="User" value={authSession?.username ?? config?.actor ?? 'none'}/>
                 <Metric label="Session" value={authSession?.sessionId ?? config?.sessionId ?? 'none'}/>
+                <Metric label="Active" value={activeCommand?.commandId ?? 'none'} tone={activeCommand ? 'active' : 'muted'}/>
+                <Metric label="Failure" value={firstFailure?.commandId ?? 'none'} tone={firstFailure ? 'bad' : 'good'}/>
             </div>
             <div className="header-actions">
                 <span className={`pill ${bootstrapping ? 'active' : 'good'}`}>
@@ -540,6 +571,46 @@ function Header({ state, control, bootstrapping, lastAction, authSession, authBu
                 )}
             </div>
         </header>
+    );
+}
+
+function AppTabs({ activeTab, onSelect }: {
+    activeTab: AppTabId;
+    onSelect(tab: AppTabId): void;
+}) {
+    const handleKeyDown = (
+        event: KeyboardEvent<HTMLButtonElement>,
+        tab: AppTabId,
+    ): void => {
+        if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') {
+            return;
+        }
+
+        event.preventDefault();
+        onSelect(nextAppTab(tab, event.key === 'ArrowRight' ? 1 : -1));
+    };
+
+    return (
+        <nav className="app-tabs" aria-label="Rallar black-box sections">
+            <div role="tablist" aria-label="Workspace tabs">
+                {APP_TABS.map(tab => (
+                    <button
+                        key={tab.id}
+                        id={`tab-${tab.id}`}
+                        type="button"
+                        role="tab"
+                        aria-selected={activeTab === tab.id}
+                        aria-controls={`panel-${tab.id}`}
+                        className={activeTab === tab.id ? 'selected' : ''}
+                        tabIndex={activeTab === tab.id ? 0 : -1}
+                        onClick={() => onSelect(tab.id)}
+                        onKeyDown={event => handleKeyDown(event, tab.id)}
+                    >
+                        {tab.label}
+                    </button>
+                ))}
+            </div>
+        </nav>
     );
 }
 
@@ -1250,8 +1321,9 @@ function RtcDiagnosticsPanel({ state, bootstrap, authSession, busy, onSelectComm
     );
 }
 
-function TopologyGraphPanel({ state, onSelectCommand }: {
+function TopologyGraphPanel({ state, active, onSelectCommand }: {
     state: RallarBlackBoxTestState;
+    active: boolean;
     onSelectCommand(commandId: string): void;
 }) {
     const [filter, setFilter] = useState<RallarTopologyFilter>('all');
@@ -1297,6 +1369,10 @@ function TopologyGraphPanel({ state, onSelectCommand }: {
     );
 
     useEffect(() => {
+        if (!active) {
+            return;
+        }
+
         const container = containerRef.current;
         if (!container) {
             return;
@@ -1319,7 +1395,7 @@ function TopologyGraphPanel({ state, onSelectCommand }: {
         });
 
         return () => renderer.kill();
-    }, [filter, topology.graph]);
+    }, [active, filter, topology.graph]);
 
     return (
         <section className="panel topology-panel">
@@ -1937,6 +2013,62 @@ function ReportPanel({ state }: { state: RallarBlackBoxTestState }) {
     );
 }
 
+function RallarServerPanel({ state, bootstrap, authSession, control }: {
+    state: RallarBlackBoxTestState;
+    bootstrap: RallarBlackBoxBootstrapConfig;
+    authSession?: AuthSession;
+    control: RallarBlackBoxControlSnapshot;
+}) {
+    const config = selectRallarBlackBoxCurrentConfig(state);
+    const providerMode = rallarBlackBoxProviderModeFromConfig(config);
+    const apiBaseUrl = config?.apiBaseUrl ?? bootstrap.apiBaseUrl;
+
+    return (
+        <section className="panel rallar-server-panel">
+            <div className="panel-heading">
+                <h2>Rallar Server</h2>
+                <span className={`pill ${authSession ? 'good' : providerMode === 'browser-rallar' ? 'bad' : 'muted'}`}>
+                    {authSession ? 'authenticated' : 'no session'}
+                </span>
+            </div>
+            <dl className="config-list">
+                <div>
+                    <dt>API base</dt>
+                    <dd>{apiBaseUrl}</dd>
+                </div>
+                <div>
+                    <dt>Provider</dt>
+                    <dd>{providerMode}</dd>
+                </div>
+                <div>
+                    <dt>User</dt>
+                    <dd>{authSession?.username ?? config?.actor ?? 'none'}</dd>
+                </div>
+                <div>
+                    <dt>Client</dt>
+                    <dd>{authSession?.clientId ?? config?.actor ?? 'none'}</dd>
+                </div>
+                <div>
+                    <dt>Session</dt>
+                    <dd>{authSession?.sessionId ?? config?.sessionId ?? 'none'}</dd>
+                </div>
+                <div>
+                    <dt>Access token</dt>
+                    <dd>{authSession?.accessToken ? 'redacted' : 'none'}</dd>
+                </div>
+                <div>
+                    <dt>Control</dt>
+                    <dd>{control.state}</dd>
+                </div>
+                <div>
+                    <dt>REST workbench</dt>
+                    <dd>planned</dd>
+                </div>
+            </dl>
+        </section>
+    );
+}
+
 export default function App() {
     const {
         state,
@@ -1954,6 +2086,7 @@ export default function App() {
     const activeCommand = selectRallarBlackBoxActiveCommand(state);
     const now = useNow(250);
     const [selectedCommandId, setSelectedCommandId] = useState<string | undefined>();
+    const [activeTab, setActiveTab] = useState<AppTabId>(() => readInitialAppTab());
     const [authSession, setAuthSession] = useState<AuthSession | undefined>(() =>
         readCurrentAuthSession()
     );
@@ -1961,6 +2094,16 @@ export default function App() {
     const [authError, setAuthError] = useState<string | undefined>();
     const requiresLogin = bootstrap.providerMode === 'browser-rallar';
     const canEnterApp = !requiresLogin || Boolean(authSession);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+
+        const handlePopState = (): void => setActiveTab(readInitialAppTab());
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }, []);
 
     useEffect(() => {
         if (requiresLogin) {
@@ -1998,6 +2141,10 @@ export default function App() {
     }, [activeCommand, history, selectedCommandId]);
 
     const selectedResult = findSelectedResult(history, selectedCommandId);
+    const selectTab = (tab: AppTabId): void => {
+        setActiveTab(tab);
+        writeAppTabToUrl(tab);
+    };
 
     const logout = async (): Promise<void> => {
         setAuthBusy(true);
@@ -2046,58 +2193,121 @@ export default function App() {
                     {authError}
                 </div>
             )}
-            <div className="workspace-grid">
-                <WorkbenchPanel
-                    busy={busy}
-                    runState={runState}
-                    loadedFixtureId={loadedFixtureId}
-                    lastError={lastError}
-                />
-                <ManualRallarWorkbenchPanel
-                    state={state}
-                    bootstrap={bootstrap}
-                    authSession={authSession}
-                    busy={busy}
-                    onSelectCommand={setSelectedCommandId}
-                />
-                <ReceivedDataInboxPanel
-                    state={state}
-                    onSelectCommand={setSelectedCommandId}
-                />
-                <RtcDiagnosticsPanel
-                    state={state}
-                    bootstrap={bootstrap}
-                    authSession={authSession}
-                    busy={busy}
-                    onSelectCommand={setSelectedCommandId}
-                />
-                <TopologyGraphPanel
-                    state={state}
-                    onSelectCommand={setSelectedCommandId}
-                />
-                <ControlPanel state={state} control={control}/>
-                <BootstrapPanel bootstrap={bootstrap}/>
-                <ConfigurationPanel state={state}/>
-                <CommandQueuePanel
-                    rows={queueRows}
-                    selectedCommandId={selectedCommandId}
-                    onSelect={setSelectedCommandId}
-                />
-                <ExecutionFocusPanel
-                    result={selectedResult}
-                    activeCommand={activeCommand}
-                    startedAtEpochMs={state.activeCommandStartedAtEpochMs}
-                    now={now}
-                />
-                <CommandHistoryPanel
-                    history={history}
-                    selectedCommandId={selectedCommandId}
-                    onSelect={setSelectedCommandId}
-                />
-                <StatsPanel state={state}/>
-                <FailurePanel state={state}/>
-                <ReportPanel state={state}/>
-                <EventStreamPanel state={state}/>
+            <AppTabs activeTab={activeTab} onSelect={selectTab}/>
+            <div className="tab-shell">
+                <section
+                    id="panel-manual-rallar"
+                    className="workspace-grid tab-workspace manual-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-manual-rallar"
+                    hidden={activeTab !== 'manual-rallar'}
+                >
+                    <ManualRallarWorkbenchPanel
+                        state={state}
+                        bootstrap={bootstrap}
+                        authSession={authSession}
+                        busy={busy}
+                        onSelectCommand={setSelectedCommandId}
+                    />
+                    <ReceivedDataInboxPanel
+                        state={state}
+                        onSelectCommand={setSelectedCommandId}
+                    />
+                    <CommandHistoryPanel
+                        history={history}
+                        selectedCommandId={selectedCommandId}
+                        onSelect={setSelectedCommandId}
+                    />
+                </section>
+                <section
+                    id="panel-topology"
+                    className="workspace-grid tab-workspace topology-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-topology"
+                    hidden={activeTab !== 'topology'}
+                >
+                    <TopologyGraphPanel
+                        state={state}
+                        active={activeTab === 'topology'}
+                        onSelectCommand={setSelectedCommandId}
+                    />
+                </section>
+                <section
+                    id="panel-rtc-diagnostics"
+                    className="workspace-grid tab-workspace rtc-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-rtc-diagnostics"
+                    hidden={activeTab !== 'rtc-diagnostics'}
+                >
+                    <RtcDiagnosticsPanel
+                        state={state}
+                        bootstrap={bootstrap}
+                        authSession={authSession}
+                        busy={busy}
+                        onSelectCommand={setSelectedCommandId}
+                    />
+                    <FailurePanel state={state}/>
+                    <StatsPanel state={state}/>
+                </section>
+                <section
+                    id="panel-local-workbench"
+                    className="workspace-grid tab-workspace workbench-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-local-workbench"
+                    hidden={activeTab !== 'local-workbench'}
+                >
+                    <WorkbenchPanel
+                        busy={busy}
+                        runState={runState}
+                        loadedFixtureId={loadedFixtureId}
+                        lastError={lastError}
+                    />
+                    <ControlPanel state={state} control={control}/>
+                    <BootstrapPanel bootstrap={bootstrap}/>
+                    <ConfigurationPanel state={state}/>
+                    <CommandQueuePanel
+                        rows={queueRows}
+                        selectedCommandId={selectedCommandId}
+                        onSelect={setSelectedCommandId}
+                    />
+                    <ReportPanel state={state}/>
+                </section>
+                <section
+                    id="panel-event-stream"
+                    className="workspace-grid tab-workspace events-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-event-stream"
+                    hidden={activeTab !== 'event-stream'}
+                >
+                    <ExecutionFocusPanel
+                        result={selectedResult}
+                        activeCommand={activeCommand}
+                        startedAtEpochMs={state.activeCommandStartedAtEpochMs}
+                        now={now}
+                    />
+                    <CommandHistoryPanel
+                        history={history}
+                        selectedCommandId={selectedCommandId}
+                        onSelect={setSelectedCommandId}
+                    />
+                    <StatsPanel state={state}/>
+                    <FailurePanel state={state}/>
+                    <EventStreamPanel state={state}/>
+                </section>
+                <section
+                    id="panel-rallar-server"
+                    className="workspace-grid tab-workspace server-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-rallar-server"
+                    hidden={activeTab !== 'rallar-server'}
+                >
+                    <RallarServerPanel
+                        state={state}
+                        bootstrap={bootstrap}
+                        authSession={authSession}
+                        control={control}
+                    />
+                </section>
             </div>
         </main>
     );
