@@ -137,6 +137,9 @@ export function applyRelicCommand(
     }
 
     if (command.kind === 'start-expedition') {
+        if (joined.state.adminPlayerId && joined.state.adminPlayerId !== options.senderId) {
+            throw new Error('Only the administrator can start the expedition.');
+        }
         const starting = joined.state.phase === 'lobby';
         return {
             state: touch({

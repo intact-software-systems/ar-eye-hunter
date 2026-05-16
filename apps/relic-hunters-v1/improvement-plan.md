@@ -347,6 +347,12 @@ Exit criteria:
 
 Make multiplayer readiness and room membership reliable.
 
+Status: in progress. First lobby-policy pass complete: the SPA now separates
+online room members from joined expedition hunters, labels the Keeper/admin in
+the lobby roster, disables Keeper start while connected room members have not
+joined the expedition, explains stale/offline players in the party-change
+prompt, and shared rules reject non-admin start commands.
+
 Deliverables:
 
 - show online members versus joined expedition players clearly

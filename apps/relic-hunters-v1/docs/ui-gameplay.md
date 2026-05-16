@@ -9,7 +9,8 @@ The intended playable loop is:
 1. Sign in or register.
 2. Create or join a Relic Hunters room.
 3. Pick a character and join the expedition.
-4. Admin starts the expedition from the lobby.
+4. The Keeper/admin starts the expedition from the lobby after connected room
+   members have joined the expedition.
 5. Each active hunter chooses one plan for the round.
 6. The server resolves all submitted plans together.
 7. Hunters collect relics, reach the Exit, escape, and compare score when the
@@ -25,6 +26,9 @@ The intended playable loop is:
   action is not hidden behind a modal.
 - Authenticated users see rooms, current expedition state, party/lobby controls,
   or planning controls depending on snapshot phase.
+- The lobby separates room presence from expedition readiness: online room
+  members are counted separately from joined expedition hunters, and the Keeper
+  is labelled in the joined roster.
 - `GameHudLayout` gives the SPA stable regions:
   - top: connection, room, round, score, progress, and language/status controls
   - side: auth, room actions, lobby controls, or round planning
@@ -83,9 +87,9 @@ immediately, so clue trails and room objectives can update after the first find.
   gameplay timing, audio, or event reveal behavior.
 - Planning state is visible, but there is not yet a browser test proving the
   full two-client submit/wait/resolve loop.
-- Lobby membership and expedition players are related but distinct. The UI warns
-  about party changes, but stale or disconnected expedition players can still
-  affect game progress until a rules policy is added.
+- Stale or disconnected joined players still remain in the active expedition
+  after start. The player-facing policy is now visible: reset rebuilds the
+  roster, while continuing keeps those hunters and may block round resolution.
 
 ## Visual State
 

@@ -2039,6 +2039,56 @@ label {
     letter-spacing: 0.04em;
 }
 
+.lobby-party-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.lobby-party-stat {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    padding: 7px 8px;
+    border: 1px solid rgba(186, 245, 231, 0.12);
+    border-radius: 6px;
+    background: rgba(5, 18, 16, 0.32);
+}
+
+.lobby-party-stat span {
+    color: #8ba399;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.lobby-party-stat strong {
+    color: #f6e9c8;
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.lobby-role-badges {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.lobby-role-badge {
+    font-size: 0.58rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #facc5b;
+    border: 1px solid rgba(250, 204, 91, 0.38);
+    border-radius: 4px;
+    padding: 1px 5px;
+    background: rgba(250, 204, 91, 0.09);
+}
+
 .lobby-ready-badge {
     font-size: 0.58rem;
     font-weight: 800;
@@ -2101,6 +2151,13 @@ label {
     font-size: 1rem;
     font-weight: 700;
     letter-spacing: 0.04em;
+}
+
+.lobby-start-hint {
+    color: #d8b4fe;
+    font-size: 0.72rem;
+    line-height: 1.35;
+    text-align: center;
 }
 
 /* --- Phase banner game-start variant --- */
@@ -2173,6 +2230,10 @@ label {
     margin-top: 8px;
     color: #667a72;
     font-size: 0.72rem;
+}
+
+.lobby-party-hint.warning {
+    color: #facc5b;
 }
 
 /* --- Relic inventory --- */

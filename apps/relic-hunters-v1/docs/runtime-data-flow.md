@@ -90,7 +90,10 @@ leaving authoritative room movement in the turn-based snapshot.
 - No reconnect recovery test currently proves that listeners are reinstalled and
   snapshots are rehydrated after middleware or WS disruption.
 - Stale active expedition players can block round resolution because active
-  player count is based on game state, not live room membership.
+  player count is based on game state, not live room membership. This is now an
+  explicit player-facing policy in the lobby/party-change UI: reset rebuilds the
+  expedition roster, while continuing keeps stale joined players in the turn
+  resolution set.
 - Runtime diagnostics are useful in development, but the production UI has no
   concise player-facing explanation when a room is joined but the snapshot is
   missing or degraded.

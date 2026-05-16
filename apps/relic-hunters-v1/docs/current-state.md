@@ -72,6 +72,8 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
 - Iterations 1 through 6 are marked complete in the plan.
 - Iteration 7, visual direction and Babylon cleanup, has a first pass complete.
 - Iteration 8, scene architecture, is now in progress.
+- Iteration 9, lobby and multiplayer flow, now has a first lobby-policy pass
+  complete.
 - Because the reported failure is that the game is not playable and state is not
   propagating reliably between clients, iteration 7 should be kept narrow and
   paired with data-flow fixes when a concrete propagation bug is found.
@@ -85,6 +87,11 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
 - Completed iteration-8 architecture fixes so far: extract
   `createRelicSceneRuntime`, move the capped render-loop scheduler to
   `scene/renderLoop.ts`, and move RTC position sync to `scene/networking.ts`.
+- Completed iteration-9 multiplayer fixes so far: the lobby distinguishes online
+  room members from joined expedition hunters, shows the Keeper explicitly,
+  blocks Keeper start while connected room members have not joined the
+  expedition, explains stale/offline joined players in the party-change prompt,
+  and enforces start authority in shared game rules.
 
 ## Main Risks
 
@@ -98,9 +105,9 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
   render-loop scheduling, and RTC position sync now have clearer boundaries.
 - The app is visually dense. Even after the HUD layout pass, many panels and
   overlays compete for attention during planning and event reveal.
-- Server rules serialize writes per game, but disconnected/stale players are
-  still a product/rules decision and can block round resolution if they remain
-  active without submitting.
+- Server rules serialize writes per game. Current product policy is explicit
+  rather than automatic: disconnected/stale joined players remain in the
+  expedition and can block turn resolution unless the room is reset.
 
 ## Working Agreement
 

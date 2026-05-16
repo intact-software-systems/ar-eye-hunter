@@ -161,6 +161,15 @@ export default function App() {
         partyChangeKey !== dismissedPartyChangeKey &&
         !!game.session &&
         !!game.roomId;
+    const lobbyStartBlocker = game.snapshot?.phase === 'lobby'
+        ? deriveLobbyStartBlocker({
+            snapshot: game.snapshot,
+            currentPlayer,
+            isAdmin,
+            onlineMemberCount: currentRoomSummary?.onlineMemberCount,
+            lang,
+        })
+        : undefined;
 
     // Latest-ref pattern: updated each render so the timer closure always calls the current version.
     revealNextRef.current = () => {
@@ -727,6 +736,7 @@ export default function App() {
                                 snapshot={game.snapshot}
                                 localPlayerId={game.session.sessionId}
                                 onlineMemberCount={currentRoomSummary?.onlineMemberCount}
+                                startBlocker={lobbyStartBlocker}
                                 lang={lang}
                             />
                         )}
@@ -760,9 +770,18 @@ export default function App() {
                                     </div>
                                 )}
                                 {currentPlayer && isAdmin && (
-                                    <button type="button" className="primary lobby-begin-btn" onClick={startExpedition}>
+                                    <button
+                                        type="button"
+                                        className="primary lobby-begin-btn"
+                                        onClick={startExpedition}
+                                        disabled={!!lobbyStartBlocker}
+                                        title={lobbyStartBlocker}
+                                    >
                                         {UI[lang].beginTheHunt}
                                     </button>
+                                )}
+                                {currentPlayer && isAdmin && lobbyStartBlocker && (
+                                    <small className="lobby-start-hint">{lobbyStartBlocker}</small>
                                 )}
                                 {currentPlayer && !isAdmin && (
                                     <div className="lobby-waiting-admin">
@@ -1364,34 +1383,111 @@ function RoomActionNudge({
     return <span>{hint}</span>;
 }
 
+function deriveLobbyStartBlocker({
+    snapshot,
+    currentPlayer,
+    isAdmin,
+    onlineMemberCount,
+    lang,
+}: Readonly<{
+    snapshot: RelicPublicSnapshot;
+    currentPlayer?: RelicPlayer;
+    isAdmin: boolean;
+    onlineMemberCount?: number;
+    lang: Lang;
+}>): string | undefined {
+    const joinedCount = snapshot.players.length;
+    const onlineOnlyCount = typeof onlineMemberCount === 'number'
+        ? Math.max(0, onlineMemberCount - joinedCount)
+        : 0;
+    const keeperName = getKeeperName(snapshot, lang);
+
+    if (!currentPlayer) {
+        return lang === 'no'
+            ? 'Bli med i ekspedisjonen før jakten kan starte.'
+            : 'Join the expedition before the hunt can start.';
+    }
+    if (!isAdmin) {
+        return lang === 'no'
+            ? `Bare ${keeperName} kan starte jakten.`
+            : `Only ${keeperName} can start the hunt.`;
+    }
+    if (joinedCount === 0) {
+        return lang === 'no'
+            ? 'Minst én jeger må bli med i ekspedisjonen.'
+            : 'At least one hunter must join the expedition.';
+    }
+    if (onlineOnlyCount > 0) {
+        return lang === 'no'
+            ? `${onlineOnlyCount} tilkoblet rommedlem må bli med i ekspedisjonen.`
+            : `${onlineOnlyCount} online room member${onlineOnlyCount === 1 ? '' : 's'} must join the expedition.`;
+    }
+    return undefined;
+}
+
+function getLobbyKeeper(snapshot: RelicPublicSnapshot): RelicPlayer | undefined {
+    const adminPlayerId = snapshot.adminPlayerId ?? snapshot.players[0]?.playerId;
+    return snapshot.players.find((player) => player.playerId === adminPlayerId);
+}
+
+function getKeeperName(snapshot: RelicPublicSnapshot, lang: Lang): string {
+    return getLobbyKeeper(snapshot)?.username ?? (lang === 'no' ? 'Vokteren' : 'the Keeper');
+}
+
 function LobbyPartyPanel({
     snapshot,
     localPlayerId,
     onlineMemberCount,
+    startBlocker,
     lang,
-}: Readonly<{ snapshot: RelicPublicSnapshot; localPlayerId?: string; onlineMemberCount?: number; lang: Lang }>) {
+}: Readonly<{
+    snapshot: RelicPublicSnapshot;
+    localPlayerId?: string;
+    onlineMemberCount?: number;
+    startBlocker?: string;
+    lang: Lang;
+}>) {
     if (snapshot.phase !== 'lobby') return null;
     const u = UI[lang];
-    const readyCount = snapshot.players.length;
-    const totalCount = Math.max(readyCount, onlineMemberCount ?? 0);
-    const allReady = readyCount > 0 && readyCount >= totalCount;
-    const waitingCount = totalCount - readyCount;
+    const joinedCount = snapshot.players.length;
+    const onlineKnown = typeof onlineMemberCount === 'number';
+    const onlineCount = onlineMemberCount ?? joinedCount;
+    const onlineOnlyCount = onlineKnown ? Math.max(0, onlineCount - joinedCount) : 0;
+    const offlineJoinedCount = onlineKnown ? Math.max(0, joinedCount - onlineCount) : 0;
+    const allJoinedOnline = joinedCount > 0 && onlineOnlyCount === 0 && offlineJoinedCount === 0;
+    const keeper = getLobbyKeeper(snapshot);
+    const adminPlayerId = snapshot.adminPlayerId ?? snapshot.players[0]?.playerId;
     return (
         <div className="panel lobby-party-panel">
             <div className="lobby-ready-header">
                 <span className="panel-label">{u.huntersSummoned}</span>
-                {totalCount > 0 && (
-                    <span className={`lobby-ready-count${allReady ? ' all-ready' : ''}`}>
-                        {readyCount}/{totalCount} {lang === 'no' ? 'klare' : 'ready'}
+                {(onlineKnown || joinedCount > 0) && (
+                    <span className={`lobby-ready-count${allJoinedOnline ? ' all-ready' : ''}`}>
+                        {joinedCount}/{onlineKnown ? onlineCount : '?'} {lang === 'no' ? 'med' : 'joined'}
                     </span>
                 )}
             </div>
-            <p className="lobby-keeper-watch">{u.keeperWatches}</p>
+            <p className="lobby-keeper-watch">
+                {keeper
+                    ? (lang === 'no' ? `Vokter: ${keeper.username}` : `Keeper: ${keeper.username}`)
+                    : u.keeperWatches}
+            </p>
+            <div className="lobby-party-summary" aria-label={lang === 'no' ? 'Lobby-medlemskap' : 'Lobby membership'}>
+                <div className="lobby-party-stat">
+                    <span>{lang === 'no' ? 'Tilkoblede rommedlemmer' : 'Online room members'}</span>
+                    <strong>{onlineKnown ? onlineCount : '—'}</strong>
+                </div>
+                <div className="lobby-party-stat">
+                    <span>{lang === 'no' ? 'Jegere i ekspedisjonen' : 'Joined expedition hunters'}</span>
+                    <strong>{joinedCount}</strong>
+                </div>
+            </div>
             {snapshot.players.length > 0 && (
                 <div className="lobby-party-list">
                     {snapshot.players.map((player) => {
                         const char = findRelicCharacter(player.characterId);
                         const isLocal = player.playerId === localPlayerId;
+                        const isKeeper = player.playerId === adminPlayerId;
                         return (
                             <div key={player.playerId} className={`lobby-party-row${isLocal ? ' local' : ''}`}>
                                 <span
@@ -1400,25 +1496,40 @@ function LobbyPartyPanel({
                                 />
                                 <span className="lobby-party-name">{player.username}</span>
                                 <span className="lobby-party-char">{char.name}</span>
-                                <span className="lobby-ready-badge">
-                                    {lang === 'no' ? 'KLAR' : 'READY'}
+                                <span className="lobby-role-badges">
+                                    {isKeeper && (
+                                        <span className="lobby-role-badge">
+                                            {lang === 'no' ? 'VOKTER' : 'KEEPER'}
+                                        </span>
+                                    )}
+                                    <span className="lobby-ready-badge">
+                                        {lang === 'no' ? 'KLAR' : 'READY'}
+                                    </span>
                                 </span>
                             </div>
                         );
                     })}
                 </div>
             )}
-            {allReady && readyCount >= 2 ? (
-                <small className="lobby-all-ready-hint">
-                    {lang === 'no'
-                        ? 'Alle jegere klare — start jakten!'
-                        : 'All hunters ready — begin the hunt!'}
-                </small>
-            ) : waitingCount > 0 ? (
+            {onlineOnlyCount > 0 ? (
                 <small className="lobby-party-hint">
                     {lang === 'no'
-                        ? `Venter på ${waitingCount} jeger${waitingCount === 1 ? '' : 'e'}…`
-                        : `Waiting for ${waitingCount} more hunter${waitingCount === 1 ? '' : 's'}…`}
+                        ? `${onlineOnlyCount} tilkoblet rommedlem må bli med i ekspedisjonen.`
+                        : `${onlineOnlyCount} online room member${onlineOnlyCount === 1 ? '' : 's'} still need${onlineOnlyCount === 1 ? 's' : ''} to join.`}
+                </small>
+            ) : offlineJoinedCount > 0 ? (
+                <small className="lobby-party-hint warning">
+                    {lang === 'no'
+                        ? `${offlineJoinedCount} jeger${offlineJoinedCount === 1 ? '' : 'e'} i ekspedisjonen ser frakoblet ut.`
+                        : `${offlineJoinedCount} joined hunter${offlineJoinedCount === 1 ? '' : 's'} appear offline.`}
+                </small>
+            ) : startBlocker ? (
+                <small className="lobby-party-hint">{startBlocker}</small>
+            ) : allJoinedOnline ? (
+                <small className="lobby-all-ready-hint">
+                    {lang === 'no'
+                        ? 'Ekspedisjonen er samlet. Vokteren kan starte jakten.'
+                        : 'The expedition is assembled. The Keeper can start when ready.'}
                 </small>
             ) : (
                 <small className="lobby-party-hint">{u.keeperAwaits}</small>
@@ -1599,13 +1710,20 @@ function PartyChangePrompt({
     onReset(): void;
     onContinue(): void;
 }>) {
+    const offlineJoinedCount = Math.max(0, expeditionPlayers - onlinePlayers);
+    const onlineOnlyCount = Math.max(0, onlinePlayers - expeditionPlayers);
+    const detail = offlineJoinedCount > 0
+        ? 'Offline joined hunters can still block round resolution. Start Over removes the stale roster; Keep Going leaves them in the expedition.'
+        : onlineOnlyCount > 0
+        ? 'Some online room members have not joined the expedition yet. Start Over rebuilds the roster; Keep Going leaves the current expedition as-is.'
+        : 'The expedition roster no longer matches the connected party.';
     return (
         <div className="panel stack party-change-panel">
             <div>
                 <span className="panel-label">Party Changed</span>
                 <strong>{onlinePlayers}/{expeditionPlayers} hunters are online</strong>
             </div>
-            <p>The expedition roster no longer matches the connected party.</p>
+            <p>{detail}</p>
             <div className="button-grid">
                 <button type="button" className="primary" onClick={onReset}>
                     Start Over
