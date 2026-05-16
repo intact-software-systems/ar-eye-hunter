@@ -52,6 +52,7 @@ Real-server test runs should record enough evidence to debug failures: peer IDs,
 | 0: Baseline evidence and reproduction harness | Completed | `packages/shared-web/tasks-findings-iteration-0-baseline.md`; targeted unit/typecheck runs; full-stack real suite; two-agent real `realtime` and `messages.rtc` smoke. |
 | 1: Read-only diagnostics and status surface | Implemented and locally verified | Added read-only RTC/WS diagnostics APIs and focused tests. Real two-agent smoke still passes. Playwright status snapshot artifacts are still a follow-up. |
 | 2: IndexedDB growth and session isolation proof | Browser IndexedDB eviction implemented | `packages/tests/shared-web/browser-al-runtime-stores.test.ts`; `packages/tests/shared-web/browser-queuebox-expiry-eviction.test.ts`; existing generic IndexedDB AL runtime tests still pass. Confirms per-prefix lazy eviction and storage bloat risk, with no cross-session read reproduced for the tested browser AL outbound state path. Added explicit cleanup helpers and browser middleware expiry eviction loops. |
+| 3: `enqueueOutboxIfAbsent()` quiet outcomes | Result statuses implemented and locally verified | `ALOutboundMessageRuntime`, RTC overlay/Rx streamer, WS client/server queue-box services, and `Rallar.messages.rtc/ws.send()` now return structured enqueue/send outcomes. |
 
 ## Iteration 0: Baseline Evidence And Reproduction Harness
 
@@ -242,6 +243,59 @@ Exit criteria:
 
 Goal: classify all `messages.rtc.send()` outcomes before changing the API.
 
+Status: result statuses implemented and locally verified on 2026-05-16. This intentionally changes `Rallar.messages.rtc.send()` and `Rallar.messages.ws.send()` from returning a bare `ALMessage` to returning a structured send result that includes the `ALMessage`.
+
+Proof findings before implementation:
+
+- Previously, `Rallar.messages.rtc.send()` returned the created `ALMessage` even when `ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent()` resolved to an empty entry list.
+- Previously, `WebRtcOverlayMulticastManager.enqueueIfAbsent()` collapsed both dropped/left outcomes and successful zero-entry outcomes to `[]`.
+- Skipped/drop outcomes whose reason contains `Skipping` are intentionally quiet at the overlay manager boundary; missing overlay context can still warn during context resolution.
+- Untargeted messages, missing overlay context, no next hop, missing RTC channel, successful volatile immediate send, superseded messages, and immediate prepared dispatch can all produce no outbox entries.
+- Durable/local-outbox RTC sends return an outbox entry and persist it in the RTC outbox.
+- Re-enqueuing the same durable RTC `ALMessage` returns an entry again but only leaves one RTC outbox row, so this duplicate/idempotent path is not currently a quiet `[]` outcome.
+- Expired multicast sends return no entries and do not persist to the RTC outbox.
+- Previously, `ALOutboundMessageRuntime.enqueueIfAbsent()` returned `left` for planner `dropReason`, and `WebRtcOverlayMulticastManager.enqueueIfAbsent()` folded that into `[]`.
+- A planner with `persist: false` and no `preparedMessages` still persists an outbox entry for enqueue intent because `shouldEnqueueOutbox` ignores `plan.persist` for normal enqueue. This is confirmed current behavior and should be reviewed before assuming "no prepared messages" means "no route".
+- A facade-only result wrapper could not accurately distinguish the quiet outcomes from the old `readonly ResourceEntry[]` return alone, so the implementation introduced a structured lower-layer enqueue outcome first.
+
+Implemented after proof:
+
+- `ALOutboundMessageRuntime.enqueueIfAbsent()` now returns `ALOutboundEnqueueResult` with:
+  - `status`
+  - `message`
+  - optional `entry`
+  - `entries`
+  - optional `reason`
+- Current statuses are:
+  - `enqueued`
+  - `sent-immediate`
+  - `skipped`
+  - `duplicate`
+  - `superseded`
+  - `expired`
+  - `no-route`
+  - `failed`
+- `WebRtcOverlayMulticastManager.enqueueIfAbsent()` and `WebRtcRxStreamerService.enqueueOutboxIfAbsent()` now preserve the structured result instead of collapsing outcomes to `[]`.
+- `WsQueueBoxClientService.enqueueOutboxIfAbsent()` and `WsQueueBoxServerService.enqueueOutboxIfAbsent()` now return the same structured result shape. WS cannot currently produce every RTC-specific route outcome, but it now reports immediate sends, queued sends, duplicate sends, and server-side no-recipient/no-route cases.
+- `Rallar.messages.rtc.send()` and `Rallar.messages.ws.send()` now return `RallarMessageSendResult`:
+  - `transport`
+  - `status`
+  - `message`
+  - optional `entry`
+  - `entries`
+  - optional `reason`
+- Same-message `enqueueIfAbsent()` is now idempotent at the AL outbound runtime boundary: a repeated enqueue returns `duplicate` and does not schedule another immediate send.
+- RTC immediate dispatch now preflights missing RTC channels and reports `no-route` instead of allowing that case to look like a successful immediate send.
+
+Verification completed:
+
+- `npm run test -- packages/tests/shared/al-outbound-message-runtime.test.ts packages/tests/shared/webrtc-overlay-services.test.ts packages/tests/shared/multicast-policy-integration.test.ts packages/tests/shared/ws-qos-policy.test.ts packages/tests/shared/ws-server-qos-policy.test.ts packages/tests/shared-web/rallar-operation-options.test.ts packages/tests/shared/al-indexeddb-runtime-stores.test.ts packages/tests/shared/al-durable-runtime.test.ts`
+- `npx tsc -p packages/shared/tsconfig.json --noEmit`
+- `npm --workspace @ar-eye-hunter/shared-web run typecheck`
+- `npm --workspace @ar-eye-hunter/shared-server run typecheck`
+- `npm --workspace @ar-eye-hunter/shared-test run typecheck`
+- `npm --workspace @ar-eye-hunter/relic-hunters run typecheck`
+
 Proof work:
 
 - Add focused tests around `WebRtcOverlayMulticastManager.enqueueIfAbsent()` and `ALOutboundMessageRuntime.enqueueIfAbsent()` for:
@@ -253,23 +307,12 @@ Proof work:
   - expired message
   - immediate dispatch success
   - missing peer/channel in immediate dispatch
-- Add a facade-level test proving `Rallar.messages.rtc.send()` currently returns an `ALMessage` even when lower layers produce no outbox entries.
+- Add facade-level tests proving `Rallar.messages.rtc.send()` and `Rallar.messages.ws.send()` now expose the structured status and the created `ALMessage`.
 
-Potential implementation after proof:
+Implemented API shape:
 
-- Add `sendWithResult()` for `messages.rtc`.
-- Add result statuses such as:
-  - `accepted`
-  - `enqueued`
-  - `sent-immediate`
-  - `skipped`
-  - `duplicate`
-  - `superseded`
-  - `expired`
-  - `no-route`
-  - `failed`
-- Keep existing `send()` behavior initially for compatibility.
-- Align `messages.ws` with the same outcome shape after RTC result mapping is proven.
+- `send()` itself now returns the structured result rather than adding a parallel `sendWithResult()` method.
+- RTC and WS use the same status vocabulary, even though WS has fewer route/planning states in practice.
 
 Real scenario testing:
 

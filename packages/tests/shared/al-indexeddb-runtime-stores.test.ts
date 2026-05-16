@@ -634,11 +634,11 @@ async function enqueueOutboundOrThrow(
     msg: ALMessage,
 ): Promise<readonly ResourceEntry[]> {
     const enqueued = await runtime.enqueueIfAbsent(msg);
-    if (enqueued.left) {
-        throw new Error(enqueued.left);
+    if (enqueued.status === 'failed') {
+        throw new Error(enqueued.reason);
     }
 
-    return enqueued.right?.entries ?? [];
+    return enqueued.entries;
 }
 
 function createInboundRuntime(

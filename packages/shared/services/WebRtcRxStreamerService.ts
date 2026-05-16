@@ -19,6 +19,7 @@ import { WebRtcOverlayMulticastManager } from '../multicast/WebRtcOverlayMultica
 import type { ALInboundRuntimeStores } from '../alm/ALInboundMessageRuntime.ts';
 import { ALInboundMessageRuntime } from '../alm/ALInboundMessageRuntime.ts';
 import { ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
+import type { ALOutboundEnqueueResult } from '../alm/ALOutboundMessageRuntime.ts';
 
 export type WebRtcRxStreamerServiceInputDto = {
     sessionId: string
@@ -387,7 +388,7 @@ export class WebRtcRxStreamerService {
     // Queue management
     // --------------------------------------------------
 
-    async enqueueOutboxIfAbsent(msg: ALMessage): Promise<readonly ResourceEntry[]> {
+    async enqueueOutboxIfAbsent(msg: ALMessage): Promise<ALOutboundEnqueueResult> {
         return await this.multicast.enqueueIfAbsent(msg);
     }
 

@@ -4,7 +4,6 @@ import { InMemoryALOrderingStore } from '../al-contracts/al-runtime.ts';
 import type { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
 import type { Key, ResourceEntry } from '../queuebox/ResourceEntry.ts';
-import { Either } from '../resilience/Either.ts';
 import { RetryableConflictError, RetryPolicies, tryWithPolicy, } from '../resilience/TryWith.ts';
 import { QueueBoxUtilities } from '../services/QueueBoxUtilities.ts';
 import type {
@@ -96,9 +95,22 @@ export type ALOutboundRuntimeStores = Readonly<{
     stateStore?: ALOutboundRuntimeStateStore;
 }>;
 
+export type ALOutboundEnqueueStatus =
+    | 'enqueued'
+    | 'sent-immediate'
+    | 'skipped'
+    | 'duplicate'
+    | 'superseded'
+    | 'expired'
+    | 'no-route'
+    | 'failed';
+
 export type ALOutboundEnqueueResult = Readonly<{
-    entry: ResourceEntry;
+    status: ALOutboundEnqueueStatus;
+    message: ALMessage;
+    entry?: ResourceEntry;
     entries: readonly ResourceEntry[];
+    reason?: string;
 }>;
 
 type ALOutboundComputeIntent = 'enqueue' | 'dequeue' | 'repair';
@@ -110,7 +122,8 @@ type ALOutboundComputeDependencies = Readonly<{
 
 type ALOutboundComputedDto<TPrepared> = Readonly<{
     bundle?: ALOutboundCommitBundle<TPrepared>;
-    dropReason?: string;
+    status: ALOutboundEnqueueStatus;
+    reason?: string;
     entries: readonly ResourceEntry[];
 }>;
 
@@ -174,7 +187,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         }
     }
 
-    async enqueueIfAbsent(msg: ALMessage): Promise<Either<string, ALOutboundEnqueueResult>> {
+    async enqueueIfAbsent(msg: ALMessage): Promise<ALOutboundEnqueueResult> {
         await this.ready();
 
         const computed = await this.commitDispatchPlanWithRetry(
@@ -183,12 +196,13 @@ export class ALOutboundMessageRuntime<TPrepared> {
             'enqueue',
             'immediate',
         );
-        return computed.dropReason
-            ? Either.ofLeft<string, ALOutboundEnqueueResult>(computed.dropReason)
-            : Either.ofRight<string, ALOutboundEnqueueResult>({
-                entry: computed.entries[0] ?? this.input.toOutboxEntry(msg),
-                entries: computed.entries,
-            });
+        return {
+            status: computed.status,
+            message: msg,
+            entry: computed.entries[0],
+            entries: computed.entries,
+            reason: computed.reason,
+        };
     }
 
     async dequeue(
@@ -306,8 +320,25 @@ export class ALOutboundMessageRuntime<TPrepared> {
             }
 
             return {
-                dropReason: plan.dropReason,
+                status: ALOutboundMessageRuntime.toEnqueueStatusFromReason(
+                    plan.dropReason,
+                ),
+                reason: plan.dropReason,
                 entries: [],
+            };
+        }
+
+        if (intent === 'enqueue' && read.sentSnapshot) {
+            const entry = read.sentSnapshot.outboxKey
+                ? {
+                    ...dependencies.toOutboxEntry(read.msg),
+                    key: read.sentSnapshot.outboxKey,
+                }
+                : undefined;
+            return {
+                status: 'duplicate',
+                reason: `Duplicate outbound message ${read.msg.id.msgId}`,
+                entries: entry ? [entry] : [],
             };
         }
 
@@ -315,6 +346,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
         if (superseded) {
             console.warn(`Skipping superseded outbound message ${read.msg.id.msgId}`);
             return {
+                status: 'superseded',
+                reason: `Skipping superseded outbound message ${read.msg.id.msgId}`,
                 entries: [],
             };
         }
@@ -339,6 +372,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
         const extraMutations = options.extraMutations?.(read) ?? [];
         if (extraMutations === 'skip') {
             return {
+                status: 'skipped',
+                reason: `Skipped outbound dispatch for message ${read.msg.id.msgId}`,
                 entries: [],
             };
         }
@@ -402,13 +437,28 @@ export class ALOutboundMessageRuntime<TPrepared> {
             console.warn(`No outbound transport route for message ${read.msg.id.msgId}`);
         }
 
+        const status: ALOutboundEnqueueStatus = shouldEnqueueOutbox
+            ? 'enqueued'
+            : shouldDispatchPrepared
+                ? 'sent-immediate'
+                : shouldFallback
+                    ? 'sent-immediate'
+                    : 'no-route';
+        const reason = status === 'no-route'
+            ? `No outbound transport route for message ${read.msg.id.msgId}`
+            : undefined;
+
         if (mutations.length === 0 && durableEffects.length === 0) {
             return {
+                status,
+                reason,
                 entries,
             };
         }
 
         return {
+            status,
+            reason,
             entries,
             bundle: {
                 senderId: read.msg.id.senderId,
@@ -963,6 +1013,37 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
     private static toEffectId(...parts: readonly (number | string)[]): string {
         return parts.map(part => encodeURIComponent(String(part))).join(':');
+    }
+
+    private static toEnqueueStatusFromReason(
+        reason: string,
+    ): ALOutboundEnqueueStatus {
+        const normalized = reason.toLowerCase();
+        if (normalized.includes('duplicate')) {
+            return 'duplicate';
+        }
+        if (normalized.includes('superseded')) {
+            return 'superseded';
+        }
+        if (normalized.includes('expired') || normalized.includes('too stale')) {
+            return 'expired';
+        }
+        if (
+            normalized.includes('no route') ||
+            normalized.includes('no recipient') ||
+            normalized.includes('without target') ||
+            normalized.includes('without next hop') ||
+            normalized.includes('without overlay context') ||
+            normalized.includes('without planned transport') ||
+            normalized.includes('without rtc channel') ||
+            normalized.includes('without ws connection') ||
+            normalized.includes('cannot route') ||
+            normalized.includes('cannot resolve')
+        ) {
+            return 'no-route';
+        }
+
+        return 'skipped';
     }
 
     private static toErrorMessage(error: unknown): string {

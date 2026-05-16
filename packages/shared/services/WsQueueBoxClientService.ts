@@ -20,6 +20,7 @@ import { ALInboundMessageRuntime } from '../alm/ALInboundMessageRuntime.ts';
 import type { ALOutboundRuntimeStores } from '../alm/ALOutboundMessageRuntime.ts';
 import {
     ALOutboundAckTrackingPlan,
+    ALOutboundEnqueueResult,
     ALOutboundMessageRuntime,
     ALOutboundSupersedenceTrackingPlan,
 } from '../alm/ALOutboundMessageRuntime.ts';
@@ -323,14 +324,8 @@ export class WsQueueBoxClientService {
             });
     }
 
-    async enqueueOutboxIfAbsent(message: ALMessage): Promise<ResourceEntry> {
-        const enqueued = await this.outboundRuntime.enqueueIfAbsent(message);
-        return enqueued.fold(
-            (error) => {
-                throw new Error(error);
-            },
-            (result) => result.entry,
-        );
+    async enqueueOutboxIfAbsent(message: ALMessage): Promise<ALOutboundEnqueueResult> {
+        return await this.outboundRuntime.enqueueIfAbsent(message);
     }
 
     async dequeueOutbox(typesToDequeue: Set<string>, resilience: ResilienceDto) {

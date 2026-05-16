@@ -22,7 +22,10 @@ import {
     WebRtcOverlayMulticasterFactory,
 } from './OverlayMulticastContracts.ts';
 import { WebRtcConnectionService } from '../services/WebRtcConnectionService.ts';
-import type { ALOutboundRuntimeStores } from '../alm/ALOutboundMessageRuntime.ts';
+import type {
+    ALOutboundEnqueueResult,
+    ALOutboundRuntimeStores,
+} from '../alm/ALOutboundMessageRuntime.ts';
 import {
     ALOutboundAckTrackingPlan,
     ALOutboundDispatchPhase,
@@ -91,18 +94,8 @@ export class WebRtcOverlayMulticastManager {
         return multicaster;
     }
 
-    async enqueueIfAbsent(msg: ALMessage): Promise<readonly ResourceEntry[]> {
-        const enqueued = await this.outboundRuntime.enqueueIfAbsent(msg);
-        return enqueued.fold(
-            (e) => {
-                if(!e?.includes('Skipping')) {
-                    console.warn(`Failed to enqueue msg ${msg.id} : ${e}`);
-                }
-
-                return [];
-            },
-            (result) => result.entries,
-        );
+    async enqueueIfAbsent(msg: ALMessage): Promise<ALOutboundEnqueueResult> {
+        return await this.outboundRuntime.enqueueIfAbsent(msg);
     }
 
     async forwardIfRequired(
@@ -399,6 +392,23 @@ export class WebRtcOverlayMulticastManager {
                 persist: false,
                 preparedMessages: [],
             };
+        }
+
+        if (!plan.handlingPlan.forwarding.persist) {
+            const missingPeerId = plan.transportMessages
+                .map((message) => message.forwarding?.nextHopPeerIds?.[0])
+                .find((peerId) =>
+                    peerId !== undefined &&
+                    !this.connectionService.readPeer(peerId)?.channel
+                );
+            if (missingPeerId) {
+                return {
+                    dropReason:
+                        `Skipping immediate RTC dispatch without RTC channel for peer ${missingPeerId}`,
+                    persist: false,
+                    preparedMessages: [],
+                };
+            }
         }
 
         return {

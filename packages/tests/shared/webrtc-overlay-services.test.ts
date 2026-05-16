@@ -5,7 +5,11 @@ import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { EntityStatus, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { newALMulticastMessage, newALUnicastMessage, } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALMulticastMessage,
+    newALUnicastMessage,
+    newALUntargetedMessage,
+} from '@shared/al-contracts/al-contract.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMulticastManager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/WebRtcOverlayMulticastService.ts';
 
@@ -14,6 +18,7 @@ import { WebRtcOverlayMulticastService } from '@shared/multicast/WebRtcOverlayMu
 describe('WebRtc overlay services', () => {
     afterEach(() => {
         vi.useRealTimers();
+        vi.restoreAllMocks();
     });
 
     it('keeps originating multicast copies transport-ready without mutating visited hops or ttl', () => {
@@ -98,7 +103,10 @@ describe('WebRtc overlay services', () => {
             },
         );
 
-        await expect(manager.enqueueIfAbsent(msg)).resolves.toEqual([]);
+        await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
+            status: 'no-route',
+            entries: [],
+        });
         expect(connectionService.readPeer).toHaveBeenCalledWith('peer-1');
 
         const reserved = await queue.reserveEntries(
@@ -108,6 +116,294 @@ describe('WebRtc overlay services', () => {
         );
 
         expect(reserved.size).toBe(0);
+    });
+
+    it('skips outbound messages without targets or next hop', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const queue = new InMemoryQueueBox(new Map());
+        const connectionService = createConnectionService(['peer-1']);
+        const manager = new WebRtcOverlayMulticastManager(
+            queue,
+            connectionService as never,
+            createReadableCache({}),
+            createReadableCache({}),
+            (overlayId) =>
+                new WebRtcOverlayMulticastService(
+                    overlayId,
+                    connectionService as never,
+                ),
+        );
+        const msg = newALUntargetedMessage(
+            'sender-no-targets',
+            {
+                topicId: 'chat',
+                resourceId: 'msg-no-targets',
+                contextId: 'conversation-1',
+            },
+            'chat.private-text.v1',
+            {
+                text: 'no target',
+            },
+        );
+
+        await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
+            status: 'no-route',
+            entries: [],
+        });
+        expect(warn).not.toHaveBeenCalled();
+        expect(await reserveRtcOutbox(queue)).toHaveLength(0);
+    });
+
+    it('skips multicast sends when overlay context is missing', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const queue = new InMemoryQueueBox(new Map());
+        const connectionService = createConnectionService(['peer-1']);
+        const manager = new WebRtcOverlayMulticastManager(
+            queue,
+            connectionService as never,
+            createReadableCache({}),
+            createReadableCache({}),
+            (overlayId) =>
+                new WebRtcOverlayMulticastService(
+                    overlayId,
+                    connectionService as never,
+                ),
+        );
+        const msg = newALMulticastMessage(
+            'sender-missing-context',
+            {
+                topicId: 'chat',
+                resourceId: 'msg-missing-context',
+                contextId: 'group-1',
+            },
+            'group-1',
+            'chat.message.v1',
+            {
+                text: 'missing context',
+            },
+        );
+
+        await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
+            status: 'no-route',
+            entries: [],
+        });
+        expect(warn).toHaveBeenCalledTimes(2);
+        expect(warn).toHaveBeenCalledWith(
+            'No GroupSnapshot found for overlayId/groupId group-1',
+        );
+        expect(await reserveRtcOutbox(queue)).toHaveLength(0);
+    });
+
+    it('skips multicast sends when no next hop is planned', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const queue = new InMemoryQueueBox(new Map());
+        const connectionService = createConnectionService([]);
+        const context = createOverlayContext(['self', 'peer-1'], []);
+        const manager = new WebRtcOverlayMulticastManager(
+            queue,
+            connectionService as never,
+            createReadableCache({ 'group-1': context.room }),
+            createReadableCache({ 'group-1': context.overlay }),
+            (overlayId) =>
+                new WebRtcOverlayMulticastService(
+                    overlayId,
+                    connectionService as never,
+                ),
+        );
+        const msg = newALMulticastMessage(
+            'sender-no-next-hop',
+            {
+                topicId: 'chat',
+                resourceId: 'msg-no-next-hop',
+                contextId: 'group-1',
+            },
+            'group-1',
+            'chat.message.v1',
+            {
+                text: 'no next hop',
+            },
+        );
+
+        await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
+            status: 'no-route',
+            entries: [],
+        });
+        expect(warn).not.toHaveBeenCalled();
+        expect(await reserveRtcOutbox(queue)).toHaveLength(0);
+    });
+
+    it('returns no entries for volatile immediate sends even when channel send succeeds', async () => {
+        const queue = new InMemoryQueueBox(new Map());
+        const channel = {
+            send: vi.fn(async () => Promise.resolve()),
+        };
+        const connectionService = createConnectionService(['peer-1'], {
+            'peer-1': {
+                channel,
+            },
+        });
+        const manager = new WebRtcOverlayMulticastManager(
+            queue,
+            connectionService as never,
+            createReadableCache({}),
+            createReadableCache({}),
+            (overlayId) =>
+                new WebRtcOverlayMulticastService(
+                    overlayId,
+                    connectionService as never,
+                ),
+        );
+        const msg = newALUnicastMessage(
+            'sender-immediate',
+            {
+                topicId: 'chat',
+                resourceId: 'msg-immediate',
+                contextId: 'conversation-1',
+            },
+            'peer-1',
+            'chat.private-text.v1',
+            {
+                text: 'send now',
+            },
+        );
+
+        await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
+            status: 'sent-immediate',
+            entries: [],
+        });
+        expect(channel.send).toHaveBeenCalledOnce();
+        expect(await reserveRtcOutbox(queue)).toHaveLength(0);
+    });
+
+    it('returns an outbox entry for durable RTC sends', async () => {
+        const queue = new InMemoryQueueBox(new Map());
+        const connectionService = createConnectionService(['peer-1']);
+        const manager = new WebRtcOverlayMulticastManager(
+            queue,
+            connectionService as never,
+            createReadableCache({}),
+            createReadableCache({}),
+            (overlayId) =>
+                new WebRtcOverlayMulticastService(
+                    overlayId,
+                    connectionService as never,
+                ),
+        );
+        const msg = newALUnicastMessage(
+            'sender-durable',
+            {
+                topicId: 'chat',
+                resourceId: 'msg-durable',
+                contextId: 'conversation-1',
+            },
+            'peer-1',
+            'chat.private-text.v1',
+            {
+                text: 'persist me',
+            },
+            {
+                qos: {
+                    durability: {
+                        algo: 'local-outbox',
+                    },
+                },
+            },
+        );
+
+        const result = await manager.enqueueIfAbsent(msg);
+
+        expect(result.status).toBe('enqueued');
+        expect(result.entries).toHaveLength(1);
+        expect(result.entries[0]?.key.resourceId).toBe('msg-durable');
+        expect(await reserveRtcOutbox(queue)).toHaveLength(1);
+    });
+
+    it('returns an existing outbox entry when the same durable RTC message is enqueued twice', async () => {
+        vi.spyOn(console, 'log').mockImplementation(() => undefined);
+        const queue = new InMemoryQueueBox(new Map());
+        const connectionService = createConnectionService(['peer-1']);
+        const manager = new WebRtcOverlayMulticastManager(
+            queue,
+            connectionService as never,
+            createReadableCache({}),
+            createReadableCache({}),
+            (overlayId) =>
+                new WebRtcOverlayMulticastService(
+                    overlayId,
+                    connectionService as never,
+                ),
+        );
+        const msg = newALUnicastMessage(
+            'sender-duplicate',
+            {
+                topicId: 'chat',
+                resourceId: 'msg-duplicate',
+                contextId: 'conversation-1',
+            },
+            'peer-1',
+            'chat.private-text.v1',
+            {
+                text: 'persist me once',
+            },
+            {
+                qos: {
+                    durability: {
+                        algo: 'local-outbox',
+                    },
+                },
+            },
+        );
+
+        const firstResult = await manager.enqueueIfAbsent(msg);
+        const secondResult = await manager.enqueueIfAbsent(msg);
+
+        expect(firstResult.status).toBe('enqueued');
+        expect(firstResult.entries).toHaveLength(1);
+        expect(secondResult.status).toBe('duplicate');
+        expect(secondResult.entries).toHaveLength(1);
+        expect(secondResult.entries[0]?.key.resourceId).toBe('msg-duplicate');
+        expect(await reserveRtcOutbox(queue)).toHaveLength(1);
+    });
+
+    it('skips expired multicast sends without outbox entries', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const queue = new InMemoryQueueBox(new Map());
+        const connectionService = createConnectionService(['peer-1']);
+        const context = createOverlayContext(['self', 'peer-1'], ['peer-1']);
+        const manager = new WebRtcOverlayMulticastManager(
+            queue,
+            connectionService as never,
+            createReadableCache({ 'group-1': context.room }),
+            createReadableCache({ 'group-1': context.overlay }),
+            (overlayId) =>
+                new WebRtcOverlayMulticastService(
+                    overlayId,
+                    connectionService as never,
+                ),
+        );
+        const msg = newALMulticastMessage(
+            'sender-expired',
+            {
+                topicId: 'chat',
+                resourceId: 'msg-expired',
+                contextId: 'group-1',
+            },
+            'group-1',
+            'chat.message.v1',
+            {
+                text: 'too late',
+            },
+            {
+                ttlMs: -10_000,
+            },
+        );
+
+        await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
+            status: 'expired',
+            entries: [],
+        });
+        expect(warn).not.toHaveBeenCalled();
+        expect(await reserveRtcOutbox(queue)).toHaveLength(0);
     });
 
     it('keeps durable rtc send effects retryable when dequeue cannot find a channel', async () => {
@@ -188,6 +484,18 @@ describe('WebRtc overlay services', () => {
         expect(peer.channel.send).toHaveBeenCalledOnce();
     });
 });
+
+async function reserveRtcOutbox(queue: InMemoryQueueBox): Promise<readonly ResourceEntry[]> {
+    return [
+        ...(
+            await queue.reserveEntries(
+                WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
+                new Set([EntityStatus.NEW]),
+                10,
+            )
+        ).values(),
+    ];
+}
 
 function createConnectionService(
     connectedPeerIds: readonly string[],

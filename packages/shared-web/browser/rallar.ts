@@ -5,6 +5,10 @@ import {
     newALMulticastMessage,
     newALRoute,
 } from '@shared/al-contracts/al-contract.ts';
+import type {
+    ALOutboundEnqueueResult,
+    ALOutboundEnqueueStatus,
+} from '@shared/alm/ALOutboundMessageRuntime.ts';
 import {
     type AuthSession,
     type ClientInfo,
@@ -32,6 +36,7 @@ import type {
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
 import { CommandsOrchestrator, type CommandsOrchestratorPolicies, } from '@shared/cache/CommandsOrchestrator.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import type { QRtcMediaPolicy } from '@shared/webrtc/QRtcPeerConnection.ts';
@@ -257,8 +262,21 @@ export type RallarWsSendInput<T> =
     exceptPeerIds?: readonly string[];
 }>;
 
+export type RallarMessageSendStatus = ALOutboundEnqueueStatus;
+
+export type RallarMessageSendResult = Readonly<{
+    transport: RallarMessageTransport;
+    status: RallarMessageSendStatus;
+    message: ALMessage;
+    entry?: ResourceEntry;
+    entries: readonly ResourceEntry[];
+    reason?: string;
+}>;
+
 export type RallarMessageLane<TSendInput, TSelector = string> = Readonly<{
-    send<T>(input: TSendInput & RallarMessageSendBase<T>): Promise<ALMessage>;
+    send<T>(
+        input: TSendInput & RallarMessageSendBase<T>,
+    ): Promise<RallarMessageSendResult>;
     onMessage<T = unknown>(
         selector: TSelector,
         handler: RallarMessageHandler<T>,
@@ -780,7 +798,9 @@ class BrowserRallarFacade implements RallarFacade {
 
     readonly messages = {
         rtc: {
-            send: async <T>(input: RallarRtcSendInput<T>): Promise<ALMessage> => {
+            send: async <T>(
+                input: RallarRtcSendInput<T>,
+            ): Promise<RallarMessageSendResult> => {
                 const ctx = await this.connect();
                 const session = this.requireSession();
                 const roomId = input.roomId ?? this.resolveCurrentRoomId();
@@ -814,8 +834,11 @@ class BrowserRallarFacade implements RallarFacade {
                     },
                 );
 
-                await ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent(msg);
-                return msg;
+                return toRallarMessageSendResult(
+                    'rtc',
+                    msg,
+                    await ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent(msg),
+                );
             },
             onMessage: <T = unknown>(
                 selector: RallarMessageSelectorInput,
@@ -829,7 +852,9 @@ class BrowserRallarFacade implements RallarFacade {
             },
         },
         ws: {
-            send: async <T>(input: RallarWsSendInput<T>): Promise<ALMessage> => {
+            send: async <T>(
+                input: RallarWsSendInput<T>,
+            ): Promise<RallarMessageSendResult> => {
                 const ctx = await this.connect();
                 const session = this.requireSession();
                 const contextId = input.contextId ?? input.roomId ?? input.scope ??
@@ -854,8 +879,11 @@ class BrowserRallarFacade implements RallarFacade {
                     },
                 );
 
-                await ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent(msg);
-                return msg;
+                return toRallarMessageSendResult(
+                    'ws',
+                    msg,
+                    await ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent(msg),
+                );
             },
             onMessage: <T = unknown>(
                 selector: RallarMessageSelectorInput,
@@ -2126,6 +2154,21 @@ function toRallarMessage<T>(
         payload: decodeMessagePayload<T>(message),
         raw: message,
         receivedAtEpochMs: Date.now(),
+    };
+}
+
+function toRallarMessageSendResult(
+    transport: RallarMessageTransport,
+    message: ALMessage,
+    result: ALOutboundEnqueueResult,
+): RallarMessageSendResult {
+    return {
+        transport,
+        status: result.status,
+        message,
+        entry: result.entry,
+        entries: result.entries,
+        reason: result.reason,
     };
 }
 

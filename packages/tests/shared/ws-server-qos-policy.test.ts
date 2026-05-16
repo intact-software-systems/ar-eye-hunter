@@ -41,8 +41,10 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             },
         );
 
-        await service.enqueueOutboxIfAbsent(msg);
+        const result = await service.enqueueOutboxIfAbsent(msg);
 
+        expect(result.status).toBe('sent-immediate');
+        expect(result.entries).toEqual([]);
         expect(socket.sent).toHaveLength(1);
         expect(socket.sent[0].connectionId).toBe('conn-2');
         expect(socket.sent[0].data.id.msgId).toBe(msg.id.msgId);
@@ -79,8 +81,10 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             },
         );
 
-        await service.enqueueOutboxIfAbsent(msg);
+        const result = await service.enqueueOutboxIfAbsent(msg);
 
+        expect(result.status).toBe('sent-immediate');
+        expect(result.entries).toEqual([]);
         expect(socket.sent).toHaveLength(2);
         expect(socket.sent.map(entry => entry.connectionId).sort()).toEqual(['conn-1', 'conn-3']);
         expect(socket.sent.every(entry => entry.data.id.msgId === msg.id.msgId)).toBe(true);
@@ -117,9 +121,11 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             },
         );
 
-        const entry = await service.enqueueOutboxIfAbsent(msg);
+        const result = await service.enqueueOutboxIfAbsent(msg);
 
-        expect(entry.key).toEqual(msg.route);
+        expect(result.status).toBe('no-route');
+        expect(result.entries).toEqual([]);
+        expect(result.reason).toContain('Cannot resolve WS server recipients');
         expect(socket.sent).toHaveLength(0);
         expect((outbox as any).data.size).toBe(0);
     });
@@ -208,7 +214,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         expect(socket.sent).toHaveLength(0);
     });
 
-    it('rejects untargeted outbound messages instead of falling back to callbacks', async () => {
+    it('returns no-route for untargeted outbound messages instead of falling back to callbacks', async () => {
         const socket = createFakeWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = new shared.WsQueueBoxServerService(
@@ -241,7 +247,10 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             },
         );
 
-        await expect(service.enqueueOutboxIfAbsent(msg)).rejects.toThrow('without explicit targets');
+        const result = await service.enqueueOutboxIfAbsent(msg);
+
+        expect(result.status).toBe('no-route');
+        expect(result.reason).toContain('without explicit targets');
         expect(callbackCount).toBe(0);
         expect(socket.sent).toHaveLength(0);
         expect((outbox as any).data.size).toBe(0);

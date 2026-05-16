@@ -17,7 +17,10 @@ import { QueueBoxUtilities } from './QueueBoxUtilities.ts';
 import { EnqueuedType } from '../api/api-config.ts';
 import type { ALInboundRuntimeStores } from '../alm/ALInboundMessageRuntime.ts';
 import { ALInboundMessageRuntime } from '../alm/ALInboundMessageRuntime.ts';
-import type { ALOutboundRuntimeStores } from '../alm/ALOutboundMessageRuntime.ts';
+import type {
+    ALOutboundEnqueueResult,
+    ALOutboundRuntimeStores,
+} from '../alm/ALOutboundMessageRuntime.ts';
 import {
     ALOutboundAckTrackingPlan,
     ALOutboundDispatchPlan,
@@ -269,31 +272,39 @@ export class WsQueueBoxServerService {
         return this.onAnyInboxWebSocketMessageCallbacks.delete(id);
     }
 
-    async enqueueOutboxIfAbsent(message: ALMessage): Promise<ResourceEntry> {
+    async enqueueOutboxIfAbsent(message: ALMessage): Promise<ALOutboundEnqueueResult> {
         if (
             message.targets?.mode === 'broadcast' &&
             this.resolveRecipients(message).length === 0
         ) {
-            return QueueBoxUtilities.toResourceEntryFromMsg(
+            return {
+                status: 'no-route',
                 message,
-                WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE,
-            );
+                entries: [],
+                reason: WsQueueBoxServerService.toNoResolvedRecipientsReason(
+                    'broadcast',
+                    message.id.msgId,
+                ),
+            };
         }
 
-        const enqueued = await this.outboundRuntime.enqueueIfAbsent(message);
-        return enqueued.fold(
-            (error) => {
-                if (WsQueueBoxServerService.isBroadcastWithoutRecipients(message, error)) {
-                    return QueueBoxUtilities.toResourceEntryFromMsg(
-                        message,
-                        WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE,
-                    );
-                }
+        const result = await this.outboundRuntime.enqueueIfAbsent(message);
+        if (
+            result.status === 'no-route' &&
+            result.reason &&
+            WsQueueBoxServerService.isBroadcastWithoutRecipients(
+                message,
+                result.reason,
+            )
+        ) {
+            return {
+                ...result,
+                entries: [],
+                entry: undefined,
+            };
+        }
 
-                throw new Error(error);
-            },
-            (result) => result.entry,
-        );
+        return result;
     }
 
     async dequeueOutbox(typesToDequeue: Set<string>, resilience: ResilienceDto) {

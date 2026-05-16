@@ -121,14 +121,15 @@ describe('multicast QoS integration', () => {
             },
         );
 
-        const entries = await manager.enqueueIfAbsent(msg);
+        const result = await manager.enqueueIfAbsent(msg);
         const reserved = await queue.reserveEntries(
             new Set([shared.EnqueuedType.RTC_OUTBOX]),
             new Set([shared.EntityStatus.NEW]),
             10,
         );
 
-        expect(entries).toEqual([]);
+        expect(result.status).toBe('sent-immediate');
+        expect(result.entries).toEqual([]);
         expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
         expect(reserved.size).toBe(0);
     });
@@ -170,14 +171,15 @@ describe('multicast QoS integration', () => {
             },
         );
 
-        const entries = await manager.enqueueIfAbsent(msg);
+        const result = await manager.enqueueIfAbsent(msg);
         const reserved = await queue.reserveEntries(
             new Set([shared.EnqueuedType.RTC_OUTBOX]),
             new Set([shared.EntityStatus.NEW]),
             10,
         );
 
-        expect(entries).toHaveLength(1);
+        expect(result.status).toBe('enqueued');
+        expect(result.entries).toHaveLength(1);
         expect(connectionService.sendByPeerId.get('peer-1')).toBeUndefined();
         expect(reserved.size).toBe(1);
     });
@@ -415,14 +417,15 @@ describe('multicast QoS integration', () => {
             },
         );
 
-        const entries = await manager.enqueueIfAbsent(msg);
+        const result = await manager.enqueueIfAbsent(msg);
         const reserved = await queue.reserveEntries(
             new Set([shared.EnqueuedType.RTC_OUTBOX]),
             new Set([shared.EntityStatus.NEW]),
             10,
         );
 
-        expect(entries).toEqual([]);
+        expect(result.status).toBe('sent-immediate');
+        expect(result.entries).toEqual([]);
         expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
         expect(reserved.size).toBe(0);
     });
@@ -478,14 +481,15 @@ describe('multicast QoS integration', () => {
             },
         );
 
-        const entries = await manager.enqueueIfAbsent(msg);
+        const result = await manager.enqueueIfAbsent(msg);
         const reserved = await queue.reserveEntries(
             new Set([shared.EnqueuedType.RTC_OUTBOX]),
             new Set([shared.EntityStatus.NEW]),
             10,
         );
 
-        expect(entries).toHaveLength(1);
+        expect(result.status).toBe('enqueued');
+        expect(result.entries).toHaveLength(1);
         expect(connectionService.sendByPeerId.get('peer-1')).toBeUndefined();
         expect(reserved.size).toBe(1);
     });

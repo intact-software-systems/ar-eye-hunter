@@ -39,11 +39,46 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             },
         );
 
-        await service.enqueueOutboxIfAbsent(msg);
+        const result = await service.enqueueOutboxIfAbsent(msg);
 
+        expect(result.status).toBe('sent-immediate');
+        expect(result.entries).toEqual([]);
         expect(socket.sentJsonStrings).toHaveLength(1);
         expect(JSON.parse(socket.sentJsonStrings[0]).id.msgId).toBe(msg.id.msgId);
         expect((outbox as any).data.size).toBe(0);
+    });
+
+    it('returns duplicate and does not resend the same volatile outbound message twice', async () => {
+        const socket = createFakeWsSocket();
+        const service = new shared.WsQueueBoxClientService(
+            new shared.InMemoryQueueBox(new Map()),
+            new shared.InMemoryQueueBox(new Map()),
+            socket as never,
+            {
+                sessionId: 'self',
+            },
+        );
+        const msg = shared.newALUnicastMessage(
+            'self',
+            {
+                topicId: 'chat',
+                resourceId: 'msg-duplicate',
+                contextId: 'conversation-1',
+            },
+            'peer-1',
+            'chat.private-text.v1',
+            {
+                text: 'hello once',
+            },
+        );
+
+        const first = await service.enqueueOutboxIfAbsent(msg);
+        const second = await service.enqueueOutboxIfAbsent(msg);
+
+        expect(first.status).toBe('sent-immediate');
+        expect(second.status).toBe('duplicate');
+        expect(second.entries).toEqual([]);
+        expect(socket.sentJsonStrings).toHaveLength(1);
     });
 
     it('applies topic defaults from the qos provider on outbound sends', async () => {
@@ -84,8 +119,10 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             },
         );
 
-        await service.enqueueOutboxIfAbsent(msg);
+        const result = await service.enqueueOutboxIfAbsent(msg);
 
+        expect(result.status).toBe('enqueued');
+        expect(result.entries).toHaveLength(1);
         expect(socket.sentJsonStrings).toHaveLength(0);
         expect((outbox as any).data.size).toBe(1);
     });
@@ -301,9 +338,11 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             },
         );
 
-        await service.enqueueOutboxIfAbsent(first);
-        await service.enqueueOutboxIfAbsent(second);
+        const firstResult = await service.enqueueOutboxIfAbsent(first);
+        const secondResult = await service.enqueueOutboxIfAbsent(second);
 
+        expect(firstResult.status).toBe('enqueued');
+        expect(secondResult.status).toBe('enqueued');
         expect((outbox as any).data.size).toBe(1);
 
         const stored = [...((outbox as any).data.values() as Iterable<{ resource: string }>)][0];

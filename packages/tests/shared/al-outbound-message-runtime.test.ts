@@ -34,8 +34,159 @@ describe('ALOutboundMessageRuntime', () => {
 
         const result = await runtime.enqueueIfAbsent(createOutboundMessage('msg-dropped'));
 
-        expect(result.left).toBe('No route for outbound enqueue');
-        expect(result.right).toBeUndefined();
+        expect(result.status).toBe('no-route');
+        expect(result.reason).toBe('No route for outbound enqueue');
+        expect(result.entries).toEqual([]);
+        runtime.dispose();
+    });
+
+    it('persists an outbox entry when enqueue has no prepared transport route', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const outbox = new InMemoryQueueBox(new Map());
+        const sendPreparedMessage = vi.fn(async () => Promise.resolve());
+        const runtime = createOutboundRuntime({
+            outbox,
+            sendPreparedMessage,
+            planOutgoingMessage: () => ({
+                persist: false,
+                preparedMessages: [],
+            }),
+        });
+
+        const result = await runtime.enqueueIfAbsent(createOutboundMessage('msg-no-route'));
+
+        expect(result.status).toBe('enqueued');
+        expect(result.entries).toHaveLength(1);
+        expect(sendPreparedMessage).not.toHaveBeenCalled();
+        expect(await reserveOutbox(outbox)).toHaveLength(1);
+        expect(warn).not.toHaveBeenCalled();
+        runtime.dispose();
+    });
+
+    it('returns right with no entries for immediate prepared dispatch', async () => {
+        const outbox = new InMemoryQueueBox(new Map());
+        const sent: Array<Record<string, unknown>> = [];
+        const runtime = createOutboundRuntime({
+            outbox,
+            sendPreparedMessage: async (prepared, phase) => {
+                sent.push({ ...prepared, phase });
+            },
+            planOutgoingMessage: (msg) => ({
+                persist: false,
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+            }),
+        });
+        const msg = createOutboundMessage('msg-immediate');
+
+        const result = await runtime.enqueueIfAbsent(msg);
+
+        expect(result.status).toBe('sent-immediate');
+        expect(result.entries).toEqual([]);
+        expect(sent).toEqual([
+            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
+        ]);
+        expect(await reserveOutbox(outbox)).toHaveLength(0);
+        runtime.dispose();
+    });
+
+    it('returns an outbox entry when enqueue is persistent', async () => {
+        const outbox = new InMemoryQueueBox(new Map());
+        const runtime = createOutboundRuntime({
+            outbox,
+            sendPreparedMessage: async () => Promise.resolve(),
+            planOutgoingMessage: () => ({
+                persist: true,
+                preparedMessages: [],
+            }),
+        });
+        const msg = createOutboundMessage('msg-persisted');
+
+        const result = await runtime.enqueueIfAbsent(msg);
+
+        expect(result.status).toBe('enqueued');
+        expect(result.entries).toHaveLength(1);
+        expect(result.entries[0]?.key.resourceId).toBe('msg-persisted');
+        const stored = await reserveOutbox(outbox);
+        expect(stored).toHaveLength(1);
+        expect(JSON.parse(stored[0]?.resource ?? '{}')).toMatchObject({
+            id: {
+                msgId: msg.id.msgId,
+            },
+        });
+        runtime.dispose();
+    });
+
+    it('returns duplicate with the existing outbox entry when a persistent message is enqueued twice', async () => {
+        const outbox = new InMemoryQueueBox(new Map());
+        const runtime = createOutboundRuntime({
+            outbox,
+            sendPreparedMessage: async () => Promise.resolve(),
+            planOutgoingMessage: () => ({
+                persist: true,
+                preparedMessages: [],
+            }),
+        });
+        const msg = createOutboundMessage('msg-duplicate');
+
+        const first = await runtime.enqueueIfAbsent(msg);
+        const second = await runtime.enqueueIfAbsent(msg);
+
+        expect(first.status).toBe('enqueued');
+        expect(second.status).toBe('duplicate');
+        expect(second.entry?.key.resourceId).toBe('msg-duplicate');
+        expect(second.entries).toHaveLength(1);
+        expect(await reserveOutbox(outbox)).toHaveLength(1);
+        runtime.dispose();
+    });
+
+    it('returns superseded with no entries when an older superseded message is enqueued', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const outbox = new InMemoryQueueBox(new Map());
+        const runtime = createOutboundRuntime({
+            outbox,
+            sendPreparedMessage: async () => Promise.resolve(),
+            planOutgoingMessage: (msg) => ({
+                persist: true,
+                preparedMessages: [],
+                supersedenceTracking: {
+                    enabled: true,
+                    algo: 'latest-wins',
+                    key: `presence:${msg.route.contextId}`,
+                },
+            }),
+        });
+        const newer = {
+            ...createOutboundMessage('msg-supersedence-newer'),
+            ordering: {
+                orderingKey: 'presence',
+                epoch: 0,
+                seq: 2,
+            },
+        };
+        const older = {
+            ...createOutboundMessage('msg-supersedence-older'),
+            ordering: {
+                orderingKey: 'presence',
+                epoch: 0,
+                seq: 1,
+            },
+        };
+
+        await enqueueOutboundOrThrow(runtime, newer);
+        const superseded = await runtime.enqueueIfAbsent(older);
+
+        expect(superseded.status).toBe('superseded');
+        expect(superseded.entries).toEqual([]);
+        expect(warn).toHaveBeenCalledWith(
+            `Skipping superseded outbound message ${older.id.msgId}`,
+        );
+        const stored = await reserveOutbox(outbox);
+        expect(stored).toHaveLength(1);
+        expect(JSON.parse(stored[0]?.resource ?? '{}')).toMatchObject({
+            id: {
+                msgId: newer.id.msgId,
+            },
+        });
         runtime.dispose();
     });
 
@@ -788,11 +939,23 @@ async function enqueueOutboundOrThrow(
     msg: ALMessage,
 ): Promise<readonly ResourceEntry[]> {
     const enqueued = await runtime.enqueueIfAbsent(msg);
-    if (enqueued.left) {
-        throw new Error(enqueued.left);
+    if (enqueued.status === 'failed') {
+        throw new Error(enqueued.reason);
     }
 
-    return enqueued.right?.entries ?? [];
+    return enqueued.entries;
+}
+
+async function reserveOutbox(outbox: InMemoryQueueBox): Promise<readonly ResourceEntry[]> {
+    return [
+        ...(
+            await outbox.reserveEntries(
+                new Set(['outbox']),
+                new Set([EntityStatus.NEW]),
+                10,
+            )
+        ).values(),
+    ];
 }
 
 function createOutboundRuntime(options: {

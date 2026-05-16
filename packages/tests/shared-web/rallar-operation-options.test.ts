@@ -39,6 +39,10 @@ const mocks = vi.hoisted(() => {
                 stop: vi.fn(),
             },
             rtcRxStreamer: {
+                enqueueOutboxIfAbsent: vi.fn(async () => ({
+                    status: 'enqueued',
+                    entries: [],
+                })),
                 onRemoteStreamDo: vi.fn(),
                 removeOnRemoteStreamCallbackById: vi.fn(),
                 stopLocalMedia: vi.fn(),
@@ -46,6 +50,10 @@ const mocks = vi.hoisted(() => {
             webRtcGroupManager: {},
             webRtcConnectionService,
             webSocketQueueBox: {
+                enqueueOutboxIfAbsent: vi.fn(async () => ({
+                    status: 'enqueued',
+                    entries: [],
+                })),
                 readHealth: vi.fn(() => ({
                     sessionId: session.sessionId,
                     url: 'ws://localhost/ws',
@@ -198,6 +206,14 @@ describe('Rallar operation options', () => {
         );
         mocks.webRtcConnectionService.readPeer.mockReturnValue(undefined);
         mocks.webRtcConnectionService.removeRtcPeerLifecycleById.mockReturnValue(true);
+        mocks.ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent.mockResolvedValue({
+            status: 'enqueued',
+            entries: [],
+        });
+        mocks.ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent.mockResolvedValue({
+            status: 'enqueued',
+            entries: [],
+        });
         mocks.ctx.middleware.webSocketQueueBox.readHealth.mockReturnValue({
             sessionId: mocks.ctx.session.sessionId,
             url: 'ws://localhost/ws',
@@ -736,6 +752,94 @@ describe('Rallar operation options', () => {
                 },
             },
         ]);
+    });
+
+    it('returns RTC send status with the message when multicast enqueue reports no entries', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        mocks.ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent.mockResolvedValueOnce({
+            status: 'no-route',
+            entries: [],
+            reason: 'Skipping RTC outbound dispatch without planned transport messages',
+        });
+
+        const result = await createRallarFacade().messages.rtc.send({
+            roomId: 'room-1',
+            typeId: 'chat.message.v1',
+            resourceId: 'msg-quiet',
+            payload: {
+                text: 'quiet outcome',
+            },
+        });
+
+        expect(mocks.ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent)
+            .toHaveBeenCalledOnce();
+        expect(result).toMatchObject({
+            transport: 'rtc',
+            status: 'no-route',
+            reason: 'Skipping RTC outbound dispatch without planned transport messages',
+            entries: [],
+            message: {
+                id: {
+                    senderId: 'session-1',
+                },
+                route: {
+                    topicId: 'chat.message.v1',
+                    resourceId: 'msg-quiet',
+                    contextId: 'room-1',
+                },
+                targets: {
+                    mode: 'multicast',
+                    groupId: 'room-1',
+                },
+                forwarding: {
+                    overlayId: 'room-1',
+                },
+            },
+        });
+    });
+
+    it('returns WS send status with the message when WS enqueue completes', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        mocks.ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent
+            .mockResolvedValueOnce({
+                status: 'sent-immediate',
+                entries: [],
+            });
+
+        const result = await createRallarFacade().messages.ws.send({
+            scope: 'all',
+            typeId: 'chat.message.v1',
+            resourceId: 'msg-ws',
+            payload: {
+                text: 'ws outcome',
+            },
+        });
+
+        expect(mocks.ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent)
+            .toHaveBeenCalledOnce();
+        expect(result).toMatchObject({
+            transport: 'ws',
+            status: 'sent-immediate',
+            entries: [],
+            message: {
+                id: {
+                    senderId: 'session-1',
+                },
+                route: {
+                    topicId: 'chat.message.v1',
+                    resourceId: 'msg-ws',
+                    contextId: 'all',
+                },
+                targets: {
+                    mode: 'broadcast',
+                    scope: 'all',
+                },
+            },
+        });
     });
 
     it('registers realtime JSON listeners on connected peers', async () => {
