@@ -74,6 +74,8 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
 - Iteration 8, scene architecture, is now in progress.
 - Iteration 9, lobby and multiplayer flow, now has a first lobby-policy pass
   complete.
+- Iteration 10, turn timeline and feedback, now has a first consolidation pass
+  complete.
 - Because the reported failure is that the game is not playable and state is not
   propagating reliably between clients, iteration 7 should be kept narrow and
   paired with data-flow fixes when a concrete propagation bug is found.
@@ -92,6 +94,11 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
   blocks Keeper start while connected room members have not joined the
   expedition, explains stale/offline joined players in the party-change prompt,
   and enforces start authority in shared game rules.
+- Completed iteration-10 feedback fixes so far: bottom HUD feedback is reduced
+  to one current-turn summary and one grouped turn timeline, and timeline events
+  are labelled as Reveal, Your Action, Party Action, Castle Reaction, or Result.
+  The floating turn feedback panel, post-round digest overlay, side personal
+  round card, and compact diff strip are no longer in the normal render path.
 
 ## Main Risks
 

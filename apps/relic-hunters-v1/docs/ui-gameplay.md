@@ -32,9 +32,9 @@ The intended playable loop is:
 - `GameHudLayout` gives the SPA stable regions:
   - top: connection, room, round, score, progress, and language/status controls
   - side: auth, room actions, lobby controls, or round planning
-  - bottom: chronicle and lower-status panels
+  - bottom: hunter readiness, current-turn summary, and grouped turn timeline
   - floating: scene prompts, minimap, and action nudges
-  - overlay: onboarding, turn feedback, post-round digest, help, and end-state
+  - overlay: onboarding, help, brief non-interactive tension beat, and end-state
     panels
 - The Babylon scene provides first-person roaming, room selection, local prompts,
   player/relic meshes, fallback tactical rendering, and touch movement controls.
@@ -72,6 +72,11 @@ The view model currently exposes:
 - low-health, round-limit, search-danger, and noise warnings
 - relic and escape progress
 
+Turn results now converge in the bottom HUD. The current-turn summary explains
+whether the local player should choose a plan, is waiting with a locked plan, is
+watching, or has finished. The timeline is grouped by round and labels entries
+as Reveal, Your Action, Party Action, Castle Reaction, or Result.
+
 Gameplay rule state now avoids a relic in the starting room, so the first
 meaningful route is outward from Entrance. When multiple adjacent rooms contain
 hidden relics, route hints prefer the higher-value relic lead instead of map
@@ -80,9 +85,9 @@ immediately, so clue trails and room objectives can update after the first find.
 
 ## Current UX Gaps
 
-- A first-time player can still be pulled between too many surfaces: scene
-  prompts, the side action panel, the minimap, room intel, turn feedback, and
-  help/onboarding overlays.
+- A first-time player can still be pulled between several surfaces: scene
+  prompts, the side action panel, the minimap, room intel, and help/onboarding
+  overlays.
 - `App.tsx` remains large enough that small UI changes can accidentally affect
   gameplay timing, audio, or event reveal behavior.
 - Planning state is visible, but there is not yet a browser test proving the

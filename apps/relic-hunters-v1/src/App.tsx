@@ -66,9 +66,6 @@ export default function App() {
     const [showOnboarding, setShowOnboarding] = useState(
         () => ONBOARDING_ENABLED && !localStorage.getItem('relic-onboarding-v1'),
     );
-    const [digestEvents, setDigestEvents] = useState<readonly RelicEvent[]>([]);
-    const [showDigest, setShowDigest] = useState(false);
-    const lastDigestEventIdRef = useRef<string | undefined>(undefined);
     const [personalFlash, setPersonalFlash] = useState<{ tone: 'good' | 'bad'; key: number } | null>(null);
     const personalFlashKeyRef = useRef(0);
     const [lockedAction, setLockedAction] = useState<RelicActionInput | undefined>();
@@ -269,32 +266,6 @@ export default function App() {
         const interval = window.setInterval(tick, 250);
         return () => clearInterval(interval);
     }, [game.snapshot?.phase, game.snapshot?.roundStartedAtEpochMs, game.snapshot?.roundTimeLimitMs, game.snapshot?.round]);
-
-    // Show post-round digest when reveal queue drains on a round_started event.
-    useEffect(() => {
-        if (revealQueueRef.current.length > 0 || revealTimerRef.current !== null) return;
-        const lastRevealed = revealedEvents.at(-1);
-        if (!lastRevealed || lastRevealed.type !== 'round_started') return;
-        if (lastRevealed.id === lastDigestEventIdRef.current) return;
-        if (game.snapshot?.phase === 'finished') return;
-        let prevRoundStartedIdx = -1;
-        for (let i = revealedEvents.length - 2; i >= 0; i--) {
-            if (revealedEvents[i].type === 'round_started') { prevRoundStartedIdx = i; break; }
-        }
-        const roundEvents = revealedEvents
-            .slice(prevRoundStartedIdx + 1, revealedEvents.length - 1)
-            .filter(isTurnResultEvent);
-        if (roundEvents.length === 0) return;
-        lastDigestEventIdRef.current = lastRevealed.id;
-        setDigestEvents(roundEvents);
-        setShowDigest(true);
-    }, [revealedEvents, game.snapshot?.phase]);
-
-    useEffect(() => {
-        if (!showDigest) return;
-        const timer = window.setTimeout(() => setShowDigest(false), 4000);
-        return () => clearTimeout(timer);
-    }, [showDigest]);
 
     useEffect(() => {
         if (currentPlayer) {
@@ -929,13 +900,6 @@ export default function App() {
                     />
                 )}
 
-                {game.session && game.roomId && (
-                    <PersonalRoundCard
-                        events={revealedEvents}
-                        localPlayerId={game.session.sessionId}
-                    />
-                )}
-
                 {game.session && game.roomId && game.snapshot && partyCoordination && (
                     <PartyCoordinationPanel
                         snapshot={game.snapshot}
@@ -1011,14 +975,6 @@ export default function App() {
             )}
             floating={(
                 <>
-            {game.snapshot && (
-                <TurnFeedbackOverlay
-                    snapshot={game.snapshot}
-                    localPlayerId={game.session?.sessionId}
-                    revealedEvents={revealedEvents}
-                />
-            )}
-
             {personalFlash && (
                 <div
                     key={personalFlash.key}
@@ -1127,10 +1083,6 @@ export default function App() {
                 </div>
             )}
 
-            {showDigest && (
-                <PostRoundDigest events={digestEvents} onDismiss={() => setShowDigest(false)}/>
-            )}
-
             {game.snapshot?.phase === 'finished' && (
                 <VictoryPanel snapshot={game.snapshot}/>
             )}
@@ -1236,13 +1188,94 @@ function BottomHudPanel({
                     lang={lang}
                 />
             )}
-            <TurnDiffStrip events={revealedEvents}/>
-            <RoundChronicle
+            <TurnTimelinePanel
+                snapshot={snapshot}
+                localPlayerId={localPlayerId}
                 events={revealedEvents}
+                lastEvent={lastEvent}
+                lang={lang}
+            />
+        </section>
+    );
+}
+
+function TurnTimelinePanel({
+    snapshot,
+    localPlayerId,
+    events,
+    lastEvent,
+    lang,
+}: Readonly<{
+    snapshot?: RelicPublicSnapshot;
+    localPlayerId?: string;
+    events: readonly RelicEvent[];
+    lastEvent?: RelicEvent;
+    lang: Lang;
+}>) {
+    return (
+        <div className="turn-timeline-panel">
+            <CurrentTurnSummary
+                snapshot={snapshot}
+                localPlayerId={localPlayerId}
+                events={events}
+                lang={lang}
+            />
+            <RoundChronicle
+                events={events}
                 phase={snapshot?.phase}
                 lastEvent={lastEvent}
                 localPlayerId={localPlayerId}
             />
+        </div>
+    );
+}
+
+function CurrentTurnSummary({
+    snapshot,
+    localPlayerId,
+    events,
+    lang,
+}: Readonly<{
+    snapshot?: RelicPublicSnapshot;
+    localPlayerId?: string;
+    events: readonly RelicEvent[];
+    lang: Lang;
+}>) {
+    const activePlayers = snapshot?.players.filter((player) => !player.escaped && !player.defeated) ?? [];
+    const submittedCount = snapshot?.submittedPlayerIds.length ?? 0;
+    const waitingCount = Math.max(0, activePlayers.length - submittedCount);
+    const localPlayer = snapshot?.players.find((player) => player.playerId === localPlayerId);
+    const localSubmitted = !!localPlayerId && !!snapshot?.submittedPlayerIds.includes(localPlayerId);
+    const lastTurnRound = [...events].reverse().find(isTurnTimelineEvent)?.round;
+    const lastRoundEvents = lastTurnRound === undefined
+        ? []
+        : events.filter((event) => event.round === lastTurnRound && isTurnTimelineEvent(event));
+    const personalCount = lastRoundEvents.filter((event) => isPersonalEvent(event, localPlayerId)).length;
+    const castleCount = lastRoundEvents.filter((event) =>
+        turnTimelineCategory(event, localPlayerId).kind === 'castle'
+    ).length;
+    const summary = deriveCurrentTurnSummary({
+        snapshot,
+        localPlayer,
+        localSubmitted,
+        waitingCount,
+        lang,
+    });
+
+    return (
+        <section className={`turn-summary turn-summary-${summary.kind}`} aria-label="Current turn summary">
+            <div className="turn-summary-copy">
+                <span className="panel-label">{summary.eyebrow}</span>
+                <strong>{summary.title}</strong>
+                <small>{summary.detail}</small>
+            </div>
+            <div className="turn-summary-stats" aria-label="Turn status">
+                <span>{submittedCount}/{activePlayers.length} locked</span>
+                <span>{waitingCount} waiting</span>
+                {lastTurnRound !== undefined && <span>R{lastTurnRound} results</span>}
+                {personalCount > 0 && <span>{personalCount} yours</span>}
+                {castleCount > 0 && <span>{castleCount} castle</span>}
+            </div>
         </section>
     );
 }
@@ -2009,151 +2042,145 @@ function ClueJournal({
     );
 }
 
-type TurnFeedbackStage = 'plans-locked' | 'revealing' | 'resolved' | 'warning' | 'finished';
-
-type TurnFeedback = Readonly<{
-    stage: TurnFeedbackStage;
+type TurnSummaryCopy = Readonly<{
+    kind: 'empty' | 'lobby' | 'planning' | 'locked' | 'watching' | 'finished';
     eyebrow: string;
     title: string;
     detail: string;
-    events: readonly RelicEvent[];
 }>;
 
-function TurnFeedbackOverlay({
+function deriveCurrentTurnSummary({
     snapshot,
-    localPlayerId,
-    revealedEvents,
+    localPlayer,
+    localSubmitted,
+    waitingCount,
+    lang,
 }: Readonly<{
-    snapshot: RelicPublicSnapshot;
-    localPlayerId?: string;
-    revealedEvents: readonly RelicEvent[];
-}>) {
-    const feedback = deriveTurnFeedback(snapshot, localPlayerId, revealedEvents);
-    if (!feedback) {
-        return null;
-    }
-
-    return (
-        <section
-            className={`turn-feedback turn-feedback-${feedback.stage}`}
-            aria-label="Turn resolution feedback"
-        >
-            <span>{feedback.eyebrow}</span>
-            <strong>{feedback.title}</strong>
-            <small>{feedback.detail}</small>
-            {feedback.events.length > 0 && (
-                <div className="turn-feedback-events">
-                    {feedback.events.map((event) => {
-                        const narLine = narratorLine(event);
-                        const personal = isPersonalEvent(event, localPlayerId);
-                        return (
-                            <div
-                                className={`turn-event-card ${toneClass(event)} ${personal ? 'personal' : ''}`}
-                                key={event.id}
-                            >
-                                {narLine && <em className="narrator-voice">{narLine}</em>}
-                                <span>{event.message}</span>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-        </section>
-    );
-}
-
-function deriveTurnFeedback(
-    snapshot: RelicPublicSnapshot,
-    localPlayerId: string | undefined,
-    events: readonly RelicEvent[],
-): TurnFeedback | undefined {
-    const active = snapshot.players.filter((player) => !player.escaped && !player.defeated);
-    const submittedCount = snapshot.submittedPlayerIds.length;
-    const waitingCount = Math.max(0, active.length - submittedCount);
-    const localSubmitted = !!localPlayerId && snapshot.submittedPlayerIds.includes(localPlayerId);
-
-    if (
-        snapshot.phase === 'planning' &&
-        submittedCount > 0 &&
-        waitingCount > 0
-    ) {
+    snapshot?: RelicPublicSnapshot;
+    localPlayer?: RelicPlayer;
+    localSubmitted: boolean;
+    waitingCount: number;
+    lang: Lang;
+}>): TurnSummaryCopy {
+    if (!snapshot) {
         return {
-            stage: 'plans-locked',
-            eyebrow: localSubmitted ? 'Plans Locked' : 'Planning',
-            title: localSubmitted ? 'Your plan is locked' : 'Hunters are choosing',
-            detail: `Waiting for ${waitingCount} hunter${waitingCount === 1 ? '' : 's'} to lock a plan.`,
-            events: [],
+            kind: 'empty',
+            eyebrow: lang === 'no' ? 'Ingen ekspedisjon' : 'No Expedition',
+            title: lang === 'no' ? 'Velg et rom' : 'Choose a room',
+            detail: lang === 'no'
+                ? 'Opprett eller bli med i et Relic Hunters-rom.'
+                : 'Create or join a Relic Hunters room to start the loop.',
         };
     }
 
-    const lastTurnEvent = [...events].reverse().find(isTurnFeedbackEvent);
-    if (!lastTurnEvent) {
-        return undefined;
-    }
-
-    const resultEvents = events
-        .filter(isTurnResultEvent)
-        .slice(-4)
-        .reverse();
-    const latestEvents = resultEvents.length > 0 ? resultEvents : [lastTurnEvent];
-
-    if (snapshot.phase === 'finished' || lastTurnEvent.type === 'game_finished') {
+    if (snapshot.phase === 'lobby') {
         return {
-            stage: 'finished',
-            eyebrow: 'Expedition End',
-            title: 'The ruin is quiet',
-            detail: lastTurnEvent.message,
-            events: latestEvents,
+            kind: 'lobby',
+            eyebrow: lang === 'no' ? 'Lobby' : 'Lobby',
+            title: lang === 'no' ? 'Samle ekspedisjonen' : 'Gather the expedition',
+            detail: lang === 'no'
+                ? 'Bli med som jeger, vent på rommedlemmer, og la Vokteren starte.'
+                : 'Join as a hunter, wait for room members, then the Keeper starts.',
         };
     }
 
-    if (lastTurnEvent.type === 'action_revealed') {
+    if (snapshot.phase === 'finished') {
+        const winnerNames = snapshot.winnerIds
+            .map((id) => snapshot.players.find((player) => player.playerId === id)?.username)
+            .filter(Boolean)
+            .join(', ');
         return {
-            stage: 'revealing',
-            eyebrow: 'Revealing Actions',
-            title: `Round ${lastTurnEvent.round} plans are revealed`,
-            detail: 'Watch the room, map, and chronicle as each plan resolves.',
-            events: [lastTurnEvent],
+            kind: 'finished',
+            eyebrow: lang === 'no' ? 'Resultat' : 'Result',
+            title: lang === 'no' ? 'Ekspedisjonen er over' : 'Expedition complete',
+            detail: winnerNames
+                ? (lang === 'no'
+                    ? `${winnerNames} tok Hjerterelikkiet.`
+                    : `${winnerNames} claimed the Heart Relic.`)
+                : (lang === 'no' ? 'Ruinen har stilnet.' : 'The ruin has gone quiet.'),
         };
     }
 
-    if (lastTurnEvent.type === 'round_started' && lastTurnEvent.message.includes('begins')) {
+    if (!localPlayer) {
         return {
-            stage: 'resolved',
-            eyebrow: 'Round Resolved',
-            title: `Round ${snapshot.round} begins`,
-            detail: lastTurnEvent.message,
-            events: latestEvents,
+            kind: 'watching',
+            eyebrow: lang === 'no' ? 'Tilskuer' : 'Watching',
+            title: lang === 'no' ? 'Ekspedisjonen er i gang' : 'Expedition in progress',
+            detail: lang === 'no'
+                ? 'Nye jegere kan ikke bli med etter at jakten har startet.'
+                : 'Late joins are closed after the hunt starts.',
         };
     }
 
-    if (lastTurnEvent.type === 'round_started') {
-        return undefined;
+    if (localPlayer.escaped || localPlayer.defeated) {
+        return {
+            kind: 'watching',
+            eyebrow: lang === 'no' ? 'Din runde' : 'Your Run',
+            title: localPlayer.escaped
+                ? (lang === 'no' ? 'Du unnslapp' : 'You escaped')
+                : (lang === 'no' ? 'Du er ute' : 'You are down'),
+            detail: lang === 'no'
+                ? 'Følg tidslinjen mens resten av ekspedisjonen avslutter.'
+                : 'Follow the timeline while the remaining hunters finish.',
+        };
     }
 
-    if (lastTurnEvent.tone === 'danger') {
+    if (localSubmitted) {
         return {
-            stage: 'warning',
-            eyebrow: 'Castle Reaction',
-            title: turnEventHeadline(lastTurnEvent),
-            detail: lastTurnEvent.message,
-            events: latestEvents,
+            kind: 'locked',
+            eyebrow: lang === 'no' ? 'Plan låst' : 'Plan Locked',
+            title: lang === 'no' ? 'Planen din er låst' : 'Your plan is locked',
+            detail: waitingCount > 0
+                ? (lang === 'no'
+                    ? `Venter på ${waitingCount} jeger${waitingCount === 1 ? '' : 'e'}.`
+                    : `Waiting for ${waitingCount} hunter${waitingCount === 1 ? '' : 's'} to lock a plan.`)
+                : (lang === 'no'
+                    ? 'Alle planer er låst. Ruinen svarer snart.'
+                    : 'All plans are locked. The castle is about to answer.'),
         };
     }
 
     return {
-        stage: 'resolved',
-        eyebrow: 'Action Result',
-        title: turnEventHeadline(lastTurnEvent),
-        detail: lastTurnEvent.message,
-        events: latestEvents,
+        kind: 'planning',
+        eyebrow: lang === 'no' ? `Runde ${snapshot.round}` : `Round ${snapshot.round}`,
+        title: lang === 'no' ? 'Velg én plan' : 'Choose one plan',
+        detail: lang === 'no'
+            ? 'Velg Flytt, Søk, Stjel eller Unnslipp. Alle planer løses samtidig.'
+            : 'Pick Move, Search, Steal, or Escape. All plans resolve together.',
     };
 }
 
-function isTurnFeedbackEvent(event: RelicEvent): boolean {
-    return event.type !== 'game_waiting' &&
-        event.type !== 'player_joined' &&
-        event.type !== 'action_submitted';
+type TurnTimelineCategory = Readonly<{
+    kind: 'your' | 'party' | 'castle' | 'result' | 'reveal';
+    label: string;
+}>;
+
+function isTurnTimelineEvent(event: RelicEvent): boolean {
+    return isTurnResultEvent(event) ||
+        event.type === 'action_revealed' ||
+        event.type === 'round_started' ||
+        event.type === 'game_finished';
+}
+
+function turnTimelineCategory(event: RelicEvent, localPlayerId: string | undefined): TurnTimelineCategory {
+    if (event.type === 'action_revealed') {
+        return { kind: 'reveal', label: 'Reveal' };
+    }
+    if (event.type === 'round_started' || event.type === 'game_finished') {
+        return { kind: 'result', label: 'Result' };
+    }
+    if (
+        event.type === 'noise_pulse' ||
+        event.type === 'player_damaged' ||
+        event.type === 'room_unstable' ||
+        event.type === 'room_collapsed'
+    ) {
+        return { kind: 'castle', label: 'Castle Reaction' };
+    }
+    if (isPersonalEvent(event, localPlayerId)) {
+        return { kind: 'your', label: 'Your Action' };
+    }
+    return { kind: 'party', label: 'Party Action' };
 }
 
 function isTurnResultEvent(event: RelicEvent): boolean {
@@ -2456,6 +2483,7 @@ function RoundChronicle({
     const roundGroups = useMemo(() => {
         const groups = new Map<number, RelicEvent[]>();
         for (const e of events) {
+            if (!isTurnTimelineEvent(e)) continue;
             const list = groups.get(e.round) ?? [];
             list.push(e);
             groups.set(e.round, list);
@@ -2466,34 +2494,44 @@ function RoundChronicle({
     }, [events]);
 
     return (
-        <div className={`chronicle ${toneClass(lastEvent)}`}>
+        <div className={`chronicle ${toneClass(lastEvent)}`} aria-label="Turn timeline">
             <div className="chronicle-title">
-                <span>{phase === 'finished' ? 'Expedition End' : 'Round Chronicle'}</span>
+                <span>{phase === 'finished' ? 'Expedition End' : 'Turn Timeline'}</span>
                 <strong>{chronicleHeadline(lastEvent, phase)}</strong>
             </div>
             <div className="chronicle-list chronicle-grouped">
-                {roundGroups.map(([round, roundEvents]) => (
-                    <div key={round} className="chronicle-round-group">
-                        <div className="chronicle-round-header">Round {round}</div>
-                        {roundEvents
-                            .filter((e) => isTurnResultEvent(e) || e.type === 'action_revealed' || e.type === 'round_started')
-                            .slice(-5)
-                            .reverse()
-                            .map((event) => {
-                                const narLine = narratorLine(event);
-                                const personal = isPersonalEvent(event, localPlayerId);
-                                return (
-                                    <div
-                                        key={event.id}
-                                        className={`chronicle-entry ${toneClass(event)} ${personal ? 'personal' : ''}`}
-                                    >
-                                        {narLine && <em className="narrator-voice">{narLine}</em>}
-                                        <span className="chronicle-message">{event.message}</span>
-                                    </div>
-                                );
-                            })}
-                    </div>
-                ))}
+                {roundGroups.length > 0 ? (
+                    roundGroups.map(([round, roundEvents]) => (
+                        <div key={round} className="chronicle-round-group">
+                            <div className="chronicle-round-header">Round {round}</div>
+                            {roundEvents
+                                .slice(-6)
+                                .reverse()
+                                .map((event) => {
+                                    const narLine = narratorLine(event);
+                                    const personal = isPersonalEvent(event, localPlayerId);
+                                    const category = turnTimelineCategory(event, localPlayerId);
+                                    return (
+                                        <div
+                                            key={event.id}
+                                            className={`chronicle-entry ${toneClass(event)} ${personal ? 'personal' : ''}`}
+                                        >
+                                            <div className="timeline-entry-meta">
+                                                <span className={`timeline-category timeline-category-${category.kind}`}>
+                                                    {category.label}
+                                                </span>
+                                                <span className="timeline-symbol">{turnDiffSymbol(event.type)}</span>
+                                            </div>
+                                            {narLine && <em className="narrator-voice">{narLine}</em>}
+                                            <span className="chronicle-message">{event.message}</span>
+                                        </div>
+                                    );
+                                })}
+                        </div>
+                    ))
+                ) : (
+                    <small className="chronicle-empty">Turn results will appear here as the castle resolves each round.</small>
+                )}
             </div>
         </div>
     );
@@ -2531,61 +2569,6 @@ function OnboardingOverlay({ onDismiss }: Readonly<{ onDismiss(): void }>) {
                 <button type="button" className="primary onboarding-dismiss" onClick={onDismiss}>
                     Into the ruin
                 </button>
-            </div>
-        </div>
-    );
-}
-
-function PostRoundDigest({
-    events,
-    onDismiss,
-}: Readonly<{
-    events: readonly RelicEvent[];
-    onDismiss(): void;
-}>) {
-    const relicsFound = events.filter((e) => e.type === 'relic_found').length;
-    const damagedCount = events.filter((e) => e.type === 'player_damaged').length;
-    const escapedCount = events.filter((e) => e.type === 'player_escaped').length;
-    const collapsedCount = events.filter((e) => e.type === 'room_collapsed').length;
-    const stealCount = events.filter((e) => e.type === 'steal_succeeded').length;
-
-    return (
-        <div className="digest-overlay" onClick={onDismiss} role="status" aria-live="polite">
-            <div className="digest-card">
-                <span className="panel-label">Round Complete</span>
-                <div className="digest-events">
-                    {relicsFound > 0 && (
-                        <div className="digest-event digest-event-relic">
-                            {relicsFound} relic{relicsFound === 1 ? '' : 's'} claimed from the ruin
-                        </div>
-                    )}
-                    {stealCount > 0 && (
-                        <div className="digest-event digest-event-steal">
-                            {stealCount} relic{stealCount === 1 ? '' : 's'} changed hands in shadow
-                        </div>
-                    )}
-                    {escapedCount > 0 && (
-                        <div className="digest-event digest-event-escape">
-                            {escapedCount} hunter{escapedCount === 1 ? '' : 's'} broke for daylight
-                        </div>
-                    )}
-                    {damagedCount > 0 && (
-                        <div className="digest-event digest-event-damage">
-                            {damagedCount} hunter{damagedCount === 1 ? '' : 's'} took the castle's toll
-                        </div>
-                    )}
-                    {collapsedCount > 0 && (
-                        <div className="digest-event digest-event-collapse">
-                            {collapsedCount} chamber{collapsedCount === 1 ? '' : 's'} surrendered to ruin
-                        </div>
-                    )}
-                    {relicsFound === 0 && escapedCount === 0 && damagedCount === 0 &&
-                        collapsedCount === 0 && stealCount === 0 && (
-                        <div className="digest-event">The ruin stayed quiet this round.</div>
-                    )}
-                </div>
-                <span className="digest-hint">tap to dismiss</span>
-                <div className="digest-progress"/>
             </div>
         </div>
     );
@@ -2910,56 +2893,6 @@ function RoomDetailCard({
                     Prime Move → {room.name}
                 </button>
             )}
-        </div>
-    );
-}
-
-function TurnDiffStrip({ events }: Readonly<{ events: readonly RelicEvent[] }>) {
-    const lastTurnRound = [...events].reverse().find(isTurnResultEvent)?.round;
-    if (lastTurnRound === undefined) return null;
-
-    const diffEvents = events.filter(
-        (e) => e.round === lastTurnRound && isTurnResultEvent(e),
-    );
-    if (diffEvents.length === 0) return null;
-
-    return (
-        <div className="turn-diff-strip" aria-label={`Round ${lastTurnRound} results`}>
-            <span className="turn-diff-label">R{lastTurnRound}</span>
-            {diffEvents.map((e) => (
-                <span key={e.id} className={`turn-diff-event tone-${e.tone ?? 'neutral'}`}>
-                    {turnDiffSymbol(e.type)} {e.message}
-                </span>
-            ))}
-        </div>
-    );
-}
-
-function PersonalRoundCard({
-    events,
-    localPlayerId,
-}: Readonly<{ events: readonly RelicEvent[]; localPlayerId?: string }>) {
-    if (!localPlayerId) return null;
-
-    const lastTurnRound = [...events].reverse().find(isTurnResultEvent)?.round;
-    if (lastTurnRound === undefined) return null;
-
-    const personal = events.filter(
-        (e) => e.round === lastTurnRound && isTurnResultEvent(e) && isPersonalEvent(e, localPlayerId),
-    );
-    if (personal.length === 0) return null;
-
-    return (
-        <div className="panel personal-round-card">
-            <span className="panel-label">Your Round {lastTurnRound}</span>
-            <div className="personal-round-list">
-                {personal.map((e) => (
-                    <div key={e.id} className={`personal-round-entry tone-${e.tone ?? 'neutral'}`}>
-                        <span className="personal-round-symbol">{turnDiffSymbol(e.type)}</span>
-                        <span>{e.message}</span>
-                    </div>
-                ))}
-            </div>
         </div>
     );
 }

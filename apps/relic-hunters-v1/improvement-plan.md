@@ -370,6 +370,13 @@ Exit criteria:
 
 Clarify simultaneous turn resolution.
 
+Status: in progress. First consolidation pass complete: normal play now uses one
+bottom current-turn summary plus one grouped turn timeline. The previous floating
+turn feedback panel, post-round digest overlay, personal round card, and compact
+diff strip have been removed from the standard path. Timeline entries are grouped
+by round and labelled as Reveal, Your Action, Party Action, Castle Reaction, or
+Result.
+
 Deliverables:
 
 - replace many competing feedback overlays with one event timeline and one current-turn summary

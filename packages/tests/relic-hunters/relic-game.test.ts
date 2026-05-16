@@ -182,6 +182,26 @@ describe('Relic Hunters game rules', () => {
         ).toThrow('Cannot join an expedition after it has started.');
     });
 
+    it('rejects non-admin expedition starts', () => {
+        let state = createRelicGame('room-1', 'room-1', 1);
+        state = applyRelicCommand(state, join('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 2,
+        }).state;
+        state = applyRelicCommand(state, join('bob', 'Bob'), {
+            senderId: 'bob',
+            now: () => 3,
+        }).state;
+
+        expect(() =>
+            applyRelicCommand(state, start('bob', 'Bob'), {
+                senderId: 'bob',
+                now: () => 4,
+            })
+        ).toThrow('Only the administrator can start the expedition.');
+        expect(state.phase).toBe('lobby');
+    });
+
     it('rejects non-adjacent move submissions before they enter the pending plan', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = applyRelicCommand(state, join('alice', 'Alice'), {
