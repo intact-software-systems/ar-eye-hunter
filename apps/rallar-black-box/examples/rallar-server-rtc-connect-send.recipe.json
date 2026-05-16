@@ -1,0 +1,54 @@
+{
+  "recipeId": "rallar-server-rtc-connect-send",
+  "name": "Rallar Server RTC connect and send",
+  "description": "Uses the current logged-in browser-rallar session to connect to bb-group over RTC and send a JSON payload.",
+  "continueOnFailure": false,
+  "metadata": {
+    "requires": [
+      "Run rallar-server-group-ws-setup first, or otherwise ensure bb-group exists and the logged-in user has joined it.",
+      "Open the SPA with provider=browser-rallar and log in before loading this recipe.",
+      "For visible delivery in another browser, run the same setup/connect flow for a second logged-in user in bb-group."
+    ],
+    "notes": [
+      "This recipe uses the current runtime config for apiBaseUrl and restored auth session.",
+      "The send command omits peerIds so the active Rallar realtime implementation can route according to the joined group."
+    ]
+  },
+  "commands": [
+    {
+      "kind": "rtc.connect",
+      "commandId": "bb-rtc-connect",
+      "label": "Connect RTC to bb-group",
+      "connection": "bbRtc",
+      "roomId": "bb-group",
+      "transport": "realtime",
+      "rallar": {
+        "restoreSession": true,
+        "leaveRoomOnClose": true
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "kind": "rtc.send",
+      "commandId": "bb-rtc-send-json",
+      "label": "Send JSON over RTC",
+      "connection": "bbRtc",
+      "transport": "realtime",
+      "send": {
+        "roomId": "bb-group",
+        "data": {
+          "topic": "bb-group.recipe.ping",
+          "kind": "black-box-ping",
+          "message": "hello from rallar-black-box",
+          "sentBy": "{auth.clientId}"
+        }
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "stats",
+      "commandId": "bb-rtc-send-stats",
+      "label": "Capture RTC stats"
+    }
+  ]
+}

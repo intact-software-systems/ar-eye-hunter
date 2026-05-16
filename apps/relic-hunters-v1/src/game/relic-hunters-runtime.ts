@@ -11,6 +11,7 @@ import {
     type RelicServerEvent,
 } from '@relic-hunters/mod.ts';
 import { fetchRelicSnapshot, resetRelicGame, sendRelicCommand } from './api.ts';
+import type { RelicSnapshotRejectionReason, RelicSnapshotSource } from './relic-snapshot-ordering.ts';
 
 export const RELIC_ROOM_NAME = 'Relic Hunters Expedition';
 export const RELIC_COMMAND_TRANSPORT = 'rest' as const;
@@ -47,8 +48,24 @@ export type RelicRuntimeDiagnostics = Readonly<{
     commandInFlight?: string;
     ignoredSnapshotCount: number;
     lastSnapshotSource?: string;
+    lastAcceptedSnapshot?: RelicRuntimeSnapshotSummary;
+    lastIgnoredSnapshotReason?: RelicSnapshotRejectionReason;
+    lastIgnoredSnapshot?: RelicRuntimeSnapshotSummary;
     lastHydratedAtEpochMs?: number;
     lastError?: string;
+}>;
+
+export type RelicRuntimeSnapshotSummary = Readonly<{
+    source: RelicSnapshotSource;
+    gameId: string;
+    roomId: string;
+    phase: string;
+    round: number;
+    updatedAtEpochMs: number;
+    playerCount: number;
+    submittedCount: number;
+    eventCount: number;
+    roomInvestigationCount: number;
 }>;
 
 export type RelicRuntimeHydration = Readonly<{
@@ -224,6 +241,9 @@ export function initialRelicDiagnostics(
         commandInFlight: undefined,
         ignoredSnapshotCount: 0,
         lastSnapshotSource: undefined,
+        lastAcceptedSnapshot: undefined,
+        lastIgnoredSnapshotReason: undefined,
+        lastIgnoredSnapshot: undefined,
         lastHydratedAtEpochMs: undefined,
         lastError: undefined,
     };

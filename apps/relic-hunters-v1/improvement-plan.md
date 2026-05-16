@@ -426,29 +426,41 @@ Follow-up from:
 [Iteration 9](#iteration-9-lobby-and-multiplayer-flow), and
 [Iteration 11](#iteration-11-tests-and-playwright-coverage).
 
-Status: planned. This is the next natural iteration before performance work
-because the core gameplay loop still needs proof that independent clients
-converge on the same authoritative snapshot.
+Status: in progress. First propagation-hardening pass complete: snapshot
+ordering now rejects equal-timestamp candidates that have less complete
+event/submission/investigation state, runtime diagnostics expose accepted
+snapshot metadata and ignored snapshot reasons, the room list exposes stable
+room ids for browser automation, and a gated full-stack Playwright spec now
+drives two browsers through create room, second-client join, expedition join,
+start, submit/wait/resolve, reload recovery, reset, and rejoin against the
+paired Relic server/Rallar runtime. The full-stack spec is validated in skipped
+mode by default and runs with `RELIC_HUNTERS_FULL_STACK=1`.
 
 Deliverables:
 
 - add a real two-browser/client propagation test using the paired Relic server
-  and Rallar runtime, not only a mocked single-browser backend
+  and Rallar runtime, not only a mocked single-browser backend: first gated spec
+  added in `tests/playwright/relic-hunters/full-stack-propagation.spec.ts`
 - cover create room, second-client room join, join expedition, start, submit,
-  wait, resolve, and reset/rejoin propagation
+  wait, resolve, and reset/rejoin propagation: first gated spec covers these
+  plus a reload recovery check
 - compare both clients' room id, snapshot phase, round, submissions, event ids,
-  active player counts, and accepted snapshot metadata after each command
+  active player counts, and accepted snapshot metadata after each command: first
+  gated spec compares this metadata through a development-only runtime hook
 - add diagnostics or test hooks that expose ignored snapshot reasons and latest
-  accepted snapshot source per client
+  accepted snapshot source per client: first pass complete
 - fix snapshot acceptance if equal-timestamp or less-complete snapshots can
-  replace richer state under fast REST/WS ordering
-- add a reconnect/resubscribe recovery check for room and snapshot listeners
+  replace richer state under fast REST/WS ordering: first pass complete with
+  unit coverage
+- add a reconnect/resubscribe recovery check for room and snapshot listeners:
+  first gated spec reloads a client and verifies snapshot rehydration
 - document the authoritative propagation contract in
-  `docs/runtime-data-flow.md`
+  `docs/runtime-data-flow.md`: first pass complete
 
 Exit criteria:
 
-- two independent clients reliably converge after each authoritative command
+- two independent clients reliably converge after each authoritative command in
+  the gated full-stack run
 - reconnect recovery has either automated coverage or a documented manual
   procedure with known limitations
 

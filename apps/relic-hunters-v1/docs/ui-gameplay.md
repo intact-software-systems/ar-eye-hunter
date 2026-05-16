@@ -91,9 +91,10 @@ immediately, so clue trails and room objectives can update after the first find.
 - `App.tsx` remains large enough that small UI changes can accidentally affect
   gameplay timing, audio, or event reveal behavior.
 - Planning state is covered by a mocked single-client Playwright loop from room
-  creation through first-turn resolution, but there is not yet a browser test
-  proving the full two-client submit/wait/resolve propagation path. This is the
-  next planned iteration in `improvement-plan.md`.
+  creation through first-turn resolution. Iteration 12 adds a gated full-stack
+  two-browser Playwright path for submit/wait/resolve propagation, reset/rejoin,
+  and reload recovery; it is skipped by default until
+  `RELIC_HUNTERS_FULL_STACK=1` is enabled with a real paired server.
 - Stale or disconnected joined players still remain in the active expedition
   after start. The player-facing policy is now visible: reset rebuilds the
   roster, while continuing keeps those hunters and may block round resolution.

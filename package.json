@@ -41,7 +41,8 @@
     "test:e2e:rallar-black-box:full-stack:real:control": "RALLAR_BLACK_BOX_FULL_STACK=1 VITE_RALLAR_API_BASE_URL=http://localhost:8080 playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts tests/playwright/rallar-black-box/full-stack-control-orchestration.spec.ts",
     "test": "vitest run",
     "test:playwright": "playwright test",
-    "test:playwright:relic": "playwright test tests/playwright/relic-hunters"
+    "test:playwright:relic": "playwright test tests/playwright/relic-hunters",
+    "test:playwright:relic:full-stack": "RELIC_HUNTERS_FULL_STACK=1 playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",

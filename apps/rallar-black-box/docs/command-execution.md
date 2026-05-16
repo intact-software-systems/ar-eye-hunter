@@ -48,6 +48,21 @@ The `Rallar Server` tab can also execute REST calls directly from the browser. T
 operations, not runtime commands. The tab can copy the selected request as a black-box `http.request` command when the
 same request should become part of a repeatable recipe or remote-control run.
 
+Browser-executed commands can use logged-in session placeholders when the SPA is running with `provider=browser-rallar`:
+
+- `{auth.clientId}`
+- `{auth.username}`
+- `{auth.sessionId}`
+- `{auth.accessToken}`
+- `{auth.wsTicket}`
+- `{config.apiBaseUrl}`
+- `{config.wsBaseUrl}`
+
+The placeholders are resolved inside `http.request`, `ws.open`, `rtc.connect`, and `rtc.send` commands. The
+`{auth.wsTicket}` placeholder is special: `ws.open` requests a fresh `/api/auth/ws-ticket` using the logged-in browser
+session before opening the WebSocket URL. This lets static recipe JSON open API-v1 WebSockets without storing one-time
+tickets in the recipe file.
+
 Real-provider cleanup is observable. Close/reset commands unsubscribe realtime and `messages.rtc` listeners, leave the
 joined room by default, then either disconnect or log out when `rallarLogoutOnClose=1` is configured. Remote reset
 commands also clear browser `localStorage` and `sessionStorage` before executing the runtime reset.

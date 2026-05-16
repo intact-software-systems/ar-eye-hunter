@@ -87,4 +87,176 @@ describe('rallar-bb browser adapter auth', () => {
         expect(headers.get('x-client-id')).toBe('client-1');
         expect(headers.get('content-type')).toBeNull();
     });
+
+    it('resolves logged-in auth placeholders in HTTP paths and bodies', async () => {
+        storage.setItem('auth.session', JSON.stringify({
+            clientId: 'alice',
+            accessToken: 'token-1',
+            username: 'alice',
+            sessionId: 'session-1',
+            expiresAtEpochMs: Date.now() + 60_000,
+        }));
+        const fetchCalls: Array<{
+            input: RequestInfo | URL;
+            init?: RequestInit;
+        }> = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            fetch: (async (input, init) => {
+                fetchCalls.push({ input, init });
+                return new Response(JSON.stringify({ ok: true }), {
+                    status: 200,
+                    headers: {
+                        'content-type': 'application/json',
+                    },
+                });
+            }) as typeof fetch,
+        });
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-api-auth-placeholders',
+            config: {
+                apiBaseUrl: 'https://api.example.test',
+            },
+        });
+        const result = await runtime.execute({
+            kind: 'http.request',
+            commandId: 'http-api-auth-placeholders',
+            request: {
+                path: '/api/state/apps/app/workspaces/ws/groups/bb-group/members/{auth.clientId}',
+                method: 'PUT',
+                body: {
+                    status: 'active',
+                    nested: {
+                        sessionId: '{auth.sessionId}',
+                    },
+                },
+            },
+            response: {
+                body: 'json',
+            },
+        });
+
+        expect(result.ok).toBe(true);
+        expect(fetchCalls[0].input).toBe(
+            'https://api.example.test/api/state/apps/app/workspaces/ws/groups/bb-group/members/alice',
+        );
+        expect(JSON.parse(String(fetchCalls[0].init?.body))).toEqual({
+            status: 'active',
+            nested: {
+                sessionId: 'session-1',
+            },
+        });
+    });
+
+    it('resolves logged-in auth placeholders and fetches a websocket ticket for ws.open', async () => {
+        storage.setItem('auth.session', JSON.stringify({
+            clientId: 'alice',
+            accessToken: 'token-1',
+            username: 'alice',
+            sessionId: 'session-1',
+            expiresAtEpochMs: Date.now() + 60_000,
+        }));
+        const fetchCalls: Array<{
+            input: RequestInfo | URL;
+            init?: RequestInit;
+        }> = [];
+        const openedSockets: string[] = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            fetch: (async (input, init) => {
+                fetchCalls.push({ input, init });
+                return new Response(JSON.stringify({
+                    ticket: 'ticket-1',
+                    sessionId: 'session-1',
+                    expiresAtEpochMs: Date.now() + 60_000,
+                }), {
+                    status: 200,
+                    headers: {
+                        'content-type': 'application/json',
+                    },
+                });
+            }) as typeof fetch,
+            webSocketFactory: (url) => {
+                openedSockets.push(url);
+                return {
+                    readyState: 1,
+                    protocol: '',
+                    url,
+                    send: () => undefined,
+                    close: () => undefined,
+                };
+            },
+        });
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-ws-auth-placeholders',
+            config: {
+                apiBaseUrl: 'https://api.example.test',
+            },
+        });
+        const result = await runtime.execute({
+            kind: 'ws.open',
+            commandId: 'ws-open-auth-placeholders',
+            connection: 'rallarApi',
+            url: '{config.wsBaseUrl}/api/ws/{auth.sessionId}?ticket={auth.wsTicket}',
+        });
+
+        expect(result.ok).toBe(true);
+        expect(fetchCalls[0].input).toBe('https://api.example.test/api/auth/ws-ticket');
+        expect(new Headers(fetchCalls[0].init?.headers).get('authorization')).toBe('Bearer token-1');
+        expect(openedSockets).toEqual([
+            'wss://api.example.test/api/ws/session-1?ticket=ticket-1',
+        ]);
+    });
+
+    it('resolves logged-in auth placeholders in RTC send payloads', async () => {
+        storage.setItem('auth.session', JSON.stringify({
+            clientId: 'alice',
+            accessToken: 'token-1',
+            username: 'alice',
+            sessionId: 'session-1',
+            expiresAtEpochMs: Date.now() + 60_000,
+        }));
+        const sends: unknown[] = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                connect: async () => ({ connected: true }),
+                send: async (input) => {
+                    sends.push(input);
+                    return { sent: true };
+                },
+                close: async () => ({ closed: true }),
+                health: async () => ({ ok: true }),
+            },
+        });
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-rtc-auth-placeholders',
+            config: {
+                apiBaseUrl: 'https://api.example.test',
+            },
+        });
+        const result = await runtime.execute({
+            kind: 'rtc.send',
+            commandId: 'rtc-send-auth-placeholders',
+            send: {
+                data: {
+                    sentBy: '{auth.clientId}',
+                    sessionId: '{auth.sessionId}',
+                },
+            },
+        });
+
+        expect(result.ok).toBe(true);
+        expect(sends).toEqual([
+            {
+                data: {
+                    sentBy: 'alice',
+                    sessionId: 'session-1',
+                },
+            },
+        ]);
+    });
 });

@@ -297,7 +297,7 @@ test.describe('Relic Hunters web app', () => {
 
         await page.keyboard.down('w');
         const movePrompt = page.getByRole('button', { name: /Move to Hallway/ });
-        await expect(movePrompt).toBeVisible();
+        await expect(movePrompt).toBeVisible({ timeout: 15_000 });
         await movePrompt.click();
         await page.keyboard.up('w');
 

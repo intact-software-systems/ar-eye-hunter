@@ -17,8 +17,8 @@ import {
     toErrorMessage,
 } from './relic-hunters-runtime.ts';
 import {
+    classifyRelicSnapshotAcceptance,
     type RelicSnapshotSource,
-    shouldAcceptRelicSnapshot,
 } from './relic-snapshot-ordering.ts';
 
 export type RelicHuntersConnection = Readonly<{
@@ -120,14 +120,19 @@ export function useRelicHunters(): RelicHuntersConnection {
         source: RelicSnapshotSource,
         expectedRoomId = roomIdRef.current,
     ): boolean => {
-        if (!shouldAcceptRelicSnapshot({
+        const acceptance = classifyRelicSnapshotAcceptance({
             current: snapshotRef.current,
             candidate: next,
             expectedRoomId,
-        })) {
+            allowSemanticRegression: source === 'rest-reset',
+        });
+
+        if (!acceptance.accepted) {
             setDiagnostics((prev) => ({
                 ...prev,
                 ignoredSnapshotCount: prev.ignoredSnapshotCount + 1,
+                lastIgnoredSnapshotReason: acceptance.reason,
+                lastIgnoredSnapshot: summarizeRuntimeSnapshot(next, source),
             }));
             return false;
         }
@@ -138,6 +143,7 @@ export function useRelicHunters(): RelicHuntersConnection {
             ...prev,
             snapshotReady: true,
             lastSnapshotSource: source,
+            lastAcceptedSnapshot: summarizeRuntimeSnapshot(next, source),
             lastHydratedAtEpochMs: Date.now(),
         }));
         return true;
@@ -566,4 +572,22 @@ function commandInFlightKey(input: RelicCommandDraft): string {
     }
 
     return `${input.kind}:${JSON.stringify(input.action)}`;
+}
+
+function summarizeRuntimeSnapshot(
+    snapshot: RelicPublicSnapshot,
+    source: RelicSnapshotSource,
+) {
+    return {
+        source,
+        gameId: snapshot.gameId,
+        roomId: snapshot.roomId,
+        phase: snapshot.phase,
+        round: snapshot.round,
+        updatedAtEpochMs: snapshot.updatedAtEpochMs,
+        playerCount: snapshot.players.length,
+        submittedCount: snapshot.submittedPlayerIds.length,
+        eventCount: snapshot.events.length,
+        roomInvestigationCount: snapshot.roomInvestigations.length,
+    };
 }

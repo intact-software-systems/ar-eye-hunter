@@ -79,8 +79,8 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
 - Iteration 11, tests and Playwright coverage, now has a first coverage pass
   complete; its remaining propagation and visual-baseline work is now tracked as
   follow-up iterations.
-- Iteration 12, two-client propagation and snapshot recovery, is the next
-  natural iteration.
+- Iteration 12, two-client propagation and snapshot recovery, is in progress
+  with a first propagation-hardening pass complete.
 - Iteration 13, stale participant policy and turn blocking, tracks the remaining
   multiplayer product-rule gap from the lobby pass.
 - Iteration 14, visual baselines and scene architecture follow-up, tracks the
@@ -116,15 +116,24 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
   and reset paths, and Playwright covers register, room creation, expedition
   join, start, submit, and resolved timeline feedback in one mocked browser
   flow.
+- Completed iteration-12 propagation fixes so far: equal-timestamp snapshots
+  with less complete event/submission/investigation state are rejected, runtime
+  diagnostics expose last accepted snapshot metadata plus ignored snapshot
+  reasons, development builds expose a compact runtime snapshot hook for browser
+  tests, room rows expose stable room ids, and a gated full-stack Playwright spec
+  covers two-browser convergence through join/start/submit/resolve, reload
+  recovery, reset, and rejoin.
 
 ## Main Risks
 
 - Multiplayer state still depends on all clients accepting the correct room
   snapshot from a mix of REST command responses and Rallar WS snapshot pushes.
-  This is now tracked by Iteration 12.
-- The runtime has diagnostics and single-browser/server Playwright coverage,
-  including a mocked first-turn browser loop, but there is no automated
-  two-client browser test for submit/wait/resolve propagation yet.
+  Iteration 12 now has a gated full-stack propagation spec, but it still needs a
+  real `RELIC_HUNTERS_FULL_STACK=1` environment run before the exit criteria are
+  fully closed.
+- The runtime has diagnostics, single-browser/server Playwright coverage, and a
+  gated two-browser full-stack spec. Default validation only compiles/skips that
+  full-stack spec unless the real server/database environment is enabled.
 - `RelicScene.tsx` remains risky to change because scene sync, labels, event
   effects, and player controls are still tightly coupled, though Babylon setup,
   render-loop scheduling, and RTC position sync now have clearer boundaries.

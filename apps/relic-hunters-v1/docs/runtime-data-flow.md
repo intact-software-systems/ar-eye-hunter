@@ -58,20 +58,25 @@ explicit deployed API origin.
 ## Snapshot Acceptance
 
 Snapshots are rejected when they belong to a non-current expected room or when
-they are older than the current same-room snapshot. Equal timestamp snapshots are
-accepted so REST responses and WS echoes can converge.
+they are older than the current same-room snapshot. Equal timestamp snapshots can
+still converge between REST responses and WS echoes, but same-room candidates
+with the same timestamp and round are rejected if they regress phase or contain
+less complete event, submission, or room-investigation state. Explicit REST
+reset responses are allowed to semantically regress to a fresh lobby snapshot.
 
-Current weakness: the ordering guard only compares update time and round. A
-snapshot with the same timestamp and less complete event/submission data can
-replace a richer snapshot. This is unlikely with normal server timestamps but
-should be covered if propagation remains unstable under fast commands.
+Development diagnostics now track the latest accepted snapshot metadata and the
+last ignored snapshot reason. Development builds also expose
+`window.__relicHuntersRuntime` with compact room, diagnostics, and snapshot
+metadata for browser tests.
 
 Current browser coverage verifies REST command submission, REST snapshot
 hydration, Rallar WS bootstrap, server HTTP APIs, and scene/UI response in a
-single browser context. It still does not prove two independent browser clients
-converge on the same snapshot after each command. `improvement-plan.md`
-Iteration 12 now tracks that proof explicitly before production performance
-work resumes.
+single browser context. `tests/playwright/relic-hunters/full-stack-propagation.spec.ts`
+adds a gated two-browser propagation path against the paired Relic server/Rallar
+runtime. It compares both clients' room id, phase, round, active player count,
+submitted player ids, event ids, and accepted snapshot metadata after join,
+start, submit/wait/resolve, reload recovery, reset, and rejoin. The spec is
+skipped by default and runs with `RELIC_HUNTERS_FULL_STACK=1`.
 
 ## RTC Position Flow
 
@@ -87,12 +92,12 @@ leaving authoritative room movement in the turn-based snapshot.
 
 ## Known Data-Flow Gaps
 
-- No end-to-end browser test currently proves that two clients receive the same
-  snapshots through REST plus WS after each command. This is the primary
-  Iteration 12 follow-up.
-- No reconnect recovery test currently proves that listeners are reinstalled and
-  snapshots are rehydrated after middleware or WS disruption. This is also part
-  of Iteration 12.
+- The two-browser propagation spec is gated and has been validated in skipped
+  mode. It still needs a real full-stack environment run before Iteration 12
+  exit criteria can be treated as fully closed.
+- Reconnect recovery currently has reload/rehydration coverage in the gated
+  full-stack spec. Lower-level middleware or WS disruption recovery is still not
+  separately simulated.
 - Stale active expedition players can block round resolution because active
   player count is based on game state, not live room membership. This is now an
   explicit player-facing policy in the lobby/party-change UI: reset rebuilds the

@@ -91,6 +91,20 @@ export default function App() {
     const revealTimerRef = useRef<number | null>(null);
     const revealNextRef = useRef<() => void>(null!);
 
+    useEffect(() => {
+        if (!IS_DEV) {
+            return;
+        }
+
+        (window as unknown as {
+            __relicHuntersRuntime?: ReturnType<typeof summarizeRelicHuntersRuntime>;
+        }).__relicHuntersRuntime = summarizeRelicHuntersRuntime(
+            game.roomId,
+            game.diagnostics,
+            game.snapshot,
+        );
+    }, [game.diagnostics, game.roomId, game.snapshot]);
+
     const viewModel = useMemo(
         () => deriveRelicGameViewModel({
             snapshot: game.snapshot,
@@ -664,6 +678,7 @@ export default function App() {
                                     <button
                                         type="button"
                                         key={room.roomId}
+                                        data-room-id={room.roomId}
                                         className={room.roomId === game.roomId
                                             ? 'room-row active'
                                             : 'room-row'}
@@ -1291,8 +1306,16 @@ function RallarDiagnosticsPanel({
             <small>Commands {diagnostics.commandTransport.toUpperCase()}</small>
             <small>Snapshots {diagnostics.snapshotTransport}</small>
             {diagnostics.lastSnapshotSource && <small>Last snapshot {diagnostics.lastSnapshotSource}</small>}
+            {diagnostics.lastAcceptedSnapshot && (
+                <small>
+                    Accepted {diagnostics.lastAcceptedSnapshot.phase} r{diagnostics.lastAcceptedSnapshot.round} / {diagnostics.lastAcceptedSnapshot.eventCount} events / {diagnostics.lastAcceptedSnapshot.submittedCount} submitted
+                </small>
+            )}
             {diagnostics.ignoredSnapshotCount > 0 && (
                 <small>Ignored stale snapshots {diagnostics.ignoredSnapshotCount}</small>
+            )}
+            {diagnostics.lastIgnoredSnapshotReason && (
+                <small>Last ignored {diagnostics.lastIgnoredSnapshotReason}</small>
             )}
             {diagnostics.commandInFlight && <small>Command {diagnostics.commandInFlight}</small>}
             {diagnostics.lastError && <small className="diagnostic-error">{diagnostics.lastError}</small>}
@@ -1309,6 +1332,35 @@ function DiagnosticFlag({
             {label}
         </span>
     );
+}
+
+function summarizeRelicHuntersRuntime(
+    roomId: string | undefined,
+    diagnostics: RelicRuntimeDiagnostics,
+    snapshot: RelicPublicSnapshot | undefined,
+) {
+    const activePlayerCount = snapshot?.players.filter(
+        (player) => !player.escaped && !player.defeated,
+    ).length ?? 0;
+
+    return {
+        roomId,
+        diagnostics,
+        snapshot: snapshot
+            ? {
+                gameId: snapshot.gameId,
+                roomId: snapshot.roomId,
+                phase: snapshot.phase,
+                round: snapshot.round,
+                updatedAtEpochMs: snapshot.updatedAtEpochMs,
+                playerIds: snapshot.players.map((player) => player.playerId),
+                activePlayerCount,
+                submittedPlayerIds: [...snapshot.submittedPlayerIds],
+                eventIds: snapshot.events.map((event) => event.id),
+                eventCount: snapshot.events.length,
+            }
+            : undefined,
+    };
 }
 
 function CharacterSelect({

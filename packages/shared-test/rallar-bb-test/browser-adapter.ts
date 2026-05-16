@@ -99,6 +99,10 @@ const DEFAULT_WS_OPEN_TIMEOUT_MS = 5_000;
 const DEFAULT_HTTP_BODY_LIMIT = 64_000;
 
 const WEBSOCKET_OPEN_STATE = 1;
+const AUTH_PLACEHOLDER_PATTERN = /\{auth\.(clientId|username|sessionId|accessToken|wsTicket)\}/g;
+const CONFIG_PLACEHOLDER_PATTERN = /\{config\.(apiBaseUrl|wsBaseUrl)\}/g;
+const AUTH_PLACEHOLDER_TEST_PATTERN = /\{auth\.(clientId|username|sessionId|accessToken|wsTicket)\}/;
+const CONFIG_PLACEHOLDER_TEST_PATTERN = /\{config\.(apiBaseUrl|wsBaseUrl)\}/;
 
 function asRecord(value: unknown): Record<string, unknown> {
     return value && typeof value === 'object' && !Array.isArray(value)
@@ -156,6 +160,179 @@ function normalizeUrlPrefix(value: string | undefined): string | undefined {
     return trimmed && trimmed.length > 0 ? trimmed : undefined;
 }
 
+function configApiBaseUrl(config: RallarBlackBoxTestConfig | undefined): string | undefined {
+    return normalizeUrlPrefix(
+        config?.apiBaseUrl ?? toStringValue(asRecord(config?.rallar).apiBaseUrl),
+    );
+}
+
+function configWsBaseUrl(config: RallarBlackBoxTestConfig | undefined): string | undefined {
+    const configured = normalizeUrlPrefix(toStringValue(asRecord(config?.rallar).wsBaseUrl));
+    if (configured) {
+        return configured;
+    }
+
+    const apiBaseUrl = configApiBaseUrl(config);
+    if (!apiBaseUrl) {
+        return undefined;
+    }
+
+    try {
+        const url = new URL(apiBaseUrl);
+        url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+        return normalizeUrlPrefix(url.toString());
+    } catch {
+        return undefined;
+    }
+}
+
+function requiresAuthPlaceholder(value: unknown): boolean {
+    if (typeof value === 'string') {
+        return AUTH_PLACEHOLDER_TEST_PATTERN.test(value) || CONFIG_PLACEHOLDER_TEST_PATTERN.test(value);
+    }
+
+    if (Array.isArray(value)) {
+        return value.some(item => requiresAuthPlaceholder(item));
+    }
+
+    if (!value || typeof value !== 'object') {
+        return false;
+    }
+
+    return Object.values(value).some(item => requiresAuthPlaceholder(item));
+}
+
+function requiresWsTicketPlaceholder(value: unknown): boolean {
+    if (typeof value === 'string') {
+        return value.includes('{auth.wsTicket}');
+    }
+
+    if (Array.isArray(value)) {
+        return value.some(item => requiresWsTicketPlaceholder(item));
+    }
+
+    if (!value || typeof value !== 'object') {
+        return false;
+    }
+
+    return Object.values(value).some(item => requiresWsTicketPlaceholder(item));
+}
+
+function replaceCommandPlaceholdersInString(
+    value: string,
+    options: Readonly<{
+        session?: AuthSession;
+        config?: RallarBlackBoxTestConfig;
+        wsTicket?: string;
+    }>,
+): string {
+    return value
+        .replace(CONFIG_PLACEHOLDER_PATTERN, (_match, key: string) => {
+            const replacement = key === 'apiBaseUrl'
+                ? configApiBaseUrl(options.config)
+                : configWsBaseUrl(options.config);
+            if (!replacement) {
+                throw new Error(`Cannot resolve recipe placeholder {config.${key}} without configured ${key}.`);
+            }
+
+            return replacement;
+        })
+        .replace(AUTH_PLACEHOLDER_PATTERN, (_match, key: string) => {
+            if (key === 'wsTicket') {
+                if (!options.wsTicket) {
+                    throw new Error('Cannot resolve recipe placeholder {auth.wsTicket} without a websocket ticket.');
+                }
+
+                return options.wsTicket;
+            }
+
+            if (!options.session) {
+                throw new Error(`Cannot resolve recipe placeholder {auth.${key}} without a logged-in Rallar session.`);
+            }
+
+            switch (key) {
+                case 'clientId':
+                    return options.session.clientId;
+                case 'username':
+                    return options.session.username;
+                case 'sessionId':
+                    return options.session.sessionId;
+                case 'accessToken':
+                    return options.session.accessToken;
+                default:
+                    return '';
+            }
+        });
+}
+
+function replaceCommandPlaceholders<T>(
+    value: T,
+    options: Readonly<{
+        session?: AuthSession;
+        config?: RallarBlackBoxTestConfig;
+        wsTicket?: string;
+    }>,
+): T {
+    if (!requiresAuthPlaceholder(value)) {
+        return value;
+    }
+
+    function replace(current: unknown): unknown {
+        if (typeof current === 'string') {
+            return replaceCommandPlaceholdersInString(current, options);
+        }
+
+        if (Array.isArray(current)) {
+            return current.map(item => replace(item));
+        }
+
+        if (!current || typeof current !== 'object') {
+            return current;
+        }
+
+        return Object.fromEntries(
+            Object.entries(current).map(([key, item]) => [key, replace(item)]),
+        );
+    }
+
+    return replace(value) as T;
+}
+
+function responseJsonRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : {};
+}
+
+async function requestWebSocketTicket(
+    fetchFn: typeof fetch,
+    config: RallarBlackBoxTestConfig | undefined,
+    session: AuthSession | undefined,
+): Promise<string> {
+    if (!session) {
+        throw new Error('Cannot request websocket ticket without a logged-in Rallar session.');
+    }
+
+    const apiBaseUrl = configApiBaseUrl(config);
+    if (!apiBaseUrl) {
+        throw new Error('Cannot request websocket ticket without configured apiBaseUrl.');
+    }
+
+    const response = await fetchFn(new URL('/api/auth/ws-ticket', `${apiBaseUrl}/`).toString(), {
+        method: 'POST',
+        headers: withRallarAuthHeaders(undefined, session),
+    });
+    const body = responseJsonRecord(await response.json());
+    if (!response.ok) {
+        throw new Error(`Websocket ticket request failed: ${response.status}`);
+    }
+    if (typeof body.ticket !== 'string' || body.ticket.length === 0) {
+        throw new Error('Websocket ticket response did not include ticket.');
+    }
+
+    return body.ticket;
+}
+
 function shouldAttachRallarAuth(
     command: Extract<CommandWithId, { kind: 'http.request' }>,
     config: RallarBlackBoxTestConfig | undefined,
@@ -165,9 +342,7 @@ function shouldAttachRallarAuth(
         return true;
     }
 
-    const apiBaseUrl = normalizeUrlPrefix(
-        config?.apiBaseUrl ?? toStringValue(asRecord(config?.rallar).apiBaseUrl),
-    );
+    const apiBaseUrl = configApiBaseUrl(config);
     if (!apiBaseUrl) {
         return false;
     }
@@ -216,22 +391,24 @@ async function readHttpBody(
 function toRequestUrl(
     request: RallarBlackBoxTestCommand & { kind: 'http.request' },
     config: RallarBlackBoxTestConfig | undefined,
+    session: AuthSession | undefined,
 ): string {
+    const requestUrl = replaceCommandPlaceholders(request.request.url, { config, session });
     if (request.request.url) {
-        return request.request.url;
+        return requestUrl ?? request.request.url;
     }
 
     if (!request.request.path) {
         throw new Error('http.request requires request.url or request.path.');
     }
 
-    const apiBaseUrl = config?.apiBaseUrl ??
-        toStringValue(asRecord(config?.rallar).apiBaseUrl);
+    const apiBaseUrl = configApiBaseUrl(config);
     if (!apiBaseUrl) {
         throw new Error('http.request path requires configured apiBaseUrl.');
     }
 
-    return new URL(request.request.path, apiBaseUrl).toString();
+    const path = replaceCommandPlaceholders(request.request.path, { config, session });
+    return new URL(path, `${apiBaseUrl}/`).toString();
 }
 
 function addWebSocketListener(
@@ -450,7 +627,13 @@ class BrowserCommandAdapter {
         command: Extract<CommandWithId, { kind: 'rtc.connect' }>,
         context: RallarBlackBoxTestCommandContext,
     ): Promise<RallarBlackBoxTestCommandOutcome> {
-        const connectionConfig = this.toRallarConnectionConfig(command, context.config());
+        const connectionConfig = this.toRallarConnectionConfig(
+            replaceCommandPlaceholders(command, {
+                config: context.config(),
+                session: readOptionalBrowserSession(),
+            }),
+            context.config(),
+        );
         const diagnostics = await this.requireRallarRuntime().connect(connectionConfig);
         context.recordEvent({
             kind: 'diagnostic',
@@ -476,7 +659,11 @@ class BrowserCommandAdapter {
         command: Extract<CommandWithId, { kind: 'rtc.send' }>,
         context: RallarBlackBoxTestCommandContext,
     ): Promise<RallarBlackBoxTestCommandOutcome> {
-        const diagnostics = await this.requireRallarRuntime().send(command.send ?? {});
+        const resolvedSend = replaceCommandPlaceholders(command.send ?? {}, {
+            config: context.config(),
+            session: readOptionalBrowserSession(),
+        });
+        const diagnostics = await this.requireRallarRuntime().send(resolvedSend);
         context.recordEvent({
             kind: 'diagnostic',
             topic: 'rallar.bb.rtc.send_completed',
@@ -498,21 +685,34 @@ class BrowserCommandAdapter {
         command: Extract<CommandWithId, { kind: 'http.request' }>,
         context: RallarBlackBoxTestCommandContext,
     ): Promise<RallarBlackBoxTestCommandOutcome> {
-        const url = toRequestUrl(command, context.config());
-        const request = command.request;
-        const headers = shouldAttachRallarAuth(command, context.config(), url)
-            ? withRallarAuthHeaders(request.headers, readOptionalBrowserSession())
-            : request.headers;
+        const session = readOptionalBrowserSession();
+        const config = context.config();
+        const wsTicket = requiresWsTicketPlaceholder(command.request)
+            ? await requestWebSocketTicket(this.requireFetch(), config, session)
+            : undefined;
+        const resolvedRequest = replaceCommandPlaceholders(command.request, {
+            config,
+            session,
+            wsTicket,
+        });
+        const resolvedCommand = {
+            ...command,
+            request: resolvedRequest,
+        };
+        const url = toRequestUrl(resolvedCommand, config, session);
+        const headers = shouldAttachRallarAuth(resolvedCommand, config, url)
+            ? withRallarAuthHeaders(resolvedRequest.headers, session)
+            : resolvedRequest.headers;
         const response = await this.requireFetch()(url, {
-            method: request.method,
+            method: resolvedRequest.method,
             headers,
-            body: request.body === undefined
+            body: resolvedRequest.body === undefined
                 ? undefined
-                : typeof request.body === 'string'
-                    ? request.body
-                    : JSON.stringify(request.body),
-            credentials: request.credentials,
-            mode: request.mode,
+                : typeof resolvedRequest.body === 'string'
+                    ? resolvedRequest.body
+                    : JSON.stringify(resolvedRequest.body),
+            credentials: resolvedRequest.credentials,
+            mode: resolvedRequest.mode,
         });
         const responseOptions = asRecord(command.response) as HttpResponseOptions;
         const body = await readHttpBody(
@@ -549,7 +749,18 @@ class BrowserCommandAdapter {
         command: Extract<CommandWithId, { kind: 'ws.open' }>,
         context: RallarBlackBoxTestCommandContext,
     ): Promise<RallarBlackBoxTestCommandOutcome> {
-        const url = command.url;
+        const session = readOptionalBrowserSession();
+        const config = context.config();
+        const wsTicket = requiresWsTicketPlaceholder(command.url)
+            ? await requestWebSocketTicket(this.requireFetch(), config, session)
+            : undefined;
+        const url = command.url
+            ? replaceCommandPlaceholders(command.url, {
+                config,
+                session,
+                wsTicket,
+            })
+            : undefined;
         if (!url) {
             throw new Error('ws.open requires url.');
         }

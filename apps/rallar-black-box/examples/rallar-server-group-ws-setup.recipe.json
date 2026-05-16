@@ -1,0 +1,103 @@
+{
+  "recipeId": "rallar-server-group-ws-setup",
+  "name": "Rallar Server group and WebSocket setup",
+  "description": "Uses the logged-in browser session to create or reuse bb-group, join it, attach the current session, and open the authenticated API WebSocket.",
+  "continueOnFailure": false,
+  "metadata": {
+    "requires": [
+      "Open the SPA with provider=browser-rallar.",
+      "Log in before loading this recipe.",
+      "The current runtime config must point apiBaseUrl at the target Rallar Server."
+    ],
+    "notes": [
+      "The create-group REST command is intentionally tolerant of an existing group because http.request records HTTP status in the result value instead of failing the recipe on 409.",
+      "{auth.clientId}, {auth.sessionId}, and {auth.wsTicket} are resolved from the logged-in browser session at execution time.",
+      "{auth.wsTicket} causes ws.open to request a fresh /api/auth/ws-ticket before opening the WebSocket."
+    ]
+  },
+  "commands": [
+    {
+      "kind": "http.request",
+      "commandId": "bb-group-create",
+      "label": "Create bb-group if missing",
+      "request": {
+        "path": "/api/state/apps/ar-eye-hunter/workspaces/default/groups",
+        "method": "POST",
+        "body": {
+          "groupId": "bb-group",
+          "displayName": "bb-group",
+          "description": "Created by rallar-black-box example recipe",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{auth.clientId}",
+          "metadata": {
+            "source": "rallar-black-box",
+            "example": "group-ws-setup"
+          }
+        }
+      },
+      "response": {
+        "body": "json"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "http.request",
+      "commandId": "bb-group-read-after-create",
+      "label": "Read bb-group",
+      "request": {
+        "path": "/api/state/apps/ar-eye-hunter/workspaces/default/groups/bb-group",
+        "method": "GET"
+      },
+      "response": {
+        "body": "json"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "http.request",
+      "commandId": "bb-group-join-current-user",
+      "label": "Join bb-group as logged-in user",
+      "request": {
+        "path": "/api/state/apps/ar-eye-hunter/workspaces/default/groups/bb-group/members/{auth.clientId}",
+        "method": "PUT",
+        "body": {
+          "status": "active"
+        }
+      },
+      "response": {
+        "body": "json"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "http.request",
+      "commandId": "bb-group-connect-current-session",
+      "label": "Attach logged-in session to bb-group",
+      "request": {
+        "path": "/api/state/apps/ar-eye-hunter/workspaces/default/groups/bb-group/sessions/{auth.sessionId}",
+        "method": "PUT",
+        "body": {
+          "principalId": "{auth.clientId}"
+        }
+      },
+      "response": {
+        "body": "json"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "ws.open",
+      "commandId": "bb-api-ws-open",
+      "label": "Open authenticated Rallar API WebSocket",
+      "connection": "rallarApi",
+      "url": "{config.wsBaseUrl}/api/ws/{auth.sessionId}?ticket={auth.wsTicket}",
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "stats",
+      "commandId": "bb-group-ws-setup-stats",
+      "label": "Capture setup stats"
+    }
+  ]
+}
