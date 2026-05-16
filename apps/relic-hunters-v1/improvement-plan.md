@@ -392,6 +392,15 @@ Exit criteria:
 
 Add automated coverage around the real gameplay loop.
 
+Status: in progress. First coverage pass complete: turn summary logic is now in
+`src/game/turn-summary.ts` with unit tests, view-model action legality has
+additional exit/defeated-player coverage, the Rallar runtime fake-dependency
+tests now cover no-session hydration, room create/join hydration, and reset
+delegation, and Playwright now drives a mocked browser loop through register,
+room create, join expedition, start, submit, and resolved timeline feedback. A
+desktop/mobile lobby screenshot smoke test was added; baseline visual snapshots
+and real two-client propagation tests are still open.
+
 Deliverables:
 
 - unit tests for view model

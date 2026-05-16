@@ -129,6 +129,58 @@ describe('deriveRelicGameViewModel', () => {
             message: 'Final round - escape or be lost to the ruin.',
         });
     });
+
+    it('allows escape only from the exit room', () => {
+        const base = planningSnapshot();
+        const snapshot: RelicPublicSnapshot = {
+            ...base,
+            players: base.players.map((player) =>
+                player.playerId === 'alice-session' ? { ...player, roomId: 'exit' } : player
+            ),
+        };
+
+        const viewModel = deriveRelicGameViewModel({
+            snapshot,
+            localPlayerId: 'alice-session',
+            draft: { kind: 'escape' },
+            lang: 'en',
+        });
+
+        expect(viewModel.currentRoom?.kind).toBe('exit');
+        expect(viewModel.actionOptions.escape).toMatchObject({
+            legal: true,
+            consequence: { text: 'exit door in reach', status: 'ok' },
+        });
+        expect(viewModel.submitBlocker).toBeUndefined();
+        expect(viewModel.turnStatus.canSubmit).toBe(true);
+    });
+
+    it('blocks defeated hunters from submitting and removes them from the active count', () => {
+        const base = planningSnapshot();
+        const snapshot: RelicPublicSnapshot = {
+            ...base,
+            players: base.players.map((player) =>
+                player.playerId === 'alice-session'
+                    ? { ...player, health: 0, defeated: true }
+                    : player
+            ),
+        };
+
+        const viewModel = deriveRelicGameViewModel({
+            snapshot,
+            localPlayerId: 'alice-session',
+            draft: { kind: 'search' },
+            lang: 'en',
+        });
+
+        expect(viewModel.submitBlocker).toBe('You are down and cannot act this expedition.');
+        expect(viewModel.turnStatus).toMatchObject({
+            activePlayerCount: 1,
+            waitingPlayerCount: 1,
+            canSubmit: false,
+        });
+        expect(viewModel.objective).toBe('You are down. The ruin keeps your relics.');
+    });
 });
 
 function planningSnapshot(): RelicPublicSnapshot {

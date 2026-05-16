@@ -69,6 +69,53 @@ describe('RelicHuntersRuntime', () => {
             kind: 'start-expedition',
         });
     });
+
+    it('does not connect or subscribe when no browser session can be restored', async () => {
+        const deps = runtimeDeps({
+            restoreSession: vi.fn(() => undefined),
+        });
+        const runtime = new RelicHuntersRuntime(deps);
+
+        const hydration = await runtime.connectAndHydrate(vi.fn(), vi.fn());
+
+        expect(hydration).toBeUndefined();
+        expect(deps.connect).not.toHaveBeenCalled();
+        expect(deps.onSnapshotMessage).not.toHaveBeenCalled();
+        expect(deps.onRoomsChange).not.toHaveBeenCalled();
+    });
+
+    it('hydrates the created room with its current snapshot and refreshed room state', async () => {
+        const deps = runtimeDeps({
+            createRoom: vi.fn(async () => ({ group: { groupId: 'created-room' } })),
+        });
+        const runtime = new RelicHuntersRuntime(deps);
+
+        const hydration = await runtime.createRoom();
+
+        expect(deps.createRoom).toHaveBeenCalledWith('Relic Hunters Expedition');
+        expect(deps.fetchSnapshot).toHaveBeenCalledWith('created-room');
+        expect(deps.refreshRooms).toHaveBeenCalledTimes(1);
+        expect(hydration).toMatchObject({
+            roomId: 'created-room',
+            roomState: roomState(),
+        });
+        expect(hydration.snapshot?.roomId).toBe('room-1');
+    });
+
+    it('hydrates a joined room and delegates resets to the game reset transport', async () => {
+        const deps = runtimeDeps({
+            joinRoom: vi.fn(async () => ({ group: { groupId: 'joined-room' } })),
+        });
+        const runtime = new RelicHuntersRuntime(deps);
+
+        const hydration = await runtime.joinRoom('joined-room');
+        await runtime.resetExpedition('joined-room');
+
+        expect(deps.joinRoom).toHaveBeenCalledWith('joined-room');
+        expect(deps.fetchSnapshot).toHaveBeenCalledWith('joined-room');
+        expect(hydration.roomId).toBe('joined-room');
+        expect(deps.resetGame).toHaveBeenCalledWith('joined-room');
+    });
 });
 
 function runtimeDeps(

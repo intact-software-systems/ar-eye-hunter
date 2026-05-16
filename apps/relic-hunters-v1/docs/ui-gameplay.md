@@ -90,8 +90,9 @@ immediately, so clue trails and room objectives can update after the first find.
   overlays.
 - `App.tsx` remains large enough that small UI changes can accidentally affect
   gameplay timing, audio, or event reveal behavior.
-- Planning state is visible, but there is not yet a browser test proving the
-  full two-client submit/wait/resolve loop.
+- Planning state is covered by a mocked single-client Playwright loop from room
+  creation through first-turn resolution, but there is not yet a browser test
+  proving the full two-client submit/wait/resolve propagation path.
 - Stale or disconnected joined players still remain in the active expedition
   after start. The player-facing policy is now visible: reset rebuilds the
   roster, while continuing keeps those hunters and may block round resolution.

@@ -76,6 +76,8 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
   complete.
 - Iteration 10, turn timeline and feedback, now has a first consolidation pass
   complete.
+- Iteration 11, tests and Playwright coverage, now has a first coverage pass
+  complete.
 - Because the reported failure is that the game is not playable and state is not
   propagating reliably between clients, iteration 7 should be kept narrow and
   paired with data-flow fixes when a concrete propagation bug is found.
@@ -99,14 +101,19 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
   are labelled as Reveal, Your Action, Party Action, Castle Reaction, or Result.
   The floating turn feedback panel, post-round digest overlay, side personal
   round card, and compact diff strip are no longer in the normal render path.
+- Completed iteration-11 coverage fixes so far: turn-summary logic has focused
+  unit tests, view-model action legality covers exit and defeated-player cases,
+  Rallar runtime fake-dependency tests cover no-session, create/join hydration,
+  and reset paths, and Playwright covers register, room creation, expedition
+  join, start, submit, and resolved timeline feedback in one browser flow.
 
 ## Main Risks
 
 - Multiplayer state still depends on all clients accepting the correct room
   snapshot from a mix of REST command responses and Rallar WS snapshot pushes.
-- The runtime has diagnostics and single-browser/server Playwright coverage, but
-  there is no automated two-client browser test for submit/wait/resolve
-  propagation yet.
+- The runtime has diagnostics and single-browser/server Playwright coverage,
+  including a mocked first-turn browser loop, but there is no automated
+  two-client browser test for submit/wait/resolve propagation yet.
 - `RelicScene.tsx` remains risky to change because scene sync, labels, event
   effects, and player controls are still tightly coupled, though Babylon setup,
   render-loop scheduling, and RTC position sync now have clearer boundaries.

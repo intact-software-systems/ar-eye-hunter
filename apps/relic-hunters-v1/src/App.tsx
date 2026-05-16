@@ -20,6 +20,13 @@ import {
     RELIC_ACTION_KINDS,
     type ActionDraft,
 } from './game/game-view-model.ts';
+import {
+    deriveCurrentTurnSummaryModel,
+    isPersonalEvent,
+    isTurnResultEvent,
+    isTurnTimelineEvent,
+    turnTimelineCategory,
+} from './game/turn-summary.ts';
 import type { RelicRuntimeDiagnostics } from './game/relic-hunters-runtime.ts';
 import { UI, type Lang } from './game/lang.ts';
 import { useRelicHunters } from './game/useRelicHunters.ts';
@@ -1241,40 +1248,22 @@ function CurrentTurnSummary({
     events: readonly RelicEvent[];
     lang: Lang;
 }>) {
-    const activePlayers = snapshot?.players.filter((player) => !player.escaped && !player.defeated) ?? [];
-    const submittedCount = snapshot?.submittedPlayerIds.length ?? 0;
-    const waitingCount = Math.max(0, activePlayers.length - submittedCount);
-    const localPlayer = snapshot?.players.find((player) => player.playerId === localPlayerId);
-    const localSubmitted = !!localPlayerId && !!snapshot?.submittedPlayerIds.includes(localPlayerId);
-    const lastTurnRound = [...events].reverse().find(isTurnTimelineEvent)?.round;
-    const lastRoundEvents = lastTurnRound === undefined
-        ? []
-        : events.filter((event) => event.round === lastTurnRound && isTurnTimelineEvent(event));
-    const personalCount = lastRoundEvents.filter((event) => isPersonalEvent(event, localPlayerId)).length;
-    const castleCount = lastRoundEvents.filter((event) =>
-        turnTimelineCategory(event, localPlayerId).kind === 'castle'
-    ).length;
-    const summary = deriveCurrentTurnSummary({
+    const summary = deriveCurrentTurnSummaryModel({
         snapshot,
-        localPlayer,
-        localSubmitted,
-        waitingCount,
+        localPlayerId,
+        events,
         lang,
     });
 
     return (
-        <section className={`turn-summary turn-summary-${summary.kind}`} aria-label="Current turn summary">
+        <section className={`turn-summary turn-summary-${summary.copy.kind}`} aria-label="Current turn summary">
             <div className="turn-summary-copy">
-                <span className="panel-label">{summary.eyebrow}</span>
-                <strong>{summary.title}</strong>
-                <small>{summary.detail}</small>
+                <span className="panel-label">{summary.copy.eyebrow}</span>
+                <strong>{summary.copy.title}</strong>
+                <small>{summary.copy.detail}</small>
             </div>
             <div className="turn-summary-stats" aria-label="Turn status">
-                <span>{submittedCount}/{activePlayers.length} locked</span>
-                <span>{waitingCount} waiting</span>
-                {lastTurnRound !== undefined && <span>R{lastTurnRound} results</span>}
-                {personalCount > 0 && <span>{personalCount} yours</span>}
-                {castleCount > 0 && <span>{castleCount} castle</span>}
+                {summary.stats.map((stat) => <span key={stat}>{stat}</span>)}
             </div>
         </section>
     );
@@ -2040,195 +2029,6 @@ function ClueJournal({
             )}
         </div>
     );
-}
-
-type TurnSummaryCopy = Readonly<{
-    kind: 'empty' | 'lobby' | 'planning' | 'locked' | 'watching' | 'finished';
-    eyebrow: string;
-    title: string;
-    detail: string;
-}>;
-
-function deriveCurrentTurnSummary({
-    snapshot,
-    localPlayer,
-    localSubmitted,
-    waitingCount,
-    lang,
-}: Readonly<{
-    snapshot?: RelicPublicSnapshot;
-    localPlayer?: RelicPlayer;
-    localSubmitted: boolean;
-    waitingCount: number;
-    lang: Lang;
-}>): TurnSummaryCopy {
-    if (!snapshot) {
-        return {
-            kind: 'empty',
-            eyebrow: lang === 'no' ? 'Ingen ekspedisjon' : 'No Expedition',
-            title: lang === 'no' ? 'Velg et rom' : 'Choose a room',
-            detail: lang === 'no'
-                ? 'Opprett eller bli med i et Relic Hunters-rom.'
-                : 'Create or join a Relic Hunters room to start the loop.',
-        };
-    }
-
-    if (snapshot.phase === 'lobby') {
-        return {
-            kind: 'lobby',
-            eyebrow: lang === 'no' ? 'Lobby' : 'Lobby',
-            title: lang === 'no' ? 'Samle ekspedisjonen' : 'Gather the expedition',
-            detail: lang === 'no'
-                ? 'Bli med som jeger, vent på rommedlemmer, og la Vokteren starte.'
-                : 'Join as a hunter, wait for room members, then the Keeper starts.',
-        };
-    }
-
-    if (snapshot.phase === 'finished') {
-        const winnerNames = snapshot.winnerIds
-            .map((id) => snapshot.players.find((player) => player.playerId === id)?.username)
-            .filter(Boolean)
-            .join(', ');
-        return {
-            kind: 'finished',
-            eyebrow: lang === 'no' ? 'Resultat' : 'Result',
-            title: lang === 'no' ? 'Ekspedisjonen er over' : 'Expedition complete',
-            detail: winnerNames
-                ? (lang === 'no'
-                    ? `${winnerNames} tok Hjerterelikkiet.`
-                    : `${winnerNames} claimed the Heart Relic.`)
-                : (lang === 'no' ? 'Ruinen har stilnet.' : 'The ruin has gone quiet.'),
-        };
-    }
-
-    if (!localPlayer) {
-        return {
-            kind: 'watching',
-            eyebrow: lang === 'no' ? 'Tilskuer' : 'Watching',
-            title: lang === 'no' ? 'Ekspedisjonen er i gang' : 'Expedition in progress',
-            detail: lang === 'no'
-                ? 'Nye jegere kan ikke bli med etter at jakten har startet.'
-                : 'Late joins are closed after the hunt starts.',
-        };
-    }
-
-    if (localPlayer.escaped || localPlayer.defeated) {
-        return {
-            kind: 'watching',
-            eyebrow: lang === 'no' ? 'Din runde' : 'Your Run',
-            title: localPlayer.escaped
-                ? (lang === 'no' ? 'Du unnslapp' : 'You escaped')
-                : (lang === 'no' ? 'Du er ute' : 'You are down'),
-            detail: lang === 'no'
-                ? 'Følg tidslinjen mens resten av ekspedisjonen avslutter.'
-                : 'Follow the timeline while the remaining hunters finish.',
-        };
-    }
-
-    if (localSubmitted) {
-        return {
-            kind: 'locked',
-            eyebrow: lang === 'no' ? 'Plan låst' : 'Plan Locked',
-            title: lang === 'no' ? 'Planen din er låst' : 'Your plan is locked',
-            detail: waitingCount > 0
-                ? (lang === 'no'
-                    ? `Venter på ${waitingCount} jeger${waitingCount === 1 ? '' : 'e'}.`
-                    : `Waiting for ${waitingCount} hunter${waitingCount === 1 ? '' : 's'} to lock a plan.`)
-                : (lang === 'no'
-                    ? 'Alle planer er låst. Ruinen svarer snart.'
-                    : 'All plans are locked. The castle is about to answer.'),
-        };
-    }
-
-    return {
-        kind: 'planning',
-        eyebrow: lang === 'no' ? `Runde ${snapshot.round}` : `Round ${snapshot.round}`,
-        title: lang === 'no' ? 'Velg én plan' : 'Choose one plan',
-        detail: lang === 'no'
-            ? 'Velg Flytt, Søk, Stjel eller Unnslipp. Alle planer løses samtidig.'
-            : 'Pick Move, Search, Steal, or Escape. All plans resolve together.',
-    };
-}
-
-type TurnTimelineCategory = Readonly<{
-    kind: 'your' | 'party' | 'castle' | 'result' | 'reveal';
-    label: string;
-}>;
-
-function isTurnTimelineEvent(event: RelicEvent): boolean {
-    return isTurnResultEvent(event) ||
-        event.type === 'action_revealed' ||
-        event.type === 'round_started' ||
-        event.type === 'game_finished';
-}
-
-function turnTimelineCategory(event: RelicEvent, localPlayerId: string | undefined): TurnTimelineCategory {
-    if (event.type === 'action_revealed') {
-        return { kind: 'reveal', label: 'Reveal' };
-    }
-    if (event.type === 'round_started' || event.type === 'game_finished') {
-        return { kind: 'result', label: 'Result' };
-    }
-    if (
-        event.type === 'noise_pulse' ||
-        event.type === 'player_damaged' ||
-        event.type === 'room_unstable' ||
-        event.type === 'room_collapsed'
-    ) {
-        return { kind: 'castle', label: 'Castle Reaction' };
-    }
-    if (isPersonalEvent(event, localPlayerId)) {
-        return { kind: 'your', label: 'Your Action' };
-    }
-    return { kind: 'party', label: 'Party Action' };
-}
-
-function isTurnResultEvent(event: RelicEvent): boolean {
-    switch (event.type) {
-        case 'player_moved':
-        case 'player_searched':
-        case 'relic_found':
-        case 'steal_succeeded':
-        case 'steal_failed':
-        case 'escape_failed':
-        case 'player_escaped':
-        case 'noise_pulse':
-        case 'player_damaged':
-        case 'room_unstable':
-        case 'room_collapsed':
-            return true;
-        default:
-            return false;
-    }
-}
-
-function turnEventHeadline(event: RelicEvent): string {
-    switch (event.type) {
-        case 'player_moved':
-            return 'A hunter slips through the dark';
-        case 'player_searched':
-            return 'Desperate hands search the room';
-        case 'relic_found':
-            return 'Ancient gold catches the light';
-        case 'steal_succeeded':
-            return 'A relic changes hands in shadow';
-        case 'steal_failed':
-            return 'A theft attempt comes up empty';
-        case 'escape_failed':
-            return 'The castle refuses to release';
-        case 'player_escaped':
-            return 'A hunter breaks for daylight';
-        case 'noise_pulse':
-            return 'The ruin stirs with the sound';
-        case 'player_damaged':
-            return 'Stone and shadow take their toll';
-        case 'room_unstable':
-            return 'A room begins to crack and groan';
-        case 'room_collapsed':
-            return 'A chamber surrenders to ruin';
-        default:
-            return event.message;
-    }
 }
 
 type CastleMapBounds = Readonly<{
@@ -3148,12 +2948,6 @@ function narratorLine(event: RelicEvent): string {
     const lines = NARRATOR_LINES[event.type];
     if (!lines || lines.length === 0) return '';
     return lines[event.id.charCodeAt(event.id.length - 1) % lines.length];
-}
-
-function isPersonalEvent(event: RelicEvent, localPlayerId: string | undefined): boolean {
-    if (!localPlayerId) return false;
-    return event.animationCue?.playerId === localPlayerId ||
-        event.animationCue?.targetPlayerId === localPlayerId;
 }
 
 function toneClass(event: RelicEvent | undefined): string {

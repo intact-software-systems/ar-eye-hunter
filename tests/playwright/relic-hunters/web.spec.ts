@@ -4,6 +4,8 @@ type MockBackendOptions = Readonly<{
     rooms?: readonly MockGroupSnapshot[];
     relicSnapshot?: RelicSnapshot;
     commandSnapshot?: RelicSnapshot;
+    commandSnapshots?: readonly RelicSnapshot[];
+    commandResponse?(body: unknown): RelicSnapshot;
     requests?: string[];
     commandBodies?: unknown[];
 }>;
@@ -33,6 +35,31 @@ test.describe('Relic Hunters web app', () => {
         await expect(page.getByText('alice', { exact: true })).toBeVisible();
     });
 
+    test('captures core lobby layouts at desktop and mobile viewports', async ({ page }) => {
+        await installBrowserDoubles(page);
+        await mockBackend(page, {
+            rooms: [groupSnapshot({ onlineMemberCount: 1 })],
+            relicSnapshot: emptyRelicSnapshot(),
+        });
+
+        await page.setViewportSize({ width: 1280, height: 720 });
+        await page.goto('/');
+        await page.getByRole('button', { name: 'Register' }).click();
+        await page.getByLabel('Username').fill('alice');
+        await page.getByLabel('Display name').fill('Alice');
+        await page.getByLabel('Password').fill('correct-horse');
+        await page.getByRole('button', { name: 'Create Hunter' }).click();
+        await expect(page.getByRole('button', { name: 'Relic Hunters Expedition' })).toBeVisible();
+
+        const desktop = await page.screenshot({ animations: 'disabled' });
+        expect(desktop.byteLength).toBeGreaterThan(10_000);
+
+        await page.setViewportSize({ width: 390, height: 844 });
+        await expect(page.getByRole('button', { name: 'Relic Hunters Expedition' })).toBeVisible();
+        const mobile = await page.screenshot({ animations: 'disabled' });
+        expect(mobile.byteLength).toBeGreaterThan(10_000);
+    });
+
     test('joins a room and prompts when expedition players no longer match online party', async ({ page }) => {
         const room = groupSnapshot({ onlineMemberCount: 1 });
         await installBrowserDoubles(page);
@@ -51,6 +78,7 @@ test.describe('Relic Hunters web app', () => {
 
         await expect(page.getByText('Party Changed')).toBeVisible();
         await expect(page.getByText('1/2 hunters are online')).toBeVisible();
+        await expect(page.getByText(/Offline joined hunters can still block round resolution/)).toBeVisible();
         await expect(page.getByRole('button', { name: 'Start Over' })).toBeVisible();
         await expect(page.getByRole('button', { name: 'Keep Going' })).toBeVisible();
     });
@@ -103,6 +131,29 @@ test.describe('Relic Hunters web app', () => {
         expect(requests).not.toContain('POST /api/relic/games/room-1/reset');
     });
 
+    test('shows lobby membership and start blockers when online members have not joined', async ({ page }) => {
+        const room = groupSnapshot({ onlineMemberCount: 2 });
+        await installBrowserDoubles(page);
+        await mockBackend(page, {
+            rooms: [room],
+            relicSnapshot: relicSnapshotWithPlayers(1),
+        });
+
+        await page.goto('/');
+        await page.getByRole('button', { name: 'Register' }).click();
+        await page.getByLabel('Username').fill('alice');
+        await page.getByLabel('Display name').fill('Alice');
+        await page.getByLabel('Password').fill('correct-horse');
+        await page.getByRole('button', { name: 'Create Hunter' }).click();
+        await page.getByRole('button', { name: 'Relic Hunters Expedition' }).click();
+
+        await expect(page.getByText('Keeper: Alice')).toBeVisible();
+        await expect(page.getByText('Online room members', { exact: true })).toBeVisible();
+        await expect(page.getByText('Joined expedition hunters', { exact: true })).toBeVisible();
+        await expect(page.getByText('1 online room member still needs to join.')).toBeVisible();
+        await expect(page.getByRole('button', { name: /^Start$/ })).toBeDisabled();
+    });
+
     test('sends room-scoped relic commands from the browser UI', async ({ page }) => {
         const room = groupSnapshot({ onlineMemberCount: 1 });
         const commandBodies: unknown[] = [];
@@ -138,6 +189,56 @@ test.describe('Relic Hunters web app', () => {
             gameId: 'room-1',
             username: 'alice',
         });
+    });
+
+    test('creates a room and completes the first playable turn through the browser UI', async ({ page }) => {
+        test.setTimeout(60_000);
+        const commandBodies: unknown[] = [];
+        await installBrowserDoubles(page);
+        await mockBackend(page, {
+            rooms: [],
+            relicSnapshot: emptyRelicSnapshot(),
+            commandBodies,
+            commandResponse: (body) => {
+                const kind = (body as { kind?: string } | undefined)?.kind;
+                if (kind === 'join-expedition') return relicSnapshotWithPlayers(1);
+                if (kind === 'start-expedition') return relicSnapshotWithPlayers(1, 'planning');
+                if (kind === 'submit-action') return resolvedSearchSnapshot();
+                return relicSnapshotWithPlayers(1);
+            },
+        });
+
+        await page.goto('/');
+        await page.getByRole('button', { name: 'Register' }).click();
+        await page.getByLabel('Username').fill('alice');
+        await page.getByLabel('Display name').fill('Alice');
+        await page.getByLabel('Password').fill('correct-horse');
+        await page.getByRole('button', { name: 'Create Hunter' }).click();
+
+        await page.getByRole('button', { name: 'New Room' }).click();
+        await expect(page.getByRole('button', { name: /Join as/ })).toBeVisible();
+
+        await page.getByRole('button', { name: /Join as/ }).click();
+        await expect(page.getByText('Keeper: Alice')).toBeVisible();
+        await expect(page.locator('.lobby-begin-btn')).toBeEnabled();
+        await page.locator('.lobby-begin-btn').click();
+        await expect.poll(() => commandBodies.length).toBe(2);
+        expect((commandBodies.at(-1) as { kind?: string }).kind).toBe('start-expedition');
+
+        await expect(page.getByLabel('Current turn summary')).toContainText('Choose one plan', { timeout: 15_000 });
+        await page.getByRole('button', { name: 'Submit Plan' }).click();
+
+        await expect(page.getByLabel('Current turn summary')).toContainText('Choose one plan', { timeout: 15_000 });
+        const timeline = page.getByLabel('Turn timeline');
+        await expect(timeline).toContainText('Reveal', { timeout: 20_000 });
+        await expect(timeline).toContainText('Your Action', { timeout: 20_000 });
+        await expect(timeline).toContainText('Result', { timeout: 20_000 });
+        await expect(timeline).toContainText('Alice searched the Entrance.', { timeout: 20_000 });
+        expect(commandBodies.map((body) => (body as { kind?: string }).kind)).toEqual([
+            'join-expedition',
+            'start-expedition',
+            'submit-action',
+        ]);
     });
 
     test('renders a nonblank Babylon scene and tolerates pointer look', async ({ page }) => {
@@ -195,9 +296,10 @@ test.describe('Relic Hunters web app', () => {
         await expect.poll(() => sceneHasVisiblePixels(page)).toBe(true);
 
         await page.keyboard.down('w');
-        await expect(page.getByRole('button', { name: /Move to Hallway/ })).toBeVisible();
+        const movePrompt = page.getByRole('button', { name: /Move to Hallway/ });
+        await expect(movePrompt).toBeVisible();
+        await movePrompt.click();
         await page.keyboard.up('w');
-        await page.getByRole('button', { name: /Move to Hallway/ }).click();
 
         await expect(page.getByText('Step into an adjacent room')).toBeVisible();
         await expect(page.getByRole('button', { name: 'Submit Plan' })).toBeEnabled();
@@ -410,8 +512,12 @@ test.describe('Relic Hunters web app', () => {
         await expect(objective.getByText('The crates held a torn supply map, but no relic.')).toBeVisible();
         await expect(objective.getByText('Follow the map fragment toward Trap Room')).toBeVisible();
         await expect(objective.getByText('Next step: Move to Trap Room. The supply marks point back toward the Entrance and onward through the Trap Room.')).toBeVisible();
-        await expect(page.getByLabel('Turn resolution feedback')).toContainText('Round Resolved');
-        await expect(page.getByLabel('Turn resolution feedback')).toContainText('Alice searched the crates and marked a false supply trail.');
+        await expect(page.getByLabel('Current turn summary')).toContainText('Choose one plan');
+        const timeline = page.getByLabel('Turn timeline');
+        await expect(timeline).toContainText('Your Action');
+        await expect(timeline).toContainText('Castle Reaction');
+        await expect(timeline).toContainText('Result');
+        await expect(timeline).toContainText('Alice searched the crates and marked a false supply trail.');
         await expect(page.getByLabel('Discovered clue trails')).toContainText('Storage - Trap Room');
         await expect(page.getByLabel('Discovered clue trails')).toContainText('The crates held a torn supply map, but no relic.');
         await expect(page.getByLabel('Castle room map').getByRole('button', { name: 'Trap Room' })).toHaveClass(/clue-target/);
@@ -494,6 +600,10 @@ async function installBrowserDoubles(page: Page): Promise<void> {
 }
 
 async function mockBackend(page: Page, options: MockBackendOptions): Promise<void> {
+    let rooms = [...(options.rooms ?? [])];
+    let currentRelicSnapshot = options.relicSnapshot ?? relicSnapshotWithPlayers(1);
+    let commandSnapshotIndex = 0;
+
     await page.route('http://127.0.0.1:5175/api/**', async (route) => {
         const request = route.request();
         const url = new URL(request.url());
@@ -539,28 +649,43 @@ async function mockBackend(page: Page, options: MockBackendOptions): Promise<voi
         }
 
         if (path === '/api/relic/games/room-1') {
-            return json(route, options.relicSnapshot ?? relicSnapshotWithPlayers(1));
+            return json(route, currentRelicSnapshot);
         }
 
         if (path === '/api/relic/games/room-1/reset') {
-            return json(route, emptyRelicSnapshot());
+            currentRelicSnapshot = emptyRelicSnapshot();
+            return json(route, currentRelicSnapshot);
         }
 
         if (path === '/api/relic/games/room-1/commands') {
-            options.commandBodies?.push(parseJsonBody(request.postData()));
-            return json(route, options.commandSnapshot ?? relicSnapshotWithPlayers(1));
+            const commandBody = parseJsonBody(request.postData());
+            options.commandBodies?.push(commandBody);
+            currentRelicSnapshot = options.commandResponse?.(commandBody) ??
+                options.commandSnapshots?.[commandSnapshotIndex] ??
+                options.commandSnapshot ??
+                relicSnapshotWithPlayers(1);
+            commandSnapshotIndex += 1;
+            return json(route, currentRelicSnapshot);
         }
 
         if (path.endsWith('/clients') && request.method() === 'GET') {
             return json(route, [clientSnapshot()]);
         }
 
-        if (path.endsWith('/groups') && request.method() === 'GET') {
-            return json(route, options.rooms ?? []);
+        if (path.endsWith('/groups') && request.method() === 'POST') {
+            const created = groupSnapshot({ onlineMemberCount: 1 });
+            rooms = [created];
+            return json(route, created, 201);
         }
 
-        if (path.includes('/groups/room-1/') || path.endsWith('/groups/room-1')) {
-            return json(route, groupSnapshot({ onlineMemberCount: 1 }));
+        if (path.endsWith('/groups') && request.method() === 'GET') {
+            return json(route, rooms);
+        }
+
+        if (path.includes('/groups/') && !path.endsWith('/groups')) {
+            const room = rooms[0] ?? groupSnapshot({ onlineMemberCount: 1 });
+            rooms = [room];
+            return json(route, room);
         }
 
         if (path.includes('/clients/') && path.endsWith('/heartbeat')) {
@@ -861,6 +986,46 @@ function emptyRelicSnapshot(): RelicSnapshot {
         submittedPlayerIds: [],
         events: [],
     };
+}
+
+function resolvedSearchSnapshot(): RelicSnapshot {
+    const now = Date.now();
+    return relicSnapshotWithPlayers(1, 'planning', {
+        round: 2,
+        events: [
+            {
+                id: 'turn-1-reveal',
+                round: 1,
+                type: 'action_revealed',
+                message: 'Round 1 actions are revealed.',
+                tone: 'mystery',
+                createdAtEpochMs: now,
+            },
+            {
+                id: 'turn-1-search',
+                round: 1,
+                type: 'player_searched',
+                message: 'Alice searched the Entrance.',
+                animationCue: {
+                    type: 'search_altar',
+                    playerId: 'alice-session',
+                    roomId: 'entrance',
+                    durationMs: 700,
+                    intensity: 'low',
+                },
+                tone: 'mystery',
+                createdAtEpochMs: now,
+            },
+            {
+                id: 'turn-1-round-2',
+                round: 1,
+                type: 'round_started',
+                message: 'Round 2 begins.',
+                tone: 'mystery',
+                createdAtEpochMs: now,
+            },
+        ],
+    });
 }
 
 type MockClientSnapshot = Readonly<Record<string, unknown>>;
