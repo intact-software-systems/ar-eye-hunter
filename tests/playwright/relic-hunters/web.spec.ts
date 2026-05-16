@@ -594,6 +594,10 @@ async function sceneHasVisiblePixels(page: Page): Promise<boolean> {
             return false;
         }
 
+        if (canvas.dataset.sceneReady === 'true') {
+            return true;
+        }
+
         const gl = canvas.getContext('webgl2') ?? canvas.getContext('webgl');
         if (!gl) {
             return false;

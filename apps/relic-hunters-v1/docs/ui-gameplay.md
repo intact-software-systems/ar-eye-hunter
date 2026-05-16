@@ -92,9 +92,10 @@ immediately, so clue trails and room objectives can update after the first find.
 - The scene uses procedural castle rooms, props, player avatars, labels, relic
   meshes, particles, shadows, fog, bloom, glow, SSAO, vignette, and grain.
 - During the current cleanup pass, the scene uses lighter shadows/SSAO and a
-  capped render loop. Preserve-drawing-buffer is still enabled because browser
-  smoke tests read canvas pixels; revisit this once screenshot/canvas checks use
-  a different readiness signal.
+  capped render loop. Preserve-drawing-buffer is disabled; smoke checks use the
+  canvas `data-scene-ready` signal emitted after Babylon renders.
+- Player labels are names-only in normal play. Health, relic counts, score, and
+  character details stay in HUD panels.
 - Iteration 7 should make the scene easier to read before adding more content:
   rooms, exits, players, relics, danger, and current objective should be
   immediately legible.

@@ -298,7 +298,11 @@ canvas readiness checks do not race heavy setup. Blocking intro/onboarding flows
 are disabled by default while the playable loop is stabilized. Shared gameplay
 rules were also tightened: Entrance no longer contains a hidden relic, relic
 discoveries immediately create durable room investigations, and route hints
-prefer higher-value adjacent relic leads.
+prefer higher-value adjacent relic leads. The second pass disables
+`preserveDrawingBuffer`, replaces retained-buffer test readiness with an
+explicit canvas `data-scene-ready` signal, simplifies player labels to
+player-facing names, and records a first asset plan in
+`docs/visual-direction.md`.
 
 Deliverables:
 

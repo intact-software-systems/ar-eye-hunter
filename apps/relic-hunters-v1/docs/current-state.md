@@ -30,6 +30,9 @@ server in `apps/relic-hunter-server-v1`, and the shared game model/rules in
 - The Babylon render path is capped at 30 fps, uses lighter shadows and ambient
   occlusion, and paints an early clear frame before the heavier scene setup so
   the canvas is reliably nonblank under parallel browser load.
+- `preserveDrawingBuffer` is disabled. Browser checks now use the canvas
+  `data-scene-ready` signal emitted after Babylon renders a frame instead of
+  relying on retained WebGL back buffers.
 - The first-load intro cinematic is currently disabled so authentication and
   room entry are immediately reachable while the playable loop is being
   stabilized. If it is re-enabled, it must not block underlying SPA controls.
@@ -70,7 +73,9 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
   onboarding from the default path, normalize local dev API calls through the
   same-origin proxy, make admin detection tolerate legacy snapshots without
   `adminPlayerId`, keep locked plans inspectable, reduce Babylon's HUD impact,
-  and make route/clue state durable in the shared rules.
+  disable `preserveDrawingBuffer`, separate normal player labels from debug
+  detail labels, document the scene asset plan, and make route/clue state durable
+  in the shared rules.
 
 ## Main Risks
 

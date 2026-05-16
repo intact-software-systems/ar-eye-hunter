@@ -70,6 +70,7 @@ const POS_BROADCAST_INTERVAL_MS = 80;
 const POS_MAX_AGE_MS = 2500;
 const MOVE_PROMPT_HOLD_MS = 1200;
 const SCENE_FRAME_INTERVAL_MS = 1000 / 30;
+const PLAYER_LABEL_MODE: 'names' | 'details' | 'hidden' = 'names';
 
 type RelicPosUpdate = Readonly<{ pid: string; x: number; z: number; r: number }>;
 type RemotePosEntry = { x: number; z: number; yaw: number; t: number };
@@ -91,6 +92,7 @@ type RelicSceneProps = Readonly<{
 }>;
 
 type SceneRuntime = Readonly<{
+    canvas: HTMLCanvasElement;
     engine: Engine;
     scene: Scene;
     camera: UniversalCamera;
@@ -236,7 +238,7 @@ export function RelicScene({
         try {
             engine = new Engine(canvas, true, {
                 antialias: true,
-                preserveDrawingBuffer: true,
+                preserveDrawingBuffer: false,
                 stencil: true,
             });
             engine.setHardwareScalingLevel(1.25);
@@ -261,7 +263,7 @@ export function RelicScene({
         camera.fov = 1.02;
         camera.minZ = 0.05;
         camera.maxZ = 80;
-        scene.render();
+        renderSceneFrame(scene, canvas);
 
         // Post-processing pipeline.
         const pipeline = new DefaultRenderingPipeline('relic-pipeline', true, scene, [camera]);
@@ -404,6 +406,7 @@ export function RelicScene({
         escapeMarker.rotation.x = Math.PI / 2;
         escapeMarker.setEnabled(false);
         const runtime: SceneRuntime = {
+            canvas,
             engine,
             scene,
             camera,
@@ -582,7 +585,7 @@ export function RelicScene({
         window.addEventListener('keydown', keydown);
         window.addEventListener('keyup', keyup);
 
-        scene.render();
+        renderSceneFrame(scene, canvas);
         let lastFrameMs = performance.now();
         engine.runRenderLoop(() => {
             const now = performance.now();
@@ -591,7 +594,7 @@ export function RelicScene({
             }
             lastFrameMs = now;
             updateRuntime(runtime);
-            scene.render();
+            renderSceneFrame(scene, canvas);
         });
 
         return () => {
@@ -603,6 +606,7 @@ export function RelicScene({
             document.removeEventListener('pointerlockchange', pointerlockchange);
             window.removeEventListener('keydown', keydown);
             window.removeEventListener('keyup', keyup);
+            delete canvas.dataset.sceneReady;
             scene.dispose();
             engine.dispose();
             runtimeRef.current = undefined;
@@ -632,7 +636,7 @@ export function RelicScene({
         }
 
         syncScene(runtime, snapshot, localPlayerId, selectedRoomId);
-        runtime.scene.render();
+        renderRuntimeScene(runtime);
     }, [localPlayerId, selectedRoomId, snapshot]);
 
     const roomStateKey = [localPlayerId, snapshot?.players.find((p) => p.playerId === localPlayerId)?.roomId].join(':');
@@ -820,6 +824,40 @@ function FallbackRelicScene({
             </div>
         </div>
     );
+}
+
+function renderRuntimeScene(runtime: SceneRuntime): void {
+    renderSceneFrame(runtime.scene, runtime.canvas);
+}
+
+function renderSceneFrame(scene: Scene, canvas: HTMLCanvasElement): void {
+    scene.render();
+    if (canvas.dataset.sceneReady !== 'true' && renderedFrameHasVisiblePixel(canvas)) {
+        canvas.dataset.sceneReady = 'true';
+    }
+}
+
+function renderedFrameHasVisiblePixel(canvas: HTMLCanvasElement): boolean {
+    const gl = canvas.getContext('webgl2') ?? canvas.getContext('webgl');
+    if (!gl) {
+        return false;
+    }
+
+    try {
+        const pixels = new Uint8Array(4);
+        gl.readPixels(
+            Math.floor(gl.drawingBufferWidth / 2),
+            Math.floor(gl.drawingBufferHeight / 2),
+            1,
+            1,
+            gl.RGBA,
+            gl.UNSIGNED_BYTE,
+            pixels,
+        );
+        return pixels[3] > 0 && (pixels[0] > 4 || pixels[1] > 4 || pixels[2] > 4);
+    } catch {
+        return false;
+    }
 }
 
 function syncScene(
@@ -1351,12 +1389,19 @@ function drawPlayerLabel(
     ctx.fillStyle = 'rgba(14, 12, 10, 0.78)';
     ctx.fillRect(4, 4, w - 8, h - 8);
 
-    ctx.font = 'bold 17px sans-serif';
+    ctx.font = PLAYER_LABEL_MODE === 'details'
+        ? 'bold 17px sans-serif'
+        : 'bold 22px sans-serif';
     ctx.fillStyle = accentHex;
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
+    ctx.textBaseline = PLAYER_LABEL_MODE === 'details' ? 'top' : 'middle';
     const label = username.length > 14 ? `${username.slice(0, 12)}…` : username;
-    ctx.fillText(label, w / 2, 8);
+    ctx.fillText(label, w / 2, PLAYER_LABEL_MODE === 'details' ? 8 : h / 2);
+
+    if (PLAYER_LABEL_MODE !== 'details') {
+        texture.update();
+        return;
+    }
 
     const barX = 18;
     const barY = 38;
@@ -1383,7 +1428,7 @@ function setAvatarEnabled(runtime: SceneRuntime, playerId: string, enabled: bool
     for (const part of runtime.avatarParts.get(playerId) ?? []) {
         part.setEnabled(enabled);
     }
-    runtime.playerLabels.get(playerId)?.setEnabled(enabled);
+    runtime.playerLabels.get(playerId)?.setEnabled(enabled && PLAYER_LABEL_MODE !== 'hidden');
 }
 
 function disposeAvatar(runtime: SceneRuntime, playerId: string): void {
