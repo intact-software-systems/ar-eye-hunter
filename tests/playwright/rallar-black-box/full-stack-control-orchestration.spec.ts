@@ -46,6 +46,7 @@ test.describe('full-stack control orchestration', () => {
         const run = await fetchControlRun(request, runId);
         expect(run.results?.some(result => result.commandId === commandId && result.ok === true)).toBe(true);
         expect((run.events ?? []).length).toBeGreaterThan(0);
-        await expect(page.getByText(commandId).first()).toBeVisible();
+        await page.getByRole('tab', { name: 'Event Stream' }).click();
+        await expect(page.locator('#panel-event-stream')).toContainText(commandId);
     });
 });

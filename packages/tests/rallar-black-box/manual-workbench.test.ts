@@ -132,6 +132,38 @@ describe('rallar-black-box manual workbench helpers', () => {
         });
     });
 
+    it('builds real RTC join as configure, group create, and connect', () => {
+        const commands = buildManualWorkbenchCommands(
+            'join',
+            {
+                ...DEFAULT_MANUAL_WORKBENCH_VALUES,
+                providerMode: 'browser-rallar',
+                transport: 'realtime',
+                groupId: 'room-from-manual',
+            },
+            {},
+            20,
+        );
+
+        expect(commands.map(command => command.kind)).toEqual(['configure', 'http.request', 'rtc.connect']);
+        expect(commands[1]).toMatchObject({
+            commandId: 'manual-group-create-21',
+            request: {
+                method: 'POST',
+                path: '/api/state/apps/ar-eye-hunter/workspaces/default/groups',
+                body: {
+                    groupId: 'room-from-manual',
+                    kind: 'room',
+                    joinMode: 'open',
+                },
+            },
+        });
+        expect(commands[2]).toMatchObject({
+            commandId: 'manual-rtc-connect-22',
+            roomId: 'room-from-manual',
+        });
+    });
+
     it('carries browser-rallar auth defaults into manual configure commands', () => {
         const [command] = buildManualWorkbenchCommands(
             'configure',

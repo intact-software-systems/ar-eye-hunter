@@ -33,6 +33,10 @@ Use these files as examples:
 - `tests/playwright/rallar-black-box/browser-rallar-two-agent-smoke.spec.ts`
   Gated live two-agent real-provider smoke. Creates two isolated browser contexts and checks realtime and
   `messages.rtc` delivery.
+- `tests/playwright/rallar-black-box/full-stack-manual-rallar-realtime.spec.ts`
+  Gated Iteration 23 full-stack UI flow. Starts from login, uses the visible Manual Rallar tab in two browsers,
+  sends unique realtime JSON through the real `browser-rallar` provider, and asserts the receiving UI shows the
+  payload plus real browser event-stream evidence before closing both Manual Rallar connections.
 
 Use Vitest for pure helper logic:
 
@@ -72,7 +76,7 @@ A full-stack Iteration 23 test should start or require:
 ```text
 apps/api-v1                       http://localhost:8080
 apps/rallar-black-box-control     http://127.0.0.1:5180 and ws://127.0.0.1:5180/control
-apps/rallar-black-box             http://127.0.0.1:5176
+apps/rallar-black-box             http://localhost:5176
 ```
 
 The normal `apps/rallar-black-box/playwright.config.ts` starts the SPA and control server for deterministic UI and
@@ -88,8 +92,36 @@ Run it with:
 npm run test:e2e:rallar-black-box:full-stack
 ```
 
+Use the convenience root scripts for real-data runs:
+
+```sh
+npm run test:e2e:rallar-black-box:full-stack:real
+npm run test:e2e:rallar-black-box:full-stack:real:manual
+npm run test:e2e:rallar-black-box:full-stack:real:rest
+npm run test:e2e:rallar-black-box:full-stack:real:control
+```
+
 The config always starts the SPA and control server. It starts `apps/api-v1` only when
-`RALLAR_BLACK_BOX_FULL_STACK=1` is set.
+`RALLAR_BLACK_BOX_FULL_STACK=1` is set. If a service is already running on the expected port, Playwright reuses it.
+
+To run the backend servers separately before test execution:
+
+```sh
+npm run dev:rallar-black-box:servers
+```
+
+To run API, control server, and the SPA together for manual UI testing:
+
+```sh
+npm run dev:rallar-black-box:all
+```
+
+The full-stack config uses `http://localhost:5176` as the SPA origin because `apps/api-v1` allows that origin by
+default when started manually. `http://127.0.0.1:5176` requires adding that origin to `CORS_ORIGINS`.
+
+The API startup commands load env files from `apps/api-v1/.env.local`, `apps/api-v1/.env`, and root `.env`, in that
+order. Existing shell environment variables still win, and `CORS_ORIGINS` is set by the npm script for the test SPA
+origins.
 
 ## Environment Gate
 
@@ -241,8 +273,8 @@ A UI-driven Manual Rallar test should usually:
 
 1. Open `Manual Rallar`.
 2. Fill group, connection, transport, target/multicast fields, and payload.
-3. Click `Configure` or `Join`.
-4. Click `Connect` if not already joined.
+3. Click `Create and join group` for the first real RTC client when the group should be created by the test.
+4. Click `Connect` for additional clients after the group exists.
 5. Click `Send`.
 6. Assert command IDs appear in completed commands.
 7. Assert the received-data inbox contains the expected payload or topic.
@@ -257,6 +289,12 @@ Use unique suffixes for rooms, connections, command IDs, and payload fields:
 const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 const roomId = `rallar-bb-${suffix}`;
 ```
+
+The first Iteration 23 Manual Rallar test intentionally uses the visible UI controls instead of enqueueing control
+commands. It fills the group, connection, target session, transport, and payload fields, clicks
+`Create and join group` for the first browser, clicks `Connect` for the second browser, clicks `Send payload`, and
+treats the receiving page's `Received Data` inbox as the primary proof that real JSON moved through Rallar. It then
+clicks `Close connections` on both pages so the happy path also exercises connection cleanup.
 
 ## Rallar Server REST Flow
 
@@ -371,6 +409,7 @@ Current files:
 ```text
 tests/playwright/rallar-black-box/full-stack-rest-workbench.spec.ts
 tests/playwright/rallar-black-box/full-stack-control-orchestration.spec.ts
+tests/playwright/rallar-black-box/full-stack-manual-rallar-realtime.spec.ts
 tests/playwright/rallar-black-box/full-stack-helpers.ts
 apps/rallar-black-box/playwright.full-stack.config.ts
 ```
@@ -378,7 +417,8 @@ apps/rallar-black-box/playwright.full-stack.config.ts
 Likely next files:
 
 ```text
-tests/playwright/rallar-black-box/full-stack-ui-flow.spec.ts
+tests/playwright/rallar-black-box/full-stack-manual-rallar-messages-rtc.spec.ts
+tests/playwright/rallar-black-box/full-stack-ui-diagnostics.spec.ts
 ```
 
 Useful helper responsibilities:

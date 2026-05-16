@@ -6,7 +6,8 @@ actions, remote control commands, runtime events, stats, and reports use one com
 
 ## Implemented
 
-The implementation is complete through the first Iteration 23 full-stack harness slice in `implementation-plan.md`.
+The implementation is complete through the first Iteration 23 full-stack harness slice and the first Manual Rallar
+real-payload delivery slice in `implementation-plan.md`.
 
 The shared facade exists in `packages/shared-test/rallar-bb-test` and defines:
 
@@ -33,9 +34,11 @@ The SPA currently provides:
 - persistent global header state for provider, control, runtime, room, active command, first failure, user, and session
 - authenticated Rallar Server REST workbench with endpoint presets, raw request editing, auth header injection, response
   rendering, cURL export, and black-box `http.request` command export
-- gated full-stack Playwright harness for API-v1, control-server, SPA, two-browser REST workbench login, and
-  control-orchestration smoke coverage
+- gated full-stack Playwright harness for API-v1, control-server, SPA, two-browser REST workbench login,
+  control-orchestration smoke coverage, and a UI-driven Manual Rallar realtime payload delivery check
 - manual Rallar workbench for quick configure, join, connect, send, health, close, and reset actions
+- real-provider Manual Rallar `Create and join group` creates a Rallar Server group before RTC connect, so disposable
+  test rooms can be created directly from the UI flow
 - received-data inbox derived from runtime message events
 - RTC diagnostics panel for connect phases, membership, latency, failure focus, and copyable diagnostic bundles
 - topology view derived from runtime events using graphology and rendered with Sigma.js
@@ -139,8 +142,8 @@ These checks are necessary because the app is a remote browser-control surface.
 The main gaps are:
 
 - the default SPA mode is still simulated for offline use
-- the live `browser-rallar` connect/send and two-agent delivery smokes are environment-gated and skipped unless real
-  Rallar config is supplied
+- the live `browser-rallar` connect/send, two-agent delivery smokes, and Iteration 23 Manual Rallar realtime delivery
+  test are environment-gated and skipped unless real Rallar config plus local full-stack services are supplied
 - real multicast/broadcast delivery and missing/stale-agent negative cases still need larger live multi-agent coverage
 - the control server is in-memory and not restart-durable
 - monitor-server ingestion is not connected
@@ -168,3 +171,6 @@ npm run test -- packages/tests/shared-test/rallar-provider-parity.test.ts
 npm run test:e2e:rallar-black-box
 RALLAR_BLACK_BOX_FULL_STACK=1 npm run test:e2e:rallar-black-box:full-stack
 ```
+
+The full-stack suite has also been verified against a manually running `apps/api-v1` at `http://localhost:8080` with
+the default static users `alice` and `bob`.

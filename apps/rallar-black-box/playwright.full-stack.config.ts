@@ -7,7 +7,7 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
     ...(fullStackEnabled
         ? [
             {
-                command: 'cd ../.. && CORS_ORIGINS=http://127.0.0.1:5176,http://localhost:5176 deno run --env-file=.env --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts',
+                command: 'cd ../.. && CORS_ORIGINS=http://localhost:5176,http://127.0.0.1:5176 deno run --env-file=apps/api-v1/.env.local --env-file=apps/api-v1/.env --env-file=.env --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts',
                 url: 'http://localhost:8080/api/config',
                 reuseExistingServer: true,
                 timeout: 90_000,
@@ -15,8 +15,8 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
         ]
         : []),
     {
-        command: 'cd ../.. && npm --workspace rallar-black-box run dev -- --host 127.0.0.1 --port 5176',
-        url: 'http://127.0.0.1:5176',
+        command: 'cd ../.. && npm --workspace rallar-black-box run dev -- --port 5176',
+        url: 'http://localhost:5176',
         reuseExistingServer: true,
         timeout: 60_000,
     },
@@ -37,7 +37,7 @@ export default defineConfig({
     },
     reporter: [['list']],
     use: {
-        baseURL: 'http://127.0.0.1:5176',
+        baseURL: 'http://localhost:5176',
         trace: 'on-first-retry',
         screenshot: 'only-on-failure',
     },

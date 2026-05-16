@@ -4,6 +4,7 @@ import type {
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestTransport,
 } from '@shared-test/rallar-bb-test/types.ts';
+import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from './client-defaults.ts';
 import type { RallarBlackBoxProviderMode } from './client-defaults.ts';
 
@@ -184,6 +185,10 @@ function commandId(action: string, sequence: number): string {
     return `manual-${action}-${sequence}`;
 }
 
+function pathSegment(value: string): string {
+    return encodeURIComponent(value);
+}
+
 function targetsFor(values: ManualWorkbenchValues): readonly string[] {
     if (values.deliveryMode === 'broadcast') {
         return [];
@@ -305,6 +310,44 @@ export function manualConnectCommand(
     };
 }
 
+export function manualCreateGroupCommand(
+    values: ManualWorkbenchValues,
+    sequence: number,
+): RallarBlackBoxTestCommand {
+    const groupId = clean(values.groupId) ?? RALLAR_BLACK_BOX_CLIENT_DEFAULTS.roomId;
+    return {
+        kind: 'http.request',
+        commandId: commandId('group-create', sequence),
+        label: 'Create manual Rallar group',
+        request: {
+            method: 'POST',
+            path: `/api/state/apps/${pathSegment(DEFAULT_STATE_APPLICATION_ID)}/workspaces/${
+                pathSegment(DEFAULT_STATE_WORKSPACE_ID)
+            }/groups`,
+            body: {
+                groupId,
+                displayName: groupId,
+                description: 'Created by rallar-black-box Manual Rallar',
+                kind: 'room',
+                joinMode: 'open',
+                metadata: {
+                    source: 'rallar-black-box',
+                    surface: 'manual-rallar',
+                },
+            },
+        },
+        response: {
+            body: 'json',
+        },
+        metadata: {
+            manual: {
+                groupId,
+                action: 'create-group',
+            },
+        },
+    };
+}
+
 export function manualSendCommand(
     values: ManualWorkbenchValues,
     payload: unknown,
@@ -387,6 +430,13 @@ export function buildManualWorkbenchCommands(
         case 'configure':
             return [manualConfigureCommand(values, sequence)];
         case 'join':
+            if (values.providerMode === 'browser-rallar' && values.transport !== 'ws') {
+                return [
+                    manualConfigureCommand(values, sequence),
+                    manualCreateGroupCommand(values, sequence + 1),
+                    manualConnectCommand(values, sequence + 2),
+                ];
+            }
             return [
                 manualConfigureCommand(values, sequence),
                 manualConnectCommand(values, sequence + 1),

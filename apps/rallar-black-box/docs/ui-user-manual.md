@@ -121,7 +121,8 @@ Controls include:
 Actions:
 
 - `Configure`: set the runtime config for the current manual test
-- `Join`: configure and connect in one operation
+- `Create and join group`: configure and connect in one operation; for real RTC with `browser-rallar`, this first
+  creates the group through the authenticated Rallar Server API
 - `Connect`: open the selected RTC or WebSocket connection
 - `Send`: send the JSON payload using direct, multicast, or broadcast metadata
 - `Health`: collect current health

@@ -1,6 +1,7 @@
 # Rallar Black Box Documentation
 
-This folder documents the current state of `apps/rallar-black-box` after the first Iteration 23 full-stack harness slice.
+This folder documents the current state of `apps/rallar-black-box` after the first Iteration 23 full-stack harness and
+Manual Rallar real-payload slices.
 
 The app is a browser-based black-box test agent and visible debugging workbench for Rallar RTC, WebSocket, and HTTP test
 flows. It uses the shared `rallar-bb-test` command contract, can connect to a WebSocket control server, streams results
@@ -60,15 +61,34 @@ Run the browser-agent smoke test:
 npm run test:e2e:rallar-black-box
 ```
 
-Run the gated full-stack automation slice:
+Start only the backend pieces used by real-data testing:
 
 ```sh
-RALLAR_BLACK_BOX_FULL_STACK=1 npm run test:e2e:rallar-black-box:full-stack
+npm run dev:rallar-black-box:servers
 ```
 
-The live browser-Rallar smoke is included in that suite but skipped unless the required `VITE_RALLAR_*` environment
-variables are provided. The suite now includes one-agent connect/send smoke plus two-agent realtime and `messages.rtc`
-delivery smokes.
+Start the API, control server, and SPA together for manual UI work:
+
+```sh
+npm run dev:rallar-black-box:all
+```
+
+Run the gated full-stack automation slice in skip-safe mode:
+
+```sh
+npm run test:e2e:rallar-black-box:full-stack
+```
+
+Run the real-data full-stack suite. Playwright starts missing services and reuses already-running services:
+
+```sh
+npm run test:e2e:rallar-black-box:full-stack:real
+```
+
+The full-stack suite is skipped unless the required local services and environment are enabled. It currently covers
+authenticated Rallar Server REST calls, control-server orchestration, and a two-browser Manual Rallar realtime flow that
+sends real JSON through the `browser-rallar` provider. The API startup scripts load `apps/api-v1/.env.local`,
+`apps/api-v1/.env`, and root `.env`.
 
 ## Main Source Files
 

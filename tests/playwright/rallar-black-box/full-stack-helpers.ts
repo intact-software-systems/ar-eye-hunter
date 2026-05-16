@@ -2,6 +2,7 @@ import { expect, type APIRequestContext, type Page } from '@playwright/test';
 
 export const FULL_STACK_CONTROL_BASE_URL = 'http://127.0.0.1:5180';
 export const FULL_STACK_CONTROL_WS_URL = 'ws://127.0.0.1:5180/control';
+export const FULL_STACK_SPA_ORIGIN = 'http://localhost:5176';
 
 export type FullStackUser = Readonly<{
     username: string;
@@ -66,11 +67,11 @@ export async function expectFullStackApiReady(
 ): Promise<void> {
     const configResponse = await request.get(`${config.apiBaseUrl}/api/config`, {
         headers: {
-            origin: 'http://127.0.0.1:5176',
+            origin: FULL_STACK_SPA_ORIGIN,
         },
     });
     expect(configResponse.ok()).toBe(true);
-    expect(configResponse.headers()['access-control-allow-origin']).toBe('http://127.0.0.1:5176');
+    expect(configResponse.headers()['access-control-allow-origin']).toBe(FULL_STACK_SPA_ORIGIN);
 }
 
 export async function loginThroughUi(

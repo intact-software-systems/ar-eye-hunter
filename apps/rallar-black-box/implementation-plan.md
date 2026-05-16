@@ -1382,27 +1382,44 @@ Deliverables:
 Create an automated regression path that starts the local server-side pieces and drives the visible SPA through the
 important user flows with at least two browsers.
 
-Status: completed for the first gated full-stack harness slice.
+Status: completed for the first gated full-stack harness slice and the first UI-driven real-payload delivery slice.
 
 Results:
 
 - Added `apps/rallar-black-box/playwright.full-stack.config.ts`, a dedicated Playwright config for full-stack
   Rallar Black Box automation.
-- Added root script `test:e2e:rallar-black-box:full-stack`.
+- Added root scripts for full-stack server startup and tests:
+  `dev:rallar-black-box:api-v1`, `dev:rallar-black-box:control-server`, `dev:rallar-black-box:servers`,
+  `dev:rallar-black-box:all`, `test:e2e:rallar-black-box:full-stack`, and focused `...:real:*` variants.
 - The full-stack config starts the SPA and control server by default, and starts `apps/api-v1` on
   `http://localhost:8080` only when `RALLAR_BLACK_BOX_FULL_STACK=1` is set.
+- The full-stack SPA origin is `http://localhost:5176` so manually started `apps/api-v1` instances work with their
+  default CORS allowlist.
+- API startup scripts and Playwright-managed API startup load `apps/api-v1/.env.local`, `apps/api-v1/.env`, and root
+  `.env`.
 - Added `tests/playwright/rallar-black-box/full-stack-helpers.ts` for env gating, API/CORS readiness checks,
   UI login, REST workbench request capture, control command enqueueing, and run polling.
 - Added a gated two-browser REST workbench test where two isolated browser contexts log in as different users, call
   `/api/auth/ws-ticket` through the Rallar Server tab, and assert `Authorization` plus `x-client-id` headers are sent.
 - Added a gated control-orchestration test that registers a browser agent with the control server, enqueues a command,
   polls the run snapshot, and verifies result/event telemetry plus visible UI evidence.
+- Added a gated Manual Rallar realtime delivery test where two isolated browser contexts log in, use the visible
+  Manual Rallar tab to create a real Rallar Server group, connect to the same room, send unique JSON from one browser
+  to the other with the real
+  `browser-rallar` provider, assert the receiving UI shows the payload in Received Data, and close both Manual Rallar
+  connections through the UI.
+- The Manual Rallar realtime test also checks Event Stream evidence for `rallar.browser.realtime.message` and asserts
+  no `rallar.bb.fake.*` topics are visible in the real-provider receiving browser.
+- Fixed Manual Rallar's real RTC `Create and join group` action so it emits an authenticated group-create
+  `http.request` before `rtc.connect`; this prevents real-provider joins from failing with `404 Group not found`.
 - Added CI-safe skip behavior when local full-stack dependencies are not intentionally enabled.
-- Verified the suite skips cleanly without `RALLAR_BLACK_BOX_FULL_STACK=1`; the enabled local run still requires a
-  root `DATABASE_URL` for `apps/api-v1`.
-- Remaining Iteration 23 work: expand the UI-driven real-provider path to cover Manual Rallar connect/send,
-  received-data assertions, diagnostics/topology/event-stream evidence, logout/cleanup, and no `rallar.bb.fake.*`
-  topics in real-provider runs.
+- Verified the suite skips cleanly without `RALLAR_BLACK_BOX_FULL_STACK=1`; if Playwright must start `apps/api-v1`
+  itself, the enabled local run still requires a root `DATABASE_URL`.
+- Verified with a manually running `apps/api-v1` on `http://localhost:8080`:
+  `RALLAR_BLACK_BOX_FULL_STACK=1 VITE_RALLAR_API_BASE_URL=http://localhost:8080 ... npm run test:e2e:rallar-black-box:full-stack`
+  passed with 3/3 tests.
+- Remaining Iteration 23 work: expand the UI-driven real-provider path to cover `messages.rtc`, broadcast/multicast
+  metadata, RTC Diagnostics, Topology, logout cleanup, and richer failure artifacts.
 
 Deliverables:
 
@@ -1412,8 +1429,9 @@ Deliverables:
   - `apps/rallar-black-box` on `http://localhost:5176`
 - test fixture that verifies required local environment and CORS setup before running live browser flows
 - two isolated browser contexts that log in as two different users or restored sessions
-- UI-driven flow covering login, app shell entry, Manual Rallar configure, connect, direct send, broadcast/multicast
-  metadata, received-data inbox, RTC diagnostics, topology, event stream filtering, and logout/cleanup
+- UI-driven flow covering login, app shell entry, Manual Rallar configure, connect, direct realtime send,
+  broadcast/multicast metadata, received-data inbox, RTC diagnostics, topology, event stream filtering, and
+  logout/cleanup
 - server-side REST workbench flow covering authenticated `GET` and `POST` requests against `apps/api-v1`
 - control-server orchestration flow covering agent registration, command enqueueing, result polling, stats/report
   capture, and graceful disconnect

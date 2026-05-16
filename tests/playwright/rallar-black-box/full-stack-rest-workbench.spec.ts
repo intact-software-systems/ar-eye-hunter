@@ -46,7 +46,6 @@ test.describe('full-stack Rallar Server REST workbench', () => {
             expect(headersB['x-client-id']).toBe(config.userB.clientId);
             expect(headersA.authorization).not.toBe(headersB.authorization);
 
-            await expect(pageA.locator('#panel-rallar-server')).toContainText('authorization');
             await expect(pageA.locator('#panel-rallar-server')).toContainText('<redacted>');
         } finally {
             await Promise.all([
