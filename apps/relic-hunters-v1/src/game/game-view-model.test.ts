@@ -81,6 +81,18 @@ describe('deriveRelicGameViewModel', () => {
         expect(viewModel.objective).toBe('Plan locked. Waiting for 1 hunter.');
     });
 
+    it('treats the first player as admin when older snapshots omit adminPlayerId', () => {
+        const legacySnapshot = { ...planningSnapshot(), adminPlayerId: undefined };
+        const viewModel = deriveRelicGameViewModel({
+            snapshot: legacySnapshot,
+            localPlayerId: 'alice-session',
+            draft: { kind: 'search' },
+            lang: 'en',
+        });
+
+        expect(viewModel.isAdmin).toBe(true);
+    });
+
     it('surfaces searched-room danger and final-round warnings', () => {
         const base = planningSnapshot();
         const snapshot: RelicPublicSnapshot = {

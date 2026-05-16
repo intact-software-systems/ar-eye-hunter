@@ -35,9 +35,11 @@ import {
 
 type AuthMode = 'login' | 'register';
 const IS_DEV = Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV);
+const INTRO_ENABLED = false;
+const ONBOARDING_ENABLED = false;
 
 export default function App() {
-    const [introComplete, setIntroComplete] = useState(false);
+    const [introComplete, setIntroComplete] = useState(!INTRO_ENABLED);
     const [lang, setLang] = useState<Lang>(
         () => (localStorage.getItem('relic-lang') as Lang | null) ?? 'en',
     );
@@ -62,7 +64,7 @@ export default function App() {
     const [ambientEnabled, setAmbientEnabled] = useState(false);
     const [revealedEvents, setRevealedEvents] = useState<readonly RelicEvent[]>([]);
     const [showOnboarding, setShowOnboarding] = useState(
-        () => !localStorage.getItem('relic-onboarding-v1'),
+        () => ONBOARDING_ENABLED && !localStorage.getItem('relic-onboarding-v1'),
     );
     const [digestEvents, setDigestEvents] = useState<readonly RelicEvent[]>([]);
     const [showDigest, setShowDigest] = useState(false);
@@ -97,6 +99,8 @@ export default function App() {
     );
     const currentPlayer = viewModel.currentPlayer;
     const currentRoom = viewModel.currentRoom;
+    const useInteractiveScene = game.snapshot?.phase === 'planning' ||
+        game.snapshot?.phase === 'finished';
     const currentRoomSummary = useMemo(
         () => game.rooms.find((room) => room.roomId === game.roomId),
         [game.roomId, game.rooms],
@@ -549,16 +553,20 @@ export default function App() {
     return (
         <GameHudLayout
             scene={(
-                <RelicScene
-                    snapshot={game.snapshot}
-                    localPlayerId={game.session?.sessionId}
-                    selectedRoomId={selectedRoomId}
-                    primedAction={scenePrimedAction}
-                    focusRoomId={eventFocusRoomId}
-                    rtcReady={game.diagnostics.rtcReady}
-                    onSelectRoom={setSelectedRoomId}
-                    onPrimeAction={primeSceneAction}
-                />
+                useInteractiveScene
+                    ? (
+                        <RelicScene
+                            snapshot={game.snapshot}
+                            localPlayerId={game.session?.sessionId}
+                            selectedRoomId={selectedRoomId}
+                            primedAction={scenePrimedAction}
+                            focusRoomId={eventFocusRoomId}
+                            rtcReady={game.diagnostics.rtcReady}
+                            onSelectRoom={setSelectedRoomId}
+                            onPrimeAction={primeSceneAction}
+                        />
+                    )
+                    : <RelicSceneBackdrop/>
             )}
             top={(
                 <AppTopBar
@@ -672,7 +680,11 @@ export default function App() {
                                         className={room.roomId === game.roomId
                                             ? 'room-row active'
                                             : 'room-row'}
-                                        onClick={() => game.joinRoom(room.roomId)}
+                                        onClick={() => {
+                                            if (room.roomId !== game.roomId) {
+                                                void game.joinRoom(room.roomId);
+                                            }
+                                        }}
                                     >
                                         <span>{room.name}</span>
                                         <small>{room.onlineMemberCount} online</small>
@@ -727,7 +739,7 @@ export default function App() {
                                     </button>
                                 ) : (
                                     <button type="button" className="primary lobby-ready-btn" onClick={joinExpedition}>
-                                        {UI[lang].heedTheCall}
+                                        {lang === 'no' ? 'Bli med som' : 'Join as'} {selectedCharacter.name}
                                     </button>
                                 )}
                                 {currentPlayer && isAdmin && game.snapshot && (
@@ -787,75 +799,72 @@ export default function App() {
                                     localPlayerId={game.session.sessionId}
                                 />
 
-                                {isLocked
-                                    ? (
-                                        <LockedPlanCard
-                                            action={lockedAction}
-                                            snapshot={game.snapshot}
-                                            localPlayerId={game.session.sessionId}
-                                        />
-                                    )
-                                    : (
-                                        <>
-                                            <div className="action-picker">
-                                                {RELIC_ACTION_KINDS.map((kind, index) => {
-                                                    const option = viewModel.actionOptions[kind];
-                                                    const cq = option.consequence;
-                                                    const isEscapeUrgent = kind === 'escape' &&
-                                                        currentRoom?.kind === 'exit' &&
-                                                        (currentPlayer?.relicIds.length ?? 0) > 0;
-                                                    return (
-                                                        <button
-                                                            type="button"
-                                                            key={kind}
-                                                            className={[
-                                                                draft.kind === kind ? 'active' : '',
-                                                                isEscapeUrgent ? 'action-escape-urgent' : '',
-                                                                !option.legal ? 'action-option-blocked' : '',
-                                                            ].filter(Boolean).join(' ')}
-                                                            aria-pressed={draft.kind === kind}
-                                                            onClick={() => selectActionKind(kind)}
-                                                        >
-                                                            <span>
-                                                                {option.info.label}
-                                                                <kbd className="action-key">{index + 1}</kbd>
-                                                            </span>
-                                                            <small>{option.info.noise}</small>
-                                                            <em className={`action-cq action-cq-${cq.status}`}>{cq.text}</em>
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
+                                {isLocked && (
+                                    <LockedPlanCard
+                                        action={lockedAction}
+                                        snapshot={game.snapshot}
+                                        localPlayerId={game.session.sessionId}
+                                    />
+                                )}
 
-                                            <div className="action-brief">
-                                                <strong>{actionInfo.label}</strong>
-                                                <span>{actionInfo.description}</span>
-                                                {submitBlocker && <small>{submitBlocker}</small>}
-                                                {partyCoordination && <small>{partyCoordination.actionHint}</small>}
-                                                {viewModel.actionBriefDanger && (
-                                                    <small className="action-brief-danger">! {viewModel.actionBriefDanger}</small>
-                                                )}
-                                            </div>
+                                <div className="action-picker">
+                                    {RELIC_ACTION_KINDS.map((kind, index) => {
+                                        const option = viewModel.actionOptions[kind];
+                                        const cq = option.consequence;
+                                        const isEscapeUrgent = kind === 'escape' &&
+                                            currentRoom?.kind === 'exit' &&
+                                            (currentPlayer?.relicIds.length ?? 0) > 0;
+                                        return (
+                                            <button
+                                                type="button"
+                                                key={kind}
+                                                className={[
+                                                    draft.kind === kind ? 'active' : '',
+                                                    isEscapeUrgent ? 'action-escape-urgent' : '',
+                                                    !option.legal ? 'action-option-blocked' : '',
+                                                ].filter(Boolean).join(' ')}
+                                                aria-pressed={draft.kind === kind}
+                                                onClick={() => selectActionKind(kind)}
+                                            >
+                                                <span>
+                                                    {option.info.label}
+                                                    <kbd className="action-key">{index + 1}</kbd>
+                                                </span>
+                                                <small>{option.info.noise}</small>
+                                                <em className={`action-cq action-cq-${cq.status}`}>{cq.text}</em>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
 
-                                            {draft.kind === 'move' && (
-                                                <MoveTargetChoices
-                                                    snapshot={game.snapshot}
-                                                    moveTargets={moveTargets}
-                                                    selectedRoomId={draft.targetRoomId ?? selectedRoomId ?? moveTargets[0]}
-                                                    exitDistances={exitDistances}
-                                                    onSelect={selectMoveTarget}
-                                                />
-                                            )}
-
-                                            {draft.kind === 'steal' && (
-                                                <StealTargetChoices
-                                                    stealTargets={stealTargets}
-                                                    selectedPlayerId={draft.targetPlayerId ?? stealTargets[0]?.playerId}
-                                                    onSelect={selectStealTarget}
-                                                />
-                                            )}
-                                        </>
+                                <div className="action-brief">
+                                    <strong>{actionInfo.label}</strong>
+                                    <span>{actionInfo.description}</span>
+                                    {isLocked && <small>Your submitted plan stays locked for this round.</small>}
+                                    {submitBlocker && !isLocked && <small>{submitBlocker}</small>}
+                                    {partyCoordination && <small>{partyCoordination.actionHint}</small>}
+                                    {viewModel.actionBriefDanger && (
+                                        <small className="action-brief-danger">! {viewModel.actionBriefDanger}</small>
                                     )}
+                                </div>
+
+                                {draft.kind === 'move' && (
+                                    <MoveTargetChoices
+                                        snapshot={game.snapshot}
+                                        moveTargets={moveTargets}
+                                        selectedRoomId={draft.targetRoomId ?? selectedRoomId ?? moveTargets[0]}
+                                        exitDistances={exitDistances}
+                                        onSelect={selectMoveTarget}
+                                    />
+                                )}
+
+                                {draft.kind === 'steal' && (
+                                    <StealTargetChoices
+                                        stealTargets={stealTargets}
+                                        selectedPlayerId={draft.targetPlayerId ?? stealTargets[0]?.playerId}
+                                        onSelect={selectStealTarget}
+                                    />
+                                )}
 
                                 {roundNoiseCount > 0 && (
                                     <div className={`noise-meter ${roundNoiseCount >= 3 ? 'noise-high' : roundNoiseCount >= 2 ? 'noise-medium' : 'noise-low'}`}>
@@ -1124,12 +1133,23 @@ export default function App() {
                 </div>
             )}
 
-            {!introComplete && (
+            {INTRO_ENABLED && !introComplete && (
                 <IntroScene onComplete={() => setIntroComplete(true)} lang={lang} />
             )}
                 </>
             )}
         />
+    );
+}
+
+function RelicSceneBackdrop() {
+    return (
+        <div className="relic-scene relic-scene-fallback" aria-label="Relic Hunters castle">
+            <div className="fallback-vista">
+                <strong>Relic Hunters</strong>
+                <span>The ruin waits beyond the gate.</span>
+            </div>
+        </div>
     );
 }
 
@@ -1859,7 +1879,7 @@ function ClueJournal({
                                 </span>
                                 <strong>
                                     {room?.name ?? investigation.roomId}
-                                    {target ? ` → ${target.name}` : ' — no target'}
+                                    {target ? ` - ${target.name}` : ' - no target'}
                                 </strong>
                                 <small>{investigation.summary}</small>
                             </button>

@@ -68,9 +68,16 @@ import type {
 const POS_TYPE_ID = 'relic.pos';
 const POS_BROADCAST_INTERVAL_MS = 80;
 const POS_MAX_AGE_MS = 2500;
+const MOVE_PROMPT_HOLD_MS = 1200;
+const SCENE_FRAME_INTERVAL_MS = 1000 / 30;
 
 type RelicPosUpdate = Readonly<{ pid: string; x: number; z: number; r: number }>;
 type RemotePosEntry = { x: number; z: number; yaw: number; t: number };
+type HeldMovePrompt = Readonly<{
+    roomId: string;
+    prompt: Extract<ScenePrompt, { kind: 'move' }>;
+    expiresAtMs: number;
+}>;
 
 type RelicSceneProps = Readonly<{
     snapshot?: RelicPublicSnapshot;
@@ -129,6 +136,7 @@ type SceneRuntime = Readonly<{
     rtcReady: { value: boolean };
     prompt: { value?: ScenePrompt };
     onPromptChange: { value(prompt?: ScenePrompt): void };
+    movePromptHold: { value?: HeldMovePrompt };
     inspection: { value?: InspectionFocus };
     doorPromptMarker: Mesh;
     doorPromptMarkerMaterial: StandardMaterial;
@@ -231,6 +239,7 @@ export function RelicScene({
                 preserveDrawingBuffer: true,
                 stencil: true,
             });
+            engine.setHardwareScalingLevel(1.25);
             setSceneError(undefined);
         } catch (error) {
             setSceneError(error instanceof Error ? error.message : String(error));
@@ -252,15 +261,16 @@ export function RelicScene({
         camera.fov = 1.02;
         camera.minZ = 0.05;
         camera.maxZ = 80;
+        scene.render();
 
-        // Post-processing pipeline
+        // Post-processing pipeline.
         const pipeline = new DefaultRenderingPipeline('relic-pipeline', true, scene, [camera]);
 
-        // Bloom — raised threshold to avoid blooming geometry edges
+        // Bloom stays visible without forcing oversized post-processing kernels.
         pipeline.bloomEnabled = true;
         pipeline.bloomThreshold = 0.52;
         pipeline.bloomWeight = 0.55;
-        pipeline.bloomKernel = 64;
+        pipeline.bloomKernel = 48;
         pipeline.bloomScale = 0.5;
 
         pipeline.sharpenEnabled = true;
@@ -270,11 +280,11 @@ export function RelicScene({
         pipeline.imageProcessing.contrast = 1.18;
         pipeline.imageProcessing.exposure = 1.06;
 
-        // ACES filmic tone mapping — rich blacks, bright highlights, cinematic look
+        // ACES filmic tone mapping.
         pipeline.imageProcessing.toneMappingEnabled = true;
         pipeline.imageProcessing.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
 
-        // Color grading: warm orange/amber highlights, cool blue-purple shadows
+        // Color grading: warm highlights, cool shadows.
         const curves = new ColorCurves();
         curves.globalSaturation = 18;
         curves.highlightsHue = 35;
@@ -284,43 +294,43 @@ export function RelicScene({
         pipeline.imageProcessing.colorCurvesEnabled = true;
         pipeline.imageProcessing.colorCurves = curves;
 
-        // Vignette — darkens edges for a cinematic feel; weight is updated per room
+        // Vignette weight is updated per room.
         pipeline.imageProcessing.vignetteEnabled = true;
         pipeline.imageProcessing.vignetteWeight = 2.4;
         pipeline.imageProcessing.vignetteStretch = 0.55;
         pipeline.imageProcessing.vignetteCameraFov = camera.fov;
         pipeline.imageProcessing.vignetteColor = new Color4(0.04, 0.02, 0.07, 0);
 
-        // Subtle grain for texture without softness
+        // Subtle grain for texture without softness.
         pipeline.grainEnabled = true;
         pipeline.grain.intensity = 6;
         pipeline.grain.animated = true;
 
-        // SSAO2 for ambient occlusion at full resolution to avoid blur smear
+        // SSAO2 gives depth, but keep it modest so HUD controls stay responsive.
         try {
-            const ssao = new SSAO2RenderingPipeline('relic-ssao', scene, { ssaoRatio: 1.0, blurRatio: 1 }, [camera]);
+            const ssao = new SSAO2RenderingPipeline('relic-ssao', scene, { ssaoRatio: 0.5, blurRatio: 0.5 }, [camera]);
             ssao.radius = 2.0;
             ssao.totalStrength = 0.9;
             ssao.base = 0.08;
             ssao.maxZ = 40;
-            ssao.samples = 8;
+            ssao.samples = 4;
         } catch {
-            // SSAO2 not available in this context — continue without it
+            // SSAO2 is not available in every browser context.
         }
 
         const glowLayer = new GlowLayer('relic-glow', scene);
         glowLayer.intensity = 1.45;
 
-        // Directional sun/moon light for hard-edged shadows and specular highlights on armour
+        // Directional sun/moon light for hard-edged shadows and specular highlights.
         const sunLight = new DirectionalLight('relic-sun', new Vector3(-0.55, -1.35, -0.45), scene);
         sunLight.position = new Vector3(25, 48, 25);
         sunLight.intensity = 2.0;
         sunLight.diffuse = new Color3(1.0, 0.93, 0.80);
         sunLight.specular = new Color3(1.0, 0.96, 0.88);
 
-        const shadows = new ShadowGenerator(1024, sunLight);
+        const shadows = new ShadowGenerator(512, sunLight);
         shadows.useBlurExponentialShadowMap = true;
-        shadows.blurKernel = 20;
+        shadows.blurKernel = 12;
         shadows.darkness = 0.42;
 
         // Auto-register every new mesh for shadow casting/receiving
@@ -443,6 +453,7 @@ export function RelicScene({
             rtcReady: { value: rtcReadyRef.current },
             prompt: { value: undefined },
             onPromptChange: { value: setScenePrompt },
+            movePromptHold: { value: undefined },
             inspection: { value: undefined },
             doorPromptMarker,
             doorPromptMarkerMaterial,
@@ -571,7 +582,14 @@ export function RelicScene({
         window.addEventListener('keydown', keydown);
         window.addEventListener('keyup', keyup);
 
+        scene.render();
+        let lastFrameMs = performance.now();
         engine.runRenderLoop(() => {
+            const now = performance.now();
+            if (now - lastFrameMs < SCENE_FRAME_INTERVAL_MS) {
+                return;
+            }
+            lastFrameMs = now;
             updateRuntime(runtime);
             scene.render();
         });
@@ -614,6 +632,7 @@ export function RelicScene({
         }
 
         syncScene(runtime, snapshot, localPlayerId, selectedRoomId);
+        runtime.scene.render();
     }, [localPlayerId, selectedRoomId, snapshot]);
 
     const roomStateKey = [localPlayerId, snapshot?.players.find((p) => p.playerId === localPlayerId)?.roomId].join(':');
@@ -1707,6 +1726,7 @@ function updateLocalRoomRoam(
         runtime.roamOffset.set(0, 0, 0);
         runtime.cameraYaw.value = Math.atan2(fallbackForward.x, fallbackForward.z);
         runtime.cameraPitch.value = 0;
+        runtime.movePromptHold.value = undefined;
     }
 
     const deltaSeconds = Math.min(0.05, runtime.engine.getDeltaTime() / 1000);
@@ -1732,6 +1752,8 @@ function updateLocalRoomRoam(
         movement.subtractInPlace(right);
     }
 
+    const movingForward = hasPressed(runtime, 'w') || hasPressed(runtime, 'arrowup');
+
     if (movement.lengthSquared() > 0) {
         movement.normalize();
         const speed = (hasPressed(runtime, 'shift') ? 2.55 : 1.62) *
@@ -1748,8 +1770,77 @@ function updateLocalRoomRoam(
     if (shouldExitInspection(runtime, room)) {
         runtime.inspection.value = undefined;
     }
+    const movementPrompt = movingForward && !runtime.inspection.value
+        ? movePromptForForwardIntent(runtime, room, forward)
+        : undefined;
+    if (movementPrompt) {
+        runtime.movePromptHold.value = {
+            roomId: room.id,
+            prompt: movementPrompt,
+            expiresAtMs: performance.now() + MOVE_PROMPT_HOLD_MS,
+        };
+        setRuntimePrompt(runtime, movementPrompt);
+        return forward;
+    }
+    const heldPrompt = runtime.movePromptHold.value;
+    if (heldPrompt && heldPrompt.roomId === room.id && heldPrompt.expiresAtMs > performance.now()) {
+        setRuntimePrompt(runtime, heldPrompt.prompt);
+        return forward;
+    }
+    if (heldPrompt && heldPrompt.expiresAtMs <= performance.now()) {
+        runtime.movePromptHold.value = undefined;
+    }
     updateScenePrompt(runtime, room, forward);
     return forward;
+}
+
+function movePromptForForwardIntent(
+    runtime: SceneRuntime,
+    room: RelicRoom,
+    forward: Vector3,
+): Extract<ScenePrompt, { kind: 'move' }> | undefined {
+    const snapshot = runtime.snapshot.value;
+    const localPlayer = snapshot?.players.find((player) =>
+        player.playerId === runtime.localPlayerId.value
+    );
+    if (
+        !snapshot ||
+        !localPlayer ||
+        localPlayer.escaped ||
+        localPlayer.defeated ||
+        snapshot.phase !== 'planning' ||
+        snapshot.submittedPlayerIds.includes(localPlayer.playerId)
+    ) {
+        return undefined;
+    }
+
+    const preferredTargetId = runtime.primedAction.value?.kind === 'move'
+        ? runtime.primedAction.value.targetRoomId
+        : runtime.objectiveTargetRoomId.value;
+    const openNeighbors = room.neighbors
+        .map((neighborId) => snapshot.map.find((candidate) => candidate.id === neighborId))
+        .filter((neighbor): neighbor is RelicRoom => !!neighbor && !neighbor.collapsed);
+    const preferred = preferredTargetId
+        ? openNeighbors.find((neighbor) => neighbor.id === preferredTargetId)
+        : undefined;
+    const candidates = preferred ? [preferred] : openNeighbors;
+
+    return candidates
+        .map((neighbor) => {
+            const direction = directionBetweenRooms(room, neighbor);
+            const vector = directionVector(direction);
+            return {
+                score: forward.x * vector.x + forward.z * vector.z,
+                prompt: {
+                    kind: 'move',
+                    roomId: neighbor.id,
+                    roomName: neighbor.name,
+                    direction,
+                } satisfies Extract<ScenePrompt, { kind: 'move' }>,
+            };
+        })
+        .filter((candidate) => candidate.score > 0.34)
+        .sort((left, right) => right.score - left.score)[0]?.prompt;
 }
 
 function updateInteractionHighlights(runtime: SceneRuntime): void {
@@ -1898,6 +1989,19 @@ function doorPromptLocalPosition(direction: CardinalDirection): Vector3 {
             return new Vector3(edge, 0, 0);
         case 'west':
             return new Vector3(-edge, 0, 0);
+    }
+}
+
+function directionVector(direction: CardinalDirection): Vector3 {
+    switch (direction) {
+        case 'north':
+            return new Vector3(0, 0, -1);
+        case 'south':
+            return new Vector3(0, 0, 1);
+        case 'east':
+            return new Vector3(1, 0, 0);
+        case 'west':
+            return new Vector3(-1, 0, 0);
     }
 }
 

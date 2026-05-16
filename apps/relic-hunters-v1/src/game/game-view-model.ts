@@ -142,6 +142,8 @@ export function deriveRelicGameViewModel({
     const turnStatus = deriveTurnStatus(snapshot, currentPlayer, submitBlocker);
     const warnings = deriveWarnings(snapshot, currentPlayer, currentRoom, draft, revealedEvents);
 
+    const adminPlayerId = snapshot?.adminPlayerId ?? snapshot?.players[0]?.playerId;
+
     return {
         snapshot,
         localPlayerId,
@@ -161,7 +163,7 @@ export function deriveRelicGameViewModel({
         lowHealthWarning: warnings.find((warning) => warning.kind === 'low-health'),
         roundLimitWarning: warnings.find((warning) => warning.kind === 'round-limit'),
         actionBriefDanger: warnings.find((warning) => warning.kind === 'search-danger')?.message,
-        isAdmin: currentPlayer?.playerId === snapshot?.adminPlayerId,
+        isAdmin: currentPlayer?.playerId === adminPlayerId,
         roundNoiseCount: roundNoiseCount(snapshot, revealedEvents),
     };
 }

@@ -413,7 +413,7 @@ function recommendedMoveRoute(
         }
     }
 
-    const relicTarget = openNeighbors.find((candidate) => roomHasHiddenRelic(snapshot, candidate.id));
+    const relicTarget = highestValueRelicNeighbor(snapshot, openNeighbors);
     if (relicTarget) {
         return { next: relicTarget, target: relicTarget, source: 'relic' };
     }
@@ -425,6 +425,36 @@ function recommendedMoveRoute(
     return fallback
         ? { next: fallback, target: fallback, source: 'fallback' }
         : undefined;
+}
+
+function highestValueRelicNeighbor(
+    snapshot: RelicPublicSnapshot,
+    neighbors: readonly RelicRoom[],
+): RelicRoom | undefined {
+    return neighbors
+        .map((neighbor) => ({
+            neighbor,
+            value: highestHiddenRelicValue(snapshot, neighbor.id),
+        }))
+        .filter((candidate) => candidate.value > 0)
+        .sort((left, right) => right.value - left.value)[0]?.neighbor;
+}
+
+function highestHiddenRelicValue(
+    snapshot: RelicPublicSnapshot,
+    roomId: string,
+): number {
+    return Math.max(
+        0,
+        ...snapshot.relics
+            .filter((relic) =>
+                relic.roomId === roomId &&
+                !relic.foundBy &&
+                !relic.carriedBy &&
+                !relic.escapedBy
+            )
+            .map((relic) => relic.value),
+    );
 }
 
 function nextStepToward(

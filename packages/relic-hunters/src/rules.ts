@@ -86,8 +86,6 @@ export function createRelicGame(
             { id: 'rusted-tanto',  name: 'Rusted Tantō',      value: 3, roomId: 'trap' },
             // Hallway — scattered find for sharp-eyed hunters
             { id: 'copper-coin',   name: 'Copper Coin',       value: 2, roomId: 'hallway' },
-            // Entrance — a small prize for the first brave step
-            { id: 'iron-lantern',  name: 'Iron Lantern',      value: 1, roomId: 'entrance' },
         ],
         roomInvestigations: [],
         players: [],
@@ -408,11 +406,8 @@ function resolveSearch(
     );
     const stateWithRelic = { ...state, relics };
 
-    // Only seal the room once all its relics have been found
     const moreRemain = relics.some((r) => r.roomId === player.roomId && !r.foundBy);
-    const investigatedState = moreRemain
-        ? stateWithRelic
-        : markRoomInvestigated(stateWithRelic, player, now, 'relic-found', relic.id);
+    const investigatedState = markRoomInvestigated(stateWithRelic, player, now, 'relic-found', relic.id);
 
     const message = moreRemain
         ? `${player.username} found the ${relic.name}. The room still hides more…`
@@ -607,14 +602,37 @@ function revealedRoomForInvestigation(
     const neighbors = room.neighbors
         .map((neighborId) => state.map.find((candidate) => candidate.id === neighborId))
         .filter((candidate): candidate is RelicRoom => !!candidate && !candidate.collapsed);
-    return neighbors.find((neighbor) =>
-        state.relics.some((relic) =>
-            relic.roomId === neighbor.id &&
-            !relic.foundBy &&
-            !relic.carriedBy &&
-            !relic.escapedBy
-        )
-    )?.id ?? neighbors[0]?.id;
+    return highestValueRelicNeighbor(state, neighbors)?.id ?? neighbors[0]?.id;
+}
+
+function highestValueRelicNeighbor(
+    state: RelicGameState,
+    neighbors: readonly RelicRoom[],
+): RelicRoom | undefined {
+    return neighbors
+        .map((neighbor) => ({
+            neighbor,
+            value: highestUnfoundRelicValue(state, neighbor.id),
+        }))
+        .filter((candidate) => candidate.value > 0)
+        .sort((left, right) => right.value - left.value)[0]?.neighbor;
+}
+
+function highestUnfoundRelicValue(
+    state: RelicGameState,
+    roomId: string,
+): number {
+    return Math.max(
+        0,
+        ...state.relics
+            .filter((relic) =>
+                relic.roomId === roomId &&
+                !relic.foundBy &&
+                !relic.carriedBy &&
+                !relic.escapedBy
+            )
+            .map((relic) => relic.value),
+    );
 }
 
 function resolveSteal(

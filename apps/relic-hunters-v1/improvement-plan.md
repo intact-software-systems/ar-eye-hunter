@@ -290,6 +290,16 @@ Exit criteria:
 
 Make the game scene clearer before adding more content.
 
+Status: in progress. The first pass prioritized playability and browser
+stability over new visual content. Auth/lobby now use a static backdrop instead
+of mounting the full Babylon runtime, the planning scene uses a capped render
+loop with lighter shadows/SSAO/bloom, and the scene paints an early frame so
+canvas readiness checks do not race heavy setup. Blocking intro/onboarding flows
+are disabled by default while the playable loop is stabilized. Shared gameplay
+rules were also tightened: Entrance no longer contains a hidden relic, relic
+discoveries immediately create durable room investigations, and route hints
+prefer higher-value adjacent relic leads.
+
 Deliverables:
 
 - define visual targets for rooms, exits, relics, players, and danger
