@@ -24,6 +24,7 @@ import {
 import { WebRtcConnectionService } from '../services/WebRtcConnectionService.ts';
 import type {
     ALOutboundEnqueueResult,
+    ALOutboundEnqueueStatus,
     ALOutboundRuntimeStores,
 } from '../alm/ALOutboundMessageRuntime.ts';
 import {
@@ -35,6 +36,7 @@ import {
     ALOutboundRepairTrackingPlan,
     ALOutboundSupersedenceTrackingPlan,
 } from '../alm/ALOutboundMessageRuntime.ts';
+import { CircuitBreaker, RateLimiter, toCircuitBreaker, toRateLimiter, } from '../resilience/Resilience.ts';
 
 export type WebRtcOverlayMulticastManagerOptions = Readonly<{
     qosProvider?: ALQosInputProvider;
@@ -61,6 +63,8 @@ export class WebRtcOverlayMulticastManager {
         public readonly overlayCache: ReadableKeyedValues<string, OverlayInfo>,
         public readonly multicasterFactory: WebRtcOverlayMulticasterFactory,
         options: WebRtcOverlayMulticastManagerOptions = {},
+        private readonly circuitBreaker: CircuitBreaker = toCircuitBreaker(),
+        private readonly rateLimiter: RateLimiter = toRateLimiter(),
     ) {
         this.qosProvider = options.qosProvider;
         this.outboundRuntime = new ALOutboundMessageRuntime<ALMessage>(
@@ -95,7 +99,73 @@ export class WebRtcOverlayMulticastManager {
     }
 
     async enqueueIfAbsent(msg: ALMessage): Promise<ALOutboundEnqueueResult> {
-        return await this.outboundRuntime.enqueueIfAbsent(msg);
+        const either =
+            await CircuitBreaker.tryToExecute<ALOutboundEnqueueResult>(
+                this.circuitBreaker,
+                () => {
+                    return RateLimiter.tryToExecuteOrDefault<ALOutboundEnqueueResult>(
+                        this.rateLimiter,
+                        () => this.outboundRuntime.enqueueIfAbsent(msg),
+                        WebRtcOverlayMulticastManager.toProtectedEnqueueResult(
+                            msg,
+                            'rate-limited',
+                            'RTC enqueue rate limit exceeded',
+                        ),
+                    );
+                },
+                WebRtcOverlayMulticastManager.isSuccessfulProtectedEnqueueResult,
+            );
+
+        return either.fold(
+            (error) => WebRtcOverlayMulticastManager.toCircuitBreakerResult(
+                msg,
+                error,
+            ),
+            (value) => value,
+        );
+    }
+
+    private static isSuccessfulProtectedEnqueueResult(
+        value: ALOutboundEnqueueResult,
+    ): boolean {
+        return value.status !== 'failed' &&
+            value.status !== 'rate-limited' &&
+            value.status !== 'circuit-open';
+    }
+
+    private static toCircuitBreakerResult(
+        msg: ALMessage,
+        error: Error,
+    ): ALOutboundEnqueueResult {
+        if (error.message === 'Not allowed to execute') {
+            return WebRtcOverlayMulticastManager.toProtectedEnqueueResult(
+                msg,
+                'circuit-open',
+                'RTC enqueue circuit breaker open',
+            );
+        }
+
+        return WebRtcOverlayMulticastManager.toProtectedEnqueueResult(
+            msg,
+            'failed',
+            `RTC enqueue failed: ${error.message}`,
+        );
+    }
+
+    private static toProtectedEnqueueResult(
+        msg: ALMessage,
+        status: Extract<
+            ALOutboundEnqueueStatus,
+            'rate-limited' | 'circuit-open' | 'failed'
+        >,
+        reason: string,
+    ): ALOutboundEnqueueResult {
+        return {
+            status,
+            message: msg,
+            entries: [],
+            reason,
+        };
     }
 
     async forwardIfRequired(

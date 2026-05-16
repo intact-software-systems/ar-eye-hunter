@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Temporal } from '@js-temporal/polyfill';
-import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
+import {
+    CircuitBreaker,
+    CircuitBreakerPolicy,
+    RateLimiter,
+} from '@shared/resilience/Resilience.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { EntityStatus, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
@@ -275,6 +279,92 @@ describe('WebRtc overlay services', () => {
         expect(await reserveRtcOutbox(queue)).toHaveLength(0);
     });
 
+    it('rate-limits RTC enqueue attempts before dispatch side effects', async () => {
+        const queue = new InMemoryQueueBox(new Map());
+        const channel = {
+            send: vi.fn(async () => Promise.resolve()),
+        };
+        const connectionService = createConnectionService(['peer-1'], {
+            'peer-1': {
+                channel,
+            },
+        });
+        const manager = new WebRtcOverlayMulticastManager(
+            queue,
+            connectionService as never,
+            createReadableCache({}),
+            createReadableCache({}),
+            (overlayId) =>
+                new WebRtcOverlayMulticastService(
+                    overlayId,
+                    connectionService as never,
+                ),
+            {},
+            CircuitBreaker.create(createCircuitBreakerPolicy()),
+            RateLimiter.init(1_000, 2),
+        );
+
+        const first = await manager.enqueueIfAbsent(
+            createUnicastRtcMessage('sender-rate-limit', 'msg-rate-limit-1'),
+        );
+        const second = await manager.enqueueIfAbsent(
+            createUnicastRtcMessage('sender-rate-limit', 'msg-rate-limit-2'),
+        );
+        const third = await manager.enqueueIfAbsent(
+            createUnicastRtcMessage('sender-rate-limit', 'msg-rate-limit-3'),
+        );
+
+        expect(first.status).toBe('sent-immediate');
+        expect(second.status).toBe('sent-immediate');
+        expect(third).toMatchObject({
+            status: 'rate-limited',
+            entries: [],
+            reason: 'RTC enqueue rate limit exceeded',
+        });
+        expect(channel.send).toHaveBeenCalledTimes(2);
+        expect(await reserveRtcOutbox(queue)).toHaveLength(0);
+    });
+
+    it('returns circuit-open without dispatch side effects when the enqueue breaker is open', async () => {
+        const queue = new InMemoryQueueBox(new Map());
+        const channel = {
+            send: vi.fn(async () => Promise.resolve()),
+        };
+        const connectionService = createConnectionService(['peer-1'], {
+            'peer-1': {
+                channel,
+            },
+        });
+        const circuitBreaker = CircuitBreaker.create(createCircuitBreakerPolicy(1));
+        circuitBreaker.failureCount(2);
+        const manager = new WebRtcOverlayMulticastManager(
+            queue,
+            connectionService as never,
+            createReadableCache({}),
+            createReadableCache({}),
+            (overlayId) =>
+                new WebRtcOverlayMulticastService(
+                    overlayId,
+                    connectionService as never,
+                ),
+            {},
+            circuitBreaker,
+            RateLimiter.init(1_000, 20),
+        );
+
+        const result = await manager.enqueueIfAbsent(
+            createUnicastRtcMessage('sender-circuit-open', 'msg-circuit-open'),
+        );
+
+        expect(result).toMatchObject({
+            status: 'circuit-open',
+            entries: [],
+            reason: 'RTC enqueue circuit breaker open',
+        });
+        expect(channel.send).not.toHaveBeenCalled();
+        expect(await reserveRtcOutbox(queue)).toHaveLength(0);
+    });
+
     it('returns an outbox entry for durable RTC sends', async () => {
         const queue = new InMemoryQueueBox(new Map());
         const connectionService = createConnectionService(['peer-1']);
@@ -510,6 +600,22 @@ function createConnectionService(
     };
 }
 
+function createUnicastRtcMessage(senderId: string, resourceId: string) {
+    return newALUnicastMessage(
+        senderId,
+        {
+            topicId: 'chat',
+            resourceId,
+            contextId: 'conversation-1',
+        },
+        'peer-1',
+        'chat.private-text.v1',
+        {
+            text: resourceId,
+        },
+    );
+}
+
 function createOverlayContext(
     memberSessionIds: readonly string[],
     nextHopSessionIds: readonly string[],
@@ -607,14 +713,19 @@ function createReadableCache<T>(valuesByKey: Record<string, T>) {
     };
 }
 
+function createCircuitBreakerPolicy(maxConsecutiveFailures: number = 10) {
+    const duration = Temporal.Duration.from({ seconds: 10 });
+    return new CircuitBreakerPolicy(
+        maxConsecutiveFailures,
+        duration,
+        duration,
+        duration,
+    );
+}
+
 function createResilienceDto() {
     return ResilienceDto.toResilienceDto(
-        new CircuitBreakerPolicy(
-            10,
-            Temporal.Duration.from({ seconds: 10 }),
-            Temporal.Duration.from({ seconds: 10 }),
-            Temporal.Duration.from({ seconds: 10 }),
-        ),
+        createCircuitBreakerPolicy(),
         1,
         10,
         1,

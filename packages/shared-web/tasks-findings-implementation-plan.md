@@ -274,6 +274,8 @@ Implemented after proof:
   - `superseded`
   - `expired`
   - `no-route`
+  - `rate-limited`
+  - `circuit-open`
   - `failed`
 - `WebRtcOverlayMulticastManager.enqueueIfAbsent()` and `WebRtcRxStreamerService.enqueueOutboxIfAbsent()` now preserve the structured result instead of collapsing outcomes to `[]`.
 - `WsQueueBoxClientService.enqueueOutboxIfAbsent()` and `WsQueueBoxServerService.enqueueOutboxIfAbsent()` now return the same structured result shape. WS cannot currently produce every RTC-specific route outcome, but it now reports immediate sends, queued sends, duplicate sends, and server-side no-recipient/no-route cases.
@@ -286,6 +288,48 @@ Implemented after proof:
   - optional `reason`
 - Same-message `enqueueIfAbsent()` is now idempotent at the AL outbound runtime boundary: a repeated enqueue returns `duplicate` and does not schedule another immediate send.
 - RTC immediate dispatch now preflights missing RTC channels and reports `no-route` instead of allowing that case to look like a successful immediate send.
+- `WebRtcOverlayMulticastManager.enqueueIfAbsent()` now has outbound abuse protection so an out-of-control SPA cannot flood RTC overlay planning, immediate sends, or durable outbox writes.
+- Default rate limit: allow 20 `messages.rtc` enqueue attempts per second per browser session/manager instance.
+- Rationale for 20/s:
+  - It is above the current `relic-hunters-v1` position broadcast cadence of one send every 80 ms, or 12.5/s, with operational headroom.
+  - `messages.rtc` is application-message delivery, not the preferred path for unbounded frame-rate telemetry. Higher-frequency streams should use `realtime` data-channel APIs with coalescing/backpressure semantics.
+  - A 20/s per-session cap keeps accidental render-loop sends from producing hundreds or thousands of multicast fanout attempts per second.
+- The default `RateLimiter` is `RateLimiter.init(1_000, 20)`.
+- The default `CircuitBreaker` uses 10 failures in a 10 second window with 10 second open/half-open/retry durations, matching the existing local resilience style.
+- `RateLimiter.tryToExecuteOrDefault(...)` returns `rate-limited` with the original `ALMessage`, empty `entries`, and reason `RTC enqueue rate limit exceeded`.
+- `CircuitBreaker.tryToExecute(...)` returns `circuit-open` with the original `ALMessage`, empty `entries`, and reason `RTC enqueue circuit breaker open` when execution is not allowed.
+- Unexpected enqueue exceptions return `failed` with a clear reason while still counting as circuit-breaker failures.
+- The circuit breaker treats normal handled outcomes as successful, including `enqueued`, `sent-immediate`, `duplicate`, `superseded`, `expired`, `no-route`, and `skipped`. It treats `rate-limited`, `circuit-open`, and `failed` as unsuccessful.
+- Added tests:
+  - configured limit of 2/s, third immediate `enqueueIfAbsent()` returns `rate-limited`
+  - rate-limited call does not write to RTC outbox and does not send on a channel
+  - successful calls still return `sent-immediate`
+  - forced/open circuit breaker returns `circuit-open` without enqueue/send side effects
+
+Protection applicability analysis added on 2026-05-16:
+
+- The RTC enqueue guard is appropriate at public/application ingress boundaries where one SPA call can trigger overlay planning, immediate data-channel sends, and durable outbox writes.
+- The same guard is riskier inside protocol paths because those paths preserve reliability, repair, signaling, and relay behavior. A blanket limiter there can make the system look healthy while silently dropping the traffic that would have recovered it.
+- `WsQueueBoxClientService.enqueueOutboxIfAbsent()` is the best direct follow-up candidate, but only after traffic class is made explicit. It is currently used by:
+  - `Rallar.messages.ws.send()` for application messages
+  - `WsRtcSignalingTransportUsingWsQBox.send()` for RTC offer/answer/ICE signaling
+  - `ALInboundMessageRuntime.sendControlMessage` for WS client ACK/NACK/repair control messages
+  - browser RTT measurement forwarding in `middleware.ts`
+- For browser WS, the proposed rule is: apply the same `rate-limited`/`circuit-open` result pattern to application `Rallar.messages.ws.send()` traffic, keep the default application-send limit near the RTC 20/s baseline, and prove that signaling/control traffic either bypasses it or uses a separate higher-priority policy.
+- `WsQueueBoxServerService.enqueueOutboxIfAbsent()` can use the same result vocabulary, but not the same 20/s global default. Server-side outbox sends include topic-router fanout and state-sync broadcasts; those can legitimately burst. Any server guard should be scoped by producer, room/topic, tenant/app namespace, or connection class, and should be proven with real API scenarios before implementation.
+- `WsQueueBoxServerService.sendToTargets()` and `forwardIncomingMessage()` bypass the durable outbox. They are possible future live-send protection points, especially for `live-only` topic fanout and server NACKs, but they need separate accounting from outbox enqueue because they do not return `ALOutboundEnqueueResult`.
+- `WebRtcOverlayMulticastManager.forwardIfRequired()` should not receive the same manager-level 20/s limiter. It is called from the inbound runtime's durable `forward-message` effect and is part of mesh propagation, subtree ACK completion, and repair behavior. A global limiter here can partition the overlay or turn one overloaded relay into message loss for downstream peers.
+- If forwarding protection is needed, it should be a separate proof item: high-threshold `forwardRateLimiter`, scoped by `fromPeerId` and overlay/topic where possible, with diagnostics for dropped/deferred forwards and real three-agent relay tests. Circuit-breaking repeated send failures may be useful, but the current `forwardIfRequired()` return type is `readonly ResourceEntry[]` and the caller ignores it, so observability/result shaping must come first.
+- Current RTC enqueue caveat: `WebRtcRxStreamerService` uses `multicast.enqueueIfAbsent()` for AL control messages generated by the inbound runtime. That means ACK/NACK/repair controls can currently be rate-limited by the RTC application-send guard. Before expanding the pattern, add proof tests around `isALControlTypeId(...)` traffic and decide whether RTC control messages bypass the app limiter or use a separate higher-priority limiter.
+- Do not put this pattern in `ALOutboundMessageRuntime.enqueueIfAbsent()` or the low-level QueueBox `enqueueIfAbsent()` primitives. Those layers do not know whether the caller is app traffic, signaling, control, repair, replay, or server fanout, so a shared limiter there would hide caller context and make correctness bugs harder to reason about.
+
+Follow-up proof tests before applying the pattern elsewhere:
+
+- Browser WS app send: exceeding the configured limit returns `rate-limited`, does not write to WS outbox, and does not send on an open socket.
+- Browser WS control/signaling: AL ACK/NACK/repair and `WsRtcSignalingTransportUsingWsQBox.send()` are not throttled by the app-message limiter, or return a separately documented status if a dedicated control/signaling policy is introduced.
+- RTC control traffic: ACK/NACK/repair generated by inbound RTC handling remains deliverable under normal message bursts and cannot be starved by user `messages.rtc.send()` loops.
+- RTC forwarding: a real three-agent scenario proves `forwardIfRequired()` behavior under relay load before adding any limiter; expected assertions should cover downstream receipt, outbox entries, and diagnostic status/metrics.
+- Server WS outbox: topic-router/state-sync broadcasts are tested with a realistic burst and scoped limiter policy before any default server-side guard is enabled.
 
 Verification completed:
 
@@ -380,12 +424,28 @@ Proof work:
   - one peer is known but not currently connected
 - Verify which peers are disconnected.
 - Add tests for `WsQueueBoxClientService.enableReconnect()` and intentional `JsonWebSocketClient.close(1000, 'rallar-disconnect')`.
+- Add tests for lifecycle callbacks on explicit and remote WS/RTC close events:
+  - WS closed intentionally by `Rallar.disconnect()`
+  - WS closed during `auth.logout()`
+  - WS closed unexpectedly while logged in
+  - RTC data channel closed remotely
+  - RTC peer connection closed/failed
+- Prove that WS reconnect is suppressed when the user is logged out or the close was intentional.
 
 Potential implementation after proof:
 
 - Add `allPeerIds()` or use `readAllPeerHealth()` to disconnect every known peer.
 - Add explicit reconnect suppression/disable path for intentional `Rallar.disconnect()`.
 - Make reconnect state visible through WS diagnostics.
+- Add Rallar lifecycle callbacks for transport closure/disconnect events:
+  - `rallar.ws.onLifecycle(listener)` or fold into `rallar.ws.onStatus(listener)`
+  - `rallar.rtc.onLifecycle(listener)` or fold into `rallar.rtc.onStatus(listener)`
+  - event fields should include transport, peerId/laneId where applicable, close code/reason where available, intentional vs unexpected, reconnect scheduled, and current session/login state.
+- Gate `WsQueueBoxClientService.enableReconnect()` behind explicit reconnect eligibility:
+  - do not reconnect after `Rallar.disconnect()`
+  - do not reconnect after `auth.logout()`
+  - do not reconnect when no valid session exists
+  - only reconnect unexpected closes while the facade/session still considers the user connected/logged in.
 
 Real scenario testing:
 
@@ -394,6 +454,7 @@ Real scenario testing:
   - establish RTC
   - call `rallar.disconnect()` in one browser
   - assert no background reconnect occurs
+  - assert WS and RTC lifecycle callbacks report intentional close/disconnect
   - assert remote side observes expected close/disconnect state
   - reconnect intentionally and verify delivery still works
 
@@ -401,6 +462,8 @@ Exit criteria:
 
 - Cleanup behavior is proven before and after any fix.
 - Intentional disconnect does not leave hidden peers or background reconnect tasks.
+- WS reconnect never runs after logout unless the user explicitly reconnects/logs in again.
+- Applications can subscribe to WS/RTC lifecycle callbacks and distinguish intentional close, unexpected close, reconnecting, reconnected, and reconnect-suppressed states.
 
 ## Iteration 6: Add Wait APIs For RTC And WS
 

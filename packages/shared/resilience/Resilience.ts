@@ -300,6 +300,7 @@ export class CircuitBreaker {
     static async tryToExecute<T>(
         circuitBreaker: CircuitBreaker,
         supplier: () => Promise<T>,
+        isSuccessful: (result: T) => boolean = () => true,
     ): Promise<Either<Error, T>> {
         try {
             if (!circuitBreaker.allow()) {
@@ -307,7 +308,12 @@ export class CircuitBreaker {
             }
 
             const value = await supplier();
-            circuitBreaker.success();
+            if(isSuccessful(value)) {
+                circuitBreaker.success();
+            }
+            else {
+                circuitBreaker.failure();
+            }
 
             return Either.ofRight(value);
         } catch (e) {
@@ -574,4 +580,29 @@ export class RateLimiter {
     isAllowed(): boolean {
         return this.slidingWindow.sumInWindow() < this.policy.maxNumberToAllow;
     }
+}
+
+
+export function toRateLimiter(
+    windowDurationMs: number = 1_000,
+    maxNumber: number = 20
+): RateLimiter {
+    return RateLimiter.init(
+        windowDurationMs,
+        maxNumber
+    );
+}
+
+export function toCircuitBreaker(
+    maxConsecutiveFailures: number = 10,
+    duration: Temporal.Duration = Temporal.Duration.from({ seconds: 10 })
+): CircuitBreaker {
+    return CircuitBreaker.create(
+        new CircuitBreakerPolicy(
+            maxConsecutiveFailures,
+            duration,
+            duration,
+            duration
+        )
+    );
 }

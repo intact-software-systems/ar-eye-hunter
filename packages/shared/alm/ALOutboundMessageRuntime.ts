@@ -103,6 +103,8 @@ export type ALOutboundEnqueueStatus =
     | 'superseded'
     | 'expired'
     | 'no-route'
+    | 'rate-limited'
+    | 'circuit-open'
     | 'failed';
 
 export type ALOutboundEnqueueResult = Readonly<{
