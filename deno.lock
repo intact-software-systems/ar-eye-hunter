@@ -1684,6 +1684,21 @@
           ]
         }
       },
+      "apps/rallar-black-box": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@types/react-dom@19",
+            "npm:@types/react@19",
+            "npm:@vitejs/plugin-react@5",
+            "npm:graphology@0.26",
+            "npm:react-dom@19",
+            "npm:react@19",
+            "npm:sigma@^3.0.3",
+            "npm:typescript@^5.3.3",
+            "npm:vite@^8.0.11"
+          ]
+        }
+      },
       "apps/relic-hunters-v1": {
         "packageJson": {
           "dependencies": [

@@ -27,6 +27,7 @@
     "check:rallar-black-box-control": "cd apps/rallar-black-box-control-server && deno task check",
     "test:rallar-black-box-control": "cd apps/rallar-black-box-control-server && deno task test",
     "test:e2e:rallar-black-box": "playwright test --config apps/rallar-black-box/playwright.config.ts",
+    "test:e2e:rallar-black-box:full-stack": "playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts",
     "test": "vitest run",
     "test:playwright": "playwright test",
     "test:playwright:relic": "playwright test tests/playwright/relic-hunters"

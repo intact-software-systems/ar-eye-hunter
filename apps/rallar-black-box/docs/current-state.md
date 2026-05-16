@@ -6,7 +6,7 @@ actions, remote control commands, runtime events, stats, and reports use one com
 
 ## Implemented
 
-The implementation is complete through Iteration 22 in `implementation-plan.md`.
+The implementation is complete through the first Iteration 23 full-stack harness slice in `implementation-plan.md`.
 
 The shared facade exists in `packages/shared-test/rallar-bb-test` and defines:
 
@@ -33,6 +33,8 @@ The SPA currently provides:
 - persistent global header state for provider, control, runtime, room, active command, first failure, user, and session
 - authenticated Rallar Server REST workbench with endpoint presets, raw request editing, auth header injection, response
   rendering, cURL export, and black-box `http.request` command export
+- gated full-stack Playwright harness for API-v1, control-server, SPA, two-browser REST workbench login, and
+  control-orchestration smoke coverage
 - manual Rallar workbench for quick configure, join, connect, send, health, close, and reset actions
 - received-data inbox derived from runtime message events
 - RTC diagnostics panel for connect phases, membership, latency, failure focus, and copyable diagnostic bundles
@@ -164,4 +166,5 @@ npm run test -- packages/tests/rallar-black-box/rallar-server-workbench.test.ts
 npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/tabbed-navigation.spec.ts
 npm run test -- packages/tests/shared-test/rallar-provider-parity.test.ts
 npm run test:e2e:rallar-black-box
+RALLAR_BLACK_BOX_FULL_STACK=1 npm run test:e2e:rallar-black-box:full-stack
 ```

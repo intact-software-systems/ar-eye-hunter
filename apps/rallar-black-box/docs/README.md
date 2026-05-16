@@ -1,6 +1,6 @@
 # Rallar Black Box Documentation
 
-This folder documents the current state of `apps/rallar-black-box` after Iteration 22.
+This folder documents the current state of `apps/rallar-black-box` after the first Iteration 23 full-stack harness slice.
 
 The app is a browser-based black-box test agent and visible debugging workbench for Rallar RTC, WebSocket, and HTTP test
 flows. It uses the shared `rallar-bb-test` command contract, can connect to a WebSocket control server, streams results
@@ -18,6 +18,8 @@ WebSocket, and browser HTTP commands when a real Rallar environment is configure
 - [Command Execution](./command-execution.md): how commands move from UI, recipes, or control server to runtime results.
 - [Benefits And Use Cases](./benefits-and-use-cases.md): why this tool exists and what it is useful for.
 - [Testing Showcases](./testing-showcases.md): examples from small manual tests to larger controlled runs.
+- [Full-stack UI Automation Tests](./full-stack-ui-automation-tests.md): how to author Iteration 23-style Playwright
+  tests for simulated UI, control-agent, API-backed, and live two-browser flows.
 
 ## Quick Start
 
@@ -56,6 +58,12 @@ Run the browser-agent smoke test:
 
 ```sh
 npm run test:e2e:rallar-black-box
+```
+
+Run the gated full-stack automation slice:
+
+```sh
+RALLAR_BLACK_BOX_FULL_STACK=1 npm run test:e2e:rallar-black-box:full-stack
 ```
 
 The live browser-Rallar smoke is included in that suite but skipped unless the required `VITE_RALLAR_*` environment

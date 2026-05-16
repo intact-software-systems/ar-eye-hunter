@@ -1382,11 +1382,27 @@ Deliverables:
 Create an automated regression path that starts the local server-side pieces and drives the visible SPA through the
 important user flows with at least two browsers.
 
-Status: planned.
+Status: completed for the first gated full-stack harness slice.
 
 Results:
 
-- Not started.
+- Added `apps/rallar-black-box/playwright.full-stack.config.ts`, a dedicated Playwright config for full-stack
+  Rallar Black Box automation.
+- Added root script `test:e2e:rallar-black-box:full-stack`.
+- The full-stack config starts the SPA and control server by default, and starts `apps/api-v1` on
+  `http://localhost:8080` only when `RALLAR_BLACK_BOX_FULL_STACK=1` is set.
+- Added `tests/playwright/rallar-black-box/full-stack-helpers.ts` for env gating, API/CORS readiness checks,
+  UI login, REST workbench request capture, control command enqueueing, and run polling.
+- Added a gated two-browser REST workbench test where two isolated browser contexts log in as different users, call
+  `/api/auth/ws-ticket` through the Rallar Server tab, and assert `Authorization` plus `x-client-id` headers are sent.
+- Added a gated control-orchestration test that registers a browser agent with the control server, enqueues a command,
+  polls the run snapshot, and verifies result/event telemetry plus visible UI evidence.
+- Added CI-safe skip behavior when local full-stack dependencies are not intentionally enabled.
+- Verified the suite skips cleanly without `RALLAR_BLACK_BOX_FULL_STACK=1`; the enabled local run still requires a
+  root `DATABASE_URL` for `apps/api-v1`.
+- Remaining Iteration 23 work: expand the UI-driven real-provider path to cover Manual Rallar connect/send,
+  received-data assertions, diagnostics/topology/event-stream evidence, logout/cleanup, and no `rallar.bb.fake.*`
+  topics in real-provider runs.
 
 Deliverables:
 
