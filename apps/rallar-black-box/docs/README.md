@@ -1,11 +1,11 @@
 # Rallar Black Box Documentation
 
-This folder documents the current state of `apps/rallar-black-box` after Iteration 21.
+This folder documents the current state of `apps/rallar-black-box` after Iteration 22.
 
 The app is a browser-based black-box test agent and visible debugging workbench for Rallar RTC, WebSocket, and HTTP test
 flows. It uses the shared `rallar-bb-test` command contract, can connect to a WebSocket control server, streams results
 and runtime events, and provides tabbed UI surfaces for manual testing, diagnostics, received data, reports, topology,
-event inspection, and Rallar Server context.
+event inspection, and authenticated Rallar Server REST calls.
 
 The default provider is simulated so the UI works without a backend. Real browser execution is available with
 `provider=browser-rallar`; it uses the browser Rallar runtime for auth, connect, room join, realtime send, browser
@@ -66,6 +66,8 @@ delivery smokes.
 
 - `src/client-defaults.ts`: out-of-the-box default values for local workbench and control-agent bootstrap.
 - `src/app-tabs.ts`: tab IDs, URL parsing, aliases, and keyboard-order helpers for the operational shell.
+- `src/rallar-server-workbench.ts`: request construction, endpoint presets, auth header injection, response parsing,
+  redaction, cURL export, and black-box command export for the Rallar Server tab.
 - `src/browser-rallar-runtime.ts`: lazy bridge from SPA provider mode to the browser Rallar runtime.
 - `src/runtime-store.ts`: app state store, bootstrap modes, local command execution, and control client integration.
 - `src/control-client.ts`: browser WebSocket control client.

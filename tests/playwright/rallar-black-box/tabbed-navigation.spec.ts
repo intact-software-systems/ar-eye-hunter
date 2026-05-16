@@ -47,3 +47,30 @@ test('keeps manual form and event filters mounted across tab changes', async ({ 
     await page.getByRole('tab', { name: 'Local Workbench' }).click();
     await expect(fixtureSelect).toHaveValue('provider-parity');
 });
+
+test('sends a Rallar Server REST request from the server tab', async ({ page }) => {
+    await page.route('http://localhost:8080/api/config', async route => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                apiBaseUrl: 'http://localhost:8080',
+                wsBaseUrl: 'ws://localhost:8080',
+                endpoints: {
+                    createWs: '/api/auth/ws-ticket',
+                },
+            }),
+        });
+    });
+
+    await page.goto(
+        '/?provider=simulated&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&tab=rallar-server',
+    );
+
+    const serverPanel = page.locator('#panel-rallar-server');
+    await serverPanel.getByRole('button', { name: 'Send' }).click();
+
+    await expect(serverPanel).toContainText('200 OK');
+    await expect(serverPanel).toContainText('"apiBaseUrl": "http://localhost:8080"');
+    await expect(serverPanel).toContainText('"kind": "http.request"');
+});

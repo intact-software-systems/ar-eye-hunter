@@ -68,6 +68,21 @@ import {
     nextAppTab,
     type AppTabId,
 } from './app-tabs.ts';
+import {
+    RALLAR_SERVER_ENDPOINT_PRESETS,
+    applyRallarServerEndpointPreset,
+    defaultRallarServerWorkbenchVariables,
+    executeRallarServerRestRequest,
+    fetchRallarServerOpenApiEndpoints,
+    redactRallarServerValue,
+    toRallarServerBlackBoxCommand,
+    toRallarServerCurl,
+    type RallarServerEndpointPreset,
+    type RallarServerResponseBodyMode,
+    type RallarServerRestMethod,
+    type RallarServerRestRequestInput,
+    type RallarServerRestResponse,
+} from './rallar-server-workbench.ts';
 
 type CommandQueueRow = Readonly<{
     id: string;
@@ -2021,7 +2036,133 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
 }) {
     const config = selectRallarBlackBoxCurrentConfig(state);
     const providerMode = rallarBlackBoxProviderModeFromConfig(config);
-    const apiBaseUrl = config?.apiBaseUrl ?? bootstrap.apiBaseUrl;
+    const variables = useMemo(
+        () => defaultRallarServerWorkbenchVariables({
+            principalId: authSession?.clientId ?? config?.actor ?? bootstrap.actor,
+            sessionId: authSession?.sessionId ?? config?.sessionId ?? bootstrap.sessionId,
+            groupId: config?.roomId ?? bootstrap.roomId,
+            username: authSession?.username ?? config?.actor ?? bootstrap.actor,
+        }),
+        [
+            authSession?.clientId,
+            authSession?.sessionId,
+            authSession?.username,
+            bootstrap.actor,
+            bootstrap.roomId,
+            bootstrap.sessionId,
+            config?.actor,
+            config?.roomId,
+            config?.sessionId,
+        ],
+    );
+    const initialDraft = useMemo(
+        () => applyRallarServerEndpointPreset(RALLAR_SERVER_ENDPOINT_PRESETS[0], variables),
+        [variables],
+    );
+    const [apiBaseUrl, setApiBaseUrl] = useState(config?.apiBaseUrl ?? bootstrap.apiBaseUrl);
+    const [selectedPresetId, setSelectedPresetId] = useState(RALLAR_SERVER_ENDPOINT_PRESETS[0].presetId);
+    const [serverOpenApiPresets, setServerOpenApiPresets] = useState<readonly RallarServerEndpointPreset[]>([]);
+    const [method, setMethod] = useState<RallarServerRestMethod>(initialDraft.method);
+    const [path, setPath] = useState(initialDraft.path);
+    const [headersText, setHeadersText] = useState(initialDraft.headersText);
+    const [queryText, setQueryText] = useState(initialDraft.queryText);
+    const [bodyText, setBodyText] = useState(initialDraft.bodyText);
+    const [responseBodyMode, setResponseBodyMode] = useState<RallarServerResponseBodyMode>(
+        initialDraft.responseBodyMode,
+    );
+    const [attachAuth, setAttachAuth] = useState(initialDraft.attachAuth);
+    const [timeoutMs, setTimeoutMs] = useState(5_000);
+    const [busy, setBusy] = useState(false);
+    const [openApiBusy, setOpenApiBusy] = useState(false);
+    const [localError, setLocalError] = useState<string | undefined>();
+    const [response, setResponse] = useState<RallarServerRestResponse | undefined>();
+    const allPresets = useMemo(
+        () => [...RALLAR_SERVER_ENDPOINT_PRESETS, ...serverOpenApiPresets],
+        [serverOpenApiPresets],
+    );
+    const activePreset = allPresets.find(preset => preset.presetId === selectedPresetId) ??
+        RALLAR_SERVER_ENDPOINT_PRESETS[0];
+    const requestInput: RallarServerRestRequestInput = {
+        apiBaseUrl,
+        method,
+        path,
+        headersText,
+        queryText,
+        bodyText,
+        responseBodyMode,
+        attachAuth,
+        timeoutMs,
+        authSession,
+        forbidPlaceholderBaseUrl: providerMode === 'browser-rallar',
+    };
+    const commandPreview = useMemo(() => {
+        try {
+            return json(toRallarServerBlackBoxCommand(requestInput, 'rallar-server-rest-request'));
+        } catch (error) {
+            return error instanceof Error ? error.message : String(error);
+        }
+    }, [requestInput]);
+    const responseBodyText = response
+        ? response.bodyKind === 'json'
+            ? json(redactRallarServerValue(response.bodyJson, authSession))
+            : response.bodyText || '-'
+        : 'No response';
+    const responseHeadersText = response
+        ? json(redactRallarServerValue(response.headers, authSession))
+        : '{}';
+
+    useEffect(() => {
+        setApiBaseUrl(config?.apiBaseUrl ?? bootstrap.apiBaseUrl);
+    }, [bootstrap.apiBaseUrl, config?.apiBaseUrl]);
+
+    const applyPreset = (preset: RallarServerEndpointPreset): void => {
+        const draft = applyRallarServerEndpointPreset(preset, variables);
+        setSelectedPresetId(preset.presetId);
+        setMethod(draft.method);
+        setPath(draft.path);
+        setHeadersText(draft.headersText);
+        setQueryText(draft.queryText);
+        setBodyText(draft.bodyText);
+        setResponseBodyMode(draft.responseBodyMode);
+        setAttachAuth(draft.attachAuth);
+        setLocalError(undefined);
+    };
+
+    const sendRequest = async (): Promise<void> => {
+        setBusy(true);
+        setLocalError(undefined);
+        try {
+            setResponse(await executeRallarServerRestRequest(requestInput));
+        } catch (error) {
+            setLocalError(error instanceof Error ? error.message : String(error));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const refreshOpenApi = async (): Promise<void> => {
+        setOpenApiBusy(true);
+        setLocalError(undefined);
+        try {
+            setServerOpenApiPresets(await fetchRallarServerOpenApiEndpoints(apiBaseUrl));
+        } catch (error) {
+            setLocalError(error instanceof Error ? error.message : String(error));
+        } finally {
+            setOpenApiBusy(false);
+        }
+    };
+
+    const copyCurl = (): void => {
+        try {
+            void navigator.clipboard?.writeText(toRallarServerCurl(requestInput));
+        } catch (error) {
+            setLocalError(error instanceof Error ? error.message : String(error));
+        }
+    };
+
+    const copyCommand = (): void => {
+        void navigator.clipboard?.writeText(commandPreview);
+    };
 
     return (
         <section className="panel rallar-server-panel">
@@ -2031,7 +2172,7 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
                     {authSession ? 'authenticated' : 'no session'}
                 </span>
             </div>
-            <dl className="config-list">
+            <dl className="config-list rest-context-list">
                 <div>
                     <dt>API base</dt>
                     <dd>{apiBaseUrl}</dd>
@@ -2061,10 +2202,181 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
                     <dd>{control.state}</dd>
                 </div>
                 <div>
-                    <dt>REST workbench</dt>
-                    <dd>planned</dd>
+                    <dt>Preset source</dt>
+                    <dd>{serverOpenApiPresets.length > 0 ? 'server OpenAPI' : 'local OpenAPI'}</dd>
                 </div>
             </dl>
+            <div className="rest-workbench-grid">
+                <label className="field">
+                    <span>Endpoint</span>
+                    <select
+                        value={selectedPresetId}
+                        onChange={event => {
+                            const nextPreset = allPresets.find(preset =>
+                                preset.presetId === event.target.value
+                            );
+                            if (nextPreset) {
+                                applyPreset(nextPreset);
+                            }
+                        }}
+                    >
+                        {allPresets.map(preset => (
+                            <option key={preset.presetId} value={preset.presetId}>
+                                {preset.tag} - {preset.label}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+                <label className="field">
+                    <span>API Base URL</span>
+                    <input value={apiBaseUrl} onChange={event => setApiBaseUrl(event.target.value)}/>
+                </label>
+                <label className="field compact-field">
+                    <span>Method</span>
+                    <select
+                        value={method}
+                        onChange={event => setMethod(event.target.value as RallarServerRestMethod)}
+                    >
+                        {(['GET', 'POST', 'PUT', 'DELETE'] as const).map(entry => (
+                            <option key={entry} value={entry}>{entry}</option>
+                        ))}
+                    </select>
+                </label>
+                <label className="field compact-field">
+                    <span>Timeout</span>
+                    <input
+                        type="number"
+                        min={0}
+                        value={timeoutMs}
+                        onChange={event => setTimeoutMs(Number(event.target.value))}
+                    />
+                </label>
+                <label className="field rest-path-field">
+                    <span>Path</span>
+                    <input value={path} onChange={event => setPath(event.target.value)}/>
+                </label>
+                <label className="field compact-field">
+                    <span>Body Mode</span>
+                    <select
+                        value={responseBodyMode}
+                        onChange={event =>
+                            setResponseBodyMode(event.target.value as RallarServerResponseBodyMode)}
+                    >
+                        {(['auto', 'json', 'text', 'none'] as const).map(entry => (
+                            <option key={entry} value={entry}>{entry}</option>
+                        ))}
+                    </select>
+                </label>
+                <label className="check-field rest-auth-check">
+                    <input
+                        type="checkbox"
+                        checked={attachAuth}
+                        onChange={event => setAttachAuth(event.target.checked)}
+                    />
+                    <span>Attach auth</span>
+                </label>
+            </div>
+            <div className="rest-editors">
+                <label className="json-editor">
+                    <span>Query JSON</span>
+                    <textarea
+                        value={queryText}
+                        onChange={event => setQueryText(event.target.value)}
+                        spellCheck={false}
+                    />
+                </label>
+                <label className="json-editor">
+                    <span>Headers JSON</span>
+                    <textarea
+                        value={headersText}
+                        onChange={event => setHeadersText(event.target.value)}
+                        spellCheck={false}
+                    />
+                </label>
+                <label className="json-editor">
+                    <span>Body JSON</span>
+                    <textarea
+                        value={bodyText}
+                        onChange={event => setBodyText(event.target.value)}
+                        spellCheck={false}
+                        disabled={method === 'GET'}
+                    />
+                </label>
+            </div>
+            <div className="rest-actions">
+                <button type="button" onClick={() => void sendRequest()} disabled={busy}>
+                    {busy ? 'Sending' : 'Send'}
+                </button>
+                <button type="button" onClick={() => applyPreset(activePreset)} disabled={busy}>
+                    Reset Preset
+                </button>
+                <button type="button" onClick={() => void refreshOpenApi()} disabled={openApiBusy}>
+                    {openApiBusy ? 'Loading OpenAPI' : 'Refresh OpenAPI'}
+                </button>
+                <button type="button" onClick={copyCurl}>
+                    Copy cURL
+                </button>
+                <button type="button" onClick={copyCommand}>
+                    Copy Command
+                </button>
+            </div>
+            {localError && (
+                <div className="workbench-error" role="status">
+                    {localError}
+                </div>
+            )}
+            <div className="rest-response-grid">
+                <section className="rest-subpanel">
+                    <div className="section-heading">
+                        <h3>Response</h3>
+                        <span className={`pill ${response?.ok ? 'good' : response ? 'bad' : 'muted'}`}>
+                            {response
+                                ? response.status > 0
+                                    ? String(response.status)
+                                    : response.error?.kind ?? 'failed'
+                                : 'idle'}
+                        </span>
+                    </div>
+                    <dl className="result-summary">
+                        <div>
+                            <dt>Status</dt>
+                            <dd>{response ? `${response.status} ${response.statusText}` : '-'}</dd>
+                        </div>
+                        <div>
+                            <dt>Duration</dt>
+                            <dd>{formatDuration(response?.durationMs)}</dd>
+                        </div>
+                        <div>
+                            <dt>Body</dt>
+                            <dd>{response?.bodyKind ?? '-'}</dd>
+                        </div>
+                        <div>
+                            <dt>Error</dt>
+                            <dd>{response?.error?.kind ?? 'none'}</dd>
+                        </div>
+                    </dl>
+                    {response?.error && (
+                        <div className="workbench-error" role="status">
+                            {response.error.message}
+                        </div>
+                    )}
+                    <pre className="json-block">{responseBodyText}</pre>
+                </section>
+                <section className="rest-subpanel">
+                    <div className="section-heading">
+                        <h3>Headers</h3>
+                        <span>{response ? response.url : '-'}</span>
+                    </div>
+                    <pre className="json-block">{responseHeadersText}</pre>
+                </section>
+                <section className="rest-subpanel">
+                    <div className="section-heading">
+                        <h3>Command</h3>
+                        <span>{method}</span>
+                    </div>
+                    <pre className="json-block">{commandPreview}</pre>
+                </section>
+            </div>
         </section>
     );
 }

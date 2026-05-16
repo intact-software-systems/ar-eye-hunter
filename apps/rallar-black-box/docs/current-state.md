@@ -6,7 +6,7 @@ actions, remote control commands, runtime events, stats, and reports use one com
 
 ## Implemented
 
-The implementation is complete through Iteration 21 in `implementation-plan.md`.
+The implementation is complete through Iteration 22 in `implementation-plan.md`.
 
 The shared facade exists in `packages/shared-test/rallar-bb-test` and defines:
 
@@ -31,6 +31,8 @@ The SPA currently provides:
 - tabbed operational shell for `Manual Rallar`, `Topology`, `RTC Diagnostics`, `Local Workbench`, `Event Stream`, and
   `Rallar Server`
 - persistent global header state for provider, control, runtime, room, active command, first failure, user, and session
+- authenticated Rallar Server REST workbench with endpoint presets, raw request editing, auth header injection, response
+  rendering, cURL export, and black-box `http.request` command export
 - manual Rallar workbench for quick configure, join, connect, send, health, close, and reset actions
 - received-data inbox derived from runtime message events
 - RTC diagnostics panel for connect phases, membership, latency, failure focus, and copyable diagnostic bundles
@@ -89,8 +91,10 @@ out when `rallarLogoutOnClose=1`, and records cleanup diagnostics. Remote reset 
 
 The app shell is tabbed. The active tab is stored in the `tab` query parameter, and inactive tab panes remain mounted
 while hidden so manual form edits, recipe JSON, selected commands, topology filters, and event filters survive normal
-navigation. The `Rallar Server` tab currently summarizes the authenticated API context; the REST request workbench is
-planned next.
+navigation. The `Rallar Server` tab can call API v1 REST endpoints directly from the browser. It starts from curated
+OpenAPI-derived presets, can refresh endpoint rows from `/api/openapi.json`, injects the active browser auth session
+when requested, redacts access tokens in visible exports, and can copy the selected request as a black-box
+`http.request` command.
 
 This means the current app is already useful for:
 
@@ -141,7 +145,7 @@ The main gaps are:
 - long-running and seeded-random runs are still planned
 - large run artifact retention and report browsing are not implemented
 - auth and permission negative testing needs real backend/Rallar integration to become meaningful
-- the Rallar Server tab does not yet execute arbitrary REST API calls
+- REST request collections and persisted REST recipes are not implemented yet
 - topology is derived from runtime events and is not yet performance-tested for very large event streams
 
 ## Verification Commands
@@ -156,6 +160,7 @@ npm run test -- packages/tests/shared-test/rallar-browser-runtime.test.ts packag
 npm run test -- packages/tests/rallar-black-box/browser-rallar-runtime.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/shared-test/rallar-bb-test.test.ts
 npm run test -- packages/tests/rallar-black-box/topology-graph.test.ts packages/tests/rallar-black-box/rtc-diagnostics.test.ts packages/tests/rallar-black-box/manual-workbench.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/rallar-black-box/control-client.test.ts
 npm run test -- packages/tests/rallar-black-box/app-tabs.test.ts packages/tests/rallar-black-box/auth-flow.test.ts packages/tests/shared-test/rallar-bb-browser-adapter-auth.test.ts
+npm run test -- packages/tests/rallar-black-box/rallar-server-workbench.test.ts
 npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/tabbed-navigation.spec.ts
 npm run test -- packages/tests/shared-test/rallar-provider-parity.test.ts
 npm run test:e2e:rallar-black-box

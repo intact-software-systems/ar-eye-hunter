@@ -1336,11 +1336,27 @@ Deliverables:
 Add a front-end for Rallar Server REST API exploration inside the SPA so black-box testers can inspect and exercise the
 server without leaving the tool.
 
-Status: planned.
+Status: completed for the first authenticated REST workbench slice.
 
 Results:
 
-- Not started.
+- Implemented the `Rallar Server` tab as an authenticated REST workbench instead of a placeholder.
+- Added `src/rallar-server-workbench.ts` with testable request construction, preset application, auth header injection,
+  response parsing, error classification, redaction, cURL export, black-box `http.request` command export, and OpenAPI
+  endpoint extraction.
+- Added curated endpoint presets for `/api/config`, websocket-ticket creation, ICE config, client state, group state,
+  graph snapshots, and `/api/openapi.json`, with default path/body variables sourced from the active user, session,
+  room, application, and workspace context.
+- Added an optional server OpenAPI refresh action that fetches `/api/openapi.json` from the selected API base and adds
+  server-served endpoint rows to the picker.
+- Added structured inputs for API base URL, method, path, timeout, response body mode, auth attachment, query JSON,
+  headers JSON, and body JSON.
+- Added response rendering for status, duration, body kind, classified error, parsed JSON or raw text, headers, and
+  generated black-box command JSON.
+- Blocked real-provider REST requests from silently using the placeholder `https://api.example.invalid` API base URL.
+- Added focused Vitest coverage for preset resolution, auth headers, placeholder blocking, response parsing, error
+  classification, command export, cURL redaction, and OpenAPI extraction.
+- Added Playwright coverage for sending a REST request from the `Rallar Server` tab and rendering the response.
 
 Deliverables:
 

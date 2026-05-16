@@ -253,6 +253,7 @@ h3 {
 .manual-command button,
 .manual-action-grid button,
 .rtc-actions button,
+.rest-actions button,
 .heading-actions button,
 .manual-command-links button,
 .control-actions button,
@@ -270,6 +271,7 @@ h3 {
 .manual-command button,
 .manual-action-grid button,
 .rtc-actions button,
+.rest-actions button,
 .heading-actions button,
 .control-actions button,
 .panel-heading button {
@@ -425,6 +427,77 @@ h3 {
     display: grid;
     gap: 10px;
     padding: 12px 14px;
+}
+
+.rest-context-list {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.rest-workbench-grid {
+    display: grid;
+    grid-template-columns: minmax(240px, 1fr) minmax(260px, 1fr) minmax(96px, 0.28fr) minmax(96px, 0.28fr);
+    gap: 10px;
+    padding: 12px 14px;
+}
+
+.rest-path-field {
+    grid-column: span 2;
+}
+
+.rest-auth-check {
+    min-height: 38px;
+    align-self: end;
+    padding: 7px 10px;
+    border: 1px solid #bdc8c0;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.rest-editors {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.rest-editors .json-editor textarea {
+    min-height: 132px;
+}
+
+.rest-actions {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px 14px;
+}
+
+.rest-response-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+    gap: 12px;
+    padding: 0 14px 14px;
+}
+
+.rest-subpanel {
+    min-width: 0;
+    border: 1px solid #d8dfd5;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.rest-subpanel:first-child {
+    grid-row: span 2;
+}
+
+.rest-subpanel .section-heading {
+    padding: 12px 12px 0;
+}
+
+.rest-subpanel .result-summary {
+    padding: 12px;
+}
+
+.rest-subpanel .json-block {
+    max-height: 360px;
 }
 
 .control-actions {
@@ -1218,6 +1291,21 @@ dd {
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
+    .rest-context-list,
+    .rest-workbench-grid,
+    .rest-editors,
+    .rest-response-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .rest-actions {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .rest-subpanel:first-child {
+        grid-row: auto;
+    }
+
     .manual-rallar-panel {
         grid-column: 1 / 3;
     }
@@ -1296,6 +1384,11 @@ dd {
     }
 
     .event-filter-grid,
+    .rest-context-list,
+    .rest-workbench-grid,
+    .rest-editors,
+    .rest-actions,
+    .rest-response-grid,
     .manual-rallar-grid,
     .manual-action-grid,
     .rtc-actions,
@@ -1306,6 +1399,10 @@ dd {
     .control-actions,
     .control-stats {
         grid-template-columns: 1fr;
+    }
+
+    .rest-path-field {
+        grid-column: auto;
     }
 
     .manual-action-row {

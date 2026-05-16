@@ -300,7 +300,7 @@ Use event filtering when you need the lower-level evidence behind a diagnostic, 
 
 ## Rallar Server
 
-The `Rallar Server` tab shows the current server-facing context:
+The `Rallar Server` tab shows the current server-facing context and a REST request workbench.
 
 - API base URL
 - provider mode
@@ -308,8 +308,32 @@ The `Rallar Server` tab shows the current server-facing context:
 - session ID
 - access-token presence with the token value redacted
 - control connection state
+- local or server-refreshed OpenAPI endpoint source
 
-The REST API workbench is planned as the next server-facing step.
+Request controls:
+
+- endpoint preset
+- API base URL
+- method
+- path
+- timeout
+- response body mode
+- auth attachment
+- query JSON
+- headers JSON
+- body JSON
+
+Actions:
+
+- `Send`: execute the request from the browser
+- `Reset Preset`: restore the selected preset defaults
+- `Refresh OpenAPI`: load endpoint rows from `/api/openapi.json`
+- `Copy cURL`: copy a redacted cURL reproduction
+- `Copy Command`: copy a black-box `http.request` command
+
+The response area shows status, duration, body kind, classified error, parsed JSON or raw text, response headers, and
+the generated command. In `browser-rallar` mode the tab refuses to send real-provider requests to the placeholder
+`https://api.example.invalid` API base URL.
 
 ## Stats
 
