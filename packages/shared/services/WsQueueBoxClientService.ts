@@ -34,6 +34,23 @@ export type WsQueueBoxClientServiceOptions = Readonly<{
     outboundStores?: ALOutboundRuntimeStores;
 }>;
 
+export type WsQueueBoxClientReadyState =
+    | 'missing'
+    | 'connecting'
+    | 'open'
+    | 'closing'
+    | 'closed'
+    | 'unknown';
+
+export type WsQueueBoxClientHealth = Readonly<{
+    sessionId: string;
+    url: string;
+    readyState: WsQueueBoxClientReadyState;
+    readyStateCode?: number;
+    isOpen: boolean;
+    reconnecting: boolean;
+}>;
+
 export class WsQueueBoxClientService {
     private static readonly ALL_IN: string = '*';
 
@@ -229,6 +246,18 @@ export class WsQueueBoxClientService {
 
     removeAnyInboxMessageCallback(id: string): boolean {
         return this.onAnyInboxMessageCallbacks.delete(id);
+    }
+
+    readHealth(): WsQueueBoxClientHealth {
+        const readyStateCode = this.socket.ws?.readyState;
+        return {
+            sessionId: this.input.sessionId,
+            url: this.socket.url,
+            readyState: toWsQueueBoxClientReadyState(readyStateCode),
+            readyStateCode,
+            isOpen: this.isSocketOpen(),
+            reconnecting: this.reconnectTask !== undefined,
+        };
     }
 
     enableReconnect(): WsQueueBoxClientService {
@@ -434,6 +463,25 @@ export class WsQueueBoxClientService {
             key: resolveSupersedenceKey(msg, effective),
             replacesMsgId: effective.supersedence.opts.replacesMsgId,
         };
+    }
+}
+
+function toWsQueueBoxClientReadyState(
+    readyState: number | undefined,
+): WsQueueBoxClientReadyState {
+    switch (readyState) {
+        case undefined:
+            return 'missing';
+        case 0:
+            return 'connecting';
+        case 1:
+            return 'open';
+        case 2:
+            return 'closing';
+        case 3:
+            return 'closed';
+        default:
+            return 'unknown';
     }
 }
 

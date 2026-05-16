@@ -155,6 +155,31 @@ export class WebRtcConnectionService {
             .map(([peerId]) => peerId);
     }
 
+    knownPeerIds(): readonly string[] {
+        return Array.from(this.peerDtoByPeerId.keys());
+    }
+
+    activePeerIds(): readonly string[] {
+        return Array.from(this.peerDtoByPeerId.entries())
+            .filter(([, peerDto]) => this.isPeerConnectedOrInProgress(peerDto))
+            .map(([peerId]) => peerId);
+    }
+
+    readyPeerIdsForLane(
+        laneId: string = DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
+    ): readonly string[] {
+        return Array.from(this.peerDtoByPeerId.entries())
+            .filter(([, peerDto]) => {
+                if (!this.isPeerConnectedOrInProgress(peerDto)) {
+                    return false;
+                }
+
+                const channel = peerDto.channels.get(laneId);
+                return channel?.readHealth().readyState === 'open';
+            })
+            .map(([peerId]) => peerId);
+    }
+
     readPeer(peerId: string): QRtcPeerDto | undefined {
         return this.peerDtoByPeerId.get(peerId);
     }

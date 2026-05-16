@@ -56,6 +56,7 @@ vi.mock('@shared/webrtc/QRtcPeerConnection.ts', () => {
 vi.mock('@shared/webrtc/QRtcDataChannel.ts', () => {
     class MockQRtcDataChannel {
         public readyToConnect = false;
+        public healthReadyState: RTCDataChannelState | undefined;
         public readonly connect = vi.fn(() => {
             this.readyToConnect = false;
         });
@@ -63,6 +64,11 @@ vi.mock('@shared/webrtc/QRtcDataChannel.ts', () => {
         public readonly isReadyToConnect = vi.fn(() => this.readyToConnect);
         public readonly readHealth = vi.fn(() => ({
             label: (this.input as { dataChannelName: string }).dataChannelName,
+            ...(this.healthReadyState
+                ? {
+                    readyState: this.healthReadyState,
+                }
+                : {}),
             counters: {
                 sent: 0,
             },
@@ -304,6 +310,34 @@ describe('WebRtcConnectionService', () => {
         expect(mockState.peerConnections).toHaveLength(1);
         expect(mockState.dataChannels[0].connect).toHaveBeenCalledTimes(2);
         expect(service.connectedPeerIds()).toEqual(['z-peer']);
+    });
+
+    it('reports known, active, connected, and lane-ready peers separately', async () => {
+        const signaler = {
+            connect: vi.fn(async () => {
+            }),
+            send: vi.fn(async () => {
+            }),
+        };
+        const service = new WebRtcConnectionService(
+            signaler as never,
+            createConnectionInput('a-self'),
+        );
+
+        await service.connectToPeerIfAbsent('z-peer');
+
+        expect(service.knownPeerIds()).toEqual(['z-peer']);
+        expect(service.activePeerIds()).toEqual(['z-peer']);
+        expect(service.connectedPeerIds()).toEqual(['z-peer']);
+        expect(service.readyPeerIdsForLane()).toEqual([]);
+
+        mockState.dataChannels[0].healthReadyState = 'open';
+        expect(service.readyPeerIdsForLane()).toEqual(['z-peer']);
+
+        mockState.dataChannels[0].readyToConnect = true;
+        expect(service.connectedPeerIds()).toEqual([]);
+        expect(service.activePeerIds()).toEqual(['z-peer']);
+        expect(service.readyPeerIdsForLane()).toEqual(['z-peer']);
     });
 
     it('creates a reliable lane plus configured realtime lanes for each peer', async () => {

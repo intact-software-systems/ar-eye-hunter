@@ -8,7 +8,6 @@ import {
     COMPLETED_STATUSES,
     EntityStatus,
     FAILED_STATUS,
-    isExpiredAudit,
     Key,
     NEVER_EXPIRE_TS,
     NEW_AND_RETRY_STATUSES,
@@ -37,6 +36,67 @@ type StoredResourceEntry = Readonly<{
         attempts: number;
     }>;
 }>;
+
+function temporalText(value: unknown, fallback: string): string {
+    if (typeof value === 'string' && value.length > 0 && value !== '[object Object]') {
+        return value;
+    }
+
+    if (
+        value &&
+        typeof value === 'object' &&
+        'toString' in value &&
+        typeof value.toString === 'function'
+    ) {
+        const text = value.toString();
+        if (text.length > 0 && text !== '[object Object]') {
+            return text;
+        }
+    }
+
+    return fallback;
+}
+
+function toPlainTime(value: unknown): Temporal.PlainTime {
+    const fallback = Temporal.Now.plainTimeISO();
+    try {
+        return Temporal.PlainTime.from(temporalText(value, fallback.toString()));
+    } catch {
+        return fallback;
+    }
+}
+
+function toPlainDateTime(value: unknown): Temporal.PlainDateTime {
+    const fallback = Temporal.Now.plainDateTimeISO();
+    try {
+        return Temporal.PlainDateTime.from(temporalText(value, fallback.toString()));
+    } catch {
+        return fallback;
+    }
+}
+
+function toInstant(
+    value: unknown,
+    fallback: Temporal.Instant = NEVER_EXPIRE_TS,
+): Temporal.Instant {
+    try {
+        return Temporal.Instant.from(temporalText(value, fallback.toString()));
+    } catch {
+        return fallback;
+    }
+}
+
+function toOptionalInstant(value: unknown): Temporal.Instant | undefined {
+    if (value === undefined || value === null) {
+        return undefined;
+    }
+
+    try {
+        return Temporal.Instant.from(temporalText(value, ''));
+    } catch {
+        return undefined;
+    }
+}
 
 export type IndexedDbQueueBoxOptions = Readonly<{
     dbName?: string;
@@ -437,17 +497,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         stored: StoredResourceEntry,
         now: Temporal.Instant = Temporal.Now.instant(),
     ): boolean {
-        return isExpiredAudit(
-            {
-                date: Temporal.PlainTime.from(stored.audit.date),
-                createdBy: stored.audit.createdBy,
-                createdTs: Temporal.PlainDateTime.from(stored.audit.createdTs),
-                expiryTs: stored.audit.expiryTs
-                    ? Temporal.Instant.from(stored.audit.expiryTs)
-                    : NEVER_EXPIRE_TS,
-            },
-            now,
-        );
+        const expiryTs = stored.audit.expiryTs
+            ? toInstant(stored.audit.expiryTs)
+            : NEVER_EXPIRE_TS;
+        return Temporal.Instant.compare(now, expiryTs) >= 0;
     }
 
     private toBackoff(exponentialBackoffSteps: Temporal.TimeUnit, attempts: number): Temporal.Duration {
@@ -498,16 +551,16 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             resource: entry.resource,
             typeId: entry.typeId,
             audit: {
-                date: entry.audit.date.toString(),
+                date: toPlainTime(entry.audit.date).toString(),
                 createdBy: entry.audit.createdBy,
-                createdTs: entry.audit.createdTs.toString(),
-                expiryTs: entry.audit.expiryTs.toString(),
+                createdTs: toPlainDateTime(entry.audit.createdTs).toString(),
+                expiryTs: toInstant(entry.audit.expiryTs).toString(),
             },
             status: entry.status,
             dequeueAudit: {
-                startTs: entry.dequeueAudit.startTs?.toString(),
-                endTs: entry.dequeueAudit.endTs?.toString(),
-                nextTs: entry.dequeueAudit.nextTs?.toString(),
+                startTs: toOptionalInstant(entry.dequeueAudit.startTs)?.toString(),
+                endTs: toOptionalInstant(entry.dequeueAudit.endTs)?.toString(),
+                nextTs: toOptionalInstant(entry.dequeueAudit.nextTs)?.toString(),
                 attempts: entry.dequeueAudit.attempts,
             },
         };
@@ -519,18 +572,18 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             resource: stored.resource,
             typeId: stored.typeId,
             audit: {
-                date: Temporal.PlainTime.from(stored.audit.date),
+                date: toPlainTime(stored.audit.date),
                 createdBy: stored.audit.createdBy,
-                createdTs: Temporal.PlainDateTime.from(stored.audit.createdTs),
+                createdTs: toPlainDateTime(stored.audit.createdTs),
                 expiryTs: stored.audit.expiryTs
-                    ? Temporal.Instant.from(stored.audit.expiryTs)
+                    ? toInstant(stored.audit.expiryTs)
                     : NEVER_EXPIRE_TS,
             },
             status: stored.status,
             dequeueAudit: {
-                startTs: stored.dequeueAudit.startTs ? Temporal.Instant.from(stored.dequeueAudit.startTs) : undefined,
-                endTs: stored.dequeueAudit.endTs ? Temporal.Instant.from(stored.dequeueAudit.endTs) : undefined,
-                nextTs: stored.dequeueAudit.nextTs ? Temporal.Instant.from(stored.dequeueAudit.nextTs) : undefined,
+                startTs: toOptionalInstant(stored.dequeueAudit.startTs),
+                endTs: toOptionalInstant(stored.dequeueAudit.endTs),
+                nextTs: toOptionalInstant(stored.dequeueAudit.nextTs),
                 attempts: stored.dequeueAudit.attempts,
             },
             db: {

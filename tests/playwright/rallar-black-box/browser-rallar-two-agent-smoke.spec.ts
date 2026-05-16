@@ -177,6 +177,10 @@ function stringValue(value: unknown): string | undefined {
     return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
+function pathSegment(value: string): string {
+    return encodeURIComponent(value);
+}
+
 async function fetchRun(
     request: APIRequestContext,
     runId: string,
@@ -277,6 +281,8 @@ async function openAgent(
     const query = new URLSearchParams({
         mode: 'control',
         provider: 'browser-rallar',
+        autoConnect: '1',
+        tab: 'local-workbench',
         controlUrl: CONTROL_WS_URL,
         runId: input.runId,
         agentId: input.agentId,
@@ -296,7 +302,15 @@ async function openAgent(
     });
 
     await page.goto(`${SPA_BASE_URL}/?${query.toString()}`);
-    await expect(page.locator('.control-panel')).toContainText('registered');
+
+    if (input.auth.kind === 'login') {
+        await expect(page.getByRole('heading', { name: 'Rallar Server Login' })).toBeVisible();
+        await page.getByRole('button', { name: 'Sign in' }).click();
+    }
+
+    await expect(page.getByRole('tab', { name: 'Local Workbench' })).toBeVisible();
+    await page.getByRole('tab', { name: 'Local Workbench' }).click();
+    await expect(page.locator('#panel-local-workbench .control-panel')).toContainText('registered');
 
     return {
         context,
@@ -305,6 +319,69 @@ async function openAgent(
         actor: input.actor,
         connection: input.connection,
     };
+}
+
+async function setupGroupMembership(
+    request: APIRequestContext,
+    runId: string,
+    input: Readonly<{
+        owner: AgentHandle;
+        members: readonly AgentHandle[];
+        suffix: string;
+    }>,
+): Promise<readonly string[]> {
+    const groupId = roomId!;
+    const groupSegment = pathSegment(groupId);
+    const createCommandId = `group-create-${input.suffix}`;
+    const joinCommandIds: string[] = [];
+
+    await executeOk(request, runId, input.owner.agentId, createCommandId, {
+        kind: 'http.request',
+        request: {
+            path: '/api/state/apps/ar-eye-hunter/workspaces/default/groups',
+            method: 'POST',
+            body: {
+                groupId,
+                displayName: groupId,
+                description: 'Created by rallar-black-box two-agent smoke',
+                kind: 'room',
+                joinMode: 'open',
+                createdByPrincipalId: '{auth.clientId}',
+                metadata: {
+                    source: 'rallar-black-box',
+                    smoke: 'two-agent',
+                },
+            },
+        },
+        response: {
+            body: 'json',
+        },
+        timeoutMs: 5_000,
+    });
+
+    for (const member of input.members) {
+        const commandId = `group-join-${member.agentId}-${input.suffix}`;
+        joinCommandIds.push(commandId);
+        await executeOk(request, runId, member.agentId, commandId, {
+            kind: 'http.request',
+            request: {
+                path: `/api/state/apps/ar-eye-hunter/workspaces/default/groups/${groupSegment}/members/{auth.clientId}`,
+                method: 'PUT',
+                body: {
+                    status: 'active',
+                },
+            },
+            response: {
+                body: 'json',
+            },
+            timeoutMs: 5_000,
+        });
+    }
+
+    return [
+        createCommandId,
+        ...joinCommandIds,
+    ];
 }
 
 function rallarConnectConfig(transport: TransportUnderTest): Record<string, unknown> {
@@ -463,6 +540,12 @@ async function runTwoAgentDelivery(
         });
         handles.push(agentB);
 
+        const setupCommandIds = await setupGroupMembership(request, runId, {
+            owner: agentA,
+            members: [agentA, agentB],
+            suffix,
+        });
+
         const connectACommandId = `connect-a-${suffix}`;
         const connectBCommandId = `connect-b-${suffix}`;
         const connectA = await executeOk(request, runId, agentA.agentId, connectACommandId, {
@@ -508,7 +591,9 @@ async function runTwoAgentDelivery(
             smokeId: smokeAtoB,
             direction: 'a-to-b',
         });
-        await expect(agentB.page.locator('.received-inbox-panel')).toContainText(smokeAtoB);
+        await agentB.page.getByRole('tab', { name: 'Manual Rallar' }).click();
+        await expect(agentB.page.locator('#panel-manual-rallar .received-inbox-panel'))
+            .toContainText(smokeAtoB);
 
         const smokeBtoA = `b-to-a-${suffix}`;
         const sendBCommandId = `send-b-to-a-${suffix}`;
@@ -531,13 +616,16 @@ async function runTwoAgentDelivery(
             smokeId: smokeBtoA,
             direction: 'b-to-a',
         });
-        await expect(agentA.page.locator('.received-inbox-panel')).toContainText(smokeBtoA);
+        await agentA.page.getByRole('tab', { name: 'Manual Rallar' }).click();
+        await expect(agentA.page.locator('#panel-manual-rallar .received-inbox-panel'))
+            .toContainText(smokeBtoA);
 
         const finalizedCommandIds = [
             ...(await runFinalizationCommands(request, runId, agentA, suffix)),
             ...(await runFinalizationCommands(request, runId, agentB, suffix)),
         ];
         const expectedCommandIds = [
+            ...setupCommandIds,
             connectACommandId,
             connectBCommandId,
             sendACommandId,

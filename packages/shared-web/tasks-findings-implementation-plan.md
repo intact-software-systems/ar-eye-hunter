@@ -45,9 +45,27 @@ npm run test:e2e:rallar-black-box:full-stack:real:control
 
 Real-server test runs should record enough evidence to debug failures: peer IDs, room ID, message IDs, route decisions, connection states, lane states, reconnect attempts, and skipped enqueue outcomes.
 
+## Iteration Status
+
+| Iteration | Status | Evidence |
+| --- | --- | --- |
+| 0: Baseline evidence and reproduction harness | Completed | `packages/shared-web/tasks-findings-iteration-0-baseline.md`; targeted unit/typecheck runs; full-stack real suite; two-agent real `realtime` and `messages.rtc` smoke. |
+| 1: Read-only diagnostics and status surface | Implemented and locally verified | Added read-only RTC/WS diagnostics APIs and focused tests. Real two-agent smoke still passes. Playwright status snapshot artifacts are still a follow-up. |
+| 2: IndexedDB growth and session isolation proof | Not started | Next evidence-first storage iteration. |
+
 ## Iteration 0: Baseline Evidence And Reproduction Harness
 
 Goal: make current behavior measurable before changing it.
+
+Status: completed on 2026-05-16.
+
+Artifacts:
+
+- `packages/shared-web/tasks-findings-iteration-0-baseline.md`
+- `npm --workspace @ar-eye-hunter/shared-web run typecheck`
+- `npm run test -- packages/tests/shared/al-indexeddb-runtime-stores.test.ts packages/tests/shared/qrtc-data-channel.test.ts packages/tests/shared/webrtc-connection-service.test.ts`
+- `npm run test:e2e:rallar-black-box:full-stack:real`
+- Two-agent browser-rallar smoke with `VITE_RALLAR_ROOM_ID=bb-group`, `VITE_RALLAR_USERNAME=alice`, and `VITE_RALLAR_PASSWORD=secret`
 
 Scope:
 
@@ -88,7 +106,35 @@ Goal: add observability needed to prove or disprove suspected lifecycle problems
 
 This is an obvious gap, but keep the first pass read-only.
 
-Proposed implementation:
+Status: implemented and locally verified on 2026-05-16.
+
+Implemented:
+
+- Added low-level RTC peer set diagnostics:
+  - `WebRtcConnectionService.knownPeerIds()`
+  - `WebRtcConnectionService.activePeerIds()`
+  - `WebRtcConnectionService.readyPeerIdsForLane(laneId)`
+- Added low-level WS diagnostics:
+  - `WsQueueBoxClientService.readHealth()`
+- Added additive browser facade APIs:
+  - `rallar.rtc.status(options?)`
+  - `rallar.rtc.peer(peerId, options?)`
+  - `rallar.rtc.knownPeerIds()`
+  - `rallar.rtc.activePeerIds()`
+  - `rallar.rtc.readyPeerIds(laneId?)`
+  - `rallar.ws.status()`
+
+Verification completed:
+
+- `npm --workspace @ar-eye-hunter/shared-web run typecheck`
+- `npm run test -- packages/tests/shared-web/rallar-operation-options.test.ts packages/tests/shared/webrtc-connection-service.test.ts`
+- Real two-agent browser-rallar smoke with `realtime` and `messages.rtc` still passes after the read-only API additions.
+
+Remaining evidence gap:
+
+- The APIs now expose the needed status shape, but the Playwright black-box reports do not yet capture `rallar.rtc.status()` snapshots as first-class artifacts. Add that when the test harness is extended for reconnect/failure scenarios.
+
+Original proposed implementation:
 
 - Add a read-only `Rallar.rtc` facade or equivalent additive API exposing:
   - known peer IDs
@@ -106,7 +152,7 @@ Proposed implementation:
   - reconnect in progress
   - queue/outbox counts if exposed safely
 
-Testing:
+Testing plan:
 
 - Unit test facade status normalization.
 - Browser integration test that `Rallar.rtc.status()` returns empty/disconnected state before RTC setup and populated state after a mocked/controlled connection service.

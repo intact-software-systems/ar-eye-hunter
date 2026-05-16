@@ -40,7 +40,11 @@ import type {
     RtcDataChannelSendOptions,
     RtcDataChannelSendResult,
 } from '@shared/webrtc/QRtcDataChannel.ts';
-import type { QRtcPeerDto, RtcDataChannelLaneConfig, } from '@shared/services/WebRtcConnectionService.ts';
+import {
+    DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
+    type QRtcPeerDto,
+    type RtcDataChannelLaneConfig,
+} from '@shared/services/WebRtcConnectionService.ts';
 import {
     type ApiMiddleware,
     clearMiddleware,
@@ -317,6 +321,71 @@ export type RallarRealtimeLaneHealth = Readonly<{
     channel?: RtcDataChannelHealth;
 }>;
 
+export type RallarRtcStatusOptions = Readonly<{
+    laneId?: string;
+}>;
+
+export type RallarRtcPeerConnectionStatus = Readonly<{
+    state?: string;
+    connectionState?: string;
+    iceConnectionState?: string;
+    signalingState?: string;
+    reconnectAttempts: number;
+    reconnecting: boolean;
+    disconnectPending: boolean;
+    makingOffer: boolean;
+    ignoreOffer: boolean;
+    iceCandidateQueueSize: number;
+    localStreamId?: string;
+    remoteStreamIds: readonly string[];
+}>;
+
+export type RallarRtcLaneStatus = Readonly<{
+    peerId: string;
+    laneId: string;
+    channel?: RtcDataChannelHealth;
+    isOpen: boolean;
+    isReconnectable: boolean;
+}>;
+
+export type RallarRtcPeerStatus = Readonly<{
+    peerId: string;
+    connection: RallarRtcPeerConnectionStatus;
+    lanes: readonly RallarRtcLaneStatus[];
+    isActive: boolean;
+    isConnectedPeer: boolean;
+    isRoutable: boolean;
+    readyLaneIds: readonly string[];
+}>;
+
+export type RallarRtcStatus = Readonly<{
+    sessionId?: string;
+    laneId: string;
+    knownPeerIds: readonly string[];
+    activePeerIds: readonly string[];
+    connectedPeerIds: readonly string[];
+    readyPeerIds: readonly string[];
+    peers: readonly RallarRtcPeerStatus[];
+}>;
+
+export type RallarWsReadyState =
+    | 'missing'
+    | 'connecting'
+    | 'open'
+    | 'closing'
+    | 'closed'
+    | 'unknown';
+
+export type RallarWsStatus = Readonly<{
+    sessionId?: string;
+    url?: string;
+    connectState: RallarConnectStatus;
+    readyState: RallarWsReadyState;
+    readyStateCode?: number;
+    isOpen: boolean;
+    reconnecting: boolean;
+}>;
+
 export type RallarFacade = Readonly<{
     configure(config: RallarApiClientConfig): void;
     connect(options?: RallarOperationOptions): Promise<ApiMiddleware>;
@@ -384,6 +453,19 @@ export type RallarFacade = Readonly<{
             RallarWsSendInput<unknown>,
             RallarMessageSelectorInput
         >;
+    }>;
+    rtc: Readonly<{
+        status(options?: RallarRtcStatusOptions): RallarRtcStatus;
+        peer(
+            peerId: string,
+            options?: RallarRtcStatusOptions,
+        ): RallarRtcPeerStatus | undefined;
+        knownPeerIds(): readonly string[];
+        activePeerIds(): readonly string[];
+        readyPeerIds(laneId?: string): readonly string[];
+    }>;
+    ws: Readonly<{
+        status(): RallarWsStatus;
     }>;
     realtime: Readonly<{
         sendJson<T>(
@@ -788,6 +870,38 @@ class BrowserRallarFacade implements RallarFacade {
         },
     };
 
+    readonly rtc = {
+        status: (
+            options: RallarRtcStatusOptions = {},
+        ): RallarRtcStatus => this.toRtcStatus(options),
+        peer: (
+            peerId: string,
+            options: RallarRtcStatusOptions = {},
+        ): RallarRtcPeerStatus | undefined => {
+            return this.toRtcStatus(options).peers.find((peer) =>
+                peer.peerId === peerId
+            );
+        },
+        knownPeerIds: (): readonly string[] => {
+            const ctx = this.readMiddleware();
+            return ctx?.middleware.webRtcConnectionService.knownPeerIds() ?? [];
+        },
+        activePeerIds: (): readonly string[] => {
+            const ctx = this.readMiddleware();
+            return ctx?.middleware.webRtcConnectionService.activePeerIds() ?? [];
+        },
+        readyPeerIds: (laneId?: string): readonly string[] => {
+            const ctx = this.readMiddleware();
+            return ctx?.middleware.webRtcConnectionService.readyPeerIdsForLane(
+                laneId ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
+            ) ?? [];
+        },
+    };
+
+    readonly ws = {
+        status: (): RallarWsStatus => this.toWsStatus(),
+    };
+
     readonly realtime = {
         sendJson: async <T>(
             input: RallarRealtimeJsonSendInput<T>,
@@ -1028,6 +1142,98 @@ class BrowserRallarFacade implements RallarFacade {
 
     flow<K, V>(policies: RallarFlowPolicies<V> = {}): RallarFlow<K, V> {
         return CommandsOrchestrator.withPolicies<K, V>(policies);
+    }
+
+    private toRtcStatus(
+        options: RallarRtcStatusOptions = {},
+    ): RallarRtcStatus {
+        const laneId = options.laneId ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID;
+        const ctx = this.readMiddleware();
+        if (!ctx) {
+            return {
+                sessionId: readSession()?.sessionId,
+                laneId,
+                knownPeerIds: [],
+                activePeerIds: [],
+                connectedPeerIds: [],
+                readyPeerIds: [],
+                peers: [],
+            };
+        }
+
+        const service = ctx.middleware.webRtcConnectionService;
+        const knownPeerIds = service.knownPeerIds();
+        const activePeerIds = service.activePeerIds();
+        const connectedPeerIds = service.connectedPeerIds();
+        const readyPeerIds = service.readyPeerIdsForLane(laneId);
+        const activePeerIdSet = new Set(activePeerIds);
+        const connectedPeerIdSet = new Set(connectedPeerIds);
+
+        return {
+            sessionId: ctx.session.sessionId,
+            laneId,
+            knownPeerIds,
+            activePeerIds,
+            connectedPeerIds,
+            readyPeerIds,
+            peers: knownPeerIds.map((peerId) =>
+                this.toRtcPeerStatus(
+                    peerId,
+                    service.readPeer(peerId),
+                    activePeerIdSet,
+                    connectedPeerIdSet,
+                )
+            ),
+        };
+    }
+
+    private toRtcPeerStatus(
+        peerId: string,
+        peer: QRtcPeerDto | undefined,
+        activePeerIds: ReadonlySet<string>,
+        connectedPeerIds: ReadonlySet<string>,
+    ): RallarRtcPeerStatus {
+        const lanes = peer
+            ? Array.from(peer.channels.entries()).map(([laneId, channel]) =>
+                toRtcLaneStatus(peerId, laneId, channel.readHealth())
+            )
+            : [];
+
+        return {
+            peerId,
+            connection: toRtcConnectionStatus(peer),
+            lanes,
+            isActive: activePeerIds.has(peerId),
+            isConnectedPeer: connectedPeerIds.has(peerId),
+            isRoutable: connectedPeerIds.has(peerId),
+            readyLaneIds: lanes
+                .filter((lane) => lane.isOpen)
+                .map((lane) => lane.laneId),
+        };
+    }
+
+    private toWsStatus(): RallarWsStatus {
+        const ctx = this.readMiddleware();
+        if (!ctx) {
+            return {
+                sessionId: readSession()?.sessionId,
+                connectState: this.connectState,
+                readyState: 'missing',
+                isOpen: false,
+                reconnecting: false,
+            };
+        }
+
+        const health = ctx.middleware.webSocketQueueBox.readHealth();
+        return {
+            sessionId: health.sessionId,
+            url: health.url,
+            connectState: this.connectState,
+            readyState: health.readyState,
+            readyStateCode: health.readyStateCode,
+            isOpen: health.isOpen,
+            reconnecting: health.reconnecting,
+        };
     }
 
     private async acceptSnapshots(
@@ -1709,6 +1915,50 @@ class BrowserRallarFacade implements RallarFacade {
 
         return String(scope);
     }
+}
+
+function toRtcConnectionStatus(
+    peer: QRtcPeerDto | undefined,
+): RallarRtcPeerConnectionStatus {
+    const status = peer?.connection.status;
+    const pc = status?.pc;
+
+    return {
+        state: status?.state ? String(status.state) : undefined,
+        connectionState: pc?.connectionState,
+        iceConnectionState: pc?.iceConnectionState,
+        signalingState: pc?.signalingState,
+        reconnectAttempts: status?.reconnectAttempts ?? 0,
+        reconnecting: status?.reconnectTimer !== undefined,
+        disconnectPending: status?.disconnectTimer !== undefined,
+        makingOffer: status?.makingOffer ?? false,
+        ignoreOffer: status?.ignoreOffer ?? false,
+        iceCandidateQueueSize: status?.iceCandidateQueue.length ?? 0,
+        localStreamId: status?.localStream?.id,
+        remoteStreamIds: Array.from(status?.remoteStreams.keys() ?? []),
+    };
+}
+
+function toRtcLaneStatus(
+    peerId: string,
+    laneId: string,
+    channel: RtcDataChannelHealth | undefined,
+): RallarRtcLaneStatus {
+    return {
+        peerId,
+        laneId,
+        channel,
+        isOpen: channel?.readyState === 'open' || channel?.state === 'Open',
+        isReconnectable: isReconnectableRtcLane(channel),
+    };
+}
+
+function isReconnectableRtcLane(
+    channel: RtcDataChannelHealth | undefined,
+): boolean {
+    return channel?.state === 'Idle' ||
+        channel?.state === 'Closed' ||
+        channel?.state === 'Failed';
 }
 
 export function createRallarFacade(): RallarFacade {

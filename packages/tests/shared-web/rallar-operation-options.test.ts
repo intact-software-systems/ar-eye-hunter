@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => {
     };
     const webRtcConnectionService = {
         connectedPeerIds: vi.fn((): readonly string[] => []),
+        knownPeerIds: vi.fn((): readonly string[] => []),
+        activePeerIds: vi.fn((): readonly string[] => []),
+        readyPeerIdsForLane: vi.fn((_laneId?: string): readonly string[] => []),
         connectToPeerIfAbsent: vi.fn((_peerId: string) =>
             Promise.resolve({
                 left: {
@@ -43,6 +46,13 @@ const mocks = vi.hoisted(() => {
             webRtcGroupManager: {},
             webRtcConnectionService,
             webSocketQueueBox: {
+                readHealth: vi.fn(() => ({
+                    sessionId: session.sessionId,
+                    url: 'ws://localhost/ws',
+                    readyState: 'missing',
+                    isOpen: false,
+                    reconnecting: false,
+                })),
                 socket: {
                     close: vi.fn(),
                 },
@@ -170,6 +180,9 @@ describe('Rallar operation options', () => {
         mocks.joinStateGroup.mockRejectedValue(new Error('join not mocked'));
         mocks.leaveStateGroup.mockRejectedValue(new Error('leave not mocked'));
         mocks.webRtcConnectionService.connectedPeerIds.mockReturnValue([]);
+        mocks.webRtcConnectionService.knownPeerIds.mockReturnValue([]);
+        mocks.webRtcConnectionService.activePeerIds.mockReturnValue([]);
+        mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue([]);
         mocks.webRtcConnectionService.connectToPeerIfAbsent.mockImplementation(
             (peerId: string) =>
                 Promise.resolve({
@@ -185,6 +198,13 @@ describe('Rallar operation options', () => {
         );
         mocks.webRtcConnectionService.readPeer.mockReturnValue(undefined);
         mocks.webRtcConnectionService.removeRtcPeerLifecycleById.mockReturnValue(true);
+        mocks.ctx.middleware.webSocketQueueBox.readHealth.mockReturnValue({
+            sessionId: mocks.ctx.session.sessionId,
+            url: 'ws://localhost/ws',
+            readyState: 'missing',
+            isOpen: false,
+            reconnecting: false,
+        });
         mocks.registerWithApi.mockResolvedValue({
             clientId: 'client-new',
             username: 'new-user',
@@ -215,6 +235,168 @@ describe('Rallar operation options', () => {
         expect(peopleListener).toHaveBeenCalledWith(
             expect.objectContaining({ people: [], clients: [] }),
         );
+    });
+
+    it('exposes empty RTC and WS diagnostics before connecting', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const facade = createRallarFacade();
+
+        expect(facade.rtc.status()).toEqual({
+            sessionId: 'session-1',
+            laneId: 'reliable',
+            knownPeerIds: [],
+            activePeerIds: [],
+            connectedPeerIds: [],
+            readyPeerIds: [],
+            peers: [],
+        });
+        expect(facade.rtc.knownPeerIds()).toEqual([]);
+        expect(facade.rtc.activePeerIds()).toEqual([]);
+        expect(facade.rtc.readyPeerIds()).toEqual([]);
+        expect(facade.ws.status()).toEqual({
+            sessionId: 'session-1',
+            connectState: 'idle',
+            readyState: 'missing',
+            isOpen: false,
+            reconnecting: false,
+        });
+    });
+
+    it('exposes read-only RTC peer and lane diagnostics', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const reliableHealth = createChannelHealth({
+            peerId: 'peer-1',
+            label: 'rtc-data-channel',
+            state: 'Open',
+            readyState: 'open',
+        });
+        const realtimeHealth = createChannelHealth({
+            peerId: 'peer-1',
+            label: 'rtc-realtime',
+            state: 'Open',
+            readyState: 'open',
+        });
+        const peer = {
+            peerId: 'peer-1',
+            connection: {
+                status: {
+                    state: 'Open',
+                    pc: {
+                        connectionState: 'connected',
+                        iceConnectionState: 'connected',
+                        signalingState: 'stable',
+                    },
+                    reconnectAttempts: 2,
+                    reconnectTimer: undefined,
+                    disconnectTimer: undefined,
+                    makingOffer: false,
+                    ignoreOffer: false,
+                    iceCandidateQueue: [{}],
+                    localStream: {
+                        id: 'local-stream',
+                    },
+                    remoteStreams: new Map([['remote-stream', {}]]),
+                },
+            },
+            channels: new Map([
+                ['reliable', { readHealth: vi.fn(() => reliableHealth) }],
+                ['realtime', { readHealth: vi.fn(() => realtimeHealth) }],
+            ]),
+        };
+        mocks.webRtcConnectionService.knownPeerIds.mockReturnValue(['peer-1']);
+        mocks.webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
+        mocks.webRtcConnectionService.connectedPeerIds.mockReturnValue(['peer-1']);
+        mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue(['peer-1']);
+        mocks.webRtcConnectionService.readPeer.mockReturnValue(peer);
+        const facade = createRallarFacade();
+
+        await facade.connect();
+
+        expect(facade.rtc.knownPeerIds()).toEqual(['peer-1']);
+        expect(facade.rtc.activePeerIds()).toEqual(['peer-1']);
+        expect(facade.rtc.readyPeerIds('realtime')).toEqual(['peer-1']);
+        expect(mocks.webRtcConnectionService.readyPeerIdsForLane)
+            .toHaveBeenCalledWith('realtime');
+        expect(facade.rtc.peer('peer-1', { laneId: 'realtime' }))
+            .toMatchObject({
+                peerId: 'peer-1',
+                isActive: true,
+                isConnectedPeer: true,
+                isRoutable: true,
+                readyLaneIds: ['reliable', 'realtime'],
+                connection: {
+                    state: 'Open',
+                    connectionState: 'connected',
+                    iceConnectionState: 'connected',
+                    signalingState: 'stable',
+                    reconnectAttempts: 2,
+                    reconnecting: false,
+                    disconnectPending: false,
+                    iceCandidateQueueSize: 1,
+                    localStreamId: 'local-stream',
+                    remoteStreamIds: ['remote-stream'],
+                },
+                lanes: [
+                    {
+                        peerId: 'peer-1',
+                        laneId: 'reliable',
+                        channel: reliableHealth,
+                        isOpen: true,
+                        isReconnectable: false,
+                    },
+                    {
+                        peerId: 'peer-1',
+                        laneId: 'realtime',
+                        channel: realtimeHealth,
+                        isOpen: true,
+                        isReconnectable: false,
+                    },
+                ],
+            });
+        expect(facade.rtc.status({ laneId: 'realtime' })).toMatchObject({
+            sessionId: 'session-1',
+            laneId: 'realtime',
+            knownPeerIds: ['peer-1'],
+            activePeerIds: ['peer-1'],
+            connectedPeerIds: ['peer-1'],
+            readyPeerIds: ['peer-1'],
+            peers: [
+                expect.objectContaining({
+                    peerId: 'peer-1',
+                }),
+            ],
+        });
+    });
+
+    it('exposes read-only WS diagnostics after connecting', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        mocks.ctx.middleware.webSocketQueueBox.readHealth.mockReturnValue({
+            sessionId: 'session-1',
+            url: 'ws://localhost/ws',
+            readyState: 'open',
+            readyStateCode: 1,
+            isOpen: true,
+            reconnecting: true,
+        });
+        const facade = createRallarFacade();
+
+        await facade.connect();
+
+        expect(facade.ws.status()).toEqual({
+            sessionId: 'session-1',
+            url: 'ws://localhost/ws',
+            connectState: 'connected',
+            readyState: 'open',
+            readyStateCode: 1,
+            isOpen: true,
+            reconnecting: true,
+        });
     });
 
     it('passes signal and timeout options into connect and room refresh workflows', async () => {
@@ -695,6 +877,49 @@ describe('Rallar operation options', () => {
         ]);
     });
 });
+
+function createChannelHealth(
+    input: Readonly<{
+        peerId: string;
+        label: string;
+        state: string;
+        readyState: RTCDataChannelState;
+    }>,
+) {
+    return {
+        peerId: input.peerId,
+        label: input.label,
+        state: input.state,
+        role: 'Initiator',
+        readyState: input.readyState,
+        binaryType: 'arraybuffer' as const,
+        bufferedAmount: 0,
+        bufferedAmountLowThreshold: 0,
+        queuedItemCount: 0,
+        rawCallbackCount: 0,
+        messageCallbackCount: 0,
+        lifecycleCallbackCount: 0,
+        flowControl: {
+            highWatermarkBytes: 64 * 1024,
+            lowWatermarkBytes: 16 * 1024,
+            overflow: 'drop-new' as const,
+            maxQueueItems: 32,
+        },
+        counters: {
+            sent: 0,
+            queued: 0,
+            dropped: 0,
+            replaced: 0,
+            closed: 0,
+            flushed: 0,
+            droppedOldest: 0,
+            droppedStale: 0,
+            receivedRaw: 0,
+            receivedString: 0,
+            receivedBinary: 0,
+        },
+    };
+}
 
 function createDeferred<T>(): {
     promise: Promise<T>;
