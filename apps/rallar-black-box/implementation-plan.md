@@ -1201,8 +1201,10 @@ Deliverables:
 ### Iteration 19: Long-running And Randomised Runs
 
 Integrate with the planned soak and seeded-random test work after real provider smoke and two-agent delivery are proven.
+This should wait until the authenticated shell, tabbed navigation, REST workbench, and full-stack UI automation are in
+place, because long-running runs need the stabilized app structure and diagnostics produced by those iterations.
 
-Status: planned.
+Status: planned, deferred behind Iterations 20-25.
 
 Results:
 
@@ -1219,6 +1221,211 @@ Deliverables:
 - real-provider cleanup checkpoints between randomized command groups
 - failure bundles that can replay the selected seed and command order against the same provider mode
 
+### Iteration 20: Authenticated SPA Shell
+
+Make the visible SPA feel like a real Rallar tool instead of a raw test dashboard by introducing an explicit login gate
+and a shared authenticated API client for all Rallar Server REST calls.
+
+Status: completed for the SPA login gate and authenticated REST command foundation.
+
+Results:
+
+- Added `src/auth-flow.ts` with testable login/register orchestration, auth error classification, and bootstrap patching
+  from successful Rallar auth sessions.
+- Added a visible login screen for `browser-rallar` mode when no valid browser auth session is restored.
+- Simulated mode still enters the local workbench directly and does not require Rallar Server login.
+- Login uses the browser Rallar facade, stores the session through the existing `auth.session` browser storage path, and
+  patches the SPA bootstrap config to use `restoreSession=true` for subsequent real-provider commands.
+- The browser Rallar facade remains lazy-loaded from the login/logout flow so the main SPA bundle does not absorb the
+  full real-provider runtime before it is needed.
+- Restored sessions update bootstrap actor/session defaults before the real-provider workbench bootstraps.
+- Added logout from the app shell. Logout closes the current Rallar runtime command path, calls the browser Rallar logout
+  flow, clears browser session state through the shared auth helper, and returns the SPA to the login screen.
+- The app shell now shows authenticated username/session when available and disables sample replay for real-provider
+  mode so a real login does not accidentally run the simulated sample recipe against the wrong room.
+- Added authenticated Rallar Server header injection for browser-native `http.request` commands in the shared browser
+  adapter. Requests using a relative `path` or an absolute URL under the configured `apiBaseUrl` receive
+  `Authorization: Bearer <accessToken>` and `x-client-id` from the current browser auth session.
+- Kept existing `packages/shared-web/browser/api-integration.ts` behavior, which already attaches the same auth headers
+  for browser Rallar facade REST calls.
+- Added focused tests for login/register orchestration, bootstrap patching, auth error classification, and authenticated
+  `http.request` header injection.
+- Remaining full browser UI coverage for login/logout, CORS denial, and two-browser authenticated flows is deferred to
+  Iteration 23, where the local API, control server, SPA, and browser contexts are started together.
+- Verified with `npm run test -- packages/tests/rallar-black-box/auth-flow.test.ts packages/tests/shared-test/rallar-bb-browser-adapter-auth.test.ts packages/tests/shared-test/rallar-bb-test.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/rallar-black-box/manual-workbench.test.ts`.
+- Verified with `npm --workspace rallar-black-box run typecheck`.
+- Verified with `npm --workspace @ar-eye-hunter/shared-test run typecheck`.
+- Verified with `npm --workspace rallar-black-box run build`.
+
+Deliverables:
+
+- login screen as the first visible state when `browser-rallar` mode is selected and no restorable browser session is
+  available
+- simulated-provider entry path that still allows offline UI work without requiring a Rallar Server login
+- successful login stores the Rallar auth session through the same browser auth/session mechanism used by the browser
+  Rallar facade
+- failed login shows a compact, redacted auth error with enough detail to distinguish bad credentials, CORS failure,
+  unreachable server, and server-side auth denial
+- logout action that disconnects, clears browser session state, returns to the login screen, and records cleanup
+  diagnostics
+- shared REST helper for SPA-originated Rallar Server calls that attaches `Authorization: Bearer <accessToken>` and
+  `x-client-id`
+- audit all current SPA HTTP paths, including manual HTTP commands, Rallar Server API calls, room/group operations,
+  diagnostics helpers, and future REST workbench requests, so authenticated endpoints never call the server without
+  tokens
+- visible session summary in the app shell: username, client id, session id, provider mode, API base URL, and room
+  context, with secret fields redacted
+- tests covering login success, bad credentials, missing CORS headers, logout cleanup, restored session bootstrap, and
+  authenticated REST header injection
+
+### Iteration 21: Tabbed Operational Navigation
+
+Reorganize the current dense single-page UI into an operational shell with top-level tabs while keeping the most useful
+status information visible.
+
+Status: planned.
+
+Results:
+
+- Not started.
+
+Deliverables:
+
+- app shell after login with persistent top summary for provider, server, user/session, run state, active command,
+  current room, and latest failure
+- top tab navigation for:
+  - `Manual Rallar`
+  - `Topology`
+  - `RTC Diagnostics`
+  - `Local Workbench`
+  - `Event Stream`
+  - `Rallar Server`
+- keep compact landing/shell elements outside tabs when they are globally useful: login/session state, provider mode,
+  API base, control connection, active run, current failure, and command progress
+- move Manual Rallar controls, received-data inbox, and manual action history into the Manual Rallar tab
+- move graphology/sigma topology, topology lists, route summaries, and topology filters into the Topology tab
+- move connect phases, failure bundle, reconnect, cleanup, and RTC-specific troubleshooting controls into the RTC
+  Diagnostics tab
+- move recipe fixtures, command JSON, recipe JSON, local execution controls, command queue, and report snapshot into the
+  Local Workbench tab
+- move events, diagnostics, filters, selected result, and raw event payloads into the Event Stream tab
+- keyboard and URL-friendly tab state so a failure link can open the relevant tab directly
+- responsive layout checks for desktop and narrow browser widths with no overlapping panels or hidden critical controls
+- regression tests proving tab selection does not reset manual form state, loaded recipes, selected command, or event
+  filters
+
+### Iteration 22: Rallar Server REST Workbench
+
+Add a front-end for Rallar Server REST API exploration inside the SPA so black-box testers can inspect and exercise the
+server without leaving the tool.
+
+Status: planned.
+
+Results:
+
+- Not started.
+
+Deliverables:
+
+- `Rallar Server` tab with authenticated REST request builder for `GET`, `POST`, `PUT`, and `DELETE` where supported by
+  the server
+- base URL defaults from the active Rallar config and cannot silently point at the placeholder API URL in real-provider
+  mode
+- endpoint picker backed by the local OpenAPI document or a server-served OpenAPI endpoint when available
+- structured inputs for common API calls: `/api/config`, auth session inspection/logout where safe, ICE config,
+  client state, group state, group create/join/leave/presence, graph endpoints, and any documented API v1 routes
+- raw path mode for advanced calls with method, path, headers, query params, JSON body, timeout, and response-body mode
+- automatic auth header injection from the current browser session, with visible redaction and an explicit unauthenticated
+  toggle only for public endpoints
+- response panel with status, duration, headers, parsed JSON, raw text, copyable curl-like reproduction, and redacted
+  request/response export
+- save selected REST requests as black-box commands or manual recipe snippets where the command model supports it
+- error classification for unauthenticated, forbidden, CORS, network, invalid JSON, timeout, and non-JSON responses
+- unit tests for request construction, auth header injection, redaction, OpenAPI endpoint extraction, and response
+  rendering
+
+### Iteration 23: Full-stack Two-browser UI Automation
+
+Create an automated regression path that starts the local server-side pieces and drives the visible SPA through the
+important user flows with at least two browsers.
+
+Status: planned.
+
+Results:
+
+- Not started.
+
+Deliverables:
+
+- Playwright project or npm script that starts:
+  - `apps/api-v1` on `http://localhost:8080`
+  - `apps/rallar-black-box-control-server` on `http://localhost:5180`
+  - `apps/rallar-black-box` on `http://localhost:5176`
+- test fixture that verifies required local environment and CORS setup before running live browser flows
+- two isolated browser contexts that log in as two different users or restored sessions
+- UI-driven flow covering login, app shell entry, Manual Rallar configure, connect, direct send, broadcast/multicast
+  metadata, received-data inbox, RTC diagnostics, topology, event stream filtering, and logout/cleanup
+- server-side REST workbench flow covering authenticated `GET` and `POST` requests against `apps/api-v1`
+- control-server orchestration flow covering agent registration, command enqueueing, result polling, stats/report
+  capture, and graceful disconnect
+- assertions that all Rallar Server REST calls include auth headers after login
+- assertions that real-provider runs do not emit `rallar.bb.fake.*` topics
+- failure artifacts: screenshots, traces, server logs, command reports, event stream export, and redacted auth/session
+  diagnostics
+- CI-safe skip or local-only gate when Postgres, Deno, browser dependencies, or live Rallar credentials are unavailable
+
+### Iteration 24: Front-end Stabilisation And Accessibility QA
+
+Stabilize the visible UI after the login/tabs/API-workbench changes so it remains usable during long and failed runs.
+
+Status: planned.
+
+Results:
+
+- Not started.
+
+Deliverables:
+
+- state persistence for selected tab, current run, active room, manual values, event filters, and server request drafts
+  where useful
+- clear loading, disabled, empty, success, warning, and error states across all tabs
+- no visible secret leakage in forms, command previews, copied recipes, reports, event payloads, browser traces, or
+  failure bundles
+- large event-stream handling through filtering, virtualization or pagination, and bounded memory growth
+- topology sampling/filtering for large runs with deterministic route summaries
+- frontend accessibility pass for form labels, keyboard navigation, focus movement after login/logout, tab semantics,
+  contrast, and screen-reader-friendly error messages
+- browser viewport QA for desktop and narrow/mobile widths
+- focused component/unit tests for selectors, tab routing, redaction, event filtering, request drafts, and diagnostics
+  classification
+
+### Iteration 25: Rallar Server And Control-plane QA Hardening
+
+Harden the server-side testing surface so black-box results are repeatable, diagnosable, and safe to run repeatedly.
+
+Status: planned.
+
+Results:
+
+- Not started.
+
+Deliverables:
+
+- documented local full-stack test recipe with required `.env`, `apps/api-v1/.env.local`, CORS origins, database setup,
+  test users, and room/group setup
+- server readiness checks for API v1, control server, database, WebSocket upgrade, `/api/config`, auth login, ws-ticket,
+  ICE, state clients, state groups, and swagger/OpenAPI routes
+- cleanup isolation between runs: unique run ids, room ids where possible, session cleanup, room leave, logout, control
+  server run cleanup, and browser storage cleanup
+- negative matrices for bad credentials, missing token, expired ticket, forbidden group operation, stale session,
+  duplicate session, missing peer, stale agent, CORS denial, and server restart/reconnect
+- repeatable seed/run metadata for every automated UI and runner test
+- cross-checks between SPA reports, control-server snapshots, Rallar Server state endpoints, and black-box runner reports
+- performance and soak baselines for command latency, connect latency, first-payload latency, event throughput, topology
+  rendering, and server response latency
+- release checklist for running unit tests, SPA build, control-server Deno check/test, API v1 check/test where available,
+  Playwright UI tests, and gated real-provider tests
+
 ## Concerns
 
 Remote browser control is a security-sensitive capability. The app should never accept arbitrary JavaScript or
@@ -1234,6 +1441,15 @@ WebSocket is best for live control and low-latency telemetry, but REST remains u
 final report submission.
 
 Graph visualisation can become expensive for large runs. It should be sampled, filtered, and optional.
+
+The visible SPA now needs product-level navigation discipline. Without tabs, state persistence, and a clear login/app
+boundary, the tool becomes harder to use exactly when diagnostics become more valuable.
+
+The Rallar Server REST workbench must reuse the same authenticated session path as the browser Rallar facade. A separate
+ad hoc API client would create a high risk of missing tokens, inconsistent CORS behavior, and misleading diagnostics.
+
+Full-stack automated tests must distinguish "not configured locally" from real regressions. Local server startup,
+database readiness, CORS, test users, and room setup should fail early with actionable diagnostics.
 
 ## Open Questions
 
@@ -1252,6 +1468,14 @@ Graph visualisation can become expensive for large runs. It should be sampled, f
   network traffic is harder to trigger?
 - What default HTTP and WebSocket destination allowlists should browser-native commands use?
 - What report storage format should the server use for long-running test reports?
+- Should the login screen support only username/password first, or should it also expose restored-session import and
+  disposable-user registration for local testing?
+- Should the `Rallar Server` REST tab consume a generated OpenAPI client, a dynamic OpenAPI endpoint index, or a small
+  curated endpoint registry for the first implementation?
+- Should full-stack Playwright tests own their own disposable Postgres/database namespace, or use existing local static
+  users and groups for the first version?
+- Should REST workbench requests be allowed to target arbitrary paths on the configured API base URL, or only paths
+  present in the OpenAPI/allowlist by default?
 
 ## References
 

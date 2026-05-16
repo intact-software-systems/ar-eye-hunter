@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { readSession } from '@shared/api/auth.ts';
 import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/browser-adapter.ts';
 import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime.ts';
 import type {
@@ -352,11 +353,25 @@ function rallarConfigFromBootstrap(
         ...(bootstrap.rallarUsername ? { username: bootstrap.rallarUsername } : {}),
         ...(bootstrap.rallarPassword ? { password: bootstrap.rallarPassword } : {}),
         ...(bootstrap.rallarRegister ? { register: true } : {}),
-        ...(bootstrap.rallarRestoreSession ? { restoreSession: true } : {}),
+        ...(bootstrap.rallarRestoreSession || browserAuthSessionExists()
+            ? { restoreSession: true }
+            : {}),
         ...(bootstrap.rallarLogoutOnClose ? { logoutOnClose: true } : {}),
         leaveRoomOnClose: bootstrap.rallarLeaveRoomOnClose,
     };
     return Object.keys(rallar).length > 0 ? rallar : undefined;
+}
+
+function browserAuthSessionExists(): boolean {
+    if (typeof localStorage === 'undefined') {
+        return false;
+    }
+
+    try {
+        return Boolean(readSession());
+    } catch {
+        return false;
+    }
 }
 
 function recordAndThrowProviderConfigError(
@@ -716,7 +731,7 @@ class RallarBlackBoxRuntimeStore {
     private snapshot: RuntimeStoreSnapshot;
     private bootstrapStarted = false;
     private runSequence = 1;
-    private readonly bootstrapConfig = resolveRallarBlackBoxBootstrapConfig();
+    private bootstrapConfig = resolveRallarBlackBoxBootstrapConfig();
 
     constructor() {
         if (
@@ -773,6 +788,20 @@ class RallarBlackBoxRuntimeStore {
             this.listeners.delete(listener);
         };
     };
+
+    updateBootstrapConfig(
+        patch: Partial<RallarBlackBoxBootstrapConfig>,
+    ): void {
+        this.bootstrapConfig = {
+            ...this.bootstrapConfig,
+            ...patch,
+        };
+        this.snapshot = {
+            ...this.snapshot,
+            bootstrap: this.bootstrapConfig,
+        };
+        this.emit();
+    }
 
     ensureBootstrapped(): void {
         if (this.bootstrapStarted) {

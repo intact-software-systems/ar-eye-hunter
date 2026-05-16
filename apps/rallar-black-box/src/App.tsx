@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import Sigma from 'sigma';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { readSession } from '@shared/api/auth.ts';
 import {
     selectRallarBlackBoxActiveCommand,
     selectRallarBlackBoxCommandHistory,
@@ -26,6 +28,11 @@ import {
     rallarBlackBoxRuntimeStore,
     useRallarBlackBoxRuntimeStore,
 } from './runtime-store.ts';
+import {
+    authenticateRallarBlackBox,
+    authErrorMessage,
+    bootstrapPatchFromAuthSession,
+} from './auth-flow.ts';
 import type { RallarBlackBoxControlSnapshot } from './control-client.ts';
 import {
     RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE,
@@ -288,6 +295,7 @@ function booleanValue(value: unknown, fallback = false): boolean {
 function manualValuesFromState(
     state: RallarBlackBoxTestState,
     bootstrap: RallarBlackBoxBootstrapConfig,
+    authSession?: AuthSession,
 ): ManualWorkbenchValues {
     const config = selectRallarBlackBoxCurrentConfig(state);
     const configRallar = recordValue(config?.rallar);
@@ -295,19 +303,21 @@ function manualValuesFromState(
         ...DEFAULT_MANUAL_WORKBENCH_VALUES,
         environment: config?.environment ?? bootstrap.environment,
         apiBaseUrl: config?.apiBaseUrl ?? bootstrap.apiBaseUrl,
-        actor: config?.actor ?? bootstrap.actor,
-        sessionId: config?.sessionId ?? bootstrap.sessionId,
+        actor: config?.actor ?? authSession?.username ?? bootstrap.actor,
+        sessionId: config?.sessionId ?? authSession?.sessionId ?? bootstrap.sessionId,
         groupId: config?.roomId ?? bootstrap.roomId,
         connection: String(config?.defaults?.connection ?? DEFAULT_MANUAL_WORKBENCH_VALUES.connection),
         transport: manualTransportFrom(config?.transport ?? bootstrap.transport),
         providerMode: config
             ? rallarBlackBoxProviderModeFromConfig(config)
             : bootstrap.providerMode,
-        rallarUsername: bootstrap.rallarUsername ?? stringValue(configRallar.username),
+        rallarUsername: bootstrap.rallarUsername ?? authSession?.username ??
+            stringValue(configRallar.username),
         rallarPassword: bootstrap.rallarPassword,
         rallarRegister: bootstrap.rallarRegister ||
             booleanValue(configRallar.register),
         rallarRestoreSession: bootstrap.rallarRestoreSession ||
+            Boolean(authSession) ||
             booleanValue(configRallar.restoreSession),
         rallarLogoutOnClose: bootstrap.rallarLogoutOnClose ||
             booleanValue(configRallar.logoutOnClose),
@@ -352,11 +362,136 @@ function topologyFilterLabel(filter: RallarTopologyFilter): string {
     return filter === 'all' ? 'All' : filter;
 }
 
-function Header({ state, control, bootstrapping, lastAction }: {
+function readCurrentAuthSession(): AuthSession | undefined {
+    try {
+        return readSession();
+    } catch {
+        return undefined;
+    }
+}
+
+async function loadBrowserRallarFacade() {
+    return (await import('@shared-web/browser/rallar.ts')).rallar;
+}
+
+function LoginScreen({ bootstrap, onAuthenticated }: {
+    bootstrap: RallarBlackBoxBootstrapConfig;
+    onAuthenticated(session: AuthSession): void;
+}) {
+    const [apiBaseUrl, setApiBaseUrl] = useState(bootstrap.apiBaseUrl);
+    const [username, setUsername] = useState(bootstrap.rallarUsername ?? bootstrap.actor);
+    const [password, setPassword] = useState(bootstrap.rallarPassword ?? '');
+    const [register, setRegister] = useState(bootstrap.rallarRegister);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | undefined>();
+
+    const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+        event.preventDefault();
+        setBusy(true);
+        setError(undefined);
+
+        try {
+            const session = await authenticateRallarBlackBox(await loadBrowserRallarFacade(), {
+                apiBaseUrl,
+                username,
+                password,
+                register,
+            });
+            rallarBlackBoxRuntimeStore.updateBootstrapConfig(
+                bootstrapPatchFromAuthSession(session, apiBaseUrl),
+            );
+            onAuthenticated(session);
+        } catch (authError) {
+            setError(authErrorMessage(authError));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <main className="auth-shell">
+            <section className="auth-panel">
+                <div className="auth-heading">
+                    <p className="eyebrow">Rallar black-box agent</p>
+                    <h1>Rallar Server Login</h1>
+                    <span className="pill active">{bootstrap.providerMode}</span>
+                </div>
+                <form className="auth-form" onSubmit={event => void submit(event)}>
+                    <label className="field">
+                        <span>API Base URL</span>
+                        <input
+                            value={apiBaseUrl}
+                            onChange={event => setApiBaseUrl(event.target.value)}
+                            disabled={busy}
+                            required
+                        />
+                    </label>
+                    <label className="field">
+                        <span>Username</span>
+                        <input
+                            value={username}
+                            onChange={event => setUsername(event.target.value)}
+                            disabled={busy}
+                            autoComplete="username"
+                            required
+                        />
+                    </label>
+                    <label className="field">
+                        <span>Password</span>
+                        <input
+                            type="password"
+                            value={password}
+                            onChange={event => setPassword(event.target.value)}
+                            disabled={busy}
+                            autoComplete="current-password"
+                            required
+                        />
+                    </label>
+                    <label className="check-field">
+                        <input
+                            type="checkbox"
+                            checked={register}
+                            onChange={event => setRegister(event.target.checked)}
+                            disabled={busy}
+                        />
+                        <span>Register before login</span>
+                    </label>
+                    <button type="submit" disabled={busy || !apiBaseUrl || !username || !password}>
+                        {busy ? 'Signing in' : 'Sign in'}
+                    </button>
+                </form>
+                <dl className="auth-summary">
+                    <div>
+                        <dt>Room</dt>
+                        <dd>{bootstrap.roomId}</dd>
+                    </div>
+                    <div>
+                        <dt>Transport</dt>
+                        <dd>{bootstrap.transport}</dd>
+                    </div>
+                    <div>
+                        <dt>Source</dt>
+                        <dd>{bootstrap.source}</dd>
+                    </div>
+                </dl>
+                {error && (
+                    <div className="workbench-error" role="status">
+                        {error}
+                    </div>
+                )}
+            </section>
+        </main>
+    );
+}
+
+function Header({ state, control, bootstrapping, lastAction, authSession, authBusy, onLogout }: {
     state: RallarBlackBoxTestState;
     control: RallarBlackBoxControlSnapshot;
     bootstrapping: boolean;
     lastAction?: string;
+    authSession?: AuthSession;
+    authBusy: boolean;
+    onLogout(): void;
 }) {
     const config = selectRallarBlackBoxCurrentConfig(state);
     const stats = selectRallarBlackBoxLatestStats(state);
@@ -379,8 +514,8 @@ function Header({ state, control, bootstrapping, lastAction }: {
                 <Metric label="Runtime" value={state.status} tone={statusTone(state.status)}/>
                 <Metric label="Rallar" value={rallarValue} tone={stats?.rallar?.connected ? 'good' : providerMode === 'simulated' ? 'warn' : 'muted'}/>
                 <Metric label="Environment" value={config?.environment ?? 'local'}/>
-                <Metric label="Actor" value={config?.actor ?? 'none'}/>
-                <Metric label="Session" value={config?.sessionId ?? 'none'}/>
+                <Metric label="User" value={authSession?.username ?? config?.actor ?? 'none'}/>
+                <Metric label="Session" value={authSession?.sessionId ?? config?.sessionId ?? 'none'}/>
             </div>
             <div className="header-actions">
                 <span className={`pill ${bootstrapping ? 'active' : 'good'}`}>
@@ -390,10 +525,19 @@ function Header({ state, control, bootstrapping, lastAction }: {
                 <button
                     type="button"
                     onClick={() => void rallarBlackBoxRuntimeStore.runSample()}
-                    disabled={bootstrapping}
+                    disabled={bootstrapping || providerMode === 'browser-rallar'}
                 >
                     Replay Sample
                 </button>
+                {authSession && (
+                    <button
+                        type="button"
+                        onClick={onLogout}
+                        disabled={authBusy}
+                    >
+                        {authBusy ? 'Signing out' : 'Logout'}
+                    </button>
+                )}
             </div>
         </header>
     );
@@ -531,15 +675,16 @@ function WorkbenchPanel({ busy, runState, loadedFixtureId, lastError }: {
     );
 }
 
-function ManualRallarWorkbenchPanel({ state, bootstrap, busy, onSelectCommand }: {
+function ManualRallarWorkbenchPanel({ state, bootstrap, authSession, busy, onSelectCommand }: {
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
+    authSession?: AuthSession;
     busy: boolean;
     onSelectCommand(commandId: string): void;
 }) {
     const defaultValues = useMemo(
-        () => manualValuesFromState(state, bootstrap),
-        [bootstrap, state.currentConfig],
+        () => manualValuesFromState(state, bootstrap, authSession),
+        [authSession, bootstrap, state.currentConfig],
     );
     const [values, setValues] = useState<ManualWorkbenchValues>(() => defaultValues);
     const [valuesEdited, setValuesEdited] = useState(false);
@@ -920,9 +1065,10 @@ function ReceivedDataInboxPanel({ state, onSelectCommand }: {
     );
 }
 
-function RtcDiagnosticsPanel({ state, bootstrap, busy, onSelectCommand }: {
+function RtcDiagnosticsPanel({ state, bootstrap, authSession, busy, onSelectCommand }: {
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
+    authSession?: AuthSession;
     busy: boolean;
     onSelectCommand(commandId: string): void;
 }) {
@@ -936,7 +1082,7 @@ function RtcDiagnosticsPanel({ state, bootstrap, busy, onSelectCommand }: {
         action: ManualWorkbenchAction | 'reconnect' | 'cleanup',
     ): Promise<void> => {
         setLocalError(undefined);
-        const values = manualValuesFromState(state, bootstrap);
+        const values = manualValuesFromState(state, bootstrap, authSession);
         const startSequence = sequence;
         const commands = action === 'reconnect'
             ? [
@@ -1808,10 +1954,37 @@ export default function App() {
     const activeCommand = selectRallarBlackBoxActiveCommand(state);
     const now = useNow(250);
     const [selectedCommandId, setSelectedCommandId] = useState<string | undefined>();
+    const [authSession, setAuthSession] = useState<AuthSession | undefined>(() =>
+        readCurrentAuthSession()
+    );
+    const [authBusy, setAuthBusy] = useState(false);
+    const [authError, setAuthError] = useState<string | undefined>();
+    const requiresLogin = bootstrap.providerMode === 'browser-rallar';
+    const canEnterApp = !requiresLogin || Boolean(authSession);
 
     useEffect(() => {
-        rallarBlackBoxRuntimeStore.ensureBootstrapped();
-    }, []);
+        if (requiresLogin) {
+            void loadBrowserRallarFacade()
+                .then(facade => facade.configure({ apiBaseUrl: bootstrap.apiBaseUrl }))
+                .catch(() => {
+                    // Connect-time diagnostics will surface configuration conflicts.
+                });
+        }
+    }, [bootstrap.apiBaseUrl, requiresLogin]);
+
+    useEffect(() => {
+        if (requiresLogin && authSession) {
+            rallarBlackBoxRuntimeStore.updateBootstrapConfig(
+                bootstrapPatchFromAuthSession(authSession, bootstrap.apiBaseUrl),
+            );
+        }
+    }, [authSession, bootstrap.apiBaseUrl, requiresLogin]);
+
+    useEffect(() => {
+        if (canEnterApp) {
+            rallarBlackBoxRuntimeStore.ensureBootstrapped();
+        }
+    }, [canEnterApp]);
 
     useEffect(() => {
         if (activeCommand) {
@@ -1826,6 +1999,37 @@ export default function App() {
 
     const selectedResult = findSelectedResult(history, selectedCommandId);
 
+    const logout = async (): Promise<void> => {
+        setAuthBusy(true);
+        setAuthError(undefined);
+        try {
+            const facade = await loadBrowserRallarFacade();
+            facade.configure({ apiBaseUrl: bootstrap.apiBaseUrl });
+            await rallarBlackBoxRuntimeStore.executeManualCommand({
+                kind: 'close',
+                commandId: `logout-close-${Date.now()}`,
+            }, 'Closing Rallar session');
+            await facade.auth.logout();
+        } catch (error) {
+            setAuthError(authErrorMessage(error));
+        } finally {
+            setAuthSession(readCurrentAuthSession());
+            setAuthBusy(false);
+        }
+    };
+
+    if (requiresLogin && !authSession) {
+        return (
+            <LoginScreen
+                bootstrap={bootstrap}
+                onAuthenticated={session => {
+                    setAuthError(undefined);
+                    setAuthSession(session);
+                }}
+            />
+        );
+    }
+
     return (
         <main className="app-shell">
             <Header
@@ -1833,7 +2037,15 @@ export default function App() {
                 control={control}
                 bootstrapping={bootstrapping}
                 lastAction={lastAction}
+                authSession={authSession}
+                authBusy={authBusy}
+                onLogout={() => void logout()}
             />
+            {authError && (
+                <div className="workbench-error app-error" role="status">
+                    {authError}
+                </div>
+            )}
             <div className="workspace-grid">
                 <WorkbenchPanel
                     busy={busy}
@@ -1844,6 +2056,7 @@ export default function App() {
                 <ManualRallarWorkbenchPanel
                     state={state}
                     bootstrap={bootstrap}
+                    authSession={authSession}
                     busy={busy}
                     onSelectCommand={setSelectedCommandId}
                 />
@@ -1854,6 +2067,7 @@ export default function App() {
                 <RtcDiagnosticsPanel
                     state={state}
                     bootstrap={bootstrap}
+                    authSession={authSession}
                     busy={busy}
                     onSelectCommand={setSelectedCommandId}
                 />

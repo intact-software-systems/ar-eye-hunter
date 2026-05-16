@@ -47,6 +47,82 @@ button:disabled {
     padding: 18px;
 }
 
+.auth-shell {
+    display: grid;
+    place-items: center;
+    min-height: 100vh;
+    padding: 18px;
+}
+
+.auth-panel {
+    width: min(540px, 100%);
+    border: 1px solid #c8d0c5;
+    border-radius: 8px;
+    background: #fbfcf8;
+}
+
+.auth-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+    align-items: start;
+    padding: 18px;
+    border-bottom: 1px solid #dbe1d8;
+}
+
+.auth-heading .eyebrow {
+    grid-column: 1 / 3;
+}
+
+.auth-form {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+}
+
+.auth-form button {
+    min-height: 40px;
+    border: 1px solid #0c6f7b;
+    border-radius: 6px;
+    background: #0c6f7b;
+    color: #ffffff;
+    font-weight: 800;
+}
+
+.check-field {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    color: #40504a;
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
+.check-field input {
+    width: 16px;
+    height: 16px;
+}
+
+.auth-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0;
+    padding: 0 14px 14px;
+}
+
+.auth-summary div {
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid #dbe1d8;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.app-error {
+    margin-top: 14px;
+}
+
 .run-header {
     display: grid;
     grid-template-columns: minmax(220px, 1.1fr) minmax(420px, 2.2fr) minmax(260px, 0.9fr);
@@ -1116,7 +1192,8 @@ dd {
     .workspace-grid,
     .config-list,
     .result-summary,
-    .stats-grid {
+    .stats-grid,
+    .auth-summary {
         grid-template-columns: 1fr;
     }
 

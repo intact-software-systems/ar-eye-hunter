@@ -1,5 +1,7 @@
 import type { CreateRallarBlackBoxTestRuntimeOptions, } from './runtime.ts';
 import { createRallarBlackBoxTestRuntime } from './runtime.ts';
+import { readSession } from '@shared/api/auth.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandContext,
@@ -135,6 +137,56 @@ function toHeadersRecord(headers: Headers): Record<string, string> {
         result[key] = value;
     });
     return result;
+}
+
+function readOptionalBrowserSession(): AuthSession | undefined {
+    if (typeof localStorage === 'undefined') {
+        return undefined;
+    }
+
+    try {
+        return readSession();
+    } catch {
+        return undefined;
+    }
+}
+
+function normalizeUrlPrefix(value: string | undefined): string | undefined {
+    const trimmed = value?.trim().replace(/\/+$/, '');
+    return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
+function shouldAttachRallarAuth(
+    command: Extract<CommandWithId, { kind: 'http.request' }>,
+    config: RallarBlackBoxTestConfig | undefined,
+    url: string,
+): boolean {
+    if (command.request.path) {
+        return true;
+    }
+
+    const apiBaseUrl = normalizeUrlPrefix(
+        config?.apiBaseUrl ?? toStringValue(asRecord(config?.rallar).apiBaseUrl),
+    );
+    if (!apiBaseUrl) {
+        return false;
+    }
+
+    return url === apiBaseUrl || url.startsWith(`${apiBaseUrl}/`);
+}
+
+function withRallarAuthHeaders(
+    headers: HeadersInit | undefined,
+    session: AuthSession | undefined,
+): HeadersInit | undefined {
+    if (!session) {
+        return headers;
+    }
+
+    const next = new Headers(headers);
+    next.set('authorization', `Bearer ${session.accessToken}`);
+    next.set('x-client-id', session.clientId);
+    return toHeadersRecord(next);
 }
 
 function trimTextBody(body: string, limit: number): string {
@@ -448,9 +500,12 @@ class BrowserCommandAdapter {
     ): Promise<RallarBlackBoxTestCommandOutcome> {
         const url = toRequestUrl(command, context.config());
         const request = command.request;
+        const headers = shouldAttachRallarAuth(command, context.config(), url)
+            ? withRallarAuthHeaders(request.headers, readOptionalBrowserSession())
+            : request.headers;
         const response = await this.requireFetch()(url, {
             method: request.method,
-            headers: request.headers,
+            headers,
             body: request.body === undefined
                 ? undefined
                 : typeof request.body === 'string'
