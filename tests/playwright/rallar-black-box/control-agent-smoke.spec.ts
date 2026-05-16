@@ -13,7 +13,7 @@ test('SPA auto-connects as a control agent and returns command results', async (
     const commandId = `smoke-stats-${suffix}`;
 
     await page.goto(
-        `/?mode=control&controlUrl=${encodeURIComponent(CONTROL_WS_URL)}` +
+        `/?mode=control&provider=simulated&tab=local-workbench&controlUrl=${encodeURIComponent(CONTROL_WS_URL)}` +
         `&runId=${encodeURIComponent(runId)}` +
         `&agentId=${encodeURIComponent(agentId)}`,
     );
@@ -45,5 +45,6 @@ test('SPA auto-connects as a control agent and returns command results', async (
         ) ?? false;
     }).toBe(true);
 
-    await expect(page.getByText(commandId).first()).toBeVisible();
+    await page.getByRole('tab', { name: 'Event Stream' }).click();
+    await expect(page.locator('#panel-event-stream').getByText(commandId).first()).toBeVisible();
 });

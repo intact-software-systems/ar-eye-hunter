@@ -18,6 +18,7 @@ import type {
     RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntimeStatus,
     RallarBlackBoxTestSeverity,
+    RallarBlackBoxTestRedactionOptions,
     RallarBlackBoxTestState,
     RallarBlackBoxTestTransport,
 } from '@shared-test/rallar-bb-test/types.ts';
@@ -74,6 +75,8 @@ import {
     defaultRallarServerWorkbenchVariables,
     executeRallarServerRestRequest,
     fetchRallarServerOpenApiEndpoints,
+    redactRallarServerText,
+    redactRallarServerUrl,
     redactRallarServerValue,
     toRallarServerBlackBoxCommand,
     toRallarServerCurl,
@@ -83,6 +86,21 @@ import {
     type RallarServerRestRequestInput,
     type RallarServerRestResponse,
 } from './rallar-server-workbench.ts';
+import {
+    readEventFilters,
+    readManualWorkbenchDraft,
+    readRallarServerWorkbenchDraft,
+    readStoredAppTab,
+    readStoredSelectedCommandId,
+    writeEventFilters,
+    writeManualWorkbenchDraft,
+    writeRallarServerWorkbenchDraft,
+    writeStoredAppTab,
+    writeStoredSelectedCommandId,
+    type ManualWorkbenchDraft,
+    type RallarBlackBoxUiStorage,
+    type RallarServerWorkbenchDraft,
+} from './ui-persistence.ts';
 
 type CommandQueueRow = Readonly<{
     id: string;
@@ -104,13 +122,47 @@ type EventFilters = Readonly<{
     severity: string;
 }>;
 
+const DEFAULT_EVENT_FILTERS: EventFilters = {
+    kind: 'all',
+    commandId: '',
+    connection: '',
+    actor: '',
+    transport: '',
+    topic: '',
+    severity: '',
+};
+
+const EVENT_KIND_FILTERS: readonly EventFilter[] = [
+    'all',
+    'diagnostic',
+    'event',
+    'message',
+    'report',
+    'result',
+    'state',
+    'stats',
+];
+
+function eventFilterFromValue(value: string): EventFilter {
+    return EVENT_KIND_FILTERS.includes(value as EventFilter)
+        ? value as EventFilter
+        : 'all';
+}
+
 function readInitialAppTab(): AppTabId {
     if (typeof window === 'undefined') {
         return DEFAULT_APP_TAB_ID;
     }
 
     const params = new URLSearchParams(window.location.search);
-    return appTabFromValue(params.get('tab'));
+    const explicitTab = params.get('tab');
+    if (explicitTab) {
+        const tab = appTabFromValue(explicitTab);
+        writeStoredAppTab(browserUiStorage(), tab);
+        return tab;
+    }
+
+    return readStoredAppTab(browserUiStorage()) ?? DEFAULT_APP_TAB_ID;
 }
 
 function writeAppTabToUrl(tab: AppTabId): void {
@@ -118,6 +170,7 @@ function writeAppTabToUrl(tab: AppTabId): void {
         return;
     }
 
+    writeStoredAppTab(browserUiStorage(), tab);
     const url = new URL(window.location.href);
     url.searchParams.set('tab', tab);
     window.history.replaceState(null, '', url);
@@ -175,6 +228,48 @@ function formatDuration(ms: number | undefined): string {
 
 function json(value: unknown): string {
     return JSON.stringify(value ?? null, null, 2);
+}
+
+function browserUiStorage(): RallarBlackBoxUiStorage | undefined {
+    if (typeof window === 'undefined') {
+        return undefined;
+    }
+
+    return window.localStorage;
+}
+
+function uiSecretValues(
+    state?: RallarBlackBoxTestState,
+    authSession?: AuthSession,
+    extraValues: readonly (string | undefined)[] = [],
+): readonly string[] {
+    return [
+        ...(state?.currentConfig?.redaction?.secretValues ?? []),
+        authSession?.accessToken,
+        authSession ? `Bearer ${authSession.accessToken}` : undefined,
+        ...extraValues,
+    ].filter((entry): entry is string => Boolean(entry && entry.length > 0));
+}
+
+function uiRedactionOptions(
+    state?: RallarBlackBoxTestState,
+    authSession?: AuthSession,
+    extraValues: readonly (string | undefined)[] = [],
+): RallarBlackBoxTestRedactionOptions {
+    const base = state?.currentConfig?.redaction ?? {};
+    return {
+        ...base,
+        secretValues: uiSecretValues(state, authSession, extraValues),
+    };
+}
+
+function redactedJson(
+    value: unknown,
+    state?: RallarBlackBoxTestState,
+    authSession?: AuthSession,
+    extraValues: readonly (string | undefined)[] = [],
+): string {
+    return json(redactRallarBlackBoxValue(value, uiRedactionOptions(state, authSession, extraValues)));
 }
 
 function activeDeadlineEpochMs(
@@ -772,12 +867,22 @@ function ManualRallarWorkbenchPanel({ state, bootstrap, authSession, busy, onSel
         () => manualValuesFromState(state, bootstrap, authSession),
         [authSession, bootstrap, state.currentConfig],
     );
-    const [values, setValues] = useState<ManualWorkbenchValues>(() => defaultValues);
-    const [valuesEdited, setValuesEdited] = useState(false);
-    const [payloadPresetId, setPayloadPresetId] = useState(MANUAL_PAYLOAD_PRESETS[0].presetId);
-    const [payloadText, setPayloadText] = useState(() =>
-        JSON.stringify(MANUAL_PAYLOAD_PRESETS[0].payload, null, 2)
-    );
+    const defaultDraft = useMemo<ManualWorkbenchDraft>(() => ({
+        values: defaultValues,
+        payloadPresetId: MANUAL_PAYLOAD_PRESETS[0].presetId,
+        payloadText: JSON.stringify(MANUAL_PAYLOAD_PRESETS[0].payload, null, 2),
+    }), [defaultValues]);
+    const [initialDraft] = useState(() => {
+        const stored = readManualWorkbenchDraft(browserUiStorage(), defaultDraft);
+        return {
+            draft: stored ?? defaultDraft,
+            restored: Boolean(stored),
+        };
+    });
+    const [values, setValues] = useState<ManualWorkbenchValues>(() => initialDraft.draft.values);
+    const [valuesEdited, setValuesEdited] = useState(initialDraft.restored);
+    const [payloadPresetId, setPayloadPresetId] = useState(initialDraft.draft.payloadPresetId);
+    const [payloadText, setPayloadText] = useState(() => initialDraft.draft.payloadText);
     const [sequence, setSequence] = useState(1);
     const [history, setHistory] = useState<readonly ManualActionHistoryEntry[]>([]);
     const [localError, setLocalError] = useState<string | undefined>();
@@ -797,6 +902,20 @@ function ManualRallarWorkbenchPanel({ state, bootstrap, authSession, busy, onSel
             setValues(defaultValues);
         }
     }, [defaultValues, valuesEdited]);
+
+    useEffect(() => {
+        writeManualWorkbenchDraft(browserUiStorage(), {
+            values,
+            payloadPresetId,
+            payloadText,
+        }, uiSecretValues(state, authSession, [values.rallarPassword]));
+    }, [
+        authSession?.accessToken,
+        payloadPresetId,
+        payloadText,
+        state.currentConfig?.redaction,
+        values,
+    ]);
 
     const updateValue = <K extends keyof ManualWorkbenchValues>(
         key: K,
@@ -836,7 +955,10 @@ function ManualRallarWorkbenchPanel({ state, bootstrap, authSession, busy, onSel
             actionId: `manual-action-${startSequence}`,
             label,
             commandIds: commands.map(command => command.commandId ?? command.kind),
-            commands: redactRallarBlackBoxValue(commands),
+            commands: redactRallarBlackBoxValue(
+                commands,
+                uiRedactionOptions(state, authSession, [values.rallarPassword]),
+            ),
             atEpochMs: Date.now(),
         };
 
@@ -1034,7 +1156,14 @@ function ManualRallarWorkbenchPanel({ state, bootstrap, authSession, busy, onSel
                     <span>{previewCommands.length} command</span>
                 </div>
                 <pre className="json-block">
-                    {payloadResult.ok ? json(previewCommands.length === 1 ? previewCommands[0] : previewCommands) : payloadResult.error}
+                    {payloadResult.ok
+                        ? redactedJson(
+                            previewCommands.length === 1 ? previewCommands[0] : previewCommands,
+                            state,
+                            authSession,
+                            [values.rallarPassword],
+                        )
+                        : payloadResult.error}
                 </pre>
             </div>
             <div className="manual-action-grid">
@@ -1101,7 +1230,10 @@ function ManualRallarWorkbenchPanel({ state, bootstrap, authSession, busy, onSel
             </div>
             {localError && (
                 <div className="workbench-error" role="status">
-                    {localError}
+                    {redactRallarBlackBoxValue(
+                        localError,
+                        uiRedactionOptions(state, authSession, [values.rallarPassword]),
+                    )}
                 </div>
             )}
         </section>
@@ -1143,7 +1275,7 @@ function ReceivedDataInboxPanel({ state, onSelectCommand }: {
                                 </button>
                             )}
                         </div>
-                        <pre className="mini-json">{json(message.payload)}</pre>
+                        <pre className="mini-json">{redactedJson(message.payload, state)}</pre>
                     </article>
                 ))}
             </div>
@@ -1162,7 +1294,10 @@ function RtcDiagnosticsPanel({ state, bootstrap, authSession, busy, onSelectComm
     const [sequence, setSequence] = useState(1);
     const [bundleVisible, setBundleVisible] = useState(false);
     const [localError, setLocalError] = useState<string | undefined>();
-    const bundleText = useMemo(() => json(diagnostics.bundle), [diagnostics.bundle]);
+    const bundleText = useMemo(
+        () => redactedJson(diagnostics.bundle, state, authSession),
+        [authSession, diagnostics.bundle, state],
+    );
     const runAction = async (
         label: string,
         action: ManualWorkbenchAction | 'reconnect' | 'cleanup',
@@ -1329,7 +1464,10 @@ function RtcDiagnosticsPanel({ state, bootstrap, authSession, busy, onSelectComm
             )}
             {localError && (
                 <div className="workbench-error" role="status">
-                    {localError}
+                    {redactRallarBlackBoxValue(
+                        localError,
+                        uiRedactionOptions(state, authSession),
+                    )}
                 </div>
             )}
         </section>
@@ -1683,7 +1821,7 @@ function ConfigurationPanel({ state }: { state: RallarBlackBoxTestState }) {
                     <dd>{String(config?.control?.mode ?? 'local')}</dd>
                 </div>
             </dl>
-            <pre className="json-block">{json(config)}</pre>
+            <pre className="json-block">{redactedJson(config, state)}</pre>
         </section>
     );
 }
@@ -1721,11 +1859,12 @@ function CommandQueuePanel({ rows, selectedCommandId, onSelect }: {
     );
 }
 
-function ExecutionFocusPanel({ result, activeCommand, startedAtEpochMs, now }: {
+function ExecutionFocusPanel({ result, activeCommand, startedAtEpochMs, now, redactionOptions }: {
     result?: RallarBlackBoxTestResult;
     activeCommand?: RallarBlackBoxTestCommand & Readonly<{ commandId: string }>;
     startedAtEpochMs?: number;
     now: number;
+    redactionOptions: RallarBlackBoxTestRedactionOptions;
 }) {
     const deadlineEpochMs = activeDeadlineEpochMs(activeCommand, startedAtEpochMs);
     const elapsedMs = activeCommand && startedAtEpochMs !== undefined
@@ -1781,7 +1920,9 @@ function ExecutionFocusPanel({ result, activeCommand, startedAtEpochMs, now }: {
                     <dd>{formatTime(result?.endedAtEpochMs)}</dd>
                 </div>
             </dl>
-            <pre className="json-block">{json(result ?? activeCommand)}</pre>
+            <pre className="json-block">
+                {json(redactRallarBlackBoxValue(result ?? activeCommand, redactionOptions))}
+            </pre>
         </section>
     );
 }
@@ -1822,27 +1963,18 @@ function CommandHistoryPanel({ history, selectedCommandId, onSelect }: {
 
 function EventStreamPanel({ state }: { state: RallarBlackBoxTestState }) {
     const events = selectRallarBlackBoxEvents(state);
-    const [filters, setFilters] = useState<EventFilters>({
-        kind: 'all',
-        commandId: '',
-        connection: '',
-        actor: '',
-        transport: '',
-        topic: '',
-        severity: '',
+    const [filters, setFilters] = useState<EventFilters>(() => {
+        const stored = readEventFilters(browserUiStorage(), DEFAULT_EVENT_FILTERS);
+        return {
+            ...stored,
+            kind: eventFilterFromValue(stored.kind),
+        };
     });
     const filtered = useMemo(
         () => events.filter(event => eventMatchesFilters(event, filters)),
         [events, filters],
     );
-    const kindFilters: readonly EventFilter[] = [
-        'all',
-        'diagnostic',
-        'message',
-        'event',
-        'stats',
-        'result',
-    ];
+    const kindFilters = EVENT_KIND_FILTERS;
     const commandIds = uniqueValues(events.map(event => event.commandId));
     const connections = uniqueValues(events.map(event => event.connection));
     const actors = uniqueValues(events.map(event => event.actor));
@@ -1852,6 +1984,10 @@ function EventStreamPanel({ state }: { state: RallarBlackBoxTestState }) {
     const severities = uniqueValues(
         events.map(event => event.severity as RallarBlackBoxTestSeverity | undefined),
     );
+
+    useEffect(() => {
+        writeEventFilters(browserUiStorage(), filters);
+    }, [filters]);
 
     return (
         <section className="panel event-panel">
@@ -1983,7 +2119,10 @@ function StatsPanel({ state }: { state: RallarBlackBoxTestState }) {
     );
 }
 
-function FailurePanel({ state }: { state: RallarBlackBoxTestState }) {
+function FailurePanel({ state, authSession }: {
+    state: RallarBlackBoxTestState;
+    authSession?: AuthSession;
+}) {
     const firstFailure = selectRallarBlackBoxFirstFailure(state);
 
     return (
@@ -1999,14 +2138,20 @@ function FailurePanel({ state }: { state: RallarBlackBoxTestState }) {
                 <strong>{firstFailure?.commandId ?? 'none'}</strong>
                 <small>{firstFailure?.error?.message ?? 'No failed command recorded'}</small>
             </div>
-            <pre className="json-block">{json(firstFailure ?? { ok: true })}</pre>
+            <pre className="json-block">{redactedJson(firstFailure ?? { ok: true }, state, authSession)}</pre>
         </section>
     );
 }
 
-function ReportPanel({ state }: { state: RallarBlackBoxTestState }) {
+function ReportPanel({ state, authSession }: {
+    state: RallarBlackBoxTestState;
+    authSession?: AuthSession;
+}) {
     const [visible, setVisible] = useState(false);
-    const reportText = useMemo(() => json(createReportSnapshot(state)), [state]);
+    const reportText = useMemo(
+        () => redactedJson(createReportSnapshot(state), state, authSession),
+        [authSession, state],
+    );
 
     return (
         <section className="panel report-panel">
@@ -2059,19 +2204,39 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
         () => applyRallarServerEndpointPreset(RALLAR_SERVER_ENDPOINT_PRESETS[0], variables),
         [variables],
     );
-    const [apiBaseUrl, setApiBaseUrl] = useState(config?.apiBaseUrl ?? bootstrap.apiBaseUrl);
-    const [selectedPresetId, setSelectedPresetId] = useState(RALLAR_SERVER_ENDPOINT_PRESETS[0].presetId);
+    const defaultServerDraft = useMemo<RallarServerWorkbenchDraft>(() => ({
+        apiBaseUrl: config?.apiBaseUrl ?? bootstrap.apiBaseUrl,
+        selectedPresetId: RALLAR_SERVER_ENDPOINT_PRESETS[0].presetId,
+        method: initialDraft.method,
+        path: initialDraft.path,
+        headersText: initialDraft.headersText,
+        queryText: initialDraft.queryText,
+        bodyText: initialDraft.bodyText,
+        responseBodyMode: initialDraft.responseBodyMode,
+        attachAuth: initialDraft.attachAuth,
+        timeoutMs: 5_000,
+    }), [bootstrap.apiBaseUrl, config?.apiBaseUrl, initialDraft]);
+    const [initialServerDraft] = useState(() => {
+        const stored = readRallarServerWorkbenchDraft(browserUiStorage(), defaultServerDraft);
+        return {
+            draft: stored ?? defaultServerDraft,
+            restored: Boolean(stored),
+        };
+    });
+    const [serverDraftEdited, setServerDraftEdited] = useState(initialServerDraft.restored);
+    const [apiBaseUrl, setApiBaseUrl] = useState(initialServerDraft.draft.apiBaseUrl);
+    const [selectedPresetId, setSelectedPresetId] = useState(initialServerDraft.draft.selectedPresetId);
     const [serverOpenApiPresets, setServerOpenApiPresets] = useState<readonly RallarServerEndpointPreset[]>([]);
-    const [method, setMethod] = useState<RallarServerRestMethod>(initialDraft.method);
-    const [path, setPath] = useState(initialDraft.path);
-    const [headersText, setHeadersText] = useState(initialDraft.headersText);
-    const [queryText, setQueryText] = useState(initialDraft.queryText);
-    const [bodyText, setBodyText] = useState(initialDraft.bodyText);
+    const [method, setMethod] = useState<RallarServerRestMethod>(initialServerDraft.draft.method);
+    const [path, setPath] = useState(initialServerDraft.draft.path);
+    const [headersText, setHeadersText] = useState(initialServerDraft.draft.headersText);
+    const [queryText, setQueryText] = useState(initialServerDraft.draft.queryText);
+    const [bodyText, setBodyText] = useState(initialServerDraft.draft.bodyText);
     const [responseBodyMode, setResponseBodyMode] = useState<RallarServerResponseBodyMode>(
-        initialDraft.responseBodyMode,
+        initialServerDraft.draft.responseBodyMode,
     );
-    const [attachAuth, setAttachAuth] = useState(initialDraft.attachAuth);
-    const [timeoutMs, setTimeoutMs] = useState(5_000);
+    const [attachAuth, setAttachAuth] = useState(initialServerDraft.draft.attachAuth);
+    const [timeoutMs, setTimeoutMs] = useState(initialServerDraft.draft.timeoutMs);
     const [busy, setBusy] = useState(false);
     const [openApiBusy, setOpenApiBusy] = useState(false);
     const [localError, setLocalError] = useState<string | undefined>();
@@ -2097,7 +2262,10 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
     };
     const commandPreview = useMemo(() => {
         try {
-            return json(toRallarServerBlackBoxCommand(requestInput, 'rallar-server-rest-request'));
+            return json(redactRallarServerValue(
+                toRallarServerBlackBoxCommand(requestInput, 'rallar-server-rest-request'),
+                authSession,
+            ));
         } catch (error) {
             return error instanceof Error ? error.message : String(error);
         }
@@ -2105,18 +2273,50 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
     const responseBodyText = response
         ? response.bodyKind === 'json'
             ? json(redactRallarServerValue(response.bodyJson, authSession))
-            : response.bodyText || '-'
+            : response.bodyText
+                ? redactRallarServerText(response.bodyText, authSession)
+                : '-'
         : 'No response';
     const responseHeadersText = response
         ? json(redactRallarServerValue(response.headers, authSession))
         : '{}';
 
     useEffect(() => {
-        setApiBaseUrl(config?.apiBaseUrl ?? bootstrap.apiBaseUrl);
-    }, [bootstrap.apiBaseUrl, config?.apiBaseUrl]);
+        if (!serverDraftEdited) {
+            setApiBaseUrl(config?.apiBaseUrl ?? bootstrap.apiBaseUrl);
+        }
+    }, [bootstrap.apiBaseUrl, config?.apiBaseUrl, serverDraftEdited]);
+
+    useEffect(() => {
+        writeRallarServerWorkbenchDraft(browserUiStorage(), {
+            apiBaseUrl,
+            selectedPresetId,
+            method,
+            path,
+            headersText,
+            queryText,
+            bodyText,
+            responseBodyMode,
+            attachAuth,
+            timeoutMs,
+        }, uiSecretValues(undefined, authSession));
+    }, [
+        apiBaseUrl,
+        attachAuth,
+        authSession?.accessToken,
+        bodyText,
+        headersText,
+        method,
+        path,
+        queryText,
+        responseBodyMode,
+        selectedPresetId,
+        timeoutMs,
+    ]);
 
     const applyPreset = (preset: RallarServerEndpointPreset): void => {
         const draft = applyRallarServerEndpointPreset(preset, variables);
+        setServerDraftEdited(true);
         setSelectedPresetId(preset.presetId);
         setMethod(draft.method);
         setPath(draft.path);
@@ -2229,13 +2429,22 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
                 </label>
                 <label className="field">
                     <span>API Base URL</span>
-                    <input value={apiBaseUrl} onChange={event => setApiBaseUrl(event.target.value)}/>
+                    <input
+                        value={apiBaseUrl}
+                        onChange={event => {
+                            setServerDraftEdited(true);
+                            setApiBaseUrl(event.target.value);
+                        }}
+                    />
                 </label>
                 <label className="field compact-field">
                     <span>Method</span>
                     <select
                         value={method}
-                        onChange={event => setMethod(event.target.value as RallarServerRestMethod)}
+                        onChange={event => {
+                            setServerDraftEdited(true);
+                            setMethod(event.target.value as RallarServerRestMethod);
+                        }}
                     >
                         {(['GET', 'POST', 'PUT', 'DELETE'] as const).map(entry => (
                             <option key={entry} value={entry}>{entry}</option>
@@ -2248,19 +2457,30 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
                         type="number"
                         min={0}
                         value={timeoutMs}
-                        onChange={event => setTimeoutMs(Number(event.target.value))}
+                        onChange={event => {
+                            setServerDraftEdited(true);
+                            setTimeoutMs(Number(event.target.value));
+                        }}
                     />
                 </label>
                 <label className="field rest-path-field">
                     <span>Path</span>
-                    <input value={path} onChange={event => setPath(event.target.value)}/>
+                    <input
+                        value={path}
+                        onChange={event => {
+                            setServerDraftEdited(true);
+                            setPath(event.target.value);
+                        }}
+                    />
                 </label>
                 <label className="field compact-field">
                     <span>Body Mode</span>
                     <select
                         value={responseBodyMode}
-                        onChange={event =>
-                            setResponseBodyMode(event.target.value as RallarServerResponseBodyMode)}
+                        onChange={event => {
+                            setServerDraftEdited(true);
+                            setResponseBodyMode(event.target.value as RallarServerResponseBodyMode);
+                        }}
                     >
                         {(['auto', 'json', 'text', 'none'] as const).map(entry => (
                             <option key={entry} value={entry}>{entry}</option>
@@ -2271,7 +2491,10 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
                     <input
                         type="checkbox"
                         checked={attachAuth}
-                        onChange={event => setAttachAuth(event.target.checked)}
+                        onChange={event => {
+                            setServerDraftEdited(true);
+                            setAttachAuth(event.target.checked);
+                        }}
                     />
                     <span>Attach auth</span>
                 </label>
@@ -2281,7 +2504,10 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
                     <span>Query JSON</span>
                     <textarea
                         value={queryText}
-                        onChange={event => setQueryText(event.target.value)}
+                        onChange={event => {
+                            setServerDraftEdited(true);
+                            setQueryText(event.target.value);
+                        }}
                         spellCheck={false}
                     />
                 </label>
@@ -2289,7 +2515,10 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
                     <span>Headers JSON</span>
                     <textarea
                         value={headersText}
-                        onChange={event => setHeadersText(event.target.value)}
+                        onChange={event => {
+                            setServerDraftEdited(true);
+                            setHeadersText(event.target.value);
+                        }}
                         spellCheck={false}
                     />
                 </label>
@@ -2297,7 +2526,10 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
                     <span>Body JSON</span>
                     <textarea
                         value={bodyText}
-                        onChange={event => setBodyText(event.target.value)}
+                        onChange={event => {
+                            setServerDraftEdited(true);
+                            setBodyText(event.target.value);
+                        }}
                         spellCheck={false}
                         disabled={method === 'GET'}
                     />
@@ -2322,7 +2554,7 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
             </div>
             {localError && (
                 <div className="workbench-error" role="status">
-                    {localError}
+                    {redactRallarBlackBoxValue(localError, uiRedactionOptions(state, authSession))}
                 </div>
             )}
             <div className="rest-response-grid">
@@ -2357,7 +2589,7 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
                     </dl>
                     {response?.error && (
                         <div className="workbench-error" role="status">
-                            {response.error.message}
+                            {redactRallarServerValue(response.error.message, authSession)}
                         </div>
                     )}
                     <pre className="json-block">{responseBodyText}</pre>
@@ -2365,7 +2597,7 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
                 <section className="rest-subpanel">
                     <div className="section-heading">
                         <h3>Headers</h3>
-                        <span>{response ? response.url : '-'}</span>
+                        <span>{response ? redactRallarServerUrl(response.url, authSession) : '-'}</span>
                     </div>
                     <pre className="json-block">{responseHeadersText}</pre>
                 </section>
@@ -2397,7 +2629,9 @@ export default function App() {
     const history = selectRallarBlackBoxCommandHistory(state);
     const activeCommand = selectRallarBlackBoxActiveCommand(state);
     const now = useNow(250);
-    const [selectedCommandId, setSelectedCommandId] = useState<string | undefined>();
+    const [selectedCommandId, setSelectedCommandId] = useState<string | undefined>(() =>
+        readStoredSelectedCommandId(browserUiStorage())
+    );
     const [activeTab, setActiveTab] = useState<AppTabId>(() => readInitialAppTab());
     const [authSession, setAuthSession] = useState<AuthSession | undefined>(() =>
         readCurrentAuthSession()
@@ -2451,6 +2685,10 @@ export default function App() {
             setSelectedCommandId(history.at(-1)?.commandId);
         }
     }, [activeCommand, history, selectedCommandId]);
+
+    useEffect(() => {
+        writeStoredSelectedCommandId(browserUiStorage(), selectedCommandId);
+    }, [selectedCommandId]);
 
     const selectedResult = findSelectedResult(history, selectedCommandId);
     const selectTab = (tab: AppTabId): void => {
@@ -2558,7 +2796,7 @@ export default function App() {
                         busy={busy}
                         onSelectCommand={setSelectedCommandId}
                     />
-                    <FailurePanel state={state}/>
+                    <FailurePanel state={state} authSession={authSession}/>
                     <StatsPanel state={state}/>
                 </section>
                 <section
@@ -2582,7 +2820,7 @@ export default function App() {
                         selectedCommandId={selectedCommandId}
                         onSelect={setSelectedCommandId}
                     />
-                    <ReportPanel state={state}/>
+                    <ReportPanel state={state} authSession={authSession}/>
                 </section>
                 <section
                     id="panel-event-stream"
@@ -2596,6 +2834,7 @@ export default function App() {
                         activeCommand={activeCommand}
                         startedAtEpochMs={state.activeCommandStartedAtEpochMs}
                         now={now}
+                        redactionOptions={uiRedactionOptions(state, authSession)}
                     />
                     <CommandHistoryPanel
                         history={history}
@@ -2603,7 +2842,7 @@ export default function App() {
                         onSelect={setSelectedCommandId}
                     />
                     <StatsPanel state={state}/>
-                    <FailurePanel state={state}/>
+                    <FailurePanel state={state} authSession={authSession}/>
                     <EventStreamPanel state={state}/>
                 </section>
                 <section

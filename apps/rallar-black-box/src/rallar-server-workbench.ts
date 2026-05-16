@@ -493,16 +493,19 @@ export function toRallarServerCurl(
     input: RallarServerRestRequestInput,
 ): string {
     const request = buildRallarServerRestRequest(input);
+    const redactedBodyText = request.bodyText
+        ? redactRallarServerText(request.bodyText, input.authSession)
+        : undefined;
     const lines = [
         'curl',
         '-X',
         request.method,
-        quoteShell(request.url),
+        quoteShell(redactRallarServerUrl(request.url, input.authSession)),
         ...Object.entries(request.redactedHeaders)
             .map(([key, value]) => ['-H', quoteShell(`${key}: ${value}`)])
             .flat(),
-        ...(request.bodyText
-            ? ['--data', quoteShell(request.bodyText)]
+        ...(redactedBodyText
+            ? ['--data', quoteShell(redactedBodyText)]
             : []),
     ];
 
@@ -516,6 +519,38 @@ export function redactRallarServerValue<T>(value: T, authSession?: AuthSession):
             authSession ? `Bearer ${authSession.accessToken}` : undefined,
         ].filter((entry): entry is string => Boolean(entry)),
     });
+}
+
+export function redactRallarServerText(text: string, authSession?: AuthSession): string {
+    const trimmed = text.trim();
+    if (!trimmed) {
+        return text;
+    }
+
+    try {
+        return JSON.stringify(
+            redactRallarServerValue(JSON.parse(trimmed) as unknown, authSession),
+            null,
+            2,
+        );
+    } catch {
+        return redactRallarServerValue(text, authSession);
+    }
+}
+
+export function redactRallarServerUrl(url: string, authSession?: AuthSession): string {
+    try {
+        const parsed = new URL(url);
+        for (const [key, value] of [...parsed.searchParams.entries()]) {
+            const redacted = redactRallarServerValue({ [key]: value }, authSession) as Record<string, string>;
+            if (redacted[key] !== value) {
+                parsed.searchParams.set(key, redacted[key]);
+            }
+        }
+        return parsed.toString();
+    } catch {
+        return redactRallarServerValue(url, authSession);
+    }
 }
 
 export function extractRallarServerOpenApiEndpoints(

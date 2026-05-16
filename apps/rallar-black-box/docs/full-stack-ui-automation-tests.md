@@ -24,7 +24,7 @@ Use these files as examples:
 
 - `tests/playwright/rallar-black-box/tabbed-navigation.spec.ts`
   Deterministic local UI tests. Uses `provider=simulated`, browser route mocks where needed, and verifies tab state,
-  state persistence, and the Rallar Server REST UI.
+  reload-safe state persistence, redacted draft storage, and the Rallar Server REST UI.
 - `tests/playwright/rallar-black-box/control-agent-smoke.spec.ts`
   Control-server loop test. Starts the SPA as a remote agent, enqueues a command through the control server REST API,
   polls the run snapshot, and verifies the UI sees the command.
@@ -43,6 +43,7 @@ Use Vitest for pure helper logic:
 - `packages/tests/rallar-black-box/app-tabs.test.ts`
 - `packages/tests/rallar-black-box/auth-flow.test.ts`
 - `packages/tests/rallar-black-box/rallar-server-workbench.test.ts`
+- `packages/tests/rallar-black-box/ui-persistence.test.ts`
 - `packages/tests/shared-test/rallar-bb-browser-adapter-auth.test.ts`
 
 ## Test Layers
@@ -51,7 +52,8 @@ Prefer the smallest layer that proves the behavior.
 
 1. Pure helpers with Vitest
    Use for URL/query building, endpoint preset expansion, auth header injection, redaction, command conversion, and
-   response classification.
+   response classification. UI persistence helpers should be tested here so storage redaction can be verified without
+   starting a browser.
 
 2. Simulated SPA Playwright tests
    Use for tab navigation, UI state persistence, local command previews, event filters, diagnostics rendering, and
@@ -372,6 +374,8 @@ Good full-stack assertions include:
 - received-data inbox shows the expected payload on the receiving browser
 - RTC Diagnostics reaches auth, runtime, group join, signaling, peer discovery, data channel, and first-payload stages
 - Event Stream filters preserve evidence for command IDs and topics
+- persisted UI drafts do not contain raw passwords, bearer tokens, auth tickets, API keys, or token/password-shaped JSON
+  values
 - Topology contains the expected room/session/route nodes
 - cleanup closes connections and removes stale session state
 

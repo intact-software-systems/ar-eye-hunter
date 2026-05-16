@@ -94,6 +94,8 @@ sends real JSON through the `browser-rallar` provider. The API startup scripts l
 
 - `src/client-defaults.ts`: out-of-the-box default values for local workbench and control-agent bootstrap.
 - `src/app-tabs.ts`: tab IDs, URL parsing, aliases, and keyboard-order helpers for the operational shell.
+- `src/ui-persistence.ts`: reload-safe tab, selected-command, Manual Rallar, Event Stream, and Rallar Server draft
+  persistence with storage-time redaction.
 - `src/rallar-server-workbench.ts`: request construction, endpoint presets, auth header injection, response parsing,
   redaction, cURL export, and black-box command export for the Rallar Server tab.
 - `src/browser-rallar-runtime.ts`: lazy bridge from SPA provider mode to the browser Rallar runtime.

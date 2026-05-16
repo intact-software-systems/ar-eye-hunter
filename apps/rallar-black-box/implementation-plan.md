@@ -1445,26 +1445,51 @@ Deliverables:
 
 Stabilize the visible UI after the login/tabs/API-workbench changes so it remains usable during long and failed runs.
 
-Status: planned.
+Status: completed for Iteration 24A. Iteration 24B remains planned for event-stream scale, topology scale, and the
+deeper accessibility/viewport pass.
 
 Results:
 
-- Not started.
+- Added `apps/rallar-black-box/src/ui-persistence.ts` for browser-local UI preferences and draft persistence with
+  defensive storage reads/writes.
+- Persisted the selected tab, selected command ID, Manual Rallar values, Manual Rallar payload draft, Event Stream
+  filters, and Rallar Server request draft across reloads and fresh loads.
+- Manual Rallar persistence strips `rallarPassword` and redacts JSON payload drafts before storing them.
+- Rallar Server request draft persistence redacts headers, query JSON, and body JSON before storing them; invalid JSON
+  editor contents are dropped instead of being saved with possible secrets.
+- Tightened visible redaction for Manual Rallar command previews and action recipes, RTC diagnostic bundles, received
+  payload rendering, configuration JSON, current-focus JSON, failure details, report snapshots, Rallar Server response
+  text, response URLs, command exports, and cURL exports.
+- Fixed the app-local Playwright config's control-server webServer path so `npm run test:e2e:rallar-black-box` can start
+  the control server from the config directory.
+- Made the control-agent Playwright smoke deterministic by forcing simulated provider mode, opening the Local Workbench
+  tab for control registration, and opening Event Stream before asserting visible command evidence.
+- Added `packages/tests/rallar-black-box/ui-persistence.test.ts` for tab persistence, Manual Rallar draft sanitization,
+  Rallar Server draft sanitization, and invalid JSON draft handling.
+- Expanded Rallar Server workbench unit coverage for cURL redaction of authorization, query secrets, and body secrets.
+- Expanded simulated SPA Playwright coverage so a fresh load restores selected tab, event filters, Manual Rallar draft,
+  and Rallar Server draft while keeping secret-shaped values out of `localStorage`.
+- Verified `npm --workspace rallar-black-box run build`, `npm test -- packages/tests/rallar-black-box`, and
+  `npm run test:e2e:rallar-black-box`.
 
 Deliverables:
 
-- state persistence for selected tab, current run, active room, manual values, event filters, and server request drafts
-  where useful
-- clear loading, disabled, empty, success, warning, and error states across all tabs
-- no visible secret leakage in forms, command previews, copied recipes, reports, event payloads, browser traces, or
-  failure bundles
-- large event-stream handling through filtering, virtualization or pagination, and bounded memory growth
-- topology sampling/filtering for large runs with deterministic route summaries
-- frontend accessibility pass for form labels, keyboard navigation, focus movement after login/logout, tab semantics,
-  contrast, and screen-reader-friendly error messages
-- browser viewport QA for desktop and narrow/mobile widths
-- focused component/unit tests for selectors, tab routing, redaction, event filtering, request drafts, and diagnostics
-  classification
+- completed in 24A: state persistence for selected tab, selected command, active room/manual values, event filters, and
+  redacted Rallar Server request drafts
+- completed in 24A: no visible secret leakage in command previews, copied recipes, reports, received payloads, RTC
+  diagnostic bundles, REST response text, REST response URLs, REST command exports, and cURL exports for the covered
+  secret/key patterns
+- completed in 24A: focused unit and Playwright tests for tab persistence, event-filter persistence, redaction, and
+  request draft sanitization
+- remaining for 24B: clearer loading, disabled, empty, success, warning, and error states across every tab
+- remaining for 24B: large event-stream handling through filtering, virtualization or pagination, and bounded memory
+  growth
+- remaining for 24B: topology sampling/filtering for large runs with deterministic route summaries
+- remaining for 24B: frontend accessibility pass for form labels, keyboard navigation, focus movement after login/logout,
+  tab semantics, contrast, and screen-reader-friendly error messages
+- remaining for 24B: browser viewport QA for desktop and narrow/mobile widths
+- remaining for 24B: broader focused component/unit tests for selectors, diagnostics classification, accessibility, and
+  large-run UI behavior
 
 ### Iteration 25: Rallar Server And Control-plane QA Hardening
 

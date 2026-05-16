@@ -75,8 +75,14 @@ The top tabs split the workspace into:
 - `Event Stream`
 - `Rallar Server`
 
-The active tab is written to `?tab=...`. Tab panes stay mounted while hidden, so form edits, recipe text, selected
+The active tab is written to `?tab=...` and saved in browser storage. If you later open the app without a `tab`
+parameter, it returns to the last selected tab. Tab panes stay mounted while hidden, so form edits, recipe text, selected
 commands, topology filters, and event filters remain in place when moving between tabs.
+
+The UI also persists selected command ID, Manual Rallar drafts, Event Stream filters, and Rallar Server request drafts
+across reloads. Persisted drafts are sanitized first: Manual Rallar passwords are not stored, JSON editor drafts are
+redacted by sensitive keys/known secret values, and invalid JSON editor drafts are dropped instead of being saved with
+possible secrets.
 
 ## Local Recipe Workbench
 
@@ -129,8 +135,9 @@ Actions:
 - `Close`: close active runtime connections
 - `Reset`: clear runtime state for the next test
 
-The command preview shows the exact `rallar-bb-test` command or command list that will be executed. The manual action
-history links back to command results, and the recipe output can turn the manual session into a repeatable recipe.
+The command preview shows the redacted `rallar-bb-test` command or command list that will be executed. The manual action
+history links back to command results, and the recipe output can turn the manual session into a repeatable redacted
+recipe.
 
 ## Received Data Inbox
 
@@ -297,7 +304,8 @@ The `Event Stream` tab shows runtime events with filters for:
 - topic text
 - severity
 
-Use event filtering when you need the lower-level evidence behind a diagnostic, message, stat, or result.
+Use event filtering when you need the lower-level evidence behind a diagnostic, message, stat, or result. Event filters
+survive reloads, which makes it easier to keep a narrowed failure view while iterating on a reproduction.
 
 ## Rallar Server
 
@@ -330,11 +338,13 @@ Actions:
 - `Reset Preset`: restore the selected preset defaults
 - `Refresh OpenAPI`: load endpoint rows from `/api/openapi.json`
 - `Copy cURL`: copy a redacted cURL reproduction
-- `Copy Command`: copy a black-box `http.request` command
+- `Copy Command`: copy a redacted black-box `http.request` command
 
 The response area shows status, duration, body kind, classified error, parsed JSON or raw text, response headers, and
-the generated command. In `browser-rallar` mode the tab refuses to send real-provider requests to the placeholder
-`https://api.example.invalid` API base URL.
+the generated command. Response text, response URLs, command previews, and copied output are redacted for sensitive
+keys, access tokens, bearer values, tickets, cookies, and known secret values from the active session. In
+`browser-rallar` mode the tab refuses to send real-provider requests to the placeholder `https://api.example.invalid`
+API base URL.
 
 ## Stats
 

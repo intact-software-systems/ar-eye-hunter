@@ -213,14 +213,14 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
         ]);
     });
 
-    it('redacts authorization in cURL output', () => {
+    it('redacts authorization, query secrets, and body secrets in cURL output', () => {
         const curl = toRallarServerCurl({
             apiBaseUrl: 'http://localhost:8080',
-            method: 'GET',
+            method: 'POST',
             path: '/api/webrtc/ice',
             headersText: '{}',
-            queryText: '{}',
-            bodyText: '',
+            queryText: '{"access_token":"query-secret"}',
+            bodyText: '{"password":"body-secret"}',
             responseBodyMode: 'auto',
             attachAuth: true,
             authSession,
@@ -229,5 +229,7 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
 
         expect(curl).toContain('authorization: <redacted>');
         expect(curl).not.toContain('secret-token');
+        expect(curl).not.toContain('query-secret');
+        expect(curl).not.toContain('body-secret');
     });
 });

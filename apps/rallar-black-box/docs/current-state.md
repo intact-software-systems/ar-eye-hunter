@@ -6,8 +6,8 @@ actions, remote control commands, runtime events, stats, and reports use one com
 
 ## Implemented
 
-The implementation is complete through the first Iteration 23 full-stack harness slice and the first Manual Rallar
-real-payload delivery slice in `implementation-plan.md`.
+The implementation is complete through Iteration 24A in `implementation-plan.md`: the first full-stack harness and
+real-payload delivery slices are in place, and the visible SPA now has reload-safe UI draft persistence with redaction.
 
 The shared facade exists in `packages/shared-test/rallar-bb-test` and defines:
 
@@ -34,6 +34,10 @@ The SPA currently provides:
 - persistent global header state for provider, control, runtime, room, active command, first failure, user, and session
 - authenticated Rallar Server REST workbench with endpoint presets, raw request editing, auth header injection, response
   rendering, cURL export, and black-box `http.request` command export
+- reload-safe UI persistence for selected tab, selected command, Manual Rallar drafts, Event Stream filters, and Rallar
+  Server request drafts
+- UI-level redaction for command previews, copied recipes, reports, received payloads, diagnostic bundles, REST response
+  text/URLs, command exports, and cURL exports
 - gated full-stack Playwright harness for API-v1, control-server, SPA, two-browser REST workbench login,
   control-orchestration smoke coverage, and a UI-driven Manual Rallar realtime payload delivery check
 - manual Rallar workbench for quick configure, join, connect, send, health, close, and reset actions
@@ -94,12 +98,17 @@ Real-provider close/reset cleanup unsubscribes browser listeners, leaves the joi
 out when `rallarLogoutOnClose=1`, and records cleanup diagnostics. Remote reset commands also clear browser
 `localStorage` and `sessionStorage` on a best-effort basis.
 
-The app shell is tabbed. The active tab is stored in the `tab` query parameter, and inactive tab panes remain mounted
-while hidden so manual form edits, recipe JSON, selected commands, topology filters, and event filters survive normal
-navigation. The `Rallar Server` tab can call API v1 REST endpoints directly from the browser. It starts from curated
+The app shell is tabbed. The active tab is stored in the `tab` query parameter and in local browser storage, so a fresh
+load without `tab` returns to the last selected workspace. Inactive tab panes remain mounted while hidden, so manual form
+edits, recipe JSON, selected commands, topology filters, and event filters survive normal navigation. Selected command
+ID, Manual Rallar values/payload draft, Event Stream filters, and Rallar Server request drafts also survive reloads.
+Secret-shaped draft fields are not stored raw: Manual Rallar passwords are stripped, JSON editor drafts are redacted, and
+invalid JSON editor drafts are dropped instead of being persisted with possible secrets.
+
+The `Rallar Server` tab can call API v1 REST endpoints directly from the browser. It starts from curated
 OpenAPI-derived presets, can refresh endpoint rows from `/api/openapi.json`, injects the active browser auth session
-when requested, redacts access tokens in visible exports, and can copy the selected request as a black-box
-`http.request` command.
+when requested, redacts access tokens in visible exports, and can copy the selected request as a redacted black-box
+`http.request` command or cURL command.
 
 This means the current app is already useful for:
 
@@ -133,6 +142,8 @@ The control boundary already includes the first hardening pass:
 - optional origin and TLS enforcement
 - destination allowlists for remote browser HTTP and WebSocket commands
 - redaction of sensitive keys and payloads in runtime reports
+- UI-level redaction before displaying or copying command previews, recipes, report snapshots, diagnostics bundles,
+  received payloads, REST response text/URLs, REST command exports, and cURL exports
 - browser storage cleanup on reset
 
 These checks are necessary because the app is a remote browser-control surface.
@@ -152,6 +163,8 @@ The main gaps are:
 - auth and permission negative testing needs real backend/Rallar integration to become meaningful
 - REST request collections and persisted REST recipes are not implemented yet
 - topology is derived from runtime events and is not yet performance-tested for very large event streams
+- event-stream virtualization/pagination, large-topology sampling, and the deeper accessibility/viewport QA pass remain
+  in Iteration 24B
 
 ## Verification Commands
 
@@ -166,7 +179,9 @@ npm run test -- packages/tests/rallar-black-box/browser-rallar-runtime.test.ts p
 npm run test -- packages/tests/rallar-black-box/topology-graph.test.ts packages/tests/rallar-black-box/rtc-diagnostics.test.ts packages/tests/rallar-black-box/manual-workbench.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/rallar-black-box/control-client.test.ts
 npm run test -- packages/tests/rallar-black-box/app-tabs.test.ts packages/tests/rallar-black-box/auth-flow.test.ts packages/tests/shared-test/rallar-bb-browser-adapter-auth.test.ts
 npm run test -- packages/tests/rallar-black-box/rallar-server-workbench.test.ts
+npm run test -- packages/tests/rallar-black-box
 npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/tabbed-navigation.spec.ts
+npm run test:e2e:rallar-black-box -- tests/playwright/rallar-black-box/tabbed-navigation.spec.ts
 npm run test -- packages/tests/shared-test/rallar-provider-parity.test.ts
 npm run test:e2e:rallar-black-box
 RALLAR_BLACK_BOX_FULL_STACK=1 npm run test:e2e:rallar-black-box:full-stack
