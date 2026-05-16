@@ -31,6 +31,7 @@ export type RelicCommandDraft =
     | Readonly<{ kind: 'join-expedition'; characterId?: RelicCharacterId }>
     | Readonly<{ kind: 'start-expedition' }>
     | Readonly<{ kind: 'submit-action'; action: RelicActionInput }>
+    | Readonly<{ kind: 'force-resolve-round' }>
     | Readonly<{ kind: 'set-round-limit'; timeLimitMs: number }>;
 
 export type RelicRuntimeDiagnostics = Readonly<{

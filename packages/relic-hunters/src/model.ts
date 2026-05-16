@@ -225,6 +225,12 @@ export type RelicCommand =
     }>
     | Readonly<{
         protocolVersion: typeof RELIC_PROTOCOL_VERSION;
+        kind: 'force-resolve-round';
+        gameId: string;
+        username: string;
+    }>
+    | Readonly<{
+        protocolVersion: typeof RELIC_PROTOCOL_VERSION;
         kind: 'set-round-limit';
         gameId: string;
         username: string;
@@ -282,6 +288,10 @@ export function isRelicCommand(value: unknown): value is RelicCommand {
     if (value.kind === 'set-round-limit') {
         return typeof value.timeLimitMs === 'number' &&
             [60_000, 180_000, 300_000].includes(value.timeLimitMs as number);
+    }
+
+    if (value.kind === 'force-resolve-round') {
+        return true;
     }
 
     return value.kind === 'submit-action' &&

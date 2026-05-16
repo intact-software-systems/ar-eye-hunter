@@ -82,7 +82,8 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
 - Iteration 12, two-client propagation and snapshot recovery, is in progress
   with a first propagation-hardening pass complete.
 - Iteration 13, stale participant policy and turn blocking, tracks the remaining
-  multiplayer product-rule gap from the lobby pass.
+  multiplayer product-rule gap from the lobby pass and now has a first policy
+  pass complete.
 - Iteration 14, visual baselines and scene architecture follow-up, tracks the
   unfinished visual screenshot and `RelicScene` boundary work.
 - Iteration 15, performance and production readiness, is the previous
@@ -123,6 +124,12 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
   tests, room rows expose stable room ids, and a gated full-stack Playwright spec
   covers two-browser convergence through join/start/submit/resolve, reload
   recovery, reset, and rejoin.
+- Completed iteration-13 stale-participant fixes so far: the product policy is
+  explicit auto-skip after timeout. Any active hunter can send
+  `force-resolve-round` once the timer expires; missing plans are skipped and the
+  round resolves with the plans already locked. The timed-out planning UI exposes
+  this recovery action, and the party-change prompt now says offline joined
+  hunters can hold a round until the timer expires rather than block forever.
 
 ## Main Risks
 
@@ -141,9 +148,9 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
 - The app is visually dense. Even after the HUD layout pass, many panels and
   overlays compete for attention during planning and event reveal.
 - Server rules serialize writes per game. Current product policy is explicit
-  rather than automatic: disconnected/stale joined players remain in the
-  expedition and can block turn resolution unless the room is reset. This is
-  now tracked by Iteration 13.
+  and timer-based: disconnected/stale joined players remain in the expedition,
+  but after the round timer expires an active hunter can force the round to
+  resolve and skip missing plans. Reset still rebuilds the expedition roster.
 
 ## Working Agreement
 

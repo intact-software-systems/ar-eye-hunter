@@ -76,6 +76,70 @@ describe('Relic Hunters game rules', () => {
             .toBe('hallway');
     });
 
+    it('lets an active hunter force-resolve after the round timer expires', () => {
+        let state = createRelicGame('room-1', 'room-1', 1);
+        state = applyRelicCommand(state, join('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 2,
+        }).state;
+        state = applyRelicCommand(state, join('bob', 'Bob'), {
+            senderId: 'bob',
+            now: () => 3,
+        }).state;
+        state = applyRelicCommand(state, start('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 4,
+        }).state;
+        state = applyRelicCommand(
+            state,
+            submit('alice', 'Alice', { kind: 'move', targetRoomId: 'hallway' }),
+            {
+                senderId: 'alice',
+                now: () => 5,
+            },
+        ).state;
+
+        const result = applyRelicCommand(state, forceResolve('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 65_000,
+        });
+
+        expect(result.resolvedRound).toBe(true);
+        expect(result.state.round).toBe(2);
+        expect(result.state.pendingActions).toEqual([]);
+        expect(result.state.players.find((player) => player.playerId === 'alice')?.roomId)
+            .toBe('hallway');
+        expect(result.state.players.find((player) => player.playerId === 'bob')?.roomId)
+            .toBe('entrance');
+        expect(result.state.events.some((event) =>
+            event.message.includes('Missing plans skipped: Bob')
+        )).toBe(true);
+    });
+
+    it('rejects force-resolve before the round timer expires', () => {
+        let state = createRelicGame('room-1', 'room-1', 1);
+        state = applyRelicCommand(state, join('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 2,
+        }).state;
+        state = applyRelicCommand(state, join('bob', 'Bob'), {
+            senderId: 'bob',
+            now: () => 3,
+        }).state;
+        state = applyRelicCommand(state, start('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 4,
+        }).state;
+
+        expect(() =>
+            applyRelicCommand(state, forceResolve('alice', 'Alice'), {
+                senderId: 'alice',
+                now: () => 10,
+            })
+        ).toThrow('Round timer has not expired.');
+        expect(state.round).toBe(1);
+    });
+
     it('maps resolved turn events to scene animation cues', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = applyRelicCommand(state, join('alice', 'Alice'), {
@@ -450,5 +514,15 @@ function submit(
         gameId: 'room-1',
         username,
         action,
+    };
+}
+
+function forceResolve(playerId: string, username: string): RelicCommand {
+    void playerId;
+    return {
+        protocolVersion: RELIC_PROTOCOL_VERSION,
+        kind: 'force-resolve-round',
+        gameId: 'room-1',
+        username,
     };
 }

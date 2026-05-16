@@ -164,6 +164,10 @@ export default function App() {
         !!currentPlayer &&
         !currentPlayer.escaped &&
         !currentPlayer.defeated;
+    const canForceResolveRound = showPlanningControls &&
+        viewModel.turnStatus.waitingPlayerCount > 0 &&
+        timeRemainingMs !== null &&
+        timeRemainingMs <= 0;
     const partyChangeKey = game.snapshot &&
             currentRoomSummary &&
             game.snapshot.phase !== 'finished' &&
@@ -500,6 +504,11 @@ export default function App() {
         playUiSound('start');
         setAmbientEnabled(startAmbientSound());
         await game.startExpedition();
+    };
+
+    const forceResolveRound = async () => {
+        playUiSound('start');
+        await game.forceResolveRound();
     };
 
     const resetExpedition = async () => {
@@ -910,6 +919,21 @@ export default function App() {
                                         ? UI[lang].boundButton
                                         : <>{UI[lang].submitButton} <kbd className="action-key action-key-enter">↵</kbd></>}
                                 </button>
+
+                                {canForceResolveRound && (
+                                    <div className="force-resolve-panel">
+                                        <small>
+                                            {viewModel.turnStatus.waitingPlayerCount} timed-out {plural('hunter', viewModel.turnStatus.waitingPlayerCount)}.
+                                        </small>
+                                        <button
+                                            type="button"
+                                            className="secondary action-force-resolve-button"
+                                            onClick={forceResolveRound}
+                                        >
+                                            Resolve Timed-Out Round
+                                        </button>
+                                    </div>
+                                )}
                             </section>
                         )}
                     </div>
@@ -1787,7 +1811,7 @@ function PartyChangePrompt({
     const offlineJoinedCount = Math.max(0, expeditionPlayers - onlinePlayers);
     const onlineOnlyCount = Math.max(0, onlinePlayers - expeditionPlayers);
     const detail = offlineJoinedCount > 0
-        ? 'Offline joined hunters can still block round resolution. Start Over removes the stale roster; Keep Going leaves them in the expedition.'
+        ? 'Offline joined hunters can hold a round until the timer expires. Start Over removes the stale roster; Keep Going leaves them in the expedition.'
         : onlineOnlyCount > 0
         ? 'Some online room members have not joined the expedition yet. Start Over rebuilds the roster; Keep Going leaves the current expedition as-is.'
         : 'The expedition roster no longer matches the connected party.';

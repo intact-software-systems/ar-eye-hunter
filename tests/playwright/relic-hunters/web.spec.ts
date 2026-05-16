@@ -78,7 +78,7 @@ test.describe('Relic Hunters web app', () => {
 
         await expect(page.getByText('Party Changed')).toBeVisible();
         await expect(page.getByText('1/2 hunters are online')).toBeVisible();
-        await expect(page.getByText(/Offline joined hunters can still block round resolution/)).toBeVisible();
+        await expect(page.getByText(/Offline joined hunters can hold a round until the timer expires/)).toBeVisible();
         await expect(page.getByRole('button', { name: 'Start Over' })).toBeVisible();
         await expect(page.getByRole('button', { name: 'Keep Going' })).toBeVisible();
     });
@@ -186,6 +186,41 @@ test.describe('Relic Hunters web app', () => {
         expect(commandBodies[1]).toMatchObject({
             protocolVersion: 1,
             kind: 'start-expedition',
+            gameId: 'room-1',
+            username: 'alice',
+        });
+    });
+
+    test('can force-resolve a timed-out round from the browser UI', async ({ page }) => {
+        const room = groupSnapshot({ onlineMemberCount: 2 });
+        const commandBodies: unknown[] = [];
+        await installBrowserDoubles(page);
+        await mockBackend(page, {
+            rooms: [room],
+            relicSnapshot: relicSnapshotWithPlayers(2, 'planning', {
+                submittedPlayerIds: ['alice-session'],
+                roundStartedAtEpochMs: Date.now() - 90_000,
+                roundTimeLimitMs: 60_000,
+            }),
+            commandBodies,
+            commandSnapshot: resolvedSearchSnapshot(),
+        });
+
+        await page.goto('/');
+        await page.getByRole('button', { name: 'Register' }).click();
+        await page.getByLabel('Username').fill('alice');
+        await page.getByLabel('Display name').fill('Alice');
+        await page.getByLabel('Password').fill('correct-horse');
+        await page.getByRole('button', { name: 'Create Hunter' }).click();
+        await page.getByRole('button', { name: 'Relic Hunters Expedition' }).click();
+
+        await expect(page.getByText('1 timed-out hunter.')).toBeVisible();
+        await page.getByRole('button', { name: 'Resolve Timed-Out Round' }).click();
+
+        expect(commandBodies).toHaveLength(1);
+        expect(commandBodies[0]).toMatchObject({
+            protocolVersion: 1,
+            kind: 'force-resolve-round',
             gameId: 'room-1',
             username: 'alice',
         });
@@ -862,6 +897,8 @@ function relicSnapshotWithPlayers(
         events?: readonly Record<string, unknown>[];
         submittedPlayerIds?: readonly string[];
         round?: number;
+        roundStartedAtEpochMs?: number;
+        roundTimeLimitMs?: number;
     }> = {},
 ): RelicSnapshot {
     const playerSpecs = [
@@ -969,6 +1006,8 @@ function relicSnapshotWithPlayers(
         round: options.round ?? 1,
         maxRounds: 10,
         updatedAtEpochMs: Date.now(),
+        roundTimeLimitMs: options.roundTimeLimitMs ?? 180_000,
+        roundStartedAtEpochMs: options.roundStartedAtEpochMs,
         map,
         relics: carriedRelics,
         roomInvestigations: options.roomInvestigations ?? [],

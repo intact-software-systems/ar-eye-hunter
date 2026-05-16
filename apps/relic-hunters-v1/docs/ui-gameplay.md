@@ -96,9 +96,9 @@ immediately, so clue trails and room objectives can update after the first find.
   and reload recovery; it is skipped by default until
   `RELIC_HUNTERS_FULL_STACK=1` is enabled with a real paired server.
 - Stale or disconnected joined players still remain in the active expedition
-  after start. The player-facing policy is now visible: reset rebuilds the
-  roster, while continuing keeps those hunters and may block round resolution.
-  A separate follow-up iteration now tracks the final product rule.
+  after start. The player-facing policy is now timer-based: reset rebuilds the
+  roster, while continuing keeps those hunters; after the round timer expires,
+  any active hunter can resolve the round and skip missing plans.
 
 ## Visual State
 

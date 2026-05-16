@@ -70,6 +70,20 @@ describe('RelicHuntersRuntime', () => {
         });
     });
 
+    it('sends force-resolve commands through the configured command transport', async () => {
+        const deps = runtimeDeps();
+        const runtime = new RelicHuntersRuntime(deps);
+
+        await runtime.sendCommand(session(), 'room-42', { kind: 'force-resolve-round' });
+
+        expect(deps.sendCommand).toHaveBeenCalledWith('room-42', {
+            protocolVersion: RELIC_PROTOCOL_VERSION,
+            gameId: 'room-42',
+            username: 'Alice',
+            kind: 'force-resolve-round',
+        });
+    });
+
     it('does not connect or subscribe when no browser session can be restored', async () => {
         const deps = runtimeDeps({
             restoreSession: vi.fn(() => undefined),

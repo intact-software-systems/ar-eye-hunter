@@ -186,6 +186,17 @@ export function applyRelicCommand(
         throw new Error('Escaped or defeated hunters cannot act.');
     }
 
+    if (command.kind === 'force-resolve-round') {
+        if (!roundTimerExpired(joined.state, now)) {
+            throw new Error('Round timer has not expired.');
+        }
+
+        return {
+            state: resolveRound(forceRoundResolutionState(joined.state, active, now), now),
+            resolvedRound: true,
+        };
+    }
+
     validateAction(joined.state, joined.player, command.action);
     const pendingAction: RelicPendingAction = {
         playerId: joined.player.playerId,
@@ -224,6 +235,32 @@ export function applyRelicCommand(
         state: resolveRound(submittedState, now),
         resolvedRound: true,
     };
+}
+
+function roundTimerExpired(state: RelicGameState, now: number): boolean {
+    return state.roundStartedAtEpochMs !== undefined &&
+        now >= state.roundStartedAtEpochMs + state.roundTimeLimitMs;
+}
+
+function forceRoundResolutionState(
+    state: RelicGameState,
+    active: readonly RelicPlayer[],
+    now: number,
+): RelicGameState {
+    const submittedIds = new Set(state.pendingActions.map((action) => action.playerId));
+    const skipped = active.filter((player) => !submittedIds.has(player.playerId));
+    const skippedNames = skipped.map((player) => player.username).join(', ');
+    const message = skipped.length === 0
+        ? 'The round timer expired after every plan was locked.'
+        : `The round timer expired. Missing plans skipped: ${skippedNames}.`;
+
+    return touch({
+        ...state,
+        events: appendEvent(state, message, now, {
+            type: 'action_revealed',
+            tone: 'mystery',
+        }),
+    }, now);
 }
 
 export function legalMoveTargets(

@@ -473,24 +473,33 @@ Follow-up from:
 [Iteration 9](#iteration-9-lobby-and-multiplayer-flow) and
 [Iteration 12](#iteration-12-two-client-propagation-and-snapshot-recovery).
 
-Status: planned. Iteration 9 made the current policy visible, but did not change
-the rule that stale joined players can still block round resolution.
+Status: in progress. First stale-participant policy pass complete: active
+hunters can now force-resolve a planning round after the round timer expires,
+and missing plans are skipped instead of blocking forever. The shared rules
+define the new `force-resolve-round` command, the SPA exposes it only after the
+timer reaches zero while hunters are still waiting, runtime command transport
+coverage includes it, and browser coverage verifies the command from the timed
+out planning UI.
 
 Deliverables:
 
 - decide the product rule for stale joined players: block, keeper-remove,
-  auto-skip after timeout, auto-defeat, or reset-only
+  auto-skip after timeout, auto-defeat, or reset-only: first pass chooses
+  explicit auto-skip after timeout, triggered by any active hunter
 - implement the chosen policy in `packages/relic-hunters` and
-  `apps/relic-hunter-server-v1` if the rule changes
-- expose the policy clearly in the lobby, waiting, and party-change states
-- cover the policy with shared-rule tests and browser/runtime tests
+  `apps/relic-hunter-server-v1` if the rule changes: shared command/rule
+  implemented; server accepts it through the shared command validator
+- expose the policy clearly in the lobby, waiting, and party-change states:
+  first pass updates the party-change copy and timed-out planning controls
+- cover the policy with shared-rule tests and browser/runtime tests: first pass
+  complete
 - document any server/Rallar dependency outside the Relic app/server/package
   before changing that external code
 
 Exit criteria:
 
 - players understand why a round is waiting and have a supported way to recover
-  from stale participants
+  from stale participants after the timer expires
 
 ### Iteration 14: Visual Baselines And Scene Architecture Follow-Up
 

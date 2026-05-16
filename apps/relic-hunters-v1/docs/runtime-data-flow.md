@@ -40,12 +40,28 @@ The browser uses REST as the authoritative gameplay command transport:
 join expedition -> REST command -> server applyCommand -> persisted state -> WS snapshot publish -> REST response snapshot
 start expedition -> REST command -> server applyCommand -> persisted state -> WS snapshot publish -> REST response snapshot
 submit action -> REST command -> server applyCommand -> persisted state -> WS snapshot publish -> REST response snapshot
+force resolve timed-out round -> REST command -> server applyCommand -> persisted state -> WS snapshot publish -> REST response snapshot
 set round limit -> REST command -> server applyCommand -> persisted state -> WS snapshot publish -> REST response snapshot
 reset -> REST reset endpoint -> persisted new game -> WS snapshot publish -> REST response snapshot
 ```
 
 The server still defines the Rallar WS command topic for compatibility/future
 experiments, but the SPA does not send gameplay commands over that topic.
+
+## Timed-Out Round Recovery
+
+Stale or disconnected expedition players remain in the game state after start.
+They are still counted as active until they escape, are defeated, or the room is
+reset. To avoid permanent turn blocking, the shared rules accept a
+`force-resolve-round` command after `roundStartedAtEpochMs + roundTimeLimitMs`.
+Any active hunter can send it. The server resolves the round with the plans that
+were already submitted and skips missing plans for active hunters who did not
+lock one.
+
+The SPA exposes this command only during planning, only after the timer reaches
+zero, and only when at least one active hunter is still waiting. This does not
+remove stale players from the expedition; it lets the current round advance.
+Reset remains the roster-rebuild path.
 
 ## API Base URL
 
@@ -99,10 +115,9 @@ leaving authoritative room movement in the turn-based snapshot.
   full-stack spec. Lower-level middleware or WS disruption recovery is still not
   separately simulated.
 - Stale active expedition players can block round resolution because active
-  player count is based on game state, not live room membership. This is now an
-  explicit player-facing policy in the lobby/party-change UI: reset rebuilds the
-  expedition roster, while continuing keeps stale joined players in the turn
-  resolution set. Iteration 13 tracks the final policy decision.
+  player count is based on game state, not live room membership. Iteration 13's
+  first pass makes this recoverable after the timer expires, but does not remove
+  stale players from the expedition automatically.
 - Runtime diagnostics are useful in development, but the production UI has no
   concise player-facing explanation when a room is joined but the snapshot is
   missing or degraded.
