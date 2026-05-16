@@ -92,10 +92,12 @@ immediately, so clue trails and room objectives can update after the first find.
   gameplay timing, audio, or event reveal behavior.
 - Planning state is covered by a mocked single-client Playwright loop from room
   creation through first-turn resolution, but there is not yet a browser test
-  proving the full two-client submit/wait/resolve propagation path.
+  proving the full two-client submit/wait/resolve propagation path. This is the
+  next planned iteration in `improvement-plan.md`.
 - Stale or disconnected joined players still remain in the active expedition
   after start. The player-facing policy is now visible: reset rebuilds the
   roster, while continuing keeps those hunters and may block round resolution.
+  A separate follow-up iteration now tracks the final product rule.
 
 ## Visual State
 
@@ -106,8 +108,9 @@ immediately, so clue trails and room objectives can update after the first find.
   canvas `data-scene-ready` signal emitted after Babylon renders.
 - Player labels are names-only in normal play. Health, relic counts, score, and
   character details stay in HUD panels.
-- Iteration 7 should make the scene easier to read before adding more content:
-  rooms, exits, players, relics, danger, and current objective should be
-  immediately legible.
+- Iteration 14 should finish the baseline visual coverage that started in
+  Iterations 7, 8, and 11: rooms, exits, players, relics, danger, current
+  objective, prompts, minimap, and bottom HUD should be immediately legible at
+  the captured desktop and mobile viewports.
 - Player-facing labels and debug/development-only labels should be separated so
   the scene can stay clean in normal play.

@@ -398,8 +398,11 @@ additional exit/defeated-player coverage, the Rallar runtime fake-dependency
 tests now cover no-session hydration, room create/join hydration, and reset
 delegation, and Playwright now drives a mocked browser loop through register,
 room create, join expedition, start, submit, and resolved timeline feedback. A
-desktop/mobile lobby screenshot smoke test was added; baseline visual snapshots
-and real two-client propagation tests are still open.
+desktop/mobile lobby screenshot smoke test was added. The real two-client
+propagation gap is now split out as
+[Iteration 12](#iteration-12-two-client-propagation-and-snapshot-recovery), and
+baseline visual snapshots are split out as
+[Iteration 14](#iteration-14-visual-baselines-and-scene-architecture-follow-up).
 
 Deliverables:
 
@@ -413,9 +416,111 @@ Exit criteria:
 
 - future UI and Rallar changes do not regress the basic playable loop
 
-### Iteration 12: Performance And Production Readiness
+### Iteration 12: Two-Client Propagation And Snapshot Recovery
+
+Prove and harden the data flow that originally made the game feel unplayable.
+
+Follow-up from:
+[Iteration 4](#iteration-4-rallar-game-runtime-facade),
+[Iteration 5](#iteration-5-command-transport-decision),
+[Iteration 9](#iteration-9-lobby-and-multiplayer-flow), and
+[Iteration 11](#iteration-11-tests-and-playwright-coverage).
+
+Status: planned. This is the next natural iteration before performance work
+because the core gameplay loop still needs proof that independent clients
+converge on the same authoritative snapshot.
+
+Deliverables:
+
+- add a real two-browser/client propagation test using the paired Relic server
+  and Rallar runtime, not only a mocked single-browser backend
+- cover create room, second-client room join, join expedition, start, submit,
+  wait, resolve, and reset/rejoin propagation
+- compare both clients' room id, snapshot phase, round, submissions, event ids,
+  active player counts, and accepted snapshot metadata after each command
+- add diagnostics or test hooks that expose ignored snapshot reasons and latest
+  accepted snapshot source per client
+- fix snapshot acceptance if equal-timestamp or less-complete snapshots can
+  replace richer state under fast REST/WS ordering
+- add a reconnect/resubscribe recovery check for room and snapshot listeners
+- document the authoritative propagation contract in
+  `docs/runtime-data-flow.md`
+
+Exit criteria:
+
+- two independent clients reliably converge after each authoritative command
+- reconnect recovery has either automated coverage or a documented manual
+  procedure with known limitations
+
+### Iteration 13: Stale Participant Policy And Turn Blocking
+
+Decide what happens when joined expedition players disconnect, go stale, or
+leave before submitting a round plan.
+
+Follow-up from:
+[Iteration 9](#iteration-9-lobby-and-multiplayer-flow) and
+[Iteration 12](#iteration-12-two-client-propagation-and-snapshot-recovery).
+
+Status: planned. Iteration 9 made the current policy visible, but did not change
+the rule that stale joined players can still block round resolution.
+
+Deliverables:
+
+- decide the product rule for stale joined players: block, keeper-remove,
+  auto-skip after timeout, auto-defeat, or reset-only
+- implement the chosen policy in `packages/relic-hunters` and
+  `apps/relic-hunter-server-v1` if the rule changes
+- expose the policy clearly in the lobby, waiting, and party-change states
+- cover the policy with shared-rule tests and browser/runtime tests
+- document any server/Rallar dependency outside the Relic app/server/package
+  before changing that external code
+
+Exit criteria:
+
+- players understand why a round is waiting and have a supported way to recover
+  from stale participants
+
+### Iteration 14: Visual Baselines And Scene Architecture Follow-Up
+
+Finish the visual and scene-safety work that started before the test pass.
+
+Follow-up from:
+[Iteration 7](#iteration-7-visual-direction-and-babylon-cleanup),
+[Iteration 8](#iteration-8-scene-architecture), and
+[Iteration 11](#iteration-11-tests-and-playwright-coverage).
+
+Status: planned. Iterations 7 and 8 were first slices; `RelicScene.tsx` still
+owns too many responsibilities, and Iteration 11 left baseline visual snapshots
+open.
+
+Deliverables:
+
+- add baseline screenshot coverage for signed-out, lobby, planning, waiting,
+  resolved timeline, and finished states at core desktop/mobile viewports
+- move either event effects or player/relic scene sync behind a module boundary
+- keep fallback tactical rendering covered by browser smoke checks
+- verify labels, prompts, minimap, and bottom HUD do not overlap at the
+  captured viewports
+- refresh `docs/visual-direction.md` with the current procedural-vs-asset plan
+
+Exit criteria:
+
+- scene changes have visual baselines, and one more high-risk scene subsystem is
+  no longer embedded directly in `RelicScene.tsx`
+
+### Iteration 15: Performance And Production Readiness
 
 Harden the app after the core loop is readable.
+
+Follow-up from:
+[Iteration 7](#iteration-7-visual-direction-and-babylon-cleanup),
+[Iteration 8](#iteration-8-scene-architecture),
+[Iteration 12](#iteration-12-two-client-propagation-and-snapshot-recovery), and
+[Iteration 14](#iteration-14-visual-baselines-and-scene-architecture-follow-up).
+
+Status: planned. This was previously numbered Iteration 12, but should come
+after multiplayer convergence and visual baselines so production measurements
+reflect the playable app shape.
 
 Deliverables:
 
@@ -430,19 +535,26 @@ Exit criteria:
 
 - production build size and runtime performance are understood and acceptable
 
-## First Implementation Recommendation
+## Next Implementation Recommendation
 
-Start with Iteration 2 and Iteration 4, not graphics.
+Start with Iteration 12, not performance.
 
-The visual quality will remain hard to judge while the screen is crowded and while connection/game states are ambiguous. A stable HUD shell plus a Rallar/game runtime facade will make every later improvement safer.
+The old Iteration 12 performance work is useful, but it assumes the playable
+loop is already trustworthy. The current remaining risk is still client-to-client
+state propagation, so prove two-client convergence first, then settle stale
+participant policy, then return to visual baselines and production performance.
 
-## Concrete First Tasks
+## Concrete Next Tasks
 
-1. Extract `useRelicHunters` internals into a runtime module with explicit connection phases.
-2. Add `GameHud` and move only the topbar, side panel, and bottom panel into it.
-3. Remove or temporarily disable duplicate overlays that occupy bottom-center and left-bottom screen space.
-4. Add a development-only Rallar status panel showing auth, connect status, current room, snapshot age, WS listener state, and RTC position status.
-5. Capture before/after screenshots at 1440x900, 1024x768, and 390x844.
+1. Build the two-client Playwright path against the real paired server/runtime.
+2. Assert both clients converge on the same room, phase, round, submissions,
+   event ids, and snapshot metadata after each command.
+3. Reproduce or rule out equal-timestamp snapshot replacement with richer/poorer
+   event data.
+4. Add a reconnect/resubscribe recovery check or document the precise manual
+   recovery procedure if automation is blocked.
+5. Update `docs/runtime-data-flow.md` with the propagation contract and any
+   known limitations found during the test pass.
 
 ## Open Questions
 

@@ -77,10 +77,19 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
 - Iteration 10, turn timeline and feedback, now has a first consolidation pass
   complete.
 - Iteration 11, tests and Playwright coverage, now has a first coverage pass
-  complete.
+  complete; its remaining propagation and visual-baseline work is now tracked as
+  follow-up iterations.
+- Iteration 12, two-client propagation and snapshot recovery, is the next
+  natural iteration.
+- Iteration 13, stale participant policy and turn blocking, tracks the remaining
+  multiplayer product-rule gap from the lobby pass.
+- Iteration 14, visual baselines and scene architecture follow-up, tracks the
+  unfinished visual screenshot and `RelicScene` boundary work.
+- Iteration 15, performance and production readiness, is the previous
+  performance-oriented Iteration 12 moved behind the playable-loop follow-ups.
 - Because the reported failure is that the game is not playable and state is not
-  propagating reliably between clients, iteration 7 should be kept narrow and
-  paired with data-flow fixes when a concrete propagation bug is found.
+  propagating reliably between clients, the next work should prove two-client
+  convergence before spending effort on production performance.
 - Completed iteration-7/playability fixes so far: remove blocking intro and
   onboarding from the default path, normalize local dev API calls through the
   same-origin proxy, make admin detection tolerate legacy snapshots without
@@ -105,23 +114,27 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
   unit tests, view-model action legality covers exit and defeated-player cases,
   Rallar runtime fake-dependency tests cover no-session, create/join hydration,
   and reset paths, and Playwright covers register, room creation, expedition
-  join, start, submit, and resolved timeline feedback in one browser flow.
+  join, start, submit, and resolved timeline feedback in one mocked browser
+  flow.
 
 ## Main Risks
 
 - Multiplayer state still depends on all clients accepting the correct room
   snapshot from a mix of REST command responses and Rallar WS snapshot pushes.
+  This is now tracked by Iteration 12.
 - The runtime has diagnostics and single-browser/server Playwright coverage,
   including a mocked first-turn browser loop, but there is no automated
   two-client browser test for submit/wait/resolve propagation yet.
 - `RelicScene.tsx` remains risky to change because scene sync, labels, event
   effects, and player controls are still tightly coupled, though Babylon setup,
   render-loop scheduling, and RTC position sync now have clearer boundaries.
+  This is now tracked by Iteration 14.
 - The app is visually dense. Even after the HUD layout pass, many panels and
   overlays compete for attention during planning and event reveal.
 - Server rules serialize writes per game. Current product policy is explicit
   rather than automatic: disconnected/stale joined players remain in the
-  expedition and can block turn resolution unless the room is reset.
+  expedition and can block turn resolution unless the room is reset. This is
+  now tracked by Iteration 13.
 
 ## Working Agreement
 
