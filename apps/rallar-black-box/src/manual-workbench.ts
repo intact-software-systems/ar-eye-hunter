@@ -40,6 +40,12 @@ export type ManualWorkbenchValues = Readonly<{
     topicId: string;
     timeoutMs: number;
     providerMode: RallarBlackBoxProviderMode;
+    rallarUsername?: string;
+    rallarPassword?: string;
+    rallarRegister: boolean;
+    rallarRestoreSession: boolean;
+    rallarLogoutOnClose: boolean;
+    rallarLeaveRoomOnClose: boolean;
 }>;
 
 export type ManualPayloadPreset = Readonly<{
@@ -117,6 +123,12 @@ export const DEFAULT_MANUAL_WORKBENCH_VALUES: ManualWorkbenchValues = {
     topicId: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.topicId,
     timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
     providerMode: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.providerMode,
+    rallarUsername: undefined,
+    rallarPassword: undefined,
+    rallarRegister: false,
+    rallarRestoreSession: false,
+    rallarLogoutOnClose: false,
+    rallarLeaveRoomOnClose: true,
 };
 
 function clean(value: string): string | undefined {
@@ -135,6 +147,37 @@ function timeoutMs(value: ManualWorkbenchValues): number | undefined {
     return Number.isFinite(value.timeoutMs) && value.timeoutMs > 0
         ? Math.round(value.timeoutMs)
         : undefined;
+}
+
+function rallarConfigFrom(
+    values: ManualWorkbenchValues,
+): Readonly<Record<string, unknown>> | undefined {
+    if (values.providerMode !== 'browser-rallar') {
+        return undefined;
+    }
+
+    const username = clean(values.rallarUsername ?? '');
+    const password = clean(values.rallarPassword ?? '');
+    const rallar: Record<string, unknown> = {
+        ...(username ? { username } : {}),
+        ...(password ? { password } : {}),
+        ...(values.rallarRegister ? { register: true } : {}),
+        ...(values.rallarRestoreSession ? { restoreSession: true } : {}),
+        ...(values.rallarLogoutOnClose ? { logoutOnClose: true } : {}),
+        leaveRoomOnClose: values.rallarLeaveRoomOnClose,
+    };
+
+    return Object.keys(rallar).length > 0 ? rallar : undefined;
+}
+
+function redactionFrom(
+    values: ManualWorkbenchValues,
+): RallarBlackBoxTestConfig['redaction'] | undefined {
+    const secretValues = [
+        values.rallarPassword,
+    ].filter((value): value is string => Boolean(value && value.length > 0));
+
+    return secretValues.length > 0 ? { secretValues } : undefined;
 }
 
 function commandId(action: string, sequence: number): string {
@@ -186,6 +229,8 @@ export function manualConfigureCommand(
     values: ManualWorkbenchValues,
     sequence: number,
 ): RallarBlackBoxTestCommand {
+    const rallar = rallarConfigFrom(values);
+    const redaction = redactionFrom(values);
     const config: RallarBlackBoxTestConfig = {
         runId: `manual-workbench-${sequence}`,
         agentId: 'visible-agent-local',
@@ -206,6 +251,8 @@ export function manualConfigureCommand(
             connection: clean(values.connection),
             providerMode: values.providerMode,
         },
+        ...(rallar ? { rallar } : {}),
+        ...(redaction ? { redaction } : {}),
     };
 
     return {

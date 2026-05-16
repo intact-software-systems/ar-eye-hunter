@@ -23,5 +23,20 @@
     "username": "test2",
     "password": "test2",
     "clientId": "test2"
+  },
+  {
+    "username": "alice",
+    "password": "secret",
+    "clientId": "alice"
+  },
+  {
+    "username": "bob",
+    "password": "secret",
+    "clientId": "bob"
+  },
+  {
+    "username": "charlie",
+    "password": "secret",
+    "clientId": "charlie"
   }
 ]

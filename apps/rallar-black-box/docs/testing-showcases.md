@@ -229,6 +229,68 @@ Diagnostics panel and copy its bundle. The bundle includes provider mode, enviro
 transport, auth-state flags, command IDs, connect stages, failure source, recent results, and recent real-provider
 events with sensitive fields redacted by the runtime redaction rules.
 
+## Provider Parity: SPA Recipe And Runner
+
+Goal: run the same command intent through the visible SPA and the black-box runner, then compare shared result semantics.
+
+In the SPA, select the `Provider Parity` recipe fixture. It covers configure, RTC connect, direct send, multicast
+metadata, broadcast metadata, health, close, and reset. In simulated mode it validates UI/report behavior without a
+backend. With `provider=browser-rallar`, the same recipe uses the real browser Rallar provider.
+
+Start the control server:
+
+```sh
+npm run dev:rallar-black-box-control
+```
+
+Start the SPA with real-provider defaults:
+
+```sh
+VITE_RALLAR_PROVIDER=browser-rallar \
+VITE_RALLAR_API_BASE_URL=https://api.example.test \
+VITE_RALLAR_ROOM_ID=room-to-join \
+VITE_RALLAR_USERNAME=alice \
+VITE_RALLAR_PASSWORD=secret \
+npm run dev:rallar-black-box -- --host 127.0.0.1 --port 5176
+```
+
+Open it as a remote provider agent:
+
+```text
+http://localhost:5176/?mode=control&autoConnect=1&provider=browser-rallar&controlUrl=ws%3A%2F%2Flocalhost%3A5180%2Fcontrol&runId=parity-run&agentId=agent-alice&actor=alice&roomId=room-to-join&transport=realtime
+```
+
+Test helpers can convert the same parity recipe to runner interactions:
+
+```ts
+import { executeBlackBox } from './packages/shared-test/black-box-runner/execute-black-box.ts';
+import {
+  createRallarBlackBoxProviderParityRecipe,
+  toRallarBlackBoxRunnerParityInteractions,
+} from './packages/shared-test/rallar-bb-test/mod.ts';
+
+const recipe = createRallarBlackBoxProviderParityRecipe({ providerMode: 'browser-rallar' });
+const { interactions } = toRallarBlackBoxRunnerParityInteractions(recipe, {
+  provider: 'rallar-remote-browser',
+});
+
+const report = await executeBlackBox(interactions, 0, {
+  rallarRemoteBrowser: {
+    controlBaseUrl: 'http://localhost:5180',
+    runId: 'parity-run',
+    agentId: 'agent-alice',
+  },
+});
+```
+
+Good signal:
+
+- converted runner commands preserve the same connect, send, close, transport, room, and parity metadata as the SPA
+  recipe
+- direct send has a received-message assertion when an expected connection is configured
+- multicast and broadcast commands keep target and delivery-mode metadata for report comparison
+- runner-only remote fields, browser health, and timing fields are marked as provider-specific before comparison
+
 ## Large Scale: Planned Controlled Runs
 
 The intended large-scale shape is:

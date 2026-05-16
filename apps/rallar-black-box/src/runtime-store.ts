@@ -478,6 +478,10 @@ function browserRallarProviderNotReadyOutcome(
     };
 }
 
+function canInstallSpaBrowserRallarRuntime(): boolean {
+    return typeof window !== 'undefined';
+}
+
 async function providerCommandExecutor(
     command: RallarBlackBoxTestCommand & Readonly<{ commandId: string }>,
     context: RallarBlackBoxTestCommandContext,
@@ -715,7 +719,10 @@ class RallarBlackBoxRuntimeStore {
     private readonly bootstrapConfig = resolveRallarBlackBoxBootstrapConfig();
 
     constructor() {
-        if (this.bootstrapConfig.providerMode === 'browser-rallar') {
+        if (
+            this.bootstrapConfig.providerMode === 'browser-rallar' &&
+            canInstallSpaBrowserRallarRuntime()
+        ) {
             const browserRuntime = createRallarBlackBoxBrowserTestRuntime({
                 rallarRuntime: createSpaBrowserRallarRuntime(),
                 fetch: globalThis.fetch?.bind(globalThis) as typeof fetch | undefined,
@@ -778,6 +785,11 @@ class RallarBlackBoxRuntimeStore {
             return;
         }
 
+        if (this.bootstrapConfig.providerMode === 'browser-rallar') {
+            void this.configureLocalWorkbenchOnly();
+            return;
+        }
+
         void this.runSample();
     }
 
@@ -827,6 +839,33 @@ class RallarBlackBoxRuntimeStore {
             };
             this.emit();
         }
+    }
+
+    async configureLocalWorkbenchOnly(): Promise<void> {
+        try {
+            await this.resetForRun('Configuring local browser-rallar workbench');
+            this.snapshot = {
+                ...this.snapshot,
+                bootstrapping: false,
+                busy: false,
+                runState: 'waiting',
+                loadedFixtureId: undefined,
+                lastAction: 'Local browser-rallar workbench configured',
+                lastError: undefined,
+            };
+        } catch (error) {
+            this.snapshot = {
+                ...this.snapshot,
+                bootstrapping: false,
+                busy: false,
+                runState: 'failed',
+                loadedFixtureId: undefined,
+                lastAction: 'Local browser-rallar workbench configuration failed',
+                lastError: toMessage(error),
+            };
+        }
+
+        this.emit();
     }
 
     async bootstrapControlAgent(): Promise<void> {

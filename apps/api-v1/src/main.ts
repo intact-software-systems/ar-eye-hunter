@@ -45,7 +45,7 @@ console.log('Server started on port 8080. http://localhost:8080/api/docs');
 
 function readCorsOrigins(): readonly string[] {
     const raw = Deno.env.get('CORS_ORIGINS') ??
-        'http://localhost:5173,http://localhost:5174';
+        'http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176';
 
     return raw
         .split(',')

@@ -14,7 +14,7 @@ export type RtcProvider = {
 export type RtcClient = {
     connect: () => Promise<void>
     send: (message: any, interaction?: any, config?: any, context?: any) => Promise<void>
-    close: () => Promise<void>
+    close: (interaction?: any, config?: any, context?: any) => Promise<void>
     onMessage?: (handler: (message: any) => void) => void
     onClose?: (handler: (event: any) => void) => void
 }
@@ -579,7 +579,7 @@ export function createRtcProviderFromClientFactory(options: RtcClientProviderOpt
 
             try {
                 if (client) {
-                    await client.close();
+                    await client.close(interaction, config, context);
                     delete context.rtcConnections[connectionName];
                 }
             } catch (e) {

@@ -1,6 +1,6 @@
 # Rallar Black Box Documentation
 
-This folder documents the current state of `apps/rallar-black-box` after Iteration 17.
+This folder documents the current state of `apps/rallar-black-box` after Iteration 18.
 
 The app is a browser-based black-box test agent and visible debugging workbench for Rallar RTC, WebSocket, and HTTP test
 flows. It uses the shared `rallar-bb-test` command contract, can connect to a WebSocket control server, streams results
@@ -72,3 +72,5 @@ delivery smokes.
 - `src/topology-graph.ts`: graphology topology derivation used by the Sigma view.
 - `apps/rallar-black-box-control-server`: minimal in-memory control server used for local orchestration and smoke tests.
 - `packages/shared-test/rallar-bb-test`: shared command/result/event/runtime contract.
+- `packages/shared-test/rallar-bb-test/provider-parity.ts`: portable SPA/runner parity recipes, runner conversion, and
+  report comparison helpers.

@@ -6,7 +6,7 @@ actions, remote control commands, runtime events, stats, and reports use one com
 
 ## Implemented
 
-The implementation is complete through Iteration 17 in `implementation-plan.md`.
+The implementation is complete through Iteration 18 in `implementation-plan.md`.
 
 The shared facade exists in `packages/shared-test/rallar-bb-test` and defines:
 
@@ -16,6 +16,8 @@ The shared facade exists in `packages/shared-test/rallar-bb-test` and defines:
 - result replay by stable command ID
 - browser adapter code for fetch, WebSocket, and existing browser Rallar runtime shapes
 - runner adapters, including the `rallar-remote-browser` provider
+- provider-parity helpers that build portable SPA recipes, convert them to `rallar-browser` or `rallar-remote-browser`
+  runner interactions, and normalize SPA/runner reports for comparison
 
 The SPA currently provides:
 
@@ -29,6 +31,8 @@ The SPA currently provides:
 - received-data inbox derived from runtime message events
 - RTC diagnostics panel for connect phases, membership, latency, failure focus, and copyable diagnostic bundles
 - topology view derived from runtime events using graphology and rendered with Sigma.js
+- a Provider Parity recipe fixture for connect, direct send, multicast metadata, broadcast metadata, health, close, and
+  reset checks
 
 The minimal control server in `apps/rallar-black-box-control-server` currently provides:
 
@@ -91,6 +95,12 @@ It has gated real-provider smokes for one-agent connect/send and two-agent deliv
 real Rallar environment is configured. Auth, permission, stale-session, duplicate-session, and cleanup failures now emit
 specific diagnostics and appear in the copyable RTC failure bundle.
 
+Iteration 18 adds a bridge between visible SPA recipes and runner scenarios. The portable parity helper intentionally
+marks provider-specific report fields such as timing, remote agent metadata, browser health, and raw runner `actual`
+details so report comparisons focus on shared command/result semantics. The runner conversion omits `configure`,
+`health`, and `reset` with explicit reasons because the RTC provider vocabulary only has connect, send, wait, and close
+actions.
+
 ## Security State
 
 The control boundary already includes the first hardening pass:
@@ -134,5 +144,6 @@ npm --workspace rallar-black-box run typecheck
 npm run test -- packages/tests/shared-test/rallar-browser-runtime.test.ts packages/tests/rallar-black-box/rtc-diagnostics.test.ts packages/tests/rallar-black-box/browser-rallar-runtime.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/shared-test/rallar-bb-test.test.ts packages/tests/rallar-black-box/control-client.test.ts
 npm run test -- packages/tests/rallar-black-box/browser-rallar-runtime.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/shared-test/rallar-bb-test.test.ts
 npm run test -- packages/tests/rallar-black-box/topology-graph.test.ts packages/tests/rallar-black-box/rtc-diagnostics.test.ts packages/tests/rallar-black-box/manual-workbench.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/rallar-black-box/control-client.test.ts
+npm run test -- packages/tests/shared-test/rallar-provider-parity.test.ts
 npm run test:e2e:rallar-black-box
 ```

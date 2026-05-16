@@ -1166,11 +1166,27 @@ Deliverables:
 
 Make recipes portable between local visible UI, remote SPA agents, and the existing black-box runner provider.
 
-Status: planned.
+Status: completed.
 
 Results:
 
-- Not started.
+- Added `packages/shared-test/rallar-bb-test/provider-parity.ts` with a portable provider-parity recipe builder,
+  runner conversion for `rallar-browser` and `rallar-remote-browser`, explicit runner omission reporting for
+  `configure`, `health`, and `reset`, and SPA/runner report normalization plus comparison helpers.
+- Added a `Provider Parity` SPA recipe fixture covering configure, RTC connect, direct send, multicast metadata,
+  broadcast metadata, health, close, and reset.
+- Preserved parity metadata through the runtime facade adapter and the remote SPA provider so converted runner commands
+  can be compared back to the source SPA recipe.
+- Fixed the runtime facade RTC close mapping to pass the close interaction into the client. This prevents close commands
+  from reusing the original connect command ID and being hidden by runtime result replay.
+- Added `packages/tests/shared-test/rallar-provider-parity.test.ts` covering recipe shape, runner conversion,
+  runtime-facade mapping, remote-provider mapping, and provider-specific report normalization.
+- Documented how to launch the SPA as a real `browser-rallar` control agent and how to run the converted parity recipe
+  through the `rallar-remote-browser` runner provider.
+- Verified with `npm run test -- packages/tests/shared-test/rallar-provider-parity.test.ts packages/tests/shared-test/rallar-bb-test.test.ts packages/tests/shared-test/rallar-remote-browser-provider.test.ts`.
+- Verified with `npm --workspace @ar-eye-hunter/shared-test run typecheck`.
+- Verified with `npm --workspace rallar-black-box run typecheck`.
+- Verified with `npm --workspace rallar-black-box run build`.
 
 Deliverables:
 

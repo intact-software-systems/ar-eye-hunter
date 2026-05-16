@@ -1,3 +1,4 @@
+import { createRallarBlackBoxProviderParityRecipe } from '@shared-test/rallar-bb-test/provider-parity.ts';
 import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRecipe, } from '@shared-test/rallar-bb-test/types.ts';
 
 export type RallarBlackBoxRecipeFixture = Readonly<{
@@ -97,6 +98,12 @@ export const RALLAR_BLACK_BOX_RECIPE_FIXTURES: readonly RallarBlackBoxRecipeFixt
                 },
             ],
         },
+    },
+    {
+        fixtureId: 'provider-parity',
+        label: 'Provider Parity',
+        description: 'Portable SPA and runner recipe covering connect, direct, multicast, broadcast, health, close, and reset.',
+        recipe: createRallarBlackBoxProviderParityRecipe(),
     },
     {
         fixtureId: 'expected-failure',

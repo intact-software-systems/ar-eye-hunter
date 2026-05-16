@@ -66,6 +66,25 @@ REST client or runner
 
 The browser initiates the WebSocket connection. The server does not reach into the browser directly.
 
+## Provider Parity Helpers
+
+`packages/shared-test/rallar-bb-test/provider-parity.ts` provides the portable Iteration 18 parity path:
+
+- `createRallarBlackBoxProviderParityRecipe(...)` builds a visible SPA recipe for configure, connect, direct send,
+  multicast metadata, broadcast metadata, health, close, and reset.
+- `toRallarBlackBoxRunnerParityInteractions(...)` converts that recipe to runner RTC interactions for `rallar-browser`
+  or `rallar-remote-browser`.
+- `normalizeRallarBlackBoxRuntimeParityReport(...)`, `normalizeBlackBoxRunnerParityReport(...)`, and
+  `compareRallarBlackBoxProviderParityReports(...)` compare shared command/result semantics while keeping
+  provider-specific fields under `providerSpecific`.
+
+The runner conversion executes RTC `connect`, `send`, optional receive `wait`, and `close` operations. It records
+`configure`, `health`, and `reset` as explicit omissions because those operations exist in the SPA command vocabulary but
+not as first-class runner RTC provider actions.
+
+The same parity metadata is preserved through the runtime facade adapter and the remote SPA provider, so drift in
+connect, send, and close command mapping is covered by shared-test regression tests.
+
 ## Control Envelopes
 
 Server to browser:

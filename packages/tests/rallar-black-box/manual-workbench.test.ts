@@ -132,6 +132,39 @@ describe('rallar-black-box manual workbench helpers', () => {
         });
     });
 
+    it('carries browser-rallar auth defaults into manual configure commands', () => {
+        const [command] = buildManualWorkbenchCommands(
+            'configure',
+            {
+                ...DEFAULT_MANUAL_WORKBENCH_VALUES,
+                providerMode: 'browser-rallar',
+                rallarUsername: 'alice',
+                rallarPassword: 'secret',
+                rallarRegister: true,
+                rallarLogoutOnClose: true,
+                rallarLeaveRoomOnClose: false,
+            },
+            {},
+            12,
+        );
+
+        expect(command).toMatchObject({
+            kind: 'configure',
+            config: {
+                rallar: {
+                    username: 'alice',
+                    password: 'secret',
+                    register: true,
+                    logoutOnClose: true,
+                    leaveRoomOnClose: false,
+                },
+                redaction: {
+                    secretValues: ['secret'],
+                },
+            },
+        });
+    });
+
     it('validates payload JSON before command execution', () => {
         expect(parseManualPayload('{"ok":true}')).toEqual({
             ok: true,

@@ -253,6 +253,7 @@ function toConnectCommand(commandId: string, interaction: any): RallarBlackBoxTe
         rallar: request.rallar,
         timeoutMs: request.timeoutMs,
         metadata: {
+            ...(request.parity ? { parity: request.parity } : {}),
             blackBoxRunner: request,
         },
     };
@@ -269,6 +270,7 @@ function toSendCommand(commandId: string, interaction: any): RallarBlackBoxTestC
         transport: toTransport(request),
         timeoutMs: request.timeoutMs,
         metadata: {
+            ...(request.parity ? { parity: request.parity } : {}),
             blackBoxRunner: request,
         },
     };
@@ -281,6 +283,7 @@ function toCloseCommand(commandId: string, interaction: any): RallarBlackBoxTest
         commandId,
         timeoutMs: request.timeoutMs,
         metadata: {
+            ...(request.parity ? { parity: request.parity } : {}),
             connection: toRtcConnectionName(request),
             blackBoxRunner: request,
         },

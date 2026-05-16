@@ -123,6 +123,10 @@ function toConnectCommand(
             ...(apiBaseUrl ? { apiBaseUrl } : {}),
             ...(transport ? { transport } : {}),
         },
+        metadata: {
+            ...(request.parity ? { parity: request.parity } : {}),
+            blackBoxRunner: request,
+        },
     };
 }
 
@@ -141,6 +145,10 @@ function toSendCommand(
         send: message,
         expect: interaction?.response,
         transport: toRtcTransport(firstDefined(rallar.transport, request.transport)),
+        metadata: {
+            ...(request.parity ? { parity: request.parity } : {}),
+            blackBoxRunner: request,
+        },
     };
 }
 
@@ -179,7 +187,8 @@ export function createRallarBlackBoxRtcClient(
             assertCommandSucceeded(result);
         },
 
-        async close(): Promise<void> {
+        async close(interaction?: any): Promise<void> {
+            const closeRequest = interaction?.request ?? request;
             const result = await runtime.execute({
                 kind: 'close',
                 commandId: toCommandId(
@@ -187,10 +196,12 @@ export function createRallarBlackBoxRtcClient(
                     connection,
                     'close',
                     sequence++,
-                    request,
+                    closeRequest,
                 ),
                 metadata: {
+                    ...(closeRequest.parity ? { parity: closeRequest.parity } : {}),
                     connection,
+                    blackBoxRunner: closeRequest,
                 },
             });
             assertCommandSucceeded(result);

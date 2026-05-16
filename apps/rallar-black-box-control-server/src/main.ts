@@ -9,6 +9,7 @@ import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandKind,
 } from '@shared-test/rallar-bb-test/types.ts';
+import { handleSwaggerRoute, swaggerFallbackResponse } from './routes/swagger-routes.ts';
 
 const DEFAULT_PORT = 5180;
 const OPEN_STATE = 1;
@@ -51,6 +52,11 @@ Deno.serve({ port }, async (request) => {
 
     if (request.method === 'OPTIONS') {
         return emptyResponse(204);
+    }
+
+    const swaggerResponse = handleSwaggerRoute(request, url);
+    if (swaggerResponse) {
+        return swaggerResponse;
     }
 
     if (url.pathname === '/control') {
@@ -106,7 +112,7 @@ Deno.serve({ port }, async (request) => {
         return await issueRunToken(request, runId, agentId);
     }
 
-    return jsonResponse({ error: 'Not found.' }, 404);
+    return isRead ? swaggerFallbackResponse() : jsonResponse({ error: 'Not found.' }, 404);
 });
 
 console.log(`Rallar black-box control server listening on http://localhost:${port}`);

@@ -19,6 +19,7 @@ import type {
     RallarBlackBoxTestState,
     RallarBlackBoxTestTransport,
 } from '@shared-test/rallar-bb-test/types.ts';
+import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import {
     type RallarBlackBoxBootstrapConfig,
     rallarBlackBoxProviderModeFromConfig,
@@ -268,18 +269,52 @@ function manualTransportFrom(
     return transport === 'messages.rtc' || transport === 'ws' ? transport : 'realtime';
 }
 
-function manualValuesFromState(state: RallarBlackBoxTestState): ManualWorkbenchValues {
+function recordValue(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : {};
+}
+
+function stringValue(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim().length > 0
+        ? value
+        : undefined;
+}
+
+function booleanValue(value: unknown, fallback = false): boolean {
+    return typeof value === 'boolean' ? value : fallback;
+}
+
+function manualValuesFromState(
+    state: RallarBlackBoxTestState,
+    bootstrap: RallarBlackBoxBootstrapConfig,
+): ManualWorkbenchValues {
     const config = selectRallarBlackBoxCurrentConfig(state);
+    const configRallar = recordValue(config?.rallar);
     return {
         ...DEFAULT_MANUAL_WORKBENCH_VALUES,
-        environment: config?.environment ?? DEFAULT_MANUAL_WORKBENCH_VALUES.environment,
-        apiBaseUrl: config?.apiBaseUrl ?? DEFAULT_MANUAL_WORKBENCH_VALUES.apiBaseUrl,
-        actor: config?.actor ?? DEFAULT_MANUAL_WORKBENCH_VALUES.actor,
-        sessionId: config?.sessionId ?? DEFAULT_MANUAL_WORKBENCH_VALUES.sessionId,
-        groupId: config?.roomId ?? DEFAULT_MANUAL_WORKBENCH_VALUES.groupId,
+        environment: config?.environment ?? bootstrap.environment,
+        apiBaseUrl: config?.apiBaseUrl ?? bootstrap.apiBaseUrl,
+        actor: config?.actor ?? bootstrap.actor,
+        sessionId: config?.sessionId ?? bootstrap.sessionId,
+        groupId: config?.roomId ?? bootstrap.roomId,
         connection: String(config?.defaults?.connection ?? DEFAULT_MANUAL_WORKBENCH_VALUES.connection),
-        transport: manualTransportFrom(config?.transport),
-        providerMode: rallarBlackBoxProviderModeFromConfig(config),
+        transport: manualTransportFrom(config?.transport ?? bootstrap.transport),
+        providerMode: config
+            ? rallarBlackBoxProviderModeFromConfig(config)
+            : bootstrap.providerMode,
+        rallarUsername: bootstrap.rallarUsername ?? stringValue(configRallar.username),
+        rallarPassword: bootstrap.rallarPassword,
+        rallarRegister: bootstrap.rallarRegister ||
+            booleanValue(configRallar.register),
+        rallarRestoreSession: bootstrap.rallarRestoreSession ||
+            booleanValue(configRallar.restoreSession),
+        rallarLogoutOnClose: bootstrap.rallarLogoutOnClose ||
+            booleanValue(configRallar.logoutOnClose),
+        rallarLeaveRoomOnClose: booleanValue(
+            configRallar.leaveRoomOnClose,
+            bootstrap.rallarLeaveRoomOnClose,
+        ),
     };
 }
 
@@ -496,12 +531,18 @@ function WorkbenchPanel({ busy, runState, loadedFixtureId, lastError }: {
     );
 }
 
-function ManualRallarWorkbenchPanel({ state, busy, onSelectCommand }: {
+function ManualRallarWorkbenchPanel({ state, bootstrap, busy, onSelectCommand }: {
     state: RallarBlackBoxTestState;
+    bootstrap: RallarBlackBoxBootstrapConfig;
     busy: boolean;
     onSelectCommand(commandId: string): void;
 }) {
-    const [values, setValues] = useState<ManualWorkbenchValues>(() => manualValuesFromState(state));
+    const defaultValues = useMemo(
+        () => manualValuesFromState(state, bootstrap),
+        [bootstrap, state.currentConfig],
+    );
+    const [values, setValues] = useState<ManualWorkbenchValues>(() => defaultValues);
+    const [valuesEdited, setValuesEdited] = useState(false);
     const [payloadPresetId, setPayloadPresetId] = useState(MANUAL_PAYLOAD_PRESETS[0].presetId);
     const [payloadText, setPayloadText] = useState(() =>
         JSON.stringify(MANUAL_PAYLOAD_PRESETS[0].payload, null, 2)
@@ -520,10 +561,17 @@ function ManualRallarWorkbenchPanel({ state, busy, onSelectCommand }: {
     );
     const recipeText = useMemo(() => manualRecipeSnippet(history), [history]);
 
+    useEffect(() => {
+        if (!valuesEdited) {
+            setValues(defaultValues);
+        }
+    }, [defaultValues, valuesEdited]);
+
     const updateValue = <K extends keyof ManualWorkbenchValues>(
         key: K,
         value: ManualWorkbenchValues[K],
     ): void => {
+        setValuesEdited(true);
         setValues(current => ({
             ...current,
             [key]: value,
@@ -557,7 +605,7 @@ function ManualRallarWorkbenchPanel({ state, busy, onSelectCommand }: {
             actionId: `manual-action-${startSequence}`,
             label,
             commandIds: commands.map(command => command.commandId ?? command.kind),
-            commands,
+            commands: redactRallarBlackBoxValue(commands),
             atEpochMs: Date.now(),
         };
 
@@ -872,8 +920,9 @@ function ReceivedDataInboxPanel({ state, onSelectCommand }: {
     );
 }
 
-function RtcDiagnosticsPanel({ state, busy, onSelectCommand }: {
+function RtcDiagnosticsPanel({ state, bootstrap, busy, onSelectCommand }: {
     state: RallarBlackBoxTestState;
+    bootstrap: RallarBlackBoxBootstrapConfig;
     busy: boolean;
     onSelectCommand(commandId: string): void;
 }) {
@@ -887,7 +936,7 @@ function RtcDiagnosticsPanel({ state, busy, onSelectCommand }: {
         action: ManualWorkbenchAction | 'reconnect' | 'cleanup',
     ): Promise<void> => {
         setLocalError(undefined);
-        const values = manualValuesFromState(state);
+        const values = manualValuesFromState(state, bootstrap);
         const startSequence = sequence;
         const commands = action === 'reconnect'
             ? [
@@ -1794,6 +1843,7 @@ export default function App() {
                 />
                 <ManualRallarWorkbenchPanel
                     state={state}
+                    bootstrap={bootstrap}
                     busy={busy}
                     onSelectCommand={setSelectedCommandId}
                 />
@@ -1803,6 +1853,7 @@ export default function App() {
                 />
                 <RtcDiagnosticsPanel
                     state={state}
+                    bootstrap={bootstrap}
                     busy={busy}
                     onSelectCommand={setSelectedCommandId}
                 />
