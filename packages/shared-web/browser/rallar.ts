@@ -101,6 +101,7 @@ const RALLAR_RTC_STATUS_CALLBACK_ID = 'rallar:rtc:status';
 const RALLAR_WS_STATUS_CALLBACK_ID = 'rallar:ws:status';
 const DEFAULT_RALLAR_REALTIME_LANE_ID = 'realtime';
 const DEFAULT_RALLAR_REALTIME_OPEN_TIMEOUT_MS = 5_000;
+const DEFAULT_RALLAR_WAIT_FOR_OPEN_TIMEOUT_MS = 5_000;
 
 export type RallarUnsubscribe = () => void;
 
@@ -205,6 +206,28 @@ export type RallarLeaveRoomOptions =
 
 export type RallarOnChangeOptions = Readonly<{
     emitCurrent?: boolean;
+}>;
+
+export type RallarWaitForOpenStatus =
+    | 'open'
+    | 'timeout'
+    | 'aborted'
+    | 'not-connected'
+    | 'closed'
+    | 'no-peer'
+    | 'no-lane'
+    | 'failed';
+
+export type RallarWaitForOpenOptions = Readonly<{
+    timeoutMs?: number;
+    signal?: AbortSignal;
+}>;
+
+export type RallarRtcWaitForOpenOptions =
+    & RallarWaitForOpenOptions
+    & Readonly<{
+    laneId?: string;
+    connect?: boolean;
 }>;
 
 export type RallarMessageTransport = 'rtc' | 'ws';
@@ -448,6 +471,12 @@ export type RallarWsStatus = Readonly<{
     reconnectExhausted: boolean;
 }>;
 
+export type RallarWsWaitForOpenResult = Readonly<{
+    transport: 'ws';
+    status: RallarWaitForOpenStatus;
+    wsStatus: RallarWsStatus;
+}>;
+
 export type RallarWsStatusSubscriptionOptions = RallarOnChangeOptions;
 
 export type RallarWsStatusListener = (
@@ -476,6 +505,17 @@ export type RallarWsLifecycleEvent = Readonly<{
 export type RallarWsLifecycleListener = (
     event: RallarWsLifecycleEvent,
 ) => void | Promise<void>;
+
+export type RallarRtcWaitForOpenResult = Readonly<{
+    transport: 'rtc';
+    status: RallarWaitForOpenStatus;
+    peerId: string;
+    laneId: string;
+    rtcStatus: RallarRtcStatus;
+    peer?: RallarRtcPeerStatus;
+    lane?: RallarRtcLaneStatus;
+    reason?: string;
+}>;
 
 export type RallarFacade = Readonly<{
     configure(config: RallarApiClientConfig): void;
@@ -555,6 +595,15 @@ export type RallarFacade = Readonly<{
             listener: RallarRtcLifecycleListener,
             options?: RallarRtcStatusSubscriptionOptions,
         ): RallarUnsubscribe;
+        waitForLane(
+            peerId: string,
+            laneId: string,
+            options?: RallarRtcWaitForOpenOptions,
+        ): Promise<RallarRtcWaitForOpenResult>;
+        waitForOpen(
+            peerId: string,
+            options?: RallarRtcWaitForOpenOptions,
+        ): Promise<RallarRtcWaitForOpenResult>;
         peer(
             peerId: string,
             options?: RallarRtcStatusOptions,
@@ -574,6 +623,9 @@ export type RallarFacade = Readonly<{
             listener: RallarWsLifecycleListener,
             options?: RallarWsStatusSubscriptionOptions,
         ): RallarUnsubscribe;
+        waitForOpen(
+            options?: RallarWaitForOpenOptions,
+        ): Promise<RallarWsWaitForOpenResult>;
     }>;
     realtime: Readonly<{
         sendJson<T>(
@@ -1059,6 +1111,21 @@ class BrowserRallarFacade implements RallarFacade {
                 this.unregisterRtcStatusCallbacksIfUnused();
             };
         },
+        waitForLane: async (
+            peerId: string,
+            laneId: string,
+            options: RallarRtcWaitForOpenOptions = {},
+        ): Promise<RallarRtcWaitForOpenResult> =>
+            await this.waitForRtcLaneOpen(peerId, laneId, options),
+        waitForOpen: async (
+            peerId: string,
+            options: RallarRtcWaitForOpenOptions = {},
+        ): Promise<RallarRtcWaitForOpenResult> =>
+            await this.waitForRtcLaneOpen(
+                peerId,
+                options.laneId ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
+                options,
+            ),
         peer: (
             peerId: string,
             options: RallarRtcStatusOptions = {},
@@ -1128,6 +1195,10 @@ class BrowserRallarFacade implements RallarFacade {
                 this.unregisterWsStatusCallbacksIfUnused();
             };
         },
+        waitForOpen: async (
+            options: RallarWaitForOpenOptions = {},
+        ): Promise<RallarWsWaitForOpenResult> =>
+            await this.waitForWsOpen(options),
     };
 
     readonly realtime = {
@@ -1488,6 +1559,175 @@ class BrowserRallarFacade implements RallarFacade {
             reconnectAttempts: health.reconnectAttempts,
             maxReconnectAttempts: health.maxReconnectAttempts,
             reconnectExhausted: health.reconnectExhausted,
+        };
+    }
+
+    private waitForWsOpen(
+        options: RallarWaitForOpenOptions = {},
+    ): Promise<RallarWsWaitForOpenResult> {
+        const current = this.toWsStatus();
+        if (current.isOpen) {
+            return Promise.resolve(toWsWaitForOpenResult('open', current));
+        }
+
+        if (options.signal?.aborted) {
+            return Promise.resolve(toWsWaitForOpenResult('aborted', current));
+        }
+
+        if (!this.readMiddleware()) {
+            return Promise.resolve(
+                toWsWaitForOpenResult('not-connected', current),
+            );
+        }
+
+        if (isTerminalClosedWsStatus(current)) {
+            return Promise.resolve(toWsWaitForOpenResult('closed', current));
+        }
+
+        const timeoutMs = normalizeWaitTimeoutMs(options.timeoutMs);
+        if (timeoutMs <= 0) {
+            return Promise.resolve(toWsWaitForOpenResult('timeout', current));
+        }
+
+        return new Promise<RallarWsWaitForOpenResult>((resolve) => {
+            let settled = false;
+            let latest = current;
+            let timeout: ReturnType<typeof setTimeout> | undefined;
+            let unsubscribe: RallarUnsubscribe = () => {
+            };
+
+            const finish = (
+                status: RallarWaitForOpenStatus,
+                wsStatus: RallarWsStatus = latest,
+            ): void => {
+                if (settled) {
+                    return;
+                }
+
+                settled = true;
+                if (timeout !== undefined) {
+                    clearTimeout(timeout);
+                }
+                options.signal?.removeEventListener('abort', onAbort);
+                unsubscribe();
+                resolve(toWsWaitForOpenResult(status, wsStatus));
+            };
+
+            const onAbort = (): void => finish('aborted');
+
+            unsubscribe = this.ws.onStatus(
+                (status) => {
+                    latest = status;
+                    if (status.isOpen) {
+                        finish('open', status);
+                        return;
+                    }
+
+                    if (isTerminalClosedWsStatus(status)) {
+                        finish('closed', status);
+                    }
+                },
+                {
+                    emitCurrent: false,
+                },
+            );
+            options.signal?.addEventListener('abort', onAbort, { once: true });
+            timeout = setTimeout(() => finish('timeout'), timeoutMs);
+        });
+    }
+
+    private async waitForRtcLaneOpen(
+        peerId: string,
+        laneId: string,
+        options: RallarRtcWaitForOpenOptions = {},
+    ): Promise<RallarRtcWaitForOpenResult> {
+        const ctx = this.readMiddleware();
+        if (options.signal?.aborted) {
+            return this.toRtcWaitForOpenResult('aborted', peerId, laneId);
+        }
+
+        if (!ctx) {
+            return this.toRtcWaitForOpenResult('not-connected', peerId, laneId);
+        }
+
+        let peer = ctx.middleware.webRtcConnectionService.readPeer(peerId);
+        if (!peer && options.connect === true) {
+            try {
+                peer = await this.connectRealtimePeer(ctx, peerId);
+            } catch (error) {
+                return this.toRtcWaitForOpenResult(
+                    'failed',
+                    peerId,
+                    laneId,
+                    toErrorMessage(error),
+                );
+            }
+        }
+
+        if (!peer) {
+            return this.toRtcWaitForOpenResult('no-peer', peerId, laneId);
+        }
+
+        const channel = peer.channels.get(laneId);
+        if (!channel) {
+            return this.toRtcWaitForOpenResult('no-lane', peerId, laneId);
+        }
+
+        const initialHealth = channel.readHealth();
+        if (initialHealth.readyState === 'open') {
+            return this.toRtcWaitForOpenResult('open', peerId, laneId);
+        }
+
+        if (isClosedRtcLaneHealth(initialHealth)) {
+            return this.toRtcWaitForOpenResult('closed', peerId, laneId);
+        }
+
+        const timeoutMs = normalizeWaitTimeoutMs(options.timeoutMs);
+        if (timeoutMs <= 0) {
+            return this.toRtcWaitForOpenResult('timeout', peerId, laneId);
+        }
+
+        const opened = await waitForRtcChannelOpenOrAbort(
+            channel.waitUntilOpen(timeoutMs),
+            options.signal,
+        );
+        if (opened === 'aborted') {
+            return this.toRtcWaitForOpenResult('aborted', peerId, laneId);
+        }
+
+        if (opened) {
+            return this.toRtcWaitForOpenResult('open', peerId, laneId);
+        }
+
+        return this.toRtcWaitForOpenResult(
+            isClosedRtcLaneHealth(channel.readHealth()) ? 'closed' : 'timeout',
+            peerId,
+            laneId,
+        );
+    }
+
+    private toRtcWaitForOpenResult(
+        status: RallarWaitForOpenStatus,
+        peerId: string,
+        laneId: string,
+        reason?: string,
+    ): RallarRtcWaitForOpenResult {
+        const rtcStatus = this.toRtcStatus({ laneId });
+        const peer = rtcStatus.peers.find((candidate) =>
+            candidate.peerId === peerId
+        );
+        const lane = peer?.lanes.find((candidate) =>
+            candidate.laneId === laneId
+        );
+        return {
+            transport: 'rtc',
+            status,
+            peerId,
+            laneId,
+            rtcStatus,
+            peer,
+            lane,
+            reason,
         };
     }
 
@@ -2475,6 +2715,74 @@ function isReconnectableRtcLane(
     return channel?.state === 'Idle' ||
         channel?.state === 'Closed' ||
         channel?.state === 'Failed';
+}
+
+function isClosedRtcLaneHealth(
+    channel: RtcDataChannelHealth | undefined,
+): boolean {
+    return channel?.readyState === 'closing' ||
+        channel?.readyState === 'closed' ||
+        channel?.state === 'Closed' ||
+        channel?.state === 'Failed';
+}
+
+function isTerminalClosedWsStatus(status: RallarWsStatus): boolean {
+    return (status.readyState === 'closing' || status.readyState === 'closed') &&
+        !status.reconnecting &&
+        !status.reconnectEnabled;
+}
+
+function normalizeWaitTimeoutMs(timeoutMs: number | undefined): number {
+    if (timeoutMs === undefined || !Number.isFinite(timeoutMs)) {
+        return DEFAULT_RALLAR_WAIT_FOR_OPEN_TIMEOUT_MS;
+    }
+
+    return Math.max(0, Math.floor(timeoutMs));
+}
+
+function toWsWaitForOpenResult(
+    status: RallarWaitForOpenStatus,
+    wsStatus: RallarWsStatus,
+): RallarWsWaitForOpenResult {
+    return {
+        transport: 'ws',
+        status,
+        wsStatus,
+    };
+}
+
+function waitForRtcChannelOpenOrAbort(
+    waitUntilOpen: Promise<boolean>,
+    signal?: AbortSignal,
+): Promise<boolean | 'aborted'> {
+    if (!signal) {
+        return waitUntilOpen;
+    }
+
+    if (signal.aborted) {
+        return Promise.resolve('aborted');
+    }
+
+    return new Promise<boolean | 'aborted'>((resolve, reject) => {
+        const onAbort = (): void => {
+            signal.removeEventListener('abort', onAbort);
+            resolve('aborted');
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+        waitUntilOpen
+            .then((opened) => {
+                signal.removeEventListener('abort', onAbort);
+                resolve(opened);
+            })
+            .catch((error: unknown) => {
+                signal.removeEventListener('abort', onAbort);
+                reject(error);
+            });
+    });
+}
+
+function toErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
 }
 
 export function createRallarFacade(): RallarFacade {

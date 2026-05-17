@@ -54,7 +54,9 @@ Real-server test runs should record enough evidence to debug failures: peer IDs,
 | 2: IndexedDB growth and session isolation proof | Browser IndexedDB eviction implemented | `packages/tests/shared-web/browser-al-runtime-stores.test.ts`; `packages/tests/shared-web/browser-queuebox-expiry-eviction.test.ts`; existing generic IndexedDB AL runtime tests still pass. Confirms per-prefix lazy eviction and storage bloat risk, with no cross-session read reproduced for the tested browser AL outbound state path. Added explicit cleanup helpers and browser middleware expiry eviction loops. |
 | 3: `enqueueOutboxIfAbsent()` quiet outcomes | Result statuses implemented and locally verified | `ALOutboundMessageRuntime`, RTC overlay/Rx streamer, WS client/server queue-box services, and `Rallar.messages.rtc/ws.send()` now return structured enqueue/send outcomes. |
 | 4: Data-channel reuse and closed-channel behavior | Unit, real-server reload, public RTC status API, and peer-id naming cleanup implemented | Focused `QRtcDataChannel` tests proved stale closed channel references blocked receiver-side replacement waits. `QRtcDataChannel` now clears terminal channel references so reconnect waits can observe replacement channels. `WebRtcConnectionService` tests document lane-ready state separately from active/no-reconnectable-lane peer state. Real browser-Rallar reload scenarios now pass for `realtime` and `messages.rtc` with attached RTC/WS status snapshots. `Rallar.rtc.onStatus(...)` and `Rallar.rtc.onLifecycle(...)` now expose public RTC subscription APIs. `connectedPeerIds()` is now a deprecated compatibility alias for the more exact `peerIdsWithNoReconnectableLanes()`, and Rallar uses active/known/lane-ready peer sets for the call sites that need those semantics. |
-| 5: `disconnect()` and WS reconnect cleanup behavior | WS reconnect suppression, bounded retry, public WS lifecycle/status API, and real-server disconnect/reconnect proof implemented | Tests prove unexpected WS close still reconnects, intentional service close suppresses reconnect, disabling reconnect stops a pending retry loop, reconnect exhaustion disables automatic reconnect, and session eligibility suppresses stale reconnects. `Rallar.disconnect()` now closes WS through `WsQueueBoxClientService.close(...)`, which disables reconnect before closing. `Rallar.ws.onStatus(...)` and `Rallar.ws.onLifecycle(...)` expose WS status/lifecycle subscriptions with intentional disconnect events and unexpected close/error events. A real two-agent browser-Rallar smoke now proves intentional disconnect does not background-reconnect and explicit reconnect restores delivery. |
+| 5: `disconnect()` and WS reconnect cleanup behavior | WS reconnect suppression, bounded retry, public WS lifecycle/status API, and targeted real-server disconnect/reconnect proof implemented | Focused tests prove unexpected WS close still reconnects, intentional service close suppresses reconnect, disabling reconnect stops a pending retry loop, reconnect exhaustion disables automatic reconnect, and session eligibility suppresses stale reconnects. `Rallar.disconnect()` now closes WS through `WsQueueBoxClientService.close(...)`. `Rallar.ws.onStatus(...)` and `Rallar.ws.onLifecycle(...)` expose WS status/lifecycle subscriptions. A targeted two-agent browser-Rallar smoke proves intentional disconnect does not background-reconnect and explicit reconnect restores delivery. Broader real-browser logout/session-replacement/unexpected-close scenarios are moved to Iteration 10. |
+| 6: Wait APIs for RTC and WS | Initial facade wait APIs implemented and locally verified | `rallar.ws.waitForOpen(...)`, `rallar.rtc.waitForLane(...)`, and `rallar.rtc.waitForOpen(...)` now return structured wait results. Focused facade tests cover open, timeout, aborted, observe-only no-connect, missing peer, and opt-in RTC connect-before-wait behavior. Real-server integration adoption is deferred until the black-box scenarios are updated to use these waits. |
+| 10: Manual real-browser/server integration proofs | Planned | Convert selected live browser/server scenarios into repeatable manual runbooks first, then graduate stable scenarios into automated integration tests. Owns logout reconnect suppression, session replacement/no-valid-session stale reconnect suppression, unexpected server/network close reconnect behavior, and broader real-browser status artifact capture. |
 
 ## Iteration 0: Baseline Evidence And Reproduction Harness
 
@@ -490,7 +492,7 @@ Verification completed:
 
 Goal: prove whether intentional disconnect leaves RTC peers alive or triggers unwanted WS reconnect.
 
-Status: proof and implementation pass completed locally on 2026-05-17. A real-server intentional disconnect/reconnect proof passed on 2026-05-17; logout-specific real-server proof remains pending.
+Status: completed for focused proof, implementation, and one targeted real-server browser proof on 2026-05-17. Broader live browser/server coverage is intentionally moved to Iteration 10 instead of blocking this implementation iteration.
 
 Proof findings:
 
@@ -532,36 +534,35 @@ Implemented after proof:
   - `rallar.ws.onLifecycle(listener, options?)`
 - WS lifecycle events currently include `snapshot`, `connected`, `disconnected`, `open`, `close`, and `error` plus the current status snapshot and close/error metadata.
 
-Proof work completed/remaining:
+Proof completed in Iteration 5:
 
-- Add tests around `Rallar.disconnect()` with a controlled `WebRtcConnectionService` where:
-  - all peers are healthy
-  - one peer has a closed lane and is excluded from `connectedPeerIds()`
-  - one peer is known but not currently connected
-- Verify which peers are disconnected.
-- Add tests for `WsQueueBoxClientService.enableReconnect()` and intentional `JsonWebSocketClient.close(1000, 'rallar-disconnect')`.
-- Add tests for lifecycle callbacks on explicit and remote WS/RTC close events:
-  - WS closed intentionally by `Rallar.disconnect()`: implemented
-  - WS closed during `auth.logout()`: direct facade test implemented; real-server scenario pending
-  - WS closed unexpectedly while logged in: unit/facade callback coverage implemented; broader real-server scenario pending
-  - RTC data channel closed remotely: covered by Iteration 4 RTC lifecycle tests
-  - RTC peer connection closed/failed: still a future RTC lifecycle/status enhancement
-- Prove that WS reconnect is suppressed when the user is logged out or the close was intentional. Intentional close is now covered by both focused tests and a real-server browser scenario. Connected logout facade behavior is covered by focused tests; real-server logout proof remains pending.
+- Controlled facade tests prove `Rallar.disconnect()` disconnects every known RTC peer, including stale-lane peers that are not in the old conservative connected/no-reconnectable-lane set.
+- Controlled service tests prove:
+  - unexpected WS close reconnects while reconnect is enabled
+  - intentional service close suppresses reconnect
+  - disabling reconnect stops a pending retry loop before its next socket connect attempt
+  - reconnect exhaustion disables automatic reconnect
+  - reconnect eligibility suppresses stale reconnect attempts when the session is no longer valid
+- Facade tests prove:
+  - WS lifecycle/status subscriptions expose current snapshots, connected/disconnected snapshots, unexpected close/error, and intentional disconnect metadata
+  - `auth.logout()` after connect uses the queue-box close path, so it inherits reconnect suppression
+- Targeted real-server browser proof confirms intentional `rallar.disconnect()` does not background-reconnect and explicit reconnect restores delivery.
 
-Potential implementation after proof:
+Implementation decisions completed:
 
-- Add `allPeerIds()` or use `readAllPeerHealth()` to disconnect every known peer.
-- Add explicit reconnect suppression/disable path for intentional `Rallar.disconnect()`. Implemented.
-- Make reconnect state visible through WS diagnostics. Implemented with `reconnectEnabled`.
-- Add Rallar WS lifecycle callbacks for transport closure/disconnect events. Implemented:
-  - `rallar.ws.onLifecycle(listener)` or fold into `rallar.ws.onStatus(listener)`
-  - keep RTC lifecycle callback semantics aligned with the Iteration 4 RTC lifecycle/status API
-  - event fields should include transport, peerId/laneId where applicable, close code/reason where available, intentional vs unexpected, reconnect scheduled, and current session/login state.
-- Gate `WsQueueBoxClientService.enableReconnect()` behind explicit reconnect eligibility:
-  - do not reconnect after `Rallar.disconnect()`: implemented
-  - do not reconnect after `auth.logout()`: facade close-path test implemented; real-server proof pending
-  - do not reconnect when no valid session exists: service-level eligibility proof implemented; real browser proof pending
-  - only reconnect unexpected closes while the facade/session still considers the user connected/logged in: initial unexpected-close proof implemented, session eligibility still pending
+- `Rallar.disconnect()` uses `knownPeerIds()` for RTC cleanup and closes WS through `WsQueueBoxClientService.close(1000, 'rallar-disconnect')`.
+- `WsQueueBoxClientService` exposes reconnect health, bounded reconnect policy, explicit reconnect enable/disable, close-time reconnect suppression, and session-aware reconnect eligibility.
+- Browser WS engine gates reconnect on the current auth session.
+- Public WS APIs expose `rallar.ws.status()`, `rallar.ws.onStatus(listener, options?)`, and `rallar.ws.onLifecycle(listener, options?)`.
+
+Moved out of Iteration 5:
+
+- Real-browser logout reconnect-suppression proof.
+- Real-browser session clear/replacement and no-valid-session stale reconnect proof.
+- Real-browser unexpected server/network close reconnect proof.
+- Broader live browser/server status artifact capture for non-disconnect scenarios.
+
+These belong in Iteration 10 because they are integration/manual proof work, not additional cleanup implementation.
 
 Verification completed:
 
@@ -572,7 +573,7 @@ Verification completed:
 - `VITE_RALLAR_API_BASE_URL=http://localhost:8080 VITE_RALLAR_ROOM_ID=bb-group VITE_RALLAR_USERNAME=alice VITE_RALLAR_PASSWORD=secret npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/browser-rallar-two-agent-smoke.spec.ts -g "suppresses WS reconnect"`
 - `git diff --check`
 
-Real scenario testing:
+Targeted real scenario completed:
 
 - Real-server browser test implemented and passing:
   - connect two agents
@@ -586,14 +587,16 @@ Exit criteria:
 
 - Cleanup behavior is proven before and after any fix.
 - Intentional disconnect does not leave hidden peers or background reconnect tasks.
-- WS reconnect never runs after logout unless the user explicitly reconnects/logs in again.
-- Applications can subscribe to WS/RTC lifecycle callbacks and distinguish intentional close, unexpected close, reconnecting, reconnected, and reconnect-suppressed states.
+- Focused tests prove logout inherits reconnect suppression; real-browser logout proof is deferred to Iteration 10.
+- Applications can subscribe to WS lifecycle callbacks and distinguish intentional close, unexpected close/error, and reconnect-suppressed status.
 
 ## Iteration 6: Add Wait APIs For RTC And WS
 
 Goal: implement the obvious missing APIs once status diagnostics are available.
 
-This iteration does not need proof that the API is missing; that is already clear. It still needs tests proving semantics.
+Status: initial facade API implementation completed locally on 2026-05-17. Real-server black-box adoption remains pending.
+
+This iteration does not need proof that the API is missing; that is already clear. It still needs tests proving semantics before broader real-server scenarios depend on it.
 
 `waitForOpen` analysis added on 2026-05-16:
 
@@ -612,35 +615,36 @@ This iteration does not need proof that the API is missing; that is already clea
 
 Proposed RTC APIs:
 
-- `rallar.rtc.waitForPeer(peerId, options)`
-- `rallar.rtc.waitForLane(peerId, laneId, options)`
-- `rallar.rtc.waitForOpen(peerId, options)` as a convenience wrapper over the default RTC message lane or a caller-provided `laneId`
-- `rallar.rtc.connectPeer(peerId, options)`
-- `rallar.rtc.status(options?)`
-- `rallar.rtc.onStatus(listener)`
+- `rallar.rtc.waitForLane(peerId, laneId, options)`: implemented
+- `rallar.rtc.waitForOpen(peerId, options)`: implemented as a convenience wrapper over the default RTC message lane or a caller-provided `laneId`
+- `rallar.rtc.status(options?)`: implemented in Iteration 4
+- `rallar.rtc.onStatus(listener)`: implemented in Iteration 4
+- `rallar.rtc.waitForPeer(peerId, options)`: deferred until a peer-level readiness contract is needed separately from lane readiness
+- `rallar.rtc.connectPeer(peerId, options)`: not added as a public method yet; `waitForLane(..., { connect: true })` provides an explicit opt-in connection path for wait callers
 
 Proposed WS APIs:
 
-- `rallar.ws.status()`
-- `rallar.ws.waitForOpen(options)`; prefer this name over `waitUntilReady` because the state being waited for is specifically WebSocket `open`
-- `rallar.ws.onStatus(listener)`
+- `rallar.ws.status()`: implemented in Iteration 5
+- `rallar.ws.waitForOpen(options)`: implemented; this name is preferred over `waitUntilReady` because the state being waited for is specifically WebSocket `open`
+- `rallar.ws.onStatus(listener)`: implemented in Iteration 5
 
 Semantics to define:
 
-- timeout behavior
-- abort behavior
-- whether waiting triggers connection or only observes; default should be observe-only unless an explicit `connect: true` option is provided
-- whether lane wait requires peer connection to be active first
-- whether RTC `waitForOpen` waits for peer connection only or data-channel lane open; the recommended contract is lane open, with peer-open covered by `waitForPeer`
-- return shape for success vs timeout vs aborted vs failed
-- behavior after logout/disconnect: should return a non-open status and must not restart WS reconnect or RTC setup unless explicitly requested
+- timeout behavior: implemented with structured `timeout` results
+- abort behavior: implemented for already-aborted waits and abort races
+- whether waiting triggers connection or only observes: implemented as observe-only by default; RTC supports explicit `connect: true`
+- whether lane wait requires peer connection to be active first: implemented as `no-peer` in observe-only mode, or opt-in connect with `connect: true`
+- whether RTC `waitForOpen` waits for peer connection only or data-channel lane open: implemented as lane-open readiness
+- return shape for success vs timeout vs aborted vs failed: implemented with `open`, `timeout`, `aborted`, `not-connected`, `closed`, `no-peer`, `no-lane`, and `failed`
+- behavior after logout/disconnect: implemented as non-open structured results without restarting WS reconnect or RTC setup unless explicitly requested for RTC
 
 Testing:
 
-- Unit tests for timeout and abort handling.
-- Facade tests for wait success/failure using controlled services.
-- Facade tests proving `rallar.ws.waitForOpen()` resolves immediately when already open, times out when closed/connecting, and does not call connect/reconnect in observe-only mode.
-- Facade tests proving `rallar.rtc.waitForOpen(peerId, { laneId })` delegates to the correct `QRtcDataChannel.waitUntilOpen(timeoutMs)` and returns a structured timeout/closed result when the lane is missing or closed.
+- Unit/facade tests for timeout and abort handling: implemented for facade wait APIs.
+- Facade tests for wait success/failure using controlled services: implemented.
+- Facade tests proving `rallar.ws.waitForOpen()` resolves immediately when already open, times out when connecting, and does not call connect/reconnect in observe-only mode: implemented.
+- Facade tests proving `rallar.rtc.waitForOpen(peerId, { laneId })` delegates to the correct `QRtcDataChannel.waitUntilOpen(timeoutMs)`: implemented.
+- Remaining focused test gaps: explicit `no-lane`, `closed`, and abort-during-wait cases can be added if later changes touch wait internals.
 - Real-server two-agent test that waits for RTC lane before sending and proves lower flake rate than optimistic send.
 - Real-server test should wait for `rallar.ws.waitForOpen()` after login/connect, then wait for `rallar.rtc.waitForOpen(peerId, ...)` before `messages.rtc` or realtime sends.
 
@@ -754,11 +758,59 @@ Exit criteria:
 - Server WS status shape aligns with browser WS status where it makes sense.
 - Publish outcomes are explicit and tested.
 
+## Iteration 10: Manual Real-browser/server Integration Proofs
+
+Goal: collect live browser/server scenarios that are valuable but too environment-dependent to block the focused implementation iterations, then graduate stable scenarios into automated integration tests.
+
+This iteration is deliberately separate from Iteration 5. Iteration 5 owns the implementation and focused proof for WS reconnect cleanup. Iteration 10 owns live verification across real browsers, API server, control server, auth/session state, and RTC/WS timing.
+
+Manual-first scenarios:
+
+- Logout after connect:
+  - connect two real browser agents
+  - establish RTC delivery
+  - call `rallar.auth.logout()` in one browser
+  - assert WS reconnect remains suppressed
+  - assert delivery only resumes after explicit login/connect
+- Session clear/replacement:
+  - connect a real browser agent
+  - clear or replace the stored auth session while the socket callback path is still present
+  - close the WS unexpectedly
+  - assert stale reconnect is suppressed because `readSession()?.sessionId` no longer matches the original client session
+- Unexpected server/network close while logged in:
+  - connect a real browser agent
+  - simulate server-side WS close or network loss where practical
+  - assert reconnect is attempted while the browser still has a valid matching session
+  - assert reconnect exhaustion becomes visible if the server remains unavailable past the configured attempt budget
+- Broader status artifacts:
+  - capture `rallar.ws.status()`, `rallar.rtc.status(...)`, lifecycle events, peer IDs, lane IDs, room ID, message IDs, route decisions, reconnect attempts, and enqueue/send outcomes as Playwright artifacts.
+
+Integration-test graduation path:
+
+- Start as manual or explicitly tagged Playwright tests that require local `apps/api-v1`, the black-box control server, and real credentials/session fixtures.
+- Stabilize waits with Iteration 6 wait APIs instead of sleeps or optimistic sends.
+- Promote scenarios to automated integration runs only after they are deterministic enough to diagnose without local observation.
+- Keep unstable environment/failure-injection scenarios as manual runbook tests until the control server can simulate the failure deterministically.
+
+Recommended commands:
+
+- `npm run start:rallar-black-box:api-v1`
+- `npm run start:rallar-black-box:control-server`
+- `VITE_RALLAR_API_BASE_URL=http://localhost:8080 VITE_RALLAR_ROOM_ID=bb-group VITE_RALLAR_USERNAME=alice VITE_RALLAR_PASSWORD=secret npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/browser-rallar-two-agent-smoke.spec.ts`
+
+Exit criteria:
+
+- Each manual scenario has a repeatable runbook and artifact expectations.
+- At least logout-after-connect and session-replacement reconnect suppression are captured as runnable Playwright scenarios.
+- Stable scenarios are tagged or moved into the integration suite with clear environment requirements.
+- Flaky scenarios remain documented as manual-only until deterministic failure injection exists.
+
 ## Release Gates
 
 Before considering the task set complete:
 
 - Unit and integration tests prove each confirmed issue and each fix.
+- Manual real-browser/server scenarios from Iteration 10 have either graduated to integration tests or are documented as intentionally manual with runbook evidence.
 - Two-agent real-server Playwright RTC test passes for:
   - initial connect
   - wait before send
@@ -782,3 +834,4 @@ Before considering the task set complete:
 8. Timeout/retry policy improvements.
 9. Speed/warmup improvements based on measured bottlenecks.
 10. Server WS symmetry after browser API shape stabilizes.
+11. Manual real-browser/server proofs and integration-test graduation.
