@@ -51,6 +51,7 @@ import {
     DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
     type QRtcPeerDto,
     type RtcDataChannelLaneConfig,
+    type WebRtcPeerLaneOpenResult,
 } from '@shared/services/WebRtcConnectionService.ts';
 import {
     type ApiMiddleware,
@@ -229,6 +230,22 @@ export type RallarRtcWaitForOpenOptions =
     laneId?: string;
     connect?: boolean;
 }>;
+
+export type RallarRtcRoomLaneWaitOptions =
+    & RallarWaitForOpenOptions
+    & Readonly<{
+    connect?: boolean;
+}>;
+
+export type RallarRtcRoomLaneWaitStatus =
+    | 'open'
+    | 'partial'
+    | 'not-ready'
+    | 'empty'
+    | 'not-connected'
+    | 'timeout'
+    | 'aborted'
+    | 'failed';
 
 export type RallarMessageTransport = 'rtc' | 'ws';
 
@@ -518,6 +535,16 @@ export type RallarRtcWaitForOpenResult = Readonly<{
     reason?: string;
 }>;
 
+export type RallarRtcRoomLaneWaitResult = Readonly<{
+    transport: 'rtc';
+    roomId: string;
+    laneId: string;
+    status: RallarRtcRoomLaneWaitStatus;
+    rtcStatus: RallarRtcStatus;
+    ready: readonly RallarRtcWaitForOpenResult[];
+    notReady: readonly RallarRtcWaitForOpenResult[];
+}>;
+
 export type RallarFacade = Readonly<{
     configure(config: RallarApiClientConfig): void;
     connect(options?: RallarOperationOptions): Promise<ApiMiddleware>;
@@ -605,6 +632,11 @@ export type RallarFacade = Readonly<{
             peerId: string,
             options?: RallarRtcWaitForOpenOptions,
         ): Promise<RallarRtcWaitForOpenResult>;
+        waitForRoomLane(
+            roomId: string,
+            laneId: string,
+            options?: RallarRtcRoomLaneWaitOptions,
+        ): Promise<RallarRtcRoomLaneWaitResult>;
         peer(
             peerId: string,
             options?: RallarRtcStatusOptions,
@@ -1127,6 +1159,12 @@ class BrowserRallarFacade implements RallarFacade {
                 options.laneId ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
                 options,
             ),
+        waitForRoomLane: async (
+            roomId: string,
+            laneId: string,
+            options: RallarRtcRoomLaneWaitOptions = {},
+        ): Promise<RallarRtcRoomLaneWaitResult> =>
+            await this.waitForRtcRoomLaneOpen(roomId, laneId, options),
         peer: (
             peerId: string,
             options: RallarRtcStatusOptions = {},
@@ -1212,15 +1250,18 @@ class BrowserRallarFacade implements RallarFacade {
 
             return await Promise.all(
                 peerIds.map(async (peerId) => {
-                    const peer = await this.connectRealtimePeer(ctx, peerId);
-                    const channel = peer?.channels.get(laneId);
+                    const laneOpen = await this.ensureRealtimeLaneOpen(
+                        ctx,
+                        peerId,
+                        laneId,
+                        input,
+                    );
                     const sendOptions = toRealtimeDataChannelSendOptions(input);
-                    const isOpen = await waitForRealtimeLane(channel, input);
                     return {
                         peerId,
                         laneId,
-                        result: channel && isOpen
-                            ? channel.sendJson(input.data, sendOptions)
+                        result: laneOpen.status === 'open' && laneOpen.channel
+                            ? laneOpen.channel.sendJson(input.data, sendOptions)
                             : toClosedRealtimeSendResult(),
                     };
                 }),
@@ -1235,15 +1276,18 @@ class BrowserRallarFacade implements RallarFacade {
 
             return await Promise.all(
                 peerIds.map(async (peerId) => {
-                    const peer = await this.connectRealtimePeer(ctx, peerId);
-                    const channel = peer?.channels.get(laneId);
+                    const laneOpen = await this.ensureRealtimeLaneOpen(
+                        ctx,
+                        peerId,
+                        laneId,
+                        input,
+                    );
                     const sendOptions = toRealtimeDataChannelSendOptions(input);
-                    const isOpen = await waitForRealtimeLane(channel, input);
                     return {
                         peerId,
                         laneId,
-                        result: channel && isOpen
-                            ? channel.sendBinary(input.data, sendOptions)
+                        result: laneOpen.status === 'open' && laneOpen.channel
+                            ? laneOpen.channel.sendBinary(input.data, sendOptions)
                             : toClosedRealtimeSendResult(),
                     };
                 }),
@@ -1651,20 +1695,16 @@ class BrowserRallarFacade implements RallarFacade {
             return this.toRtcWaitForOpenResult('not-connected', peerId, laneId);
         }
 
-        let peer = ctx.middleware.webRtcConnectionService.readPeer(peerId);
-        if (!peer && options.connect === true) {
-            try {
-                peer = await this.connectRealtimePeer(ctx, peerId);
-            } catch (error) {
-                return this.toRtcWaitForOpenResult(
-                    'failed',
-                    peerId,
-                    laneId,
-                    toErrorMessage(error),
-                );
-            }
+        if (options.connect === true) {
+            return await this.waitForRtcLaneOpenWithConnect(
+                ctx,
+                peerId,
+                laneId,
+                options,
+            );
         }
 
+        let peer = ctx.middleware.webRtcConnectionService.readPeer(peerId);
         if (!peer) {
             return this.toRtcWaitForOpenResult('no-peer', peerId, laneId);
         }
@@ -1705,6 +1745,87 @@ class BrowserRallarFacade implements RallarFacade {
             peerId,
             laneId,
         );
+    }
+
+    private async waitForRtcRoomLaneOpen(
+        roomId: string,
+        laneId: string,
+        options: RallarRtcRoomLaneWaitOptions = {},
+    ): Promise<RallarRtcRoomLaneWaitResult> {
+        const peerIds = this.resolveRoomPeerIds(roomId);
+        if (peerIds.length === 0) {
+            return this.toRtcRoomLaneWaitResult(roomId, laneId, [], []);
+        }
+
+        const results = await Promise.all(
+            peerIds.map((peerId) =>
+                this.waitForRtcLaneOpen(
+                    peerId,
+                    laneId,
+                    options,
+                )
+            ),
+        );
+        const ready = results.filter((result) => result.status === 'open');
+        const notReady = results.filter((result) => result.status !== 'open');
+
+        return this.toRtcRoomLaneWaitResult(roomId, laneId, ready, notReady);
+    }
+
+    private async waitForRtcLaneOpenWithConnect(
+        ctx: ApiMiddleware,
+        peerId: string,
+        laneId: string,
+        options: RallarRtcWaitForOpenOptions,
+    ): Promise<RallarRtcWaitForOpenResult> {
+        try {
+            const result = await ctx.middleware.webRtcConnectionService
+                .ensurePeerLaneOpen(
+                    peerId,
+                    laneId,
+                    {
+                        timeoutMs: normalizeWaitTimeoutMs(options.timeoutMs),
+                        signal: options.signal,
+                    },
+                );
+
+            return this.toRtcWaitForOpenResultFromPeerLaneOpen(result);
+        } catch (error) {
+            return this.toRtcWaitForOpenResult(
+                'failed',
+                peerId,
+                laneId,
+                toErrorMessage(error),
+            );
+        }
+    }
+
+    private toRtcWaitForOpenResultFromPeerLaneOpen(
+        result: WebRtcPeerLaneOpenResult,
+    ): RallarRtcWaitForOpenResult {
+        return this.toRtcWaitForOpenResult(
+            toRallarWaitForOpenStatus(result.status),
+            result.peerId,
+            result.laneId,
+            toPeerLaneOpenReason(result),
+        );
+    }
+
+    private toRtcRoomLaneWaitResult(
+        roomId: string,
+        laneId: string,
+        ready: readonly RallarRtcWaitForOpenResult[],
+        notReady: readonly RallarRtcWaitForOpenResult[],
+    ): RallarRtcRoomLaneWaitResult {
+        return {
+            transport: 'rtc',
+            roomId,
+            laneId,
+            status: toRtcRoomLaneWaitStatus(ready, notReady),
+            rtcStatus: this.toRtcStatus({ laneId }),
+            ready,
+            notReady,
+        };
     }
 
     private toRtcWaitForOpenResult(
@@ -2495,6 +2616,16 @@ class BrowserRallarFacade implements RallarFacade {
         ];
     }
 
+    private resolveRoomPeerIds(roomId: string): readonly string[] {
+        const session = readSession();
+        const room = this.findGroupSnapshot(roomId);
+        const peerIds = (room?.activeSessions ?? [])
+            .map((activeSession) => activeSession.sessionId)
+            .filter((sessionId) => sessionId !== session?.sessionId);
+
+        return [...new Set(peerIds)];
+    }
+
     private resolveRealtimePeerIds(
         input: RallarRealtimeSendOptions,
     ): readonly string[] {
@@ -2515,15 +2646,20 @@ class BrowserRallarFacade implements RallarFacade {
         return [...new Set(peerIds)];
     }
 
-    private async connectRealtimePeer(
+    private async ensureRealtimeLaneOpen(
         ctx: ApiMiddleware,
         peerId: string,
-    ): Promise<QRtcPeerDto | undefined> {
-        const connected = ctx.middleware.webRtcConnectionService
-            .ensurePeerConnectionStarted(peerId);
-
-        return connected.right ??
-            ctx.middleware.webRtcConnectionService.readPeer(peerId);
+        laneId: string,
+        input: RallarRealtimeSendOptions,
+    ): Promise<WebRtcPeerLaneOpenResult> {
+        return await ctx.middleware.webRtcConnectionService.ensurePeerLaneOpen(
+            peerId,
+            laneId,
+            {
+                timeoutMs: input.openTimeoutMs ??
+                    DEFAULT_RALLAR_REALTIME_OPEN_TIMEOUT_MS,
+            },
+        );
     }
 
     private toRealtimeCallbackId(laneId: string): string {
@@ -2791,6 +2927,72 @@ function toErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
+function toRallarWaitForOpenStatus(
+    status: WebRtcPeerLaneOpenResult['status'],
+): RallarWaitForOpenStatus {
+    switch (status) {
+        case 'open':
+        case 'timeout':
+        case 'aborted':
+        case 'no-peer':
+        case 'no-lane':
+        case 'closed':
+            return status;
+        case 'self':
+        case 'connect-failed':
+        case 'failed':
+            return 'failed';
+    }
+}
+
+function toRtcRoomLaneWaitStatus(
+    ready: readonly RallarRtcWaitForOpenResult[],
+    notReady: readonly RallarRtcWaitForOpenResult[],
+): RallarRtcRoomLaneWaitStatus {
+    if (ready.length === 0 && notReady.length === 0) {
+        return 'empty';
+    }
+
+    if (notReady.length === 0) {
+        return 'open';
+    }
+
+    if (ready.length > 0) {
+        return 'partial';
+    }
+
+    if (notReady.every((peer) => peer.status === 'not-connected')) {
+        return 'not-connected';
+    }
+
+    if (notReady.every((peer) => peer.status === 'timeout')) {
+        return 'timeout';
+    }
+
+    if (notReady.every((peer) => peer.status === 'aborted')) {
+        return 'aborted';
+    }
+
+    if (notReady.every((peer) => peer.status === 'failed')) {
+        return 'failed';
+    }
+
+    return 'not-ready';
+}
+
+function toPeerLaneOpenReason(
+    result: WebRtcPeerLaneOpenResult,
+): string | undefined {
+    if (result.status === 'open' || !result.error) {
+        return undefined;
+    }
+
+    const cause = (result.error as Error & { cause?: unknown }).cause;
+    return cause !== undefined
+        ? toErrorMessage(cause)
+        : result.error.message;
+}
+
 export function createRallarFacade(): RallarFacade {
     return new BrowserRallarFacade();
 }
@@ -3040,19 +3242,6 @@ function toClosedRealtimeSendResult(): RtcDataChannelSendResult {
         reason: 'Realtime lane not connected',
         bufferedAmount: 0,
     };
-}
-
-async function waitForRealtimeLane(
-    channel: QRtcPeerDto['channel'] | undefined,
-    input: RallarRealtimeSendOptions,
-): Promise<boolean> {
-    if (!channel) {
-        return false;
-    }
-
-    return await channel.waitUntilOpen(
-        input.openTimeoutMs ?? DEFAULT_RALLAR_REALTIME_OPEN_TIMEOUT_MS,
-    );
 }
 
 async function toArrayBuffer(
