@@ -61,9 +61,13 @@ const mocks = vi.hoisted(() => {
                     readyState: 'missing',
                     isOpen: false,
                     reconnecting: false,
+                    reconnectEnabled: false,
                 })),
+                close: vi.fn(),
                 socket: {
                     close: vi.fn(),
+                    onWebsocketCallbacksDo: vi.fn(),
+                    removeWebsocketCallbackById: vi.fn(() => true),
                 },
             },
         },
@@ -223,7 +227,17 @@ describe('Rallar operation options', () => {
             readyState: 'missing',
             isOpen: false,
             reconnecting: false,
+            reconnectEnabled: false,
         });
+        mocks.ctx.middleware.webSocketQueueBox.close.mockImplementation(
+            (code?: number, reason?: string) => {
+                mocks.ctx.middleware.webSocketQueueBox.socket.close(code, reason);
+            },
+        );
+        mocks.ctx.middleware.webSocketQueueBox.socket.onWebsocketCallbacksDo
+            .mockReturnValue(mocks.ctx.middleware.webSocketQueueBox.socket);
+        mocks.ctx.middleware.webSocketQueueBox.socket.removeWebsocketCallbackById
+            .mockReturnValue(true);
         mocks.registerWithApi.mockResolvedValue({
             clientId: 'client-new',
             username: 'new-user',
@@ -282,6 +296,7 @@ describe('Rallar operation options', () => {
             readyState: 'missing',
             isOpen: false,
             reconnecting: false,
+            reconnectEnabled: false,
         });
     });
 
@@ -693,6 +708,7 @@ describe('Rallar operation options', () => {
             readyStateCode: 1,
             isOpen: true,
             reconnecting: true,
+            reconnectEnabled: true,
         });
         const facade = createRallarFacade();
 
@@ -706,7 +722,123 @@ describe('Rallar operation options', () => {
             readyStateCode: 1,
             isOpen: true,
             reconnecting: true,
+            reconnectEnabled: true,
         });
+    });
+
+    it('notifies public WS status and lifecycle subscribers', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        type WsLifecycleCallbacks = {
+            onOpen?: (event: Event) => void;
+            onClose?: (event: CloseEvent) => void;
+            onError?: (event: Event) => void;
+        };
+        let callbacks: WsLifecycleCallbacks | undefined;
+        mocks.ctx.middleware.webSocketQueueBox.socket.onWebsocketCallbacksDo
+            .mockImplementation((_id: string, next: WsLifecycleCallbacks) => {
+                callbacks = next;
+                return mocks.ctx.middleware.webSocketQueueBox.socket;
+            });
+        mocks.ctx.middleware.webSocketQueueBox.readHealth.mockReturnValue({
+            sessionId: 'session-1',
+            url: 'ws://localhost/ws',
+            readyState: 'open',
+            readyStateCode: 1,
+            isOpen: true,
+            reconnecting: false,
+            reconnectEnabled: true,
+        });
+        const facade = createRallarFacade();
+        const statuses: unknown[] = [];
+        const lifecycles: unknown[] = [];
+
+        const unsubscribeStatus = facade.ws.onStatus(
+            (status) => statuses.push(status),
+        );
+        const unsubscribeLifecycle = facade.ws.onLifecycle(
+            (event) => lifecycles.push(event),
+        );
+
+        expect(statuses).toEqual([
+            expect.objectContaining({
+                readyState: 'missing',
+                reconnectEnabled: false,
+            }),
+        ]);
+        expect(lifecycles).toEqual([
+            expect.objectContaining({
+                kind: 'snapshot',
+                status: expect.objectContaining({
+                    readyState: 'missing',
+                }),
+            }),
+        ]);
+
+        await facade.connect();
+
+        expect(mocks.ctx.middleware.webSocketQueueBox.socket.onWebsocketCallbacksDo)
+            .toHaveBeenCalledWith(
+                'rallar:ws:status',
+                expect.objectContaining({
+                    onOpen: expect.any(Function),
+                    onClose: expect.any(Function),
+                    onError: expect.any(Function),
+                }),
+            );
+        expect(lifecycles).toContainEqual(
+            expect.objectContaining({
+                kind: 'connected',
+                status: expect.objectContaining({
+                    readyState: 'open',
+                    reconnectEnabled: true,
+                }),
+            }),
+        );
+
+        mocks.ctx.middleware.webSocketQueueBox.readHealth.mockReturnValue({
+            sessionId: 'session-1',
+            url: 'ws://localhost/ws',
+            readyState: 'closed',
+            readyStateCode: 3,
+            isOpen: false,
+            reconnecting: true,
+            reconnectEnabled: true,
+        });
+        callbacks?.onClose?.({
+            type: 'close',
+            code: 1006,
+            reason: 'network-lost',
+            wasClean: false,
+        } as CloseEvent);
+
+        expect(statuses.at(-1)).toMatchObject({
+            readyState: 'closed',
+            reconnecting: true,
+            reconnectEnabled: true,
+        });
+        expect(lifecycles.at(-1)).toMatchObject({
+            kind: 'close',
+            code: 1006,
+            reason: 'network-lost',
+            wasClean: false,
+            eventType: 'close',
+            intentional: false,
+            status: {
+                readyState: 'closed',
+            },
+        });
+
+        unsubscribeStatus();
+        expect(mocks.ctx.middleware.webSocketQueueBox.socket
+            .removeWebsocketCallbackById)
+            .not.toHaveBeenCalled();
+
+        unsubscribeLifecycle();
+        expect(mocks.ctx.middleware.webSocketQueueBox.socket
+            .removeWebsocketCallbackById)
+            .toHaveBeenCalledWith('rallar:ws:status');
     });
 
     it('passes signal and timeout options into connect and room refresh workflows', async () => {
@@ -883,6 +1015,21 @@ describe('Rallar operation options', () => {
         expect(mocks.clearSession).toHaveBeenCalledOnce();
     });
 
+    it('closes WS through the queue-box service when logging out after connect', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const facade = createRallarFacade();
+
+        await facade.connect();
+        await facade.auth.logout();
+
+        expect(mocks.ctx.middleware.webSocketQueueBox.close)
+            .toHaveBeenCalledWith(1000, 'rallar-disconnect');
+        expect(mocks.logoutFromApi).toHaveBeenCalledOnce();
+        expect(mocks.clearSession).toHaveBeenCalledOnce();
+    });
+
     it('disconnects every known RTC peer, including stale lane peers', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
@@ -900,6 +1047,13 @@ describe('Rallar operation options', () => {
         mocks.webRtcConnectionService.readyPeerIdsForLane
             .mockReturnValue(['peer-ready']);
         const facade = createRallarFacade();
+        const wsLifecycle: unknown[] = [];
+        facade.ws.onLifecycle(
+            (event) => wsLifecycle.push(event),
+            {
+                emitCurrent: false,
+            },
+        );
 
         await facade.connect();
         await facade.disconnect();
@@ -910,9 +1064,22 @@ describe('Rallar operation options', () => {
             .toHaveBeenCalledWith('peer-stale');
         expect(mocks.webRtcConnectionService.disconnectPeer)
             .toHaveBeenCalledTimes(2);
+        expect(mocks.ctx.middleware.webSocketQueueBox.close)
+            .toHaveBeenCalledWith(1000, 'rallar-disconnect');
         expect(mocks.ctx.middleware.webSocketQueueBox.socket.close)
             .toHaveBeenCalledWith(1000, 'rallar-disconnect');
         expect(mocks.clearMiddleware).toHaveBeenCalledOnce();
+        expect(wsLifecycle.at(-1)).toMatchObject({
+            kind: 'disconnected',
+            code: 1000,
+            reason: 'rallar-disconnect',
+            intentional: true,
+            status: {
+                connectState: 'idle',
+                readyState: 'missing',
+                reconnectEnabled: false,
+            },
+        });
     });
 
     it('applies timeout options when waiting on an in-flight connect', async () => {

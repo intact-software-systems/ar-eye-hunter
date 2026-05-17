@@ -50,6 +50,7 @@ export type WsQueueBoxClientHealth = Readonly<{
     readyStateCode?: number;
     isOpen: boolean;
     reconnecting: boolean;
+    reconnectEnabled: boolean;
 }>;
 
 export class WsQueueBoxClientService {
@@ -66,6 +67,8 @@ export class WsQueueBoxClientService {
     ]);
 
     private reconnectTask?: Promise<unknown> = undefined;
+    private reconnectEnabled = false;
+    private reconnectGeneration = 0;
 
     private readonly onOutboxMessageCallbacks: Map<string, OnOutboxWebSocketMessageCallback> =
         new Map<string, OnOutboxWebSocketMessageCallback>();
@@ -258,10 +261,12 @@ export class WsQueueBoxClientService {
             readyStateCode,
             isOpen: this.isSocketOpen(),
             reconnecting: this.reconnectTask !== undefined,
+            reconnectEnabled: this.reconnectEnabled,
         };
     }
 
     enableReconnect(): WsQueueBoxClientService {
+        this.reconnectEnabled = true;
         this.socket
             .onWebsocketCallbacksDo(
                 this.input.sessionId,
@@ -274,6 +279,17 @@ export class WsQueueBoxClientService {
                 },
             );
         return this;
+    }
+
+    disableReconnect(): WsQueueBoxClientService {
+        this.reconnectEnabled = false;
+        this.reconnectGeneration++;
+        return this;
+    }
+
+    close(code?: number, reason?: string): void {
+        this.disableReconnect();
+        this.socket.close(code, reason);
     }
 
     enableDefaultCallbacks(): WsQueueBoxClientService {
@@ -310,18 +326,33 @@ export class WsQueueBoxClientService {
     }
 
     private reconnect() {
+        if (!this.reconnectEnabled) {
+            return;
+        }
+
         if (this.reconnectTask) {
             return;
         }
 
-        this.reconnectTask = tryWith<unknown>(
+        const reconnectGeneration = this.reconnectGeneration;
+        const reconnectTask = tryWith<unknown>(
             async () => {
+                if (
+                    !this.reconnectEnabled ||
+                    this.reconnectGeneration !== reconnectGeneration
+                ) {
+                    return;
+                }
+
                 await this.socket.connect();
             },
         )
             .finally(() => {
-                this.reconnectTask = undefined;
+                if (this.reconnectTask === reconnectTask) {
+                    this.reconnectTask = undefined;
+                }
             });
+        this.reconnectTask = reconnectTask;
     }
 
     async enqueueOutboxIfAbsent(message: ALMessage): Promise<ALOutboundEnqueueResult> {

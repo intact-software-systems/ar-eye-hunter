@@ -41,6 +41,7 @@ import * as clientStateSnapshotsRepository from '@shared/repository/client-state
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import type { QRtcMediaPolicy } from '@shared/webrtc/QRtcPeerConnection.ts';
 import type { QRtcClientCallbacks } from '@shared/webrtc/QRtcClientCallbacks.ts';
+import type { WebSocketClientCallbacks } from '@shared/websocket/JsonWebSocketClient.ts';
 import type {
     RtcDataChannelHealth,
     RtcDataChannelSendOptions,
@@ -97,6 +98,7 @@ const RALLAR_REMOTE_STREAM_CALLBACK_ID = 'rallar:remote-stream';
 const RALLAR_WS_ANY_MESSAGE_CALLBACK_ID = 'rallar:ws:any-message';
 const RALLAR_REALTIME_LIFECYCLE_CALLBACK_ID = 'rallar:realtime:lifecycle';
 const RALLAR_RTC_STATUS_CALLBACK_ID = 'rallar:rtc:status';
+const RALLAR_WS_STATUS_CALLBACK_ID = 'rallar:ws:status';
 const DEFAULT_RALLAR_REALTIME_LANE_ID = 'realtime';
 const DEFAULT_RALLAR_REALTIME_OPEN_TIMEOUT_MS = 5_000;
 
@@ -440,7 +442,37 @@ export type RallarWsStatus = Readonly<{
     readyStateCode?: number;
     isOpen: boolean;
     reconnecting: boolean;
+    reconnectEnabled: boolean;
 }>;
+
+export type RallarWsStatusSubscriptionOptions = RallarOnChangeOptions;
+
+export type RallarWsStatusListener = (
+    status: RallarWsStatus,
+) => void | Promise<void>;
+
+export type RallarWsLifecycleKind =
+    | 'snapshot'
+    | 'connected'
+    | 'disconnected'
+    | 'open'
+    | 'close'
+    | 'error';
+
+export type RallarWsLifecycleEvent = Readonly<{
+    kind: RallarWsLifecycleKind;
+    atEpochMs: number;
+    status: RallarWsStatus;
+    code?: number;
+    reason?: string;
+    wasClean?: boolean;
+    eventType?: string;
+    intentional?: boolean;
+}>;
+
+export type RallarWsLifecycleListener = (
+    event: RallarWsLifecycleEvent,
+) => void | Promise<void>;
 
 export type RallarFacade = Readonly<{
     configure(config: RallarApiClientConfig): void;
@@ -531,6 +563,14 @@ export type RallarFacade = Readonly<{
     }>;
     ws: Readonly<{
         status(): RallarWsStatus;
+        onStatus(
+            listener: RallarWsStatusListener,
+            options?: RallarWsStatusSubscriptionOptions,
+        ): RallarUnsubscribe;
+        onLifecycle(
+            listener: RallarWsLifecycleListener,
+            options?: RallarWsStatusSubscriptionOptions,
+        ): RallarUnsubscribe;
     }>;
     realtime: Readonly<{
         sendJson<T>(
@@ -576,6 +616,16 @@ type RallarRtcLifecycleSubscription = Readonly<{
     options: RallarRtcStatusSubscriptionOptions;
 }>;
 
+type RallarWsStatusSubscription = Readonly<{
+    listener: RallarWsStatusListener;
+    options: RallarWsStatusSubscriptionOptions;
+}>;
+
+type RallarWsLifecycleSubscription = Readonly<{
+    listener: RallarWsLifecycleListener;
+    options: RallarWsStatusSubscriptionOptions;
+}>;
+
 class BrowserRallarFacade implements RallarFacade {
     private connectState: RallarConnectStatus = 'idle';
     private ctx: ApiMiddleware | undefined = undefined;
@@ -608,6 +658,9 @@ class BrowserRallarFacade implements RallarFacade {
     private readonly rtcStatusListeners = new Set<RallarRtcStatusSubscription>();
     private readonly rtcLifecycleListeners =
         new Set<RallarRtcLifecycleSubscription>();
+    private readonly wsStatusListeners = new Set<RallarWsStatusSubscription>();
+    private readonly wsLifecycleListeners =
+        new Set<RallarWsLifecycleSubscription>();
     private readonly registeredRtcMessageTypes = new Set<string>();
     private wsAnyMessageCallbackRegistered = false;
     private readonly remoteStreamListeners = new Set<
@@ -1034,6 +1087,44 @@ class BrowserRallarFacade implements RallarFacade {
 
     readonly ws = {
         status: (): RallarWsStatus => this.toWsStatus(),
+        onStatus: (
+            listener: RallarWsStatusListener,
+            options: RallarWsStatusSubscriptionOptions = {},
+        ): RallarUnsubscribe => {
+            const subscription: RallarWsStatusSubscription = {
+                listener,
+                options,
+            };
+            this.wsStatusListeners.add(subscription);
+            this.registerWsStatusCallbacks();
+            if (options.emitCurrent ?? true) {
+                notifyListener(listener, this.toWsStatus());
+            }
+
+            return () => {
+                this.wsStatusListeners.delete(subscription);
+                this.unregisterWsStatusCallbacksIfUnused();
+            };
+        },
+        onLifecycle: (
+            listener: RallarWsLifecycleListener,
+            options: RallarWsStatusSubscriptionOptions = {},
+        ): RallarUnsubscribe => {
+            const subscription: RallarWsLifecycleSubscription = {
+                listener,
+                options,
+            };
+            this.wsLifecycleListeners.add(subscription);
+            this.registerWsStatusCallbacks();
+            if (options.emitCurrent ?? true) {
+                this.notifyWsLifecycleSubscription(subscription, 'snapshot');
+            }
+
+            return () => {
+                this.wsLifecycleListeners.delete(subscription);
+                this.unregisterWsStatusCallbacksIfUnused();
+            };
+        },
     };
 
     readonly realtime = {
@@ -1201,11 +1292,13 @@ class BrowserRallarFacade implements RallarFacade {
                     () => this.emitState(),
                 );
                 this.registerAllMessageCallbacks();
+                this.registerWsStatusCallbacks(ctx);
                 this.registerRealtimeLifecycleCallback(ctx);
                 this.registerRtcStatusCallbacks(ctx);
                 this.registerAllRealtimeCallbacks();
                 this.registerRemoteStreamCallback();
                 this.emitState();
+                this.emitWsLifecycle('connected');
                 this.emitRtcLifecycle('connected');
                 return ctx;
             })
@@ -1234,6 +1327,7 @@ class BrowserRallarFacade implements RallarFacade {
                     RALLAR_WS_ANY_MESSAGE_CALLBACK_ID,
                 );
             }
+            this.unregisterWsStatusCallbacks(ctx);
             ctx.middleware.webRtcConnectionService.removeRtcPeerLifecycleById(
                 RALLAR_REALTIME_LIFECYCLE_CALLBACK_ID,
             );
@@ -1245,7 +1339,7 @@ class BrowserRallarFacade implements RallarFacade {
             this.unregisterRemoteStreamCallback();
             ctx.middleware.rtcRxStreamer.stopLocalMedia('all');
             ctx.middleware.qboxEngine.stop();
-            ctx.middleware.webSocketQueueBox.socket.close(
+            ctx.middleware.webSocketQueueBox.close(
                 1000,
                 'rallar-disconnect',
             );
@@ -1259,6 +1353,11 @@ class BrowserRallarFacade implements RallarFacade {
         this.connectState = 'idle';
         clearMiddleware();
         this.emitState();
+        this.emitWsLifecycle('disconnected', {
+            code: 1000,
+            reason: 'rallar-disconnect',
+            intentional: true,
+        });
         this.emitRtcLifecycle('disconnected');
         return Promise.resolve();
     }
@@ -1366,6 +1465,7 @@ class BrowserRallarFacade implements RallarFacade {
                 readyState: 'missing',
                 isOpen: false,
                 reconnecting: false,
+                reconnectEnabled: false,
             };
         }
 
@@ -1378,7 +1478,112 @@ class BrowserRallarFacade implements RallarFacade {
             readyStateCode: health.readyStateCode,
             isOpen: health.isOpen,
             reconnecting: health.reconnecting,
+            reconnectEnabled: health.reconnectEnabled,
         };
+    }
+
+    private registerWsStatusCallbacks(
+        ctx: ApiMiddleware | undefined = this.readMiddleware(),
+    ): void {
+        if (!ctx || !this.hasWsStatusSubscriptions()) {
+            return;
+        }
+
+        ctx.middleware.webSocketQueueBox.socket.onWebsocketCallbacksDo(
+            RALLAR_WS_STATUS_CALLBACK_ID,
+            this.toWsLifecycleCallbacks(),
+        );
+    }
+
+    private toWsLifecycleCallbacks(): WebSocketClientCallbacks {
+        return {
+            onOpen: (event) => {
+                this.emitWsLifecycle('open', {
+                    eventType: event.type,
+                });
+            },
+            onClose: (event) => {
+                this.emitWsLifecycle('close', {
+                    code: event.code,
+                    reason: event.reason,
+                    wasClean: event.wasClean,
+                    eventType: event.type,
+                    intentional: false,
+                });
+            },
+            onError: (event) => {
+                this.emitWsLifecycle('error', {
+                    eventType: event.type,
+                    intentional: false,
+                });
+            },
+        };
+    }
+
+    private unregisterWsStatusCallbacksIfUnused(): void {
+        if (this.hasWsStatusSubscriptions()) {
+            return;
+        }
+
+        this.unregisterWsStatusCallbacks();
+    }
+
+    private unregisterWsStatusCallbacks(
+        ctx: ApiMiddleware | undefined = this.readMiddleware(),
+    ): void {
+        ctx?.middleware.webSocketQueueBox.socket.removeWebsocketCallbackById(
+            RALLAR_WS_STATUS_CALLBACK_ID,
+        );
+    }
+
+    private hasWsStatusSubscriptions(): boolean {
+        return this.wsStatusListeners.size > 0 ||
+            this.wsLifecycleListeners.size > 0;
+    }
+
+    private emitWsLifecycle(
+        kind: RallarWsLifecycleKind,
+        input: Readonly<{
+            code?: number;
+            reason?: string;
+            wasClean?: boolean;
+            eventType?: string;
+            intentional?: boolean;
+        }> = {},
+    ): void {
+        this.emitWsStatus();
+        for (const subscription of this.wsLifecycleListeners) {
+            this.notifyWsLifecycleSubscription(subscription, kind, input);
+        }
+    }
+
+    private emitWsStatus(): void {
+        for (const subscription of this.wsStatusListeners) {
+            notifyListener(subscription.listener, this.toWsStatus());
+        }
+    }
+
+    private notifyWsLifecycleSubscription(
+        subscription: RallarWsLifecycleSubscription,
+        kind: RallarWsLifecycleKind,
+        input: Readonly<{
+            code?: number;
+            reason?: string;
+            wasClean?: boolean;
+            eventType?: string;
+            intentional?: boolean;
+        }> = {},
+    ): void {
+        notifyListener(subscription.listener, {
+            kind,
+            atEpochMs: Date.now(),
+            status: this.toWsStatus(),
+            code: input.code,
+            reason: input.reason,
+            wasClean: input.wasClean,
+            eventType: input.eventType,
+            intentional: input.intentional,
+        });
     }
 
     private async acceptSnapshots(

@@ -54,6 +54,7 @@ Real-server test runs should record enough evidence to debug failures: peer IDs,
 | 2: IndexedDB growth and session isolation proof | Browser IndexedDB eviction implemented | `packages/tests/shared-web/browser-al-runtime-stores.test.ts`; `packages/tests/shared-web/browser-queuebox-expiry-eviction.test.ts`; existing generic IndexedDB AL runtime tests still pass. Confirms per-prefix lazy eviction and storage bloat risk, with no cross-session read reproduced for the tested browser AL outbound state path. Added explicit cleanup helpers and browser middleware expiry eviction loops. |
 | 3: `enqueueOutboxIfAbsent()` quiet outcomes | Result statuses implemented and locally verified | `ALOutboundMessageRuntime`, RTC overlay/Rx streamer, WS client/server queue-box services, and `Rallar.messages.rtc/ws.send()` now return structured enqueue/send outcomes. |
 | 4: Data-channel reuse and closed-channel behavior | Unit, real-server reload, public RTC status API, and peer-id naming cleanup implemented | Focused `QRtcDataChannel` tests proved stale closed channel references blocked receiver-side replacement waits. `QRtcDataChannel` now clears terminal channel references so reconnect waits can observe replacement channels. `WebRtcConnectionService` tests document lane-ready state separately from active/no-reconnectable-lane peer state. Real browser-Rallar reload scenarios now pass for `realtime` and `messages.rtc` with attached RTC/WS status snapshots. `Rallar.rtc.onStatus(...)` and `Rallar.rtc.onLifecycle(...)` now expose public RTC subscription APIs. `connectedPeerIds()` is now a deprecated compatibility alias for the more exact `peerIdsWithNoReconnectableLanes()`, and Rallar uses active/known/lane-ready peer sets for the call sites that need those semantics. |
+| 5: `disconnect()` and WS reconnect cleanup behavior | Initial WS reconnect suppression and public WS lifecycle/status API implemented | Tests prove unexpected WS close still reconnects, intentional service close suppresses reconnect, and disabling reconnect stops a pending retry loop. `Rallar.disconnect()` now closes WS through `WsQueueBoxClientService.close(...)`, which disables reconnect before closing. `Rallar.ws.onStatus(...)` and `Rallar.ws.onLifecycle(...)` expose WS status/lifecycle subscriptions with intentional disconnect events and unexpected close/error events. |
 
 ## Iteration 0: Baseline Evidence And Reproduction Harness
 
@@ -380,7 +381,7 @@ Facade lifecycle callback check added on 2026-05-16:
 
 - `Rallar` currently exposes read-only status snapshots through `rallar.rtc.status(options?)`, `rallar.rtc.peer(...)`, `rallar.rtc.knownPeerIds()`, `rallar.rtc.activePeerIds()`, `rallar.rtc.readyPeerIds(...)`, and `rallar.ws.status()`.
 - The public facade now exposes RTC subscription APIs through `rallar.rtc.onStatus(listener, options?)` and `rallar.rtc.onLifecycle(listener, options?)`.
-- The public facade still does not expose WS lifecycle subscription APIs such as `rallar.ws.onLifecycle(...)` or `rallar.ws.onStatus(...)`; that remains an Iteration 5 concern.
+- The public facade exposes WS subscription APIs through `rallar.ws.onStatus(listener, options?)` and `rallar.ws.onLifecycle(listener, options?)` after the first Iteration 5 implementation pass.
 - Lower layers already have lifecycle hooks, including WebSocket callbacks, RTC peer lifecycle callbacks, and data-channel close/open/error callbacks, but those are internal plumbing and not an application-facing Rallar API.
 - RTC lifecycle callbacks fit Iteration 4 because proving stale data-channel reuse needs observable peer/lane events for open, close, error, replace/reset, reconnecting, and reconnected transitions.
 - WS lifecycle callbacks fit Iteration 5 because they are tied to intentional disconnect, logout, reconnect suppression, and unexpected WebSocket close/error behavior.
@@ -489,7 +490,37 @@ Verification completed:
 
 Goal: prove whether intentional disconnect leaves RTC peers alive or triggers unwanted WS reconnect.
 
-Proof work:
+Status: initial proof and implementation pass completed locally on 2026-05-17. Real-server disconnect/logout scenarios remain pending.
+
+Proof findings:
+
+- Iteration 4 already fixed the main RTC peer cleanup gap by changing `Rallar.disconnect()` to disconnect `knownPeerIds()` instead of the conservative connected/no-reconnectable-lane set.
+- Code inspection confirmed the WS reconnect risk: `WsQueueBoxClientService.enableReconnect()` attached close/error callbacks that called `reconnect()` for every socket close/error, while `Rallar.disconnect()` closed the raw `JsonWebSocketClient` directly.
+- Focused tests now prove the desired WS lifecycle split:
+  - unexpected WS close while reconnect is enabled calls `socket.connect()`
+  - intentional `WsQueueBoxClientService.close(1000, 'rallar-disconnect')` disables reconnect before closing and does not reconnect when the close callback fires
+  - disabling reconnect while a retry loop is pending prevents the next retry attempt from calling `socket.connect()`
+- Public WS lifecycle/status subscription tests prove applications can observe:
+  - current WS status snapshots
+  - facade-connected lifecycle snapshots
+  - unexpected close events with close code/reason/cleanliness
+  - intentional `Rallar.disconnect()` events with code `1000`, reason `rallar-disconnect`, and `intentional: true`
+- Facade logout tests now prove `auth.logout()` uses the same queue-box close path after a connected session, so it inherits reconnect suppression from `disconnect()`.
+
+Implemented after proof:
+
+- `WsQueueBoxClientService.readHealth()` now reports `reconnectEnabled`.
+- `WsQueueBoxClientService.enableReconnect()` explicitly enables reconnect.
+- `WsQueueBoxClientService.disableReconnect()` suppresses future reconnect attempts and stops pending retry loops before their next socket connect attempt.
+- `WsQueueBoxClientService.close(code, reason)` disables reconnect before closing the socket.
+- `Rallar.disconnect()` now calls `ctx.middleware.webSocketQueueBox.close(1000, 'rallar-disconnect')` instead of closing the raw socket directly.
+- `Rallar.ws.status()` now includes `reconnectEnabled`.
+- Added public WS subscription APIs:
+  - `rallar.ws.onStatus(listener, options?)`
+  - `rallar.ws.onLifecycle(listener, options?)`
+- WS lifecycle events currently include `snapshot`, `connected`, `disconnected`, `open`, `close`, and `error` plus the current status snapshot and close/error metadata.
+
+Proof work completed/remaining:
 
 - Add tests around `Rallar.disconnect()` with a controlled `WebRtcConnectionService` where:
   - all peers are healthy
@@ -498,27 +529,35 @@ Proof work:
 - Verify which peers are disconnected.
 - Add tests for `WsQueueBoxClientService.enableReconnect()` and intentional `JsonWebSocketClient.close(1000, 'rallar-disconnect')`.
 - Add tests for lifecycle callbacks on explicit and remote WS/RTC close events:
-  - WS closed intentionally by `Rallar.disconnect()`
-  - WS closed during `auth.logout()`
-  - WS closed unexpectedly while logged in
-  - RTC data channel closed remotely
-  - RTC peer connection closed/failed
-- Prove that WS reconnect is suppressed when the user is logged out or the close was intentional.
+  - WS closed intentionally by `Rallar.disconnect()`: implemented
+  - WS closed during `auth.logout()`: direct facade test implemented; real-server scenario pending
+  - WS closed unexpectedly while logged in: unit/facade callback coverage implemented; real-server scenario pending
+  - RTC data channel closed remotely: covered by Iteration 4 RTC lifecycle tests
+  - RTC peer connection closed/failed: still a future RTC lifecycle/status enhancement
+- Prove that WS reconnect is suppressed when the user is logged out or the close was intentional. Intentional close and connected logout facade behavior are now covered; real-server logout proof remains pending.
 
 Potential implementation after proof:
 
 - Add `allPeerIds()` or use `readAllPeerHealth()` to disconnect every known peer.
-- Add explicit reconnect suppression/disable path for intentional `Rallar.disconnect()`.
-- Make reconnect state visible through WS diagnostics.
-- Add Rallar WS lifecycle callbacks for transport closure/disconnect events:
+- Add explicit reconnect suppression/disable path for intentional `Rallar.disconnect()`. Implemented.
+- Make reconnect state visible through WS diagnostics. Implemented with `reconnectEnabled`.
+- Add Rallar WS lifecycle callbacks for transport closure/disconnect events. Implemented:
   - `rallar.ws.onLifecycle(listener)` or fold into `rallar.ws.onStatus(listener)`
   - keep RTC lifecycle callback semantics aligned with the Iteration 4 RTC lifecycle/status API
   - event fields should include transport, peerId/laneId where applicable, close code/reason where available, intentional vs unexpected, reconnect scheduled, and current session/login state.
 - Gate `WsQueueBoxClientService.enableReconnect()` behind explicit reconnect eligibility:
-  - do not reconnect after `Rallar.disconnect()`
-  - do not reconnect after `auth.logout()`
-  - do not reconnect when no valid session exists
-  - only reconnect unexpected closes while the facade/session still considers the user connected/logged in.
+  - do not reconnect after `Rallar.disconnect()`: implemented
+  - do not reconnect after `auth.logout()`: facade close-path test implemented; real-server proof pending
+  - do not reconnect when no valid session exists: pending explicit proof
+  - only reconnect unexpected closes while the facade/session still considers the user connected/logged in: initial unexpected-close proof implemented, session eligibility still pending
+
+Verification completed:
+
+- `npm run test -- packages/tests/shared-web/rallar-operation-options.test.ts packages/tests/shared/websocket-webrtc.test.ts packages/tests/shared/ws-qos-policy.test.ts`
+- `npx tsc -p packages/shared/tsconfig.json --noEmit`
+- `npx tsc -p packages/shared-web/tsconfig.json --noEmit`
+- `npm --workspace rallar-black-box run typecheck`
+- `git diff --check`
 
 Real scenario testing:
 

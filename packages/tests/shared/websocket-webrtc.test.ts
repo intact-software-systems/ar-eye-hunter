@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type ALMessage, newALEventRoute, newALUnicastMessage, } from '@shared/al-contracts/al-contract.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { WsQueueBoxClientService } from '@shared/services/WsQueueBoxClientService.ts';
 import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
 import { ConnectionContext, JsonWebSocketServer, } from '@shared/websocket/JsonWebSocketServer.ts';
 import {
@@ -385,6 +387,86 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
     });
 });
 
+describe('WsQueueBoxClientService reconnect lifecycle', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+    });
+
+    it('reconnects after an unexpected WebSocket close while reconnect is enabled', async () => {
+        const socket = createReconnectSocketHarness();
+        const service = createWsQueueBoxService(socket.client);
+
+        service.enableReconnect();
+
+        socket.webSocketCallbacks?.onClose?.({
+            type: 'close',
+            code: 1006,
+            reason: 'network-lost',
+        } as CloseEvent);
+        await Promise.resolve();
+
+        expect(socket.connect).toHaveBeenCalledOnce();
+        expect(service.readHealth()).toMatchObject({
+            reconnectEnabled: true,
+        });
+    });
+
+    it('does not reconnect after an intentional service close', async () => {
+        const socket = createReconnectSocketHarness();
+        const service = createWsQueueBoxService(socket.client);
+
+        service.enableReconnect();
+        service.close(1000, 'rallar-disconnect');
+
+        socket.webSocketCallbacks?.onClose?.({
+            type: 'close',
+            code: 1000,
+            reason: 'rallar-disconnect',
+        } as CloseEvent);
+        await Promise.resolve();
+
+        expect(socket.close).toHaveBeenCalledWith(1000, 'rallar-disconnect');
+        expect(socket.connect).not.toHaveBeenCalled();
+        expect(service.readHealth()).toMatchObject({
+            reconnectEnabled: false,
+            reconnecting: false,
+        });
+    });
+
+    it('stops a pending reconnect loop when reconnect is disabled', async () => {
+        vi.useFakeTimers();
+        const socket = createReconnectSocketHarness({
+            connect: async () => {
+                throw new Error('offline');
+            },
+        });
+        const service = createWsQueueBoxService(socket.client);
+
+        service.enableReconnect();
+        socket.webSocketCallbacks?.onClose?.({
+            type: 'close',
+            code: 1006,
+            reason: 'network-lost',
+        } as CloseEvent);
+
+        expect(socket.connect).toHaveBeenCalledTimes(1);
+        expect(service.readHealth()).toMatchObject({
+            reconnectEnabled: true,
+            reconnecting: true,
+        });
+
+        service.disableReconnect();
+        await vi.advanceTimersByTimeAsync(500);
+
+        expect(socket.connect).toHaveBeenCalledTimes(1);
+        expect(service.readHealth()).toMatchObject({
+            reconnectEnabled: false,
+            reconnecting: false,
+        });
+    });
+});
+
 class FakeWebSocket {
     static readonly CONNECTING = 0;
     static readonly OPEN = 1;
@@ -426,6 +508,63 @@ class FakeWebSocket {
     close(): void {
         this.readyState = FakeWebSocket.CLOSED;
     }
+}
+
+function createWsQueueBoxService(socket: unknown): WsQueueBoxClientService {
+    return new WsQueueBoxClientService(
+        new InMemoryQueueBox(new Map()),
+        new InMemoryQueueBox(new Map()),
+        socket as never,
+        {
+            sessionId: 'session-1',
+        },
+    );
+}
+
+function createReconnectSocketHarness(
+    options: Readonly<{
+        connect?: () => Promise<void>;
+    }> = {},
+) {
+    const state: {
+        webSocketCallbacks?: {
+            onOpen?: (ev: Event) => void | Promise<void>;
+            onError?: (ev: Event) => void | Promise<void>;
+            onClose?: (ev: CloseEvent) => void | Promise<void>;
+        };
+    } = {};
+
+    const client = {
+        url: 'ws://test',
+        ws: {
+            readyState: 1,
+        },
+        onWebsocketCallbacksDo: vi.fn(function (
+            _id: string,
+            callbacks: typeof state.webSocketCallbacks,
+        ) {
+            state.webSocketCallbacks = callbacks;
+            return client;
+        }),
+        connect: vi.fn(options.connect ?? (async () => {
+        })),
+        close: vi.fn((_code?: number, _reason?: string) => {
+            client.ws = undefined;
+        }),
+        onWebSocketMessageDo: vi.fn(function () {
+            return client;
+        }),
+        sendAsJsonString: vi.fn(),
+    };
+
+    return {
+        client,
+        get webSocketCallbacks() {
+            return state.webSocketCallbacks;
+        },
+        connect: client.connect,
+        close: client.close,
+    };
 }
 
 function createSocketHarness() {
