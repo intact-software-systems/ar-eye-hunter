@@ -149,6 +149,8 @@ export type BlackBoxRallarCloseDiagnostics = Readonly<{
 export type BlackBoxRallarHealthDiagnostics = Readonly<{
     connected: boolean;
     status: ReturnType<typeof rallar.status>;
+    wsStatus: ReturnType<typeof rallar.ws.status>;
+    rtcStatus: ReturnType<typeof rallar.rtc.status>;
     connection?: string;
     actor?: string;
     transport?: BlackBoxRallarTransport;
@@ -945,12 +947,18 @@ async function close(): Promise<BlackBoxRallarCloseDiagnostics> {
 
 async function health(): Promise<BlackBoxRallarHealthDiagnostics> {
     const config = state?.config;
+    const transport = config ? transportOf(config) : undefined;
+    const rtcLaneId = transport === 'realtime' && config
+        ? laneIdOf(config)
+        : undefined;
     return {
         connected: rallar.isConnected(),
         status: rallar.status(),
+        wsStatus: rallar.ws.status(),
+        rtcStatus: rallar.rtc.status({ laneId: rtcLaneId }),
         connection: config?.connection,
         actor: config?.actor,
-        transport: config ? transportOf(config) : undefined,
+        transport,
         roomId: config?.roomId,
         session: rallar.session(),
         health: config ? readHealth(config) : [],

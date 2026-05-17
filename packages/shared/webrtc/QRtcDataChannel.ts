@@ -176,13 +176,7 @@ export class QRtcDataChannel {
                 const dc = this.status.dc;
 
                 dc.close();
-                dc.onmessage = null;
-                dc.onopen = null;
-                dc.onclose = null;
-                dc.onerror = null;
-                dc.onbufferedamountlow = null;
-
-                this.status.dc = undefined;
+                this.clearDataChannelReference(dc);
             } catch (e) {
                 console.error('Error closing data channel. Ignoring ...', e);
             }
@@ -344,12 +338,14 @@ export class QRtcDataChannel {
     // ----------------------------------------
 
     connect(isInitiator: boolean) {
-        if (this.isOpen() || (!this.isReadyToConnect() && !this.peerConnection.isReadyToConnect())) {
+        if (this.isOpen() || !this.isReadyToConnect()) {
             console.log('Ignoring connect, data connection is in progress and not ready to connect: ' + this.status.state + ' role ' + this.status.role +
                 ' peerId ' + this.input.peerId + ' dataChannelName ' + this.input.dataChannelName);
             return;
         }
 
+        // Note: Order matters here
+        this.clearTerminalDataChannelReference();
         this.status.state = RtcSessionState.Connecting;
         this.status.role = isInitiator ? RtcRole.Initiator : RtcRole.Receiver;
 
@@ -467,6 +463,7 @@ export class QRtcDataChannel {
 
             this.status.state = RtcSessionState.Closed;
             this.resolveOpenWaiters(false);
+            this.clearDataChannelReference(dc);
 
             for (const callback of this.clientCallbacks.values()) {
                 try {
@@ -506,6 +503,35 @@ export class QRtcDataChannel {
         return this.status.state === RtcSessionState.Idle ||
             this.status.state === RtcSessionState.Failed ||
             this.status.state === RtcSessionState.Closed;
+    }
+
+    private clearTerminalDataChannelReference(): void {
+        const dc = this.status.dc;
+        if (
+            !dc ||
+            (
+                this.status.state !== RtcSessionState.Closed &&
+                this.status.state !== RtcSessionState.Failed &&
+                dc.readyState !== 'closing' &&
+                dc.readyState !== 'closed'
+            )
+        ) {
+            return;
+        }
+
+        this.clearDataChannelReference(dc);
+    }
+
+    private clearDataChannelReference(dc: RTCDataChannel): void {
+        dc.onmessage = null;
+        dc.onopen = null;
+        dc.onclose = null;
+        dc.onerror = null;
+        dc.onbufferedamountlow = null;
+
+        if (this.status.dc === dc) {
+            this.status.dc = undefined;
+        }
     }
 
     private dataChannelCallbackId(): string {

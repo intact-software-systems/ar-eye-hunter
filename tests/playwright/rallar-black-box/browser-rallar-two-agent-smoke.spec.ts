@@ -5,6 +5,7 @@ import {
     type Browser,
     type BrowserContext,
     type Page,
+    type TestInfo,
 } from '@playwright/test';
 
 const SPA_BASE_URL = 'http://127.0.0.1:5176';
@@ -61,6 +62,13 @@ type AgentHandle = Readonly<{
     agentId: string;
     actor: string;
     connection: string;
+}>;
+
+type RtcReloadHealthSnapshot = Readonly<{
+    phase: string;
+    agentId: string;
+    commandId: string;
+    value: unknown;
 }>;
 
 const apiBaseUrl = envValue('VITE_RALLAR_API_BASE_URL');
@@ -250,6 +258,43 @@ function resultValue(result: ControlResult): Record<string, unknown> {
     return asRecord(result.result?.value);
 }
 
+function rallarHealthValue(result: ControlResult): Record<string, unknown> {
+    return asRecord(resultValue(result).rallar);
+}
+
+function rtcStatusValue(result: ControlResult): Record<string, unknown> {
+    return asRecord(rallarHealthValue(result).rtcStatus);
+}
+
+function stringArrayValue(value: unknown): readonly string[] {
+    return Array.isArray(value)
+        ? value.filter((entry): entry is string => typeof entry === 'string')
+        : [];
+}
+
+function expectRallarHealthConnected(
+    result: ControlResult,
+    expected: boolean,
+): void {
+    expect(rallarHealthValue(result).connected).toBe(expected);
+}
+
+function expectRallarHealthSession(
+    result: ControlResult,
+    expectedSessionId: string,
+): void {
+    expect(stringValue(asRecord(rallarHealthValue(result).session).sessionId))
+        .toBe(expectedSessionId);
+}
+
+function expectRtcPeerReady(
+    result: ControlResult,
+    expectedPeerId: string,
+): void {
+    expect(stringArrayValue(rtcStatusValue(result).readyPeerIds))
+        .toContain(expectedPeerId);
+}
+
 function requireSessionId(result: ControlResult, commandId: string): string {
     const sessionId = stringValue(resultValue(result).sessionId);
     if (!sessionId) {
@@ -403,6 +448,19 @@ function rallarConnectConfig(transport: TransportUnderTest): Record<string, unkn
     return rallar;
 }
 
+function rallarRestoreConnectConfig(
+    transport: TransportUnderTest,
+    expectedSessionId: string,
+): Record<string, unknown> {
+    return {
+        ...rallarConnectConfig(transport),
+        username: null,
+        password: null,
+        restoreSession: true,
+        expectedSessionId,
+    };
+}
+
 function sendPayload(
     transport: TransportUnderTest,
     targetSessionId: string,
@@ -470,6 +528,40 @@ async function waitForMessage(
     }).toBe(true);
 }
 
+async function reloadAgent(agent: AgentHandle): Promise<void> {
+    await agent.page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(agent.page.getByRole('tab', { name: 'Local Workbench' }))
+        .toBeVisible({ timeout: 30_000 });
+    await agent.page.getByRole('tab', { name: 'Local Workbench' }).click();
+    await expect(agent.page.locator('#panel-local-workbench .control-panel'))
+        .toContainText('registered', { timeout: 30_000 });
+}
+
+async function captureHealthSnapshot(
+    request: APIRequestContext,
+    runId: string,
+    agent: AgentHandle,
+    input: Readonly<{
+        phase: string;
+        suffix: string;
+        snapshots: RtcReloadHealthSnapshot[];
+        commandIds: string[];
+    }>,
+): Promise<ControlResult> {
+    const commandId = `health-${agent.agentId}-${input.phase}-${input.suffix}`;
+    const result = await executeOk(request, runId, agent.agentId, commandId, {
+        kind: 'health',
+    });
+    input.commandIds.push(commandId);
+    input.snapshots.push({
+        phase: input.phase,
+        agentId: agent.agentId,
+        commandId,
+        value: result.result?.value,
+    });
+    return result;
+}
+
 async function runFinalizationCommands(
     request: APIRequestContext,
     runId: string,
@@ -502,6 +594,293 @@ async function runFinalizationCommands(
     await executeOk(request, runId, agent.agentId, commandIds[4], { kind: 'reset' });
 
     return commandIds;
+}
+
+async function runTwoAgentReloadDelivery(
+    browser: Browser,
+    request: APIRequestContext,
+    transport: TransportUnderTest,
+    testInfo: TestInfo,
+): Promise<void> {
+    const suffix = `${transport.replace('.', '-')}-reload-${Date.now()}-${
+        Math.random().toString(16).slice(2)
+    }`;
+    const runId = `real-rallar-two-agent-reload-${suffix}`;
+    const agentAId = `real-rallar-a-${suffix}`;
+    const agentBId = `real-rallar-b-${suffix}`;
+    const handles: AgentHandle[] = [];
+    const healthSnapshots: RtcReloadHealthSnapshot[] = [];
+    const healthSnapshotCommandIds: string[] = [];
+
+    try {
+        const agentA = await openAgent(browser, {
+            auth: agentAAuth!,
+            runId,
+            agentId: agentAId,
+            actor: firstEnvValue('VITE_RALLAR_AGENT_A_ACTOR', 'VITE_RALLAR_A_ACTOR') ??
+                `agent-a-${suffix}`,
+            connection: `agent-a-rtc-${suffix}`,
+            transport,
+        });
+        handles.push(agentA);
+
+        const agentB = await openAgent(browser, {
+            auth: agentBAuth!,
+            runId,
+            agentId: agentBId,
+            actor: firstEnvValue('VITE_RALLAR_AGENT_B_ACTOR', 'VITE_RALLAR_B_ACTOR') ??
+                `agent-b-${suffix}`,
+            connection: `agent-b-rtc-${suffix}`,
+            transport,
+        });
+        handles.push(agentB);
+
+        const setupCommandIds = await setupGroupMembership(request, runId, {
+            owner: agentA,
+            members: [agentA, agentB],
+            suffix,
+        });
+
+        const connectACommandId = `connect-a-${suffix}`;
+        const connectBCommandId = `connect-b-${suffix}`;
+        const connectA = await executeOk(request, runId, agentA.agentId, connectACommandId, {
+            kind: 'rtc.connect',
+            connection: agentA.connection,
+            actor: agentA.actor,
+            roomId,
+            transport,
+            rallar: rallarConnectConfig(transport),
+            timeoutMs: 30_000,
+        });
+        const connectB = await executeOk(request, runId, agentB.agentId, connectBCommandId, {
+            kind: 'rtc.connect',
+            connection: agentB.connection,
+            actor: agentB.actor,
+            roomId,
+            transport,
+            rallar: rallarConnectConfig(transport),
+            timeoutMs: 30_000,
+        });
+        const sessionA = requireSessionId(connectA, connectACommandId);
+        const sessionB = requireSessionId(connectB, connectBCommandId);
+        expect(sessionA).not.toBe(sessionB);
+
+        const beforeReloadSmokeId = `before-reload-${suffix}`;
+        const sendBeforeReloadCommandId = `send-before-reload-${suffix}`;
+        await executeOk(request, runId, agentA.agentId, sendBeforeReloadCommandId, {
+            kind: 'rtc.send',
+            connection: agentA.connection,
+            transport,
+            timeoutMs: 30_000,
+            send: sendPayload(transport, sessionB, {
+                topic: 'rallar.black-box.reload',
+                smokeId: beforeReloadSmokeId,
+                direction: 'a-to-b-before-reload',
+                transport,
+                runId,
+            }),
+        });
+        await waitForMessage(request, runId, {
+            agentId: agentB.agentId,
+            transport,
+            smokeId: beforeReloadSmokeId,
+            direction: 'a-to-b-before-reload',
+        });
+
+        const healthABeforeReload = await captureHealthSnapshot(request, runId, agentA, {
+            phase: 'before-reload-ready',
+            suffix,
+            snapshots: healthSnapshots,
+            commandIds: healthSnapshotCommandIds,
+        });
+        const healthBBeforeReload = await captureHealthSnapshot(request, runId, agentB, {
+            phase: 'before-reload-ready',
+            suffix,
+            snapshots: healthSnapshots,
+            commandIds: healthSnapshotCommandIds,
+        });
+        expectRallarHealthConnected(healthABeforeReload, true);
+        expectRallarHealthConnected(healthBBeforeReload, true);
+        expectRallarHealthSession(healthABeforeReload, sessionA);
+        expectRallarHealthSession(healthBBeforeReload, sessionB);
+        expectRtcPeerReady(healthABeforeReload, sessionB);
+        expectRtcPeerReady(healthBBeforeReload, sessionA);
+
+        await reloadAgent(agentB);
+
+        const healthBAfterPageReload = await captureHealthSnapshot(request, runId, agentB, {
+            phase: 'after-page-reload-before-reconnect',
+            suffix,
+            snapshots: healthSnapshots,
+            commandIds: healthSnapshotCommandIds,
+        });
+        expectRallarHealthConnected(healthBAfterPageReload, false);
+        expectRallarHealthSession(healthBAfterPageReload, sessionB);
+
+        const reconnectBCommandId = `connect-b-after-reload-${suffix}`;
+        const reconnectB = await executeOk(request, runId, agentB.agentId, reconnectBCommandId, {
+            kind: 'rtc.connect',
+            connection: agentB.connection,
+            actor: agentB.actor,
+            roomId,
+            transport,
+            rallar: rallarRestoreConnectConfig(transport, sessionB),
+            timeoutMs: 30_000,
+        });
+        expect(requireSessionId(reconnectB, reconnectBCommandId)).toBe(sessionB);
+
+        const healthBAfterReconnect = await captureHealthSnapshot(request, runId, agentB, {
+            phase: 'after-reconnect',
+            suffix,
+            snapshots: healthSnapshots,
+            commandIds: healthSnapshotCommandIds,
+        });
+        expectRallarHealthConnected(healthBAfterReconnect, true);
+        expectRallarHealthSession(healthBAfterReconnect, sessionB);
+
+        const afterReloadAtoBSmokeId = `after-reload-a-to-b-${suffix}`;
+        const sendAfterReloadACommandId = `send-after-reload-a-to-b-${suffix}`;
+        await executeOk(request, runId, agentA.agentId, sendAfterReloadACommandId, {
+            kind: 'rtc.send',
+            connection: agentA.connection,
+            transport,
+            timeoutMs: 45_000,
+            send: sendPayload(transport, sessionB, {
+                topic: 'rallar.black-box.reload',
+                smokeId: afterReloadAtoBSmokeId,
+                direction: 'a-to-b-after-reload',
+                transport,
+                runId,
+            }),
+        });
+        await waitForMessage(request, runId, {
+            agentId: agentB.agentId,
+            transport,
+            smokeId: afterReloadAtoBSmokeId,
+            direction: 'a-to-b-after-reload',
+        });
+        await agentB.page.getByRole('tab', { name: 'Manual Rallar' }).click();
+        await expect(agentB.page.locator('#panel-manual-rallar .received-inbox-panel'))
+            .toContainText(afterReloadAtoBSmokeId);
+
+        const afterReloadBtoASmokeId = `after-reload-b-to-a-${suffix}`;
+        const sendAfterReloadBCommandId = `send-after-reload-b-to-a-${suffix}`;
+        await executeOk(request, runId, agentB.agentId, sendAfterReloadBCommandId, {
+            kind: 'rtc.send',
+            connection: agentB.connection,
+            transport,
+            timeoutMs: 45_000,
+            send: sendPayload(transport, sessionA, {
+                topic: 'rallar.black-box.reload',
+                smokeId: afterReloadBtoASmokeId,
+                direction: 'b-to-a-after-reload',
+                transport,
+                runId,
+            }),
+        });
+        await waitForMessage(request, runId, {
+            agentId: agentA.agentId,
+            transport,
+            smokeId: afterReloadBtoASmokeId,
+            direction: 'b-to-a-after-reload',
+        });
+        await agentA.page.getByRole('tab', { name: 'Manual Rallar' }).click();
+        await expect(agentA.page.locator('#panel-manual-rallar .received-inbox-panel'))
+            .toContainText(afterReloadBtoASmokeId);
+
+        const healthAAfterReloadDelivery = await captureHealthSnapshot(request, runId, agentA, {
+            phase: 'after-reload-delivery-ready',
+            suffix,
+            snapshots: healthSnapshots,
+            commandIds: healthSnapshotCommandIds,
+        });
+        const healthBAfterReloadDelivery = await captureHealthSnapshot(request, runId, agentB, {
+            phase: 'after-reload-delivery-ready',
+            suffix,
+            snapshots: healthSnapshots,
+            commandIds: healthSnapshotCommandIds,
+        });
+        expectRallarHealthConnected(healthAAfterReloadDelivery, true);
+        expectRallarHealthConnected(healthBAfterReloadDelivery, true);
+        expectRallarHealthSession(healthAAfterReloadDelivery, sessionA);
+        expectRallarHealthSession(healthBAfterReloadDelivery, sessionB);
+        expectRtcPeerReady(healthAAfterReloadDelivery, sessionB);
+        expectRtcPeerReady(healthBAfterReloadDelivery, sessionA);
+
+        const finalizedCommandIds = [
+            ...(await runFinalizationCommands(request, runId, agentA, suffix)),
+            ...(await runFinalizationCommands(request, runId, agentB, suffix)),
+        ];
+        const expectedCommandIds = [
+            ...setupCommandIds,
+            connectACommandId,
+            connectBCommandId,
+            sendBeforeReloadCommandId,
+            reconnectBCommandId,
+            sendAfterReloadACommandId,
+            sendAfterReloadBCommandId,
+            ...healthSnapshotCommandIds,
+            ...finalizedCommandIds,
+        ];
+
+        await expect.poll(async () => {
+            const run = await fetchRun(request, runId);
+            const resultIds = new Set((run.results ?? [])
+                .filter(result => result.ok === true)
+                .map(result => result.commandId));
+            const topics = (run.events ?? [])
+                .map(event => stringValue(eventPayload(event).topic))
+                .filter((topic): topic is string => Boolean(topic));
+            const deliveryMessages = (run.events ?? [])
+                .filter(event =>
+                    isMessageFor(event, {
+                        agentId: agentB.agentId,
+                        transport,
+                        smokeId: beforeReloadSmokeId,
+                        direction: 'a-to-b-before-reload',
+                    }) ||
+                    isMessageFor(event, {
+                        agentId: agentB.agentId,
+                        transport,
+                        smokeId: afterReloadAtoBSmokeId,
+                        direction: 'a-to-b-after-reload',
+                    }) ||
+                    isMessageFor(event, {
+                        agentId: agentA.agentId,
+                        transport,
+                        smokeId: afterReloadBtoASmokeId,
+                        direction: 'b-to-a-after-reload',
+                    })
+                ).length;
+            return {
+                agents: (run.agents ?? [])
+                    .filter(agent => agent.agentId === agentA.agentId || agent.agentId === agentB.agentId)
+                    .length,
+                resultsComplete: expectedCommandIds.every(commandId => resultIds.has(commandId)),
+                messagesReceived: deliveryMessages >= 3,
+                fakeTopicCount: topics.filter(topic => topic.startsWith('rallar.bb.fake.')).length,
+            };
+        }, {
+            timeout: 20_000,
+        }).toEqual({
+            agents: 2,
+            resultsComplete: true,
+            messagesReceived: true,
+            fakeTopicCount: 0,
+        });
+    } finally {
+        if (healthSnapshots.length > 0) {
+            await testInfo.attach(`rallar-rtc-reload-snapshots-${transport}.json`, {
+                body: JSON.stringify({
+                    runId,
+                    transport,
+                    snapshots: healthSnapshots,
+                }, null, 2),
+                contentType: 'application/json',
+            });
+        }
+        await Promise.all(handles.map(handle => handle.context.close()));
+    }
 }
 
 async function runTwoAgentDelivery(
@@ -711,4 +1090,30 @@ test('browser-rallar provider delivers messages.rtc payloads between two real ag
     );
 
     await runTwoAgentDelivery(browser, request, 'messages.rtc');
+});
+
+test('browser-rallar provider delivers realtime after reloading one real agent', async ({
+                                                                                           browser,
+                                                                                           request,
+                                                                                       }, testInfo) => {
+    test.setTimeout(180_000);
+    test.skip(
+        !hasTwoAgentConfig,
+        'Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and two-agent Rallar login or restore config to run the live reload realtime smoke.',
+    );
+
+    await runTwoAgentReloadDelivery(browser, request, 'realtime', testInfo);
+});
+
+test('browser-rallar provider delivers messages.rtc after reloading one real agent', async ({
+                                                                                               browser,
+                                                                                               request,
+                                                                                           }, testInfo) => {
+    test.setTimeout(180_000);
+    test.skip(
+        !hasTwoAgentConfig,
+        'Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and two-agent Rallar login or restore config to run the live reload messages.rtc smoke.',
+    );
+
+    await runTwoAgentReloadDelivery(browser, request, 'messages.rtc', testInfo);
 });

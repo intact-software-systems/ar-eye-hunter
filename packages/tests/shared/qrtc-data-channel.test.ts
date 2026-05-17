@@ -208,6 +208,194 @@ describe('QRtcDataChannel', () => {
         }
     });
 
+    it('resolves pending open waits when reset before open', async () => {
+        const peerConnection = createPeerConnectionHarness();
+        const dataChannel = new QRtcDataChannel(
+            peerConnection.peerConnection as never,
+            {
+                peerId: 'peer-1',
+                dataChannelName: 'room',
+            },
+        );
+
+        dataChannel.connect(false);
+
+        const wait = dataChannel.waitUntilOpen(1_000);
+
+        dataChannel.reset();
+
+        await expect(wait).resolves.toBe(false);
+        expect(dataChannel.readHealth()).toMatchObject({
+            state: 'Idle',
+            readyState: undefined,
+        });
+    });
+
+    it('resolves pending open waits when a channel closes before opening', async () => {
+        const peerConnection = createPeerConnectionHarness();
+        const dataChannel = new QRtcDataChannel(
+            peerConnection.peerConnection as never,
+            {
+                peerId: 'peer-1',
+                dataChannelName: 'room',
+            },
+        );
+        const lifecycle: string[] = [];
+
+        dataChannel.onRtcCallbacksDo('callbacks', {
+            onClose: async () => lifecycle.push('close'),
+        });
+
+        dataChannel.connect(true);
+
+        const wait = dataChannel.waitUntilOpen(1_000);
+        const createdChannel = peerConnection.createdChannels[0];
+
+        await createdChannel.emitClose();
+
+        await expect(wait).resolves.toBe(false);
+        expect(lifecycle).toEqual(['close']);
+        expect(dataChannel.readHealth()).toMatchObject({
+            state: 'Closed',
+            readyState: undefined,
+        });
+        expect(createdChannel.onopen).toBeNull();
+        expect(createdChannel.onclose).toBeNull();
+    });
+
+    it('clears stale closed channel state before later reconnect attempts', async () => {
+        const peerConnection = createPeerConnectionHarness();
+        const dataChannel = new QRtcDataChannel(
+            peerConnection.peerConnection as never,
+            {
+                peerId: 'peer-1',
+                dataChannelName: 'room',
+            },
+        );
+
+        dataChannel.connect(true);
+
+        const createdChannel = peerConnection.createdChannels[0];
+        await createdChannel.emitOpen();
+        await createdChannel.emitClose();
+
+        expect(dataChannel.readHealth()).toMatchObject({
+            state: 'Closed',
+            readyState: undefined,
+        });
+        expect(dataChannel.isReadyToConnect()).toBe(true);
+        await expect(dataChannel.waitUntilOpen(1_000)).resolves.toBe(false);
+    });
+
+    it('replaces a failed initiator channel on reconnect', async () => {
+        const peerConnection = createPeerConnectionHarness();
+        const dataChannel = new QRtcDataChannel(
+            peerConnection.peerConnection as never,
+            {
+                peerId: 'peer-1',
+                dataChannelName: 'room',
+            },
+        );
+
+        dataChannel.connect(true);
+
+        const firstChannel = peerConnection.createdChannels[0];
+        await firstChannel.emitError();
+
+        expect(dataChannel.readHealth()).toMatchObject({
+            state: 'Failed',
+            readyState: 'closed',
+        });
+
+        dataChannel.connect(true);
+        const wait = dataChannel.waitUntilOpen(1_000);
+
+        expect(peerConnection.createDataChannel).toHaveBeenCalledTimes(2);
+        expect(firstChannel.onopen).toBeNull();
+        expect(firstChannel.onerror).toBeNull();
+
+        const secondChannel = peerConnection.createdChannels[1];
+        expect(secondChannel).not.toBe(firstChannel);
+
+        await secondChannel.emitOpen();
+
+        await expect(wait).resolves.toBe(true);
+        expect(dataChannel.readHealth()).toMatchObject({
+            state: 'Open',
+            readyState: 'open',
+        });
+    });
+
+    it('replaces a closed initiator channel on reconnect', async () => {
+        const peerConnection = createPeerConnectionHarness();
+        const dataChannel = new QRtcDataChannel(
+            peerConnection.peerConnection as never,
+            {
+                peerId: 'peer-1',
+                dataChannelName: 'room',
+            },
+        );
+
+        dataChannel.connect(true);
+
+        const firstChannel = peerConnection.createdChannels[0];
+        await firstChannel.emitOpen();
+        await firstChannel.emitClose();
+
+        dataChannel.connect(true);
+        const wait = dataChannel.waitUntilOpen(1_000);
+
+        expect(peerConnection.createDataChannel).toHaveBeenCalledTimes(2);
+
+        const secondChannel = peerConnection.createdChannels[1];
+        expect(secondChannel).not.toBe(firstChannel);
+
+        await secondChannel.emitOpen();
+
+        await expect(wait).resolves.toBe(true);
+        expect(dataChannel.readHealth()).toMatchObject({
+            state: 'Open',
+            readyState: 'open',
+        });
+    });
+
+    it('waits for a replacement receiver channel after the previous channel closed', async () => {
+        const peerConnection = createPeerConnectionHarness();
+        const dataChannel = new QRtcDataChannel(
+            peerConnection.peerConnection as never,
+            {
+                peerId: 'peer-1',
+                dataChannelName: 'room',
+            },
+        );
+
+        dataChannel.connect(false);
+
+        const firstChannel = new FakeRTCDataChannel('room');
+        await peerConnection.onDataChannelCallback?.({
+            channel: firstChannel,
+        } as RTCDataChannelEvent);
+        await firstChannel.emitOpen();
+        await firstChannel.emitClose();
+
+        dataChannel.connect(false);
+        const wait = dataChannel.waitUntilOpen(1_000);
+
+        expect(peerConnection.createDataChannel).not.toHaveBeenCalled();
+
+        const secondChannel = new FakeRTCDataChannel('room');
+        await peerConnection.onDataChannelCallback?.({
+            channel: secondChannel,
+        } as RTCDataChannelEvent);
+        await secondChannel.emitOpen();
+
+        await expect(wait).resolves.toBe(true);
+        expect(dataChannel.readHealth()).toMatchObject({
+            state: 'Open',
+            readyState: 'open',
+        });
+    });
+
     it('supports realtime lane options, binary sends, and replace-by-key back pressure', async () => {
         const peerConnection = createPeerConnectionHarness();
         const dataChannelInit = {

@@ -430,6 +430,57 @@ describe('WebRtcConnectionService', () => {
         ]);
     });
 
+    it('reports lane readiness separately when only the realtime lane is reconnectable', async () => {
+        const signaler = {
+            connect: vi.fn(async () => {
+            }),
+            send: vi.fn(async () => {
+            }),
+        };
+        const service = new WebRtcConnectionService(
+            signaler as never,
+            {
+                ...createConnectionInput('a-self'),
+                dataChannelLanes: [
+                    {
+                        id: 'realtime',
+                        label: 'rtc-realtime',
+                    },
+                ],
+            },
+        );
+
+        await service.connectToPeerIfAbsent('z-peer');
+
+        mockState.dataChannels[0].healthReadyState = 'open';
+        mockState.dataChannels[1].healthReadyState = 'closed';
+        mockState.dataChannels[1].readyToConnect = true;
+
+        expect(service.activePeerIds()).toEqual(['z-peer']);
+        expect(service.connectedPeerIds()).toEqual([]);
+        expect(service.readyPeerIdsForLane()).toEqual(['z-peer']);
+        expect(service.readyPeerIdsForLane('realtime')).toEqual([]);
+        expect(service.readAllPeerHealth()).toMatchObject([
+            {
+                peerId: 'z-peer',
+                channels: [
+                    {
+                        laneId: 'reliable',
+                        channel: {
+                            readyState: 'open',
+                        },
+                    },
+                    {
+                        laneId: 'realtime',
+                        channel: {
+                            readyState: 'closed',
+                        },
+                    },
+                ],
+            },
+        ]);
+    });
+
     it('rejects self-connections', async () => {
         const signaler = {
             connect: vi.fn(async () => {
