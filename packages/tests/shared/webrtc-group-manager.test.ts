@@ -40,6 +40,7 @@ describe('WebRtcGroupManager', () => {
             onlinePeerIds: ['peer-a', 'peer-c'],
             onlineDesiredPeerIds: ['peer-a', 'peer-c'],
             connectablePeerIds: ['peer-a', 'peer-c'],
+            peerIdsWithNoReconnectableLanes: ['peer-a', 'peer-c'],
             connectedPeerIds: ['peer-a', 'peer-c'],
             peerOwners: new Map([
                 ['peer-a', ['group-1', 'group-2']],
@@ -117,6 +118,31 @@ describe('WebRtcGroupManager', () => {
         expect(manager.size()).toBe(0);
         expect(rtcQBox.connectedPeerIds()).toEqual([]);
     });
+
+    it('disconnects stale known peers when they leave all groups', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcQBoxHarness('self', ['peer-a']);
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+        );
+
+        clientCache.set('peer-a', createClientInfo('peer-a', true));
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot('group-1', 1, ['self', 'peer-a']),
+        );
+
+        rtcQBox.markReconnectable('peer-a');
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot('group-1', 2, ['self']),
+        );
+
+        expect(rtcQBox.disconnectPeer).toHaveBeenCalledWith('peer-a');
+        expect(rtcQBox.knownPeerIds()).toEqual([]);
+        expect(rtcQBox.connectedPeerIds()).toEqual([]);
+    });
 });
 
 function createRtcQBoxHarness(
@@ -127,9 +153,11 @@ function createRtcQBoxHarness(
         connectedPeerIds: Set<string>,
     ) => Promise<void>,
 ) {
+    const knownPeerIds = new Set(initiallyConnectedPeerIds);
     const connectedPeerIds = new Set(initiallyConnectedPeerIds);
 
     const connectToPeerIfAbsent = vi.fn(async (peerId: string) => {
+        knownPeerIds.add(peerId);
         if (connectImpl) {
             await connectImpl(peerId, connectedPeerIds);
             return Either.ofRight({ peerId } as never);
@@ -140,6 +168,7 @@ function createRtcQBoxHarness(
     });
 
     const disconnectPeer = vi.fn((peerId: string) => {
+        knownPeerIds.delete(peerId);
         return connectedPeerIds.delete(peerId);
     });
 
@@ -147,6 +176,8 @@ function createRtcQBoxHarness(
         input: {
             sessionId,
         },
+        knownPeerIds: () => Array.from(knownPeerIds),
+        peerIdsWithNoReconnectableLanes: () => Array.from(connectedPeerIds),
         connectedPeerIds: () => Array.from(connectedPeerIds),
         connectToPeerIfAbsent,
         disconnectPeer,
@@ -156,7 +187,9 @@ function createRtcQBoxHarness(
         service,
         connectToPeerIfAbsent,
         disconnectPeer,
+        knownPeerIds: service.knownPeerIds,
         connectedPeerIds: service.connectedPeerIds,
+        markReconnectable: (peerId: string) => connectedPeerIds.delete(peerId),
     };
 }
 

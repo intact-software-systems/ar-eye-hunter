@@ -595,6 +595,7 @@ function createConnectionService(
         input: {
             sessionId: 'self',
         },
+        readyPeerIdsForLane: () => [...connectedPeerIds],
         connectedPeerIds: () => [...connectedPeerIds],
         readPeer: vi.fn((peerId: string) => peersById[peerId]),
     };

@@ -40,6 +40,7 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import type { QRtcMediaPolicy } from '@shared/webrtc/QRtcPeerConnection.ts';
+import type { QRtcClientCallbacks } from '@shared/webrtc/QRtcClientCallbacks.ts';
 import type {
     RtcDataChannelHealth,
     RtcDataChannelSendOptions,
@@ -95,6 +96,7 @@ export type {
 const RALLAR_REMOTE_STREAM_CALLBACK_ID = 'rallar:remote-stream';
 const RALLAR_WS_ANY_MESSAGE_CALLBACK_ID = 'rallar:ws:any-message';
 const RALLAR_REALTIME_LIFECYCLE_CALLBACK_ID = 'rallar:realtime:lifecycle';
+const RALLAR_RTC_STATUS_CALLBACK_ID = 'rallar:rtc:status';
 const DEFAULT_RALLAR_REALTIME_LANE_ID = 'realtime';
 const DEFAULT_RALLAR_REALTIME_OPEN_TIMEOUT_MS = 5_000;
 
@@ -343,6 +345,38 @@ export type RallarRtcStatusOptions = Readonly<{
     laneId?: string;
 }>;
 
+export type RallarRtcStatusSubscriptionOptions =
+    & RallarRtcStatusOptions
+    & RallarOnChangeOptions;
+
+export type RallarRtcStatusListener = (
+    status: RallarRtcStatus,
+) => void | Promise<void>;
+
+export type RallarRtcLifecycleKind =
+    | 'snapshot'
+    | 'connected'
+    | 'disconnected'
+    | 'peer-created'
+    | 'peer-deleted'
+    | 'lane-open'
+    | 'lane-close'
+    | 'lane-error';
+
+export type RallarRtcLifecycleEvent = Readonly<{
+    kind: RallarRtcLifecycleKind;
+    atEpochMs: number;
+    status: RallarRtcStatus;
+    peerId?: string;
+    laneId?: string;
+    peer?: RallarRtcPeerStatus;
+    lane?: RallarRtcLaneStatus;
+}>;
+
+export type RallarRtcLifecycleListener = (
+    event: RallarRtcLifecycleEvent,
+) => void | Promise<void>;
+
 export type RallarRtcPeerConnectionStatus = Readonly<{
     state?: string;
     connectionState?: string;
@@ -371,6 +405,8 @@ export type RallarRtcPeerStatus = Readonly<{
     connection: RallarRtcPeerConnectionStatus;
     lanes: readonly RallarRtcLaneStatus[];
     isActive: boolean;
+    hasNoReconnectableLanes: boolean;
+    /** @deprecated Use hasNoReconnectableLanes for this exact state. */
     isConnectedPeer: boolean;
     isRoutable: boolean;
     readyLaneIds: readonly string[];
@@ -381,6 +417,8 @@ export type RallarRtcStatus = Readonly<{
     laneId: string;
     knownPeerIds: readonly string[];
     activePeerIds: readonly string[];
+    peerIdsWithNoReconnectableLanes: readonly string[];
+    /** @deprecated Use peerIdsWithNoReconnectableLanes for this exact state. */
     connectedPeerIds: readonly string[];
     readyPeerIds: readonly string[];
     peers: readonly RallarRtcPeerStatus[];
@@ -474,12 +512,21 @@ export type RallarFacade = Readonly<{
     }>;
     rtc: Readonly<{
         status(options?: RallarRtcStatusOptions): RallarRtcStatus;
+        onStatus(
+            listener: RallarRtcStatusListener,
+            options?: RallarRtcStatusSubscriptionOptions,
+        ): RallarUnsubscribe;
+        onLifecycle(
+            listener: RallarRtcLifecycleListener,
+            options?: RallarRtcStatusSubscriptionOptions,
+        ): RallarUnsubscribe;
         peer(
             peerId: string,
             options?: RallarRtcStatusOptions,
         ): RallarRtcPeerStatus | undefined;
         knownPeerIds(): readonly string[];
         activePeerIds(): readonly string[];
+        peerIdsWithNoReconnectableLanes(): readonly string[];
         readyPeerIds(laneId?: string): readonly string[];
     }>;
     ws: Readonly<{
@@ -519,6 +566,16 @@ export type RallarFacade = Readonly<{
     }>;
 }>;
 
+type RallarRtcStatusSubscription = Readonly<{
+    listener: RallarRtcStatusListener;
+    options: RallarRtcStatusSubscriptionOptions;
+}>;
+
+type RallarRtcLifecycleSubscription = Readonly<{
+    listener: RallarRtcLifecycleListener;
+    options: RallarRtcStatusSubscriptionOptions;
+}>;
+
 class BrowserRallarFacade implements RallarFacade {
     private connectState: RallarConnectStatus = 'idle';
     private ctx: ApiMiddleware | undefined = undefined;
@@ -548,6 +605,9 @@ class BrowserRallarFacade implements RallarFacade {
         string,
         Set<RallarRealtimeHandler<ArrayBuffer>>
     >();
+    private readonly rtcStatusListeners = new Set<RallarRtcStatusSubscription>();
+    private readonly rtcLifecycleListeners =
+        new Set<RallarRtcLifecycleSubscription>();
     private readonly registeredRtcMessageTypes = new Set<string>();
     private wsAnyMessageCallbackRegistered = false;
     private readonly remoteStreamListeners = new Set<
@@ -902,6 +962,47 @@ class BrowserRallarFacade implements RallarFacade {
         status: (
             options: RallarRtcStatusOptions = {},
         ): RallarRtcStatus => this.toRtcStatus(options),
+        onStatus: (
+            listener: RallarRtcStatusListener,
+            options: RallarRtcStatusSubscriptionOptions = {},
+        ): RallarUnsubscribe => {
+            const subscription: RallarRtcStatusSubscription = {
+                listener,
+                options,
+            };
+            this.rtcStatusListeners.add(subscription);
+            this.registerRtcStatusCallbacks();
+            if (options.emitCurrent ?? true) {
+                notifyListener(listener, this.toRtcStatus(options));
+            }
+
+            return () => {
+                this.rtcStatusListeners.delete(subscription);
+                this.unregisterRtcStatusCallbacksIfUnused();
+            };
+        },
+        onLifecycle: (
+            listener: RallarRtcLifecycleListener,
+            options: RallarRtcStatusSubscriptionOptions = {},
+        ): RallarUnsubscribe => {
+            const subscription: RallarRtcLifecycleSubscription = {
+                listener,
+                options,
+            };
+            this.rtcLifecycleListeners.add(subscription);
+            this.registerRtcStatusCallbacks();
+            if (options.emitCurrent ?? true) {
+                this.notifyRtcLifecycleSubscription(
+                    subscription,
+                    'snapshot',
+                );
+            }
+
+            return () => {
+                this.rtcLifecycleListeners.delete(subscription);
+                this.unregisterRtcStatusCallbacksIfUnused();
+            };
+        },
         peer: (
             peerId: string,
             options: RallarRtcStatusOptions = {},
@@ -917,6 +1018,11 @@ class BrowserRallarFacade implements RallarFacade {
         activePeerIds: (): readonly string[] => {
             const ctx = this.readMiddleware();
             return ctx?.middleware.webRtcConnectionService.activePeerIds() ?? [];
+        },
+        peerIdsWithNoReconnectableLanes: (): readonly string[] => {
+            const ctx = this.readMiddleware();
+            return ctx?.middleware.webRtcConnectionService
+                .peerIdsWithNoReconnectableLanes() ?? [];
         },
         readyPeerIds: (laneId?: string): readonly string[] => {
             const ctx = this.readMiddleware();
@@ -1016,7 +1122,7 @@ class BrowserRallarFacade implements RallarFacade {
             }
 
             const peerIds = options.peerIds ??
-                ctx.middleware.webRtcConnectionService.connectedPeerIds();
+                ctx.middleware.webRtcConnectionService.activePeerIds();
 
             return peerIds.flatMap((peerId) => {
                 const peer = ctx.middleware.webRtcConnectionService.readPeer(peerId);
@@ -1096,9 +1202,11 @@ class BrowserRallarFacade implements RallarFacade {
                 );
                 this.registerAllMessageCallbacks();
                 this.registerRealtimeLifecycleCallback(ctx);
+                this.registerRtcStatusCallbacks(ctx);
                 this.registerAllRealtimeCallbacks();
                 this.registerRemoteStreamCallback();
                 this.emitState();
+                this.emitRtcLifecycle('connected');
                 return ctx;
             })
             .catch((error) => {
@@ -1129,10 +1237,9 @@ class BrowserRallarFacade implements RallarFacade {
             ctx.middleware.webRtcConnectionService.removeRtcPeerLifecycleById(
                 RALLAR_REALTIME_LIFECYCLE_CALLBACK_ID,
             );
-            for (
-                const peerId of ctx.middleware.webRtcConnectionService
-                .connectedPeerIds()
-                ) {
+            this.unregisterRtcStatusCallbacks(ctx);
+            const peerIds = ctx.middleware.webRtcConnectionService.knownPeerIds();
+            for (const peerId of peerIds) {
                 ctx.middleware.webRtcConnectionService.disconnectPeer(peerId);
             }
             this.unregisterRemoteStreamCallback();
@@ -1152,6 +1259,7 @@ class BrowserRallarFacade implements RallarFacade {
         this.connectState = 'idle';
         clearMiddleware();
         this.emitState();
+        this.emitRtcLifecycle('disconnected');
         return Promise.resolve();
     }
 
@@ -1183,6 +1291,7 @@ class BrowserRallarFacade implements RallarFacade {
                 laneId,
                 knownPeerIds: [],
                 activePeerIds: [],
+                peerIdsWithNoReconnectableLanes: [],
                 connectedPeerIds: [],
                 readyPeerIds: [],
                 peers: [],
@@ -1192,24 +1301,30 @@ class BrowserRallarFacade implements RallarFacade {
         const service = ctx.middleware.webRtcConnectionService;
         const knownPeerIds = service.knownPeerIds();
         const activePeerIds = service.activePeerIds();
-        const connectedPeerIds = service.connectedPeerIds();
+        const peerIdsWithNoReconnectableLanes = service
+            .peerIdsWithNoReconnectableLanes();
         const readyPeerIds = service.readyPeerIdsForLane(laneId);
         const activePeerIdSet = new Set(activePeerIds);
-        const connectedPeerIdSet = new Set(connectedPeerIds);
+        const peerIdsWithNoReconnectableLanesSet = new Set(
+            peerIdsWithNoReconnectableLanes,
+        );
+        const readyPeerIdSet = new Set(readyPeerIds);
 
         return {
             sessionId: ctx.session.sessionId,
             laneId,
             knownPeerIds,
             activePeerIds,
-            connectedPeerIds,
+            peerIdsWithNoReconnectableLanes,
+            connectedPeerIds: peerIdsWithNoReconnectableLanes,
             readyPeerIds,
             peers: knownPeerIds.map((peerId) =>
                 this.toRtcPeerStatus(
                     peerId,
                     service.readPeer(peerId),
                     activePeerIdSet,
-                    connectedPeerIdSet,
+                    peerIdsWithNoReconnectableLanesSet,
+                    readyPeerIdSet,
                 )
             ),
         };
@@ -1219,7 +1334,8 @@ class BrowserRallarFacade implements RallarFacade {
         peerId: string,
         peer: QRtcPeerDto | undefined,
         activePeerIds: ReadonlySet<string>,
-        connectedPeerIds: ReadonlySet<string>,
+        peerIdsWithNoReconnectableLanes: ReadonlySet<string>,
+        readyPeerIds: ReadonlySet<string>,
     ): RallarRtcPeerStatus {
         const lanes = peer
             ? Array.from(peer.channels.entries()).map(([laneId, channel]) =>
@@ -1232,8 +1348,9 @@ class BrowserRallarFacade implements RallarFacade {
             connection: toRtcConnectionStatus(peer),
             lanes,
             isActive: activePeerIds.has(peerId),
-            isConnectedPeer: connectedPeerIds.has(peerId),
-            isRoutable: connectedPeerIds.has(peerId),
+            hasNoReconnectableLanes: peerIdsWithNoReconnectableLanes.has(peerId),
+            isConnectedPeer: peerIdsWithNoReconnectableLanes.has(peerId),
+            isRoutable: readyPeerIds.has(peerId),
             readyLaneIds: lanes
                 .filter((lane) => lane.isOpen)
                 .map((lane) => lane.laneId),
@@ -1288,6 +1405,161 @@ class BrowserRallarFacade implements RallarFacade {
         for (const listener of this.peopleStateListeners) {
             notifyListener(listener, peopleState);
         }
+    }
+
+    private registerRtcStatusCallbacks(
+        ctx: ApiMiddleware | undefined = this.readMiddleware(),
+    ): void {
+        if (!ctx || !this.hasRtcStatusSubscriptions()) {
+            return;
+        }
+
+        const service = ctx.middleware.webRtcConnectionService;
+        service.onRtcPeerLifecycleDo(
+            RALLAR_RTC_STATUS_CALLBACK_ID,
+            {
+                onCreated: (peer) => {
+                    this.registerRtcStatusCallbacksForPeer(peer);
+                    this.emitRtcLifecycle('peer-created', {
+                        peerId: peer.peerId,
+                    });
+                },
+                onDeleted: (peer) => {
+                    this.unregisterRtcStatusCallbacksForPeer(peer);
+                    this.emitRtcLifecycleSoon('peer-deleted', {
+                        peerId: peer.peerId,
+                    });
+                },
+            },
+        );
+
+        for (const peerId of service.knownPeerIds()) {
+            const peer = service.readPeer(peerId);
+            if (peer) {
+                this.registerRtcStatusCallbacksForPeer(peer);
+            }
+        }
+    }
+
+    private registerRtcStatusCallbacksForPeer(peer: QRtcPeerDto): void {
+        for (const [laneId, channel] of peer.channels.entries()) {
+            channel.onRtcCallbacksDo(
+                RALLAR_RTC_STATUS_CALLBACK_ID,
+                this.toRtcLaneLifecycleCallbacks(peer.peerId, laneId),
+            );
+        }
+    }
+
+    private toRtcLaneLifecycleCallbacks(
+        peerId: string,
+        laneId: string,
+    ): QRtcClientCallbacks {
+        return {
+            onOpen: async () => {
+                this.emitRtcLifecycle('lane-open', { peerId, laneId });
+            },
+            onClose: async () => {
+                this.emitRtcLifecycle('lane-close', { peerId, laneId });
+            },
+            onError: async () => {
+                this.emitRtcLifecycle('lane-error', { peerId, laneId });
+            },
+        };
+    }
+
+    private unregisterRtcStatusCallbacksIfUnused(): void {
+        if (this.hasRtcStatusSubscriptions()) {
+            return;
+        }
+
+        this.unregisterRtcStatusCallbacks();
+    }
+
+    private unregisterRtcStatusCallbacks(
+        ctx: ApiMiddleware | undefined = this.readMiddleware(),
+    ): void {
+        if (!ctx) {
+            return;
+        }
+
+        const service = ctx.middleware.webRtcConnectionService;
+        service.removeRtcPeerLifecycleById(RALLAR_RTC_STATUS_CALLBACK_ID);
+        for (const peerId of service.knownPeerIds()) {
+            const peer = service.readPeer(peerId);
+            if (peer) {
+                this.unregisterRtcStatusCallbacksForPeer(peer);
+            }
+        }
+    }
+
+    private unregisterRtcStatusCallbacksForPeer(peer: QRtcPeerDto): void {
+        for (const channel of peer.channels.values()) {
+            channel.removeRtcCallbackById(RALLAR_RTC_STATUS_CALLBACK_ID);
+        }
+    }
+
+    private hasRtcStatusSubscriptions(): boolean {
+        return this.rtcStatusListeners.size > 0 ||
+            this.rtcLifecycleListeners.size > 0;
+    }
+
+    private emitRtcLifecycleSoon(
+        kind: RallarRtcLifecycleKind,
+        input: Readonly<{
+            peerId?: string;
+            laneId?: string;
+        }> = {},
+    ): void {
+        queueMicrotask(() => this.emitRtcLifecycle(kind, input));
+    }
+
+    private emitRtcLifecycle(
+        kind: RallarRtcLifecycleKind,
+        input: Readonly<{
+            peerId?: string;
+            laneId?: string;
+        }> = {},
+    ): void {
+        this.emitRtcStatus();
+        for (const subscription of this.rtcLifecycleListeners) {
+            this.notifyRtcLifecycleSubscription(subscription, kind, input);
+        }
+    }
+
+    private emitRtcStatus(): void {
+        for (const subscription of this.rtcStatusListeners) {
+            notifyListener(
+                subscription.listener,
+                this.toRtcStatus(subscription.options),
+            );
+        }
+    }
+
+    private notifyRtcLifecycleSubscription(
+        subscription: RallarRtcLifecycleSubscription,
+        kind: RallarRtcLifecycleKind,
+        input: Readonly<{
+            peerId?: string;
+            laneId?: string;
+        }> = {},
+    ): void {
+        const status = this.toRtcStatus(subscription.options);
+        const peer = input.peerId
+            ? status.peers.find((candidate) => candidate.peerId === input.peerId)
+            : undefined;
+        const lane = input.laneId
+            ? peer?.lanes.find((candidate) => candidate.laneId === input.laneId)
+            : undefined;
+
+        notifyListener(subscription.listener, {
+            kind,
+            atEpochMs: Date.now(),
+            status,
+            peerId: input.peerId,
+            laneId: input.laneId,
+            peer,
+            lane,
+        });
     }
 
     private toRoomState(): RallarRoomState {
@@ -1604,7 +1876,8 @@ class BrowserRallarFacade implements RallarFacade {
             return;
         }
 
-        for (const peerId of ctx.middleware.webRtcConnectionService.connectedPeerIds()) {
+        const peerIds = ctx.middleware.webRtcConnectionService.activePeerIds();
+        for (const peerId of peerIds) {
             const peer = ctx.middleware.webRtcConnectionService.readPeer(peerId);
             if (peer) {
                 this.registerRealtimeCallbacksForPeer(peer, laneId);
@@ -1744,7 +2017,8 @@ class BrowserRallarFacade implements RallarFacade {
             return;
         }
 
-        for (const peerId of ctx.middleware.webRtcConnectionService.connectedPeerIds()) {
+        const peerIds = ctx.middleware.webRtcConnectionService.knownPeerIds();
+        for (const peerId of peerIds) {
             ctx.middleware.webRtcConnectionService
                 .readPeer(peerId)
                 ?.channels.get(laneId)

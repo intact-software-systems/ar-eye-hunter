@@ -196,7 +196,7 @@ export class WebRtcOverlayMulticastManager {
                     direction: 'outbound',
                     selfPeerId: this.connectionService.input.sessionId,
                     fromPeerId,
-                    connectedPeerIds: this.connectionService.connectedPeerIds(),
+                    connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
                     groupMemberPeerIds: readGroupMemberSessionIds(context.room),
                     overlayNeighborPeerIds: context.overlay.nextHopSessionIds,
                 },
@@ -219,7 +219,7 @@ export class WebRtcOverlayMulticastManager {
         const baseContext = {
             selfPeerId: this.connectionService.input.sessionId,
             fromPeerId,
-            connectedPeerIds: this.connectionService.connectedPeerIds(),
+            connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
             dedupStore: runtime?.dedupStore,
             orderingStore: runtime?.orderingStore,
             supersedenceStore: runtime?.supersedenceStore,
@@ -375,7 +375,7 @@ export class WebRtcOverlayMulticastManager {
                 {
                     direction: 'outbound',
                     selfPeerId: this.connectionService.input.sessionId,
-                    connectedPeerIds: this.connectionService.connectedPeerIds(),
+                    connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
                     groupMemberPeerIds: context
                         ? readGroupMemberSessionIds(context.room)
                         : undefined,
@@ -436,7 +436,7 @@ export class WebRtcOverlayMulticastManager {
                     {
                         direction: 'outbound',
                         selfPeerId: this.connectionService.input.sessionId,
-                        connectedPeerIds: this.connectionService.connectedPeerIds(),
+                        connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
                         groupMemberPeerIds: readGroupMemberSessionIds(context.room),
                         overlayNeighborPeerIds: context.overlay.nextHopSessionIds,
                     },
@@ -641,7 +641,7 @@ export class WebRtcOverlayMulticastManager {
             return undefined;
         }
 
-        if (!this.connectionService.connectedPeerIds().includes(peerId)) {
+        if (!this.connectionService.readyPeerIdsForLane().includes(peerId)) {
             return undefined;
         }
 
@@ -700,7 +700,7 @@ export class WebRtcOverlayMulticastManager {
                 {
                     direction: 'outbound',
                     selfPeerId: this.connectionService.input.sessionId,
-                    connectedPeerIds: this.connectionService.connectedPeerIds(),
+                    connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
                     groupMemberPeerIds: readGroupMemberSessionIds(context.room),
                     overlayNeighborPeerIds: context.overlay.nextHopSessionIds,
                 },

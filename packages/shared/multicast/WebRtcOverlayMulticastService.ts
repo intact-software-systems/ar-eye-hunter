@@ -62,7 +62,7 @@ export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {
             {
                 selfPeerId: this.connectionService.input.sessionId,
                 fromPeerId,
-                connectedPeerIds: this.connectionService.connectedPeerIds(),
+                connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
                 groupMemberPeerIds: readGroupMemberSessionIds(context.room),
                 overlayNeighborPeerIds: context.overlay.nextHopSessionIds,
             },

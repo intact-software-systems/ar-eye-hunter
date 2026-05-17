@@ -502,6 +502,7 @@ function createConnectionService(connectedPeerIds: readonly string[]) {
         input: {
             sessionId: 'self',
         },
+        readyPeerIdsForLane: () => [...connectedPeerIds],
         connectedPeerIds: () => [...connectedPeerIds],
         readPeer: (peerId: string) => ({
             channel: {

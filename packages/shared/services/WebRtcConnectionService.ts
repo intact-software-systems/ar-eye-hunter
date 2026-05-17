@@ -146,13 +146,21 @@ export class WebRtcConnectionService {
         return this;
     }
 
-    connectedPeerIds(): readonly string[] {
+    peerIdsWithNoReconnectableLanes(): readonly string[] {
         return Array.from(this.peerDtoByPeerId.entries())
             .filter(([, peerDto]) =>
                 this.isPeerConnectedOrInProgress(peerDto) &&
                 !this.hasReconnectableDataChannels(peerDto)
             )
             .map(([peerId]) => peerId);
+    }
+
+    /**
+     * @deprecated Use activePeerIds(), readyPeerIdsForLane(), or
+     * peerIdsWithNoReconnectableLanes() depending on the actual intent.
+     */
+    connectedPeerIds(): readonly string[] {
+        return this.peerIdsWithNoReconnectableLanes();
     }
 
     knownPeerIds(): readonly string[] {

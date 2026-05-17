@@ -53,7 +53,7 @@ Real-server test runs should record enough evidence to debug failures: peer IDs,
 | 1: Read-only diagnostics and status surface | Implemented and locally verified | Added read-only RTC/WS diagnostics APIs and focused tests. Real two-agent smoke still passes. Playwright status snapshot artifacts are still a follow-up. |
 | 2: IndexedDB growth and session isolation proof | Browser IndexedDB eviction implemented | `packages/tests/shared-web/browser-al-runtime-stores.test.ts`; `packages/tests/shared-web/browser-queuebox-expiry-eviction.test.ts`; existing generic IndexedDB AL runtime tests still pass. Confirms per-prefix lazy eviction and storage bloat risk, with no cross-session read reproduced for the tested browser AL outbound state path. Added explicit cleanup helpers and browser middleware expiry eviction loops. |
 | 3: `enqueueOutboxIfAbsent()` quiet outcomes | Result statuses implemented and locally verified | `ALOutboundMessageRuntime`, RTC overlay/Rx streamer, WS client/server queue-box services, and `Rallar.messages.rtc/ws.send()` now return structured enqueue/send outcomes. |
-| 4: Data-channel reuse and closed-channel behavior | Unit and real-server reload proof implemented | Focused `QRtcDataChannel` tests proved stale closed channel references blocked receiver-side replacement waits. `QRtcDataChannel` now clears terminal channel references so reconnect waits can observe replacement channels. `WebRtcConnectionService` tests document lane-ready state separately from active/connected peer state. Real browser-Rallar reload scenarios now pass for `realtime` and `messages.rtc` with attached RTC/WS status snapshots. |
+| 4: Data-channel reuse and closed-channel behavior | Unit, real-server reload, public RTC status API, and peer-id naming cleanup implemented | Focused `QRtcDataChannel` tests proved stale closed channel references blocked receiver-side replacement waits. `QRtcDataChannel` now clears terminal channel references so reconnect waits can observe replacement channels. `WebRtcConnectionService` tests document lane-ready state separately from active/no-reconnectable-lane peer state. Real browser-Rallar reload scenarios now pass for `realtime` and `messages.rtc` with attached RTC/WS status snapshots. `Rallar.rtc.onStatus(...)` and `Rallar.rtc.onLifecycle(...)` now expose public RTC subscription APIs. `connectedPeerIds()` is now a deprecated compatibility alias for the more exact `peerIdsWithNoReconnectableLanes()`, and Rallar uses active/known/lane-ready peer sets for the call sites that need those semantics. |
 
 ## Iteration 0: Baseline Evidence And Reproduction Harness
 
@@ -374,12 +374,13 @@ Exit criteria:
 
 Goal: confirm whether stale `RTCDataChannel` reuse causes false closed results, hidden peers, or reconnect failure.
 
-Status: unit proof, narrow data-channel fix, real-server reload proof, reload status snapshot artifacts, and additional terminal-wait lifecycle tests implemented on 2026-05-17. Public RTC lifecycle/status subscription APIs remain a follow-up API item.
+Status: unit proof, narrow data-channel fix, real-server reload proof, reload status snapshot artifacts, additional terminal-wait lifecycle tests, and public RTC lifecycle/status subscription APIs implemented on 2026-05-17.
 
 Facade lifecycle callback check added on 2026-05-16:
 
 - `Rallar` currently exposes read-only status snapshots through `rallar.rtc.status(options?)`, `rallar.rtc.peer(...)`, `rallar.rtc.knownPeerIds()`, `rallar.rtc.activePeerIds()`, `rallar.rtc.readyPeerIds(...)`, and `rallar.ws.status()`.
-- The public facade does not currently expose RTC/WS lifecycle subscription APIs such as `rallar.rtc.onLifecycle(...)`, `rallar.ws.onLifecycle(...)`, `rallar.rtc.onStatus(...)`, or `rallar.ws.onStatus(...)`.
+- The public facade now exposes RTC subscription APIs through `rallar.rtc.onStatus(listener, options?)` and `rallar.rtc.onLifecycle(listener, options?)`.
+- The public facade still does not expose WS lifecycle subscription APIs such as `rallar.ws.onLifecycle(...)` or `rallar.ws.onStatus(...)`; that remains an Iteration 5 concern.
 - Lower layers already have lifecycle hooks, including WebSocket callbacks, RTC peer lifecycle callbacks, and data-channel close/open/error callbacks, but those are internal plumbing and not an application-facing Rallar API.
 - RTC lifecycle callbacks fit Iteration 4 because proving stale data-channel reuse needs observable peer/lane events for open, close, error, replace/reset, reconnecting, and reconnected transitions.
 - WS lifecycle callbacks fit Iteration 5 because they are tied to intentional disconnect, logout, reconnect suppression, and unexpected WebSocket close/error behavior.
@@ -390,7 +391,7 @@ Proof findings:
 - That stale closed channel caused `waitUntilOpen()` to resolve `false` immediately during receiver-side reconnect, before the replacement incoming channel could be delivered through `ondatachannel`.
 - Initiator-side reconnect already created a replacement channel on a later `connect(true)`, but clearing terminal references makes the state and health snapshot explicit.
 - `WebRtcConnectionService` already exposes `knownPeerIds()`, `activePeerIds()`, and `readyPeerIdsForLane(...)`, which allows lane readiness to be observed separately from broad connected-peer semantics.
-- `connectedPeerIds()` remains conservative: if any configured lane is reconnectable, the peer is excluded even when the reliable/default lane is open. The new test documents this current behavior rather than changing it in Iteration 4.
+- The old `connectedPeerIds()` name was misleading: if any configured lane is reconnectable, the peer is excluded even when the reliable/default lane is open. This is now named `peerIdsWithNoReconnectableLanes()` in the low-level service, while `connectedPeerIds()` remains only as a deprecated compatibility alias.
 
 Implemented after proof:
 
@@ -399,6 +400,16 @@ Implemented after proof:
 - Receiver-side reconnect can now call `waitUntilOpen(...)` after `connect(false)` and remain pending until the replacement incoming channel opens.
 - Added real browser-Rallar reload tests that keep the same browser auth session across a page reload, so the remote peer ID remains stable and the opposite browser must recover from closed data channels for the same peer.
 - Extended browser black-box health diagnostics with facade-level `wsStatus` and lane-scoped `rtcStatus`, then captured Playwright JSON artifacts for before-reload, after-page-reload, after-reconnect, and after-reload-delivery phases.
+- Added public RTC subscription APIs:
+  - `rallar.rtc.onStatus(listener, options?)` emits lane-scoped `RallarRtcStatus` snapshots.
+  - `rallar.rtc.onLifecycle(listener, options?)` emits lifecycle events for `snapshot`, `connected`, `disconnected`, `peer-created`, `peer-deleted`, `lane-open`, `lane-close`, and `lane-error`, with the current status snapshot attached.
+  - RTC status/lifecycle subscriptions are backed by `WebRtcConnectionService` peer lifecycle callbacks and `QRtcDataChannel` open/close/error callbacks.
+- Split misleading connected-peer usage by intent:
+  - Rallar status now exposes `peerIdsWithNoReconnectableLanes` and peer-level `hasNoReconnectableLanes`, while retaining deprecated compatibility aliases `connectedPeerIds` and `isConnectedPeer`.
+  - Rallar RTC routeability now uses `readyPeerIdsForLane(laneId)`, so a peer can be routable for the reliable lane even if another lane is reconnectable.
+  - Rallar realtime health and callback registration use `activePeerIds()`, so closed/reconnecting lanes remain visible for diagnostics instead of disappearing from health output.
+  - Rallar disconnect and realtime callback cleanup use `knownPeerIds()`, so stale peers with closed/reconnectable lanes are still cleaned up.
+  - WebRTC group reconciliation still uses `peerIdsWithNoReconnectableLanes()` to decide when a desired peer needs a lane reconnect, but it now uses `knownPeerIds()` when disconnecting peers that left all groups.
 - Added focused tests for:
   - clearing stale closed channel state
   - replacing a closed initiator channel
@@ -422,17 +433,19 @@ Proof work completed/remaining:
   - one lane is closed/failed
   - reliable lane is open but realtime lane is closed
   - peer connection is reset after reconnect exhaustion
+- Added facade tests proving `rallar.rtc.onStatus(...)` and `rallar.rtc.onLifecycle(...)`:
+  - emit current snapshots by default
+  - register callbacks on existing RTC peers/lanes after connect
+  - emit lifecycle events for lane-open and peer-deleted transitions
+  - unregister lower-level callbacks when the last public subscriber unsubscribes
 
 Remaining potential implementation after proof:
 
-- Split peer-level health from lane-level readiness.
-- Add public RTC lifecycle/status subscription API after the close/reuse behavior is proven:
-  - `rallar.rtc.onLifecycle(listener)` or `rallar.rtc.onStatus(listener)`
-  - event fields should include peerId, laneId when applicable, peer connection state, data-channel state, event kind, close/error details where available, and whether the transition is part of reconnect/reset.
-- Replace or supplement `connectedPeerIds()` with explicit APIs:
-  - `knownPeerIds()`
-  - `activePeerIds()`
-  - `readyPeerIdsForLane(laneId)`
+- "Split peer-level health from lane-level readiness" means callers should not have to infer two different concepts from one broad `connectedPeerIds()` result:
+  - peer-level health: whether the `RTCPeerConnection` exists, is connecting/connected, is reconnecting, or is disconnected/failed
+  - lane-level readiness: whether a specific data-channel lane such as `reliable` or `realtime` is open and sendable
+- This is partly addressed by the existing explicit APIs and status fields: `knownPeerIds()`, `activePeerIds()`, `readyPeerIds(laneId)`, `RallarRtcPeerStatus.connection`, and per-lane `RallarRtcLaneStatus`.
+- The `connectedPeerIds()` cleanup is implemented as an additive rename: use `peerIdsWithNoReconnectableLanes()` for that exact conservative state, `activePeerIds()` for peer connection presence/health, `readyPeerIdsForLane(laneId)` for routing, and `knownPeerIds()` for teardown/cleanup. The old name remains available only for compatibility.
 
 Real scenario testing completed/remaining:
 
@@ -462,6 +475,13 @@ Verification completed:
 - `npm --workspace @ar-eye-hunter/shared-test run typecheck`
 - `npm --workspace rallar-black-box run typecheck`
 - `npm run test -- packages/tests/shared/qrtc-data-channel.test.ts packages/tests/shared/webrtc-connection-service.test.ts`
+- `npm run test -- packages/tests/shared-web/rallar-operation-options.test.ts`
+- `npm run test -- packages/tests/shared-web/rallar-operation-options.test.ts packages/tests/shared/webrtc-connection-service.test.ts packages/tests/shared/webrtc-group-manager.test.ts packages/tests/shared/webrtc-overlay-services.test.ts packages/tests/shared/multicast-policy-integration.test.ts`
+- `npm run test -- packages/tests/shared/qrtc-data-channel.test.ts`
+- `npx tsc -p packages/shared/tsconfig.json --noEmit`
+- `npx tsc -p packages/shared-web/tsconfig.json --noEmit`
+- `npm --workspace rallar-black-box run typecheck`
+- `git diff --check`
 - `VITE_RALLAR_API_BASE_URL=http://localhost:8080 VITE_RALLAR_ROOM_ID=bb-group VITE_RALLAR_USERNAME=alice VITE_RALLAR_PASSWORD=secret npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/browser-rallar-two-agent-smoke.spec.ts -g "reloading one real agent"`
 - `VITE_RALLAR_API_BASE_URL=http://localhost:8080 VITE_RALLAR_ROOM_ID=bb-group VITE_RALLAR_USERNAME=alice VITE_RALLAR_PASSWORD=secret npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/browser-rallar-two-agent-smoke.spec.ts -g "messages.rtc after reloading one real agent"`
 

@@ -14,6 +14,8 @@ export type WebRtcGroupManagerState = {
     readonly onlinePeerIds: readonly PeerId[];
     readonly onlineDesiredPeerIds: readonly PeerId[];
     readonly connectablePeerIds: readonly PeerId[];
+    readonly peerIdsWithNoReconnectableLanes: readonly PeerId[];
+    /** @deprecated Use peerIdsWithNoReconnectableLanes. */
     readonly connectedPeerIds: readonly PeerId[];
     readonly peerOwners: ReadonlyMap<PeerId, readonly GroupId[]>;
 };
@@ -119,6 +121,8 @@ export class WebRtcGroupManager {
         const onlineDesiredPeerIds = desiredPeerIds.filter((peerId) =>
             this.onlinePeerIds().has(peerId)
         );
+        const peerIdsWithNoReconnectableLanes = this.rtcQBox
+            .peerIdsWithNoReconnectableLanes();
 
         return {
             groupIds: this.groupIds(),
@@ -126,7 +130,8 @@ export class WebRtcGroupManager {
             onlinePeerIds,
             onlineDesiredPeerIds,
             connectablePeerIds: onlineDesiredPeerIds,
-            connectedPeerIds: this.rtcQBox.connectedPeerIds(),
+            peerIdsWithNoReconnectableLanes,
+            connectedPeerIds: peerIdsWithNoReconnectableLanes,
             peerOwners,
         };
     }
@@ -176,17 +181,20 @@ export class WebRtcGroupManager {
             const peerOwners = this.peerOwners();
             const desiredPeerIds = new Set(peerOwners.keys());
             const onlinePeerIds = this.onlinePeerIds();
-            const connectedPeerIds = new Set(this.rtcQBox.connectedPeerIds());
+            const peerIdsWithNoReconnectableLanes = new Set(
+                this.rtcQBox.peerIdsWithNoReconnectableLanes(),
+            );
+            const knownPeerIds = new Set(this.rtcQBox.knownPeerIds());
 
             const connectablePeerIds = Array.from(desiredPeerIds).filter(
                 (peerId) => onlinePeerIds.has(peerId),
             );
 
             const peersToConnect = connectablePeerIds.filter(
-                (peerId) => !connectedPeerIds.has(peerId),
+                (peerId) => !peerIdsWithNoReconnectableLanes.has(peerId),
             );
 
-            const peersToDisconnect = Array.from(connectedPeerIds).filter(
+            const peersToDisconnect = Array.from(knownPeerIds).filter(
                 (peerId) => !desiredPeerIds.has(peerId),
             );
 

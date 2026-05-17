@@ -299,9 +299,11 @@ describe('WebRtcConnectionService', () => {
 
         const first = await service.connectToPeerIfAbsent('z-peer');
         expect(first.left).toBeUndefined();
+        expect(service.peerIdsWithNoReconnectableLanes()).toEqual(['z-peer']);
         expect(service.connectedPeerIds()).toEqual(['z-peer']);
 
         mockState.dataChannels[0].readyToConnect = true;
+        expect(service.peerIdsWithNoReconnectableLanes()).toEqual([]);
         expect(service.connectedPeerIds()).toEqual([]);
 
         const second = await service.connectToPeerIfAbsent('z-peer');
@@ -309,10 +311,11 @@ describe('WebRtcConnectionService', () => {
         expect(second.right).toBe(first.right);
         expect(mockState.peerConnections).toHaveLength(1);
         expect(mockState.dataChannels[0].connect).toHaveBeenCalledTimes(2);
+        expect(service.peerIdsWithNoReconnectableLanes()).toEqual(['z-peer']);
         expect(service.connectedPeerIds()).toEqual(['z-peer']);
     });
 
-    it('reports known, active, connected, and lane-ready peers separately', async () => {
+    it('reports known, active, lane-reconciled, and lane-ready peers separately', async () => {
         const signaler = {
             connect: vi.fn(async () => {
             }),
@@ -328,6 +331,7 @@ describe('WebRtcConnectionService', () => {
 
         expect(service.knownPeerIds()).toEqual(['z-peer']);
         expect(service.activePeerIds()).toEqual(['z-peer']);
+        expect(service.peerIdsWithNoReconnectableLanes()).toEqual(['z-peer']);
         expect(service.connectedPeerIds()).toEqual(['z-peer']);
         expect(service.readyPeerIdsForLane()).toEqual([]);
 
@@ -335,6 +339,7 @@ describe('WebRtcConnectionService', () => {
         expect(service.readyPeerIdsForLane()).toEqual(['z-peer']);
 
         mockState.dataChannels[0].readyToConnect = true;
+        expect(service.peerIdsWithNoReconnectableLanes()).toEqual([]);
         expect(service.connectedPeerIds()).toEqual([]);
         expect(service.activePeerIds()).toEqual(['z-peer']);
         expect(service.readyPeerIdsForLane()).toEqual(['z-peer']);
@@ -457,6 +462,7 @@ describe('WebRtcConnectionService', () => {
         mockState.dataChannels[1].readyToConnect = true;
 
         expect(service.activePeerIds()).toEqual(['z-peer']);
+        expect(service.peerIdsWithNoReconnectableLanes()).toEqual([]);
         expect(service.connectedPeerIds()).toEqual([]);
         expect(service.readyPeerIdsForLane()).toEqual(['z-peer']);
         expect(service.readyPeerIdsForLane('realtime')).toEqual([]);
