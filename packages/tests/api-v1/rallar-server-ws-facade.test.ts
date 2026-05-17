@@ -8,6 +8,7 @@ import {
     WsQueueBoxServerService,
     type WsServerTargetResolver,
 } from '@shared/mod.ts';
+import { createRallarServerFacade } from '@shared-server/rallar-facade/RallarServer.ts';
 import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
 
 describe('RallarServerWsFacade', () => {
@@ -141,6 +142,203 @@ describe('RallarServerWsFacade', () => {
     });
 });
 
+describe('RallarServer.ws.publish current behavior', () => {
+    it('returns the live-only send count and sends to resolved targets', async () => {
+        const { server, socket } = createServerFacade();
+        const message = newALBroadcastMessage(
+            'server-1',
+            newALRoute('app.cursor', 'all', 'cursor-1'),
+            'all',
+            'cursor.position.v1',
+            { x: 1, y: 2 },
+            {
+                exceptPeerIds: ['peer-1'],
+            },
+        );
+
+        const result = await server.ws.publish(message, 'live-only');
+
+        expect(result).toMatchObject({
+            fanout: 'live-only',
+            status: 'sent-live',
+            sentCount: 2,
+            recipientCount: 2,
+            failedCount: 0,
+            entries: [],
+        });
+        expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual([
+            'conn-2',
+            'conn-3',
+        ]);
+        expect(
+            socket.sent.every((entry) => entry.data.id.msgId === message.id.msgId),
+        ).toBe(true);
+    });
+
+    it('returns 0 for live-only fanout with zero recipients', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        try {
+            const { server, socket } = createServerFacade({
+                targetResolver: {
+                    ...createTargetResolver(),
+                    resolveBroadcastRecipients: () => [],
+                },
+            });
+            const message = newALBroadcastMessage(
+                'server-1',
+                newALRoute('app.cursor', 'all', 'cursor-1'),
+                'all',
+                'cursor.position.v1',
+                { x: 1, y: 2 },
+            );
+
+            const result = await server.ws.publish(message, 'live-only');
+
+            expect(result).toMatchObject({
+                fanout: 'live-only',
+                status: 'no-recipients',
+                sentCount: 0,
+                recipientCount: 0,
+                failedCount: 0,
+                entries: [],
+            });
+            expect(socket.sent).toHaveLength(0);
+            expect(warn).toHaveBeenCalledWith(
+                'Dynamic WS topic had no recipients: app.cursor',
+            );
+        } finally {
+            warn.mockRestore();
+        }
+    });
+
+    it('returns partial-failure metadata for live-only send failures', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        try {
+            const { server, socket } = createServerFacade({
+                failingConnectionIds: ['conn-2'],
+            });
+            const message = newALBroadcastMessage(
+                'server-1',
+                newALRoute('app.cursor', 'all', 'cursor-1'),
+                'all',
+                'cursor.position.v1',
+                { x: 1, y: 2 },
+            );
+
+            const result = await server.ws.publish(message, 'live-only');
+
+            expect(result).toMatchObject({
+                fanout: 'live-only',
+                status: 'partial-failure',
+                sentCount: 2,
+                recipientCount: 3,
+                failedCount: 1,
+                entries: [],
+                failures: [
+                    {
+                        peerId: 'peer-2',
+                        connectionId: 'conn-2',
+                        reason: 'send failed',
+                    },
+                ],
+            });
+            expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual([
+                'conn-1',
+                'conn-3',
+            ]);
+        } finally {
+            error.mockRestore();
+        }
+    });
+
+    it('returns queued-outbox metadata for durable outbox fanout', async () => {
+        const { server, service, socket, outbox } = createServerFacade();
+        const enqueue = vi.spyOn(service, 'enqueueOutboxIfAbsent');
+        const message = newALBroadcastMessage(
+            'server-1',
+            newALRoute('app.todo', 'room-1', 'todo-1'),
+            'room',
+            'todo.item.updated.v1',
+            { title: 'Durable fanout', done: false },
+            {
+                reliability: 'at-least-once',
+                ack: 'receiver',
+            },
+        );
+
+        const result = await server.ws.publish(message, 'outbox');
+        const lowerResult = await enqueue.mock.results[0].value;
+
+        expect(result).toMatchObject({
+            fanout: 'outbox',
+            status: 'queued-outbox',
+            enqueueStatus: 'enqueued',
+        });
+        expect(enqueue).toHaveBeenCalledWith(message);
+        expect(lowerResult.status).toBe('enqueued');
+        expect(lowerResult.entries).toHaveLength(1);
+        expect(result.entries).toHaveLength(1);
+        expect((outbox as any).data.size).toBe(1);
+        expect(socket.sent).toHaveLength(0);
+    });
+
+    it('returns none metadata without sending or enqueueing', async () => {
+        const { server, service, socket, outbox } = createServerFacade();
+        const enqueue = vi.spyOn(service, 'enqueueOutboxIfAbsent');
+        const sendToTargets = vi.spyOn(service, 'sendToTargets');
+        const message = newALBroadcastMessage(
+            'server-1',
+            newALRoute('app.todo', 'room-1', 'todo-1'),
+            'room',
+            'todo.item.updated.v1',
+            { title: 'No fanout', done: false },
+        );
+
+        const result = await server.ws.publish(message, 'none');
+
+        expect(result).toMatchObject({
+            fanout: 'none',
+            status: 'none',
+            sentCount: 0,
+            entries: [],
+        });
+        expect(enqueue).not.toHaveBeenCalled();
+        expect(sendToTargets).not.toHaveBeenCalled();
+        expect(socket.sent).toHaveLength(0);
+        expect((outbox as any).data.size).toBe(0);
+    });
+
+    it('reports minimal server websocket status from current connections', () => {
+        const { server, socket } = createServerFacade();
+        socket.connections.set('conn-1', {
+            id: 'conn-1',
+            isOpen: true,
+        });
+        socket.connections.set('conn-2', {
+            id: 'conn-2',
+            isOpen: false,
+        });
+
+        expect(server.ws.status()).toEqual({
+            transport: 'ws-server',
+            connectionCount: 2,
+            openConnectionCount: 1,
+            connectionIds: ['conn-1', 'conn-2'],
+            openConnectionIds: ['conn-1'],
+            connections: [
+                {
+                    connectionId: 'conn-1',
+                    isOpen: true,
+                },
+                {
+                    connectionId: 'conn-2',
+                    isOpen: false,
+                },
+            ],
+        });
+    });
+});
+
 function createFacade(
     options?: ConstructorParameters<typeof RallarServerWsFacade>[1],
 ) {
@@ -163,15 +361,60 @@ function createFacade(
     };
 }
 
-function createFakeWsServer() {
+function createServerFacade(
+    options: Readonly<{
+        targetResolver?: WsServerTargetResolver;
+        failingConnectionIds?: readonly string[];
+    }> = {},
+) {
+    const socket = createFakeWsServer({
+        failingConnectionIds: options.failingConnectionIds,
+    });
+    const inbox = new InMemoryQueueBox(new Map());
+    const outbox = new InMemoryQueueBox(new Map());
+    const service = new WsQueueBoxServerService(
+        inbox,
+        outbox,
+        socket as never,
+        'server-1',
+        {
+            targetResolver: options.targetResolver ?? createTargetResolver(),
+        },
+    );
+    const server = createRallarServerFacade({
+        runtime: {
+            wsQBoxServerService: service,
+        },
+    });
+
+    return {
+        server,
+        service,
+        socket,
+        inbox,
+        outbox,
+    };
+}
+
+function createFakeWsServer(
+    options: Readonly<{
+        failingConnectionIds?: readonly string[];
+    }> = {},
+) {
     const sent: Array<{ connectionId: string; data: ALMessage }> = [];
+    const connections = new Map<string, { id: string; isOpen: boolean }>();
+    const failingConnectionIds = new Set(options.failingConnectionIds ?? []);
 
     return {
         sent,
+        connections,
         onMessageDo() {
             return this;
         },
         send(connectionId: string, data: ALMessage) {
+            if (failingConnectionIds.has(connectionId)) {
+                throw new Error('send failed');
+            }
             sent.push({ connectionId, data });
         },
     };

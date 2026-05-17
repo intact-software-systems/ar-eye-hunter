@@ -2,9 +2,18 @@ import type { ALMessage, ALTargets } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { isALControlTypeId, newALNackControlMessage, } from '@shared/al-contracts/al-control.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
+import type {
+    ALOutboundEnqueueResult,
+    ALOutboundEnqueueStatus,
+} from '@shared/alm/ALOutboundMessageRuntime.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import {
+    type WsServerLiveSendFailure,
+    type WsServerLiveSendResult,
+    type WsServerResolvedRecipient,
+    WsQueueBoxServerService,
+} from '@shared/services/WsQueueBoxServerService.ts';
 
 const DYNAMIC_TOPIC_ROUTER_CALLBACK_ID = 'dynamic-ws-topic-router';
 const DEFAULT_USER_TOPIC_PREFIXES = ['app.', 'room.'] as const;
@@ -14,6 +23,50 @@ const RESERVED_TOPIC_IDS = new Set<string>(Object.values(AppTopics));
 const AL_CONTROL_TOPIC_ID = 'al-control';
 
 export type RallarServerWsFanout = 'live-only' | 'outbox' | 'none';
+
+export type RallarServerWsPublishStatus =
+    | 'sent-live'
+    | 'queued-outbox'
+    | 'none'
+    | 'no-recipients'
+    | 'partial-failure'
+    | 'skipped'
+    | 'duplicate'
+    | 'superseded'
+    | 'expired'
+    | 'no-route'
+    | 'rate-limited'
+    | 'circuit-open'
+    | 'failed';
+
+export type RallarServerWsPublishResult = Readonly<{
+    fanout: RallarServerWsFanout;
+    status: RallarServerWsPublishStatus;
+    message: ALMessage;
+    sentCount?: number;
+    recipientCount?: number;
+    failedCount?: number;
+    recipients?: readonly WsServerResolvedRecipient[];
+    failures?: readonly WsServerLiveSendFailure[];
+    entry?: ResourceEntry;
+    entries: readonly ResourceEntry[];
+    enqueueStatus?: ALOutboundEnqueueStatus;
+    reason?: string;
+}>;
+
+export type RallarServerWsConnectionStatus = Readonly<{
+    connectionId: string;
+    isOpen: boolean;
+}>;
+
+export type RallarServerWsStatus = Readonly<{
+    transport: 'ws-server';
+    connectionCount: number;
+    openConnectionCount: number;
+    connectionIds: readonly string[];
+    openConnectionIds: readonly string[];
+    connections: readonly RallarServerWsConnectionStatus[];
+}>;
 
 export type RallarServerWsTopicScope = 'app' | 'room' | 'world';
 
@@ -104,12 +157,12 @@ export type RallarServerWsProxyContext = Readonly<{
     toTargets(
         message: ALMessage,
         fanout?: RallarServerWsFanout,
-    ): Promise<number | undefined>;
+    ): Promise<RallarServerWsPublishResult>;
     toPeer(
         peerId: string,
         message: ALMessage,
         fanout?: RallarServerWsFanout,
-    ): Promise<number | undefined>;
+    ): Promise<RallarServerWsPublishResult>;
     toRoom(
         roomId: string,
         message: ALMessage,
@@ -117,14 +170,14 @@ export type RallarServerWsProxyContext = Readonly<{
             exceptPeerIds?: readonly string[];
             fanout?: RallarServerWsFanout;
         }>,
-    ): Promise<number | undefined>;
+    ): Promise<RallarServerWsPublishResult>;
     toAll(
         message: ALMessage,
         options?: Readonly<{
             exceptPeerIds?: readonly string[];
             fanout?: RallarServerWsFanout;
         }>,
-    ): Promise<number | undefined>;
+    ): Promise<RallarServerWsPublishResult>;
 }>;
 
 type RegisteredHandler = Readonly<{
@@ -255,8 +308,31 @@ export class RallarServerWsFacade {
     async publish(
         message: ALMessage,
         fanout?: RallarServerWsFanout,
-    ): Promise<number | undefined> {
+    ): Promise<RallarServerWsPublishResult> {
         return await this.dispatchFanout(message, fanout ?? this.defaultFanout);
+    }
+
+    status(): RallarServerWsStatus {
+        const socketConnections = this.wsQBoxServerService.socket.connections;
+        const connections: readonly RallarServerWsConnectionStatus[] =
+            socketConnections instanceof Map
+                ? [...socketConnections.values()].map((ctx) => ({
+                    connectionId: ctx.id,
+                    isOpen: ctx.isOpen,
+                }))
+                : [];
+        const openConnectionIds = connections
+            .filter((connection) => connection.isOpen)
+            .map((connection) => connection.connectionId);
+
+        return {
+            transport: 'ws-server',
+            connectionCount: connections.length,
+            openConnectionCount: openConnectionIds.length,
+            connectionIds: connections.map((connection) => connection.connectionId),
+            openConnectionIds,
+            connections,
+        };
     }
 
     async handle(
@@ -452,22 +528,32 @@ export class RallarServerWsFacade {
     private async dispatchFanout(
         message: ALMessage,
         fanout: RallarServerWsFanout,
-    ): Promise<number | undefined> {
+    ): Promise<RallarServerWsPublishResult> {
         switch (fanout) {
             case 'none':
-                return undefined;
+                return {
+                    fanout,
+                    status: 'none',
+                    message,
+                    sentCount: 0,
+                    entries: [],
+                };
             case 'outbox': {
-                await this.wsQBoxServerService.enqueueOutboxIfAbsent(message);
-                return undefined;
+                const result = await this.wsQBoxServerService.enqueueOutboxIfAbsent(
+                    message,
+                );
+                return toOutboxPublishResult(message, fanout, result);
             }
             case 'live-only': {
-                const sent = this.wsQBoxServerService.sendToTargets(message);
-                if (sent === 0) {
+                const result = this.wsQBoxServerService.sendToTargetsWithResult(
+                    message,
+                );
+                if (result.status === 'no-recipients') {
                     console.warn(
                         `Dynamic WS topic had no recipients: ${message.route.topicId}`,
                     );
                 }
-                return sent;
+                return toLivePublishResult(message, fanout, result);
             }
         }
     }
@@ -683,6 +769,60 @@ export class RallarServerWsFacade {
                 error,
             );
         }
+    }
+}
+
+function toLivePublishResult(
+    message: ALMessage,
+    fanout: RallarServerWsFanout,
+    result: WsServerLiveSendResult,
+): RallarServerWsPublishResult {
+    return {
+        fanout,
+        status: result.status,
+        message,
+        sentCount: result.sentCount,
+        recipientCount: result.recipientCount,
+        failedCount: result.failedCount,
+        recipients: result.recipients,
+        failures: result.failures,
+        entries: [],
+    };
+}
+
+function toOutboxPublishResult(
+    message: ALMessage,
+    fanout: RallarServerWsFanout,
+    result: ALOutboundEnqueueResult,
+): RallarServerWsPublishResult {
+    return {
+        fanout,
+        status: toOutboxPublishStatus(result.status),
+        message,
+        entry: result.entry,
+        entries: result.entries,
+        enqueueStatus: result.status,
+        reason: result.reason,
+    };
+}
+
+function toOutboxPublishStatus(
+    status: ALOutboundEnqueueStatus,
+): RallarServerWsPublishStatus {
+    switch (status) {
+        case 'enqueued':
+            return 'queued-outbox';
+        case 'sent-immediate':
+            return 'sent-live';
+        case 'skipped':
+        case 'duplicate':
+        case 'superseded':
+        case 'expired':
+        case 'no-route':
+        case 'rate-limited':
+        case 'circuit-open':
+        case 'failed':
+            return status;
     }
 }
 

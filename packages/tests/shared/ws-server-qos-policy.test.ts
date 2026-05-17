@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { Temporal } from '@js-temporal/polyfill';
 
 (globalThis as { Temporal?: typeof Temporal }).Temporal ??= Temporal;
@@ -89,6 +89,57 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         expect(socket.sent.map(entry => entry.connectionId).sort()).toEqual(['conn-1', 'conn-3']);
         expect(socket.sent.every(entry => entry.data.id.msgId === msg.id.msgId)).toBe(true);
         expect((outbox as any).data.size).toBe(0);
+    });
+
+    it('reports partial live-send failures with recipient and failure counts', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        try {
+            const socket = createFakeWsServer({
+                failingConnectionIds: ['conn-2'],
+            });
+            const service = new shared.WsQueueBoxServerService(
+                new shared.InMemoryQueueBox(new Map()),
+                new shared.InMemoryQueueBox(new Map()),
+                socket as never,
+                'server-1',
+                {
+                    targetResolver: createTargetResolver(),
+                },
+            );
+            const msg = shared.newALBroadcastMessage(
+                'server-1',
+                {
+                    topicId: 'chat',
+                    resourceId: 'msg-partial-failure',
+                    contextId: 'room-1',
+                },
+                'room',
+                'chat.message.v1',
+                {
+                    text: 'partial',
+                },
+            );
+
+            const result = service.sendToTargetsWithResult(msg);
+
+            expect(result.status).toBe('partial-failure');
+            expect(result.recipientCount).toBe(3);
+            expect(result.sentCount).toBe(2);
+            expect(result.failedCount).toBe(1);
+            expect(result.failures).toEqual([
+                {
+                    peerId: 'peer-2',
+                    connectionId: 'conn-2',
+                    reason: 'send failed',
+                },
+            ]);
+            expect(socket.sent.map(entry => entry.connectionId).sort()).toEqual([
+                'conn-1',
+                'conn-3',
+            ]);
+        } finally {
+            error.mockRestore();
+        }
     });
 
     it('treats targeted broadcast messages with no recipients as a successful no-op', async () => {
@@ -542,10 +593,15 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     });
 });
 
-function createFakeWsServer() {
+function createFakeWsServer(
+    options: Readonly<{
+        failingConnectionIds?: readonly string[];
+    }> = {},
+) {
     const sent: Array<{ connectionId: string; data: SharedMessage }> = [];
     const broadcasts: Array<{ data: SharedMessage; recipientIds: string[] }> = [];
     const connectionIds = ['conn-1', 'conn-2', 'conn-3'];
+    const failingConnectionIds = new Set(options.failingConnectionIds ?? []);
 
     return {
         sent,
@@ -554,6 +610,9 @@ function createFakeWsServer() {
             return this;
         },
         send(connectionId: string, data: SharedMessage) {
+            if (failingConnectionIds.has(connectionId)) {
+                throw new Error('send failed');
+            }
             sent.push({ connectionId, data });
         },
         broadcast(data: SharedMessage, filter?: (ctx: { id: string }) => boolean) {

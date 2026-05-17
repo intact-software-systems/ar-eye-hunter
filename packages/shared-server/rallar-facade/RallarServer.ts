@@ -15,8 +15,10 @@ import {
     type RallarServerWsFacadeOptions,
     type RallarServerWsFanout,
     type RallarServerWsHandler,
+    type RallarServerWsPublishResult,
     type RallarServerWsProxyRule,
     type RallarServerWsSelector,
+    type RallarServerWsStatus,
     type RallarServerWsTopicDefinition,
 } from './ws-topic-router.ts';
 
@@ -163,8 +165,12 @@ export class RallarServerWebSocketFacade {
     publish(
         message: ALMessage,
         fanout?: RallarServerWsFanout,
-    ): Promise<number | undefined> {
+    ): Promise<RallarServerWsPublishResult> {
         return this.topics.publish(message, fanout);
+    }
+
+    status(): RallarServerWsStatus {
+        return this.topics.status();
     }
 }
 

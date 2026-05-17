@@ -15,8 +15,10 @@ import type {
     RallarServerWsFacadeOptions,
     RallarServerWsFanout,
     RallarServerWsHandler,
+    RallarServerWsPublishResult,
     RallarServerWsProxyRule,
     RallarServerWsSelector,
+    RallarServerWsStatus,
     RallarServerWsTopicDefinition,
 } from './ws-topic-router.ts';
 
@@ -129,8 +131,15 @@ export class RallarServerWebSocketApplicationFacade<TApp> {
         return this.core.proxy(rule);
     }
 
-    publish(message: ALMessage, fanout?: RallarServerWsFanout): Promise<number | undefined> {
+    publish(
+        message: ALMessage,
+        fanout?: RallarServerWsFanout,
+    ): Promise<RallarServerWsPublishResult> {
         return this.core.publish(message, fanout);
+    }
+
+    status(): RallarServerWsStatus {
+        return this.core.status();
     }
 }
 

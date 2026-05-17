@@ -36,6 +36,28 @@ export type WsServerResolvedRecipient = Readonly<{
     connectionId: string;
 }>;
 
+export type WsServerLiveSendStatus =
+    | 'sent-live'
+    | 'no-recipients'
+    | 'partial-failure'
+    | 'failed';
+
+export type WsServerLiveSendFailure = Readonly<{
+    peerId: string;
+    connectionId: string;
+    reason: string;
+}>;
+
+export type WsServerLiveSendResult = Readonly<{
+    status: WsServerLiveSendStatus;
+    message: ALMessage;
+    recipients: readonly WsServerResolvedRecipient[];
+    recipientCount: number;
+    sentCount: number;
+    failedCount: number;
+    failures: readonly WsServerLiveSendFailure[];
+}>;
+
 export type WsServerTargetResolver = Readonly<{
     resolvePeerRecipients?: (
         peerId: string,
@@ -377,17 +399,35 @@ export class WsQueueBoxServerService {
     }
 
     sendToTargets(message: ALMessage): number {
+        return this.sendToTargetsWithResult(message).sentCount;
+    }
+
+    sendToTargetsWithResult(message: ALMessage): WsServerLiveSendResult {
         const recipients = this.resolveRecipients(message);
         if (recipients.length === 0) {
-            return 0;
+            return {
+                status: 'no-recipients',
+                message,
+                recipients,
+                recipientCount: 0,
+                sentCount: 0,
+                failedCount: 0,
+                failures: [],
+            };
         }
 
         let sent = 0;
+        const failures: WsServerLiveSendFailure[] = [];
         for (const recipient of recipients) {
             try {
                 this.socket.send(recipient.connectionId, message);
                 sent += 1;
             } catch (error) {
+                failures.push({
+                    peerId: recipient.peerId,
+                    connectionId: recipient.connectionId,
+                    reason: errorToReason(error),
+                });
                 console.error(
                     `Error sending WS server message to ${recipient.connectionId}`,
                     error,
@@ -395,7 +435,19 @@ export class WsQueueBoxServerService {
             }
         }
 
-        return sent;
+        return {
+            status: toWsServerLiveSendStatus(
+                recipients.length,
+                sent,
+                failures.length,
+            ),
+            message,
+            recipients,
+            recipientCount: recipients.length,
+            sentCount: sent,
+            failedCount: failures.length,
+            failures,
+        };
     }
 
     private planOutgoingMessage(
@@ -750,4 +802,24 @@ function dedupRecipients(
     }
 
     return [...byConnectionId.values()];
+}
+
+function toWsServerLiveSendStatus(
+    recipientCount: number,
+    sentCount: number,
+    failedCount: number,
+): WsServerLiveSendStatus {
+    if (recipientCount === 0) {
+        return 'no-recipients';
+    }
+
+    if (failedCount === 0) {
+        return 'sent-live';
+    }
+
+    return sentCount > 0 ? 'partial-failure' : 'failed';
+}
+
+function errorToReason(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
 }

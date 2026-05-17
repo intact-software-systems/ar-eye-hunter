@@ -657,7 +657,7 @@ Exit criteria:
 
 Goal: add explicit timeouts only where tests prove indefinite or unclear waits.
 
-Status: started on 2026-05-17. Initial deterministic proof, browser policy wiring, explicit start/open service APIs, and generic watchdog command extraction are implemented; real-server failure proofs remain pending.
+Status: paused on 2026-05-17 after focused implementation and deterministic proof. Browser policy wiring, explicit start/open service APIs, generic watchdog command extraction, Rallar facade adoption, and room-level lane readiness are implemented; real-server failure proofs remain pending and are better handled in Iteration 10.
 
 Proof work:
 
@@ -710,6 +710,8 @@ Goal: improve RTC establishment speed after observability proves where time is s
 
 Do not start here. Speed work should be based on measured bottlenecks.
 
+Status: deferred/skipped for now on 2026-05-17. This is not a prerequisite for Iteration 9 because it is speed and warmup work, while Iteration 9 is server WS facade/status/result symmetry.
+
 Proof work:
 
 - Measure connect timeline in real-server two-agent tests:
@@ -744,6 +746,60 @@ Exit criteria:
 
 Goal: add server-side WS status/readiness APIs only after browser transport API shapes settle.
 
+Status: focused proof and first implementation pass completed on 2026-05-17 after Iteration 7 was paused and Iteration 8 was deferred.
+
+Characterization before implementation:
+
+- `RallarServerWebSocketFacade.publish(...)` and `RallarServerWebSocketApplicationFacade.publish(...)` returned `Promise<number | undefined>` and simply delegated to `RallarServerWsFacade.publish(...)`.
+- `RallarServerWsFacade.publish(...)` dispatched by fanout:
+  - `none` returns `undefined`.
+  - `outbox` calls `WsQueueBoxServerService.enqueueOutboxIfAbsent(...)` but discards the structured enqueue result and returns `undefined`.
+  - `live-only` calls `WsQueueBoxServerService.sendToTargets(...)` and returns the successful send count.
+  - `live-only` with zero recipients logs a warning and returns `0`.
+- `WsQueueBoxServerService.enqueueOutboxIfAbsent(...)` already returned the shared structured `ALOutboundEnqueueResult` status vocabulary, so the server facade had enough lower-layer data to expose richer outbox publish metadata without inventing a parallel result model.
+- `WsQueueBoxServerService.sendToTargets(...)` only exposed successful send count. It resolves recipients internally and logs per-recipient send errors, so the old numeric result could not distinguish "2 recipients and 2 sent" from "3 recipients, 2 sent, 1 failed".
+- `JsonWebSocketServer` exposes a public `connections` map and each `ConnectionContext` exposes `id` and `isOpen`. This is enough for a basic server `ws.status()` with total/open connection counts and connection ids.
+- Room/topic recipient counts are not generically available from `JsonWebSocketServer` alone. The default middleware resolver can derive room recipients from a group snapshot provider, but exposing room/topic counts cleanly likely needs a status-capable resolver/provider rather than scraping private router definitions.
+- Server-side lifecycle handling already exists at the raw socket level through `JsonWebSocketServer.onWebsocketCallbacksDo(...)`, and system cleanup uses `initWsLifecycle(...)` on close. There is no public `RallarServer.ws.onStatus(...)` or `RallarServer.ws.onLifecycle(...)` facade API yet.
+- Server/browser symmetry should be semantic, not field-for-field. Browser WS status has client-only reconnect fields; server WS status should focus on server transport state: connection counts, open connection ids, optional session/room recipient views, and publish outcomes.
+
+Implemented after proof:
+
+- `WsQueueBoxServerService.sendToTargetsWithResult(...)` returns live-send metadata while `sendToTargets(...)` remains as the numeric compatibility wrapper.
+- `RallarServer.ws.publish(...)`, `RallarServerApplication.ws.publish(...)`, and proxy fanout helpers now return `RallarServerWsPublishResult` instead of `number | undefined`.
+- Publish statuses now include:
+  - `sent-live`
+  - `queued-outbox`
+  - `none`
+  - `no-recipients`
+  - `partial-failure`
+  - lower-layer outbox statuses such as `duplicate`, `expired`, `no-route`, `rate-limited`, `circuit-open`, and `failed`
+- Live publish results expose `sentCount`, `recipientCount`, `failedCount`, `recipients`, and `failures`.
+- Outbox publish results preserve `entry`, `entries`, `reason`, and the original lower-layer `enqueueStatus`.
+- `RallarServer.ws.status()` and `RallarServerApplication.ws.status()` now expose the minimal status shape backed by current data:
+  - `transport: 'ws-server'`
+  - `connectionCount`
+  - `openConnectionCount`
+  - `connectionIds`
+  - `openConnectionIds`
+  - `connections`
+
+Remaining proof sequence:
+
+- Add room/topic recipient counts later only after proving the server has a stable source for those views.
+- Add public server lifecycle subscriptions only if tests or app observability need facade-level events beyond the existing raw socket/system lifecycle callbacks.
+- Add real full-stack coverage through a test/control endpoint if server-side status becomes useful in browser/server scenarios.
+
+Verification completed:
+
+- `npm run test -- packages/tests/api-v1/rallar-server-ws-facade.test.ts packages/tests/shared/ws-server-qos-policy.test.ts`
+- `npm --workspace @ar-eye-hunter/shared-server run typecheck`
+- `npx tsc -p packages/shared/tsconfig.json --noEmit`
+
+Verification caveat:
+
+- `npx tsc -p packages/tests/tsconfig.json --noEmit` still fails on broad pre-existing test/app typecheck issues outside this change, including Deno globals, missing test alias modules, duplicate Babylon typings, and older RTC test fixture typings.
+
 Proof work:
 
 - Confirm what server operators and tests need:
@@ -759,8 +815,8 @@ Proof work:
 
 Potential implementation:
 
-- Add `RallarServer.ws.status()`.
-- Add explicit publish result metadata.
+- Add `RallarServer.ws.status()`: implemented for the current connection map.
+- Add explicit publish result metadata: implemented for live-only, outbox, and none fanout.
 - Add lifecycle subscriptions if useful for server tests or app observability.
 
 Testing:
@@ -771,7 +827,7 @@ Testing:
 Exit criteria:
 
 - Server WS status shape aligns with browser WS status where it makes sense.
-- Publish outcomes are explicit and tested.
+- Publish outcomes are explicit and tested: completed for focused Vitest coverage; real full-stack status/control endpoint proof remains optional follow-up.
 
 ## Iteration 10: Manual Real-browser/server Integration Proofs
 
