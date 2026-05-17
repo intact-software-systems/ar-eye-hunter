@@ -1,6 +1,8 @@
 import { ClientInfo } from '@shared/api/api-config.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import WsQueueBoxClientService from '@shared/services/WsQueueBoxClientService.ts';
+import WsQueueBoxClientService, {
+    DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
+} from '@shared/services/WsQueueBoxClientService.ts';
 import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { createBrowserQueueBox } from '@shared-web/browser/browser-queuebox.ts';
@@ -8,6 +10,7 @@ import {
     resolveBrowserWsClientALInboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores,
 } from '@shared-web/browser/browser-al-runtime-stores.ts';
+import { readSession } from '@shared/api/auth.ts';
 
 export async function initialiseWsEngine(
     qboxEngine: InboxOutboxEngine,
@@ -26,6 +29,11 @@ export async function initialiseWsEngine(
             {
                 inboundStores: resolveBrowserWsClientALInboundRuntimeStores(clientData.sessionId),
                 outboundStores: resolveBrowserWsClientALOutboundRuntimeStores(clientData.sessionId),
+                reconnect: {
+                    ...DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
+                    canReconnect: () =>
+                        readSession()?.sessionId === clientData.sessionId,
+                },
             },
         )
             .enableReconnect()

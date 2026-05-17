@@ -443,6 +443,9 @@ export type RallarWsStatus = Readonly<{
     isOpen: boolean;
     reconnecting: boolean;
     reconnectEnabled: boolean;
+    reconnectAttempts: number;
+    maxReconnectAttempts: number;
+    reconnectExhausted: boolean;
 }>;
 
 export type RallarWsStatusSubscriptionOptions = RallarOnChangeOptions;
@@ -1466,6 +1469,9 @@ class BrowserRallarFacade implements RallarFacade {
                 isOpen: false,
                 reconnecting: false,
                 reconnectEnabled: false,
+                reconnectAttempts: 0,
+                maxReconnectAttempts: 0,
+                reconnectExhausted: false,
             };
         }
 
@@ -1479,6 +1485,9 @@ class BrowserRallarFacade implements RallarFacade {
             isOpen: health.isOpen,
             reconnecting: health.reconnecting,
             reconnectEnabled: health.reconnectEnabled,
+            reconnectAttempts: health.reconnectAttempts,
+            maxReconnectAttempts: health.maxReconnectAttempts,
+            reconnectExhausted: health.reconnectExhausted,
         };
     }
 

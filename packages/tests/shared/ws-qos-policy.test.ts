@@ -1,7 +1,5 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { Temporal } from '@js-temporal/polyfill';
-
-(globalThis as { Temporal?: typeof Temporal }).Temporal ??= Temporal;
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 type SharedModule = typeof import('@shared/mod.ts');
 type SharedResourceEntry = import('@shared/mod.ts').ResourceEntry;
@@ -102,6 +100,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                         }
                         : undefined,
                 },
+                reconnect: shared.DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
             },
         );
 
@@ -516,6 +515,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                         overloaded,
                     }),
                 },
+                reconnect: shared.DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
             },
         );
 

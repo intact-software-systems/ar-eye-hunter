@@ -1,4 +1,5 @@
 // deno-lint-ignore-file require-await
+import { Temporal } from '@js-temporal/polyfill';
 import { RateLimiter } from '../resilience/Resilience.ts';
 import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvider.ts';
 import { QueueBoxResourceEntryRepository } from './QueueBoxTypes.ts';

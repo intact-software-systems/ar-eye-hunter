@@ -62,6 +62,9 @@ const mocks = vi.hoisted(() => {
                     isOpen: false,
                     reconnecting: false,
                     reconnectEnabled: false,
+                    reconnectAttempts: 0,
+                    maxReconnectAttempts: 12,
+                    reconnectExhausted: false,
                 })),
                 close: vi.fn(),
                 socket: {
@@ -228,6 +231,9 @@ describe('Rallar operation options', () => {
             isOpen: false,
             reconnecting: false,
             reconnectEnabled: false,
+            reconnectAttempts: 0,
+            maxReconnectAttempts: 12,
+            reconnectExhausted: false,
         });
         mocks.ctx.middleware.webSocketQueueBox.close.mockImplementation(
             (code?: number, reason?: string) => {
@@ -297,6 +303,9 @@ describe('Rallar operation options', () => {
             isOpen: false,
             reconnecting: false,
             reconnectEnabled: false,
+            reconnectAttempts: 0,
+            maxReconnectAttempts: 0,
+            reconnectExhausted: false,
         });
     });
 
@@ -709,6 +718,9 @@ describe('Rallar operation options', () => {
             isOpen: true,
             reconnecting: true,
             reconnectEnabled: true,
+            reconnectAttempts: 2,
+            maxReconnectAttempts: 12,
+            reconnectExhausted: false,
         });
         const facade = createRallarFacade();
 
@@ -723,6 +735,9 @@ describe('Rallar operation options', () => {
             isOpen: true,
             reconnecting: true,
             reconnectEnabled: true,
+            reconnectAttempts: 2,
+            maxReconnectAttempts: 12,
+            reconnectExhausted: false,
         });
     });
 
@@ -749,6 +764,9 @@ describe('Rallar operation options', () => {
             isOpen: true,
             reconnecting: false,
             reconnectEnabled: true,
+            reconnectAttempts: 0,
+            maxReconnectAttempts: 12,
+            reconnectExhausted: false,
         });
         const facade = createRallarFacade();
         const statuses: unknown[] = [];
@@ -805,6 +823,9 @@ describe('Rallar operation options', () => {
             isOpen: false,
             reconnecting: true,
             reconnectEnabled: true,
+            reconnectAttempts: 1,
+            maxReconnectAttempts: 12,
+            reconnectExhausted: false,
         });
         callbacks?.onClose?.({
             type: 'close',

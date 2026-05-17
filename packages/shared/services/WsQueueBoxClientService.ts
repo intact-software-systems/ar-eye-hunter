@@ -1,6 +1,6 @@
 import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
 import { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
-import { tryWith } from '../resilience/TryWith.ts';
+import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy, } from '../resilience/TryWith.ts';
 import { OnMessageCallback, OnOutboxWebSocketMessageCallback, } from './InboxOutboxContracts.ts';
 import { JsonWebSocketClient } from '../websocket/JsonWebSocketClient.ts';
 import { QueueBoxUtilities } from './QueueBoxUtilities.ts';
@@ -33,7 +33,22 @@ export type WsQueueBoxClientServiceOptions = Readonly<{
     qosProvider?: ALQosInputProvider;
     inboundStores?: ALInboundRuntimeStores;
     outboundStores?: ALOutboundRuntimeStores;
+    reconnect: WsQueueBoxClientReconnectOptions;
 }>;
+
+export type WsQueueBoxClientReconnectOptions = Readonly<{
+    maxAttempts: number;
+    retryIntervalMsecs: number;
+    maxRetryIntervalMsecs: number;
+    canReconnect: () => boolean;
+}>;
+
+export const DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS: WsQueueBoxClientReconnectOptions = {
+    maxAttempts: 12,
+    retryIntervalMsecs: 500,
+    maxRetryIntervalMsecs: 20_000,
+    canReconnect: () => true,
+};
 
 export type WsQueueBoxClientReadyState =
     | 'missing'
@@ -51,7 +66,18 @@ export type WsQueueBoxClientHealth = Readonly<{
     isOpen: boolean;
     reconnecting: boolean;
     reconnectEnabled: boolean;
+    reconnectAttempts: number;
+    maxReconnectAttempts: number;
+    reconnectExhausted: boolean;
 }>;
+
+type WsQueueBoxClientReconnectStatus = {
+    task: Promise<unknown> | undefined;
+    enabled: boolean;
+    generation: number;
+    attempts: number;
+    exhausted: boolean;
+};
 
 export class WsQueueBoxClientService {
     private static readonly ALL_IN: string = '*';
@@ -66,10 +92,6 @@ export class WsQueueBoxClientService {
         this.INBOX_ENQUEUE_TYPE,
     ]);
 
-    private reconnectTask?: Promise<unknown> = undefined;
-    private reconnectEnabled = false;
-    private reconnectGeneration = 0;
-
     private readonly onOutboxMessageCallbacks: Map<string, OnOutboxWebSocketMessageCallback> =
         new Map<string, OnOutboxWebSocketMessageCallback>();
 
@@ -81,20 +103,27 @@ export class WsQueueBoxClientService {
 
     private readonly inboundRuntime: ALInboundMessageRuntime;
     private readonly outboundRuntime: ALOutboundMessageRuntime<ALMessage>;
-    private readonly qosProvider?: ALQosInputProvider;
+
+    private readonly reconnectStatus: WsQueueBoxClientReconnectStatus = {
+        task: undefined,
+        enabled: false,
+        generation: 0,
+        attempts: 0,
+        exhausted: false,
+    };
 
     constructor(
         public readonly inbox: QueueBoxResourceEntryRepository,
         public readonly outbox: QueueBoxResourceEntryRepository,
         public readonly socket: JsonWebSocketClient,
         public readonly input: WsQueueBoxClientServiceInputDto,
-        options: WsQueueBoxClientServiceOptions = {},
+        private readonly options: WsQueueBoxClientServiceOptions = {
+            reconnect: DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
+        },
     ) {
-        this.qosProvider = options.qosProvider;
-
         this.outboundRuntime = new ALOutboundMessageRuntime<ALMessage>(
             {
-                stores: options.outboundStores,
+                stores: this.options.outboundStores,
                 outbox: this.outbox,
                 toOutboxEntry: (msg) =>
                     QueueBoxUtilities.toResourceEntryFromMsg(
@@ -115,7 +144,7 @@ export class WsQueueBoxClientService {
                                     ? [this.input.sessionId]
                                     : [],
                             },
-                            this.qosProvider,
+                            this.options.qosProvider,
                         ),
                     );
                     return {
@@ -142,7 +171,7 @@ export class WsQueueBoxClientService {
 
         this.inboundRuntime = new ALInboundMessageRuntime(
             {
-                stores: options.inboundStores,
+                stores: this.options.inboundStores,
                 selfPeerId: this.input.sessionId,
                 inbox: this.inbox,
                 planIncomingMessage: (msg, fromPeerId, runtime) =>
@@ -164,7 +193,7 @@ export class WsQueueBoxClientService {
                                 fromPeerId,
                                 connectedPeerIds: [this.input.sessionId],
                             },
-                            this.qosProvider,
+                            this.options.qosProvider,
                         ),
                     ),
                 readStoredEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
@@ -260,13 +289,18 @@ export class WsQueueBoxClientService {
             readyState: toWsQueueBoxClientReadyState(readyStateCode),
             readyStateCode,
             isOpen: this.isSocketOpen(),
-            reconnecting: this.reconnectTask !== undefined,
-            reconnectEnabled: this.reconnectEnabled,
+            reconnecting: this.reconnectStatus.task !== undefined,
+            reconnectEnabled: this.reconnectStatus.enabled,
+            reconnectAttempts: this.reconnectStatus.attempts,
+            maxReconnectAttempts: this.options.reconnect.maxAttempts,
+            reconnectExhausted: this.reconnectStatus.exhausted,
         };
     }
 
     enableReconnect(): WsQueueBoxClientService {
-        this.reconnectEnabled = true;
+        this.reconnectStatus.enabled = true;
+        this.reconnectStatus.attempts = 0;
+        this.reconnectStatus.exhausted = false;
         this.socket
             .onWebsocketCallbacksDo(
                 this.input.sessionId,
@@ -282,8 +316,10 @@ export class WsQueueBoxClientService {
     }
 
     disableReconnect(): WsQueueBoxClientService {
-        this.reconnectEnabled = false;
-        this.reconnectGeneration++;
+        this.reconnectStatus.enabled = false;
+        this.reconnectStatus.generation++;
+        this.reconnectStatus.attempts = 0;
+        this.reconnectStatus.exhausted = false;
         return this;
     }
 
@@ -326,33 +362,102 @@ export class WsQueueBoxClientService {
     }
 
     private reconnect() {
-        if (!this.reconnectEnabled) {
+        if (!this.canReconnect()) {
             return;
         }
 
-        if (this.reconnectTask) {
+        if (this.reconnectStatus.task) {
             return;
         }
 
-        const reconnectGeneration = this.reconnectGeneration;
-        const reconnectTask = tryWith<unknown>(
-            async () => {
-                if (
-                    !this.reconnectEnabled ||
-                    this.reconnectGeneration !== reconnectGeneration
-                ) {
-                    return;
-                }
+        const reconnectGeneration = this.reconnectStatus.generation;
+        const reconnectTask =
+            tryWithPolicy(
+                async () => await this.attemptReconnect(reconnectGeneration),
+                this.toReconnectPolicy(reconnectGeneration)
+            )
+                .catch(
+                    (error) => this.handleReconnectFailure(
+                        error,
+                        reconnectGeneration,
+                    )
+                )
+                .finally(() => {
+                    if (this.reconnectStatus.task === reconnectTask) {
+                        this.reconnectStatus.task = undefined;
+                    }
+                });
 
-                await this.socket.connect();
-            },
-        )
-            .finally(() => {
-                if (this.reconnectTask === reconnectTask) {
-                    this.reconnectTask = undefined;
-                }
-            });
-        this.reconnectTask = reconnectTask;
+        this.reconnectStatus.task = reconnectTask;
+    }
+
+    private async attemptReconnect(reconnectGeneration: number): Promise<void> {
+        if (!this.isReconnectCurrent(reconnectGeneration)) {
+            return;
+        }
+
+        this.reconnectStatus.attempts++;
+        await this.socket.connect();
+        this.reconnectStatus.attempts = 0;
+        this.reconnectStatus.exhausted = false;
+    }
+
+    private toReconnectPolicy(reconnectGeneration: number): TryWithPolicy {
+        return TryWithPolicy.defaults()
+            .label(`ws-reconnect:${this.input.sessionId}`)
+            .maxAttempts(this.options.reconnect.maxAttempts)
+            .initialDelayMsecs(this.options.reconnect.retryIntervalMsecs)
+            .maxDelayMsecs(this.options.reconnect.maxRetryIntervalMsecs)
+            .jitterRatio(0)
+            .retryIf(() => this.isReconnectCurrent(reconnectGeneration));
+    }
+
+    private handleReconnectFailure(
+        error: unknown,
+        reconnectGeneration: number,
+    ): void {
+        if (this.reconnectStatus.generation !== reconnectGeneration) {
+            return;
+        }
+
+        this.reconnectStatus.enabled = false;
+        this.reconnectStatus.generation++;
+
+        if (error instanceof TryWithExhaustedError) {
+            this.reconnectStatus.attempts = error.context.attempt;
+            this.reconnectStatus.exhausted = true;
+            console.warn(
+                `WebSocket reconnect exhausted after ${
+                    this.reconnectStatus.attempts
+                } attempts for ${this.input.sessionId}`,
+                error,
+            );
+            return;
+        }
+
+        this.reconnectStatus.exhausted = false;
+        console.warn(
+            `WebSocket reconnect stopped for ${this.input.sessionId}`,
+            error,
+        );
+    }
+
+    private isReconnectCurrent(reconnectGeneration: number): boolean {
+        return this.reconnectStatus.generation === reconnectGeneration &&
+            this.canReconnect();
+    }
+
+    private canReconnect(): boolean {
+        if (!this.reconnectStatus.enabled) {
+            return false;
+        }
+
+        if (this.options.reconnect.canReconnect() === false) {
+            this.disableReconnect();
+            return false;
+        }
+
+        return true;
     }
 
     async enqueueOutboxIfAbsent(message: ALMessage): Promise<ALOutboundEnqueueResult> {

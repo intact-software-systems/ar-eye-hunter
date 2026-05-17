@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type ALMessage, newALEventRoute, newALUnicastMessage, } from '@shared/al-contracts/al-contract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import { WsQueueBoxClientService } from '@shared/services/WsQueueBoxClientService.ts';
+import {
+    DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
+    type WsQueueBoxClientReconnectOptions,
+    type WsQueueBoxClientServiceOptions,
+    WsQueueBoxClientService,
+} from '@shared/services/WsQueueBoxClientService.ts';
 import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
 import { ConnectionContext, JsonWebSocketServer, } from '@shared/websocket/JsonWebSocketServer.ts';
 import {
@@ -465,6 +470,79 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
             reconnecting: false,
         });
     });
+
+    it('gives up after the configured reconnect attempts', async () => {
+        vi.useFakeTimers();
+        const consoleWarn = vi
+            .spyOn(console, 'warn')
+            .mockImplementation(() => {
+            });
+        const socket = createReconnectSocketHarness({
+            connect: async () => {
+                throw new Error('offline');
+            },
+        });
+        const service = createWsQueueBoxService(
+            socket.client,
+            {
+                reconnect: {
+                    maxAttempts: 3,
+                    retryIntervalMsecs: 0,
+                    maxRetryIntervalMsecs: 0,
+                },
+            },
+        );
+
+        service.enableReconnect();
+        socket.webSocketCallbacks?.onClose?.({
+            type: 'close',
+            code: 1006,
+            reason: 'network-lost',
+        } as CloseEvent);
+
+        await vi.runAllTimersAsync();
+
+        expect(socket.connect).toHaveBeenCalledTimes(3);
+        expect(service.readHealth()).toMatchObject({
+            reconnectEnabled: false,
+            reconnecting: false,
+            reconnectAttempts: 3,
+            maxReconnectAttempts: 3,
+            reconnectExhausted: true,
+        });
+        expect(consoleWarn).toHaveBeenCalledWith(
+            expect.stringContaining('WebSocket reconnect exhausted after 3 attempts'),
+            expect.anything(),
+        );
+    });
+
+    it('does not reconnect when reconnect eligibility is false', async () => {
+        const socket = createReconnectSocketHarness();
+        const service = createWsQueueBoxService(
+            socket.client,
+            {
+                reconnect: {
+                    canReconnect: () => false,
+                },
+            },
+        );
+
+        service.enableReconnect();
+        socket.webSocketCallbacks?.onClose?.({
+            type: 'close',
+            code: 1006,
+            reason: 'network-lost',
+        } as CloseEvent);
+        await Promise.resolve();
+
+        expect(socket.connect).not.toHaveBeenCalled();
+        expect(service.readHealth()).toMatchObject({
+            reconnectEnabled: false,
+            reconnecting: false,
+            reconnectAttempts: 0,
+            reconnectExhausted: false,
+        });
+    });
 });
 
 class FakeWebSocket {
@@ -510,7 +588,24 @@ class FakeWebSocket {
     }
 }
 
-function createWsQueueBoxService(socket: unknown): WsQueueBoxClientService {
+type WsQueueBoxClientServiceTestOptions =
+    Omit<Partial<WsQueueBoxClientServiceOptions>, 'reconnect'> &
+    Readonly<{
+        reconnect?: Partial<WsQueueBoxClientReconnectOptions>;
+    }>;
+
+function createWsQueueBoxService(
+    socket: unknown,
+    options: WsQueueBoxClientServiceTestOptions = {},
+): WsQueueBoxClientService {
+    const serviceOptions: WsQueueBoxClientServiceOptions = {
+        ...options,
+        reconnect: {
+            ...DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
+            ...options.reconnect,
+        },
+    };
+
     return new WsQueueBoxClientService(
         new InMemoryQueueBox(new Map()),
         new InMemoryQueueBox(new Map()),
@@ -518,6 +613,7 @@ function createWsQueueBoxService(socket: unknown): WsQueueBoxClientService {
         {
             sessionId: 'session-1',
         },
+        serviceOptions,
     );
 }
 
