@@ -642,9 +642,8 @@ Testing:
 
 - Unit/facade tests for timeout and abort handling: implemented for facade wait APIs.
 - Facade tests for wait success/failure using controlled services: implemented.
-- Facade tests proving `rallar.ws.waitForOpen()` resolves immediately when already open, times out when connecting, and does not call connect/reconnect in observe-only mode: implemented.
-- Facade tests proving `rallar.rtc.waitForOpen(peerId, { laneId })` delegates to the correct `QRtcDataChannel.waitUntilOpen(timeoutMs)`: implemented.
-- Remaining focused test gaps: explicit `no-lane`, `closed`, and abort-during-wait cases can be added if later changes touch wait internals.
+- Facade tests proving `rallar.ws.waitForOpen()` resolves immediately when already open, resolves when a pending socket opens, returns `closed` for terminal closed state, times out when connecting, returns `aborted`, and does not call connect/reconnect in observe-only mode: implemented.
+- Facade tests proving `rallar.rtc.waitForOpen(peerId, { laneId })` delegates to the correct `QRtcDataChannel.waitUntilOpen(timeoutMs)`, returns `no-peer` in observe-only mode, returns `no-lane`, returns `closed`, returns `aborted`, and returns `failed` when opt-in peer connection throws: implemented.
 - Real-server two-agent test that waits for RTC lane before sending and proves lower flake rate than optimistic send.
 - Real-server test should wait for `rallar.ws.waitForOpen()` after login/connect, then wait for `rallar.rtc.waitForOpen(peerId, ...)` before `messages.rtc` or realtime sends.
 
