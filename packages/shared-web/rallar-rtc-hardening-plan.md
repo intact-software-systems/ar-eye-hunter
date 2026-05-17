@@ -52,7 +52,7 @@ The state-cache hydration installs repository observers. Group and client presen
 
 ### 3. Peer Creation
 
-`WebRtcConnectionService.connectToPeerIfAbsent(peerId)` serializes connection attempts per peer through `pendingConnections`.
+`WebRtcConnectionService.ensurePeerConnectionStarted(peerId)` serializes connection attempts per peer through `pendingConnections`.
 
 For a new peer it creates:
 
@@ -156,13 +156,13 @@ This reconnect path does not directly remove the peer from `WebRtcConnectionServ
 
 ### Data Channel Reconnect
 
-Data-channel reconnect is not timer-driven. A closed or failed `QRtcDataChannel` becomes `isReadyToConnect() === true`, and a later call to `WebRtcConnectionService.connectToPeerIfAbsent(peerId)` may reuse the existing peer DTO and reconnect channels.
+Data-channel reconnect is not timer-driven. A closed or failed `QRtcDataChannel` becomes `isReadyToConnect() === true`, and a later call to `WebRtcConnectionService.ensurePeerConnectionStarted(peerId)` may reuse the existing peer DTO and reconnect channels.
 
 When a peer connection is still active and any data channel is reconnectable:
 
 - `connectedPeerIds()` excludes that peer.
 - `computeRtcPeerDtoIfAbsent()` reuses the existing `QRtcPeerDto`.
-- `_connectToPeerIfAbsent()` calls `connection.connect(...)`, which is ignored if the peer connection is already open.
+- `_ensurePeerConnectionStarted()` calls `connection.connect(...)`, which is ignored if the peer connection is already open.
 - It then calls `channel.connect(isInitiator)` for all channels and `media.connect()`.
 
 For initiators, this creates a new browser `RTCDataChannel` and overwrites `status.dc`.
@@ -183,7 +183,7 @@ For receivers, this waits for an incoming matching channel. Until the new incomi
 | Incoming signal from self | Ignored. | Good. | Keep. |
 | Incoming signal for unknown peer | Peer is created, signal handled. | Good for passive acceptance. | Keep. |
 | Peer already active and channels healthy | Existing peer reused, no reconnect. | Good. | Keep. |
-| Peer active but any channel is closed or failed | Peer is excluded from `connectedPeerIds()` and later `connectToPeerIfAbsent()` reconnects channels. | A single closed lane hides the whole peer from multicast and health. | Separate peer connection health from channel health. |
+| Peer active but any channel is closed or failed | Peer is excluded from `connectedPeerIds()` and later `ensurePeerConnectionStarted()` reconnects channels. | A single closed lane hides the whole peer from multicast and health. | Separate peer connection health from channel health. |
 | Reliable channel open, realtime lane closed | Whole peer can disappear from `connectedPeerIds()`. | Reliable RTC multicast may stop using an otherwise usable peer. | Treat lane health independently. |
 | Data channel closes | Wrapper state becomes `Closed`; old `status.dc` remains set. | Reconnect for receiver lanes may immediately report closed before new channel arrives. | Clear stale `dc` or distinguish stale closed channel from pending replacement. |
 | Data channel errors | Wrapper state becomes `Failed`; old `status.dc` remains set. | Same stale reference risk as close. | Same handling as close. |
@@ -193,7 +193,7 @@ For receivers, this waits for an incoming matching channel. Until the new incomi
 | PeerConnection reconnect attempts exhausted | `QRtcPeerConnection.reset()` is called. | Peer remains in `peerDtoByPeerId` until another code path removes or reconnects it. | Notify service or remove peer on terminal failure. |
 | PeerConnection closes | `onClosed` removes peer from service. | Good. | Keep. |
 | `rallar.disconnect()` | Disconnects peers from `connectedPeerIds()`, stops qbox engine, closes WebSocket. | Peers hidden by reconnectable channels may be skipped. WebSocket reconnect may fire on intentional close. | Disconnect all known peers and suppress intentional WS reconnect. |
-| `rallar.realtime.sendJson()` to closed lane | Calls `connectToPeerIfAbsent()`, waits for lane, returns closed if not open. | Receiver side can return closed immediately because stale closed `dc` remains. | Wait on current connection attempt, not stale closed channel. |
+| `rallar.realtime.sendJson()` to closed lane | Calls `ensurePeerConnectionStarted()`, waits for lane, returns closed if not open. | Receiver side can return closed immediately because stale closed `dc` remains. | Wait on current connection attempt, not stale closed channel. |
 | `messages.rtc.send()` | Enqueues to multicast outbox; send later uses `readPeer(peerId)?.channel.send(...)`. | If reliable channel is closed, dequeue throws or retries; if peer hidden, planning may skip. | Reconnect before reliable send or classify retryable channel-closed failures. |
 
 ## Main Problem Areas
@@ -212,7 +212,7 @@ Impact:
 - RTC multicast planning can stop selecting a peer whose reliable lane may still be usable.
 - `rallar.realtime.health()` defaults to `connectedPeerIds()` and can hide degraded peers.
 - `rallar.disconnect()` loops over `connectedPeerIds()` and can skip degraded peers, leaving peer objects and browser connections alive.
-- Group reconciliation sees degraded peers as not connected and calls `connectToPeerIfAbsent()`, which is currently the only implicit data-channel reconnect trigger.
+- Group reconciliation sees degraded peers as not connected and calls `ensurePeerConnectionStarted()`, which is currently the only implicit data-channel reconnect trigger.
 
 Hardening direction:
 
@@ -246,7 +246,7 @@ When a data channel closes:
 - The wrapper becomes reconnectable.
 - No service-level timer or callback schedules reconnection.
 
-Reconnect happens only if another path later calls `connectToPeerIfAbsent()`.
+Reconnect happens only if another path later calls `ensurePeerConnectionStarted()`.
 
 Hardening direction:
 

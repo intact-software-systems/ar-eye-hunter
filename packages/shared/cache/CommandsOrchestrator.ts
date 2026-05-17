@@ -1,4 +1,14 @@
-import { Command, type CommandOptions, type LoanedValueSupplier, } from './Command.ts';
+import {
+    Command,
+    type CommandOptions,
+    type LoanedValueSupplier,
+} from './Command.ts';
+import {
+    PullPushCommand,
+    type PullPushCommandOptions,
+    type PullSupplier,
+    type PushConsumer,
+} from './PullPushCommand.ts';
 import { LoanedValue } from './LoanedValue.ts';
 import { LoanedRepository } from './LoanedRepository.ts';
 
@@ -146,6 +156,22 @@ export class CommandsOrchestrator<K, V> {
         return async () => {
             const value = await new Command<V>(supplier, mergedOptions).run();
             return [key, value] as const;
+        };
+    }
+
+    public pullPushCommandStep<TPulled>(
+        key: K,
+        pull: PullSupplier<TPulled>,
+        push: PushConsumer<TPulled, V>,
+        options?: PullPushCommandOptions<TPulled, V>,
+    ): OrchestratorStep<K, V> {
+        return async () => {
+            const result = await new PullPushCommand<TPulled, V>(
+                pull,
+                push,
+                options,
+            ).run();
+            return [key, result.pushed] as const;
         };
     }
 

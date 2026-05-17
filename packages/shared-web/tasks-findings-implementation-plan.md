@@ -56,6 +56,7 @@ Real-server test runs should record enough evidence to debug failures: peer IDs,
 | 4: Data-channel reuse and closed-channel behavior | Unit, real-server reload, public RTC status API, and peer-id naming cleanup implemented | Focused `QRtcDataChannel` tests proved stale closed channel references blocked receiver-side replacement waits. `QRtcDataChannel` now clears terminal channel references so reconnect waits can observe replacement channels. `WebRtcConnectionService` tests document lane-ready state separately from active/no-reconnectable-lane peer state. Real browser-Rallar reload scenarios now pass for `realtime` and `messages.rtc` with attached RTC/WS status snapshots. `Rallar.rtc.onStatus(...)` and `Rallar.rtc.onLifecycle(...)` now expose public RTC subscription APIs. `connectedPeerIds()` is now a deprecated compatibility alias for the more exact `peerIdsWithNoReconnectableLanes()`, and Rallar uses active/known/lane-ready peer sets for the call sites that need those semantics. |
 | 5: `disconnect()` and WS reconnect cleanup behavior | WS reconnect suppression, bounded retry, public WS lifecycle/status API, and targeted real-server disconnect/reconnect proof implemented | Focused tests prove unexpected WS close still reconnects, intentional service close suppresses reconnect, disabling reconnect stops a pending retry loop, reconnect exhaustion disables automatic reconnect, and session eligibility suppresses stale reconnects. `Rallar.disconnect()` now closes WS through `WsQueueBoxClientService.close(...)`. `Rallar.ws.onStatus(...)` and `Rallar.ws.onLifecycle(...)` expose WS status/lifecycle subscriptions. A targeted two-agent browser-Rallar smoke proves intentional disconnect does not background-reconnect and explicit reconnect restores delivery. Broader real-browser logout/session-replacement/unexpected-close scenarios are moved to Iteration 10. |
 | 6: Wait APIs for RTC and WS | Initial facade wait APIs implemented and locally verified | `rallar.ws.waitForOpen(...)`, `rallar.rtc.waitForLane(...)`, and `rallar.rtc.waitForOpen(...)` now return structured wait results. Focused facade tests cover open, timeout, aborted, observe-only no-connect, missing peer, and opt-in RTC connect-before-wait behavior. Real-server integration adoption is deferred until the black-box scenarios are updated to use these waits. |
+| 7: RTC establishment timeout and retry policy | Initial peer establishment timeout policy and explicit start/open APIs implemented and locally verified | Deterministic `WebRtcConnectionService` tests prove a peer that never establishes is evicted after an explicit timeout and can be recreated, while an opened lane clears the timeout. Browser Rallar enables the policy with a 30 second timeout, and `rallar.rtc.onLifecycle(...)` now surfaces service timeout events as `peer-timeout`. `ensurePeerConnectionStarted()` is now synchronous and start-only, `ensurePeerConnectionStarted()` remains a deprecated alias, and `ensurePeerLaneOpen(...)` provides the opt-in readiness path using `PullPushCommand`. Peer establishment watchdog bookkeeping moved into reusable `AsyncCommand`. Real-server bad-condition scenarios and reconnect-exhaustion service cleanup remain pending. |
 | 10: Manual real-browser/server integration proofs | Planned | Convert selected live browser/server scenarios into repeatable manual runbooks first, then graduate stable scenarios into automated integration tests. Owns logout reconnect suppression, session replacement/no-valid-session stale reconnect suppression, unexpected server/network close reconnect behavior, and broader real-browser status artifact capture. |
 
 ## Iteration 0: Baseline Evidence And Reproduction Harness
@@ -656,6 +657,8 @@ Exit criteria:
 
 Goal: add explicit timeouts only where tests prove indefinite or unclear waits.
 
+Status: started on 2026-05-17. Initial deterministic proof, browser policy wiring, explicit start/open service APIs, and generic watchdog command extraction are implemented; real-server failure proofs remain pending.
+
 Proof work:
 
 - Use diagnostics from Iterations 1 and 6 to detect:
@@ -663,17 +666,28 @@ Proof work:
   - ICE candidates exchanged but no connected state
   - data channel never opens
   - reconnect attempts exhausted without service-level cleanup
-- Add deterministic tests using fake/stub signaling and peer wrappers where possible.
+- Add deterministic tests using fake/stub signaling and peer wrappers where possible: initial tests added for a peer that remains in setup until timeout, a peer whose lane opens before the deadline, explicit lane-open success, missing lane, timeout, abort, and opt-in cleanup.
 
 Potential implementation after proof:
 
 - Add configurable timeout policy for:
-  - signaling answer wait
-  - peer connected wait
-  - lane open wait
-  - reconnect total elapsed time
-- Surface timeout events through lifecycle/status APIs.
+  - peer establishment timeout covering the current "created/connecting but no open connection or lane" case: implemented in `WebRtcConnectionService`, policy-gated, browser-enabled at 30 seconds
+  - signaling answer wait: still pending; may become a separate diagnostic once real signaling timings are captured
+  - peer connected wait: partially covered by peer establishment timeout; more granular connection-state deadline still pending
+  - lane open wait: already bounded through `QRtcDataChannel.waitUntilOpen(...)`, public Rallar wait APIs, and the new `WebRtcConnectionService.ensurePeerLaneOpen(...)` service API
+  - reconnect total elapsed time: still pending
+- Surface timeout events through lifecycle/status APIs: initial Rallar lifecycle event `peer-timeout` implemented.
 - On reconnect exhaustion, notify `WebRtcConnectionService` so it can remove or recreate the peer DTO.
+- Naming cleanup: `ensurePeerConnectionStarted(...)` now describes the start-only behavior and returns synchronously. The older `ensurePeerConnectionStarted(...)` remains as a deprecated compatibility alias.
+- Pull/push command proof: `PullPushCommand` now lives in `packages/shared/cache/PullPushCommand.ts`, supports RTC-like start-then-wait workflows, and `CommandsOrchestrator.pullPushCommandStep(...)` can host the same pattern when orchestration wants to store the pushed value.
+- Watchdog extraction: peer establishment timeout maps/timer ownership moved out of `WebRtcConnectionService` and into reusable `AsyncCommand` in `packages/shared/cache/AsyncCommand.ts`, which watches keyed async resources, cancels/completes pending watches, replaces stale watches by key, and routes timeout cleanup errors.
+
+Testing:
+
+- `packages/tests/shared/webrtc-connection-service.test.ts` now proves timeout eviction, timeout clearing on lane open, synchronous start-only behavior, explicit lane-open readiness, missing lane, timeout, abort, and opt-in cleanup.
+- `packages/tests/shared/command.test.ts` now covers additional `Command` retry/fallback behavior, `PullPushCommand` fallback/null-push cases, and `AsyncCommand` timeout/cancel/replacement/error-routing behavior.
+- `packages/tests/shared/commands-orchestrator.test.ts` now covers `pullPushCommandStep(...)` and trailing `then(...)` callbacks.
+- `packages/tests/shared-web/rallar-operation-options.test.ts` now proves Rallar forwards service timeout callbacks through `rallar.rtc.onLifecycle(...)`.
 
 Real scenario testing:
 
@@ -685,7 +699,7 @@ Real scenario testing:
 
 Exit criteria:
 
-- Timeout behavior is visible and covered by deterministic tests.
+- Timeout behavior is visible and covered by deterministic tests: partially complete for peer establishment timeout.
 - At least one real-server failure scenario produces a useful status/result.
 
 ## Iteration 8: Speed And Warmup Improvements

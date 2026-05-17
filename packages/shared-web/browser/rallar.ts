@@ -384,6 +384,7 @@ export type RallarRtcLifecycleKind =
     | 'disconnected'
     | 'peer-created'
     | 'peer-deleted'
+    | 'peer-timeout'
     | 'lane-open'
     | 'lane-close'
     | 'lane-error';
@@ -1884,6 +1885,11 @@ class BrowserRallarFacade implements RallarFacade {
                         peerId: peer.peerId,
                     });
                 },
+                onConnectTimeout: (peer) => {
+                    this.emitRtcLifecycle('peer-timeout', {
+                        peerId: peer.peerId,
+                    });
+                },
             },
         );
 
@@ -2513,8 +2519,8 @@ class BrowserRallarFacade implements RallarFacade {
         ctx: ApiMiddleware,
         peerId: string,
     ): Promise<QRtcPeerDto | undefined> {
-        const connected = await ctx.middleware.webRtcConnectionService
-            .connectToPeerIfAbsent(peerId);
+        const connected = ctx.middleware.webRtcConnectionService
+            .ensurePeerConnectionStarted(peerId);
 
         return connected.right ??
             ctx.middleware.webRtcConnectionService.readPeer(peerId);

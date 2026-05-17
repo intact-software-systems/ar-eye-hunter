@@ -97,4 +97,74 @@ describe('CommandsOrchestrator', () => {
             ['repo', 8],
         ]);
     });
+
+    it('runs pull-push command steps and stores the pushed value', async () => {
+        type FlowValue =
+            | {
+            type: 'session';
+            peerId: string;
+        }
+            | {
+            type: 'connected';
+            peerId: string;
+        };
+        const events: string[] = [];
+        const orchestrator = CommandsOrchestrator.withPolicies<string, FlowValue>();
+
+        const results = await orchestrator
+            .sequential(
+                orchestrator.pullPushCommandStep(
+                    'peer',
+                    () => {
+                        events.push('pull');
+                        return {
+                            peerId: 'peer-1',
+                        };
+                    },
+                    (peer) => {
+                        events.push(`push:${peer.peerId}`);
+                        return {
+                            type: 'connected',
+                            peerId: peer.peerId,
+                        };
+                    },
+                    {
+                        hooks: {
+                            onPullSuccess: (peer) =>
+                                events.push(`pulled:${peer.peerId}`),
+                            onPushSuccess: (value) =>
+                                events.push(`pushed:${value.peerId}`),
+                        },
+                    },
+                ),
+            )
+            .run();
+
+        expect(results.get('peer')).toEqual({
+            type: 'connected',
+            peerId: 'peer-1',
+        });
+        expect(events).toEqual([
+            'pull',
+            'pulled:peer-1',
+            'push:peer-1',
+            'pushed:peer-1',
+        ]);
+    });
+
+    it('runs then callbacks even when no phase follows them', async () => {
+        const snapshots: Array<Array<[string, number]>> = [];
+
+        const results = await CommandsOrchestrator.withPolicies<string, number>()
+            .sequential(async () => ['a', 1])
+            .then((existing) => snapshots.push(Array.from(existing.entries())))
+            .then((existing) => snapshots.push(Array.from(existing.entries())))
+            .run();
+
+        expect(Array.from(results.entries())).toEqual([['a', 1]]);
+        expect(snapshots).toEqual([
+            [['a', 1]],
+            [['a', 1]],
+        ]);
+    });
 });

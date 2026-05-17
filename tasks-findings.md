@@ -101,8 +101,8 @@ The browser facade flow is:
 3. `initialiseMiddleware()` configures browser AL runtime stores for the current session, reads API config, creates a WebSocket ticket, opens a WebSocket, creates queue-box services, reads ICE config, and creates `WebRtcConnectionService`.
 4. RTC signaling uses `WsRtcSignalingTransportUsingWsQBox`, which sends signaling messages over the WS queue-box path.
 5. `WebRtcConnectionService.connectSignaler()` registers signaling callbacks.
-6. RTC peer connections are not eagerly connected for all peers during `Rallar.connect()`. They are created when group/cache logic, realtime send, media, or overlay routing asks `connectToPeerIfAbsent(peerId)`.
-7. `connectToPeerIfAbsent()` serializes per-peer attempts through `pendingConnections`.
+6. RTC peer connections are not eagerly connected for all peers during `Rallar.connect()`. They are created when group/cache logic, realtime send, media, or overlay routing asks `ensurePeerConnectionStarted(peerId)`.
+7. `ensurePeerConnectionStarted()` serializes per-peer attempts through `pendingConnections`.
 8. `computeRtcPeerDtoIfAbsent()` either reuses an existing DTO, reconnects an existing DTO, or creates a new `QRtcPeerConnection` plus one or more `QRtcDataChannel` wrappers.
 9. `QRtcPeerConnection.connect()` creates the browser `RTCPeerConnection`, wires negotiation/ICE/datachannel/track/state callbacks, and uses perfect-negotiation handling for offers/answers.
 10. Data channels are created by the initiator and accepted by the receiver through `ondatachannel`.
@@ -140,7 +140,7 @@ Data-channel reconnect:
 
 - `QRtcDataChannel.onclose` sets wrapper state to `Closed`.
 - `QRtcDataChannel.onerror` sets wrapper state to `Failed`.
-- A later `WebRtcConnectionService.connectToPeerIfAbsent(peerId)` can see reconnectable data channels and reuse the peer DTO while calling `channel.connect(...)` again.
+- A later `WebRtcConnectionService.ensurePeerConnectionStarted(peerId)` can see reconnectable data channels and reuse the peer DTO while calling `channel.connect(...)` again.
 
 The data-channel reconnect is therefore demand-driven. It depends on a later send, group reconciliation, or other caller touching the peer.
 

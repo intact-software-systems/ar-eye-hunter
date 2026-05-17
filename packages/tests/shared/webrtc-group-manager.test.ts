@@ -27,9 +27,9 @@ describe('WebRtcGroupManager', () => {
             createGroupSnapshot('group-2', 1, ['self', 'peer-a', 'peer-c']),
         );
 
-        expect(rtcQBox.connectToPeerIfAbsent).toHaveBeenCalledTimes(2);
-        expect(rtcQBox.connectToPeerIfAbsent).toHaveBeenNthCalledWith(1, 'peer-a');
-        expect(rtcQBox.connectToPeerIfAbsent).toHaveBeenNthCalledWith(2, 'peer-c');
+        expect(rtcQBox.ensurePeerConnectionStarted).toHaveBeenCalledTimes(2);
+        expect(rtcQBox.ensurePeerConnectionStarted).toHaveBeenNthCalledWith(1, 'peer-a');
+        expect(rtcQBox.ensurePeerConnectionStarted).toHaveBeenNthCalledWith(2, 'peer-c');
         expect(rtcQBox.disconnectPeer).toHaveBeenCalledWith('peer-orphan');
         expect(manager.ownerGroupsOfPeer('peer-a')).toEqual(['group-1', 'group-2']);
         expect(manager.isPeerOwnedByAnyGroup('peer-b')).toBe(true);
@@ -50,19 +50,10 @@ describe('WebRtcGroupManager', () => {
         });
     });
 
-    it('deduplicates concurrent reconciliations while a connect is in flight', async () => {
-        const deferred = createDeferred<void>();
+    it('does not duplicate reconciliations once sync start records a peer', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const rtcQBox = createRtcQBoxHarness(
-            'self',
-            [],
-            async (peerId, connected) => {
-                await deferred.promise;
-                connected.add(peerId);
-                return undefined;
-            },
-        );
+        const rtcQBox = createRtcQBoxHarness('self');
         const manager = new WebRtcGroupManager(
             rtcQBox.service as never,
             groupCache,
@@ -77,9 +68,7 @@ describe('WebRtcGroupManager', () => {
         const second = manager.ensureAllGroupsConnected();
         const third = manager.notifyClientPresenceChanged();
 
-        expect(rtcQBox.connectToPeerIfAbsent).toHaveBeenCalledTimes(1);
-
-        deferred.resolve();
+        expect(rtcQBox.ensurePeerConnectionStarted).toHaveBeenCalledTimes(1);
 
         await Promise.all([first, second, third]);
 
@@ -151,15 +140,15 @@ function createRtcQBoxHarness(
     connectImpl?: (
         peerId: string,
         connectedPeerIds: Set<string>,
-    ) => Promise<void>,
+    ) => void,
 ) {
     const knownPeerIds = new Set(initiallyConnectedPeerIds);
     const connectedPeerIds = new Set(initiallyConnectedPeerIds);
 
-    const connectToPeerIfAbsent = vi.fn(async (peerId: string) => {
+    const ensurePeerConnectionStarted = vi.fn((peerId: string) => {
         knownPeerIds.add(peerId);
         if (connectImpl) {
-            await connectImpl(peerId, connectedPeerIds);
+            connectImpl(peerId, connectedPeerIds);
             return Either.ofRight({ peerId } as never);
         }
 
@@ -179,13 +168,13 @@ function createRtcQBoxHarness(
         knownPeerIds: () => Array.from(knownPeerIds),
         peerIdsWithNoReconnectableLanes: () => Array.from(connectedPeerIds),
         connectedPeerIds: () => Array.from(connectedPeerIds),
-        connectToPeerIfAbsent,
+        ensurePeerConnectionStarted,
         disconnectPeer,
     };
 
     return {
         service,
-        connectToPeerIfAbsent,
+        ensurePeerConnectionStarted,
         disconnectPeer,
         knownPeerIds: service.knownPeerIds,
         connectedPeerIds: service.connectedPeerIds,
@@ -259,21 +248,5 @@ function createGroupSnapshot(
         })),
         memberCount: memberSessionIds.length,
         onlineMemberCount: memberSessionIds.length,
-    };
-}
-
-function createDeferred<T>() {
-    let resolve!: (value: T | PromiseLike<T>) => void;
-    let reject!: (reason?: unknown) => void;
-
-    const promise = new Promise<T>((innerResolve, innerReject) => {
-        resolve = innerResolve;
-        reject = innerReject;
-    });
-
-    return {
-        promise,
-        resolve,
-        reject,
     };
 }

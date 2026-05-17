@@ -199,7 +199,7 @@ export class WebRtcGroupManager {
             );
 
             for (const peerId of peersToConnect) {
-                const connected = await this.rtcQBox.connectToPeerIfAbsent(peerId);
+                const connected = this.rtcQBox.ensurePeerConnectionStarted(peerId);
                 if (connected.left) {
                     const error = connected.left.kind === 'self'
                         ? undefined
