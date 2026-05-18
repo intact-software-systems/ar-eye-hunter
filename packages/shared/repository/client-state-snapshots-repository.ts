@@ -1,4 +1,5 @@
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import { readClientVersion } from '@shared/api/group-client-views.ts';
 import {
     configureObservableLatestRepository,
     newObservableLatestRepositoryToken,
@@ -161,7 +162,7 @@ export function getAllClientStateSnapshots(
 }
 
 function toClientSnapshotVersion(snapshot: ClientSnapshot): number {
-    return snapshot.principal.profileVersion + snapshot.principal.presenceVersion;
+    return readClientVersion(snapshot);
 }
 
 function toClientStateSnapshotChange(

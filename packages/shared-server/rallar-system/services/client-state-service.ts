@@ -770,6 +770,7 @@ function toPrincipal(
         externalSubjectId: request.externalSubjectId ?? existing?.externalSubjectId,
         roles: request.roles ?? existing?.roles ?? [],
         metadata: request.metadata ?? existing?.metadata ?? {},
+        snapshotVersion: existing ? existing.snapshotVersion + 1 : 1,
         profileVersion: existing ? existing.profileVersion + 1 : 1,
         presenceVersion: existing?.presenceVersion ?? 1,
         created: existing?.created ?? updated,
@@ -850,6 +851,7 @@ function bumpPrincipalPresence(
 ): ClientPrincipal {
     return {
         ...principal,
+        snapshotVersion: principal.snapshotVersion + 1,
         presenceVersion: principal.presenceVersion + 1,
         updated: toAuditStamp(
             request,
@@ -869,6 +871,7 @@ function bumpPrincipalProfile(
 ): ClientPrincipal {
     return {
         ...principal,
+        snapshotVersion: principal.snapshotVersion + 1,
         profileVersion: principal.profileVersion + 1,
         updated: toAuditStamp(
             request,

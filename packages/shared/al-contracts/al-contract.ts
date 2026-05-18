@@ -36,11 +36,13 @@ export type ALTargets =
     mode: 'multicast';
     groupId: string;
     membershipEpoch?: number;
+    minSnapshotVersion?: number;
 }>
     | Readonly<{
     mode: 'broadcast';
     scope: 'room' | 'world' | 'all';
     exceptPeerIds?: readonly string[];
+    minSnapshotVersion?: number;
 }>;
 
 // -------------------------------------------------------
@@ -237,6 +239,7 @@ export function newALMulticastMessage<T>(
     resource: T,
     options?: Readonly<{
         membershipEpoch?: number;
+        minSnapshotVersion?: number;
         ttlHops?: number;
         ttlMs?: number;
         seq?: number;
@@ -260,6 +263,7 @@ export function newALMulticastMessage<T>(
             mode: 'multicast',
             groupId,
             membershipEpoch: options?.membershipEpoch,
+            minSnapshotVersion: options?.minSnapshotVersion,
         },
         forwarding: options?.nextHopPeerIds !== undefined
         || options?.overlayId !== undefined
@@ -301,6 +305,7 @@ export function newALBroadcastMessage<T>(
     resource: T,
     options?: Readonly<{
         exceptPeerIds?: readonly string[];
+        minSnapshotVersion?: number;
         ttlHops?: number;
         ttlMs?: number;
         reliability?: 'best-effort' | 'at-least-once';
@@ -319,6 +324,7 @@ export function newALBroadcastMessage<T>(
             mode: 'broadcast',
             scope,
             exceptPeerIds: options?.exceptPeerIds,
+            minSnapshotVersion: options?.minSnapshotVersion,
         },
         constraints: options?.ttlHops !== undefined || expiresAtMs !== undefined
             ? {

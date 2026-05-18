@@ -41,9 +41,11 @@ export function readGroupUpdatedAtEpochMs(snapshot: AnyGroupPresence): number {
 }
 
 export function readGroupVersion(snapshot: AnyGroupPresence): number {
-    return snapshot.group.metadataVersion +
-        snapshot.group.rosterVersion +
-        snapshot.group.presenceVersion;
+    return snapshot.group.snapshotVersion;
+}
+
+export function readClientVersion(snapshot: ClientSnapshot): number {
+    return snapshot.principal.snapshotVersion;
 }
 
 export function isGroupActive(snapshot: AnyGroupPresence): boolean {

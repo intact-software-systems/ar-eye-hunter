@@ -128,6 +128,7 @@ export function createGroupStateService(
                     maxMembers: request.maxMembers,
                     maxSessionsPerMember: request.maxSessionsPerMember,
                     metadata: request.metadata ?? {},
+                    snapshotVersion: 1,
                     metadataVersion: 1,
                     rosterVersion: 1,
                     presenceVersion: 0,
@@ -202,6 +203,7 @@ export function createGroupStateService(
                     maxSessionsPerMember:
                         request.maxSessionsPerMember ?? existing.maxSessionsPerMember,
                     metadata: request.metadata ?? existing.metadata,
+                    snapshotVersion: nextGroupSnapshotVersion(existing),
                     metadataVersion: existing.metadataVersion + 1,
                     updated: updatedAudit,
                     archived: status === 'archived' ? updatedAudit : existing.archived,
@@ -289,15 +291,17 @@ export function createGroupStateService(
                 }
 
                 await repository.putMember(member);
-                await repository.putGroup({
+                const snapshotGroup = {
                     ...group,
+                    snapshotVersion: nextGroupSnapshotVersion(group),
                     rosterVersion: group.rosterVersion + 1,
                     updated: updatedAudit,
-                });
+                };
+                await repository.putGroup(snapshotGroup);
 
                 const event = newGroupEvent(
                     toGroupMemberEventType(status),
-                    group,
+                    snapshotGroup,
                     request,
                     timestamp,
                     serviceId,
@@ -305,7 +309,7 @@ export function createGroupStateService(
                 await repository.appendEvent(event);
 
                 return {
-                    snapshot: await requireGroupSnapshot(repository, group),
+                    snapshot: await requireGroupSnapshot(repository, snapshotGroup),
                     event,
                 };
             });
@@ -374,6 +378,7 @@ export function createGroupStateService(
                 if (!existing || !isSameConnectedGroupPresenceSession(existing, session)) {
                     snapshotGroup = {
                         ...group,
+                        snapshotVersion: nextGroupSnapshotVersion(group),
                         presenceVersion: group.presenceVersion + 1,
                         updated: updatedAudit,
                     };
@@ -442,16 +447,19 @@ export function createGroupStateService(
                 await repository.putPresenceSession(session);
 
                 let event: GroupEvent | undefined;
+                let snapshotGroup = group;
                 if (!wasActive) {
-                    await repository.putGroup({
+                    snapshotGroup = {
                         ...group,
+                        snapshotVersion: nextGroupSnapshotVersion(group),
                         presenceVersion: group.presenceVersion + 1,
                         updated: updatedAudit,
-                    });
+                    };
+                    await repository.putGroup(snapshotGroup);
 
                     event = newGroupEvent(
                         'session-heartbeat',
-                        group,
+                        snapshotGroup,
                         request,
                         timestamp,
                         serviceId,
@@ -460,7 +468,7 @@ export function createGroupStateService(
                 }
 
                 return {
-                    snapshot: await requireGroupSnapshot(repository, group),
+                    snapshot: await requireGroupSnapshot(repository, snapshotGroup),
                     event,
                 };
             });
@@ -511,6 +519,7 @@ export function createGroupStateService(
                 if (!isSameDisconnectedGroupPresenceSession(existing, session)) {
                     snapshotGroup = {
                         ...group,
+                        snapshotVersion: nextGroupSnapshotVersion(group),
                         presenceVersion: group.presenceVersion + 1,
                         updated: updatedAudit,
                     };
@@ -595,6 +604,10 @@ async function requireGroup(repository: GroupStateRepository, ref: GroupRef): Pr
     }
 
     return group;
+}
+
+function nextGroupSnapshotVersion(group: Group): number {
+    return group.snapshotVersion + 1;
 }
 
 async function requireGroupSnapshot(

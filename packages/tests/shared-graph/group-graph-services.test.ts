@@ -122,6 +122,7 @@ function createClientStateSnapshot(
             status: 'active',
             roles: [],
             metadata: {},
+            snapshotVersion: 1,
             profileVersion: 1,
             presenceVersion: 1,
             created: {
@@ -164,6 +165,7 @@ function createGroupStateSnapshot(
             status: 'active',
             joinMode: 'invite-only',
             metadata: {},
+            snapshotVersion: 3,
             metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: 1,

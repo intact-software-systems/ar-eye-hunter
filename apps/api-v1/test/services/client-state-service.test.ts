@@ -64,6 +64,7 @@ Deno.test('heartbeatSession refreshes TTL without publishing unchanged snapshots
         refreshed.principal.presenceVersion,
         before.principal.presenceVersion,
     );
+    assert.equal(refreshed.principal.snapshotVersion, before.principal.snapshotVersion);
     assert.equal(refreshed.activeSessions[0].lastHeartbeatAtEpochMs, 2_000);
     assert.equal(
         refreshed.activeSessions[0].expiresAtEpochMs,
@@ -111,6 +112,7 @@ Deno.test('heartbeatSession publishes when presence state changes', async () => 
         refreshed.principal.presenceVersion,
         before.principal.presenceVersion + 1,
     );
+    assert.equal(refreshed.principal.snapshotVersion, before.principal.snapshotVersion + 1);
     assert.equal(refreshed.activeSessions[0].presenceState, 'away');
     assert.equal(syncPublisher.clientSnapshots.length, 1);
     assert.equal(syncPublisher.clientEvents.length, 1);
@@ -139,6 +141,7 @@ Deno.test('upsertPrincipal ignores unchanged profile state', async () => {
     });
 
     assert.equal(unchanged.principal.profileVersion, created.principal.profileVersion);
+    assert.equal(unchanged.principal.snapshotVersion, created.principal.snapshotVersion);
     assert.equal(syncPublisher.clientSnapshots.length, 0);
     assert.equal(syncPublisher.clientEvents.length, 0);
 });
@@ -187,10 +190,106 @@ Deno.test('upsertInstance bumps profile version only for semantic instance chang
     );
 
     assert.equal(unchanged.principal.profileVersion, registered.principal.profileVersion);
+    assert.equal(unchanged.principal.snapshotVersion, registered.principal.snapshotVersion);
     assert.equal(updated.principal.profileVersion, registered.principal.profileVersion + 1);
+    assert.equal(updated.principal.snapshotVersion, registered.principal.snapshotVersion + 1);
     assert.equal(syncPublisher.clientSnapshots.length, 1);
     assert.equal(syncPublisher.clientEvents.length, 1);
     assert.equal(syncPublisher.clientEvents[0].eventType, 'instance-updated');
+});
+
+Deno.test('semantic client mutations advance snapshotVersion', async () => {
+    const service = createTestClientStateService();
+
+    const created = await service.upsertPrincipal(TEST_SCOPE, 'client-1', {
+        username: 'client-1',
+        displayName: 'Client One',
+        actorPrincipalId: 'client-1',
+    });
+    assert.equal(created.principal.snapshotVersion, 1);
+
+    const unchanged = await service.upsertPrincipal(TEST_SCOPE, 'client-1', {
+        username: 'client-1',
+        displayName: 'Client One',
+        actorPrincipalId: 'client-1',
+    });
+    assert.equal(unchanged.principal.snapshotVersion, 1);
+
+    const profileUpdated = await service.upsertPrincipal(TEST_SCOPE, 'client-1', {
+        username: 'client-1',
+        displayName: 'Client 1',
+        actorPrincipalId: 'client-1',
+    });
+    assert.equal(profileUpdated.principal.snapshotVersion, 2);
+
+    const instanceRegistered = await service.upsertInstance(
+        TEST_SCOPE,
+        'client-1',
+        'instance-1',
+        {
+            platform: 'web',
+            actorPrincipalId: 'client-1',
+        },
+    );
+    assert.equal(instanceRegistered.principal.snapshotVersion, 3);
+
+    const sessionConnected = await service.connectSession(
+        TEST_SCOPE,
+        'client-1',
+        'instance-1',
+        'session-1',
+        {
+            presenceState: 'online',
+            actorPrincipalId: 'client-1',
+            actorSessionId: 'session-1',
+            lastHeartbeatAtEpochMs: 2_000,
+            expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
+        },
+    );
+    assert.equal(sessionConnected.principal.snapshotVersion, 4);
+
+    const heartbeatOnly = await service.heartbeatSession(
+        TEST_SCOPE,
+        'client-1',
+        'instance-1',
+        'session-1',
+        {
+            presenceState: 'online',
+            actorPrincipalId: 'client-1',
+            actorSessionId: 'session-1',
+            lastHeartbeatAtEpochMs: 3_000,
+            expiresAtEpochMs: REFRESHED_EXPIRES_AT_EPOCH_MS,
+        },
+    );
+    assert.equal(heartbeatOnly.principal.snapshotVersion, 4);
+
+    const presenceUpdated = await service.heartbeatSession(
+        TEST_SCOPE,
+        'client-1',
+        'instance-1',
+        'session-1',
+        {
+            presenceState: 'away',
+            actorPrincipalId: 'client-1',
+            actorSessionId: 'session-1',
+            lastHeartbeatAtEpochMs: 4_000,
+            expiresAtEpochMs: REFRESHED_EXPIRES_AT_EPOCH_MS,
+        },
+    );
+    assert.equal(presenceUpdated.principal.snapshotVersion, 5);
+
+    const disconnected = await service.disconnectSession(
+        TEST_SCOPE,
+        'client-1',
+        'instance-1',
+        'session-1',
+        {
+            actorPrincipalId: 'client-1',
+            actorSessionId: 'session-1',
+            lastHeartbeatAtEpochMs: 5_000,
+        },
+    );
+    assert.equal(disconnected.principal.snapshotVersion, 6);
 });
 
 function createTestClientStateService(

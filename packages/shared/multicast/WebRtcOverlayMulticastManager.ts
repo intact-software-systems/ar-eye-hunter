@@ -34,6 +34,7 @@ import {
     ALOutboundMessageRuntime,
     ALOutboundRepairRequest,
     ALOutboundRepairTrackingPlan,
+    ALOutboundRetryTrackingPlan,
     ALOutboundSupersedenceTrackingPlan,
 } from '../alm/ALOutboundMessageRuntime.ts';
 import { CircuitBreaker, RateLimiter, toCircuitBreaker, toRateLimiter, } from '../resilience/Resilience.ts';
@@ -490,6 +491,7 @@ export class WebRtcOverlayMulticastManager {
                     .map((message) => message.forwarding?.nextHopPeerIds?.[0])
                     .filter((peerId): peerId is string => peerId !== undefined),
             ),
+            retryTracking: this.toRetryTrackingPlan(plan.handlingPlan.effective),
             repairTracking: this.toRepairTrackingPlan(plan.handlingPlan.effective),
             supersedenceTracking: this.toSupersedenceTrackingPlan(
                 plan.handlingPlan.effective,
@@ -580,6 +582,19 @@ export class WebRtcOverlayMulticastManager {
                 : effective.retry.opts.maxAttempts,
             expectedPeerIds: [...new Set(expectedPeerIds)],
             mode,
+        };
+    }
+
+    private toRetryTrackingPlan(
+        effective: ReturnType<typeof normalizeALQosPolicy>['effective'],
+    ): ALOutboundRetryTrackingPlan | undefined {
+        if (effective.retry.algo === 'none') {
+            return undefined;
+        }
+
+        return {
+            enabled: true,
+            maxAttempts: effective.retry.opts.maxAttempts,
         };
     }
 

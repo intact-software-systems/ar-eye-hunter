@@ -1,4 +1,5 @@
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { readGroupVersion } from '@shared/api/group-client-views.ts';
 import {
     configureObservableLatestRepository,
     newObservableLatestRepositoryToken,
@@ -168,8 +169,7 @@ export function getAllGroupStateSnapshots(
 }
 
 function toGroupSnapshotVersion(snapshot: GroupSnapshot): number {
-    return snapshot.group.metadataVersion + snapshot.group.rosterVersion +
-        snapshot.group.presenceVersion;
+    return readGroupVersion(snapshot);
 }
 
 function toGroupStateSnapshotChange(

@@ -77,6 +77,7 @@ export type ClientPrincipal = ClientPrincipalRef & Readonly<{
     roles: readonly string[];
     metadata: Record<string, unknown>;
 
+    snapshotVersion: number;
     profileVersion: number;
     presenceVersion: number;
 

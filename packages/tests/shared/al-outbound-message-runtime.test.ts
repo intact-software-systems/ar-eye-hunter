@@ -334,6 +334,146 @@ describe('ALOutboundMessageRuntime', () => {
         ]);
     });
 
+    it('retries cached messages shortly after a not-yet-in-sync nack', async () => {
+        vi.useFakeTimers();
+
+        const sent: Array<Record<string, unknown>> = [];
+        const runtime = createOutboundRuntime({
+            sendPreparedMessage: async (prepared, phase) => {
+                sent.push({ ...prepared, phase });
+            },
+            planOutgoingMessage: (msg) => ({
+                persist: false,
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+                retryTracking: {
+                    enabled: true,
+                    maxAttempts: 2,
+                    retryDelayMs: 50,
+                },
+            }),
+        });
+        const msg = createOutboundMessage('msg-not-yet-in-sync');
+
+        await enqueueOutboundOrThrow(runtime, msg);
+        await runtime.acceptControlMessage(
+            newALNackControlMessage(
+                'server-1',
+                'self',
+                msg.id.msgId,
+                'not-yet-in-sync',
+                undefined,
+                {
+                    serverSnapshotVersion: 3,
+                },
+            ),
+        );
+
+        expect(sent).toEqual([
+            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
+        ]);
+
+        await vi.advanceTimersByTimeAsync(49);
+        expect(sent).toHaveLength(1);
+
+        await vi.advanceTimersByTimeAsync(1);
+        expect(sent).toEqual([
+            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
+            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
+        ]);
+        runtime.dispose();
+    });
+
+    it('can re-enter the outbox for a not-yet-in-sync retry when planning requires durability', async () => {
+        vi.useFakeTimers();
+
+        const outbox = new InMemoryQueueBox(new Map());
+        const sent: Array<Record<string, unknown>> = [];
+        let persistRetry = false;
+        const runtime = createOutboundRuntime({
+            outbox,
+            sendPreparedMessage: async (prepared, phase) => {
+                sent.push({ ...prepared, phase });
+                persistRetry = true;
+            },
+            planOutgoingMessage: (msg) => persistRetry
+                ? {
+                    persist: true,
+                    preparedMessages: [],
+                    retryTracking: {
+                        enabled: true,
+                        maxAttempts: 2,
+                        retryDelayMs: 50,
+                    },
+                }
+                : {
+                    persist: false,
+                    preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+                    retryTracking: {
+                        enabled: true,
+                        maxAttempts: 2,
+                        retryDelayMs: 50,
+                    },
+                },
+        });
+        const msg = createOutboundMessage('msg-not-yet-in-sync-outbox');
+
+        await enqueueOutboundOrThrow(runtime, msg);
+        await runtime.acceptControlMessage(
+            newALNackControlMessage('server-1', 'self', msg.id.msgId, 'not-yet-in-sync'),
+        );
+        await vi.advanceTimersByTimeAsync(50);
+
+        expect(sent).toEqual([
+            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
+        ]);
+        const reserved = await outbox.reserveEntries(
+            new Set(['outbox']),
+            new Set([EntityStatus.NEW]),
+            10,
+        );
+        expect(reserved.size).toBe(1);
+        const stored = firstValue(reserved);
+        const storedMsg = JSON.parse(stored.resource) as ALMessage;
+        expect(storedMsg.id.msgId).toBe(msg.id.msgId);
+        runtime.dispose();
+    });
+
+    it('coalesces duplicate not-yet-in-sync nacks while a retry is pending', async () => {
+        vi.useFakeTimers();
+
+        const sent: Array<Record<string, unknown>> = [];
+        const runtime = createOutboundRuntime({
+            sendPreparedMessage: async (prepared, phase) => {
+                sent.push({ ...prepared, phase });
+            },
+            planOutgoingMessage: (msg) => ({
+                persist: false,
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+                retryTracking: {
+                    enabled: true,
+                    maxAttempts: 3,
+                    retryDelayMs: 50,
+                },
+            }),
+        });
+        const msg = createOutboundMessage('msg-duplicate-not-yet-in-sync');
+
+        await enqueueOutboundOrThrow(runtime, msg);
+        await runtime.acceptControlMessage(
+            newALNackControlMessage('server-1', 'self', msg.id.msgId, 'not-yet-in-sync'),
+        );
+        await runtime.acceptControlMessage(
+            newALNackControlMessage('server-1', 'self', msg.id.msgId, 'not-yet-in-sync'),
+        );
+        await vi.advanceTimersByTimeAsync(50);
+
+        expect(sent).toEqual([
+            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
+            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
+        ]);
+        runtime.dispose();
+    });
+
     it('reuses the prior outbox key when supersedence replaces a persisted message', async () => {
         const outbox = new InMemoryQueueBox(new Map());
         const runtime = createOutboundRuntime({

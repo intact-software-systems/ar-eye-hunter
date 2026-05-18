@@ -542,6 +542,7 @@ function createGroupSnapshot(memberSessionIds: readonly string[]) {
             status: 'active',
             joinMode: 'open',
             metadata: {},
+            snapshotVersion: 1,
             metadataVersion: 0,
             rosterVersion: 1,
             presenceVersion: 0,

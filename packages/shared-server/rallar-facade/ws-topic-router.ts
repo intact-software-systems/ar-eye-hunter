@@ -2,17 +2,14 @@ import type { ALMessage, ALTargets } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { isALControlTypeId, newALNackControlMessage, } from '@shared/al-contracts/al-control.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import type {
-    ALOutboundEnqueueResult,
-    ALOutboundEnqueueStatus,
-} from '@shared/alm/ALOutboundMessageRuntime.ts';
+import type { ALOutboundEnqueueResult, ALOutboundEnqueueStatus, } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import {
+    WsQueueBoxServerService,
     type WsServerLiveSendFailure,
     type WsServerLiveSendResult,
     type WsServerResolvedRecipient,
-    WsQueueBoxServerService,
 } from '@shared/services/WsQueueBoxServerService.ts';
 
 const DYNAMIC_TOPIC_ROUTER_CALLBACK_ID = 'dynamic-ws-topic-router';
@@ -98,11 +95,26 @@ export type RallarServerWsRoomAuthorizationInput = Readonly<{
     senderId: string;
     topicId: string;
     typeId: string;
+    minSnapshotVersion?: number;
+}>;
+
+export type RallarServerWsRoomAuthorizationDecision =
+    | boolean
+    | Readonly<{
+    authorized: true;
+}>
+    | Readonly<{
+    authorized: false;
+    reason?: ALNackReason;
+    logMessage?: string;
+    serverSnapshotVersion?: number;
 }>;
 
 export type RallarServerWsRoomAuthorizer = (
     input: RallarServerWsRoomAuthorizationInput,
-) => boolean | Promise<boolean>;
+) =>
+    | RallarServerWsRoomAuthorizationDecision
+    | Promise<RallarServerWsRoomAuthorizationDecision>;
 
 export type RallarServerWsHandler<T = unknown> = (
     message: RallarServerWsMessage<T>,
@@ -395,11 +407,16 @@ export class RallarServerWsFacade {
         const serverMessage = toRallarServerWsMessage(decoded.value, message);
         const context = this.toMessageContext(definition, message);
 
-        if (!(await this.isAuthorisedForDynamicTopic(message, definition))) {
+        const authorization = await this.authorizeDynamicTopic(message, definition);
+        if (!authorization.authorized) {
             this.reject(
                 message,
-                'unauthorized',
-                `Rejected unauthorised dynamic WS topic: ${message.route.topicId}`,
+                authorization.reason ?? 'unauthorized',
+                authorization.logMessage ??
+                    `Rejected unauthorised dynamic WS topic: ${message.route.topicId}`,
+                {
+                    serverSnapshotVersion: authorization.serverSnapshotVersion,
+                },
             );
             return;
         }
@@ -666,27 +683,36 @@ export class RallarServerWsFacade {
             maxPayloadBytes;
     }
 
-    private async isAuthorisedForDynamicTopic(
+    private async authorizeDynamicTopic(
         message: ALMessage,
         definition?: RallarServerWsTopicDefinition<unknown>,
-    ): Promise<boolean> {
+    ): Promise<Readonly<{
+        authorized: boolean;
+        reason?: ALNackReason;
+        logMessage?: string;
+        serverSnapshotVersion?: number;
+    }>> {
         if (!this.isRoomScoped(message, definition)) {
-            return true;
+            return { authorized: true };
         }
 
         const roomId = this.readRoomId(message);
         if (!roomId || !this.authorizeRoomMessage) {
-            return false;
+            return { authorized: false };
         }
 
-        return await this.authorizeRoomMessage({
+        return normalizeRoomAuthorizationDecision(
+            await this.authorizeRoomMessage({
+                message,
+                definition,
+                roomId,
+                senderId: message.id.senderId,
+                topicId: message.route.topicId,
+                typeId: message.payload.typeId,
+                minSnapshotVersion: this.readMinSnapshotVersion(message),
+            }),
             message,
-            definition,
-            roomId,
-            senderId: message.id.senderId,
-            topicId: message.route.topicId,
-            typeId: message.payload.typeId,
-        });
+        );
     }
 
     private isRoomScoped(
@@ -718,6 +744,18 @@ export class RallarServerWsFacade {
         return undefined;
     }
 
+    private readMinSnapshotVersion(message: ALMessage): number | undefined {
+        const targets = message.targets;
+        if (
+            targets?.mode === 'multicast' ||
+            targets?.mode === 'broadcast'
+        ) {
+            return targets.minSnapshotVersion;
+        }
+
+        return undefined;
+    }
+
     private decodeMessage(message: ALMessage):
         | Readonly<{
         ok: true;
@@ -740,22 +778,33 @@ export class RallarServerWsFacade {
         message: ALMessage,
         reason: ALNackReason,
         logMessage: string,
+        nackOptions: Readonly<{
+            serverSnapshotVersion?: number;
+        }> = {},
     ): void {
         console.warn(logMessage);
         if (!this.sendNacks) {
             return;
         }
 
-        this.trySendNack(message, reason);
+        this.trySendNack(message, reason, nackOptions);
     }
 
-    private trySendNack(message: ALMessage, reason: ALNackReason): void {
+    private trySendNack(
+        message: ALMessage,
+        reason: ALNackReason,
+        options: Readonly<{
+            serverSnapshotVersion?: number;
+        }> = {},
+    ): void {
         try {
             const nack = newALNackControlMessage(
                 this.wsQBoxServerService.name,
                 message.id.senderId,
                 message.id.msgId,
                 reason,
+                undefined,
+                options,
             );
             const sent = this.wsQBoxServerService.sendToTargets(nack);
             if (sent === 0) {
@@ -834,6 +883,36 @@ function toRallarServerWsMessage<T>(
         payload,
         raw,
         receivedAtEpochMs: Date.now(),
+    };
+}
+
+function normalizeRoomAuthorizationDecision(
+    decision: RallarServerWsRoomAuthorizationDecision,
+    message: ALMessage,
+): Readonly<{
+    authorized: boolean;
+    reason?: ALNackReason;
+    logMessage?: string;
+    serverSnapshotVersion?: number;
+}> {
+    if (typeof decision === 'boolean') {
+        return {
+            authorized: decision,
+        };
+    }
+
+    if (decision.authorized) {
+        return {
+            authorized: true,
+        };
+    }
+
+    return {
+        authorized: false,
+        reason: decision.reason,
+        logMessage: decision.logMessage ??
+            `Rejected unauthorised dynamic WS topic: ${message.route.topicId}`,
+        serverSnapshotVersion: decision.serverSnapshotVersion,
     };
 }
 

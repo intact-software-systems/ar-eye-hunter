@@ -89,6 +89,7 @@ export type ALOutboundRepairReadDto<TPrepared> = Readonly<{
     pendingAck?: ALOutboundPendingAckSnapshot;
     repairAttempt?: ALOutboundRepairAttemptSnapshot;
     acks: readonly ALAckPayload[];
+    nacks: readonly ALNackPayload[];
     plan?: ALOutboundDispatchPlan<TPrepared>;
 }>;
 
@@ -170,6 +171,11 @@ export type ALOutboundDurableEffect<TPrepared> =
     kind: 'repair-hint';
     msgId: string;
     request: ALOutboundRepairHint;
+}>
+    | Readonly<{
+    kind: 'nack-retry';
+    msgId: string;
+    reason: 'not-yet-in-sync';
 }>;
 
 export type ALOutboundDurableEffectWrite<TPrepared> = Readonly<{
@@ -427,6 +433,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
             pendingAck: await this.getPendingAck(msgId),
             repairAttempt: await this.backend.get<ALOutboundRepairAttemptSnapshot>(this.toRepairAttemptKey(msgId)),
             acks: await this.readAcks(msgId),
+            nacks: await this.readNacks(msgId),
             plan: msg ? planner(msg) : undefined,
         };
     }
@@ -848,6 +855,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                 );
             case 'ack-timeout':
             case 'repair-hint':
+            case 'nack-retry':
                 return toExpireAtTimestampFromNow(this.retention.durableEffectTtlMs);
         }
     }

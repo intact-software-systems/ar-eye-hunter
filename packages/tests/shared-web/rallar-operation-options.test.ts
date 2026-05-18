@@ -2191,6 +2191,31 @@ describe('Rallar operation options', () => {
         });
     });
 
+    it('adds cached room snapshotVersion as minSnapshotVersion on RTC room sends', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        mockGroupSnapshot(withSnapshotVersion(
+            createGroupSnapshot('room-1', ['session-1', 'peer-1']),
+            7,
+        ));
+
+        const result = await createRallarFacade().messages.rtc.send({
+            roomId: 'room-1',
+            typeId: 'chat.message.v1',
+            resourceId: 'msg-versioned-rtc',
+            payload: {
+                text: 'versioned rtc',
+            },
+        });
+
+        expect(result.message.targets).toMatchObject({
+            mode: 'multicast',
+            groupId: 'room-1',
+            minSnapshotVersion: 7,
+        });
+    });
+
     it('returns WS send status with the message when WS enqueue completes', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
@@ -2230,6 +2255,31 @@ describe('Rallar operation options', () => {
                     scope: 'all',
                 },
             },
+        });
+    });
+
+    it('adds cached room snapshotVersion as minSnapshotVersion on WS room sends', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        mockGroupSnapshot(withSnapshotVersion(
+            createGroupSnapshot('room-1', ['session-1', 'peer-1']),
+            11,
+        ));
+
+        const result = await createRallarFacade().messages.ws.send({
+            roomId: 'room-1',
+            typeId: 'chat.message.v1',
+            resourceId: 'msg-versioned-ws',
+            payload: {
+                text: 'versioned ws',
+            },
+        });
+
+        expect(result.message.targets).toMatchObject({
+            mode: 'broadcast',
+            scope: 'room',
+            minSnapshotVersion: 11,
         });
     });
 
@@ -2426,6 +2476,19 @@ function mockGroupSnapshot(snapshot: GroupSnapshot): void {
     });
 }
 
+function withSnapshotVersion(
+    snapshot: GroupSnapshot,
+    snapshotVersion: number,
+): GroupSnapshot {
+    return {
+        ...snapshot,
+        group: {
+            ...snapshot.group,
+            snapshotVersion,
+        },
+    };
+}
+
 function createGroupSnapshot(
     groupId: string,
     sessionIds: readonly string[],
@@ -2440,6 +2503,7 @@ function createGroupSnapshot(
             status: 'active',
             joinMode: 'open',
             metadata: {},
+            snapshotVersion: 1,
             metadataVersion: 0,
             rosterVersion: 1,
             presenceVersion: 1,

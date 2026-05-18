@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
     AL_CONTROL_NACK_TYPE_ID,
+    type ALNackPayload,
     ALMessage,
     InMemoryQueueBox,
     newALBroadcastMessage,
@@ -8,8 +9,10 @@ import {
     WsQueueBoxServerService,
     type WsServerTargetResolver,
 } from '@shared/mod.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { createRallarServerFacade } from '@shared-server/rallar-facade/RallarServer.ts';
 import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
+import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/services/ws-topic-room-authorizer.ts';
 
 describe('RallarServerWsFacade', () => {
     it('fans out implicit app topics to their declared targets', async () => {
@@ -139,6 +142,47 @@ describe('RallarServerWsFacade', () => {
                 typeId: 'todo.item.updated.v1',
             })
         ).toThrow('Rallar user WS topic must start with app. or room.');
+    });
+
+    it('rejects room messages as not-yet-in-sync when local cache is older than minSnapshotVersion', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        try {
+            const { facade, socket } = createFacade({
+                authorizeRoomMessage: createGroupRoomWsAuthorizer({
+                    findGroupSnapshotById: () =>
+                        createGroupSnapshot('room-1', ['peer-1'], 3),
+                }),
+            });
+            const message = newALBroadcastMessage(
+                'peer-1',
+                newALRoute('room.chat', 'room-1', 'msg-1'),
+                'room',
+                'chat.message.v1',
+                { text: 'after join' },
+                {
+                    minSnapshotVersion: 4,
+                },
+            );
+
+            await facade.handle(message);
+
+            expect(socket.sent).toHaveLength(1);
+            expect(socket.sent[0].connectionId).toBe('conn-1');
+            expect(socket.sent[0].data.payload.typeId).toBe(AL_CONTROL_NACK_TYPE_ID);
+            const nack = JSON.parse(
+                socket.sent[0].data.payload.resource,
+            ) as ALNackPayload;
+            expect(nack).toMatchObject({
+                msgId: message.id.msgId,
+                reason: 'not-yet-in-sync',
+                serverSnapshotVersion: 3,
+            });
+            expect(nack).not.toHaveProperty('groupId');
+            expect(nack).not.toHaveProperty('minSnapshotVersion');
+            expect(nack).not.toHaveProperty('retryAfterMs');
+        } finally {
+            warn.mockRestore();
+        }
     });
 });
 
@@ -444,5 +488,64 @@ function createTargetResolver(): WsServerTargetResolver {
                 peerId,
                 connectionId,
             })),
+    };
+}
+
+function createGroupSnapshot(
+    groupId: string,
+    sessionIds: readonly string[],
+    snapshotVersion: number,
+): GroupSnapshot {
+    return {
+        group: {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId,
+            displayName: groupId,
+            kind: 'room',
+            status: 'active',
+            joinMode: 'open',
+            metadata: {},
+            snapshotVersion,
+            metadataVersion: 1,
+            rosterVersion: 1,
+            presenceVersion: snapshotVersion,
+            created: {
+                atEpochMs: 1,
+                byPrincipalId: 'peer-1',
+            },
+            updated: {
+                atEpochMs: snapshotVersion,
+                byPrincipalId: 'peer-1',
+            },
+        },
+        members: sessionIds.map((sessionId) => ({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId,
+            principalId: sessionId,
+            role: 'member',
+            status: 'active',
+            joined: {
+                atEpochMs: 1,
+                byPrincipalId: sessionId,
+            },
+            updated: {
+                atEpochMs: snapshotVersion,
+                byPrincipalId: sessionId,
+            },
+        })),
+        activeSessions: sessionIds.map((sessionId) => ({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId,
+            sessionId,
+            principalId: sessionId,
+            connectedAtEpochMs: 1,
+            lastHeartbeatAtEpochMs: snapshotVersion,
+            expiresAtEpochMs: 60_000,
+        })),
+        memberCount: sessionIds.length,
+        onlineMemberCount: sessionIds.length,
     };
 }

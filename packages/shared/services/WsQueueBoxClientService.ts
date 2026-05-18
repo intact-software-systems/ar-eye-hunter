@@ -22,6 +22,7 @@ import {
     ALOutboundAckTrackingPlan,
     ALOutboundEnqueueResult,
     ALOutboundMessageRuntime,
+    ALOutboundRetryTrackingPlan,
     ALOutboundSupersedenceTrackingPlan,
 } from '../alm/ALOutboundMessageRuntime.ts';
 
@@ -152,6 +153,7 @@ export class WsQueueBoxClientService {
                             !this.isSocketOpen(),
                         preparedMessages: [msg],
                         ackTracking: this.toAckTrackingPlan(normalized.effective, msg),
+                        retryTracking: this.toRetryTrackingPlan(normalized.effective),
                         supersedenceTracking: this.toSupersedenceTrackingPlan(
                             normalized.effective,
                             msg,
@@ -577,6 +579,19 @@ export class WsQueueBoxClientService {
                 ? 0
                 : effective.retry.opts.maxAttempts,
             expectedPeerIds: [targets.toPeerId],
+        };
+    }
+
+    private toRetryTrackingPlan(
+        effective: ReturnType<typeof normalizeALQosPolicy>['effective'],
+    ): ALOutboundRetryTrackingPlan | undefined {
+        if (effective.retry.algo === 'none') {
+            return undefined;
+        }
+
+        return {
+            enabled: true,
+            maxAttempts: effective.retry.opts.maxAttempts,
         };
     }
 

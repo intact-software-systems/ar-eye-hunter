@@ -25,6 +25,7 @@ import {
     readActiveClientSessionIds,
     readGroupDisplayName,
     readGroupId,
+    readGroupVersion,
 } from '@shared/api/group-client-views.ts';
 import type {
     GroupJoinMode,
@@ -291,6 +292,7 @@ export type RallarRtcSendInput<T> =
     & Readonly<{
     roomId?: string;
     membershipEpoch?: number;
+    minSnapshotVersion?: number;
     seq?: number;
     orderingKey?: string;
     nextHopPeerIds?: readonly string[];
@@ -303,6 +305,7 @@ export type RallarWsSendInput<T> =
     & Readonly<{
     scope?: 'room' | 'world' | 'all';
     roomId?: string;
+    minSnapshotVersion?: number;
     exceptPeerIds?: readonly string[];
 }>;
 
@@ -1022,6 +1025,10 @@ class BrowserRallarFacade implements RallarFacade {
                     input.payload,
                     {
                         membershipEpoch: input.membershipEpoch,
+                        minSnapshotVersion: this.resolveRoomMinSnapshotVersion(
+                            roomId,
+                            input.minSnapshotVersion,
+                        ),
                         ttlHops: input.ttlHops,
                         ttlMs: input.ttlMs,
                         seq: input.seq,
@@ -1060,6 +1067,12 @@ class BrowserRallarFacade implements RallarFacade {
                 const session = this.requireSession();
                 const contextId = input.contextId ?? input.roomId ?? input.scope ??
                     'all';
+                const minSnapshotVersion = input.roomId
+                    ? this.resolveRoomMinSnapshotVersion(
+                        input.roomId,
+                        input.minSnapshotVersion,
+                    )
+                    : input.minSnapshotVersion;
                 const msg = newALBroadcastMessage(
                     session.sessionId,
                     newALRoute(
@@ -1072,6 +1085,7 @@ class BrowserRallarFacade implements RallarFacade {
                     input.payload,
                     {
                         exceptPeerIds: input.exceptPeerIds,
+                        minSnapshotVersion,
                         ttlHops: input.ttlHops,
                         ttlMs: input.ttlMs,
                         reliability: input.reliability ?? 'at-least-once',
@@ -2258,6 +2272,24 @@ class BrowserRallarFacade implements RallarFacade {
             () => groupStateSnapshotsRepository.findGroupStateSnapshotById(groupId),
             undefined,
         );
+    }
+
+    private resolveRoomMinSnapshotVersion(
+        roomId: string,
+        explicitMinSnapshotVersion?: number,
+    ): number | undefined {
+        const cached = this.findGroupSnapshot(roomId);
+        const cachedVersion = cached ? readGroupVersion(cached) : undefined;
+
+        if (explicitMinSnapshotVersion === undefined) {
+            return cachedVersion;
+        }
+
+        if (cachedVersion === undefined) {
+            return explicitMinSnapshotVersion;
+        }
+
+        return Math.max(explicitMinSnapshotVersion, cachedVersion);
     }
 
     private findFirstGroupSnapshotIdForSession(

@@ -7,7 +7,15 @@ export const AL_CONTROL_NACK_TYPE_ID = 'al.control.nack.v1';
 export const AL_CONTROL_REPAIR_TYPE_ID = 'al.control.repair.v1';
 
 export type ALAckStatus = 'accepted' | 'delivered' | 'forwarded' | 'subtree-complete';
-export type ALNackReason = 'duplicate' | 'gap' | 'expired' | 'unauthorized' | 'no-route' | 'overloaded' | 'stale';
+export type ALNackReason =
+    | 'duplicate'
+    | 'gap'
+    | 'expired'
+    | 'unauthorized'
+    | 'no-route'
+    | 'overloaded'
+    | 'stale'
+    | 'not-yet-in-sync';
 export type ALRepairReason = 'missing-seq' | 'retransmit' | 'resync';
 
 export type ALAckPayload = Readonly<{
@@ -27,6 +35,7 @@ export type ALNackPayload = Readonly<{
     orderingKey?: string;
     expectedSeq?: number;
     missingSeqs?: readonly number[];
+    serverSnapshotVersion?: number;
 }>;
 
 export type ALRepairPayload = Readonly<{
@@ -177,6 +186,9 @@ export function newALNackControlMessage(
     msgId: string,
     reason: ALNackReason,
     ordering?: ALOrderingObservation,
+    options: Readonly<{
+        serverSnapshotVersion?: number;
+    }> = {},
 ): ALMessage {
     const payload: ALNackPayload = {
         msgId,
@@ -187,6 +199,7 @@ export function newALNackControlMessage(
         orderingKey: ordering?.trackKey,
         expectedSeq: ordering?.expectedSeq,
         missingSeqs: ordering?.missingSeqs,
+        serverSnapshotVersion: options.serverSnapshotVersion,
     };
 
     return newALUnicastMessage(

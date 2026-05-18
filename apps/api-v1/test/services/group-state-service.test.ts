@@ -97,6 +97,81 @@ Deno.test('upsertMember preserves existing roles across leave and rejoin', async
     assertMember(await readSnapshot(service), 'owner-1', 'owner', 'active');
 });
 
+Deno.test('semantic group mutations advance snapshotVersion', async () => {
+    const service = createTestGroupStateService();
+
+    const created = await service.createGroup(TEST_SCOPE, {
+        groupId: 'group-1',
+        displayName: 'Room 1',
+        kind: 'room',
+        createdByPrincipalId: 'owner-1',
+        actorPrincipalId: 'owner-1',
+        actorSessionId: 'owner-session',
+    });
+    assertSnapshotVersion(created, 1);
+
+    const unchanged = await service.updateGroup(TEST_SCOPE, 'group-1', {
+        displayName: 'Room 1',
+        kind: 'room',
+        actorPrincipalId: 'owner-1',
+    });
+    assertSnapshotVersion(unchanged, 1);
+
+    const updated = await service.updateGroup(TEST_SCOPE, 'group-1', {
+        displayName: 'Room 1 updated',
+        actorPrincipalId: 'owner-1',
+    });
+    assertSnapshotVersion(updated, 2);
+
+    const joined = await service.upsertMember(TEST_SCOPE, 'group-1', 'member-1', {
+        status: 'active',
+        actorPrincipalId: 'owner-1',
+        actorSessionId: 'owner-session',
+    });
+    assertSnapshotVersion(joined, 3);
+
+    const connected = await service.connectPresenceSession(
+        TEST_SCOPE,
+        'group-1',
+        'member-session',
+        {
+            principalId: 'member-1',
+            actorPrincipalId: 'member-1',
+            actorSessionId: 'member-session',
+            lastHeartbeatAtEpochMs: 1_000,
+            expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
+        },
+    );
+    assertSnapshotVersion(connected, 4);
+
+    const heartbeat = await service.heartbeatPresenceSession(
+        TEST_SCOPE,
+        'group-1',
+        'member-session',
+        {
+            principalId: 'member-1',
+            actorPrincipalId: 'member-1',
+            actorSessionId: 'member-session',
+            lastHeartbeatAtEpochMs: 2_000,
+            expiresAtEpochMs: REFRESHED_EXPIRES_AT_EPOCH_MS,
+        },
+    );
+    assertSnapshotVersion(heartbeat, 4);
+
+    const disconnected = await service.disconnectPresenceSession(
+        TEST_SCOPE,
+        'group-1',
+        'member-session',
+        {
+            principalId: 'member-1',
+            actorPrincipalId: 'member-1',
+            actorSessionId: 'member-session',
+            reason: 'left',
+        },
+    );
+    assertSnapshotVersion(disconnected, 5);
+});
+
 Deno.test('heartbeatPresenceSession refreshes TTL without publishing unchanged snapshots', async () => {
     const syncPublisher = createRecordingStateSyncPublisher();
     const service = createTestGroupStateService(syncPublisher);
@@ -296,6 +371,10 @@ function assertMember(
 
     assert.equal(member.role, role);
     assert.equal(member.status, status);
+}
+
+function assertSnapshotVersion(snapshot: GroupSnapshot, expected: number): void {
+    assert.equal(snapshot.group.snapshotVersion, expected);
 }
 
 class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {

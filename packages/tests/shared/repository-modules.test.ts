@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { OverlayInfo, RttMeasurementInfo, } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import { readClientVersion, readGroupVersion } from '@shared/api/group-client-views.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import {
@@ -88,6 +89,37 @@ describe('repository modules', () => {
         }
     });
 
+    it('uses client principal snapshotVersion for cache ordering', () => {
+        const first = {
+            ...createClientSnapshot('client-1', 'session-1', 1),
+            principal: {
+                ...createClientSnapshot('client-1', 'session-1', 1).principal,
+                snapshotVersion: 10,
+            },
+        } satisfies ClientSnapshot;
+        const staleBySnapshotVersion = {
+            ...createClientSnapshot('client-1', 'session-1', 99),
+            principal: {
+                ...createClientSnapshot('client-1', 'session-1', 99).principal,
+                snapshotVersion: 9,
+            },
+        } satisfies ClientSnapshot;
+        const newer = {
+            ...createClientSnapshot('client-1', 'session-1', 2),
+            principal: {
+                ...createClientSnapshot('client-1', 'session-1', 2).principal,
+                snapshotVersion: 11,
+            },
+        } satisfies ClientSnapshot;
+
+        expect(readClientVersion(first)).toBe(10);
+        expect(setClientStateSnapshotByPrincipalId('client-1', first)).toBe(true);
+        expect(setClientStateSnapshotByPrincipalId('client-1', staleBySnapshotVersion)).toBe(false);
+        expect(findClientStateSnapshotByPrincipalId('client-1')).toEqual(first);
+        expect(setClientStateSnapshotByPrincipalId('client-1', newer)).toBe(true);
+        expect(findClientStateSnapshotByPrincipalId('client-1')).toEqual(newer);
+    });
+
     it('stores group snapshots by group id, keeps newer versions, and finds memberships', () => {
         const first = createGroupSnapshot('group-1', 'Alpha', 1, [
             'self',
@@ -109,6 +141,37 @@ describe('repository modules', () => {
 
         expect(setGroupStateSnapshotById(first.group.groupId, stale)).toBe(false);
         expect(findGroupStateSnapshotById('group-1')).toEqual(first);
+    });
+
+    it('uses group aggregate snapshotVersion for cache ordering', () => {
+        const first = {
+            ...createGroupSnapshot('group-1', 'Alpha', 1, ['self']),
+            group: {
+                ...createGroupSnapshot('group-1', 'Alpha', 1, ['self']).group,
+                snapshotVersion: 10,
+            },
+        } satisfies GroupSnapshot;
+        const staleBySnapshotVersion = {
+            ...createGroupSnapshot('group-1', 'Alpha', 99, ['self', 'peer-stale']),
+            group: {
+                ...createGroupSnapshot('group-1', 'Alpha', 99, ['self', 'peer-stale']).group,
+                snapshotVersion: 9,
+            },
+        } satisfies GroupSnapshot;
+        const newer = {
+            ...createGroupSnapshot('group-1', 'Alpha', 2, ['self', 'peer-a']),
+            group: {
+                ...createGroupSnapshot('group-1', 'Alpha', 2, ['self', 'peer-a']).group,
+                snapshotVersion: 11,
+            },
+        } satisfies GroupSnapshot;
+
+        expect(readGroupVersion(first)).toBe(10);
+        expect(setGroupStateSnapshotById('group-1', first)).toBe(true);
+        expect(setGroupStateSnapshotById('group-1', staleBySnapshotVersion)).toBe(false);
+        expect(findGroupStateSnapshotById('group-1')).toEqual(first);
+        expect(setGroupStateSnapshotById('group-1', newer)).toBe(true);
+        expect(findGroupStateSnapshotById('group-1')).toEqual(newer);
     });
 
     it('emits group snapshot changes only for accepted writes', async () => {
@@ -298,6 +361,7 @@ function createClientSnapshot(
             status: 'active',
             roles: [],
             metadata: {},
+            snapshotVersion: version,
             profileVersion: 0,
             presenceVersion: version,
             created: {
@@ -355,6 +419,7 @@ function createGroupSnapshot(
             status: 'active',
             joinMode: 'open',
             metadata: {},
+            snapshotVersion: membershipVersion,
             metadataVersion: 0,
             rosterVersion: membershipVersion,
             presenceVersion: 0,

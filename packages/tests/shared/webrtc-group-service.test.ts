@@ -138,6 +138,7 @@ function createGroupSnapshot(
             status: 'active',
             joinMode: 'open',
             metadata: {},
+            snapshotVersion: membershipVersion,
             metadataVersion: 0,
             rosterVersion: membershipVersion,
             presenceVersion: 0,

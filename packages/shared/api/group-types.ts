@@ -61,6 +61,7 @@ export type Group =
     maxSessionsPerMember?: number;
     metadata: Record<string, unknown>;
 
+    snapshotVersion: number;
     metadataVersion: number;
     rosterVersion: number;
     presenceVersion: number;

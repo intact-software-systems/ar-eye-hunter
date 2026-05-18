@@ -1,4 +1,5 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
+import { parseALControlMessage } from '../al-contracts/al-control.ts';
 import type { ALRepairAlgo, ALSupersedenceAlgo } from '../al-contracts/al-policy.ts';
 import { InMemoryALOrderingStore } from '../al-contracts/al-runtime.ts';
 import type { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
@@ -45,6 +46,12 @@ export type ALOutboundRepairTrackingPlan = Readonly<{
     maxAttempts: number;
 }>;
 
+export type ALOutboundRetryTrackingPlan = Readonly<{
+    enabled: boolean;
+    maxAttempts: number;
+    retryDelayMs?: number;
+}>;
+
 export type ALOutboundSupersedenceTrackingPlan = Readonly<{
     enabled: boolean;
     algo: ALSupersedenceAlgo;
@@ -68,6 +75,7 @@ export type ALOutboundDispatchPlan<TPrepared> = Readonly<{
     persist: boolean;
     preparedMessages: readonly TPrepared[];
     ackTracking?: ALOutboundAckTrackingPlan;
+    retryTracking?: ALOutboundRetryTrackingPlan;
     repairTracking?: ALOutboundRepairTrackingPlan;
     supersedenceTracking?: ALOutboundSupersedenceTrackingPlan;
 }>;
@@ -131,6 +139,7 @@ type ALOutboundComputedDto<TPrepared> = Readonly<{
 
 type CommitDispatchOptions<TPrepared> = Readonly<{
     fallbackEntry?: ResourceEntry;
+    replaceExistingOutbox?: boolean;
     extraMutations?: (
         read: ALOutboundMessageReadDto<TPrepared>,
     ) => readonly ALOutboundAdmissionMutation[] | 'skip' | undefined;
@@ -141,6 +150,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
     private static readonly COMMIT_RETRY_INTERVAL_MSECS = 10;
     private static readonly COMMIT_MAX_RETRY_INTERVAL_MSECS = 50;
     private static readonly COMMIT_MAX_ELAPSED_MSECS = 500;
+    private static readonly NOT_YET_IN_SYNC_RETRY_DELAY_MS = 50;
     private static readonly COMMIT_RETRY_POLICY = RetryPolicies
         .optimisticCommit('al-outbound-commit')
         .maxAttempts(ALOutboundMessageRuntime.MAX_COMMIT_ATTEMPTS)
@@ -240,8 +250,11 @@ export class ALOutboundMessageRuntime<TPrepared> {
             return false;
         }
 
+        const retryAtMs = await this.scheduleNotYetInSyncRetryIfRequired(msg);
         if (!this.runningEffectDrain) {
             await this.drainDurableEffectsNow();
+        } else if (retryAtMs !== undefined) {
+            this.scheduleEffectDrainAt(retryAtMs);
         }
         return true;
     }
@@ -402,7 +415,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
                     kind: 'enqueue-outbox',
                     msg: read.msg,
                     entry,
-                    replaceExisting: plan.supersedenceTracking?.enabled === true && plan.supersedenceTracking.key !== undefined,
+                    replaceExisting: options.replaceExistingOutbox === true ||
+                        (plan.supersedenceTracking?.enabled === true && plan.supersedenceTracking.key !== undefined),
                 },
             });
         }
@@ -590,6 +604,90 @@ export class ALOutboundMessageRuntime<TPrepared> {
                     effect.payload.request,
                 );
                 return;
+            case 'nack-retry':
+                await this.retransmitByMsgId(effect.payload.msgId, {
+                    replaceExistingOutbox: true,
+                });
+                return;
+        }
+    }
+
+    private async scheduleNotYetInSyncRetryIfRequired(
+        controlMessage: ALMessage,
+    ): Promise<number | undefined> {
+        const parsed = parseALControlMessage(controlMessage);
+        if (parsed?.type !== 'nack' || parsed.payload.reason !== 'not-yet-in-sync') {
+            return undefined;
+        }
+
+        const msgId = parsed.payload.msgId;
+
+        try {
+            return await tryWithPolicy<number | undefined>(
+                async () => {
+                    const read = await this.admissionStore.readRepairMessage(
+                        msgId,
+                        this.input.planOutgoingMessage,
+                    );
+                    const msg = read.sentSnapshot?.msg;
+                    const retry = read.plan?.retryTracking;
+                    if (!msg || !retry?.enabled || retry.maxAttempts <= 0) {
+                        return undefined;
+                    }
+
+                    const retryAttempt = read.nacks
+                        .filter(nack => nack.reason === 'not-yet-in-sync')
+                        .length;
+                    if (retryAttempt > retry.maxAttempts) {
+                        console.warn(
+                            `Not-yet-in-sync retry budget exceeded for message ${msgId}`,
+                        );
+                        return undefined;
+                    }
+
+                    const retryDelayMs = Math.max(
+                        0,
+                        retry.retryDelayMs ??
+                            ALOutboundMessageRuntime.NOT_YET_IN_SYNC_RETRY_DELAY_MS,
+                    );
+                    const retryAtMs = read.nowMs + retryDelayMs;
+                    const status = await this.admissionStore.commitBundle<TPrepared>({
+                        senderId: msg.id.senderId,
+                        expectedVersion: read.clientRecord?.version,
+                        mutations: [],
+                        durableEffects: [
+                            {
+                                effectId: ALOutboundMessageRuntime.toEffectId(
+                                    'nack-retry',
+                                    msgId,
+                                    'not-yet-in-sync',
+                                ),
+                                retryAtMs,
+                                expireAtTimestamp: resolveExplicitOutboundMessageExpireAtMs(msg),
+                                payload: {
+                                    kind: 'nack-retry',
+                                    msgId,
+                                    reason: 'not-yet-in-sync',
+                                },
+                            },
+                        ],
+                    });
+
+                    if (status === 'conflict') {
+                        throw new RetryableConflictError(
+                            'Outbound not-yet-in-sync retry commit conflict',
+                        );
+                    }
+
+                    return retryAtMs;
+                },
+                ALOutboundMessageRuntime.COMMIT_RETRY_POLICY,
+            );
+        } catch (error) {
+            throw new Error(
+                `Failed to schedule not-yet-in-sync retry for message ${msgId}`,
+                { cause: error },
+            );
         }
     }
 
@@ -854,7 +952,12 @@ export class ALOutboundMessageRuntime<TPrepared> {
         }
     }
 
-    private async retransmitByMsgId(msgId: string): Promise<void> {
+    private async retransmitByMsgId(
+        msgId: string,
+        options: Readonly<{
+            replaceExistingOutbox?: boolean;
+        }> = {},
+    ): Promise<void> {
         const sent = await this.admissionStore.getSentMessage(msgId);
         if (!sent) {
             console.warn(`No cached outbound message found for retransmit ${msgId}`);
@@ -866,6 +969,9 @@ export class ALOutboundMessageRuntime<TPrepared> {
             this.input.planOutgoingMessage,
             'repair',
             'immediate',
+            {
+                replaceExistingOutbox: options.replaceExistingOutbox,
+            },
         );
     }
 

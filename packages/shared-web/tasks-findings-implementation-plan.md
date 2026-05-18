@@ -54,10 +54,11 @@ Real-server test runs should record enough evidence to debug failures: peer IDs,
 | 2: IndexedDB growth and session isolation proof | Browser IndexedDB eviction implemented | `packages/tests/shared-web/browser-al-runtime-stores.test.ts`; `packages/tests/shared-web/browser-queuebox-expiry-eviction.test.ts`; existing generic IndexedDB AL runtime tests still pass. Confirms per-prefix lazy eviction and storage bloat risk, with no cross-session read reproduced for the tested browser AL outbound state path. Added explicit cleanup helpers and browser middleware expiry eviction loops. |
 | 3: `enqueueOutboxIfAbsent()` quiet outcomes | Result statuses implemented and locally verified | `ALOutboundMessageRuntime`, RTC overlay/Rx streamer, WS client/server queue-box services, and `Rallar.messages.rtc/ws.send()` now return structured enqueue/send outcomes. |
 | 4: Data-channel reuse and closed-channel behavior | Unit, real-server reload, public RTC status API, and peer-id naming cleanup implemented | Focused `QRtcDataChannel` tests proved stale closed channel references blocked receiver-side replacement waits. `QRtcDataChannel` now clears terminal channel references so reconnect waits can observe replacement channels. `WebRtcConnectionService` tests document lane-ready state separately from active/no-reconnectable-lane peer state. Real browser-Rallar reload scenarios now pass for `realtime` and `messages.rtc` with attached RTC/WS status snapshots. `Rallar.rtc.onStatus(...)` and `Rallar.rtc.onLifecycle(...)` now expose public RTC subscription APIs. `connectedPeerIds()` is now a deprecated compatibility alias for the more exact `peerIdsWithNoReconnectableLanes()`, and Rallar uses active/known/lane-ready peer sets for the call sites that need those semantics. |
-| 5: `disconnect()` and WS reconnect cleanup behavior | WS reconnect suppression, bounded retry, public WS lifecycle/status API, and targeted real-server disconnect/reconnect proof implemented | Focused tests prove unexpected WS close still reconnects, intentional service close suppresses reconnect, disabling reconnect stops a pending retry loop, reconnect exhaustion disables automatic reconnect, and session eligibility suppresses stale reconnects. `Rallar.disconnect()` now closes WS through `WsQueueBoxClientService.close(...)`. `Rallar.ws.onStatus(...)` and `Rallar.ws.onLifecycle(...)` expose WS status/lifecycle subscriptions. A targeted two-agent browser-Rallar smoke proves intentional disconnect does not background-reconnect and explicit reconnect restores delivery. Broader real-browser logout/session-replacement/unexpected-close scenarios are moved to Iteration 10. |
+| 5: `disconnect()` and WS reconnect cleanup behavior | WS reconnect suppression, bounded retry, public WS lifecycle/status API, and targeted real-server disconnect/reconnect proof implemented | Focused tests prove unexpected WS close still reconnects, intentional service close suppresses reconnect, disabling reconnect stops a pending retry loop, reconnect exhaustion disables automatic reconnect, and session eligibility suppresses stale reconnects. `Rallar.disconnect()` now closes WS through `WsQueueBoxClientService.close(...)`. `Rallar.ws.onStatus(...)` and `Rallar.ws.onLifecycle(...)` expose WS status/lifecycle subscriptions. A targeted two-agent browser-Rallar smoke proves intentional disconnect does not background-reconnect and explicit reconnect restores delivery. Broader real-browser logout/session-replacement/unexpected-close scenarios are moved to Iteration 11. |
 | 6: Wait APIs for RTC and WS | Initial facade wait APIs implemented and locally verified | `rallar.ws.waitForOpen(...)`, `rallar.rtc.waitForLane(...)`, and `rallar.rtc.waitForOpen(...)` now return structured wait results. Focused facade tests cover open, timeout, aborted, observe-only no-connect, missing peer, and opt-in RTC connect-before-wait behavior. Real-server integration adoption is deferred until the black-box scenarios are updated to use these waits. |
 | 7: RTC establishment timeout and retry policy | Initial peer establishment timeout policy and explicit start/open APIs implemented and locally verified | Deterministic `WebRtcConnectionService` tests prove a peer that never establishes is evicted after an explicit timeout and can be recreated, while an opened lane clears the timeout. Browser Rallar enables the policy with a 30 second timeout, and `rallar.rtc.onLifecycle(...)` now surfaces service timeout events as `peer-timeout`. `ensurePeerConnectionStarted()` is now synchronous and start-only, `connectToPeerIfAbsent()` remains a deprecated alias, and `ensurePeerLaneOpen(...)` provides the opt-in readiness path using `PullPushCommand`. Rallar uses `ensurePeerLaneOpen(...)` internally for connect-and-wait RTC facade calls and realtime sends, while observe-only waits still avoid starting peers. `rallar.rtc.waitForRoomLane(...)` adds a room-level readiness wrapper that separates ready and not-ready peers. Peer establishment watchdog bookkeeping moved into reusable `AsyncCommand`. Real-server bad-condition scenarios and reconnect-exhaustion service cleanup remain pending. |
-| 10: Manual real-browser/server integration proofs | Planned | Convert selected live browser/server scenarios into repeatable manual runbooks first, then graduate stable scenarios into automated integration tests. Owns logout reconnect suppression, session replacement/no-valid-session stale reconnect suppression, unexpected server/network close reconnect behavior, and broader real-browser status artifact capture. |
+| 10: Group snapshot-version consistency preconditions | Contract, stale-cache proof, and bounded retry implemented | Added mandatory aggregate `snapshotVersion` on groups and client principals, `minSnapshotVersion` on room-scoped AL sends, browser Rallar propagation from cached room snapshots, and server stale-cache `not-yet-in-sync` NACKs. Focused tests prove version increments, repository version comparison, browser send metadata, server rejection, simplified NACK diagnostics, and delayed outbound retry of retryable NACKs. |
+| 11: Manual real-browser/server integration proofs | Planned | Convert selected live browser/server scenarios into repeatable manual runbooks first, then graduate stable scenarios into automated integration tests. Owns logout reconnect suppression, session replacement/no-valid-session stale reconnect suppression, unexpected server/network close reconnect behavior, and broader real-browser status artifact capture. |
 
 ## Iteration 0: Baseline Evidence And Reproduction Harness
 
@@ -493,7 +494,7 @@ Verification completed:
 
 Goal: prove whether intentional disconnect leaves RTC peers alive or triggers unwanted WS reconnect.
 
-Status: completed for focused proof, implementation, and one targeted real-server browser proof on 2026-05-17. Broader live browser/server coverage is intentionally moved to Iteration 10 instead of blocking this implementation iteration.
+Status: completed for focused proof, implementation, and one targeted real-server browser proof on 2026-05-17. Broader live browser/server coverage is intentionally moved to Iteration 11 instead of blocking this implementation iteration.
 
 Proof findings:
 
@@ -563,7 +564,7 @@ Moved out of Iteration 5:
 - Real-browser unexpected server/network close reconnect proof.
 - Broader live browser/server status artifact capture for non-disconnect scenarios.
 
-These belong in Iteration 10 because they are integration/manual proof work, not additional cleanup implementation.
+These belong in Iteration 11 because they are integration/manual proof work, not additional cleanup implementation.
 
 Verification completed:
 
@@ -588,7 +589,7 @@ Exit criteria:
 
 - Cleanup behavior is proven before and after any fix.
 - Intentional disconnect does not leave hidden peers or background reconnect tasks.
-- Focused tests prove logout inherits reconnect suppression; real-browser logout proof is deferred to Iteration 10.
+- Focused tests prove logout inherits reconnect suppression; real-browser logout proof is deferred to Iteration 11.
 - Applications can subscribe to WS lifecycle callbacks and distinguish intentional close, unexpected close/error, and reconnect-suppressed status.
 
 ## Iteration 6: Add Wait APIs For RTC And WS
@@ -657,7 +658,7 @@ Exit criteria:
 
 Goal: add explicit timeouts only where tests prove indefinite or unclear waits.
 
-Status: paused on 2026-05-17 after focused implementation and deterministic proof. Browser policy wiring, explicit start/open service APIs, generic watchdog command extraction, Rallar facade adoption, and room-level lane readiness are implemented; real-server failure proofs remain pending and are better handled in Iteration 10.
+Status: paused on 2026-05-17 after focused implementation and deterministic proof. Browser policy wiring, explicit start/open service APIs, generic watchdog command extraction, Rallar facade adoption, and room-level lane readiness are implemented; real-server failure proofs remain pending and are better handled in Iteration 11.
 
 Proof work:
 
@@ -829,11 +830,54 @@ Exit criteria:
 - Server WS status shape aligns with browser WS status where it makes sense.
 - Publish outcomes are explicit and tested: completed for focused Vitest coverage; real full-stack status/control endpoint proof remains optional follow-up.
 
-## Iteration 10: Manual Real-browser/server Integration Proofs
+## Iteration 10: Group Snapshot-version Consistency Preconditions
+
+Goal: prove and implement an eventual-consistency guard for room-scoped operations after REST group mutations. A browser that has received a newer group snapshot should be able to include that minimum version on dependent room sends, and a backend with a stale room cache should reject as not-yet-in-sync instead of making a final authorization or routing decision from old state.
+
+Status: contract, stale-cache proof, and bounded retry implemented.
+
+Design direction:
+
+- Add a server-assigned mandatory `snapshotVersion` to the group aggregate. It should be monotonic for semantic group changes: metadata, roster, and presence membership changes. Existing component versions remain useful diagnostics, but the aggregate version is the consistency precondition value.
+- Add `minSnapshotVersion` to room-scoped WS/RTC message contracts. Browser Rallar should populate it from the latest cached room snapshot when sending into a room, while still allowing explicit override for tests or specialized callers.
+- Rallar Server room authorization should compare its cached `snapshotVersion` with the requested `minSnapshotVersion`. If the cache is missing or older, the result should be a retryable not-yet-in-sync rejection/NACK, not an authoritative unauthorized/no-route outcome.
+- Keep implementation proof-focused: validate version propagation, stale-cache detection, and retryable NACK handling before broad full-stack failure-injection automation.
+
+Implementation steps:
+
+- Completed: updated shared group/client API types and helpers in `packages/shared/api/`.
+- Completed: updated group state service/repository snapshot creation so mutation responses carry `group.snapshotVersion`; `GroupSnapshot` no longer duplicates it.
+- Completed: updated client state service/repository ordering to use mandatory `ClientPrincipal.snapshotVersion` instead of summing profile/presence component versions.
+- Completed: updated AL room target types/builders and browser Rallar room sends to include `minSnapshotVersion`.
+- Completed: updated Rallar Server dynamic WS room authorization to surface stale cache as retryable `not-yet-in-sync`.
+- Completed: added focused unit tests around version increments, cache acceptance, browser send metadata, and server stale-cache rejection.
+- Completed: simplified `ALNackPayload` for `not-yet-in-sync` to keep only diagnostic `serverSnapshotVersion`; retry timing/context are derived locally from the cached outbound message.
+- Completed: taught the shared outbound runtime used by browser WS/RTC to schedule a short delayed retry effect for `not-yet-in-sync` NACKs, using the cached AL message and the caller's retry budget. The retry re-enters outbound planning, so it can send immediately or re-enter the outbox depending on current transport state; duplicate NACKs coalesce while a retry is pending.
+
+Exit criteria:
+
+- Group mutations return snapshots with monotonic `group.snapshotVersion`.
+- Client semantic mutations return snapshots with monotonic `principal.snapshotVersion`.
+- Browser Rallar includes `minSnapshotVersion` on room-scoped sends when it has a cached room snapshot.
+- Server room authorization can distinguish stale/missing cache from true unauthorized membership.
+- Retryable `not-yet-in-sync` NACKs are retried by the outbound runtime without requiring server-provided retry delay or original-message context in the NACK payload.
+
+Verification completed:
+
+- Up-front failing proof before implementation: `npx vitest run packages/tests/shared/al-outbound-message-runtime.test.ts`; `npx vitest run packages/tests/api-v1/rallar-server-ws-facade.test.ts`
+- `npx vitest run packages/tests/shared/repository-modules.test.ts packages/tests/shared-web/rallar-operation-options.test.ts packages/tests/api-v1/rallar-server-ws-facade.test.ts`
+- `npx vitest run packages/tests/shared/al-outbound-message-runtime.test.ts packages/tests/shared/al-durable-runtime.test.ts packages/tests/shared/al-indexeddb-runtime-stores.test.ts`
+- `deno test --config apps/api-v1/deno.json apps/api-v1/test/services/group-state-service.test.ts`
+- `npx tsc -p packages/shared/tsconfig.json --noEmit`
+- `npx tsc -p packages/shared-web/tsconfig.json --noEmit`
+- `npx tsc -p packages/shared-server/tsconfig.json --noEmit`
+- `deno check --config apps/api-v1/deno.json apps/api-v1/src/main.ts`
+
+## Iteration 11: Manual Real-browser/server Integration Proofs
 
 Goal: collect live browser/server scenarios that are valuable but too environment-dependent to block the focused implementation iterations, then graduate stable scenarios into automated integration tests.
 
-This iteration is deliberately separate from Iteration 5. Iteration 5 owns the implementation and focused proof for WS reconnect cleanup. Iteration 10 owns live verification across real browsers, API server, control server, auth/session state, and RTC/WS timing.
+This iteration is deliberately separate from Iteration 5. Iteration 5 owns the implementation and focused proof for WS reconnect cleanup. Iteration 11 owns live verification across real browsers, API server, control server, auth/session state, and RTC/WS timing.
 
 Manual-first scenarios:
 
@@ -881,7 +925,7 @@ Exit criteria:
 Before considering the task set complete:
 
 - Unit and integration tests prove each confirmed issue and each fix.
-- Manual real-browser/server scenarios from Iteration 10 have either graduated to integration tests or are documented as intentionally manual with runbook evidence.
+- Manual real-browser/server scenarios from Iteration 11 have either graduated to integration tests or are documented as intentionally manual with runbook evidence.
 - Two-agent real-server Playwright RTC test passes for:
   - initial connect
   - wait before send
