@@ -14,6 +14,7 @@ import {
     waitForClientStateSnapshotChangesIdle,
 } from '@shared/repository/client-state-snapshots-repository.ts';
 import {
+    findGroupStateSnapshotByRef,
     findFirstGroupStateSnapshotIdSessionIdIsIn,
     findGroupStateSnapshotById,
     getAllGroupStateSnapshots,
@@ -141,6 +142,51 @@ describe('repository modules', () => {
 
         expect(setGroupStateSnapshotById(first.group.groupId, stale)).toBe(false);
         expect(findGroupStateSnapshotById('group-1')).toEqual(first);
+    });
+
+    it('keeps same group id snapshots isolated across workspaces', () => {
+        const workspaceA = createGroupSnapshot(
+            'shared-room',
+            'Workspace A',
+            1,
+            ['session-a'],
+            {
+                workspaceId: 'workspace-a',
+            },
+        );
+        const workspaceB = createGroupSnapshot(
+            'shared-room',
+            'Workspace B',
+            1,
+            ['session-b'],
+            {
+                workspaceId: 'workspace-b',
+            },
+        );
+
+        expect(setGroupStateSnapshots([workspaceA, workspaceB])).toBe(true);
+
+        expect(
+            getAllGroupStateSnapshots()
+                .map((snapshot) => ({
+                    workspaceId: snapshot.group.workspaceId,
+                    displayName: snapshot.group.displayName,
+                }))
+                .sort((left, right) =>
+                    (left.workspaceId ?? '').localeCompare(right.workspaceId ?? '')
+                ),
+        ).toEqual([
+            {
+                workspaceId: 'workspace-a',
+                displayName: 'Workspace A',
+            },
+            {
+                workspaceId: 'workspace-b',
+                displayName: 'Workspace B',
+            },
+        ]);
+        expect(findGroupStateSnapshotByRef(workspaceA.group)).toEqual(workspaceA);
+        expect(findGroupStateSnapshotByRef(workspaceB.group)).toEqual(workspaceB);
     });
 
     it('uses group aggregate snapshotVersion for cache ordering', () => {
@@ -405,9 +451,13 @@ function createGroupSnapshot(
     displayName: string,
     membershipVersion: number,
     memberSessionIds: readonly string[],
+    scope: Readonly<{
+        applicationId?: string;
+        workspaceId?: string;
+    }> = {},
 ): GroupSnapshot {
-    const applicationId = 'app-1';
-    const workspaceId = 'workspace-1';
+    const applicationId = scope.applicationId ?? 'app-1';
+    const workspaceId = scope.workspaceId ?? 'workspace-1';
 
     return {
         group: {

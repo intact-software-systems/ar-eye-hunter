@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { WebRtcGroupService } from '@shared/services/WebRtcGroupService.ts';
+import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 
 describe('WebRtcGroupService', () => {
     it('accepts newer snapshots, filters self from targets, and ignores stale updates', async () => {
@@ -97,6 +99,30 @@ describe('WebRtcGroupService', () => {
         await service.refreshFromCache();
 
         expect(callback).toHaveBeenCalledTimes(1);
+    });
+
+    it('reads from the scoped group snapshot repository by group id', async () => {
+        configureTestCacheRepositories();
+
+        const snapshot = createGroupSnapshot('group-1', 1, ['self', 'peer-a']);
+        groupStateSnapshotsRepository.setGroupStateSnapshotById(
+            snapshot.group.groupId,
+            snapshot,
+        );
+
+        const rtcQBox = createRtcHarness('self');
+        const service = new WebRtcGroupService(
+            rtcQBox as never,
+            'group-1',
+            groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
+        );
+
+        expect(service.readGroup()).toEqual(snapshot);
+        expect(service.targetPeerIds()).toEqual(['peer-a']);
+        await expect(service.refreshFromCache()).resolves.toEqual({
+            joinedPeerIds: [],
+            leftPeerIds: [],
+        });
     });
 
     it('rejects updates for the wrong group id', async () => {

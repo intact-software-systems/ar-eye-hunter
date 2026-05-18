@@ -14,6 +14,7 @@ import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { initialiseServerCacheRepositories } from '../cache-repositories.ts';
 import type { ClientStateRepository } from '../repositories/ClientStateRepository.ts';
 import type { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
+import { resolveStateSyncRecipients } from '../state-sync-routing.ts';
 
 export type RallarMiddlewareRuntime = Readonly<{
     qboxEngine: InboxOutboxEngine;
@@ -141,7 +142,20 @@ export function createWsServerTargetResolver(
             }));
     };
 
-    const resolveAllOpenConnections = (): readonly WsServerResolvedRecipient[] => {
+    const resolveAllOpenConnections = (
+        message: ALMessage,
+    ): readonly WsServerResolvedRecipient[] => {
+        const stateSyncRecipients = resolveStateSyncRecipients(
+            webSocketServer,
+            message,
+            {
+                findGroupSnapshotById: options.findGroupSnapshotById,
+            },
+        );
+        if (stateSyncRecipients) {
+            return stateSyncRecipients;
+        }
+
         return [...webSocketServer.connections.values()]
             .filter((ctx) => ctx.isOpen)
             .map((ctx) => ({
@@ -169,7 +183,7 @@ export function createWsServerTargetResolver(
                 return resolveGroupRecipients(message.route.contextId);
             }
 
-            return resolveAllOpenConnections();
+            return resolveAllOpenConnections(message);
         },
         resolvePeerIdForConnection: (connectionId) => connectionId,
     };

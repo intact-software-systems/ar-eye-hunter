@@ -23,6 +23,33 @@ Recommended hardening:
 - Add browser-side scope rejection before accepting snapshots into caches.
 - Add tests with two workspaces and two logged-in users proving that cross-scope snapshots do not arrive.
 
+Implementation status:
+
+- Started on 2026-05-18.
+- Completed focused test-first proof for client snapshot cross-scope routing and browser cache hydration scope rejection.
+- Added server-side state-sync recipient filtering for the QueueBox target resolver path and the system-topic `server.broadcast(...)` path.
+- Client state snapshots/events now route only to open sessions whose cached client snapshot is in the same application/workspace.
+- Group state snapshots/events now route only to open sessions for active/invited group members in the same application/workspace; removed/left/banned members and cross-workspace sessions are excluded.
+- Malformed state-sync payloads fail closed with no recipients instead of falling back to global broadcast.
+- Browser state caches now reject out-of-scope client/group snapshots before writing local caches. Rallar scoped operations pass their scope through to cache hydration.
+- The in-memory group snapshot repository now stores snapshots under an application/workspace/group composite key, so identical `groupId` values in different workspaces no longer overwrite each other.
+- Group state-event routing now uses the event application/workspace scope when falling back to the in-memory snapshot repository.
+
+Verification:
+
+- Up-front failing proof: `npx vitest run packages/tests/shared-server/rallar-middleware.test.ts packages/tests/shared-web/data-caches.test.ts` failed because client state broadcasts resolved all open sessions and browser hydration accepted out-of-scope snapshots.
+- Up-front failing proof for repository isolation: `npx vitest run packages/tests/shared/repository-modules.test.ts --testNamePattern "same group id"` failed because only the last same-`groupId` workspace snapshot remained in the repository.
+- After implementation: `npx vitest run packages/tests/shared-server/rallar-middleware.test.ts packages/tests/shared-web/data-caches.test.ts packages/tests/shared-web/rallar-operation-options.test.ts`.
+- After repository isolation: `npx vitest run packages/tests/shared/repository-modules.test.ts packages/tests/shared-server/rallar-middleware.test.ts packages/tests/shared/webrtc-group-service.test.ts packages/tests/shared/webrtc-group-manager.test.ts packages/tests/shared-web/data-caches.test.ts packages/tests/shared-graph/group-graph-services.test.ts`.
+- Type/runtime checks: `npx tsc -p packages/shared-server/tsconfig.json --noEmit`, `npx tsc -p packages/shared-web/tsconfig.json --noEmit`, and `deno check --config apps/api-v1/deno.json apps/api-v1/src/main.ts`.
+- Repository isolation type checks: `npx tsc -p packages/shared/tsconfig.json --noEmit`, `npx tsc -p packages/shared-server/tsconfig.json --noEmit`, and `npx tsc -p packages/shared-web/tsconfig.json --noEmit`.
+
+Remaining gaps:
+
+- The proof is focused/unit-level. The originally recommended two-real-browser/two-workspace integration scenario is still pending.
+- Some public/internal APIs still accept only `groupId` and therefore remain ambiguous when one process intentionally works with multiple scopes at the same time. The repository now has a scoped lookup, but higher-level APIs should gradually move toward `GroupRef`/scope-aware signatures where the caller knows the scope.
+- Event routing for group events depends on a cached group snapshot. If the group snapshot cache is cold, the event fails closed rather than broadcasting.
+
 ## 2. Room Routing And Authorization Depend On Process-Local Snapshot Cache
 
 Current behavior:

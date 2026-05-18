@@ -867,7 +867,7 @@ class BrowserRallarFacade implements RallarFacade {
                 options.scope,
                 toRallarWorkflowPolicies(options),
             );
-            await this.acceptSnapshots(ctx, clients, groups);
+            await this.acceptSnapshots(ctx, clients, groups, options.scope);
             return this.toRoomState();
         },
         create: async (
@@ -887,7 +887,7 @@ class BrowserRallarFacade implements RallarFacade {
                 toRallarWorkflowPolicies(operationOptions),
             );
             this.currentRoomId = readGroupId(snapshot);
-            await this.acceptSnapshots(ctx, [], [snapshot]);
+            await this.acceptSnapshots(ctx, [], [snapshot], createInput.scope);
             return snapshot;
         },
         join: async (
@@ -920,7 +920,7 @@ class BrowserRallarFacade implements RallarFacade {
             }
 
             this.currentRoomId = readGroupId(snapshot);
-            await this.acceptSnapshots(ctx, [], [snapshot]);
+            await this.acceptSnapshots(ctx, [], [snapshot], options.scope);
             return snapshot;
         },
         leave: async (
@@ -949,7 +949,7 @@ class BrowserRallarFacade implements RallarFacade {
                 this.currentRoomId = undefined;
             }
 
-            await this.acceptSnapshots(ctx, [], [snapshot]);
+            await this.acceptSnapshots(ctx, [], [snapshot], options.scope);
             return snapshot;
         },
         current: (): GroupSnapshot | undefined => this.toRoomState().currentRoom,
@@ -979,7 +979,7 @@ class BrowserRallarFacade implements RallarFacade {
                 options.scope,
                 toRallarWorkflowPolicies(options),
             );
-            await this.acceptSnapshots(ctx, clients, groups);
+            await this.acceptSnapshots(ctx, clients, groups, options.scope);
             return this.toPeopleState();
         },
         get: (principalId: string): RallarPerson | undefined => {
@@ -1975,12 +1975,14 @@ class BrowserRallarFacade implements RallarFacade {
         ctx: ApiMiddleware,
         clients: readonly ClientSnapshot[],
         groups: readonly GroupSnapshot[],
+        scope?: StateScope,
     ): Promise<void> {
         await stateCaches.hydrateStateCaches(
             ctx.middleware.webRtcGroupManager,
             toClientInfo(ctx.session),
             clients,
             groups,
+            { scope },
         );
         this.emitState();
     }

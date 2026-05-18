@@ -57,11 +57,11 @@ export class WebRtcGroupService {
     }
 
     readGroup(): AnyGroupPresence | undefined {
-        return this.snapshot ?? this.groupCache.read(this.groupId);
+        return this.snapshot ?? this.readCachedGroup('read');
     }
 
     peekGroup(): AnyGroupPresence | undefined {
-        return this.snapshot ?? this.groupCache.peek(this.groupId);
+        return this.snapshot ?? this.readCachedGroup('peek');
     }
 
     targetPeerIds(): readonly PeerId[] {
@@ -111,8 +111,8 @@ export class WebRtcGroupService {
     async refreshFromCache(): Promise<GroupMembershipDiff> {
         const before = this.computeTargetPeerIds(this.readGroup());
 
-        this.snapshot = this.groupCache.read(this.groupId) ??
-            this.groupCache.peek(this.groupId);
+        this.snapshot = this.readCachedGroup('read') ??
+            this.readCachedGroup('peek');
 
         const after = this.computeTargetPeerIds(this.readGroup());
         const diff = this.computeDiff(before, after);
@@ -144,6 +144,24 @@ export class WebRtcGroupService {
         return readGroupMemberSessionIds(snapshot).filter(
             (peerId) => peerId !== this.rtcQBox.input.sessionId,
         );
+    }
+
+    private readCachedGroup(mode: 'read' | 'peek'): AnyGroupPresence | undefined {
+        const direct = mode === 'read'
+            ? this.groupCache.read(this.groupId)
+            : this.groupCache.peek(this.groupId);
+        if (direct) {
+            return direct;
+        }
+
+        if (typeof this.groupCache.readAllValues !== 'function') {
+            return undefined;
+        }
+
+        return this.groupCache.readAllValues()
+            .filter((snapshot) => readGroupId(snapshot) === this.groupId)
+            .sort((left, right) => readGroupVersion(right) - readGroupVersion(left))
+            .at(0);
     }
 
     private computeDiff(

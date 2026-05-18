@@ -15,6 +15,7 @@ import {
     type DynamicWsTopicRouterOptions,
     initDynamicWsTopicRouter,
 } from '../rallar-facade/ws-topic-router.ts';
+import { toStateSyncConnectionFilter } from './state-sync-routing.ts';
 
 export type InitRallarSystemWsTopicsOptions = Readonly<{
     initDynamicTopics?: boolean;
@@ -67,7 +68,7 @@ function initStateBroadcastTopic(
             }
 
             acceptState(data);
-            server.broadcast(data);
+            server.broadcast(data, toStateSyncConnectionFilter(server, data));
             return Promise.resolve();
         },
     });
@@ -79,7 +80,7 @@ function initStateBroadcastTopic(
             }
 
             acceptState(data);
-            server.broadcast(data);
+            server.broadcast(data, toStateSyncConnectionFilter(server, data));
             return Promise.resolve();
         },
     });

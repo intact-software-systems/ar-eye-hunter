@@ -1,4 +1,4 @@
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { readGroupVersion } from '@shared/api/group-client-views.ts';
 import {
     configureObservableLatestRepository,
@@ -99,9 +99,19 @@ export function findGroupStateSnapshotById(
     groupId: string,
     manager?: RepositoryManager,
 ): GroupSnapshot | undefined {
+    return readAllObservableLatestRepository(groupStateSnapshotRepositoryToken, manager)
+        .filter((snapshot) => snapshot.group.groupId === groupId)
+        .sort((left, right) => toGroupSnapshotVersion(right) - toGroupSnapshotVersion(left))
+        .at(0);
+}
+
+export function findGroupStateSnapshotByRef(
+    ref: GroupRef,
+    manager?: RepositoryManager,
+): GroupSnapshot | undefined {
     return readObservableLatestRepositoryValue(
         groupStateSnapshotRepositoryToken,
-        groupId,
+        toGroupStateSnapshotRepositoryKey(ref),
         manager,
     );
 }
@@ -138,25 +148,26 @@ export function setGroupStateSnapshotById(
     manager?: RepositoryManager,
 ): boolean {
     const repository = requireGroupStateSnapshotRepository(manager);
-    const current = repository.read(groupId);
+    const repositoryKey = toGroupStateSnapshotRepositoryKey(snapshot.group);
+    const current = repository.read(repositoryKey);
     const nextVersion = toGroupSnapshotVersion(snapshot);
     const currentVersion = current
         ? toGroupSnapshotVersion(current)
         : undefined;
 
     if (!current) {
-        repository.set(groupId, snapshot);
+        repository.set(repositoryKey, snapshot);
         return true;
     }
 
     if (currentVersion !== undefined && nextVersion > currentVersion) {
-        repository.set(groupId, snapshot);
+        repository.set(repositoryKey, snapshot);
         console.log(`Received updated group snapshot: ${groupId}`);
         return true;
     }
 
     if (currentVersion === nextVersion && !jsonEquals(current, snapshot)) {
-        repository.set(groupId, snapshot);
+        repository.set(repositoryKey, snapshot);
     }
 
     return false;
@@ -172,13 +183,22 @@ function toGroupSnapshotVersion(snapshot: GroupSnapshot): number {
     return readGroupVersion(snapshot);
 }
 
+export function toGroupStateSnapshotRepositoryKey(ref: GroupRef): string {
+    return JSON.stringify([
+        ref.applicationId,
+        ref.workspaceId ?? '',
+        ref.groupId,
+    ]);
+}
+
 function toGroupStateSnapshotChange(
     event: ObservableKeyedValueEvent<string, GroupSnapshot>,
     manager?: RepositoryManager,
 ): GroupStateSnapshotChange {
+    const snapshot = event.value ?? event.previous;
     return {
         kind: event.type,
-        groupId: event.key,
+        groupId: snapshot?.group.groupId ?? event.key,
         snapshot: event.value,
         previous: event.previous,
         version: event.value
