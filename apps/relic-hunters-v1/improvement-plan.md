@@ -291,14 +291,15 @@ Exit criteria:
 Make the game scene clearer before adding more content.
 
 Status: in progress. The first pass prioritized playability and browser
-stability over new visual content. Auth/lobby now use a static backdrop instead
-of mounting the full Babylon runtime, the planning scene uses a capped render
-loop with lighter shadows/SSAO/bloom, and the scene paints an early frame so
-canvas readiness checks do not race heavy setup. Blocking intro/onboarding flows
-are disabled by default while the playable loop is stabilized. Shared gameplay
-rules were also tightened: Entrance no longer contains a hidden relic, relic
-discoveries immediately create durable room investigations, and route hints
-prefer higher-value adjacent relic leads. The second pass disables
+stability over new visual content. The opening and lobby surfaces now mount a
+lightweight Babylon ambient scene, while the planning scene uses a capped render
+loop with lighter shadows/SSAO/bloom and paints an early frame so canvas
+readiness checks do not race heavy setup. Blocking
+intro/onboarding flows are disabled by default while the playable loop is
+stabilized. Shared gameplay rules were also tightened: Entrance no longer
+contains a hidden relic, relic discoveries immediately create durable room
+investigations, and route hints prefer higher-value adjacent relic leads. The
+second pass disables
 `preserveDrawingBuffer`, replaces retained-buffer test readiness with an
 explicit canvas `data-scene-ready` signal, simplifies player labels to
 player-facing names, and records a first asset plan in
@@ -426,15 +427,16 @@ Follow-up from:
 [Iteration 9](#iteration-9-lobby-and-multiplayer-flow), and
 [Iteration 11](#iteration-11-tests-and-playwright-coverage).
 
-Status: in progress. First propagation-hardening pass complete: snapshot
+Status: completed for the current propagation target. Snapshot
 ordering now rejects equal-timestamp candidates that have less complete
 event/submission/investigation state, runtime diagnostics expose accepted
 snapshot metadata and ignored snapshot reasons, the room list exposes stable
 room ids for browser automation, and a gated full-stack Playwright spec now
 drives two browsers through create room, second-client join, expedition join,
 start, submit/wait/resolve, reload recovery, reset, and rejoin against the
-paired Relic server/Rallar runtime. The full-stack spec is validated in skipped
-mode by default and runs with `RELIC_HUNTERS_FULL_STACK=1`.
+paired Relic server/Rallar runtime. The full-stack spec is skipped by default,
+runs with `RELIC_HUNTERS_FULL_STACK=1`, and has passed against the paired local
+server.
 
 Deliverables:
 
@@ -512,7 +514,10 @@ Follow-up from:
 
 Status: planned. Iterations 7 and 8 were first slices; `RelicScene.tsx` still
 owns too many responsibilities, and Iteration 11 left baseline visual snapshots
-open.
+open. A small navigation follow-up is complete: signed-in side menus now have
+sticky section jumps, extra-wide screens use a wider/two-column desktop layout,
+the desktop bottom HUD stays out of the right column, and mobile no longer clips
+the side-panel menu.
 
 Deliverables:
 
@@ -522,6 +527,8 @@ Deliverables:
 - keep fallback tactical rendering covered by browser smoke checks
 - verify labels, prompts, minimap, and bottom HUD do not overlap at the
   captured viewports
+- include the extra-wide side menu layout in visual smoke coverage so the
+  Rooms, Party/Plan, Map, and Intel controls stay reachable
 - refresh `docs/visual-direction.md` with the current procedural-vs-asset plan
 
 Exit criteria:
@@ -556,33 +563,176 @@ Exit criteria:
 
 - production build size and runtime performance are understood and acceptable
 
+### Iteration 16: Rallar Room Fanout And Reload Recovery
+
+Fix the external Rallar-side propagation bug found while validating Iteration 12.
+
+Follow-up from:
+[Iteration 12](#iteration-12-two-client-propagation-and-snapshot-recovery) and
+the reported failure where a second browser did not receive room-scoped game
+updates after another browser joined or started the expedition.
+
+Status: completed. This intentionally touched Rallar shared-server code because
+the room recipient cache lagged behind recent room membership writes. The
+state-sync publisher now writes client/group snapshots into the in-process
+recipient cache before queuing WS broadcast work, so immediate relic room
+fanout sees newly joined sessions. The SPA also persists the current Relic room
+id and rejoins it during reload hydration before fetching the authoritative
+snapshot.
+
+Deliverables:
+
+- update `packages/shared-server/rallar-system/state-sync-publisher.ts` so
+  local recipient caches are current before room-scoped live fanout depends on
+  them
+- persist and restore the current Relic room id in
+  `apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts`
+- prove join, start, submit, reload, reset, and rejoin convergence with
+  `RELIC_HUNTERS_FULL_STACK=1`
+- document the Rallar dependency in `docs/runtime-data-flow.md`
+
+Exit criteria:
+
+- two live browsers converge through the paired Relic server after room join,
+  expedition start, round resolution, reload hydration, reset, and rejoin
+
+### Iteration 17: Remote Avatar RTC Routing
+
+Fix the app-side RTC routing bug found while checking remote player avatar
+tracking.
+
+Follow-up from:
+[Iteration 8](#iteration-8-scene-architecture-and-runtime-split),
+[Iteration 12](#iteration-12-two-client-propagation-and-snapshot-recovery), and
+[Iteration 16](#iteration-16-rallar-room-fanout-and-reload-recovery).
+
+Status: completed. The scene networking adapter was still calling
+`rallar.messages.rtc.send()` without planned RTC next hops. Current Rallar
+returns `no-route` for that shape instead of silently fanning out, so remote
+browsers never received live avatar coordinates. The adapter now dedupes
+`rallar.rtc.readyPeerIds()` into `nextHopPeerIds`, includes the Relic game room
+id, sends the avatar room id plus room-relative offsets, uses one-hop
+best-effort delivery, and skips without throttling while no RTC peer is
+routable. The app workspace test command now runs the existing
+`apps/relic-hunters-v1/tests` suite, including focused regressions for this send
+and receive path.
+
+Deliverables:
+
+- update `apps/relic-hunters-v1/src/game/scene/networking.ts` so avatar
+  position sends use explicit ready RTC peer targets
+- add focused Vitest coverage for routed sends, room-relative receive
+  resolution, and no-route/no-throttle behavior
+- repair the app workspace test script and runtime test fake dependency shape
+- document the RTC avatar routing contract in `docs/runtime-data-flow.md`
+
+Exit criteria:
+
+- remote avatar position sends produce planned Rallar RTC transport messages
+  whenever at least one peer has an open reliable RTC lane
+
+### Iteration 18: RTC Snapshot Repair
+
+Fix the game-state/UI divergence found after avatar RTC started delivering
+coordinates: two clients could continue rendering different public snapshots,
+so remote avatar coordinates alone made the scene look plausible while room
+state, action state, and UI panels stayed out of sync.
+
+Follow-up from:
+[Iteration 12](#iteration-12-two-client-propagation-and-snapshot-recovery),
+[Iteration 16](#iteration-16-rallar-room-fanout-and-reload-recovery), and
+[Iteration 17](#iteration-17-remote-avatar-rtc-routing).
+
+Status: completed. Rallar WS remains the normal server fanout path and REST
+remains the command path, but accepted public snapshots are now also published
+over Rallar RTC to ready peers. Incoming RTC snapshots are accepted only for the
+currently joined Relic room and still pass through the existing timestamp,
+round, phase, and completeness ordering gate. The runtime also republishes the
+current snapshot periodically while RTC is ready, giving late or temporarily
+stale peers a repair signal without treating RTC as command authority.
+
+Deliverables:
+
+- subscribe to Relic snapshot messages over `rallar.messages.rtc`
+- publish accepted non-RTC public snapshots to `rallar.rtc.readyPeerIds()`
+- periodically republish the current accepted snapshot while RTC is ready
+- keep RTC snapshots on the same acceptance path as REST and WS snapshots
+- add focused runtime coverage for the RTC snapshot listener and publisher
+
+Exit criteria:
+
+- a client that misses a WS snapshot can accept a newer or equally complete
+  peer snapshot over RTC and converge before room/avatar UI drift becomes
+  permanent
+
+### Iteration 19: Timed-Out Round Snapshot Repair
+
+Fix the remaining timeout-resolution UI divergence: when one client
+force-resolved an overdue round, another client could miss both the WS snapshot
+and the RTC repair snapshot and keep showing the stale timed-out controls.
+
+Follow-up from:
+[Iteration 13](#iteration-13-stale-participant-policy-and-turn-blocking) and
+[Iteration 18](#iteration-18-rtc-snapshot-repair).
+
+Status: completed. The SPA now starts a narrow authoritative snapshot repair
+poll once a planning round reaches its deadline while active hunters are still
+waiting. The poll uses the regular REST snapshot endpoint, accepts the result
+through the same ordering gate as bootstrap/WS/RTC snapshots, republishes
+accepted repairs over RTC, and stops automatically when a newer snapshot
+advances the round or clears the waiting state. Browser coverage now verifies
+that an expired round can repair from the force-resolved server snapshot and
+clear the timed-out UI.
+
+Deliverables:
+
+- add a `timeout-repair` snapshot source for diagnostics and ordering
+- poll the authoritative room snapshot only after the planning deadline when
+  active players are still waiting
+- reuse the existing snapshot acceptance policy so stale timeout snapshots
+  cannot replace newer local state
+- add browser-level regression coverage for a timed-out force-resolved round
+  catching up through authoritative snapshot polling
+- document the timeout repair path in `docs/runtime-data-flow.md`
+
+Exit criteria:
+
+- a peer that misses push-based timeout resolution can still converge from the
+  server snapshot without staying stuck on the stale force-resolve UI
+
 ## Next Implementation Recommendation
 
-Start with Iteration 12, not performance.
+Continue with Iteration 14 before performance.
 
-The old Iteration 12 performance work is useful, but it assumes the playable
-loop is already trustworthy. The current remaining risk is still client-to-client
-state propagation, so prove two-client convergence first, then settle stale
-participant policy, then return to visual baselines and production performance.
+The playable loop now has a real two-browser convergence pass, while performance
+work still assumes the scene and UI surfaces have stable visual baselines.
+The next natural work is visual baseline coverage and one more `RelicScene`
+boundary extraction, then production readiness.
 
 ## Concrete Next Tasks
 
-1. Build the two-client Playwright path against the real paired server/runtime.
-2. Assert both clients converge on the same room, phase, round, submissions,
-   event ids, and snapshot metadata after each command.
-3. Reproduce or rule out equal-timestamp snapshot replacement with richer/poorer
-   event data.
-4. Add a reconnect/resubscribe recovery check or document the precise manual
-   recovery procedure if automation is blocked.
-5. Update `docs/runtime-data-flow.md` with the propagation contract and any
-   known limitations found during the test pass.
+1. Add baseline screenshot coverage for signed-out, lobby, planning, waiting,
+   resolved timeline, and finished states.
+2. Include the extra-wide side-panel scroll layout in the visual smoke checks.
+3. Extract either event effects or player/relic sync out of `RelicScene.tsx`.
+4. Keep the full-stack propagation spec available as a gated regression check
+   whenever Rallar or room hydration changes.
+5. Add a browser-level two-client avatar tracking assertion once the visual
+   baseline pass has stable scene screenshots.
+6. Add a two-client RTC snapshot-repair browser assertion that blocks or drops a
+   WS update and verifies the stale client catches up from a peer snapshot.
+7. Add a full-stack timeout-resolution propagation assertion that force-resolves
+   an overdue round from one browser and verifies the other browser leaves the
+   timed-out UI without manual refresh.
 
 ## Open Questions
 
 - Should future non-browser clients use the registered Rallar WS command topic,
   or should all gameplay command senders stay REST-first?
-- Should RTC position sharing be gameplay-relevant or only cosmetic?
-- Should disconnected players block turn resolution?
+- Should peer snapshot repair remain full-snapshot based, or should it move to a
+  smaller signed/hashed state digest once the playable loop is stable?
+- Should disconnected players eventually be removable from the expedition
+  roster, or should timer-based skip remain the only recovery path?
 - Should the first playable camera be top-down/tactical instead of third-person roaming?
 - Are real 3D assets planned, or should the procedural style be refined into an intentional low-poly direction?
 - Should the intro cinematic stay in the first load path, or load only after the playable flow is stable?

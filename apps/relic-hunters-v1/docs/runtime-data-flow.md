@@ -1,12 +1,12 @@
 # Runtime Data Flow
 
-Last reviewed: 2026-05-16.
+Last reviewed: 2026-05-18.
 
 ## Modules
 
 - `src/game/relic-hunters-runtime.ts` is the browser runtime facade around
-  Rallar auth, rooms, room listeners, WS snapshot listeners, and REST relic API
-  calls.
+  Rallar auth, rooms, room listeners, WS snapshot listeners, RTC snapshot
+  repair, and REST relic API calls.
 - `src/game/useRelicHunters.ts` adapts the runtime into React state and exposes
   phases, diagnostics, room summaries, the current room id, and the accepted
   relic snapshot.
@@ -21,11 +21,12 @@ Last reviewed: 2026-05-16.
 1. The hook restores an auth session.
 2. The runtime calls `rallar.connect()`.
 3. It installs a Rallar WS snapshot listener.
-4. It installs a Rallar rooms change listener.
-5. It refreshes room state.
-6. If a room is current, it fetches the room snapshot over REST.
-7. The hook accepts or ignores snapshots through `shouldAcceptRelicSnapshot`.
-8. Diagnostics track auth, middleware, room, snapshot, WS listener, room
+4. It installs a Rallar RTC snapshot listener.
+5. It installs a Rallar rooms change listener.
+6. It refreshes room state.
+7. If a room is current, it fetches the room snapshot over REST.
+8. The hook accepts or ignores snapshots through `shouldAcceptRelicSnapshot`.
+9. Diagnostics track auth, middleware, room, snapshot, WS listener, room
    listener, RTC readiness, snapshot source, ignored snapshots, and last error.
 
 Legacy or mocked snapshots may omit `adminPlayerId`; the SPA treats the first
@@ -63,6 +64,13 @@ zero, and only when at least one active hunter is still waiting. This does not
 remove stale players from the expedition; it lets the current round advance.
 Reset remains the roster-rebuild path.
 
+After a planning deadline is reached while active hunters are still waiting, the
+SPA also starts a narrow authoritative snapshot repair poll for the current
+room. This is a fallback for missed WS/RTC timeout-resolution snapshots, not a
+new command path. Repaired snapshots use source `timeout-repair`, pass through
+the same snapshot ordering policy, and stop the stale timed-out UI once the
+server snapshot has advanced the round.
+
 ## API Base URL
 
 In Vite development, local absolute API URLs such as `http://localhost:8090` are
@@ -75,10 +83,11 @@ explicit deployed API origin.
 
 Snapshots are rejected when they belong to a non-current expected room or when
 they are older than the current same-room snapshot. Equal timestamp snapshots can
-still converge between REST responses and WS echoes, but same-room candidates
-with the same timestamp and round are rejected if they regress phase or contain
-less complete event, submission, or room-investigation state. Explicit REST
-reset responses are allowed to semantically regress to a fresh lobby snapshot.
+still converge between REST responses, WS echoes, and RTC repair messages, but
+same-room candidates with the same timestamp and round are rejected if they
+regress phase or contain less complete event, submission, or
+room-investigation state. Explicit REST reset responses are allowed to
+semantically regress to a fresh lobby snapshot.
 
 Development diagnostics now track the latest accepted snapshot metadata and the
 last ignored snapshot reason. Development builds also expose
@@ -92,7 +101,15 @@ adds a gated two-browser propagation path against the paired Relic server/Rallar
 runtime. It compares both clients' room id, phase, round, active player count,
 submitted player ids, event ids, and accepted snapshot metadata after join,
 start, submit/wait/resolve, reload recovery, reset, and rejoin. The spec is
-skipped by default and runs with `RELIC_HUNTERS_FULL_STACK=1`.
+skipped by default, runs with `RELIC_HUNTERS_FULL_STACK=1`, and has passed
+against the paired local Relic server.
+
+The propagation fix crossed into Rallar server code: the WS state-sync publisher
+now writes client and group snapshots into the in-process recipient cache before
+queuing broadcast work. That prevents a room-scoped relic snapshot from racing
+ahead of a recent room join and missing the newly joined browser. The SPA also
+persists the current room id and rejoins it during reload hydration before
+fetching the authoritative relic snapshot.
 
 ## RTC Position Flow
 
@@ -106,13 +123,36 @@ The RTC adapter publishes world-space room coordinates plus local roam offset.
 This keeps remote avatar interpolation aligned with the Babylon room grid while
 leaving authoritative room movement in the turn-based snapshot.
 
+Outbound avatar position messages are explicitly routed to
+`rallar.rtc.readyPeerIds()` through `nextHopPeerIds`. Each payload carries the
+game room, the avatar's current room, absolute world coordinates, and
+room-relative offsets. Receivers prefer the room-relative form and resolve it
+against their own scene map, falling back to absolute coordinates for older
+payloads. Rallar `messages.rtc` returns `no-route` for untargeted sends, so the
+scene skips broadcasts until at least one reliable RTC lane is open and leaves
+the broadcast throttle untouched while no peer is routable.
+
+## RTC Snapshot Repair
+
+The SPA also uses Rallar RTC as a secondary snapshot repair path. When a client
+accepts a public snapshot from bootstrap, room hydration, REST command/reset,
+timeout repair, or WS, it publishes that snapshot to
+`rallar.rtc.readyPeerIds()` with the regular Relic snapshot topic/type. While
+RTC is ready, the current accepted snapshot is also republished periodically.
+This is intentionally not a command path: peers do not apply actions from RTC,
+they only accept public snapshots that pass the existing ordering and room
+checks.
+
+Incoming RTC snapshots use source `rallar-rtc`. They are ignored unless they
+belong to the currently joined room, then pass through the same monotonic
+snapshot acceptance policy as WS and REST. This keeps clients visually aligned
+when WS fanout or room hydration lags, without allowing an older or less
+complete peer snapshot to replace a richer local one.
+
 ## Known Data-Flow Gaps
 
-- The two-browser propagation spec is gated and has been validated in skipped
-  mode. It still needs a real full-stack environment run before Iteration 12
-  exit criteria can be treated as fully closed.
-- Reconnect recovery currently has reload/rehydration coverage in the gated
-  full-stack spec. Lower-level middleware or WS disruption recovery is still not
+- The two-browser propagation spec is gated, but the real local full-stack run
+  now passes. Lower-level middleware or WS disruption recovery is still not
   separately simulated.
 - Stale active expedition players can block round resolution because active
   player count is based on game state, not live room membership. Iteration 13's

@@ -13,6 +13,7 @@ import type {
 } from '@relic-hunters/mod.ts';
 import { RELIC_CHARACTERS, findRelicCharacter } from '@relic-hunters/mod.ts';
 import { IntroScene } from './game/IntroScene.tsx';
+import { OpeningRelicScene } from './game/OpeningRelicScene.tsx';
 import { RelicScene } from './game/RelicScene.tsx';
 import { GameHudLayout } from './game/hud/GameHudLayout.tsx';
 import {
@@ -117,7 +118,7 @@ export default function App() {
     );
     const currentPlayer = viewModel.currentPlayer;
     const currentRoom = viewModel.currentRoom;
-    const useInteractiveScene = game.snapshot?.phase === 'planning' ||
+    const sceneInputEnabled = game.snapshot?.phase === 'planning' ||
         game.snapshot?.phase === 'finished';
     const currentRoomSummary = useMemo(
         () => game.rooms.find((room) => room.roomId === game.roomId),
@@ -559,11 +560,17 @@ export default function App() {
 
         setAmbientEnabled(startAmbientSound());
     };
+    const jumpToSidePanelSection = useCallback((sectionId: string) => {
+        document.getElementById(sectionId)?.scrollIntoView({
+            block: 'start',
+            behavior: 'auto',
+        });
+    }, []);
 
     return (
         <GameHudLayout
             scene={(
-                useInteractiveScene
+                sceneInputEnabled
                     ? (
                         <RelicScene
                             snapshot={game.snapshot}
@@ -572,11 +579,12 @@ export default function App() {
                             primedAction={scenePrimedAction}
                             focusRoomId={eventFocusRoomId}
                             rtcReady={game.diagnostics.rtcReady}
+                            inputEnabled={sceneInputEnabled}
                             onSelectRoom={setSelectedRoomId}
                             onPrimeAction={primeSceneAction}
                         />
                     )
-                    : <RelicSceneBackdrop/>
+                    : <OpeningRelicScene/>
             )}
             top={(
                 <AppTopBar
@@ -595,6 +603,23 @@ export default function App() {
                 >
                     {sidePanelCollapsed ? '▶ Panel' : '◀ Collapse'}
                 </button>
+                {game.session && (
+                    <SidePanelMenu
+                        items={[
+                            { id: 'hud-rooms', label: 'Rooms' },
+                            ...(game.roomId
+                                ? [{ id: 'hud-plan', label: game.snapshot?.phase === 'planning' ? 'Plan' : 'Party' }]
+                                : []),
+                            ...(game.roomId && game.snapshot
+                                ? [
+                                    { id: 'hud-map', label: 'Map' },
+                                    { id: 'hud-intel', label: 'Intel' },
+                                ]
+                                : []),
+                        ]}
+                        onJump={jumpToSidePanelSection}
+                    />
+                )}
                 {!game.session || game.connectionState === 'signed-out'
                     ? (
                         <form className="panel stack" onSubmit={submitAuth}>
@@ -652,7 +677,7 @@ export default function App() {
                         </form>
                     )
                     : (
-                        <div className="panel stack">
+                        <div id="hud-rooms" className="panel stack">
                             <div className="profile-row">
                                 <span
                                     className="hunter-dot"
@@ -706,7 +731,7 @@ export default function App() {
                     )}
 
                 {game.session && game.roomId && (
-                    <div className="panel stack">
+                    <div id="hud-plan" className="panel stack">
                         <CharacterSelect
                             currentPlayer={currentPlayer}
                             selectedCharacterId={selectedCharacterId}
@@ -1159,17 +1184,6 @@ export default function App() {
     );
 }
 
-function RelicSceneBackdrop() {
-    return (
-        <div className="relic-scene relic-scene-fallback" aria-label="Relic Hunters castle">
-            <div className="fallback-vista">
-                <strong>Relic Hunters</strong>
-                <span>The ruin waits beyond the gate.</span>
-            </div>
-        </div>
-    );
-}
-
 function AppTopBar({
                        phaseText,
                        snapshot,
@@ -1205,6 +1219,28 @@ function AppTopBar({
                 >?</button>
             </div>
         </section>
+    );
+}
+
+function SidePanelMenu({
+                           items,
+                           onJump,
+                       }: Readonly<{
+    items: readonly Readonly<{ id: string; label: string }>[];
+    onJump(id: string): void;
+}>) {
+    return (
+        <nav className="side-panel-menu" aria-label="Side panel sections">
+            {items.map((item) => (
+                <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => onJump(item.id)}
+                >
+                    {item.label}
+                </button>
+            ))}
+        </nav>
     );
 }
 
@@ -1859,7 +1895,7 @@ function RoomIntel({
         : undefined;
 
     return (
-        <div className="panel stack room-intel">
+        <div id="hud-intel" className="panel stack room-intel">
             <button type="button" className="collapsible-header" onClick={() => setOpen((v) => !v)}>
                 <div>
                     <span className="panel-label">Current Room</span>
@@ -2183,7 +2219,7 @@ function CastleMap({
     );
 
     return (
-        <div className="panel castle-map-panel">
+        <div id="hud-map" className="panel castle-map-panel">
             <div className="castle-map-title">
                 <span className="panel-label">Castle Map</span>
                 <strong>{snapshot.phase === 'lobby' ? 'Choose a hunter to enter' : 'Track the expedition'}</strong>

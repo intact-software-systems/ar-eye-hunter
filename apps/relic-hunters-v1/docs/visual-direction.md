@@ -21,8 +21,8 @@ Last reviewed: 2026-05-16.
 
 ## Current Babylon Baseline
 
-- Auth and lobby use a static backdrop instead of mounting the full engine.
-- Planning and finished phases mount Babylon.
+- Opening, auth, and lobby surfaces use a lightweight Babylon ambient scene.
+- Planning and finished phases mount the full gameplay Babylon scene.
 - The render loop is capped at 30 fps.
 - Hardware scaling is set to `1.25` for performance headroom.
 - `preserveDrawingBuffer` is disabled. The canvas exposes

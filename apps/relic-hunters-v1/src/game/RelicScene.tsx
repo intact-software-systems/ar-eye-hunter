@@ -88,6 +88,7 @@ type RelicSceneProps = Readonly<{
     primedAction?: RelicActionInput;
     focusRoomId?: string;
     rtcReady?: boolean;
+    inputEnabled?: boolean;
     onSelectRoom(roomId: string): void;
     onPrimeAction?(action: RelicActionInput): void;
 }>;
@@ -137,6 +138,7 @@ type SceneRuntime = Readonly<{
     eventPlaybackPrimed: { value: boolean };
     focusRoomId: { value?: string };
     rtcReady: { value: boolean };
+    inputEnabled: { value: boolean };
     prompt: { value?: ScenePrompt };
     onPromptChange: { value(prompt?: ScenePrompt): void };
     movePromptHold: { value?: HeldMovePrompt };
@@ -163,6 +165,7 @@ export function RelicScene({
                                primedAction,
                                focusRoomId,
                                rtcReady = false,
+                               inputEnabled = true,
                                onSelectRoom,
                                onPrimeAction,
                            }: RelicSceneProps) {
@@ -175,6 +178,7 @@ export function RelicScene({
     const selectedRoomIdRef = useRef(selectedRoomId);
     const primedActionRef = useRef(primedAction);
     const rtcReadyRef = useRef(rtcReady);
+    const inputEnabledRef = useRef(inputEnabled);
     const onSelectRoomRef = useRef(onSelectRoom);
     const onPrimeActionRef = useRef(onPrimeAction);
     const sceneObjective = deriveSceneObjective({
@@ -208,6 +212,20 @@ export function RelicScene({
             runtimeRef.current.rtcReady.value = rtcReady;
         }
     }, [rtcReady]);
+
+    useEffect(() => {
+        inputEnabledRef.current = inputEnabled;
+        if (runtimeRef.current) {
+            runtimeRef.current.inputEnabled.value = inputEnabled;
+            if (!inputEnabled) {
+                runtimeRef.current.pointerLook.active = false;
+                runtimeRef.current.pressedKeys.clear();
+                if (document.pointerLockElement === runtimeRef.current.canvas) {
+                    document.exitPointerLock?.();
+                }
+            }
+        }
+    }, [inputEnabled]);
 
     useEffect(() => {
         if (runtimeRef.current) {
@@ -244,6 +262,7 @@ export function RelicScene({
                 selectedRoomId: selectedRoomIdRef.current,
                 primedAction: primedActionRef.current,
                 rtcReady: rtcReadyRef.current,
+                inputEnabled: inputEnabledRef.current,
                 objectiveTargetRoomId: sceneObjective.targetRoomId,
                 onPromptChange: setScenePrompt,
             });
@@ -294,6 +313,9 @@ export function RelicScene({
 
         const resize = () => runtime.engine.resize();
         const pointerdown = (event: PointerEvent) => {
+            if (!runtime.inputEnabled.value) {
+                return;
+            }
             if (event.button !== 0 && event.pointerType === 'mouse') {
                 return;
             }
@@ -313,6 +335,9 @@ export function RelicScene({
             }
         };
         const pointermove = (event: PointerEvent) => {
+            if (!runtime.inputEnabled.value) {
+                return;
+            }
             const lookScale = runtime.inspection.value ? 0.35 : 1;
             if (document.pointerLockElement === canvas) {
                 applyPointerLook(runtime, event.movementX * lookScale, event.movementY * lookScale);
@@ -350,6 +375,9 @@ export function RelicScene({
                 target instanceof HTMLTextAreaElement ||
                 (target instanceof HTMLElement && target.isContentEditable);
 
+            if (!runtime.inputEnabled.value) {
+                return;
+            }
             if (event.key === 'Escape' && runtime.inspection.value) {
                 runtime.inspection.value = undefined;
                 setRuntimePrompt(runtime, undefined);
@@ -443,7 +471,7 @@ export function RelicScene({
                 tabIndex={0}
             />
             <RoomStateOverlay key={roomStateKey} snapshot={snapshot} localPlayerId={localPlayerId}/>
-            <TouchDPad active={localPlayerActive}/>
+            <TouchDPad active={inputEnabled && localPlayerActive}/>
             <SceneInteractionPrompt
                 prompt={scenePrompt}
                 onPrimeAction={(action) => {
@@ -611,6 +639,7 @@ function createRelicSceneRuntime({
                                      selectedRoomId,
                                      primedAction,
                                      rtcReady,
+                                     inputEnabled,
                                      objectiveTargetRoomId,
                                      onPromptChange,
                                  }: Readonly<{
@@ -620,6 +649,7 @@ function createRelicSceneRuntime({
     selectedRoomId?: string;
     primedAction?: RelicActionInput;
     rtcReady: boolean;
+    inputEnabled: boolean;
     objectiveTargetRoomId?: string;
     onPromptChange(prompt?: ScenePrompt): void;
 }>): SceneRuntime {
@@ -713,6 +743,7 @@ function createRelicSceneRuntime({
         eventPlaybackPrimed: { value: false },
         focusRoomId: { value: undefined },
         rtcReady: { value: rtcReady },
+        inputEnabled: { value: inputEnabled },
         prompt: { value: undefined },
         onPromptChange: { value: onPromptChange },
         movePromptHold: { value: undefined },
@@ -900,17 +931,35 @@ function renderedFrameHasVisiblePixel(canvas: HTMLCanvasElement): boolean {
     }
 
     try {
+        const width = gl.drawingBufferWidth;
+        const height = gl.drawingBufferHeight;
+        if (width <= 0 || height <= 0) {
+            return false;
+        }
+
         const pixels = new Uint8Array(4);
-        gl.readPixels(
-            Math.floor(gl.drawingBufferWidth / 2),
-            Math.floor(gl.drawingBufferHeight / 2),
-            1,
-            1,
-            gl.RGBA,
-            gl.UNSIGNED_BYTE,
-            pixels,
-        );
-        return pixels[3] > 0 && (pixels[0] > 4 || pixels[1] > 4 || pixels[2] > 4);
+        const samples: readonly Readonly<[number, number]>[] = [
+            [0.5, 0.5],
+            [0.34, 0.42],
+            [0.66, 0.42],
+            [0.5, 0.28],
+            [0.5, 0.72],
+        ];
+        for (const [xRatio, yRatio] of samples) {
+            gl.readPixels(
+                Math.min(width - 1, Math.max(0, Math.floor(width * xRatio))),
+                Math.min(height - 1, Math.max(0, Math.floor(height * yRatio))),
+                1,
+                1,
+                gl.RGBA,
+                gl.UNSIGNED_BYTE,
+                pixels,
+            );
+            if (pixels[3] > 0 && (pixels[0] > 4 || pixels[1] > 4 || pixels[2] > 4)) {
+                return true;
+            }
+        }
+        return false;
     } catch {
         return false;
     }
@@ -1594,8 +1643,8 @@ function syncEventEffects(runtime: SceneRuntime, snapshot: RelicPublicSnapshot):
 
 function updateRuntime(runtime: SceneRuntime): void {
     updateSceneVisibility(runtime);
-    updatePlayerPositions(runtime);
     updateCameraPose(runtime);
+    updatePlayerPositions(runtime);
     updateInteractionHighlights(runtime);
     updateFirstPersonHands(runtime);
     updateLightFlicker(runtime);
@@ -1603,14 +1652,16 @@ function updateRuntime(runtime: SceneRuntime): void {
     updateRelics(runtime);
     updateAvatarCompulsionState(runtime);
     updateDynamicPostProcess(runtime);
-    broadcastLocalPosition(runtime);
+    if (runtime.inputEnabled.value) {
+        broadcastLocalPosition(runtime);
+    }
 }
 
 function updateSceneVisibility(runtime: SceneRuntime): void {
     const snapshot = runtime.snapshot.value;
     const localPlayerId = runtime.localPlayerId.value;
     const localPlayer = snapshot?.players.find((player) => player.playerId === localPlayerId);
-    const showIntro = !snapshot || !localPlayer;
+    const showIntro = !snapshot || !localPlayer || snapshot.phase === 'lobby';
 
     for (const mesh of runtime.introMeshes) {
         mesh.setEnabled(showIntro);
@@ -1706,7 +1757,7 @@ function updateCameraPose(runtime: SceneRuntime): void {
     const snapshot = runtime.snapshot.value;
     const localPlayerId = runtime.localPlayerId.value;
     const localPlayer = snapshot?.players.find((player) => player.playerId === localPlayerId);
-    if (!snapshot || !localPlayer) {
+    if (!snapshot || !localPlayer || snapshot.phase === 'lobby') {
         setRuntimePrompt(runtime, undefined);
         // Cinematic slow orbit around the Japanese lobby
         const t = performance.now() / 1000;

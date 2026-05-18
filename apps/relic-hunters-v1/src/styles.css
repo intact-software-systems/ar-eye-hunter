@@ -323,7 +323,7 @@ label {
     grid-template-areas:
         "top top"
         ". side"
-        "bottom bottom";
+        "bottom side";
     gap: var(--hud-gap);
     padding: 18px var(--hud-edge) var(--hud-edge);
     pointer-events: none;
@@ -345,9 +345,11 @@ label {
 
 .hud-region-side {
     grid-area: side;
-    align-self: start;
+    align-self: stretch;
     justify-self: end;
     width: 100%;
+    height: 100%;
+    min-height: 0;
     max-height: 100%;
     overflow: hidden;
 }
@@ -479,10 +481,42 @@ label {
 
 .side-panel {
     width: 100%;
+    height: 100%;
+    min-height: 0;
     max-height: 100%;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    scroll-padding-top: 54px;
     display: grid;
     gap: 12px;
+    padding: 0 4px 18px 0;
+}
+
+.side-panel-menu {
+    position: sticky;
+    top: 0;
+    z-index: 12;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(68px, 1fr));
+    gap: 5px;
+    padding: 6px;
+    border: 1px solid rgba(255, 249, 233, 0.16);
+    border-radius: 8px;
+    background: rgba(17, 36, 34, 0.9);
+    box-shadow: 0 12px 30px rgba(6, 18, 16, 0.26);
+    backdrop-filter: blur(14px);
+}
+
+.side-panel-menu button {
+    min-height: 32px;
+    padding: 0 8px;
+    border-color: rgba(186, 245, 231, 0.18);
+    color: #dffcf2;
+    background: rgba(34, 54, 49, 0.82);
+    font-size: 0.72rem;
+    font-weight: 800;
 }
 
 .bottom-panel {
@@ -490,6 +524,7 @@ label {
     grid-template-columns: minmax(0, 1.35fr) minmax(260px, 1fr);
     gap: 12px;
     align-items: end;
+    pointer-events: none;
 }
 
 .bottom-panel.compact {
@@ -1512,6 +1547,44 @@ label {
     color: #fecaca !important;
 }
 
+@media (min-width: 1320px) {
+    .app-root {
+        --hud-edge: 28px;
+    }
+
+    .hud-layout {
+        grid-template-columns: minmax(0, 1fr) clamp(420px, 28vw, 560px);
+    }
+
+    .side-panel {
+        gap: 14px;
+    }
+}
+
+@media (min-width: 1760px) and (min-height: 820px) {
+    .hud-layout {
+        grid-template-columns: minmax(0, 1fr) minmax(720px, 820px);
+    }
+
+    .side-panel:not(.collapsed) {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-content: start;
+        align-items: start;
+    }
+
+    .side-panel:not(.collapsed) > .side-panel-toggle,
+    .side-panel:not(.collapsed) > .side-panel-menu,
+    .side-panel:not(.collapsed) > .party-change-panel,
+    .side-panel:not(.collapsed) > .error-panel,
+    .side-panel:not(.collapsed) > .rallar-diagnostics-panel {
+        grid-column: 1 / -1;
+    }
+
+    .side-panel:not(.collapsed) > #hud-plan {
+        align-self: start;
+    }
+}
+
 @media (max-width: 820px) {
     body {
         overflow: auto;
@@ -1549,7 +1622,17 @@ label {
 
     .hud-region-side,
     .side-panel {
+        height: auto;
         max-height: none;
+    }
+
+    .hud-region-side {
+        overflow: visible;
+    }
+
+    .side-panel {
+        overflow: visible;
+        padding: 0;
     }
 
     .scene-interaction-prompt {

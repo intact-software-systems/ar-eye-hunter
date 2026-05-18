@@ -3,9 +3,11 @@ import type { RelicPublicSnapshot } from '@relic-hunters/mod.ts';
 export type RelicSnapshotSource =
     | 'bootstrap'
     | 'room-hydration'
+    | 'timeout-repair'
     | 'rest-command'
     | 'rest-reset'
-    | 'rallar-ws';
+    | 'rallar-ws'
+    | 'rallar-rtc';
 
 export type RelicSnapshotRejectionReason =
     | 'room-mismatch'

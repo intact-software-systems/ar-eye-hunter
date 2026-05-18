@@ -21,6 +21,9 @@ import {
     type RelicSnapshotSource,
 } from './relic-snapshot-ordering.ts';
 
+const RTC_SNAPSHOT_REPAIR_INTERVAL_MS = 2_000;
+const ROUND_TIMEOUT_SNAPSHOT_REPAIR_INTERVAL_MS = 2_000;
+
 export type RelicHuntersConnection = Readonly<{
     session?: AuthSession;
     connectionState: RelicHuntersRuntimePhase;
@@ -60,6 +63,7 @@ export function useRelicHunters(): RelicHuntersConnection {
     const [roomId, setRoomId] = useState<string | undefined>();
     const [rooms, setRooms] = useState<readonly RallarRoomSummary[]>([]);
     const [snapshot, setSnapshot] = useState<RelicPublicSnapshot | undefined>();
+    const timedOutRoundRepairKey = snapshot ? toTimedOutRoundRepairKey(snapshot) : undefined;
     const sessionRef = useRef<AuthSession | undefined>(session);
     const roomIdRef = useRef<string | undefined>(roomId);
     const snapshotRef = useRef<RelicPublicSnapshot | undefined>(snapshot);
@@ -116,6 +120,27 @@ export function useRelicHunters(): RelicHuntersConnection {
         }));
     }, []);
 
+    const publishSnapshotToRtc = useCallback((
+        next: RelicPublicSnapshot,
+        source: RelicSnapshotSource,
+    ) => {
+        if (source === 'rallar-rtc') {
+            return;
+        }
+
+        const currentRoomId = roomIdRef.current ?? next.roomId;
+        if (!currentRoomId || currentRoomId !== next.roomId) {
+            return;
+        }
+
+        void runtime.publishRtcSnapshot(next).catch((err) => {
+            setDiagnostics((prev) => ({
+                ...prev,
+                lastError: `RTC snapshot sync failed: ${toErrorMessage(err)}`,
+            }));
+        });
+    }, [runtime]);
+
     const acceptSnapshotCandidate = useCallback((
         next: RelicPublicSnapshot,
         source: RelicSnapshotSource,
@@ -147,8 +172,9 @@ export function useRelicHunters(): RelicHuntersConnection {
             lastAcceptedSnapshot: summarizeRuntimeSnapshot(next, source),
             lastHydratedAtEpochMs: Date.now(),
         }));
+        publishSnapshotToRtc(next, source);
         return true;
-    }, []);
+    }, [publishSnapshotToRtc]);
 
     const closeSubscriptions = useCallback(() => {
         unsubscribeRef.current?.();
@@ -161,14 +187,28 @@ export function useRelicHunters(): RelicHuntersConnection {
         }));
     }, []);
 
-    const acceptSnapshot = useCallback((value: unknown) => {
+    const acceptSnapshotFromSource = useCallback((
+        value: unknown,
+        source: RelicSnapshotSource,
+    ) => {
         const next = isRelicServerEvent(value) ? value.snapshot : value;
         if (!isRelicSnapshot(next)) {
             return;
         }
+        if (source === 'rallar-rtc' && (!roomIdRef.current || next.roomId !== roomIdRef.current)) {
+            return;
+        }
 
-        acceptSnapshotCandidate(next, 'rallar-ws');
+        acceptSnapshotCandidate(next, source);
     }, [acceptSnapshotCandidate]);
+
+    const acceptWsSnapshot = useCallback((value: unknown) => {
+        acceptSnapshotFromSource(value, 'rallar-ws');
+    }, [acceptSnapshotFromSource]);
+
+    const acceptRtcSnapshot = useCallback((value: unknown) => {
+        acceptSnapshotFromSource(value, 'rallar-rtc');
+    }, [acceptSnapshotFromSource]);
 
     const hydrateSnapshotForRoom = useCallback(async (nextRoomId: string) => {
         const requestId = ++roomSnapshotRequestRef.current;
@@ -197,6 +237,20 @@ export function useRelicHunters(): RelicHuntersConnection {
             }
         }
     }, [acceptSnapshotCandidate, clearSnapshot, runtime, setPhase]);
+
+    const repairTimedOutRoundSnapshot = useCallback(async (nextRoomId: string) => {
+        try {
+            const next = await runtime.fetchSnapshot(nextRoomId);
+            if (next) {
+                acceptSnapshotCandidate(next, 'timeout-repair', nextRoomId);
+            }
+        } catch (err) {
+            setDiagnostics((prev) => ({
+                ...prev,
+                lastError: `Timed-out round snapshot repair failed: ${toErrorMessage(err)}`,
+            }));
+        }
+    }, [acceptSnapshotCandidate, runtime]);
 
     const applyRoomState = useCallback((state: RallarRoomState) => {
         const nextRoomId = state.currentRoomId;
@@ -252,8 +306,9 @@ export function useRelicHunters(): RelicHuntersConnection {
 
         try {
             const hydration = await runtime.connectAndHydrate(
-                acceptSnapshot,
+                acceptWsSnapshot,
                 applyRoomState,
+                acceptRtcSnapshot,
             );
             if (!hydration) {
                 setPhase('signed-out', initialRelicDiagnostics(undefined));
@@ -285,8 +340,8 @@ export function useRelicHunters(): RelicHuntersConnection {
                 roomReady: !!hydration.roomState.currentRoomId,
                 snapshotReady: snapshotAccepted,
                 wsListenerReady: hydration.snapshotListenerReady,
-                roomListenerReady: hydration.roomListenerReady,
                 rtcReady: !!hydration.roomState.currentRoomId,
+                roomListenerReady: hydration.roomListenerReady,
                 roomId: hydration.roomState.currentRoomId,
                 lastHydratedAtEpochMs: Date.now(),
                 lastError: hydration.degradedError,
@@ -309,8 +364,9 @@ export function useRelicHunters(): RelicHuntersConnection {
             });
         }
     }, [
-        acceptSnapshot,
+        acceptRtcSnapshot,
         acceptSnapshotCandidate,
+        acceptWsSnapshot,
         applyRoomState,
         clearSnapshot,
         closeSubscriptions,
@@ -324,6 +380,74 @@ export function useRelicHunters(): RelicHuntersConnection {
             closeSubscriptions();
         };
     }, [closeSubscriptions, connectAndHydrate]);
+
+    useEffect(() => {
+        if (!diagnostics.rtcReady) {
+            return;
+        }
+
+        const intervalId = window.setInterval(() => {
+            const current = snapshotRef.current;
+            if (!current || current.roomId !== roomIdRef.current) {
+                return;
+            }
+
+            void runtime.publishRtcSnapshot(current).catch((err) => {
+                setDiagnostics((prev) => ({
+                    ...prev,
+                    lastError: `RTC snapshot sync failed: ${toErrorMessage(err)}`,
+                }));
+            });
+        }, RTC_SNAPSHOT_REPAIR_INTERVAL_MS);
+
+        return () => window.clearInterval(intervalId);
+    }, [diagnostics.rtcReady, runtime]);
+
+    useEffect(() => {
+        const current = snapshotRef.current;
+        if (!current || !roomIdRef.current || current.roomId !== roomIdRef.current) {
+            return;
+        }
+
+        const repair = toTimedOutRoundRepair(current);
+        if (!repair) {
+            return;
+        }
+
+        let cancelled = false;
+        let timeoutId: number | undefined;
+        let intervalId: number | undefined;
+
+        const poll = () => {
+            if (cancelled) {
+                return;
+            }
+            void repairTimedOutRoundSnapshot(repair.roomId);
+        };
+        const startPolling = () => {
+            poll();
+            intervalId = window.setInterval(
+                poll,
+                ROUND_TIMEOUT_SNAPSHOT_REPAIR_INTERVAL_MS,
+            );
+        };
+        const delayMs = repair.deadlineEpochMs - Date.now();
+        if (delayMs <= 0) {
+            startPolling();
+        } else {
+            timeoutId = window.setTimeout(startPolling, delayMs);
+        }
+
+        return () => {
+            cancelled = true;
+            if (timeoutId !== undefined) {
+                window.clearTimeout(timeoutId);
+            }
+            if (intervalId !== undefined) {
+                window.clearInterval(intervalId);
+            }
+        };
+    }, [repairTimedOutRoundSnapshot, timedOutRoundRepairKey]);
 
     const refreshRooms = useCallback(async () => {
         const state = await runtime.refreshRooms();
@@ -596,5 +720,48 @@ function summarizeRuntimeSnapshot(
         submittedCount: snapshot.submittedPlayerIds.length,
         eventCount: snapshot.events.length,
         roomInvestigationCount: snapshot.roomInvestigations.length,
+    };
+}
+
+function toTimedOutRoundRepairKey(snapshot: RelicPublicSnapshot): string {
+    const repair = toTimedOutRoundRepair(snapshot);
+    return repair
+        ? [
+            repair.roomId,
+            repair.round,
+            repair.deadlineEpochMs,
+            repair.activePlayerCount,
+            repair.submittedPlayerCount,
+        ].join(':')
+        : 'none';
+}
+
+function toTimedOutRoundRepair(snapshot: RelicPublicSnapshot):
+    | Readonly<{
+        roomId: string;
+        round: number;
+        deadlineEpochMs: number;
+        activePlayerCount: number;
+        submittedPlayerCount: number;
+    }>
+    | undefined {
+    if (snapshot.phase !== 'planning' || snapshot.roundStartedAtEpochMs === undefined) {
+        return undefined;
+    }
+
+    const activePlayerCount = snapshot.players.filter((player) =>
+        !player.escaped && !player.defeated
+    ).length;
+    const submittedPlayerCount = snapshot.submittedPlayerIds.length;
+    if (activePlayerCount === 0 || submittedPlayerCount >= activePlayerCount) {
+        return undefined;
+    }
+
+    return {
+        roomId: snapshot.roomId,
+        round: snapshot.round,
+        deadlineEpochMs: snapshot.roundStartedAtEpochMs + snapshot.roundTimeLimitMs,
+        activePlayerCount,
+        submittedPlayerCount,
     };
 }

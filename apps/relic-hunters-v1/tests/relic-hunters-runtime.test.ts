@@ -7,9 +7,11 @@ import { RelicHuntersRuntime, type RelicHuntersRuntimeDeps, } from '../src/game/
 describe('RelicHuntersRuntime', () => {
     it('connects, installs listeners, refreshes rooms, and fetches the current snapshot', async () => {
         const unsubscribeSnapshot = vi.fn();
+        const unsubscribeRtcSnapshot = vi.fn();
         const unsubscribeRooms = vi.fn();
         const deps = runtimeDeps({
             onSnapshotMessage: vi.fn(() => unsubscribeSnapshot),
+            onRtcSnapshotMessage: vi.fn(() => unsubscribeRtcSnapshot),
             onRoomsChange: vi.fn(() => unsubscribeRooms),
         });
         const runtime = new RelicHuntersRuntime(deps);
@@ -18,6 +20,7 @@ describe('RelicHuntersRuntime', () => {
 
         expect(deps.connect).toHaveBeenCalledTimes(1);
         expect(deps.onSnapshotMessage).toHaveBeenCalledTimes(1);
+        expect(deps.onRtcSnapshotMessage).toHaveBeenCalledTimes(1);
         expect(deps.onRoomsChange).toHaveBeenCalledTimes(1);
         expect(deps.refreshRooms).toHaveBeenCalledTimes(1);
         expect(deps.fetchSnapshot).toHaveBeenCalledWith('room-1');
@@ -25,11 +28,13 @@ describe('RelicHuntersRuntime', () => {
             session: session(),
             roomState: roomState(),
             snapshotListenerReady: true,
+            rtcSnapshotListenerReady: true,
             roomListenerReady: true,
         });
 
         hydration?.unsubscribe();
         expect(unsubscribeSnapshot).toHaveBeenCalledTimes(1);
+        expect(unsubscribeRtcSnapshot).toHaveBeenCalledTimes(1);
         expect(unsubscribeRooms).toHaveBeenCalledTimes(1);
     });
 
@@ -46,7 +51,20 @@ describe('RelicHuntersRuntime', () => {
         expect(hydration?.degradedError).toBe('snapshot unavailable');
         expect(hydration?.snapshot).toBeUndefined();
         expect(hydration?.snapshotListenerReady).toBe(true);
+        expect(hydration?.rtcSnapshotListenerReady).toBe(true);
         expect(hydration?.roomListenerReady).toBe(true);
+    });
+
+    it('publishes accepted snapshots through the configured RTC snapshot transport', async () => {
+        const snapshot = toPublicRelicSnapshot(createRelicGame('game-1', 'room-1', 1_700_000_000_000));
+        const deps = runtimeDeps({
+            publishRtcSnapshot: vi.fn(async () => true),
+        });
+        const runtime = new RelicHuntersRuntime(deps);
+
+        await expect(runtime.publishRtcSnapshot(snapshot)).resolves.toBe(true);
+
+        expect(deps.publishRtcSnapshot).toHaveBeenCalledWith(snapshot);
     });
 
     it('sends gameplay commands through the configured command transport', async () => {
@@ -88,6 +106,7 @@ describe('RelicHuntersRuntime', () => {
         expect(hydration).toBeUndefined();
         expect(deps.connect).not.toHaveBeenCalled();
         expect(deps.onSnapshotMessage).not.toHaveBeenCalled();
+        expect(deps.onRtcSnapshotMessage).not.toHaveBeenCalled();
         expect(deps.onRoomsChange).not.toHaveBeenCalled();
     });
 
@@ -130,6 +149,9 @@ function runtimeDeps(
 ): RelicHuntersRuntimeDeps {
     return {
         restoreSession: vi.fn(() => session()),
+        restoreRoomId: vi.fn(() => undefined),
+        saveRoomId: vi.fn(),
+        clearRoomId: vi.fn(),
         login: vi.fn(async () => session()),
         register: vi.fn(async () => session()),
         logout: vi.fn(async () => undefined),
@@ -137,6 +159,8 @@ function runtimeDeps(
         refreshRooms: vi.fn(async () => roomState()),
         onRoomsChange: vi.fn(() => () => undefined),
         onSnapshotMessage: vi.fn(() => () => undefined),
+        onRtcSnapshotMessage: vi.fn(() => () => undefined),
+        publishRtcSnapshot: vi.fn(async () => true),
         createRoom: vi.fn(async () => ({ group: { groupId: 'room-1' } })),
         joinRoom: vi.fn(async () => ({ group: { groupId: 'room-1' } })),
         fetchSnapshot: vi.fn(async () =>

@@ -1,6 +1,6 @@
 # UI And Gameplay
 
-Last reviewed: 2026-05-16.
+Last reviewed: 2026-05-18.
 
 ## Player Flow
 
@@ -20,8 +20,8 @@ The intended playable loop is:
 
 - Signed-out users land directly on the auth form in the side panel. The intro
   scene exists in code but is disabled during playable-loop stabilization.
-- Auth and lobby screens use a static scene backdrop. The full Babylon scene is
-  mounted when an expedition is in planning or finished state.
+- Auth and lobby screens use a lightweight Babylon ambient scene. The full
+  gameplay scene is mounted only for playable expedition phases.
 - First-time onboarding is disabled during stabilization so the first playable
   action is not hidden behind a modal.
 - Authenticated users see rooms, current expedition state, party/lobby controls,
@@ -36,6 +36,12 @@ The intended playable loop is:
   - floating: scene prompts, minimap, and action nudges
   - overlay: onboarding, help, brief non-interactive tension beat, and end-state
     panels
+- Signed-in side menus have a sticky section jump bar for Rooms, Party/Plan,
+  Map, and Intel. Extra-wide desktop screens use the available width for a
+  wider, two-column menu stack, and the bottom HUD is kept out of the right
+  column so the side menu gets the full available height. The desktop side menu
+  owns its own scroll range, and mobile lets the page scroll through the whole
+  side menu instead of clipping it.
 - The Babylon scene provides first-person roaming, room selection, local prompts,
   player/relic meshes, fallback tactical rendering, and touch movement controls.
 - The intro cinematic canvas is non-interactive so it cannot intercept clicks if
@@ -87,18 +93,25 @@ immediately, so clue trails and room objectives can update after the first find.
 
 - A first-time player can still be pulled between several surfaces: scene
   prompts, the side action panel, the minimap, room intel, and help/onboarding
-  overlays.
+  overlays. Large-screen menu navigation now has sticky jump controls, but the
+  underlying number of surfaces is still high.
 - `App.tsx` remains large enough that small UI changes can accidentally affect
   gameplay timing, audio, or event reveal behavior.
 - Planning state is covered by a mocked single-client Playwright loop from room
   creation through first-turn resolution. Iteration 12 adds a gated full-stack
   two-browser Playwright path for submit/wait/resolve propagation, reset/rejoin,
-  and reload recovery; it is skipped by default until
-  `RELIC_HUNTERS_FULL_STACK=1` is enabled with a real paired server.
+  and reload recovery. It is skipped by default, and the real
+  `RELIC_HUNTERS_FULL_STACK=1` paired-server run now passes locally.
+- Accepted public snapshots are now also shared over RTC as a repair path, so a
+  browser that misses a WS update can catch up from a peer before the two scenes
+  drift indefinitely.
 - Stale or disconnected joined players still remain in the active expedition
   after start. The player-facing policy is now timer-based: reset rebuilds the
   roster, while continuing keeps those hunters; after the round timer expires,
-  any active hunter can resolve the round and skip missing plans.
+  any active hunter can resolve the round and skip missing plans. If another
+  browser misses the push update for that timeout resolution, it now repairs from
+  the authoritative room snapshot after the deadline instead of staying on the
+  stale timed-out controls.
 
 ## Visual State
 
@@ -109,6 +122,13 @@ immediately, so clue trails and room objectives can update after the first find.
   canvas `data-scene-ready` signal emitted after Babylon renders.
 - Player labels are names-only in normal play. Health, relic counts, score, and
   character details stay in HUD panels.
+- Remote player avatars fall back to authoritative snapshot room positions, then
+  interpolate toward live RTC position updates when another browser has an open
+  reliable RTC lane. Live updates are resolved from the sender's room-relative
+  offset so the visible avatar uses the receiver's current scene layout.
+- Room membership, player room ids, submissions, events, relic ownership, and
+  investigations still come from public snapshots; RTC avatar coordinates do not
+  override game state.
 - Iteration 14 should finish the baseline visual coverage that started in
   Iterations 7, 8, and 11: rooms, exits, players, relics, danger, current
   objective, prompts, minimap, and bottom HUD should be immediately legible at
