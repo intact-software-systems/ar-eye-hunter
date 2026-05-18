@@ -53,6 +53,9 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
             create: vi.fn(),
             join: vi.fn(),
         },
+        rtc: {
+            readyPeerIds: () => [],
+        },
         messages: {
             ws: {
                 onMessage: (_selector: unknown, handler: (message: { payload: unknown }) => void) => {
@@ -61,6 +64,10 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
                         rallarMock.wsMessageHandler = undefined;
                     };
                 },
+            },
+            rtc: {
+                onMessage: () => () => undefined,
+                send: vi.fn(async () => ({ status: 'no-route' })),
             },
         },
     },
@@ -109,9 +116,12 @@ vi.mock('../../../apps/relic-hunters-v1/src/game/RelicScene.tsx', async () => {
     };
 });
 
-vi.mock('../../../apps/relic-hunters-v1/src/game/IntroScene.tsx', () => ({
-    IntroScene: () => null,
-}));
+vi.mock('../../../apps/relic-hunters-v1/src/game/OpeningRelicScene.tsx', async () => {
+    const React = await vi.importActual<typeof import('react')>('react');
+    return {
+        OpeningRelicScene: () => React.createElement('div', { 'data-testid': 'opening-relic-scene' }),
+    };
+});
 
 vi.mock('../../../apps/relic-hunters-v1/src/game/sound.ts', () => soundMock);
 
@@ -257,6 +267,23 @@ describe('Relic Hunters browser app', () => {
         expect(container.textContent).toContain('1 hunter still choosing');
     });
 
+    it('repairs a timed-out force-resolved round from authoritative snapshot polling', async () => {
+        const { timedOut, resolved } = timedOutRoundSnapshots();
+        writeSession(session());
+        rallarMock.roomState = roomState(2);
+        const fetchMock = stubSnapshotFetchSequence(timedOut, resolved);
+
+        await renderApp();
+        await waitFor(() =>
+            fetchMock.mock.calls.length >= 2 &&
+            container.textContent?.includes('Round 2') === true,
+        );
+
+        expect(container.textContent).not.toContain('Resolve Timed-Out Round');
+        expect(container.textContent).not.toContain('1 timed-out hunter.');
+        expect(container.textContent).toContain('Round 2');
+    });
+
     it('summarizes current-room occupants, readiness, and steal pressure', () => {
         const snapshot = {
             ...snapshotWithPlayers(2, 'planning'),
@@ -374,15 +401,27 @@ function roomState(onlineMemberCount: number): unknown {
 }
 
 function stubSnapshotFetch(snapshot: RelicPublicSnapshot): void {
+    stubSnapshotFetchSequence(snapshot);
+}
+
+function stubSnapshotFetchSequence(
+    ...snapshots: readonly RelicPublicSnapshot[]
+): ReturnType<typeof vi.fn> {
+    let index = 0;
+    const fetchMock = vi.fn(async () => {
+        const snapshot = snapshots[Math.min(index, snapshots.length - 1)];
+        index += 1;
+        return new Response(JSON.stringify(snapshot), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+        });
+    });
+
     vi.stubGlobal(
         'fetch',
-        vi.fn(async () =>
-            new Response(JSON.stringify(snapshot), {
-                status: 200,
-                headers: { 'content-type': 'application/json' },
-            })
-        ),
+        fetchMock,
     );
+    return fetchMock;
 }
 
 function snapshotWithPlayers(
@@ -427,6 +466,67 @@ function snapshotWithPlayers(
     }
 
     return toPublicRelicSnapshot(state);
+}
+
+function timedOutRoundSnapshots(): Readonly<{
+    timedOut: RelicPublicSnapshot;
+    resolved: RelicPublicSnapshot;
+}> {
+    const now = Date.now();
+    const roundStartedAt = now - 90_000;
+    let state: RelicGameState = createRelicGame('room-1', 'room-1', roundStartedAt - 5);
+    state = applyRelicCommand(state, {
+        protocolVersion: RELIC_PROTOCOL_VERSION,
+        kind: 'join-expedition',
+        gameId: 'room-1',
+        username: 'Alice',
+        characterId: 'kael-ironstride',
+    }, {
+        senderId: 'alice-session',
+        now: () => roundStartedAt - 4,
+    }).state;
+    state = applyRelicCommand(state, {
+        protocolVersion: RELIC_PROTOCOL_VERSION,
+        kind: 'join-expedition',
+        gameId: 'room-1',
+        username: 'Bob',
+        characterId: 'nyra-vale',
+    }, {
+        senderId: 'bob-session',
+        now: () => roundStartedAt - 3,
+    }).state;
+    state = applyRelicCommand(state, {
+        protocolVersion: RELIC_PROTOCOL_VERSION,
+        kind: 'start-expedition',
+        gameId: 'room-1',
+        username: 'Alice',
+    }, {
+        senderId: 'alice-session',
+        now: () => roundStartedAt,
+    }).state;
+    state = applyRelicCommand(state, {
+        protocolVersion: RELIC_PROTOCOL_VERSION,
+        kind: 'submit-action',
+        gameId: 'room-1',
+        username: 'Alice',
+        action: { kind: 'move', targetRoomId: 'hallway' },
+    }, {
+        senderId: 'alice-session',
+        now: () => roundStartedAt + 1,
+    }).state;
+
+    const timedOut = toPublicRelicSnapshot(state);
+    const resolved = toPublicRelicSnapshot(applyRelicCommand(state, {
+        protocolVersion: RELIC_PROTOCOL_VERSION,
+        kind: 'force-resolve-round',
+        gameId: 'room-1',
+        username: 'Alice',
+    }, {
+        senderId: 'alice-session',
+        now: () => now,
+    }).state);
+
+    return { timedOut, resolved };
 }
 
 async function waitFor(assertion: () => boolean, attempts = 20): Promise<void> {

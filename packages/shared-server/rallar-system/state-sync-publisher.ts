@@ -2,6 +2,8 @@ import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
+import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
+import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 
 export type StateSyncPublisher = Readonly<{
@@ -21,6 +23,10 @@ export function createWsStateSyncPublisher(
 ): StateSyncPublisher {
     return {
         publishClientSnapshot: async (snapshot, senderId) => {
+            clientStateSnapshotsRepository.setClientStateSnapshotByPrincipalId(
+                snapshot.principal.principalId,
+                snapshot,
+            );
             await enqueueBroadcast(
                 wsQBoxServerService,
                 senderId ?? snapshot.principal.principalId,
@@ -41,6 +47,10 @@ export function createWsStateSyncPublisher(
             );
         },
         publishGroupSnapshot: async (snapshot, senderId) => {
+            groupStateSnapshotsRepository.setGroupStateSnapshotById(
+                snapshot.group.groupId,
+                snapshot,
+            );
             await enqueueBroadcast(
                 wsQBoxServerService,
                 senderId ?? snapshot.group.groupId,

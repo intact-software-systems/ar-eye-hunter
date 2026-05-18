@@ -19,6 +19,19 @@ const session = {
 };
 
 test.describe('Relic Hunters web app', () => {
+    test('renders a Babylon opening scene before authentication', async ({ page }) => {
+        await installBrowserDoubles(page);
+        await mockBackend(page, { rooms: [] });
+
+        await page.goto('/');
+
+        const canvas = page.locator('canvas.relic-scene');
+        await expect(canvas).toBeVisible();
+        await expect(page.locator('.relic-scene-fallback')).toHaveCount(0);
+        await expect.poll(() => sceneHasVisiblePixels(page)).toBe(true);
+        await expect(page.getByRole('button', { name: 'Login' })).toBeVisible();
+    });
+
     test('registers a player and shows the connected lobby controls', async ({ page }) => {
         await installBrowserDoubles(page);
         await mockBackend(page, { rooms: [] });
@@ -56,8 +69,55 @@ test.describe('Relic Hunters web app', () => {
 
         await page.setViewportSize({ width: 390, height: 844 });
         await expect(page.getByRole('button', { name: 'Relic Hunters Expedition' })).toBeVisible();
+        await expect.poll(() => page.locator('.hud-region-side').evaluate((el) => getComputedStyle(el).overflow))
+            .toBe('visible');
         const mobile = await page.screenshot({ animations: 'disabled' });
         expect(mobile.byteLength).toBeGreaterThan(10_000);
+    });
+
+    test('keeps large-screen side menus reachable', async ({ page }) => {
+        test.slow();
+        const room = groupSnapshot({ onlineMemberCount: 1 });
+        await page.setViewportSize({ width: 1920, height: 1080 });
+        await installBrowserDoubles(page);
+        await mockBackend(page, {
+            rooms: [room],
+            relicSnapshot: relicSnapshotWithPlayers(1, 'planning'),
+        });
+        await page.addInitScript((storedSession) => {
+            window.localStorage.setItem('auth.session', JSON.stringify(storedSession));
+        }, session);
+
+        await page.goto('/');
+        await page.getByRole('button', { name: 'Relic Hunters Expedition' }).click({ force: true });
+
+        const menu = page.getByRole('navigation', { name: 'Side panel sections' });
+        await expect(menu.getByRole('button', { name: 'Rooms' })).toBeVisible();
+        await expect(menu.getByRole('button', { name: 'Plan' })).toBeVisible();
+        await expect(menu.getByRole('button', { name: 'Map' })).toBeVisible();
+        await expect(menu.getByRole('button', { name: 'Intel' })).toBeVisible();
+
+        const sideWidth = await page.locator('.hud-region-side').evaluate((el) => el.getBoundingClientRect().width);
+        expect(sideWidth).toBeGreaterThan(700);
+        const bottomRight = await page.locator('.hud-region-bottom').evaluate((el) => el.getBoundingClientRect().right);
+        const sideLeft = await page.locator('.hud-region-side').evaluate((el) => el.getBoundingClientRect().left);
+        expect(bottomRight).toBeLessThanOrEqual(sideLeft);
+
+        const scrollMetrics = await page.locator('.side-panel').evaluate((el) => {
+            el.scrollTop = el.scrollHeight;
+            const panelBox = el.getBoundingClientRect();
+            const lastChildBox = el.lastElementChild?.getBoundingClientRect();
+            return {
+                clientHeight: el.clientHeight,
+                scrollHeight: el.scrollHeight,
+                scrollTop: el.scrollTop,
+                panelBottom: panelBox.bottom,
+                lastChildBottom: lastChildBox?.bottom ?? panelBox.bottom,
+            };
+        });
+        expect(scrollMetrics.scrollHeight).toBeGreaterThan(scrollMetrics.clientHeight);
+        expect(scrollMetrics.scrollTop).toBeGreaterThan(0);
+        expect(scrollMetrics.lastChildBottom).toBeLessThanOrEqual(scrollMetrics.panelBottom + 1);
     });
 
     test('joins a room and prompts when expedition players no longer match online party', async ({ page }) => {
@@ -74,7 +134,7 @@ test.describe('Relic Hunters web app', () => {
         await page.getByLabel('Display name').fill('Alice');
         await page.getByLabel('Password').fill('correct-horse');
         await page.getByRole('button', { name: 'Create Hunter' }).click();
-        await page.getByRole('button', { name: 'Relic Hunters Expedition' }).click();
+        await page.getByRole('button', { name: 'Relic Hunters Expedition' }).click({ force: true });
 
         await expect(page.getByText('Party Changed')).toBeVisible();
         await expect(page.getByText('1/2 hunters are online')).toBeVisible();
@@ -97,7 +157,7 @@ test.describe('Relic Hunters web app', () => {
         await page.getByLabel('Display name').fill('Alice');
         await page.getByLabel('Password').fill('correct-horse');
         await page.getByRole('button', { name: 'Create Hunter' }).click();
-        await page.getByRole('button', { name: 'Relic Hunters Expedition' }).click();
+        await page.getByRole('button', { name: 'Relic Hunters Expedition' }).click({ force: true });
         await expect(page.getByText('Party Changed')).toBeVisible();
 
         await page.getByRole('button', { name: 'Start Over' }).click();
@@ -763,18 +823,36 @@ async function sceneHasVisiblePixels(page: Page): Promise<boolean> {
             return false;
         }
 
-        const pixels = new Uint8Array(4);
-        gl.readPixels(
-            Math.floor(gl.drawingBufferWidth / 2),
-            Math.floor(gl.drawingBufferHeight / 2),
-            1,
-            1,
-            gl.RGBA,
-            gl.UNSIGNED_BYTE,
-            pixels,
-        );
+        const width = gl.drawingBufferWidth;
+        const height = gl.drawingBufferHeight;
+        if (width <= 0 || height <= 0) {
+            return false;
+        }
 
-        return pixels[3] > 0 && (pixels[0] > 4 || pixels[1] > 4 || pixels[2] > 4);
+        const pixels = new Uint8Array(4);
+        const samples: readonly Readonly<[number, number]>[] = [
+            [0.5, 0.5],
+            [0.34, 0.42],
+            [0.66, 0.42],
+            [0.5, 0.28],
+            [0.5, 0.72],
+        ];
+        for (const [xRatio, yRatio] of samples) {
+            gl.readPixels(
+                Math.min(width - 1, Math.max(0, Math.floor(width * xRatio))),
+                Math.min(height - 1, Math.max(0, Math.floor(height * yRatio))),
+                1,
+                1,
+                gl.RGBA,
+                gl.UNSIGNED_BYTE,
+                pixels,
+            );
+            if (pixels[3] > 0 && (pixels[0] > 4 || pixels[1] > 4 || pixels[2] > 4)) {
+                return true;
+            }
+        }
+
+        return false;
     });
 }
 
