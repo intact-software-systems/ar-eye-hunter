@@ -344,6 +344,12 @@ export function toObjective(
         return u.objectiveLobby;
     }
 
+    if (snapshot.phase === 'review') {
+        return lang === 'no'
+            ? 'Se planene bli avslørt før neste runde.'
+            : 'Watch the revealed plans before the next turn.';
+    }
+
     if (currentPlayer.escaped) {
         return u.objectiveEscaped;
     }

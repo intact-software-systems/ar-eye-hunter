@@ -12,7 +12,7 @@ export type RelicRoomKind =
 
 export type RelicActionKind = 'move' | 'search' | 'steal' | 'escape';
 
-export type RelicGamePhase = 'lobby' | 'planning' | 'finished';
+export type RelicGamePhase = 'lobby' | 'planning' | 'review' | 'finished';
 
 export type RelicCharacterId =
     | 'kael-ironstride'
@@ -231,6 +231,12 @@ export type RelicCommand =
     }>
     | Readonly<{
         protocolVersion: typeof RELIC_PROTOCOL_VERSION;
+        kind: 'continue-review';
+        gameId: string;
+        username: string;
+    }>
+    | Readonly<{
+        protocolVersion: typeof RELIC_PROTOCOL_VERSION;
         kind: 'set-round-limit';
         gameId: string;
         username: string;
@@ -291,6 +297,10 @@ export function isRelicCommand(value: unknown): value is RelicCommand {
     }
 
     if (value.kind === 'force-resolve-round') {
+        return true;
+    }
+
+    if (value.kind === 'continue-review') {
         return true;
     }
 

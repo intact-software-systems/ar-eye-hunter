@@ -1,6 +1,6 @@
 # Relic Hunters Scene Upgrade Implementation Plan
 
-Last reviewed: 2026-05-18.
+Last reviewed: 2026-05-19.
 
 ## Goal
 
@@ -34,6 +34,9 @@ automation.
 - Rendering now uses high-DPI/native canvas scaling capped at 2x device ratio,
   a 45 fps gameplay cap, lighter fog/bloom/glow/grain/vignette, disabled depth
   of field, sharper shadows, and faster avatar roam/interpolation.
+- Round review now keeps the gameplay scene mounted with planning input
+  disabled, queues reveal cues sequentially, and stages the final collapse cue
+  with escaping winners and losing hunters left in shaken rooms.
 - `src/game/scene/networking.ts` owns RTC avatar position send/receive.
 - `src/game/scene/rooms.ts` owns most current procedural room construction,
   materials, props, lights, particles, and lobby scenery.
@@ -190,8 +193,11 @@ presentation camera mode decision and tactical framing math. Idle planning uses
 a raised castle overview that frames the local room, neighbors, selected room,
 objective target, and occupied party rooms. Active roam and clue inspection
 still use the closer camera paths, and ordinary tactical clicks no longer start
-pointer lock. The gameplay canvas exposes `data-camera-mode` so Playwright can
-assert that planning screenshots are captured in tactical mode.
+pointer lock. Recent avatar movement now holds the close follow camera briefly
+and then eases back to tactical overview over several seconds. The scene now
+also exposes convenience camera controls for room flyover, tactical overview,
+and avatar follow. The gameplay canvas exposes `data-camera-mode` and
+`data-camera-control` so Playwright can assert camera presentation state.
 
 Deliverables:
 
@@ -201,6 +207,10 @@ Deliverables:
 - Preserve current close/inspection behavior for clue hotspots: preserved.
 - Keep mouse/touch controls predictable and avoid pointer-lock surprises for
   menu-driven play: first pass complete for tactical planning clicks.
+- Keep the avatar visible after active movement before returning to overview:
+  complete with a follow-hold and slow zoom-out state.
+- Add convenience camera controls for flyover, tactical overview, and avatar
+  follow: complete.
 - Expose a debug or development toggle only if useful for comparing camera
   modes: deferred; the `data-camera-mode` canvas attribute covers automated
   verification for now.
@@ -212,8 +222,11 @@ Tests:
   tactical camera mode in the existing scene baseline scenarios.
 - Keep pointer-look tolerance test until the old roam mode is removed or fully
   demoted: still applicable because roam and inspection modes remain available.
-- Add focused unit coverage for camera mode derivation and tactical framing:
+- Add focused unit coverage for camera mode derivation, tactical framing, and
+  avatar-follow return timing:
   complete in `tests/camera-modes.test.ts`.
+- Add browser coverage that camera controls are reachable and update canvas
+  camera-control state: complete in `tests/playwright/relic-hunters/web.spec.ts`.
 
 Docs:
 
@@ -483,7 +496,7 @@ Deliverables:
 - Add active scene effect and effect mesh metrics to browser baselines:
   complete.
 - Inspect cross-room thin instancing viability after S9: complete; deferred to
-  S11 because cross-room batching must preserve per-room picking.
+  S12 because cross-room batching must preserve per-room picking.
 
 Tests:
 
@@ -503,12 +516,62 @@ Exit criteria:
   scenario duration, and simultaneous scene effects are budgeted independently
   from authoritative event history.
 
-### Iteration S11: Per-Room Picking For Cross-Room Instancing
+### Iteration S11: Round Review And Finale Presentation
+
+Make the reveal of simultaneous turns a first-class scene beat that all clients
+can watch before the next planning turn.
+
+Status: first pass complete. Shared gameplay rules now publish `phase: review`
+after resolving submitted or timed-out plans, and the SPA keeps `RelicScene`
+mounted during review while disabling scene planning input. `RelicScene` queues
+new event animation cues and focuses each cue room/player in sequence instead of
+spawning the entire reveal burst at once. The `heart_relic_victory` finale cue
+now creates a larger scene collapse: winners get escape streaks and glow from
+their final rooms, while losing or defeated hunters remain in shaken rooms as
+the castle falls.
+
+Deliverables:
+
+- Keep the gameplay scene visible during review without allowing move/search
+  action priming: complete.
+- Queue event cue playback during review so moves, searches, steals, damage,
+  relic finds, collapse pressure, and round-result cues can be watched in
+  order: first pass complete.
+- Focus cue playback around the relevant room or player when an event carries
+  animation metadata: first pass complete.
+- Add a larger final collapse presentation that distinguishes escaping winners
+  from hunters left behind: first pass complete.
+- Keep event playback presentation-only; the public snapshot remains the source
+  for room membership, scoring, winner ids, escaped state, and defeated state:
+  complete.
+
+Tests:
+
+- Add shared-rule coverage for review transitions and finale continuation:
+  complete in `packages/tests/relic-hunters/relic-game.test.ts`.
+- Add app coverage for review objective/summary and snapshot phase ordering:
+  complete in `apps/relic-hunters-v1/tests`.
+- Keep typecheck, build, and targeted scene smoke checks passing.
+
+Docs:
+
+- Update `docs/current-state.md`, `docs/ui-gameplay.md`,
+  `docs/runtime-data-flow.md`, `docs/scene-contracts.md`,
+  `docs/visual-direction.md`, and this plan with the review/finale behavior:
+  complete.
+
+Exit criteria:
+
+- A resolved round becomes a shared watched reveal instead of an immediate
+  planning jump, and finale presentation clearly separates escaping winners
+  from hunters left inside the collapse.
+
+### Iteration S12: Per-Room Picking For Cross-Room Instancing
 
 Prepare cross-room thin instances/shared geometry without regressing room
 selection or clue inspection.
 
-Status: planned follow-up from S10. S9's room-level static batches preserve
+Status: planned follow-up from S10/S11. S9's room-level static batches preserve
 `roomId` metadata because each batch belongs to one room. Cross-room thin
 instances or global material batches would need an explicit per-instance picking
 map before repeated kit pieces can be folded across rooms.
@@ -554,8 +617,9 @@ prompting, or visual screenshot coverage changes.
 
 ## Input Needed Later
 
-No input was needed to complete Iterations S1 through S7 using the reference
-board as direction. Input will help before a later imported-asset prototype:
+No extra input was needed to complete Iterations S1 through S11 using the
+reference board and review/finale direction already provided. Input will help
+before a later imported-asset prototype:
 
 - confirm whether the product should eventually use imported 3D assets
 - decide how close the art should stay to Japanese castle realism versus

@@ -1,6 +1,6 @@
 # UI And Gameplay
 
-Last reviewed: 2026-05-18.
+Last reviewed: 2026-05-19.
 
 ## Player Flow
 
@@ -13,7 +13,12 @@ The intended playable loop is:
    members have joined the expedition.
 5. Each active hunter chooses one plan for the round.
 6. The server resolves all submitted plans together.
-7. Hunters collect relics, reach the Exit, escape, and compare score when the
+7. The app enters a review phase where every client watches the revealed moves,
+   searches, steals, ruin reactions, and other round effects before anyone plans
+   the next turn.
+8. A player continues the review to the next planning turn, or to the finale if
+   the expedition is over.
+9. Hunters collect relics, reach the Exit, escape, and compare score when the
    expedition ends.
 
 ## Current Screens And Regions
@@ -21,7 +26,8 @@ The intended playable loop is:
 - Signed-out users land directly on the auth form in the side panel. The intro
   scene exists in code but is disabled during playable-loop stabilization.
 - Auth and lobby screens use a lightweight Babylon ambient scene. The full
-  gameplay scene is mounted only for playable expedition phases.
+  gameplay scene is mounted for planning, review, and finished expedition
+  phases.
 - First-time onboarding is disabled during stabilization so the first playable
   action is not hidden behind a modal.
 - Authenticated users see rooms, current expedition state, party/lobby controls,
@@ -46,6 +52,12 @@ The intended playable loop is:
   provides optional close roaming, clue inspection, room selection, local
   prompts, player/relic meshes, fallback tactical rendering, and touch movement
   controls.
+- Scene camera controls offer `Fly over rooms`, `Tactical overview`, and
+  `Avatar`. Flyover is temporary and returns to the previous camera choice;
+  Tactical and Avatar remain selected until another camera button is chosen.
+- After avatar movement input stops, the scene holds the close follow camera
+  briefly and then slowly returns to the tactical overview while keeping the
+  local hunter in view.
 - The intro cinematic canvas is non-interactive so it cannot intercept clicks if
   the cinematic is re-enabled. Tutorial overlays must follow the same rule or be
   opened only on explicit request.
@@ -57,16 +69,26 @@ The intended playable loop is:
   `Submit Plan`; themed copy should stay in supporting text.
 - After a plan is locked, the locked-plan card remains visible and the action
   picker can still be used for inspection, but submission stays disabled.
+- During review, planning input is disabled and a round review panel replaces
+  the plan submission controls. The scene remains visible so each browser can
+  play the same reveal cues before a player continues to the next turn or
+  finale.
 - Number keys select actions, arrow-style target shortcuts select move targets,
   and Enter submits when the draft is legal.
-- Scene clicks can prime room movement or search actions, but the visible action
-  panel is intended to remain the authoritative planning surface.
+- Scene clicks on a legal adjacent room prime a move draft for that room.
+  Search hotspots can still prime search actions, and the visible action panel
+  remains the authoritative planning surface.
 - Ordinary tactical planning clicks do not start pointer lock. Pointer-look
   behavior is reserved for active roam and clue-inspection camera modes so menu
   navigation stays predictable.
 - Holding forward in the scene exposes the currently faced legal move prompt
   immediately and keeps it briefly after key-up so a player can prime the move
   without walking to the far edge of a large room.
+- Releasing movement keys does not immediately snap the camera back to the
+  overview; the avatar remains the focus before the gradual zoom-out starts.
+- The Avatar camera button keeps the close follow camera active for walking
+  around. The Tactical overview button prioritizes nearby-room visibility while
+  keeping the local hunter in frame.
 - Touch D-pad controls are contained inside the scene layer.
 
 ## Gameplay State Shown To Players
@@ -85,8 +107,15 @@ The view model currently exposes:
 
 Turn results now converge in the bottom HUD. The current-turn summary explains
 whether the local player should choose a plan, is waiting with a locked plan, is
-watching, or has finished. The timeline is grouped by round and labels entries
-as Reveal, Your Action, Party Action, Castle Reaction, or Result.
+watching a review, or has finished. The timeline is grouped by round and labels
+entries as Reveal, Your Action, Party Action, Castle Reaction, or Result.
+
+The review phase is part of shared game state, not only a client animation. A
+resolved round stays at the same round number with `phase: review`,
+`pendingActions: []`, and the full resolved event list. The next round starts
+only after `continue-review`; if the review belongs to the final round or all
+active hunters are escaped/defeated, `continue-review` moves the expedition to
+`finished`.
 
 Gameplay rule state now avoids a relic in the starting room, so the first
 meaningful route is outward from Entrance. When multiple adjacent rooms contain
@@ -151,14 +180,21 @@ immediately, so clue trails and room objectives can update after the first find.
   material. Room selection, clue inspection, resolved markers, action prompts,
   and legal move state remain separate from those render batches.
 - The S10 event-cue budget limits simultaneous Babylon scene effects from a
-  burst of new timeline events. It does not hide events from the timeline or
-  change action resolution.
+  burst of new timeline events. The review phase then queues reveal cues
+  sequentially so player moves and castle reactions can be watched instead of
+  being visually flattened into one instant. It does not hide events from the
+  timeline or change action resolution.
+- The finale presentation now treats the final `game_finished` cue as a bigger
+  scene beat: winners receive escape streaks from their final rooms while losing
+  or defeated hunters remain in rooms that shake under the collapse.
 - Player labels are names-only in normal play. Health, relic counts, score, and
   character details stay in HUD panels.
 - Remote player avatars fall back to authoritative snapshot room positions, then
   interpolate toward live RTC position updates when another browser has an open
   reliable RTC lane. Live updates are resolved from the sender's room-relative
-  offset so the visible avatar uses the receiver's current scene layout.
+  offset so the visible avatar uses the receiver's current scene layout. If an
+  RTC avatar packet still refers to the player's previous room, the snapshot
+  room target wins so avatars do not stay pinned in old rooms.
 - Room membership, player room ids, submissions, events, relic ownership, and
   investigations still come from public snapshots; RTC avatar coordinates do not
   override game state.

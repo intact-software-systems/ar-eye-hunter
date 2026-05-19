@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     RELIC_PROTOCOL_VERSION,
     type RelicCommand,
+    type RelicGameState,
     applyRelicCommand,
     createRelicGame,
     toPublicRelicSnapshot,
@@ -70,10 +71,15 @@ describe('Relic Hunters game rules', () => {
         );
 
         expect(result.resolvedRound).toBe(true);
-        expect(result.state.round).toBe(2);
+        expect(result.state.round).toBe(1);
+        expect(result.state.phase).toBe('review');
         expect(result.state.pendingActions).toEqual([]);
         expect(result.state.players.find((player) => player.playerId === 'bob')?.roomId)
             .toBe('hallway');
+
+        const continued = continueReview(result.state, 7);
+        expect(continued.round).toBe(2);
+        expect(continued.phase).toBe('planning');
     });
 
     it('lets an active hunter force-resolve after the round timer expires', () => {
@@ -105,7 +111,8 @@ describe('Relic Hunters game rules', () => {
         });
 
         expect(result.resolvedRound).toBe(true);
-        expect(result.state.round).toBe(2);
+        expect(result.state.round).toBe(1);
+        expect(result.state.phase).toBe('review');
         expect(result.state.pendingActions).toEqual([]);
         expect(result.state.players.find((player) => player.playerId === 'alice')?.roomId)
             .toBe('hallway');
@@ -114,6 +121,10 @@ describe('Relic Hunters game rules', () => {
         expect(result.state.events.some((event) =>
             event.message.includes('Missing plans skipped: Bob')
         )).toBe(true);
+
+        const continued = continueReview(result.state, 65_500);
+        expect(continued.round).toBe(2);
+        expect(continued.phase).toBe('planning');
     });
 
     it('rejects force-resolve before the round timer expires', () => {
@@ -345,14 +356,7 @@ describe('Relic Hunters game rules', () => {
             { kind: 'move', targetRoomId: 'storage' },
             { kind: 'search' },
         ] as const).entries()) {
-            state = applyRelicCommand(
-                state,
-                submit('alice', 'Alice', action),
-                {
-                    senderId: 'alice',
-                    now: () => 4 + index,
-                },
-            ).state;
+            state = submitAndContinue(state, action, 4 + index);
         }
 
         expect(state.roomInvestigations).toContainEqual(expect.objectContaining({
@@ -380,14 +384,7 @@ describe('Relic Hunters game rules', () => {
             { kind: 'move', targetRoomId: 'storage' },
             { kind: 'search' },
         ] as const).entries()) {
-            state = applyRelicCommand(
-                state,
-                submit('alice', 'Alice', action),
-                {
-                    senderId: 'alice',
-                    now: () => 4 + index,
-                },
-            ).state;
+            state = submitAndContinue(state, action, 4 + index);
         }
 
         expect(state.roomInvestigations).toContainEqual({
@@ -416,22 +413,8 @@ describe('Relic Hunters game rules', () => {
             now: () => 3,
         }).state;
 
-        state = applyRelicCommand(
-            state,
-            submit('alice', 'Alice', { kind: 'search' }),
-            {
-                senderId: 'alice',
-                now: () => 4,
-            },
-        ).state;
-        state = applyRelicCommand(
-            state,
-            submit('alice', 'Alice', { kind: 'search' }),
-            {
-                senderId: 'alice',
-                now: () => 5,
-            },
-        ).state;
+        state = submitAndContinue(state, { kind: 'search' }, 4);
+        state = submitAndContinue(state, { kind: 'search' }, 5);
 
         expect(state.roomInvestigations).toHaveLength(1);
         expect(state.events.at(-3)?.message).toContain('useful clues were already marked');
@@ -458,14 +441,7 @@ describe('Relic Hunters game rules', () => {
             { kind: 'move', targetRoomId: 'exit' },
             { kind: 'escape' },
         ] as const).entries()) {
-            state = applyRelicCommand(
-                state,
-                submit('alice', 'Alice', action),
-                {
-                    senderId: 'alice',
-                    now: () => 4 + index,
-                },
-            ).state;
+            state = submitAndContinue(state, action, 4 + index);
         }
 
         const alice = state.players.find((player) => player.playerId === 'alice');
@@ -525,4 +501,35 @@ function forceResolve(playerId: string, username: string): RelicCommand {
         gameId: 'room-1',
         username,
     };
+}
+
+function continueReview(state: RelicGameState, now: number): RelicGameState {
+    return applyRelicCommand(state, {
+        protocolVersion: RELIC_PROTOCOL_VERSION,
+        kind: 'continue-review',
+        gameId: 'room-1',
+        username: 'Alice',
+    }, {
+        senderId: 'alice',
+        now: () => now,
+    }).state;
+}
+
+function submitAndContinue(
+    state: RelicGameState,
+    action: Extract<RelicCommand, { kind: 'submit-action' }>['action'],
+    now: number,
+): RelicGameState {
+    const submitted = applyRelicCommand(
+        state,
+        submit('alice', 'Alice', action),
+        {
+            senderId: 'alice',
+            now: () => now,
+        },
+    ).state;
+
+    return submitted.phase === 'review'
+        ? continueReview(submitted, now + 0.5)
+        : submitted;
 }

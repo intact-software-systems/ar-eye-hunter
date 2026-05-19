@@ -177,6 +177,19 @@ describe('deriveRelicGameViewModel', () => {
         });
         expect(viewModel.objective).toBe('You are down. The ruin keeps your relics.');
     });
+
+    it('switches the objective to watching during round review', () => {
+        const viewModel = deriveRelicGameViewModel({
+            snapshot: { ...planningSnapshot(), phase: 'review', submittedPlayerIds: [] },
+            localPlayerId: 'alice-session',
+            draft: { kind: 'search' },
+            lang: 'en',
+        });
+
+        expect(viewModel.turnStatus.phase).toBe('review');
+        expect(viewModel.turnStatus.canSubmit).toBe(false);
+        expect(viewModel.objective).toBe('Watch the revealed plans before the next turn.');
+    });
 });
 
 function planningSnapshot(): RelicPublicSnapshot {

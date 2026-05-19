@@ -10,6 +10,7 @@ type MockBackendOptions = Readonly<{
     requests?: string[];
     commandBodies?: unknown[];
 }>;
+type RelicPhase = 'lobby' | 'planning' | 'review' | 'finished';
 type SceneBaselineScenario = Readonly<{
     name: string;
     mode: 'opening' | 'room';
@@ -567,6 +568,20 @@ test.describe('Relic Hunters web app', () => {
         const canvas = page.locator('canvas.relic-scene');
         await expect(canvas).toBeVisible();
         await expect.poll(() => sceneHasVisiblePixels(page)).toBe(true);
+        await expect(page.getByRole('group', { name: 'Camera controls' })).toBeVisible();
+
+        await page.getByRole('button', { name: 'Avatar' }).click();
+        await expect.poll(() => canvas.evaluate((node) =>
+            (node as HTMLCanvasElement).dataset.cameraControl
+        )).toBe('avatar');
+        await page.getByRole('button', { name: 'Tactical overview' }).click();
+        await expect.poll(() => canvas.evaluate((node) =>
+            (node as HTMLCanvasElement).dataset.cameraControl
+        )).toBe('tactical');
+        await page.getByRole('button', { name: 'Fly over rooms' }).click();
+        await expect.poll(() => canvas.evaluate((node) =>
+            (node as HTMLCanvasElement).dataset.cameraControl
+        )).toBe('flyover');
 
         const box = await canvas.boundingBox();
         expect(box).not.toBeNull();
@@ -830,6 +845,49 @@ test.describe('Relic Hunters web app', () => {
         await expect(page.getByLabel('Castle room map').getByRole('button', { name: 'Trap Room' })).toHaveClass(/clue-target/);
     });
 
+    test('shows the review phase before continuing to the next turn', async ({ page }) => {
+        const commandBodies: unknown[] = [];
+        await installBrowserDoubles(page);
+        await mockBackend(page, {
+            rooms: [groupSnapshot({ onlineMemberCount: 1 })],
+            relicSnapshot: relicSnapshotWithPlayers(1, 'planning', {
+                includeStorage: true,
+                playerRoomId: 'storage',
+            }),
+            commandBodies,
+            commandResponse: (body) => {
+                if (isCommandKind(body, 'continue-review')) {
+                    return continuedStoragePlanningSnapshot();
+                }
+                return reviewStorageSearchSnapshot();
+            },
+        });
+
+        await page.goto('/');
+        await page.getByRole('button', { name: 'Register' }).click();
+        await page.getByLabel('Username').fill('alice');
+        await page.getByLabel('Display name').fill('Alice');
+        await page.getByLabel('Password').fill('correct-horse');
+        await page.getByRole('button', { name: 'Create Hunter' }).click();
+        await page.getByRole('button', { name: 'Relic Hunters Expedition' }).click();
+
+        await expect(page.getByRole('button', { name: 'Submit Plan' })).toBeEnabled();
+        await page.getByRole('button', { name: 'Submit Plan' }).click();
+
+        await expect(page.getByLabel('Current turn summary')).toContainText('Plans revealed');
+        await expect(page.getByLabel('Round review')).toContainText('Watch the revealed plans');
+        await expect(page.getByRole('button', { name: 'Submit Plan' })).toHaveCount(0);
+        await expect(page.getByLabel('Turn timeline')).toContainText(
+            'Alice searched the crates and marked a false supply trail.',
+        );
+
+        await page.getByRole('button', { name: 'Continue to next turn' }).click();
+
+        await expect(page.getByLabel('Current turn summary')).toContainText('Choose one plan');
+        await expect(page.getByRole('button', { name: 'Submit Plan' })).toBeEnabled();
+        expect(commandBodies.some((body) => isCommandKind(body, 'continue-review'))).toBe(true);
+    });
+
     test('Rallar browser bootstrap reads server config, state snapshots, and opens WebSocket', async ({ page }) => {
         const requests: string[] = [];
         await installBrowserDoubles(page);
@@ -1067,6 +1125,13 @@ function parseJsonBody(body: string | null): unknown {
     }
 
     return JSON.parse(body);
+}
+
+function isCommandKind(body: unknown, kind: string): boolean {
+    return typeof body === 'object' &&
+        body !== null &&
+        'kind' in body &&
+        (body as { kind?: unknown }).kind === kind;
 }
 
 async function sceneHasVisiblePixels(page: Page): Promise<boolean> {
@@ -1388,7 +1453,7 @@ function groupSnapshot(
 
 function relicSnapshotWithPlayers(
     playerCount: 1 | 2 | 4,
-    phase: 'lobby' | 'planning' = 'lobby',
+    phase: RelicPhase = 'lobby',
     options: Readonly<{
         carryRelic?: boolean;
         includeStorage?: boolean;
@@ -1711,6 +1776,95 @@ function resolvedStorageSearchSnapshot(): RelicSnapshot {
         ],
         round: 2,
     });
+}
+
+function reviewStorageSearchSnapshot(): RelicSnapshot {
+    const now = Date.now();
+    return relicSnapshotWithPlayers(1, 'review', {
+        includeStorage: true,
+        playerRoomId: 'storage',
+        roomInvestigations: [
+            {
+                roomId: 'storage',
+                searchedByPlayerId: 'alice-session',
+                searchedByUsername: 'Alice',
+                searchedAtRound: 1,
+                searchedAtEpochMs: now,
+                result: 'empty',
+                summary: 'The crates held a torn supply map, but no relic.',
+                hint: 'The supply marks point back toward the Entrance and onward through the Trap Room.',
+                effect: 'map-fragment',
+                revealedRoomId: 'trap',
+            },
+        ],
+        events: [
+            {
+                id: 'event-reveal-1',
+                round: 1,
+                type: 'action_revealed',
+                message: 'Round 1 actions are revealed.',
+                animationCue: {
+                    type: 'noise_pulse',
+                    durationMs: 620,
+                    intensity: 'low',
+                },
+                tone: 'mystery',
+                createdAtEpochMs: now,
+            },
+            {
+                id: 'event-search-1',
+                round: 1,
+                type: 'player_searched',
+                message: 'Alice searched the crates and marked a false supply trail.',
+                animationCue: {
+                    type: 'search_altar',
+                    playerId: 'alice-session',
+                    roomId: 'storage',
+                    durationMs: 700,
+                    intensity: 'low',
+                },
+                tone: 'mystery',
+                createdAtEpochMs: now,
+            },
+            {
+                id: 'event-noise-1',
+                round: 1,
+                type: 'noise_pulse',
+                message: 'The ruin hears 2 noise.',
+                animationCue: {
+                    type: 'noise_pulse',
+                    durationMs: 900,
+                    intensity: 'low',
+                },
+                tone: 'mystery',
+                createdAtEpochMs: now,
+            },
+        ],
+        submittedPlayerIds: [],
+    });
+}
+
+function continuedStoragePlanningSnapshot(): RelicSnapshot {
+    const review = reviewStorageSearchSnapshot() as {
+        events: readonly Record<string, unknown>[];
+    } & Record<string, unknown>;
+    return {
+        ...review,
+        phase: 'planning',
+        round: 2,
+        roundStartedAtEpochMs: Date.now(),
+        events: [
+            ...review.events,
+            {
+                id: 'event-round-2',
+                round: 1,
+                type: 'round_started',
+                message: 'Round 2 begins.',
+                tone: 'mystery',
+                createdAtEpochMs: Date.now(),
+            },
+        ],
+    };
 }
 
 function finishedRelicSnapshot(): RelicSnapshot {

@@ -39,9 +39,16 @@ import { findRelicCharacter } from '@relic-hunters/mod.ts';
 import { SceneInteractionPrompt } from './scene/SceneInteractionPrompt.tsx';
 import { SceneObjectivePanel } from './scene/SceneObjectivePanel.tsx';
 import {
+    avatarCameraReturnState,
+    blendRelicCameraPose,
     deriveRelicCameraMode,
+    planRoomFlyoverCameraPose,
     planTacticalCameraPose,
+    ROOM_FLYOVER_DURATION_MS,
+    type RelicCameraPose,
     type RelicCameraMode,
+    type RelicSceneCameraControl,
+    type RelicSceneManualCameraMode,
 } from './scene/cameraModes.ts';
 import {
     avatarPoseOffsets,
@@ -56,17 +63,17 @@ import {
 } from './scene/lightingPresets.ts';
 import { CURRENT_RELIC_ASSET_PIPELINE } from './scene/assetPipeline.ts';
 import { selectActiveEffectRoomIds } from './scene/sceneCost.ts';
-import { selectRenderableSceneEventCues } from './scene/sceneEventBudget.ts';
 import { DOOR_WIDTH, FLOOR_Y, PLAYER_EYE_Y, ROOM_SIZE, } from './scene/constants.ts';
 import { applyPointerLook, isRoamKey, yawToForward } from './scene/controls.ts';
 import { resolveRoomRoam, roomCollisionBoxes } from './scene/collision.ts';
 import { setRuntimePrompt, shouldExitInspection, startInspection, updateScenePrompt, } from './scene/interaction.ts';
 import {
     broadcastLocalPosition,
-    POS_MAX_AGE_MS,
+    isRemotePositionFreshForPlayer,
     type RemotePosEntry,
     subscribeRelicScenePositionUpdates,
 } from './scene/networking.ts';
+import { sceneMoveActionForPickedRoom } from './scene/movement.ts';
 import { deriveSceneObjective, roomHasResolvedClue, } from './scene/objectives.ts';
 import { chooseLookRoom, directionBetweenRooms, roomClueHotspot, } from './scene/prompts.ts';
 import { startCappedRenderLoop } from './scene/renderLoop.ts';
@@ -94,11 +101,19 @@ import type {
 const MOVE_PROMPT_HOLD_MS = 1200;
 const SCENE_FRAME_INTERVAL_MS = 1000 / 45;
 const PLAYER_LABEL_MODE: 'names' | 'details' | 'hidden' = 'names';
+const DEFAULT_CAMERA_CONTROL: RelicSceneCameraControl = 'tactical';
 
 type HeldMovePrompt = Readonly<{
     roomId: string;
     prompt: Extract<ScenePrompt, { kind: 'move' }>;
     expiresAtMs: number;
+}>;
+
+type SceneCameraFlyover = Readonly<{
+    startedAtMs: number;
+    returnPose: RelicCameraPose;
+    returnControl: RelicSceneCameraControl;
+    returnManualMode: RelicSceneManualCameraMode;
 }>;
 
 type RelicSceneProps = Readonly<{
@@ -133,6 +148,14 @@ type SceneRuntime = Readonly<{
     cameraYaw: { value: number };
     cameraPitch: { value: number };
     cameraMode: { value: RelicCameraMode };
+    lastRoamInputMs: { value?: number };
+    cameraTarget: Vector3;
+    cameraControl: {
+        selected: { value: RelicSceneCameraControl };
+        manualMode: { value: RelicSceneManualCameraMode };
+        flyover: { value?: SceneCameraFlyover };
+        onChange: { value(mode: RelicSceneCameraControl): void };
+    };
     pointerLook: PointerLookState;
     roamOffset: Vector3;
     roamRoomId: { value?: string };
@@ -161,6 +184,8 @@ type SceneRuntime = Readonly<{
     flickerLights: PointLight[];
     effects: TimedEffect[];
     seenEventIds: Set<string>;
+    eventCueQueue: RelicEvent[];
+    nextEventCueAtMs: { value: number };
     eventPlaybackPrimed: { value: boolean };
     focusRoomId: { value?: string };
     rtcReady: { value: boolean };
@@ -206,6 +231,7 @@ export function RelicScene({
     const runtimeRef = useRef<SceneRuntime | undefined>(undefined);
     const [sceneError, setSceneError] = useState<string | undefined>();
     const [scenePrompt, setScenePrompt] = useState<ScenePrompt | undefined>();
+    const [cameraControl, setCameraControl] = useState<RelicSceneCameraControl>(DEFAULT_CAMERA_CONTROL);
     const snapshotRef = useRef(snapshot);
     const localPlayerIdRef = useRef(localPlayerId);
     const selectedRoomIdRef = useRef(selectedRoomId);
@@ -298,6 +324,7 @@ export function RelicScene({
                 inputEnabled: inputEnabledRef.current,
                 objectiveTargetRoomId: sceneObjective.targetRoomId,
                 onPromptChange: setScenePrompt,
+                onCameraControlChange: setCameraControl,
             });
             setSceneError(undefined);
         } catch (error) {
@@ -315,6 +342,9 @@ export function RelicScene({
 
         runtime.scene.onPointerObservable.add((event) => {
             if (event.event.type !== 'pointerdown') {
+                return;
+            }
+            if (!inputEnabledRef.current) {
                 return;
             }
 
@@ -336,6 +366,17 @@ export function RelicScene({
 
             const roomId = metadata?.roomId;
             if (typeof roomId === 'string') {
+                const moveAction = sceneMoveActionForPickedRoom({
+                    snapshot: runtime.snapshot.value,
+                    localPlayerId: runtime.localPlayerId.value,
+                    roomId,
+                });
+                if (moveAction) {
+                    primeSceneRuntimeAction(runtime, moveAction, onPrimeActionRef, onSelectRoomRef);
+                    runtime.inspection.value = undefined;
+                    return;
+                }
+
                 onSelectRoomRef.current(roomId);
                 runtime.inspection.value = undefined;
                 return;
@@ -466,6 +507,7 @@ export function RelicScene({
             delete canvas.dataset.sceneEffectMeshCount;
             delete canvas.dataset.sceneDrawCalls;
             delete canvas.dataset.sceneFps;
+            delete canvas.dataset.cameraControl;
             runtime.scene.dispose();
             runtime.engine.dispose();
             runtimeRef.current = undefined;
@@ -522,6 +564,13 @@ export function RelicScene({
             />
             <RoomStateOverlay key={roomStateKey} snapshot={snapshot} localPlayerId={localPlayerId}/>
             <TouchDPad active={inputEnabled && localPlayerActive}/>
+            <SceneCameraControls
+                active={!!snapshot && snapshot.phase !== 'lobby' && !!localPlayerId}
+                selected={cameraControl}
+                onSelect={(mode) => {
+                    applySceneCameraControl(runtimeRef.current, mode);
+                }}
+            />
             <SceneInteractionPrompt
                 prompt={scenePrompt}
                 onPrimeAction={(action) => {
@@ -535,6 +584,42 @@ export function RelicScene({
                 }}
             />
         </>
+    );
+}
+
+function SceneCameraControls({
+                                 active,
+                                 selected,
+                                 onSelect,
+                             }: Readonly<{
+    active: boolean;
+    selected: RelicSceneCameraControl;
+    onSelect(mode: RelicSceneCameraControl): void;
+}>) {
+    if (!active) {
+        return null;
+    }
+
+    const options: readonly Readonly<{ mode: RelicSceneCameraControl; label: string }>[] = [
+        { mode: 'flyover', label: 'Fly over rooms' },
+        { mode: 'tactical', label: 'Tactical overview' },
+        { mode: 'avatar', label: 'Avatar' },
+    ];
+
+    return (
+        <div className="scene-camera-controls" role="group" aria-label="Camera controls">
+            {options.map((option) => (
+                <button
+                    key={option.mode}
+                    type="button"
+                    className={selected === option.mode ? 'active' : ''}
+                    aria-pressed={selected === option.mode}
+                    onClick={() => onSelect(option.mode)}
+                >
+                    {option.label}
+                </button>
+            ))}
+        </div>
     );
 }
 
@@ -702,6 +787,7 @@ function createRelicSceneRuntime({
                                      inputEnabled,
                                      objectiveTargetRoomId,
                                      onPromptChange,
+                                     onCameraControlChange,
                                  }: Readonly<{
     canvas: HTMLCanvasElement;
     snapshot?: RelicPublicSnapshot;
@@ -712,6 +798,7 @@ function createRelicSceneRuntime({
     inputEnabled: boolean;
     objectiveTargetRoomId?: string;
     onPromptChange(prompt?: ScenePrompt): void;
+    onCameraControlChange(mode: RelicSceneCameraControl): void;
 }>): SceneRuntime {
     const engine = new Engine(canvas, true, {
         antialias: true,
@@ -746,6 +833,7 @@ function createRelicSceneRuntime({
     installSkybox(scene);
     scene.environmentIntensity = initialLighting.environmentIntensity;
     canvas.dataset.lightingPreset = initialLighting.id;
+    canvas.dataset.cameraControl = DEFAULT_CAMERA_CONTROL;
 
     const flameTexture = createFlameTexture(scene);
     const handMaterial = new PBRMaterial('first-person-hands-material', scene);
@@ -778,6 +866,14 @@ function createRelicSceneRuntime({
         cameraYaw: { value: 0 },
         cameraPitch: { value: 0 },
         cameraMode: { value: 'lobby' },
+        lastRoamInputMs: { value: undefined },
+        cameraTarget: new Vector3(0, PLAYER_EYE_Y, 0),
+        cameraControl: {
+            selected: { value: DEFAULT_CAMERA_CONTROL },
+            manualMode: { value: 'auto' },
+            flyover: { value: undefined },
+            onChange: { value: onCameraControlChange },
+        },
         pointerLook: {
             active: false,
             lastX: 0,
@@ -810,6 +906,8 @@ function createRelicSceneRuntime({
         flickerLights: [],
         effects: [],
         seenEventIds: new Set(),
+        eventCueQueue: [],
+        nextEventCueAtMs: { value: 0 },
         eventPlaybackPrimed: { value: false },
         focusRoomId: { value: undefined },
         rtcReady: { value: rtcReady },
@@ -1161,6 +1259,52 @@ function primeSceneRuntimeAction(
     }
 }
 
+function applySceneCameraControl(
+    runtime: SceneRuntime | undefined,
+    mode: RelicSceneCameraControl,
+): void {
+    if (!runtime) {
+        return;
+    }
+
+    runtime.inspection.value = undefined;
+    if (mode === 'flyover') {
+        runtime.cameraControl.flyover.value = {
+            startedAtMs: performance.now(),
+            returnPose: currentCameraPose(runtime),
+            returnControl: runtime.cameraControl.selected.value,
+            returnManualMode: runtime.cameraControl.manualMode.value,
+        };
+        setSceneCameraControl(runtime, 'flyover', runtime.cameraControl.manualMode.value);
+        return;
+    }
+
+    runtime.cameraControl.flyover.value = undefined;
+    runtime.lastRoamInputMs.value = mode === 'avatar'
+        ? performance.now()
+        : undefined;
+    setSceneCameraControl(runtime, mode, mode);
+}
+
+function setSceneCameraControl(
+    runtime: SceneRuntime,
+    selected: RelicSceneCameraControl,
+    manualMode: RelicSceneManualCameraMode,
+): void {
+    runtime.cameraControl.selected.value = selected;
+    runtime.cameraControl.manualMode.value = manualMode;
+    runtime.canvas.dataset.cameraControl = selected;
+    runtime.cameraControl.onChange.value(selected);
+}
+
+function currentCameraPose(runtime: SceneRuntime): RelicCameraPose {
+    return {
+        position: runtime.camera.position.clone(),
+        target: runtime.cameraTarget.clone(),
+        fov: runtime.camera.fov,
+    };
+}
+
 function syncLinks(runtime: SceneRuntime, rooms: readonly RelicRoom[]): void {
     if (runtime.links.length > 0) {
         return;
@@ -1275,6 +1419,11 @@ function syncPlayers(
         } else {
             const room = snapshot.map.find((candidate) => candidate.id === player.roomId);
             if (room) {
+                const remote = runtime.remotePositions.get(player.playerId);
+                if (remote?.roomId && remote.roomId !== player.roomId) {
+                    runtime.remotePositions.delete(player.playerId);
+                }
+
                 const world = roomWorldPosition(room);
                 const offset = toPlayerOffset(index);
                 const target = new Vector3(world.x + offset.x, 0.65, world.z + offset.z);
@@ -1799,19 +1948,14 @@ function syncEventEffects(runtime: SceneRuntime, snapshot: RelicPublicSnapshot):
         return;
     }
 
-    const newEvents: RelicEvent[] = [];
     for (const event of snapshot.events) {
         if (runtime.seenEventIds.has(event.id)) {
             continue;
         }
 
         runtime.seenEventIds.add(event.id);
-        newEvents.push(event);
-    }
-
-    for (const event of selectRenderableSceneEventCues(newEvents)) {
         if (event.animationCue) {
-            spawnCueEffect(runtime, event.animationCue);
+            runtime.eventCueQueue.push(event);
         }
     }
 }
@@ -1823,6 +1967,7 @@ function updateRuntime(runtime: SceneRuntime): void {
     updateInteractionHighlights(runtime);
     updateFirstPersonHands(runtime);
     updateLightFlicker(runtime);
+    updateQueuedEventCues(runtime);
     updateEffects(runtime);
     updateRelics(runtime);
     updateAvatarCompulsionState(runtime);
@@ -1916,7 +2061,7 @@ function updatePlayerPositions(runtime: SceneRuntime): void {
             const remote = player.escaped || player.defeated || snapshot.phase === 'lobby'
                 ? undefined
                 : runtime.remotePositions.get(playerId);
-            if (remote && now - remote.t < POS_MAX_AGE_MS) {
+            if (isRemotePositionFreshForPlayer(remote, player.roomId, now)) {
                 // Live WebRTC position — lerp quickly toward it
                 mesh.position.x += (remote.x - mesh.position.x) * rtcFactor;
                 mesh.position.y += (0.65 - mesh.position.y) * rtcFactor;
@@ -1993,6 +2138,7 @@ function updateAvatarPresentation(
 }
 
 function updateCameraPose(runtime: SceneRuntime): void {
+    const now = performance.now();
     const snapshot = runtime.snapshot.value;
     const localPlayerId = runtime.localPlayerId.value;
     const localPlayer = snapshot?.players.find((player) => player.playerId === localPlayerId);
@@ -2000,7 +2146,7 @@ function updateCameraPose(runtime: SceneRuntime): void {
         setCameraMode(runtime, 'lobby');
         setRuntimePrompt(runtime, undefined);
         // Cinematic slow orbit around the Japanese lobby
-        const t = performance.now() / 1000;
+        const t = now / 1000;
         const camX = Math.sin(t * 0.18) * 5.2;
         const camZ = -9.4 + Math.sin(t * 0.11) * 1.8;
         const camY = 1.76 + Math.sin(t * 0.14) * 0.32;
@@ -2019,11 +2165,19 @@ function updateCameraPose(runtime: SceneRuntime): void {
 
     // Spectator camera: pan to event focus room when no keys are held.
     const focusRoomId = runtime.focusRoomId.value;
-    const isRoaming = runtime.pressedKeys.size > 0;
+    const isRoaming = isAvatarCameraInputActive(runtime);
+    if (isRoaming) {
+        runtime.lastRoamInputMs.value = now;
+    }
+    const avatarReturn = avatarCameraReturnState({
+        snapshotPhase: snapshot.phase,
+        lastRoamInputMs: runtime.lastRoamInputMs.value,
+        nowMs: now,
+    });
     const mode = deriveRelicCameraMode({
         snapshot,
         localPlayerId,
-        isRoaming,
+        isRoaming: isRoaming || avatarReturn.phase === 'follow',
         isInspecting: !!runtime.inspection.value,
         focusRoomId,
     });
@@ -2058,6 +2212,34 @@ function updateCameraPose(runtime: SceneRuntime): void {
     const inspection = runtime.inspection.value?.roomId === room.id
         ? runtime.inspection.value
         : undefined;
+    const flyover = runtime.cameraControl.flyover.value;
+    if (flyover) {
+        updateRoomFlyoverCamera(runtime, snapshot, flyover, now);
+        return;
+    }
+
+    if (runtime.cameraControl.manualMode.value === 'avatar') {
+        setCameraMode(runtime, 'roam');
+        const followPose = planAvatarFollowCameraPose(playerPosition, roamForward, runtime.cameraPitch.value);
+        runtime.camera.fov += (followPose.fov - runtime.camera.fov) * Math.min(1, runtime.engine.getDeltaTime() / 220);
+        moveCameraToward(runtime, followPose.position, followPose.target, 90);
+        return;
+    }
+
+    if (runtime.cameraControl.manualMode.value === 'tactical') {
+        setCameraMode(runtime, 'tactical');
+        const tacticalPose = planTacticalCameraPose({
+            snapshot,
+            currentRoom: room,
+            selectedRoomId: runtime.selectedRoomId.value,
+            objectiveTargetRoomId: runtime.objectiveTargetRoomId.value,
+            aspectRatio: runtime.engine.getRenderWidth() / Math.max(1, runtime.engine.getRenderHeight()),
+        });
+        moveCameraToward(runtime, tacticalPose.position, tacticalPose.target, 360);
+        runtime.camera.fov += (tacticalPose.fov - runtime.camera.fov) * Math.min(1, runtime.engine.getDeltaTime() / 360);
+        return;
+    }
+
     if (mode === 'inspection' && inspection) {
         const clueWorld = roomWorld.add(new Vector3(
             inspection.hotspot.x,
@@ -2083,29 +2265,84 @@ function updateCameraPose(runtime: SceneRuntime): void {
     }
 
     if (mode === 'tactical') {
-        const pose = planTacticalCameraPose({
+        const tacticalPose = planTacticalCameraPose({
             snapshot,
             currentRoom: room,
             selectedRoomId: runtime.selectedRoomId.value,
             objectiveTargetRoomId: runtime.objectiveTargetRoomId.value,
             aspectRatio: runtime.engine.getRenderWidth() / Math.max(1, runtime.engine.getRenderHeight()),
         });
-        moveCameraToward(runtime, pose.position, pose.target, 160);
-        runtime.camera.fov += (pose.fov - runtime.camera.fov) * Math.min(1, runtime.engine.getDeltaTime() / 260);
+        if (avatarReturn.phase === 'zoom-out') {
+            const avatarPose = planAvatarFollowCameraPose(playerPosition, roamForward, runtime.cameraPitch.value);
+            const pose = blendRelicCameraPose(avatarPose, tacticalPose, avatarReturn.progress);
+            moveCameraToward(runtime, pose.position, pose.target, 820);
+            runtime.camera.fov += (pose.fov - runtime.camera.fov) * Math.min(1, runtime.engine.getDeltaTime() / 820);
+            return;
+        }
+
+        moveCameraToward(runtime, tacticalPose.position, tacticalPose.target, 160);
+        runtime.camera.fov += (tacticalPose.fov - runtime.camera.fov) * Math.min(1, runtime.engine.getDeltaTime() / 260);
         return;
     }
 
     // 3rd-person follow camera — stays behind and above the avatar
-    const camDistance = 5.5 + Math.cos(runtime.cameraPitch.value) * 2.0;
-    const camHeight = 3.8 + Math.sin(runtime.cameraPitch.value) * 2.5;
-    const desiredPosition = new Vector3(
-        playerPosition.x - roamForward.x * camDistance,
-        playerPosition.y + camHeight,
-        playerPosition.z - roamForward.z * camDistance,
-    );
-    const lookTarget = new Vector3(playerPosition.x, playerPosition.y + 1.1, playerPosition.z);
-    runtime.camera.fov += (0.94 - runtime.camera.fov) * Math.min(1, runtime.engine.getDeltaTime() / 220);
-    moveCameraToward(runtime, desiredPosition, lookTarget, 90);
+    const followPose = planAvatarFollowCameraPose(playerPosition, roamForward, runtime.cameraPitch.value);
+    runtime.camera.fov += (followPose.fov - runtime.camera.fov) * Math.min(1, runtime.engine.getDeltaTime() / 220);
+    moveCameraToward(runtime, followPose.position, followPose.target, 90);
+}
+
+function planAvatarFollowCameraPose(
+    playerPosition: Vector3,
+    roamForward: Vector3,
+    cameraPitch: number,
+): RelicCameraPose {
+    const camDistance = 5.5 + Math.cos(cameraPitch) * 2.0;
+    const camHeight = 3.8 + Math.sin(cameraPitch) * 2.5;
+    return {
+        position: new Vector3(
+            playerPosition.x - roamForward.x * camDistance,
+            playerPosition.y + camHeight,
+            playerPosition.z - roamForward.z * camDistance,
+        ),
+        target: new Vector3(playerPosition.x, playerPosition.y + 1.1, playerPosition.z),
+        fov: 0.94,
+    };
+}
+
+function updateRoomFlyoverCamera(
+    runtime: SceneRuntime,
+    snapshot: RelicPublicSnapshot,
+    flyover: SceneCameraFlyover,
+    nowMs: number,
+): void {
+    const progress = Math.min(1, (nowMs - flyover.startedAtMs) / ROOM_FLYOVER_DURATION_MS);
+    const pose = planRoomFlyoverCameraPose({
+        rooms: snapshot.map,
+        progress,
+        returnPose: flyover.returnPose,
+    });
+
+    setCameraMode(runtime, 'flyover');
+    moveCameraToward(runtime, pose.position, pose.target, 160);
+    runtime.camera.fov += (pose.fov - runtime.camera.fov) * Math.min(1, runtime.engine.getDeltaTime() / 180);
+
+    if (progress >= 1) {
+        runtime.cameraControl.flyover.value = undefined;
+        setSceneCameraControl(runtime, flyover.returnControl, flyover.returnManualMode);
+    }
+}
+
+function isAvatarCameraInputActive(runtime: SceneRuntime): boolean {
+    return hasPressed(runtime, 'w') ||
+        hasPressed(runtime, 'a') ||
+        hasPressed(runtime, 's') ||
+        hasPressed(runtime, 'd') ||
+        hasPressed(runtime, 'q') ||
+        hasPressed(runtime, 'e') ||
+        hasPressed(runtime, 'arrowup') ||
+        hasPressed(runtime, 'arrowdown') ||
+        hasPressed(runtime, 'arrowleft') ||
+        hasPressed(runtime, 'arrowright');
 }
 
 function updateLocalRoomRoam(
@@ -2456,9 +2693,9 @@ function moveCameraToward(
 ): void {
     const factor = Math.min(1, runtime.engine.getDeltaTime() / dampingMs);
     runtime.camera.position.addInPlace(desiredPosition.subtract(runtime.camera.position).scale(factor));
-    const currentForward = runtime.camera.getForwardRay().direction;
-    const currentTarget = runtime.camera.position.add(currentForward.scale(3));
+    const currentTarget = runtime.cameraTarget;
     const nextTarget = currentTarget.add(desiredTarget.subtract(currentTarget).scale(factor));
+    runtime.cameraTarget.copyFrom(nextTarget);
     runtime.camera.setTarget(nextTarget);
 }
 
@@ -2691,6 +2928,30 @@ function updateEffects(runtime: SceneRuntime): void {
             runtime.effects.splice(index, 1);
         }
     }
+}
+
+function updateQueuedEventCues(runtime: SceneRuntime): void {
+    const now = performance.now();
+    if (now < runtime.nextEventCueAtMs.value) {
+        return;
+    }
+
+    const event = runtime.eventCueQueue.shift();
+    if (!event?.animationCue) {
+        return;
+    }
+
+    const cue = event.animationCue;
+    if (cue.roomId) {
+        runtime.focusRoomId.value = cue.roomId;
+    } else if (cue.playerId) {
+        const snapshot = runtime.snapshot.value;
+        const player = snapshot?.players.find((candidate) => candidate.playerId === cue.playerId);
+        runtime.focusRoomId.value = player?.roomId ?? runtime.focusRoomId.value;
+    }
+
+    spawnCueEffect(runtime, cue);
+    runtime.nextEventCueAtMs.value = now + Math.max(900, (cue.durationMs ?? 900) * 0.82);
 }
 
 function spawnPrimeActionEffect(runtime: SceneRuntime, action: RelicActionInput): void {
@@ -3038,6 +3299,29 @@ function spawnHeartRelic(runtime: SceneRuntime, durationMs: number): void {
     const center = new Vector3(0, 1.2, 0);
     spawnPulse(runtime, center, '#f2c14e', durationMs, 'high');
     spawnGlow(runtime, center, '#fef08a', durationMs);
+    const snapshot = runtime.snapshot.value;
+    if (!snapshot) {
+        return;
+    }
+
+    const winnerIds = new Set(snapshot.winnerIds);
+    for (const player of snapshot.players) {
+        const playerPosition = playerCenter(runtime, player.playerId);
+        if (winnerIds.has(player.playerId)) {
+            spawnEscapeStreak(runtime, playerPosition, durationMs);
+            spawnGlow(runtime, playerPosition.add(new Vector3(0, 0.8, 0)), '#dcfce7', durationMs);
+            continue;
+        }
+
+        spawnPulse(runtime, playerPosition, '#f87171', durationMs, 'medium');
+        spawnRoomShake(runtime, player.roomId, durationMs, 'high');
+    }
+
+    for (const room of snapshot.map) {
+        if (room.id !== 'entrance' && room.id !== 'exit') {
+            spawnRoomShake(runtime, room.id, durationMs, 'medium');
+        }
+    }
 }
 
 function roomCenter(runtime: SceneRuntime, roomId: string): Vector3 {

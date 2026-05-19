@@ -1,6 +1,6 @@
 # Visual Direction
 
-Last reviewed: 2026-05-18.
+Last reviewed: 2026-05-19.
 
 ## Targets
 
@@ -22,7 +22,7 @@ Last reviewed: 2026-05-18.
 ## Current Babylon Baseline
 
 - Opening, auth, and lobby surfaces use a lightweight Babylon ambient scene.
-- Planning and finished phases mount the full gameplay Babylon scene.
+- Planning, review, and finished phases mount the full gameplay Babylon scene.
 - The full gameplay render loop is capped at 45 fps. The opening scene is
   capped at 30 fps.
 - The Babylon engine now uses high-DPI/native canvas scaling capped at 2x device
@@ -45,6 +45,13 @@ Last reviewed: 2026-05-18.
   to close roam or inspection modes when the player actively uses them.
 - The gameplay canvas exposes `data-camera-mode` for browser baselines; current
   planning baselines are expected to render in `tactical` mode.
+- Review snapshots keep the tactical scene visible but disable planning input.
+  New animation cues are queued for sequential playback so a round reveal reads
+  as a watched sequence of hunter moves and castle reactions instead of an
+  instant state jump.
+- The final `game_finished` cue is staged as a larger collapse beat: winners get
+  escape streaks from their final rooms, while losing or defeated hunters remain
+  in rooms shaken by the castle collapse.
 - Player labels default to names-only. Detail labels can be reintroduced as an
   explicit debug/development mode if needed.
 - Scene upgrade baselines now cover opening, lobby, planning desktop, planning
@@ -178,7 +185,10 @@ Scene data and interaction contracts live in
 6. Add short motion states for player movement: lean while walking, a small
    arrival settle, and a distinct idle pose. This will make remote avatars feel
    alive even before bespoke character animation.
-7. Keep UI and scene palettes related but not identical. The scene should use
+7. Treat round review as a primary entertainment beat. Moves, searches, steals,
+   damage, relic discovery, collapse pressure, and final escape should each have
+   short readable scene language that is visible across all clients.
+8. Keep UI and scene palettes related but not identical. The scene should use
    darker stone/wood/metal neutrals with bright accents only for players,
    objectives, relics, and exits.
 
@@ -202,9 +212,10 @@ procedural castle readable while lowering the mesh pressure measured in the
 scene baselines.
 
 S10 adds an event-cue budget so command snapshots do not spawn every scene
-effect at once. The timeline still shows all events, but the Babylon scene picks
-the strongest cue for a burst. The draw-call baseline now resets the counter per
-rendered frame, so long reveal waits are comparable to ordinary planning views.
+effect at once. The timeline still shows all events. The review follow-up now
+queues cue playback one event at a time, and the draw-call baseline resets the
+counter per rendered frame so long reveal waits are comparable to ordinary
+planning views.
 
 Refine procedural geometry in this order:
 

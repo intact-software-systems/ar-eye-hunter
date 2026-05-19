@@ -141,7 +141,7 @@ label {
     position: absolute;
     z-index: 3;
     left: 22px;
-    top: 104px;
+    top: 138px;
     width: min(330px, calc(100vw - 410px));
     min-width: 260px;
     display: grid;
@@ -208,6 +208,39 @@ label {
 
 .scene-objective-panel.investigated {
     background: rgba(26, 50, 45, 0.68);
+}
+
+.scene-camera-controls {
+    position: absolute;
+    z-index: 6;
+    left: 22px;
+    top: 84px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px;
+    border: 1px solid rgba(255, 249, 233, 0.16);
+    border-radius: 8px;
+    background: rgba(15, 34, 33, 0.72);
+    box-shadow: 0 12px 30px rgba(7, 18, 16, 0.22);
+    backdrop-filter: blur(12px);
+}
+
+.scene-camera-controls button {
+    min-height: 32px;
+    padding: 0 10px;
+    border-color: rgba(186, 245, 231, 0.24);
+    border-radius: 6px;
+    background: rgba(34, 63, 58, 0.78);
+    color: #f2ead8;
+    font-size: 0.76rem;
+    font-weight: 750;
+}
+
+.scene-camera-controls button.active {
+    border-color: rgba(250, 204, 91, 0.72);
+    background: rgba(95, 107, 53, 0.9);
+    color: #fff9e9;
 }
 
 .relic-scene-fallback {
@@ -1657,9 +1690,21 @@ label {
     .scene-objective-panel {
         position: absolute;
         left: 12px;
-        top: 64px;
+        top: 108px;
         width: min(330px, calc(100vw - 24px));
         min-width: 0;
+    }
+
+    .scene-camera-controls {
+        left: 12px;
+        top: 58px;
+        max-width: calc(100vw - 24px);
+    }
+
+    .scene-camera-controls button {
+        min-height: 30px;
+        padding: 0 8px;
+        font-size: 0.7rem;
     }
 
     .topbar,

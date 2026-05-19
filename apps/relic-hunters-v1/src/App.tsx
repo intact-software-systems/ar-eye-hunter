@@ -118,6 +118,9 @@ export default function App() {
     );
     const currentPlayer = viewModel.currentPlayer;
     const currentRoom = viewModel.currentRoom;
+    const sceneVisible = game.snapshot?.phase === 'planning' ||
+        game.snapshot?.phase === 'review' ||
+        game.snapshot?.phase === 'finished';
     const sceneInputEnabled = game.snapshot?.phase === 'planning' ||
         game.snapshot?.phase === 'finished';
     const currentRoomSummary = useMemo(
@@ -165,6 +168,8 @@ export default function App() {
         !!currentPlayer &&
         !currentPlayer.escaped &&
         !currentPlayer.defeated;
+    const showReviewControls = game.snapshot?.phase === 'review' &&
+        !!currentPlayer;
     const canForceResolveRound = showPlanningControls &&
         viewModel.turnStatus.waitingPlayerCount > 0 &&
         timeRemainingMs !== null &&
@@ -316,6 +321,7 @@ export default function App() {
         if (prevPhaseRef.current && prevPhaseRef.current !== phase) {
             const isGameStart = prevPhaseRef.current === 'lobby' && phase === 'planning';
             const msg = phase === 'planning' ? UI[lang].phaseBannerPlanning
+                : phase === 'review' ? 'Plans are revealed.'
                 : phase === 'finished' ? 'The ruin falls silent.'
                 : null;
             if (msg) {
@@ -512,6 +518,11 @@ export default function App() {
         await game.forceResolveRound();
     };
 
+    const continueReview = async () => {
+        playUiSound('start');
+        await game.continueReview();
+    };
+
     const resetExpedition = async () => {
         playUiSound('reset');
         setDismissedPartyChangeKey(undefined);
@@ -570,7 +581,7 @@ export default function App() {
     return (
         <GameHudLayout
             scene={(
-                sceneInputEnabled
+                sceneVisible
                     ? (
                         <RelicScene
                             snapshot={game.snapshot}
@@ -959,6 +970,26 @@ export default function App() {
                                         </button>
                                     </div>
                                 )}
+                            </section>
+                        )}
+
+                        {showReviewControls && game.snapshot && (
+                            <section className="action-command-panel review-command-panel" aria-label="Round review">
+                                <span className="panel-label">Round {game.snapshot.round} Review</span>
+                                <div className="action-brief">
+                                    <strong>Watch the revealed plans</strong>
+                                    <span>Each hunter's move is now being replayed in the scene and timeline.</span>
+                                    <small>Continue only after the party has seen the results.</small>
+                                </div>
+                                <button
+                                    type="button"
+                                    className="primary action-submit-button"
+                                    onClick={continueReview}
+                                >
+                                    {willReviewEndGame(game.snapshot)
+                                        ? 'Continue to finale'
+                                        : 'Continue to next turn'}
+                                </button>
                             </section>
                         )}
                     </div>
@@ -3070,11 +3101,19 @@ function plural(word: string, count: number): string {
     return count === 1 ? word : `${word}s`;
 }
 
+function willReviewEndGame(snapshot: RelicPublicSnapshot): boolean {
+    const active = snapshot.players.some((player) =>
+        !player.escaped && !player.defeated
+    );
+    return snapshot.round + 1 > snapshot.maxRounds || !active;
+}
+
 function phaseLabel(value: string, lang: Lang): string {
     const u = UI[lang];
     switch (value) {
         case 'lobby':     return u.phaseLobby;
         case 'planning':  return u.phasePlanning;
+        case 'review':    return u.phaseReview;
         case 'finished':  return u.phaseFinished;
         case 'connected': return u.phaseConnected;
         case 'connecting':return u.phaseConnecting;

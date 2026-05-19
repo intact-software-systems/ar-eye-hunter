@@ -181,6 +181,21 @@ export function applyRelicCommand(
         throw new Error('The expedition is already finished.');
     }
 
+    if (command.kind === 'continue-review') {
+        if (joined.state.phase !== 'review') {
+            throw new Error('There is no review to continue.');
+        }
+
+        return {
+            state: advanceReviewedRound(joined.state, now),
+            resolvedRound: false,
+        };
+    }
+
+    if (joined.state.phase === 'review') {
+        throw new Error('Review the revealed actions before planning the next turn.');
+    }
+
     const active = activePlayers(joined.state);
     if (!active.some((player) => player.playerId === joined.player.playerId)) {
         throw new Error('Escaped or defeated hunters cannot act.');
@@ -300,32 +315,43 @@ function resolveRound(state: RelicGameState, now: number): RelicGameState {
         0,
     );
     next = applyRuinPhase(next, noise, now);
-    const nextRound = next.round + 1;
-    const finished = nextRound > next.maxRounds || activePlayers(next).length === 0;
-    const finishedState = touch({
+    const reviewState = touch({
         ...next,
-        round: finished ? next.round : nextRound,
-        phase: finished ? 'finished' : 'planning',
+        phase: 'review',
         pendingActions: [],
-        roundStartedAtEpochMs: finished ? next.roundStartedAtEpochMs : now,
-        winnerIds: finished ? calculateWinnerIds(next) : [],
+        roundStartedAtEpochMs: undefined,
+        winnerIds: [],
+    }, now);
+
+    return scoreAllPlayers(reviewState);
+}
+
+function advanceReviewedRound(state: RelicGameState, now: number): RelicGameState {
+    const nextRound = state.round + 1;
+    const finished = nextRound > state.maxRounds || activePlayers(state).length === 0;
+    const advanced = touch({
+        ...state,
+        round: finished ? state.round : nextRound,
+        phase: finished ? 'finished' : 'planning',
+        roundStartedAtEpochMs: finished ? state.roundStartedAtEpochMs : now,
+        winnerIds: [],
         events: finished
-            ? appendEvent(next, 'The expedition is over.', now, {
+            ? appendEvent(state, 'The castle collapses as the expedition ends.', now, {
                 type: 'game_finished',
                 animationCue: {
                     type: 'heart_relic_victory',
-                    durationMs: 2_500,
+                    durationMs: 4_500,
                     intensity: 'high',
                 },
                 tone: 'success',
             })
-            : appendEvent(next, `Round ${nextRound} begins.`, now, {
+            : appendEvent(state, `Round ${nextRound} begins.`, now, {
                 type: 'round_started',
                 tone: 'mystery',
             }),
     }, now);
 
-    return finished ? scoreAllPlayers(finishedState, true) : scoreAllPlayers(finishedState);
+    return finished ? scoreAllPlayers(advanced, true) : scoreAllPlayers(advanced);
 }
 
 function resolveAction(

@@ -376,7 +376,8 @@ bottom current-turn summary plus one grouped turn timeline. The previous floatin
 turn feedback panel, post-round digest overlay, personal round card, and compact
 diff strip have been removed from the standard path. Timeline entries are grouped
 by round and labelled as Reveal, Your Action, Party Action, Castle Reaction, or
-Result.
+Result. Iteration 21 adds the missing shared review phase so these resolved
+events are watched before the next planning turn begins.
 
 Deliverables:
 
@@ -545,7 +546,8 @@ particle/light metrics, and paused inactive room effects. Its S9 pass adds a
 static batch metrics while keeping interactive clue/action meshes separate. Its
 S10 pass adds a `scene/sceneEventBudget.ts` boundary, limits simultaneous scene
 animation cues, exports active effect metrics, and resets draw-call metrics per
-rendered frame.
+rendered frame. Its S11 pass keeps the gameplay scene mounted during review,
+queues reveal cues sequentially, and expands the final collapse presentation.
 
 Deliverables:
 
@@ -568,6 +570,9 @@ Deliverables:
   first pass complete in the scene upgrade S9 track
 - add a scene event-cue budget and corrected per-frame draw-call metrics: first
   pass complete in the scene upgrade S10 track
+- add review/finale scene playback that keeps all clients watching the same
+  resolved round before the next turn: first pass complete in Iteration 21 and
+  the scene upgrade S11 track
 - verify labels, prompts, minimap, and bottom HUD do not overlap at the
   captured viewports
 - include the extra-wide side menu layout in visual smoke coverage so the
@@ -744,19 +749,96 @@ Exit criteria:
 - a peer that misses push-based timeout resolution can still converge from the
   server snapshot without staying stuck on the stale force-resolve UI
 
+### Iteration 20: Scene Movement Input And Stale RTC Room Guard
+
+Fix the reported avatar movement dead end where clicking rooms in the Babylon
+scene selected rooms without drafting movement, and stale live RTC avatar
+coordinates could keep an avatar visually pinned to a previous room after the
+authoritative snapshot had moved that player.
+
+Follow-up from:
+[Iteration 14](#iteration-14-visual-baselines-and-scene-architecture-follow-up),
+[Iteration 17](#iteration-17-remote-avatar-rtc-routing), and
+[Iteration 18](#iteration-18-rtc-snapshot-repair).
+
+Status: completed. `src/game/scene/movement.ts` now converts a picked legal
+adjacent room into a move draft during planning. `RelicScene` uses that helper
+before falling back to selection-only room clicks, so scene interaction can
+prime movement without directly submitting a turn plan. `scene/networking.ts`
+now rejects fresh-looking RTC avatar coordinates when their payload room no
+longer matches the player's snapshot room, and `RelicScene` clears those stale
+remote entries during player sync.
+
+Deliverables:
+
+- add a tested scene movement helper for legal adjacent room picks
+- wire Babylon room clicks through the helper before selection-only behavior
+- reject stale-room RTC avatar coordinates so snapshot room movement wins
+- document the movement and stale RTC room contracts
+
+Exit criteria:
+
+- clicking a legal adjacent room in planning primes a move draft, and stale RTC
+  position packets cannot prevent snapshot-driven avatar room movement
+
+### Iteration 21: Round Review And Finale Reveal
+
+Turn simultaneous resolution into a visible shared reveal phase instead of an
+instant jump into the next planning turn.
+
+Follow-up from:
+[Iteration 10](#iteration-10-turn-timeline-and-feedback),
+[Iteration 12](#iteration-12-two-client-propagation-and-snapshot-recovery),
+[Iteration 18](#iteration-18-rtc-snapshot-repair), and
+[Iteration 20](#iteration-20-scene-movement-input-and-stale-rtc-room-guard).
+
+Status: completed for the first shared reveal pass. Shared rules now resolve a
+round into `phase: review`, clear submitted plans, keep the resolved event list
+visible, and reject new gameplay commands until a `continue-review` command
+advances to the next planning turn or finale. The SPA mounts the gameplay scene
+during review with planning input disabled, shows a round review command panel,
+and exposes `continueReview()` through the runtime hook. Snapshot ordering now
+treats review as a monotonic phase between planning and finished for same-round
+snapshots. The scene queues new event animation cues for sequential playback and
+stages the final `game_finished` cue as a larger collapse/escape beat.
+
+Deliverables:
+
+- add `review` to the shared public game phase model
+- split round resolution from round advancement in `packages/relic-hunters`
+- add a `continue-review` command through the shared validator, runtime, hook,
+  server API surface, and SPA controls
+- keep review snapshots on the same REST/WS/RTC acceptance and repair paths as
+  planning and finished snapshots
+- disable scene planning input during review while keeping the Babylon scene
+  mounted for reveal playback
+- queue event animation cues so moves, searches, steals, damage, relic finds,
+  collapse pressure, and finale cues can be watched in order
+- add tests for shared-rule review transitions, app review summary/objective,
+  snapshot phase ordering, and server API progression
+- update current-state, UI/gameplay, runtime data-flow, scene contracts, visual
+  direction, and scene upgrade plan docs
+
+Exit criteria:
+
+- all clients see a shared review state after a round resolves, the next turn
+  starts only after review continuation, and finale presentation distinguishes
+  escaping winners from hunters left in the collapsed castle
+
 ## Next Implementation Recommendation
 
-Continue with Iteration 14 before performance.
+Continue with the remaining Iteration 14 scene-boundary work before performance.
 
 The playable loop now has a real two-browser convergence pass, while performance
 work still assumes the scene and UI surfaces have stable visual baselines.
-The next natural work is visual baseline coverage and one more `RelicScene`
-boundary extraction, then production readiness.
+The next natural work is one more `RelicScene` boundary extraction, then
+per-room picking support for cross-room instancing/shared geometry, then
+production readiness.
 
 ## Concrete Next Tasks
 
-1. Add baseline screenshot coverage for signed-out, lobby, planning, waiting,
-   resolved timeline, and finished states.
+1. Add review-phase browser coverage that verifies the review panel, disabled
+   planning input, and `continue-review` transition.
 2. Include the extra-wide side-panel scroll layout in the visual smoke checks.
 3. Extract either event effects or player/relic sync out of `RelicScene.tsx`.
 4. Keep the full-stack propagation spec available as a gated regression check
@@ -768,6 +850,8 @@ boundary extraction, then production readiness.
 7. Add a full-stack timeout-resolution propagation assertion that force-resolves
    an overdue round from one browser and verifies the other browser leaves the
    timed-out UI without manual refresh.
+8. Add two-client review/finale propagation coverage once the gated full-stack
+   harness can drive the explicit `continue-review` step.
 
 ## Open Questions
 

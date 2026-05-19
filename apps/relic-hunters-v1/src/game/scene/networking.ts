@@ -36,6 +36,16 @@ export type RelicScenePositionRuntime = Readonly<{
     lastPosBroadcastMs: { value: number };
 }>;
 
+export function isRemotePositionFreshForPlayer(
+    remote: RemotePosEntry | undefined,
+    playerRoomId: string,
+    nowMs: number,
+): remote is RemotePosEntry {
+    return !!remote &&
+        nowMs - remote.t < POS_MAX_AGE_MS &&
+        (!remote.roomId || remote.roomId === playerRoomId);
+}
+
 export function subscribeRelicScenePositionUpdates(
     runtime: RelicScenePositionRuntime,
 ): () => void {

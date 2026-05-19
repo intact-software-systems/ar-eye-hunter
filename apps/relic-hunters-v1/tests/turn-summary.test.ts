@@ -109,6 +109,32 @@ describe('turn summary and timeline derivation', () => {
         expect(isPersonalEvent(personal, 'alice-session')).toBe(true);
     });
 
+    it('summarizes the review phase before the next turn starts', () => {
+        const summary = deriveCurrentTurnSummaryModel({
+            snapshot: {
+                ...planningSnapshot(),
+                phase: 'review',
+                submittedPlayerIds: [],
+                events: [
+                    event('reveal', 'action_revealed', 'Round 1 actions are revealed.'),
+                    event('move', 'player_moved', 'Alice moved to Hallway.', {
+                        animationCue: { type: 'camera_move', playerId: 'alice-session', roomId: 'hallway' },
+                    }),
+                ],
+            },
+            localPlayerId: 'alice-session',
+            events: [],
+            lang: 'en',
+        });
+
+        expect(summary.copy).toMatchObject({
+            kind: 'watching',
+            eyebrow: 'Round 1',
+            title: 'Plans revealed',
+            detail: "Watch each hunter's action before the next turn begins.",
+        });
+    });
+
     it('names the winner when the expedition is finished', () => {
         const snapshot: RelicPublicSnapshot = {
             ...planningSnapshot(),

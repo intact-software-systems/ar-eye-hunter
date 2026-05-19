@@ -120,6 +120,17 @@ function deriveCurrentTurnSummaryCopy({
         };
     }
 
+    if (snapshot.phase === 'review') {
+        return {
+            kind: 'watching',
+            eyebrow: lang === 'no' ? `Runde ${snapshot.round}` : `Round ${snapshot.round}`,
+            title: lang === 'no' ? 'Planene avsløres' : 'Plans revealed',
+            detail: lang === 'no'
+                ? 'Se hver jegers handling før neste runde starter.'
+                : "Watch each hunter's action before the next turn begins.",
+        };
+    }
+
     if (!localPlayer) {
         return {
             kind: 'watching',

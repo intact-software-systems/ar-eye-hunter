@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     broadcastLocalPosition,
+    isRemotePositionFreshForPlayer,
     resolveRelicPosUpdatePosition,
     type RelicScenePositionRuntime,
     subscribeRelicScenePositionUpdates,
@@ -118,6 +119,23 @@ describe('Relic scene networking', () => {
             yaw: 1.2,
             roomId: 'entrance',
         });
+    });
+
+    it('rejects fresh RTC avatar positions from a stale snapshot room', () => {
+        expect(isRemotePositionFreshForPlayer({
+            x: 0,
+            z: 0,
+            yaw: 0,
+            roomId: 'entrance',
+            t: 1_000,
+        }, 'hallway', 1_010)).toBe(false);
+        expect(isRemotePositionFreshForPlayer({
+            x: 0,
+            z: 0,
+            yaw: 0,
+            roomId: 'hallway',
+            t: 1_000,
+        }, 'hallway', 1_010)).toBe(true);
     });
 });
 

@@ -42,6 +42,7 @@ export type RelicHuntersConnection = Readonly<{
     startExpedition(): Promise<void>;
     submitAction(action: RelicActionInput): Promise<void>;
     forceResolveRound(): Promise<void>;
+    continueReview(): Promise<void>;
     setRoundLimit(timeLimitMs: number): Promise<void>;
     resetExpedition(): Promise<void>;
 }>;
@@ -619,6 +620,10 @@ export function useRelicHunters(): RelicHuntersConnection {
         await sendCommand({ kind: 'force-resolve-round' });
     }, [sendCommand]);
 
+    const continueReview = useCallback(async () => {
+        await sendCommand({ kind: 'continue-review' });
+    }, [sendCommand]);
+
     const setRoundLimit = useCallback(async (timeLimitMs: number) => {
         await sendCommand({ kind: 'set-round-limit', timeLimitMs });
     }, [sendCommand]);
@@ -666,6 +671,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         startExpedition,
         submitAction,
         forceResolveRound,
+        continueReview,
         setRoundLimit,
         resetExpedition,
     }), [
@@ -686,6 +692,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         startExpedition,
         submitAction,
         forceResolveRound,
+        continueReview,
         setRoundLimit,
         resetExpedition,
     ]);

@@ -1,6 +1,6 @@
 # Scene Contracts
 
-Last reviewed: 2026-05-18.
+Last reviewed: 2026-05-19.
 
 This document defines the contracts that scene-upgrade work must preserve while
 the Babylon castle moves toward a stylized Japanese castle diorama.
@@ -11,7 +11,7 @@ The scene receives a public relic snapshot. It must treat these fields as the
 authoritative gameplay source:
 
 - `snapshot.roomId`: the Rallar/Relic game room, used for RTC routing.
-- `snapshot.phase`: lobby, planning, or finished scene mode.
+- `snapshot.phase`: lobby, planning, review, or finished scene mode.
 - `snapshot.map`: room graph, room kinds, room coordinates, collapsed state,
   unstable state, and neighbor links.
 - `snapshot.players`: player identity, character, room id, health, escaped,
@@ -20,7 +20,8 @@ authoritative gameplay source:
   exposed as scene spoilers.
 - `snapshot.roomInvestigations`: discovered clue trails and room search results.
 - `snapshot.submittedPlayerIds`: locked-plan avatar state.
-- `snapshot.events`: recent event effects and timeline focus.
+- `snapshot.events`: recent event effects, review reveal cues, finale cues, and
+  timeline focus.
 
 Scene modules may derive presentation state from these fields, but must not
 invent authoritative room movement, relic ownership, or action legality.
@@ -42,6 +43,8 @@ Clickable or pickable Babylon meshes must keep metadata compatible with current
 scene interaction:
 
 - `{ roomId: string }` selects a room.
+- During planning, `{ roomId: string }` on a legal adjacent room primes a move
+  draft for that room before selection-only behavior.
 - `{ primeAction: 'search', clueHotspotId?: string }` starts clue inspection or
   primes search.
 - `{ playerId: string }` identifies avatar meshes for labels, effects, and
@@ -69,6 +72,9 @@ submit actions, reveal hidden relics, or replace clue hotspot metadata.
   options.
 - Remote RTC payloads should stay room-relative so clients with equivalent room
   graphs can resolve positions consistently.
+- Remote RTC payloads must not keep driving an avatar after the public snapshot
+  says that player is in a different room; the snapshot-derived target wins on
+  room mismatch.
 - `src/game/scene/avatarPresentation.ts` owns presentation-only avatar states.
   It may derive lobby, idle, moving, arriving, locked, escaped, and defeated
   presentation from public snapshot status and cosmetic movement deltas, but it
@@ -86,7 +92,16 @@ submit actions, reveal hidden relics, or replace clue hotspot metadata.
   state.
 - Idle planning should use the tactical overview. Active roam and clue
   inspection may keep closer camera behavior, and event focus may frame the
-  latest event room outside planning.
+  latest event room outside planning. Review mode should keep the scene visible
+  and focus each queued event cue without allowing planning input.
+- Recent avatar movement may temporarily hold a closer follow camera and then
+  blend back to tactical framing. This is presentation-only and must not affect
+  room movement, legal actions, or submitted plans.
+- Scene camera controls are presentation-only. `Fly over rooms` may temporarily
+  set `data-camera-mode="flyover"` and `data-camera-control="flyover"`, then
+  must return to the previous manual camera choice. `Tactical overview` and
+  `Avatar` may persist as local client preferences, but must not enter public
+  snapshots or alter action legality.
 - Tactical framing must be derived from public room coordinates: current room,
   neighbors, selected room, objective target, and active party room locations.
 - The gameplay canvas publishes `data-camera-mode` for browser baselines and
@@ -147,6 +162,13 @@ submit actions, reveal hidden relics, or replace clue hotspot metadata.
 - Event cue budgeting must not hide, drop, or reorder authoritative
   `snapshot.events`; it only limits how many Babylon effects are spawned from a
   burst of new events.
+- Review playback may queue new animation cues so player moves, searches,
+  steals, ruin reactions, and finale cues are shown sequentially. This queue is
+  presentation-only; it must not rewrite `snapshot.events`, delay snapshot
+  acceptance, or apply gameplay commands.
+- Finale cues may emphasize winners escaping and losing hunters being left in
+  collapsing rooms, but winner ids, scores, escaped state, defeated state, and
+  room membership remain public snapshot data.
 - Browser baselines expose active effect and effect mesh counts. Draw-call
   counters are reset per rendered frame before being written to canvas metrics.
 
@@ -155,6 +177,9 @@ submit actions, reveal hidden relics, or replace clue hotspot metadata.
 - Scene prompts can prime `move`, `search`, or `escape` actions.
 - The side action panel remains the source of truth for committed turn plans.
 - Scene prompts must not submit actions directly.
+- During review, scene clicks and prompt actions must not prime or submit new
+  plans. Review continuation goes through the explicit `continue-review`
+  command exposed by the SPA controls.
 - Prompt text and buttons must stay reachable with the HUD at desktop and mobile
   viewports.
 

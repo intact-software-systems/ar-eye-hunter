@@ -98,8 +98,10 @@ function phaseRank(phase: RelicPublicSnapshot['phase']): number {
             return 0;
         case 'planning':
             return 1;
-        case 'finished':
+        case 'review':
             return 2;
+        case 'finished':
+            return 3;
     }
 }
 

@@ -1,4 +1,9 @@
-import { rallar, type RallarRoomState } from '@shared-web/browser/rallar.ts';
+import {
+    rallar,
+    type RallarRoomState,
+    type RallarStartResult,
+    type RallarSubscriptionScope,
+} from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import {
     RELIC_PROTOCOL_VERSION,
@@ -33,6 +38,7 @@ export type RelicCommandDraft =
     | Readonly<{ kind: 'start-expedition' }>
     | Readonly<{ kind: 'submit-action'; action: RelicActionInput }>
     | Readonly<{ kind: 'force-resolve-round' }>
+    | Readonly<{ kind: 'continue-review' }>
     | Readonly<{ kind: 'set-round-limit'; timeLimitMs: number }>;
 
 export type RelicRuntimeDiagnostics = Readonly<{
@@ -87,15 +93,21 @@ export type RelicRoomHydration = Readonly<{
     snapshot?: RelicPublicSnapshot;
 }>;
 
+export type RelicRuntimeStartResult = Pick<
+    RallarStartResult,
+    'session' | 'connected' | 'roomState'
+>;
+
 export type RelicHuntersRuntimeDeps = Readonly<{
     restoreSession(): AuthSession | undefined;
+    start(): Promise<RelicRuntimeStartResult>;
+    subscriptions(): RallarSubscriptionScope;
     restoreRoomId(): string | undefined;
     saveRoomId(roomId: string): void;
     clearRoomId(): void;
     login(username: string, password: string): Promise<AuthSession>;
     register(username: string, password: string, displayName?: string): Promise<AuthSession>;
     logout(): Promise<void>;
-    connect(): Promise<void>;
     refreshRooms(): Promise<RallarRoomState>;
     onRoomsChange(handler: (state: RallarRoomState) => void): () => void;
     onSnapshotMessage(handler: (event: RelicServerEvent) => void): () => void;
@@ -137,22 +149,19 @@ export class RelicHuntersRuntime {
         onRoomsChange: (state: RallarRoomState) => void,
         onRtcSnapshot: (event: RelicServerEvent) => void = onSnapshot,
     ): Promise<RelicRuntimeHydration | undefined> {
-        const session = this.deps.restoreSession();
-        if (!session) {
+        const started = await this.deps.start();
+        const session = started.session;
+        if (!session || !started.connected) {
             return undefined;
         }
 
-        await this.deps.connect();
-        const unsubscribeSnapshot = this.deps.onSnapshotMessage(onSnapshot);
-        const unsubscribeRtcSnapshot = this.deps.onRtcSnapshotMessage(onRtcSnapshot);
-        const unsubscribeRooms = this.deps.onRoomsChange(onRoomsChange);
-        const unsubscribe = () => {
-            unsubscribeSnapshot();
-            unsubscribeRtcSnapshot();
-            unsubscribeRooms();
-        };
+        const subscriptions = this.deps.subscriptions();
+        subscriptions
+            .add(this.deps.onSnapshotMessage(onSnapshot))
+            .add(this.deps.onRtcSnapshotMessage(onRtcSnapshot))
+            .add(this.deps.onRoomsChange(onRoomsChange));
 
-        let roomState = await this.deps.refreshRooms();
+        let roomState = started.roomState ?? await this.deps.refreshRooms();
         let roomId = roomState.currentRoomId;
         if (!roomId) {
             const restoredRoomId = this.deps.restoreRoomId();
@@ -172,7 +181,7 @@ export class RelicHuntersRuntime {
             return {
                 session,
                 roomState,
-                unsubscribe,
+                unsubscribe: () => subscriptions.unsubscribe(),
                 snapshotListenerReady: true,
                 rtcSnapshotListenerReady: true,
                 roomListenerReady: true,
@@ -185,7 +194,7 @@ export class RelicHuntersRuntime {
                 session,
                 roomState,
                 snapshot: await this.deps.fetchSnapshot(roomId),
-                unsubscribe,
+                unsubscribe: () => subscriptions.unsubscribe(),
                 snapshotListenerReady: true,
                 rtcSnapshotListenerReady: true,
                 roomListenerReady: true,
@@ -194,7 +203,7 @@ export class RelicHuntersRuntime {
             return {
                 session,
                 roomState,
-                unsubscribe,
+                unsubscribe: () => subscriptions.unsubscribe(),
                 snapshotListenerReady: true,
                 rtcSnapshotListenerReady: true,
                 roomListenerReady: true,
@@ -298,9 +307,8 @@ function browserRelicRuntimeDeps(): RelicHuntersRuntimeDeps {
                 displayName: displayName || username,
             }),
         logout: () => rallar.auth.logout(),
-        connect: async () => {
-            await rallar.connect();
-        },
+        start: () => rallar.start({ refreshRooms: true }),
+        subscriptions: () => rallar.subscriptions(),
         refreshRooms: () => rallar.rooms.refresh(),
         onRoomsChange: (handler) => rallar.rooms.onChange(handler),
         onSnapshotMessage: (handler) =>

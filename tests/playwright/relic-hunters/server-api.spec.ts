@@ -356,6 +356,15 @@ async function submitRound(
         snapshot = await response.json();
     }
 
+    if ((snapshot as RelicApiSnapshot | undefined)?.phase === 'review') {
+        const response = await api.post(`/api/relic/games/${roomId}/commands`, {
+            headers: playerHeader(players[0]),
+            data: continueReviewCommand(roomId, players[0]),
+        });
+        expect(response.ok()).toBe(true);
+        snapshot = await response.json();
+    }
+
     return snapshot as RelicApiSnapshot;
 }
 
@@ -402,5 +411,14 @@ function submitCommand(
         gameId,
         username: player.username,
         action,
+    };
+}
+
+function continueReviewCommand(gameId: string, player: TestPlayer): RelicCommand {
+    return {
+        protocolVersion: RELIC_PROTOCOL_VERSION,
+        kind: 'continue-review',
+        gameId,
+        username: player.username,
     };
 }

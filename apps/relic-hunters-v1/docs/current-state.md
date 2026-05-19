@@ -1,6 +1,6 @@
 # Current State
 
-Last reviewed: 2026-05-18.
+Last reviewed: 2026-05-19.
 
 ## Scope
 
@@ -32,7 +32,11 @@ server in `apps/relic-hunter-server-v1`, and the shared game model/rules in
   Rallar directly, and outbound avatar positions now target Rallar's ready RTC
   peers as explicit next hops. Accepted public game snapshots are also shared
   over RTC as a repair path so UI/gameplay state does not depend only on avatar
-  position packets.
+  position packets. Incoming RTC avatar positions are used only while they are
+  fresh and still match the player's authoritative snapshot room.
+- `src/game/scene/movement.ts` owns the scene-pick-to-move-action bridge. When a
+  player clicks a legal adjacent room in planning, the scene primes a move plan
+  for that room instead of merely selecting it.
 - `src/game/scene/castleKit.ts` owns the first reusable Japanese castle kit
   builders for room shell pieces: stone bases, plaster walls, timber rails,
   roof tiles, doorway frames, lacquer columns, lanterns, banners, torii gates,
@@ -42,7 +46,12 @@ server in `apps/relic-hunter-server-v1`, and the shared game model/rules in
   haunted barracks, and garden watchtower.
 - `src/game/scene/cameraModes.ts` owns the first scene camera-mode boundary.
   Idle planning now renders from a raised tactical overview, while active roam,
-  clue inspection, lobby, and event focus remain distinct presentation modes.
+  clue inspection, lobby, review reveal, finale, and event focus remain distinct
+  presentation modes.
+  Recent avatar movement now keeps the close follow camera briefly before
+  easing back to the tactical overview. The scene also exposes camera controls
+  for a temporary room flyover, persistent tactical overview, and persistent
+  avatar follow.
 - `src/game/scene/avatarPresentation.ts` owns the first presentation-only
   avatar state boundary for idle, moving, arriving, locked, escaped, and
   defeated hunters.
@@ -52,14 +61,19 @@ server in `apps/relic-hunter-server-v1`, and the shared game model/rules in
   pipeline decision and the gate for a future measured hybrid glTF path.
 - `src/game/scene/sceneCost.ts` owns the first active-effect-room selector used
   to cap active room lights and particle systems in tactical/full-map scenes.
+- Round resolution now enters a shared `review` phase before the next planning
+  turn. The server resolves submitted plans, clears locked actions, publishes
+  the full event list, and waits for a `continue-review` command before
+  advancing to the next round or final scoring.
 - `docs/scene-contracts.md` records the scene data contracts for room world
   positions, interactive mesh metadata, avatar targets, prompt behavior, and
   baseline visual tolerances.
 - `docs/asset-pipeline-decision.md` records the S7 asset decision, build-size
   output, browser scene metrics, future model folder shape, and follow-up work.
 - The opening and lobby surfaces mount a lightweight Babylon ambient scene. The
-  full gameplay `RelicScene` mounts for planning and finished expedition phases
-  so authentication, room joining, and Keeper controls remain responsive.
+  full gameplay `RelicScene` mounts for planning, review, and finished
+  expedition phases so authentication, room joining, and Keeper controls remain
+  responsive.
 - The Babylon render path is capped at 45 fps for gameplay and 30 fps for the
   opening scene, uses lighter shadows and ambient
   occlusion, and paints an early clear frame before the heavier scene setup so
@@ -68,6 +82,10 @@ server in `apps/relic-hunter-server-v1`, and the shared game model/rules in
   Babylon canvases to high-DPI/native scaling, lowers fog/bloom/glow/grain/SSAO
   blur, disables depth of field, sharpens shadows, and increases avatar roam and
   remote interpolation speed so rooms and hunters read more crisply.
+- Review snapshots queue each new animation cue for sequential Babylon playback
+  instead of spawning every reveal effect at once. The finale cue now highlights
+  winners escaping while defeated or losing hunters remain in rooms shaken by
+  the collapse.
 - `preserveDrawingBuffer` is disabled. Browser checks now use the canvas
   `data-scene-ready` signal emitted after Babylon renders a frame instead of
   relying on retained WebGL back buffers.
@@ -100,15 +118,18 @@ npm run test:playwright:relic:full-stack
 ```
 
 For this review, `npm --workspace relic-hunters-v1 run test`,
-`npm --workspace relic-hunters-v1 run typecheck`, and
-`npm --workspace relic-hunters-v1 run build` pass. The app workspace test script
-now runs the Relic Hunters Vitest suite under `apps/relic-hunters-v1/tests`,
-including the RTC avatar routing and RTC snapshot repair regressions. The server
-and Playwright commands remain the broader targeted validation set from the
-previous propagation pass. The package-level browser app test now also covers
-timed-out round repair from an authoritative force-resolved snapshot. The scene
-upgrade baseline writer also passes and writes eight screenshots under
-`baseline/screenshots/scene-upgrades/` plus
+`npm --workspace relic-hunters-v1 run typecheck`,
+`npm --workspace relic-hunters-v1 run build`, and
+`npx playwright test tests/playwright/relic-hunters/web.spec.ts --grep "renders a nonblank Babylon scene"`
+pass. The app workspace test script now runs the Relic Hunters Vitest suite under
+`apps/relic-hunters-v1/tests`, including the RTC avatar routing, stale-room RTC
+avatar rejection, scene movement priming, camera return timing, flyover pose
+planning, review summary/objective, review snapshot ordering, and RTC snapshot
+repair regressions. The server and broader Playwright commands remain the
+targeted validation set from the previous propagation pass. The package-level browser app
+test now also covers timed-out round repair from an authoritative force-resolved
+snapshot. The scene upgrade baseline writer also passes and writes eight
+screenshots under `baseline/screenshots/scene-upgrades/` plus
 `baseline/screenshots/scene-upgrades/scene-upgrade-metrics.json`. Planning
 baseline scenarios also assert the gameplay canvas
 `data-camera-mode="tactical"` contract.
@@ -174,12 +195,22 @@ folder.
 - Iteration 19, timed-out round snapshot repair, was added as a completed
   follow-up for stale UIs that missed the push snapshot after another client
   force-resolved an overdue round.
+- Iteration 20, scene movement input and stale RTC room guard, was added as a
+  completed follow-up for the reported avatar movement issue. Legal adjacent
+  room clicks now prime a move draft, and old-room RTC avatar coordinates no
+  longer override snapshot room movement.
+- Iteration 21, round review and finale reveal, was added as a completed
+  follow-up from the Iteration 10 feedback work. Round resolution now pauses in
+  `review`, the SPA exposes a continue-review control, all clients receive the
+  same reviewed snapshot through the existing REST/WS/RTC repair paths, and the
+  scene queues reveal/finale animation cues for shared playback before the next
+  turn or final collapse.
 - With the current propagation, avatar-routing, RTC snapshot repair, timed-out
-  round repair, tactical camera, avatar readability, lighting preset, asset
-  pipeline, first active-effects fixes, static room batching, and event-budget
-  metrics validated, the next planned scene work is per-room picking support for
-  cross-room thin instancing/shared geometry before imported assets or broad
-  production performance work.
+  round repair, review/finale reveal, tactical camera, avatar readability,
+  lighting preset, asset pipeline, first active-effects fixes, static room
+  batching, and event-cue metrics validated, the next planned scene work is
+  per-room picking support for cross-room thin instancing/shared geometry before
+  imported assets or broad production performance work.
 - Completed iteration-7/playability fixes so far: remove blocking intro and
   onboarding from the default path, normalize local dev API calls through the
   same-origin proxy, make admin detection tolerate legacy snapshots without
@@ -200,6 +231,8 @@ folder.
   are labelled as Reveal, Your Action, Party Action, Castle Reaction, or Result.
   The floating turn feedback panel, post-round digest overlay, side personal
   round card, and compact diff strip are no longer in the normal render path.
+  The follow-up review phase now makes the reveal an explicit shared gameplay
+  state instead of immediately advancing to the next planning turn.
 - Completed iteration-11 coverage fixes so far: turn-summary logic has focused
   unit tests, view-model action legality covers exit and defeated-player cases,
   Rallar runtime fake-dependency tests cover no-session, create/join hydration,

@@ -36,6 +36,7 @@ export const AUTO_COMPLETE_MS = 34000;
 export type UIStrings = Readonly<{
     phaseLobby: string;
     phasePlanning: string;
+    phaseReview: string;
     phaseFinished: string;
     phaseConnected: string;
     phaseConnecting: string;
@@ -68,6 +69,7 @@ export const UI: Record<Lang, UIStrings> = {
     en: {
         phaseLobby: 'The Keeper gathers hunters',
         phasePlanning: 'The Keeper Commands',
+        phaseReview: 'Plans revealed',
         phaseFinished: 'Expedition complete',
         phaseConnected: 'Choose a room',
         phaseConnecting: 'Opening the gate',
@@ -98,6 +100,7 @@ export const UI: Record<Lang, UIStrings> = {
     no: {
         phaseLobby: 'Vokteren samler jegere',
         phasePlanning: 'Vokternes Befaling',
+        phaseReview: 'Planene avsløres',
         phaseFinished: 'Ekspedisjonen er over',
         phaseConnected: 'Velg et rom',
         phaseConnecting: 'Åpner porten',

@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import type { RelicPublicSnapshot, RelicRoom } from '@relic-hunters/mod.ts';
 import {
+    AVATAR_CAMERA_FOLLOW_HOLD_MS,
+    AVATAR_CAMERA_ZOOM_OUT_MS,
+    avatarCameraReturnState,
+    blendRelicCameraPose,
     deriveRelicCameraMode,
+    planRoomFlyoverCameraPose,
     planTacticalCameraPose,
     tacticalFocusRooms,
 } from '../src/game/scene/cameraModes.ts';
@@ -91,6 +97,88 @@ describe('camera modes', () => {
         expect(pose.position.y).toBeGreaterThan(20);
         expect(pose.position.z).toBeLessThan(pose.target.z);
         expect(pose.fov).toBeLessThan(0.8);
+    });
+
+    it('holds the avatar camera after movement before easing back to tactical', () => {
+        expect(avatarCameraReturnState({
+            snapshotPhase: 'planning',
+            lastRoamInputMs: 1_000,
+            nowMs: 1_000 + AVATAR_CAMERA_FOLLOW_HOLD_MS - 1,
+        })).toEqual({
+            phase: 'follow',
+            progress: 0,
+        });
+
+        const midpoint = avatarCameraReturnState({
+            snapshotPhase: 'planning',
+            lastRoamInputMs: 1_000,
+            nowMs: 1_000 + AVATAR_CAMERA_FOLLOW_HOLD_MS + AVATAR_CAMERA_ZOOM_OUT_MS / 2,
+        });
+        expect(midpoint.phase).toBe('zoom-out');
+        expect(midpoint.progress).toBeCloseTo(0.5);
+
+        expect(avatarCameraReturnState({
+            snapshotPhase: 'planning',
+            lastRoamInputMs: 1_000,
+            nowMs: 1_000 + AVATAR_CAMERA_FOLLOW_HOLD_MS + AVATAR_CAMERA_ZOOM_OUT_MS + 1,
+        })).toEqual({
+            phase: 'inactive',
+            progress: 1,
+        });
+    });
+
+    it('blends avatar follow and tactical camera poses', () => {
+        const pose = blendRelicCameraPose(
+            {
+                position: new Vector3(0, 2, 0),
+                target: new Vector3(0, 1, 0),
+                fov: 0.94,
+            },
+            {
+                position: new Vector3(10, 22, -20),
+                target: new Vector3(4, 1, -6),
+                fov: 0.72,
+            },
+            0.25,
+        );
+
+        expect(pose.position.x).toBeCloseTo(2.5);
+        expect(pose.position.y).toBeCloseTo(7);
+        expect(pose.position.z).toBeCloseTo(-5);
+        expect(pose.target.x).toBeCloseTo(1);
+        expect(pose.target.z).toBeCloseTo(-1.5);
+        expect(pose.fov).toBeCloseTo(0.885);
+    });
+
+    it('flies over room centers before returning to the captured camera pose', () => {
+        const returnPose = {
+            position: new Vector3(2, 6, -8),
+            target: new Vector3(1, 1, -3),
+            fov: 0.9,
+        };
+        const start = planRoomFlyoverCameraPose({
+            rooms,
+            progress: 0,
+            returnPose,
+        });
+        const middle = planRoomFlyoverCameraPose({
+            rooms,
+            progress: 0.5,
+            returnPose,
+        });
+        const end = planRoomFlyoverCameraPose({
+            rooms,
+            progress: 1,
+            returnPose,
+        });
+
+        expect(start.target.z).toBeLessThan(middle.target.z);
+        expect(end.position.x).toBeCloseTo(returnPose.position.x);
+        expect(end.position.y).toBeCloseTo(returnPose.position.y);
+        expect(end.position.z).toBeCloseTo(returnPose.position.z);
+        expect(end.target.x).toBeCloseTo(returnPose.target.x);
+        expect(end.target.z).toBeCloseTo(returnPose.target.z);
+        expect(end.fov).toBeCloseTo(returnPose.fov);
     });
 });
 

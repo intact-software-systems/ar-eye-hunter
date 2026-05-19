@@ -78,6 +78,28 @@ describe('relic snapshot ordering', () => {
         expect(shouldAcceptRelicSnapshot({ current, candidate })).toBe(true);
     });
 
+    it('does not replace same-round review snapshots with older planning-phase state', () => {
+        const current = snapshot({
+            phase: 'review',
+            updatedAtEpochMs: 20,
+            round: 1,
+            submittedPlayerIds: [],
+            events: [event('reveal'), event('move')],
+        });
+        const candidate = snapshot({
+            phase: 'planning',
+            updatedAtEpochMs: 20,
+            round: 1,
+            submittedPlayerIds: ['alice-session'],
+            events: [event('reveal')],
+        });
+
+        expect(classifyRelicSnapshotAcceptance({ current, candidate })).toEqual({
+            accepted: false,
+            reason: 'phase-regression',
+        });
+    });
+
     it('accepts snapshots for a newly selected room even if that room has an older clock', () => {
         const current = snapshot({
             roomId: 'room-1',

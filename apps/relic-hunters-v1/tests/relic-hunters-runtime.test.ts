@@ -5,11 +5,13 @@ import { createRelicGame, RELIC_PROTOCOL_VERSION, toPublicRelicSnapshot, } from 
 import { RelicHuntersRuntime, type RelicHuntersRuntimeDeps, } from '../src/game/relic-hunters-runtime.ts';
 
 describe('RelicHuntersRuntime', () => {
-    it('connects, installs listeners, refreshes rooms, and fetches the current snapshot', async () => {
+    it('starts, installs scoped listeners, and fetches the current snapshot', async () => {
         const unsubscribeSnapshot = vi.fn();
         const unsubscribeRtcSnapshot = vi.fn();
         const unsubscribeRooms = vi.fn();
+        const subscriptions = subscriptionScope();
         const deps = runtimeDeps({
+            subscriptions: vi.fn(() => subscriptions),
             onSnapshotMessage: vi.fn(() => unsubscribeSnapshot),
             onRtcSnapshotMessage: vi.fn(() => unsubscribeRtcSnapshot),
             onRoomsChange: vi.fn(() => unsubscribeRooms),
@@ -18,11 +20,13 @@ describe('RelicHuntersRuntime', () => {
 
         const hydration = await runtime.connectAndHydrate(vi.fn(), vi.fn());
 
-        expect(deps.connect).toHaveBeenCalledTimes(1);
+        expect(deps.start).toHaveBeenCalledTimes(1);
+        expect(deps.subscriptions).toHaveBeenCalledTimes(1);
         expect(deps.onSnapshotMessage).toHaveBeenCalledTimes(1);
         expect(deps.onRtcSnapshotMessage).toHaveBeenCalledTimes(1);
         expect(deps.onRoomsChange).toHaveBeenCalledTimes(1);
-        expect(deps.refreshRooms).toHaveBeenCalledTimes(1);
+        expect(deps.refreshRooms).not.toHaveBeenCalled();
+        expect(subscriptions.add).toHaveBeenCalledTimes(3);
         expect(deps.fetchSnapshot).toHaveBeenCalledWith('room-1');
         expect(hydration).toMatchObject({
             session: session(),
@@ -33,6 +37,7 @@ describe('RelicHuntersRuntime', () => {
         });
 
         hydration?.unsubscribe();
+        expect(subscriptions.unsubscribe).toHaveBeenCalledTimes(1);
         expect(unsubscribeSnapshot).toHaveBeenCalledTimes(1);
         expect(unsubscribeRtcSnapshot).toHaveBeenCalledTimes(1);
         expect(unsubscribeRooms).toHaveBeenCalledTimes(1);
@@ -97,14 +102,18 @@ describe('RelicHuntersRuntime', () => {
 
     it('does not connect or subscribe when no browser session can be restored', async () => {
         const deps = runtimeDeps({
-            restoreSession: vi.fn(() => undefined),
+            start: vi.fn(async () => ({
+                session: undefined,
+                connected: false,
+            })),
         });
         const runtime = new RelicHuntersRuntime(deps);
 
         const hydration = await runtime.connectAndHydrate(vi.fn(), vi.fn());
 
         expect(hydration).toBeUndefined();
-        expect(deps.connect).not.toHaveBeenCalled();
+        expect(deps.start).toHaveBeenCalledTimes(1);
+        expect(deps.subscriptions).not.toHaveBeenCalled();
         expect(deps.onSnapshotMessage).not.toHaveBeenCalled();
         expect(deps.onRtcSnapshotMessage).not.toHaveBeenCalled();
         expect(deps.onRoomsChange).not.toHaveBeenCalled();
@@ -155,7 +164,12 @@ function runtimeDeps(
         login: vi.fn(async () => session()),
         register: vi.fn(async () => session()),
         logout: vi.fn(async () => undefined),
-        connect: vi.fn(async () => undefined),
+        start: vi.fn(async () => ({
+            session: session(),
+            connected: true,
+            roomState: roomState(),
+        })),
+        subscriptions: vi.fn(() => subscriptionScope()),
         refreshRooms: vi.fn(async () => roomState()),
         onRoomsChange: vi.fn(() => () => undefined),
         onSnapshotMessage: vi.fn(() => () => undefined),
@@ -174,6 +188,26 @@ function runtimeDeps(
         ),
         ...overrides,
     };
+}
+
+function subscriptionScope(): ReturnType<RelicHuntersRuntimeDeps['subscriptions']> {
+    const callbacks: (() => void)[] = [];
+    const scope = {
+        add: vi.fn((unsubscribe?: (() => void) | null) => {
+            if (unsubscribe) {
+                callbacks.push(unsubscribe);
+            }
+            return scope;
+        }),
+        unsubscribe: vi.fn(() => {
+            const current = callbacks.splice(0);
+            for (const unsubscribe of current) {
+                unsubscribe();
+            }
+        }),
+        size: vi.fn(() => callbacks.length),
+    };
+    return scope;
 }
 
 function session(): AuthSession {
