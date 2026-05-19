@@ -42,8 +42,10 @@ The intended playable loop is:
   column so the side menu gets the full available height. The desktop side menu
   owns its own scroll range, and mobile lets the page scroll through the whole
   side menu instead of clipping it.
-- The Babylon scene provides first-person roaming, room selection, local prompts,
-  player/relic meshes, fallback tactical rendering, and touch movement controls.
+- The Babylon scene now defaults planning to a tactical castle overview, then
+  provides optional close roaming, clue inspection, room selection, local
+  prompts, player/relic meshes, fallback tactical rendering, and touch movement
+  controls.
 - The intro cinematic canvas is non-interactive so it cannot intercept clicks if
   the cinematic is re-enabled. Tutorial overlays must follow the same rule or be
   opened only on explicit request.
@@ -59,6 +61,9 @@ The intended playable loop is:
   and Enter submits when the draft is legal.
 - Scene clicks can prime room movement or search actions, but the visible action
   panel is intended to remain the authoritative planning surface.
+- Ordinary tactical planning clicks do not start pointer lock. Pointer-look
+  behavior is reserved for active roam and clue-inspection camera modes so menu
+  navigation stays predictable.
 - Holding forward in the scene exposes the currently faced legal move prompt
   immediately and keeps it briefly after key-up so a player can prime the move
   without walking to the far edge of a large room.
@@ -120,6 +125,34 @@ immediately, so clue trails and room objectives can update after the first find.
 - During the current cleanup pass, the scene uses lighter shadows/SSAO and a
   capped render loop. Preserve-drawing-buffer is disabled; smoke checks use the
   canvas `data-scene-ready` signal emitted after Babylon renders.
+- The latest scene tuning prioritizes crispness over cinematic softness:
+  high-DPI/native canvas scaling, reduced fog/bloom/glow/grain/vignette, no
+  depth of field, sharper shadows, and faster avatar roaming/interpolation.
+- The S4 scene upgrade pass adds a camera-mode boundary in
+  `src/game/scene/cameraModes.ts`. Idle planning uses a raised tactical view
+  that frames the relevant castle rooms; close roam and inspection remain
+  available as active modes.
+- The S5 scene upgrade pass adds `src/game/scene/avatarPresentation.ts` for
+  presentation-only avatar states. Active hunters are larger and easier to read
+  from tactical view, submitted hunters use a locked glow, escaped hunters use a
+  faint exit shimmer, and defeated hunters stay visibly downed instead of
+  disappearing from the room scene.
+- The S6 scene upgrade pass adds `src/game/scene/lightingPresets.ts` for
+  presentation-only day, lantern, night, and sunset moods. These presets change
+  scene readability and atmosphere only; gameplay state and action legality
+  still come from public snapshots and the view model.
+- The S7 scene upgrade pass keeps active gameplay procedural-first. Imported
+  GLB assets are deferred until a measured hybrid boundary exists with
+  procedural fallbacks, so missing assets cannot block the playable loop.
+- The S8 scene-cost pass keeps the full tactical castle visible but runs room
+  lights and particle effects only around the highest-priority rooms. This is a
+  performance/readability budget and does not change room state or legal moves.
+- The S9 static batching pass merges non-interactive room decoration by
+  material. Room selection, clue inspection, resolved markers, action prompts,
+  and legal move state remain separate from those render batches.
+- The S10 event-cue budget limits simultaneous Babylon scene effects from a
+  burst of new timeline events. It does not hide events from the timeline or
+  change action resolution.
 - Player labels are names-only in normal play. Health, relic counts, score, and
   character details stay in HUD panels.
 - Remote player avatars fall back to authoritative snapshot room positions, then
@@ -129,9 +162,14 @@ immediately, so clue trails and room objectives can update after the first find.
 - Room membership, player room ids, submissions, events, relic ownership, and
   investigations still come from public snapshots; RTC avatar coordinates do not
   override game state.
-- Iteration 14 should finish the baseline visual coverage that started in
-  Iterations 7, 8, and 11: rooms, exits, players, relics, danger, current
-  objective, prompts, minimap, and bottom HUD should be immediately legible at
-  the captured desktop and mobile viewports.
+- Room visuals now use a dedicated identity mapping: Entrance as gatehouse,
+  Hallway as main corridor, Storage as armory, Shrine as main hall, Trap Room as
+  secret cell, Treasure as treasury, Monster as damaged barracks, and Exit as
+  garden watchtower. These are presentation cues only; action legality and relic
+  visibility still come from the public snapshot and view model.
+- Iteration 14 now has a first scene-baseline pass through the scene upgrade
+  S1 track. Further visual work should keep rooms, exits, players, relics,
+  danger, current objective, prompts, minimap, and bottom HUD immediately
+  legible at the captured desktop and mobile viewports.
 - Player-facing labels and debug/development-only labels should be separated so
   the scene can stay clean in normal play.

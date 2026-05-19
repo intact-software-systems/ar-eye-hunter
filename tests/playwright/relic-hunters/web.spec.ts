@@ -1,3 +1,4 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 type MockBackendOptions = Readonly<{
@@ -9,14 +10,32 @@ type MockBackendOptions = Readonly<{
     requests?: string[];
     commandBodies?: unknown[];
 }>;
+type SceneBaselineScenario = Readonly<{
+    name: string;
+    mode: 'opening' | 'room';
+    viewport: Readonly<{ width: number; height: number }>;
+    snapshot?: RelicSnapshot;
+    commandSnapshot?: RelicSnapshot;
+    onlineMemberCount?: number;
+    expectedCameraMode?: string;
+    expectedLightingPreset?: string;
+    wait?(page: Page): Promise<void>;
+}>;
+type SceneBaselineMetric = Awaited<ReturnType<typeof sceneCanvasMetrics>> & Readonly<{
+    scenario: string;
+}>;
 
+const SESSION_TTL_MS = 60 * 60 * 1_000;
 const session = {
     clientId: 'alice-client',
     accessToken: 'alice-token',
     username: 'alice',
     sessionId: 'alice-session',
-    expiresAtEpochMs: Date.now() + 60_000,
+    expiresAtEpochMs: Date.now() + SESSION_TTL_MS,
 };
+const SCENE_BASELINE_DIR = 'apps/relic-hunters-v1/baseline/screenshots/scene-upgrades';
+const WRITE_SCENE_BASELINES = process.env.RELIC_SCENE_BASELINE_WRITE === '1' ||
+    process.env.RELIC_SCENE_BASELINE_WRITE === 'true';
 
 test.describe('Relic Hunters web app', () => {
     test('renders a Babylon opening scene before authentication', async ({ page }) => {
@@ -30,6 +49,199 @@ test.describe('Relic Hunters web app', () => {
         await expect(page.locator('.relic-scene-fallback')).toHaveCount(0);
         await expect.poll(() => sceneHasVisiblePixels(page)).toBe(true);
         await expect(page.getByRole('button', { name: 'Login' })).toBeVisible();
+    });
+
+    test('captures scene upgrade baselines and verifies canvas render contracts', async ({ browser }) => {
+        test.slow();
+        test.setTimeout(240_000);
+        const baselineMetrics: SceneBaselineMetric[] = [];
+        const scenarios: readonly SceneBaselineScenario[] = [
+            {
+                name: 'opening-desktop',
+                mode: 'opening',
+                viewport: { width: 1280, height: 720 },
+                expectedLightingPreset: 'day',
+            },
+            {
+                name: 'lobby-desktop',
+                mode: 'room',
+                viewport: { width: 1280, height: 720 },
+                snapshot: relicSnapshotWithPlayers(1, 'lobby'),
+                expectedLightingPreset: 'day',
+                wait: async (page) => {
+                    await expect(page.getByText('Keeper: Alice')).toBeVisible();
+                    await expect(page.getByRole('button', { name: /^Start$/ })).toBeVisible();
+                },
+            },
+            {
+                name: 'planning-desktop',
+                mode: 'room',
+                viewport: { width: 1280, height: 720 },
+                snapshot: relicSnapshotWithPlayers(1, 'planning', { includeStorage: true }),
+                expectedCameraMode: 'tactical',
+                expectedLightingPreset: 'day',
+                wait: async (page) => {
+                    await expect(page.getByLabel('Current turn summary')).toContainText('Choose one plan');
+                    await expect(page.getByRole('button', { name: 'Submit Plan' })).toBeVisible();
+                },
+            },
+            {
+                name: 'planning-mobile',
+                mode: 'room',
+                viewport: { width: 390, height: 844 },
+                snapshot: relicSnapshotWithPlayers(1, 'planning', { includeStorage: true }),
+                expectedCameraMode: 'tactical',
+                expectedLightingPreset: 'day',
+                wait: async (page) => {
+                    await expect(page.getByLabel('Current turn summary')).toContainText('Choose one plan');
+                    await expect(page.getByRole('button', { name: 'Submit Plan' })).toBeVisible();
+                },
+            },
+            {
+                name: 'waiting-locked-desktop',
+                mode: 'room',
+                viewport: { width: 1280, height: 720 },
+                snapshot: relicSnapshotWithPlayers(2, 'planning', {
+                    submittedPlayerIds: ['alice-session'],
+                }),
+                onlineMemberCount: 2,
+                expectedCameraMode: 'tactical',
+                expectedLightingPreset: 'day',
+                wait: async (page) => {
+                    await expect(page.getByLabel('Current turn summary')).toContainText('Plan Locked');
+                    await expect(page.getByLabel('Round plan')).toContainText('1 hunter still choosing');
+                },
+            },
+            {
+                name: 'split-party-identities-desktop',
+                mode: 'room',
+                viewport: { width: 1280, height: 720 },
+                snapshot: relicSnapshotWithPlayers(4, 'planning', {
+                    includeFullMap: true,
+                    playerRooms: {
+                        'alice-session': 'entrance',
+                        'bob-session': 'shrine',
+                        'cara-session': 'monster',
+                        'dain-session': 'exit',
+                    },
+                    playerRelicIds: {
+                        'dain-session': ['sun-disk'],
+                    },
+                    submittedPlayerIds: ['alice-session', 'cara-session'],
+                }),
+                onlineMemberCount: 4,
+                expectedCameraMode: 'tactical',
+                expectedLightingPreset: 'day',
+                wait: async (page) => {
+                    await expect(page.getByLabel('Current turn summary')).toContainText('Plan Locked');
+                    await expect(page.getByLabel('Castle room map')).toContainText('Shrine');
+                    await expect(page.getByLabel('Castle room map')).toContainText('Monster');
+                    await expect(page.getByLabel('Castle room map')).toContainText('Treasure');
+                    await expect(page.getByLabel('Room occupants')).toContainText('1 hunter here / 3 elsewhere');
+                },
+            },
+            {
+                name: 'resolved-timeline-desktop',
+                mode: 'room',
+                viewport: { width: 1280, height: 720 },
+                snapshot: relicSnapshotWithPlayers(1, 'planning', {
+                    includeStorage: true,
+                    playerRoomId: 'storage',
+                }),
+                commandSnapshot: resolvedStorageSearchSnapshot(),
+                expectedCameraMode: 'tactical',
+                expectedLightingPreset: 'lantern',
+                wait: async (page) => {
+                    await expect(page.getByLabel('Current turn summary')).toContainText(
+                        'Choose one plan',
+                        { timeout: 15_000 },
+                    );
+                    await expect(page.getByRole('button', { name: 'Submit Plan' })).toBeEnabled();
+                    await page.getByRole('button', { name: 'Submit Plan' }).click();
+                    await expect(page.getByLabel('Turn timeline')).toContainText(
+                        'Alice searched the crates and marked a false supply trail.',
+                        { timeout: 15_000 },
+                    );
+                },
+            },
+            {
+                name: 'finished-desktop',
+                mode: 'room',
+                viewport: { width: 1280, height: 720 },
+                snapshot: finishedRelicSnapshot(),
+                expectedLightingPreset: 'sunset',
+                wait: async (page) => {
+                    await expect(page.getByText('The Heart Relic has chosen')).toBeVisible();
+                    await expect(page.getByText('Final score: 5')).toBeVisible();
+                },
+            },
+        ];
+
+        for (const scenario of scenarios) {
+            const context = await browser.newContext({
+                viewport: scenario.viewport,
+                deviceScaleFactor: 2,
+            });
+            const page = await context.newPage();
+            try {
+                await installBrowserDoubles(page);
+                if (scenario.mode === 'room') {
+                    await restoreRoomSession(page);
+                }
+                await mockBackend(page, {
+                    rooms: scenario.mode === 'room'
+                        ? [groupSnapshot({ onlineMemberCount: scenario.onlineMemberCount ?? 1 })]
+                        : [],
+                    relicSnapshot: scenario.snapshot ?? emptyRelicSnapshot(),
+                    commandSnapshot: scenario.commandSnapshot,
+                });
+
+                await page.goto('http://127.0.0.1:5175/');
+                if (scenario.mode === 'room') {
+                    await openListedRoomIfNeeded(page);
+                    await scenario.wait?.(page);
+                } else {
+                    await expect(page.getByRole('button', { name: 'Login' })).toBeVisible();
+                }
+
+                await expect.poll(() => sceneCanvasMetrics(page), {
+                    message: `${scenario.name} canvas should render visible high-DPI pixels`,
+                    timeout: 20_000,
+                }).toMatchObject({
+                    ready: true,
+                    devicePixelRatio: 2,
+                    highDpi: true,
+                    hasRenderedFrame: true,
+                    ...(scenario.expectedCameraMode ? { cameraMode: scenario.expectedCameraMode } : {}),
+                    ...(scenario.expectedLightingPreset
+                        ? { lightingPreset: scenario.expectedLightingPreset }
+                        : {}),
+                    assetPipeline: 'procedural',
+                });
+
+                const metrics = await sceneCanvasMetrics(page);
+                expect(metrics.meshCount).toBeGreaterThan(0);
+                expect(metrics.materialCount).toBeGreaterThan(0);
+                if (scenario.expectedCameraMode) {
+                    expect(metrics.activeMeshCount).toBeGreaterThan(0);
+                    expect(metrics.readyMs).toBeGreaterThan(0);
+                }
+                baselineMetrics.push({ scenario: scenario.name, ...metrics });
+
+                const screenshot = await captureSceneBaseline(page, scenario.name);
+                expect(screenshot.byteLength).toBeGreaterThan(10_000);
+            } finally {
+                await context.close();
+            }
+        }
+
+        if (WRITE_SCENE_BASELINES) {
+            mkdirSync(SCENE_BASELINE_DIR, { recursive: true });
+            writeFileSync(
+                `${SCENE_BASELINE_DIR}/scene-upgrade-metrics.json`,
+                `${JSON.stringify(baselineMetrics, null, 2)}\n`,
+            );
+        }
     });
 
     test('registers a player and shows the connected lobby controls', async ({ page }) => {
@@ -694,6 +906,56 @@ async function installBrowserDoubles(page: Page): Promise<void> {
     });
 }
 
+async function restoreRoomSession(page: Page): Promise<void> {
+    await page.addInitScript((storedSession) => {
+        window.localStorage.setItem(
+            'auth.session',
+            JSON.stringify({
+                ...storedSession,
+                expiresAtEpochMs: Date.now() + 60 * 60 * 1_000,
+            }),
+        );
+        window.localStorage.setItem('relic.currentRoomId', 'room-1');
+    }, session);
+}
+
+async function openListedRoomIfNeeded(page: Page): Promise<void> {
+    const roomButton = page.getByRole('button', { name: 'Relic Hunters Expedition' }).first();
+    const summary = page.getByLabel('Current turn summary');
+    const deadline = Date.now() + 15_000;
+
+    while (Date.now() < deadline) {
+        const summaryText = await summary.textContent().catch(() => '');
+        if (summaryText && !summaryText.includes('No Expedition')) {
+            return;
+        }
+        if (await roomButton.count() > 0) {
+            await roomButton.click({ force: true });
+            return;
+        }
+        await page.waitForTimeout(250);
+    }
+
+    await expect(roomButton).toBeAttached({ timeout: 1_000 });
+    await roomButton.click({ force: true });
+}
+
+async function captureSceneBaseline(page: Page, name: string): Promise<Buffer> {
+    const options = {
+        animations: 'disabled' as const,
+        fullPage: false,
+    };
+    if (!WRITE_SCENE_BASELINES) {
+        return await page.screenshot(options);
+    }
+
+    mkdirSync(SCENE_BASELINE_DIR, { recursive: true });
+    return await page.screenshot({
+        ...options,
+        path: `${SCENE_BASELINE_DIR}/${name}.png`,
+    });
+}
+
 async function mockBackend(page: Page, options: MockBackendOptions): Promise<void> {
     let rooms = [...(options.rooms ?? [])];
     let currentRelicSnapshot = options.relicSnapshot ?? relicSnapshotWithPlayers(1);
@@ -856,6 +1118,170 @@ async function sceneHasVisiblePixels(page: Page): Promise<boolean> {
     });
 }
 
+async function sceneCanvasMetrics(page: Page): Promise<Readonly<{
+    ready: boolean;
+    cssWidth: number;
+    cssHeight: number;
+    drawingBufferWidth: number;
+    drawingBufferHeight: number;
+    devicePixelRatio: number;
+    highDpi: boolean;
+    hasRenderedFrame: boolean;
+    averageLuma: number;
+    cameraMode?: string;
+    lightingPreset?: string;
+    assetPipeline?: string;
+    meshCount: number;
+    activeMeshCount: number;
+    materialCount: number;
+    particleSystemCount: number;
+    activeParticleSystemCount: number;
+    activeRoomLightCount: number;
+    staticBatchCount: number;
+    batchedMeshCount: number;
+    activeEffectCount: number;
+    effectMeshCount: number;
+    drawCalls?: number;
+    fps?: number;
+    readyMs: number;
+}>> {
+    return await page.evaluate(() => {
+        const canvas = document.querySelector<HTMLCanvasElement>('canvas.relic-scene');
+        if (!canvas) {
+            return {
+                ready: false,
+                cssWidth: 0,
+                cssHeight: 0,
+                drawingBufferWidth: 0,
+                drawingBufferHeight: 0,
+                devicePixelRatio: window.devicePixelRatio,
+                highDpi: false,
+                hasRenderedFrame: false,
+                averageLuma: 0,
+                cameraMode: undefined,
+                lightingPreset: undefined,
+                assetPipeline: undefined,
+                meshCount: 0,
+                activeMeshCount: 0,
+                materialCount: 0,
+                particleSystemCount: 0,
+                activeParticleSystemCount: 0,
+                activeRoomLightCount: 0,
+                staticBatchCount: 0,
+                batchedMeshCount: 0,
+                activeEffectCount: 0,
+                effectMeshCount: 0,
+                drawCalls: undefined,
+                fps: undefined,
+                readyMs: 0,
+            };
+        }
+
+        const gl = canvas.getContext('webgl2') ?? canvas.getContext('webgl');
+        const box = canvas.getBoundingClientRect();
+        if (!gl || box.width <= 0 || box.height <= 0) {
+            return {
+                ready: false,
+                cssWidth: box.width,
+                cssHeight: box.height,
+                drawingBufferWidth: 0,
+                drawingBufferHeight: 0,
+                devicePixelRatio: window.devicePixelRatio,
+                highDpi: false,
+                hasRenderedFrame: false,
+                averageLuma: 0,
+                cameraMode: canvas.dataset.cameraMode,
+                lightingPreset: canvas.dataset.lightingPreset,
+                assetPipeline: canvas.dataset.assetPipeline,
+                meshCount: numberDataset(canvas.dataset.sceneMeshCount),
+                activeMeshCount: numberDataset(canvas.dataset.sceneActiveMeshCount),
+                materialCount: numberDataset(canvas.dataset.sceneMaterialCount),
+                particleSystemCount: numberDataset(canvas.dataset.sceneParticleSystemCount),
+                activeParticleSystemCount: numberDataset(canvas.dataset.sceneActiveParticleSystemCount),
+                activeRoomLightCount: numberDataset(canvas.dataset.sceneActiveRoomLightCount),
+                staticBatchCount: numberDataset(canvas.dataset.sceneStaticBatchCount),
+                batchedMeshCount: numberDataset(canvas.dataset.sceneBatchedMeshCount),
+                activeEffectCount: numberDataset(canvas.dataset.sceneActiveEffectCount),
+                effectMeshCount: numberDataset(canvas.dataset.sceneEffectMeshCount),
+                drawCalls: optionalNumberDataset(canvas.dataset.sceneDrawCalls),
+                fps: optionalNumberDataset(canvas.dataset.sceneFps),
+                readyMs: numberDataset(canvas.dataset.sceneReadyMs),
+            };
+        }
+
+        const width = gl.drawingBufferWidth;
+        const height = gl.drawingBufferHeight;
+        const pixels = new Uint8Array(4);
+        const samples: readonly Readonly<[number, number]>[] = [
+            [0.50, 0.50],
+            [0.30, 0.38],
+            [0.70, 0.38],
+            [0.40, 0.62],
+            [0.60, 0.62],
+            [0.50, 0.24],
+            [0.50, 0.76],
+        ];
+        let visibleSamples = 0;
+        let lumaTotal = 0;
+        for (const [xRatio, yRatio] of samples) {
+            gl.readPixels(
+                Math.min(width - 1, Math.max(0, Math.floor(width * xRatio))),
+                Math.min(height - 1, Math.max(0, Math.floor(height * yRatio))),
+                1,
+                1,
+                gl.RGBA,
+                gl.UNSIGNED_BYTE,
+                pixels,
+            );
+            const luma = pixels[0] * 0.2126 + pixels[1] * 0.7152 + pixels[2] * 0.0722;
+            lumaTotal += luma;
+            if (pixels[3] > 0 && luma > 6) {
+                visibleSamples += 1;
+            }
+        }
+
+        const expectedScale = Math.min(window.devicePixelRatio || 1, 2);
+        return {
+            ready: canvas.dataset.sceneReady === 'true' || visibleSamples > 0,
+            cssWidth: box.width,
+            cssHeight: box.height,
+            drawingBufferWidth: width,
+            drawingBufferHeight: height,
+            devicePixelRatio: window.devicePixelRatio,
+            highDpi: width >= box.width * expectedScale - 2 &&
+                height >= box.height * expectedScale - 2,
+            hasRenderedFrame: canvas.dataset.sceneReady === 'true' || visibleSamples >= 2,
+            averageLuma: lumaTotal / samples.length,
+            cameraMode: canvas.dataset.cameraMode,
+            lightingPreset: canvas.dataset.lightingPreset,
+            assetPipeline: canvas.dataset.assetPipeline,
+            meshCount: numberDataset(canvas.dataset.sceneMeshCount),
+            activeMeshCount: numberDataset(canvas.dataset.sceneActiveMeshCount),
+            materialCount: numberDataset(canvas.dataset.sceneMaterialCount),
+            particleSystemCount: numberDataset(canvas.dataset.sceneParticleSystemCount),
+            activeParticleSystemCount: numberDataset(canvas.dataset.sceneActiveParticleSystemCount),
+            activeRoomLightCount: numberDataset(canvas.dataset.sceneActiveRoomLightCount),
+            staticBatchCount: numberDataset(canvas.dataset.sceneStaticBatchCount),
+            batchedMeshCount: numberDataset(canvas.dataset.sceneBatchedMeshCount),
+            activeEffectCount: numberDataset(canvas.dataset.sceneActiveEffectCount),
+            effectMeshCount: numberDataset(canvas.dataset.sceneEffectMeshCount),
+            drawCalls: optionalNumberDataset(canvas.dataset.sceneDrawCalls),
+            fps: optionalNumberDataset(canvas.dataset.sceneFps),
+            readyMs: numberDataset(canvas.dataset.sceneReadyMs),
+        };
+
+        function numberDataset(value: string | undefined): number {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : 0;
+        }
+
+        function optionalNumberDataset(value: string | undefined): number | undefined {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : undefined;
+        }
+    });
+}
+
 function clientSnapshot(): MockClientSnapshot {
     const now = Date.now();
     return {
@@ -974,6 +1400,7 @@ function relicSnapshotWithPlayers(
         roomInvestigations?: readonly Record<string, unknown>[];
         events?: readonly Record<string, unknown>[];
         submittedPlayerIds?: readonly string[];
+        includeFullMap?: boolean;
         round?: number;
         roundStartedAtEpochMs?: number;
         roundTimeLimitMs?: number;
@@ -1025,7 +1452,74 @@ function relicSnapshotWithPlayers(
         ),
     ];
 
-    const map = [
+    const map = options.includeFullMap
+        ? [
+            {
+                id: 'entrance',
+                name: 'Entrance',
+                kind: 'entrance',
+                x: 0,
+                z: -6,
+                neighbors: ['hallway', 'storage'],
+            },
+            {
+                id: 'hallway',
+                name: 'Hallway',
+                kind: 'hallway',
+                x: 0,
+                z: -3,
+                neighbors: ['entrance', 'shrine', 'monster'],
+            },
+            {
+                id: 'storage',
+                name: 'Storage',
+                kind: 'storage',
+                x: -4,
+                z: -3,
+                neighbors: ['entrance', 'trap'],
+            },
+            {
+                id: 'trap',
+                name: 'Trap Room',
+                kind: 'trap',
+                x: -4,
+                z: 0,
+                neighbors: ['storage', 'shrine'],
+            },
+            {
+                id: 'shrine',
+                name: 'Shrine',
+                kind: 'shrine',
+                x: 0,
+                z: 0,
+                neighbors: ['hallway', 'trap', 'treasure', 'exit'],
+            },
+            {
+                id: 'monster',
+                name: 'Monster',
+                kind: 'monster',
+                x: 4,
+                z: -3,
+                neighbors: ['hallway', 'treasure'],
+            },
+            {
+                id: 'treasure',
+                name: 'Treasure',
+                kind: 'treasure',
+                x: 4,
+                z: 0,
+                neighbors: ['monster', 'shrine'],
+            },
+            {
+                id: 'exit',
+                name: 'Exit',
+                kind: 'exit',
+                x: 0,
+                z: 3,
+                neighbors: ['shrine'],
+            },
+        ]
+        : [
         {
             id: 'entrance',
             name: 'Entrance',
@@ -1143,6 +1637,136 @@ function resolvedSearchSnapshot(): RelicSnapshot {
             },
         ],
     });
+}
+
+function resolvedStorageSearchSnapshot(): RelicSnapshot {
+    const now = Date.now();
+    return relicSnapshotWithPlayers(1, 'planning', {
+        includeStorage: true,
+        playerRoomId: 'storage',
+        roomInvestigations: [
+            {
+                roomId: 'storage',
+                searchedByPlayerId: 'alice-session',
+                searchedByUsername: 'Alice',
+                searchedAtRound: 1,
+                searchedAtEpochMs: now,
+                result: 'empty',
+                summary: 'The crates held a torn supply map, but no relic.',
+                hint: 'The supply marks point back toward the Entrance and onward through the Trap Room.',
+                effect: 'map-fragment',
+                revealedRoomId: 'trap',
+            },
+        ],
+        events: [
+            {
+                id: 'event-reveal-1',
+                round: 1,
+                type: 'action_revealed',
+                message: 'Round 1 actions are revealed.',
+                animationCue: {
+                    type: 'noise_pulse',
+                    durationMs: 620,
+                    intensity: 'low',
+                },
+                tone: 'mystery',
+                createdAtEpochMs: now,
+            },
+            {
+                id: 'event-search-1',
+                round: 1,
+                type: 'player_searched',
+                message: 'Alice searched the crates and marked a false supply trail.',
+                animationCue: {
+                    type: 'search_altar',
+                    playerId: 'alice-session',
+                    roomId: 'storage',
+                    durationMs: 700,
+                    intensity: 'low',
+                },
+                tone: 'mystery',
+                createdAtEpochMs: now,
+            },
+            {
+                id: 'event-noise-1',
+                round: 1,
+                type: 'noise_pulse',
+                message: 'The ruin hears 2 noise.',
+                animationCue: {
+                    type: 'noise_pulse',
+                    durationMs: 900,
+                    intensity: 'low',
+                },
+                tone: 'mystery',
+                createdAtEpochMs: now,
+            },
+            {
+                id: 'event-round-2',
+                round: 1,
+                type: 'round_started',
+                message: 'Round 2 begins.',
+                tone: 'mystery',
+                createdAtEpochMs: now,
+            },
+        ],
+        round: 2,
+    });
+}
+
+function finishedRelicSnapshot(): RelicSnapshot {
+    const now = Date.now();
+    const base = relicSnapshotWithPlayers(2, 'planning', {
+        carryRelic: true,
+        includeExit: true,
+        playerRoomId: 'exit',
+        playerScores: {
+            'alice-session': 5,
+            'bob-session': 1,
+        },
+        events: [
+            {
+                id: 'turn-final-escape',
+                round: 3,
+                type: 'player_escaped',
+                message: 'Alice escaped with the Golden Idol.',
+                tone: 'success',
+                createdAtEpochMs: now,
+            },
+            {
+                id: 'turn-final-finished',
+                round: 3,
+                type: 'game_finished',
+                message: 'The expedition is over.',
+                tone: 'success',
+                createdAtEpochMs: now,
+            },
+        ],
+        round: 3,
+    }) as {
+        players: Array<Record<string, unknown>>;
+        relics: Array<Record<string, unknown>>;
+    } & Record<string, unknown>;
+
+    return {
+        ...base,
+        phase: 'finished',
+        winnerIds: ['alice-session'],
+        submittedPlayerIds: [],
+        players: base.players.map((player) =>
+            player.playerId === 'alice-session'
+                ? { ...player, escaped: true, score: 5, relicIds: [] }
+                : player
+        ),
+        relics: base.relics.map((relic) =>
+            relic.id === 'golden-idol'
+                ? {
+                    ...relic,
+                    carriedBy: undefined,
+                    escapedBy: 'alice-session',
+                }
+                : relic
+        ),
+    };
 }
 
 type MockClientSnapshot = Readonly<Record<string, unknown>>;

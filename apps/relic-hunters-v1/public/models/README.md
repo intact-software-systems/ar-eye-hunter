@@ -1,18 +1,30 @@
-# Lobby GLB Model
+# Future GLB Models
 
-Drop a GLB file named **`lobby.glb`** here and the game will load it automatically as the lobby scene instead of the built-in procedural Japanese castle.
+The active Relic Hunters scene currently uses the procedural castle kit. Do not
+drop gameplay-critical GLB files here and expect them to load automatically.
+The S7 asset decision keeps the game procedural-first until a measured hybrid
+asset boundary is implemented.
 
-The model is placed at the world origin (`0, 0.03, 0`) and displayed while no game session is active (login screen / waiting for players).
+When imported assets are introduced, use this folder only for approved
+experiments that have a procedural fallback. Candidate files should follow this
+shape:
 
-## Recommended free Japanese castle models
+- `rooms/<role>/<piece>.glb` for room shell or landmark variants
+- `avatars/<character-or-role>.glb` for non-authoritative avatar skins
+- `relics/<relic-id>.glb` for inspectable relic variants
+- `effects/<effect-name>.glb` only for visual effects that can fail closed
 
-- **poly.pizza** — search "japanese castle", "samurai", "torii" — many CC0 models
-- **Quaternius** — https://quaternius.com — free medieval fantasy packs, CC0
-- **Sketchfab** — filter by "free" + CC license — search "nihon" or "edo castle"
-- **kenney.nl** — castle packs, CC0
+Required conventions before any file ships:
 
-## Tips
+- Keep each modular gameplay file under 1 MB compressed unless there is a
+  measured exception.
+- Put the origin at the room-local or avatar-local pivot expected by the
+  procedural fallback.
+- Use meters/Babylon units matching the current room grid.
+- Avoid baked text in textures.
+- Keep material names stable and map them to the palette in
+  `docs/visual-direction.md`.
+- Document license, source, author, and any edits next to the asset.
 
-- Keep the model under ~10 MB for fast load
-- The camera looks from z ≈ −10 toward z ≈ +7, eye height ≈ 1.9 — orient your model accordingly
-- The procedural scene is 14 units wide × 26 units deep — scale your model to fit
+The current decision and measurements live in
+`apps/relic-hunters-v1/docs/asset-pipeline-decision.md`.

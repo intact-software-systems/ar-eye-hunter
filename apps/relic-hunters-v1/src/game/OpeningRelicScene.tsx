@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera.js';
 import { Engine } from '@babylonjs/core/Engines/engine.js';
+import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight.js';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight.js';
 import { PointLight } from '@babylonjs/core/Lights/pointLight.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
@@ -8,9 +9,11 @@ import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
 import { Scene } from '@babylonjs/core/scene.js';
+import { CURRENT_RELIC_ASSET_PIPELINE } from './scene/assetPipeline.ts';
+import { lightingPresetById } from './scene/lightingPresets.ts';
 import { startCappedRenderLoop } from './scene/renderLoop.ts';
 
-const OPENING_FRAME_INTERVAL_MS = 1000 / 24;
+const OPENING_FRAME_INTERVAL_MS = 1000 / 30;
 
 export function OpeningRelicScene() {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -25,15 +28,21 @@ export function OpeningRelicScene() {
             antialias: true,
             preserveDrawingBuffer: false,
             stencil: false,
+            adaptToDeviceRatio: true,
+            limitDeviceRatio: 2,
         });
-        engine.setHardwareScalingLevel(1.5);
+
+        const createdAtMs = performance.now();
+        const openingLighting = lightingPresetById('day');
+        canvas.dataset.assetPipeline = CURRENT_RELIC_ASSET_PIPELINE.strategy;
+        canvas.dataset.lightingPreset = openingLighting.id;
 
         const scene = new Scene(engine);
-        scene.clearColor = new Color4(0.035, 0.045, 0.065, 1);
-        scene.ambientColor = new Color3(0.35, 0.31, 0.24);
+        scene.clearColor = color4FromHex(openingLighting.clearColor);
+        scene.ambientColor = Color3.FromHexString(openingLighting.ambientColor);
         scene.fogMode = Scene.FOGMODE_EXP2;
-        scene.fogColor = new Color3(0.04, 0.055, 0.07);
-        scene.fogDensity = 0.018;
+        scene.fogColor = Color3.FromHexString(openingLighting.fogColor);
+        scene.fogDensity = openingLighting.fogDensity;
 
         const camera = new UniversalCamera('opening-camera', new Vector3(0, 2.2, -9.4), scene);
         camera.setTarget(new Vector3(0, 1.7, 1.2));
@@ -41,19 +50,25 @@ export function OpeningRelicScene() {
         camera.minZ = 0.05;
         camera.maxZ = 60;
 
-        const moon = new HemisphericLight('opening-moon', new Vector3(-0.25, 1, 0.15), scene);
-        moon.diffuse = new Color3(0.58, 0.68, 0.78);
-        moon.groundColor = new Color3(0.16, 0.12, 0.08);
-        moon.intensity = 0.92;
+        const sun = new DirectionalLight('opening-sun', vectorFromTuple(openingLighting.sunDirection), scene);
+        sun.position = vectorFromTuple(openingLighting.sunPosition);
+        sun.diffuse = Color3.FromHexString(openingLighting.sunDiffuse);
+        sun.specular = Color3.FromHexString(openingLighting.sunSpecular);
+        sun.intensity = openingLighting.sunIntensity * 0.62;
+
+        const moon = new HemisphericLight('opening-sky-fill', vectorFromTuple(openingLighting.hemiDirection), scene);
+        moon.diffuse = Color3.FromHexString(openingLighting.hemiDiffuse);
+        moon.groundColor = Color3.FromHexString(openingLighting.hemiGround);
+        moon.intensity = openingLighting.hemiIntensity;
 
         const gateLight = new PointLight('opening-gate-light', new Vector3(0, 2.1, 1.5), scene);
         gateLight.diffuse = new Color3(1.0, 0.72, 0.28);
-        gateLight.intensity = 1.8;
+        gateLight.intensity = 2.1;
         gateLight.range = 9;
 
         const relicLight = new PointLight('opening-relic-light', new Vector3(0, 1.2, -1.7), scene);
         relicLight.diffuse = new Color3(0.45, 0.9, 0.82);
-        relicLight.intensity = 1.15;
+        relicLight.intensity = 1.35;
         relicLight.range = 5;
 
         buildOpeningScene(scene);
@@ -72,12 +87,22 @@ export function OpeningRelicScene() {
             scene.render();
             if (canvas.dataset.sceneReady !== 'true') {
                 canvas.dataset.sceneReady = 'true';
+                canvas.dataset.sceneReadyMs = String(Math.round(performance.now() - createdAtMs));
             }
+            canvas.dataset.sceneMeshCount = String(scene.meshes.length);
+            canvas.dataset.sceneMaterialCount = String(scene.materials.length);
+            canvas.dataset.sceneFps = String(Math.round(engine.getFps()));
         });
 
         return () => {
             window.removeEventListener('resize', resize);
             delete canvas.dataset.sceneReady;
+            delete canvas.dataset.sceneReadyMs;
+            delete canvas.dataset.assetPipeline;
+            delete canvas.dataset.lightingPreset;
+            delete canvas.dataset.sceneMeshCount;
+            delete canvas.dataset.sceneMaterialCount;
+            delete canvas.dataset.sceneFps;
             scene.dispose();
             engine.dispose();
         };
@@ -170,4 +195,13 @@ function material(scene: Scene, name: string, diffuse: Color3, emissive: Color3)
     mat.emissiveColor = emissive;
     mat.specularColor = new Color3(0.08, 0.07, 0.05);
     return mat;
+}
+
+function vectorFromTuple(tuple: readonly [number, number, number]): Vector3 {
+    return new Vector3(tuple[0], tuple[1], tuple[2]);
+}
+
+function color4FromHex(hex: string): Color4 {
+    const color = Color3.FromHexString(hex);
+    return new Color4(color.r, color.g, color.b, 1);
 }

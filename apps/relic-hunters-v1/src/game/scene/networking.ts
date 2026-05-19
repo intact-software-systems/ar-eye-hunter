@@ -6,7 +6,7 @@ import { roomWorldPosition } from './rooms.ts';
 export const POS_MAX_AGE_MS = 2500;
 
 const POS_TYPE_ID = 'relic.pos';
-const POS_BROADCAST_INTERVAL_MS = 80;
+const POS_BROADCAST_INTERVAL_MS = 50;
 
 export type RelicPosUpdate = Readonly<{
     pid: string;

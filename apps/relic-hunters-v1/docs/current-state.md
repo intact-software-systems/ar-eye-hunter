@@ -33,12 +33,41 @@ server in `apps/relic-hunter-server-v1`, and the shared game model/rules in
   peers as explicit next hops. Accepted public game snapshots are also shared
   over RTC as a repair path so UI/gameplay state does not depend only on avatar
   position packets.
+- `src/game/scene/castleKit.ts` owns the first reusable Japanese castle kit
+  builders for room shell pieces: stone bases, plaster walls, timber rails,
+  roof tiles, doorway frames, lacquer columns, lanterns, banners, torii gates,
+  garden rocks, cherry trees, and a bridge builder for later corridor work.
+- `src/game/scene/roomIdentity.ts` owns the room-kind-to-visual-role mapping:
+  gatehouse, main corridor, armory/storage, main shrine, secret cell, treasury,
+  haunted barracks, and garden watchtower.
+- `src/game/scene/cameraModes.ts` owns the first scene camera-mode boundary.
+  Idle planning now renders from a raised tactical overview, while active roam,
+  clue inspection, lobby, and event focus remain distinct presentation modes.
+- `src/game/scene/avatarPresentation.ts` owns the first presentation-only
+  avatar state boundary for idle, moving, arriving, locked, escaped, and
+  defeated hunters.
+- `src/game/scene/lightingPresets.ts` owns the first presentation-only lighting
+  preset boundary for day, sunset, night, and lantern room moods.
+- `src/game/scene/assetPipeline.ts` records the current procedural-first asset
+  pipeline decision and the gate for a future measured hybrid glTF path.
+- `src/game/scene/sceneCost.ts` owns the first active-effect-room selector used
+  to cap active room lights and particle systems in tactical/full-map scenes.
+- `docs/scene-contracts.md` records the scene data contracts for room world
+  positions, interactive mesh metadata, avatar targets, prompt behavior, and
+  baseline visual tolerances.
+- `docs/asset-pipeline-decision.md` records the S7 asset decision, build-size
+  output, browser scene metrics, future model folder shape, and follow-up work.
 - The opening and lobby surfaces mount a lightweight Babylon ambient scene. The
   full gameplay `RelicScene` mounts for planning and finished expedition phases
   so authentication, room joining, and Keeper controls remain responsive.
-- The Babylon render path is capped at 30 fps, uses lighter shadows and ambient
+- The Babylon render path is capped at 45 fps for gameplay and 30 fps for the
+  opening scene, uses lighter shadows and ambient
   occlusion, and paints an early clear frame before the heavier scene setup so
   the canvas is reliably nonblank under parallel browser load.
+- The latest visual pass raises the gameplay scene cap to 45 fps, switches the
+  Babylon canvases to high-DPI/native scaling, lowers fog/bloom/glow/grain/SSAO
+  blur, disables depth of field, sharpens shadows, and increases avatar roam and
+  remote interpolation speed so rooms and hunters read more crisply.
 - `preserveDrawingBuffer` is disabled. Browser checks now use the canvas
   `data-scene-ready` signal emitted after Babylon renders a frame instead of
   relying on retained WebGL back buffers.
@@ -65,6 +94,7 @@ npm --workspace relic-hunters-v1 run typecheck
 npm --workspace relic-hunters-v1 run build
 cd apps/relic-hunter-server-v1 && deno task check
 npx playwright test tests/playwright/relic-hunters/web.spec.ts --grep "large-screen side menus|core lobby layouts|Rallar browser bootstrap"
+RELIC_SCENE_BASELINE_WRITE=1 npx playwright test tests/playwright/relic-hunters/web.spec.ts --grep "scene upgrade baselines"
 npm run test:playwright:relic
 npm run test:playwright:relic:full-stack
 ```
@@ -76,7 +106,12 @@ now runs the Relic Hunters Vitest suite under `apps/relic-hunters-v1/tests`,
 including the RTC avatar routing and RTC snapshot repair regressions. The server
 and Playwright commands remain the broader targeted validation set from the
 previous propagation pass. The package-level browser app test now also covers
-timed-out round repair from an authoritative force-resolved snapshot.
+timed-out round repair from an authoritative force-resolved snapshot. The scene
+upgrade baseline writer also passes and writes eight screenshots under
+`baseline/screenshots/scene-upgrades/` plus
+`baseline/screenshots/scene-upgrades/scene-upgrade-metrics.json`. Planning
+baseline scenarios also assert the gameplay canvas
+`data-camera-mode="tactical"` contract.
 Root `npm test` has historically failed in two shared-test suites unrelated to
 Relic Hunters because Node's default ESM loader rejects HTTPS imports:
 `packages/tests/shared-test/execute-black-box-rtc-client-provider.test.ts` and
@@ -84,8 +119,10 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
 
 ## Iteration Status
 
-`apps/relic-hunters-v1` currently has `improvement-plan.md`; there is no
-`implementation-plan.md` in this app folder.
+`apps/relic-hunters-v1` currently has `improvement-plan.md` for the broad app
+track and `implementation-plan-for-scene-upgrades.md` for the Japanese castle
+scene upgrade track. There is no generic `implementation-plan.md` in this app
+folder.
 
 - Iterations 1 through 6 are marked complete in the plan.
 - Iteration 7, visual direction and Babylon cleanup, has a first pass complete.
@@ -103,7 +140,27 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
   multiplayer product-rule gap from the lobby pass and now has a first policy
   pass complete.
 - Iteration 14, visual baselines and scene architecture follow-up, tracks the
-  unfinished visual screenshot and `RelicScene` boundary work.
+  remaining `RelicScene` boundary work. The scene upgrade implementation
+  sequence is now split into `implementation-plan-for-scene-upgrades.md`, and
+  its S1 baseline/contract pass has browser screenshots and canvas render
+  contracts in place. The S2 modular castle kit has a first implementation and
+  is now used by gameplay room shells. The S3 room identity pass has a first
+  implementation, with the split-party full-map state added to the screenshot
+  baseline set. The S4 tactical camera pass now has a first implementation and
+  planning baselines assert the tactical camera mode. The S5 avatar readability
+  pass now has a first implementation with larger procedural hunters and tested
+  presentation states. The S6 lighting preset pass now has a first
+  implementation with tested day, lantern, night, and sunset preset selection
+  plus baseline assertions for rendered lighting presets. The S7 asset pipeline
+  pass now has a procedural-first decision, tested hybrid gate, scene metrics
+  export, and documented future GLB conventions. The S8 scene-cost pass now has
+  a first implementation that reduces per-room flame emitters, pauses inactive
+  room particles/lights, and exports active particle/light metrics. The S9
+  static batching pass now merges fully visible non-interactive room meshes by
+  material and exports static batch metrics while leaving clue/action meshes
+  independent. The S10 event-budget pass now limits simultaneous scene
+  animation cues, exports active effect metrics, and resets draw-call metrics
+  per rendered frame.
 - Iteration 15, performance and production readiness, is the previous
   performance-oriented Iteration 12 moved behind the playable-loop follow-ups.
 - Iteration 16, Rallar room fanout and reload recovery, was added as a completed
@@ -117,10 +174,12 @@ Relic Hunters because Node's default ESM loader rejects HTTPS imports:
 - Iteration 19, timed-out round snapshot repair, was added as a completed
   follow-up for stale UIs that missed the push snapshot after another client
   force-resolved an overdue round.
-- With the current propagation, avatar-routing, RTC snapshot repair, and
-  timed-out round repair fixes validated, the next planned work should return
-  to Iteration 14 visual baselines and scene architecture before spending effort
-  on production performance.
+- With the current propagation, avatar-routing, RTC snapshot repair, timed-out
+  round repair, tactical camera, avatar readability, lighting preset, asset
+  pipeline, first active-effects fixes, static room batching, and event-budget
+  metrics validated, the next planned scene work is per-room picking support for
+  cross-room thin instancing/shared geometry before imported assets or broad
+  production performance work.
 - Completed iteration-7/playability fixes so far: remove blocking intro and
   onboarding from the default path, normalize local dev API calls through the
   same-origin proxy, make admin detection tolerate legacy snapshots without

@@ -21,6 +21,7 @@ This document is analysis only. It records follow-up findings and proposed harde
 - `connectedPeerIds()` mixes peer connection health with data-channel lane health. That affects routing, health reporting, cleanup, and reconnect behavior.
 - WebSocket and RTC APIs are not symmetric today. WS has auto-reconnect but little exposed status; RTC has peer/channel health internally but little facade-level API.
 - `rallar.ts` around the `enqueueOutboxIfAbsent()` call can report success to the caller even when no outbox entry was created or when a dispatch was intentionally skipped.
+- Browser RTC overlay topology identity is still scoped only by string `overlayId`, which commonly defaults to `groupId`. `graphId` is also used as the bridge for graph topology updates into overlays. In a single SPA runtime that can see same-`groupId` rooms from multiple workspaces, overlay and graph topology can collide even after AL multicast targets carry mandatory scoped `groupRef`.
 
 ## 1. IndexedDB: `ar-eye-hunter-al-runtime.entries`
 
@@ -200,6 +201,36 @@ Potential causes of slow or failed setup:
 - Surface terminal reconnect exhaustion from `QRtcPeerConnection` back to `WebRtcConnectionService`.
 - Add explicit timeouts for signaling, peer connection establishment, and lane opening.
 - Add metrics/events for offer, answer, ICE candidate, connection state, lane state, reconnect attempt, reconnect exhausted, and timeout.
+
+### Overlay And Graph Identity
+
+`OverlayId` is currently a SPA-side RTC multicast topology key. The server does not use it for room WS routing, but the shared RTC overlay manager and repository live in `packages/shared`.
+
+Current flow:
+
+- Browser group snapshot handling creates a default star overlay where `overlayId = groupId`.
+- Browser graph messages update overlay next hops by calling `updateNextHopSessionIds(graph.graphId, neighbors)`.
+- RTC multicast resolution reads room membership from the group cache and overlay topology from the overlay cache.
+- Rallar RTC sends default `overlayId` to `roomId`, unless the caller passes an explicit `overlayId`.
+
+Risk:
+
+- Same-`groupId` rooms in two workspaces can overwrite each other's overlay entries because the overlay repository key is just `overlayId`.
+- `removeOverlayById(groupId)` can delete the wrong workspace overlay.
+- `graphId` has the same ambiguity as `overlayId` when a room graph uses `graphId = groupId`.
+- Global graph snapshots such as `graphId = "global"` do not map cleanly to scoped room overlays, so graph updates may be ignored for room routing unless a matching overlay key already exists.
+- Normal Rallar RTC sends now include mandatory scoped AL target `groupRef`, which protects the room context, but the topology lookup can still be wrong if same-id overlays collide.
+
+Recommended follow-up:
+
+- Add proof tests before changing behavior:
+  - two same-`groupId` room snapshots from different workspaces should produce two independent overlays;
+  - deleting one scoped room should not remove the other overlay;
+  - a graph snapshot for workspace B should update only workspace B's overlay;
+  - RTC multicast with scoped `groupRef` should use the matching scoped overlay topology.
+- Introduce scoped overlay identity derived from `GroupRef`, keeping display/debug `groupId` separate.
+- Extend graph topology snapshots or update paths so room graphs carry `groupRef` or an equivalent scoped graph ref, instead of relying only on raw `graphId`.
+- Keep support for explicitly custom overlay ids only for intentionally shared or application-defined topologies.
 
 ## 3. WS And RTC API Symmetry
 

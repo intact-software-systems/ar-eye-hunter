@@ -512,24 +512,68 @@ Follow-up from:
 [Iteration 8](#iteration-8-scene-architecture), and
 [Iteration 11](#iteration-11-tests-and-playwright-coverage).
 
-Status: planned. Iterations 7 and 8 were first slices; `RelicScene.tsx` still
-owns too many responsibilities, and Iteration 11 left baseline visual snapshots
-open. A small navigation follow-up is complete: signed-in side menus now have
-sticky section jumps, extra-wide screens use a wider/two-column desktop layout,
-the desktop bottom HUD stays out of the right column, and mobile no longer clips
-the side-panel menu.
+Status: in progress. Iterations 7 and 8 were first slices; `RelicScene.tsx`
+still owns too many responsibilities, and Iteration 11 left baseline visual
+snapshots open. A small navigation follow-up is complete: signed-in side menus
+now have sticky section jumps, extra-wide screens use a wider/two-column desktop
+layout, the desktop bottom HUD stays out of the right column, and mobile no
+longer clips the side-panel menu. A crispness follow-up is also complete:
+gameplay rendering now uses high-DPI/native canvas scaling, less fog/bloom/glow,
+lighter SSAO/grain/vignette, sharper shadows, disabled depth of field, a 45 fps
+gameplay cap, and faster avatar roam/interpolation. The larger Japanese castle
+visual upgrade track now has a dedicated implementation plan in
+`implementation-plan-for-scene-upgrades.md`, and its S1 pass now writes the
+opening, lobby, planning, waiting/locked, resolved timeline, and finished
+baseline screenshots. Its S2 pass now adds the first reusable Japanese castle
+kit and routes gameplay room shells through it. Its S3 pass adds a dedicated
+room identity mapping plus stronger per-kind scene silhouettes and split-party
+baseline coverage. Its S4 pass adds a `scene/cameraModes.ts` boundary, makes
+idle planning default to a tactical castle overview, preserves active roam and
+inspection camera paths, and exposes the rendered mode through
+`data-camera-mode` for browser baselines. Its S5 pass adds a
+`scene/avatarPresentation.ts` boundary, larger readable procedural hunters,
+idle/move/arrival/locked/escaped/defeated presentation states, and focused
+avatar state tests. Its S6 pass adds a `scene/lightingPresets.ts` boundary,
+day/lantern/night/sunset render presets, brighter opening lighting, and browser
+baseline assertions for the active lighting preset. Its S7 pass adds a
+`scene/assetPipeline.ts` decision boundary, browser-exported scene metrics,
+`scene-upgrade-metrics.json`, and a procedural-first asset decision with a
+future hybrid glTF gate. Its S8 pass adds a `scene/sceneCost.ts` boundary,
+active-effect-room selection, reduced per-room flame emitters, active
+particle/light metrics, and paused inactive room effects. Its S9 pass adds a
+`scene/sceneBatching.ts` boundary, static room mesh batching by material, and
+static batch metrics while keeping interactive clue/action meshes separate. Its
+S10 pass adds a `scene/sceneEventBudget.ts` boundary, limits simultaneous scene
+animation cues, exports active effect metrics, and resets draw-call metrics per
+rendered frame.
 
 Deliverables:
 
 - add baseline screenshot coverage for signed-out, lobby, planning, waiting,
-  resolved timeline, and finished states at core desktop/mobile viewports
+  resolved timeline, and finished states at core desktop/mobile viewports: first
+  pass complete in the scene upgrade S1 track
 - move either event effects or player/relic scene sync behind a module boundary
 - keep fallback tactical rendering covered by browser smoke checks
+- add a tactical camera mode boundary and verify the rendered planning mode:
+  first pass complete in the scene upgrade S4 track
+- add an avatar presentation boundary and readable tactical-distance hunter
+  states: first pass complete in the scene upgrade S5 track
+- add lighting preset boundaries and verify rendered day/interior/finished
+  presets: first pass complete in the scene upgrade S6 track
+- add an asset pipeline decision boundary, browser scene metrics, and future
+  hybrid asset gate: first pass complete in the scene upgrade S7 track
+- add a scene-cost boundary and cap active room lights/particles in tactical
+  views: first pass complete in the scene upgrade S8 track
+- add a static room batching boundary and reduce repeated procedural mesh cost:
+  first pass complete in the scene upgrade S9 track
+- add a scene event-cue budget and corrected per-frame draw-call metrics: first
+  pass complete in the scene upgrade S10 track
 - verify labels, prompts, minimap, and bottom HUD do not overlap at the
   captured viewports
 - include the extra-wide side menu layout in visual smoke coverage so the
   Rooms, Party/Plan, Map, and Intel controls stay reachable
 - refresh `docs/visual-direction.md` with the current procedural-vs-asset plan
+  and concrete modern visual direction: first pass complete
 
 Exit criteria:
 

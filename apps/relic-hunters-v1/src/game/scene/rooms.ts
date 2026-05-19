@@ -7,8 +7,6 @@ import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
 import { ParticleSystem } from '@babylonjs/core/Particles/particleSystem.js';
 import { Scene } from '@babylonjs/core/scene.js';
-import { SceneLoader } from '@babylonjs/core/Loading/sceneLoader.js';
-import '@babylonjs/loaders/glTF/index.js';
 import type { RelicRoom } from '@relic-hunters/mod.ts';
 import {
     CEILING_Y,
@@ -19,7 +17,24 @@ import {
     WALL_THICKNESS,
     WORLD_SCALE,
 } from './constants.ts';
+import {
+    buildBanner,
+    buildCastleWall,
+    buildCeilingGrid,
+    buildCherryTree,
+    buildGardenRock,
+    buildLanternPair,
+    buildLanternPost,
+    buildStoneBase,
+    buildTimberColumns,
+    buildToriiGate,
+    type CastleKitContext,
+    type CastleKitPalette,
+    type CastleKitMaterialRole,
+} from './castleKit.ts';
 import { directionBetweenRooms, roomClueHotspots } from './prompts.ts';
+import { roomIdentityForRoom, type RoomIdentity } from './roomIdentity.ts';
+import { MIN_ROOM_STATIC_BATCH_SIZE, roomStaticBatchKey } from './sceneBatching.ts';
 import {
     applyNormalMap,
     applyClearCoat,
@@ -31,10 +46,16 @@ import type { CardinalDirection, ClueHotspot } from './types.ts';
 export type CastleMaterials = Readonly<{
     wall: PBRMaterial;
     ceiling: PBRMaterial;
+    plaster: PBRMaterial;
     wood: PBRMaterial;
+    roofTile: PBRMaterial;
+    lacquer: PBRMaterial;
     trim: PBRMaterial;
     metal: PBRMaterial;
     gold: PBRMaterial;
+    shoji: PBRMaterial;
+    foliage: PBRMaterial;
+    water: PBRMaterial;
     clothBlue: PBRMaterial;
     clothCoral: PBRMaterial;
     torch: PBRMaterial;
@@ -52,12 +73,18 @@ export type RoomRuntime = Readonly<{
 export function createCastleMaterials(scene: Scene): CastleMaterials {
     const { stoneNormal, woodNormal, metalNormal } = createCastleSurfaceTextures(scene);
 
-    const wall      = castleMaterial(scene, 'castle-wall-stone',    '#b7c0ad', 0.018, 0.02, 0.86);
-    const ceiling   = castleMaterial(scene, 'castle-ceiling-stone', '#8a9a8d', 0.012, 0.02, 0.90);
-    const wood      = castleMaterial(scene, 'castle-oak',           '#946b3c', 0.012, 0.00, 0.80);
-    const trim      = castleMaterial(scene, 'castle-trim',          '#d5b86f', 0.06,  0.18, 0.62);
+    const wall      = castleMaterial(scene, 'castle-wall-stone',    '#8c9890', 0.012, 0.02, 0.88);
+    const ceiling   = castleMaterial(scene, 'castle-ceiling-stone', '#7f8b84', 0.010, 0.02, 0.90);
+    const plaster   = castleMaterial(scene, 'castle-plaster',       '#d8d3bf', 0.030, 0.00, 0.92);
+    const wood      = castleMaterial(scene, 'castle-oak',           '#4b2a18', 0.016, 0.00, 0.74);
+    const roofTile  = castleMaterial(scene, 'castle-roof-tile',     '#29313a', 0.012, 0.04, 0.72);
+    const lacquer   = castleMaterial(scene, 'castle-lacquer',       '#982617', 0.060, 0.00, 0.42);
+    const trim      = castleMaterial(scene, 'castle-trim',          '#c6973d', 0.08,  0.22, 0.46);
     const metal     = castleMaterial(scene, 'castle-iron',          '#9aa7ae', 0.014, 0.85, 0.38);
     const gold      = castleMaterial(scene, 'castle-gold',          '#f1c453', 0.20,  0.92, 0.14);
+    const shoji     = castleMaterial(scene, 'castle-shoji-paper',   '#f6e8ca', 0.22,  0.00, 0.96);
+    const foliage   = castleMaterial(scene, 'castle-foliage',       '#e58aa6', 0.045, 0.00, 0.88);
+    const water     = castleMaterial(scene, 'castle-water',         '#5cb8c8', 0.10,  0.02, 0.35);
     const clothBlue = castleMaterial(scene, 'castle-blue-cloth',    '#3db7d6', 0.06,  0.00, 0.90);
     const clothCoral= castleMaterial(scene, 'castle-coral-cloth',   '#f9736b', 0.055, 0.00, 0.90);
     const torch     = castleMaterial(scene, 'castle-torch-flame',   '#ffbf5c', 1.85,  0,    1.0);
@@ -68,11 +95,14 @@ export function createCastleMaterials(scene: Scene): CastleMaterials {
     // Stone surfaces — brick-course bump adds mortar joints and per-stone dome
     applyNormalMap(wall,    stoneNormal, 4, 3);
     applyNormalMap(ceiling, stoneNormal, 4, 4);
+    applyNormalMap(plaster, stoneNormal, 3, 3, 0.46);
     applyNormalMap(rubble,  stoneNormal, 3, 3);
     applyNormalMap(trim,    stoneNormal, 3, 3, 0.55);
+    applyNormalMap(roofTile, stoneNormal, 5, 2, 0.52);
 
     // Wood — horizontal grain lines along beam length
     applyNormalMap(wood, woodNormal, 1, 6);
+    applyNormalMap(lacquer, woodNormal, 1, 5, 0.35);
 
     // Metal — fine machining scratches; gold gets a subtle version
     applyNormalMap(metal, metalNormal, 2, 2);
@@ -81,13 +111,36 @@ export function createCastleMaterials(scene: Scene): CastleMaterials {
     // Lacquer / jewellery clear coat — thin glossy layer on top of the PBR base
     applyClearCoat(gold,   0.88, 0.05); // mirror-like gilded surface
     applyClearCoat(trim,   0.48, 0.22); // polished stone/gilt trim
+    applyClearCoat(lacquer, 0.88, 0.06);
+    applyClearCoat(water, 0.5, 0.08);
     applyClearCoat(portal, 0.38, 0.14); // magical glass-like glow
 
     // Woven cloth sheen — fabric micro-fibres catch grazing light
     applySheen(clothBlue,  0.88, 0.62);
     applySheen(clothCoral, 0.88, 0.62);
+    applySheen(shoji, 0.5, 0.84);
+    applySheen(foliage, 0.45, 0.62);
 
-    return { wall, ceiling, wood, trim, metal, gold, clothBlue, clothCoral, torch, crack, rubble, portal };
+    return {
+        wall,
+        ceiling,
+        plaster,
+        wood,
+        roofTile,
+        lacquer,
+        trim,
+        metal,
+        gold,
+        shoji,
+        foliage,
+        water,
+        clothBlue,
+        clothCoral,
+        torch,
+        crack,
+        rubble,
+        portal,
+    };
 }
 
 export function applyRoomMaterial(
@@ -352,28 +405,33 @@ export function createRoomProps(
     const props: Mesh[] = [];
     const materials = runtime.castleMaterials;
     const add = (mesh: Mesh, material: PBRMaterial = materials.wall) => {
-        mesh.parent = root;
-        mesh.metadata = { roomId: room.id };
+        mesh.metadata = {
+            ...(metadataRecord(mesh.metadata) ?? {}),
+            roomId: room.id,
+        };
         mesh.material = material;
         props.push(mesh);
         return mesh;
     };
 
     const doorDirections = roomDoorDirections(room, rooms);
+    const kit = createRoomCastleKit(runtime.scene, add, materials, room.id);
+    buildStoneBase(kit);
     for (const direction of ['north', 'south', 'east', 'west'] as const) {
-        addCastleWall(add, direction, doorDirections.has(direction), materials);
+        buildCastleWall(kit, direction, doorDirections.has(direction));
     }
-    addCastleCeiling(add, materials);
+    buildCeilingGrid(kit);
     addStoneCourseDetail(add, room, materials);
-    addCastleColumns(add, materials);
+    buildTimberColumns(kit);
     addCastleCracks(add, room, materials);
-    addCastleDoorLight(add, room, materials);
+    addJapaneseCastleAccents(kit, room);
+    addRoomIdentitySilhouette(runtime, kit, add, room, roomIdentityForRoom(room));
     addHighFantasyRoomDecor(add, room, materials);
     addRoomKindProps(runtime, add, room, materials);
     addClueHotspot(add, room, materials);
     addRubblePile(add, room, materials);
 
-    return props;
+    return finalizeRoomProps(props, root, room.id);
 }
 
 export function createRoomLights(runtime: RoomRuntime, room: RelicRoom): readonly PointLight[] {
@@ -467,6 +525,586 @@ function castleMaterial(
     material.metallic = metallic;
     material.roughness = roughness;
     return material;
+}
+
+function createRoomCastleKit(
+    scene: Scene,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
+    materials: CastleMaterials,
+    roomId: string,
+): CastleKitContext {
+    return {
+        scene,
+        add,
+        materials: toCastleKitPalette(materials),
+        prefix: `room-kit-${roomId}`,
+        roomSize: ROOM_SIZE,
+        wallHeight: WALL_HEIGHT,
+        wallThickness: WALL_THICKNESS,
+        doorWidth: DOOR_WIDTH,
+        floorY: FLOOR_Y,
+        ceilingY: CEILING_Y,
+    };
+}
+
+function finalizeRoomProps(
+    props: readonly Mesh[],
+    root: Mesh,
+    roomId: string,
+): readonly Mesh[] {
+    const batches = new Map<string, Mesh[]>();
+    const finalized: Mesh[] = [];
+
+    for (const mesh of props) {
+        const key = roomStaticBatchKey({
+            materialKey: mesh.material ? String(mesh.material.uniqueId) : undefined,
+            visibility: mesh.visibility,
+            metadata: metadataRecord(mesh.metadata),
+        });
+        if (!key) {
+            finalized.push(mesh);
+            continue;
+        }
+
+        const batch = batches.get(key);
+        if (batch) {
+            batch.push(mesh);
+        } else {
+            batches.set(key, [mesh]);
+        }
+    }
+
+    for (const [key, meshes] of batches.entries()) {
+        if (meshes.length < MIN_ROOM_STATIC_BATCH_SIZE) {
+            finalized.push(...meshes);
+            continue;
+        }
+
+        const merged = Mesh.MergeMeshes([...meshes], true, true);
+        if (!merged) {
+            finalized.push(...meshes);
+            continue;
+        }
+
+        merged.name = `room-static-batch-${roomId}-${sanitizedBatchKey(key)}`;
+        merged.id = merged.name;
+        merged.metadata = {
+            roomId,
+            staticBatch: true,
+            batchedMeshCount: meshes.length,
+        };
+        finalized.push(merged);
+    }
+
+    for (const mesh of finalized) {
+        mesh.parent = root;
+        mesh.metadata = {
+            ...(metadataRecord(mesh.metadata) ?? {}),
+            roomId,
+        };
+    }
+
+    return finalized;
+}
+
+function metadataRecord(metadata: unknown): Readonly<Record<string, unknown>> | undefined {
+    return metadata && typeof metadata === 'object'
+        ? metadata as Readonly<Record<string, unknown>>
+        : undefined;
+}
+
+function sanitizedBatchKey(key: string): string {
+    return key.replace(/[^a-z0-9_-]/gi, '-');
+}
+
+function toCastleKitPalette(materials: CastleMaterials): CastleKitPalette {
+    return {
+        stone: materials.wall,
+        plaster: materials.plaster,
+        wood: materials.wood,
+        roofTile: materials.roofTile,
+        lacquer: materials.lacquer,
+        metal: materials.metal,
+        gold: materials.gold,
+        paper: materials.shoji,
+        foliage: materials.foliage,
+        water: materials.water,
+        lantern: materials.torch,
+        accentBlue: materials.clothBlue,
+        accentCoral: materials.clothCoral,
+        crack: materials.crack,
+        rubble: materials.rubble,
+        portal: materials.portal,
+    };
+}
+
+function addJapaneseCastleAccents(
+    kit: CastleKitContext,
+    room: RelicRoom,
+): void {
+    buildLanternPair(kit, room.kind === 'exit' ? 'south' : 'north');
+
+    for (const side of [-1, 1]) {
+        buildBanner(
+            kit,
+            `side-banner-${room.id}-${side}`,
+            side < 0 ? 'accentBlue' : 'accentCoral',
+            new Vector3(side * (kit.roomSize / 2 - 0.07), 2.38, -0.62),
+            side < 0 ? 'west' : 'east',
+        );
+    }
+
+    if (room.kind === 'entrance' || room.kind === 'shrine') {
+        buildToriiGate(
+            kit,
+            `torii-${room.id}`,
+            new Vector3(0, 0.12, -kit.roomSize / 2 + 1.12),
+            room.kind === 'entrance' ? 1.5 : 1.15,
+        );
+    }
+
+    if (room.kind === 'exit') {
+        buildToriiGate(
+            kit,
+            `exit-garden-gate-${room.id}`,
+            new Vector3(0, 0.1, kit.roomSize / 2 - 1.12),
+            1.32,
+        );
+        buildCherryTree(
+            kit,
+            `exit-cherry-left-${room.id}`,
+            new Vector3(-kit.roomSize / 2 + 1.9, 0.05, kit.roomSize / 2 - 2.3),
+            1.0,
+        );
+        buildCherryTree(
+            kit,
+            `exit-cherry-right-${room.id}`,
+            new Vector3(kit.roomSize / 2 - 1.9, 0.05, kit.roomSize / 2 - 2.3),
+            0.9,
+        );
+    }
+
+    if (room.kind === 'monster' || room.kind === 'trap') {
+        buildGardenRock(
+            kit,
+            `broken-garden-rock-${room.id}`,
+            new Vector3(-kit.roomSize / 2 + 1.7, 0.26, kit.roomSize / 2 - 1.8),
+            1.4,
+        );
+        buildGardenRock(
+            kit,
+            `fallen-garden-rock-${room.id}`,
+            new Vector3(kit.roomSize / 2 - 1.8, 0.24, -kit.roomSize / 2 + 1.7),
+            0.95,
+        );
+    }
+}
+
+function addRoomIdentitySilhouette(
+    runtime: RoomRuntime,
+    kit: CastleKitContext,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
+    room: RelicRoom,
+    identity: RoomIdentity,
+): void {
+    addIdentityFloorMark(runtime, kit, add, room, identity);
+
+    switch (identity.silhouette) {
+        case 'gatehouse':
+            addGatehouseSilhouette(runtime, kit, add, room, identity);
+            break;
+        case 'main-corridor':
+            addMainCorridorSilhouette(runtime, kit, add, room, identity);
+            break;
+        case 'armory-storage':
+            addArmoryStorageSilhouette(runtime, kit, add, room, identity);
+            break;
+        case 'main-shrine':
+            addMainShrineSilhouette(runtime, kit, add, room, identity);
+            break;
+        case 'secret-cell':
+            addSecretCellSilhouette(runtime, kit, add, room, identity);
+            break;
+        case 'treasury':
+            addTreasurySilhouette(runtime, kit, add, room, identity);
+            break;
+        case 'haunted-barracks':
+            addHauntedBarracksSilhouette(runtime, kit, add, room, identity);
+            break;
+        case 'garden-watchtower':
+            addGardenWatchtowerSilhouette(runtime, kit, add, room, identity);
+            break;
+    }
+}
+
+function addIdentityFloorMark(
+    runtime: RoomRuntime,
+    kit: CastleKitContext,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
+    room: RelicRoom,
+    identity: RoomIdentity,
+): void {
+    const material = identity.floorMotif === 'warning-grid'
+        ? 'accentCoral'
+        : identity.floorMotif === 'vault-ring'
+        ? 'gold'
+        : identity.floorMotif === 'garden-path'
+        ? 'water'
+        : identity.accentMaterial;
+
+    if (identity.floorMotif === 'runner') {
+        addIdentityBox(runtime, add, room, 'identity-runner-long', {
+            width: 1.55,
+            height: 0.032,
+            depth: ROOM_SIZE - 3.2,
+        }, material, new Vector3(0, 0.14, 0));
+        return;
+    }
+
+    if (identity.floorMotif === 'warning-grid') {
+        for (const x of [-1.2, 0, 1.2]) {
+            addIdentityBox(runtime, add, room, `identity-warning-strip-x-${x}`, {
+                width: 0.05,
+                height: 0.035,
+                depth: 3.4,
+            }, material, new Vector3(x, 0.15, 0));
+            addIdentityBox(runtime, add, room, `identity-warning-strip-z-${x}`, {
+                width: 3.4,
+                height: 0.035,
+                depth: 0.05,
+            }, material, new Vector3(0, 0.155, x));
+        }
+        return;
+    }
+
+    if (identity.floorMotif === 'garden-path') {
+        for (let index = 0; index < 5; index += 1) {
+            buildGardenRock(
+                kit,
+                `identity-stepping-stone-${room.id}-${index}`,
+                new Vector3(-1.6 + index * 0.8, 0.16, ROOM_SIZE / 2 - 3.8 + index * 0.38),
+                0.72,
+            );
+        }
+        addIdentityBox(runtime, add, room, 'identity-water-rill', {
+            width: ROOM_SIZE - 3.2,
+            height: 0.025,
+            depth: 0.34,
+        }, 'water', new Vector3(0, 0.125, ROOM_SIZE / 2 - 2.1));
+        return;
+    }
+
+    const ring = add(MeshBuilder.CreateTorus(
+        `identity-floor-ring-${room.id}`,
+        {
+            diameter: identity.floorMotif === 'vault-ring' || identity.floorMotif === 'altar-ring' ? 3.9 : 2.9,
+            thickness: identity.floorMotif === 'threshold' ? 0.055 : 0.042,
+            tessellation: 44,
+        },
+        runtime.scene,
+    ), kit.materials[material]);
+    ring.position.set(0, 0.16, 0);
+    ring.rotation.x = Math.PI / 2;
+}
+
+function addGatehouseSilhouette(
+    runtime: RoomRuntime,
+    kit: CastleKitContext,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
+    room: RelicRoom,
+    identity: RoomIdentity,
+): void {
+    const z = -ROOM_SIZE / 2 + 0.75;
+    addIdentityBox(runtime, add, room, 'gatehouse-roof-main', {
+        width: 5.4,
+        height: 0.32,
+        depth: 1.05,
+    }, 'roofTile', new Vector3(0, 3.6, z));
+    addIdentityBox(runtime, add, room, 'gatehouse-roof-eave', {
+        width: 6.2,
+        height: 0.18,
+        depth: 1.34,
+    }, 'roofTile', new Vector3(0, 3.36, z));
+    for (const x of [-2.4, 2.4]) {
+        addIdentityBox(runtime, add, room, `gatehouse-post-${x}`, {
+            width: 0.32,
+            height: 2.7,
+            depth: 0.32,
+        }, identity.primaryMaterial, new Vector3(x, 1.54, z));
+    }
+    for (const x of [-0.9, -0.45, 0, 0.45, 0.9]) {
+        addIdentityBox(runtime, add, room, `gatehouse-bars-${x}`, {
+            width: 0.055,
+            height: 1.85,
+            depth: 0.08,
+        }, identity.accentMaterial, new Vector3(x, 1.48, z - 0.18));
+    }
+}
+
+function addMainCorridorSilhouette(
+    runtime: RoomRuntime,
+    kit: CastleKitContext,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
+    room: RelicRoom,
+    identity: RoomIdentity,
+): void {
+    for (const side of [-1, 1]) {
+        addIdentityBox(runtime, add, room, `corridor-guide-rail-${side}`, {
+            width: 0.16,
+            height: 0.18,
+            depth: ROOM_SIZE - 3.0,
+        }, identity.primaryMaterial, new Vector3(side * 1.65, 0.42, 0));
+        for (let index = 0; index < 4; index += 1) {
+            buildLanternPost(
+                kit,
+                `corridor-small-lantern-${room.id}-${side}-${index}`,
+                side * 2.35,
+                -5.1 + index * 3.4,
+            );
+        }
+    }
+}
+
+function addArmoryStorageSilhouette(
+    runtime: RoomRuntime,
+    kit: CastleKitContext,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
+    room: RelicRoom,
+    identity: RoomIdentity,
+): void {
+    for (const side of [-1, 1]) {
+        addIdentityBox(runtime, add, room, `armory-shelf-back-${side}`, {
+            width: 0.18,
+            height: 1.6,
+            depth: 2.8,
+        }, identity.primaryMaterial, new Vector3(side * 2.25, 1.0, 0.5));
+        for (const z of [-0.7, 0.2, 1.1]) {
+            addIdentityBox(runtime, add, room, `armory-shelf-${side}-${z}`, {
+                width: 0.72,
+                height: 0.12,
+                depth: 0.24,
+            }, identity.primaryMaterial, new Vector3(side * 2.12, 0.58 + z * 0.22, z));
+        }
+        for (let index = 0; index < 4; index += 1) {
+            const spear = addIdentityCylinder(runtime, add, room, `armory-spear-${side}-${index}`, {
+                height: 1.75,
+                diameter: 0.045,
+                tessellation: 6,
+            }, identity.accentMaterial, new Vector3(side * 2.0, 1.05, -1.2 + index * 0.38));
+            spear.rotation.z = side * 0.18;
+        }
+    }
+    addIdentityBox(runtime, add, room, 'armory-crate-tower-bottom', {
+        width: 1.15,
+        height: 0.5,
+        depth: 0.95,
+    }, identity.primaryMaterial, new Vector3(0, 0.34, -1.3));
+    addIdentityBox(runtime, add, room, 'armory-crate-tower-top', {
+        width: 0.88,
+        height: 0.42,
+        depth: 0.78,
+    }, identity.primaryMaterial, new Vector3(0.18, 0.82, -1.28));
+}
+
+function addMainShrineSilhouette(
+    runtime: RoomRuntime,
+    kit: CastleKitContext,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
+    room: RelicRoom,
+    identity: RoomIdentity,
+): void {
+    addIdentityBox(runtime, add, room, 'shrine-dais-wide', {
+        width: 4.0,
+        height: 0.28,
+        depth: 2.3,
+    }, 'wood', new Vector3(0, 0.23, 1.2));
+    addIdentityBox(runtime, add, room, 'shrine-dais-gold', {
+        width: 3.15,
+        height: 0.18,
+        depth: 1.58,
+    }, 'gold', new Vector3(0, 0.5, 1.2));
+    addIdentityBox(runtime, add, room, 'shrine-shoji-screen', {
+        width: 3.6,
+        height: 1.72,
+        depth: 0.06,
+    }, identity.primaryMaterial, new Vector3(0, 1.58, ROOM_SIZE / 2 - 1.1));
+    buildToriiGate(
+        kit,
+        `identity-shrine-torii-${room.id}`,
+        new Vector3(0, 0.16, ROOM_SIZE / 2 - 2.1),
+        1.24,
+    );
+    const halo = add(MeshBuilder.CreateTorus(
+        `identity-shrine-halo-${room.id}`,
+        { diameter: 1.45, thickness: 0.05, tessellation: 36 },
+        runtime.scene,
+    ), kit.materials[identity.accentMaterial]);
+    halo.position.set(0, 1.7, ROOM_SIZE / 2 - 1.18);
+}
+
+function addSecretCellSilhouette(
+    runtime: RoomRuntime,
+    kit: CastleKitContext,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
+    room: RelicRoom,
+    identity: RoomIdentity,
+): void {
+    const z = ROOM_SIZE / 2 - 1.25;
+    for (const x of [-1.5, -0.9, -0.3, 0.3, 0.9, 1.5]) {
+        addIdentityBox(runtime, add, room, `cell-bar-${x}`, {
+            width: 0.08,
+            height: 2.35,
+            depth: 0.08,
+        }, identity.primaryMaterial, new Vector3(x, 1.32, z));
+    }
+    for (const y of [0.68, 1.45, 2.18]) {
+        addIdentityBox(runtime, add, room, `cell-crossbar-${y}`, {
+            width: 3.55,
+            height: 0.08,
+            depth: 0.08,
+        }, identity.primaryMaterial, new Vector3(0, y, z));
+    }
+    for (const x of [-0.72, 0.72]) {
+        const spike = addIdentityCylinder(runtime, add, room, `cell-warning-spike-${x}`, {
+            height: 0.92,
+            diameterBottom: 0.24,
+            diameterTop: 0.02,
+            tessellation: 4,
+        }, identity.accentMaterial, new Vector3(x, 0.58, -0.7));
+        spike.rotation.z = x * 0.22;
+    }
+}
+
+function addTreasurySilhouette(
+    runtime: RoomRuntime,
+    kit: CastleKitContext,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
+    room: RelicRoom,
+    identity: RoomIdentity,
+): void {
+    addIdentityBox(runtime, add, room, 'treasury-plinth-base', {
+        width: 2.4,
+        height: 0.42,
+        depth: 1.8,
+    }, identity.accentMaterial, new Vector3(0, 0.32, 0.45));
+    addIdentityBox(runtime, add, room, 'treasury-plinth-top', {
+        width: 1.75,
+        height: 0.22,
+        depth: 1.18,
+    }, identity.primaryMaterial, new Vector3(0, 0.68, 0.45));
+    for (const [index, x] of [-1.25, -0.72, 0.82, 1.32].entries()) {
+        const stack = addIdentityCylinder(runtime, add, room, `treasury-coin-stack-${index}`, {
+            height: 0.12 + index * 0.045,
+            diameter: 0.42,
+            tessellation: 16,
+        }, identity.primaryMaterial, new Vector3(x, 0.24 + index * 0.02, -0.9 + (index % 2) * 0.5));
+        stack.rotation.x = Math.PI / 2;
+    }
+    const vault = add(MeshBuilder.CreateTorus(
+        `identity-treasury-vault-ring-${room.id}`,
+        { diameter: 2.85, thickness: 0.13, tessellation: 42 },
+        runtime.scene,
+    ), kit.materials[identity.primaryMaterial]);
+    vault.position.set(0, 1.78, ROOM_SIZE / 2 - 1.2);
+    vault.rotation.x = Math.PI / 2;
+}
+
+function addHauntedBarracksSilhouette(
+    runtime: RoomRuntime,
+    kit: CastleKitContext,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
+    room: RelicRoom,
+    identity: RoomIdentity,
+): void {
+    for (let index = 0; index < 4; index += 1) {
+        const beam = addIdentityBox(runtime, add, room, `barracks-broken-beam-${index}`, {
+            width: 3.0 - index * 0.28,
+            height: 0.18,
+            depth: 0.24,
+        }, 'wood', new Vector3(-1.4 + index * 0.82, 1.7 + index * 0.2, -0.8 + index * 0.35));
+        beam.rotation.z = -0.55 + index * 0.24;
+        beam.rotation.y = 0.3;
+    }
+    for (let index = 0; index < 4; index += 1) {
+        const claw = addIdentityBox(runtime, add, room, `barracks-claw-${index}`, {
+            width: 1.25,
+            height: 0.035,
+            depth: 0.05,
+        }, identity.accentMaterial, new Vector3(-0.9 + index * 0.42, 1.46 + index * 0.18, -ROOM_SIZE / 2 + 0.16));
+        claw.rotation.z = -0.68;
+    }
+    addIdentityBox(runtime, add, room, 'barracks-torn-banner', {
+        width: 0.9,
+        height: 1.62,
+        depth: 0.05,
+    }, identity.dangerMaterial ?? 'accentCoral', new Vector3(ROOM_SIZE / 2 - 0.1, 2.1, 0));
+}
+
+function addGardenWatchtowerSilhouette(
+    runtime: RoomRuntime,
+    kit: CastleKitContext,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
+    room: RelicRoom,
+    identity: RoomIdentity,
+): void {
+    for (const x of [-1.05, 1.05]) {
+        addIdentityBox(runtime, add, room, `watchtower-post-${x}`, {
+            width: 0.18,
+            height: 2.45,
+            depth: 0.18,
+        }, 'wood', new Vector3(x, 1.32, ROOM_SIZE / 2 - 2.35));
+    }
+    addIdentityBox(runtime, add, room, 'watchtower-roof', {
+        width: 3.2,
+        height: 0.28,
+        depth: 1.5,
+    }, 'roofTile', new Vector3(0, 2.68, ROOM_SIZE / 2 - 2.35));
+    const beacon = addIdentityCylinder(runtime, add, room, 'escape-beacon', {
+        height: 3.1,
+        diameter: 0.34,
+        tessellation: 18,
+    }, identity.primaryMaterial, new Vector3(0, 1.72, ROOM_SIZE / 2 - 1.0));
+    beacon.visibility = 0.72;
+    buildCherryTree(
+        kit,
+        `identity-exit-cherry-${room.id}`,
+        new Vector3(-ROOM_SIZE / 2 + 2.7, 0.08, ROOM_SIZE / 2 - 3.0),
+        1.25,
+    );
+}
+
+function addIdentityBox(
+    runtime: RoomRuntime,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
+    room: RelicRoom,
+    name: string,
+    size: Readonly<{ width: number; height: number; depth: number }>,
+    material: CastleKitMaterialRole,
+    position: Vector3,
+): Mesh {
+    const mesh = add(
+        MeshBuilder.CreateBox(`identity-${room.id}-${name}`, size, runtime.scene),
+        toCastleKitPalette(runtime.castleMaterials)[material],
+    );
+    mesh.position.copyFrom(position);
+    return mesh;
+}
+
+function addIdentityCylinder(
+    runtime: RoomRuntime,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
+    room: RelicRoom,
+    name: string,
+    options: Parameters<typeof MeshBuilder.CreateCylinder>[1],
+    material: CastleKitMaterialRole,
+    position: Vector3,
+): Mesh {
+    const mesh = add(
+        MeshBuilder.CreateCylinder(`identity-${room.id}-${name}`, options, runtime.scene),
+        toCastleKitPalette(runtime.castleMaterials)[material],
+    );
+    mesh.position.copyFrom(position);
+    return mesh;
 }
 
 function addRoomKindProps(
@@ -690,88 +1328,6 @@ function addExitProps(
         runtime.scene,
     ), materials.gold);
     threshold.position.set(0, 0.1, ROOM_SIZE / 2 - 0.42);
-}
-
-function addCastleWall(
-    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
-    direction: CardinalDirection,
-    hasDoor: boolean,
-    materials: CastleMaterials,
-): void {
-    const northSouth = direction === 'north' || direction === 'south';
-    const sign = direction === 'north' || direction === 'west' ? -1 : 1;
-    const wallPosition = sign * ROOM_SIZE / 2;
-    const segmentLength = (ROOM_SIZE - DOOR_WIDTH) / 2;
-    const addSegment = (size: Readonly<{ width: number; depth: number }>, x: number, z: number) => {
-        const wall = add(MeshBuilder.CreateBox(
-            `castle-wall-${direction}-${x}-${z}-${Date.now()}`,
-            {
-                width: size.width,
-                height: WALL_HEIGHT,
-                depth: size.depth,
-            },
-            materials.wall.getScene(),
-        ), materials.wall);
-        wall.position.set(x, WALL_HEIGHT / 2, z);
-        return wall;
-    };
-
-    if (!hasDoor) {
-        addSegment(
-            {
-                width: northSouth ? ROOM_SIZE + WALL_THICKNESS : WALL_THICKNESS,
-                depth: northSouth ? WALL_THICKNESS : ROOM_SIZE + WALL_THICKNESS,
-            },
-            northSouth ? 0 : wallPosition,
-            northSouth ? wallPosition : 0,
-        );
-        return;
-    }
-
-    for (const side of [-1, 1]) {
-        const offset = side * (DOOR_WIDTH / 2 + segmentLength / 2);
-        addSegment(
-            {
-                width: northSouth ? segmentLength : WALL_THICKNESS,
-                depth: northSouth ? WALL_THICKNESS : segmentLength,
-            },
-            northSouth ? offset : wallPosition,
-            northSouth ? wallPosition : offset,
-        );
-    }
-
-    const lintel = add(MeshBuilder.CreateBox(
-        `castle-door-lintel-${direction}-${Date.now()}`,
-        {
-            width: northSouth ? DOOR_WIDTH + 0.3 : WALL_THICKNESS + 0.05,
-            height: 0.34,
-            depth: northSouth ? WALL_THICKNESS + 0.05 : DOOR_WIDTH + 0.3,
-        },
-        materials.trim.getScene(),
-    ), materials.trim);
-    lintel.position.set(northSouth ? 0 : wallPosition, 2.42, northSouth ? wallPosition : 0);
-}
-
-function addCastleCeiling(
-    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
-    materials: CastleMaterials,
-): void {
-    const ceiling = add(MeshBuilder.CreateBox(
-        `castle-ceiling-${Date.now()}`,
-        { width: ROOM_SIZE + 0.14, height: 0.12, depth: ROOM_SIZE + 0.14 },
-        materials.ceiling.getScene(),
-    ), materials.ceiling);
-    ceiling.position.set(0, CEILING_Y, 0);
-
-    for (const [index, offset] of [-2.1, -0.7, 0.7, 2.1].entries()) {
-        const beam = add(MeshBuilder.CreateBox(
-            `castle-ceiling-beam-${index}-${Date.now()}`,
-            { width: ROOM_SIZE + 0.16, height: 0.15, depth: 0.16 },
-            materials.wood.getScene(),
-        ), materials.wood);
-        beam.position.set(0, CEILING_Y - 0.14, offset);
-        beam.rotation.z = index === 1 ? 0.025 : 0;
-    }
 }
 
 function addHighFantasyRoomDecor(
@@ -1175,26 +1731,6 @@ function addStoneCourseDetail(
     }
 }
 
-function addCastleColumns(
-    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
-    materials: CastleMaterials,
-): void {
-    for (const x of [-1, 1]) {
-        for (const z of [-1, 1]) {
-            const column = add(MeshBuilder.CreateCylinder(
-                `castle-column-${x}-${z}-${Date.now()}`,
-                { height: WALL_HEIGHT, diameter: 0.22, tessellation: 8 },
-                materials.trim.getScene(),
-            ), materials.trim);
-            column.position.set(
-                x * (ROOM_SIZE / 2 - 0.22),
-                WALL_HEIGHT / 2,
-                z * (ROOM_SIZE / 2 - 0.22),
-            );
-        }
-    }
-}
-
 function addCastleCracks(
     add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
     room: RelicRoom,
@@ -1308,16 +1844,12 @@ export function createRoomTorchParticles(
         particles.push(spawnTorchFlame(scene, pos, texture, false));
     }
 
-    // Chandelier flames (matching addHighFantasyRoomDecor positions)
-    for (let index = 0; index < 4; index += 1) {
-        const angle = (Math.PI * 2 * index) / 4;
-        const pos = new Vector3(
-            world.x + Math.cos(angle) * 0.52,
-            CEILING_Y - 0.68,
-            world.z + Math.sin(angle) * 0.52,
-        );
-        particles.push(spawnTorchFlame(scene, pos, texture, true));
-    }
+    particles.push(spawnTorchFlame(
+        scene,
+        new Vector3(world.x, CEILING_Y - 0.68, world.z),
+        texture,
+        true,
+    ));
 
     return particles;
 }
@@ -1389,7 +1921,7 @@ function spawnTorchFlame(
 ): ParticleSystem {
     const system = new ParticleSystem(
         `torch-flame-${position.x.toFixed(1)}-${position.y.toFixed(1)}-${position.z.toFixed(1)}-${Date.now()}`,
-        small ? 30 : 60,
+        small ? 18 : 36,
         scene,
     );
     system.particleTexture = texture;
@@ -1405,7 +1937,7 @@ function spawnTorchFlame(
     system.maxSize = small ? 0.1 : 0.18;
     system.minLifeTime = 0.2;
     system.maxLifeTime = small ? 0.42 : 0.58;
-    system.emitRate = small ? 50 : 90;
+    system.emitRate = small ? 28 : 54;
 
     system.direction1 = new Vector3(-0.06, 1.0, -0.06);
     system.direction2 = new Vector3(0.06, 1.0, 0.06);
@@ -1417,21 +1949,6 @@ function spawnTorchFlame(
     system.blendMode = ParticleSystem.BLENDMODE_ADD;
     system.start();
     return system;
-}
-
-// --- GLB lobby loader ---
-// Drop a GLB file at /public/models/lobby.glb and it will replace the procedural lobby.
-export async function tryLoadLobbyGlb(scene: Scene): Promise<readonly Mesh[] | null> {
-    try {
-        const result = await SceneLoader.ImportMeshAsync('', '/models/', 'lobby.glb', scene);
-        if (result.meshes.length === 0) return null;
-        // Place the imported model at origin
-        const root = result.meshes[0];
-        root.position.set(0, FLOOR_Y, 0);
-        return result.meshes as Mesh[];
-    } catch {
-        return null;
-    }
 }
 
 // --- Japanese castle lobby scene ---
