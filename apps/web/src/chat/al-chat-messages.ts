@@ -1,5 +1,6 @@
 import { ALMessage, ALRoute, newALMulticastMessage, } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 
 // -------------------------------------------------------
 // Type ids
@@ -66,14 +67,14 @@ export function newChatTextPayload(
  * Group chat message.
  *
  * Convention:
- * - groupId === overlayId
+ * - groupRef.groupId === overlayId
  * - logical destination is multicast to the group
  * - route.contextId is groupId
  * - route.resourceId is the chat message id
  */
 export function newALChatTextMulticastMessage(
     senderId: string,
-    groupId: string,
+    groupRef: GroupRef,
     text: string,
     options?: Readonly<{
         membershipEpoch?: number;
@@ -88,12 +89,13 @@ export function newALChatTextMulticastMessage(
         fanoutLimit?: number;
     }>,
 ): ALMessage {
+    const groupId = groupRef.groupId;
     const payload = newChatTextPayload(groupId, senderId, text);
 
     return newALMulticastMessage(
         senderId,
         newALChatRoute(groupId, payload.chatMessageId),
-        groupId,
+        groupRef,
         AL_CHAT_TEXT_TYPE_ID,
         payload,
         {

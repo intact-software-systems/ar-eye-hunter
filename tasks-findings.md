@@ -17,8 +17,8 @@ This document is analysis only. It records follow-up findings and proposed harde
 - `ar-eye-hunter-al-runtime.entries` is TTL-based, but cleanup is mostly lazy. Normal current-session reads filter expired rows, but old prefixes and old sessions can remain in IndexedDB indefinitely unless the same prefix is read/listed or an explicit cleanup is run.
 - Different login sessions are isolated by session-scoped namespaces in normal runtime access. The larger risk is stale data for a reused/restored same session ID, plus storage bloat from old session prefixes.
 - `Rallar` exposes coarse application connection state and realtime send/health helpers, but it does not expose a first-class RTC facade with wait, status, retry, or lifecycle APIs.
-- RTC reconnect has important object reuse risks. A peer DTO can be reused after data-channel close/failure, while the channel wrapper may still hold the stale closed browser `RTCDataChannel`. Some code paths can then hide the peer from `connectedPeerIds()` or return closed immediately instead of waiting for a fresh channel.
-- `connectedPeerIds()` mixes peer connection health with data-channel lane health. That affects routing, health reporting, cleanup, and reconnect behavior.
+- RTC reconnect had important object reuse risks. A peer DTO could be reused after data-channel close/failure, while the channel wrapper could still hold the stale closed browser `RTCDataChannel`. The follow-up cleanup split the old connected-peer concept into explicit known, active, no-reconnectable-lane, and ready-lane peer sets.
+- The removed `connectedPeerIds()` API mixed peer connection health with data-channel lane health. That affected routing, health reporting, cleanup, and reconnect behavior.
 - WebSocket and RTC APIs are not symmetric today. WS has auto-reconnect but little exposed status; RTC has peer/channel health internally but little facade-level API.
 - `rallar.ts` around the `enqueueOutboxIfAbsent()` call can report success to the caller even when no outbox entry was created or when a dispatch was intentionally skipped.
 - Browser RTC overlay topology identity is still scoped only by string `overlayId`, which commonly defaults to `groupId`. `graphId` is also used as the bridge for graph topology updates into overlays. In a single SPA runtime that can see same-`groupId` rooms from multiple workspaces, overlay and graph topology can collide even after AL multicast targets carry mandatory scoped `groupRef`.
@@ -156,13 +156,13 @@ However, normal `onclose` and `onerror` do not clear `status.dc`; they only upda
 - `waitUntilOpen()` returns `false` immediately if the stored `RTCDataChannel.readyState` is `closed` or `closing`.
 - `connect()` may reuse the same wrapper object.
 - Receiver-side reconnect can be especially fragile because it waits for a new incoming channel, but the stale closed channel can still influence wait/health behavior.
-- `connectedPeerIds()` excludes the whole peer if any channel is considered reconnectable.
+- The old `connectedPeerIds()` calculation excluded the whole peer if any channel was considered reconnectable.
 
 Result:
 
 - A single closed or failed lane can hide an otherwise active peer from routing and health.
 - `realtime.sendJson()` and `realtime.sendBinary()` can return a closed result even when a reconnect attempt was just started.
-- `rallar.disconnect()` loops over `connectedPeerIds()`, so degraded peers hidden by reconnectable channels may be skipped during cleanup.
+- `rallar.disconnect()` previously looped over `connectedPeerIds()`, so degraded peers hidden by reconnectable channels could be skipped during cleanup.
 
 ### Signaling Timeouts And Retries
 
@@ -189,14 +189,14 @@ Potential causes of slow or failed setup:
 - Peer connections are mostly lazy, so the first user action that needs RTC can pay the full setup cost.
 - Signaling readiness is implicit through WS queue-box setup, not exposed as a clear state.
 - There is no facade-level wait API to gate operations until a peer or lane is ready.
-- `connectedPeerIds()` can exclude peers with recoverable lane issues, reducing routing candidates and triggering unnecessary reconnect behavior.
+- The old connected-peer calculation could exclude peers with recoverable lane issues, reducing routing candidates and triggering unnecessary reconnect behavior.
 - Terminal peer-connection reconnect exhaustion resets the peer connection object but does not clearly notify `WebRtcConnectionService` to remove/recreate the peer DTO.
 
 ### Recommended Follow-up
 
 - Add `Rallar.rtc` with explicit methods such as `connectPeer`, `waitForPeer`, `waitForLane`, `status`, `health`, `disconnectPeer`, and `retryPeer`.
 - Separate peer connection state from data-channel lane state. Keep "known peers", "active peer connections", and "ready lane peers" as distinct concepts.
-- Make `disconnect()` close all known peers, not only peers returned by `connectedPeerIds()`.
+- Make `disconnect()` close all known peers, not only peers that have no reconnectable lanes.
 - Clear or replace stale `status.dc` on data-channel close/error, or make `waitUntilOpen()` aware of an in-progress replacement channel.
 - Surface terminal reconnect exhaustion from `QRtcPeerConnection` back to `WebRtcConnectionService`.
 - Add explicit timeouts for signaling, peer connection establishment, and lane opening.
@@ -306,7 +306,7 @@ Cases found:
 - If there is no overlay context, the overlay planner returns a skip/drop reason.
 - If a message is superseded by AL admission/supersedence policy, the outbound runtime returns success with `entries: []`.
 - Immediate dispatch paths can also return `entries: []`; in that case it may be a successful immediate send rather than a failure, so the current return shape is ambiguous.
-- If a connected peer is hidden by `connectedPeerIds()` because a lane is reconnectable, the overlay planner may have fewer/no routing candidates.
+- If a connected peer was hidden by the old connected-peer calculation because a lane was reconnectable, the overlay planner could have fewer/no routing candidates.
 - In immediate dispatch, missing peer/channel can warn and return rather than reliably fail the facade call. In dequeue/repair paths, missing peer/channel can throw and be retried.
 
 ### Why Some Skips Are Correct
@@ -333,7 +333,7 @@ The issue is not that every skip is wrong. The issue is that `Rallar.messages.rt
 ### P0: Make Outcomes And Cleanup Reliable
 
 - Add explicit send outcome reporting for `messages.rtc.send()` and then align `messages.ws.send()`.
-- Split peer health from lane health so `connectedPeerIds()` does not hide peers solely because one lane is reconnectable.
+- Split peer health from lane health so no peer set hides peers solely because one lane is reconnectable.
 - Make `disconnect()` clean up all known RTC peers.
 - Prevent intentional `Rallar.disconnect()` from triggering background WS reconnect.
 - Add AL runtime IndexedDB cleanup for logout/session replacement and a startup sweep for expired rows.
@@ -356,6 +356,6 @@ The issue is not that every skip is wrong. The issue is that `Rallar.messages.rt
 ## Open Decisions
 
 - Should same-session restore preserve AL runtime rows across browser reloads, or should runtime state be cleared on every authenticated connect?
-- Should `connectedPeerIds()` change meaning, or should new APIs such as `knownPeerIds()`, `activePeerIds()`, and `readyPeerIdsForLane(laneId)` be added?
+- Which real-server scenarios should be promoted next to automated coverage for `knownPeerIds()`, `activePeerIds()`, `peerIdsWithNoReconnectableLanes()`, and `readyPeerIdsForLane(laneId)`?
 - Should existing `send()` methods remain optimistic and add separate `sendWithResult()`, or should send return richer delivery/admission metadata directly?
 - What is the expected server-side symmetry target, given that `RallarServer` currently has WS but no RTC facade?

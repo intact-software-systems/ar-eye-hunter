@@ -183,7 +183,7 @@ describe('WebRtcRxStreamerService QoS receive pipeline', () => {
                 resourceId: 'msg-2',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'two',
@@ -201,7 +201,7 @@ describe('WebRtcRxStreamerService QoS receive pipeline', () => {
                 resourceId: 'msg-3',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'one',
@@ -299,7 +299,7 @@ describe('WebRtcRxStreamerService QoS receive pipeline', () => {
                 resourceId: 'msg-5',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'wait for children',
@@ -375,5 +375,13 @@ function createFakeMulticastManager(options?: Readonly<{
         },
         outboundControlMessages,
         forwardedMessages,
+    };
+}
+
+function groupRef(groupId: string) {
+    return {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId,
     };
 }

@@ -29,7 +29,7 @@ export type GroupStateSnapshotWriteKind = ObservableValueEventType;
 
 export type GroupStateSnapshotChange = Readonly<{
     kind: GroupStateSnapshotWriteKind;
-    groupId: string;
+    groupRef: GroupRef;
     snapshot?: GroupSnapshot;
     previous?: GroupSnapshot;
     version: number;
@@ -95,16 +95,6 @@ export function readableGroupStateSnapshotCache(
     return requireGroupStateSnapshotRepository(manager).readable();
 }
 
-export function findGroupStateSnapshotById(
-    groupId: string,
-    manager?: RepositoryManager,
-): GroupSnapshot | undefined {
-    return readAllObservableLatestRepository(groupStateSnapshotRepositoryToken, manager)
-        .filter((snapshot) => snapshot.group.groupId === groupId)
-        .sort((left, right) => toGroupSnapshotVersion(right) - toGroupSnapshotVersion(left))
-        .at(0);
-}
-
 export function findGroupStateSnapshotByRef(
     ref: GroupRef,
     manager?: RepositoryManager,
@@ -116,15 +106,15 @@ export function findGroupStateSnapshotByRef(
     );
 }
 
-export function findFirstGroupStateSnapshotIdSessionIdIsIn(
+export function findFirstGroupStateSnapshotRefSessionIdIsIn(
     sessionId: string,
     manager?: RepositoryManager,
-): string | undefined {
+): GroupRef | undefined {
     return readAllObservableLatestRepository(groupStateSnapshotRepositoryToken, manager)
         .find((snapshot) =>
             snapshot.activeSessions.some((activeSession) => activeSession.sessionId === sessionId)
         )
-        ?.group.groupId;
+        ?.group;
 }
 
 export function setGroupStateSnapshots(
@@ -133,17 +123,14 @@ export function setGroupStateSnapshots(
 ): boolean {
     let isAnyUpdated = false;
     for (const snapshot of snapshots) {
-        if (
-            setGroupStateSnapshotById(snapshot.group.groupId, snapshot, manager)
-        ) {
+        if (setGroupStateSnapshot(snapshot, manager)) {
             isAnyUpdated = true;
         }
     }
     return isAnyUpdated;
 }
 
-export function setGroupStateSnapshotById(
-    groupId: string,
+export function setGroupStateSnapshot(
     snapshot: GroupSnapshot,
     manager?: RepositoryManager,
 ): boolean {
@@ -162,7 +149,7 @@ export function setGroupStateSnapshotById(
 
     if (currentVersion !== undefined && nextVersion > currentVersion) {
         repository.set(repositoryKey, snapshot);
-        console.log(`Received updated group snapshot: ${groupId}`);
+        console.log(`Received updated group snapshot: ${snapshot.group.groupId}`);
         return true;
     }
 
@@ -177,6 +164,13 @@ export function getAllGroupStateSnapshots(
     manager?: RepositoryManager,
 ): GroupSnapshot[] {
     return readAllObservableLatestRepository(groupStateSnapshotRepositoryToken, manager);
+}
+
+export function findLatestGroupSnapshotById(groupId: string) {
+    return getAllGroupStateSnapshots()
+        .filter((snapshot) => snapshot.group.groupId === groupId)
+        .sort((left, right) => readGroupVersion(right) - readGroupVersion(left))
+        .at(0);
 }
 
 function toGroupSnapshotVersion(snapshot: GroupSnapshot): number {
@@ -196,9 +190,15 @@ function toGroupStateSnapshotChange(
     manager?: RepositoryManager,
 ): GroupStateSnapshotChange {
     const snapshot = event.value ?? event.previous;
+    if (!snapshot) {
+        throw new Error(
+            `Cannot build group snapshot change without a snapshot for key ${event.key}`,
+        );
+    }
+
     return {
         kind: event.type,
-        groupId: snapshot?.group.groupId ?? event.key,
+        groupRef: snapshot.group,
         snapshot: event.value,
         previous: event.previous,
         version: event.value

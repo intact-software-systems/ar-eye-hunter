@@ -1,12 +1,14 @@
 import { WebRtcConnectionService } from './WebRtcConnectionService.ts';
-import { WebRtcGroupService } from './WebRtcGroupService.ts';
+import { WebRtcGroupService, } from './WebRtcGroupService.ts';
 import { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
 import { GroupId, PeerId } from '../api/api-config.ts';
+import type { GroupRef } from '../api/group-types.ts';
 import {
     type AnyClientPresence,
     type AnyGroupPresence,
     readActiveClientSessionIds,
 } from '../api/group-client-views.ts';
+import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 
 export type WebRtcGroupManagerState = {
     readonly groupIds: readonly GroupId[];
@@ -15,13 +17,11 @@ export type WebRtcGroupManagerState = {
     readonly onlineDesiredPeerIds: readonly PeerId[];
     readonly connectablePeerIds: readonly PeerId[];
     readonly peerIdsWithNoReconnectableLanes: readonly PeerId[];
-    /** @deprecated Use peerIdsWithNoReconnectableLanes. */
-    readonly connectedPeerIds: readonly PeerId[];
     readonly peerOwners: ReadonlyMap<PeerId, readonly GroupId[]>;
 };
 
 export class WebRtcGroupManager {
-    private readonly groupsById = new Map<GroupId, WebRtcGroupService>();
+    private readonly groupsByKey = new Map<string, WebRtcGroupService>();
     private reconcileInFlight: Promise<void> | undefined;
 
     constructor(
@@ -31,31 +31,33 @@ export class WebRtcGroupManager {
     ) {
     }
 
-    getOrCreate(groupId: GroupId): WebRtcGroupService {
-        let group = this.groupsById.get(groupId);
+    getOrCreate(group: GroupRef): WebRtcGroupService {
+        const groupKey = toWebRtcGroupKey(group);
+        let service = this.groupsByKey.get(groupKey);
 
-        if (!group) {
-            group = new WebRtcGroupService(
+        if (!service) {
+            service = new WebRtcGroupService(
                 this.rtcQBox,
-                groupId,
+                group,
                 this.groupCache,
             );
-            this.groupsById.set(groupId, group);
+            this.groupsByKey.set(groupKey, service);
         }
 
-        return group;
+        return service;
     }
 
-    getIfPresent(groupId: GroupId): WebRtcGroupService | undefined {
-        return this.groupsById.get(groupId);
+    getIfPresent(group: GroupRef): WebRtcGroupService | undefined {
+        return this.groupsByKey.get(toWebRtcGroupKey(group));
     }
 
-    has(groupId: GroupId): boolean {
-        return this.groupsById.has(groupId);
+    has(group: GroupRef): boolean {
+        return this.groupsByKey.has(toWebRtcGroupKey(group));
     }
 
-    async delete(groupId: GroupId): Promise<boolean> {
-        const existed = this.groupsById.delete(groupId);
+    async delete(group: GroupRef): Promise<boolean> {
+        const groupKey = toWebRtcGroupKey(group);
+        const existed = this.groupsByKey.delete(groupKey);
         if (!existed) {
             return false;
         }
@@ -65,20 +67,20 @@ export class WebRtcGroupManager {
     }
 
     async clear(): Promise<void> {
-        this.groupsById.clear();
+        this.groupsByKey.clear();
         await this.reconcileAllGroups();
     }
 
     size(): number {
-        return this.groupsById.size;
+        return this.groupsByKey.size;
     }
 
     groupIds(): readonly GroupId[] {
-        return Array.from(this.groupsById.keys());
+        return this.groups().map((group) => group.groupRef.groupId);
     }
 
     groups(): readonly WebRtcGroupService[] {
-        return Array.from(this.groupsById.values());
+        return Array.from(this.groupsByKey.values());
     }
 
     /**
@@ -87,14 +89,14 @@ export class WebRtcGroupManager {
     peerOwners(): ReadonlyMap<PeerId, readonly GroupId[]> {
         const owners = new Map<PeerId, GroupId[]>();
 
-        for (const [groupId, group] of this.groupsById.entries()) {
+        for (const group of this.groupsByKey.values()) {
             for (const peerId of group.targetPeerIds()) {
                 let groupIds = owners.get(peerId);
                 if (!groupIds) {
                     groupIds = [];
                     owners.set(peerId, groupIds);
                 }
-                groupIds.push(groupId);
+                groupIds.push(group.groupRef.groupId);
             }
         }
 
@@ -131,7 +133,6 @@ export class WebRtcGroupManager {
             onlineDesiredPeerIds,
             connectablePeerIds: onlineDesiredPeerIds,
             peerIdsWithNoReconnectableLanes,
-            connectedPeerIds: peerIdsWithNoReconnectableLanes,
             peerOwners,
         };
     }
@@ -139,22 +140,14 @@ export class WebRtcGroupManager {
     async acceptGroupUpdate(
         snapshot: AnyGroupPresence,
     ): Promise<WebRtcGroupService> {
-        const groupId = snapshot.group.groupId;
-        const group = this.getOrCreate(groupId);
+        const group = this.getOrCreate(snapshot.group);
         await group.acceptGroupUpdate(snapshot);
         await this.reconcileAllGroups();
         return group;
     }
 
-    async refreshGroup(groupId: GroupId): Promise<WebRtcGroupService> {
-        const group = this.getOrCreate(groupId);
-        await group.refreshFromCache();
-        await this.reconcileAllGroups();
-        return group;
-    }
-
     async refreshAllGroups(): Promise<void> {
-        for (const group of this.groupsById.values()) {
+        for (const group of this.groupsByKey.values()) {
             await group.refreshFromCache();
         }
 
@@ -163,12 +156,6 @@ export class WebRtcGroupManager {
 
     async ensureAllGroupsConnected(): Promise<void> {
         await this.reconcileAllGroups();
-    }
-
-    async ensureGroupConnected(groupId: GroupId): Promise<WebRtcGroupService> {
-        const group = this.getOrCreate(groupId);
-        await this.reconcileAllGroups();
-        return group;
     }
 
     private async reconcileAllGroups(): Promise<void> {

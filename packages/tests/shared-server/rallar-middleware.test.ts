@@ -6,6 +6,7 @@ import {
     JsonWebSocketServer,
     newALBroadcastMessage,
     newALEventRoute,
+    newALMulticastMessage,
 } from '@shared/mod.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -192,6 +193,172 @@ describe('createWsServerTargetResolver state sync routing', () => {
             event,
         );
         const resolver = createWsServerTargetResolver(webSocketServer);
+
+        expect(
+            resolver.resolveBroadcastRecipients?.('all', message)
+                .map((recipient) => recipient.connectionId)
+                .sort(),
+        ).toEqual(['session-b']);
+    });
+
+    it('routes room broadcasts with a scoped group snapshot resolver when same group id exists in multiple workspaces', () => {
+        configureTestCacheRepositories();
+
+        const webSocketServer = new JsonWebSocketServer();
+        addOpenConnection(webSocketServer, 'session-a');
+        addOpenConnection(webSocketServer, 'session-b');
+        const workspaceA = createGroupSnapshot(
+            'shared-room',
+            'app-1',
+            'workspace-a',
+            [
+                { principalId: 'alice', sessionId: 'session-a', status: 'active' },
+            ],
+            1,
+        );
+        const workspaceB = createGroupSnapshot(
+            'shared-room',
+            'app-1',
+            'workspace-b',
+            [
+                { principalId: 'bob', sessionId: 'session-b', status: 'active' },
+            ],
+            1,
+        );
+        const message = newALBroadcastMessage(
+            'session-b',
+            newALEventRoute('room.chat', 'shared-room', 'msg-1'),
+            'room',
+            'chat.message.v1',
+            { text: 'workspace-b' },
+        );
+        const resolver = createWsServerTargetResolver(
+            webSocketServer,
+            {
+                findGroupSnapshotById: () => workspaceA,
+                resolveGroupRef: (groupId) => ({
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-b',
+                    groupId,
+                }),
+                findGroupSnapshotByRef: (ref) =>
+                    ref.workspaceId === 'workspace-b' ? workspaceB : undefined,
+            },
+        );
+
+        expect(
+            resolver.resolveBroadcastRecipients?.('room', message)
+                .map((recipient) => recipient.connectionId)
+                .sort(),
+        ).toEqual(['session-b']);
+    });
+
+    it('routes multicast targets using target groupRef before the group id fallback', () => {
+        configureTestCacheRepositories();
+
+        const webSocketServer = new JsonWebSocketServer();
+        addOpenConnection(webSocketServer, 'session-a');
+        addOpenConnection(webSocketServer, 'session-b');
+        const workspaceA = createGroupSnapshot(
+            'shared-room',
+            'app-1',
+            'workspace-a',
+            [
+                { principalId: 'alice', sessionId: 'session-a', status: 'active' },
+            ],
+            1,
+        );
+        const workspaceB = createGroupSnapshot(
+            'shared-room',
+            'app-1',
+            'workspace-b',
+            [
+                { principalId: 'bob', sessionId: 'session-b', status: 'active' },
+            ],
+            1,
+        );
+        const message = {
+            ...newALMulticastMessage(
+                'session-b',
+                newALEventRoute('room.chat', 'shared-room', 'msg-1'),
+                workspaceB.group,
+                'chat.message.v1',
+                { text: 'workspace-b' },
+            ),
+        };
+        const resolver = createWsServerTargetResolver(
+            webSocketServer,
+            {
+                findGroupSnapshotById: () => workspaceA,
+                findGroupSnapshotByRef: (ref) =>
+                    ref.workspaceId === 'workspace-b' ? workspaceB : undefined,
+            },
+        );
+
+        expect(
+            resolver.resolveGroupRecipients?.('shared-room', message)
+                .map((recipient) => recipient.connectionId)
+                .sort(),
+        ).toEqual(['session-b']);
+    });
+
+    it('routes state sync group events with the scoped resolver before the group id fallback', () => {
+        configureTestCacheRepositories();
+
+        const webSocketServer = new JsonWebSocketServer();
+        addOpenConnection(webSocketServer, 'session-a');
+        addOpenConnection(webSocketServer, 'session-b');
+
+        clientStateSnapshotsRepository.setClientStateSnapshots([
+            createClientSnapshot('alice', 'session-a', 'app-1', 'workspace-a', 1),
+            createClientSnapshot('bob', 'session-b', 'app-1', 'workspace-b', 1),
+        ]);
+
+        const workspaceA = createGroupSnapshot(
+            'shared-room',
+            'app-1',
+            'workspace-a',
+            [
+                { principalId: 'alice', sessionId: 'session-a', status: 'active' },
+            ],
+            1,
+        );
+        const workspaceB = createGroupSnapshot(
+            'shared-room',
+            'app-1',
+            'workspace-b',
+            [
+                { principalId: 'bob', sessionId: 'session-b', status: 'active' },
+            ],
+            1,
+        );
+        const event = {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-b',
+            groupId: 'shared-room',
+            eventId: 'event-1',
+            eventType: 'member-joined',
+            occurredAtEpochMs: 2,
+            actor: {
+                principalId: 'bob',
+            },
+        };
+        const message = newALBroadcastMessage(
+            'server-1',
+            newALEventRoute(
+                AppTopics.groupStateEvent,
+                event.groupId,
+                event.eventId,
+            ),
+            'all',
+            AppTopics.groupStateEvent,
+            event,
+        );
+        const resolver = createWsServerTargetResolver(webSocketServer, {
+            findGroupSnapshotById: () => workspaceA,
+            findGroupSnapshotByRef: (ref) =>
+                ref.workspaceId === 'workspace-b' ? workspaceB : undefined,
+        });
 
         expect(
             resolver.resolveBroadcastRecipients?.('all', message)

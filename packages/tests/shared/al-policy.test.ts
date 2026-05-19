@@ -21,7 +21,7 @@ describe('AL QoS policy', () => {
                 resourceId: 'msg-1',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'hello',
@@ -112,7 +112,7 @@ describe('AL QoS policy', () => {
                     resourceId: 'msg-2',
                     contextId: 'group-1',
                 },
-                'group-1',
+                groupRef('group-1'),
                 'chat.message.v1',
                 {
                     text: 'group hello',
@@ -343,7 +343,7 @@ describe('AL QoS policy', () => {
                 resourceId: 'msg-4',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'first',
@@ -363,7 +363,7 @@ describe('AL QoS policy', () => {
                 resourceId: 'msg-5',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'third',
@@ -591,3 +591,11 @@ describe('AL QoS policy', () => {
         expect(plan.nack.reason).toBe('overloaded');
     });
 });
+
+function groupRef(groupId: string) {
+    return {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId,
+    };
+}

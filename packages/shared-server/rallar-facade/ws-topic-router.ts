@@ -1,7 +1,8 @@
-import type { ALMessage, ALTargets } from '@shared/al-contracts/al-contract.ts';
+import { type ALMessage, type ALTargets, readALMulticastTargetGroupRef, } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { isALControlTypeId, newALNackControlMessage, } from '@shared/al-contracts/al-control.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { ALOutboundEnqueueResult, ALOutboundEnqueueStatus, } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
@@ -92,6 +93,7 @@ export type RallarServerWsRoomAuthorizationInput = Readonly<{
     message: ALMessage;
     definition?: RallarServerWsTopicDefinition<unknown>;
     roomId: string;
+    roomRef?: GroupRef;
     senderId: string;
     topicId: string;
     typeId: string;
@@ -161,6 +163,7 @@ export type RallarServerWsMessageContext<T = unknown> = Readonly<{
     service: WsQueueBoxServerService;
     definition?: RallarServerWsTopicDefinition<T>;
     roomId?: string;
+    roomRef?: GroupRef;
     senderId: string;
     proxy: RallarServerWsProxyContext;
 }>;
@@ -413,7 +416,7 @@ export class RallarServerWsFacade {
                 message,
                 authorization.reason ?? 'unauthorized',
                 authorization.logMessage ??
-                    `Rejected unauthorised dynamic WS topic: ${message.route.topicId}`,
+                `Rejected unauthorised dynamic WS topic: ${message.route.topicId}`,
                 {
                     serverSnapshotVersion: authorization.serverSnapshotVersion,
                 },
@@ -583,6 +586,7 @@ export class RallarServerWsFacade {
             service: this.wsQBoxServerService,
             definition,
             roomId: this.readRoomId(message),
+            roomRef: this.readRoomRef(message),
             senderId: message.id.senderId,
             proxy: {
                 toTargets: async (targetMessage, fanout) =>
@@ -706,6 +710,7 @@ export class RallarServerWsFacade {
                 message,
                 definition,
                 roomId,
+                roomRef: this.readRoomRef(message),
                 senderId: message.id.senderId,
                 topicId: message.route.topicId,
                 typeId: message.payload.typeId,
@@ -728,7 +733,7 @@ export class RallarServerWsFacade {
 
     private readRoomId(message: ALMessage): string | undefined {
         if (message.targets?.mode === 'multicast') {
-            return message.targets.groupId;
+            return message.targets.groupRef.groupId;
         }
 
         if (
@@ -742,6 +747,13 @@ export class RallarServerWsFacade {
         }
 
         return undefined;
+    }
+
+    private readRoomRef(message: ALMessage): GroupRef | undefined {
+        const roomId = this.readRoomId(message);
+        return roomId
+            ? readALMulticastTargetGroupRef(message)
+            : undefined;
     }
 
     private readMinSnapshotVersion(message: ALMessage): number | undefined {

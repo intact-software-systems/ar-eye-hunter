@@ -50,11 +50,79 @@ Remaining gaps:
 - Some public/internal APIs still accept only `groupId` and therefore remain ambiguous when one process intentionally works with multiple scopes at the same time. The repository now has a scoped lookup, but higher-level APIs should gradually move toward `GroupRef`/scope-aware signatures where the caller knows the scope.
 - Event routing for group events depends on a cached group snapshot. If the group snapshot cache is cold, the event fails closed rather than broadcasting.
 
+GroupId-only API audit:
+
+- Repository/cache: the deprecated `findGroupStateSnapshotById(groupId)`, `findFirstGroupStateSnapshotIdSessionIdIsIn(sessionId)`, and `setGroupStateSnapshotById(groupId, snapshot)` helpers have been removed. New repository code uses `findGroupStateSnapshotByRef(ref)`, `findFirstGroupStateSnapshotRefSessionIdIsIn(sessionId)`, and `setGroupStateSnapshot(snapshot)`.
+- RTC group management: `WebRtcGroupManager` and `WebRtcGroupService` still model tracked groups around `groupId`. This is the first implementation target because it can merge RTC desired peers when the same room id exists in two scopes.
+- Browser Rallar facade: `rooms.join(roomId, options)`, `rooms.leave(...)`, `messages.rtc.send({ roomId })`, `messages.ws.send({ roomId })`, and `rtc.waitForRoomLane(roomId, ...)` use room id as the public handle. They often carry `scope` in options, but cached/current-room helpers still resolve snapshots by id.
+- Server WS routing and authorization: `CreateRallarMiddlewareOptions.findGroupSnapshotById`, `createWsServerTargetResolver`, `StateSyncRoutingOptions.findGroupSnapshotById`, and `createGroupRoomWsAuthorizer` still use `groupId`-only resolver callbacks.
+- AL message targeting: resolved for multicast. Multicast targets now require scoped `groupRef` and no longer carry a target-level `groupId`; remaining scope ambiguity is in overlay/graph topology identity, not AL target identity.
+
+Implementation order:
+
+- First: update RTC group manager/service internals to key tracked groups by `GroupRef` when a snapshot/scope is available, keeping `groupId` wrappers for single-scope callers.
+- Second: make repository API names less misleading by using scoped/readable alternatives and removing `ById` wrappers.
+- Third: update server WS routing/authorizer options to accept scoped resolver forms while preserving current callbacks as compatibility fallbacks.
+- Fourth: evaluate public Rallar room handles. Public `roomId` can remain ergonomic, but methods that can operate outside the current scope should accept or derive `GroupRef` consistently.
+
+Implementation status for groupId-only audit:
+
+- Started on 2026-05-18.
+- Added focused proof that `WebRtcGroupManager` collapsed two snapshots with the same `groupId` from different workspaces into one tracked RTC group.
+- `WebRtcGroupManager` now keys tracked groups by `GroupRef` when available, while string-based compatibility lookups still work when exactly one matching scoped group exists.
+- `WebRtcGroupService` now accepts either `groupId` or `GroupRef` and reads the matching scoped cached snapshot when multiple same-id snapshots exist.
+- Browser cache group-update handling now calls RTC manager `has/delete` with `snapshot.group`, avoiding accidental misses after scoped tracking.
+- Added `setGroupStateSnapshot(snapshot)` and `findFirstGroupStateSnapshotRefSessionIdIsIn(sessionId)` repository helpers so new code does not have to use misleading `ById` APIs.
+- Updated server state-sync snapshot cache writers to use `setGroupStateSnapshot(snapshot)`.
+- Added scoped server WS resolver callbacks: `resolveGroupRef(groupId, message)` and `findGroupSnapshotByRef(ref, message)` on `createWsServerTargetResolver`/middleware options.
+- Added scoped room authorization callbacks: `resolveGroupRef(input)` and `findGroupSnapshotByRef(ref, input)` on `createGroupRoomWsAuthorizer`.
+- Server-side `findGroupSnapshotById(groupId)` callbacks remain as compatibility fallbacks, but are ignored when a known scoped `GroupRef` exists and the fallback snapshot belongs to a different scope.
+- Browser Rallar room sends and waits now accept scoped room refs: `messages.rtc.send({ roomRef })`, `messages.ws.send({ roomRef })`, `realtime.*({ roomRef })`, and `rtc.waitForRoomLane(roomRef, ...)`.
+- Browser Rallar now preserves `currentRoomRef` after create/join and resolves current-room/cache lookups by `GroupRef` when available.
+- AL multicast targets now carry mandatory scoped `groupRef` and no target-level `groupId`. Browser Rallar must resolve a scoped room ref before RTC multicast sends, server multicast recipient resolution reads the target ref directly, and room authorization can infer scope from the target without an external resolver callback.
+- RTC overlay multicast context resolution now uses target `groupRef` to choose the room snapshot when same-id rooms exist in multiple scopes.
+
+Verification for groupId-only audit:
+
+- Up-front failing proof: `npx vitest run packages/tests/shared/webrtc-group-manager.test.ts --testNamePattern "same group id"` failed because `manager.size()` was `1` instead of `2`.
+- Up-front failing proof: `npx vitest run packages/tests/shared-web/data-caches.test.ts --testNamePattern "deletes scoped RTC"` failed because browser cache handling called `has("shared-room")` instead of `has(snapshot.group)`.
+- Up-front failing proof: `npx vitest run packages/tests/shared-server/rallar-middleware.test.ts --testNamePattern "scoped group snapshot resolver"` routed a same-`groupId` room broadcast to workspace A instead of workspace B.
+- Up-front failing proof: `npx vitest run packages/tests/shared-server/ws-topic-room-authorizer.test.ts` rejected a workspace B room message because the id-only fallback returned the workspace A snapshot.
+- Up-front failing proof: `npx vitest run packages/tests/shared-web/rallar-operation-options.test.ts --testNamePattern "roomRef"` produced the workspace A cached `minSnapshotVersion` for a workspace B RTC send.
+- Up-front failing proof: `npx vitest run packages/tests/shared-web/rallar-operation-options.test.ts --testNamePattern "roomRef scope for cached snapshotVersion on RTC"` showed RTC multicast targets carried only `groupId`, not `groupRef`.
+- Up-front failing proof: `npx vitest run packages/tests/shared-server/rallar-middleware.test.ts --testNamePattern "multicast targets using target groupRef"` routed a scoped multicast target to workspace A because recipient resolution ignored the target ref.
+- Up-front failing proof: `npx vitest run packages/tests/shared-server/ws-topic-room-authorizer.test.ts --testNamePattern "target groupRef"` rejected a workspace B multicast message because authorization could not infer target scope.
+- After implementation: `npx vitest run packages/tests/shared/webrtc-group-manager.test.ts packages/tests/shared/webrtc-group-service.test.ts packages/tests/shared-web/data-caches.test.ts packages/tests/shared/repository-modules.test.ts packages/tests/shared-server/rallar-middleware.test.ts packages/tests/shared-graph/group-graph-services.test.ts`.
+- After second pass: `npx vitest run packages/tests/shared-server/rallar-middleware.test.ts packages/tests/shared-server/ws-topic-room-authorizer.test.ts`.
+- After browser roomRef cleanup: `npx vitest run packages/tests/shared-web/rallar-operation-options.test.ts --testNamePattern "roomRef"`.
+- After AL multicast target cleanup: `npx vitest run packages/tests/shared-web/rallar-operation-options.test.ts packages/tests/shared-server/rallar-middleware.test.ts packages/tests/shared-server/ws-topic-room-authorizer.test.ts packages/tests/shared/webrtc-overlay-services.test.ts packages/tests/shared/multicast-policy-integration.test.ts packages/tests/shared/al-policy.test.ts`.
+- After AL multicast target cleanup: `npx vitest run packages/tests/shared/ws-server-qos-policy.test.ts packages/tests/api-v1/rallar-server-ws-facade.test.ts`.
+- After mandatory target `groupRef` cleanup: `npx vitest run packages/tests/shared/al-policy.test.ts packages/tests/shared/al-inbound-message-runtime.test.ts packages/tests/shared/al-durable-runtime.test.ts packages/tests/shared/al-indexeddb-runtime-stores.test.ts packages/tests/shared/webrtc-overlay-services.test.ts packages/tests/shared/multicast-policy-integration.test.ts packages/tests/shared/ws-qos-policy.test.ts packages/tests/shared/ws-server-qos-policy.test.ts packages/tests/shared/webrtc-rx-policy.test.ts packages/tests/shared-web/rallar-message-selectors.test.ts packages/tests/shared-web/rallar-operation-options.test.ts packages/tests/shared-server/rallar-middleware.test.ts packages/tests/shared-server/ws-topic-room-authorizer.test.ts`.
+- Mandatory target `groupRef` type checks: `npx tsc -p packages/shared/tsconfig.json --noEmit`, `npx tsc -p packages/shared-web/tsconfig.json --noEmit`, `npx tsc -p packages/shared-server/tsconfig.json --noEmit`, and `npm --workspace apps/web run typecheck`.
+- Type/runtime checks: `npx tsc -p packages/shared/tsconfig.json --noEmit`, `npx tsc -p packages/shared-web/tsconfig.json --noEmit`, `npx tsc -p packages/shared-server/tsconfig.json --noEmit`, and `deno check --config apps/api-v1/deno.json apps/api-v1/src/main.ts`.
+
+Remaining groupId-only gaps:
+
+- Browser Rallar still keeps `roomId` as the ergonomic default handle for single-scope use. Multi-scope callers should pass `roomRef`; future cleanup can add overloads for `rooms.join/leave` if those workflows need to target multiple scopes concurrently from one facade.
+- AL overlay identity is still a string `overlayId` that commonly defaults to `groupId`. The multicast target is now scoped, but overlay cache keying remains a separate cleanup if one runtime must maintain multiple overlays with the same room id across scopes.
+- Graph topology snapshots now carry mandatory `groupRef` instead of `graphId`, so graph updates can identify their room scope. The browser graph handler still updates overlay next hops by `graph.groupRef.groupId`, so overlay cache keying remains ambiguous until overlay identity is scoped too.
+
+Overlay and graph identity follow-up:
+
+- Treat browser overlay identity as a separate iteration from AL target scoping. `groupRef` now protects message authorization/routing and graph snapshots, but overlay topology lookup still depends on `overlayId`.
+- Prove the bug first with same-`groupId` rooms in two workspaces in one browser runtime:
+  - `createAndSetStarOverlays([workspaceA, workspaceB])` should not collapse or overwrite overlays.
+  - `removeOverlayById(groupId)` should not delete another workspace's overlay.
+  - a `GraphInfoSnapshot` with workspace B `groupRef` should update only workspace B's overlay next hops.
+  - RTC multicast with a scoped `groupRef` should use the matching scoped overlay topology, not whatever same-id overlay was last written.
+- Candidate fix: introduce a scoped overlay key derived from `GroupRef`, while retaining human-readable `groupId` and optional custom `overlayId` for diagnostics or explicitly shared topologies.
+- Candidate API direction: add helpers such as `toOverlayRef(groupRef)` and `toOverlayKey(groupRef)`. Graph snapshots already carry `groupRef`; avoid bridging from graph state to room overlay topology through a raw string key.
+
 ## 2. Room Routing And Authorization Depend On Process-Local Snapshot Cache
 
 Current behavior:
 
-- `createWsServerTargetResolver(...)` resolves room recipients from `groupStateSnapshotsRepository.findGroupStateSnapshotById`.
+- `createWsServerTargetResolver(...)` resolves room recipients from the process-local group snapshot cache. Scoped multicast uses `GroupRef`; id-only room broadcasts still depend on a local latest-by-`groupId` compatibility resolver.
 - `authorizeApiV1RoomWsMessage(...)` also uses the group snapshot cache.
 - The durable source of truth is `runtime_state_store`, but the resolver and authorizer read the in-memory snapshot cache.
 

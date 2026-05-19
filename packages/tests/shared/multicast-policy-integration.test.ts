@@ -31,7 +31,7 @@ describe('multicast QoS integration', () => {
                     resourceId: 'msg-1',
                     contextId: 'group-1',
                 },
-                'group-1',
+                groupRef('group-1'),
                 'chat.typing.v1',
                 {
                     text: 'typing',
@@ -107,7 +107,7 @@ describe('multicast QoS integration', () => {
                 resourceId: 'msg-2',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.typing.v1',
             {
                 text: 'typing',
@@ -160,7 +160,7 @@ describe('multicast QoS integration', () => {
                 resourceId: 'msg-3',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'hello',
@@ -210,7 +210,7 @@ describe('multicast QoS integration', () => {
                 resourceId: 'msg-3b',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'hello again',
@@ -259,7 +259,7 @@ describe('multicast QoS integration', () => {
                     resourceId: 'msg-3c',
                     contextId: 'group-1',
                 },
-                'group-1',
+                groupRef('group-1'),
                 'chat.message.v1',
                 {
                     text: 'repair via alternate parent',
@@ -349,7 +349,7 @@ describe('multicast QoS integration', () => {
                 resourceId: 'msg-3d',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'repair just one peer',
@@ -503,7 +503,6 @@ function createConnectionService(connectedPeerIds: readonly string[]) {
             sessionId: 'self',
         },
         readyPeerIdsForLane: () => [...connectedPeerIds],
-        connectedPeerIds: () => [...connectedPeerIds],
         readPeer: (peerId: string) => ({
             channel: {
                 send: vi.fn(async (msg: unknown) => {
@@ -595,6 +594,14 @@ function createOverlayInfo(nextHopSessionIds: readonly string[]) {
         nextHopSessionIds,
         overlayVersion: 1,
         updatedAtEpochMs: 1,
+    };
+}
+
+function groupRef(groupId: string) {
+    return {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId,
     };
 }
 

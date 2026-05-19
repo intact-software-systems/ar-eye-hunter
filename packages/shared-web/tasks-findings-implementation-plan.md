@@ -53,12 +53,15 @@ Real-server test runs should record enough evidence to debug failures: peer IDs,
 | 1: Read-only diagnostics and status surface | Implemented and locally verified | Added read-only RTC/WS diagnostics APIs and focused tests. Real two-agent smoke still passes. Playwright status snapshot artifacts are still a follow-up. |
 | 2: IndexedDB growth and session isolation proof | Browser IndexedDB eviction implemented | `packages/tests/shared-web/browser-al-runtime-stores.test.ts`; `packages/tests/shared-web/browser-queuebox-expiry-eviction.test.ts`; existing generic IndexedDB AL runtime tests still pass. Confirms per-prefix lazy eviction and storage bloat risk, with no cross-session read reproduced for the tested browser AL outbound state path. Added explicit cleanup helpers and browser middleware expiry eviction loops. |
 | 3: `enqueueOutboxIfAbsent()` quiet outcomes | Result statuses implemented and locally verified | `ALOutboundMessageRuntime`, RTC overlay/Rx streamer, WS client/server queue-box services, and `Rallar.messages.rtc/ws.send()` now return structured enqueue/send outcomes. |
-| 4: Data-channel reuse and closed-channel behavior | Unit, real-server reload, public RTC status API, and peer-id naming cleanup implemented | Focused `QRtcDataChannel` tests proved stale closed channel references blocked receiver-side replacement waits. `QRtcDataChannel` now clears terminal channel references so reconnect waits can observe replacement channels. `WebRtcConnectionService` tests document lane-ready state separately from active/no-reconnectable-lane peer state. Real browser-Rallar reload scenarios now pass for `realtime` and `messages.rtc` with attached RTC/WS status snapshots. `Rallar.rtc.onStatus(...)` and `Rallar.rtc.onLifecycle(...)` now expose public RTC subscription APIs. `connectedPeerIds()` is now a deprecated compatibility alias for the more exact `peerIdsWithNoReconnectableLanes()`, and Rallar uses active/known/lane-ready peer sets for the call sites that need those semantics. |
+| 4: Data-channel reuse and closed-channel behavior | Unit, real-server reload, public RTC status API, and peer-id naming cleanup implemented | Focused `QRtcDataChannel` tests proved stale closed channel references blocked receiver-side replacement waits. `QRtcDataChannel` now clears terminal channel references so reconnect waits can observe replacement channels. `WebRtcConnectionService` tests document lane-ready state separately from active/no-reconnectable-lane peer state. Real browser-Rallar reload scenarios now pass for `realtime` and `messages.rtc` with attached RTC/WS status snapshots. `Rallar.rtc.onStatus(...)` and `Rallar.rtc.onLifecycle(...)` now expose public RTC subscription APIs. The old `connectedPeerIds()` compatibility alias and Rallar status aliases were removed; callers use `peerIdsWithNoReconnectableLanes()`, `activePeerIds()`, `knownPeerIds()`, or `readyPeerIdsForLane(...)` by intent. |
 | 5: `disconnect()` and WS reconnect cleanup behavior | WS reconnect suppression, bounded retry, public WS lifecycle/status API, and targeted real-server disconnect/reconnect proof implemented | Focused tests prove unexpected WS close still reconnects, intentional service close suppresses reconnect, disabling reconnect stops a pending retry loop, reconnect exhaustion disables automatic reconnect, and session eligibility suppresses stale reconnects. `Rallar.disconnect()` now closes WS through `WsQueueBoxClientService.close(...)`. `Rallar.ws.onStatus(...)` and `Rallar.ws.onLifecycle(...)` expose WS status/lifecycle subscriptions. A targeted two-agent browser-Rallar smoke proves intentional disconnect does not background-reconnect and explicit reconnect restores delivery. Broader real-browser logout/session-replacement/unexpected-close scenarios are moved to Iteration 11. |
 | 6: Wait APIs for RTC and WS | Initial facade wait APIs implemented and locally verified | `rallar.ws.waitForOpen(...)`, `rallar.rtc.waitForLane(...)`, and `rallar.rtc.waitForOpen(...)` now return structured wait results. Focused facade tests cover open, timeout, aborted, observe-only no-connect, missing peer, and opt-in RTC connect-before-wait behavior. Real-server integration adoption is deferred until the black-box scenarios are updated to use these waits. |
-| 7: RTC establishment timeout and retry policy | Initial peer establishment timeout policy and explicit start/open APIs implemented and locally verified | Deterministic `WebRtcConnectionService` tests prove a peer that never establishes is evicted after an explicit timeout and can be recreated, while an opened lane clears the timeout. Browser Rallar enables the policy with a 30 second timeout, and `rallar.rtc.onLifecycle(...)` now surfaces service timeout events as `peer-timeout`. `ensurePeerConnectionStarted()` is now synchronous and start-only, `connectToPeerIfAbsent()` remains a deprecated alias, and `ensurePeerLaneOpen(...)` provides the opt-in readiness path using `PullPushCommand`. Rallar uses `ensurePeerLaneOpen(...)` internally for connect-and-wait RTC facade calls and realtime sends, while observe-only waits still avoid starting peers. `rallar.rtc.waitForRoomLane(...)` adds a room-level readiness wrapper that separates ready and not-ready peers. Peer establishment watchdog bookkeeping moved into reusable `AsyncCommand`. Real-server bad-condition scenarios and reconnect-exhaustion service cleanup remain pending. |
+| 7: RTC establishment timeout and retry policy | Initial peer establishment timeout policy and explicit start/open APIs implemented and locally verified | Deterministic `WebRtcConnectionService` tests prove a peer that never establishes is evicted after an explicit timeout and can be recreated, while an opened lane clears the timeout. Browser Rallar enables the policy with a 30 second timeout, and `rallar.rtc.onLifecycle(...)` now surfaces service timeout events as `peer-timeout`. `ensurePeerConnectionStarted()` is synchronous and start-only, and `ensurePeerLaneOpen(...)` provides the opt-in readiness path using `PullPushCommand`. Rallar uses `ensurePeerLaneOpen(...)` internally for connect-and-wait RTC facade calls and realtime sends, while observe-only waits still avoid starting peers. `rallar.rtc.waitForRoomLane(...)` adds a room-level readiness wrapper that separates ready and not-ready peers. Peer establishment watchdog bookkeeping moved into reusable `AsyncCommand`. Real-server bad-condition scenarios and reconnect-exhaustion service cleanup remain pending. |
 | 10: Group snapshot-version consistency preconditions | Contract, stale-cache proof, and bounded retry implemented | Added mandatory aggregate `snapshotVersion` on groups and client principals, `minSnapshotVersion` on room-scoped AL sends, browser Rallar propagation from cached room snapshots, and server stale-cache `not-yet-in-sync` NACKs. Focused tests prove version increments, repository version comparison, browser send metadata, server rejection, simplified NACK diagnostics, and delayed outbound retry of retryable NACKs. |
 | 11: Manual real-browser/server integration proofs | Planned | Convert selected live browser/server scenarios into repeatable manual runbooks first, then graduate stable scenarios into automated integration tests. Owns logout reconnect suppression, session replacement/no-valid-session stale reconnect suppression, unexpected server/network close reconnect behavior, and broader real-browser status artifact capture. |
+| 12: Scoped overlay and graph identity | Partially implemented | AL multicast target scoping is mandatory `groupRef` with no target `groupId`. `GraphInfoSnapshot`/`GraphInfo` now use mandatory `groupRef` instead of `graphId`, and graph repository APIs key by `GroupRef`. Remaining work is SPA RTC overlay topology identity: prove same-`groupId` overlay collisions before changing overlay contracts. |
+| 13: Typed Rallar facade channels and realtime lanes | Initial wrappers implemented and locally verified | `rallar.messages.channel<T>({...})` and `rallar.realtime.json<T>(...)` now reduce repeated `topicId`/`typeId`, payload extraction, lane id, and realtime send-option boilerplate while delegating to the existing low-level APIs. |
+| 14: Startup and subscription lifecycle convenience | Implemented and locally verified | Added `rallar.start(...)` for restore/connect/refresh startup flow and `rallar.subscriptions()` for idempotent composite cleanup. Focused facade and Relic runtime tests prove startup state, no-session no-connect behavior, scoped listener registration, and unsubscribe-once cleanup semantics. Sample app adoption is in place for the arena hook and Relic runtime. |
 
 ## Iteration 0: Baseline Evidence And Reproduction Harness
 
@@ -396,7 +399,7 @@ Proof findings:
 - That stale closed channel caused `waitUntilOpen()` to resolve `false` immediately during receiver-side reconnect, before the replacement incoming channel could be delivered through `ondatachannel`.
 - Initiator-side reconnect already created a replacement channel on a later `connect(true)`, but clearing terminal references makes the state and health snapshot explicit.
 - `WebRtcConnectionService` already exposes `knownPeerIds()`, `activePeerIds()`, and `readyPeerIdsForLane(...)`, which allows lane readiness to be observed separately from broad connected-peer semantics.
-- The old `connectedPeerIds()` name was misleading: if any configured lane is reconnectable, the peer is excluded even when the reliable/default lane is open. This is now named `peerIdsWithNoReconnectableLanes()` in the low-level service, while `connectedPeerIds()` remains only as a deprecated compatibility alias.
+- The old `connectedPeerIds()` name was misleading: if any configured lane is reconnectable, the peer was excluded even when the reliable/default lane was open. The low-level service now exposes the exact conservative state as `peerIdsWithNoReconnectableLanes()` and the old alias has been removed.
 
 Implemented after proof:
 
@@ -410,7 +413,7 @@ Implemented after proof:
   - `rallar.rtc.onLifecycle(listener, options?)` emits lifecycle events for `snapshot`, `connected`, `disconnected`, `peer-created`, `peer-deleted`, `lane-open`, `lane-close`, and `lane-error`, with the current status snapshot attached.
   - RTC status/lifecycle subscriptions are backed by `WebRtcConnectionService` peer lifecycle callbacks and `QRtcDataChannel` open/close/error callbacks.
 - Split misleading connected-peer usage by intent:
-  - Rallar status now exposes `peerIdsWithNoReconnectableLanes` and peer-level `hasNoReconnectableLanes`, while retaining deprecated compatibility aliases `connectedPeerIds` and `isConnectedPeer`.
+  - Rallar status now exposes `peerIdsWithNoReconnectableLanes` and peer-level `hasNoReconnectableLanes`; the old `connectedPeerIds` and `isConnectedPeer` status aliases were removed.
   - Rallar RTC routeability now uses `readyPeerIdsForLane(laneId)`, so a peer can be routable for the reliable lane even if another lane is reconnectable.
   - Rallar realtime health and callback registration use `activePeerIds()`, so closed/reconnecting lanes remain visible for diagnostics instead of disappearing from health output.
   - Rallar disconnect and realtime callback cleanup use `knownPeerIds()`, so stale peers with closed/reconnectable lanes are still cleaned up.
@@ -433,7 +436,7 @@ Proof work completed/remaining:
   - failed initiator data channels are detached before a later reconnect creates a replacement channel
   - `connect()` after close behaves correctly for initiator and receiver roles
   - `reset()` clears `status.dc`
-- Added or retained `WebRtcConnectionService` tests proving how `connectedPeerIds()` behaves when:
+- Added or retained `WebRtcConnectionService` tests proving how `peerIdsWithNoReconnectableLanes()` behaves when:
   - peer connection is connected and all lanes are open
   - one lane is closed/failed
   - reliable lane is open but realtime lane is closed
@@ -450,7 +453,7 @@ Remaining potential implementation after proof:
   - peer-level health: whether the `RTCPeerConnection` exists, is connecting/connected, is reconnecting, or is disconnected/failed
   - lane-level readiness: whether a specific data-channel lane such as `reliable` or `realtime` is open and sendable
 - This is partly addressed by the existing explicit APIs and status fields: `knownPeerIds()`, `activePeerIds()`, `readyPeerIds(laneId)`, `RallarRtcPeerStatus.connection`, and per-lane `RallarRtcLaneStatus`.
-- The `connectedPeerIds()` cleanup is implemented as an additive rename: use `peerIdsWithNoReconnectableLanes()` for that exact conservative state, `activePeerIds()` for peer connection presence/health, `readyPeerIdsForLane(laneId)` for routing, and `knownPeerIds()` for teardown/cleanup. The old name remains available only for compatibility.
+- The `connectedPeerIds()` cleanup is complete: use `peerIdsWithNoReconnectableLanes()` for that exact conservative state, `activePeerIds()` for peer connection presence/health, `readyPeerIdsForLane(laneId)` for routing, and `knownPeerIds()` for teardown/cleanup.
 
 Real scenario testing completed/remaining:
 
@@ -679,7 +682,7 @@ Potential implementation after proof:
   - reconnect total elapsed time: still pending
 - Surface timeout events through lifecycle/status APIs: initial Rallar lifecycle event `peer-timeout` implemented.
 - On reconnect exhaustion, notify `WebRtcConnectionService` so it can remove or recreate the peer DTO.
-- Naming cleanup: `ensurePeerConnectionStarted(...)` now describes the start-only behavior and returns synchronously. The older `connectToPeerIfAbsent(...)` remains as a deprecated compatibility alias.
+- Naming cleanup: `ensurePeerConnectionStarted(...)` now describes the start-only behavior and returns synchronously. The older `connectToPeerIfAbsent(...)` compatibility alias has been removed.
 - Pull/push command proof: `PullPushCommand` now lives in `packages/shared/cache/PullPushCommand.ts`, supports RTC-like start-then-wait workflows, and `CommandsOrchestrator.pullPushCommandStep(...)` can host the same pattern when orchestration wants to store the pushed value.
 - Watchdog extraction: peer establishment timeout maps/timer ownership moved out of `WebRtcConnectionService` and into reusable `AsyncCommand` in `packages/shared/cache/AsyncCommand.ts`, which watches keyed async resources, cancels/completes pending watches, replaces stale watches by key, and routes timeout cleanup errors.
 - Rallar facade adoption: `rallar.rtc.waitForLane(..., { connect: true })`, `rallar.rtc.waitForOpen(..., { connect: true })`, `rallar.realtime.sendJson(...)`, and `rallar.realtime.sendBinary(...)` now use `WebRtcConnectionService.ensurePeerLaneOpen(...)` internally. Observe-only RTC waits keep their local read-only path and do not start peers.
@@ -919,6 +922,145 @@ Exit criteria:
 - At least logout-after-connect and session-replacement reconnect suppression are captured as runnable Playwright scenarios.
 - Stable scenarios are tagged or moved into the integration suite with clear environment requirements.
 - Flaky scenarios remain documented as manual-only until deterministic failure injection exists.
+
+## Iteration 12: Scoped Overlay And Graph Identity
+
+Goal: prove and then fix SPA-side RTC overlay topology ambiguity caused by `overlayId` being a plain string that commonly equals `groupId`.
+
+Why this is separate:
+
+- AL multicast target scoping is now handled by mandatory `groupRef` on multicast targets with no target-level `groupId`, so server routing/authorization and RTC room-context lookup can distinguish same-id rooms.
+- Overlay topology is a different layer: it chooses next hops for RTC multicast in the browser. It still reads `OverlayInfo` by `overlayId`, and default overlays use `overlayId = groupId`.
+- Graph topology snapshots now carry scoped `groupRef`, but browser graph updates still map that ref back to `groupRef.groupId` when updating overlay next hops.
+
+Current risk hypothesis:
+
+- In one SPA runtime, two rooms with the same `groupId` but different application/workspace scopes can collapse into one overlay entry.
+- A stale or larger-version overlay from workspace A can provide next hops for a scoped workspace B RTC multicast.
+- Removing or archiving one scoped room can call `removeOverlayById(groupId)` and delete the other room's overlay.
+- A room graph update with workspace B `groupRef` can still update the wrong scoped overlay if the overlay repository only has the raw `groupId` key; the global graph uses a synthetic `GLOBAL_GRAPH_REF` and still should not be treated as a room overlay.
+
+Proof-first tests:
+
+- Add repository tests proving whether `createAndSetStarOverlays([workspaceA, workspaceB])` collapses same-`groupId` overlays today.
+- Add browser cache tests proving whether inactive/deleted workspace A removes workspace B's overlay when both share `groupId`.
+- Add graph-update tests proving whether `GraphInfoSnapshot.groupRef` can update only the intended scoped overlay while overlay identity remains string-keyed.
+- Add RTC overlay manager tests proving whether scoped `groupRef` room context can still pair with the wrong overlay topology when same-id overlays collide.
+
+Potential implementation after proof:
+
+- Introduce a scoped overlay identity helper derived from `GroupRef`, for example a stable key based on `applicationId`, `workspaceId`, and `groupId`.
+- Store `OverlayInfo` under the scoped overlay key while retaining display/debug fields for `groupId`.
+- Update default star overlay creation, removal, lookup, and graph update paths to use scoped overlay identity where a `GroupRef` is known.
+- Graph topology snapshots now carry `groupRef`; finish browser graph update handling by mapping that ref to a scoped overlay identity instead of `groupRef.groupId`.
+- Preserve explicit custom `overlayId` for intentionally shared/application-defined topologies, but make that opt-in and test it separately.
+
+Implemented so far:
+
+- `GroupStateSnapshotChange` now exposes mandatory `groupRef` and no longer duplicates `groupId`.
+- `WebRtcGroupService` and `WebRtcGroupManager` now use mandatory `GroupRef` internally; the string-or-ref compatibility alias was removed.
+- `GraphInfoSnapshot` and nested `GraphInfo` now carry mandatory `groupRef` instead of `graphId`; graph repository APIs use `GroupRef` keys.
+- Rallar gained facade defaults via `setDefaults(...)` for application/workspace scope, default room identity, realtime lane/open timeout, RTC connect-on-wait/wait timeout/data-channel lanes, and operation timeout. This allows common SPA/game flows to omit repeated room ids, lane ids, and timeout boilerplate while still letting per-call options override defaults.
+
+Testing:
+
+- `packages/tests/shared/repository-modules.test.ts` for overlay repository isolation.
+- `packages/tests/shared-web/data-caches.test.ts` for group snapshot delete/update and graph update behavior.
+- `packages/tests/shared/webrtc-overlay-services.test.ts` and `packages/tests/shared/multicast-policy-integration.test.ts` for RTC multicast topology selection.
+- Type checks for `packages/shared`, `packages/shared-web`, and `packages/shared-server` if shared graph/overlay contracts change.
+- Current focused verification: `npx vitest run packages/tests/shared/webrtc-group-service.test.ts packages/tests/shared/webrtc-group-manager.test.ts packages/tests/shared/repository-modules.test.ts`, `npx vitest run packages/tests/shared-graph/group-graph-services.test.ts packages/tests/shared-graph/repositories-and-create-graph.test.ts packages/tests/shared-graph/graphology-serialization.test.ts`, `npx vitest run packages/tests/shared-web/rallar-operation-options.test.ts`, `npx tsc -p packages/shared/tsconfig.json --noEmit`, `npx tsc -p packages/shared-graph/tsconfig.json --noEmit`, `npx tsc -p packages/shared-web/tsconfig.json --noEmit`, `npx tsc -p packages/shared-server/tsconfig.json --noEmit`, `deno check --config apps/api-v1/deno.json apps/api-v1/src/main.ts`, and `npm --workspace apps/web run typecheck`.
+
+Exit criteria:
+
+- Same-`groupId` rooms in different scopes have independent overlay entries.
+- Graph topology updates can target a scoped room overlay deterministically.
+- Scoped RTC multicast uses matching room membership and matching overlay topology.
+- Legacy/custom overlay ids are either documented as explicitly shared or rejected when they would conflict with scoped room topology.
+
+## Iteration 13: Typed Rallar Facade Channels And Realtime Lanes
+
+Goal: reduce the repetitive Rallar facade code that is visible in game and browser clients without changing transport behavior.
+
+Observed boilerplate:
+
+- Message send/listen paths repeat the same `topicId`, `typeId`, selector object, and `message.payload` extraction at each call site.
+- Realtime JSON send/listen paths repeat `laneId`, room targeting, open timeout, and send policy options such as `key` and `maxAgeMs`.
+- Games often define a small set of logical channels such as snapshots, commands, position updates, and gameplay realtime; those logical channels should be declared once and reused.
+
+Proof-first tests:
+
+- A typed message channel should send RTC and WS payloads with the configured topic/type while still returning the existing `RallarMessageSendResult`.
+- A typed message channel should subscribe on RTC and WS and deliver decoded payloads plus the original `RallarMessage` for callers that need routing metadata.
+- A typed realtime JSON lane should send payloads with configured lane defaults and subscribe handlers on the same lane.
+- Per-call overrides should still win over channel/lane defaults where the low-level API already supports overrides.
+
+Initial implementation direction:
+
+- Add `rallar.messages.channel<T>({ topicId, typeId })` returning `sendRtc`, `sendWs`, `onRtc`, and `onWs`.
+- Add `rallar.realtime.json<T>(defaults)` returning `send` and `on`.
+- Keep this layer as a thin wrapper over existing `messages.rtc/ws.send`, `messages.rtc/ws.onMessage`, `realtime.sendJson`, and `realtime.onJson`.
+- Do not add QoS defaults here; reliability, ack, TTL, and routing policies remain explicit per send or part of a later policy iteration.
+
+Implemented so far:
+
+- `rallar.messages.channel<T>({ topicId, typeId })` supports `sendRtc(payload, options)`, `sendWs(payload, options)`, `onRtc(handler)`, and `onWs(handler)`.
+- Typed channel subscriptions deliver `(payload, message)` so simple callers avoid `message.payload`, while advanced callers still have access to route, sender, transport, and raw message metadata.
+- `rallar.realtime.json<T>(defaults)` supports `send(data, options)` and `on(handler)` over a configured JSON data-channel lane.
+- The wrappers preserve per-call options and existing send result shapes.
+
+Testing:
+
+- `packages/tests/shared-web/rallar-operation-options.test.ts` for facade wrapper behavior.
+- `npx tsc -p packages/shared-web/tsconfig.json --noEmit`
+- `npm --workspace apps/web run typecheck`
+- Current verification: `npx vitest run packages/tests/shared-web/rallar-operation-options.test.ts`, `npx tsc -p packages/shared-web/tsconfig.json --noEmit`, and `npm --workspace apps/web run typecheck`.
+
+Exit criteria:
+
+- Apps can declare a typed logical channel once and send/listen without repeating `topicId`, `typeId`, or payload extraction.
+- Apps can declare a realtime JSON lane once and send/listen without repeating `laneId` and common open-timeout/room options.
+- Existing low-level APIs remain available and unchanged.
+
+## Iteration 14: Startup And Subscription Lifecycle Convenience
+
+Goal: reduce app startup and cleanup boilerplate after channel ergonomics stabilize.
+
+Status: implemented and locally verified on 2026-05-19.
+
+Observed boilerplate:
+
+- App startup often repeats `auth.restore()`, `connect()`, `rooms.refresh()`, local state updates, and error handling.
+- UI components collect several unsubscribe callbacks and manually call each one in cleanup.
+
+Proof-first tests:
+
+- A startup helper should preserve current explicit startup semantics: restore if requested, connect if a session exists, refresh requested state, and return structured state.
+- A subscription scope helper should unsubscribe every registered callback once and tolerate repeated cleanup.
+
+Implemented so far:
+
+- `rallar.start(...)` restores the browser session by default, connects only when a session exists, refreshes requested room/people state, and returns `{ session, connected, middleware, roomState, peopleState }`.
+- `rallar.subscriptions()` creates a small subscription scope with `add(...)`, `unsubscribe()`, and `size()`. Cleanup is idempotent, and callbacks added after cleanup are invoked immediately rather than retained.
+- Defaults and operation options flow through the existing `connect(...)` and refresh workflows instead of introducing a separate startup path.
+- `apps/ar-eye-hunter-v1` now uses `rallar.start(...)` for startup and `rallar.subscriptions()` for realtime/room listener plus interval cleanup.
+- `apps/relic-hunters-v1` now depends on a single runtime `start()` call backed by `rallar.start(...)` and uses Rallar subscription scopes for WS, RTC, and room listener cleanup.
+
+Verification:
+
+- `npx vitest run packages/tests/shared-web/rallar-operation-options.test.ts`
+- `npx tsc -p packages/shared-web/tsconfig.json --noEmit`
+- `npm --workspace apps/web run typecheck`
+- `npm --workspace relic-hunters-v1 run test -- tests/relic-hunters-runtime.test.ts`
+- `npm --workspace relic-hunters-v1 run typecheck`
+- `npx tsc -p apps/ar-eye-hunter-v1/tsconfig.json --noEmit`
+
+Known unrelated verification noise:
+
+- `npm --workspace relic-hunters-v1 run test` currently fails in `tests/turn-summary.test.ts` because expected review-phase copy does not match the current copy. This is outside the Rallar startup/subscription cleanup.
+
+Remaining follow-up:
+
+- Add real-browser/server startup runbook evidence in Iteration 11 if startup behavior changes beyond the current facade/runtime wrapper.
 
 ## Release Gates
 

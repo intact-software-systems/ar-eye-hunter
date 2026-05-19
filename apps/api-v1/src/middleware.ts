@@ -65,7 +65,9 @@ function initialise(): Middleware {
         outbox: queueBox,
         webSocketServer,
         wsRuntimeName,
-        findGroupSnapshotById: groupStateSnapshotsRepository.findGroupStateSnapshotById,
+        findGroupSnapshotByRef: (ref) =>
+            groupStateSnapshotsRepository.findGroupStateSnapshotByRef(ref),
+        findGroupSnapshotById: groupStateSnapshotsRepository.findLatestGroupSnapshotById,
         inboundStores: resolveServerWsQBoxALInboundRuntimeStores(wsRuntimeName),
         outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(wsRuntimeName),
         resilience: {

@@ -108,20 +108,19 @@ export function useRallarArena(): ArenaConnection {
     }, []);
 
     const connect = useCallback(async () => {
-        const restored = rallar.auth.restore();
-        if (!restored) {
-            setConnectionState('signed-out');
-            setSession(undefined);
-            return;
-        }
-
         setConnectionState('connecting');
         setError(undefined);
 
         try {
-            await rallar.connect();
-            const roomState = await rallar.rooms.refresh();
-            setSession(restored);
+            const startup = await rallar.start({ refreshRooms: true });
+            if (!startup.session || !startup.connected) {
+                setConnectionState('signed-out');
+                setSession(undefined);
+                return;
+            }
+
+            const roomState = startup.roomState ?? rallar.rooms.state();
+            setSession(startup.session);
             setRooms(roomState.rooms);
             setRoomId(roomState.currentRoomId);
             setConnectionState('connected');
@@ -140,16 +139,21 @@ export function useRallarArena(): ArenaConnection {
             return;
         }
 
-        const unsubscribeRealtime = rallar.realtime.onJson<GameRealtimeMessage>(
-            GAME_LANE_ID,
-            (message) => {
-                acceptRealtimeMessage(message.peerId, message.data);
-            },
-        );
-        const unsubscribeRooms = rallar.rooms.onChange((state) => {
-            setRooms(state.rooms);
-            setRoomId(state.currentRoomId);
-        });
+        const subscriptions = rallar.subscriptions()
+            .add(
+                rallar.realtime.onJson<GameRealtimeMessage>(
+                    GAME_LANE_ID,
+                    (message) => {
+                        acceptRealtimeMessage(message.peerId, message.data);
+                    },
+                ),
+            )
+            .add(
+                rallar.rooms.onChange((state) => {
+                    setRooms(state.rooms);
+                    setRoomId(state.currentRoomId);
+                }),
+            );
 
         const prune = window.setInterval(() => {
             const cutoff = Date.now() - 10_000;
@@ -162,12 +166,9 @@ export function useRallarArena(): ArenaConnection {
                 return next.size === previous.size ? previous : next;
             });
         }, 2_000);
+        subscriptions.add(() => window.clearInterval(prune));
 
-        return () => {
-            unsubscribeRealtime();
-            unsubscribeRooms();
-            window.clearInterval(prune);
-        };
+        return () => subscriptions.unsubscribe();
     }, [acceptRealtimeMessage, connectionState]);
 
     const refreshRooms = useCallback(async () => {

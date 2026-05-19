@@ -1,7 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
-import type { GroupEvent, GroupMemberStatus, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupEvent, GroupMemberStatus, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import type { WsServerResolvedRecipient } from '@shared/services/WsQueueBoxServerService.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
@@ -13,6 +13,7 @@ type StateSyncScope = Readonly<{
 }>;
 
 export type StateSyncRoutingOptions = Readonly<{
+    findGroupSnapshotByRef?: (ref: GroupRef) => GroupSnapshot | undefined;
     findGroupSnapshotById?: (groupId: string) => GroupSnapshot | undefined;
     readClientSnapshots?: () => readonly ClientSnapshot[];
 }>;
@@ -40,13 +41,15 @@ export function resolveStateSyncRecipients(
         case 'group':
             return resolveGroupRecipients(webSocketServer, payload.snapshot, options);
         case 'group-event': {
-            const configuredSnapshot = options.findGroupSnapshotById?.(payload.groupId);
+            const groupRef = {
+                ...payload.scope,
+                groupId: payload.groupId,
+            };
+            const configuredSnapshot = options.findGroupSnapshotByRef?.(groupRef) ??
+                options.findGroupSnapshotById?.(payload.groupId);
             const snapshot = configuredSnapshot && sameScope(configuredSnapshot.group, payload.scope)
                 ? configuredSnapshot
-                : groupStateSnapshotsRepository.findGroupStateSnapshotByRef({
-                    ...payload.scope,
-                    groupId: payload.groupId,
-                });
+                : groupStateSnapshotsRepository.findGroupStateSnapshotByRef(groupRef);
             return snapshot
                 ? resolveGroupRecipients(webSocketServer, snapshot, options)
                 : [];
@@ -141,22 +144,22 @@ function toOpenClientSessionRecipients(
 
 function parseStateSyncPayload(message: ALMessage):
     | Readonly<{
-        kind: 'client';
-        scope: StateSyncScope;
-        snapshot?: ClientSnapshot;
-    }>
+    kind: 'client';
+    scope: StateSyncScope;
+    snapshot?: ClientSnapshot;
+}>
     | Readonly<{
-        kind: 'group';
-        snapshot: GroupSnapshot;
-    }>
+    kind: 'group';
+    snapshot: GroupSnapshot;
+}>
     | Readonly<{
-        kind: 'group-event';
-        scope: StateSyncScope;
-        groupId: string;
-    }>
+    kind: 'group-event';
+    scope: StateSyncScope;
+    groupId: string;
+}>
     | Readonly<{
-        kind: 'invalid';
-    }>
+    kind: 'invalid';
+}>
     | undefined {
     try {
         switch (message.payload.typeId) {

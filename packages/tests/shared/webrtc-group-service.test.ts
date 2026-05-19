@@ -9,7 +9,8 @@ describe('WebRtcGroupService', () => {
     it('accepts newer snapshots, filters self from targets, and ignores stale updates', async () => {
         const cache = new LatestRepository<string, GroupSnapshot>();
         const rtcQBox = createRtcHarness('self');
-        const service = new WebRtcGroupService(rtcQBox as never, 'group-1', cache);
+        const initial = createGroupSnapshot('group-1', 1, ['self']);
+        const service = new WebRtcGroupService(rtcQBox as never, initial.group, cache);
         const events: Array<{
             source: string;
             joinedPeerIds: readonly string[];
@@ -78,7 +79,7 @@ describe('WebRtcGroupService', () => {
         const rtcQBox = createRtcHarness('self');
         const service = new WebRtcGroupService(
             rtcQBox as never,
-            'group-1',
+            snapshot.group,
             cache as never,
         );
         const callback = vi.fn(async () => {
@@ -105,15 +106,12 @@ describe('WebRtcGroupService', () => {
         configureTestCacheRepositories();
 
         const snapshot = createGroupSnapshot('group-1', 1, ['self', 'peer-a']);
-        groupStateSnapshotsRepository.setGroupStateSnapshotById(
-            snapshot.group.groupId,
-            snapshot,
-        );
+        groupStateSnapshotsRepository.setGroupStateSnapshot(snapshot);
 
         const rtcQBox = createRtcHarness('self');
         const service = new WebRtcGroupService(
             rtcQBox as never,
-            'group-1',
+            snapshot.group,
             groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
         );
 
@@ -125,10 +123,43 @@ describe('WebRtcGroupService', () => {
         });
     });
 
+    it('reads the matching scoped snapshot when same group id exists in multiple workspaces', () => {
+        configureTestCacheRepositories();
+
+        const workspaceA = createGroupSnapshot(
+            'shared-room',
+            1,
+            ['self', 'peer-a'],
+            {
+                workspaceId: 'workspace-a',
+            },
+        );
+        const workspaceB = createGroupSnapshot(
+            'shared-room',
+            1,
+            ['self', 'peer-b'],
+            {
+                workspaceId: 'workspace-b',
+            },
+        );
+        groupStateSnapshotsRepository.setGroupStateSnapshots([workspaceA, workspaceB]);
+
+        const rtcQBox = createRtcHarness('self');
+        const service = new WebRtcGroupService(
+            rtcQBox as never,
+            workspaceB.group,
+            groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
+        );
+
+        expect(service.readGroup()).toEqual(workspaceB);
+        expect(service.targetPeerIds()).toEqual(['peer-b']);
+    });
+
     it('rejects updates for the wrong group id', async () => {
         const cache = new LatestRepository<string, GroupSnapshot>();
         const rtcQBox = createRtcHarness('self');
-        const service = new WebRtcGroupService(rtcQBox as never, 'group-1', cache);
+        const snapshot = createGroupSnapshot('group-1', 1, ['self']);
+        const service = new WebRtcGroupService(rtcQBox as never, snapshot.group, cache);
 
         await expect(
             service.acceptGroupUpdate(createGroupSnapshot('group-2', 1, ['self'])),
@@ -150,9 +181,13 @@ function createGroupSnapshot(
     groupId: string,
     membershipVersion: number,
     memberSessionIds: readonly string[],
+    scope: Readonly<{
+        applicationId?: string;
+        workspaceId?: string;
+    }> = {},
 ): GroupSnapshot {
-    const applicationId = 'app-1';
-    const workspaceId = 'workspace-1';
+    const applicationId = scope.applicationId ?? 'app-1';
+    const workspaceId = scope.workspaceId ?? 'workspace-1';
 
     return {
         group: {

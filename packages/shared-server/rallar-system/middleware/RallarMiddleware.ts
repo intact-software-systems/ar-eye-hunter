@@ -1,7 +1,7 @@
 import type { ALInboundRuntimeStores } from '@shared/alm/ALInboundMessageRuntime.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/ALOutboundMessageRuntime.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { type ALMessage, readALMulticastTargetGroupRef, } from '@shared/al-contracts/al-contract.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
@@ -15,6 +15,7 @@ import { initialiseServerCacheRepositories } from '../cache-repositories.ts';
 import type { ClientStateRepository } from '../repositories/ClientStateRepository.ts';
 import type { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
 import { resolveStateSyncRecipients } from '../state-sync-routing.ts';
+import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
 
 export type RallarMiddlewareRuntime = Readonly<{
     qboxEngine: InboxOutboxEngine;
@@ -23,13 +24,27 @@ export type RallarMiddlewareRuntime = Readonly<{
     groupsRepository: GroupStateRepository;
 }>;
 
+export type RallarGroupSnapshotResolverOptions = Readonly<{
+    findGroupSnapshotByRef?: (
+        ref: GroupRef,
+        message: ALMessage,
+    ) => GroupSnapshot | undefined;
+    findGroupSnapshotById?: (groupId: string) => GroupSnapshot | undefined;
+    resolveGroupRef?: (
+        groupId: string,
+        message: ALMessage,
+    ) => GroupRef | undefined;
+}>;
+
 export type CreateRallarMiddlewareOptions = Readonly<{
     inbox: QueueBoxResourceEntryRepository;
     outbox?: QueueBoxResourceEntryRepository;
     webSocketServer?: JsonWebSocketServer;
     wsRuntimeName?: string;
     targetResolver?: WsServerTargetResolver;
-    findGroupSnapshotById?: (groupId: string) => GroupSnapshot | undefined;
+    findGroupSnapshotByRef?: RallarGroupSnapshotResolverOptions['findGroupSnapshotByRef'];
+    findGroupSnapshotById?: RallarGroupSnapshotResolverOptions['findGroupSnapshotById'];
+    resolveGroupRef?: RallarGroupSnapshotResolverOptions['resolveGroupRef'];
     inboundStores?: ALInboundRuntimeStores;
     outboundStores?: ALOutboundRuntimeStores;
     resilience: Readonly<{
@@ -49,7 +64,9 @@ export function createRallarMiddleware(
     const webSocketServer = options.webSocketServer ?? new JsonWebSocketServer();
     const targetResolver = options.targetResolver ??
         createWsServerTargetResolver(webSocketServer, {
+            findGroupSnapshotByRef: options.findGroupSnapshotByRef,
             findGroupSnapshotById: options.findGroupSnapshotById,
+            resolveGroupRef: options.resolveGroupRef,
         });
 
     const wsQBoxServerService = new WsQueueBoxServerService(
@@ -122,14 +139,37 @@ export function includeWsQueueBoxEngineTasks(
 
 export function createWsServerTargetResolver(
     webSocketServer: JsonWebSocketServer,
-    options: Readonly<{
-        findGroupSnapshotById?: (groupId: string) => GroupSnapshot | undefined;
-    }> = {},
+    options: RallarGroupSnapshotResolverOptions = {},
 ): WsServerTargetResolver {
+    const resolveGroupSnapshot = (
+        groupId: string,
+        message: ALMessage,
+    ): GroupSnapshot | undefined => {
+        const groupRef = message.targets?.mode === 'multicast'
+            ? readALMulticastTargetGroupRef(message)
+            : options.resolveGroupRef?.(groupId, message);
+        const scopedSnapshot = groupRef
+            ? options.findGroupSnapshotByRef?.(groupRef, message)
+            : undefined;
+        if (scopedSnapshot) {
+            return scopedSnapshot;
+        }
+
+        const byIdSnapshot = options.findGroupSnapshotById?.(groupId);
+        if (!byIdSnapshot) {
+            return undefined;
+        }
+
+        return groupRef === undefined || isSameGroupScope(byIdSnapshot.group, groupRef)
+            ? byIdSnapshot
+            : undefined;
+    };
+
     const resolveGroupRecipients = (
         groupId: string,
+        message: ALMessage,
     ): readonly WsServerResolvedRecipient[] => {
-        const snapshot = options.findGroupSnapshotById?.(groupId);
+        const snapshot = resolveGroupSnapshot(groupId, message);
         if (!snapshot) {
             return [];
         }
@@ -149,6 +189,8 @@ export function createWsServerTargetResolver(
             webSocketServer,
             message,
             {
+                findGroupSnapshotByRef: (ref) =>
+                    options.findGroupSnapshotByRef?.(ref, message),
                 findGroupSnapshotById: options.findGroupSnapshotById,
             },
         );
@@ -177,10 +219,10 @@ export function createWsServerTargetResolver(
                 : [];
         },
         resolveGroupRecipients: (groupId, _message: ALMessage) =>
-            resolveGroupRecipients(groupId),
+            resolveGroupRecipients(groupId, _message),
         resolveBroadcastRecipients: (scope, message) => {
             if (scope === 'room') {
-                return resolveGroupRecipients(message.route.contextId);
+                return resolveGroupRecipients(message.route.contextId, message);
             }
 
             return resolveAllOpenConnections(message);

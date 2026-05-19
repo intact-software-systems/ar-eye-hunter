@@ -11,10 +11,7 @@ import type { QRtcSignalingMessage } from '@shared/webrtc/QRtcSignalingContracts
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { computeGlobalGraphAndCacheIt } from '@shared-graph/group-graphs-create-service.ts';
 import * as vivaldiService from '@shared-graph/vivaldi-service.ts';
-import {
-    type DynamicWsTopicRouterOptions,
-    initDynamicWsTopicRouter,
-} from '../rallar-facade/ws-topic-router.ts';
+import { type DynamicWsTopicRouterOptions, initDynamicWsTopicRouter, } from '../rallar-facade/ws-topic-router.ts';
 import { toStateSyncConnectionFilter } from './state-sync-routing.ts';
 
 export type InitRallarSystemWsTopicsOptions = Readonly<{
@@ -36,7 +33,7 @@ export function initRallarSystemWsTopics(
     initStateBroadcastTopic(AppTopics.clientStateEvent, wsQBoxServerService);
     initStateBroadcastTopic(AppTopics.groupStateSnapshot, wsQBoxServerService, (rawData) => {
         const data = rawData as GroupSnapshot;
-        groupStateSnapshotsRepository.setGroupStateSnapshotById(data.group.groupId, data);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(data);
     });
     initStateBroadcastTopic(AppTopics.groupStateEvent, wsQBoxServerService);
     initGraphsTopic(wsQBoxServerService);

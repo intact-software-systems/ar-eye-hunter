@@ -657,7 +657,7 @@ export class WsQueueBoxServerService {
             }
             case 'multicast': {
                 const resolved = this.targetResolver.resolveGroupRecipients?.(
-                    targets.groupId,
+                    targets.groupRef.groupId,
                     message,
                 ) ?? [];
                 return dedupRecipients(resolved);

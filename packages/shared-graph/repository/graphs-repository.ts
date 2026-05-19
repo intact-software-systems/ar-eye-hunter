@@ -1,5 +1,6 @@
 import { GraphInfoSnapshot } from '../shared-graph-types.ts';
 import { LatestRepository, type LatestRepositoryOptions, } from '@shared/cache/LatestRepository.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     configureLatestRepository,
     newLatestRepositoryToken,
@@ -39,19 +40,26 @@ export function readableGraphCache(
     return requireGraphRepository(manager).readable();
 }
 
-export function findGraphById(
-    id: string,
+export function findGraphByRef(
+    groupRef: GroupRef,
     manager?: RepositoryManager,
 ): GraphInfoSnapshot | undefined {
-    return readLatestRepositoryValue(graphRepositoryToken, id, manager);
+    return readLatestRepositoryValue(
+        graphRepositoryToken,
+        toGraphRepositoryKey(groupRef),
+        manager,
+    );
 }
 
 export function computeIfAbsent(
-    id: string,
+    groupRef: GroupRef,
     creator: () => GraphInfoSnapshot,
     manager?: RepositoryManager,
 ): GraphInfoSnapshot {
-    return requireGraphRepository(manager).setIfAbsent(id, creator);
+    return requireGraphRepository(manager).setIfAbsent(
+        toGraphRepositoryKey(groupRef),
+        creator,
+    );
 }
 
 export function setGraphs(
@@ -60,28 +68,39 @@ export function setGraphs(
 ): boolean {
     let isAnyUpdated = false;
     for (const graph of graphs) {
-        if (setGraphById(graph.graphId, graph, manager)) {
+        if (setGraph(graph, manager)) {
             isAnyUpdated = true;
         }
     }
     return isAnyUpdated;
 }
 
-export function setGraphById(
-    id: string,
+export function setGraph(
     graph: GraphInfoSnapshot,
     manager?: RepositoryManager,
 ): boolean {
-    return requireGraphRepository(manager).updateIfNewer(id, graph, {
-        versionOf: (value) => value.version,
-        onNewer: (next) => {
-            console.log(`Received updated graph details: ${JSON.stringify(next)}`);
+    return requireGraphRepository(manager).updateIfNewer(
+        toGraphRepositoryKey(graph.groupRef),
+        graph,
+        {
+            versionOf: (value) => value.version,
+            onNewer: (next) => {
+                console.log(`Received updated graph details: ${JSON.stringify(next)}`);
+            },
         },
-    });
+    );
 }
 
 export function getAllGraphs(
     manager?: RepositoryManager,
 ): GraphInfoSnapshot[] {
     return readAllLatestRepository(graphRepositoryToken, manager);
+}
+
+export function toGraphRepositoryKey(ref: GroupRef): string {
+    return JSON.stringify([
+        ref.applicationId,
+        ref.workspaceId ?? '',
+        ref.groupId,
+    ]);
 }

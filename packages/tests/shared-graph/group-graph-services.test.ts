@@ -1,12 +1,16 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_GRAPH_PROP } from '@shared-graph/algo-props.ts';
-import { computeGlobalGraphAndCacheIt, computeGroupGraph, } from '@shared-graph/group-graphs-create-service.ts';
+import {
+    computeGlobalGraphAndCacheIt,
+    computeGroupGraph,
+    GLOBAL_GRAPH_REF,
+} from '@shared-graph/group-graphs-create-service.ts';
 import { clearAllNodes, hasNode } from '@shared-graph/repository/vivaldi-repository.ts';
-import { findGraphById, readableGraphCache } from '@shared-graph/repository/graphs-repository.ts';
+import { findGraphByRef, readableGraphCache } from '@shared-graph/repository/graphs-repository.ts';
 import { observeRtt } from '@shared-graph/vivaldi-service.ts';
 import {
     readableGroupStateSnapshotCache,
-    setGroupStateSnapshotById,
+    setGroupStateSnapshot,
 } from '@shared/repository/group-state-snapshots-repository.ts';
 import {
     readableClientStateSnapshotCache,
@@ -29,7 +33,11 @@ describe('shared-graph group graph services', () => {
     });
 
     it('returns a left value when the requested group does not exist', () => {
-        const result = computeGroupGraph('missing-group');
+        const result = computeGroupGraph({
+            applicationId: 'app',
+            workspaceId: 'ws',
+            groupId: 'missing-group',
+        });
 
         expect(result.left).toBe('Group not found: missing-group');
         expect(result.right).toBeUndefined();
@@ -37,7 +45,7 @@ describe('shared-graph group graph services', () => {
 
     it('computes a predicted and measured group graph from repositories', () => {
         const group = createGroupStateSnapshot('group-1', ['peer-a', 'peer-b', 'peer-c']);
-        setGroupStateSnapshotById(group.group.groupId, group);
+        setGroupStateSnapshot(group);
 
         const pairwiseRtt = [
             createRtt('peer-a', 'peer-b', 10, 1),
@@ -50,10 +58,10 @@ describe('shared-graph group graph services', () => {
             observeRtt(rtt);
         }
 
-        const result = computeGroupGraph('group-1', true);
+        const result = computeGroupGraph(group.group, true);
 
         expect(result.left).toBeUndefined();
-        expect(result.right?.graphId).toBe('group-1');
+        expect(result.right?.groupRef).toEqual(group.group);
         expect(result.right?.predicted.graph.order).toBe(3);
         expect(result.right?.predicted.groupGraph.order).toBeGreaterThan(0);
         expect(result.right?.predicted.coreNodes.length).toBeGreaterThan(0);
@@ -84,12 +92,13 @@ describe('shared-graph group graph services', () => {
 
         const snapshot = computeGlobalGraphAndCacheIt();
 
-        expect(snapshot.graphId).toBe(DEFAULT_GRAPH_PROP.id);
+        expect(snapshot.groupRef).toEqual(GLOBAL_GRAPH_REF);
+        expect(snapshot.groupRef.groupId).toBe(DEFAULT_GRAPH_PROP.id);
         expect(snapshot.predicted.graph.hasNode('peer-a')).toBe(true);
         expect(snapshot.predicted.graph.hasNode('peer-b')).toBe(true);
         expect(snapshot.predicted.graph.hasNode('peer-offline')).toBe(false);
         expect(snapshot.measured?.graph.hasEdge('peer-a', 'peer-b')).toBe(true);
-        expect(findGraphById(DEFAULT_GRAPH_PROP.id)).toBe(snapshot);
+        expect(findGraphByRef(GLOBAL_GRAPH_REF)).toBe(snapshot);
     });
 });
 

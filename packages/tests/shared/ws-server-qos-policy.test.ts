@@ -201,7 +201,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
                 resourceId: 'msg-multi',
                 contextId: 'room-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'multicast',
@@ -334,7 +334,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
                 resourceId: 'msg-unresolved',
                 contextId: 'room-1',
             },
-            'missing-group',
+            groupRef('missing-group'),
             'chat.message.v1',
             {
                 text: 'unknown group',
@@ -385,7 +385,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
                 resourceId: 'msg-repair',
                 contextId: 'room-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'multicast',
@@ -660,6 +660,14 @@ function createTargetResolver(): SharedTargetResolver {
             connectionId,
         })),
         resolvePeerIdForConnection: (connectionId: string) => peerByConnectionId[connectionId],
+    };
+}
+
+function groupRef(groupId: string) {
+    return {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId,
     };
 }
 

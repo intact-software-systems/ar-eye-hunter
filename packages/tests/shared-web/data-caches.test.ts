@@ -125,6 +125,43 @@ describe('browser data caches state scope filtering', () => {
                 .map((snapshot) => snapshot.group.groupId),
         ).toEqual(['room-b']);
     });
+
+    it('deletes scoped RTC group tracking when the current session is not in the active snapshot', async () => {
+        const group = createGroupSnapshot(
+            'shared-room',
+            'app-1',
+            'workspace-b',
+            ['session-b'],
+            1,
+        );
+        const manager = {
+            notifyClientPresenceChanged: vi.fn(async () => undefined),
+            acceptGroupUpdate: vi.fn(async () => undefined),
+            has: vi.fn((input) => input === group.group),
+            delete: vi.fn(async () => undefined),
+        };
+        const clientData: ClientInfo = {
+            clientId: 'alice',
+            sessionId: 'session-a',
+            isOnline: true,
+        };
+
+        await dataCaches.hydrateStateCaches(
+            manager as never,
+            clientData,
+            [],
+            [group],
+            {
+                scope: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-b',
+                },
+            },
+        );
+
+        expect(manager.has).toHaveBeenCalledWith(group.group);
+        expect(manager.delete).toHaveBeenCalledWith(group.group);
+    });
 });
 
 function createWebRtcGroupManager() {

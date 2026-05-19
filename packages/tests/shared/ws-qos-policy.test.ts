@@ -611,7 +611,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                 resourceId: 'msg-2',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'two',
@@ -629,7 +629,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                 resourceId: 'msg-3',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'one',
@@ -681,6 +681,14 @@ function createFakeWsSocket() {
             sentJsonStrings.push(JSON.stringify(data));
         },
         connect: async () => Promise.resolve(),
+    };
+}
+
+function groupRef(groupId: string) {
+    return {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId,
     };
 }
 

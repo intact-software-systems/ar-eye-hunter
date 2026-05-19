@@ -47,10 +47,7 @@ export function createWsStateSyncPublisher(
             );
         },
         publishGroupSnapshot: async (snapshot, senderId) => {
-            groupStateSnapshotsRepository.setGroupStateSnapshotById(
-                snapshot.group.groupId,
-                snapshot,
-            );
+            groupStateSnapshotsRepository.setGroupStateSnapshot(snapshot);
             await enqueueBroadcast(
                 wsQBoxServerService,
                 senderId ?? snapshot.group.groupId,

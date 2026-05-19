@@ -1,20 +1,37 @@
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import {
-    isGroupActive,
-    isSessionInGroup,
-    readGroupVersion,
-} from '@shared/api/group-client-views.ts';
+import { readALMulticastTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { isGroupActive, isSessionInGroup, readGroupVersion, } from '@shared/api/group-client-views.ts';
 import type { RallarServerWsRoomAuthorizer } from '../../rallar-facade/ws-topic-router.ts';
+import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
 
 export type CreateGroupRoomWsAuthorizerOptions = Readonly<{
-    findGroupSnapshotById(groupId: string): GroupSnapshot | undefined;
+    findGroupSnapshotByRef?: (
+        ref: GroupRef,
+        input: Parameters<RallarServerWsRoomAuthorizer>[0],
+    ) => GroupSnapshot | undefined;
+    findGroupSnapshotById?: (groupId: string) => GroupSnapshot | undefined;
+    resolveGroupRef?: (
+        input: Parameters<RallarServerWsRoomAuthorizer>[0],
+    ) => GroupRef | undefined;
 }>;
 
 export function createGroupRoomWsAuthorizer(
     options: CreateGroupRoomWsAuthorizerOptions,
 ): RallarServerWsRoomAuthorizer {
     return (input) => {
-        const snapshot = options.findGroupSnapshotById(input.roomId);
+        const groupRef = input.roomRef ??
+            (input.message.targets?.mode === 'multicast'
+                ? readALMulticastTargetGroupRef(input.message)
+                : options.resolveGroupRef?.(input));
+        const scopedSnapshot = groupRef
+            ? options.findGroupSnapshotByRef?.(groupRef, input)
+            : undefined;
+        const byIdSnapshot = options.findGroupSnapshotById?.(input.roomId);
+        const snapshot = scopedSnapshot ?? (
+            byIdSnapshot && (!groupRef || isSameGroupScope(byIdSnapshot.group, groupRef))
+                ? byIdSnapshot
+                : undefined
+        );
         const minSnapshotVersion = input.minSnapshotVersion;
 
         if (!snapshot) {

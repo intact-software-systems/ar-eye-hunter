@@ -1,4 +1,5 @@
 import type { ALQosPolicyRequest } from './al-policy.ts';
+import type { GroupRef } from '../api/group-types.ts';
 
 // -------------------------------------------------------
 // 1) Message identity
@@ -34,7 +35,7 @@ export type ALTargets =
 }>
     | Readonly<{
     mode: 'multicast';
-    groupId: string;
+    groupRef: GroupRef;
     membershipEpoch?: number;
     minSnapshotVersion?: number;
 }>
@@ -234,7 +235,7 @@ export function newALUnicastMessage<T>(
 export function newALMulticastMessage<T>(
     senderId: string,
     route: ALRoute,
-    groupId: string,
+    groupRef: GroupRef,
     typeId: string,
     resource: T,
     options?: Readonly<{
@@ -256,12 +257,13 @@ export function newALMulticastMessage<T>(
     const expiresAtMs = options?.ttlMs !== undefined
         ? Date.now() + options.ttlMs
         : undefined;
+    const targetGroupRef = toALGroupRef(groupRef);
 
     return {
         ...newALUntargetedMessage(senderId, route, typeId, resource, { qos: options?.qos }),
         targets: {
             mode: 'multicast',
-            groupId,
+            groupRef: targetGroupRef,
             membershipEpoch: options?.membershipEpoch,
             minSnapshotVersion: options?.minSnapshotVersion,
         },
@@ -284,7 +286,9 @@ export function newALMulticastMessage<T>(
         || options?.orderingKey !== undefined
         || options?.membershipEpoch !== undefined
             ? {
-                orderingKey: options?.orderingKey ?? groupId,
+                orderingKey: options?.orderingKey ?? toALGroupTargetKey(
+                    targetGroupRef,
+                ),
                 epoch: options?.membershipEpoch,
                 seq: options?.seq,
             }
@@ -295,6 +299,37 @@ export function newALMulticastMessage<T>(
             ack: options?.ack ?? 'none',
         },
     };
+}
+
+export function toALGroupRef(ref: GroupRef): GroupRef {
+    return {
+        applicationId: ref.applicationId,
+        workspaceId: ref.workspaceId,
+        groupId: ref.groupId,
+    };
+}
+
+export function toALGroupTargetKey(group: string | GroupRef): string {
+    if (typeof group === 'string') {
+        return group;
+    }
+
+    return JSON.stringify([
+        group.applicationId,
+        group.workspaceId ?? '',
+        group.groupId,
+    ]);
+}
+
+export function readALMulticastTargetGroupRef(
+    message: ALMessage,
+): GroupRef | undefined {
+    const targets = message.targets;
+    if (targets?.mode !== 'multicast') {
+        return undefined;
+    }
+
+    return toALGroupRef(targets.groupRef);
 }
 
 export function newALBroadcastMessage<T>(

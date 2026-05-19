@@ -33,7 +33,7 @@ describe('ALInboundMessageRuntime', () => {
                 resourceId: 'msg-2',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'two',
@@ -56,7 +56,7 @@ describe('ALInboundMessageRuntime', () => {
                 resourceId: 'msg-1',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'one',
@@ -273,7 +273,7 @@ describe('ALInboundMessageRuntime', () => {
                 resourceId: 'msg-ack',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'hello',
@@ -324,7 +324,7 @@ describe('ALInboundMessageRuntime', () => {
                 resourceId: 'msg-expiring-pending-ack',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'hello',
@@ -402,7 +402,7 @@ describe('ALInboundMessageRuntime', () => {
                 resourceId: 'msg-dispatch',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'hello',
@@ -450,7 +450,7 @@ describe('ALInboundMessageRuntime', () => {
                 resourceId: 'msg-expiring-dispatch',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'expires',
@@ -669,7 +669,7 @@ function createOrderedMessage(
             resourceId: `msg-${seq}`,
             contextId: 'group-1',
         },
-        'group-1',
+        groupRef('group-1'),
         'chat.message.v1',
         {
             text,
@@ -699,5 +699,13 @@ function createPersistentInboundStores(
             orderingTrackTtlMs: 5 * 60_000,
             supersedenceTrackTtlMs: 5 * 60_000,
         }),
+    };
+}
+
+function groupRef(groupId: string) {
+    return {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId,
     };
 }

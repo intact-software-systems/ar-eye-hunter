@@ -15,16 +15,18 @@ export function connectTransport(
 ) {
     chat.configure({
         onSend: async (text) => {
-            const groupId = groupStateSnapshotsRepository
-                .findFirstGroupStateSnapshotIdSessionIdIsIn(clientData.sessionId);
-            if (groupId === undefined) {
+            const groupRef =
+                groupStateSnapshotsRepository
+                    .findFirstGroupStateSnapshotRefSessionIdIsIn(clientData.sessionId);
+
+            if (groupRef === undefined) {
                 console.error(`Could not find group for session ${clientData.sessionId}`);
                 return;
             }
 
             const msg = newALChatTextMulticastMessage(
                 clientData.sessionId,
-                groupId,
+                groupRef,
                 text,
             );
 

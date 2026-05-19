@@ -2,7 +2,7 @@ import { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
 import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
 import { QueueBoxUtilities } from '../services/QueueBoxUtilities.ts';
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
-import { ALMessage } from '../al-contracts/al-contract.ts';
+import { ALMessage, readALMulticastTargetGroupRef, } from '../al-contracts/al-contract.ts';
 import {
     ALMessageHandlingPlan,
     ALQosInputProvider,
@@ -15,6 +15,7 @@ import type { ALDedupStoreLike, ALOrderingStoreLike, ALSupersedenceStoreLike, } 
 import { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
 import { EnqueuedType, OverlayId, OverlayInfo, PeerId, } from '../api/api-config.ts';
 import { type AnyGroupPresence, readGroupMemberSessionIds, } from '../api/group-client-views.ts';
+import type { GroupRef } from '../api/group-types.ts';
 import {
     OverlayMulticastDispatchPlan,
     OverlayMulticasterContext,
@@ -38,6 +39,7 @@ import {
     ALOutboundSupersedenceTrackingPlan,
 } from '../alm/ALOutboundMessageRuntime.ts';
 import { CircuitBreaker, RateLimiter, toCircuitBreaker, toRateLimiter, } from '../resilience/Resilience.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 
 export type WebRtcOverlayMulticastManagerOptions = Readonly<{
     qosProvider?: ALQosInputProvider;
@@ -309,8 +311,10 @@ export class WebRtcOverlayMulticastManager {
             return undefined;
         }
 
-        const room = this.groupCache.read(overlayId) ??
-            this.groupCache.peek(overlayId);
+        const groupRef = this.resolveTargetGroupRef(msg);
+        const room = groupRef
+            ? this.resolveGroupByRef(groupRef)
+            : this.groupCache.read(overlayId) ?? this.groupCache.peek(overlayId);
         if (!room) {
             console.warn(`No GroupSnapshot found for overlayId/groupId ${overlayId}`);
             return undefined;
@@ -330,13 +334,22 @@ export class WebRtcOverlayMulticastManager {
         };
     }
 
+    private resolveTargetGroupRef(msg: ALMessage): GroupRef | undefined {
+        return readALMulticastTargetGroupRef(msg);
+    }
+
+    private resolveGroupByRef(ref: GroupRef): AnyGroupPresence | undefined {
+        return this.groupCache.readAllValues()
+            .find((group) => isSameGroupRef(group.group, ref));
+    }
+
     private resolveOverlayId(msg: ALMessage): OverlayId | undefined {
         if (msg.forwarding?.overlayId) {
             return msg.forwarding.overlayId;
         }
 
         if (msg.targets?.mode === 'multicast') {
-            return msg.targets.groupId;
+            return msg.targets.groupRef.groupId;
         }
 
         if (msg.targets?.mode === 'broadcast') {

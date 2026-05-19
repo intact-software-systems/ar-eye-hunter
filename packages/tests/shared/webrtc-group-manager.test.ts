@@ -41,7 +41,6 @@ describe('WebRtcGroupManager', () => {
             onlineDesiredPeerIds: ['peer-a', 'peer-c'],
             connectablePeerIds: ['peer-a', 'peer-c'],
             peerIdsWithNoReconnectableLanes: ['peer-a', 'peer-c'],
-            connectedPeerIds: ['peer-a', 'peer-c'],
             peerOwners: new Map([
                 ['peer-a', ['group-1', 'group-2']],
                 ['peer-b', ['group-1']],
@@ -72,7 +71,86 @@ describe('WebRtcGroupManager', () => {
 
         await Promise.all([first, second, third]);
 
-        expect(rtcQBox.connectedPeerIds()).toEqual(['peer-a']);
+        expect(rtcQBox.peerIdsWithNoReconnectableLanes()).toEqual(['peer-a']);
+    });
+
+    it('tracks same group id snapshots from different workspaces independently', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcQBoxHarness('self');
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+        );
+
+        clientCache.set('peer-a', createClientInfo('peer-a', true));
+        clientCache.set('peer-b', createClientInfo('peer-b', true));
+
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot(
+                'shared-room',
+                1,
+                ['self', 'peer-a'],
+                {
+                    workspaceId: 'workspace-a',
+                },
+            ),
+        );
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot(
+                'shared-room',
+                1,
+                ['self', 'peer-b'],
+                {
+                    workspaceId: 'workspace-b',
+                },
+            ),
+        );
+
+        expect(manager.size()).toBe(2);
+        expect(rtcQBox.peerIdsWithNoReconnectableLanes().sort()).toEqual(['peer-a', 'peer-b']);
+        expect(manager.ownerGroupsOfPeer('peer-a')).toEqual(['shared-room']);
+        expect(manager.ownerGroupsOfPeer('peer-b')).toEqual(['shared-room']);
+    });
+
+    it('deletes only the matching scoped group when same group id exists in multiple workspaces', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcQBoxHarness('self');
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+        );
+        const workspaceA = createGroupSnapshot(
+            'shared-room',
+            1,
+            ['self', 'peer-a'],
+            {
+                workspaceId: 'workspace-a',
+            },
+        );
+        const workspaceB = createGroupSnapshot(
+            'shared-room',
+            1,
+            ['self', 'peer-b'],
+            {
+                workspaceId: 'workspace-b',
+            },
+        );
+
+        clientCache.set('peer-a', createClientInfo('peer-a', true));
+        clientCache.set('peer-b', createClientInfo('peer-b', true));
+        await manager.acceptGroupUpdate(workspaceA);
+        await manager.acceptGroupUpdate(workspaceB);
+
+        await expect(manager.delete(workspaceA.group)).resolves.toBe(true);
+
+        expect(manager.size()).toBe(1);
+        expect(rtcQBox.peerIdsWithNoReconnectableLanes()).toEqual(['peer-b']);
+        expect(manager.getIfPresent(workspaceA.group)).toBeUndefined();
+        expect(manager.getIfPresent(workspaceB.group)?.targetPeerIds()).toEqual(['peer-b']);
     });
 
     it('disconnects peers when groups are deleted or cleared', async () => {
@@ -86,26 +164,25 @@ describe('WebRtcGroupManager', () => {
         );
 
         clientCache.set('peer-a', createClientInfo('peer-a', true));
-        await manager.acceptGroupUpdate(
-            createGroupSnapshot('group-1', 1, ['self', 'peer-a']),
-        );
+        const group1 = createGroupSnapshot('group-1', 1, ['self', 'peer-a']);
+        await manager.acceptGroupUpdate(group1);
 
-        expect(rtcQBox.connectedPeerIds()).toEqual(['peer-a']);
+        expect(rtcQBox.peerIdsWithNoReconnectableLanes()).toEqual(['peer-a']);
 
-        await expect(manager.delete('group-1')).resolves.toBe(true);
+        await expect(manager.delete(group1.group)).resolves.toBe(true);
         expect(rtcQBox.disconnectPeer).toHaveBeenCalledWith('peer-a');
-        expect(rtcQBox.connectedPeerIds()).toEqual([]);
+        expect(rtcQBox.peerIdsWithNoReconnectableLanes()).toEqual([]);
 
         await manager.acceptGroupUpdate(
             createGroupSnapshot('group-2', 1, ['self', 'peer-a']),
         );
-        expect(rtcQBox.connectedPeerIds()).toEqual(['peer-a']);
+        expect(rtcQBox.peerIdsWithNoReconnectableLanes()).toEqual(['peer-a']);
 
         await manager.clear();
 
         expect(rtcQBox.disconnectPeer).toHaveBeenLastCalledWith('peer-a');
         expect(manager.size()).toBe(0);
-        expect(rtcQBox.connectedPeerIds()).toEqual([]);
+        expect(rtcQBox.peerIdsWithNoReconnectableLanes()).toEqual([]);
     });
 
     it('disconnects stale known peers when they leave all groups', async () => {
@@ -130,7 +207,7 @@ describe('WebRtcGroupManager', () => {
 
         expect(rtcQBox.disconnectPeer).toHaveBeenCalledWith('peer-a');
         expect(rtcQBox.knownPeerIds()).toEqual([]);
-        expect(rtcQBox.connectedPeerIds()).toEqual([]);
+        expect(rtcQBox.peerIdsWithNoReconnectableLanes()).toEqual([]);
     });
 });
 
@@ -167,7 +244,6 @@ function createRtcQBoxHarness(
         },
         knownPeerIds: () => Array.from(knownPeerIds),
         peerIdsWithNoReconnectableLanes: () => Array.from(connectedPeerIds),
-        connectedPeerIds: () => Array.from(connectedPeerIds),
         ensurePeerConnectionStarted,
         disconnectPeer,
     };
@@ -177,7 +253,7 @@ function createRtcQBoxHarness(
         ensurePeerConnectionStarted,
         disconnectPeer,
         knownPeerIds: service.knownPeerIds,
-        connectedPeerIds: service.connectedPeerIds,
+        peerIdsWithNoReconnectableLanes: service.peerIdsWithNoReconnectableLanes,
         markReconnectable: (peerId: string) => connectedPeerIds.delete(peerId),
     };
 }
@@ -194,9 +270,13 @@ function createGroupSnapshot(
     groupId: string,
     membershipVersion: number,
     memberSessionIds: readonly string[],
+    scope: Readonly<{
+        applicationId?: string;
+        workspaceId?: string;
+    }> = {},
 ): GroupSnapshot {
-    const applicationId = 'app-1';
-    const workspaceId = 'workspace-1';
+    const applicationId = scope.applicationId ?? 'app-1';
+    const workspaceId = scope.workspaceId ?? 'workspace-1';
 
     return {
         group: {

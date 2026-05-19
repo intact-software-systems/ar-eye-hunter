@@ -879,7 +879,7 @@ function createOrderedMulticastMessage(seq: number, text: string) {
             resourceId: `msg-${seq}`,
             contextId: 'group-1',
         },
-        'group-1',
+        groupRef('group-1'),
         'chat.message.v1',
         {
             text,
@@ -895,4 +895,12 @@ function createOrderedMulticastMessage(seq: number, text: string) {
             },
         },
     );
+}
+
+function groupRef(groupId: string) {
+    return {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId,
+    };
 }

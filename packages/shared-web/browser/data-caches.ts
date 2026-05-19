@@ -3,11 +3,7 @@ import { AppTopics, ClientInfo } from '@shared/api/api-config.ts';
 import { isGroupActive, isSessionInGroup, readGroupId, } from '@shared/api/group-client-views.ts';
 import type { ClientSnapshot as ClientStateSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-types.ts';
-import {
-    DEFAULT_STATE_APPLICATION_ID,
-    DEFAULT_STATE_WORKSPACE_ID,
-    type StateScope,
-} from '@shared/api/state-types.ts';
+import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID, type StateScope, } from '@shared/api/state-types.ts';
 import { GraphInfoSnapshot } from '@shared-graph/shared-graph-types.ts';
 import * as graphsRepository from '@shared-graph/repository/graphs-repository.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
@@ -114,10 +110,7 @@ export function initialise(
 
                             console.log(`Received graph info: ${JSON.stringify(graph)}`);
 
-                            const isUpdated = graphsRepository.setGraphById(
-                                graph.graphId,
-                                graph,
-                            );
+                            const isUpdated = graphsRepository.setGraph(graph);
 
                             if (isUpdated) {
                                 const neighbors = graph.predicted.groupGraph.neighbors(
@@ -125,7 +118,7 @@ export function initialise(
                                 );
 
                                 overlaysRepository.updateNextHopSessionIds(
-                                    graph.graphId,
+                                    graph.groupRef.groupId,
                                     neighbors,
                                 );
                             }
@@ -263,8 +256,8 @@ async function handleGroupSnapshotUpdate(
     if (!isGroupActive(snapshot)) {
         overlaysRepository.removeOverlayById(groupId);
 
-        if (webRtcGroupManager.has(groupId)) {
-            await webRtcGroupManager.delete(groupId);
+        if (webRtcGroupManager.has(snapshot.group)) {
+            await webRtcGroupManager.delete(snapshot.group);
         }
         return;
     }
@@ -273,8 +266,8 @@ async function handleGroupSnapshotUpdate(
 
     if (isSessionInGroup(snapshot, mySessionId)) {
         await webRtcGroupManager.acceptGroupUpdate(snapshot);
-    } else if (webRtcGroupManager.has(groupId)) {
-        await webRtcGroupManager.delete(groupId);
+    } else if (webRtcGroupManager.has(snapshot.group)) {
+        await webRtcGroupManager.delete(snapshot.group);
     }
 }
 

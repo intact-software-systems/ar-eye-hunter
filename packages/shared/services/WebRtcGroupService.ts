@@ -1,11 +1,13 @@
 import { WebRtcConnectionService } from './WebRtcConnectionService.ts';
 import { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
+import type { GroupRef } from '../api/group-types.ts';
 import {
     type AnyGroupPresence,
     readGroupId,
     readGroupMemberSessionIds,
     readGroupVersion,
 } from '../api/group-client-views.ts';
+import { isSameGroupScope, toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 
 type PeerId = string;
 type GroupUpdateSource = 'push' | 'pull';
@@ -16,13 +18,14 @@ export type GroupMembershipDiff = {
 };
 
 export type WebRtcGroupServiceState = {
-    readonly groupId: string;
+    readonly groupRef: GroupRef;
     readonly snapshot: AnyGroupPresence | undefined;
     readonly targetPeerIds: readonly PeerId[];
 };
 
 export class WebRtcGroupService {
     private snapshot: AnyGroupPresence | undefined;
+    public readonly groupKey: string;
 
     private readonly onStateCallbacks = new Map<
         string,
@@ -35,9 +38,10 @@ export class WebRtcGroupService {
 
     constructor(
         public readonly rtcQBox: WebRtcConnectionService,
-        public readonly groupId: string,
+        public readonly groupRef: GroupRef,
         public readonly groupCache: ReadableKeyedValues<string, AnyGroupPresence>,
     ) {
+        this.groupKey = toWebRtcGroupKey(groupRef);
     }
 
     onStateDo(
@@ -71,16 +75,19 @@ export class WebRtcGroupService {
     state(): WebRtcGroupServiceState {
         const snapshot = this.readGroup();
         return {
-            groupId: this.groupId,
+            groupRef: this.groupRef,
             snapshot,
             targetPeerIds: this.computeTargetPeerIds(snapshot),
         };
     }
 
     async acceptGroupUpdate(snapshot: AnyGroupPresence): Promise<GroupMembershipDiff> {
-        if (readGroupId(snapshot) !== this.groupId) {
+        if (
+            readGroupId(snapshot) !== this.groupRef.groupId ||
+            !isSameGroupScope(snapshot.group, this.groupRef)
+        ) {
             throw new Error(
-                `Received update for wrong room ${readGroupId(snapshot)}, expected ${this.groupId}`,
+                `Received update for wrong room ${readGroupId(snapshot)}, expected ${this.groupRef.groupId}`,
             );
         }
 
@@ -147,9 +154,7 @@ export class WebRtcGroupService {
     }
 
     private readCachedGroup(mode: 'read' | 'peek'): AnyGroupPresence | undefined {
-        const direct = mode === 'read'
-            ? this.groupCache.read(this.groupId)
-            : this.groupCache.peek(this.groupId);
+        const direct = this.readDirectCachedGroup(mode, this.groupKey);
         if (direct) {
             return direct;
         }
@@ -159,9 +164,21 @@ export class WebRtcGroupService {
         }
 
         return this.groupCache.readAllValues()
-            .filter((snapshot) => readGroupId(snapshot) === this.groupId)
+            .filter((snapshot) =>
+                readGroupId(snapshot) === this.groupRef.groupId &&
+                isSameGroupScope(snapshot.group, this.groupRef)
+            )
             .sort((left, right) => readGroupVersion(right) - readGroupVersion(left))
             .at(0);
+    }
+
+    private readDirectCachedGroup(
+        mode: 'read' | 'peek',
+        key: string,
+    ): AnyGroupPresence | undefined {
+        return mode === 'read'
+            ? this.groupCache.read(key)
+            : this.groupCache.peek(key);
     }
 
     private computeDiff(

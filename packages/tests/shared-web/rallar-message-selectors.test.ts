@@ -17,10 +17,16 @@ describe('Rallar message selectors', () => {
         const message = newALMulticastMessage(
             'session-1',
             newALRoute('room.chat', 'room-1', 'message-1'),
-            'room-1',
+            {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-1',
+            },
             'chat.message.v1',
             { text: 'hello' },
         );
+
+        expect(message.targets).not.toHaveProperty('groupId');
 
         expect(
             matchesRallarMessageSelector(

@@ -39,7 +39,7 @@ describe('WebRtc overlay services', () => {
                     resourceId: 'msg-1',
                     contextId: 'group-1',
                 },
-                'group-1',
+                groupRef('group-1'),
                 'chat.message.v1',
                 {
                     text: 'hello',
@@ -180,7 +180,7 @@ describe('WebRtc overlay services', () => {
                 resourceId: 'msg-missing-context',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'missing context',
@@ -221,7 +221,7 @@ describe('WebRtc overlay services', () => {
                 resourceId: 'msg-no-next-hop',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'no next hop',
@@ -233,6 +233,70 @@ describe('WebRtc overlay services', () => {
             entries: [],
         });
         expect(warn).not.toHaveBeenCalled();
+        expect(await reserveRtcOutbox(queue)).toHaveLength(0);
+    });
+
+    it('resolves multicast room context from target groupRef when group ids collide', async () => {
+        const queue = new InMemoryQueueBox(new Map());
+        const channel = {
+            send: vi.fn(async () => Promise.resolve()),
+        };
+        const connectionService = createConnectionService(['peer-b'], {
+            'peer-b': {
+                channel,
+            },
+        });
+        const workspaceA = createOverlayContext(
+            ['self', 'peer-a'],
+            ['peer-a'],
+            {
+                groupId: 'shared-room',
+                workspaceId: 'workspace-a',
+            },
+        );
+        const workspaceB = createOverlayContext(
+            ['self', 'peer-b'],
+            ['peer-b'],
+            {
+                groupId: 'shared-room',
+                workspaceId: 'workspace-b',
+            },
+        );
+        const manager = new WebRtcOverlayMulticastManager(
+            queue,
+            connectionService as never,
+            createReadableCache({
+                'shared-room': workspaceA.room,
+                'workspace-b-room': workspaceB.room,
+            }),
+            createReadableCache({
+                'shared-room': workspaceB.overlay,
+            }),
+            (overlayId) =>
+                new WebRtcOverlayMulticastService(
+                    overlayId,
+                    connectionService as never,
+                ),
+        );
+        const msg = newALMulticastMessage(
+            'self',
+            {
+                topicId: 'chat',
+                resourceId: 'msg-scoped',
+                contextId: 'shared-room',
+            },
+            workspaceB.room.group,
+            'chat.message.v1',
+            {
+                text: 'scoped multicast',
+            },
+        );
+
+        await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
+            status: 'sent-immediate',
+            entries: [],
+        });
+        expect(channel.send).toHaveBeenCalledOnce();
         expect(await reserveRtcOutbox(queue)).toHaveLength(0);
     });
 
@@ -478,7 +542,7 @@ describe('WebRtc overlay services', () => {
                 resourceId: 'msg-expired',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'too late',
@@ -596,7 +660,6 @@ function createConnectionService(
             sessionId: 'self',
         },
         readyPeerIdsForLane: () => [...connectedPeerIds],
-        connectedPeerIds: () => [...connectedPeerIds],
         readPeer: vi.fn((peerId: string) => peersById[peerId]),
     };
 }
@@ -620,17 +683,23 @@ function createUnicastRtcMessage(senderId: string, resourceId: string) {
 function createOverlayContext(
     memberSessionIds: readonly string[],
     nextHopSessionIds: readonly string[],
+    options: Readonly<{
+        groupId?: string;
+        applicationId?: string;
+        workspaceId?: string;
+    }> = {},
 ) {
-    const applicationId = 'app-1';
-    const workspaceId = 'workspace-1';
+    const applicationId = options.applicationId ?? 'app-1';
+    const workspaceId = options.workspaceId ?? 'workspace-1';
+    const groupId = options.groupId ?? 'group-1';
 
     return {
-        overlayId: 'group-1',
+        overlayId: groupId,
         room: {
             group: {
                 applicationId,
                 workspaceId,
-                groupId: 'group-1',
+                groupId,
                 displayName: 'Group 1',
                 kind: 'room',
                 status: 'active',
@@ -652,7 +721,7 @@ function createOverlayContext(
             members: memberSessionIds.map((sessionId) => ({
                 applicationId,
                 workspaceId,
-                groupId: 'group-1',
+                groupId,
                 principalId: sessionId,
                 role: 'member',
                 status: 'active',
@@ -668,7 +737,7 @@ function createOverlayContext(
             activeSessions: memberSessionIds.map((sessionId) => ({
                 applicationId,
                 workspaceId,
-                groupId: 'group-1',
+                groupId,
                 sessionId,
                 principalId: sessionId,
                 connectedAtEpochMs: 1,
@@ -679,7 +748,7 @@ function createOverlayContext(
             onlineMemberCount: memberSessionIds.length,
         },
         overlay: {
-            overlayId: 'group-1',
+            overlayId: groupId,
             name: 'Group 1',
             createdByClientId: 'owner',
             createdAtEpochMs: 1,
@@ -712,6 +781,14 @@ function createReadableCache<T>(valuesByKey: Record<string, T>) {
             Object.values(valuesByKey).filter(
                 (value) => value !== undefined,
             ) as Array<Exclude<T, undefined>>,
+    };
+}
+
+function groupRef(groupId: string) {
+    return {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId,
     };
 }
 

@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import {
+    newALBroadcastMessage,
+    newALMulticastMessage,
+    newALRoute,
+} from '@shared/al-contracts/al-contract.ts';
 
 const mocks = vi.hoisted(() => {
     const session = {
@@ -11,7 +16,6 @@ const mocks = vi.hoisted(() => {
         expiresAtEpochMs: Date.now() + 60_000,
     };
     const webRtcConnectionService = {
-        connectedPeerIds: vi.fn((): readonly string[] => []),
         peerIdsWithNoReconnectableLanes: vi.fn((): readonly string[] => []),
         knownPeerIds: vi.fn((): readonly string[] => []),
         activePeerIds: vi.fn((): readonly string[] => []),
@@ -51,6 +55,8 @@ const mocks = vi.hoisted(() => {
                     status: 'enqueued',
                     entries: [],
                 })),
+                onInboxMessageDo: vi.fn(),
+                removeInboxMessageCallback: vi.fn(() => true),
                 onRemoteStreamDo: vi.fn(),
                 removeOnRemoteStreamCallbackById: vi.fn(),
                 stopLocalMedia: vi.fn(),
@@ -74,6 +80,8 @@ const mocks = vi.hoisted(() => {
                     reconnectExhausted: false,
                 })),
                 close: vi.fn(),
+                onAnyInboxMessageDo: vi.fn(),
+                removeAnyInboxMessageCallback: vi.fn(() => true),
                 socket: {
                     close: vi.fn(),
                     onWebsocketCallbacksDo: vi.fn(),
@@ -178,8 +186,8 @@ vi.mock('@shared/repository/client-state-snapshots-repository.ts', () => ({
 }));
 
 vi.mock('@shared/repository/group-state-snapshots-repository.ts', () => ({
-    findFirstGroupStateSnapshotIdSessionIdIsIn: mocks.groupRepositoryMissing,
-    findGroupStateSnapshotById: mocks.groupRepositoryMissing,
+    findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.groupRepositoryMissing,
+    findGroupStateSnapshotByRef: mocks.groupRepositoryMissing,
     getAllGroupStateSnapshots: mocks.groupRepositoryMissing,
 }));
 
@@ -200,9 +208,9 @@ describe('Rallar operation options', () => {
         mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
         mocks.initMiddleware.mockResolvedValue(mocks.ctx);
         mocks.isMiddlewareReady.mockReturnValue(false);
+        mocks.readSession.mockReturnValue(mocks.ctx.session);
         mocks.joinStateGroup.mockRejectedValue(new Error('join not mocked'));
         mocks.leaveStateGroup.mockRejectedValue(new Error('leave not mocked'));
-        mocks.webRtcConnectionService.connectedPeerIds.mockReturnValue([]);
         mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes
             .mockReturnValue([]);
         mocks.webRtcConnectionService.knownPeerIds.mockReturnValue([]);
@@ -235,10 +243,20 @@ describe('Rallar operation options', () => {
             status: 'enqueued',
             entries: [],
         });
+        mocks.ctx.middleware.rtcRxStreamer.onInboxMessageDo.mockReturnValue(
+            mocks.ctx.middleware.rtcRxStreamer,
+        );
+        mocks.ctx.middleware.rtcRxStreamer.removeInboxMessageCallback
+            .mockReturnValue(true);
         mocks.ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent.mockResolvedValue({
             status: 'enqueued',
             entries: [],
         });
+        mocks.ctx.middleware.webSocketQueueBox.onAnyInboxMessageDo.mockReturnValue(
+            mocks.ctx.middleware.webSocketQueueBox,
+        );
+        mocks.ctx.middleware.webSocketQueueBox.removeAnyInboxMessageCallback
+            .mockReturnValue(true);
         mocks.ctx.middleware.webSocketQueueBox.readHealth.mockReturnValue({
             sessionId: mocks.ctx.session.sessionId,
             url: 'ws://localhost/ws',
@@ -291,6 +309,560 @@ describe('Rallar operation options', () => {
         );
     });
 
+    it('uses facade defaults as the operation scope when no explicit scope is passed', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const facade = createRallarFacade();
+
+        facade.setDefaults({
+            applicationId: 'default-app',
+        });
+
+        await facade.people.refresh();
+
+        expect(facade.defaults()).toEqual({
+            applicationId: 'default-app',
+        });
+        expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(
+            {
+                applicationId: 'default-app',
+                workspaceId: 'default',
+            },
+            {},
+        );
+    });
+
+    it('uses facade defaults to build RTC group refs from room id strings', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const facade = createRallarFacade();
+        facade.setDefaults({
+            applicationId: 'game-app',
+            workspaceId: 'arena-1',
+        });
+
+        const result = await facade.messages.rtc.send({
+            roomId: 'match-1',
+            typeId: 'game.input.v1',
+            resourceId: 'input-1',
+            payload: {
+                x: 1,
+            },
+        });
+
+        expect(result.message.targets).toMatchObject({
+            mode: 'multicast',
+            groupRef: {
+                applicationId: 'game-app',
+                workspaceId: 'arena-1',
+                groupId: 'match-1',
+            },
+        });
+        expect(result.message.targets).not.toHaveProperty('groupId');
+    });
+
+    it('uses facade room defaults for RTC and WS sends without per-call room ids', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const facade = createRallarFacade();
+        facade.setDefaults({
+            applicationId: 'game-app',
+            workspaceId: 'arena-1',
+            room: {
+                roomId: 'match-1',
+            },
+        });
+
+        const rtcResult = await facade.messages.rtc.send({
+            typeId: 'game.input.v1',
+            resourceId: 'rtc-input-1',
+            payload: {
+                x: 1,
+            },
+        });
+        const wsResult = await facade.messages.ws.send({
+            typeId: 'game.event.v1',
+            resourceId: 'ws-event-1',
+            payload: {
+                text: 'joined',
+            },
+        });
+
+        expect(rtcResult.message.route).toMatchObject({
+            contextId: 'match-1',
+            resourceId: 'rtc-input-1',
+        });
+        expect(rtcResult.message.targets).toMatchObject({
+            mode: 'multicast',
+            groupRef: {
+                applicationId: 'game-app',
+                workspaceId: 'arena-1',
+                groupId: 'match-1',
+            },
+        });
+        expect(wsResult.message.route).toMatchObject({
+            contextId: 'match-1',
+            resourceId: 'ws-event-1',
+        });
+        expect(wsResult.message.targets).toMatchObject({
+            mode: 'broadcast',
+            scope: 'room',
+        });
+    });
+
+    it('uses facade operation and RTC lane defaults for connect and workflows', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const lanes = [
+            {
+                id: 'gameplay',
+                label: 'gameplay-data',
+                init: {
+                    ordered: false,
+                    maxRetransmits: 0,
+                },
+            },
+        ];
+        const facade = createRallarFacade();
+        facade.setDefaults({
+            applicationId: 'default-app',
+            rtc: {
+                dataChannelLanes: lanes,
+            },
+            operations: {
+                timeoutMs: 321,
+            },
+        });
+
+        await facade.people.refresh();
+
+        expect(mocks.initMiddleware).toHaveBeenCalledWith({
+            timeoutMs: 321,
+            dataChannelLanes: lanes,
+        });
+        expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(
+            {
+                applicationId: 'default-app',
+                workspaceId: 'default',
+            },
+            {
+                command: {
+                    timeoutMs: 321,
+                },
+            },
+        );
+    });
+
+    it('starts by restoring a session, connecting, and refreshing requested state', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        mockGroupSnapshot(createGroupSnapshot('match-1', ['session-1', 'peer-1']));
+        const facade = createRallarFacade();
+        facade.setDefaults({
+            applicationId: 'default-app',
+            operations: {
+                timeoutMs: 123,
+            },
+        });
+
+        const result = await facade.start({
+            refreshRooms: true,
+            refreshPeople: true,
+        });
+
+        expect(result.session).toEqual(mocks.ctx.session);
+        expect(result.connected).toBe(true);
+        expect(result.middleware).toBe(mocks.ctx);
+        expect(result.roomState?.rooms.map((room) => room.roomId)).toEqual([
+            'match-1',
+        ]);
+        expect(result.peopleState?.clients).toEqual([]);
+        expect(mocks.initMiddleware).toHaveBeenCalledWith({
+            timeoutMs: 123,
+        });
+        expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(
+            {
+                applicationId: 'default-app',
+                workspaceId: 'default',
+            },
+            {
+                command: {
+                    timeoutMs: 123,
+                },
+            },
+        );
+    });
+
+    it('does not connect on start when no session can be restored', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        mocks.readSession.mockReturnValue(undefined);
+        const facade = createRallarFacade();
+
+        const result = await facade.start();
+
+        expect(result).toEqual({
+            session: undefined,
+            connected: false,
+        });
+        expect(mocks.initMiddleware).not.toHaveBeenCalled();
+        expect(mocks.refreshStateSnapshots).not.toHaveBeenCalled();
+    });
+
+    it('groups subscriptions and cleans them up idempotently', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const facade = createRallarFacade();
+        const first = vi.fn();
+        const second = vi.fn();
+        const late = vi.fn();
+
+        const scope = facade.subscriptions();
+
+        expect(scope.add(first)).toBe(scope);
+        scope.add(undefined);
+        scope.add(second);
+        expect(scope.size()).toBe(2);
+
+        scope.unsubscribe();
+        scope.unsubscribe();
+
+        expect(first).toHaveBeenCalledOnce();
+        expect(second).toHaveBeenCalledOnce();
+        expect(scope.size()).toBe(0);
+
+        scope.add(late);
+
+        expect(late).toHaveBeenCalledOnce();
+        expect(scope.size()).toBe(0);
+    });
+
+    it('uses facade room and realtime defaults for realtime sends', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const sendResult = {
+            status: 'sent',
+            bufferedAmount: 0,
+        };
+        const gameplayChannel = {
+            sendJson: vi.fn(() => sendResult),
+        };
+        mockGroupSnapshot(createGroupSnapshot('match-1', ['session-1', 'peer-1']));
+        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValueOnce({
+            status: 'open',
+            peerId: 'peer-1',
+            laneId: 'gameplay',
+            channel: gameplayChannel,
+        });
+        const facade = createRallarFacade();
+        facade.setDefaults({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            room: {
+                roomId: 'match-1',
+            },
+            realtime: {
+                laneId: 'gameplay',
+                openTimeoutMs: 750,
+            },
+        });
+
+        const result = await facade.realtime.sendJson({
+            data: {
+                x: 1,
+            },
+        });
+
+        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen)
+            .toHaveBeenCalledWith(
+                'peer-1',
+                'gameplay',
+                expect.objectContaining({
+                    timeoutMs: 750,
+                }),
+            );
+        expect(gameplayChannel.sendJson).toHaveBeenCalledWith(
+            {
+                x: 1,
+            },
+            expect.any(Object),
+        );
+        expect(result).toEqual([
+            {
+                peerId: 'peer-1',
+                laneId: 'gameplay',
+                result: sendResult,
+            },
+        ]);
+    });
+
+    it('uses facade RTC wait defaults when waiting for a lane', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValueOnce({
+            status: 'open',
+            peerId: 'peer-1',
+            laneId: 'reliable',
+        });
+        const facade = createRallarFacade();
+        facade.setDefaults({
+            applicationId: 'app-1',
+            rtc: {
+                connectOnWait: true,
+                waitTimeoutMs: 333,
+            },
+        });
+
+        await facade.connect();
+        const result = await facade.rtc.waitForOpen('peer-1');
+
+        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen)
+            .toHaveBeenCalledWith(
+                'peer-1',
+                'reliable',
+                expect.objectContaining({
+                    timeoutMs: 333,
+                }),
+            );
+        expect(result).toMatchObject({
+            status: 'open',
+            peerId: 'peer-1',
+            laneId: 'reliable',
+        });
+    });
+
+    it('sends RTC and WS payloads through a typed message channel', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const facade = createRallarFacade();
+        facade.setDefaults({
+            applicationId: 'game-app',
+            workspaceId: 'arena-1',
+            room: {
+                roomId: 'match-1',
+            },
+        });
+        const channel = facade.messages.channel<{ text: string }>({
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+        });
+
+        const rtcResult = await channel.sendRtc(
+            {
+                text: 'rtc',
+            },
+            {
+                resourceId: 'rtc-message-1',
+            },
+        );
+        const wsResult = await channel.sendWs(
+            {
+                text: 'ws',
+            },
+            {
+                resourceId: 'ws-message-1',
+            },
+        );
+
+        expect(rtcResult.message.route).toMatchObject({
+            topicId: 'room.chat',
+            contextId: 'match-1',
+            resourceId: 'rtc-message-1',
+        });
+        expect(rtcResult.message.payload.typeId).toBe('chat.message.v1');
+        expect(JSON.parse(rtcResult.message.payload.resource)).toEqual({
+            text: 'rtc',
+        });
+        expect(wsResult.message.route).toMatchObject({
+            topicId: 'room.chat',
+            contextId: 'match-1',
+            resourceId: 'ws-message-1',
+        });
+        expect(wsResult.message.payload.typeId).toBe('chat.message.v1');
+        expect(JSON.parse(wsResult.message.payload.resource)).toEqual({
+            text: 'ws',
+        });
+    });
+
+    it('delivers decoded payloads through typed message channel subscriptions', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const facade = createRallarFacade();
+        const channel = facade.messages.channel<{ text: string }>({
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+        });
+        const onRtc = vi.fn();
+        const onWs = vi.fn();
+
+        channel.onRtc(onRtc);
+        channel.onWs(onWs);
+        await facade.connect();
+
+        const rtcCallback = mocks.ctx.middleware.rtcRxStreamer
+            .onInboxMessageDo.mock.calls.find(([typeId]) =>
+                typeId === 'chat.message.v1'
+            )?.[1];
+        const wsCallback = mocks.ctx.middleware.webSocketQueueBox
+            .onAnyInboxMessageDo.mock.calls.find(([callbackId]) =>
+                callbackId === 'rallar:ws:any-message'
+            )?.[1];
+
+        await rtcCallback?.onMessage?.(
+            newALMulticastMessage(
+                'peer-1',
+                newALRoute('room.chat', 'match-1', 'rtc-message-1'),
+                {
+                    applicationId: 'game-app',
+                    workspaceId: 'arena-1',
+                    groupId: 'match-1',
+                },
+                'chat.message.v1',
+                {
+                    text: 'rtc',
+                },
+            ),
+        );
+        await wsCallback?.onMessage?.(
+            newALBroadcastMessage(
+                'peer-1',
+                newALRoute('room.chat', 'match-1', 'ws-message-1'),
+                'room',
+                'chat.message.v1',
+                {
+                    text: 'ws',
+                },
+            ),
+        );
+
+        expect(onRtc).toHaveBeenCalledWith(
+            {
+                text: 'rtc',
+            },
+            expect.objectContaining({
+                payload: {
+                    text: 'rtc',
+                },
+                transport: 'rtc',
+            }),
+        );
+        expect(onWs).toHaveBeenCalledWith(
+            {
+                text: 'ws',
+            },
+            expect.objectContaining({
+                payload: {
+                    text: 'ws',
+                },
+                transport: 'ws',
+            }),
+        );
+    });
+
+    it('sends and listens through a typed realtime JSON lane', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        type RawCallback = {
+            onMessage: (data: unknown, event: MessageEvent) => Promise<void>;
+        };
+        const rawCallbacks = new Map<string, RawCallback>();
+        const sendResult = {
+            status: 'sent',
+            bufferedAmount: 0,
+        };
+        const gameplayChannel = {
+            sendJson: vi.fn(() => sendResult),
+            onRawMessageDo: vi.fn((id: string, callback: RawCallback) => {
+                rawCallbacks.set(id, callback);
+                return gameplayChannel;
+            }),
+            removeOnRawMessageCallbackById: vi.fn(),
+        };
+        const peer = {
+            peerId: 'peer-1',
+            channels: new Map([['gameplay', gameplayChannel]]),
+        };
+        mocks.webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
+        mocks.webRtcConnectionService.readPeer.mockReturnValue(peer);
+        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValueOnce({
+            status: 'open',
+            peerId: 'peer-1',
+            laneId: 'gameplay',
+            channel: gameplayChannel,
+        });
+        const facade = createRallarFacade();
+        const gameplay = facade.realtime.json<{ x: number }>({
+            laneId: 'gameplay',
+            peerIds: ['peer-1'],
+            openTimeoutMs: 750,
+            key: 'player-1',
+            maxAgeMs: 250,
+        });
+        const onMessage = vi.fn();
+
+        gameplay.on(onMessage);
+        await facade.connect();
+        const sendResults = await gameplay.send({
+            x: 1,
+        });
+        await rawCallbacks.get('rallar:realtime:gameplay')?.onMessage?.(
+            JSON.stringify({
+                x: 2,
+            }),
+            {
+                data: JSON.stringify({
+                    x: 2,
+                }),
+            } as MessageEvent,
+        );
+
+        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen)
+            .toHaveBeenCalledWith(
+                'peer-1',
+                'gameplay',
+                expect.objectContaining({
+                    timeoutMs: 750,
+                }),
+            );
+        expect(gameplayChannel.sendJson).toHaveBeenCalledWith(
+            {
+                x: 1,
+            },
+            expect.objectContaining({
+                key: 'player-1',
+                maxAgeMs: 250,
+            }),
+        );
+        expect(sendResults).toEqual([
+            {
+                peerId: 'peer-1',
+                laneId: 'gameplay',
+                result: sendResult,
+            },
+        ]);
+        expect(onMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                peerId: 'peer-1',
+                laneId: 'gameplay',
+                data: {
+                    x: 2,
+                },
+            }),
+        );
+    });
+
     it('exposes empty RTC and WS diagnostics before connecting', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
@@ -303,7 +875,6 @@ describe('Rallar operation options', () => {
             knownPeerIds: [],
             activePeerIds: [],
             peerIdsWithNoReconnectableLanes: [],
-            connectedPeerIds: [],
             readyPeerIds: [],
             peers: [],
         });
@@ -369,7 +940,6 @@ describe('Rallar operation options', () => {
         };
         mocks.webRtcConnectionService.knownPeerIds.mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
-        mocks.webRtcConnectionService.connectedPeerIds.mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes
             .mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue(['peer-1']);
@@ -389,7 +959,6 @@ describe('Rallar operation options', () => {
                 peerId: 'peer-1',
                 isActive: true,
                 hasNoReconnectableLanes: true,
-                isConnectedPeer: true,
                 isRoutable: true,
                 readyLaneIds: ['reliable', 'realtime'],
                 connection: {
@@ -427,7 +996,6 @@ describe('Rallar operation options', () => {
             knownPeerIds: ['peer-1'],
             activePeerIds: ['peer-1'],
             peerIdsWithNoReconnectableLanes: ['peer-1'],
-            connectedPeerIds: ['peer-1'],
             readyPeerIds: ['peer-1'],
             peers: [
                 expect.objectContaining({
@@ -489,13 +1057,11 @@ describe('Rallar operation options', () => {
 
         expect(facade.rtc.peer('peer-1')).toMatchObject({
             hasNoReconnectableLanes: false,
-            isConnectedPeer: false,
             isRoutable: true,
             readyLaneIds: ['reliable'],
         });
         expect(facade.rtc.peer('peer-1', { laneId: 'realtime' })).toMatchObject({
             hasNoReconnectableLanes: false,
-            isConnectedPeer: false,
             isRoutable: false,
             readyLaneIds: ['reliable'],
         });
@@ -551,7 +1117,6 @@ describe('Rallar operation options', () => {
         };
         mocks.webRtcConnectionService.knownPeerIds.mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
-        mocks.webRtcConnectionService.connectedPeerIds.mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes
             .mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue(['peer-1']);
@@ -675,7 +1240,6 @@ describe('Rallar operation options', () => {
         };
         mocks.webRtcConnectionService.knownPeerIds.mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
-        mocks.webRtcConnectionService.connectedPeerIds.mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes
             .mockReturnValue(['peer-1']);
         mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue(['peer-1']);
@@ -701,7 +1265,6 @@ describe('Rallar operation options', () => {
 
         mocks.webRtcConnectionService.knownPeerIds.mockReturnValue([]);
         mocks.webRtcConnectionService.activePeerIds.mockReturnValue([]);
-        mocks.webRtcConnectionService.connectedPeerIds.mockReturnValue([]);
         mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes
             .mockReturnValue([]);
         mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue([]);
@@ -2154,6 +2717,7 @@ describe('Rallar operation options', () => {
             entries: [],
             reason: 'Skipping RTC outbound dispatch without planned transport messages',
         });
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
 
         const result = await createRallarFacade().messages.rtc.send({
             roomId: 'room-1',
@@ -2182,7 +2746,11 @@ describe('Rallar operation options', () => {
                 },
                 targets: {
                     mode: 'multicast',
-                    groupId: 'room-1',
+                    groupRef: {
+                        applicationId: 'app-1',
+                        workspaceId: 'workspace-1',
+                        groupId: 'room-1',
+                    },
                 },
                 forwarding: {
                     overlayId: 'room-1',
@@ -2211,9 +2779,62 @@ describe('Rallar operation options', () => {
 
         expect(result.message.targets).toMatchObject({
             mode: 'multicast',
-            groupId: 'room-1',
+            groupRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-1',
+            },
             minSnapshotVersion: 7,
         });
+        expect(result.message.targets).not.toHaveProperty('groupId');
+    });
+
+    it('uses roomRef scope for cached snapshotVersion on RTC room sends', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const workspaceA = withSnapshotVersion(
+            createGroupSnapshot(
+                'shared-room',
+                ['session-1', 'peer-a'],
+                {
+                    workspaceId: 'workspace-a',
+                },
+            ),
+            7,
+        );
+        const workspaceB = withSnapshotVersion(
+            createGroupSnapshot(
+                'shared-room',
+                ['session-1', 'peer-b'],
+                {
+                    workspaceId: 'workspace-b',
+                },
+            ),
+            11,
+        );
+        mockGroupSnapshots([workspaceA, workspaceB]);
+
+        const result = await createRallarFacade().messages.rtc.send({
+            roomId: 'shared-room',
+            roomRef: workspaceB.group,
+            typeId: 'chat.message.v1',
+            resourceId: 'msg-versioned-rtc-scoped',
+            payload: {
+                text: 'versioned scoped rtc',
+            },
+        });
+
+        expect(result.message.targets).toMatchObject({
+            mode: 'multicast',
+            groupRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-b',
+                groupId: 'shared-room',
+            },
+            minSnapshotVersion: 11,
+        });
+        expect(result.message.targets).not.toHaveProperty('groupId');
     });
 
     it('returns WS send status with the message when WS enqueue completes', async () => {
@@ -2281,6 +2902,96 @@ describe('Rallar operation options', () => {
             scope: 'room',
             minSnapshotVersion: 11,
         });
+    });
+
+    it('uses roomRef scope for cached snapshotVersion on WS room sends', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const workspaceA = withSnapshotVersion(
+            createGroupSnapshot(
+                'shared-room',
+                ['session-1', 'peer-a'],
+                {
+                    workspaceId: 'workspace-a',
+                },
+            ),
+            5,
+        );
+        const workspaceB = withSnapshotVersion(
+            createGroupSnapshot(
+                'shared-room',
+                ['session-1', 'peer-b'],
+                {
+                    workspaceId: 'workspace-b',
+                },
+            ),
+            13,
+        );
+        mockGroupSnapshots([workspaceA, workspaceB]);
+
+        const result = await createRallarFacade().messages.ws.send({
+            roomId: 'shared-room',
+            roomRef: workspaceB.group,
+            typeId: 'chat.message.v1',
+            resourceId: 'msg-versioned-ws-scoped',
+            payload: {
+                text: 'versioned scoped ws',
+            },
+        });
+
+        expect(result.message.targets).toMatchObject({
+            mode: 'broadcast',
+            scope: 'room',
+            minSnapshotVersion: 13,
+        });
+    });
+
+    it('uses roomRef scope for room RTC lane waits', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const workspaceA = createGroupSnapshot(
+            'shared-room',
+            ['session-1', 'peer-a'],
+            {
+                workspaceId: 'workspace-a',
+            },
+        );
+        const workspaceB = createGroupSnapshot(
+            'shared-room',
+            ['session-1', 'peer-b'],
+            {
+                workspaceId: 'workspace-b',
+            },
+        );
+        mockGroupSnapshots([workspaceA, workspaceB]);
+        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValue({
+            status: 'open',
+            peerId: 'peer-b',
+            laneId: 'realtime',
+        });
+        const facade = createRallarFacade();
+
+        await facade.connect();
+        const result = await facade.rtc.waitForRoomLane(
+            workspaceB.group,
+            'realtime',
+            {
+                connect: true,
+                timeoutMs: 1_000,
+            },
+        );
+
+        expect(result.ready.map((ready) => ready.peerId)).toEqual(['peer-b']);
+        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen)
+            .toHaveBeenCalledWith(
+                'peer-b',
+                'realtime',
+                expect.objectContaining({
+                    timeoutMs: 1_000,
+                }),
+            );
     });
 
     it('registers realtime JSON listeners on connected peers', async () => {
@@ -2467,13 +3178,32 @@ function createChannelHealth(
 }
 
 function mockGroupSnapshot(snapshot: GroupSnapshot): void {
+    mockGroupSnapshots([snapshot]);
+}
+
+function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
     mocks.groupRepositoryMissing.mockImplementation((key?: unknown) => {
         if (key === undefined) {
-            return [snapshot];
+            return [...snapshots];
         }
 
-        return key === snapshot.group.groupId ? snapshot : undefined;
+        if (isGroupRefLike(key)) {
+            return snapshots.find((snapshot) =>
+                snapshot.group.groupId === key.groupId &&
+                snapshot.group.applicationId === key.applicationId &&
+                (snapshot.group.workspaceId ?? '') === (key.workspaceId ?? '')
+            );
+        }
+
+        return snapshots.find((snapshot) => key === snapshot.group.groupId);
     });
+}
+
+function isGroupRefLike(value: unknown): value is GroupSnapshot['group'] {
+    return typeof value === 'object' &&
+        value !== null &&
+        typeof (value as { groupId?: unknown }).groupId === 'string' &&
+        typeof (value as { applicationId?: unknown }).applicationId === 'string';
 }
 
 function withSnapshotVersion(
@@ -2492,11 +3222,17 @@ function withSnapshotVersion(
 function createGroupSnapshot(
     groupId: string,
     sessionIds: readonly string[],
+    scope: Readonly<{
+        applicationId?: string;
+        workspaceId?: string;
+    }> = {},
 ): GroupSnapshot {
+    const applicationId = scope.applicationId ?? 'app-1';
+    const workspaceId = scope.workspaceId ?? 'workspace-1';
     return {
         group: {
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
+            applicationId,
+            workspaceId,
             groupId,
             displayName: groupId,
             kind: 'room',
@@ -2517,8 +3253,8 @@ function createGroupSnapshot(
             },
         },
         members: sessionIds.map((sessionId) => ({
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
+            applicationId,
+            workspaceId,
             groupId,
             principalId: sessionId,
             role: 'member',
@@ -2533,8 +3269,8 @@ function createGroupSnapshot(
             },
         })),
         activeSessions: sessionIds.map((sessionId) => ({
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
+            applicationId,
+            workspaceId,
             groupId,
             sessionId,
             principalId: sessionId,

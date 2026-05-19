@@ -144,7 +144,7 @@ describe('Durable AL runtime stores', () => {
                 resourceId: 'msg-1',
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: 'hello',
@@ -483,7 +483,7 @@ function createOrderedMessage(seq: number) {
                 resourceId: `msg-${seq}`,
                 contextId: 'group-1',
             },
-            'group-1',
+            groupRef('group-1'),
             'chat.message.v1',
             {
                 text: `message-${seq}`,
@@ -509,7 +509,7 @@ function createBufferedOrderedMessage(seq: number, text: string) {
             resourceId: `msg-${seq}`,
             contextId: 'group-1',
         },
-        'group-1',
+        groupRef('group-1'),
         'chat.message.v1',
         {
             text,
@@ -541,4 +541,12 @@ function createOutboundMessage(resourceId: string) {
             text: resourceId,
         },
     );
+}
+
+function groupRef(groupId: string) {
+    return {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId,
+    };
 }

@@ -4,6 +4,7 @@ import type { GraphInfo, GraphInfoSnapshot, } from '@shared-graph/shared-graph-t
 import type { EdgeProp, GraphProp, VertexProp, WeightedGraph, } from '@shared-graph/graph/graph-props.ts';
 import { VertexState } from '@shared-graph/graph/graph-props.ts';
 import { createGraph } from './helpers.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 
 type SerializedWeightedGraph = ReturnType<WeightedGraph['export']>;
 
@@ -50,16 +51,17 @@ describe('graphology JSON serialization', () => {
             ['peer-a', 'peer-b', 7],
         ]);
 
+        const groupRef = createGroupRef('group-1');
         const snapshot: GraphInfoSnapshot = {
-            graphId: 'group-1',
+            groupRef,
             predicted: {
-                graphId: 'group-1',
+                groupRef,
                 graph: predictedGraph,
                 groupGraph: predictedTree,
                 coreNodes: ['peer-b'],
             },
             measured: {
-                graphId: 'group-1',
+                groupRef,
                 graph: measuredGraph,
                 groupGraph: measuredTree,
                 coreNodes: ['peer-a'],
@@ -99,7 +101,7 @@ function restoreGraphSnapshot(
     snapshot: SerializedGraphInfoSnapshot,
 ): GraphInfoSnapshot {
     return {
-        graphId: snapshot.graphId,
+        groupRef: snapshot.groupRef,
         predicted: restoreGraphInfo(snapshot.predicted),
         measured: snapshot.measured
             ? restoreGraphInfo(snapshot.measured)
@@ -113,7 +115,7 @@ function restoreGraphInfo(
     info: SerializedGraphInfo,
 ): GraphInfo {
     return {
-        graphId: info.graphId,
+        groupRef: info.groupRef,
         graph: restoreGraph(info.graph),
         groupGraph: restoreGraph(info.groupGraph),
         coreNodes: [...info.coreNodes],
@@ -126,4 +128,12 @@ function restoreGraph(
     const graph = new UndirectedGraph<VertexProp, EdgeProp, GraphProp>();
     graph.import(serialized);
     return graph as WeightedGraph;
+}
+
+function createGroupRef(groupId: string): GroupRef {
+    return {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId,
+    };
 }

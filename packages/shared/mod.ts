@@ -4,6 +4,7 @@ export * from './al-contracts/al-policy.ts';
 export * from './al-contracts/al-runtime.ts';
 
 export * from './api/api-config.ts';
+export * from './api/api-type-utils.ts';
 
 export * from './contracts/ws.ts';
 export * from './contracts/p2p.ts';

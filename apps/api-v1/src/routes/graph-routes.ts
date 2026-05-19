@@ -1,5 +1,5 @@
 import { Hono } from 'jsr:@hono/hono';
-import { computeGlobalGraphAndCacheIt, computeGroupGraph } from '@shared-graph/group-graphs-create-service.ts';
+import { computeGlobalGraphAndCacheIt, computeLatestGroupGraphById } from '@shared-graph/group-graphs-create-service.ts';
 
 export function init(app: Hono) {
     app.get(
@@ -9,13 +9,18 @@ export function init(app: Hono) {
         }
     );
 
+    /**
+     * @Deprecated
+     *
+     * Update with groupRef as path params
+     */
     app.get(
         '/api/graph/tree/:groupId',
         c => {
             const groupId = c.req.param('groupId');
 
             const computedGraph =
-                computeGroupGraph(
+                computeLatestGroupGraphById(
                     groupId,
                     true
                 );

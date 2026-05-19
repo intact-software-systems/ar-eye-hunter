@@ -1,4 +1,11 @@
-import type { ALConstraints, ALDelivery, ALForwarding, ALMessage, ALTargets, } from './al-contract.ts';
+import {
+    type ALConstraints,
+    type ALDelivery,
+    type ALForwarding,
+    type ALMessage,
+    type ALTargets,
+    toALGroupTargetKey,
+} from './al-contract.ts';
 import type {
     ALDedupStoreLike,
     ALOrderingObservation,
@@ -529,7 +536,8 @@ function deriveForwardingRequest(
     return {
         algo: 'target',
         opts: {
-            overlayId: forwarding?.overlayId ?? (targets.mode === 'multicast' ? targets.groupId : undefined),
+            overlayId: forwarding?.overlayId ??
+                (targets.mode === 'multicast' ? targets.groupRef.groupId : undefined),
         },
     };
 }
@@ -590,7 +598,10 @@ function toDefaultEffectivePolicy(msg: ALMessage): ALQosEffectivePolicy {
         forwarding: {
             algo: 'target',
             opts: {
-                overlayId: msg.forwarding?.overlayId ?? (msg.targets?.mode === 'multicast' ? msg.targets.groupId : msg.route.contextId),
+                overlayId: msg.forwarding?.overlayId ??
+                    (msg.targets?.mode === 'multicast'
+                        ? msg.targets.groupRef.groupId
+                        : msg.route.contextId),
             },
         },
         repair: {
@@ -1480,7 +1491,7 @@ function inferOrderingKeyFromTargets(
         case 'unicast':
             return msg.id.senderId;
         case 'multicast':
-            return targets.groupId;
+            return toALGroupTargetKey(targets.groupRef);
         case 'broadcast':
             return msg.route.contextId;
     }

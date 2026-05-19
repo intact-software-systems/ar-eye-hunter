@@ -2,5 +2,7 @@ import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/servic
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 
 export const authorizeApiV1RoomWsMessage = createGroupRoomWsAuthorizer({
-    findGroupSnapshotById: groupStateSnapshotsRepository.findGroupStateSnapshotById,
+    findGroupSnapshotByRef: (ref) =>
+        groupStateSnapshotsRepository.findGroupStateSnapshotByRef(ref),
+    findGroupSnapshotById: groupStateSnapshotsRepository.findLatestGroupSnapshotById,
 });

@@ -4,16 +4,17 @@ import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { DEFAULT_GRAPH_PROP } from '@shared-graph/algo-props.ts';
 import {
     computeIfAbsent,
-    findGraphById,
+    findGraphByRef,
     getAllGraphs,
     readableGraphCache,
-    setGraphById,
+    setGraph,
     setGraphs,
 } from '@shared-graph/repository/graphs-repository.ts';
 import { toGraph } from '@shared-graph/graph/create-graph.ts';
 import type { GraphInfoSnapshot } from '@shared-graph/shared-graph-types.ts';
 import { VertexState, VertexType } from '@shared-graph/graph/graph-props.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 
 describe('shared-graph repositories and graph creation', () => {
     beforeEach(() => {
@@ -69,23 +70,24 @@ describe('shared-graph repositories and graph creation', () => {
         const creator = vi.fn(() =>
             createGraphSnapshot('graph-1', 1, 100),
         );
+        const graph1 = groupRef('graph-1');
 
-        const first = computeIfAbsent('graph-1', creator);
-        const second = computeIfAbsent('graph-1', creator);
+        const first = computeIfAbsent(graph1, creator);
+        const second = computeIfAbsent(graph1, creator);
 
         expect(first).toBe(second);
         expect(creator).toHaveBeenCalledTimes(1);
-        expect(findGraphById('graph-1')?.version).toBe(1);
+        expect(findGraphByRef(graph1)?.version).toBe(1);
 
         expect(
-            setGraphById('graph-1', createGraphSnapshot('graph-1', 0, 50)),
+            setGraph(createGraphSnapshot('graph-1', 0, 50)),
         ).toBe(false);
-        expect(findGraphById('graph-1')?.version).toBe(1);
+        expect(findGraphByRef(graph1)?.version).toBe(1);
 
         expect(
-            setGraphById('graph-1', createGraphSnapshot('graph-1', 2, 200)),
+            setGraph(createGraphSnapshot('graph-1', 2, 200)),
         ).toBe(true);
-        expect(findGraphById('graph-1')?.createdAtEpochMs).toBe(200);
+        expect(findGraphByRef(graph1)?.createdAtEpochMs).toBe(200);
 
         expect(
             setGraphs([
@@ -95,12 +97,27 @@ describe('shared-graph repositories and graph creation', () => {
         ).toBe(true);
 
         const allGraphs = getAllGraphs().sort((left, right) =>
-            left.graphId.localeCompare(right.graphId),
+            left.groupRef.groupId.localeCompare(right.groupRef.groupId),
         );
-        expect(allGraphs.map(graph => [graph.graphId, graph.version])).toEqual([
+        expect(allGraphs.map(graph => [graph.groupRef.groupId, graph.version])).toEqual([
             ['graph-1', 2],
             ['graph-2', 1],
         ]);
+    });
+
+    it('keys graph snapshots by full group ref, not only group id', () => {
+        const workspaceA = createGraphSnapshot('shared-room', 1, 100, {
+            workspaceId: 'workspace-a',
+        });
+        const workspaceB = createGraphSnapshot('shared-room', 1, 200, {
+            workspaceId: 'workspace-b',
+        });
+
+        expect(setGraphs([workspaceA, workspaceB])).toBe(true);
+
+        expect(findGraphByRef(workspaceA.groupRef)).toBe(workspaceA);
+        expect(findGraphByRef(workspaceB.groupRef)).toBe(workspaceB);
+        expect(getAllGraphs()).toHaveLength(2);
     });
 });
 
@@ -120,21 +137,40 @@ function createRtt(
 }
 
 function createGraphSnapshot(
-    graphId: string,
+    groupId: string,
     version: number,
     createdAtEpochMs: number,
+    scope: Readonly<{
+        applicationId?: string;
+        workspaceId?: string;
+    }> = {},
 ): GraphInfoSnapshot {
     const graph = toGraph(new LatestRepository<string, RttMeasurementInfo>(), DEFAULT_GRAPH_PROP);
+    const ref = groupRef(groupId, scope);
 
     return {
-        graphId,
+        groupRef: ref,
         predicted: {
-            graphId,
+            groupRef: ref,
             graph,
             groupGraph: graph,
             coreNodes: [],
         },
         createdAtEpochMs,
         version,
+    };
+}
+
+function groupRef(
+    groupId: string,
+    scope: Readonly<{
+        applicationId?: string;
+        workspaceId?: string;
+    }> = {},
+): GroupRef {
+    return {
+        applicationId: scope.applicationId ?? 'app-1',
+        workspaceId: scope.workspaceId ?? 'workspace-1',
+        groupId,
     };
 }

@@ -14,12 +14,11 @@ import {
     waitForClientStateSnapshotChangesIdle,
 } from '@shared/repository/client-state-snapshots-repository.ts';
 import {
+    findFirstGroupStateSnapshotRefSessionIdIsIn,
     findGroupStateSnapshotByRef,
-    findFirstGroupStateSnapshotIdSessionIdIsIn,
-    findGroupStateSnapshotById,
     getAllGroupStateSnapshots,
     onGroupStateSnapshotChange,
-    setGroupStateSnapshotById,
+    setGroupStateSnapshot,
     setGroupStateSnapshots,
     waitForGroupStateSnapshotChangesIdle,
 } from '@shared/repository/group-state-snapshots-repository.ts';
@@ -121,7 +120,7 @@ describe('repository modules', () => {
         expect(findClientStateSnapshotByPrincipalId('client-1')).toEqual(newer);
     });
 
-    it('stores group snapshots by group id, keeps newer versions, and finds memberships', () => {
+    it('stores group snapshots by scoped ref, keeps newer versions, and finds memberships', () => {
         const first = createGroupSnapshot('group-1', 'Alpha', 1, [
             'self',
             'peer-a',
@@ -133,15 +132,15 @@ describe('repository modules', () => {
         ]);
 
         expect(setGroupStateSnapshots([first, second])).toBe(true);
-        expect(findGroupStateSnapshotById('group-1')).toEqual(first);
-        expect(findGroupStateSnapshotById('group-2')).toEqual(second);
-        expect(findFirstGroupStateSnapshotIdSessionIdIsIn('peer-a')).toBe(
-            'group-1',
+        expect(findGroupStateSnapshotByRef(first.group)).toEqual(first);
+        expect(findGroupStateSnapshotByRef(second.group)).toEqual(second);
+        expect(findFirstGroupStateSnapshotRefSessionIdIsIn('peer-a')).toEqual(
+            first.group,
         );
         expect(getAllGroupStateSnapshots()).toEqual([first, second]);
 
-        expect(setGroupStateSnapshotById(first.group.groupId, stale)).toBe(false);
-        expect(findGroupStateSnapshotById('group-1')).toEqual(first);
+        expect(setGroupStateSnapshot(stale)).toBe(false);
+        expect(findGroupStateSnapshotByRef(first.group)).toEqual(first);
     });
 
     it('keeps same group id snapshots isolated across workspaces', () => {
@@ -187,6 +186,9 @@ describe('repository modules', () => {
         ]);
         expect(findGroupStateSnapshotByRef(workspaceA.group)).toEqual(workspaceA);
         expect(findGroupStateSnapshotByRef(workspaceB.group)).toEqual(workspaceB);
+        expect(findFirstGroupStateSnapshotRefSessionIdIsIn('session-b')).toEqual(
+            workspaceB.group,
+        );
     });
 
     it('uses group aggregate snapshotVersion for cache ordering', () => {
@@ -213,11 +215,11 @@ describe('repository modules', () => {
         } satisfies GroupSnapshot;
 
         expect(readGroupVersion(first)).toBe(10);
-        expect(setGroupStateSnapshotById('group-1', first)).toBe(true);
-        expect(setGroupStateSnapshotById('group-1', staleBySnapshotVersion)).toBe(false);
-        expect(findGroupStateSnapshotById('group-1')).toEqual(first);
-        expect(setGroupStateSnapshotById('group-1', newer)).toBe(true);
-        expect(findGroupStateSnapshotById('group-1')).toEqual(newer);
+        expect(setGroupStateSnapshot(first)).toBe(true);
+        expect(setGroupStateSnapshot(staleBySnapshotVersion)).toBe(false);
+        expect(findGroupStateSnapshotByRef(first.group)).toEqual(first);
+        expect(setGroupStateSnapshot(newer)).toBe(true);
+        expect(findGroupStateSnapshotByRef(newer.group)).toEqual(newer);
     });
 
     it('emits group snapshot changes only for accepted writes', async () => {
@@ -244,14 +246,14 @@ describe('repository modules', () => {
                 'peer-a',
             ]);
 
-            expect(setGroupStateSnapshotById('group-1', first)).toBe(true);
-            expect(setGroupStateSnapshotById('group-1', first)).toBe(false);
-            expect(setGroupStateSnapshotById('group-1', refreshed)).toBe(false);
-            expect(setGroupStateSnapshotById('group-1', stale)).toBe(false);
-            expect(setGroupStateSnapshotById('group-1', newer)).toBe(true);
+            expect(setGroupStateSnapshot(first)).toBe(true);
+            expect(setGroupStateSnapshot(first)).toBe(false);
+            expect(setGroupStateSnapshot(refreshed)).toBe(false);
+            expect(setGroupStateSnapshot(stale)).toBe(false);
+            expect(setGroupStateSnapshot(newer)).toBe(true);
             await waitForGroupStateSnapshotChangesIdle();
 
-            expect(findGroupStateSnapshotById('group-1')).toEqual(newer);
+            expect(findGroupStateSnapshotByRef(newer.group)).toEqual(newer);
             expect(changes).toEqual(['created', 'refreshed', 'updated']);
         } finally {
             unsubscribe();
