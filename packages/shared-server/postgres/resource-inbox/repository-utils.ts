@@ -1,0 +1,107 @@
+import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { Temporal } from '@js-temporal/polyfill';
+
+/**
+ * Repository for table `resource_inbox`.
+ *
+ * Mapping between domain and DB columns:
+ * - key.topicId     <-> ri_topic_id
+ * - key.resourceId  <-> ri_resource_id
+ * - key.contextId   <-> fk_ext_bank_id
+ * - typeId          <-> ri_type_id
+ * - resource        <-> ri_resource
+ * - status          <-> ri_status
+ * - audit.createdBy <-> created_by
+ * - audit.createdTs <-> created_ts
+ * - audit.expiryTs  <-> expire_ts
+ * - dequeueAudit.startTs/endTs/nextTs <-> start_ts/end_ts/next_ts
+ * - dequeueAudit.attempts            <-> ri_attempts
+ */
+export type ResourceInboxRow = {
+    ri_row_id: bigint;
+    ri_resource_id: string;
+    ri_topic_id: string;
+    ri_resource: string;
+    ri_type_id: string;
+    ri_status: string;
+    fk_ext_bank_id: string;
+    system_date: string; // DATE
+    created_by: string;
+    created_ts: string; // timestamp without time zone
+    expire_ts: string; // timestamp without time zone
+    start_ts: string | null;
+    end_ts: string | null;
+    next_ts: string | null;
+    ri_attempts: bigint | null;
+};
+
+export function keyToString(k: Key): string {
+    return `${k.contextId}::${k.topicId}::${k.resourceId}`;
+}
+
+export function rowsToMap(rows: ResourceInboxRow[]): Map<string, ResourceEntry> {
+    const m = new Map<string, ResourceEntry>();
+    for (const r of rows) {
+        const e = toDomain(r);
+        m.set(keyToString(e.key), e);
+    }
+    return m;
+}
+
+export function toDomain(r: ResourceInboxRow): ResourceEntry {
+    // created_ts/start_ts/end_ts/next_ts are timestamps without TZ; keep as Instant-ish by assuming UTC.
+    // If you prefer local time, adjust parsing here.
+    const attempts = r.ri_attempts == null ? 0 : Number(r.ri_attempts);
+
+    return {
+        key: {
+            topicId: r.ri_topic_id,
+            resourceId: r.ri_resource_id,
+            contextId: r.fk_ext_bank_id,
+        },
+        resource: r.ri_resource,
+        typeId: r.ri_type_id,
+        audit: {
+            // date is not stored separately in the table; keep it derived from created_ts
+            date: Temporal.PlainTime.from(parseTemporalPlainDateTime(r.created_ts.toString()).toPlainTime().toString()),
+            createdBy: r.created_by,
+            createdTs: parseTemporalPlainDateTime(r.created_ts.toString()),
+            expiryTs: r.expire_ts
+                ? toInstant(r.expire_ts.toString())
+                : NEVER_EXPIRE_TS,
+        },
+        status: r.ri_status as EntityStatus,
+        dequeueAudit: {
+            startTs: r.start_ts ? toInstant(r.start_ts) : undefined,
+            endTs: r.end_ts ? toInstant(r.end_ts) : undefined,
+            nextTs: r.next_ts ? toInstant(r.next_ts) : undefined,
+            attempts,
+        },
+        db: {
+            id: r.ri_row_id.toString(),
+        },
+    };
+}
+
+
+export function toSystemDate(entry: ResourceEntry): string {
+    // system_date is DATE; derive it from createdTs.
+    // createdTs is Temporal.PlainDateTime (no zone) -> take its PlainDate.
+    return entry.audit.createdTs.toPlainDate().toString();
+}
+
+export function toPgTimestamp(t: Temporal.PlainDateTime | Temporal.Instant): string {
+    // For timestamp(6) without timezone, sending ISO-like strings is fine.
+    // - PlainDateTime: "YYYY-MM-DDTHH:mm:ss.sss"
+    // - Instant: "YYYY-MM-DDTHH:mm:ss.sssZ" (Postgres parses this too)
+    return t.toString();
+}
+
+export function parseTemporalPlainDateTime(ts: string): Temporal.PlainDateTime {
+    const instant = Temporal.Instant.from(new Date(ts).toISOString());
+    return instant.toZonedDateTimeISO('UTC').toPlainDateTime();
+}
+
+export function toInstant(ts: string): Temporal.Instant {
+    return Temporal.Instant.from(new Date(ts).toISOString());
+}

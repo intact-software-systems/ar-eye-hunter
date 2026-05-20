@@ -1226,6 +1226,8 @@ class BrowserRallarFacade implements RallarFacade {
                     input.roomId ??
                     (input.scope === undefined ? this.resolveDefaultRoom() : undefined);
                 const roomId = this.toRoomId(room);
+                const scope = input.scope ?? (roomId ? 'room' : 'all');
+                const roomRef = scope === 'room' ? this.resolveRoomRef(room) : undefined;
                 const contextId = input.contextId ?? roomId ?? input.scope ??
                     'all';
                 const minSnapshotVersion = room
@@ -1241,10 +1243,11 @@ class BrowserRallarFacade implements RallarFacade {
                         contextId,
                         input.resourceId ?? crypto.randomUUID(),
                     ),
-                    input.scope ?? (roomId ? 'room' : 'all'),
+                    scope,
                     input.typeId,
                     input.payload,
                     {
+                        groupRef: roomRef,
                         exceptPeerIds: input.exceptPeerIds,
                         minSnapshotVersion,
                         ttlHops: input.ttlHops,

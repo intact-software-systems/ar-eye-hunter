@@ -25,6 +25,9 @@ import { toResilienceDto } from './middleware-resilience.ts';
 import { createClientStateRepository, createGroupStateRepository, } from './repository/createStateRepositories.ts';
 import { sql } from './db/db.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
+import {
+    createGroupStateSnapshotReadThroughCache
+} from '@shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts';
 
 export type Middleware = RallarMiddlewareRuntime;
 
@@ -51,6 +54,11 @@ function initialise(): Middleware {
     const webSocketServer = new JsonWebSocketServer();
     const resilienceInbox = toResilienceDto();
     const resilienceOutbox = toResilienceDto();
+    const clientsRepository = createClientStateRepository(sql);
+    const groupsRepository = createGroupStateRepository(sql);
+    const groupSnapshotReadThroughCache = createGroupStateSnapshotReadThroughCache({
+        groupsRepository,
+    });
 
     configureServerWsQBoxALRuntimeStores(wsRuntimeName, { sql: postgresSql });
     initResourceInboxExpiryEviction(queueBox.repo).catch((e) =>
@@ -66,7 +74,7 @@ function initialise(): Middleware {
         webSocketServer,
         wsRuntimeName,
         findGroupSnapshotByRef: (ref) =>
-            groupStateSnapshotsRepository.findGroupStateSnapshotByRef(ref),
+            groupSnapshotReadThroughCache.findByRef(ref),
         findGroupSnapshotById: groupStateSnapshotsRepository.findLatestGroupSnapshotById,
         inboundStores: resolveServerWsQBoxALInboundRuntimeStores(wsRuntimeName),
         outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(wsRuntimeName),
@@ -74,8 +82,8 @@ function initialise(): Middleware {
             inbox: resilienceInbox,
             outbox: resilienceOutbox,
         },
-        clientsRepository: createClientStateRepository(sql),
-        groupsRepository: createGroupStateRepository(sql),
+        clientsRepository,
+        groupsRepository,
     });
 
     installQueueBoxPubSubBridge({

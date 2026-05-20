@@ -42,6 +42,7 @@ export type ALTargets =
     | Readonly<{
     mode: 'broadcast';
     scope: 'room' | 'world' | 'all';
+    groupRef?: GroupRef;
     exceptPeerIds?: readonly string[];
     minSnapshotVersion?: number;
 }>;
@@ -332,6 +333,25 @@ export function readALMulticastTargetGroupRef(
     return toALGroupRef(targets.groupRef);
 }
 
+export function readALTargetGroupRef(
+    message: ALMessage,
+): GroupRef | undefined {
+    const targets = message.targets;
+    if (targets?.mode === 'multicast') {
+        return toALGroupRef(targets.groupRef);
+    }
+
+    if (
+        targets?.mode === 'broadcast' &&
+        targets.scope === 'room' &&
+        targets.groupRef !== undefined
+    ) {
+        return toALGroupRef(targets.groupRef);
+    }
+
+    return undefined;
+}
+
 export function newALBroadcastMessage<T>(
     senderId: string,
     route: ALRoute,
@@ -339,6 +359,7 @@ export function newALBroadcastMessage<T>(
     typeId: string,
     resource: T,
     options?: Readonly<{
+        groupRef?: GroupRef;
         exceptPeerIds?: readonly string[];
         minSnapshotVersion?: number;
         ttlHops?: number;
@@ -352,12 +373,16 @@ export function newALBroadcastMessage<T>(
     const expiresAtMs = options?.ttlMs !== undefined
         ? Date.now() + options.ttlMs
         : undefined;
+    const groupRef = scope === 'room' && options?.groupRef !== undefined
+        ? toALGroupRef(options.groupRef)
+        : undefined;
 
     return {
         ...newALUntargetedMessage(senderId, route, typeId, resource, { qos: options?.qos }),
         targets: {
             mode: 'broadcast',
             scope,
+            groupRef,
             exceptPeerIds: options?.exceptPeerIds,
             minSnapshotVersion: options?.minSnapshotVersion,
         },

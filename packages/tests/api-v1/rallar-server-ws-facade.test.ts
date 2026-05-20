@@ -144,6 +144,39 @@ describe('RallarServerWsFacade', () => {
         ).toThrow('Rallar user WS topic must start with app. or room.');
     });
 
+    it('passes room broadcast target groupRef into room authorization context', async () => {
+        const authorizeRoomMessage = vi.fn(() => true);
+        const { facade } = createFacade({
+            authorizeRoomMessage,
+        });
+        const group = createGroupSnapshot('room-1', ['peer-1'], 4).group;
+        const message = newALBroadcastMessage(
+            'peer-1',
+            newALRoute('room.chat', 'room-1', 'msg-1'),
+            'room',
+            'chat.message.v1',
+            { text: 'after join' },
+            {
+                groupRef: group,
+                minSnapshotVersion: 4,
+            },
+        );
+
+        await facade.handle(message);
+
+        expect(authorizeRoomMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                roomId: 'room-1',
+                roomRef: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    groupId: 'room-1',
+                },
+                minSnapshotVersion: 4,
+            }),
+        );
+    });
+
     it('rejects room messages as not-yet-in-sync when local cache is older than minSnapshotVersion', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         try {

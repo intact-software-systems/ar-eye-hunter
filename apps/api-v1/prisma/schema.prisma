@@ -53,3 +53,21 @@ model app_data_store {
   @@index([expire_at_ts], map: "app_data_store_expire_at_ix")
   @@index([app_namespace, expire_at_ts], map: "app_data_store_namespace_expire_at_ix")
 }
+
+model resource_inbox_results {
+  ris_row_id      BigInt   @id(map: "ris_pk") @default(autoincrement())
+  ris_resource_id String   @db.VarChar(36)
+  ris_topic_id    String   @db.VarChar(36)
+  ris_resource    String
+  ris_type_id     String   @db.VarChar(36)
+  ris_status      String   @db.VarChar(36)
+  fk_ext_bank_id  String   @db.VarChar(35)
+  system_date     DateTime @db.Date
+  created_by      String   @db.VarChar(16)
+  created_ts      DateTime @db.Timestamp(6)
+  expire_ts       DateTime @db.Timestamp(6)
+
+  @@unique([fk_ext_bank_id, ris_resource_id, ris_topic_id], map: "resource_inbox_results_unique_k")
+  @@index([expire_ts], map: "resource_inbox_results_expire_ts_ix")
+  @@index([ris_status, ris_type_id], map: "resource_inbox_results_ix")
+}

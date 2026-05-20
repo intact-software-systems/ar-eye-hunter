@@ -31,6 +31,7 @@ export * from './websocket/JsonWebSocketServer.ts';
 
 export * from './services/InboxOutboxContracts.ts';
 export * from './services/InboxOutboxEngine.ts';
+export * from './services/InboxQueueReader.ts';
 export * from './alm/ALInboundAdmissionStore.ts';
 export * from './alm/ALInboundMessageRuntime.ts';
 export * from './alm/ALOutboundAdmissionStore.ts';
@@ -77,6 +78,8 @@ export * from './cache/LatestRepository.ts';
 export * from './cache/LatestValue.ts';
 export * from './cache/ObservableLatestRepository.ts';
 export * from './cache/ObservableLatestValue.ts';
+export * from './cache/ObservableLoanedRepository.ts';
+export * from './cache/ObservableLoanedValue.ts';
 export * from './cache/LoanedMementoRepository.ts';
 export * from './cache/LoanedMementoValue.ts';
 export * from './cache/LoanedRepository.ts';

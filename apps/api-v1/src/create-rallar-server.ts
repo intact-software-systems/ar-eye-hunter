@@ -16,7 +16,7 @@ import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system
 import type { RallarServerWsFacadeOptions } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import type { Middleware } from './middleware.ts';
 import { initialiseMiddleware } from './middleware.ts';
-import { authorizeApiV1RoomWsMessage } from './services/ws-topic-room-authorizer.ts';
+import { createApiV1RoomWsAuthorizer } from './services/ws-topic-room-authorizer.ts';
 import * as configRoutes from './routes/config-route.ts';
 import * as wsRoutes from './routes/ws-routes.ts';
 import * as iceRoutes from './routes/ice-route.ts';
@@ -49,7 +49,9 @@ export function createRallarServer(
         runtime: middleware,
         repositories: options.repositories ?? defaultRepositoryManager,
         ws: {
-            authorizeRoomMessage: authorizeApiV1RoomWsMessage,
+            authorizeRoomMessage: createApiV1RoomWsAuthorizer(
+                middleware.groupsRepository,
+            ),
             ...options.ws,
         },
         appData: {

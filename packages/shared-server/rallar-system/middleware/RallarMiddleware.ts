@@ -1,9 +1,10 @@
 import type { ALInboundRuntimeStores } from '@shared/alm/ALInboundMessageRuntime.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/ALOutboundMessageRuntime.ts';
-import { type ALMessage, readALMulticastTargetGroupRef, } from '@shared/al-contracts/al-contract.ts';
+import { type ALMessage, readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
+import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import {
     WsQueueBoxServerService,
@@ -20,6 +21,8 @@ import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
 export type RallarMiddlewareRuntime = Readonly<{
     qboxEngine: InboxOutboxEngine;
     wsQBoxServerService: WsQueueBoxServerService;
+    inboxQueueReader: InboxQueueReader;
+    appInboxResilience: ResilienceDto;
     clientsRepository: ClientStateRepository;
     groupsRepository: GroupStateRepository;
 }>;
@@ -50,6 +53,7 @@ export type CreateRallarMiddlewareOptions = Readonly<{
     resilience: Readonly<{
         inbox: ResilienceDto;
         outbox?: ResilienceDto;
+        appInbox?: ResilienceDto;
     }>;
     clientsRepository: ClientStateRepository;
     groupsRepository: GroupStateRepository;
@@ -80,6 +84,8 @@ export function createRallarMiddleware(
             outboundStores: options.outboundStores,
         },
     );
+    const inboxQueueReader = new InboxQueueReader(options.inbox);
+    const appInboxResilience = options.resilience.appInbox ?? options.resilience.inbox;
 
     includeWsQueueBoxEngineTasks(
         qboxEngine,
@@ -87,10 +93,17 @@ export function createRallarMiddleware(
         options.resilience.inbox,
         options.resilience.outbox ?? options.resilience.inbox,
     );
+    includeInboxQueueReaderEngineTasks(
+        qboxEngine,
+        inboxQueueReader,
+        appInboxResilience,
+    );
 
     return {
         qboxEngine,
         wsQBoxServerService,
+        inboxQueueReader,
+        appInboxResilience,
         clientsRepository: options.clientsRepository,
         groupsRepository: options.groupsRepository,
     };
@@ -137,6 +150,29 @@ export function includeWsQueueBoxEngineTasks(
     });
 }
 
+export function includeInboxQueueReaderEngineTasks(
+    engine: InboxOutboxEngine,
+    inboxQueueReader: InboxQueueReader,
+    resilience: ResilienceDto,
+): void {
+    engine.includeTask(InboxQueueReader.INBOX_ENQUEUE_TYPE, {
+        name: InboxQueueReader.INBOX_ENQUEUE_TYPE,
+        maxConcurrency: () => 1,
+        isWork: () =>
+            inboxQueueReader.inbox.isAnyEntryToLock(
+                InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                resilience.checkReserveTimeouts.isEntryRateLimiter,
+                resilience.checkFailed.isEntryRateLimiter,
+            ),
+        runnable: () =>
+            inboxQueueReader.dequeueInbox(
+                InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                resilience,
+            ),
+        ongoingTasks: [],
+    });
+}
+
 export function createWsServerTargetResolver(
     webSocketServer: JsonWebSocketServer,
     options: RallarGroupSnapshotResolverOptions = {},
@@ -145,9 +181,8 @@ export function createWsServerTargetResolver(
         groupId: string,
         message: ALMessage,
     ): GroupSnapshot | undefined => {
-        const groupRef = message.targets?.mode === 'multicast'
-            ? readALMulticastTargetGroupRef(message)
-            : options.resolveGroupRef?.(groupId, message);
+        const groupRef = readALTargetGroupRef(message) ??
+            options.resolveGroupRef?.(groupId, message);
         const scopedSnapshot = groupRef
             ? options.findGroupSnapshotByRef?.(groupRef, message)
             : undefined;
@@ -222,7 +257,10 @@ export function createWsServerTargetResolver(
             resolveGroupRecipients(groupId, _message),
         resolveBroadcastRecipients: (scope, message) => {
             if (scope === 'room') {
-                return resolveGroupRecipients(message.route.contextId, message);
+                return resolveGroupRecipients(
+                    readALTargetGroupRef(message)?.groupId ?? message.route.contextId,
+                    message,
+                );
             }
 
             return resolveAllOpenConnections(message);
