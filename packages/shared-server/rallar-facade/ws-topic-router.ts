@@ -1,4 +1,4 @@
-import { type ALMessage, type ALTargets, readALMulticastTargetGroupRef, } from '@shared/al-contracts/al-contract.ts';
+import { type ALMessage, type ALTargets, readALTargetGroupRef, } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { isALControlTypeId, newALNackControlMessage, } from '@shared/al-contracts/al-control.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
@@ -732,8 +732,9 @@ export class RallarServerWsFacade {
     }
 
     private readRoomId(message: ALMessage): string | undefined {
-        if (message.targets?.mode === 'multicast') {
-            return message.targets.groupRef.groupId;
+        const groupRef = readALTargetGroupRef(message);
+        if (groupRef) {
+            return groupRef.groupId;
         }
 
         if (
@@ -752,7 +753,7 @@ export class RallarServerWsFacade {
     private readRoomRef(message: ALMessage): GroupRef | undefined {
         const roomId = this.readRoomId(message);
         return roomId
-            ? readALMulticastTargetGroupRef(message)
+            ? readALTargetGroupRef(message)
             : undefined;
     }
 
