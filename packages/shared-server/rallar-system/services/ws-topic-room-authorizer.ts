@@ -1,32 +1,37 @@
-import { readALMulticastTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
+import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { isGroupActive, isSessionInGroup, readGroupVersion, } from '@shared/api/group-client-views.ts';
 import type { RallarServerWsRoomAuthorizer } from '../../rallar-facade/ws-topic-router.ts';
 import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
 
+type MaybePromise<T> = T | Promise<T>;
+
 export type CreateGroupRoomWsAuthorizerOptions = Readonly<{
     findGroupSnapshotByRef?: (
         ref: GroupRef,
         input: Parameters<RallarServerWsRoomAuthorizer>[0],
-    ) => GroupSnapshot | undefined;
-    findGroupSnapshotById?: (groupId: string) => GroupSnapshot | undefined;
+    ) => MaybePromise<GroupSnapshot | undefined>;
+    findGroupSnapshotById?: (
+        groupId: string,
+    ) => MaybePromise<GroupSnapshot | undefined>;
     resolveGroupRef?: (
         input: Parameters<RallarServerWsRoomAuthorizer>[0],
-    ) => GroupRef | undefined;
+    ) => MaybePromise<GroupRef | undefined>;
 }>;
 
 export function createGroupRoomWsAuthorizer(
     options: CreateGroupRoomWsAuthorizerOptions,
 ): RallarServerWsRoomAuthorizer {
-    return (input) => {
+    return async (input) => {
         const groupRef = input.roomRef ??
-            (input.message.targets?.mode === 'multicast'
-                ? readALMulticastTargetGroupRef(input.message)
-                : options.resolveGroupRef?.(input));
+            readALTargetGroupRef(input.message) ??
+            await options.resolveGroupRef?.(input);
         const scopedSnapshot = groupRef
-            ? options.findGroupSnapshotByRef?.(groupRef, input)
+            ? await options.findGroupSnapshotByRef?.(groupRef, input)
             : undefined;
-        const byIdSnapshot = options.findGroupSnapshotById?.(input.roomId);
+        const byIdSnapshot = scopedSnapshot
+            ? undefined
+            : await options.findGroupSnapshotById?.(input.roomId);
         const snapshot = scopedSnapshot ?? (
             byIdSnapshot && (!groupRef || isSameGroupScope(byIdSnapshot.group, groupRef))
                 ? byIdSnapshot
