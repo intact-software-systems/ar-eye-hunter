@@ -22,43 +22,63 @@ import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
 import type { RuntimeStateTransactionalRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import type { StateSyncPublisher } from '../state-sync-publisher.ts';
+import { Either } from '@shared/resilience/Either.ts';
+import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 const DEFAULT_GROUP_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+
+export type GroupWritten = {
+    snapshot: GroupSnapshot;
+    event: GroupEvent;
+};
+
+export type GroupMutationWritten = {
+    snapshot: GroupSnapshot;
+    event?: GroupEvent;
+};
+
+export type GroupStateWritten = {
+    status: 'created' | 'ok' | 'error';
+    result: Either<string, GroupMutationWritten>;
+};
 
 export type GroupStateService = Readonly<{
     listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]>;
     readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
     listEvents(ref: GroupRef): Promise<readonly GroupEvent[]>;
-    createGroup(scope: StateScope, request: CreateGroupRequest): Promise<GroupSnapshot>;
+    createGroup(
+        scope: StateScope,
+        request: CreateGroupRequest,
+    ): Promise<GroupStateWritten>;
     updateGroup(
         scope: StateScope,
         groupId: string,
         request: UpdateGroupRequest,
-    ): Promise<GroupSnapshot>;
+    ): Promise<GroupStateWritten>;
     upsertMember(
         scope: StateScope,
         groupId: string,
         principalId: string,
         request: UpsertGroupMemberRequest,
-    ): Promise<GroupSnapshot>;
+    ): Promise<GroupStateWritten>;
     connectPresenceSession(
         scope: StateScope,
         groupId: string,
         sessionId: string,
         request: ConnectGroupPresenceSessionRequest,
-    ): Promise<GroupSnapshot>;
+    ): Promise<GroupStateWritten>;
     heartbeatPresenceSession(
         scope: StateScope,
         groupId: string,
         sessionId: string,
         request: HeartbeatGroupPresenceSessionRequest,
-    ): Promise<GroupSnapshot>;
+    ): Promise<GroupStateWritten>;
     disconnectPresenceSession(
         scope: StateScope,
         groupId: string,
         sessionId: string,
         request: DisconnectGroupPresenceSessionRequest,
-    ): Promise<GroupSnapshot>;
+    ): Promise<GroupStateWritten>;
     disconnectPresenceSessionsBySessionId(
         sessionId: string,
         request?: DisconnectGroupPresenceSessionRequest,
@@ -91,21 +111,45 @@ export function createGroupStateService(
             return snapshots.filter(isDefined);
         },
         readSnapshot: async (ref) => {
-            return await new GroupStateRepository(runtimeRepository).readSnapshot(ref);
+            return await new GroupStateRepository(runtimeRepository).readSnapshot(
+                ref,
+            );
         },
         listEvents: async (ref) => {
             return await new GroupStateRepository(runtimeRepository).listEvents(ref);
         },
-        createGroup: async (scope, request) => {
-            const result = await runtimeRepository.begin(async (transactionRepository) => {
+
+        createGroup: async (scope, request): Promise<GroupStateWritten> => {
+            return await runtimeRepository.begin(async (transactionRepository) => {
                 const repository = new GroupStateRepository(transactionRepository);
+
                 const ref: GroupRef = {
                     ...scope,
                     groupId: request.groupId,
                 };
+                const idempotencyKey = request.requestId ?? request.groupId;
+
                 const existing = await repository.findGroup(ref);
+
                 if (existing) {
-                    throw new Error(`Group already exists: ${request.groupId}`);
+                    const written =
+                        await repository.findIdempotentGroupStateWritten(
+                            ref,
+                            idempotencyKey,
+                        );
+
+                    if (written) {
+                        return written;
+                    }
+
+                    return await repository.addIdempotentGroupStateWritten(
+                        ref,
+                        idempotencyKey,
+                        {
+                            status: 'error',
+                            result: Either.ofLeft(`Group already exists: ${request.groupId}`),
+                        },
+                    );
                 }
 
                 const timestamp = now();
@@ -115,6 +159,7 @@ export function createGroupStateService(
                     serviceId,
                     request.createdByPrincipalId,
                 );
+
                 const group: Group = {
                     applicationId: scope.applicationId,
                     workspaceId: scope.workspaceId,
@@ -155,29 +200,44 @@ export function createGroupStateService(
                     group,
                     {
                         ...request,
-                        actorPrincipalId: request.actorPrincipalId ?? request.createdByPrincipalId,
+                        actorPrincipalId:
+                            request.actorPrincipalId ?? request.createdByPrincipalId,
                     },
                     timestamp,
                     serviceId,
                 );
+
                 await repository.appendEvent(event);
 
-                return {
-                    snapshot: await requireGroupSnapshot(repository, ref),
-                    event,
-                };
+                return await repository.addIdempotentGroupStateWritten(
+                    ref,
+                    idempotencyKey,
+                    {
+                        status: 'created',
+                        result: Either.ofRight({
+                            snapshot: await requireGroupSnapshot(repository, ref),
+                            event,
+                        }),
+                    },
+                );
             });
-
-            await publishGroupMutation(syncPublisher, result.snapshot, result.event, serviceId);
-            return result.snapshot;
         },
         updateGroup: async (scope, groupId, request) => {
-            const result = await runtimeRepository.begin(async (transactionRepository) => {
+            return await runtimeRepository.begin(async (transactionRepository) => {
                 const repository = new GroupStateRepository(transactionRepository);
                 const ref: GroupRef = {
                     ...scope,
                     groupId,
                 };
+                const idempotentWritten = await findIdempotentGroupMutationWritten(
+                    repository,
+                    ref,
+                    request.requestId,
+                );
+                if (idempotentWritten) {
+                    return idempotentWritten;
+                }
+
                 const existing = await repository.findGroup(ref);
                 if (!existing) {
                     throw new Error(`Group not found: ${groupId}`);
@@ -208,16 +268,24 @@ export function createGroupStateService(
                     updated: updatedAudit,
                     archived: status === 'archived' ? updatedAudit : existing.archived,
                     deleted: status === 'deleted' ? updatedAudit : existing.deleted,
-                    expiresAtEpochMs: request.expiresAtEpochMs ?? existing.expiresAtEpochMs,
-                    emptySinceEpochMs: request.emptySinceEpochMs ?? existing.emptySinceEpochMs,
-                    purgeAfterEpochMs: request.purgeAfterEpochMs ?? existing.purgeAfterEpochMs,
+                    expiresAtEpochMs:
+                        request.expiresAtEpochMs ?? existing.expiresAtEpochMs,
+                    emptySinceEpochMs:
+                        request.emptySinceEpochMs ?? existing.emptySinceEpochMs,
+                    purgeAfterEpochMs:
+                        request.purgeAfterEpochMs ?? existing.purgeAfterEpochMs,
                 };
 
                 if (isSameGroupMutation(existing, group)) {
-                    return {
-                        snapshot: await requireGroupSnapshot(repository, ref),
-                        event: undefined,
-                    };
+                    return await addIdempotentGroupMutationWritten(
+                        repository,
+                        ref,
+                        request.requestId,
+                        {
+                            snapshot: await requireGroupSnapshot(repository, ref),
+                            event: undefined,
+                        },
+                    );
                 }
 
                 await repository.putGroup(group);
@@ -226,8 +294,8 @@ export function createGroupStateService(
                     status === 'archived'
                         ? 'group-archived'
                         : status === 'deleted'
-                          ? 'group-deleted'
-                          : 'group-updated',
+                            ? 'group-deleted'
+                            : 'group-updated',
                     group,
                     request,
                     timestamp,
@@ -235,24 +303,34 @@ export function createGroupStateService(
                 );
                 await repository.appendEvent(event);
 
-                return {
-                    snapshot: await requireGroupSnapshot(repository, ref),
-                    event,
-                };
+                return await addIdempotentGroupMutationWritten(
+                    repository,
+                    ref,
+                    request.requestId,
+                    {
+                        snapshot: await requireGroupSnapshot(repository, ref),
+                        event,
+                    },
+                );
             });
-
-            if (result.event) {
-                await publishGroupMutation(syncPublisher, result.snapshot, result.event, serviceId);
-            }
-            return result.snapshot;
         },
         upsertMember: async (scope, groupId, principalId, request) => {
-            const result = await runtimeRepository.begin(async (transactionRepository) => {
+            return await runtimeRepository.begin(async (transactionRepository) => {
                 const repository = new GroupStateRepository(transactionRepository);
-                const group = await requireGroup(repository, {
+                const groupRef = {
                     ...scope,
                     groupId,
-                });
+                };
+                const idempotentWritten = await findIdempotentGroupMutationWritten(
+                    repository,
+                    groupRef,
+                    request.requestId,
+                );
+                if (idempotentWritten) {
+                    return idempotentWritten;
+                }
+
+                const group = await requireGroup(repository, groupRef);
                 const ref = {
                     applicationId: scope.applicationId,
                     workspaceId: scope.workspaceId,
@@ -280,14 +358,20 @@ export function createGroupStateService(
                     invitedByPrincipalId:
                         request.invitedByPrincipalId ?? existing?.invitedByPrincipalId,
                     invitationExpiresAtEpochMs:
-                        request.invitationExpiresAtEpochMs ?? existing?.invitationExpiresAtEpochMs,
+                        request.invitationExpiresAtEpochMs ??
+                        existing?.invitationExpiresAtEpochMs,
                 };
 
                 if (existing && isSameGroupMemberMutation(existing, member)) {
-                    return {
-                        snapshot: await requireGroupSnapshot(repository, group),
-                        event: undefined,
-                    };
+                    return await addIdempotentGroupMutationWritten(
+                        repository,
+                        group,
+                        request.requestId,
+                        {
+                            snapshot: await requireGroupSnapshot(repository, group),
+                            event: undefined,
+                        },
+                    );
                 }
 
                 await repository.putMember(member);
@@ -308,24 +392,34 @@ export function createGroupStateService(
                 );
                 await repository.appendEvent(event);
 
-                return {
-                    snapshot: await requireGroupSnapshot(repository, snapshotGroup),
-                    event,
-                };
+                return await addIdempotentGroupMutationWritten(
+                    repository,
+                    snapshotGroup,
+                    request.requestId,
+                    {
+                        snapshot: await requireGroupSnapshot(repository, snapshotGroup),
+                        event,
+                    },
+                );
             });
-
-            if (result.event) {
-                await publishGroupMutation(syncPublisher, result.snapshot, result.event, serviceId);
-            }
-            return result.snapshot;
         },
         connectPresenceSession: async (scope, groupId, sessionId, request) => {
-            const result = await runtimeRepository.begin(async (transactionRepository) => {
+            return await runtimeRepository.begin(async (transactionRepository) => {
                 const repository = new GroupStateRepository(transactionRepository);
-                const group = await requireGroup(repository, {
+                const groupRef = {
                     ...scope,
                     groupId,
-                });
+                };
+                const idempotentWritten = await findIdempotentGroupMutationWritten(
+                    repository,
+                    groupRef,
+                    request.requestId,
+                );
+                if (idempotentWritten) {
+                    return idempotentWritten;
+                }
+
+                const group = await requireGroup(repository, groupRef);
                 const timestamp = now();
                 const updatedAudit = toGroupAuditStamp(
                     request,
@@ -363,10 +457,13 @@ export function createGroupStateService(
                     sessionId,
                     principalId: request.principalId,
                     connectedAtEpochMs:
-                        request.connectedAtEpochMs ?? existing?.connectedAtEpochMs ?? timestamp,
+                        request.connectedAtEpochMs ??
+                        existing?.connectedAtEpochMs ??
+                        timestamp,
                     lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs ?? timestamp,
                     expiresAtEpochMs:
-                        request.expiresAtEpochMs ?? timestamp + DEFAULT_GROUP_SESSION_TTL_MS,
+                        request.expiresAtEpochMs ??
+                        timestamp + DEFAULT_GROUP_SESSION_TTL_MS,
                     disconnectedAtEpochMs: undefined,
                     disconnectReason: undefined,
                 };
@@ -375,7 +472,10 @@ export function createGroupStateService(
 
                 let event: GroupEvent | undefined;
                 let snapshotGroup = group;
-                if (!existing || !isSameConnectedGroupPresenceSession(existing, session)) {
+                if (
+                    !existing ||
+                    !isSameConnectedGroupPresenceSession(existing, session)
+                ) {
                     snapshotGroup = {
                         ...group,
                         snapshotVersion: nextGroupSnapshotVersion(group),
@@ -394,24 +494,34 @@ export function createGroupStateService(
                     await repository.appendEvent(event);
                 }
 
-                return {
-                    snapshot: await requireGroupSnapshot(repository, snapshotGroup),
-                    event,
-                };
+                return await addIdempotentGroupMutationWritten(
+                    repository,
+                    snapshotGroup,
+                    request.requestId,
+                    {
+                        snapshot: await requireGroupSnapshot(repository, snapshotGroup),
+                        event,
+                    },
+                );
             });
-
-            if (result.event) {
-                await publishGroupMutation(syncPublisher, result.snapshot, result.event, serviceId);
-            }
-            return result.snapshot;
         },
         heartbeatPresenceSession: async (scope, groupId, sessionId, request) => {
-            const result = await runtimeRepository.begin(async (transactionRepository) => {
+            return await runtimeRepository.begin(async (transactionRepository) => {
                 const repository = new GroupStateRepository(transactionRepository);
-                const group = await requireGroup(repository, {
+                const groupRef = {
                     ...scope,
                     groupId,
-                });
+                };
+                const idempotentWritten = await findIdempotentGroupMutationWritten(
+                    repository,
+                    groupRef,
+                    request.requestId,
+                );
+                if (idempotentWritten) {
+                    return idempotentWritten;
+                }
+
+                const group = await requireGroup(repository, groupRef);
                 const ref = {
                     applicationId: scope.applicationId,
                     workspaceId: scope.workspaceId,
@@ -428,7 +538,9 @@ export function createGroupStateService(
                     request,
                     timestamp,
                     serviceId,
-                    request.actorPrincipalId ?? request.principalId ?? existing.principalId,
+                    request.actorPrincipalId ??
+                    request.principalId ??
+                    existing.principalId,
                 );
                 const wasActive =
                     existing.disconnectedAtEpochMs === undefined &&
@@ -467,24 +579,34 @@ export function createGroupStateService(
                     await repository.appendEvent(event);
                 }
 
-                return {
-                    snapshot: await requireGroupSnapshot(repository, snapshotGroup),
-                    event,
-                };
+                return await addIdempotentGroupMutationWritten(
+                    repository,
+                    snapshotGroup,
+                    request.requestId,
+                    {
+                        snapshot: await requireGroupSnapshot(repository, snapshotGroup),
+                        event,
+                    },
+                );
             });
-
-            if (result.event) {
-                await publishGroupMutation(syncPublisher, result.snapshot, result.event, serviceId);
-            }
-            return result.snapshot;
         },
         disconnectPresenceSession: async (scope, groupId, sessionId, request) => {
-            const result = await runtimeRepository.begin(async (transactionRepository) => {
+            return await runtimeRepository.begin(async (transactionRepository) => {
                 const repository = new GroupStateRepository(transactionRepository);
-                const group = await requireGroup(repository, {
+                const groupRef = {
                     ...scope,
                     groupId,
-                });
+                };
+                const idempotentWritten = await findIdempotentGroupMutationWritten(
+                    repository,
+                    groupRef,
+                    request.requestId,
+                );
+                if (idempotentWritten) {
+                    return idempotentWritten;
+                }
+
+                const group = await requireGroup(repository, groupRef);
                 const ref = {
                     applicationId: scope.applicationId,
                     workspaceId: scope.workspaceId,
@@ -501,15 +623,22 @@ export function createGroupStateService(
                     request,
                     timestamp,
                     serviceId,
-                    request.actorPrincipalId ?? request.principalId ?? existing.principalId,
+                    request.actorPrincipalId ??
+                    request.principalId ??
+                    existing.principalId,
                 );
                 const session: GroupPresenceSession = {
                     ...existing,
                     lastHeartbeatAtEpochMs:
                         request.lastHeartbeatAtEpochMs ?? existing.lastHeartbeatAtEpochMs,
-                    expiresAtEpochMs: request.expiresAtEpochMs ?? existing.expiresAtEpochMs,
-                    disconnectedAtEpochMs: request.disconnectedAtEpochMs ?? timestamp,
-                    disconnectReason: request.reason ?? existing.disconnectReason ?? 'closed',
+                    expiresAtEpochMs:
+                        request.expiresAtEpochMs ?? existing.expiresAtEpochMs,
+                    disconnectedAtEpochMs:
+                        request.disconnectedAtEpochMs ??
+                        existing.disconnectedAtEpochMs ??
+                        timestamp,
+                    disconnectReason:
+                        request.reason ?? existing.disconnectReason ?? 'closed',
                 };
 
                 await repository.putPresenceSession(session);
@@ -535,45 +664,47 @@ export function createGroupStateService(
                     await repository.appendEvent(event);
                 }
 
-                return {
-                    snapshot: await requireGroupSnapshot(repository, snapshotGroup),
-                    event,
-                };
+                return await addIdempotentGroupMutationWritten(
+                    repository,
+                    snapshotGroup,
+                    request.requestId,
+                    {
+                        snapshot: await requireGroupSnapshot(repository, snapshotGroup),
+                        event,
+                    },
+                );
             });
-
-            if (result.event) {
-                await publishGroupMutation(syncPublisher, result.snapshot, result.event, serviceId);
-            }
-            return result.snapshot;
         },
         disconnectPresenceSessionsBySessionId: async (sessionId, request = {}) => {
             const repository = new GroupStateRepository(runtimeRepository);
             const sessions = (await repository.listAllPresenceSessions()).filter(
                 (session) =>
-                    session.sessionId === sessionId && session.disconnectedAtEpochMs === undefined,
+                    session.sessionId === sessionId &&
+                    session.disconnectedAtEpochMs === undefined,
             );
             const snapshots: GroupSnapshot[] = [];
 
             for (const session of sessions) {
                 try {
-                    snapshots.push(
-                        await service.disconnectPresenceSession(
-                            {
-                                applicationId: session.applicationId,
-                                workspaceId: session.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
-                            },
-                            session.groupId,
-                            session.sessionId,
-                            {
-                                ...request,
-                                principalId: request.principalId ?? session.principalId,
-                                actorPrincipalId: request.actorPrincipalId ?? session.principalId,
-                                actorSessionId: request.actorSessionId ?? session.sessionId,
-                            },
-                        ),
+                    const written = await service.disconnectPresenceSession(
+                        {
+                            applicationId: session.applicationId,
+                            workspaceId: session.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
+                        },
+                        session.groupId,
+                        session.sessionId,
+                        {
+                            ...request,
+                            principalId: request.principalId ?? session.principalId,
+                            actorPrincipalId: request.actorPrincipalId ?? session.principalId,
+                            actorSessionId: request.actorSessionId ?? session.sessionId,
+                        },
                     );
+                    await publishGroupStateWritten(syncPublisher, written, serviceId);
+                    snapshots.push(requireGroupStateWrittenSnapshot(written));
                 } catch (error) {
-                    const message = error instanceof Error ? error.message : String(error);
+                    const message =
+                        error instanceof Error ? error.message : String(error);
                     if (!message.includes('not found')) {
                         throw error;
                     }
@@ -587,17 +718,69 @@ export function createGroupStateService(
     return service;
 }
 
-async function publishGroupMutation(
-    syncPublisher: StateSyncPublisher,
-    snapshot: GroupSnapshot,
-    event: GroupEvent,
-    serviceId: string,
-): Promise<void> {
-    await syncPublisher.publishGroupSnapshot(snapshot, serviceId);
-    await syncPublisher.publishGroupEvent(event, serviceId);
+async function findIdempotentGroupMutationWritten(
+    repository: GroupStateRepository,
+    ref: GroupRef,
+    requestId: string | undefined,
+): Promise<GroupStateWritten | undefined> {
+    if (!requestId) {
+        return undefined;
+    }
+
+    return await repository.findIdempotentGroupStateWritten(ref, requestId);
 }
 
-async function requireGroup(repository: GroupStateRepository, ref: GroupRef): Promise<Group> {
+async function addIdempotentGroupMutationWritten(
+    repository: GroupStateRepository,
+    ref: GroupRef,
+    requestId: string | undefined,
+    written: GroupMutationWritten,
+): Promise<GroupStateWritten> {
+    const groupStateWritten: GroupStateWritten = {
+        status: 'ok',
+        result: Either.ofRight(written),
+    };
+
+    if (!requestId) {
+        return groupStateWritten;
+    }
+
+    return await repository.addIdempotentGroupStateWritten(
+        ref,
+        requestId,
+        groupStateWritten,
+    );
+}
+
+async function publishGroupStateWritten(
+    syncPublisher: StateSyncPublisher,
+    written: GroupStateWritten,
+    serviceId: string,
+): Promise<void> {
+    const mutation = written.result.right;
+    if (!mutation?.event) {
+        return;
+    }
+
+    await syncPublisher.publishGroupSnapshot(mutation.snapshot, serviceId);
+    await syncPublisher.publishGroupEvent(mutation.event, serviceId);
+}
+
+function requireGroupStateWrittenSnapshot(
+    written: GroupStateWritten,
+): GroupSnapshot {
+    const snapshot = written.result.right?.snapshot;
+    if (!snapshot) {
+        throw new Error(written.result.left ?? 'Group mutation failed');
+    }
+
+    return snapshot;
+}
+
+async function requireGroup(
+    repository: GroupStateRepository,
+    ref: GroupRef,
+): Promise<Group> {
     const group = await repository.findGroup(ref);
     if (!group) {
         throw new Error(`Group not found: ${ref.groupId}`);
@@ -639,7 +822,10 @@ function isSameGroupMutation(current: Group, next: Group): boolean {
     );
 }
 
-function isSameGroupMemberMutation(current: GroupMember, next: GroupMember): boolean {
+function isSameGroupMemberMutation(
+    current: GroupMember,
+    next: GroupMember,
+): boolean {
     return (
         current.role === next.role &&
         current.status === next.status &&
@@ -700,7 +886,9 @@ function newGroupEvent(
     };
 }
 
-function toGroupMemberEventType(status: GroupMember['status']): GroupEvent['eventType'] {
+function toGroupMemberEventType(
+    status: GroupMember['status'],
+): GroupEvent['eventType'] {
     switch (status) {
         case 'invited':
             return 'member-invited';
@@ -730,31 +918,4 @@ function toGroupAuditStamp(
         traceId: request.traceId,
         requestId: request.requestId,
     };
-}
-
-function jsonEquals(left: unknown, right: unknown): boolean {
-    return stableJsonStringify(left) === stableJsonStringify(right);
-}
-
-function stableJsonStringify(value: unknown): string {
-    return JSON.stringify(toStableJson(value));
-}
-
-function toStableJson(value: unknown): unknown {
-    if (Array.isArray(value)) {
-        return value.map(toStableJson);
-    }
-    if (!value || typeof value !== 'object') {
-        return value;
-    }
-
-    return Object.fromEntries(
-        Object.entries(value as Record<string, unknown>)
-            .sort(([left], [right]) => left.localeCompare(right))
-            .map(([key, entryValue]) => [key, toStableJson(entryValue)]),
-    );
-}
-
-function isDefined<T>(value: T | undefined): value is T {
-    return value !== undefined;
 }

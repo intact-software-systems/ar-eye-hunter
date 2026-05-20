@@ -10,6 +10,21 @@ import type {
 } from '@shared/api/state-types.ts';
 import { getGroupStateService } from '../services/group-state-service.ts';
 import { requireApiAuthSession } from '../services/request-auth-service.ts';
+import { getMiddleware } from '../middleware.ts';
+import type {
+    GroupMutationWritten,
+    GroupStateWritten,
+} from '@shared-server/rallar-system/services/group-state-service.ts';
+import {
+    type AppInboxEnqueueInput,
+    AppInboxType,
+    type GroupCreateAppInboxPayload,
+    type GroupMemberUpsertAppInboxPayload,
+    type GroupPresenceConnectAppInboxPayload,
+    type GroupPresenceDisconnectAppInboxPayload,
+    type GroupPresenceHeartbeatAppInboxPayload,
+    type GroupUpdateAppInboxPayload,
+} from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 export function init(app: Hono): void {
     app.get(
@@ -49,14 +64,26 @@ export function init(app: Hono): void {
         async (c) => {
             try {
                 const authSession = await requireApiAuthSession(c.req);
-                const snapshot = await getGroupStateService().createGroup(
-                    toScope(c),
-                    withActorAndCreator(
-                        await c.req.json() as CreateGroupRequest,
-                        authSession,
-                    ),
+                const scope = toScope(c);
+                const requestBody = await readRequestWithRequestId<CreateGroupRequest>(c);
+                const request = withActorAndCreator(requestBody, authSession);
+                const written = unwrapGroupStateWritten(
+                    await processGroupAppInbox<
+                        GroupCreateAppInboxPayload,
+                        GroupStateWritten
+                    >({
+                        type: AppInboxType.GROUP_CREATE,
+                        resourceId: request.requestId,
+                        contextId: toGroupAppInboxContextId(scope, request.groupId),
+                        senderId: authSession.clientId,
+                        data: {
+                            scope,
+                            request,
+                        },
+                    }),
                 );
-                return c.json(snapshot, 201);
+
+                return c.json(written.snapshot, 201);
             } catch (error) {
                 return toErrorResponse(c, error);
             }
@@ -68,16 +95,30 @@ export function init(app: Hono): void {
         async (c) => {
             try {
                 const authSession = await requireApiAuthSession(c.req);
-                await assertCanUpdateGroup(authSession.clientId, toScope(c), c.req.param('groupId'));
-                const snapshot = await getGroupStateService().updateGroup(
-                    toScope(c),
-                    c.req.param('groupId'),
-                    withActor(
-                        await c.req.json() as UpdateGroupRequest,
-                        authSession,
-                    ),
+                const scope = toScope(c);
+                const groupId = c.req.param('groupId');
+                await assertCanUpdateGroup(authSession.clientId, scope, groupId);
+                const request = withActor(
+                    await readRequestWithRequestId<UpdateGroupRequest>(c),
+                    authSession,
                 );
-                return c.json(snapshot);
+                const written = unwrapGroupStateWritten(
+                    await processGroupAppInbox<
+                        GroupUpdateAppInboxPayload,
+                        GroupStateWritten
+                    >({
+                        type: AppInboxType.GROUP_UPDATE,
+                        resourceId: request.requestId,
+                        contextId: toGroupAppInboxContextId(scope, groupId),
+                        senderId: authSession.clientId,
+                        data: {
+                            scope,
+                            groupId,
+                            request,
+                        },
+                    }),
+                );
+                return c.json(written.snapshot);
             } catch (error) {
                 return toErrorResponse(c, error);
             }
@@ -89,23 +130,36 @@ export function init(app: Hono): void {
         async (c) => {
             try {
                 const authSession = await requireApiAuthSession(c.req);
+                const scope = toScope(c);
+                const groupId = c.req.param('groupId');
                 const principalId = c.req.param('principalId');
                 assertSelfPrincipal(authSession.clientId, principalId);
-                const request = await c.req.json() as UpsertGroupMemberRequest;
+                const request = await readRequestWithRequestId<UpsertGroupMemberRequest>(c);
                 assertSelfServiceMemberStatus(request.status);
-                const snapshot = await getGroupStateService().upsertMember(
-                    toScope(c),
-                    c.req.param('groupId'),
-                    principalId,
-                    withActor(
-                        {
-                            ...request,
-                            role: undefined,
+                const written = unwrapGroupStateWritten(
+                    await processGroupAppInbox<
+                        GroupMemberUpsertAppInboxPayload,
+                        GroupStateWritten
+                    >({
+                        type: AppInboxType.GROUP_MEMBER_UPSERT,
+                        resourceId: request.requestId,
+                        contextId: toGroupAppInboxContextId(scope, groupId),
+                        senderId: authSession.clientId,
+                        data: {
+                            scope,
+                            groupId,
+                            principalId,
+                            request: withActor(
+                                {
+                                    ...request,
+                                    role: undefined,
+                                },
+                                authSession,
+                            ),
                         },
-                        authSession,
-                    ),
+                    }),
                 );
-                return c.json(snapshot);
+                return c.json(written.snapshot);
             } catch (error) {
                 return toErrorResponse(c, error);
             }
@@ -117,19 +171,34 @@ export function init(app: Hono): void {
         async (c) => {
             try {
                 const authSession = await requireApiAuthSession(c.req);
-                assertSelfSession(authSession, c.req.param('sessionId'));
-                const snapshot = await getGroupStateService().connectPresenceSession(
-                    toScope(c),
-                    c.req.param('groupId'),
-                    c.req.param('sessionId'),
-                    {
-                        ...(await c.req.json() as ConnectGroupPresenceSessionRequest),
-                        principalId: authSession.clientId,
-                        actorPrincipalId: authSession.clientId,
-                        actorSessionId: authSession.sessionId,
-                    },
+                const scope = toScope(c);
+                const groupId = c.req.param('groupId');
+                const sessionId = c.req.param('sessionId');
+                assertSelfSession(authSession, sessionId);
+                const request = await readRequestWithRequestId<ConnectGroupPresenceSessionRequest>(c);
+                const written = unwrapGroupStateWritten(
+                    await processGroupAppInbox<
+                        GroupPresenceConnectAppInboxPayload,
+                        GroupStateWritten
+                    >({
+                        type: AppInboxType.GROUP_PRESENCE_CONNECT,
+                        resourceId: request.requestId,
+                        contextId: toGroupAppInboxContextId(scope, groupId),
+                        senderId: authSession.clientId,
+                        data: {
+                            scope,
+                            groupId,
+                            sessionId,
+                            request: {
+                                ...request,
+                                principalId: authSession.clientId,
+                                actorPrincipalId: authSession.clientId,
+                                actorSessionId: authSession.sessionId,
+                            },
+                        },
+                    }),
                 );
-                return c.json(snapshot);
+                return c.json(written.snapshot);
             } catch (error) {
                 return toErrorResponse(c, error);
             }
@@ -141,19 +210,36 @@ export function init(app: Hono): void {
         async (c) => {
             try {
                 const authSession = await requireApiAuthSession(c.req);
-                assertSelfSession(authSession, c.req.param('sessionId'));
-                const snapshot = await getGroupStateService().heartbeatPresenceSession(
-                    toScope(c),
-                    c.req.param('groupId'),
-                    c.req.param('sessionId'),
-                    {
-                        ...(await c.req.json() as HeartbeatGroupPresenceSessionRequest),
-                        principalId: authSession.clientId,
-                        actorPrincipalId: authSession.clientId,
-                        actorSessionId: authSession.sessionId,
-                    },
+                const scope = toScope(c);
+                const groupId = c.req.param('groupId');
+                const sessionId = c.req.param('sessionId');
+                assertSelfSession(authSession, sessionId);
+                const request = await readRequestWithRequestId<HeartbeatGroupPresenceSessionRequest>(
+                    c,
                 );
-                return c.json(snapshot);
+                const written = unwrapGroupStateWritten(
+                    await processGroupAppInbox<
+                        GroupPresenceHeartbeatAppInboxPayload,
+                        GroupStateWritten
+                    >({
+                        type: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
+                        resourceId: request.requestId,
+                        contextId: toGroupAppInboxContextId(scope, groupId),
+                        senderId: authSession.clientId,
+                        data: {
+                            scope,
+                            groupId,
+                            sessionId,
+                            request: {
+                                ...request,
+                                principalId: authSession.clientId,
+                                actorPrincipalId: authSession.clientId,
+                                actorSessionId: authSession.sessionId,
+                            },
+                        },
+                    }),
+                );
+                return c.json(written.snapshot);
             } catch (error) {
                 return toErrorResponse(c, error);
             }
@@ -165,24 +251,109 @@ export function init(app: Hono): void {
         async (c) => {
             try {
                 const authSession = await requireApiAuthSession(c.req);
-                assertSelfSession(authSession, c.req.param('sessionId'));
-                const snapshot = await getGroupStateService().disconnectPresenceSession(
-                    toScope(c),
-                    c.req.param('groupId'),
-                    c.req.param('sessionId'),
-                    {
-                        ...(await c.req.json() as DisconnectGroupPresenceSessionRequest),
-                        principalId: authSession.clientId,
-                        actorPrincipalId: authSession.clientId,
-                        actorSessionId: authSession.sessionId,
-                    },
+                const scope = toScope(c);
+                const groupId = c.req.param('groupId');
+                const sessionId = c.req.param('sessionId');
+                assertSelfSession(authSession, sessionId);
+                const request = await readRequestWithRequestId<DisconnectGroupPresenceSessionRequest>(
+                    c,
                 );
-                return c.json(snapshot);
+                const written = unwrapGroupStateWritten(
+                    await processGroupAppInbox<
+                        GroupPresenceDisconnectAppInboxPayload,
+                        GroupStateWritten
+                    >({
+                        type: AppInboxType.GROUP_PRESENCE_DISCONNECT,
+                        resourceId: request.requestId,
+                        contextId: toGroupAppInboxContextId(scope, groupId),
+                        senderId: authSession.clientId,
+                        data: {
+                            scope,
+                            groupId,
+                            sessionId,
+                            request: {
+                                ...request,
+                                principalId: authSession.clientId,
+                                actorPrincipalId: authSession.clientId,
+                                actorSessionId: authSession.sessionId,
+                            },
+                        },
+                    }),
+                );
+                return c.json(written.snapshot);
             } catch (error) {
                 return toErrorResponse(c, error);
             }
         },
     );
+}
+
+async function processGroupAppInbox<V, R>(
+    enqueue: AppInboxEnqueueInput<V>,
+): Promise<R> {
+    const result = await getMiddleware().appInboxService?.processEntryUntilCompletion<V, R>(
+        enqueue,
+    );
+
+    if (!result) {
+        throw new Error('App inbox service not initialised');
+    }
+
+    return result.fold(
+        (error) => {
+            throw new Error(error);
+        },
+        (value) => value,
+    );
+}
+
+async function readRequestWithRequestId<T extends { requestId?: string }>(c: {
+    req: {
+        json(): Promise<unknown>;
+        header(name: string): string | undefined;
+    };
+}): Promise<T & { requestId: string }> {
+    const requestBody = (await c.req.json()) as T;
+    const requestId = requestBody.requestId ??
+        c.req.header('Idempotency-Key') ??
+        crypto.randomUUID();
+
+    return {
+        ...requestBody,
+        requestId,
+    };
+}
+
+function unwrapGroupStateWritten(
+    written: GroupStateWritten,
+): GroupMutationWritten {
+    const result = written.result as
+        | GroupStateWritten['result']
+        | {
+        left?: string;
+        right?: GroupMutationWritten;
+    };
+
+    if ('fold' in result && typeof result.fold === 'function') {
+        return result.fold(
+            (error) => {
+                throw new Error(error);
+            },
+            (value) => value,
+        );
+    }
+
+    if (result.right) {
+        return result.right;
+    }
+
+    throw new Error(result.left ?? 'Group mutation failed');
+}
+
+function toGroupAppInboxContextId(scope: StateScope, groupId: string): string {
+    return [scope.applicationId, scope.workspaceId, groupId]
+        .map(encodeURIComponent)
+        .join(':');
 }
 
 function toScope(c: {
@@ -250,12 +421,11 @@ function withActorAndCreator(
     };
 }
 
-function assertSelfPrincipal(
-    clientId: string,
-    principalId: string,
-): void {
+function assertSelfPrincipal(clientId: string, principalId: string): void {
     if (clientId !== principalId) {
-        throw new Error('Forbidden: principal id does not match authenticated client');
+        throw new Error(
+            'Forbidden: principal id does not match authenticated client',
+        );
     }
 }
 
@@ -267,13 +437,19 @@ function assertSelfSession(
     sessionId: string,
 ): void {
     if (authSession.sessionId !== sessionId) {
-        throw new Error('Forbidden: session id does not match authenticated session');
+        throw new Error(
+            'Forbidden: session id does not match authenticated session',
+        );
     }
 }
 
-function assertSelfServiceMemberStatus(status: UpsertGroupMemberRequest['status']): void {
+function assertSelfServiceMemberStatus(
+    status: UpsertGroupMemberRequest['status'],
+): void {
     if (status !== 'active' && status !== 'left') {
-        throw new Error('Forbidden: self-service membership changes only support active/left');
+        throw new Error(
+            'Forbidden: self-service membership changes only support active/left',
+        );
     }
 }
 
@@ -289,9 +465,13 @@ async function assertCanUpdateGroup(
     if (!snapshot) {
         throw new Error(`Group not found: ${groupId}`);
     }
-    const member = snapshot.members.find((entry) => entry.principalId === principalId);
+    const member = snapshot.members.find(
+        (entry) => entry.principalId === principalId,
+    );
     if (!member || member.status !== 'active') {
-        throw new Error('Forbidden: only active group owners/admins can update groups');
+        throw new Error(
+            'Forbidden: only active group owners/admins can update groups',
+        );
     }
 
     if (member.role !== 'owner' && member.role !== 'admin') {

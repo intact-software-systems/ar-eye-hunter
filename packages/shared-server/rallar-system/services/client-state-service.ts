@@ -29,6 +29,7 @@ import { ClientStateRepository } from '../repositories/ClientStateRepository.ts'
 import type { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
 import type { RuntimeStateTransactionalRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import type { StateSyncPublisher } from '../state-sync-publisher.ts';
+import { arrayEquals, isDefined, jsonEquals } from '@shared/repository/state-utils.ts';
 
 const DEFAULT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -1006,37 +1007,4 @@ async function requireClientSnapshot(
     }
 
     return snapshot;
-}
-
-function arrayEquals<T>(left: readonly T[], right: readonly T[]): boolean {
-    return (
-        left.length === right.length && left.every((value, index) => Object.is(value, right[index]))
-    );
-}
-
-function jsonEquals(left: unknown, right: unknown): boolean {
-    return stableJsonStringify(left) === stableJsonStringify(right);
-}
-
-function stableJsonStringify(value: unknown): string {
-    return JSON.stringify(toStableJson(value));
-}
-
-function toStableJson(value: unknown): unknown {
-    if (Array.isArray(value)) {
-        return value.map(toStableJson);
-    }
-    if (!value || typeof value !== 'object') {
-        return value;
-    }
-
-    return Object.fromEntries(
-        Object.entries(value as Record<string, unknown>)
-            .sort(([left], [right]) => left.localeCompare(right))
-            .map(([key, entryValue]) => [key, toStableJson(entryValue)]),
-    );
-}
-
-function isDefined<T>(value: T | undefined): value is T {
-    return value !== undefined;
 }

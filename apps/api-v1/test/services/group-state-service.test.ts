@@ -3,476 +3,514 @@ import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { createGroupStateService } from '../../src/services/group-state-service.ts';
 import type { StateSyncPublisher } from '../../src/services/state-sync-service.ts';
+import type { GroupStateWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
 import type {
-    RuntimeStateEntry,
-    RuntimeStateTransactionalRepositoryLike,
+  RuntimeStateEntry,
+  RuntimeStateTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
 const TEST_SCOPE: StateScope = {
-    applicationId: 'app-1',
-    workspaceId: 'workspace-1',
+  applicationId: 'app-1',
+  workspaceId: 'workspace-1',
 };
 const INITIAL_EXPIRES_AT_EPOCH_MS = 4_102_444_821_000;
 const REFRESHED_EXPIRES_AT_EPOCH_MS = 4_102_444_822_000;
 
 const NO_OP_SYNC_PUBLISHER: StateSyncPublisher = {
+  publishClientSnapshot: async () => {
+  },
+  publishClientEvent: async () => {
+  },
+  publishGroupSnapshot: async () => {
+  },
+  publishGroupEvent: async () => {
+  },
+};
+
+Deno.test('connectPresenceSession rejects missing and non-active group members', async () => {
+  const service = createTestGroupStateService();
+  await service.createGroup(TEST_SCOPE, {
+    groupId: 'group-1',
+    displayName: 'Room 1',
+    kind: 'room',
+    createdByPrincipalId: 'owner-1',
+    actorPrincipalId: 'owner-1',
+    actorSessionId: 'owner-session',
+  });
+
+  await assert.rejects(
+    () =>
+      service.connectPresenceSession(TEST_SCOPE, 'group-1', 'missing-session', {
+        principalId: 'missing-member',
+        actorPrincipalId: 'missing-member',
+        actorSessionId: 'missing-session',
+      }),
+    /Forbidden: group member not found for presence session: missing-member/,
+  );
+
+  for (const status of ['left', 'removed', 'banned'] as const) {
+    await service.upsertMember(TEST_SCOPE, 'group-1', 'member-2', {
+      status,
+      actorPrincipalId: 'owner-1',
+      actorSessionId: 'owner-session',
+    });
+
+    await assert.rejects(
+      () =>
+        service.connectPresenceSession(
+          TEST_SCOPE,
+          'group-1',
+          `session-${status}`,
+          {
+            principalId: 'member-2',
+            actorPrincipalId: 'member-2',
+            actorSessionId: `session-${status}`,
+          },
+        ),
+      /Forbidden: group member is not active for presence session: member-2/,
+    );
+  }
+});
+
+Deno.test('upsertMember preserves existing roles across leave and rejoin', async () => {
+  const service = createTestGroupStateService();
+  await service.createGroup(TEST_SCOPE, {
+    groupId: 'group-1',
+    displayName: 'Room 1',
+    kind: 'room',
+    createdByPrincipalId: 'owner-1',
+    actorPrincipalId: 'owner-1',
+    actorSessionId: 'owner-session',
+  });
+
+  await service.upsertMember(TEST_SCOPE, 'group-1', 'owner-1', {
+    status: 'left',
+    actorPrincipalId: 'owner-1',
+    actorSessionId: 'owner-session',
+  });
+  assertMember(await readSnapshot(service), 'owner-1', 'owner', 'left');
+
+  await service.upsertMember(TEST_SCOPE, 'group-1', 'owner-1', {
+    status: 'active',
+    actorPrincipalId: 'owner-1',
+    actorSessionId: 'owner-session',
+  });
+  assertMember(await readSnapshot(service), 'owner-1', 'owner', 'active');
+});
+
+Deno.test('semantic group mutations advance snapshotVersion', async () => {
+  const service = createTestGroupStateService();
+
+  const created = snapshotFromGroupStateWritten(
+    await service.createGroup(TEST_SCOPE, {
+      groupId: 'group-1',
+      displayName: 'Room 1',
+      kind: 'room',
+      createdByPrincipalId: 'owner-1',
+      actorPrincipalId: 'owner-1',
+      actorSessionId: 'owner-session',
+    }),
+  );
+  assertSnapshotVersion(created, 1);
+
+  const unchanged = snapshotFromGroupStateWritten(
+    await service.updateGroup(TEST_SCOPE, 'group-1', {
+      displayName: 'Room 1',
+      kind: 'room',
+      actorPrincipalId: 'owner-1',
+    }),
+  );
+  assertSnapshotVersion(unchanged, 1);
+
+  const updated = snapshotFromGroupStateWritten(
+    await service.updateGroup(TEST_SCOPE, 'group-1', {
+      displayName: 'Room 1 updated',
+      actorPrincipalId: 'owner-1',
+    }),
+  );
+  assertSnapshotVersion(updated, 2);
+
+  const joined = snapshotFromGroupStateWritten(
+    await service.upsertMember(TEST_SCOPE, 'group-1', 'member-1', {
+      status: 'active',
+      actorPrincipalId: 'owner-1',
+      actorSessionId: 'owner-session',
+    }),
+  );
+  assertSnapshotVersion(joined, 3);
+
+  const connected = snapshotFromGroupStateWritten(
+    await service.connectPresenceSession(
+      TEST_SCOPE,
+      'group-1',
+      'member-session',
+      {
+        principalId: 'member-1',
+        actorPrincipalId: 'member-1',
+        actorSessionId: 'member-session',
+        lastHeartbeatAtEpochMs: 1_000,
+        expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
+      },
+    ),
+  );
+  assertSnapshotVersion(connected, 4);
+
+  const heartbeat = snapshotFromGroupStateWritten(
+    await service.heartbeatPresenceSession(
+      TEST_SCOPE,
+      'group-1',
+      'member-session',
+      {
+        principalId: 'member-1',
+        actorPrincipalId: 'member-1',
+        actorSessionId: 'member-session',
+        lastHeartbeatAtEpochMs: 2_000,
+        expiresAtEpochMs: REFRESHED_EXPIRES_AT_EPOCH_MS,
+      },
+    ),
+  );
+  assertSnapshotVersion(heartbeat, 4);
+
+  const disconnected = snapshotFromGroupStateWritten(
+    await service.disconnectPresenceSession(
+      TEST_SCOPE,
+      'group-1',
+      'member-session',
+      {
+        principalId: 'member-1',
+        actorPrincipalId: 'member-1',
+        actorSessionId: 'member-session',
+        reason: 'left',
+      },
+    ),
+  );
+  assertSnapshotVersion(disconnected, 5);
+});
+
+Deno.test('heartbeatPresenceSession refreshes TTL without publishing unchanged snapshots', async () => {
+  const syncPublisher = createRecordingStateSyncPublisher();
+  const service = createTestGroupStateService(syncPublisher);
+
+  await service.createGroup(TEST_SCOPE, {
+    groupId: 'group-1',
+    displayName: 'Room 1',
+    kind: 'room',
+    createdByPrincipalId: 'owner-1',
+    actorPrincipalId: 'owner-1',
+    actorSessionId: 'owner-session',
+  });
+  await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session', {
+    principalId: 'owner-1',
+    actorPrincipalId: 'owner-1',
+    actorSessionId: 'owner-session',
+    lastHeartbeatAtEpochMs: 1_000,
+    expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
+  });
+  syncPublisher.reset();
+
+  const before = await readSnapshot(service);
+  const refreshed = snapshotFromGroupStateWritten(
+    await service.heartbeatPresenceSession(
+      TEST_SCOPE,
+      'group-1',
+      'owner-session',
+      {
+        principalId: 'owner-1',
+        actorPrincipalId: 'owner-1',
+        actorSessionId: 'owner-session',
+        lastHeartbeatAtEpochMs: 2_000,
+        expiresAtEpochMs: REFRESHED_EXPIRES_AT_EPOCH_MS,
+      },
+    ),
+  );
+
+  assert.equal(refreshed.group.presenceVersion, before.group.presenceVersion);
+  assert.equal(refreshed.activeSessions[0].lastHeartbeatAtEpochMs, 2_000);
+  assert.equal(
+    refreshed.activeSessions[0].expiresAtEpochMs,
+    REFRESHED_EXPIRES_AT_EPOCH_MS,
+  );
+  assert.equal(syncPublisher.groupSnapshots.length, 0);
+  assert.equal(syncPublisher.groupEvents.length, 0);
+});
+
+Deno.test('updateGroup ignores unchanged metadata state', async () => {
+  const syncPublisher = createRecordingStateSyncPublisher();
+  const service = createTestGroupStateService(syncPublisher);
+
+  const created = snapshotFromGroupStateWritten(
+    await service.createGroup(TEST_SCOPE, {
+      groupId: 'group-1',
+      displayName: 'Room 1',
+      kind: 'room',
+      createdByPrincipalId: 'owner-1',
+      actorPrincipalId: 'owner-1',
+    }),
+  );
+  syncPublisher.reset();
+
+  const unchanged = snapshotFromGroupStateWritten(
+    await service.updateGroup(TEST_SCOPE, 'group-1', {
+      displayName: 'Room 1',
+      kind: 'room',
+      actorPrincipalId: 'owner-1',
+    }),
+  );
+
+  assert.equal(unchanged.group.metadataVersion, created.group.metadataVersion);
+  assert.equal(syncPublisher.groupSnapshots.length, 0);
+  assert.equal(syncPublisher.groupEvents.length, 0);
+});
+
+Deno.test('upsertMember and connectPresenceSession ignore unchanged semantic state', async () => {
+  const syncPublisher = createRecordingStateSyncPublisher();
+  const service = createTestGroupStateService(syncPublisher);
+
+  await service.createGroup(TEST_SCOPE, {
+    groupId: 'group-1',
+    displayName: 'Room 1',
+    kind: 'room',
+    createdByPrincipalId: 'owner-1',
+    actorPrincipalId: 'owner-1',
+  });
+  syncPublisher.reset();
+
+  const joined = snapshotFromGroupStateWritten(
+    await service.upsertMember(TEST_SCOPE, 'group-1', 'member-1', {
+      status: 'active',
+      role: 'member',
+      actorPrincipalId: 'owner-1',
+    }),
+  );
+  syncPublisher.reset();
+
+  const unchangedMember = snapshotFromGroupStateWritten(
+    await service.upsertMember(
+      TEST_SCOPE,
+      'group-1',
+      'member-1',
+      {
+        status: 'active',
+        role: 'member',
+        actorPrincipalId: 'owner-1',
+      },
+    ),
+  );
+  const connected = snapshotFromGroupStateWritten(
+    await service.connectPresenceSession(
+      TEST_SCOPE,
+      'group-1',
+      'member-session',
+      {
+        principalId: 'member-1',
+        actorPrincipalId: 'member-1',
+        lastHeartbeatAtEpochMs: 1_000,
+        expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
+      },
+    ),
+  );
+  syncPublisher.reset();
+  const unchangedPresence = snapshotFromGroupStateWritten(
+    await service.connectPresenceSession(
+      TEST_SCOPE,
+      'group-1',
+      'member-session',
+      {
+        principalId: 'member-1',
+        actorPrincipalId: 'member-1',
+        lastHeartbeatAtEpochMs: 2_000,
+        expiresAtEpochMs: REFRESHED_EXPIRES_AT_EPOCH_MS,
+      },
+    ),
+  );
+
+  assert.equal(unchangedMember.group.rosterVersion, joined.group.rosterVersion);
+  assert.equal(unchangedPresence.group.presenceVersion, connected.group.presenceVersion);
+  assert.equal(
+    unchangedPresence.activeSessions[0].expiresAtEpochMs,
+    REFRESHED_EXPIRES_AT_EPOCH_MS,
+  );
+  assert.equal(syncPublisher.groupSnapshots.length, 0);
+  assert.equal(syncPublisher.groupEvents.length, 0);
+});
+
+function createTestGroupStateService(
+  syncPublisher: StateSyncPublisher = NO_OP_SYNC_PUBLISHER,
+) {
+  return createGroupStateService({
+    runtimeRepository: new FakeRuntimeStateRepository(),
+    syncPublisher,
+    now: () => 1_000,
+    serviceId: 'test-service',
+  });
+}
+
+function createRecordingStateSyncPublisher() {
+  const groupSnapshots: GroupSnapshot[] = [];
+  const groupEvents: GroupEvent[] = [];
+
+  return {
+    groupSnapshots,
+    groupEvents,
+    reset() {
+      groupSnapshots.length = 0;
+      groupEvents.length = 0;
+    },
     publishClientSnapshot: async () => {
     },
     publishClientEvent: async () => {
     },
-    publishGroupSnapshot: async () => {
+    publishGroupSnapshot: async (snapshot: GroupSnapshot) => {
+      groupSnapshots.push(snapshot);
     },
-    publishGroupEvent: async () => {
+    publishGroupEvent: async (event: GroupEvent) => {
+      groupEvents.push(event);
     },
-};
-
-Deno.test('connectPresenceSession rejects missing and non-active group members', async () => {
-    const service = createTestGroupStateService();
-    await service.createGroup(TEST_SCOPE, {
-        groupId: 'group-1',
-        displayName: 'Room 1',
-        kind: 'room',
-        createdByPrincipalId: 'owner-1',
-        actorPrincipalId: 'owner-1',
-        actorSessionId: 'owner-session',
-    });
-
-    await assert.rejects(
-        () =>
-            service.connectPresenceSession(TEST_SCOPE, 'group-1', 'missing-session', {
-                principalId: 'missing-member',
-                actorPrincipalId: 'missing-member',
-                actorSessionId: 'missing-session',
-            }),
-        /Forbidden: group member not found for presence session: missing-member/,
-    );
-
-    for (const status of ['left', 'removed', 'banned'] as const) {
-        await service.upsertMember(TEST_SCOPE, 'group-1', 'member-2', {
-            status,
-            actorPrincipalId: 'owner-1',
-            actorSessionId: 'owner-session',
-        });
-
-        await assert.rejects(
-            () =>
-                service.connectPresenceSession(
-                    TEST_SCOPE,
-                    'group-1',
-                    `session-${status}`,
-                    {
-                        principalId: 'member-2',
-                        actorPrincipalId: 'member-2',
-                        actorSessionId: `session-${status}`,
-                    },
-                ),
-            /Forbidden: group member is not active for presence session: member-2/,
-        );
-    }
-});
-
-Deno.test('upsertMember preserves existing roles across leave and rejoin', async () => {
-    const service = createTestGroupStateService();
-    await service.createGroup(TEST_SCOPE, {
-        groupId: 'group-1',
-        displayName: 'Room 1',
-        kind: 'room',
-        createdByPrincipalId: 'owner-1',
-        actorPrincipalId: 'owner-1',
-        actorSessionId: 'owner-session',
-    });
-
-    await service.upsertMember(TEST_SCOPE, 'group-1', 'owner-1', {
-        status: 'left',
-        actorPrincipalId: 'owner-1',
-        actorSessionId: 'owner-session',
-    });
-    assertMember(await readSnapshot(service), 'owner-1', 'owner', 'left');
-
-    await service.upsertMember(TEST_SCOPE, 'group-1', 'owner-1', {
-        status: 'active',
-        actorPrincipalId: 'owner-1',
-        actorSessionId: 'owner-session',
-    });
-    assertMember(await readSnapshot(service), 'owner-1', 'owner', 'active');
-});
-
-Deno.test('semantic group mutations advance snapshotVersion', async () => {
-    const service = createTestGroupStateService();
-
-    const created = await service.createGroup(TEST_SCOPE, {
-        groupId: 'group-1',
-        displayName: 'Room 1',
-        kind: 'room',
-        createdByPrincipalId: 'owner-1',
-        actorPrincipalId: 'owner-1',
-        actorSessionId: 'owner-session',
-    });
-    assertSnapshotVersion(created, 1);
-
-    const unchanged = await service.updateGroup(TEST_SCOPE, 'group-1', {
-        displayName: 'Room 1',
-        kind: 'room',
-        actorPrincipalId: 'owner-1',
-    });
-    assertSnapshotVersion(unchanged, 1);
-
-    const updated = await service.updateGroup(TEST_SCOPE, 'group-1', {
-        displayName: 'Room 1 updated',
-        actorPrincipalId: 'owner-1',
-    });
-    assertSnapshotVersion(updated, 2);
-
-    const joined = await service.upsertMember(TEST_SCOPE, 'group-1', 'member-1', {
-        status: 'active',
-        actorPrincipalId: 'owner-1',
-        actorSessionId: 'owner-session',
-    });
-    assertSnapshotVersion(joined, 3);
-
-    const connected = await service.connectPresenceSession(
-        TEST_SCOPE,
-        'group-1',
-        'member-session',
-        {
-            principalId: 'member-1',
-            actorPrincipalId: 'member-1',
-            actorSessionId: 'member-session',
-            lastHeartbeatAtEpochMs: 1_000,
-            expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
-        },
-    );
-    assertSnapshotVersion(connected, 4);
-
-    const heartbeat = await service.heartbeatPresenceSession(
-        TEST_SCOPE,
-        'group-1',
-        'member-session',
-        {
-            principalId: 'member-1',
-            actorPrincipalId: 'member-1',
-            actorSessionId: 'member-session',
-            lastHeartbeatAtEpochMs: 2_000,
-            expiresAtEpochMs: REFRESHED_EXPIRES_AT_EPOCH_MS,
-        },
-    );
-    assertSnapshotVersion(heartbeat, 4);
-
-    const disconnected = await service.disconnectPresenceSession(
-        TEST_SCOPE,
-        'group-1',
-        'member-session',
-        {
-            principalId: 'member-1',
-            actorPrincipalId: 'member-1',
-            actorSessionId: 'member-session',
-            reason: 'left',
-        },
-    );
-    assertSnapshotVersion(disconnected, 5);
-});
-
-Deno.test('heartbeatPresenceSession refreshes TTL without publishing unchanged snapshots', async () => {
-    const syncPublisher = createRecordingStateSyncPublisher();
-    const service = createTestGroupStateService(syncPublisher);
-
-    await service.createGroup(TEST_SCOPE, {
-        groupId: 'group-1',
-        displayName: 'Room 1',
-        kind: 'room',
-        createdByPrincipalId: 'owner-1',
-        actorPrincipalId: 'owner-1',
-        actorSessionId: 'owner-session',
-    });
-    await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session', {
-        principalId: 'owner-1',
-        actorPrincipalId: 'owner-1',
-        actorSessionId: 'owner-session',
-        lastHeartbeatAtEpochMs: 1_000,
-        expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
-    });
-    syncPublisher.reset();
-
-    const before = await readSnapshot(service);
-    const refreshed = await service.heartbeatPresenceSession(
-        TEST_SCOPE,
-        'group-1',
-        'owner-session',
-        {
-            principalId: 'owner-1',
-            actorPrincipalId: 'owner-1',
-            actorSessionId: 'owner-session',
-            lastHeartbeatAtEpochMs: 2_000,
-            expiresAtEpochMs: REFRESHED_EXPIRES_AT_EPOCH_MS,
-        },
-    );
-
-    assert.equal(refreshed.group.presenceVersion, before.group.presenceVersion);
-    assert.equal(refreshed.activeSessions[0].lastHeartbeatAtEpochMs, 2_000);
-    assert.equal(
-        refreshed.activeSessions[0].expiresAtEpochMs,
-        REFRESHED_EXPIRES_AT_EPOCH_MS,
-    );
-    assert.equal(syncPublisher.groupSnapshots.length, 0);
-    assert.equal(syncPublisher.groupEvents.length, 0);
-});
-
-Deno.test('updateGroup ignores unchanged metadata state', async () => {
-    const syncPublisher = createRecordingStateSyncPublisher();
-    const service = createTestGroupStateService(syncPublisher);
-
-    const created = await service.createGroup(TEST_SCOPE, {
-        groupId: 'group-1',
-        displayName: 'Room 1',
-        kind: 'room',
-        createdByPrincipalId: 'owner-1',
-        actorPrincipalId: 'owner-1',
-    });
-    syncPublisher.reset();
-
-    const unchanged = await service.updateGroup(TEST_SCOPE, 'group-1', {
-        displayName: 'Room 1',
-        kind: 'room',
-        actorPrincipalId: 'owner-1',
-    });
-
-    assert.equal(unchanged.group.metadataVersion, created.group.metadataVersion);
-    assert.equal(syncPublisher.groupSnapshots.length, 0);
-    assert.equal(syncPublisher.groupEvents.length, 0);
-});
-
-Deno.test('upsertMember and connectPresenceSession ignore unchanged semantic state', async () => {
-    const syncPublisher = createRecordingStateSyncPublisher();
-    const service = createTestGroupStateService(syncPublisher);
-
-    await service.createGroup(TEST_SCOPE, {
-        groupId: 'group-1',
-        displayName: 'Room 1',
-        kind: 'room',
-        createdByPrincipalId: 'owner-1',
-        actorPrincipalId: 'owner-1',
-    });
-    syncPublisher.reset();
-
-    const joined = await service.upsertMember(TEST_SCOPE, 'group-1', 'member-1', {
-        status: 'active',
-        role: 'member',
-        actorPrincipalId: 'owner-1',
-    });
-    syncPublisher.reset();
-
-    const unchangedMember = await service.upsertMember(
-        TEST_SCOPE,
-        'group-1',
-        'member-1',
-        {
-            status: 'active',
-            role: 'member',
-            actorPrincipalId: 'owner-1',
-        },
-    );
-    const connected = await service.connectPresenceSession(
-        TEST_SCOPE,
-        'group-1',
-        'member-session',
-        {
-            principalId: 'member-1',
-            actorPrincipalId: 'member-1',
-            lastHeartbeatAtEpochMs: 1_000,
-            expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
-        },
-    );
-    syncPublisher.reset();
-    const unchangedPresence = await service.connectPresenceSession(
-        TEST_SCOPE,
-        'group-1',
-        'member-session',
-        {
-            principalId: 'member-1',
-            actorPrincipalId: 'member-1',
-            lastHeartbeatAtEpochMs: 2_000,
-            expiresAtEpochMs: REFRESHED_EXPIRES_AT_EPOCH_MS,
-        },
-    );
-
-    assert.equal(unchangedMember.group.rosterVersion, joined.group.rosterVersion);
-    assert.equal(unchangedPresence.group.presenceVersion, connected.group.presenceVersion);
-    assert.equal(
-        unchangedPresence.activeSessions[0].expiresAtEpochMs,
-        REFRESHED_EXPIRES_AT_EPOCH_MS,
-    );
-    assert.equal(syncPublisher.groupSnapshots.length, 0);
-    assert.equal(syncPublisher.groupEvents.length, 0);
-});
-
-function createTestGroupStateService(
-    syncPublisher: StateSyncPublisher = NO_OP_SYNC_PUBLISHER,
-) {
-    return createGroupStateService({
-        runtimeRepository: new FakeRuntimeStateRepository(),
-        syncPublisher,
-        now: () => 1_000,
-        serviceId: 'test-service',
-    });
-}
-
-function createRecordingStateSyncPublisher() {
-    const groupSnapshots: GroupSnapshot[] = [];
-    const groupEvents: GroupEvent[] = [];
-
-    return {
-        groupSnapshots,
-        groupEvents,
-        reset() {
-            groupSnapshots.length = 0;
-            groupEvents.length = 0;
-        },
-        publishClientSnapshot: async () => {
-        },
-        publishClientEvent: async () => {
-        },
-        publishGroupSnapshot: async (snapshot: GroupSnapshot) => {
-            groupSnapshots.push(snapshot);
-        },
-        publishGroupEvent: async (event: GroupEvent) => {
-            groupEvents.push(event);
-        },
-    } satisfies StateSyncPublisher & {
-        groupSnapshots: GroupSnapshot[];
-        groupEvents: GroupEvent[];
-        reset(): void;
-    };
+  } satisfies StateSyncPublisher & {
+    groupSnapshots: GroupSnapshot[];
+    groupEvents: GroupEvent[];
+    reset(): void;
+  };
 }
 
 async function readSnapshot(
-    service: ReturnType<typeof createTestGroupStateService>,
+  service: ReturnType<typeof createTestGroupStateService>,
 ): Promise<GroupSnapshot> {
-    const snapshot = await service.readSnapshot({
-        ...TEST_SCOPE,
-        groupId: 'group-1',
-    });
-    if (!snapshot) {
-        throw new Error('Expected group snapshot to exist');
-    }
+  const snapshot = await service.readSnapshot({
+    ...TEST_SCOPE,
+    groupId: 'group-1',
+  });
+  if (!snapshot) {
+    throw new Error('Expected group snapshot to exist');
+  }
 
-    return snapshot;
+  return snapshot;
 }
 
 function assertMember(
-    snapshot: GroupSnapshot,
-    principalId: string,
-    role: string,
-    status: string,
+  snapshot: GroupSnapshot,
+  principalId: string,
+  role: string,
+  status: string,
 ): void {
-    const member = snapshot.members.find((entry) => entry.principalId === principalId);
-    if (!member) {
-        throw new Error(`Expected member ${principalId} to exist`);
-    }
+  const member = snapshot.members.find((entry) => entry.principalId === principalId);
+  if (!member) {
+    throw new Error(`Expected member ${principalId} to exist`);
+  }
 
-    assert.equal(member.role, role);
-    assert.equal(member.status, status);
+  assert.equal(member.role, role);
+  assert.equal(member.status, status);
 }
 
 function assertSnapshotVersion(snapshot: GroupSnapshot, expected: number): void {
-    assert.equal(snapshot.group.snapshotVersion, expected);
+  assert.equal(snapshot.group.snapshotVersion, expected);
+}
+
+function snapshotFromGroupStateWritten(written: GroupStateWritten): GroupSnapshot {
+  const snapshot = written.result.right?.snapshot;
+  if (!snapshot) {
+    throw new Error(written.result.left ?? 'Expected createGroup to return a snapshot');
+  }
+
+  return snapshot;
 }
 
 class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {
-    readonly data = new Map<string, RuntimeStateEntry>();
+  readonly data = new Map<string, RuntimeStateEntry>();
 
-    async begin<T>(
-        fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
-    ): Promise<T> {
-        return await fn(this);
+  async begin<T>(
+    fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
+  ): Promise<T> {
+    return await fn(this);
+  }
+
+  findEntry(
+    namespace: string,
+    key: string,
+  ): Promise<RuntimeStateEntry | undefined> {
+    const entry = this.data.get(this.toKey(namespace, key));
+    return Promise.resolve(entry ? { ...entry } : undefined);
+  }
+
+  findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]> {
+    return Promise.resolve(
+      [...this.data.entries()]
+        .filter(([compositeKey]) => this.toNamespace(compositeKey) === namespace)
+        .map(([, entry]) => ({ ...entry }))
+        .sort((left, right) => left.key.localeCompare(right.key)),
+    );
+  }
+
+  findEntriesByPrefix(
+    namespace: string,
+    keyPrefix: string,
+  ): Promise<readonly RuntimeStateEntry[]> {
+    return Promise.resolve(
+      [...this.data.entries()]
+        .filter(
+          ([compositeKey]) =>
+            this.toNamespace(compositeKey) === namespace &&
+            this.toStoreKey(compositeKey).startsWith(keyPrefix),
+        )
+        .map(([, entry]) => ({ ...entry }))
+        .sort((left, right) => left.key.localeCompare(right.key)),
+    );
+  }
+
+  upsert(
+    namespace: string,
+    key: string,
+    value: string,
+    expireAtTimestamp: number,
+  ): Promise<void> {
+    const compositeKey = this.toKey(namespace, key);
+    const current = this.data.get(compositeKey);
+    this.data.set(compositeKey, {
+      key,
+      value,
+      expireAtTimestamp,
+      updatedTimestamp: new Date().toISOString(),
+      revision: current ? current.revision + 1 : 0,
+    });
+    return Promise.resolve();
+  }
+
+  deleteByKey(namespace: string, key: string): Promise<void> {
+    this.data.delete(this.toKey(namespace, key));
+    return Promise.resolve();
+  }
+
+  deleteExpired(namespace: string): Promise<number> {
+    let deleted = 0;
+
+    for (const [compositeKey, entry] of this.data.entries()) {
+      if (this.toNamespace(compositeKey) !== namespace) {
+        continue;
+      }
+
+      if (entry.expireAtTimestamp > Date.now()) {
+        continue;
+      }
+
+      this.data.delete(compositeKey);
+      deleted += 1;
     }
 
-    findEntry(
-        namespace: string,
-        key: string,
-    ): Promise<RuntimeStateEntry | undefined> {
-        const entry = this.data.get(this.toKey(namespace, key));
-        return Promise.resolve(entry ? { ...entry } : undefined);
-    }
+    return Promise.resolve(deleted);
+  }
 
-    findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]> {
-        return Promise.resolve(
-            [...this.data.entries()]
-                .filter(([compositeKey]) => this.toNamespace(compositeKey) === namespace)
-                .map(([, entry]) => ({ ...entry }))
-                .sort((left, right) => left.key.localeCompare(right.key)),
-        );
-    }
+  async lockKey(_namespace: string, _key: string): Promise<void> {
+  }
 
-    findEntriesByPrefix(
-        namespace: string,
-        keyPrefix: string,
-    ): Promise<readonly RuntimeStateEntry[]> {
-        return Promise.resolve(
-            [...this.data.entries()]
-                .filter(
-                    ([compositeKey]) =>
-                        this.toNamespace(compositeKey) === namespace &&
-                        this.toStoreKey(compositeKey).startsWith(keyPrefix),
-                )
-                .map(([, entry]) => ({ ...entry }))
-                .sort((left, right) => left.key.localeCompare(right.key)),
-        );
-    }
+  private toKey(namespace: string, key: string): string {
+    return `${namespace}::${key}`;
+  }
 
-    upsert(
-        namespace: string,
-        key: string,
-        value: string,
-        expireAtTimestamp: number,
-    ): Promise<void> {
-        const compositeKey = this.toKey(namespace, key);
-        const current = this.data.get(compositeKey);
-        this.data.set(compositeKey, {
-            key,
-            value,
-            expireAtTimestamp,
-            updatedTimestamp: new Date().toISOString(),
-            revision: current ? current.revision + 1 : 0,
-        });
-        return Promise.resolve();
-    }
+  private toNamespace(compositeKey: string): string {
+    return compositeKey.split('::', 1)[0] ?? '';
+  }
 
-    deleteByKey(namespace: string, key: string): Promise<void> {
-        this.data.delete(this.toKey(namespace, key));
-        return Promise.resolve();
-    }
-
-    deleteExpired(namespace: string): Promise<number> {
-        let deleted = 0;
-
-        for (const [compositeKey, entry] of this.data.entries()) {
-            if (this.toNamespace(compositeKey) !== namespace) {
-                continue;
-            }
-
-            if (entry.expireAtTimestamp > Date.now()) {
-                continue;
-            }
-
-            this.data.delete(compositeKey);
-            deleted += 1;
-        }
-
-        return Promise.resolve(deleted);
-    }
-
-    async lockKey(_namespace: string, _key: string): Promise<void> {
-    }
-
-    private toKey(namespace: string, key: string): string {
-        return `${namespace}::${key}`;
-    }
-
-    private toNamespace(compositeKey: string): string {
-        return compositeKey.split('::', 1)[0] ?? '';
-    }
-
-    private toStoreKey(compositeKey: string): string {
-        return compositeKey.slice(this.toNamespace(compositeKey).length + 2);
-    }
+  private toStoreKey(compositeKey: string): string {
+    return compositeKey.slice(this.toNamespace(compositeKey).length + 2);
+  }
 }

@@ -140,7 +140,6 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
             });
     }
 
-
     static toBackoff(exponentialBackoffSteps: Temporal.TimeUnit, attempts: number) {
         switch (exponentialBackoffSteps) {
             case 'hour':

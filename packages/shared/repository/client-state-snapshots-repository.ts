@@ -17,6 +17,7 @@ import {
     ObservableValueEventType,
     type ReadableKeyedValues,
 } from '@shared/cache/RepositoryInterfaces.ts';
+import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 export type ClientStateSnapshotRepositoryOptions =
     & Omit<
@@ -184,27 +185,4 @@ function toClientStateSnapshotChange(
             : undefined,
         manager,
     };
-}
-
-function jsonEquals(left: unknown, right: unknown): boolean {
-    return stableJsonStringify(left) === stableJsonStringify(right);
-}
-
-function stableJsonStringify(value: unknown): string {
-    return JSON.stringify(toStableJson(value));
-}
-
-function toStableJson(value: unknown): unknown {
-    if (Array.isArray(value)) {
-        return value.map(toStableJson);
-    }
-    if (!value || typeof value !== 'object') {
-        return value;
-    }
-
-    return Object.fromEntries(
-        Object.entries(value as Record<string, unknown>)
-            .sort(([left], [right]) => left.localeCompare(right))
-            .map(([key, entryValue]) => [key, toStableJson(entryValue)]),
-    );
 }

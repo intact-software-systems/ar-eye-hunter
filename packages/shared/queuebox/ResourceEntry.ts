@@ -125,6 +125,8 @@ export function isCompleted(status: EntityStatus): boolean {
 }
 
 export const TIMEOUT_ON_NON_RESPONSIVE_ENTRY: Temporal.Duration = Temporal.Duration.from({ minutes: 5 });
+
+// TODO: Replace with 30 days
 export const NEVER_EXPIRE_TS = Temporal.Instant.from('9999-12-31T23:59:59.999Z');
 
 export function isExpiredAudit(
@@ -211,6 +213,22 @@ export function toUpdatedResourceEntry(
             nextTs: nextTimestamp,
             attempts: entry.dequeueAudit.attempts,
         },
+        db: entry.db
+    };
+}
+
+export function toResourceEntryWithUpdatedResource<T>(
+    entry: ResourceEntry,
+    entityStatus: EntityStatus,
+    value: T
+): ResourceEntry {
+    return {
+        key: entry.key,
+        resource: JSON.stringify(value),
+        typeId: entry.typeId,
+        audit: entry.audit,
+        status: entityStatus,
+        dequeueAudit: entry.dequeueAudit,
         db: entry.db
     };
 }

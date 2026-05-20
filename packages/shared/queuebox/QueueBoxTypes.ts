@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
 import * as Resource from './ResourceEntry.ts';
-import { ResourceEntry } from './ResourceEntry.ts';
+import { type Key, ResourceEntry } from './ResourceEntry.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
 
 export type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
@@ -43,6 +43,12 @@ export interface EnqueueResourceEntryController {
     enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined>;
 
     cleanup(): void;
+}
+
+export interface EnqueueBoxResourceEntryRepository
+    extends EnqueueResourceEntryController {
+
+    findByKey(key: Key): Promise<ResourceEntry | undefined>
 }
 
 export interface QueueBoxResourceEntryRepository

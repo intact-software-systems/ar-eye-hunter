@@ -6,6 +6,9 @@ import {
     ResourceInboxRepository,
 } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import {
+    ResourceInboxResultsRepository
+} from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import {
     initRuntimeStateExpiryEviction,
     PSqlRuntimeStateRepository,
 } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
@@ -19,14 +22,21 @@ import {
     type RallarMiddlewareRuntime,
 } from '@shared-server/rallar-system/middleware/RallarMiddleware.ts';
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
+import { AppInboxService } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { createWsStateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { createPostgresQueuePubSubBridge } from './db/postgres-queue-pubsub-bridge.ts';
-import { myPublisherId } from './runtime/runtime-identity.ts';
+import { myPublisherId, myServerId } from './runtime/runtime-identity.ts';
 import { toResilienceDto } from './middleware-resilience.ts';
-import { createClientStateRepository, createGroupStateRepository, } from './repository/createStateRepositories.ts';
+import {
+    createClientStateRepository,
+    createGroupStateRepository,
+    createRuntimeStateRepository,
+} from './repository/createStateRepositories.ts';
 import { sql } from './db/db.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import {
-    createGroupStateSnapshotReadThroughCache
+    createGroupStateSnapshotReadThroughCache,
 } from '@shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts';
 
 export type Middleware = RallarMiddlewareRuntime;
@@ -50,6 +60,7 @@ function initialise(): Middleware {
     const wsRuntimeName = 'default-qbox-server';
     const postgresSql = sql as unknown as PSqlSql;
     const resourceInboxRepository = new ResourceInboxRepository(postgresSql);
+    const resourceInboxResultsRepository = new ResourceInboxResultsRepository(postgresSql);
     const queueBox = new PSqlQueueBox(resourceInboxRepository);
     const webSocketServer = new JsonWebSocketServer();
     const resilienceInbox = toResilienceDto();
@@ -73,11 +84,28 @@ function initialise(): Middleware {
         outbox: queueBox,
         webSocketServer,
         wsRuntimeName,
-        findGroupSnapshotByRef: (ref) =>
-            groupSnapshotReadThroughCache.findByRef(ref),
+        findGroupSnapshotByRef: (ref) => groupSnapshotReadThroughCache.findByRef(ref),
         findGroupSnapshotById: groupStateSnapshotsRepository.findLatestGroupSnapshotById,
         inboundStores: resolveServerWsQBoxALInboundRuntimeStores(wsRuntimeName),
         outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(wsRuntimeName),
+        createAppInboxService: ({ inboxQueueReader, wsQBoxServerService }) => {
+            const stateSyncPublisher = createWsStateSyncPublisher(
+                wsQBoxServerService,
+                { serverId: myServerId },
+            );
+            return new AppInboxService(
+                inboxQueueReader,
+                resourceInboxRepository,
+                resourceInboxResultsRepository,
+                createGroupStateService({
+                    runtimeRepository: createRuntimeStateRepository(sql),
+                    syncPublisher: stateSyncPublisher,
+                    serviceId: myServerId,
+                }),
+                stateSyncPublisher,
+                myServerId,
+            );
+        },
         resilience: {
             inbox: resilienceInbox,
             outbox: resilienceOutbox,

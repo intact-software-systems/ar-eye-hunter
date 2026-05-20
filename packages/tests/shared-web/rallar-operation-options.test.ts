@@ -2900,11 +2900,16 @@ describe('Rallar operation options', () => {
         expect(result.message.targets).toMatchObject({
             mode: 'broadcast',
             scope: 'room',
+            groupRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-1',
+            },
             minSnapshotVersion: 11,
         });
     });
 
-    it('uses roomRef scope for cached snapshotVersion on WS room sends', async () => {
+    it('uses roomRef scope for cached snapshotVersion and target groupRef on WS room sends', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
             );
@@ -2943,6 +2948,11 @@ describe('Rallar operation options', () => {
         expect(result.message.targets).toMatchObject({
             mode: 'broadcast',
             scope: 'room',
+            groupRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-b',
+                groupId: 'shared-room',
+            },
             minSnapshotVersion: 13,
         });
     });

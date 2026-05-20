@@ -122,14 +122,16 @@ Overlay and graph identity follow-up:
 
 Current behavior:
 
-- `createWsServerTargetResolver(...)` resolves room recipients from the process-local group snapshot cache. Scoped multicast uses `GroupRef`; id-only room broadcasts still depend on a local latest-by-`groupId` compatibility resolver.
-- `authorizeApiV1RoomWsMessage(...)` also uses the group snapshot cache.
-- The durable source of truth is `runtime_state_store`, but the resolver and authorizer read the in-memory snapshot cache.
+- `createWsServerTargetResolver(...)` still resolves room recipients synchronously from process-local group snapshot cache state.
+- Dynamic inbound room authorization can now use scoped `groupRef` from multicast and room-broadcast targets and can hydrate from durable `GroupStateRepository` before fanout.
+- After authorization hydrates the cache, normal Rallar-originated room broadcasts can route by scoped `groupRef`.
+- Legacy/id-only room broadcasts and server-initiated messages that bypass dynamic-topic authorization still depend on process-local cache state or a `groupId` compatibility fallback.
+- The durable source of truth is `runtime_state_store`; only the dynamic room authorization path currently has an async durable read-through point.
 
 Risk:
 
 - After process restart, a server can have open sockets but an empty group snapshot cache until a state mutation or explicit cache hydration happens.
-- Room-scoped WS messages can be rejected or have no recipients even when durable group membership exists.
+- Server-initiated or id-only room-scoped WS messages can be rejected or have no recipients even when durable group membership exists.
 - In a multi-server setup, cache lag can make authorization and routing inconsistent between nodes.
 
 Recommended hardening:
@@ -137,6 +139,67 @@ Recommended hardening:
 - Hydrate client/group snapshot caches on server startup for active scopes, or lazily hydrate a group snapshot from `GroupStateRepository` on cache miss.
 - Prefer a resolver/authorizer that can fall back to durable state when the cache is cold.
 - Add real-server tests that restart the API process, reconnect clients, and send a room WS message before any new group mutation.
+
+Implementation status:
+
+- Started on 2026-05-19.
+- Added an `ObservableLoanedRepository`-backed `GroupStateSnapshotReadThroughCache` for server-side group snapshots.
+- The read-through cache loads snapshots from durable `GroupStateRepository.readSnapshot(ref)` on cache miss, writes successful loads back into the process-local observable latest snapshot repository, and reuses the loaned cache for TTL/coalescing behavior.
+- Added an `ObservableLoanedRepository`-backed `ClientStateSnapshotReadThroughCache` for server-side client snapshots.
+- The client read-through cache loads snapshots from durable `ClientStateRepository.readSnapshot(ref)` on cache miss, keeps internally loaded same-`principalId` snapshots isolated by application/workspace/principal ref, and writes successful loads back into the existing process-local client snapshot repository for current callers.
+- `createGroupRoomWsAuthorizer(...)` now supports async scoped snapshot resolvers, so API-v1 can await durable read-through hydration before making a final room authorization decision.
+- AL room-broadcast targets can now carry `groupRef`, matching multicast targets. Rallar WS room sends include that scoped reference when it can resolve one from `roomRef`, defaults, or cached room snapshots.
+- Server WS authorization and target resolution now read scoped `groupRef` from both multicast targets and room-broadcast targets before falling back to `groupId`-only lookup.
+- `RallarServerWsFacade` now passes room-broadcast target `groupRef` into the room authorization context, so normal Rallar-originated WS room messages can use the same scoped authorizer path as multicast messages.
+- API-v1 now builds its room authorizer with `middleware.groupsRepository`, allowing inbound room/multicast WS messages to hydrate a cold or stale process-local group snapshot cache before authorization.
+- When a message carries `minSnapshotVersion`, the read-through cache returns a warm cached snapshot only if it is new enough; otherwise it refreshes from durable state before authorization. This avoids returning an avoidable `not-yet-in-sync` decision when the durable store is already current.
+- API-v1 middleware target resolution now reads through the shared snapshot read-through cache synchronously. The actual durable hydration remains on the async authorizer path; after authorization hydrates the observable latest cache, the existing synchronous target resolver can route the same message fanout from the hot cache.
+
+How `GroupStateSnapshotReadThroughCache` is used:
+
+- `apps/api-v1/src/middleware.ts` creates one `GroupStateSnapshotReadThroughCache` around the API-v1 `GroupStateRepository`.
+- Middleware target resolution calls `groupSnapshotReadThroughCache.findByRef(ref)`. This is intentionally synchronous and only checks the process-local observable latest snapshot repository and the read-through cache's already-loaded loaned value.
+- `apps/api-v1/src/create-rallar-server.ts` builds the dynamic WS room authorizer with `middleware.groupsRepository`.
+- `apps/api-v1/src/services/ws-topic-room-authorizer.ts` creates a second read-through cache for the authorizer and wires `findGroupSnapshotByRef` to `await readThroughCache.findOrLoadByRef(ref, { minSnapshotVersion })`.
+- In the inbound dynamic WS topic path, `RallarServerWsFacade.authorizeDynamicTopic(...)` awaits the room authorizer before fanout. That gives the authorizer a safe async point where it can load or refresh the group snapshot from durable `GroupStateRepository.readSnapshot(ref)`.
+- Successful durable loads emit an `ObservableLoanedRepository` change event. The read-through cache uses that callback to write the snapshot into the shared process-local `group-state-snapshots` observable latest repository.
+- After authorization has warmed that shared snapshot repository, the existing synchronous `WsQueueBoxServerService` target resolver can route the same message fanout from the hot cache.
+- `ClientStateSnapshotReadThroughCache` is available as the matching client-side server cache helper, but it is not yet wired into state-sync recipient routing because that path is still synchronous. It is ready for the same async-routing direction as group snapshots once state-sync routing can await durable reads.
+
+Verification:
+
+- Up-front failing proof: `npx vitest run packages/tests/shared-server/ws-topic-room-authorizer.test.ts --testNamePattern "cold group snapshot"` failed because the read-through cache did not exist.
+- Up-front failing proof: `npx vitest run packages/tests/shared-server/client-state-snapshot-read-through-cache.test.ts` failed because the client read-through cache did not exist.
+- Added proof that a cold process-local group snapshot cache is hydrated from durable `GroupStateRepository` before room authorization succeeds.
+- Added proof that a stale process-local and loaned group snapshot is refreshed from durable state when `minSnapshotVersion` requires a newer version.
+- Added proof that a cold process-local client snapshot cache is hydrated from durable `ClientStateRepository`.
+- Added proof that a stale process-local and loaned client snapshot is refreshed from durable state when `minSnapshotVersion` requires a newer version.
+- Added proof that the client read-through cache can keep same-principal snapshots isolated internally across workspaces.
+- Added proof that Rallar WS room sends attach scoped room-broadcast `groupRef`, that server room authorization receives it, and that server target resolution prefers it over an ambiguous `groupId`.
+- After implementation: `npx vitest run packages/tests/shared-server/ws-topic-room-authorizer.test.ts`.
+- Related regression run: `npx vitest run packages/tests/shared-server/client-state-snapshot-read-through-cache.test.ts packages/tests/shared-server/ws-topic-room-authorizer.test.ts packages/tests/shared-server/rallar-middleware.test.ts packages/tests/shared/observable-loaned-repository.test.ts`.
+- Room-broadcast scoped target regression run: `npx vitest run packages/tests/shared-web/rallar-operation-options.test.ts packages/tests/shared-server/ws-topic-room-authorizer.test.ts packages/tests/shared-server/rallar-middleware.test.ts packages/tests/api-v1/rallar-server-ws-facade.test.ts`.
+- Combined related regression run: `npx vitest run packages/tests/shared-server/client-state-snapshot-read-through-cache.test.ts packages/tests/shared-server/ws-topic-room-authorizer.test.ts packages/tests/shared-server/rallar-middleware.test.ts packages/tests/shared/observable-loaned-repository.test.ts packages/tests/api-v1/rallar-server-ws-facade.test.ts packages/tests/shared-web/rallar-operation-options.test.ts`.
+- Type/runtime checks: `npx tsc -p packages/shared/tsconfig.json --noEmit`, `npx tsc -p packages/shared-server/tsconfig.json --noEmit`, and `deno check --config apps/api-v1/deno.json apps/api-v1/src/main.ts`.
+- Additional type/runtime checks after room-broadcast scoped target work: `npx tsc -p packages/shared-web/tsconfig.json --noEmit`, `deno check --config apps/api-v1/deno.json apps/api-v1/src/main.ts`, and `git diff --check`.
+
+Iteration 2 evaluation:
+
+- OK for now.
+- The high-value correctness hole for normal inbound Rallar WS room messages is covered: browser-originated room broadcasts can now carry `groupRef`, the server authorizer can await durable read-through by scoped ref, and the synchronous target resolver can fan out from the warmed process-local cache.
+- The remaining gaps are larger design work rather than blockers for iteration 2: startup-wide hydration, async lower-level WS target resolution for server-initiated messages that bypass dynamic-topic authorization, and real restart/reconnect browser tests.
+- Those remaining gaps should stay documented as future work instead of expanding this iteration further.
+
+Remaining gaps:
+
+- The current hardening covers the inbound dynamic topic authorizer path, which is the path that can await durable state before fanout.
+- Normal Rallar-originated WS room sends now provide a scoped `groupRef` on the AL room-broadcast target when available. That lets the authorizer and hot-cache target resolver select the correct workspace/application snapshot without relying on ambiguous `groupId`.
+- `WsQueueBoxServerService` target resolution is still synchronous. `resolveGroupRecipients(...)` returns recipients immediately, and `enqueueOutboxIfAbsent(...)`, `sendToTargetsWithResult(...)`, and outbound planning all call synchronous recipient resolution.
+- Server-initiated outbound messages that do not pass through `RallarServerWsFacade.authorizeDynamicTopic(...)` have no async authorization step where the server can `await GroupStateRepository.readSnapshot(ref)`. Those messages can only use already-hot process-local snapshots, or they fail closed with no recipients/no route.
+- "Hot cache" means the process-local snapshot repository has already been populated by startup hydration, a recent local mutation, state sync, or a prior read-through authorizer load.
+- A full lower-level fix would require an async routing design, for example allowing `WsServerTargetResolver.resolveGroupRecipients(...)` to return a promise and updating outbound planning, live sends, repair sends, and tests to await recipient resolution.
+- Client state-sync routing has the same broad limitation. The client read-through cache can load a known `ClientPrincipalRef`, but current state-sync routing mainly consumes a synchronous list of already-cached client snapshots. Async routing or startup hydration is still needed before client read-through can fully repair cold-cache state-sync broadcasts.
+- Startup-wide cache hydration and real restart/reconnect browser tests are still pending.
 
 ## 3. State Mutation Commit And WS Publish Are Not Atomic
 
@@ -158,6 +221,43 @@ Recommended hardening:
 - Make WS publication a consumer of that durable outbox.
 - Track publish failures with metrics/logging that include application/workspace/group/principal ids.
 - Add characterization tests that inject a failing publisher and assert the exact durable-state and cache outcomes.
+
+Implementation status:
+
+- Started on 2026-05-19.
+- Added characterization tests before changing runtime behavior.
+- Added a transactional `GroupStateCommandLedgerRepository` over `runtime_state_store`.
+- `GroupStateService` mutating methods now use `request.requestId` as an idempotency key when present. The ledger is checked and written inside the same `runtimeRepository.begin(...)` transaction as the group mutation.
+- Repeated group commands with the same `requestId` return the stored snapshot/event result instead of applying the mutation again. The returned event is still passed through the existing publisher path, so a retry after publish failure can re-attempt WS publication without bumping versions or appending duplicate domain events.
+- Reusing the same `requestId` with a different command fingerprint now fails with an idempotency conflict instead of silently replaying an unrelated result.
+- Added a shared `InboxQueueReader` app-inbox path for `APP_INBOX` AL messages. Missing payload-type handlers now fail the queue item instead of accidentally completing it.
+- `RallarMiddleware` now owns an `InboxQueueReader`, wires an app-inbox engine task into `InboxOutboxEngine`, and uses the same `PSqlQueueBox` repository as the durable app inbox in API-v1.
+- Added `GroupStateAppInbox`, which maps HTTP group mutation commands to typed app-inbox AL messages, executes them through `GroupStateService`, preserves caller-supplied `requestId`, generates one when missing, and marks permanent request/auth errors as non-retryable queue entries.
+- API-v1 group mutation routes now enqueue typed `APP_INBOX` commands before executing the mutation. The HTTP response shape is preserved by draining the command immediately and returning the resulting `GroupSnapshot`; if the process dies after enqueue, the middleware app-inbox task can still drain the durable command later.
+- Current behavior is now documented in tests:
+  - group mutation state and event rows are committed before snapshot enqueue failure is surfaced to the caller;
+  - the process-local group snapshot cache can already be updated when snapshot enqueue fails;
+  - client mutation state and event rows have the same committed-before-publish-failure behavior;
+  - group snapshot enqueue can succeed before a later group event enqueue failure is surfaced, leaving snapshot/event publication split.
+- No durable state-sync outbox fix has been applied yet. The current runtime change is the prerequisite command-idempotency layer needed before queued HTTP command execution can safely retry.
+
+Verification:
+
+- Characterization run: `npx vitest run packages/tests/shared-server/state-sync-publish-failure-characterization.test.ts`.
+- Group command idempotency run: `npx vitest run packages/tests/shared-server/group-state-service-idempotency.test.ts`.
+- App-inbox proof run: `npx vitest run packages/tests/shared/inbox-queue-reader.test.ts packages/tests/shared-server/group-state-app-inbox.test.ts packages/tests/shared-server/rallar-middleware.test.ts`.
+- Related regression run: `npx vitest run packages/tests/shared-server/group-state-service-idempotency.test.ts packages/tests/shared-server/state-sync-publish-failure-characterization.test.ts packages/tests/shared-server/ws-topic-room-authorizer.test.ts packages/tests/shared-server/rallar-middleware.test.ts packages/tests/api-v1/client-and-group-state-repositories.test.ts`.
+- Type/runtime checks: `npx tsc -p packages/shared/tsconfig.json --noEmit`, `npx tsc -p packages/shared-server/tsconfig.json --noEmit`, and `deno check --config apps/api-v1/deno.json apps/api-v1/src/main.ts`.
+- API-v1 Deno regression run: `deno test --allow-env --allow-read --config apps/api-v1/deno.json apps/api-v1/test/rallar-server.test.ts apps/api-v1/test/services/group-state-service.test.ts`.
+
+Next implementation direction:
+
+- Add browser/Rallar request IDs for state mutation workflows so an HTTP retry after a lost response can reuse the same idempotency key instead of depending on server-generated command IDs.
+- Apply the same command-inbox pattern to client state mutation routes if the group route behavior holds up in integration tests.
+- Decide the durable outbox boundary before changing service behavior. The clean target is to persist state-sync publication intents in the same `runtime_state_store` transaction as the client/group mutation.
+- Add a publisher/drainer that converts durable state-sync outbox intents into WS QueueBox messages and marks them delivered or retryable.
+- Keep the existing `StateSyncPublisher` API as the live WS enqueue adapter, or split it into a mutation-time durable writer and an async WS delivery worker.
+- Add tests for retry after enqueue failure, idempotent drain, and no duplicate snapshot/event delivery for the same mutation outbox id.
 
 ## 4. State Events Are Broadcast But Not Modeled In Browser High-Level State
 

@@ -15,6 +15,7 @@ import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { initialiseServerCacheRepositories } from '../cache-repositories.ts';
 import type { ClientStateRepository } from '../repositories/ClientStateRepository.ts';
 import type { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
+import type { AppInboxService } from '../services/AppInboxService.ts';
 import { resolveStateSyncRecipients } from '../state-sync-routing.ts';
 import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
 
@@ -23,6 +24,7 @@ export type RallarMiddlewareRuntime = Readonly<{
     wsQBoxServerService: WsQueueBoxServerService;
     inboxQueueReader: InboxQueueReader;
     appInboxResilience: ResilienceDto;
+    appInboxService?: AppInboxService;
     clientsRepository: ClientStateRepository;
     groupsRepository: GroupStateRepository;
 }>;
@@ -50,6 +52,13 @@ export type CreateRallarMiddlewareOptions = Readonly<{
     resolveGroupRef?: RallarGroupSnapshotResolverOptions['resolveGroupRef'];
     inboundStores?: ALInboundRuntimeStores;
     outboundStores?: ALOutboundRuntimeStores;
+    createAppInboxService?: (
+        input: Readonly<{
+            inboxQueueReader: InboxQueueReader;
+            wsQBoxServerService: WsQueueBoxServerService;
+            appInboxResilience: ResilienceDto;
+        }>,
+    ) => AppInboxService;
     resilience: Readonly<{
         inbox: ResilienceDto;
         outbox?: ResilienceDto;
@@ -86,6 +95,11 @@ export function createRallarMiddleware(
     );
     const inboxQueueReader = new InboxQueueReader(options.inbox);
     const appInboxResilience = options.resilience.appInbox ?? options.resilience.inbox;
+    const appInboxService = options.createAppInboxService?.({
+        inboxQueueReader,
+        wsQBoxServerService,
+        appInboxResilience,
+    });
 
     includeWsQueueBoxEngineTasks(
         qboxEngine,
@@ -104,6 +118,7 @@ export function createRallarMiddleware(
         wsQBoxServerService,
         inboxQueueReader,
         appInboxResilience,
+        appInboxService,
         clientsRepository: options.clientsRepository,
         groupsRepository: options.groupsRepository,
     };
@@ -224,8 +239,7 @@ export function createWsServerTargetResolver(
             webSocketServer,
             message,
             {
-                findGroupSnapshotByRef: (ref) =>
-                    options.findGroupSnapshotByRef?.(ref, message),
+                findGroupSnapshotByRef: (ref) => options.findGroupSnapshotByRef?.(ref, message),
                 findGroupSnapshotById: options.findGroupSnapshotById,
             },
         );

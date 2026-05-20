@@ -1,4 +1,4 @@
-import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
 import { Temporal } from '@js-temporal/polyfill';
 
 /**
@@ -35,11 +35,27 @@ export type ResourceInboxRow = {
     ri_attempts: bigint | null;
 };
 
+export type ResourceInboxResultsRow = {
+    ris_row_id: bigint;
+    ris_resource_id: string;
+    ris_topic_id: string;
+    ris_resource: string;
+    ris_type_id: string;
+    ris_status: string;
+    fk_ext_bank_id: string;
+    system_date: string;
+    created_by: string;
+    created_ts: string;
+    expire_ts: string;
+};
+
 export function keyToString(k: Key): string {
     return `${k.contextId}::${k.topicId}::${k.resourceId}`;
 }
 
-export function rowsToMap(rows: ResourceInboxRow[]): Map<string, ResourceEntry> {
+export function rowsToMap(
+    rows: ResourceInboxRow[],
+): Map<string, ResourceEntry> {
     const m = new Map<string, ResourceEntry>();
     for (const r of rows) {
         const e = toDomain(r);
@@ -63,7 +79,11 @@ export function toDomain(r: ResourceInboxRow): ResourceEntry {
         typeId: r.ri_type_id,
         audit: {
             // date is not stored separately in the table; keep it derived from created_ts
-            date: Temporal.PlainTime.from(parseTemporalPlainDateTime(r.created_ts.toString()).toPlainTime().toString()),
+            date: Temporal.PlainTime.from(
+                parseTemporalPlainDateTime(r.created_ts.toString())
+                    .toPlainTime()
+                    .toString(),
+            ),
             createdBy: r.created_by,
             createdTs: parseTemporalPlainDateTime(r.created_ts.toString()),
             expiryTs: r.expire_ts
@@ -83,6 +103,25 @@ export function toDomain(r: ResourceInboxRow): ResourceEntry {
     };
 }
 
+export function toResultsDomain(r: ResourceInboxResultsRow): ResourceEntry {
+    return toDomain({
+        ri_row_id: r.ris_row_id,
+        ri_resource_id: r.ris_resource_id,
+        ri_topic_id: r.ris_topic_id,
+        ri_resource: r.ris_resource,
+        ri_type_id: r.ris_type_id,
+        ri_status: r.ris_status,
+        fk_ext_bank_id: r.fk_ext_bank_id,
+        system_date: r.system_date,
+        created_by: r.created_by,
+        created_ts: r.created_ts,
+        expire_ts: r.expire_ts,
+        start_ts: null,
+        end_ts: null,
+        next_ts: null,
+        ri_attempts: null,
+    });
+}
 
 export function toSystemDate(entry: ResourceEntry): string {
     // system_date is DATE; derive it from createdTs.
@@ -90,7 +129,9 @@ export function toSystemDate(entry: ResourceEntry): string {
     return entry.audit.createdTs.toPlainDate().toString();
 }
 
-export function toPgTimestamp(t: Temporal.PlainDateTime | Temporal.Instant): string {
+export function toPgTimestamp(
+    t: Temporal.PlainDateTime | Temporal.Instant,
+): string {
     // For timestamp(6) without timezone, sending ISO-like strings is fine.
     // - PlainDateTime: "YYYY-MM-DDTHH:mm:ss.sss"
     // - Instant: "YYYY-MM-DDTHH:mm:ss.sssZ" (Postgres parses this too)

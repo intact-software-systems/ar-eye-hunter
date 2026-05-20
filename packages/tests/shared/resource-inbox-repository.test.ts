@@ -1,8 +1,6 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Temporal } from '@js-temporal/polyfill';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { EntityStatus, type Key, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
-
-(globalThis as { Temporal?: typeof Temporal }).Temporal ??= Temporal;
 
 type ResourceInboxRepositoryModule =
     typeof import('@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts');
