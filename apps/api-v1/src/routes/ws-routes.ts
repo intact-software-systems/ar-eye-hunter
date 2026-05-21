@@ -27,11 +27,14 @@ export function init(app: Hono): void {
                     new ConnectionContext(authSession.sessionId, socket),
                 );
 
-                await getClientStateService().registerAuthorisedWsClientSession(
+                const clientStateWritten = await getClientStateService().registerAuthorisedWsClientSession(
                     authSession,
                     {
                         userAgent: c.req.header('user-agent'),
                     },
+                );
+                await getMiddleware().appClientInboxService.publishClientStateWritten(
+                    clientStateWritten,
                 );
 
                 console.log(`Upgrading connection for ID: ${sessionId}`);

@@ -8,14 +8,11 @@ import {
     createRallarServerApplication,
     type RallarServerApplication,
 } from '@shared-server/rallar-facade/RallarServerApplication.ts';
-import {
-    RallarServerDataFacade,
-    RallarServerSystemFacade,
-} from '@shared-server/rallar-facade/RallarServer.ts';
+import { RallarServerDataFacade, RallarServerSystemFacade, } from '@shared-server/rallar-facade/RallarServer.ts';
 import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
 import type { RallarServerWsFacadeOptions } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import type { Middleware } from './middleware.ts';
-import { initialiseMiddleware } from './middleware.ts';
+import { getMiddleware, initialiseMiddleware } from './middleware.ts';
 import { createApiV1RoomWsAuthorizer } from './services/ws-topic-room-authorizer.ts';
 import * as configRoutes from './routes/config-route.ts';
 import * as wsRoutes from './routes/ws-routes.ts';
@@ -55,8 +52,8 @@ export function createRallarServer(
             ...options.ws,
         },
         appData: {
-            repository: options.appDataRepository
-                ?? new PSqlAppDataRepository(sql as unknown as PSqlSql),
+            repository: options.appDataRepository ??
+                new PSqlAppDataRepository(sql as unknown as PSqlSql),
         },
         system: {
             installDefaultMiddlewareTopics: (runtime) => {
@@ -66,8 +63,13 @@ export function createRallarServer(
             },
             installWebSocketLifecycle: (runtime) => {
                 initSharedWsLifecycle(runtime.wsQBoxServerService, {
-                    disconnectClientSession: async (sessionId) =>
-                        await getClientStateService().disconnectAuthorisedWsClientSession(sessionId),
+                    disconnectClientSession: async (sessionId) => {
+                        const clientStateWritten = await getClientStateService()
+                            .disconnectAuthorisedWsClientSession(sessionId);
+                        await getMiddleware().appClientInboxService.publishClientStateWritten(
+                            clientStateWritten,
+                        );
+                    },
                     disconnectGroupSessionsBySessionId: async (sessionId, request) =>
                         await getGroupStateService().disconnectPresenceSessionsBySessionId(sessionId, request),
                 });

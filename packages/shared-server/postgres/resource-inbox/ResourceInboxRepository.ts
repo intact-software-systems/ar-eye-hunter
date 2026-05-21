@@ -381,7 +381,7 @@ export class ResourceInboxRepository {
                       and ri_status in ${this.sql([EntityStatus.RESERVED])}
                       and expire_ts > ${now}
                       and start_ts is not null
-                      and next_ts < ${timeoutTs}
+                      and start_ts < ${timeoutTs}
                     limit 1
                 `;
 

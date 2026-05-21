@@ -6,7 +6,7 @@ import {
     ResourceInboxRepository,
 } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import {
-    ResourceInboxResultsRepository
+    ResourceInboxResultsRepository,
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import {
     initRuntimeStateExpiryEviction,
@@ -22,7 +22,9 @@ import {
     type RallarMiddlewareRuntime,
 } from '@shared-server/rallar-system/middleware/RallarMiddleware.ts';
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
-import { AppInboxService } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
+import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { createWsStateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { createPostgresQueuePubSubBridge } from './db/postgres-queue-pubsub-bridge.ts';
@@ -88,16 +90,34 @@ function initialise(): Middleware {
         findGroupSnapshotById: groupStateSnapshotsRepository.findLatestGroupSnapshotById,
         inboundStores: resolveServerWsQBoxALInboundRuntimeStores(wsRuntimeName),
         outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(wsRuntimeName),
-        createAppInboxService: ({ inboxQueueReader, wsQBoxServerService }) => {
+        createAppGroupInboxService: ({ inboxQueueReader, wsQBoxServerService }) => {
             const stateSyncPublisher = createWsStateSyncPublisher(
                 wsQBoxServerService,
                 { serverId: myServerId },
             );
-            return new AppInboxService(
+            return new AppGroupInboxService(
                 inboxQueueReader,
                 resourceInboxRepository,
                 resourceInboxResultsRepository,
                 createGroupStateService({
+                    runtimeRepository: createRuntimeStateRepository(sql),
+                    syncPublisher: stateSyncPublisher,
+                    serviceId: myServerId,
+                }),
+                stateSyncPublisher,
+                myServerId,
+            );
+        },
+        createAppClientInboxService: ({ inboxQueueReader, wsQBoxServerService }) => {
+            const stateSyncPublisher = createWsStateSyncPublisher(
+                wsQBoxServerService,
+                { serverId: myServerId },
+            );
+            return new AppClientInboxService(
+                inboxQueueReader,
+                resourceInboxRepository,
+                resourceInboxResultsRepository,
+                createClientStateService({
                     runtimeRepository: createRuntimeStateRepository(sql),
                     syncPublisher: stateSyncPublisher,
                     serviceId: myServerId,

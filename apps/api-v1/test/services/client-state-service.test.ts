@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type {
+    ClientMutationWritten,
+    ClientStateWritten,
+} from '@shared-server/rallar-system/services/client-state-service.ts';
+import type {
     RuntimeStateEntry,
     RuntimeStateTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
@@ -46,18 +50,20 @@ Deno.test('heartbeatSession refreshes TTL without publishing unchanged snapshots
     syncPublisher.reset();
 
     const before = await readSnapshot(service);
-    const refreshed = await service.heartbeatSession(
-        TEST_SCOPE,
-        'client-1',
-        'instance-1',
-        'session-1',
-        {
-            presenceState: 'online',
-            actorPrincipalId: 'client-1',
-            actorSessionId: 'session-1',
-            lastHeartbeatAtEpochMs: 2_000,
-            expiresAtEpochMs: REFRESHED_EXPIRES_AT_EPOCH_MS,
-        },
+    const refreshed = requireClientStateWrittenSnapshot(
+        await service.heartbeatSession(
+            TEST_SCOPE,
+            'client-1',
+            'instance-1',
+            'session-1',
+            {
+                presenceState: 'online',
+                actorPrincipalId: 'client-1',
+                actorSessionId: 'session-1',
+                lastHeartbeatAtEpochMs: 2_000,
+                expiresAtEpochMs: REFRESHED_EXPIRES_AT_EPOCH_MS,
+            },
+        ),
     );
 
     assert.equal(
@@ -74,7 +80,7 @@ Deno.test('heartbeatSession refreshes TTL without publishing unchanged snapshots
     assert.equal(syncPublisher.clientEvents.length, 0);
 });
 
-Deno.test('heartbeatSession publishes when presence state changes', async () => {
+Deno.test('heartbeatSession returns an event when presence state changes without publishing directly', async () => {
     const syncPublisher = createRecordingStateSyncPublisher();
     const service = createTestClientStateService(syncPublisher);
 
@@ -94,7 +100,7 @@ Deno.test('heartbeatSession publishes when presence state changes', async () => 
     syncPublisher.reset();
 
     const before = await readSnapshot(service);
-    const refreshed = await service.heartbeatSession(
+    const refreshedWritten = await service.heartbeatSession(
         TEST_SCOPE,
         'client-1',
         'instance-1',
@@ -107,6 +113,8 @@ Deno.test('heartbeatSession publishes when presence state changes', async () => 
             expiresAtEpochMs: REFRESHED_EXPIRES_AT_EPOCH_MS,
         },
     );
+    const refreshed = requireClientStateWrittenSnapshot(refreshedWritten);
+    const event = requireClientStateWrittenEvent(refreshedWritten);
 
     assert.equal(
         refreshed.principal.presenceVersion,
@@ -114,31 +122,35 @@ Deno.test('heartbeatSession publishes when presence state changes', async () => 
     );
     assert.equal(refreshed.principal.snapshotVersion, before.principal.snapshotVersion + 1);
     assert.equal(refreshed.activeSessions[0].presenceState, 'away');
-    assert.equal(syncPublisher.clientSnapshots.length, 1);
-    assert.equal(syncPublisher.clientEvents.length, 1);
-    assert.equal(syncPublisher.clientEvents[0].eventType, 'session-heartbeat');
+    assert.equal(syncPublisher.clientSnapshots.length, 0);
+    assert.equal(syncPublisher.clientEvents.length, 0);
+    assert.equal(event.eventType, 'session-heartbeat');
 });
 
 Deno.test('upsertPrincipal ignores unchanged profile state', async () => {
     const syncPublisher = createRecordingStateSyncPublisher();
     const service = createTestClientStateService(syncPublisher);
 
-    const created = await service.upsertPrincipal(TEST_SCOPE, 'client-1', {
-        username: 'client-1',
-        displayName: 'Client One',
-        roles: ['member'],
-        metadata: { score: 1 },
-        actorPrincipalId: 'client-1',
-    });
+    const created = requireClientStateWrittenSnapshot(
+        await service.upsertPrincipal(TEST_SCOPE, 'client-1', {
+            username: 'client-1',
+            displayName: 'Client One',
+            roles: ['member'],
+            metadata: { score: 1 },
+            actorPrincipalId: 'client-1',
+        }),
+    );
     syncPublisher.reset();
 
-    const unchanged = await service.upsertPrincipal(TEST_SCOPE, 'client-1', {
-        username: 'client-1',
-        displayName: 'Client One',
-        roles: ['member'],
-        metadata: { score: 1 },
-        actorPrincipalId: 'client-1',
-    });
+    const unchanged = requireClientStateWrittenSnapshot(
+        await service.upsertPrincipal(TEST_SCOPE, 'client-1', {
+            username: 'client-1',
+            displayName: 'Client One',
+            roles: ['member'],
+            metadata: { score: 1 },
+            actorPrincipalId: 'client-1',
+        }),
+    );
 
     assert.equal(unchanged.principal.profileVersion, created.principal.profileVersion);
     assert.equal(unchanged.principal.snapshotVersion, created.principal.snapshotVersion);
@@ -156,29 +168,33 @@ Deno.test('upsertInstance bumps profile version only for semantic instance chang
     });
     syncPublisher.reset();
 
-    const registered = await service.upsertInstance(
-        TEST_SCOPE,
-        'client-1',
-        'instance-1',
-        {
-            platform: 'web',
-            capabilities: ['rtc'],
-            actorPrincipalId: 'client-1',
-        },
+    const registered = requireClientStateWrittenSnapshot(
+        await service.upsertInstance(
+            TEST_SCOPE,
+            'client-1',
+            'instance-1',
+            {
+                platform: 'web',
+                capabilities: ['rtc'],
+                actorPrincipalId: 'client-1',
+            },
+        ),
     );
     syncPublisher.reset();
 
-    const unchanged = await service.upsertInstance(
-        TEST_SCOPE,
-        'client-1',
-        'instance-1',
-        {
-            platform: 'web',
-            capabilities: ['rtc'],
-            actorPrincipalId: 'client-1',
-        },
+    const unchanged = requireClientStateWrittenSnapshot(
+        await service.upsertInstance(
+            TEST_SCOPE,
+            'client-1',
+            'instance-1',
+            {
+                platform: 'web',
+                capabilities: ['rtc'],
+                actorPrincipalId: 'client-1',
+            },
+        ),
     );
-    const updated = await service.upsertInstance(
+    const updatedWritten = await service.upsertInstance(
         TEST_SCOPE,
         'client-1',
         'instance-1',
@@ -188,106 +204,124 @@ Deno.test('upsertInstance bumps profile version only for semantic instance chang
             actorPrincipalId: 'client-1',
         },
     );
+    const updated = requireClientStateWrittenSnapshot(updatedWritten);
+    const updatedEvent = requireClientStateWrittenEvent(updatedWritten);
 
     assert.equal(unchanged.principal.profileVersion, registered.principal.profileVersion);
     assert.equal(unchanged.principal.snapshotVersion, registered.principal.snapshotVersion);
     assert.equal(updated.principal.profileVersion, registered.principal.profileVersion + 1);
     assert.equal(updated.principal.snapshotVersion, registered.principal.snapshotVersion + 1);
-    assert.equal(syncPublisher.clientSnapshots.length, 1);
-    assert.equal(syncPublisher.clientEvents.length, 1);
-    assert.equal(syncPublisher.clientEvents[0].eventType, 'instance-updated');
+    assert.equal(syncPublisher.clientSnapshots.length, 0);
+    assert.equal(syncPublisher.clientEvents.length, 0);
+    assert.equal(updatedEvent.eventType, 'instance-updated');
 });
 
 Deno.test('semantic client mutations advance snapshotVersion', async () => {
     const service = createTestClientStateService();
 
-    const created = await service.upsertPrincipal(TEST_SCOPE, 'client-1', {
-        username: 'client-1',
-        displayName: 'Client One',
-        actorPrincipalId: 'client-1',
-    });
+    const created = requireClientStateWrittenSnapshot(
+        await service.upsertPrincipal(TEST_SCOPE, 'client-1', {
+            username: 'client-1',
+            displayName: 'Client One',
+            actorPrincipalId: 'client-1',
+        }),
+    );
     assert.equal(created.principal.snapshotVersion, 1);
 
-    const unchanged = await service.upsertPrincipal(TEST_SCOPE, 'client-1', {
-        username: 'client-1',
-        displayName: 'Client One',
-        actorPrincipalId: 'client-1',
-    });
+    const unchanged = requireClientStateWrittenSnapshot(
+        await service.upsertPrincipal(TEST_SCOPE, 'client-1', {
+            username: 'client-1',
+            displayName: 'Client One',
+            actorPrincipalId: 'client-1',
+        }),
+    );
     assert.equal(unchanged.principal.snapshotVersion, 1);
 
-    const profileUpdated = await service.upsertPrincipal(TEST_SCOPE, 'client-1', {
-        username: 'client-1',
-        displayName: 'Client 1',
-        actorPrincipalId: 'client-1',
-    });
+    const profileUpdated = requireClientStateWrittenSnapshot(
+        await service.upsertPrincipal(TEST_SCOPE, 'client-1', {
+            username: 'client-1',
+            displayName: 'Client 1',
+            actorPrincipalId: 'client-1',
+        }),
+    );
     assert.equal(profileUpdated.principal.snapshotVersion, 2);
 
-    const instanceRegistered = await service.upsertInstance(
-        TEST_SCOPE,
-        'client-1',
-        'instance-1',
-        {
-            platform: 'web',
-            actorPrincipalId: 'client-1',
-        },
+    const instanceRegistered = requireClientStateWrittenSnapshot(
+        await service.upsertInstance(
+            TEST_SCOPE,
+            'client-1',
+            'instance-1',
+            {
+                platform: 'web',
+                actorPrincipalId: 'client-1',
+            },
+        ),
     );
     assert.equal(instanceRegistered.principal.snapshotVersion, 3);
 
-    const sessionConnected = await service.connectSession(
-        TEST_SCOPE,
-        'client-1',
-        'instance-1',
-        'session-1',
-        {
-            presenceState: 'online',
-            actorPrincipalId: 'client-1',
-            actorSessionId: 'session-1',
-            lastHeartbeatAtEpochMs: 2_000,
-            expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
-        },
+    const sessionConnected = requireClientStateWrittenSnapshot(
+        await service.connectSession(
+            TEST_SCOPE,
+            'client-1',
+            'instance-1',
+            'session-1',
+            {
+                presenceState: 'online',
+                actorPrincipalId: 'client-1',
+                actorSessionId: 'session-1',
+                lastHeartbeatAtEpochMs: 2_000,
+                expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
+            },
+        ),
     );
     assert.equal(sessionConnected.principal.snapshotVersion, 4);
 
-    const heartbeatOnly = await service.heartbeatSession(
-        TEST_SCOPE,
-        'client-1',
-        'instance-1',
-        'session-1',
-        {
-            presenceState: 'online',
-            actorPrincipalId: 'client-1',
-            actorSessionId: 'session-1',
-            lastHeartbeatAtEpochMs: 3_000,
-            expiresAtEpochMs: REFRESHED_EXPIRES_AT_EPOCH_MS,
-        },
+    const heartbeatOnly = requireClientStateWrittenSnapshot(
+        await service.heartbeatSession(
+            TEST_SCOPE,
+            'client-1',
+            'instance-1',
+            'session-1',
+            {
+                presenceState: 'online',
+                actorPrincipalId: 'client-1',
+                actorSessionId: 'session-1',
+                lastHeartbeatAtEpochMs: 3_000,
+                expiresAtEpochMs: REFRESHED_EXPIRES_AT_EPOCH_MS,
+            },
+        ),
     );
     assert.equal(heartbeatOnly.principal.snapshotVersion, 4);
 
-    const presenceUpdated = await service.heartbeatSession(
-        TEST_SCOPE,
-        'client-1',
-        'instance-1',
-        'session-1',
-        {
-            presenceState: 'away',
-            actorPrincipalId: 'client-1',
-            actorSessionId: 'session-1',
-            lastHeartbeatAtEpochMs: 4_000,
-            expiresAtEpochMs: REFRESHED_EXPIRES_AT_EPOCH_MS,
-        },
+    const presenceUpdated = requireClientStateWrittenSnapshot(
+        await service.heartbeatSession(
+            TEST_SCOPE,
+            'client-1',
+            'instance-1',
+            'session-1',
+            {
+                presenceState: 'away',
+                actorPrincipalId: 'client-1',
+                actorSessionId: 'session-1',
+                lastHeartbeatAtEpochMs: 4_000,
+                expiresAtEpochMs: REFRESHED_EXPIRES_AT_EPOCH_MS,
+            },
+        ),
     );
     assert.equal(presenceUpdated.principal.snapshotVersion, 5);
 
-    const disconnected = await service.disconnectSession(
-        TEST_SCOPE,
-        'client-1',
-        'instance-1',
-        'session-1',
-        {
-            actorPrincipalId: 'client-1',
-            actorSessionId: 'session-1',
-            lastHeartbeatAtEpochMs: 5_000,
-        },
+    const disconnected = requireClientStateWrittenSnapshot(
+        await service.disconnectSession(
+            TEST_SCOPE,
+            'client-1',
+            'instance-1',
+            'session-1',
+            {
+                actorPrincipalId: 'client-1',
+                actorSessionId: 'session-1',
+                lastHeartbeatAtEpochMs: 5_000,
+            },
+        ),
     );
     assert.equal(disconnected.principal.snapshotVersion, 6);
 });
@@ -329,6 +363,34 @@ function createRecordingStateSyncPublisher() {
         clientEvents: ClientEvent[];
         reset(): void;
     };
+}
+
+function requireClientStateWrittenSnapshot(
+    written: ClientStateWritten,
+): ClientSnapshot {
+    return requireClientMutationWritten(written).snapshot;
+}
+
+function requireClientStateWrittenEvent(
+    written: ClientStateWritten,
+): ClientEvent {
+    const event = requireClientMutationWritten(written).event;
+    if (!event) {
+        throw new Error('Expected client mutation event');
+    }
+
+    return event;
+}
+
+function requireClientMutationWritten(
+    written: ClientStateWritten,
+): ClientMutationWritten {
+    const mutation = written.result.right;
+    if (!mutation) {
+        throw new Error(written.result.left ?? 'Client mutation failed');
+    }
+
+    return mutation;
 }
 
 async function readSnapshot(

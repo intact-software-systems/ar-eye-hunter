@@ -16,15 +16,14 @@ import type {
     GroupStateWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import {
-    type AppInboxEnqueueInput,
-    AppInboxType,
     type GroupCreateAppInboxPayload,
     type GroupMemberUpsertAppInboxPayload,
     type GroupPresenceConnectAppInboxPayload,
     type GroupPresenceDisconnectAppInboxPayload,
     type GroupPresenceHeartbeatAppInboxPayload,
     type GroupUpdateAppInboxPayload,
-} from '@shared-server/rallar-system/services/AppInboxService.ts';
+} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { AppInboxEnqueueInput, AppInboxType, } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 export function init(app: Hono): void {
     app.get(
@@ -291,13 +290,9 @@ export function init(app: Hono): void {
 async function processGroupAppInbox<V, R>(
     enqueue: AppInboxEnqueueInput<V>,
 ): Promise<R> {
-    const result = await getMiddleware().appInboxService?.processEntryUntilCompletion<V, R>(
+    const result = await getMiddleware().appGroupInboxService.processEntryUntilCompletion<V, R>(
         enqueue,
     );
-
-    if (!result) {
-        throw new Error('App inbox service not initialised');
-    }
 
     return result.fold(
         (error) => {

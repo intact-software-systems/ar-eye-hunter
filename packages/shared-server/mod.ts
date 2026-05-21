@@ -13,6 +13,8 @@ export * from './rallar-system/pubsub/QueueBoxPubSubBridge.ts';
 export * from './rallar-system/services/client-state-service.ts';
 export * from './rallar-system/services/client-state-snapshot-read-through-cache.ts';
 export * from './rallar-system/services/auth-login-service.ts';
+export * from './rallar-system/services/AppClientInboxService.ts';
+export * from './rallar-system/services/AppGroupInboxService.ts';
 export * from './rallar-system/services/AppInboxService.ts';
 export * from './rallar-system/services/group-state-service.ts';
 export * from './rallar-system/services/group-state-snapshot-read-through-cache.ts';

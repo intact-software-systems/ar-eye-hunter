@@ -7,8 +7,23 @@ import type {
     UpsertClientInstanceRequest,
     UpsertClientPrincipalRequest,
 } from '@shared/api/state-types.ts';
+import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { getClientStateService } from '../services/client-state-service.ts';
 import { requireApiAuthSession } from '../services/request-auth-service.ts';
+import { getMiddleware } from '../middleware.ts';
+import {
+    type AppInboxEnqueueInput,
+    AppInboxType,
+    type ClientInstanceUpsertAppInboxPayload,
+    type ClientPrincipalUpsertAppInboxPayload,
+    type ClientSessionConnectAppInboxPayload,
+    type ClientSessionDisconnectAppInboxPayload,
+    type ClientSessionHeartbeatAppInboxPayload,
+} from '@shared-server/rallar-system/services/AppClientInboxService.ts';
+import type {
+    ClientMutationWritten,
+    ClientStateWritten,
+} from '@shared-server/rallar-system/services/client-state-service.ts';
 
 export function init(app: Hono): void {
     app.get(
@@ -66,15 +81,24 @@ export function init(app: Hono): void {
         async (c) => {
             try {
                 const authSession = await requireApiAuthSession(c.req);
-                assertSelfPrincipal(authSession.clientId, c.req.param('principalId'));
-                const snapshot = await getClientStateService().upsertPrincipal(
-                    toScope(c),
-                    c.req.param('principalId'),
-                    withActor(
-                        await c.req.json() as UpsertClientPrincipalRequest,
-                        authSession,
-                    ),
+                const scope = toScope(c);
+                const principalId = c.req.param('principalId');
+                assertSelfPrincipal(authSession.clientId, principalId);
+                const request = withActor(
+                    await readRequestWithRequestId<UpsertClientPrincipalRequest>(c),
+                    authSession,
                 );
+                const snapshot = await processClientAppInbox<ClientPrincipalUpsertAppInboxPayload>({
+                    type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+                    resourceId: request.requestId,
+                    contextId: toClientAppInboxContextId(scope, principalId),
+                    senderId: authSession.clientId,
+                    data: {
+                        scope,
+                        principalId,
+                        request,
+                    },
+                });
                 return c.json(snapshot);
             } catch (error) {
                 return toErrorResponse(c, error);
@@ -87,16 +111,26 @@ export function init(app: Hono): void {
         async (c) => {
             try {
                 const authSession = await requireApiAuthSession(c.req);
-                assertSelfPrincipal(authSession.clientId, c.req.param('principalId'));
-                const snapshot = await getClientStateService().upsertInstance(
-                    toScope(c),
-                    c.req.param('principalId'),
-                    c.req.param('clientInstanceId'),
-                    withActor(
-                        await c.req.json() as UpsertClientInstanceRequest,
-                        authSession,
-                    ),
+                const scope = toScope(c);
+                const principalId = c.req.param('principalId');
+                const clientInstanceId = c.req.param('clientInstanceId');
+                assertSelfPrincipal(authSession.clientId, principalId);
+                const request = withActor(
+                    await readRequestWithRequestId<UpsertClientInstanceRequest>(c),
+                    authSession,
                 );
+                const snapshot = await processClientAppInbox<ClientInstanceUpsertAppInboxPayload>({
+                    type: AppInboxType.CLIENT_INSTANCE_UPSERT,
+                    resourceId: request.requestId,
+                    contextId: toClientAppInboxContextId(scope, principalId),
+                    senderId: authSession.clientId,
+                    data: {
+                        scope,
+                        principalId,
+                        clientInstanceId,
+                        request,
+                    },
+                });
                 return c.json(snapshot);
             } catch (error) {
                 return toErrorResponse(c, error);
@@ -109,21 +143,32 @@ export function init(app: Hono): void {
         async (c) => {
             try {
                 const authSession = await requireApiAuthSession(c.req);
+                const scope = toScope(c);
+                const principalId = c.req.param('principalId');
+                const clientInstanceId = c.req.param('clientInstanceId');
+                const sessionId = c.req.param('sessionId');
                 assertSelfSession(
                     authSession,
-                    c.req.param('principalId'),
-                    c.req.param('sessionId'),
+                    principalId,
+                    sessionId,
                 );
-                const snapshot = await getClientStateService().connectSession(
-                    toScope(c),
-                    c.req.param('principalId'),
-                    c.req.param('clientInstanceId'),
-                    c.req.param('sessionId'),
-                    withActor(
-                        await c.req.json() as ConnectClientSessionRequest,
-                        authSession,
-                    ),
+                const request = withActor(
+                    await readRequestWithRequestId<ConnectClientSessionRequest>(c),
+                    authSession,
                 );
+                const snapshot = await processClientAppInbox<ClientSessionConnectAppInboxPayload>({
+                    type: AppInboxType.CLIENT_SESSION_CONNECT,
+                    resourceId: request.requestId,
+                    contextId: toClientAppInboxContextId(scope, principalId),
+                    senderId: authSession.clientId,
+                    data: {
+                        scope,
+                        principalId,
+                        clientInstanceId,
+                        sessionId,
+                        request,
+                    },
+                });
                 return c.json(snapshot);
             } catch (error) {
                 return toErrorResponse(c, error);
@@ -136,21 +181,32 @@ export function init(app: Hono): void {
         async (c) => {
             try {
                 const authSession = await requireApiAuthSession(c.req);
+                const scope = toScope(c);
+                const principalId = c.req.param('principalId');
+                const clientInstanceId = c.req.param('clientInstanceId');
+                const sessionId = c.req.param('sessionId');
                 assertSelfSession(
                     authSession,
-                    c.req.param('principalId'),
-                    c.req.param('sessionId'),
+                    principalId,
+                    sessionId,
                 );
-                const snapshot = await getClientStateService().heartbeatSession(
-                    toScope(c),
-                    c.req.param('principalId'),
-                    c.req.param('clientInstanceId'),
-                    c.req.param('sessionId'),
-                    withActor(
-                        await c.req.json() as HeartbeatClientSessionRequest,
-                        authSession,
-                    ),
+                const request = withActor(
+                    await readRequestWithRequestId<HeartbeatClientSessionRequest>(c),
+                    authSession,
                 );
+                const snapshot = await processClientAppInbox<ClientSessionHeartbeatAppInboxPayload>({
+                    type: AppInboxType.CLIENT_SESSION_HEARTBEAT,
+                    resourceId: request.requestId,
+                    contextId: toClientAppInboxContextId(scope, principalId),
+                    senderId: authSession.clientId,
+                    data: {
+                        scope,
+                        principalId,
+                        clientInstanceId,
+                        sessionId,
+                        request,
+                    },
+                });
                 return c.json(snapshot);
             } catch (error) {
                 return toErrorResponse(c, error);
@@ -163,27 +219,105 @@ export function init(app: Hono): void {
         async (c) => {
             try {
                 const authSession = await requireApiAuthSession(c.req);
+                const scope = toScope(c);
+                const principalId = c.req.param('principalId');
+                const clientInstanceId = c.req.param('clientInstanceId');
+                const sessionId = c.req.param('sessionId');
                 assertSelfSession(
                     authSession,
-                    c.req.param('principalId'),
-                    c.req.param('sessionId'),
+                    principalId,
+                    sessionId,
                 );
-                const snapshot = await getClientStateService().disconnectSession(
-                    toScope(c),
-                    c.req.param('principalId'),
-                    c.req.param('clientInstanceId'),
-                    c.req.param('sessionId'),
-                    withActor(
-                        await c.req.json() as DisconnectClientSessionRequest,
-                        authSession,
-                    ),
+                const request = withActor(
+                    await readRequestWithRequestId<DisconnectClientSessionRequest>(c),
+                    authSession,
                 );
+                const snapshot = await processClientAppInbox<ClientSessionDisconnectAppInboxPayload>({
+                    type: AppInboxType.CLIENT_SESSION_DISCONNECT,
+                    resourceId: request.requestId,
+                    contextId: toClientAppInboxContextId(scope, principalId),
+                    senderId: authSession.clientId,
+                    data: {
+                        scope,
+                        principalId,
+                        clientInstanceId,
+                        sessionId,
+                        request,
+                    },
+                });
                 return c.json(snapshot);
             } catch (error) {
                 return toErrorResponse(c, error);
             }
         },
     );
+}
+
+async function processClientAppInbox<V>(
+    enqueue: AppInboxEnqueueInput<V>,
+): Promise<ClientSnapshot> {
+    const result = await getMiddleware().appClientInboxService.processEntryUntilCompletion<
+        V,
+        ClientStateWritten
+    >(
+        enqueue,
+    );
+
+    return result.fold(
+        (error) => {
+            throw new Error(error);
+        },
+        (value) => requireClientStateWrittenSnapshot(value),
+    );
+}
+
+function requireClientStateWrittenSnapshot(
+    written: ClientStateWritten,
+): ClientSnapshot {
+    const result = written.result as
+        | ClientStateWritten['result']
+        | {
+        left?: string;
+        right?: ClientMutationWritten;
+    };
+
+    if ('fold' in result && typeof result.fold === 'function') {
+        return result.fold(
+            (error) => {
+                throw new Error(error);
+            },
+            (value) => value.snapshot,
+        );
+    }
+
+    if (result.right) {
+        return result.right.snapshot;
+    }
+
+    throw new Error(result.left ?? 'Client mutation failed');
+}
+
+async function readRequestWithRequestId<T extends { requestId?: string }>(c: {
+    req: {
+        json(): Promise<unknown>;
+        header(name: string): string | undefined;
+    };
+}): Promise<T & { requestId: string }> {
+    const requestBody = (await c.req.json()) as T;
+    const requestId = requestBody.requestId ??
+        c.req.header('Idempotency-Key') ??
+        crypto.randomUUID();
+
+    return {
+        ...requestBody,
+        requestId,
+    };
+}
+
+function toClientAppInboxContextId(scope: StateScope, principalId: string): string {
+    return [scope.applicationId, scope.workspaceId, principalId]
+        .map(encodeURIComponent)
+        .join(':');
 }
 
 function toScope(c: {

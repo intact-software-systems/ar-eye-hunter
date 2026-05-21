@@ -1,6 +1,8 @@
 import {
+    type ClientMutationWritten,
     type ClientStateService,
     type ClientStateServiceDependencies,
+    type ClientStateWritten,
     createClientStateService,
     type RegisterAuthorisedWsClientInput,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
@@ -9,8 +11,10 @@ import { createAuthSessionRepository, createRuntimeStateRepository, } from '../r
 import { getWsStateSyncPublisher } from './state-sync-service.ts';
 
 export {
+    type ClientMutationWritten,
     type ClientStateService,
     type ClientStateServiceDependencies,
+    type ClientStateWritten,
     createClientStateService,
     type RegisterAuthorisedWsClientInput,
 };

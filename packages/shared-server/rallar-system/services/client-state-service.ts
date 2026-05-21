@@ -21,15 +21,13 @@ import type {
     UpsertClientInstanceRequest,
     UpsertClientPrincipalRequest,
 } from '@shared/api/state-types.ts';
-import {
-    DEFAULT_STATE_APPLICATION_ID,
-    DEFAULT_STATE_WORKSPACE_ID,
-} from '@shared/api/state-types.ts';
+import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID, } from '@shared/api/state-types.ts';
 import { ClientStateRepository } from '../repositories/ClientStateRepository.ts';
 import type { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
 import type { RuntimeStateTransactionalRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import type { StateSyncPublisher } from '../state-sync-publisher.ts';
-import { arrayEquals, isDefined, jsonEquals } from '@shared/repository/state-utils.ts';
+import { arrayEquals, isDefined, jsonEquals, } from '@shared/repository/state-utils.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 const DEFAULT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -45,51 +43,63 @@ export type RegisterAuthorisedWsClientInput = Readonly<{
     expiresAtEpochMs?: number;
 }>;
 
+export type ClientMutationWritten = Readonly<{
+    snapshot: ClientSnapshot;
+    event?: ClientEvent;
+}>;
+
+export type ClientStateWritten = Readonly<{
+    status: 'ok';
+    result: Either<string, ClientMutationWritten>;
+}>;
+
 export type ClientStateService = Readonly<{
     listSnapshots(scope: ClientScope): Promise<readonly ClientSnapshot[]>;
     readSnapshot(ref: ClientPrincipalRef): Promise<ClientSnapshot | undefined>;
-    readPresenceSnapshot(ref: ClientPrincipalRef): Promise<ClientPresenceSnapshot | undefined>;
+    readPresenceSnapshot(
+        ref: ClientPrincipalRef,
+    ): Promise<ClientPresenceSnapshot | undefined>;
     listEvents(ref: ClientPrincipalRef): Promise<readonly ClientEvent[]>;
     upsertPrincipal(
         scope: StateScope,
         principalId: string,
         request: UpsertClientPrincipalRequest,
-    ): Promise<ClientSnapshot>;
+    ): Promise<ClientStateWritten>;
     upsertInstance(
         scope: StateScope,
         principalId: string,
         clientInstanceId: string,
         request: UpsertClientInstanceRequest,
-    ): Promise<ClientSnapshot>;
+    ): Promise<ClientStateWritten>;
     connectSession(
         scope: StateScope,
         principalId: string,
         clientInstanceId: string,
         sessionId: string,
         request: ConnectClientSessionRequest,
-    ): Promise<ClientSnapshot>;
+    ): Promise<ClientStateWritten>;
     heartbeatSession(
         scope: StateScope,
         principalId: string,
         clientInstanceId: string,
         sessionId: string,
         request: HeartbeatClientSessionRequest,
-    ): Promise<ClientSnapshot>;
+    ): Promise<ClientStateWritten>;
     disconnectSession(
         scope: StateScope,
         principalId: string,
         clientInstanceId: string,
         sessionId: string,
         request: DisconnectClientSessionRequest,
-    ): Promise<ClientSnapshot>;
+    ): Promise<ClientStateWritten>;
     registerAuthorisedWsClientSession(
         authSession: AuthSession,
         input?: RegisterAuthorisedWsClientInput,
-    ): Promise<ClientSnapshot>;
+    ): Promise<ClientStateWritten>;
     disconnectAuthorisedWsClientSession(
         sessionId: string,
         reason?: string,
-    ): Promise<ClientSnapshot>;
+    ): Promise<ClientStateWritten>;
 }>;
 
 export type ClientStateServiceDependencies = Readonly<{
@@ -104,7 +114,6 @@ export function createClientStateService(
     dependencies: ClientStateServiceDependencies,
 ): ClientStateService {
     const runtimeRepository = dependencies.runtimeRepository;
-    const syncPublisher = dependencies.syncPublisher;
     const now = dependencies.now ?? (() => Date.now());
     const serviceId = dependencies.serviceId;
 
@@ -113,27 +122,43 @@ export function createClientStateService(
             const repository = new ClientStateRepository(runtimeRepository);
             const principals = await repository.listPrincipals(scope);
             const snapshots = await Promise.all(
-                principals.map(async (principal) => await repository.readSnapshot(principal)),
+                principals.map(
+                    async (principal) => await repository.readSnapshot(principal),
+                ),
             );
 
             return snapshots.filter(isDefined);
         },
         readSnapshot: async (ref) => {
-            return await new ClientStateRepository(runtimeRepository).readSnapshot(ref);
+            return await new ClientStateRepository(runtimeRepository).readSnapshot(
+                ref,
+            );
         },
         readPresenceSnapshot: async (ref) => {
-            return await new ClientStateRepository(runtimeRepository).readPresenceSnapshot(ref);
+            return await new ClientStateRepository(
+                runtimeRepository,
+            ).readPresenceSnapshot(ref);
         },
         listEvents: async (ref) => {
             return await new ClientStateRepository(runtimeRepository).listEvents(ref);
         },
         upsertPrincipal: async (scope, principalId, request) => {
-            const result = await runtimeRepository.begin(async (transactionRepository) => {
+            return await runtimeRepository.begin(async (transactionRepository) => {
                 const repository = new ClientStateRepository(transactionRepository);
-                const existing = await repository.findPrincipal({
+                const principalRef = {
                     ...scope,
                     principalId,
-                });
+                };
+                const idempotentWritten = await findIdempotentClientMutationWritten(
+                    repository,
+                    principalRef,
+                    request.requestId,
+                );
+                if (idempotentWritten) {
+                    return idempotentWritten;
+                }
+
+                const existing = await repository.findPrincipal(principalRef);
                 const principal = toPrincipal(
                     scope,
                     principalId,
@@ -144,10 +169,15 @@ export function createClientStateService(
                 );
 
                 if (existing && isSameClientPrincipalMutation(existing, principal)) {
-                    return {
-                        snapshot: await requireClientSnapshot(repository, existing),
-                        event: undefined,
-                    };
+                    return await addIdempotentClientMutationWritten(
+                        repository,
+                        principalRef,
+                        request.requestId,
+                        {
+                            snapshot: await requireClientSnapshot(repository, existing),
+                            event: undefined,
+                        },
+                    );
                 }
 
                 await repository.putPrincipal(principal);
@@ -162,25 +192,33 @@ export function createClientStateService(
 
                 await repository.appendEvent(event);
 
-                return {
-                    snapshot: await requireClientSnapshot(repository, principal),
-                    event,
-                };
-            });
-
-            if (result.event) {
-                await publishClientMutation(
-                    syncPublisher,
-                    result.snapshot,
-                    result.event,
-                    serviceId,
+                return await addIdempotentClientMutationWritten(
+                    repository,
+                    principalRef,
+                    request.requestId,
+                    {
+                        snapshot: await requireClientSnapshot(repository, principal),
+                        event,
+                    },
                 );
-            }
-            return result.snapshot;
+            });
         },
         upsertInstance: async (scope, principalId, clientInstanceId, request) => {
-            const result = await runtimeRepository.begin(async (transactionRepository) => {
+            return await runtimeRepository.begin(async (transactionRepository) => {
                 const repository = new ClientStateRepository(transactionRepository);
+                const principalRef = {
+                    ...scope,
+                    principalId,
+                };
+                const idempotentWritten = await findIdempotentClientMutationWritten(
+                    repository,
+                    principalRef,
+                    request.requestId,
+                );
+                if (idempotentWritten) {
+                    return idempotentWritten;
+                }
+
                 const existingPrincipal = await repository.findPrincipal({
                     ...scope,
                     principalId,
@@ -216,10 +254,15 @@ export function createClientStateService(
                 );
 
                 if (existing && isSameClientInstanceMutation(existing, instance)) {
-                    return {
-                        snapshot: await requireClientSnapshot(repository, principal),
-                        event: undefined,
-                    };
+                    return await addIdempotentClientMutationWritten(
+                        repository,
+                        principalRef,
+                        request.requestId,
+                        {
+                            snapshot: await requireClientSnapshot(repository, principal),
+                            event: undefined,
+                        },
+                    );
                 }
 
                 await repository.putInstance(instance);
@@ -234,8 +277,8 @@ export function createClientStateService(
                     request.status === 'revoked'
                         ? 'instance-revoked'
                         : existing
-                          ? 'instance-updated'
-                          : 'instance-registered',
+                            ? 'instance-updated'
+                            : 'instance-registered',
                     snapshotPrincipal,
                     request,
                     now(),
@@ -245,25 +288,42 @@ export function createClientStateService(
 
                 await repository.appendEvent(event);
 
-                return {
-                    snapshot: await requireClientSnapshot(repository, snapshotPrincipal),
-                    event,
-                };
-            });
-
-            if (result.event) {
-                await publishClientMutation(
-                    syncPublisher,
-                    result.snapshot,
-                    result.event,
-                    serviceId,
+                return await addIdempotentClientMutationWritten(
+                    repository,
+                    principalRef,
+                    request.requestId,
+                    {
+                        snapshot: await requireClientSnapshot(
+                            repository,
+                            snapshotPrincipal,
+                        ),
+                        event,
+                    },
                 );
-            }
-            return result.snapshot;
+            });
         },
-        connectSession: async (scope, principalId, clientInstanceId, sessionId, request) => {
-            const result = await runtimeRepository.begin(async (transactionRepository) => {
+        connectSession: async (
+            scope,
+            principalId,
+            clientInstanceId,
+            sessionId,
+            request,
+        ) => {
+            return await runtimeRepository.begin(async (transactionRepository) => {
                 const repository = new ClientStateRepository(transactionRepository);
+                const principalRef = {
+                    ...scope,
+                    principalId,
+                };
+                const idempotentWritten = await findIdempotentClientMutationWritten(
+                    repository,
+                    principalRef,
+                    request.requestId,
+                );
+                if (idempotentWritten) {
+                    return idempotentWritten;
+                }
+
                 const principal = await ensurePrincipal(
                     repository,
                     scope,
@@ -350,29 +410,42 @@ export function createClientStateService(
                     await repository.appendEvent(event);
                 }
 
-                return {
-                    snapshot: await requireClientSnapshot(repository, snapshotPrincipal),
-                    event,
-                };
-            });
-
-            if (result.event) {
-                await publishClientMutation(
-                    syncPublisher,
-                    result.snapshot,
-                    result.event,
-                    serviceId,
+                return await addIdempotentClientMutationWritten(
+                    repository,
+                    principalRef,
+                    request.requestId,
+                    {
+                        snapshot: await requireClientSnapshot(
+                            repository,
+                            snapshotPrincipal,
+                        ),
+                        event,
+                    },
                 );
-            }
-            return result.snapshot;
+            });
         },
-        heartbeatSession: async (scope, principalId, clientInstanceId, sessionId, request) => {
-            const result = await runtimeRepository.begin(async (transactionRepository) => {
+        heartbeatSession: async (
+            scope,
+            principalId,
+            clientInstanceId,
+            sessionId,
+            request,
+        ) => {
+            return await runtimeRepository.begin(async (transactionRepository) => {
                 const repository = new ClientStateRepository(transactionRepository);
                 const principalRef = {
                     ...scope,
                     principalId,
                 };
+                const idempotentWritten = await findIdempotentClientMutationWritten(
+                    repository,
+                    principalRef,
+                    request.requestId,
+                );
+                if (idempotentWritten) {
+                    return idempotentWritten;
+                }
+
                 const principal = await repository.findPrincipal(principalRef);
                 if (!principal) {
                     throw new Error(`Client principal not found: ${principalId}`);
@@ -412,7 +485,10 @@ export function createClientStateService(
 
                 let event: ClientEvent | undefined;
                 if (wasSemanticallyActive) {
-                    const nextPrincipal = rememberPrincipalLastSeen(principal, heartbeatTimestamp);
+                    const nextPrincipal = rememberPrincipalLastSeen(
+                        principal,
+                        heartbeatTimestamp,
+                    );
                     if (nextPrincipal !== principal) {
                         await repository.putPrincipal(nextPrincipal);
                     }
@@ -439,29 +515,39 @@ export function createClientStateService(
                     await repository.appendEvent(event);
                 }
 
-                return {
-                    snapshot: await requireClientSnapshot(repository, principal),
-                    event,
-                };
-            });
-
-            if (result.event) {
-                await publishClientMutation(
-                    syncPublisher,
-                    result.snapshot,
-                    result.event,
-                    serviceId,
+                return await addIdempotentClientMutationWritten(
+                    repository,
+                    principalRef,
+                    request.requestId,
+                    {
+                        snapshot: await requireClientSnapshot(repository, principal),
+                        event,
+                    },
                 );
-            }
-            return result.snapshot;
+            });
         },
-        disconnectSession: async (scope, principalId, clientInstanceId, sessionId, request) => {
-            const result = await runtimeRepository.begin(async (transactionRepository) => {
+        disconnectSession: async (
+            scope,
+            principalId,
+            clientInstanceId,
+            sessionId,
+            request,
+        ) => {
+            return await runtimeRepository.begin(async (transactionRepository) => {
                 const repository = new ClientStateRepository(transactionRepository);
                 const principalRef = {
                     ...scope,
                     principalId,
                 };
+                const idempotentWritten = await findIdempotentClientMutationWritten(
+                    repository,
+                    principalRef,
+                    request.requestId,
+                );
+                if (idempotentWritten) {
+                    return idempotentWritten;
+                }
+
                 const principal = await repository.findPrincipal(principalRef);
                 if (!principal) {
                     throw new Error(`Client principal not found: ${principalId}`);
@@ -483,9 +569,11 @@ export function createClientStateService(
                     status: 'disconnected',
                     lastHeartbeatAtEpochMs:
                         request.lastHeartbeatAtEpochMs ?? existing.lastHeartbeatAtEpochMs,
-                    expiresAtEpochMs: request.expiresAtEpochMs ?? existing.expiresAtEpochMs,
+                    expiresAtEpochMs:
+                        request.expiresAtEpochMs ?? existing.expiresAtEpochMs,
                     disconnectedAtEpochMs,
-                    disconnectReason: request.reason ?? existing.disconnectReason ?? 'closed',
+                    disconnectReason:
+                        request.reason ?? existing.disconnectReason ?? 'closed',
                 };
 
                 await repository.putSession(session);
@@ -523,21 +611,19 @@ export function createClientStateService(
                     await repository.appendEvent(event);
                 }
 
-                return {
-                    snapshot: await requireClientSnapshot(repository, snapshotPrincipal),
-                    event,
-                };
-            });
-
-            if (result.event) {
-                await publishClientMutation(
-                    syncPublisher,
-                    result.snapshot,
-                    result.event,
-                    serviceId,
+                return await addIdempotentClientMutationWritten(
+                    repository,
+                    principalRef,
+                    request.requestId,
+                    {
+                        snapshot: await requireClientSnapshot(
+                            repository,
+                            snapshotPrincipal,
+                        ),
+                        event,
+                    },
                 );
-            }
-            return result.snapshot;
+            });
         },
         registerAuthorisedWsClientSession: async (authSession, input = {}) => {
             const scope: StateScope = {
@@ -546,10 +632,28 @@ export function createClientStateService(
             };
             const principalId = input.principalId ?? authSession.clientId;
             const clientInstanceId = input.clientInstanceId ?? authSession.clientId;
-            const expiresAtEpochMs = input.expiresAtEpochMs ?? now() + DEFAULT_SESSION_TTL_MS;
+            const expiresAtEpochMs =
+                input.expiresAtEpochMs ?? now() + DEFAULT_SESSION_TTL_MS;
+            const requestId = toAuthorisedWsClientRequestId(
+                'connect',
+                authSession.sessionId,
+            );
 
-            const result = await runtimeRepository.begin(async (transactionRepository) => {
+            return await runtimeRepository.begin(async (transactionRepository) => {
                 const repository = new ClientStateRepository(transactionRepository);
+                const principalRef = {
+                    ...scope,
+                    principalId,
+                };
+                const idempotentWritten = await findIdempotentClientMutationWritten(
+                    repository,
+                    principalRef,
+                    requestId,
+                );
+                if (idempotentWritten) {
+                    return idempotentWritten;
+                }
+
                 const timestamp = now();
                 const principal = await ensurePrincipal(
                     repository,
@@ -563,6 +667,7 @@ export function createClientStateService(
                         metadata: {},
                         actorPrincipalId: principalId,
                         actorSessionId: authSession.sessionId,
+                        requestId,
                     },
                     timestamp,
                     serviceId,
@@ -579,6 +684,7 @@ export function createClientStateService(
                         capabilities: input.capabilities ?? ['ws'],
                         actorPrincipalId: principalId,
                         actorSessionId: authSession.sessionId,
+                        requestId,
                     },
                     timestamp,
                     serviceId,
@@ -605,6 +711,7 @@ export function createClientStateService(
                         expiresAtEpochMs,
                         actorPrincipalId: principalId,
                         actorSessionId: authSession.sessionId,
+                        requestId,
                     },
                     timestamp,
                 );
@@ -617,6 +724,7 @@ export function createClientStateService(
                         {
                             actorPrincipalId: principalId,
                             actorSessionId: authSession.sessionId,
+                            requestId,
                         },
                         timestamp,
                         serviceId,
@@ -629,6 +737,7 @@ export function createClientStateService(
                     {
                         actorPrincipalId: principalId,
                         actorSessionId: authSession.sessionId,
+                        requestId,
                     },
                     timestamp,
                     serviceId,
@@ -637,22 +746,30 @@ export function createClientStateService(
                 );
                 await repository.appendEvent(event);
 
-                return {
-                    snapshot: await requireClientSnapshot(repository, principal),
-                    event,
-                };
+                return await addIdempotentClientMutationWritten(
+                    repository,
+                    principalRef,
+                    requestId,
+                    {
+                        snapshot: await requireClientSnapshot(repository, principal),
+                        event,
+                    },
+                );
             });
-
-            await publishClientMutation(syncPublisher, result.snapshot, result.event, serviceId);
-            return result.snapshot;
         },
-        disconnectAuthorisedWsClientSession: async (sessionId, reason = 'websocket-closed') => {
+        disconnectAuthorisedWsClientSession: async (
+            sessionId,
+            reason = 'websocket-closed',
+        ) => {
             const authSessionRepository = dependencies.authSessionRepository;
             if (!authSessionRepository) {
-                throw new Error('Auth session repository required to disconnect authorised websocket clients');
+                throw new Error(
+                    'Auth session repository required to disconnect authorised websocket clients',
+                );
             }
 
-            const issuedSession = await authSessionRepository.findBySessionId(sessionId);
+            const issuedSession =
+                await authSessionRepository.findBySessionId(sessionId);
             if (!issuedSession) {
                 throw new Error(`Client not authorised: ${sessionId}`);
             }
@@ -673,6 +790,7 @@ export function createClientStateService(
                     reason,
                     actorPrincipalId: principalId,
                     actorSessionId: sessionId,
+                    requestId: toAuthorisedWsClientRequestId('disconnect', sessionId),
                 },
             );
         },
@@ -681,14 +799,51 @@ export function createClientStateService(
     return service;
 }
 
-async function publishClientMutation(
-    syncPublisher: StateSyncPublisher,
-    snapshot: ClientSnapshot,
-    event: ClientEvent,
-    serviceId: string,
-): Promise<void> {
-    await syncPublisher.publishClientSnapshot(snapshot, serviceId);
-    await syncPublisher.publishClientEvent(event, serviceId);
+async function findIdempotentClientMutationWritten(
+    repository: ClientStateRepository,
+    ref: ClientPrincipalRef,
+    requestId: string | undefined,
+): Promise<ClientStateWritten | undefined> {
+    if (!requestId) {
+        return undefined;
+    }
+
+    return await repository.findIdempotentClientStateWritten(ref, requestId);
+}
+
+async function addIdempotentClientMutationWritten(
+    repository: ClientStateRepository,
+    ref: ClientPrincipalRef,
+    requestId: string | undefined,
+    written: ClientMutationWritten,
+): Promise<ClientStateWritten> {
+    const clientStateWritten = toClientStateWritten(written);
+
+    if (!requestId) {
+        return clientStateWritten;
+    }
+
+    return await repository.addIdempotentClientStateWritten(
+        ref,
+        requestId,
+        clientStateWritten,
+    );
+}
+
+function toClientStateWritten(
+    written: ClientMutationWritten,
+): ClientStateWritten {
+    return {
+        status: 'ok',
+        result: Either.ofRight(written),
+    };
+}
+
+function toAuthorisedWsClientRequestId(
+    operation: 'connect' | 'disconnect',
+    sessionId: string,
+): string {
+    return `authorised-ws:${operation}:${sessionId}`;
 }
 
 async function ensurePrincipal(
@@ -707,7 +862,14 @@ async function ensurePrincipal(
         return existing;
     }
 
-    const principal = toPrincipal(scope, principalId, undefined, request, timestamp, serviceId);
+    const principal = toPrincipal(
+        scope,
+        principalId,
+        undefined,
+        request,
+        timestamp,
+        serviceId,
+    );
     await repository.putPrincipal(principal);
     return principal;
 }
@@ -834,10 +996,14 @@ function toActiveSession(
         transport: request.transport ?? existing?.transport ?? 'unknown',
         connectionId: request.connectionId ?? existing?.connectionId,
         authenticatedAtEpochMs:
-            request.authenticatedAtEpochMs ?? existing?.authenticatedAtEpochMs ?? timestamp,
-        connectedAtEpochMs: request.connectedAtEpochMs ?? existing?.connectedAtEpochMs ?? timestamp,
+            request.authenticatedAtEpochMs ??
+            existing?.authenticatedAtEpochMs ??
+            timestamp,
+        connectedAtEpochMs:
+            request.connectedAtEpochMs ?? existing?.connectedAtEpochMs ?? timestamp,
         lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs ?? timestamp,
-        expiresAtEpochMs: request.expiresAtEpochMs ?? timestamp + DEFAULT_SESSION_TTL_MS,
+        expiresAtEpochMs:
+            request.expiresAtEpochMs ?? timestamp + DEFAULT_SESSION_TTL_MS,
         disconnectedAtEpochMs: undefined,
         disconnectReason: undefined,
     };
@@ -887,7 +1053,10 @@ function rememberPrincipalLastSeen(
     principal: ClientPrincipal,
     lastSeenAtEpochMs: number,
 ): ClientPrincipal {
-    if ((principal.lastSeenAtEpochMs ?? Number.NEGATIVE_INFINITY) >= lastSeenAtEpochMs) {
+    if (
+        (principal.lastSeenAtEpochMs ?? Number.NEGATIVE_INFINITY) >=
+        lastSeenAtEpochMs
+    ) {
         return principal;
     }
 
@@ -897,7 +1066,10 @@ function rememberPrincipalLastSeen(
     };
 }
 
-function isSameClientPrincipalMutation(current: ClientPrincipal, next: ClientPrincipal): boolean {
+function isSameClientPrincipalMutation(
+    current: ClientPrincipal,
+    next: ClientPrincipal,
+): boolean {
     return (
         current.username === next.username &&
         current.displayName === next.displayName &&
@@ -911,7 +1083,10 @@ function isSameClientPrincipalMutation(current: ClientPrincipal, next: ClientPri
     );
 }
 
-function isSameClientInstanceMutation(current: ClientInstance, next: ClientInstance): boolean {
+function isSameClientInstanceMutation(
+    current: ClientInstance,
+    next: ClientInstance,
+): boolean {
     return (
         current.status === next.status &&
         current.platform === next.platform &&
@@ -922,7 +1097,10 @@ function isSameClientInstanceMutation(current: ClientInstance, next: ClientInsta
     );
 }
 
-function isSameActiveClientSession(current: ClientSession, next: ClientSession): boolean {
+function isSameActiveClientSession(
+    current: ClientSession,
+    next: ClientSession,
+): boolean {
     return (
         current.status === 'active' &&
         next.status === 'active' &&
@@ -938,7 +1116,10 @@ function isSameActiveClientSession(current: ClientSession, next: ClientSession):
     );
 }
 
-function isSameDisconnectedClientSession(current: ClientSession, next: ClientSession): boolean {
+function isSameDisconnectedClientSession(
+    current: ClientSession,
+    next: ClientSession,
+): boolean {
     return (
         current.status === 'disconnected' &&
         next.status === 'disconnected' &&

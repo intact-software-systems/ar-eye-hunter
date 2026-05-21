@@ -23,7 +23,7 @@ import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
 import type { RuntimeStateTransactionalRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import type { StateSyncPublisher } from '../state-sync-publisher.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { jsonEquals } from '@shared/repository/state-utils.ts';
+import { isDefined, jsonEquals } from '@shared/repository/state-utils.ts';
 
 const DEFAULT_GROUP_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -132,11 +132,10 @@ export function createGroupStateService(
                 const existing = await repository.findGroup(ref);
 
                 if (existing) {
-                    const written =
-                        await repository.findIdempotentGroupStateWritten(
-                            ref,
-                            idempotencyKey,
-                        );
+                    const written = await repository.findIdempotentGroupStateWritten(
+                        ref,
+                        idempotencyKey,
+                    );
 
                     if (written) {
                         return written;

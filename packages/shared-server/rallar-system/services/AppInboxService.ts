@@ -1,13 +1,4 @@
 import { ALMessage, newALRoute, newALUntargetedMessage, } from '@shared/al-contracts/al-contract.ts';
-import type {
-    ConnectGroupPresenceSessionRequest,
-    CreateGroupRequest,
-    DisconnectGroupPresenceSessionRequest,
-    HeartbeatGroupPresenceSessionRequest,
-    StateScope,
-    UpdateGroupRequest,
-    UpsertGroupMemberRequest,
-} from '@shared/api/state-types.ts';
 import {
     EntityStatus,
     Key,
@@ -21,16 +12,16 @@ import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/
 import {
     ResourceInboxResultsRepository
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import type {
-    GroupMutationWritten,
-    GroupStateService,
-    GroupStateWritten,
-} from '@shared-server/rallar-system/services/group-state-service.ts';
-import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 
 export const SIMPLER_GROUP_STATE_APP_INBOX_TOPIC = 'app-inbox.group-state';
+export const SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC = 'app-inbox.client-state';
 
 export enum AppInboxType {
+    CLIENT_PRINCIPAL_UPSERT = 'CLIENT_PRINCIPAL_UPSERT',
+    CLIENT_INSTANCE_UPSERT = 'CLIENT_INSTANCE_UPSERT',
+    CLIENT_SESSION_CONNECT = 'CLIENT_SESSION_CONNECT',
+    CLIENT_SESSION_HEARTBEAT = 'CLIENT_SESSION_HEARTBEAT',
+    CLIENT_SESSION_DISCONNECT = 'CLIENT_SESSION_DISCONNECT',
     GROUP_CREATE = 'GROUP_CREATE',
     GROUP_UPDATE = 'GROUP_UPDATE',
     GROUP_MEMBER_UPSERT = 'GROUP_MEMBER_UPSERT',
@@ -48,164 +39,31 @@ export type AppInboxEnqueueInput<V> = {
     data: V;
 };
 
-export type GroupCreateAppInboxPayload = Readonly<{
-    scope: StateScope;
-    request: CreateGroupRequest;
-}>;
-
-export type GroupUpdateAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    request: UpdateGroupRequest;
-}>;
-
-export type GroupMemberUpsertAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    principalId: string;
-    request: UpsertGroupMemberRequest;
-}>;
-
-export type GroupPresenceConnectAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    sessionId: string;
-    request: ConnectGroupPresenceSessionRequest;
-}>;
-
-export type GroupPresenceHeartbeatAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    sessionId: string;
-    request: HeartbeatGroupPresenceSessionRequest;
-}>;
-
-export type GroupPresenceDisconnectAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    sessionId: string;
-    request: DisconnectGroupPresenceSessionRequest;
-}>;
-
 export class AppInboxService {
-    static MAX_ELAPSED_MSECS = 10_000;
+    public static readonly MAX_ELAPSED_MSECS = 10_000;
 
     constructor(
         public readonly inbox: InboxQueueReader,
         public readonly resourceInbox: ResourceInboxRepository,
         public readonly resourceInboxResults: ResourceInboxResultsRepository,
-        public readonly groupStateService: GroupStateService,
-        public readonly stateSyncPublisher: StateSyncPublisher,
         public readonly serviceId: string,
+        private readonly defaultTopicId: string = SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
     ) {
-        this.onGroupStateMessage<GroupCreateAppInboxPayload>(
-            AppInboxType.GROUP_CREATE,
-            async (groupCreate) => {
-                const groupStateWritten = await this.groupStateService.createGroup(
-                    groupCreate.scope,
-                    groupCreate.request,
-                );
-
-                await this.publishGroupStateWritten(groupStateWritten);
-
-                return groupStateWritten;
-            },
-        );
-        this.onGroupStateMessage<GroupUpdateAppInboxPayload>(
-            AppInboxType.GROUP_UPDATE,
-            async (update) => {
-                const groupStateWritten = await this.groupStateService.updateGroup(
-                    update.scope,
-                    update.groupId,
-                    update.request,
-                );
-
-                await this.publishGroupStateWritten(groupStateWritten);
-
-                return groupStateWritten;
-            },
-        );
-        this.onGroupStateMessage<GroupMemberUpsertAppInboxPayload>(
-            AppInboxType.GROUP_MEMBER_UPSERT,
-            async (member) => {
-                const groupStateWritten = await this.groupStateService.upsertMember(
-                    member.scope,
-                    member.groupId,
-                    member.principalId,
-                    member.request,
-                );
-
-                await this.publishGroupStateWritten(groupStateWritten);
-
-                return groupStateWritten;
-            },
-        );
-        this.onGroupStateMessage<GroupPresenceConnectAppInboxPayload>(
-            AppInboxType.GROUP_PRESENCE_CONNECT,
-            async (presence) => {
-                const groupStateWritten =
-                    await this.groupStateService.connectPresenceSession(
-                        presence.scope,
-                        presence.groupId,
-                        presence.sessionId,
-                        presence.request,
-                    );
-
-                await this.publishGroupStateWritten(groupStateWritten);
-
-                return groupStateWritten;
-            },
-        );
-        this.onGroupStateMessage<GroupPresenceHeartbeatAppInboxPayload>(
-            AppInboxType.GROUP_PRESENCE_HEARTBEAT,
-            async (presence) => {
-                const groupStateWritten =
-                    await this.groupStateService.heartbeatPresenceSession(
-                        presence.scope,
-                        presence.groupId,
-                        presence.sessionId,
-                        presence.request,
-                    );
-
-                await this.publishGroupStateWritten(groupStateWritten);
-
-                return groupStateWritten;
-            },
-        );
-        this.onGroupStateMessage<GroupPresenceDisconnectAppInboxPayload>(
-            AppInboxType.GROUP_PRESENCE_DISCONNECT,
-            async (presence) => {
-                const groupStateWritten =
-                    await this.groupStateService.disconnectPresenceSession(
-                        presence.scope,
-                        presence.groupId,
-                        presence.sessionId,
-                        presence.request,
-                    );
-
-                await this.publishGroupStateWritten(groupStateWritten);
-
-                return groupStateWritten;
-            },
-        );
     }
 
-    public async processEntryNoWaiting<V, R = V>(
-        enqueue: AppInboxEnqueueInput<V>,
-    ) {
-        this.processEntryUntilCompletionInternal(enqueue, false)
-            .catch((err) => {
-                console.error(`Error processing entry without waiting: ${err}`);
-            });
+    public processEntryNoWaiting<V, R = V>(enqueue: AppInboxEnqueueInput<V>) {
+        this.processEntryUntilCompletionInternal(enqueue, false).catch((err) => {
+            console.error(`Error processing entry without waiting: ${err}`);
+        });
     }
 
     public async processEntryUntilCompletion<V, R = V>(
         enqueue: AppInboxEnqueueInput<V>,
     ): Promise<Either<string, R>> {
-        return this.processEntryUntilCompletionInternal(enqueue, true);
+        return await this.processEntryUntilCompletionInternal(enqueue, true);
     }
 
-    public async processEntryUntilCompletionInternal<V, R = V>(
+    private async processEntryUntilCompletionInternal<V, R = V>(
         enqueue: AppInboxEnqueueInput<V>,
         waitForCompletion: boolean,
     ): Promise<Either<string, R>> {
@@ -224,28 +82,29 @@ export class AppInboxService {
             return Either.ofLeft('No waiting for completion');
         }
 
-        const isCompleted =
-            await tryWithPolicy<boolean>(
-                async () => {
-                    const isCompleted = await this.resourceInbox.isEntryWithStatus(key, [
-                        EntityStatus.COMPLETED,
-                        EntityStatus.FAILED,
-                    ]);
+        const isCompleted = await tryWithPolicy<boolean>(async () => {
+            const isCompleted = await this.resourceInbox.isEntryWithStatus(key, [
+                EntityStatus.COMPLETED,
+                EntityStatus.FAILED,
+            ]);
 
-                    if (!isCompleted) {
-                        throw new Error('App inbox entry not found');
-                    }
+            if (!isCompleted) {
+                throw new Error('App inbox entry not found');
+            }
 
-                    return true;
-                },
-                TryWithPolicy.defaults()
-                    .maxElapsedMsecs(AppInboxService.MAX_ELAPSED_MSECS)
-            );
+            return true;
+        }, TryWithPolicy.defaults().maxElapsedMsecs(AppInboxService.MAX_ELAPSED_MSECS));
 
         if (!isCompleted) {
             return Either.ofLeft('App inbox entry not completed');
         }
 
+        return await this.findByKeyAndReturnEither<R>(key);
+    }
+
+    private async findByKeyAndReturnEither<R>(
+        key: Key,
+    ): Promise<Either<string, R>> {
         const result = await this.resourceInboxResults.findByKey(key);
         if (result === undefined) {
             return Either.ofLeft('App inbox entry not found');
@@ -260,7 +119,7 @@ export class AppInboxService {
         return Either.ofRight(JSON.parse(result.resource) as R);
     }
 
-    private onGroupStateMessage<V>(
+    onStateMessage<V>(
         type: AppInboxType,
         handler: (data: V) => Promise<unknown>,
     ): void {
@@ -274,6 +133,7 @@ export class AppInboxService {
                     const result = await handler(enqueue.data);
                     await this.writeAppInboxResult(entry, EntityStatus.COMPLETED, result);
                 } catch (error) {
+                    // TODO: Only FAILED if it is a non-retryable error
                     await this.writeAppInboxResult(
                         entry,
                         EntityStatus.FAILED,
@@ -294,53 +154,9 @@ export class AppInboxService {
         );
     }
 
-    private async publishGroupStateWritten(
-        groupStateWritten: GroupStateWritten,
-    ): Promise<void> {
-        const result = groupStateWritten.result as
-            | GroupStateWritten['result']
-            | {
-            left?: string;
-            right?: GroupMutationWritten;
-        };
-
-        if ('fold' in result && typeof result.fold === 'function') {
-            await result.fold(
-                async () => undefined,
-                async (written) => await this.publishGroupMutation(written),
-            );
-            return;
-        }
-
-        if (result.right) {
-            await this.publishGroupMutation(result.right);
-        }
-    }
-
-    private async publishGroupMutation(
-        written: GroupMutationWritten,
-    ): Promise<void> {
-        if (!written.event) {
-            return;
-        }
-
-        await this.stateSyncPublisher.publishGroupSnapshot(
-            written.snapshot,
-            this.serviceId,
-        );
-
-        await this.stateSyncPublisher.publishGroupEvent(
-            written.event,
-            this.serviceId,
-        );
-    }
-
     private toKey<V>(enqueue: AppInboxEnqueueInput<V>) {
         return {
-            topicId: toQueueKeyPart(
-                enqueue.topicId ?? SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
-                36,
-            ),
+            topicId: toQueueKeyPart(enqueue.topicId ?? this.defaultTopicId, 36),
             resourceId: toQueueKeyPart(
                 enqueue.resourceId ?? crypto.randomUUID().toString(),
                 36,

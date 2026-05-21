@@ -1,0 +1,208 @@
+import type {
+    ConnectClientSessionRequest,
+    DisconnectClientSessionRequest,
+    HeartbeatClientSessionRequest,
+    StateScope,
+    UpsertClientInstanceRequest,
+    UpsertClientPrincipalRequest,
+} from '@shared/api/state-types.ts';
+import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import {
+    ResourceInboxResultsRepository
+} from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import type {
+    ClientMutationWritten,
+    ClientStateService,
+    ClientStateWritten,
+} from '@shared-server/rallar-system/services/client-state-service.ts';
+import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
+import {
+    AppInboxService,
+    AppInboxType,
+    SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+} from '@shared-server/rallar-system/services/AppInboxService.ts';
+
+export {
+    AppInboxService,
+    AppInboxType,
+    type AppInboxEnqueueInput,
+} from '@shared-server/rallar-system/services/AppInboxService.ts';
+
+export type ClientPrincipalUpsertAppInboxPayload = Readonly<{
+    scope: StateScope;
+    principalId: string;
+    request: UpsertClientPrincipalRequest;
+}>;
+
+export type ClientInstanceUpsertAppInboxPayload = Readonly<{
+    scope: StateScope;
+    principalId: string;
+    clientInstanceId: string;
+    request: UpsertClientInstanceRequest;
+}>;
+
+export type ClientSessionConnectAppInboxPayload = Readonly<{
+    scope: StateScope;
+    principalId: string;
+    clientInstanceId: string;
+    sessionId: string;
+    request: ConnectClientSessionRequest;
+}>;
+
+export type ClientSessionHeartbeatAppInboxPayload = Readonly<{
+    scope: StateScope;
+    principalId: string;
+    clientInstanceId: string;
+    sessionId: string;
+    request: HeartbeatClientSessionRequest;
+}>;
+
+export type ClientSessionDisconnectAppInboxPayload = Readonly<{
+    scope: StateScope;
+    principalId: string;
+    clientInstanceId: string;
+    sessionId: string;
+    request: DisconnectClientSessionRequest;
+}>;
+
+export class AppClientInboxService extends AppInboxService {
+    constructor(
+        public override readonly inbox: InboxQueueReader,
+        public override readonly resourceInbox: ResourceInboxRepository,
+        public override readonly resourceInboxResults: ResourceInboxResultsRepository,
+        public readonly clientStateService: ClientStateService,
+        public readonly stateSyncPublisher: StateSyncPublisher,
+        public override readonly serviceId: string,
+    ) {
+        super(
+            inbox,
+            resourceInbox,
+            resourceInboxResults,
+            serviceId,
+            SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+        );
+
+        this.onStateMessage<ClientPrincipalUpsertAppInboxPayload>(
+            AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+            async (principal) => {
+                const clientStateWritten =
+                    await this.clientStateService.upsertPrincipal(
+                        principal.scope,
+                        principal.principalId,
+                        principal.request,
+                    );
+
+                await this.publishClientStateWritten(clientStateWritten);
+
+                return clientStateWritten;
+            },
+        );
+        this.onStateMessage<ClientInstanceUpsertAppInboxPayload>(
+            AppInboxType.CLIENT_INSTANCE_UPSERT,
+            async (instance) => {
+                const clientStateWritten = await this.clientStateService.upsertInstance(
+                    instance.scope,
+                    instance.principalId,
+                    instance.clientInstanceId,
+                    instance.request,
+                );
+
+                await this.publishClientStateWritten(clientStateWritten);
+
+                return clientStateWritten;
+            },
+        );
+        this.onStateMessage<ClientSessionConnectAppInboxPayload>(
+            AppInboxType.CLIENT_SESSION_CONNECT,
+            async (session) => {
+                const clientStateWritten = await this.clientStateService.connectSession(
+                    session.scope,
+                    session.principalId,
+                    session.clientInstanceId,
+                    session.sessionId,
+                    session.request,
+                );
+
+                await this.publishClientStateWritten(clientStateWritten);
+
+                return clientStateWritten;
+            },
+        );
+        this.onStateMessage<ClientSessionHeartbeatAppInboxPayload>(
+            AppInboxType.CLIENT_SESSION_HEARTBEAT,
+            async (session) => {
+                const clientStateWritten =
+                    await this.clientStateService.heartbeatSession(
+                        session.scope,
+                        session.principalId,
+                        session.clientInstanceId,
+                        session.sessionId,
+                        session.request,
+                    );
+
+                await this.publishClientStateWritten(clientStateWritten);
+
+                return clientStateWritten;
+            },
+        );
+        this.onStateMessage<ClientSessionDisconnectAppInboxPayload>(
+            AppInboxType.CLIENT_SESSION_DISCONNECT,
+            async (session) => {
+                const clientStateWritten =
+                    await this.clientStateService.disconnectSession(
+                        session.scope,
+                        session.principalId,
+                        session.clientInstanceId,
+                        session.sessionId,
+                        session.request,
+                    );
+
+                await this.publishClientStateWritten(clientStateWritten);
+
+                return clientStateWritten;
+            },
+        );
+    }
+
+    public async publishClientStateWritten(
+        clientStateWritten: ClientStateWritten,
+    ): Promise<void> {
+        const result = clientStateWritten.result as
+            | ClientStateWritten['result']
+            | {
+            left?: string;
+            right?: ClientMutationWritten;
+        };
+
+        if ('fold' in result && typeof result.fold === 'function') {
+            await result.fold(
+                async () => undefined,
+                async (written) => await this.publishClientMutation(written),
+            );
+            return;
+        }
+
+        if (result.right) {
+            await this.publishClientMutation(result.right);
+        }
+    }
+
+    private async publishClientMutation(
+        written: ClientMutationWritten,
+    ): Promise<void> {
+        if (!written.event) {
+            return;
+        }
+
+        await this.stateSyncPublisher.publishClientSnapshot(
+            written.snapshot,
+            this.serviceId,
+        );
+
+        await this.stateSyncPublisher.publishClientEvent(
+            written.event,
+            this.serviceId,
+        );
+    }
+}
