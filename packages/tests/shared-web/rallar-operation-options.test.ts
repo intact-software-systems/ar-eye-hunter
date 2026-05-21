@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
+import type { ClientEvent } from '@shared/api/client-types.ts';
+import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import {
     newALBroadcastMessage,
+    newALEventRoute,
     newALMulticastMessage,
     newALRoute,
 } from '@shared/al-contracts/al-contract.ts';
@@ -318,6 +321,134 @@ describe('Rallar operation options', () => {
         expect(peopleListener).toHaveBeenCalledWith(
             expect.objectContaining({ people: [], clients: [] }),
         );
+    });
+
+    it('delivers group state events through rooms.onEvent without treating them as state changes', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const facade = createRallarFacade();
+        const roomListener = vi.fn();
+        const eventListener = vi.fn();
+
+        facade.setDefaults({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        });
+        facade.rooms.onChange(roomListener, { emitCurrent: false });
+        facade.rooms.onEvent(eventListener, {
+            roomId: 'room-1',
+            eventTypes: ['member-joined'],
+        });
+        await facade.connect();
+        roomListener.mockClear();
+
+        const wsCallback = findWsAnyMessageCallback();
+        await wsCallback?.onMessage?.(
+            toGroupStateEventMessage(
+                createGroupEvent('room-1', 'group-event-1', 'member-joined'),
+            ),
+        );
+        await wsCallback?.onMessage?.(
+            toGroupStateEventMessage(
+                createGroupEvent('room-1', 'group-event-1', 'member-joined'),
+            ),
+        );
+        await wsCallback?.onMessage?.(
+            toGroupStateEventMessage(
+                createGroupEvent('room-2', 'group-event-2', 'member-joined'),
+            ),
+        );
+        await wsCallback?.onMessage?.(
+            toGroupStateEventMessage(
+                createGroupEvent('room-1', 'group-event-3', 'member-left'),
+            ),
+        );
+        await wsCallback?.onMessage?.(
+            toGroupStateEventMessage(
+                createGroupEvent('room-1', 'group-event-4', 'member-joined', {
+                    workspaceId: 'workspace-2',
+                }),
+            ),
+        );
+
+        expect(roomListener).not.toHaveBeenCalled();
+        expect(eventListener).toHaveBeenCalledOnce();
+        expect(eventListener.mock.calls[0]?.[0]).toMatchObject({
+            groupId: 'room-1',
+            eventId: 'group-event-1',
+            eventType: 'member-joined',
+        });
+        expect(eventListener.mock.calls[0]?.[1]).toMatchObject({
+            transport: 'ws',
+            typeId: AppTopics.groupStateEvent,
+            topicId: AppTopics.groupStateEvent,
+        });
+    });
+
+    it('delivers client state events through people.onEvent with filtering and unsubscribe', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const facade = createRallarFacade();
+        const eventListener = vi.fn();
+
+        facade.setDefaults({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        });
+        const unsubscribe = facade.people.onEvent(eventListener, {
+            principalId: 'alice',
+            eventTypes: ['session-connected'],
+        });
+        await facade.connect();
+
+        const wsCallback = findWsAnyMessageCallback();
+        await wsCallback?.onMessage?.(
+            toClientStateEventMessage(
+                createClientEvent('alice', 'client-event-1', 'session-connected'),
+            ),
+        );
+        await wsCallback?.onMessage?.(
+            toClientStateEventMessage(
+                createClientEvent('alice', 'client-event-1', 'session-connected'),
+            ),
+        );
+        await wsCallback?.onMessage?.(
+            toClientStateEventMessage(
+                createClientEvent('bob', 'client-event-2', 'session-connected'),
+            ),
+        );
+        await wsCallback?.onMessage?.(
+            toClientStateEventMessage(
+                createClientEvent('alice', 'client-event-3', 'principal-updated'),
+            ),
+        );
+        await wsCallback?.onMessage?.(
+            toClientStateEventMessage(
+                createClientEvent('alice', 'client-event-4', 'session-connected', {
+                    workspaceId: 'workspace-2',
+                }),
+            ),
+        );
+        unsubscribe();
+        await wsCallback?.onMessage?.(
+            toClientStateEventMessage(
+                createClientEvent('alice', 'client-event-5', 'session-connected'),
+            ),
+        );
+
+        expect(eventListener).toHaveBeenCalledOnce();
+        expect(eventListener.mock.calls[0]?.[0]).toMatchObject({
+            principalId: 'alice',
+            eventId: 'client-event-1',
+            eventType: 'session-connected',
+        });
+        expect(eventListener.mock.calls[0]?.[1]).toMatchObject({
+            transport: 'ws',
+            typeId: AppTopics.clientStateEvent,
+            topicId: AppTopics.clientStateEvent,
+        });
     });
 
     it('uses facade defaults as the operation scope when no explicit scope is passed', async () => {
@@ -3243,6 +3374,89 @@ describe('Rallar operation options', () => {
         ]);
     });
 });
+
+function findWsAnyMessageCallback(): {
+    onMessage?: (message: unknown) => Promise<void>;
+} | undefined {
+    return mocks.ctx.middleware.webSocketQueueBox
+        .onAnyInboxMessageDo.mock.calls.find(([callbackId]) =>
+            callbackId === 'rallar:ws:any-message'
+        )?.[1] as { onMessage?: (message: unknown) => Promise<void> } | undefined;
+}
+
+function toGroupStateEventMessage(event: GroupEvent) {
+    return newALBroadcastMessage(
+        'server-1',
+        newALEventRoute(AppTopics.groupStateEvent, event.groupId, event.eventId),
+        'all',
+        AppTopics.groupStateEvent,
+        event,
+    );
+}
+
+function toClientStateEventMessage(event: ClientEvent) {
+    return newALBroadcastMessage(
+        'server-1',
+        newALEventRoute(
+            AppTopics.clientStateEvent,
+            event.principalId,
+            event.eventId,
+        ),
+        'all',
+        AppTopics.clientStateEvent,
+        event,
+    );
+}
+
+function createGroupEvent(
+    groupId: string,
+    eventId: string,
+    eventType: GroupEvent['eventType'],
+    scope: Readonly<{
+        applicationId?: string;
+        workspaceId?: string;
+    }> = {},
+): GroupEvent {
+    return {
+        applicationId: scope.applicationId ?? 'app-1',
+        workspaceId: scope.workspaceId ?? 'workspace-1',
+        groupId,
+        eventId,
+        eventType,
+        occurredAtEpochMs: 1,
+        actor: {
+            principalId: 'alice',
+            sessionId: 'session-1',
+        },
+        requestId: `request-${eventId}`,
+    };
+}
+
+function createClientEvent(
+    principalId: string,
+    eventId: string,
+    eventType: ClientEvent['eventType'],
+    scope: Readonly<{
+        applicationId?: string;
+        workspaceId?: string;
+    }> = {},
+): ClientEvent {
+    return {
+        applicationId: scope.applicationId ?? 'app-1',
+        workspaceId: scope.workspaceId ?? 'workspace-1',
+        principalId,
+        eventId,
+        eventType,
+        clientInstanceId: `${principalId}-instance`,
+        sessionId: `${principalId}-session`,
+        occurredAtEpochMs: 1,
+        actor: {
+            principalId,
+            sessionId: `${principalId}-session`,
+        },
+        requestId: `request-${eventId}`,
+    };
+}
 
 function createChannelHealth(
     input: Readonly<{

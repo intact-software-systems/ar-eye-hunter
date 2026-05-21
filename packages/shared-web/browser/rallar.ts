@@ -14,9 +14,14 @@ import {
     type LoginResponse,
     type RegisterRequest,
     type RegisterResponse,
+    AppTopics,
 } from '@shared/api/api-config.ts';
 import { clearSession, isLoggedIn, readSession, writeSession, } from '@shared/api/auth.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type {
+    ClientEvent,
+    ClientEventType,
+    ClientSnapshot,
+} from '@shared/api/client-types.ts';
 import {
     isGroupActive,
     isSessionInGroup,
@@ -29,13 +34,18 @@ import type {
     ApplicationId,
     GroupJoinMode,
     GroupMemberStatus,
+    GroupEvent,
+    GroupEventType,
     GroupRef,
     GroupRole,
     GroupSnapshot,
     GroupStatus,
     WorkspaceId,
 } from '@shared/api/group-types.ts';
-import { DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
+import {
+    DEFAULT_STATE_WORKSPACE_ID,
+    type StateScope,
+} from '@shared/api/state-types.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
 import { CommandsOrchestrator, type CommandsOrchestratorPolicies, } from '@shared/cache/CommandsOrchestrator.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -106,6 +116,7 @@ const RALLAR_WS_STATUS_CALLBACK_ID = 'rallar:ws:status';
 const DEFAULT_RALLAR_REALTIME_LANE_ID = 'realtime';
 const DEFAULT_RALLAR_REALTIME_OPEN_TIMEOUT_MS = 5_000;
 const DEFAULT_RALLAR_WAIT_FOR_OPEN_TIMEOUT_MS = 5_000;
+const MAX_RALLAR_STATE_EVENT_DEDUPE_KEYS = 1_000;
 
 export type RallarUnsubscribe = () => void;
 
@@ -195,6 +206,16 @@ type RallarMessageSubscription = Readonly<{
     listeners: Set<RallarMessageHandler<unknown>>;
 }>;
 
+type RallarRoomEventSubscription = Readonly<{
+    listener: RallarRoomEventListener;
+    options: RallarRoomEventOptions;
+}>;
+
+type RallarPeopleEventSubscription = Readonly<{
+    listener: RallarPeopleEventListener;
+    options: RallarPeopleEventOptions;
+}>;
+
 export type RallarRoomSummary = Readonly<{
     roomId: string;
     roomRef: GroupRef;
@@ -268,6 +289,19 @@ export type RallarOnChangeOptions = Readonly<{
     emitCurrent?: boolean;
 }>;
 
+export type RallarRoomEventOptions = Readonly<{
+    scope?: StateScope;
+    roomId?: string;
+    roomRef?: GroupRef;
+    eventTypes?: readonly GroupEventType[];
+}>;
+
+export type RallarPeopleEventOptions = Readonly<{
+    scope?: StateScope;
+    principalId?: string;
+    eventTypes?: readonly ClientEventType[];
+}>;
+
 export type RallarWaitForOpenStatus =
     | 'open'
     | 'timeout'
@@ -325,6 +359,15 @@ export type RallarMessage<T = unknown> = Readonly<{
 export type RallarMessageHandler<T = unknown> = (
     message: RallarMessage<T>,
 ) => void | Promise<void>;
+
+export type RallarStateEventListener<TEvent> = (
+    event: TEvent,
+    message: RallarMessage<TEvent>,
+) => void | Promise<void>;
+
+export type RallarRoomEventListener = RallarStateEventListener<GroupEvent>;
+
+export type RallarPeopleEventListener = RallarStateEventListener<ClientEvent>;
 
 export type RallarMessageSelector = Readonly<{
     topicId?: string;
@@ -703,6 +746,10 @@ export type RallarFacade = Readonly<{
             listener: RallarStateListener<RallarRoomState>,
             options?: RallarOnChangeOptions,
         ): RallarUnsubscribe;
+        onEvent(
+            listener: RallarRoomEventListener,
+            options?: RallarRoomEventOptions,
+        ): RallarUnsubscribe;
     }>;
     people: Readonly<{
         state(): RallarPeopleState;
@@ -714,6 +761,10 @@ export type RallarFacade = Readonly<{
         onChange(
             listener: RallarStateListener<RallarPeopleState>,
             options?: RallarOnChangeOptions,
+        ): RallarUnsubscribe;
+        onEvent(
+            listener: RallarPeopleEventListener,
+            options?: RallarPeopleEventOptions,
         ): RallarUnsubscribe;
     }>;
     messages: Readonly<{
@@ -849,6 +900,12 @@ class BrowserRallarFacade implements RallarFacade {
     private readonly peopleStateListeners = new Set<
         RallarStateListener<RallarPeopleState>
     >();
+    private readonly roomEventSubscriptions =
+        new Set<RallarRoomEventSubscription>();
+    private readonly peopleEventSubscriptions =
+        new Set<RallarPeopleEventSubscription>();
+    private readonly seenGroupEventKeys = new Set<string>();
+    private readonly seenClientEventKeys = new Set<string>();
     private readonly rtcMessageListeners = new Map<
         string,
         RallarMessageSubscription
@@ -1118,6 +1175,12 @@ class BrowserRallarFacade implements RallarFacade {
                 this.roomStateListeners.delete(listener);
             };
         },
+        onEvent: (
+            listener: RallarRoomEventListener,
+            options: RallarRoomEventOptions = {},
+        ): RallarUnsubscribe => {
+            return this.onRoomEvent(listener, options);
+        },
     };
 
     readonly people = {
@@ -1152,6 +1215,12 @@ class BrowserRallarFacade implements RallarFacade {
             return () => {
                 this.peopleStateListeners.delete(listener);
             };
+        },
+        onEvent: (
+            listener: RallarPeopleEventListener,
+            options: RallarPeopleEventOptions = {},
+        ): RallarUnsubscribe => {
+            return this.onPeopleEvent(listener, options);
         },
     };
 
@@ -2861,10 +2930,70 @@ class BrowserRallarFacade implements RallarFacade {
                 return;
             }
 
-            if (transport === 'ws' && this.wsMessageListeners.size === 0) {
+            if (
+                transport === 'ws' &&
+                this.wsMessageListeners.size === 0 &&
+                !this.hasStateEventSubscriptions()
+            ) {
                 this.unregisterMessageCallback(transport, selector);
             }
         };
+    }
+
+    private onRoomEvent(
+        listener: RallarRoomEventListener,
+        options: RallarRoomEventOptions,
+    ): RallarUnsubscribe {
+        const subscription: RallarRoomEventSubscription = {
+            listener,
+            options,
+        };
+        this.roomEventSubscriptions.add(subscription);
+        this.registerStateEventCallbacks();
+
+        return () => {
+            this.roomEventSubscriptions.delete(subscription);
+            this.unregisterStateEventCallbacksIfUnused();
+        };
+    }
+
+    private onPeopleEvent(
+        listener: RallarPeopleEventListener,
+        options: RallarPeopleEventOptions,
+    ): RallarUnsubscribe {
+        const subscription: RallarPeopleEventSubscription = {
+            listener,
+            options,
+        };
+        this.peopleEventSubscriptions.add(subscription);
+        this.registerStateEventCallbacks();
+
+        return () => {
+            this.peopleEventSubscriptions.delete(subscription);
+            this.unregisterStateEventCallbacksIfUnused();
+        };
+    }
+
+    private registerStateEventCallbacks(): void {
+        if (!this.readMiddleware() || !this.hasStateEventSubscriptions()) {
+            return;
+        }
+
+        this.registerMessageCallback('ws', {});
+    }
+
+    private unregisterStateEventCallbacksIfUnused(): void {
+        if (
+            this.wsMessageListeners.size === 0 &&
+            !this.hasStateEventSubscriptions()
+        ) {
+            this.unregisterMessageCallback('ws', {});
+        }
+    }
+
+    private hasStateEventSubscriptions(): boolean {
+        return this.roomEventSubscriptions.size > 0 ||
+            this.peopleEventSubscriptions.size > 0;
     }
 
     private messageSubscription(
@@ -2892,7 +3021,10 @@ class BrowserRallarFacade implements RallarFacade {
         for (const subscription of this.rtcMessageListeners.values()) {
             this.registerMessageCallback('rtc', subscription.selector);
         }
-        if (this.wsMessageListeners.size > 0) {
+        if (
+            this.wsMessageListeners.size > 0 ||
+            this.hasStateEventSubscriptions()
+        ) {
             this.registerMessageCallback('ws', {});
         }
     }
@@ -3226,11 +3358,24 @@ class BrowserRallarFacade implements RallarFacade {
             }
         }
 
-        if (listeners.size === 0) {
+        const shouldDispatchStateEvent =
+            transport === 'ws' &&
+            this.isStateEventMessage(message) &&
+            this.hasStateEventSubscriptions();
+
+        if (listeners.size === 0 && !shouldDispatchStateEvent) {
             return;
         }
 
         const rallarMessage = toRallarMessage(transport, message);
+        if (shouldDispatchStateEvent) {
+            await this.dispatchStateEventMessage(rallarMessage);
+        }
+
+        if (listeners.size === 0) {
+            return;
+        }
+
         await Promise.all(
             [...listeners].map(async (listener) => {
                 try {
@@ -3240,6 +3385,145 @@ class BrowserRallarFacade implements RallarFacade {
                 }
             }),
         );
+    }
+
+    private isStateEventMessage(message: ALMessage): boolean {
+        return message.payload.typeId === AppTopics.groupStateEvent ||
+            message.payload.typeId === AppTopics.clientStateEvent;
+    }
+
+    private async dispatchStateEventMessage(
+        message: RallarMessage<unknown>,
+    ): Promise<void> {
+        if (message.typeId === AppTopics.groupStateEvent) {
+            await this.dispatchRoomStateEvent(
+                message as RallarMessage<GroupEvent>,
+            );
+            return;
+        }
+
+        if (message.typeId === AppTopics.clientStateEvent) {
+            await this.dispatchPeopleStateEvent(
+                message as RallarMessage<ClientEvent>,
+            );
+        }
+    }
+
+    private async dispatchRoomStateEvent(
+        message: RallarMessage<GroupEvent>,
+    ): Promise<void> {
+        const event = message.payload;
+        if (!isGroupEventPayload(event)) {
+            return;
+        }
+
+        const subscriptions = [...this.roomEventSubscriptions]
+            .filter((subscription) =>
+                this.matchesRoomEventSubscription(subscription, event)
+            );
+        if (subscriptions.length === 0) {
+            return;
+        }
+
+        const dedupeKey = toGroupStateEventDedupeKey(event);
+        if (this.seenGroupEventKeys.has(dedupeKey)) {
+            return;
+        }
+        rememberStateEventKey(this.seenGroupEventKeys, dedupeKey);
+
+        await Promise.all(
+            subscriptions.map(async (subscription) =>
+                await notifyStateEventListener(
+                    subscription.listener,
+                    event,
+                    message,
+                )
+            ),
+        );
+    }
+
+    private async dispatchPeopleStateEvent(
+        message: RallarMessage<ClientEvent>,
+    ): Promise<void> {
+        const event = message.payload;
+        if (!isClientEventPayload(event)) {
+            return;
+        }
+
+        const subscriptions = [...this.peopleEventSubscriptions]
+            .filter((subscription) =>
+                this.matchesPeopleEventSubscription(subscription, event)
+            );
+        if (subscriptions.length === 0) {
+            return;
+        }
+
+        const dedupeKey = toClientStateEventDedupeKey(event);
+        if (this.seenClientEventKeys.has(dedupeKey)) {
+            return;
+        }
+        rememberStateEventKey(this.seenClientEventKeys, dedupeKey);
+
+        await Promise.all(
+            subscriptions.map(async (subscription) =>
+                await notifyStateEventListener(
+                    subscription.listener,
+                    event,
+                    message,
+                )
+            ),
+        );
+    }
+
+    private matchesRoomEventSubscription(
+        subscription: RallarRoomEventSubscription,
+        event: GroupEvent,
+    ): boolean {
+        const { options } = subscription;
+        if (
+            options.eventTypes &&
+            !options.eventTypes.includes(event.eventType)
+        ) {
+            return false;
+        }
+
+        if (
+            options.roomRef &&
+            !isSameStateGroupRef(event, options.roomRef)
+        ) {
+            return false;
+        }
+
+        if (
+            !options.roomRef &&
+            options.roomId &&
+            event.groupId !== options.roomId
+        ) {
+            return false;
+        }
+
+        const scope = options.scope ?? this.defaultScope;
+        return isSameStateScopeValue(event, scope);
+    }
+
+    private matchesPeopleEventSubscription(
+        subscription: RallarPeopleEventSubscription,
+        event: ClientEvent,
+    ): boolean {
+        const { options } = subscription;
+        if (
+            options.eventTypes &&
+            !options.eventTypes.includes(event.eventType)
+        ) {
+            return false;
+        }
+
+        if (options.principalId && event.principalId !== options.principalId) {
+            return false;
+        }
+
+        const scope = options.scope ?? this.defaultScope;
+        return isSameStateScopeValue(event, scope);
     }
 
     private hasRtcSubscriptionsForTypeId(typeId: string): boolean {
@@ -3928,6 +4212,92 @@ async function toArrayBuffer(
     }
 
     return undefined;
+}
+
+function isGroupEventPayload(value: unknown): value is GroupEvent {
+    return isRecord(value) &&
+        typeof value.applicationId === 'string' &&
+        typeof value.groupId === 'string' &&
+        typeof value.eventId === 'string' &&
+        typeof value.eventType === 'string';
+}
+
+function isClientEventPayload(value: unknown): value is ClientEvent {
+    return isRecord(value) &&
+        typeof value.applicationId === 'string' &&
+        typeof value.principalId === 'string' &&
+        typeof value.eventId === 'string' &&
+        typeof value.eventType === 'string';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+function isSameStateGroupRef(
+    left: Pick<GroupRef, 'applicationId' | 'workspaceId' | 'groupId'>,
+    right: Pick<GroupRef, 'applicationId' | 'workspaceId' | 'groupId'>,
+): boolean {
+    return left.groupId === right.groupId &&
+        isSameStateScopeValue(left, right);
+}
+
+function isSameStateScopeValue(
+    value: Pick<StateScope, 'applicationId'> & { workspaceId?: string },
+    scope?: Pick<StateScope, 'applicationId'> & { workspaceId?: string },
+): boolean {
+    if (!scope) {
+        return true;
+    }
+
+    return value.applicationId === scope.applicationId &&
+        normalizeStateWorkspaceId(value.workspaceId) ===
+            normalizeStateWorkspaceId(scope.workspaceId);
+}
+
+function normalizeStateWorkspaceId(workspaceId?: string): string {
+    return workspaceId ?? DEFAULT_STATE_WORKSPACE_ID;
+}
+
+function toGroupStateEventDedupeKey(event: GroupEvent): string {
+    return [
+        event.applicationId,
+        normalizeStateWorkspaceId(event.workspaceId),
+        event.groupId,
+        event.eventId,
+    ].join('/');
+}
+
+function toClientStateEventDedupeKey(event: ClientEvent): string {
+    return [
+        event.applicationId,
+        normalizeStateWorkspaceId(event.workspaceId),
+        event.principalId,
+        event.eventId,
+    ].join('/');
+}
+
+function rememberStateEventKey(keys: Set<string>, key: string): void {
+    keys.add(key);
+    while (keys.size > MAX_RALLAR_STATE_EVENT_DEDUPE_KEYS) {
+        const oldest = keys.values().next().value;
+        if (oldest === undefined) {
+            break;
+        }
+        keys.delete(oldest);
+    }
+}
+
+async function notifyStateEventListener<TEvent>(
+    listener: RallarStateEventListener<TEvent>,
+    event: TEvent,
+    message: RallarMessage<TEvent>,
+): Promise<void> {
+    try {
+        await listener(event, message);
+    } catch (error) {
+        console.error('Error notifying Rallar state event listener', error);
+    }
 }
 
 function notifyListener<T>(

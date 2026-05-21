@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ClientInfo } from '@shared/api/api-config.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { AppTopics, type ClientInfo } from '@shared/api/api-config.ts';
+import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
+import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
+import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as dataCaches from '@shared-web/browser/data-caches.ts';
@@ -162,6 +163,65 @@ describe('browser data caches state scope filtering', () => {
         expect(manager.has).toHaveBeenCalledWith(group.group);
         expect(manager.delete).toHaveBeenCalledWith(group.group);
     });
+
+    it('ignores state event websocket messages in the snapshot cache layer', async () => {
+        const manager = createWebRtcGroupManager();
+        const clientData: ClientInfo = {
+            clientId: 'alice',
+            sessionId: 'session-a',
+            isOnline: true,
+        };
+        let onInboxMessage:
+            | ((message: unknown) => Promise<void>)
+            | undefined;
+        const webSocketQueueBox = {
+            onAllInboxMessagesDo: vi.fn((callback: {
+                onMessage: (message: unknown) => Promise<void>;
+            }) => {
+                onInboxMessage = callback.onMessage;
+                return webSocketQueueBox;
+            }),
+        };
+        const listener = vi.fn();
+        const unsubscribe = dataCaches.onStateCacheChange(listener);
+
+        dataCaches.initialise(
+            webSocketQueueBox as never,
+            manager,
+            clientData,
+        );
+
+        await onInboxMessage?.(
+            newALBroadcastMessage(
+                'server-1',
+                newALEventRoute(AppTopics.groupStateEvent, 'room-a', 'event-1'),
+                'all',
+                AppTopics.groupStateEvent,
+                createGroupEvent('room-a', 'event-1'),
+            ),
+        );
+        await onInboxMessage?.(
+            newALBroadcastMessage(
+                'server-1',
+                newALEventRoute(AppTopics.clientStateEvent, 'alice', 'event-2'),
+                'all',
+                AppTopics.clientStateEvent,
+                createClientEvent('alice', 'event-2'),
+            ),
+        );
+
+        expect(listener).not.toHaveBeenCalled();
+        expect(manager.notifyClientPresenceChanged).not.toHaveBeenCalled();
+        expect(manager.acceptGroupUpdate).not.toHaveBeenCalled();
+        expect(clientStateSnapshotsRepository.getAllClientStateSnapshots()).toEqual(
+            [],
+        );
+        expect(groupStateSnapshotsRepository.getAllGroupStateSnapshots()).toEqual(
+            [],
+        );
+
+        unsubscribe();
+    });
 });
 
 function createWebRtcGroupManager() {
@@ -274,5 +334,43 @@ function createGroupSnapshot(
         })),
         memberCount: sessionIds.length,
         onlineMemberCount: sessionIds.length,
+    };
+}
+
+function createGroupEvent(
+    groupId: string,
+    eventId: string,
+): GroupEvent {
+    return {
+        applicationId: 'ar-eye-hunter',
+        workspaceId: 'default',
+        groupId,
+        eventId,
+        eventType: 'member-joined',
+        occurredAtEpochMs: 1,
+        actor: {
+            principalId: 'alice',
+            sessionId: 'session-a',
+        },
+        requestId: 'request-1',
+    };
+}
+
+function createClientEvent(
+    principalId: string,
+    eventId: string,
+): ClientEvent {
+    return {
+        applicationId: 'ar-eye-hunter',
+        workspaceId: 'default',
+        principalId,
+        eventId,
+        eventType: 'session-connected',
+        occurredAtEpochMs: 1,
+        actor: {
+            principalId,
+            sessionId: 'session-a',
+        },
+        requestId: 'request-2',
     };
 }

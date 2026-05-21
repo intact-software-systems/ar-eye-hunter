@@ -565,24 +565,51 @@ Next implementation direction:
 
 ## 4. State Events Are Broadcast But Not Modeled In Browser High-Level State
 
-Current behavior:
+Status: implemented as scoped live callbacks in the browser facade.
+
+Original behavior:
 
 - Server publishes `client-state.event` and `group-state.event` over WS.
 - Browser `data-caches.ts` ignores those event topic payloads.
 - High-level `rallar.rooms.onChange(...)` and `rallar.people.onChange(...)` are snapshot-cache driven.
 - Lower-level `rallar.messages.ws.onMessage(...)` can observe raw WS messages if callers register for them.
 
-Risk:
+Proof-first characterization added:
+
+- `packages/tests/shared-web/data-caches.test.ts` proves that `client-state.event` and `group-state.event` messages do
+  not mutate the snapshot repositories, do not notify high-level snapshot listeners, and do not drive RTC group manager
+  membership updates.
+- This preserves the intended split: snapshots remain authoritative state, while events are live mutation/audit signals.
+
+Implemented browser facade behavior:
+
+- `rallar.rooms.onEvent(listener, options?)` subscribes to `group-state.event`.
+- `rallar.people.onEvent(listener, options?)` subscribes to `client-state.event`.
+- Both APIs use the existing WS any-message callback internally and only register it when needed.
+- Event subscriptions support scope filtering, entity filtering, and event-type filtering:
+  - rooms: `scope`, `roomId`, `roomRef`, `eventTypes`
+  - people: `scope`, `principalId`, `eventTypes`
+- Event callbacks receive both the decoded event and the `RallarMessage<TEvent>` transport wrapper.
+- Duplicate event delivery is suppressed by a bounded in-memory dedupe set keyed by scope, entity id, and `eventId`.
+- `rooms.onChange(...)` and `people.onChange(...)` remain snapshot-cache subscriptions; event messages do not trigger
+  those listeners.
+
+Known boundaries:
+
+- The new APIs are live subscriptions, not event caches. They do not replay old events to late subscribers.
+- They do not provide durable exactly-once delivery. WS reconnect/replay behavior still depends on the underlying
+  QueueBox delivery path.
+- Ordering is whatever order the browser receives from WS; no additional ordering buffer was added.
+
+Verification:
+
+- `npx vitest run packages/tests/shared-web/data-caches.test.ts packages/tests/shared-web/rallar-operation-options.test.ts`
+- `npx tsc -p packages/shared-web/tsconfig.json --noEmit`
+
+Resolved risk:
 
 - Applications may assume they are subscribing to all changes, but the high-level state API only exposes snapshot
-  results.
-- Event-specific details, audit causes, and mutation reasons are not represented in the high-level browser facade.
-
-Recommended hardening:
-
-- Decide whether browser Rallar should expose `rooms.onEvent(...)` and `people.onEvent(...)`.
-- If not, document that high-level subscriptions are snapshot subscriptions.
-- If yes, add browser event caches or direct event callbacks and prove ordering/duplication behavior.
+  results. They now have explicit event APIs for event-specific details, while snapshot APIs keep snapshot semantics.
 
 ## 5. Server App-Data Cache Has No Cross-Process Invalidation
 
