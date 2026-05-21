@@ -479,7 +479,11 @@ Implementation status:
     - browser operation retry options are forwarded to state workflows with retryable/non-retryable HTTP status
       classification;
     - browser room mutation responses hydrate local state caches immediately, without waiting for WS state-sync echo;
-    - authorised WS disconnect app-inbox handling can still clean up client session state after auth-session deletion.
+    - authorised WS disconnect app-inbox handling can still clean up client session state after auth-session deletion;
+    - real-browser/full-stack Playwright coverage now proves browser `Rallar.rooms.create` retries injected transient
+      `503` and `429` failures with stable per-step `requestId` values before succeeding against API-v1;
+    - real-browser/full-stack Playwright coverage now proves WS close cleanup records the disconnected client state
+      when `/api/auth/logout` deletes the auth session before the browser socket is closed.
 - No transactional state-sync outbox fix has been applied yet. The current runtime change is a durable command-inbox
   layer plus group/client command idempotency and app-inbox-owned publication; it is not a state-sync publication intent
   committed atomically with the domain mutation.
@@ -503,6 +507,8 @@ Verification:
   `npx vitest run packages/tests/shared-web/api-workflows.test.ts`.
 - Browser facade retry/cache proof run:
   `npx vitest run packages/tests/shared-web/rallar-operation-options.test.ts`.
+- Real-browser/full-stack retry and logout/WS-close proof run:
+  `RALLAR_BLACK_BOX_FULL_STACK=1 VITE_RALLAR_API_BASE_URL=http://localhost:8080 npx playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts tests/playwright/rallar-black-box/full-stack-browser-rallar-resilience.spec.ts`.
 - Full shared-server regression run remains blocked by an unrelated syntax error in
   `packages/tests/shared-server/rallar-middleware.test.ts`.
 - Type/runtime checks: `npx tsc -p packages/shared/tsconfig.json --noEmit`,
@@ -528,8 +534,9 @@ Remaining iteration 3 issues:
 - Direct `api-integration.ts` callers can still omit `requestId` and rely on server-generated IDs. The Rallar facade
   workflows now generate stable IDs, which covers normal browser facade usage; lower-level direct callers remain
   responsible for providing request IDs if they need retry idempotency.
-- Real server/browser tests should still prove the new browser retry path against API-v1 with an injected transient
-  `5xx/429` before relying on it operationally.
+- Real server/browser retry proof now exists for browser-injected transient `503`/`429` failures on the normal Rallar
+  facade room-create path. A server-side fault-injection endpoint is still not present, so this proves browser retry and
+  real API success after retry, not API process fault injection.
 - Future direct `ClientStateService` or `GroupStateService` callers must either go through the app-inbox service or
   explicitly publish returned written results. Calling the state services alone mutates durable state without emitting
   state sync.
@@ -542,9 +549,9 @@ Remaining iteration 3 issues:
 
 Next implementation direction:
 
-- Before the deferred transactional outbox work, add real-server/browser scenarios that prove browser `maxAttempts`
-  retries preserve `requestId`, that transient `5xx/429` mutations replay safely, and that logout/WS-close cleanup still
-  publishes the final disconnected state when `/api/auth/logout` races with socket close handling.
+- Before the deferred transactional outbox work, the remaining real-server/browser proof should focus on API process
+  death or server-side fault injection after app-inbox enqueue. Browser `maxAttempts` retry/request-id stability and
+  logout/WS-close cleanup now have full-stack Playwright coverage.
 - Decide the durable state-sync outbox boundary before changing publication behavior. The clean target is to persist
   state-sync publication intents in the same `runtime_state_store` transaction as the client/group mutation.
 - Add a publisher/drainer that converts durable state-sync outbox intents into WS QueueBox messages and marks them

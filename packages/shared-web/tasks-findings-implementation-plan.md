@@ -58,7 +58,7 @@ Real-server test runs should record enough evidence to debug failures: peer IDs,
 | 6: Wait APIs for RTC and WS | Initial facade wait APIs implemented and locally verified | `rallar.ws.waitForOpen(...)`, `rallar.rtc.waitForLane(...)`, and `rallar.rtc.waitForOpen(...)` now return structured wait results. Focused facade tests cover open, timeout, aborted, observe-only no-connect, missing peer, and opt-in RTC connect-before-wait behavior. Real-server integration adoption is deferred until the black-box scenarios are updated to use these waits. |
 | 7: RTC establishment timeout and retry policy | Initial peer establishment timeout policy and explicit start/open APIs implemented and locally verified | Deterministic `WebRtcConnectionService` tests prove a peer that never establishes is evicted after an explicit timeout and can be recreated, while an opened lane clears the timeout. Browser Rallar enables the policy with a 30 second timeout, and `rallar.rtc.onLifecycle(...)` now surfaces service timeout events as `peer-timeout`. `ensurePeerConnectionStarted()` is synchronous and start-only, and `ensurePeerLaneOpen(...)` provides the opt-in readiness path using `PullPushCommand`. Rallar uses `ensurePeerLaneOpen(...)` internally for connect-and-wait RTC facade calls and realtime sends, while observe-only waits still avoid starting peers. `rallar.rtc.waitForRoomLane(...)` adds a room-level readiness wrapper that separates ready and not-ready peers. Peer establishment watchdog bookkeeping moved into reusable `AsyncCommand`. Real-server bad-condition scenarios and reconnect-exhaustion service cleanup remain pending. |
 | 10: Group snapshot-version consistency preconditions | Contract, stale-cache proof, and bounded retry implemented | Added mandatory aggregate `snapshotVersion` on groups and client principals, `minSnapshotVersion` on room-scoped AL sends, browser Rallar propagation from cached room snapshots, and server stale-cache `not-yet-in-sync` NACKs. Focused tests prove version increments, repository version comparison, browser send metadata, server rejection, simplified NACK diagnostics, and delayed outbound retry of retryable NACKs. |
-| 11: Manual real-browser/server integration proofs | Planned | Convert selected live browser/server scenarios into repeatable manual runbooks first, then graduate stable scenarios into automated integration tests. Owns logout reconnect suppression, session replacement/no-valid-session stale reconnect suppression, unexpected server/network close reconnect behavior, and broader real-browser status artifact capture. |
+| 11: Manual real-browser/server integration proofs | Partially automated | Added full-stack real-browser Playwright coverage for browser Rallar retry/request-id stability with injected transient `503`/`429` responses, and for auth-deleted-before-WS-close cleanup. Remaining live scenarios are broader logout reconnect suppression, session replacement/no-valid-session stale reconnect suppression, unexpected server/network close reconnect behavior, and broader status artifact capture. |
 | 12: Scoped overlay and graph identity | Partially implemented | AL multicast target scoping is mandatory `groupRef` with no target `groupId`. `GraphInfoSnapshot`/`GraphInfo` now use mandatory `groupRef` instead of `graphId`, and graph repository APIs key by `GroupRef`. Remaining work is SPA RTC overlay topology identity: prove same-`groupId` overlay collisions before changing overlay contracts. |
 | 13: Typed Rallar facade channels and realtime lanes | Initial wrappers implemented and locally verified | `rallar.messages.channel<T>({...})` and `rallar.realtime.json<T>(...)` now reduce repeated `topicId`/`typeId`, payload extraction, lane id, and realtime send-option boilerplate while delegating to the existing low-level APIs. |
 | 14: Startup and subscription lifecycle convenience | Implemented and locally verified | Added `rallar.start(...)` for restore/connect/refresh startup flow and `rallar.subscriptions()` for idempotent composite cleanup. Focused facade and Relic runtime tests prove startup state, no-session no-connect behavior, scoped listener registration, and unsubscribe-once cleanup semantics. Sample app adoption is in place for the arena hook and Relic runtime. |
@@ -882,6 +882,16 @@ Goal: collect live browser/server scenarios that are valuable but too environmen
 
 This iteration is deliberately separate from Iteration 5. Iteration 5 owns the implementation and focused proof for WS reconnect cleanup. Iteration 11 owns live verification across real browsers, API server, control server, auth/session state, and RTC/WS timing.
 
+Automated so far:
+
+- `tests/playwright/rallar-black-box/full-stack-browser-rallar-resilience.spec.ts` runs behind
+  `RALLAR_BLACK_BOX_FULL_STACK=1`.
+- The retry test logs in through the real browser UI, calls the browser `Rallar` facade, injects one transient `503`
+  on group create and one transient `429` on presence connect, and verifies both mutation steps reuse stable
+  `requestId` values before the room is persisted through API-v1.
+- The WS cleanup test connects a real browser Rallar session, calls `/api/auth/logout` while the browser WS remains
+  open, closes the socket afterwards, and verifies API-v1 records a `session-disconnected` event for the old session.
+
 Manual-first scenarios:
 
 - Logout after connect:
@@ -914,12 +924,15 @@ Recommended commands:
 
 - `npm run start:rallar-black-box:api-v1`
 - `npm run start:rallar-black-box:control-server`
+- `RALLAR_BLACK_BOX_FULL_STACK=1 VITE_RALLAR_API_BASE_URL=http://localhost:8080 npx playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts tests/playwright/rallar-black-box/full-stack-browser-rallar-resilience.spec.ts`
 - `VITE_RALLAR_API_BASE_URL=http://localhost:8080 VITE_RALLAR_ROOM_ID=bb-group VITE_RALLAR_USERNAME=alice VITE_RALLAR_PASSWORD=secret npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/browser-rallar-two-agent-smoke.spec.ts`
 
 Exit criteria:
 
 - Each manual scenario has a repeatable runbook and artifact expectations.
-- At least logout-after-connect and session-replacement reconnect suppression are captured as runnable Playwright scenarios.
+- Browser retry/request-id stability and auth-deleted-before-WS-close cleanup are captured as runnable Playwright
+  scenarios.
+- Logout-after-connect and session-replacement reconnect suppression still need runnable Playwright scenarios.
 - Stable scenarios are tagged or moved into the integration suite with clear environment requirements.
 - Flaky scenarios remain documented as manual-only until deterministic failure injection exists.
 
