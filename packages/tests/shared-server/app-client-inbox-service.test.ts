@@ -267,6 +267,7 @@ describe('AppClientInboxService', () => {
             sessionId: 'alice-ws-session',
             expiresAtEpochMs: Date.now() + 60_000,
         };
+        let authSessionAvailable = true;
         const service = new AppClientInboxService(
             reader,
             queue as never,
@@ -276,7 +277,8 @@ describe('AppClientInboxService', () => {
                 syncPublisher: publisher,
                 authSessionRepository: {
                     findBySessionId: vi.fn(async (sessionId: string) =>
-                        sessionId === authSession.sessionId
+                        authSessionAvailable &&
+                            sessionId === authSession.sessionId
                             ? {
                                 ...authSession,
                                 issuedAtEpochMs: 1_000,
@@ -299,6 +301,7 @@ describe('AppClientInboxService', () => {
         );
         vi.mocked(publisher.publishClientSnapshot).mockClear();
         vi.mocked(publisher.publishClientEvent).mockClear();
+        authSessionAvailable = false;
         const disconnected = await processAppInboxMethod(reader, () =>
             service.processAuthorisedWsClientDisconnect(
                 authSession.sessionId,

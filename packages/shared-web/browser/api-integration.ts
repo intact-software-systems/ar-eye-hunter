@@ -30,6 +30,18 @@ export type ApiRequestOptions = Readonly<{
     authSession?: AuthSession | null;
 }>;
 
+export class ApiHttpError extends Error {
+    public constructor(
+        public readonly method: 'GET' | 'POST' | 'PUT',
+        public readonly path: string,
+        public readonly status: number,
+        public readonly bodyText: string,
+    ) {
+        super(`API ${method} ${path} failed: ${status} ${bodyText}`);
+        this.name = 'ApiHttpError';
+    }
+}
+
 async function readTextOrElse(
     res: Response,
     orElse: () => string,
@@ -79,7 +91,7 @@ async function executeHttpRequest<TReq, TRes>(
     if (!res.ok) {
         const txt = await readTextOrElse(res, () => '');
 
-        throw new Error(`API ${method} ${path} failed: ${res.status} ${txt}`);
+        throw new ApiHttpError(method, path, res.status, txt);
     }
 
     return (await res.json()) as TRes;

@@ -98,6 +98,15 @@ const mocks = vi.hoisted(() => {
         hydrateStateCaches: vi.fn(() => Promise.resolve()),
         initMiddleware: vi.fn((_options?: unknown) => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn(() => false),
+        createAndJoinStateGroup: vi.fn(
+            (
+                _displayName?: unknown,
+                _principalId?: unknown,
+                _sessionId?: unknown,
+                _scope?: unknown,
+                _policies?: unknown,
+            ) => Promise.reject(new Error('create not mocked')),
+        ),
         joinStateGroup: vi.fn(
             (
                 _roomId?: unknown,
@@ -163,6 +172,7 @@ vi.mock('@shared-web/browser/api-integration.ts', () => ({
 }));
 
 vi.mock('@shared-web/browser/api-workflows.ts', () => ({
+    createAndJoinStateGroup: mocks.createAndJoinStateGroup,
     joinStateGroup: mocks.joinStateGroup,
     leaveStateGroup: mocks.leaveStateGroup,
     refreshStateSnapshots: mocks.refreshStateSnapshots,
@@ -209,6 +219,7 @@ describe('Rallar operation options', () => {
         mocks.initMiddleware.mockResolvedValue(mocks.ctx);
         mocks.isMiddlewareReady.mockReturnValue(false);
         mocks.readSession.mockReturnValue(mocks.ctx.session);
+        mocks.createAndJoinStateGroup.mockRejectedValue(new Error('create not mocked'));
         mocks.joinStateGroup.mockRejectedValue(new Error('join not mocked'));
         mocks.leaveStateGroup.mockRejectedValue(new Error('leave not mocked'));
         mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes
@@ -1758,6 +1769,95 @@ describe('Rallar operation options', () => {
                 timeoutMs: 123,
             },
         });
+    });
+
+    it('passes retry options and retry classification into room workflows', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const snapshot = createGroupSnapshot('room-1', ['session-1']);
+        mocks.joinStateGroup.mockResolvedValue(snapshot);
+
+        await createRallarFacade().rooms.join('room-1', {
+            maxAttempts: 3,
+        });
+
+        const policies = mocks.joinStateGroup.mock.calls[0]?.[4] as {
+            command?: {
+                maxAttempts?: number;
+                shouldRetry?: (error: unknown, attempt: number) => boolean;
+            };
+        };
+        expect(policies.command?.maxAttempts).toBe(3);
+        expect(
+            policies.command?.shouldRetry?.(
+                Object.assign(new Error('server busy'), { status: 503 }),
+                1,
+            ),
+        ).toBe(true);
+        expect(
+            policies.command?.shouldRetry?.(
+                Object.assign(new Error('rate limited'), { status: 429 }),
+                1,
+            ),
+        ).toBe(true);
+        expect(
+            policies.command?.shouldRetry?.(
+                Object.assign(new Error('bad request'), { status: 400 }),
+                1,
+            ),
+        ).toBe(false);
+        expect(
+            policies.command?.shouldRetry?.(
+                Object.assign(new Error('conflict'), { status: 409 }),
+                1,
+            ),
+        ).toBe(false);
+    });
+
+    it('uses default retry attempts for room workflows', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const snapshot = createGroupSnapshot('room-1', ['session-1']);
+        const facade = createRallarFacade();
+        facade.setDefaults({
+            applicationId: 'app-1',
+            operations: {
+                maxAttempts: 4,
+            },
+        });
+        mocks.joinStateGroup.mockResolvedValue(snapshot);
+
+        await facade.rooms.join('room-1');
+
+        const policies = mocks.joinStateGroup.mock.calls[0]?.[4] as {
+            command?: {
+                maxAttempts?: number;
+            };
+        };
+        expect(policies.command?.maxAttempts).toBe(4);
+    });
+
+    it('hydrates state caches from room mutation responses without waiting for WS echo', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const snapshot = createGroupSnapshot('created-room', ['session-1']);
+        mocks.createAndJoinStateGroup.mockResolvedValue(snapshot);
+
+        await createRallarFacade().rooms.create('Created Room');
+
+        expect(mocks.hydrateStateCaches).toHaveBeenCalledWith(
+            mocks.ctx.middleware.webRtcGroupManager,
+            expect.objectContaining({
+                clientId: 'principal-1',
+                sessionId: 'session-1',
+            }),
+            [],
+            [snapshot],
+            expect.any(Object),
+        );
     });
 
     it('passes custom data-channel lanes into middleware connect', async () => {

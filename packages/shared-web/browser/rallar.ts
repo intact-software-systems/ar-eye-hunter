@@ -135,12 +135,21 @@ export type RallarDefaults = Readonly<{
     }>;
     operations?: Readonly<{
         timeoutMs?: number;
+        maxAttempts?: number;
+        shouldRetry?: RallarOperationRetryPredicate;
     }>;
 }>;
+
+export type RallarOperationRetryPredicate = (
+    error: unknown,
+    attempt: number,
+) => boolean;
 
 export type RallarOperationOptions = Readonly<{
     signal?: AbortSignal;
     timeoutMs?: number;
+    maxAttempts?: number;
+    shouldRetry?: RallarOperationRetryPredicate;
     dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
 }>;
 
@@ -2696,17 +2705,29 @@ class BrowserRallarFacade implements RallarFacade {
         const timeoutMs = options.timeoutMs !== undefined
             ? options.timeoutMs
             : this.configuredDefaults?.operations?.timeoutMs;
+        const maxAttempts = options.maxAttempts !== undefined
+            ? options.maxAttempts
+            : this.configuredDefaults?.operations?.maxAttempts;
+        const shouldRetry = options.shouldRetry ??
+            this.configuredDefaults?.operations?.shouldRetry;
         const dataChannelLanes = options.dataChannelLanes !== undefined
             ? options.dataChannelLanes
             : this.configuredDefaults?.rtc?.dataChannelLanes;
 
-        if (timeoutMs === undefined && dataChannelLanes === undefined) {
+        if (
+            timeoutMs === undefined &&
+            maxAttempts === undefined &&
+            shouldRetry === undefined &&
+            dataChannelLanes === undefined
+        ) {
             return options;
         }
 
         return {
             ...options,
             ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+            ...(maxAttempts !== undefined ? { maxAttempts } : {}),
+            ...(shouldRetry !== undefined ? { shouldRetry } : {}),
             ...(dataChannelLanes !== undefined ? { dataChannelLanes } : {}),
         };
     }
@@ -2734,6 +2755,12 @@ class BrowserRallarFacade implements RallarFacade {
             ...(operationOptions.signal ? { signal: operationOptions.signal } : {}),
             ...(operationOptions.timeoutMs !== undefined
                 ? { timeoutMs: operationOptions.timeoutMs }
+                : {}),
+            ...(operationOptions.maxAttempts !== undefined
+                ? { maxAttempts: operationOptions.maxAttempts }
+                : {}),
+            ...(operationOptions.shouldRetry !== undefined
+                ? { shouldRetry: operationOptions.shouldRetry }
                 : {}),
             ...(operationOptions.dataChannelLanes !== undefined
                 ? { dataChannelLanes: operationOptions.dataChannelLanes }
@@ -3604,7 +3631,12 @@ function cloneRallarDefaults(defaults: RallarDefaults): RallarDefaults {
 function toRallarWorkflowPolicies<V>(
     options?: RallarOperationOptions,
 ): CommandsOrchestratorPolicies<V> {
-    if (!options?.signal && options?.timeoutMs === undefined) {
+    if (
+        !options?.signal &&
+        options?.timeoutMs === undefined &&
+        options?.maxAttempts === undefined &&
+        options?.shouldRetry === undefined
+    ) {
         return {};
     }
 
@@ -3619,6 +3651,8 @@ function toRallarOperationOptions(
     if (
         !options.signal &&
         options.timeoutMs === undefined &&
+        options.maxAttempts === undefined &&
+        options.shouldRetry === undefined &&
         options.dataChannelLanes === undefined
     ) {
         return {};
@@ -3627,6 +3661,8 @@ function toRallarOperationOptions(
     const normalized: {
         signal?: AbortSignal;
         timeoutMs?: number;
+        maxAttempts?: number;
+        shouldRetry?: RallarOperationRetryPredicate;
         dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
     } = {};
     if (options.signal) {
@@ -3634,6 +3670,12 @@ function toRallarOperationOptions(
     }
     if (options.timeoutMs !== undefined) {
         normalized.timeoutMs = options.timeoutMs;
+    }
+    if (options.maxAttempts !== undefined) {
+        normalized.maxAttempts = options.maxAttempts;
+    }
+    if (options.shouldRetry !== undefined) {
+        normalized.shouldRetry = options.shouldRetry;
     }
     if (options.dataChannelLanes !== undefined) {
         normalized.dataChannelLanes = options.dataChannelLanes;
@@ -3670,10 +3712,43 @@ function hasOwn<T extends object, K extends PropertyKey>(
 function toRallarCommandOptions<T>(
     options: RallarOperationOptions,
 ): CommandOptions<T> {
-    return {
-        signal: options.signal,
-        timeoutMs: options.timeoutMs,
-    };
+    const commandOptions: CommandOptions<T> = {};
+    if (options.signal) {
+        commandOptions.signal = options.signal;
+    }
+    if (options.timeoutMs !== undefined) {
+        commandOptions.timeoutMs = options.timeoutMs;
+    }
+    if (options.maxAttempts !== undefined) {
+        commandOptions.maxAttempts = options.maxAttempts;
+    }
+    if (options.shouldRetry) {
+        commandOptions.shouldRetry = options.shouldRetry;
+    } else if (options.maxAttempts !== undefined) {
+        commandOptions.shouldRetry = shouldRetryRallarOperation;
+    }
+
+    return commandOptions;
+}
+
+function shouldRetryRallarOperation(error: unknown): boolean {
+    const status = readHttpStatus(error);
+    if (status !== undefined) {
+        return status === 429 || status >= 500;
+    }
+
+    return true;
+}
+
+function readHttpStatus(error: unknown): number | undefined {
+    if (typeof error !== 'object' || error === null) {
+        return undefined;
+    }
+
+    const status = (error as { status?: unknown }).status;
+    return typeof status === 'number' && Number.isFinite(status)
+        ? status
+        : undefined;
 }
 
 function isStateScope(

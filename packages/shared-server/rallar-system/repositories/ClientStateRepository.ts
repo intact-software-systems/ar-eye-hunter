@@ -147,6 +147,10 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         );
     }
 
+    async listAllSessions(): Promise<readonly ClientSession[]> {
+        return await this.listValues<ClientSession>(SESSIONS_NAMESPACE);
+    }
+
     async removeSession(ref: ClientSessionRef): Promise<void> {
         await this.deleteValue(SESSIONS_NAMESPACE, this.sessionKey(ref));
     }

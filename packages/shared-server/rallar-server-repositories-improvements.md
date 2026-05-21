@@ -403,7 +403,8 @@ Recommended hardening:
 Implementation status:
 
 - Started on 2026-05-19; updated on 2026-05-20 after the app-inbox split; updated on 2026-05-21 after client
-  written-result idempotency, WS lifecycle app-inbox routing, and browser HTTP workflow request IDs.
+  written-result idempotency, WS lifecycle app-inbox routing, browser HTTP workflow request IDs, facade retry options,
+  and auth-session-independent WS close cleanup.
 - Added characterization tests before changing runtime behavior.
 - Added a shared `InboxQueueReader` app-inbox path for `APP_INBOX` AL messages. Missing payload-type handlers now fail
   the queue item instead of accidentally completing it.
@@ -419,6 +420,11 @@ Implementation status:
 - Browser Rallar state workflows now generate stable per-step `requestId` values before entering `Command` retry
   handling. A retried create/join/leave/heartbeat HTTP command reuses the same body `requestId`, so the server app-inbox
   and service-level idempotency ledgers can replay the same command instead of treating retry attempts as new mutations.
+- Browser Rallar operation options and defaults now support `maxAttempts` and `shouldRetry`. The default retry classifier
+  retries network/unknown errors, HTTP `429`, and HTTP `5xx`, but does not retry HTTP `4xx` validation/auth/conflict
+  failures.
+- Browser HTTP errors now carry structured `status`, `method`, `path`, and `bodyText` fields, so retry policy does not
+  need to parse error text.
 - `ResourceInboxResultsRepository` and `PSqlResultsQueueBox` persist completed/failed app-inbox results separately from
   the queue entry, so waiting HTTP callers can read the durable result after the inbox worker has handled the command.
 - `GroupStateService` mutating methods now use `request.requestId` as a service-level idempotency key when present. The
@@ -439,6 +445,8 @@ Implementation status:
   result is checked and written inside the same `runtimeRepository.begin(...)` transaction as the client mutation.
 - Authorised WS client register/disconnect operations derive stable idempotency keys from the websocket session id, so
   lifecycle retries can replay the original `ClientStateWritten` result.
+- Authorised WS client disconnect now falls back to durable client-session state when the auth-session row has already
+  been removed, covering the common browser logout order where WS close cleanup races with `/api/auth/logout`.
 - `AppClientInboxService` folds the `ClientStateWritten` result, publishes snapshot/event only when the result contains
   an event, and skips publish for semantic no-op results.
 - `AppClientInboxService` now also maps authorised WS connect/disconnect lifecycle commands to typed app-inbox payloads.
@@ -467,7 +475,11 @@ Implementation status:
       publishes returned written results, stores readable success/failure results, and publishes stored idempotent
       mutation results on handler replay;
     - browser HTTP workflows reuse request IDs across `Command` retries for create-and-join, join, leave, and heartbeat
-      mutation steps.
+      mutation steps;
+    - browser operation retry options are forwarded to state workflows with retryable/non-retryable HTTP status
+      classification;
+    - browser room mutation responses hydrate local state caches immediately, without waiting for WS state-sync echo;
+    - authorised WS disconnect app-inbox handling can still clean up client session state after auth-session deletion.
 - No transactional state-sync outbox fix has been applied yet. The current runtime change is a durable command-inbox
   layer plus group/client command idempotency and app-inbox-owned publication; it is not a state-sync publication intent
   committed atomically with the domain mutation.
@@ -489,6 +501,8 @@ Verification:
   `npx vitest run packages/tests/shared-server/app-client-inbox-service.test.ts packages/tests/shared-server/app-inbox-service.test.ts packages/tests/shared-server/group-state-service-idempotency.test.ts packages/tests/shared-server/state-sync-publish-failure-characterization.test.ts`.
 - Browser HTTP workflow idempotency proof run:
   `npx vitest run packages/tests/shared-web/api-workflows.test.ts`.
+- Browser facade retry/cache proof run:
+  `npx vitest run packages/tests/shared-web/rallar-operation-options.test.ts`.
 - Full shared-server regression run remains blocked by an unrelated syntax error in
   `packages/tests/shared-server/rallar-middleware.test.ts`.
 - Type/runtime checks: `npx tsc -p packages/shared/tsconfig.json --noEmit`,
@@ -514,6 +528,8 @@ Remaining iteration 3 issues:
 - Direct `api-integration.ts` callers can still omit `requestId` and rely on server-generated IDs. The Rallar facade
   workflows now generate stable IDs, which covers normal browser facade usage; lower-level direct callers remain
   responsible for providing request IDs if they need retry idempotency.
+- Real server/browser tests should still prove the new browser retry path against API-v1 with an injected transient
+  `5xx/429` before relying on it operationally.
 - Future direct `ClientStateService` or `GroupStateService` callers must either go through the app-inbox service or
   explicitly publish returned written results. Calling the state services alone mutates durable state without emitting
   state sync.
@@ -526,6 +542,9 @@ Remaining iteration 3 issues:
 
 Next implementation direction:
 
+- Before the deferred transactional outbox work, add real-server/browser scenarios that prove browser `maxAttempts`
+  retries preserve `requestId`, that transient `5xx/429` mutations replay safely, and that logout/WS-close cleanup still
+  publishes the final disconnected state when `/api/auth/logout` races with socket close handling.
 - Decide the durable state-sync outbox boundary before changing publication behavior. The clean target is to persist
   state-sync publication intents in the same `runtime_state_store` transaction as the client/group mutation.
 - Add a publisher/drainer that converts durable state-sync outbox intents into WS QueueBox messages and marks them

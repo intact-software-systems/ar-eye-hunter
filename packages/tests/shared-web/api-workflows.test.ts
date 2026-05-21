@@ -478,6 +478,16 @@ describe('state API workflows', () => {
         expect(signals.every((signal) => signal.aborted)).toBe(true);
     });
 
+    it('exposes HTTP status on failed API requests for retry classification', async () => {
+        stubFetch(() => textResponse('temporarily unavailable', 503));
+
+        await expect(refreshStateSnapshots()).rejects.toMatchObject({
+            status: 503,
+            method: 'GET',
+            bodyText: 'temporarily unavailable',
+        });
+    });
+
     function stubFetch(
         handler: (call: FetchCall) => Response | Promise<Response>,
     ): void {

@@ -763,24 +763,30 @@ export function createClientStateService(
             reason = 'websocket-closed',
         ) => {
             const authSessionRepository = dependencies.authSessionRepository;
-            if (!authSessionRepository) {
-                throw new NonRetryableException(
-                    'Auth session repository required to disconnect authorised websocket clients',
-                );
-            }
-
             const issuedSession =
-                await authSessionRepository.findBySessionId(sessionId);
-            if (!issuedSession) {
-                throw new NonRetryableException(`Client not authorised: ${sessionId}`);
+                await authSessionRepository?.findBySessionId(sessionId);
+            const session = issuedSession
+                ? undefined
+                : await findClientSessionBySessionId(
+                    runtimeRepository,
+                    sessionId,
+                );
+            if (!issuedSession && !session) {
+                throw new NonRetryableException(`Client session not found: ${sessionId}`);
             }
 
-            const scope: StateScope = {
-                applicationId: DEFAULT_STATE_APPLICATION_ID,
-                workspaceId: DEFAULT_STATE_WORKSPACE_ID,
-            };
-            const principalId = issuedSession.clientId;
-            const clientInstanceId = issuedSession.clientId;
+            const scope: StateScope = issuedSession
+                ? {
+                    applicationId: DEFAULT_STATE_APPLICATION_ID,
+                    workspaceId: DEFAULT_STATE_WORKSPACE_ID,
+                }
+                : {
+                    applicationId: session!.applicationId,
+                    workspaceId: session!.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
+                };
+            const principalId = issuedSession?.clientId ?? session!.principalId;
+            const clientInstanceId = issuedSession?.clientId ??
+                session!.clientInstanceId;
 
             return await service.disconnectSession(
                 scope,
@@ -798,6 +804,20 @@ export function createClientStateService(
     };
 
     return service;
+}
+
+async function findClientSessionBySessionId(
+    runtimeRepository: RuntimeStateTransactionalRepositoryLike,
+    sessionId: string,
+): Promise<ClientSession | undefined> {
+    const repository = new ClientStateRepository(runtimeRepository);
+    const sessions = await repository.listAllSessions();
+
+    return sessions.find((session) =>
+        session.sessionId === sessionId &&
+        session.status === 'active' &&
+        session.disconnectedAtEpochMs === undefined
+    ) ?? sessions.find((session) => session.sessionId === sessionId);
 }
 
 async function findIdempotentClientMutationWritten(
