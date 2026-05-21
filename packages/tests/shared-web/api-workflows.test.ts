@@ -5,6 +5,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import {
     createAndJoinStateGroup,
+    joinStateGroup,
     leaveStateGroup,
     refreshStateHeartbeat,
     refreshStateSnapshots,
@@ -121,6 +122,131 @@ describe('state API workflows', () => {
         });
     });
 
+    it('reuses state group workflow request IDs across HTTP command retries', async () => {
+        vi.spyOn(crypto, 'randomUUID')
+            .mockReturnValueOnce('group-retry' as ReturnType<typeof crypto.randomUUID>)
+            .mockReturnValueOnce('create-request' as ReturnType<typeof crypto.randomUUID>)
+            .mockReturnValueOnce('presence-request' as ReturnType<typeof crypto.randomUUID>)
+            .mockReturnValue('unused-request' as ReturnType<typeof crypto.randomUUID>);
+        let createAttempts = 0;
+        let presenceAttempts = 0;
+        stubFetch(({ url, method, body }) => {
+            if (method === 'POST' && url.endsWith('/groups')) {
+                createAttempts += 1;
+                if (createAttempts === 1) {
+                    return textResponse('transient create failure', 503);
+                }
+
+                return jsonResponse(groupSnapshot((body as { groupId: string }).groupId));
+            }
+
+            if (
+                method === 'PUT' &&
+                url.endsWith('/groups/group-retry/sessions/session-1')
+            ) {
+                presenceAttempts += 1;
+                if (presenceAttempts === 1) {
+                    return textResponse('transient presence failure', 503);
+                }
+
+                return jsonResponse(groupSnapshot('group-retry'));
+            }
+
+            return notFoundResponse();
+        });
+
+        await createAndJoinStateGroup(
+            'Retry Room',
+            'principal-1',
+            'session-1',
+            undefined,
+            { command: { maxAttempts: 2 } },
+        );
+
+        const createRequestIds = fetchCalls
+            .filter((call) => call.method === 'POST' && call.url.endsWith('/groups'))
+            .map((call) => (call.body as { requestId?: string }).requestId);
+        const presenceRequestIds = fetchCalls
+            .filter((call) =>
+                call.method === 'PUT' &&
+                call.url.endsWith('/groups/group-retry/sessions/session-1')
+            )
+            .map((call) => (call.body as { requestId?: string }).requestId);
+
+        expect(createRequestIds).toHaveLength(2);
+        expect(new Set(createRequestIds).size).toBe(1);
+        expect(createRequestIds[0]).toContain('create-request');
+        expect(presenceRequestIds).toHaveLength(2);
+        expect(new Set(presenceRequestIds).size).toBe(1);
+        expect(presenceRequestIds[0]).toContain('presence-request');
+        expect(createRequestIds[0]).not.toBe(presenceRequestIds[0]);
+    });
+
+    it('reuses join workflow request IDs across HTTP command retries', async () => {
+        vi.spyOn(crypto, 'randomUUID')
+            .mockReturnValueOnce('member-request' as ReturnType<typeof crypto.randomUUID>)
+            .mockReturnValueOnce('presence-request' as ReturnType<typeof crypto.randomUUID>)
+            .mockReturnValue('unused-request' as ReturnType<typeof crypto.randomUUID>);
+        let memberAttempts = 0;
+        let presenceAttempts = 0;
+        stubFetch(({ url, method }) => {
+            if (
+                method === 'PUT' &&
+                url.endsWith('/groups/group-1/members/principal-1')
+            ) {
+                memberAttempts += 1;
+                if (memberAttempts === 1) {
+                    return textResponse('transient member failure', 503);
+                }
+
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            if (
+                method === 'PUT' &&
+                url.endsWith('/groups/group-1/sessions/session-1')
+            ) {
+                presenceAttempts += 1;
+                if (presenceAttempts === 1) {
+                    return textResponse('transient presence failure', 503);
+                }
+
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            return notFoundResponse();
+        });
+
+        await joinStateGroup(
+            'group-1',
+            'principal-1',
+            'session-1',
+            undefined,
+            { command: { maxAttempts: 2 } },
+        );
+
+        const memberRequestIds = fetchCalls
+            .filter((call) =>
+                call.method === 'PUT' &&
+                call.url.endsWith('/groups/group-1/members/principal-1')
+            )
+            .map((call) => (call.body as { requestId?: string }).requestId);
+        const presenceRequestIds = fetchCalls
+            .filter((call) =>
+                call.method === 'PUT' &&
+                call.url.endsWith('/groups/group-1/sessions/session-1')
+            )
+            .map((call) => (call.body as { requestId?: string }).requestId);
+
+        expect(memberRequestIds).toHaveLength(2);
+        expect(new Set(memberRequestIds).size).toBe(1);
+        expect(memberRequestIds[0]).toContain('member-request');
+        expect(presenceRequestIds).toHaveLength(2);
+        expect(new Set(presenceRequestIds).size).toBe(1);
+        expect(presenceRequestIds[0]).toContain('presence-request');
+        expect(memberRequestIds[0]).not.toBe(presenceRequestIds[0]);
+    });
+
     it('continues leave workflow when disconnect presence has already gone away', async () => {
         stubFetch(({ url, method }) => {
             if (method === 'POST' && url.endsWith('/disconnect')) {
@@ -145,10 +271,73 @@ describe('state API workflows', () => {
 
         expect(result.group.groupId).toBe('group-1');
         expect(fetchCalls.map((call) => call.method)).toEqual(['POST', 'PUT']);
+        expect(fetchCalls[0].body).toMatchObject({
+            requestId: expect.any(String),
+        });
         expect(fetchCalls[1].body).toMatchObject({
             status: 'left',
             reason: 'left-group',
+            requestId: expect.any(String),
         });
+    });
+
+    it('reuses leave workflow request IDs across HTTP command retries', async () => {
+        vi.spyOn(crypto, 'randomUUID')
+            .mockReturnValueOnce('disconnect-request' as ReturnType<typeof crypto.randomUUID>)
+            .mockReturnValueOnce('member-request' as ReturnType<typeof crypto.randomUUID>)
+            .mockReturnValue('unused-request' as ReturnType<typeof crypto.randomUUID>);
+        let disconnectAttempts = 0;
+        let memberAttempts = 0;
+        stubFetch(({ url, method }) => {
+            if (method === 'POST' && url.endsWith('/disconnect')) {
+                disconnectAttempts += 1;
+                if (disconnectAttempts === 1) {
+                    return textResponse('transient disconnect failure', 503);
+                }
+
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            if (
+                method === 'PUT' &&
+                url.endsWith('/groups/group-1/members/principal-1')
+            ) {
+                memberAttempts += 1;
+                if (memberAttempts === 1) {
+                    return textResponse('transient member failure', 503);
+                }
+
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            return notFoundResponse();
+        });
+
+        await leaveStateGroup(
+            'group-1',
+            'principal-1',
+            'session-1',
+            undefined,
+            { command: { maxAttempts: 2 } },
+        );
+
+        const disconnectRequestIds = fetchCalls
+            .filter((call) => call.method === 'POST' && call.url.endsWith('/disconnect'))
+            .map((call) => (call.body as { requestId?: string }).requestId);
+        const memberRequestIds = fetchCalls
+            .filter((call) =>
+                call.method === 'PUT' &&
+                call.url.endsWith('/groups/group-1/members/principal-1')
+            )
+            .map((call) => (call.body as { requestId?: string }).requestId);
+
+        expect(disconnectRequestIds).toHaveLength(2);
+        expect(new Set(disconnectRequestIds).size).toBe(1);
+        expect(disconnectRequestIds[0]).toContain('disconnect-request');
+        expect(memberRequestIds).toHaveLength(2);
+        expect(new Set(memberRequestIds).size).toBe(1);
+        expect(memberRequestIds[0]).toContain('member-request');
+        expect(disconnectRequestIds[0]).not.toBe(memberRequestIds[0]);
     });
 
     it('orchestrates client and group heartbeats and tolerates missing group presence', async () => {
@@ -188,6 +377,76 @@ describe('state API workflows', () => {
         expect(result.heartbeatAtEpochMs).toBe(1000);
         expect(result.expiresAtEpochMs).toBe(121000);
         expect(fetchCalls).toHaveLength(3);
+    });
+
+    it('reuses heartbeat workflow request IDs across HTTP command retries', async () => {
+        const clientData: ClientInfo = {
+            clientId: 'principal-1',
+            sessionId: 'session-1',
+            isOnline: true,
+        };
+        vi.spyOn(crypto, 'randomUUID')
+            .mockReturnValueOnce('client-heartbeat-request' as ReturnType<typeof crypto.randomUUID>)
+            .mockReturnValueOnce('group-heartbeat-request' as ReturnType<typeof crypto.randomUUID>)
+            .mockReturnValue('unused-request' as ReturnType<typeof crypto.randomUUID>);
+        let clientAttempts = 0;
+        let groupAttempts = 0;
+        stubFetch(({ url, method }) => {
+            if (
+                method === 'POST' &&
+                url.includes('/clients/principal-1/') &&
+                url.endsWith('/sessions/session-1/heartbeat')
+            ) {
+                clientAttempts += 1;
+                if (clientAttempts === 1) {
+                    return textResponse('transient client heartbeat failure', 503);
+                }
+
+                return jsonResponse(clientSnapshot('principal-1'));
+            }
+
+            if (
+                method === 'POST' &&
+                url.includes('/groups/group-1/') &&
+                url.endsWith('/sessions/session-1/heartbeat')
+            ) {
+                groupAttempts += 1;
+                if (groupAttempts === 1) {
+                    return textResponse('transient group heartbeat failure', 503);
+                }
+
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            return notFoundResponse();
+        });
+
+        await refreshStateHeartbeat(clientData, [groupSnapshot('group-1')], {
+            policies: { command: { maxAttempts: 2 } },
+        });
+
+        const clientRequestIds = fetchCalls
+            .filter((call) =>
+                call.method === 'POST' &&
+                call.url.includes('/clients/principal-1/') &&
+                call.url.endsWith('/sessions/session-1/heartbeat')
+            )
+            .map((call) => (call.body as { requestId?: string }).requestId);
+        const groupRequestIds = fetchCalls
+            .filter((call) =>
+                call.method === 'POST' &&
+                call.url.includes('/groups/group-1/') &&
+                call.url.endsWith('/sessions/session-1/heartbeat')
+            )
+            .map((call) => (call.body as { requestId?: string }).requestId);
+
+        expect(clientRequestIds).toHaveLength(2);
+        expect(new Set(clientRequestIds).size).toBe(1);
+        expect(clientRequestIds[0]).toContain('client-heartbeat-request');
+        expect(groupRequestIds).toHaveLength(2);
+        expect(new Set(groupRequestIds).size).toBe(1);
+        expect(groupRequestIds[0]).toContain('group-heartbeat-request');
+        expect(clientRequestIds[0]).not.toBe(groupRequestIds[0]);
     });
 
     it('passes command timeout aborts into endpoint fetch calls', async () => {

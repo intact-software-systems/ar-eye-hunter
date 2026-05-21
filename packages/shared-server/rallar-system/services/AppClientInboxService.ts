@@ -6,6 +6,7 @@ import type {
     UpsertClientInstanceRequest,
     UpsertClientPrincipalRequest,
 } from '@shared/api/state-types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import {
@@ -15,6 +16,7 @@ import type {
     ClientMutationWritten,
     ClientStateService,
     ClientStateWritten,
+    RegisterAuthorisedWsClientInput,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
 import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import {
@@ -64,6 +66,16 @@ export type ClientSessionDisconnectAppInboxPayload = Readonly<{
     clientInstanceId: string;
     sessionId: string;
     request: DisconnectClientSessionRequest;
+}>;
+
+export type ClientAuthorisedWsSessionConnectAppInboxPayload = Readonly<{
+    authSession: Omit<AuthSession, 'accessToken'>;
+    input?: RegisterAuthorisedWsClientInput;
+}>;
+
+export type ClientAuthorisedWsSessionDisconnectAppInboxPayload = Readonly<{
+    sessionId: string;
+    reason?: string;
 }>;
 
 export class AppClientInboxService extends AppInboxService {
@@ -163,28 +175,87 @@ export class AppClientInboxService extends AppInboxService {
                 return clientStateWritten;
             },
         );
+        this.onStateMessage<ClientAuthorisedWsSessionConnectAppInboxPayload>(
+            AppInboxType.CLIENT_AUTHORISED_WS_CONNECT,
+            async (session) => {
+                const clientStateWritten =
+                    await this.clientStateService.registerAuthorisedWsClientSession(
+                        {
+                            ...session.authSession,
+                            accessToken: '',
+                        },
+                        session.input,
+                    );
+
+                await this.publishClientStateWritten(clientStateWritten);
+
+                return clientStateWritten;
+            },
+        );
+        this.onStateMessage<ClientAuthorisedWsSessionDisconnectAppInboxPayload>(
+            AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT,
+            async (session) => {
+                const clientStateWritten =
+                    await this.clientStateService.disconnectAuthorisedWsClientSession(
+                        session.sessionId,
+                        session.reason,
+                    );
+
+                await this.publishClientStateWritten(clientStateWritten);
+
+                return clientStateWritten;
+            },
+        );
+    }
+
+    public async processAuthorisedWsClientConnect(
+        authSession: AuthSession,
+        input?: RegisterAuthorisedWsClientInput,
+    ) {
+        return await this.processEntryUntilCompletion<
+            ClientAuthorisedWsSessionConnectAppInboxPayload,
+            ClientStateWritten
+        >({
+            type: AppInboxType.CLIENT_AUTHORISED_WS_CONNECT,
+            resourceId: `authorised-ws-connect-${authSession.sessionId}`,
+            contextId: authSession.clientId,
+            senderId: authSession.clientId,
+            data: {
+                authSession: {
+                    clientId: authSession.clientId,
+                    username: authSession.username,
+                    sessionId: authSession.sessionId,
+                    expiresAtEpochMs: authSession.expiresAtEpochMs,
+                },
+                input,
+            },
+        });
+    }
+
+    public async processAuthorisedWsClientDisconnect(
+        sessionId: string,
+        reason?: string,
+    ) {
+        return await this.processEntryUntilCompletion<
+            ClientAuthorisedWsSessionDisconnectAppInboxPayload,
+            ClientStateWritten
+        >({
+            type: AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT,
+            resourceId: `authorised-ws-disconnect-${sessionId}`,
+            contextId: sessionId,
+            senderId: sessionId,
+            data: {
+                sessionId,
+                reason,
+            },
+        });
     }
 
     public async publishClientStateWritten(
         clientStateWritten: ClientStateWritten,
     ): Promise<void> {
-        const result = clientStateWritten.result as
-            | ClientStateWritten['result']
-            | {
-            left?: string;
-            right?: ClientMutationWritten;
-        };
-
-        if ('fold' in result && typeof result.fold === 'function') {
-            await result.fold(
-                async () => undefined,
-                async (written) => await this.publishClientMutation(written),
-            );
-            return;
-        }
-
-        if (result.right) {
-            await this.publishClientMutation(result.right);
+        if (clientStateWritten.result.right) {
+            await this.publishClientMutation(clientStateWritten.result.right);
         }
     }
 

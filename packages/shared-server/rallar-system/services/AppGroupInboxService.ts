@@ -69,6 +69,11 @@ export type GroupPresenceDisconnectAppInboxPayload = Readonly<{
     request: DisconnectGroupPresenceSessionRequest;
 }>;
 
+export type GroupPresenceDisconnectBySessionIdAppInboxPayload = Readonly<{
+    sessionId: string;
+    request?: DisconnectGroupPresenceSessionRequest;
+}>;
+
 export class AppGroupInboxService extends AppInboxService {
     constructor(
         public override readonly inbox: InboxQueueReader,
@@ -176,28 +181,48 @@ export class AppGroupInboxService extends AppInboxService {
                 return groupStateWritten;
             },
         );
+        this.onStateMessage<GroupPresenceDisconnectBySessionIdAppInboxPayload>(
+            AppInboxType.GROUP_PRESENCE_DISCONNECT_BY_SESSION_ID,
+            async (presence) => {
+                const groupStateWrittenResults =
+                    await this.groupStateService.disconnectPresenceSessionsBySessionIdWritten(
+                        presence.sessionId,
+                        presence.request,
+                    );
+
+                for (const groupStateWritten of groupStateWrittenResults) {
+                    await this.publishGroupStateWritten(groupStateWritten);
+                }
+
+                return groupStateWrittenResults;
+            },
+        );
+    }
+
+    public async processPresenceDisconnectsBySessionId(
+        sessionId: string,
+        request?: DisconnectGroupPresenceSessionRequest,
+    ) {
+        return await this.processEntryUntilCompletion<
+            GroupPresenceDisconnectBySessionIdAppInboxPayload,
+            readonly GroupStateWritten[]
+        >({
+            type: AppInboxType.GROUP_PRESENCE_DISCONNECT_BY_SESSION_ID,
+            resourceId: `disconnect-presence-${sessionId}`,
+            contextId: sessionId,
+            senderId: request?.actorPrincipalId ?? request?.actorSessionId ?? sessionId,
+            data: {
+                sessionId,
+                request,
+            },
+        });
     }
 
     private async publishGroupStateWritten(
         groupStateWritten: GroupStateWritten,
     ): Promise<void> {
-        const result = groupStateWritten.result as
-            | GroupStateWritten['result']
-            | {
-            left?: string;
-            right?: GroupMutationWritten;
-        };
-
-        if ('fold' in result && typeof result.fold === 'function') {
-            await result.fold(
-                async () => undefined,
-                async (written) => await this.publishGroupMutation(written),
-            );
-            return;
-        }
-
-        if (result.right) {
-            await this.publishGroupMutation(result.right);
+        if (groupStateWritten.result.right) {
+            await this.publishGroupMutation(groupStateWritten.result.right);
         }
     }
 

@@ -359,10 +359,9 @@ Current behavior:
 - Group state services return a `GroupStateWritten` result from the transaction.
 - For HTTP mutations, `AppClientInboxService` and `AppGroupInboxService` publish the written result after the state
   write has committed.
-- WebSocket lifecycle client cleanup still calls `ClientStateService` directly, but publication is delegated to
-  `AppClientInboxService.publishClientStateWritten(...)` so publishing remains outside `client-state-service.ts`.
-- WebSocket lifecycle group cleanup still calls `disconnectPresenceSessionsBySessionId(...)` directly; that path
-  explicitly publishes the returned group written result because it does not pass through `AppGroupInboxService`.
+- WebSocket lifecycle client connect/disconnect now enqueue typed app-inbox commands through `AppClientInboxService`.
+- WebSocket lifecycle group cleanup now enqueues a typed app-inbox command through `AppGroupInboxService`, which owns
+  publication for the returned group written results.
 - The publisher updates process-local cache and enqueues an AL message through
   `WsQueueBoxServerService.enqueueOutboxIfAbsent`.
 - HTTP client and group mutation routes now enqueue durable app-inbox commands first and then wait for the app-inbox
@@ -386,8 +385,10 @@ Risk:
 - If DB mutation succeeds but WS enqueue fails, the durable state changes but clients do not receive a live update.
 - If cache update succeeds but enqueue fails, the local process cache can observe a value that was not broadcast.
 - There is no obvious repair job that scans durable state changes and republishes missed state sync messages.
-- A failed app-inbox publish can be recorded as a failed app-inbox result even though the durable domain mutation has
-  already committed.
+- Retryable app-inbox publish failures now leave the command in QueueBox retry state instead of writing a failed
+  app-inbox result, but the durable domain mutation can still commit before the WS enqueue failure is observed.
+- Non-retryable app-level validation failures are recorded as failed app-inbox results so waiting HTTP callers can get a
+  terminal application error.
 - Client mutations now have a service-level written-result ledger for request-keyed retries, but callers must still
   provide or derive a stable request key for replay semantics.
 
@@ -402,7 +403,7 @@ Recommended hardening:
 Implementation status:
 
 - Started on 2026-05-19; updated on 2026-05-20 after the app-inbox split; updated on 2026-05-21 after client
-  written-result idempotency.
+  written-result idempotency, WS lifecycle app-inbox routing, and browser HTTP workflow request IDs.
 - Added characterization tests before changing runtime behavior.
 - Added a shared `InboxQueueReader` app-inbox path for `APP_INBOX` AL messages. Missing payload-type handlers now fail
   the queue item instead of accidentally completing it.
@@ -415,6 +416,9 @@ Implementation status:
   owns client state-sync publication for the returned `ClientStateWritten` result.
 - API-v1 group and client mutation routes now enqueue typed `APP_INBOX` commands before executing the mutation. The HTTP
   response shape is preserved by draining the command immediately and returning the resulting snapshot.
+- Browser Rallar state workflows now generate stable per-step `requestId` values before entering `Command` retry
+  handling. A retried create/join/leave/heartbeat HTTP command reuses the same body `requestId`, so the server app-inbox
+  and service-level idempotency ledgers can replay the same command instead of treating retry attempts as new mutations.
 - `ResourceInboxResultsRepository` and `PSqlResultsQueueBox` persist completed/failed app-inbox results separately from
   the queue entry, so waiting HTTP callers can read the durable result after the inbox worker has handled the command.
 - `GroupStateService` mutating methods now use `request.requestId` as a service-level idempotency key when present. The
@@ -437,21 +441,33 @@ Implementation status:
   lifecycle retries can replay the original `ClientStateWritten` result.
 - `AppClientInboxService` folds the `ClientStateWritten` result, publishes snapshot/event only when the result contains
   an event, and skips publish for semantic no-op results.
-- Direct WS lifecycle client registration/disconnect calls publish their returned `ClientStateWritten` through
-  `AppClientInboxService.publishClientStateWritten(...)`, keeping publication out of `client-state-service.ts` while
-  preserving lifecycle state-sync behavior.
+- `AppClientInboxService` now also maps authorised WS connect/disconnect lifecycle commands to typed app-inbox payloads.
+  The connect payload stores the auth session fields needed for state mutation without persisting the access token in the
+  app-inbox resource entry.
+- `GroupStateService.disconnectPresenceSessionsBySessionIdWritten(...)` returns the written disconnect results for all
+  active presence sessions owned by a WS session without publishing directly.
+- `AppGroupInboxService` now maps WS-session presence cleanup to a typed app-inbox payload and publishes each returned
+  `GroupStateWritten` result.
+- `AppInboxService` now treats only `NonRetryableException` as a terminal failed app-inbox result. Other handler errors
+  rethrow into QueueBox release handling, which keeps the command retryable until the QueueBox retry policy is
+  exhausted.
+- API-v1 WS upgrade and WS-close lifecycle callbacks now route authorised client connect/disconnect and group presence
+  cleanup through the app-inbox services instead of calling the state services directly.
 - Current behavior is now documented in tests:
     - group mutation state and event rows are committed before snapshot enqueue failure is returned by
-      `AppGroupInboxService`;
+      `AppGroupInboxService`, with the app-inbox command left retryable and no failed result row written;
     - the process-local group snapshot cache can already be updated when snapshot enqueue fails;
     - client mutation state and event rows are committed before snapshot enqueue failure is returned by
-      `AppClientInboxService`;
-    - group snapshot enqueue can succeed before a later group event enqueue failure is returned, leaving snapshot/event
-      publication split;
-    - group app-inbox processes create/update/member/presence commands and publishes stored idempotent mutation results
-      on handler replay;
-    - client app-inbox processes principal/instance/session commands, publishes returned written results, stores
-      readable success/failure results, and publishes stored idempotent mutation results on handler replay.
+      `AppClientInboxService`, with the app-inbox command left retryable and no failed result row written;
+    - group snapshot enqueue can succeed before a later group event enqueue failure leaves the app-inbox command
+      retryable, leaving snapshot/event publication split until retry;
+    - group app-inbox processes create/update/member/presence commands, WS-session presence cleanup, and publishes stored
+      idempotent mutation results on handler replay;
+    - client app-inbox processes principal/instance/session commands, authorised WS connect/disconnect commands,
+      publishes returned written results, stores readable success/failure results, and publishes stored idempotent
+      mutation results on handler replay;
+    - browser HTTP workflows reuse request IDs across `Command` retries for create-and-join, join, leave, and heartbeat
+      mutation steps.
 - No transactional state-sync outbox fix has been applied yet. The current runtime change is a durable command-inbox
   layer plus group/client command idempotency and app-inbox-owned publication; it is not a state-sync publication intent
   committed atomically with the domain mutation.
@@ -469,7 +485,12 @@ Verification:
 - Middleware wiring proof run: `npx vitest run packages/tests/shared-server/rallar-middleware.test.ts`.
 - Related regression run:
   `npx vitest run packages/tests/shared-server/group-state-service-idempotency.test.ts packages/tests/shared-server/state-sync-publish-failure-characterization.test.ts packages/tests/shared-server/ws-topic-room-authorizer.test.ts packages/tests/shared-server/rallar-middleware.test.ts packages/tests/api-v1/client-and-group-state-repositories.test.ts`.
-- Latest shared-server regression run: `npx vitest run packages/tests/shared-server`.
+- Focused shared-server regression run:
+  `npx vitest run packages/tests/shared-server/app-client-inbox-service.test.ts packages/tests/shared-server/app-inbox-service.test.ts packages/tests/shared-server/group-state-service-idempotency.test.ts packages/tests/shared-server/state-sync-publish-failure-characterization.test.ts`.
+- Browser HTTP workflow idempotency proof run:
+  `npx vitest run packages/tests/shared-web/api-workflows.test.ts`.
+- Full shared-server regression run remains blocked by an unrelated syntax error in
+  `packages/tests/shared-server/rallar-middleware.test.ts`.
 - Type/runtime checks: `npx tsc -p packages/shared/tsconfig.json --noEmit`,
   `npx tsc -p packages/shared-server/tsconfig.json --noEmit`, and
   `deno check --config apps/api-v1/deno.json apps/api-v1/src/main.ts`.
@@ -484,19 +505,20 @@ Remaining iteration 3 issues:
   transaction as the domain mutation.
 - There is no state-sync outbox drainer that can retry missed snapshot/event publication independently of the original
   HTTP request.
-- `AppGroupInboxService` can publish a stored `GroupStateWritten` result if a command re-enters the handler, but
-  app-inbox failed results are currently stored in `resource_inbox_results`. A retry using the same app-inbox queue key
-  can read the failed result instead of forcing a fresh publish attempt until the result expires or a different queue
-  key is used.
-- Group service idempotency does not validate a command fingerprint. Reusing the same `requestId` with a different
-  payload replays the stored result rather than raising an idempotency conflict. That is idempotent, but it can hide
-  caller bugs.
-- Direct `ClientStateService` callers must explicitly publish the returned `ClientStateWritten` result through
-  `AppClientInboxService` or another publisher. Calling the service alone now mutates durable state without emitting
+- `AppGroupInboxService` and `AppClientInboxService` can publish stored written results if a command re-enters the
+  handler after a retryable publication failure, but there is still no separate durable publication intent that can be
+  drained independently of the original app-inbox command.
+- Deferred by decision: group/client service idempotency does not validate a command fingerprint. Reusing the same
+  `requestId` with a different payload replays the stored result rather than raising an idempotency conflict. That is
+  idempotent, but it can hide caller bugs.
+- Direct `api-integration.ts` callers can still omit `requestId` and rely on server-generated IDs. The Rallar facade
+  workflows now generate stable IDs, which covers normal browser facade usage; lower-level direct callers remain
+  responsible for providing request IDs if they need retry idempotency.
+- Future direct `ClientStateService` or `GroupStateService` callers must either go through the app-inbox service or
+  explicitly publish returned written results. Calling the state services alone mutates durable state without emitting
   state sync.
-- WebSocket lifecycle client cleanup still calls `disconnectAuthorisedWsClientSession(...)` directly for the domain
-  mutation; it uses `AppClientInboxService.publishClientStateWritten(...)` for publication, but it does not use the
-  durable app-inbox command path.
+- App-inbox enqueue for WS close lifecycle still depends on the process observing the WS close callback. If the process
+  dies before that callback runs and enqueues the cleanup command, this iteration does not provide a recovery mechanism.
 - The app-inbox command layer protects HTTP command durability, but it does not guarantee eventual WS delivery of the
   resulting state-sync snapshot/event.
 - Real server/browser integration tests for API process death after app-inbox enqueue and before command drain are still

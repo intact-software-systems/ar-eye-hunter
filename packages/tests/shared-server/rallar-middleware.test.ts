@@ -26,6 +26,7 @@ import type { AppGroupInboxService } from '@shared-server/rallar-system/services
 import type { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import type { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+import { GroupSnapshot } from '@shared/api/group-types.ts';
 
 describe('createRallarMiddleware', () => {
     it('constructs queuebox runtime services around supplied repositories', () => {
@@ -572,18 +573,15 @@ function createGroupSnapshot(
     groupId: string,
     applicationId: string,
     workspaceId: string,
-    members: readonly
-
-Readonly<{
-    principalId: string;
-    sessionId: string;
-    status: 'active' | 'removed';
-}>,
-    snapshotVersion;
-:
-number,
-):
-GroupSnapshot;
+    members: Readonly<
+        {
+            principalId: string;
+            sessionId: string;
+            status: 'active' | 'removed';
+        }
+    >,
+    snapshotVersion: number,
+): GroupSnapshot;
 {
     const activeMembers = members.filter((member) => member.status === 'active');
     return {

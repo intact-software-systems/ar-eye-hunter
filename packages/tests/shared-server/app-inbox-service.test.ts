@@ -425,6 +425,77 @@ describe('AppInboxService', () => {
         expect(publisher.publishGroupEvent).toHaveBeenCalledTimes(1);
     });
 
+    it('processes websocket group presence cleanup through the inbox', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const publisher = {
+            publishClientSnapshot: vi.fn(async () => undefined),
+            publishClientEvent: vi.fn(async () => undefined),
+            publishGroupSnapshot: vi.fn(async () => undefined),
+            publishGroupEvent: vi.fn(async () => undefined),
+        };
+        const service = new AppGroupInboxService(
+            reader,
+            queue as never,
+            results as never,
+            createGroupStateService({
+                runtimeRepository,
+                syncPublisher: publisher,
+                now: () => 2_000,
+                serviceId: 'server-12345678',
+            }),
+            publisher,
+            'server-12345678',
+        );
+
+        await processCreateGroup(
+            service,
+            reader,
+            'ws-cleanup-room',
+            'create-ws-cleanup-room',
+        );
+        await processAppInbox<
+            GroupPresenceConnectAppInboxPayload,
+            GroupStateWritten
+        >(service, reader, {
+            type: AppInboxType.GROUP_PRESENCE_CONNECT,
+            resourceId: 'connect-alice-ws-cleanup-room',
+            contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:ws-cleanup-room`,
+            senderId: 'alice',
+            data: {
+                scope: SCOPE,
+                groupId: 'ws-cleanup-room',
+                sessionId: 'alice-ws-session',
+                request: {
+                    principalId: 'alice',
+                    actorPrincipalId: 'alice',
+                    actorSessionId: 'alice-ws-session',
+                    expiresAtEpochMs: Date.now() + 60_000,
+                    requestId: 'connect-alice-ws-cleanup-room',
+                },
+            },
+        });
+        vi.mocked(publisher.publishGroupSnapshot).mockClear();
+        vi.mocked(publisher.publishGroupEvent).mockClear();
+
+        const disconnected = await processAppInboxMethod(reader, () =>
+            service.processPresenceDisconnectsBySessionId('alice-ws-session', {
+                actorSessionId: 'alice-ws-session',
+                reason: 'socket-closed',
+            })
+        );
+
+        expect(disconnected.right).toHaveLength(1);
+        expect(disconnected.right?.[0].result.right?.snapshot.activeSessions).toHaveLength(0);
+        expect(disconnected.right?.[0].result.right?.event?.eventType).toBe(
+            'session-disconnected',
+        );
+        expect(publisher.publishGroupSnapshot).toHaveBeenCalledTimes(1);
+        expect(publisher.publishGroupEvent).toHaveBeenCalledTimes(1);
+    });
+
     it('returns a left result when an app inbox mutation handler fails', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
@@ -469,6 +540,54 @@ describe('AppInboxService', () => {
         });
 
         expect(result.left).toBe('Group not found: missing-room');
+        expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
+        expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
+    });
+
+    it('keeps retryable app inbox handler failures in the queue without a failed result', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const publisher = {
+            publishClientSnapshot: vi.fn(async () => undefined),
+            publishClientEvent: vi.fn(async () => undefined),
+            publishGroupSnapshot: vi.fn(async () => undefined),
+            publishGroupEvent: vi.fn(async () => undefined),
+        };
+        const service = new AppGroupInboxService(
+            reader,
+            queue as never,
+            results as never,
+            createGroupStateServiceStub({
+                updateGroup: vi.fn(async () => {
+                    throw new Error('Transient group update unavailable');
+                }),
+            }),
+            publisher,
+            'server-12345678',
+        );
+
+        const entry = await processAppInboxNoWaiting<
+            GroupUpdateAppInboxPayload
+        >(service, reader, queue, {
+            type: AppInboxType.GROUP_UPDATE,
+            resourceId: 'update-retryable-room',
+            contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:retryable-room`,
+            senderId: 'alice',
+            data: {
+                scope: SCOPE,
+                groupId: 'retryable-room',
+                request: {
+                    displayName: 'Retryable Room',
+                    actorPrincipalId: 'alice',
+                    requestId: 'update-retryable-room',
+                },
+            },
+        });
+
+        expect(entry.status).toBe(EntityStatus.RETRY);
+        expect(entry.dequeueAudit.attempts).toBe(1);
+        expect(await results.findByKey(entry.key)).toBeUndefined();
         expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
         expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
     });
@@ -548,6 +667,7 @@ function createGroupStateServiceStub(
         heartbeatPresenceSession: vi.fn(),
         disconnectPresenceSession: vi.fn(),
         disconnectPresenceSessionsBySessionId: vi.fn(),
+        disconnectPresenceSessionsBySessionIdWritten: vi.fn(),
         ...overrides,
     } as unknown as GroupStateService;
 }
@@ -593,6 +713,52 @@ async function processAppInbox<V, R>(
     );
 
     return await resultPromise;
+}
+
+async function processAppInboxMethod<R>(
+    reader: InboxQueueReader,
+    run: () => Promise<R>,
+): Promise<R> {
+    const resultPromise = run();
+    await reader.dequeueInbox(
+        InboxQueueReader.INBOX_DEQUEUE_TYPES,
+        createResilience(),
+    );
+
+    return await resultPromise;
+}
+
+async function processAppInboxNoWaiting<V>(
+    service: AppGroupInboxService,
+    reader: InboxQueueReader,
+    queue: InMemoryQueueBox,
+    input: AppInboxEnqueueInput<V>,
+): Promise<ResourceEntry> {
+    service.processEntryNoWaiting<V>(input);
+    await waitForQueueEntry(queue);
+    await reader.dequeueInbox(
+        InboxQueueReader.INBOX_DEQUEUE_TYPES,
+        createResilience(),
+    );
+
+    const entry = readOnlyEntry(queue);
+    if (!entry) {
+        throw new Error('Expected app inbox entry to remain in queue');
+    }
+
+    return entry;
+}
+
+async function waitForQueueEntry(queue: InMemoryQueueBox): Promise<void> {
+    for (let i = 0; i < 20; i += 1) {
+        if (readOnlyEntry(queue)) {
+            return;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    throw new Error('Expected app inbox entry to be enqueued');
 }
 
 function writtenSnapshot(

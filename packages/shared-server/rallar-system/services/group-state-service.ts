@@ -24,6 +24,7 @@ import type { RuntimeStateTransactionalRepositoryLike } from '../../runtime-stat
 import type { StateSyncPublisher } from '../state-sync-publisher.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { isDefined, jsonEquals } from '@shared/repository/state-utils.ts';
+import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 
 const DEFAULT_GROUP_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -83,6 +84,10 @@ export type GroupStateService = Readonly<{
         sessionId: string,
         request?: DisconnectGroupPresenceSessionRequest,
     ): Promise<readonly GroupSnapshot[]>;
+    disconnectPresenceSessionsBySessionIdWritten(
+        sessionId: string,
+        request?: DisconnectGroupPresenceSessionRequest,
+    ): Promise<readonly GroupStateWritten[]>;
 }>;
 
 export type GroupStateServiceDependencies = Readonly<{
@@ -96,7 +101,6 @@ export function createGroupStateService(
     dependencies: GroupStateServiceDependencies,
 ): GroupStateService {
     const runtimeRepository = dependencies.runtimeRepository;
-    const syncPublisher = dependencies.syncPublisher;
     const now = dependencies.now ?? (() => Date.now());
     const serviceId = dependencies.serviceId;
 
@@ -239,7 +243,7 @@ export function createGroupStateService(
 
                 const existing = await repository.findGroup(ref);
                 if (!existing) {
-                    throw new Error(`Group not found: ${groupId}`);
+                    throw new NonRetryableException(`Group not found: ${groupId}`);
                 }
 
                 const timestamp = now();
@@ -439,12 +443,12 @@ export function createGroupStateService(
                     principalId: request.principalId,
                 });
                 if (!member) {
-                    throw new Error(
+                    throw new NonRetryableException(
                         `Forbidden: group member not found for presence session: ${request.principalId}`,
                     );
                 }
                 if (member.status !== 'active') {
-                    throw new Error(
+                    throw new NonRetryableException(
                         `Forbidden: group member is not active for presence session: ${request.principalId}`,
                     );
                 }
@@ -529,7 +533,7 @@ export function createGroupStateService(
                 };
                 const existing = await repository.findPresenceSession(ref);
                 if (!existing) {
-                    throw new Error(`Group presence session not found: ${sessionId}`);
+                    throw new NonRetryableException(`Group presence session not found: ${sessionId}`);
                 }
 
                 const timestamp = request.lastHeartbeatAtEpochMs ?? now();
@@ -614,7 +618,7 @@ export function createGroupStateService(
                 };
                 const existing = await repository.findPresenceSession(ref);
                 if (!existing) {
-                    throw new Error(`Group presence session not found: ${sessionId}`);
+                    throw new NonRetryableException(`Group presence session not found: ${sessionId}`);
                 }
 
                 const timestamp = now();
@@ -675,13 +679,21 @@ export function createGroupStateService(
             });
         },
         disconnectPresenceSessionsBySessionId: async (sessionId, request = {}) => {
+            const writtenResults = await service.disconnectPresenceSessionsBySessionIdWritten(
+                sessionId,
+                request,
+            );
+
+            return writtenResults.map(requireGroupStateWrittenSnapshot);
+        },
+        disconnectPresenceSessionsBySessionIdWritten: async (sessionId, request = {}) => {
             const repository = new GroupStateRepository(runtimeRepository);
             const sessions = (await repository.listAllPresenceSessions()).filter(
                 (session) =>
                     session.sessionId === sessionId &&
                     session.disconnectedAtEpochMs === undefined,
             );
-            const snapshots: GroupSnapshot[] = [];
+            const writtenResults: GroupStateWritten[] = [];
 
             for (const session of sessions) {
                 try {
@@ -699,8 +711,7 @@ export function createGroupStateService(
                             actorSessionId: request.actorSessionId ?? session.sessionId,
                         },
                     );
-                    await publishGroupStateWritten(syncPublisher, written, serviceId);
-                    snapshots.push(requireGroupStateWrittenSnapshot(written));
+                    writtenResults.push(written);
                 } catch (error) {
                     const message =
                         error instanceof Error ? error.message : String(error);
@@ -710,7 +721,7 @@ export function createGroupStateService(
                 }
             }
 
-            return snapshots;
+            return writtenResults;
         },
     };
 
@@ -751,20 +762,6 @@ async function addIdempotentGroupMutationWritten(
     );
 }
 
-async function publishGroupStateWritten(
-    syncPublisher: StateSyncPublisher,
-    written: GroupStateWritten,
-    serviceId: string,
-): Promise<void> {
-    const mutation = written.result.right;
-    if (!mutation?.event) {
-        return;
-    }
-
-    await syncPublisher.publishGroupSnapshot(mutation.snapshot, serviceId);
-    await syncPublisher.publishGroupEvent(mutation.event, serviceId);
-}
-
 function requireGroupStateWrittenSnapshot(
     written: GroupStateWritten,
 ): GroupSnapshot {
@@ -782,7 +779,7 @@ async function requireGroup(
 ): Promise<Group> {
     const group = await repository.findGroup(ref);
     if (!group) {
-        throw new Error(`Group not found: ${ref.groupId}`);
+        throw new NonRetryableException(`Group not found: ${ref.groupId}`);
     }
 
     return group;

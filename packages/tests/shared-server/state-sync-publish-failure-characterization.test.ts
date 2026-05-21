@@ -19,10 +19,7 @@ import { findGroupStateSnapshotByRef } from '@shared/repository/group-state-snap
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import {
-    type ClientStateWritten,
-    createClientStateService,
-} from '@shared-server/rallar-system/services/client-state-service.ts';
+import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import {
     AppClientInboxService,
     type ClientPrincipalUpsertAppInboxPayload,
@@ -32,10 +29,7 @@ import {
     AppInboxType,
     type GroupCreateAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import {
-    createGroupStateService,
-    type GroupStateWritten,
-} from '@shared-server/rallar-system/services/group-state-service.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { createWsStateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
@@ -50,12 +44,12 @@ describe('state sync publish failure characterization', () => {
         configureTestCacheRepositories();
     });
 
-    it('app inbox commits group state and updates process cache before returning snapshot enqueue failure', async () => {
+    it('app inbox commits group state and updates process cache before retrying snapshot enqueue failure', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const enqueueOutboxIfAbsent = vi.fn(async () => {
             throw new Error('snapshot enqueue unavailable');
         });
-        const { appInbox, reader } = createGroupAppInbox(
+        const { appInbox, reader, queue, results } = createGroupAppInbox(
             runtimeRepository,
             createPublisher(enqueueOutboxIfAbsent),
             1_000,
@@ -65,9 +59,12 @@ describe('state sync publish failure characterization', () => {
             groupId: 'room-1',
         };
 
-        const result = await processCreateGroup(appInbox, reader, groupRef.groupId);
-
-        expect(result.left).toBe('snapshot enqueue unavailable');
+        const entry = await processCreateGroup(
+            appInbox,
+            reader,
+            queue,
+            groupRef.groupId,
+        );
 
         const durableRepository = new GroupStateRepository(runtimeRepository);
         const durableSnapshot = await durableRepository.readSnapshot(groupRef);
@@ -83,26 +80,28 @@ describe('state sync publish failure characterization', () => {
         expect(enqueueOutboxIfAbsent.mock.calls[0]?.[0].payload.typeId).toBe(
             AppTopics.groupStateSnapshot,
         );
+        expect(entry.status).toBe(EntityStatus.RETRY);
+        expect(entry.dequeueAudit.attempts).toBe(1);
+        expect(await results.findByKey(entry.key)).toBeUndefined();
     });
 
-    it('app inbox commits client state and updates process cache before returning snapshot enqueue failure', async () => {
+    it('app inbox commits client state and updates process cache before retrying snapshot enqueue failure', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const enqueueOutboxIfAbsent = vi.fn(async () => {
             throw new Error('client snapshot enqueue unavailable');
         });
-        const { appInbox, reader } = createClientAppInbox(
+        const { appInbox, reader, queue, results } = createClientAppInbox(
             runtimeRepository,
             createPublisher(enqueueOutboxIfAbsent),
             2_000,
         );
 
-        const result = await processUpsertClientPrincipal(
+        const entry = await processUpsertClientPrincipal(
             appInbox,
             reader,
+            queue,
             'alice',
         );
-
-        expect(result.left).toBe('client snapshot enqueue unavailable');
 
         const principalRef = {
             ...SCOPE,
@@ -122,9 +121,12 @@ describe('state sync publish failure characterization', () => {
         expect(enqueueOutboxIfAbsent.mock.calls[0]?.[0].payload.typeId).toBe(
             AppTopics.clientStateSnapshot,
         );
+        expect(entry.status).toBe(EntityStatus.RETRY);
+        expect(entry.dequeueAudit.attempts).toBe(1);
+        expect(await results.findByKey(entry.key)).toBeUndefined();
     });
 
-    it('app inbox can enqueue a group snapshot before returning a later group event enqueue failure', async () => {
+    it('app inbox can enqueue a group snapshot before retrying a later group event enqueue failure', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const enqueuedMessages: ALMessage[] = [];
         const enqueueOutboxIfAbsent = vi.fn(async (message: ALMessage) => {
@@ -138,7 +140,7 @@ describe('state sync publish failure characterization', () => {
                 entries: [],
             };
         });
-        const { appInbox, reader } = createGroupAppInbox(
+        const { appInbox, reader, queue, results } = createGroupAppInbox(
             runtimeRepository,
             createPublisher(enqueueOutboxIfAbsent),
             3_000,
@@ -148,9 +150,12 @@ describe('state sync publish failure characterization', () => {
             groupId: 'room-2',
         };
 
-        const result = await processCreateGroup(appInbox, reader, groupRef.groupId);
-
-        expect(result.left).toBe('event enqueue unavailable');
+        const entry = await processCreateGroup(
+            appInbox,
+            reader,
+            queue,
+            groupRef.groupId,
+        );
 
         expect(enqueuedMessages.map((message) => message.payload.typeId)).toEqual([
             AppTopics.groupStateSnapshot,
@@ -160,6 +165,9 @@ describe('state sync publish failure characterization', () => {
             await new GroupStateRepository(runtimeRepository).readSnapshot(groupRef),
         ).toBeDefined();
         expect(findGroupStateSnapshotByRef(groupRef)).toBeDefined();
+        expect(entry.status).toBe(EntityStatus.RETRY);
+        expect(entry.dequeueAudit.attempts).toBe(1);
+        expect(await results.findByKey(entry.key)).toBeUndefined();
     });
 });
 
@@ -204,13 +212,16 @@ function createGroupAppInbox(
 ): Readonly<{
     appInbox: AppGroupInboxService;
     reader: InboxQueueReader;
+    queue: TestResourceInbox;
+    results: TestResourceInboxResults;
 }> {
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
+    const results = new TestResourceInboxResults();
     const appInbox = new AppGroupInboxService(
         reader,
         queue as never,
-        new TestResourceInboxResults() as never,
+        results as never,
         createGroupStateService({
             runtimeRepository,
             syncPublisher: publisher,
@@ -224,6 +235,8 @@ function createGroupAppInbox(
     return {
         appInbox,
         reader,
+        queue,
+        results,
     };
 }
 
@@ -234,13 +247,16 @@ function createClientAppInbox(
 ): Readonly<{
     appInbox: AppClientInboxService;
     reader: InboxQueueReader;
+    queue: TestResourceInbox;
+    results: TestResourceInboxResults;
 }> {
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
+    const results = new TestResourceInboxResults();
     const appInbox = new AppClientInboxService(
         reader,
         queue as never,
-        new TestResourceInboxResults() as never,
+        results as never,
         createClientStateService({
             runtimeRepository,
             syncPublisher: publisher,
@@ -254,19 +270,19 @@ function createClientAppInbox(
     return {
         appInbox,
         reader,
+        queue,
+        results,
     };
 }
 
 async function processCreateGroup(
     appInbox: AppGroupInboxService,
     reader: InboxQueueReader,
+    queue: InMemoryQueueBox,
     groupId: string,
-) {
+): Promise<ResourceEntry> {
     const requestId = `create-${groupId}`;
-    const resultPromise = appInbox.processEntryUntilCompletion<
-        GroupCreateAppInboxPayload,
-        GroupStateWritten
-    >({
+    appInbox.processEntryNoWaiting<GroupCreateAppInboxPayload>({
         type: AppInboxType.GROUP_CREATE,
         resourceId: requestId,
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
@@ -284,24 +300,28 @@ async function processCreateGroup(
         },
     });
 
+    await waitForQueueEntry(queue);
     await reader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
         createResilience(),
     );
 
-    return await resultPromise;
+    const entry = readOnlyEntry(queue);
+    if (!entry) {
+        throw new Error('Expected app inbox entry to remain in queue');
+    }
+
+    return entry;
 }
 
 async function processUpsertClientPrincipal(
     appInbox: AppClientInboxService,
     reader: InboxQueueReader,
+    queue: InMemoryQueueBox,
     principalId: string,
-) {
+): Promise<ResourceEntry> {
     const requestId = `upsert-client-${principalId}`;
-    const resultPromise = appInbox.processEntryUntilCompletion<
-        ClientPrincipalUpsertAppInboxPayload,
-        ClientStateWritten
-    >({
+    appInbox.processEntryNoWaiting<ClientPrincipalUpsertAppInboxPayload>({
         type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
         resourceId: requestId,
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${principalId}`,
@@ -318,12 +338,18 @@ async function processUpsertClientPrincipal(
         },
     });
 
+    await waitForQueueEntry(queue);
     await reader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
         createResilience(),
     );
 
-    return await resultPromise;
+    const entry = readOnlyEntry(queue);
+    if (!entry) {
+        throw new Error('Expected app inbox entry to remain in queue');
+    }
+
+    return entry;
 }
 
 function createResilience(): ResilienceDto {
@@ -346,4 +372,26 @@ function createPublisher(
             serverId: 'test-server',
         },
     );
+}
+
+async function waitForQueueEntry(queue: InMemoryQueueBox): Promise<void> {
+    for (let i = 0; i < 20; i += 1) {
+        if (readOnlyEntry(queue)) {
+            return;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    throw new Error('Expected app inbox entry to be enqueued');
+}
+
+function readOnlyEntry(queue: InMemoryQueueBox): ResourceEntry | undefined {
+    const data = (
+        queue as unknown as {
+            data: Map<string, ResourceEntry>;
+        }
+    ).data;
+
+    return data.values().next().value;
 }

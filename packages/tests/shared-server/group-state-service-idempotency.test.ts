@@ -341,7 +341,7 @@ describe("GroupStateService command idempotency", () => {
     expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
   });
 
-  it("publishes disconnects triggered by websocket session cleanup", async () => {
+  it("returns disconnects triggered by websocket session cleanup without publishing directly", async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
     await seedGroup(runtimeRepository, "room-7");
     await seedPresenceSession(runtimeRepository, "room-7");
@@ -354,19 +354,51 @@ describe("GroupStateService command idempotency", () => {
       serviceId: "group-service",
     });
 
+    const snapshots = await service.disconnectPresenceSessionsBySessionId("session-1", {
+      reason: "closed",
+      actorPrincipalId: "alice",
+      actorSessionId: "session-1",
+    });
+
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0].activeSessions).toHaveLength(0);
+    expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
+    expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
+  });
+
+  it("returns written disconnect results for websocket session cleanup", async () => {
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    await seedGroup(runtimeRepository, "room-8");
+    await seedPresenceSession(runtimeRepository, "room-8");
+
+    const publisher = createPublisher();
+    const service = createGroupStateService({
+      runtimeRepository,
+      syncPublisher: publisher,
+      now: () => 5_000,
+      serviceId: "group-service",
+    });
+
     await expect(
-      service.disconnectPresenceSessionsBySessionId("session-1", {
+      service.disconnectPresenceSessionsBySessionIdWritten("session-1", {
         reason: "closed",
         actorPrincipalId: "alice",
         actorSessionId: "session-1",
       }),
-    ).resolves.toHaveLength(1);
+    ).resolves.toMatchObject([
+      {
+        result: {
+          right: {
+            event: {
+              eventType: "session-disconnected",
+            },
+          },
+        },
+      },
+    ]);
 
-    expect(publisher.publishGroupSnapshot).toHaveBeenCalledTimes(1);
-    expect(publisher.publishGroupEvent).toHaveBeenCalledTimes(1);
-    expect(
-      vi.mocked(publisher.publishGroupEvent).mock.calls[0]?.[0].eventType,
-    ).toBe("session-disconnected");
+    expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
+    expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
   });
 });
 

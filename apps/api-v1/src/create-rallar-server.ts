@@ -25,8 +25,6 @@ import {
     initWsLifecycle as initSharedWsLifecycle,
 } from '@shared-server/rallar-system/services/ws-lifecycle-service.ts';
 import { sql } from './db/db.ts';
-import { getClientStateService } from './services/client-state-service.ts';
-import { getGroupStateService } from './services/group-state-service.ts';
 
 export { RallarServerDataFacade, RallarServerSystemFacade };
 
@@ -64,14 +62,27 @@ export function createRallarServer(
             installWebSocketLifecycle: (runtime) => {
                 initSharedWsLifecycle(runtime.wsQBoxServerService, {
                     disconnectClientSession: async (sessionId) => {
-                        const clientStateWritten = await getClientStateService()
-                            .disconnectAuthorisedWsClientSession(sessionId);
-                        await getMiddleware().appClientInboxService.publishClientStateWritten(
-                            clientStateWritten,
+                        const result = await getMiddleware()
+                            .appClientInboxService
+                            .processAuthorisedWsClientDisconnect(sessionId);
+                        result.fold(
+                            (error) => {
+                                throw new Error(error);
+                            },
+                            () => undefined,
                         );
                     },
-                    disconnectGroupSessionsBySessionId: async (sessionId, request) =>
-                        await getGroupStateService().disconnectPresenceSessionsBySessionId(sessionId, request),
+                    disconnectGroupSessionsBySessionId: async (sessionId, request) => {
+                        const result = await getMiddleware()
+                            .appGroupInboxService
+                            .processPresenceDisconnectsBySessionId(sessionId, request);
+                        result.fold(
+                            (error) => {
+                                throw new Error(error);
+                            },
+                            () => undefined,
+                        );
+                    },
                 });
             },
         },

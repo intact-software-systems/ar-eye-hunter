@@ -28,6 +28,7 @@ import type { RuntimeStateTransactionalRepositoryLike } from '../../runtime-stat
 import type { StateSyncPublisher } from '../state-sync-publisher.ts';
 import { arrayEquals, isDefined, jsonEquals, } from '@shared/repository/state-utils.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 
 const DEFAULT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -448,7 +449,7 @@ export function createClientStateService(
 
                 const principal = await repository.findPrincipal(principalRef);
                 if (!principal) {
-                    throw new Error(`Client principal not found: ${principalId}`);
+                    throw new NonRetryableException(`Client principal not found: ${principalId}`);
                 }
 
                 const existing = await repository.findSession({
@@ -458,7 +459,7 @@ export function createClientStateService(
                     sessionId,
                 });
                 if (!existing) {
-                    throw new Error(`Client session not found: ${sessionId}`);
+                    throw new NonRetryableException(`Client session not found: ${sessionId}`);
                 }
 
                 const heartbeatTimestamp = request.lastHeartbeatAtEpochMs ?? now();
@@ -550,7 +551,7 @@ export function createClientStateService(
 
                 const principal = await repository.findPrincipal(principalRef);
                 if (!principal) {
-                    throw new Error(`Client principal not found: ${principalId}`);
+                    throw new NonRetryableException(`Client principal not found: ${principalId}`);
                 }
 
                 const existing = await repository.findSession({
@@ -560,7 +561,7 @@ export function createClientStateService(
                     sessionId,
                 });
                 if (!existing) {
-                    throw new Error(`Client session not found: ${sessionId}`);
+                    throw new NonRetryableException(`Client session not found: ${sessionId}`);
                 }
 
                 const disconnectedAtEpochMs = request.disconnectedAtEpochMs ?? now();
@@ -763,7 +764,7 @@ export function createClientStateService(
         ) => {
             const authSessionRepository = dependencies.authSessionRepository;
             if (!authSessionRepository) {
-                throw new Error(
+                throw new NonRetryableException(
                     'Auth session repository required to disconnect authorised websocket clients',
                 );
             }
@@ -771,7 +772,7 @@ export function createClientStateService(
             const issuedSession =
                 await authSessionRepository.findBySessionId(sessionId);
             if (!issuedSession) {
-                throw new Error(`Client not authorised: ${sessionId}`);
+                throw new NonRetryableException(`Client not authorised: ${sessionId}`);
             }
 
             const scope: StateScope = {

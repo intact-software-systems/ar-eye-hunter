@@ -5,6 +5,7 @@ import {
     ResourceEntry,
     toResourceEntryWithUpdatedResource,
 } from '@shared/queuebox/ResourceEntry.ts';
+import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { TryWithPolicy, tryWithPolicy } from '@shared/resilience/TryWith.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
@@ -22,13 +23,18 @@ export enum AppInboxType {
     CLIENT_SESSION_CONNECT = 'CLIENT_SESSION_CONNECT',
     CLIENT_SESSION_HEARTBEAT = 'CLIENT_SESSION_HEARTBEAT',
     CLIENT_SESSION_DISCONNECT = 'CLIENT_SESSION_DISCONNECT',
+    CLIENT_AUTHORISED_WS_CONNECT = 'CLIENT_AUTHORISED_WS_CONNECT',
+    CLIENT_AUTHORISED_WS_DISCONNECT = 'CLIENT_AUTHORISED_WS_DISCONNECT',
     GROUP_CREATE = 'GROUP_CREATE',
     GROUP_UPDATE = 'GROUP_UPDATE',
     GROUP_MEMBER_UPSERT = 'GROUP_MEMBER_UPSERT',
     GROUP_PRESENCE_CONNECT = 'GROUP_PRESENCE_CONNECT',
     GROUP_PRESENCE_HEARTBEAT = 'GROUP_PRESENCE_HEARTBEAT',
     GROUP_PRESENCE_DISCONNECT = 'GROUP_PRESENCE_DISCONNECT',
+    GROUP_PRESENCE_DISCONNECT_BY_SESSION_ID = 'GROUP_PRESENCE_DISCONNECT_BY_SESSION_ID',
 }
+
+export { NonRetryableException };
 
 export type AppInboxEnqueueInput<V> = {
     type: AppInboxType;
@@ -133,7 +139,10 @@ export class AppInboxService {
                     const result = await handler(enqueue.data);
                     await this.writeAppInboxResult(entry, EntityStatus.COMPLETED, result);
                 } catch (error) {
-                    // TODO: Only FAILED if it is a non-retryable error
+                    if (!(error instanceof NonRetryableException)) {
+                        throw error;
+                    }
+
                     await this.writeAppInboxResult(
                         entry,
                         EntityStatus.FAILED,

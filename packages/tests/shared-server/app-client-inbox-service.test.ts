@@ -1,9 +1,13 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it, vi } from 'vitest';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import {
+    NonRetryableException,
+    ResilienceDto,
+} from '@shared/queuebox/DequeueResourceEntryController.ts';
 import {
     EntityStatus,
     isExpiredResourceEntry,
@@ -251,7 +255,71 @@ describe('AppClientInboxService', () => {
         );
     });
 
-    it('returns a left result when a client inbox mutation handler fails', async () => {
+    it('processes authorised websocket lifecycle mutations through the inbox', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const publisher = createPublisher();
+        const authSession: AuthSession = {
+            clientId: 'alice',
+            username: 'alice',
+            accessToken: 'secret-token',
+            sessionId: 'alice-ws-session',
+            expiresAtEpochMs: Date.now() + 60_000,
+        };
+        const service = new AppClientInboxService(
+            reader,
+            queue as never,
+            results as never,
+            createClientStateService({
+                runtimeRepository: new FakeRuntimeStateRepository(),
+                syncPublisher: publisher,
+                authSessionRepository: {
+                    findBySessionId: vi.fn(async (sessionId: string) =>
+                        sessionId === authSession.sessionId
+                            ? {
+                                ...authSession,
+                                issuedAtEpochMs: 1_000,
+                            }
+                            : undefined
+                    ),
+                } as never,
+                now: () => 2_000,
+                serviceId: 'server-12345678',
+            }),
+            publisher,
+            'server-12345678',
+        );
+
+        const connected = await processAppInboxMethod(reader, () =>
+            service.processAuthorisedWsClientConnect(authSession, {
+                expiresAtEpochMs: Date.now() + 60_000,
+                userAgent: 'Browser',
+            })
+        );
+        vi.mocked(publisher.publishClientSnapshot).mockClear();
+        vi.mocked(publisher.publishClientEvent).mockClear();
+        const disconnected = await processAppInboxMethod(reader, () =>
+            service.processAuthorisedWsClientDisconnect(
+                authSession.sessionId,
+                'socket-closed',
+            )
+        );
+
+        expect(requireRightSnapshot(connected).activeSessions).toHaveLength(1);
+        expect(requireRightSnapshot(connected).instances[0]).toMatchObject({
+            clientInstanceId: 'alice',
+            userAgent: 'Browser',
+        });
+        expect(requireRightSnapshot(disconnected).activeSessions).toHaveLength(0);
+        expect(requireRightWritten(disconnected).event?.eventType).toBe(
+            'session-disconnected',
+        );
+        expect(publisher.publishClientSnapshot).toHaveBeenCalledTimes(1);
+        expect(publisher.publishClientEvent).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns a left result when a client inbox mutation handler fails with a non-retryable error', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
@@ -261,7 +329,9 @@ describe('AppClientInboxService', () => {
             results as never,
             createClientStateServiceStub({
                 upsertPrincipal: vi.fn(async () => {
-                    throw new Error('Client principal update failed');
+                    throw new NonRetryableException(
+                        'Client principal update failed',
+                    );
                 }),
             }),
             createPublisher(),
@@ -390,6 +460,19 @@ async function processAppInbox<V, R>(
     },
 ): Promise<Either<string, R>> {
     const resultPromise = service.processEntryUntilCompletion<V, R>(input);
+    await reader.dequeueInbox(
+        InboxQueueReader.INBOX_DEQUEUE_TYPES,
+        createResilience(),
+    );
+
+    return await resultPromise;
+}
+
+async function processAppInboxMethod<R>(
+    reader: InboxQueueReader,
+    run: () => Promise<R>,
+): Promise<R> {
+    const resultPromise = run();
     await reader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
         createResilience(),

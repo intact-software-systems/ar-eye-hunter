@@ -98,6 +98,12 @@ export async function createAndJoinStateGroup(
     policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue> = {},
 ): Promise<GroupStateSnapshot> {
     const groupId = crypto.randomUUID();
+    const createRequestId = toWorkflowRequestId('group-create', groupId);
+    const presenceRequestId = toWorkflowRequestId(
+        'group-presence-connect',
+        groupId,
+        sessionId,
+    );
     const flow = CommandsOrchestrator.withPolicies<
         GroupWorkflowKey,
         StateGroupWorkflowValue
@@ -116,6 +122,7 @@ export async function createAndJoinStateGroup(
                         createdByPrincipalId: principalId,
                         actorPrincipalId: principalId,
                         actorSessionId: sessionId,
+                        requestId: createRequestId,
                         metadata: {},
                     },
                     scope,
@@ -129,6 +136,7 @@ export async function createAndJoinStateGroup(
                         principalId,
                         actorPrincipalId: principalId,
                         actorSessionId: sessionId,
+                        requestId: presenceRequestId,
                     },
                     scope,
                     { signal },
@@ -146,6 +154,16 @@ export async function joinStateGroup(
     scope: StateScope = defaultStateScope(),
     policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue> = {},
 ): Promise<GroupStateSnapshot> {
+    const memberRequestId = toWorkflowRequestId(
+        'group-member-upsert',
+        groupId,
+        principalId,
+    );
+    const presenceRequestId = toWorkflowRequestId(
+        'group-presence-connect',
+        groupId,
+        sessionId,
+    );
     const flow = CommandsOrchestrator.withPolicies<
         GroupWorkflowKey,
         StateGroupWorkflowValue
@@ -161,6 +179,7 @@ export async function joinStateGroup(
                         status: 'active',
                         actorPrincipalId: principalId,
                         actorSessionId: sessionId,
+                        requestId: memberRequestId,
                     },
                     scope,
                     { signal },
@@ -173,6 +192,7 @@ export async function joinStateGroup(
                         principalId,
                         actorPrincipalId: principalId,
                         actorSessionId: sessionId,
+                        requestId: presenceRequestId,
                     },
                     scope,
                     { signal },
@@ -190,6 +210,16 @@ export async function leaveStateGroup(
     scope: StateScope = defaultStateScope(),
     policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue> = {},
 ): Promise<GroupStateSnapshot> {
+    const disconnectRequestId = toWorkflowRequestId(
+        'group-presence-disconnect',
+        groupId,
+        sessionId,
+    );
+    const memberRequestId = toWorkflowRequestId(
+        'group-member-upsert',
+        groupId,
+        principalId,
+    );
     const flow = CommandsOrchestrator.withPolicies<
         GroupWorkflowKey,
         StateGroupWorkflowValue
@@ -208,6 +238,7 @@ export async function leaveStateGroup(
                             actorPrincipalId: principalId,
                             actorSessionId: sessionId,
                             reason: 'left-group',
+                            requestId: disconnectRequestId,
                         },
                         scope,
                         { signal },
@@ -226,6 +257,7 @@ export async function leaveStateGroup(
                         actorPrincipalId: principalId,
                         actorSessionId: sessionId,
                         reason: 'left-group',
+                        requestId: memberRequestId,
                     },
                     scope,
                     { signal },
@@ -245,6 +277,11 @@ export async function refreshStateHeartbeat(
     const heartbeatAtEpochMs = options.heartbeatAtEpochMs ?? Date.now();
     const expiresAtEpochMs = heartbeatAtEpochMs +
         (options.ttlMs ?? DEFAULT_STATE_HEARTBEAT_TTL_MSECS);
+    const clientHeartbeatRequestId = toWorkflowRequestId(
+        'client-session-heartbeat',
+        clientData.clientId,
+        clientData.sessionId,
+    );
     const flow = CommandsOrchestrator.withPolicies<
         StateHeartbeatKey,
         StateHeartbeatWorkflowValue
@@ -263,14 +300,21 @@ export async function refreshStateHeartbeat(
                         presenceState: 'online',
                         lastHeartbeatAtEpochMs: heartbeatAtEpochMs,
                         expiresAtEpochMs,
+                        requestId: clientHeartbeatRequestId,
                     },
                     scope,
                     { signal },
                 )),
         )
         .parallel(
-            ...joinedGroups.map((snapshot) =>
-                flow.commandStep(
+            ...joinedGroups.map((snapshot) => {
+                const groupHeartbeatRequestId = toWorkflowRequestId(
+                    'group-presence-heartbeat',
+                    snapshot.group.groupId,
+                    clientData.sessionId,
+                );
+
+                return flow.commandStep(
                     `group:${snapshot.group.groupId}`,
                     (signal) =>
                         heartbeatStateGroupPresenceSession(
@@ -282,6 +326,7 @@ export async function refreshStateHeartbeat(
                                 actorSessionId: clientData.sessionId,
                                 lastHeartbeatAtEpochMs: heartbeatAtEpochMs,
                                 expiresAtEpochMs,
+                                requestId: groupHeartbeatRequestId,
                             },
                             scope,
                             { signal },
@@ -290,8 +335,8 @@ export async function refreshStateHeartbeat(
                         errorOnNull: false,
                         fallback: (error) => tolerateNotFound(error, undefined),
                     },
-                )
-            ),
+                );
+            }),
         )
         .run();
 
@@ -344,4 +389,11 @@ function toSlug(displayName: string): string {
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '');
+}
+
+function toWorkflowRequestId(
+    operation: string,
+    ...parts: readonly string[]
+): string {
+    return [operation, ...parts, crypto.randomUUID()].join(':');
 }

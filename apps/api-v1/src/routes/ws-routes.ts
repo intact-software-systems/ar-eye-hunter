@@ -2,7 +2,6 @@ import { Hono } from 'jsr:@hono/hono';
 import { getMiddleware } from '../middleware.ts';
 import { requireWsAuthSession, toAuthErrorResponse } from '../services/request-auth-service.ts';
 import { ConnectionContext } from '@shared/websocket/JsonWebSocketServer.ts';
-import { getClientStateService } from '../services/client-state-service.ts';
 
 export function init(app: Hono): void {
     app.get(
@@ -27,14 +26,18 @@ export function init(app: Hono): void {
                     new ConnectionContext(authSession.sessionId, socket),
                 );
 
-                const clientStateWritten = await getClientStateService().registerAuthorisedWsClientSession(
-                    authSession,
-                    {
-                        userAgent: c.req.header('user-agent'),
+                const clientStateWritten =
+                    await getMiddleware().appClientInboxService.processAuthorisedWsClientConnect(
+                        authSession,
+                        {
+                            userAgent: c.req.header('user-agent'),
+                        },
+                    );
+                clientStateWritten.fold(
+                    (error) => {
+                        throw new Error(error);
                     },
-                );
-                await getMiddleware().appClientInboxService.publishClientStateWritten(
-                    clientStateWritten,
+                    () => undefined,
                 );
 
                 console.log(`Upgrading connection for ID: ${sessionId}`);
