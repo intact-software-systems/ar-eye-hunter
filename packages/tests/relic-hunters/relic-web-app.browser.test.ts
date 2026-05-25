@@ -44,6 +44,22 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
         connect: async () => {
             rallarMock.connectCalls += 1;
         },
+        start: async () => {
+            rallarMock.connectCalls += 1;
+            return {
+                session: rallarMock.session,
+                connected: !!rallarMock.session,
+                roomState: rallarMock.roomState,
+            };
+        },
+        subscriptions: () => {
+            const scope = {
+                add: () => scope,
+                unsubscribe: () => undefined,
+                size: () => 0,
+            };
+            return scope;
+        },
         rooms: {
             refresh: async () => {
                 rallarMock.refreshCalls += 1;
@@ -276,12 +292,12 @@ describe('Relic Hunters browser app', () => {
         await renderApp();
         await waitFor(() =>
             fetchMock.mock.calls.length >= 2 &&
-            container.textContent?.includes('Round 2') === true,
+            container.textContent?.includes('Plans revealed') === true,
         );
 
         expect(container.textContent).not.toContain('Resolve Timed-Out Round');
         expect(container.textContent).not.toContain('1 timed-out hunter.');
-        expect(container.textContent).toContain('Round 2');
+        expect(container.textContent).toContain('Round 1 Review');
     });
 
     it('summarizes current-room occupants, readiness, and steal pressure', () => {

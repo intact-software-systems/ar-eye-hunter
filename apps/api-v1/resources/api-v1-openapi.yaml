@@ -290,6 +290,32 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/events/page:
+    get:
+      tags: [ Client State ]
+      summary: List a cursor page of client events
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/EventType'
+        - $ref: '#/components/parameters/EventLimit'
+        - $ref: '#/components/parameters/AfterSnapshotVersion'
+        - $ref: '#/components/parameters/AfterOccurredAtEpochMs'
+        - $ref: '#/components/parameters/AfterEventId'
+      responses:
+        '200':
+          description: Cursor page of client events for the principal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientEventPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/principal:
     put:
       tags: [ Client State ]
@@ -579,6 +605,32 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events/page:
+    get:
+      tags: [ Group State ]
+      summary: List a cursor page of group events
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/EventType'
+        - $ref: '#/components/parameters/EventLimit'
+        - $ref: '#/components/parameters/AfterSnapshotVersion'
+        - $ref: '#/components/parameters/AfterOccurredAtEpochMs'
+        - $ref: '#/components/parameters/AfterEventId'
+      responses:
+        '200':
+          description: Cursor page of group events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupEventPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}:
     put:
       tags: [ Group State ]
@@ -855,6 +907,50 @@ components:
       required: true
       schema:
         type: string
+    EventType:
+      name: eventType
+      in: query
+      required: false
+      description: Event type filter. Repeat the query parameter for multiple event types.
+      schema:
+        type: array
+        items:
+          type: string
+      style: form
+      explode: true
+    EventLimit:
+      name: limit
+      in: query
+      required: false
+      description: Maximum number of events to return.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+        default: 100
+    AfterSnapshotVersion:
+      name: afterSnapshotVersion
+      in: query
+      required: false
+      description: Cursor aggregate snapshot version.
+      schema:
+        type: integer
+        format: int64
+    AfterOccurredAtEpochMs:
+      name: afterOccurredAtEpochMs
+      in: query
+      required: false
+      description: Cursor event timestamp.
+      schema:
+        type: integer
+        format: int64
+    AfterEventId:
+      name: afterEventId
+      in: query
+      required: false
+      description: Cursor event identifier.
+      schema:
+        type: string
 
   responses:
     BadRequest:
@@ -1063,6 +1159,7 @@ components:
         - status
         - roles
         - metadata
+        - snapshotVersion
         - profileVersion
         - presenceVersion
         - created
@@ -1094,6 +1191,9 @@ components:
         metadata:
           type: object
           additionalProperties: true
+        snapshotVersion:
+          type: integer
+          format: int64
         profileVersion:
           type: integer
           format: int64
@@ -1280,6 +1380,7 @@ components:
         - principalId
         - eventId
         - eventType
+        - snapshotVersion
         - occurredAtEpochMs
         - actor
       properties:
@@ -1306,6 +1407,9 @@ components:
             - session-heartbeat
             - session-disconnected
             - session-expired
+        snapshotVersion:
+          type: integer
+          format: int64
         clientInstanceId:
           type: string
         sessionId:
@@ -1325,6 +1429,37 @@ components:
           type: object
           additionalProperties: true
 
+    StateEventCursor:
+      type: object
+      required:
+        - snapshotVersion
+        - occurredAtEpochMs
+        - eventId
+      properties:
+        snapshotVersion:
+          type: integer
+          format: int64
+        occurredAtEpochMs:
+          type: integer
+          format: int64
+        eventId:
+          type: string
+
+    ClientEventPage:
+      type: object
+      required:
+        - events
+        - hasMore
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClientEvent'
+        nextCursor:
+          $ref: '#/components/schemas/StateEventCursor'
+        hasMore:
+          type: boolean
+
     Group:
       type: object
       required:
@@ -1336,6 +1471,7 @@ components:
         - status
         - joinMode
         - metadata
+        - snapshotVersion
         - metadataVersion
         - rosterVersion
         - presenceVersion
@@ -1372,6 +1508,9 @@ components:
         metadata:
           type: object
           additionalProperties: true
+        snapshotVersion:
+          type: integer
+          format: int64
         metadataVersion:
           type: integer
           format: int64
@@ -1507,6 +1646,7 @@ components:
         - groupId
         - eventId
         - eventType
+        - snapshotVersion
         - occurredAtEpochMs
         - actor
       properties:
@@ -1533,6 +1673,9 @@ components:
             - session-connected
             - session-heartbeat
             - session-disconnected
+        snapshotVersion:
+          type: integer
+          format: int64
         occurredAtEpochMs:
           type: integer
           format: int64
@@ -1547,6 +1690,21 @@ components:
         payload:
           type: object
           additionalProperties: true
+
+    GroupEventPage:
+      type: object
+      required:
+        - events
+        - hasMore
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupEvent'
+        nextCursor:
+          $ref: '#/components/schemas/StateEventCursor'
+        hasMore:
+          type: boolean
 
     UpsertClientPrincipalRequest:
       type: object

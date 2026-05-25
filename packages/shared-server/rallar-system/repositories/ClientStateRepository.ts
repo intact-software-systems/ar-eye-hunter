@@ -165,9 +165,7 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
             this.eventPrefix(ref),
         );
 
-        return [...events].sort(
-            (left, right) => left.occurredAtEpochMs - right.occurredAtEpochMs,
-        );
+        return [...events].sort(compareClientEventsForReplay);
     }
 
     async readPresenceSnapshot(
@@ -309,4 +307,13 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
             this.idKey('event', event.eventId),
         ].join(':');
     }
+}
+
+function compareClientEventsForReplay(
+    left: ClientEvent,
+    right: ClientEvent,
+): number {
+    return left.snapshotVersion - right.snapshotVersion ||
+        left.occurredAtEpochMs - right.occurredAtEpochMs ||
+        left.eventId.localeCompare(right.eventId);
 }

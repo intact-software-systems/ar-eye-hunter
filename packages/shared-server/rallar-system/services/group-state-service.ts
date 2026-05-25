@@ -870,6 +870,7 @@ function newGroupEvent(
         groupId: group.groupId,
         eventId: crypto.randomUUID(),
         eventType,
+        snapshotVersion: group.snapshotVersion,
         occurredAtEpochMs: timestamp,
         actor: {
             principalId: request.actorPrincipalId,

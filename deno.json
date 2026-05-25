@@ -10,5 +10,12 @@
   "imports": {
     "@shared/": "./packages/shared/",
     "@std/assert": "jsr:@std/assert@^1.0.18"
+  },
+  "compilerOptions": {
+    "strict": true,
+    "lib": [
+      "deno.ns",
+      "dom"
+    ]
   }
 }

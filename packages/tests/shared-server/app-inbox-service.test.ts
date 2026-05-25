@@ -840,6 +840,7 @@ function createGroupWritten(groupId: string): GroupWritten {
         groupId,
         eventId: 'event-1',
         eventType: 'group-created',
+        snapshotVersion: snapshot.group.snapshotVersion,
         occurredAtEpochMs: 1,
         requestId: 'create-group-request-1',
         actor: {

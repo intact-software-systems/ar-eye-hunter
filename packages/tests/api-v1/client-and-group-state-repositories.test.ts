@@ -235,6 +235,7 @@ function createClientEvent(eventId: string, occurredAtEpochMs: number): ClientEv
         eventType: 'session-connected',
         clientInstanceId: 'instance-a',
         sessionId: 'session-a',
+        snapshotVersion: occurredAtEpochMs,
         occurredAtEpochMs,
         actor: { serviceId: 'seed' },
     };
@@ -298,6 +299,7 @@ function createGroupEvent(eventId: string, occurredAtEpochMs: number): GroupEven
         groupId: 'group-1',
         eventId,
         eventType: 'session-connected',
+        snapshotVersion: occurredAtEpochMs,
         occurredAtEpochMs,
         actor: { serviceId: 'seed' },
     };

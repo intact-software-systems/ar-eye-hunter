@@ -155,9 +155,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
             this.eventPrefix(ref),
         );
 
-        return [...events].sort(
-            (left, right) => left.occurredAtEpochMs - right.occurredAtEpochMs,
-        );
+        return [...events].sort(compareGroupEventsForReplay);
     }
 
     async readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined> {
@@ -243,4 +241,10 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
             this.idKey('event', event.eventId),
         ].join(':');
     }
+}
+
+function compareGroupEventsForReplay(left: GroupEvent, right: GroupEvent): number {
+    return left.snapshotVersion - right.snapshotVersion ||
+        left.occurredAtEpochMs - right.occurredAtEpochMs ||
+        left.eventId.localeCompare(right.eventId);
 }

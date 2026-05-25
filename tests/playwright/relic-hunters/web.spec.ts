@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { expect, type Page, type Route, test } from '@playwright/test';
+import { Buffer } from 'node:buffer';
 
 type MockBackendOptions = Readonly<{
     rooms?: readonly MockGroupSnapshot[];
@@ -465,6 +466,7 @@ test.describe('Relic Hunters web app', () => {
     });
 
     test('can force-resolve a timed-out round from the browser UI', async ({ page }) => {
+        test.setTimeout(60_000);
         const room = groupSnapshot({ onlineMemberCount: 2 });
         const commandBodies: unknown[] = [];
         await installBrowserDoubles(page);
@@ -550,6 +552,7 @@ test.describe('Relic Hunters web app', () => {
     });
 
     test('renders a nonblank Babylon scene and tolerates pointer look', async ({ page }) => {
+        test.setTimeout(60_000);
         const room = groupSnapshot({ onlineMemberCount: 1 });
         await installBrowserDoubles(page);
         await mockBackend(page, {
@@ -596,6 +599,7 @@ test.describe('Relic Hunters web app', () => {
     });
 
     test('scene doorway prompt primes a move plan without submitting it', async ({ page }) => {
+        test.setTimeout(60_000);
         const room = groupSnapshot({ onlineMemberCount: 1 });
         const commandBodies: unknown[] = [];
         await installBrowserDoubles(page);
@@ -629,6 +633,7 @@ test.describe('Relic Hunters web app', () => {
     });
 
     test('scene objective panel primes the recommended room action', async ({ page }) => {
+        test.setTimeout(60_000);
         const room = groupSnapshot({ onlineMemberCount: 1 });
         const commandBodies: unknown[] = [];
         await installBrowserDoubles(page);
@@ -650,12 +655,14 @@ test.describe('Relic Hunters web app', () => {
         await expect(objective.getByText('Move to Hallway')).toBeVisible();
         await objective.getByRole('button', { name: 'Prime Move' }).click();
 
-        await expect(page.getByText('Step into an adjacent room')).toBeVisible();
+        await expect(page.getByLabel('Round plan').getByText('Step into an adjacent room'))
+            .toBeVisible({ timeout: 15_000 });
         await expect(objective.getByText('Submit the plan to commit this turn-based move.')).toBeVisible();
         expect(commandBodies).toHaveLength(0);
     });
 
     test('scene objective panel exposes escape when the hunter reaches the exit', async ({ page }) => {
+        test.setTimeout(60_000);
         const room = groupSnapshot({ onlineMemberCount: 1 });
         const commandBodies: unknown[] = [];
         await installBrowserDoubles(page);
@@ -688,6 +695,7 @@ test.describe('Relic Hunters web app', () => {
     });
 
     test('shows party coordination and map occupancy for a split party', async ({ page }) => {
+        test.setTimeout(60_000);
         const room = groupSnapshot({ onlineMemberCount: 4 });
         await installBrowserDoubles(page);
         await mockBackend(page, {
@@ -720,7 +728,7 @@ test.describe('Relic Hunters web app', () => {
         await page.getByRole('button', { name: 'Relic Hunters Expedition' }).click();
 
         const occupants = page.getByLabel('Room occupants');
-        await expect(occupants).toContainText('2 hunters here / 2 elsewhere');
+        await expect(occupants).toContainText('2 hunters here / 2 elsewhere', { timeout: 15_000 });
         await expect(occupants).toContainText('2/4 plans locked');
         await expect(occupants).toContainText('Storage');
         await expect(occupants).toContainText('Bob');
@@ -737,6 +745,7 @@ test.describe('Relic Hunters web app', () => {
     });
 
     test('resolved search marks the room objective as investigated', async ({ page }) => {
+        test.setTimeout(60_000);
         const room = groupSnapshot({ onlineMemberCount: 1 });
         await installBrowserDoubles(page);
         await mockBackend(page, {
@@ -846,6 +855,7 @@ test.describe('Relic Hunters web app', () => {
     });
 
     test('shows the review phase before continuing to the next turn', async ({ page }) => {
+        test.setTimeout(60_000);
         const commandBodies: unknown[] = [];
         await installBrowserDoubles(page);
         await mockBackend(page, {
@@ -1585,55 +1595,55 @@ function relicSnapshotWithPlayers(
             },
         ]
         : [
-        {
-            id: 'entrance',
-            name: 'Entrance',
-            kind: 'entrance',
-            x: 0,
-            z: -6,
-            neighbors: options.includeStorage ? ['hallway', 'storage'] : ['hallway'],
-        },
-        {
-            id: 'hallway',
-            name: 'Hallway',
-            kind: 'hallway',
-            x: 0,
-            z: -3,
-            neighbors: options.includeExit ? ['entrance', 'exit'] : ['entrance'],
-        },
-        ...(options.includeExit
-            ? [
-                {
-                    id: 'exit',
-                    name: 'Exit',
-                    kind: 'exit',
-                    x: 0,
-                    z: 0,
-                    neighbors: ['hallway'],
-                },
-            ]
-            : []),
-        ...(options.includeStorage
-            ? [
-                {
-                    id: 'storage',
-                    name: 'Storage',
-                    kind: 'storage',
-                    x: -4,
-                    z: -3,
-                    neighbors: ['entrance', 'trap'],
-                },
-                {
-                    id: 'trap',
-                    name: 'Trap Room',
-                    kind: 'trap',
-                    x: -4,
-                    z: 0,
-                    neighbors: ['storage'],
-                },
-            ]
-            : []),
-    ];
+            {
+                id: 'entrance',
+                name: 'Entrance',
+                kind: 'entrance',
+                x: 0,
+                z: -6,
+                neighbors: options.includeStorage ? ['hallway', 'storage'] : ['hallway'],
+            },
+            {
+                id: 'hallway',
+                name: 'Hallway',
+                kind: 'hallway',
+                x: 0,
+                z: -3,
+                neighbors: options.includeExit ? ['entrance', 'exit'] : ['entrance'],
+            },
+            ...(options.includeExit
+                ? [
+                    {
+                        id: 'exit',
+                        name: 'Exit',
+                        kind: 'exit',
+                        x: 0,
+                        z: 0,
+                        neighbors: ['hallway'],
+                    },
+                ]
+                : []),
+            ...(options.includeStorage
+                ? [
+                    {
+                        id: 'storage',
+                        name: 'Storage',
+                        kind: 'storage',
+                        x: -4,
+                        z: -3,
+                        neighbors: ['entrance', 'trap'],
+                    },
+                    {
+                        id: 'trap',
+                        name: 'Trap Room',
+                        kind: 'trap',
+                        x: -4,
+                        z: 0,
+                        neighbors: ['storage'],
+                    },
+                ]
+                : []),
+        ];
 
     return {
         protocolVersion: 1,

@@ -1,8 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClientInfo } from '@shared/api/api-config.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
+import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
+import {
+    listStateClientEventPage,
+    listStateClientEvents,
+    listStateGroupEventPage,
+    listStateGroupEvents,
+} from '@shared-web/browser/api-integration.ts';
 import {
     createAndJoinStateGroup,
     joinStateGroup,
@@ -83,6 +89,116 @@ describe('state API workflows', () => {
         expect(fetchCalls.map((call) => call.url)).toEqual([
             'https://api.example.test/api/state/apps/ar-eye-hunter/workspaces/default/clients',
             'https://api.example.test/api/state/apps/ar-eye-hunter/workspaces/default/groups',
+        ]);
+    });
+
+    it('lists state events with entity encoding and query filters', async () => {
+        const groupEvents = [groupEvent('group-event-1', 'member-joined')];
+        const clientEvents = [clientEvent('client-event-1', 'session-connected')];
+        const scope = {
+            applicationId: 'app 1',
+            workspaceId: 'workspace/1',
+        };
+        stubFetch(({ url, method }) => {
+            if (method === 'GET' && url.includes('/groups/room%20%2F1/events')) {
+                return jsonResponse(groupEvents);
+            }
+
+            if (
+                method === 'GET' &&
+                url.includes('/clients/alice%40example.test/events')
+            ) {
+                return jsonResponse(clientEvents);
+            }
+
+            return notFoundResponse();
+        });
+
+        await expect(
+            listStateGroupEvents('room /1', scope, {
+                eventTypes: ['member-joined', 'member-left'],
+                limit: 10,
+            }),
+        ).resolves.toEqual(groupEvents);
+        await expect(
+            listStateClientEvents('alice@example.test', scope, {
+                eventTypes: ['session-connected'],
+                limit: 5,
+            }),
+        ).resolves.toEqual(clientEvents);
+
+        expect(fetchCalls.map((call) => call.url)).toEqual([
+            '/api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/events?eventType=member-joined&eventType=member-left&limit=10',
+            '/api/state/apps/app%201/workspaces/workspace%2F1/clients/alice%40example.test/events?eventType=session-connected&limit=5',
+        ]);
+    });
+
+    it('lists state event pages with cursor query filters', async () => {
+        const groupEvents = [groupEvent('group-event-2', 'member-left')];
+        const clientEvents = [clientEvent('client-event-2', 'session-disconnected')];
+        const groupPage = {
+            events: groupEvents,
+            nextCursor: {
+                snapshotVersion: 2,
+                occurredAtEpochMs: 2_000,
+                eventId: 'group-event-2',
+            },
+            hasMore: false,
+        };
+        const clientPage = {
+            events: clientEvents,
+            nextCursor: {
+                snapshotVersion: 3,
+                occurredAtEpochMs: 3_000,
+                eventId: 'client-event-2',
+            },
+            hasMore: true,
+        };
+        const scope = {
+            applicationId: 'app 1',
+            workspaceId: 'workspace/1',
+        };
+        stubFetch(({ url, method }) => {
+            if (method === 'GET' && url.includes('/groups/room%20%2F1/events/page')) {
+                return jsonResponse(groupPage);
+            }
+
+            if (
+                method === 'GET' &&
+                url.includes('/clients/alice%40example.test/events/page')
+            ) {
+                return jsonResponse(clientPage);
+            }
+
+            return notFoundResponse();
+        });
+
+        await expect(
+            listStateGroupEventPage('room /1', scope, {
+                eventTypes: ['member-left'],
+                limit: 10,
+                after: {
+                    snapshotVersion: 1,
+                    occurredAtEpochMs: 1_000,
+                    eventId: 'group-event-1',
+                },
+            }),
+        ).resolves.toEqual(groupPage);
+        await expect(
+            listStateClientEventPage('alice@example.test', scope, {
+                eventTypes: ['session-disconnected'],
+                limit: 5,
+                after: {
+                    snapshotVersion: 2,
+                    occurredAtEpochMs: 2_000,
+                    eventId: 'client-event-1',
+                },
+            }),
+        ).resolves.toEqual(clientPage);
+
+        expect(fetchCalls.map((call) => call.url)).toEqual([
+            '/api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/events/page?eventType=member-left&limit=10&afterSnapshotVersion=1&afterOccurredAtEpochMs=1000&afterEventId=group-event-1',
+            '/api/state/apps/app%201/workspaces/workspace%2F1/clients/alice%40example.test/events/page?eventType=session-disconnected&limit=5&afterSnapshotVersion=2&afterOccurredAtEpochMs=2000&afterEventId=client-event-1',
         ]);
     });
 
@@ -520,6 +636,42 @@ function textResponse(body: string, status: number): Response {
 
 function notFoundResponse(): Response {
     return textResponse('not found', 404);
+}
+
+function clientEvent(
+    eventId: string,
+    eventType: ClientEvent['eventType'],
+): ClientEvent {
+    return {
+        applicationId: 'ar-eye-hunter',
+        workspaceId: 'default',
+        principalId: 'principal-1',
+        eventId,
+        eventType,
+        snapshotVersion: 1,
+        occurredAtEpochMs: 1,
+        actor: {
+            serviceId: 'test',
+        },
+    };
+}
+
+function groupEvent(
+    eventId: string,
+    eventType: GroupEvent['eventType'],
+): GroupEvent {
+    return {
+        applicationId: 'ar-eye-hunter',
+        workspaceId: 'default',
+        groupId: 'group-1',
+        eventId,
+        eventType,
+        snapshotVersion: 1,
+        occurredAtEpochMs: 1,
+        actor: {
+            serviceId: 'test',
+        },
+    };
 }
 
 function clientSnapshot(principalId: string): ClientSnapshot {

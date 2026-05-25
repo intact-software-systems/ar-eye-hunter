@@ -222,6 +222,99 @@ describe('browser data caches state scope filtering', () => {
 
         unsubscribe();
     });
+
+    it('uses snapshot hydration as convergence after state event details are missed', async () => {
+        const manager = createWebRtcGroupManager();
+        const clientData: ClientInfo = {
+            clientId: 'alice',
+            sessionId: 'session-a',
+            isOnline: true,
+        };
+        let onInboxMessage:
+            | ((message: unknown) => Promise<void>)
+            | undefined;
+        const webSocketQueueBox = {
+            onAllInboxMessagesDo: vi.fn((callback: {
+                onMessage: (message: unknown) => Promise<void>;
+            }) => {
+                onInboxMessage = callback.onMessage;
+                return webSocketQueueBox;
+            }),
+        };
+        const listener = vi.fn();
+        const unsubscribe = dataCaches.onStateCacheChange(listener);
+        const clientSnapshot = createClientSnapshot(
+            'alice',
+            'session-a',
+            'ar-eye-hunter',
+            'default',
+            2,
+        );
+        const groupSnapshot = createGroupSnapshot(
+            'room-a',
+            'ar-eye-hunter',
+            'default',
+            ['session-a'],
+            2,
+        );
+
+        dataCaches.initialise(
+            webSocketQueueBox as never,
+            manager,
+            clientData,
+        );
+
+        await onInboxMessage?.(
+            newALBroadcastMessage(
+                'server-1',
+                newALEventRoute(AppTopics.groupStateEvent, 'room-a', 'event-1'),
+                'all',
+                AppTopics.groupStateEvent,
+                createGroupEvent('room-a', 'event-1'),
+            ),
+        );
+        await onInboxMessage?.(
+            newALBroadcastMessage(
+                'server-1',
+                newALEventRoute(AppTopics.clientStateEvent, 'alice', 'event-2'),
+                'all',
+                AppTopics.clientStateEvent,
+                createClientEvent('alice', 'event-2'),
+            ),
+        );
+
+        expect(listener).not.toHaveBeenCalled();
+        expect(clientStateSnapshotsRepository.getAllClientStateSnapshots()).toEqual(
+            [],
+        );
+        expect(groupStateSnapshotsRepository.getAllGroupStateSnapshots()).toEqual(
+            [],
+        );
+
+        await dataCaches.hydrateStateCaches(
+            manager,
+            clientData,
+            [clientSnapshot],
+            [groupSnapshot],
+        );
+
+        expect(
+            clientStateSnapshotsRepository.getAllClientStateSnapshots(),
+        ).toEqual([clientSnapshot]);
+        expect(
+            groupStateSnapshotsRepository.getAllGroupStateSnapshots(),
+        ).toEqual([groupSnapshot]);
+        expect(listener).toHaveBeenCalledWith({
+            clients: [clientSnapshot],
+            groups: [],
+        });
+        expect(listener).toHaveBeenCalledWith({
+            clients: [],
+            groups: [groupSnapshot],
+        });
+
+        unsubscribe();
+    });
 });
 
 function createWebRtcGroupManager() {
@@ -347,6 +440,7 @@ function createGroupEvent(
         groupId,
         eventId,
         eventType: 'member-joined',
+        snapshotVersion: 1,
         occurredAtEpochMs: 1,
         actor: {
             principalId: 'alice',
@@ -366,6 +460,7 @@ function createClientEvent(
         principalId,
         eventId,
         eventType: 'session-connected',
+        snapshotVersion: 1,
         occurredAtEpochMs: 1,
         actor: {
             principalId,

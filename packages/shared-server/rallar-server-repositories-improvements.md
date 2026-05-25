@@ -700,22 +700,379 @@ Recommended hardening:
 
 ## 9. Built-In State Sync Uses Snapshot Broadcasts More Than Event Replay
 
+Status: 9.1 characterization, 9.2 minimal event-history reads, 9.3 versioned event identity, 9.4 cursor page
+reads, 9.5 explicit browser replay convenience, and 9.6 real browser/server proof implemented and locally verified.
+Do not implement a full replay protocol until a real application workflow requires durable event processing.
+
 Current behavior:
 
 - State mutations append durable events.
 - Browser state caches are hydrated and updated primarily from snapshots.
 - Missed WS messages can be corrected by REST refresh, but there is no explicit client cursor/replay protocol.
+- Group and client event routes already exist for per-entity historical reads:
+  - `/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/events`
+  - `/api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId/events`
+- Browser Rallar now has live event callbacks through `rooms.onEvent(...)` and `people.onEvent(...)`, but these are
+  live subscriptions only. They intentionally do not replay old events to late subscribers.
 
 Risk:
 
 - Clients can miss transient event details while still converging to latest snapshot.
 - There is no built-in "subscribe from revision N" or "replay events since timestamp" path in the browser facade.
+- Existing event ordering is not a strong replay contract. Events are listed by `occurredAtEpochMs`, but equal
+  timestamps and cross-process clock skew can make replay ordering ambiguous.
+- Events do not currently carry an aggregate `snapshotVersion`, so a client cannot directly connect "I have snapshot
+  version N" with "replay the events after N".
 
 Recommended hardening:
 
 - Treat snapshots as convergence and events as optional audit unless a replay contract is added.
-- Add event cursor APIs if applications need guaranteed event processing.
+- Prefer a small browser facade wrapper around existing event-list routes before adding automatic replay behavior.
+- Add event cursor APIs only if applications need guaranteed event processing.
 - Include profile/presence/roster versions in client-side stale update rejection tests.
+
+Proof-first implementation plan:
+
+1. Characterize current behavior before adding replay semantics.
+   - Prove a browser can miss `rooms.onEvent(...)` or `people.onEvent(...)` messages while disconnected.
+   - Prove `rooms.refresh(...)` and `people.refresh(...)` still converge to the latest snapshot after missed WS events.
+   - Prove the existing REST event routes can recover historical events manually.
+   - Prove the current event ordering limitations around equal `occurredAtEpochMs` values.
+
+   9.1 evidence added:
+
+   - `packages/tests/shared-web/rallar-operation-options.test.ts` proves live state-event callbacks are not replayed
+     after disconnect/reconnect, while new live events still flow after reconnect.
+   - `packages/tests/shared-web/rallar-operation-options.test.ts` proves `rooms.refresh(...)` and `people.refresh(...)`
+     use snapshot refresh/hydration as the convergence path and do not synthesize missed event callbacks.
+   - `packages/tests/shared-web/data-caches.test.ts` proves ignored/missed state-event details do not mutate snapshot
+     caches, while later snapshot hydration updates the client/group snapshot repositories.
+   - `packages/tests/shared-server/state-sync-event-replay-characterization.test.ts` proves durable group/client events
+     can be listed after mutations through the same service path that the current REST event routes delegate to.
+   - `packages/tests/shared-server/state-sync-event-replay-characterization.test.ts` documents the current equal
+     timestamp ordering limitation: events do not carry `snapshotVersion`, so same-timestamp ordering falls back to
+     persisted event-key ordering rather than an explicit aggregate-version replay contract.
+
+   Verification:
+
+   ```sh
+   npx vitest run packages/tests/shared-web/data-caches.test.ts packages/tests/shared-web/rallar-operation-options.test.ts
+   npx vitest run packages/tests/shared-server/state-sync-event-replay-characterization.test.ts
+   ```
+
+   Remaining 9.1 caveat:
+
+   - The historical event read proof started at the service/repository level. 9.2 adds shared route filtering tests and
+     route wiring, but there is still no Hono-wrapper test with mocked state services because the current route modules
+     resolve concrete services directly.
+
+2. Add minimal browser event-read APIs, not automatic replay.
+   - Candidate APIs:
+     - `rallar.rooms.listEvents(roomId | roomRef, options?)`
+     - `rallar.people.listEvents(principalId, options?)`
+   - Options should include `scope`, `eventTypes`, and `limit`.
+   - A later pass can add `after`/cursor options once the server route has a stable cursor contract.
+
+   Proposed first API shape:
+
+   ```ts
+   rallar.rooms.listEvents(
+       input: string | {
+           roomId?: string;
+           roomRef?: GroupRef;
+           scope?: StateScope;
+           eventTypes?: readonly GroupEventType[];
+           limit?: number;
+           signal?: AbortSignal;
+           timeoutMs?: number;
+           maxAttempts?: number;
+       },
+   ): Promise<readonly GroupEvent[]>;
+
+   rallar.people.listEvents(
+       principalId: string,
+       options?: {
+           scope?: StateScope;
+           eventTypes?: readonly ClientEventType[];
+           limit?: number;
+           signal?: AbortSignal;
+           timeoutMs?: number;
+           maxAttempts?: number;
+       },
+   ): Promise<readonly ClientEvent[]>;
+   ```
+
+   Room event scope resolution should be explicit and predictable:
+
+   - `roomRef` scope first.
+   - Explicit `options.scope` second.
+   - Facade defaults third.
+   - API default scope last.
+
+   Room id resolution should be:
+
+   - `roomRef.groupId` first.
+   - Explicit `roomId` second.
+   - String input third.
+
+   Do not silently use current/default room in the first pass. Historical event reads should remain explicit until real
+   usage proves a convenience default is helpful.
+
+   Implementation shape for this step:
+
+   - Add `listStateGroupEvents(groupId, scope, options?)` and `listStateClientEvents(principalId, scope, options?)` to
+     the browser API integration layer.
+   - Use the existing server routes:
+     - `/groups/:groupId/events`
+     - `/clients/:principalId/events`
+   - Add query params for `eventType` and `limit`.
+   - Add server-side route filtering without changing repositories initially:
+     - call existing `listEvents(...)`
+     - filter by event type
+     - apply bounded `limit`
+     - return events in chronological order
+   - Do not call `connect()`, hydrate caches, register WS callbacks, or mutate snapshot repositories from these facade
+     methods. They should be read-only REST commands using the existing timeout/retry policy path.
+
+   Tests for this step:
+
+   - Server route characterization:
+     - existing `/events` returns all events in chronological order
+     - `eventType` filters correctly
+     - `limit` returns the latest N events while preserving chronological order in the response
+   - Browser REST helper tests:
+     - encodes `groupId` and `principalId`
+     - sends the scope path correctly
+     - serializes repeated `eventType`
+     - serializes `limit`
+   - Rallar facade tests:
+     - `rooms.listEvents(roomRef)` uses `roomRef` scope
+     - `rooms.listEvents({ roomId, scope })` uses explicit scope
+     - `people.listEvents(principalId, options)` returns client events
+     - calls do not connect or mutate snapshot caches
+     - `signal`, `timeoutMs`, and retry options flow through the existing command policy
+
+   9.2 implemented:
+
+   - Added `filterStateEventsForList(...)` and `readStateEventListQuery(...)` in shared-server for server route
+     filtering.
+   - Group and client event routes now accept repeated `eventType` query params and `limit`.
+   - `limit` returns the latest N matching events while preserving chronological order in the response.
+   - Event-list routes default to `100` events and clamp requested limits to `500`, so a caller cannot ask the HTTP
+     response path to return the full event history accidentally. This bounds response size, but the current repository
+     call still reads the full per-entity event list before filtering; repository-level range pagination remains the
+     stronger future fix.
+   - Added browser REST helpers:
+     - `listStateGroupEvents(groupId, scope, options?)`
+     - `listStateClientEvents(principalId, scope, options?)`
+   - Added browser facade APIs:
+     - `rallar.rooms.listEvents(input)`
+     - `rallar.people.listEvents(principalId, options?)`
+   - These methods are explicit read-only REST calls. They do not call `connect()`, register WS callbacks, hydrate
+     caches, or replay events through `onEvent(...)`.
+   - The browser facade methods are wrapped in `runRallarCommand(...)`, so callers can use existing `signal`,
+     `timeoutMs`, `maxAttempts`, and retry classification options.
+   - Added `/api/state/*` Hono resilience middleware:
+     - General state requests are rate-limited per authenticated `x-client-id`.
+     - Event-list requests use a stricter rate-limit namespace.
+     - A state-route scoped circuit breaker counts 5xx responses and thrown errors as failures, returns `503` while
+       open, and ignores client-side 4xx responses.
+
+   9.2 verification:
+
+   ```sh
+   npx vitest run packages/tests/shared-server/state-event-listing.test.ts packages/tests/shared-server/state-sync-event-replay-characterization.test.ts
+   npx vitest run packages/tests/shared-web/api-workflows.test.ts packages/tests/shared-web/data-caches.test.ts packages/tests/shared-web/rallar-operation-options.test.ts
+   cd apps/api-v1 && deno test --allow-env --allow-read --config deno.json test/services/state-api-resilience-middleware.test.ts
+   npx tsc -p packages/shared-web/tsconfig.json --noEmit
+   npx tsc -p packages/shared-server/tsconfig.json --noEmit
+   cd apps/api-v1 && deno check src/main.ts
+   ```
+
+3. Strengthen event identity for replay.
+   - Add an aggregate version to events, preferably `snapshotVersion`, populated from the written group/client snapshot.
+   - Use `(snapshotVersion, occurredAtEpochMs, eventId)` as the stable replay order when version is available.
+   - Keep event consumers idempotent by `eventId`; replay should be treated as at-least-once delivery.
+
+   9.3 implemented:
+
+   - `GroupEvent` and `ClientEvent` now carry mandatory `snapshotVersion`.
+   - Group events are populated from the written `Group.snapshotVersion`; client events are populated from the written
+     `ClientPrincipal.snapshotVersion`.
+   - Group/client event repositories now list events in replay order:
+     `(snapshotVersion, occurredAtEpochMs, eventId)`.
+   - State-sync routing and browser event payload guards require numeric `snapshotVersion`, so incomplete live event
+     payloads are ignored instead of entering callbacks as valid events.
+   - OpenAPI `GroupEvent` and `ClientEvent` schemas now require `snapshotVersion`. The existing `Group` and
+     `ClientPrincipal` schemas were also aligned with their mandatory aggregate `snapshotVersion` fields.
+
+   9.3 verification:
+
+   ```sh
+   npx vitest run packages/tests/shared-server/state-sync-event-replay-characterization.test.ts packages/tests/shared-server/state-event-listing.test.ts packages/tests/api-v1/client-and-group-state-repositories.test.ts packages/tests/shared-server/app-inbox-service.test.ts packages/tests/shared-server/rallar-middleware.test.ts packages/tests/shared-web/api-workflows.test.ts packages/tests/shared-web/data-caches.test.ts packages/tests/shared-web/rallar-operation-options.test.ts
+   cd apps/api-v1 && deno test --allow-env --allow-read --config deno.json test/services/group-state-service.test.ts test/services/client-state-service.test.ts test/services/state-api-resilience-middleware.test.ts
+   npx tsc -p packages/shared/tsconfig.json --noEmit
+   npx tsc -p packages/shared-server/tsconfig.json --noEmit
+   npx tsc -p packages/shared-web/tsconfig.json --noEmit
+   cd apps/api-v1 && deno check src/main.ts test/services/group-state-service.test.ts test/services/client-state-service.test.ts test/services/state-api-resilience-middleware.test.ts
+   ```
+
+4. Add cursor-capable server event APIs only after the read API proves useful.
+   - Return an envelope instead of a bare array:
+     - `events`
+     - `nextCursor`
+     - `hasMore`
+   - Candidate filters:
+     - `afterSnapshotVersion`
+     - `afterOccurredAtEpochMs`
+     - `afterEventId`
+     - `eventType`
+     - `limit`
+   - Start per group/principal. Avoid global workspace event replay until a concrete use case needs it.
+
+   9.4 implemented:
+
+   - Kept the existing `/events` array routes and Rallar `listEvents(...)` methods as latest-N convenience reads.
+   - Added cursor page routes with forward replay semantics:
+     - `/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/events/page`
+     - `/api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId/events/page`
+   - Added cursor query params:
+     - `afterSnapshotVersion`
+     - `afterOccurredAtEpochMs`
+     - `afterEventId`
+   - Page responses return `{ events, nextCursor, hasMore }`, where `nextCursor` is derived from the last returned
+     event.
+   - Added browser REST helpers:
+     - `listStateGroupEventPage(...)`
+     - `listStateClientEventPage(...)`
+   - Added Rallar facade methods:
+     - `rallar.rooms.listEventPage(...)`
+     - `rallar.people.listEventPage(...)`
+   - OpenAPI now documents the page endpoints, cursor query params, `StateEventCursor`, `GroupEventPage`, and
+     `ClientEventPage`.
+
+   9.4 verification:
+
+   ```sh
+   npx vitest run packages/tests/shared-server/state-event-listing.test.ts packages/tests/shared-web/api-workflows.test.ts packages/tests/shared-web/rallar-operation-options.test.ts
+   npx tsc -p packages/shared/tsconfig.json --noEmit
+   npx tsc -p packages/shared-server/tsconfig.json --noEmit
+   npx tsc -p packages/shared-web/tsconfig.json --noEmit
+   cd apps/api-v1 && deno check src/main.ts src/routes/client-state-routes.ts src/routes/group-state-routes.ts
+   ```
+
+5. Add optional Rallar replay convenience.
+   - Candidate APIs:
+     - `rallar.rooms.replayEvents(...)`
+     - `rallar.people.replayEvents(...)`
+   - Do not make `onEvent(...)` silently replay old events unless the method name or options make that explicit.
+   - Deduplicate overlap between live WS events and replayed REST events by `eventId`.
+
+   9.5 implemented:
+
+   - Added explicit replay facade methods:
+     - `rallar.rooms.replayEvents(input, listener?)`
+     - `rallar.people.replayEvents(principalId, options?, listener?)`
+   - Replay uses the 9.4 cursor page APIs and returns:
+     - `events`
+     - `nextCursor`
+     - `hasMore`
+     - `pageCount`
+     - `replayedCount`
+     - `duplicateCount`
+   - Replay dispatch is explicit:
+     - If a listener is passed, replayed events are delivered to that listener.
+     - If no listener is passed, replayed events are delivered to currently registered `onEvent(...)` subscriptions that
+       match the event.
+     - If neither applies, events are fetched but not marked as seen.
+   - Replay shares the same dedupe sets as live WS event callbacks:
+     - live-before-replay skips duplicate replay events
+     - replay-before-live skips duplicate live WS callbacks
+   - Replay is page bounded. The default is one page, with optional `maxPages`, clamped to avoid accidental large
+     browser-side replay loops.
+   - Replay callback messages use `message.transport === 'replay'`, making replayed callbacks distinguishable from live
+     WS events.
+
+   9.5 verification:
+
+   ```sh
+   npx vitest run packages/tests/shared-web/rallar-operation-options.test.ts
+   npx tsc -p packages/shared/tsconfig.json --noEmit
+   npx tsc -p packages/shared-web/tsconfig.json --noEmit
+   ```
+
+6. Prove with a real browser/server scenario.
+   - Browser A subscribes to events and records a cursor.
+   - Browser A disconnects or loses WS.
+   - Browser B mutates group/client state.
+   - Browser A reconnects, refreshes snapshots, then lists/replays missed events from its cursor.
+   - Verify snapshot convergence, recovered event details, and no duplicate event processing when live and replay
+     overlap.
+
+   9.6 implemented:
+
+   - Added a gated full-stack Playwright proof in
+     `tests/playwright/rallar-black-box/full-stack-browser-rallar-resilience.spec.ts`.
+   - The scenario uses two real browser contexts against the real API and SPA:
+     - Browser A creates a room, records the `group-created` cursor, and subscribes to room member events.
+     - Browser B joins while Browser A is connected, proving the live WS callback path.
+     - Browser A disconnects, Browser B leaves, then Browser A reconnects.
+     - Browser A refreshes room snapshots and explicitly replays events from the recorded cursor.
+   - The assertions prove snapshot convergence, recovered missed `member-left` details, and live/replay overlap
+     dedupe for the already-seen `member-joined` event.
+   - Coverage was expanded with two additional direct Browser Rallar facade tests:
+     - People/client event replay plus WS lifecycle/status around disconnect and reconnect.
+     - RTC `waitForRoomLane(..., { connect: true })` plus direct `realtime.sendJson(...)` delivery between two real
+       browser contexts.
+   - The expanded tests register unique throwaway users through the real SPA login form when needed, so full-file runs do
+     not depend on the login rate-limit window for the shared `alice`/`bob` test users.
+   - This test is intentionally gated by `RALLAR_BLACK_BOX_FULL_STACK=1` because it needs the full API, SPA, and
+     browser stack.
+
+   9.6 verification:
+
+   ```sh
+   npx playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts tests/playwright/rallar-black-box/full-stack-browser-rallar-resilience.spec.ts -g "recovers missed" --list
+   RALLAR_BLACK_BOX_FULL_STACK=1 npx playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts tests/playwright/rallar-black-box/full-stack-browser-rallar-resilience.spec.ts -g "recovers missed room events"
+   RALLAR_BLACK_BOX_FULL_STACK=1 npx playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts tests/playwright/rallar-black-box/full-stack-browser-rallar-resilience.spec.ts
+   ```
+
+Pros:
+
+- Recovers mutation details after sleep, reload, reconnect, mobile backgrounding, or transient WS loss.
+- Supports activity feeds, audit views, notifications, moderation logs, and debugging.
+- If events carry `snapshotVersion`, replay can be aligned with snapshot convergence.
+- Gives applications a principled way to answer "what happened?" instead of only "what is true now?".
+
+Cons:
+
+- Adds cursor, ordering, dedupe, pagination, retention, and authorization complexity.
+- Can encourage applications to treat events as primary state, even though snapshots should remain the convergence
+  source.
+- Presence and heartbeat events can be noisy and may require filtering or retention limits.
+- Exactly-once delivery is not realistic; the practical contract is at-least-once replay with idempotent consumers.
+- Event retention is a product and privacy decision if payloads include user metadata or audit details.
+
+Real application need:
+
+- Most simple realtime apps do not need durable event replay. If the UI only needs current room membership, online
+  users, and RTC routing, snapshots plus live event callbacks are enough.
+- Applications that are more likely to need this:
+  - audit-heavy admin tools
+  - moderation systems
+  - notification centers
+  - activity feeds
+  - workflow/task systems where every transition matters
+  - turn-based or replayable games
+  - collaborative apps that need operation history
+  - mobile/offline-first apps where clients often reconnect after missing WS messages
+
+Recommended next step:
+
+- Keep replay explicit in the facade and avoid automatic durable replay subscriptions until a real feature requires
+  guaranteed event processing.
+- If a product workflow starts depending on replay, add retention policy tests and repository-level range pagination
+  before widening the API beyond per-group/per-principal reads.
 
 ## 10. Lifecycle Cleanup Depends On WS Close Being Observed
 

@@ -485,6 +485,7 @@ export function createClientStateService(
                 await repository.putSession(session);
 
                 let event: ClientEvent | undefined;
+                let snapshotPrincipal = principal;
                 if (wasSemanticallyActive) {
                     const nextPrincipal = rememberPrincipalLastSeen(
                         principal,
@@ -492,21 +493,21 @@ export function createClientStateService(
                     );
                     if (nextPrincipal !== principal) {
                         await repository.putPrincipal(nextPrincipal);
+                        snapshotPrincipal = nextPrincipal;
                     }
                 } else {
-                    await repository.putPrincipal(
-                        bumpPrincipalPresence(
-                            principal,
-                            heartbeatTimestamp,
-                            request,
-                            now(),
-                            serviceId,
-                        ),
+                    snapshotPrincipal = bumpPrincipalPresence(
+                        principal,
+                        heartbeatTimestamp,
+                        request,
+                        now(),
+                        serviceId,
                     );
+                    await repository.putPrincipal(snapshotPrincipal);
 
                     event = newClientEvent(
                         'session-heartbeat',
-                        principal,
+                        snapshotPrincipal,
                         request,
                         now(),
                         serviceId,
@@ -521,7 +522,10 @@ export function createClientStateService(
                     principalRef,
                     request.requestId,
                     {
-                        snapshot: await requireClientSnapshot(repository, principal),
+                        snapshot: await requireClientSnapshot(
+                            repository,
+                            snapshotPrincipal,
+                        ),
                         event,
                     },
                 );
@@ -718,23 +722,22 @@ export function createClientStateService(
                 );
 
                 await repository.putSession(session);
-                await repository.putPrincipal(
-                    bumpPrincipalPresence(
-                        principal,
-                        session.lastHeartbeatAtEpochMs,
-                        {
-                            actorPrincipalId: principalId,
-                            actorSessionId: authSession.sessionId,
-                            requestId,
-                        },
-                        timestamp,
-                        serviceId,
-                    ),
+                const snapshotPrincipal = bumpPrincipalPresence(
+                    principal,
+                    session.lastHeartbeatAtEpochMs,
+                    {
+                        actorPrincipalId: principalId,
+                        actorSessionId: authSession.sessionId,
+                        requestId,
+                    },
+                    timestamp,
+                    serviceId,
                 );
+                await repository.putPrincipal(snapshotPrincipal);
 
                 const event = newClientEvent(
                     'session-connected',
-                    principal,
+                    snapshotPrincipal,
                     {
                         actorPrincipalId: principalId,
                         actorSessionId: authSession.sessionId,
@@ -752,7 +755,10 @@ export function createClientStateService(
                     principalRef,
                     requestId,
                     {
-                        snapshot: await requireClientSnapshot(repository, principal),
+                        snapshot: await requireClientSnapshot(
+                            repository,
+                            snapshotPrincipal,
+                        ),
                         event,
                     },
                 );
@@ -1168,6 +1174,7 @@ function newClientEvent(
         principalId: principal.principalId,
         eventId: crypto.randomUUID(),
         eventType,
+        snapshotVersion: principal.snapshotVersion,
         clientInstanceId,
         sessionId,
         occurredAtEpochMs: timestamp,

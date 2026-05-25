@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppTopics } from '@shared/api/api-config.ts';
-import type { ClientEvent } from '@shared/api/client-types.ts';
+import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import {
@@ -131,6 +131,18 @@ const mocks = vi.hoisted(() => {
         loginToApi: vi.fn((_request?: unknown, _options?: unknown) =>
             Promise.resolve(session)
         ),
+        listStateClientEvents: vi.fn((_principalId?: unknown, _scope?: unknown, _options?: unknown) =>
+            Promise.reject(new Error('client events not mocked'))
+        ),
+        listStateClientEventPage: vi.fn((_principalId?: unknown, _scope?: unknown, _options?: unknown) =>
+            Promise.reject(new Error('client event page not mocked'))
+        ),
+        listStateGroupEvents: vi.fn((_groupId?: unknown, _scope?: unknown, _options?: unknown) =>
+            Promise.reject(new Error('group events not mocked'))
+        ),
+        listStateGroupEventPage: vi.fn((_groupId?: unknown, _scope?: unknown, _options?: unknown) =>
+            Promise.reject(new Error('group event page not mocked'))
+        ),
         logoutFromApi: vi.fn((_options?: unknown) =>
             Promise.resolve({ loggedOut: true })
         ),
@@ -169,6 +181,10 @@ vi.mock('@shared-web/browser/app-context.ts', () => ({
 }));
 
 vi.mock('@shared-web/browser/api-integration.ts', () => ({
+    listStateClientEventPage: mocks.listStateClientEventPage,
+    listStateClientEvents: mocks.listStateClientEvents,
+    listStateGroupEventPage: mocks.listStateGroupEventPage,
+    listStateGroupEvents: mocks.listStateGroupEvents,
     loginToApi: mocks.loginToApi,
     logoutFromApi: mocks.logoutFromApi,
     registerWithApi: mocks.registerWithApi,
@@ -296,6 +312,18 @@ describe('Rallar operation options', () => {
             username: 'new-user',
             registeredAtEpochMs: 1_000,
         });
+        mocks.listStateClientEvents.mockRejectedValue(
+            new Error('client events not mocked'),
+        );
+        mocks.listStateClientEventPage.mockRejectedValue(
+            new Error('client event page not mocked'),
+        );
+        mocks.listStateGroupEvents.mockRejectedValue(
+            new Error('group events not mocked'),
+        );
+        mocks.listStateGroupEventPage.mockRejectedValue(
+            new Error('group event page not mocked'),
+        );
     });
 
     it('returns empty state before cache repositories are configured', async () => {
@@ -378,6 +406,7 @@ describe('Rallar operation options', () => {
             groupId: 'room-1',
             eventId: 'group-event-1',
             eventType: 'member-joined',
+            snapshotVersion: 1,
         });
         expect(eventListener.mock.calls[0]?.[1]).toMatchObject({
             transport: 'ws',
@@ -443,12 +472,517 @@ describe('Rallar operation options', () => {
             principalId: 'alice',
             eventId: 'client-event-1',
             eventType: 'session-connected',
+            snapshotVersion: 1,
         });
         expect(eventListener.mock.calls[0]?.[1]).toMatchObject({
             transport: 'ws',
             typeId: AppTopics.clientStateEvent,
             topicId: AppTopics.clientStateEvent,
         });
+    });
+
+    it('does not replay live state events missed while disconnected', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const facade = createRallarFacade();
+        const eventListener = vi.fn();
+
+        facade.setDefaults({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        });
+        facade.rooms.onEvent(eventListener, {
+            roomId: 'room-1',
+        });
+        await facade.connect();
+
+        await findLatestWsAnyMessageCallback()?.onMessage?.(
+            toGroupStateEventMessage(
+                createGroupEvent('room-1', 'group-event-1', 'member-joined'),
+            ),
+        );
+        expect(eventListener).toHaveBeenCalledTimes(1);
+
+        await facade.disconnect();
+        expect(
+            mocks.ctx.middleware.webSocketQueueBox.removeAnyInboxMessageCallback,
+        ).toHaveBeenCalledWith('rallar:ws:any-message');
+
+        await facade.connect();
+
+        expect(eventListener).toHaveBeenCalledTimes(1);
+
+        await findLatestWsAnyMessageCallback()?.onMessage?.(
+            toGroupStateEventMessage(
+                createGroupEvent('room-1', 'group-event-3', 'member-left'),
+            ),
+        );
+        expect(eventListener).toHaveBeenCalledTimes(2);
+    });
+
+    it('uses refresh snapshots as convergence without replaying missed event callbacks', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const facade = createRallarFacade();
+        const roomEventListener = vi.fn();
+        const peopleEventListener = vi.fn();
+        const groupSnapshot = createGroupSnapshot('room-1', ['session-1']);
+        const clientSnapshot = createClientSnapshot('principal-1', 'session-1');
+
+        facade.setDefaults({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        });
+        facade.rooms.onEvent(roomEventListener);
+        facade.people.onEvent(peopleEventListener);
+        mocks.refreshStateSnapshots.mockResolvedValue({
+            clients: [clientSnapshot],
+            groups: [groupSnapshot],
+        });
+
+        await facade.rooms.refresh();
+        await facade.people.refresh();
+
+        expect(roomEventListener).not.toHaveBeenCalled();
+        expect(peopleEventListener).not.toHaveBeenCalled();
+        expect(mocks.refreshStateSnapshots).toHaveBeenCalledTimes(2);
+        expect(mocks.hydrateStateCaches).toHaveBeenCalledWith(
+            mocks.ctx.middleware.webRtcGroupManager,
+            expect.objectContaining({
+                clientId: 'principal-1',
+                sessionId: 'session-1',
+            }),
+            [clientSnapshot],
+            [groupSnapshot],
+            {
+                scope: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                },
+            },
+        );
+    });
+
+    it('lists room and people events without connecting or hydrating state caches', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const facade = createRallarFacade();
+        const groupEvent = createGroupEvent(
+            'room-1',
+            'group-event-1',
+            'member-joined',
+            {
+                applicationId: 'room-app',
+                workspaceId: 'room-workspace',
+            },
+        );
+        const clientEvent = createClientEvent(
+            'alice',
+            'client-event-1',
+            'session-connected',
+            {
+                applicationId: 'people-app',
+                workspaceId: 'people-workspace',
+            },
+        );
+
+        mocks.listStateGroupEvents.mockResolvedValue([groupEvent]);
+        mocks.listStateClientEvents.mockResolvedValue([clientEvent]);
+
+        await expect(
+            facade.rooms.listEvents({
+                roomRef: {
+                    applicationId: 'room-app',
+                    workspaceId: 'room-workspace',
+                    groupId: 'room-1',
+                },
+                scope: {
+                    applicationId: 'ignored-app',
+                    workspaceId: 'ignored-workspace',
+                },
+                eventTypes: ['member-joined'],
+                limit: 2,
+            }),
+        ).resolves.toEqual([groupEvent]);
+        await expect(
+            facade.people.listEvents('alice', {
+                scope: {
+                    applicationId: 'people-app',
+                    workspaceId: 'people-workspace',
+                },
+                eventTypes: ['session-connected'],
+                limit: 3,
+            }),
+        ).resolves.toEqual([clientEvent]);
+
+        expect(mocks.initMiddleware).not.toHaveBeenCalled();
+        expect(mocks.hydrateStateCaches).not.toHaveBeenCalled();
+        expect(mocks.listStateGroupEvents).toHaveBeenCalledWith(
+            'room-1',
+            {
+                applicationId: 'room-app',
+                workspaceId: 'room-workspace',
+            },
+            {
+                eventTypes: ['member-joined'],
+                limit: 2,
+                signal: expect.any(AbortSignal),
+            },
+        );
+        expect(mocks.listStateClientEvents).toHaveBeenCalledWith(
+            'alice',
+            {
+                applicationId: 'people-app',
+                workspaceId: 'people-workspace',
+            },
+            {
+                eventTypes: ['session-connected'],
+                limit: 3,
+                signal: expect.any(AbortSignal),
+            },
+        );
+    });
+
+    it('uses facade defaults for string room event history reads', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const facade = createRallarFacade();
+        const groupEvent = createGroupEvent(
+            'room-1',
+            'group-event-1',
+            'member-joined',
+        );
+
+        facade.setDefaults({
+            applicationId: 'default-app',
+            workspaceId: 'default-workspace',
+        });
+        mocks.listStateGroupEvents.mockResolvedValue([groupEvent]);
+
+        await expect(facade.rooms.listEvents('room-1')).resolves.toEqual([
+            groupEvent,
+        ]);
+
+        expect(mocks.initMiddleware).not.toHaveBeenCalled();
+        expect(mocks.listStateGroupEvents).toHaveBeenCalledWith(
+            'room-1',
+            {
+                applicationId: 'default-app',
+                workspaceId: 'default-workspace',
+            },
+            {
+                signal: expect.any(AbortSignal),
+            },
+        );
+    });
+
+    it('lists room and people event pages with cursor options', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const facade = createRallarFacade();
+        const groupEvent = createGroupEvent(
+            'room-1',
+            'group-event-2',
+            'member-left',
+        );
+        const clientEvent = createClientEvent(
+            'alice',
+            'client-event-2',
+            'session-disconnected',
+        );
+        const after = {
+            snapshotVersion: 1,
+            occurredAtEpochMs: 1_000,
+            eventId: 'event-1',
+        };
+        const groupPage = {
+            events: [groupEvent],
+            nextCursor: {
+                snapshotVersion: 2,
+                occurredAtEpochMs: 2_000,
+                eventId: groupEvent.eventId,
+            },
+            hasMore: false,
+        };
+        const clientPage = {
+            events: [clientEvent],
+            nextCursor: {
+                snapshotVersion: 3,
+                occurredAtEpochMs: 3_000,
+                eventId: clientEvent.eventId,
+            },
+            hasMore: true,
+        };
+
+        facade.setDefaults({
+            applicationId: 'default-app',
+            workspaceId: 'default-workspace',
+        });
+        mocks.listStateGroupEventPage.mockResolvedValue(groupPage);
+        mocks.listStateClientEventPage.mockResolvedValue(clientPage);
+
+        await expect(
+            facade.rooms.listEventPage({
+                roomId: 'room-1',
+                eventTypes: ['member-left'],
+                limit: 2,
+                after,
+            }),
+        ).resolves.toEqual(groupPage);
+        await expect(
+            facade.people.listEventPage('alice', {
+                eventTypes: ['session-disconnected'],
+                limit: 3,
+                after,
+            }),
+        ).resolves.toEqual(clientPage);
+
+        expect(mocks.initMiddleware).not.toHaveBeenCalled();
+        expect(mocks.hydrateStateCaches).not.toHaveBeenCalled();
+        expect(mocks.listStateGroupEventPage).toHaveBeenCalledWith(
+            'room-1',
+            {
+                applicationId: 'default-app',
+                workspaceId: 'default-workspace',
+            },
+            {
+                eventTypes: ['member-left'],
+                limit: 2,
+                after,
+                signal: expect.any(AbortSignal),
+            },
+        );
+        expect(mocks.listStateClientEventPage).toHaveBeenCalledWith(
+            'alice',
+            {
+                applicationId: 'default-app',
+                workspaceId: 'default-workspace',
+            },
+            {
+                eventTypes: ['session-disconnected'],
+                limit: 3,
+                after,
+                signal: expect.any(AbortSignal),
+            },
+        );
+    });
+
+    it('replays room and people events explicitly and deduplicates live overlap', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const facade = createRallarFacade();
+        const liveRoomListener = vi.fn();
+        const replayRoomListener = vi.fn();
+        const peopleListener = vi.fn();
+        const liveRoomEvent = createGroupEvent(
+            'room-1',
+            'group-event-1',
+            'member-joined',
+        );
+        const replayRoomEvent = createGroupEvent(
+            'room-1',
+            'group-event-2',
+            'member-left',
+            { snapshotVersion: 2, occurredAtEpochMs: 2 },
+        );
+        const replayClientEvent = createClientEvent(
+            'alice',
+            'client-event-1',
+            'session-connected',
+        );
+        const roomPage = {
+            events: [liveRoomEvent, replayRoomEvent],
+            nextCursor: {
+                snapshotVersion: replayRoomEvent.snapshotVersion,
+                occurredAtEpochMs: replayRoomEvent.occurredAtEpochMs,
+                eventId: replayRoomEvent.eventId,
+            },
+            hasMore: false,
+        };
+        const clientPage = {
+            events: [replayClientEvent],
+            nextCursor: {
+                snapshotVersion: replayClientEvent.snapshotVersion,
+                occurredAtEpochMs: replayClientEvent.occurredAtEpochMs,
+                eventId: replayClientEvent.eventId,
+            },
+            hasMore: false,
+        };
+
+        facade.setDefaults({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        });
+        facade.rooms.onEvent(liveRoomListener, { roomId: 'room-1' });
+        facade.people.onEvent(peopleListener, { principalId: 'alice' });
+        mocks.listStateGroupEventPage.mockResolvedValue(roomPage);
+        mocks.listStateClientEventPage.mockResolvedValue(clientPage);
+        await facade.connect();
+
+        await findLatestWsAnyMessageCallback()?.onMessage?.(
+            toGroupStateEventMessage(liveRoomEvent),
+        );
+
+        const roomReplayResult = await facade.rooms.replayEvents(
+            {
+                roomId: 'room-1',
+                after: {
+                    snapshotVersion: 1,
+                    occurredAtEpochMs: 1,
+                    eventId: liveRoomEvent.eventId,
+                },
+                limit: 2,
+            },
+            replayRoomListener,
+        );
+        const peopleReplayResult = await facade.people.replayEvents('alice');
+
+        await findLatestWsAnyMessageCallback()?.onMessage?.(
+            toGroupStateEventMessage(replayRoomEvent),
+        );
+        await findLatestWsAnyMessageCallback()?.onMessage?.(
+            toClientStateEventMessage(replayClientEvent),
+        );
+
+        expect(liveRoomListener).toHaveBeenCalledOnce();
+        expect(replayRoomListener).toHaveBeenCalledOnce();
+        expect(replayRoomListener.mock.calls[0]?.[0]).toEqual(replayRoomEvent);
+        expect(replayRoomListener.mock.calls[0]?.[1]).toMatchObject({
+            transport: 'replay',
+            typeId: AppTopics.groupStateEvent,
+            topicId: AppTopics.groupStateEvent,
+        });
+        expect(roomReplayResult).toMatchObject({
+            events: [replayRoomEvent],
+            duplicateCount: 1,
+            replayedCount: 1,
+            pageCount: 1,
+            hasMore: false,
+        });
+        expect(peopleListener).toHaveBeenCalledOnce();
+        expect(peopleListener.mock.calls[0]?.[0]).toEqual(replayClientEvent);
+        expect(peopleListener.mock.calls[0]?.[1]).toMatchObject({
+            transport: 'replay',
+            typeId: AppTopics.clientStateEvent,
+            topicId: AppTopics.clientStateEvent,
+        });
+        expect(peopleReplayResult).toMatchObject({
+            events: [replayClientEvent],
+            duplicateCount: 0,
+            replayedCount: 1,
+            pageCount: 1,
+            hasMore: false,
+        });
+        expect(mocks.listStateGroupEventPage).toHaveBeenCalledWith(
+            'room-1',
+            {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+            },
+            expect.objectContaining({
+                after: {
+                    snapshotVersion: 1,
+                    occurredAtEpochMs: 1,
+                    eventId: liveRoomEvent.eventId,
+                },
+                limit: 2,
+                signal: expect.any(AbortSignal),
+            }),
+        );
+    });
+
+    it('replays multiple room event pages until maxPages or completion', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const facade = createRallarFacade();
+        const listener = vi.fn();
+        const eventA = createGroupEvent(
+            'room-1',
+            'group-event-1',
+            'member-joined',
+        );
+        const eventB = createGroupEvent(
+            'room-1',
+            'group-event-2',
+            'member-left',
+            { snapshotVersion: 2, occurredAtEpochMs: 2 },
+        );
+        const cursorA = {
+            snapshotVersion: eventA.snapshotVersion,
+            occurredAtEpochMs: eventA.occurredAtEpochMs,
+            eventId: eventA.eventId,
+        };
+        const cursorB = {
+            snapshotVersion: eventB.snapshotVersion,
+            occurredAtEpochMs: eventB.occurredAtEpochMs,
+            eventId: eventB.eventId,
+        };
+
+        facade.setDefaults({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        });
+        facade.rooms.onEvent(listener, { roomId: 'room-1' });
+        mocks.listStateGroupEventPage
+            .mockResolvedValueOnce({
+                events: [eventA],
+                nextCursor: cursorA,
+                hasMore: true,
+            })
+            .mockResolvedValueOnce({
+                events: [eventB],
+                nextCursor: cursorB,
+                hasMore: false,
+            });
+
+        const result = await facade.rooms.replayEvents({
+            roomId: 'room-1',
+            limit: 1,
+            maxPages: 2,
+        });
+
+        expect(listener).toHaveBeenCalledTimes(2);
+        expect(listener.mock.calls.map((call) => call[0])).toEqual([eventA, eventB]);
+        expect(result).toMatchObject({
+            events: [eventA, eventB],
+            nextCursor: cursorB,
+            hasMore: false,
+            pageCount: 2,
+            replayedCount: 2,
+            duplicateCount: 0,
+        });
+        expect(mocks.listStateGroupEventPage).toHaveBeenNthCalledWith(
+            1,
+            'room-1',
+            {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+            },
+            expect.objectContaining({
+                limit: 1,
+                signal: expect.any(AbortSignal),
+            }),
+        );
+        expect(mocks.listStateGroupEventPage).toHaveBeenNthCalledWith(
+            2,
+            'room-1',
+            {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+            },
+            expect.objectContaining({
+                limit: 1,
+                after: cursorA,
+                signal: expect.any(AbortSignal),
+            }),
+        );
     });
 
     it('uses facade defaults as the operation scope when no explicit scope is passed', async () => {
@@ -3384,6 +3918,15 @@ function findWsAnyMessageCallback(): {
         )?.[1] as { onMessage?: (message: unknown) => Promise<void> } | undefined;
 }
 
+function findLatestWsAnyMessageCallback(): {
+    onMessage?: (message: unknown) => Promise<void>;
+} | undefined {
+    return mocks.ctx.middleware.webSocketQueueBox
+        .onAnyInboxMessageDo.mock.calls
+        .filter(([callbackId]) => callbackId === 'rallar:ws:any-message')
+        .at(-1)?.[1] as { onMessage?: (message: unknown) => Promise<void> } | undefined;
+}
+
 function toGroupStateEventMessage(event: GroupEvent) {
     return newALBroadcastMessage(
         'server-1',
@@ -3415,6 +3958,8 @@ function createGroupEvent(
     scope: Readonly<{
         applicationId?: string;
         workspaceId?: string;
+        snapshotVersion?: number;
+        occurredAtEpochMs?: number;
     }> = {},
 ): GroupEvent {
     return {
@@ -3423,7 +3968,8 @@ function createGroupEvent(
         groupId,
         eventId,
         eventType,
-        occurredAtEpochMs: 1,
+        snapshotVersion: scope.snapshotVersion ?? 1,
+        occurredAtEpochMs: scope.occurredAtEpochMs ?? 1,
         actor: {
             principalId: 'alice',
             sessionId: 'session-1',
@@ -3439,6 +3985,8 @@ function createClientEvent(
     scope: Readonly<{
         applicationId?: string;
         workspaceId?: string;
+        snapshotVersion?: number;
+        occurredAtEpochMs?: number;
     }> = {},
 ): ClientEvent {
     return {
@@ -3449,7 +3997,8 @@ function createClientEvent(
         eventType,
         clientInstanceId: `${principalId}-instance`,
         sessionId: `${principalId}-session`,
-        occurredAtEpochMs: 1,
+        snapshotVersion: scope.snapshotVersion ?? 1,
+        occurredAtEpochMs: scope.occurredAtEpochMs ?? 1,
         actor: {
             principalId,
             sessionId: `${principalId}-session`,
@@ -3540,6 +4089,58 @@ function withSnapshotVersion(
             ...snapshot.group,
             snapshotVersion,
         },
+    };
+}
+
+function createClientSnapshot(
+    principalId: string,
+    sessionId: string,
+    scope: Readonly<{
+        applicationId?: string;
+        workspaceId?: string;
+    }> = {},
+): ClientSnapshot {
+    const applicationId = scope.applicationId ?? 'app-1';
+    const workspaceId = scope.workspaceId ?? 'workspace-1';
+    return {
+        principal: {
+            applicationId,
+            workspaceId,
+            principalId,
+            username: principalId,
+            status: 'active',
+            roles: [],
+            metadata: {},
+            snapshotVersion: 1,
+            profileVersion: 1,
+            presenceVersion: 1,
+            created: {
+                atEpochMs: 1,
+                byPrincipalId: principalId,
+            },
+            updated: {
+                atEpochMs: 1,
+                byPrincipalId: principalId,
+            },
+        },
+        instances: [],
+        activeSessions: [{
+            applicationId,
+            workspaceId,
+            principalId,
+            clientInstanceId: `${principalId}-instance`,
+            sessionId,
+            status: 'active',
+            presenceState: 'online',
+            transport: 'ws',
+            authenticatedAtEpochMs: 1,
+            connectedAtEpochMs: 1,
+            lastHeartbeatAtEpochMs: 1,
+            expiresAtEpochMs: 60_000,
+        }],
+        isOnline: true,
+        activeSessionCount: 1,
+        lastSeenAtEpochMs: 1,
     };
 }
 

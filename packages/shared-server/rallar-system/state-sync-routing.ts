@@ -245,6 +245,7 @@ function isClientSnapshot(value: unknown): value is ClientSnapshot {
 function isClientEvent(value: unknown): value is ClientEvent {
     return isRecord(value) &&
         typeof value.principalId === 'string' &&
+        typeof value.snapshotVersion === 'number' &&
         hasStateSyncScope(value);
 }
 
@@ -260,6 +261,7 @@ function isGroupSnapshot(value: unknown): value is GroupSnapshot {
 function isGroupEvent(value: unknown): value is GroupEvent {
     return isRecord(value) &&
         typeof value.groupId === 'string' &&
+        typeof value.snapshotVersion === 'number' &&
         hasStateSyncScope(value);
 }
 

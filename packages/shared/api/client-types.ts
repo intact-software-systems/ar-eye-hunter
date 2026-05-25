@@ -152,6 +152,7 @@ export type ClientEventType =
 export type ClientEvent = ClientPrincipalRef & Readonly<{
     eventId: string;
     eventType: ClientEventType;
+    snapshotVersion: number;
     clientInstanceId?: ClientInstanceId;
     sessionId?: SessionId;
     occurredAtEpochMs: number;

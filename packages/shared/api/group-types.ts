@@ -135,6 +135,7 @@ export type GroupEvent =
     & Readonly<{
     eventId: string;
     eventType: GroupEventType;
+    snapshotVersion: number;
     occurredAtEpochMs: number;
     actor: {
         principalId?: PrincipalId;

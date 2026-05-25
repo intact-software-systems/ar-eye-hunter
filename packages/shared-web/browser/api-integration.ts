@@ -11,8 +11,16 @@ import {
     RegisterResponse,
     WebSocketTicketResponse,
 } from '@shared/api/api-config.ts';
-import type { ClientSnapshot as ClientStateSnapshot } from '@shared/api/client-types.ts';
-import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-types.ts';
+import type {
+    ClientEvent,
+    ClientEventType,
+    ClientSnapshot as ClientStateSnapshot,
+} from '@shared/api/client-types.ts';
+import type {
+    GroupEvent,
+    GroupEventType,
+    GroupSnapshot as GroupStateSnapshot,
+} from '@shared/api/group-types.ts';
 import {
     type ConnectGroupPresenceSessionRequest,
     type CreateGroupRequest,
@@ -24,11 +32,29 @@ import {
     type StateScope,
     type UpsertGroupMemberRequest,
 } from '@shared/api/state-types.ts';
+import type {
+    StateEventCursor,
+    StateEventPage,
+} from '@shared/api/state-event-types.ts';
 
 export type ApiRequestOptions = Readonly<{
     signal?: AbortSignal;
     authSession?: AuthSession | null;
 }>;
+
+export type StateEventListRequestOptions<TEventType extends string> =
+    & ApiRequestOptions
+    & Readonly<{
+    eventTypes?: readonly TEventType[];
+    limit?: number;
+    after?: StateEventCursor;
+}>;
+
+export type GroupStateEventListRequestOptions =
+    StateEventListRequestOptions<GroupEventType>;
+
+export type ClientStateEventListRequestOptions =
+    StateEventListRequestOptions<ClientEventType>;
 
 export class ApiHttpError extends Error {
     public constructor(
@@ -218,6 +244,74 @@ export async function findStateGroup(
     );
 }
 
+export async function listStateGroupEvents(
+    groupId: string,
+    scope: StateScope = defaultStateScope(),
+    options?: GroupStateEventListRequestOptions,
+): Promise<GroupEvent[]> {
+    return await executeHttpRequest<void, GroupEvent[]>(
+        readApiBaseUrl(),
+        withStateEventListQuery(
+            `${toStateScopePath(scope)}/groups/${encodeURIComponent(groupId)}/events`,
+            options,
+        ),
+        'GET',
+        undefined,
+        options,
+    );
+}
+
+export async function listStateGroupEventPage(
+    groupId: string,
+    scope: StateScope = defaultStateScope(),
+    options?: GroupStateEventListRequestOptions,
+): Promise<StateEventPage<GroupEvent>> {
+    return await executeHttpRequest<void, StateEventPage<GroupEvent>>(
+        readApiBaseUrl(),
+        withStateEventListQuery(
+            `${toStateScopePath(scope)}/groups/${encodeURIComponent(groupId)}/events/page`,
+            options,
+        ),
+        'GET',
+        undefined,
+        options,
+    );
+}
+
+export async function listStateClientEvents(
+    principalId: string,
+    scope: StateScope = defaultStateScope(),
+    options?: ClientStateEventListRequestOptions,
+): Promise<ClientEvent[]> {
+    return await executeHttpRequest<void, ClientEvent[]>(
+        readApiBaseUrl(),
+        withStateEventListQuery(
+            `${toStateScopePath(scope)}/clients/${encodeURIComponent(principalId)}/events`,
+            options,
+        ),
+        'GET',
+        undefined,
+        options,
+    );
+}
+
+export async function listStateClientEventPage(
+    principalId: string,
+    scope: StateScope = defaultStateScope(),
+    options?: ClientStateEventListRequestOptions,
+): Promise<StateEventPage<ClientEvent>> {
+    return await executeHttpRequest<void, StateEventPage<ClientEvent>>(
+        readApiBaseUrl(),
+        withStateEventListQuery(
+            `${toStateScopePath(scope)}/clients/${encodeURIComponent(principalId)}/events/page`,
+            options,
+        ),
+        'GET',
+        undefined,
+        options,
+    );
+}
+
 export async function createStateGroup(
     request: CreateGroupRequest,
     scope: StateScope = defaultStateScope(),
@@ -339,4 +433,31 @@ function toStateScopePath(scope: StateScope): string {
     return `/api/state/apps/${encodeURIComponent(scope.applicationId)}/workspaces/${
         encodeURIComponent(scope.workspaceId)
     }`;
+}
+
+function withStateEventListQuery<TEventType extends string>(
+    path: string,
+    options?: StateEventListRequestOptions<TEventType>,
+): string {
+    const searchParams = new URLSearchParams();
+    for (const eventType of options?.eventTypes ?? []) {
+        searchParams.append('eventType', eventType);
+    }
+    if (options?.limit !== undefined) {
+        searchParams.set('limit', String(options.limit));
+    }
+    if (options?.after) {
+        searchParams.set(
+            'afterSnapshotVersion',
+            String(options.after.snapshotVersion),
+        );
+        searchParams.set(
+            'afterOccurredAtEpochMs',
+            String(options.after.occurredAtEpochMs),
+        );
+        searchParams.set('afterEventId', options.after.eventId);
+    }
+
+    const query = searchParams.toString();
+    return query ? `${path}?${query}` : path;
 }

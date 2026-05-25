@@ -81,6 +81,7 @@ export async function loginThroughUi(
     input: Readonly<{
         suffix: string;
         tab?: 'manual-rallar' | 'rallar-server' | 'event-stream' | 'local-workbench';
+        registerBeforeLogin?: boolean;
     }>,
 ): Promise<void> {
     const sessionId = `${user.actor}-session-${input.suffix}`;
@@ -98,6 +99,9 @@ export async function loginThroughUi(
     await page.getByLabel('API Base URL').fill(config.apiBaseUrl);
     await page.getByLabel('Username').fill(user.username);
     await page.getByLabel('Password').fill(user.password);
+    if (input.registerBeforeLogin) {
+        await page.getByLabel('Register before login').check();
+    }
     await page.getByRole('button', { name: 'Sign in' }).click();
     await expect(page.getByRole('tab', { name: 'Rallar Server' })).toBeVisible();
     await expect(page.locator('.run-header')).toContainText(user.username);

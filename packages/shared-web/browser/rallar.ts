@@ -46,6 +46,10 @@ import {
     DEFAULT_STATE_WORKSPACE_ID,
     type StateScope,
 } from '@shared/api/state-types.ts';
+import type {
+    StateEventCursor,
+    StateEventPage,
+} from '@shared/api/state-event-types.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
 import { CommandsOrchestrator, type CommandsOrchestratorPolicies, } from '@shared/cache/CommandsOrchestrator.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -117,6 +121,8 @@ const DEFAULT_RALLAR_REALTIME_LANE_ID = 'realtime';
 const DEFAULT_RALLAR_REALTIME_OPEN_TIMEOUT_MS = 5_000;
 const DEFAULT_RALLAR_WAIT_FOR_OPEN_TIMEOUT_MS = 5_000;
 const MAX_RALLAR_STATE_EVENT_DEDUPE_KEYS = 1_000;
+const DEFAULT_RALLAR_REPLAY_MAX_PAGES = 1;
+const MAX_RALLAR_REPLAY_MAX_PAGES = 50;
 
 export type RallarUnsubscribe = () => void;
 
@@ -302,6 +308,53 @@ export type RallarPeopleEventOptions = Readonly<{
     eventTypes?: readonly ClientEventType[];
 }>;
 
+export type RallarListRoomEventsOptions =
+    & RallarScopedOperationOptions
+    & Readonly<{
+    roomId?: string;
+    roomRef?: GroupRef;
+    eventTypes?: readonly GroupEventType[];
+    limit?: number;
+    after?: StateEventCursor;
+}>;
+
+export type RallarListRoomEventsInput = string | RallarListRoomEventsOptions;
+
+export type RallarReplayEventsResult<TEvent> = Readonly<{
+    events: readonly TEvent[];
+    nextCursor?: StateEventCursor;
+    hasMore: boolean;
+    pageCount: number;
+    replayedCount: number;
+    duplicateCount: number;
+}>;
+
+export type RallarReplayRoomEventsOptions =
+    & RallarListRoomEventsOptions
+    & Readonly<{
+    maxPages?: number;
+    listener?: RallarRoomEventListener;
+}>;
+
+export type RallarReplayRoomEventsInput =
+    | string
+    | RallarReplayRoomEventsOptions;
+
+export type RallarListPeopleEventsOptions =
+    & RallarScopedOperationOptions
+    & Readonly<{
+    eventTypes?: readonly ClientEventType[];
+    limit?: number;
+    after?: StateEventCursor;
+}>;
+
+export type RallarReplayPeopleEventsOptions =
+    & RallarListPeopleEventsOptions
+    & Readonly<{
+    maxPages?: number;
+    listener?: RallarPeopleEventListener;
+}>;
+
 export type RallarWaitForOpenStatus =
     | 'open'
     | 'timeout'
@@ -341,7 +394,7 @@ export type RallarRtcRoomLaneWaitStatus =
     | 'aborted'
     | 'failed';
 
-export type RallarMessageTransport = 'rtc' | 'ws';
+export type RallarMessageTransport = 'rtc' | 'ws' | 'replay';
 
 export type RallarMessage<T = unknown> = Readonly<{
     transport: RallarMessageTransport;
@@ -733,6 +786,16 @@ export type RallarFacade = Readonly<{
         refresh(
             input?: StateScope | RallarRefreshOptions,
         ): Promise<RallarRoomState>;
+        listEvents(
+            input: RallarListRoomEventsInput,
+        ): Promise<readonly GroupEvent[]>;
+        listEventPage(
+            input: RallarListRoomEventsInput,
+        ): Promise<StateEventPage<GroupEvent>>;
+        replayEvents(
+            input: RallarReplayRoomEventsInput,
+            listener?: RallarRoomEventListener,
+        ): Promise<RallarReplayEventsResult<GroupEvent>>;
         create(input: string | RallarCreateRoomInput): Promise<GroupSnapshot>;
         join(
             roomId: string,
@@ -757,6 +820,19 @@ export type RallarFacade = Readonly<{
         refresh(
             input?: StateScope | RallarRefreshOptions,
         ): Promise<RallarPeopleState>;
+        listEvents(
+            principalId: string,
+            options?: RallarListPeopleEventsOptions,
+        ): Promise<readonly ClientEvent[]>;
+        listEventPage(
+            principalId: string,
+            options?: RallarListPeopleEventsOptions,
+        ): Promise<StateEventPage<ClientEvent>>;
+        replayEvents(
+            principalId: string,
+            options?: RallarReplayPeopleEventsOptions,
+            listener?: RallarPeopleEventListener,
+        ): Promise<RallarReplayEventsResult<ClientEvent>>;
         get(principalId: string): RallarPerson | undefined;
         onChange(
             listener: RallarStateListener<RallarPeopleState>,
@@ -1069,6 +1145,68 @@ class BrowserRallarFacade implements RallarFacade {
             await this.acceptSnapshots(ctx, clients, groups, operationScope);
             return this.toRoomState();
         },
+        listEvents: async (
+            input: RallarListRoomEventsInput,
+        ): Promise<readonly GroupEvent[]> => {
+            const options = typeof input === 'string'
+                ? { roomId: input }
+                : input;
+            const operationOptions = this.resolveOperationOptions(options);
+            const roomId = options.roomRef?.groupId ?? options.roomId;
+            if (!roomId) {
+                throw new Error(
+                    'Cannot list room events: roomId or roomRef is required.',
+                );
+            }
+
+            const scope = this.resolveRoomEventListScope(options);
+            return await runRallarCommand(
+                async (signal) =>
+                    await api.listStateGroupEvents(
+                        roomId,
+                        scope,
+                        toStateEventListRequestOptions(options, signal),
+                    ),
+                operationOptions,
+            );
+        },
+        listEventPage: async (
+            input: RallarListRoomEventsInput,
+        ): Promise<StateEventPage<GroupEvent>> => {
+            const options = typeof input === 'string'
+                ? { roomId: input }
+                : input;
+            const operationOptions = this.resolveOperationOptions(options);
+            const roomId = options.roomRef?.groupId ?? options.roomId;
+            if (!roomId) {
+                throw new Error(
+                    'Cannot list room event page: roomId or roomRef is required.',
+                );
+            }
+
+            const scope = this.resolveRoomEventListScope(options);
+            return await runRallarCommand(
+                async (signal) =>
+                    await api.listStateGroupEventPage(
+                        roomId,
+                        scope,
+                        toStateEventListRequestOptions(options, signal),
+                    ),
+                operationOptions,
+            );
+        },
+        replayEvents: async (
+            input: RallarReplayRoomEventsInput,
+            listener?: RallarRoomEventListener,
+        ): Promise<RallarReplayEventsResult<GroupEvent>> => {
+            const options = typeof input === 'string'
+                ? { roomId: input }
+                : input;
+            return await this.replayRoomEvents(
+                options,
+                listener ?? options.listener,
+            );
+        },
         create: async (
             input: string | RallarCreateRoomInput,
         ): Promise<GroupSnapshot> => {
@@ -1199,6 +1337,51 @@ class BrowserRallarFacade implements RallarFacade {
             );
             await this.acceptSnapshots(ctx, clients, groups, operationScope);
             return this.toPeopleState();
+        },
+        listEvents: async (
+            principalId: string,
+            options: RallarListPeopleEventsOptions = {},
+        ): Promise<readonly ClientEvent[]> => {
+            const operationOptions = this.resolveOperationOptions(options);
+            const scope = this.resolveOperationScope(options.scope) ??
+                api.defaultStateScope();
+            return await runRallarCommand(
+                async (signal) =>
+                    await api.listStateClientEvents(
+                        principalId,
+                        scope,
+                        toStateEventListRequestOptions(options, signal),
+                    ),
+                operationOptions,
+            );
+        },
+        listEventPage: async (
+            principalId: string,
+            options: RallarListPeopleEventsOptions = {},
+        ): Promise<StateEventPage<ClientEvent>> => {
+            const operationOptions = this.resolveOperationOptions(options);
+            const scope = this.resolveOperationScope(options.scope) ??
+                api.defaultStateScope();
+            return await runRallarCommand(
+                async (signal) =>
+                    await api.listStateClientEventPage(
+                        principalId,
+                        scope,
+                        toStateEventListRequestOptions(options, signal),
+                    ),
+                operationOptions,
+            );
+        },
+        replayEvents: async (
+            principalId: string,
+            options: RallarReplayPeopleEventsOptions = {},
+            listener?: RallarPeopleEventListener,
+        ): Promise<RallarReplayEventsResult<ClientEvent>> => {
+            return await this.replayPeopleEvents(
+                principalId,
+                options,
+                listener ?? options.listener,
+            );
         },
         get: (principalId: string): RallarPerson | undefined => {
             const snapshot = this.findClientSnapshot(principalId);
@@ -2805,6 +2988,21 @@ class BrowserRallarFacade implements RallarFacade {
         return scope ?? this.defaultScope;
     }
 
+    private resolveRoomEventListScope(
+        options: RallarListRoomEventsOptions,
+    ): StateScope {
+        if (options.roomRef) {
+            return {
+                applicationId: options.roomRef.applicationId,
+                workspaceId: options.roomRef.workspaceId ??
+                    DEFAULT_STATE_WORKSPACE_ID,
+            };
+        }
+
+        return this.resolveOperationScope(options.scope) ??
+            api.defaultStateScope();
+    }
+
     private resolveGroupRefFromRoomId(
         roomId: string,
         scope?: StateScope,
@@ -2972,6 +3170,217 @@ class BrowserRallarFacade implements RallarFacade {
             this.peopleEventSubscriptions.delete(subscription);
             this.unregisterStateEventCallbacksIfUnused();
         };
+    }
+
+    private async replayRoomEvents(
+        options: RallarReplayRoomEventsOptions,
+        listener?: RallarRoomEventListener,
+    ): Promise<RallarReplayEventsResult<GroupEvent>> {
+        const operationOptions = this.resolveOperationOptions(options);
+        const roomId = options.roomRef?.groupId ?? options.roomId;
+        if (!roomId) {
+            throw new Error(
+                'Cannot replay room events: roomId or roomRef is required.',
+            );
+        }
+
+        const scope = this.resolveRoomEventListScope(options);
+        return await runRallarCommand(
+            async (signal) => {
+                let after = options.after;
+                let hasMore = false;
+                let nextCursor: StateEventCursor | undefined;
+                let pageCount = 0;
+                let duplicateCount = 0;
+                const replayedEvents: GroupEvent[] = [];
+                const maxPages = toReplayMaxPages(options.maxPages);
+
+                while (pageCount < maxPages) {
+                    const page = await api.listStateGroupEventPage(
+                        roomId,
+                        scope,
+                        toStateEventListRequestOptions(
+                            {
+                                ...options,
+                                after,
+                            },
+                            signal,
+                        ),
+                    );
+                    pageCount += 1;
+                    hasMore = page.hasMore;
+                    nextCursor = page.nextCursor;
+
+                    for (const event of page.events) {
+                        const result = await this.replayRoomEvent(event, listener);
+                        if (result === 'duplicate') {
+                            duplicateCount += 1;
+                        } else if (result === 'replayed') {
+                            replayedEvents.push(event);
+                        }
+                    }
+
+                    if (!page.hasMore || !page.nextCursor) {
+                        break;
+                    }
+                    after = page.nextCursor;
+                }
+
+                return {
+                    events: replayedEvents,
+                    ...(nextCursor ? { nextCursor } : {}),
+                    hasMore,
+                    pageCount,
+                    replayedCount: replayedEvents.length,
+                    duplicateCount,
+                };
+            },
+            operationOptions,
+        );
+    }
+
+    private async replayPeopleEvents(
+        principalId: string,
+        options: RallarReplayPeopleEventsOptions,
+        listener?: RallarPeopleEventListener,
+    ): Promise<RallarReplayEventsResult<ClientEvent>> {
+        const operationOptions = this.resolveOperationOptions(options);
+        const scope = this.resolveOperationScope(options.scope) ??
+            api.defaultStateScope();
+        return await runRallarCommand(
+            async (signal) => {
+                let after = options.after;
+                let hasMore = false;
+                let nextCursor: StateEventCursor | undefined;
+                let pageCount = 0;
+                let duplicateCount = 0;
+                const replayedEvents: ClientEvent[] = [];
+                const maxPages = toReplayMaxPages(options.maxPages);
+
+                while (pageCount < maxPages) {
+                    const page = await api.listStateClientEventPage(
+                        principalId,
+                        scope,
+                        toStateEventListRequestOptions(
+                            {
+                                ...options,
+                                after,
+                            },
+                            signal,
+                        ),
+                    );
+                    pageCount += 1;
+                    hasMore = page.hasMore;
+                    nextCursor = page.nextCursor;
+
+                    for (const event of page.events) {
+                        const result = await this.replayPeopleEvent(event, listener);
+                        if (result === 'duplicate') {
+                            duplicateCount += 1;
+                        } else if (result === 'replayed') {
+                            replayedEvents.push(event);
+                        }
+                    }
+
+                    if (!page.hasMore || !page.nextCursor) {
+                        break;
+                    }
+                    after = page.nextCursor;
+                }
+
+                return {
+                    events: replayedEvents,
+                    ...(nextCursor ? { nextCursor } : {}),
+                    hasMore,
+                    pageCount,
+                    replayedCount: replayedEvents.length,
+                    duplicateCount,
+                };
+            },
+            operationOptions,
+        );
+    }
+
+    private async replayRoomEvent(
+        event: GroupEvent,
+        listener?: RallarRoomEventListener,
+    ): Promise<'replayed' | 'duplicate' | 'no-listeners'> {
+        if (!isGroupEventPayload(event)) {
+            return 'no-listeners';
+        }
+
+        const dedupeKey = toGroupStateEventDedupeKey(event);
+        if (this.seenGroupEventKeys.has(dedupeKey)) {
+            return 'duplicate';
+        }
+
+        const message = toReplayGroupStateEventMessage(event);
+        if (listener) {
+            rememberStateEventKey(this.seenGroupEventKeys, dedupeKey);
+            await notifyStateEventListener(listener, event, message);
+            return 'replayed';
+        }
+
+        const subscriptions = [...this.roomEventSubscriptions]
+            .filter((subscription) =>
+                this.matchesRoomEventSubscription(subscription, event)
+            );
+        if (subscriptions.length === 0) {
+            return 'no-listeners';
+        }
+
+        rememberStateEventKey(this.seenGroupEventKeys, dedupeKey);
+        await Promise.all(
+            subscriptions.map(async (subscription) =>
+                await notifyStateEventListener(
+                    subscription.listener,
+                    event,
+                    message,
+                )
+            ),
+        );
+        return 'replayed';
+    }
+
+    private async replayPeopleEvent(
+        event: ClientEvent,
+        listener?: RallarPeopleEventListener,
+    ): Promise<'replayed' | 'duplicate' | 'no-listeners'> {
+        if (!isClientEventPayload(event)) {
+            return 'no-listeners';
+        }
+
+        const dedupeKey = toClientStateEventDedupeKey(event);
+        if (this.seenClientEventKeys.has(dedupeKey)) {
+            return 'duplicate';
+        }
+
+        const message = toReplayClientStateEventMessage(event);
+        if (listener) {
+            rememberStateEventKey(this.seenClientEventKeys, dedupeKey);
+            await notifyStateEventListener(listener, event, message);
+            return 'replayed';
+        }
+
+        const subscriptions = [...this.peopleEventSubscriptions]
+            .filter((subscription) =>
+                this.matchesPeopleEventSubscription(subscription, event)
+            );
+        if (subscriptions.length === 0) {
+            return 'no-listeners';
+        }
+
+        rememberStateEventKey(this.seenClientEventKeys, dedupeKey);
+        await Promise.all(
+            subscriptions.map(async (subscription) =>
+                await notifyStateEventListener(
+                    subscription.listener,
+                    event,
+                    message,
+                )
+            ),
+        );
+        return 'replayed';
     }
 
     private registerStateEventCallbacks(): void {
@@ -4183,6 +4592,27 @@ function toRealtimeDataChannelSendOptions(
     };
 }
 
+function toStateEventListRequestOptions<TEventType extends string>(
+    options: Readonly<{
+        eventTypes?: readonly TEventType[];
+        limit?: number;
+        after?: StateEventCursor;
+    }>,
+    signal?: AbortSignal,
+): Readonly<{
+    eventTypes?: readonly TEventType[];
+    limit?: number;
+    after?: StateEventCursor;
+    signal?: AbortSignal;
+}> {
+    return {
+        ...(options.eventTypes !== undefined ? { eventTypes: options.eventTypes } : {}),
+        ...(options.limit !== undefined ? { limit: options.limit } : {}),
+        ...(options.after !== undefined ? { after: options.after } : {}),
+        ...(signal ? { signal } : {}),
+    };
+}
+
 function toClosedRealtimeSendResult(): RtcDataChannelSendResult {
     return {
         status: 'closed',
@@ -4219,7 +4649,8 @@ function isGroupEventPayload(value: unknown): value is GroupEvent {
         typeof value.applicationId === 'string' &&
         typeof value.groupId === 'string' &&
         typeof value.eventId === 'string' &&
-        typeof value.eventType === 'string';
+        typeof value.eventType === 'string' &&
+        typeof value.snapshotVersion === 'number';
 }
 
 function isClientEventPayload(value: unknown): value is ClientEvent {
@@ -4227,7 +4658,8 @@ function isClientEventPayload(value: unknown): value is ClientEvent {
         typeof value.applicationId === 'string' &&
         typeof value.principalId === 'string' &&
         typeof value.eventId === 'string' &&
-        typeof value.eventType === 'string';
+        typeof value.eventType === 'string' &&
+        typeof value.snapshotVersion === 'number';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -4259,6 +4691,42 @@ function normalizeStateWorkspaceId(workspaceId?: string): string {
     return workspaceId ?? DEFAULT_STATE_WORKSPACE_ID;
 }
 
+function toReplayGroupStateEventMessage(event: GroupEvent): RallarMessage<GroupEvent> {
+    return toRallarMessage(
+        'replay',
+        newALBroadcastMessage(
+            'rallar:replay',
+            newALRoute(
+                AppTopics.groupStateEvent,
+                event.groupId,
+                event.eventId,
+            ),
+            'all',
+            AppTopics.groupStateEvent,
+            event,
+        ),
+    );
+}
+
+function toReplayClientStateEventMessage(
+    event: ClientEvent,
+): RallarMessage<ClientEvent> {
+    return toRallarMessage(
+        'replay',
+        newALBroadcastMessage(
+            'rallar:replay',
+            newALRoute(
+                AppTopics.clientStateEvent,
+                event.principalId,
+                event.eventId,
+            ),
+            'all',
+            AppTopics.clientStateEvent,
+            event,
+        ),
+    );
+}
+
 function toGroupStateEventDedupeKey(event: GroupEvent): string {
     return [
         event.applicationId,
@@ -4275,6 +4743,18 @@ function toClientStateEventDedupeKey(event: ClientEvent): string {
         event.principalId,
         event.eventId,
     ].join('/');
+}
+
+function toReplayMaxPages(value?: number): number {
+    if (value === undefined) {
+        return DEFAULT_RALLAR_REPLAY_MAX_PAGES;
+    }
+
+    if (!Number.isSafeInteger(value) || value < 1) {
+        return DEFAULT_RALLAR_REPLAY_MAX_PAGES;
+    }
+
+    return Math.min(value, MAX_RALLAR_REPLAY_MAX_PAGES);
 }
 
 function rememberStateEventKey(keys: Set<string>, key: string): void {

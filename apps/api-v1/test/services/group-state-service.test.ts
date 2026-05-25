@@ -101,17 +101,17 @@ Deno.test('upsertMember preserves existing roles across leave and rejoin', async
 Deno.test('semantic group mutations advance snapshotVersion', async () => {
   const service = createTestGroupStateService();
 
-  const created = snapshotFromGroupStateWritten(
-    await service.createGroup(TEST_SCOPE, {
-      groupId: 'group-1',
-      displayName: 'Room 1',
-      kind: 'room',
-      createdByPrincipalId: 'owner-1',
-      actorPrincipalId: 'owner-1',
-      actorSessionId: 'owner-session',
-    }),
-  );
+  const createdWritten = await service.createGroup(TEST_SCOPE, {
+    groupId: 'group-1',
+    displayName: 'Room 1',
+    kind: 'room',
+    createdByPrincipalId: 'owner-1',
+    actorPrincipalId: 'owner-1',
+    actorSessionId: 'owner-session',
+  });
+  const created = snapshotFromGroupStateWritten(createdWritten);
   assertSnapshotVersion(created, 1);
+  assertEventSnapshotVersion(createdWritten, 1);
 
   const unchanged = snapshotFromGroupStateWritten(
     await service.updateGroup(TEST_SCOPE, 'group-1', {
@@ -122,38 +122,38 @@ Deno.test('semantic group mutations advance snapshotVersion', async () => {
   );
   assertSnapshotVersion(unchanged, 1);
 
-  const updated = snapshotFromGroupStateWritten(
-    await service.updateGroup(TEST_SCOPE, 'group-1', {
-      displayName: 'Room 1 updated',
-      actorPrincipalId: 'owner-1',
-    }),
-  );
+  const updatedWritten = await service.updateGroup(TEST_SCOPE, 'group-1', {
+    displayName: 'Room 1 updated',
+    actorPrincipalId: 'owner-1',
+  });
+  const updated = snapshotFromGroupStateWritten(updatedWritten);
   assertSnapshotVersion(updated, 2);
+  assertEventSnapshotVersion(updatedWritten, 2);
 
-  const joined = snapshotFromGroupStateWritten(
-    await service.upsertMember(TEST_SCOPE, 'group-1', 'member-1', {
-      status: 'active',
-      actorPrincipalId: 'owner-1',
-      actorSessionId: 'owner-session',
-    }),
-  );
+  const joinedWritten = await service.upsertMember(TEST_SCOPE, 'group-1', 'member-1', {
+    status: 'active',
+    actorPrincipalId: 'owner-1',
+    actorSessionId: 'owner-session',
+  });
+  const joined = snapshotFromGroupStateWritten(joinedWritten);
   assertSnapshotVersion(joined, 3);
+  assertEventSnapshotVersion(joinedWritten, 3);
 
-  const connected = snapshotFromGroupStateWritten(
-    await service.connectPresenceSession(
-      TEST_SCOPE,
-      'group-1',
-      'member-session',
-      {
-        principalId: 'member-1',
-        actorPrincipalId: 'member-1',
-        actorSessionId: 'member-session',
-        lastHeartbeatAtEpochMs: 1_000,
-        expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
-      },
-    ),
+  const connectedWritten = await service.connectPresenceSession(
+    TEST_SCOPE,
+    'group-1',
+    'member-session',
+    {
+      principalId: 'member-1',
+      actorPrincipalId: 'member-1',
+      actorSessionId: 'member-session',
+      lastHeartbeatAtEpochMs: 1_000,
+      expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
+    },
   );
+  const connected = snapshotFromGroupStateWritten(connectedWritten);
   assertSnapshotVersion(connected, 4);
+  assertEventSnapshotVersion(connectedWritten, 4);
 
   const heartbeat = snapshotFromGroupStateWritten(
     await service.heartbeatPresenceSession(
@@ -171,20 +171,20 @@ Deno.test('semantic group mutations advance snapshotVersion', async () => {
   );
   assertSnapshotVersion(heartbeat, 4);
 
-  const disconnected = snapshotFromGroupStateWritten(
-    await service.disconnectPresenceSession(
-      TEST_SCOPE,
-      'group-1',
-      'member-session',
-      {
-        principalId: 'member-1',
-        actorPrincipalId: 'member-1',
-        actorSessionId: 'member-session',
-        reason: 'left',
-      },
-    ),
+  const disconnectedWritten = await service.disconnectPresenceSession(
+    TEST_SCOPE,
+    'group-1',
+    'member-session',
+    {
+      principalId: 'member-1',
+      actorPrincipalId: 'member-1',
+      actorSessionId: 'member-session',
+      reason: 'left',
+    },
   );
+  const disconnected = snapshotFromGroupStateWritten(disconnectedWritten);
   assertSnapshotVersion(disconnected, 5);
+  assertEventSnapshotVersion(disconnectedWritten, 5);
 });
 
 Deno.test('heartbeatPresenceSession refreshes TTL without publishing unchanged snapshots', async () => {
@@ -404,6 +404,15 @@ function assertMember(
 
 function assertSnapshotVersion(snapshot: GroupSnapshot, expected: number): void {
   assert.equal(snapshot.group.snapshotVersion, expected);
+}
+
+function assertEventSnapshotVersion(written: GroupStateWritten, expected: number): void {
+  const event = written.result.right?.event;
+  if (!event) {
+    throw new Error('Expected group mutation to return an event');
+  }
+
+  assert.equal(event.snapshotVersion, expected);
 }
 
 function snapshotFromGroupStateWritten(written: GroupStateWritten): GroupSnapshot {

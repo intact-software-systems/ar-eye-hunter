@@ -239,6 +239,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             groupId: 'shared-room',
             eventId: 'event-1',
             eventType: 'member-joined',
+            snapshotVersion: 1,
             occurredAtEpochMs: 2,
             actor: {
                 principalId: 'bob',
@@ -426,6 +427,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
             groupId: 'shared-room',
             eventId: 'event-1',
             eventType: 'member-joined',
+            snapshotVersion: 1,
             occurredAtEpochMs: 2,
             actor: {
                 principalId: 'bob',
@@ -581,8 +583,7 @@ function createGroupSnapshot(
         }
     >,
     snapshotVersion: number,
-): GroupSnapshot;
-{
+): GroupSnapshot {
     const activeMembers = members.filter((member) => member.status === 'active');
     return {
         group: {
