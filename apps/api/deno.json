@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "imports": {
     "@/": "./",
+    "@js-temporal/polyfill": "npm:@js-temporal/polyfill@^0.5.1",
     "@shared/": "../../packages/shared/"
   },
   "tasks": {

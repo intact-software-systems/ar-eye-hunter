@@ -81,6 +81,48 @@ export class ResourceInboxResultsRepository {
         );
     }
 
+    async replace(entry: ResourceEntry): Promise<ResourceEntry> {
+        const systemDate = toSystemDate(entry);
+
+        const rows = await this.sql<ResourceInboxResultsRow[]>`
+            insert into resource_inbox_results (ris_resource_id,
+                                                ris_topic_id,
+                                                ris_resource,
+                                                ris_type_id,
+                                                ris_status,
+                                                fk_ext_bank_id,
+                                                system_date,
+                                                created_by,
+                                                created_ts,
+                                                expire_ts)
+            values (${entry.key.resourceId},
+                    ${entry.key.topicId},
+                    ${entry.resource},
+                    ${entry.typeId},
+                    ${entry.status},
+                    ${entry.key.contextId},
+                    ${systemDate},
+                    ${entry.audit.createdBy},
+                    ${toPgTimestamp(entry.audit.createdTs)},
+                    ${toPgTimestamp(entry.audit.expiryTs)})
+            on conflict (fk_ext_bank_id, ris_resource_id, ris_topic_id)
+                do update set ris_resource = excluded.ris_resource,
+                              ris_type_id  = excluded.ris_type_id,
+                              ris_status   = excluded.ris_status,
+                              system_date  = excluded.system_date,
+                              created_by   = excluded.created_by,
+                              created_ts   = excluded.created_ts,
+                              expire_ts    = excluded.expire_ts
+            returning *
+        `;
+
+        if (rows.length !== 1) {
+            throw new Error('Replace failed: expected exactly one row');
+        }
+
+        return toResultsDomain(rows[0]);
+    }
+
     async findAnyByKey(key: Key): Promise<ResourceEntry | null> {
         const rows = await this.sql<ResourceInboxResultsRow[]>`
             select *

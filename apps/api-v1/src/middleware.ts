@@ -40,6 +40,9 @@ import * as groupStateSnapshotsRepository from '@shared/repository/group-state-s
 import {
     createGroupStateSnapshotReadThroughCache,
 } from '@shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts';
+import {
+    initPresenceExpiryReconciliation,
+} from '@shared-server/rallar-system/services/presence-expiry-reconciliation-service.ts';
 
 export type Middleware = RallarMiddlewareRuntime;
 
@@ -140,6 +143,11 @@ function initialise(): Middleware {
         channel: dbWsChannelId,
         publisherId: myPublisherId,
     });
+
+    initPresenceExpiryReconciliation(runtime)
+        .catch((e) =>
+            console.error('Failed to initialise presence expiry reconciliation:', e)
+        );
 
     return runtime;
 }

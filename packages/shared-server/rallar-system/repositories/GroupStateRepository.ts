@@ -11,6 +11,10 @@ import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStat
 import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import { GroupStateWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+import {
+    isLogicallyActiveSession,
+    toSessionPurgeAfterEpochMs,
+} from './session-expiry.ts';
 
 const GROUPS_NAMESPACE = 'group-state:groups';
 const MEMBERS_NAMESPACE = 'group-state:members';
@@ -113,7 +117,10 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
             SESSIONS_NAMESPACE,
             this.sessionKey(session),
             session,
-            session.expiresAtEpochMs,
+            toSessionPurgeAfterEpochMs(
+                session.expiresAtEpochMs,
+                session.disconnectedAtEpochMs,
+            ),
         );
     }
 
@@ -190,7 +197,9 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         sessions: readonly GroupPresenceSession[],
     ): readonly GroupPresenceSession[] {
         return sessions.filter(
-            (session) => session.disconnectedAtEpochMs === undefined,
+            (session) =>
+                session.disconnectedAtEpochMs === undefined &&
+                isLogicallyActiveSession(session.expiresAtEpochMs),
         );
     }
 

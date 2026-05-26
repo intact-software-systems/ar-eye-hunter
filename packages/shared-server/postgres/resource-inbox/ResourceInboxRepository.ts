@@ -9,7 +9,7 @@ import {
     toDomain,
     toPgTimestamp,
     toSystemDate
-} from '@shared-server/postgres/resource-inbox/repository-utils.ts';
+} from './repository-utils.ts';
 
 export const RESOURCE_INBOX_EXPIRY_EVICTION_INTERVAL_MS = 15_000;
 

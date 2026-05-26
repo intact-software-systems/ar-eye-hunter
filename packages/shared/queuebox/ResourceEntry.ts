@@ -124,6 +124,10 @@ export function isCompleted(status: EntityStatus): boolean {
     return COMPLETED_STATUSES.has(status);
 }
 
+export function isCompletedOrFailed(status: EntityStatus): boolean {
+    return COMPLETED_STATUSES.has(status) || status === EntityStatus.FAILED;
+}
+
 export const TIMEOUT_ON_NON_RESPONSIVE_ENTRY: Temporal.Duration = Temporal.Duration.from({ minutes: 5 });
 
 // TODO: Replace with 30 days

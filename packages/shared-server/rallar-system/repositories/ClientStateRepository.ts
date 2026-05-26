@@ -15,6 +15,10 @@ import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStat
 import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type { ClientStateWritten } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+import {
+    isLogicallyActiveSession,
+    toSessionPurgeAfterEpochMs,
+} from './session-expiry.ts';
 
 const PRINCIPALS_NAMESPACE = 'client-state:principals';
 const INSTANCES_NAMESPACE = 'client-state:instances';
@@ -118,7 +122,10 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
             SESSIONS_NAMESPACE,
             this.sessionKey(session),
             session,
-            session.expiresAtEpochMs,
+            toSessionPurgeAfterEpochMs(
+                session.expiresAtEpochMs,
+                session.disconnectedAtEpochMs,
+            ),
         );
     }
 
@@ -224,7 +231,12 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     private toActiveSessions(
         sessions: readonly ClientSession[],
     ): readonly ClientSession[] {
-        return sessions.filter((session) => session.status === 'active');
+        return sessions.filter(
+            (session) =>
+                session.status === 'active' &&
+                session.disconnectedAtEpochMs === undefined &&
+                isLogicallyActiveSession(session.expiresAtEpochMs),
+        );
     }
 
     private toPresenceState(

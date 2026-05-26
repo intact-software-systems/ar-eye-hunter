@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    NEVER_EXPIRE_TS,
+    type ResourceEntry,
+} from '@shared/queuebox/ResourceEntry.ts';
 
 describe('InMemoryQueueBox', () => {
     it('returns the existing entry from enqueueIfAbsent without overwriting it', async () => {
@@ -22,6 +27,49 @@ describe('InMemoryQueueBox', () => {
         );
 
         expect(firstValue(reserved).resource).toBe(original.resource);
+    });
+
+    it('uses enqueueIf predicate to decide whether active entries are overwritten', async () => {
+        const queue = new InMemoryQueueBox();
+        const original = createEntry('presence.state.v1', 'resource-1', {
+            resource: JSON.stringify({ version: 1 }),
+        });
+        const skippedReplacement = createEntry('presence.state.v1', 'resource-1', {
+            resource: JSON.stringify({ version: 2 }),
+        });
+        const acceptedReplacement = createEntry('presence.state.v1', 'resource-1', {
+            resource: JSON.stringify({ version: 3 }),
+        });
+
+        await queue.enqueueIfAbsent(original);
+
+        const skip = vi.fn(() => false);
+        expect(await queue.enqueueIf(skippedReplacement, skip)).toBe(original);
+        expect(skip).toHaveBeenCalledWith(original);
+        expect((await queue.getItem(original.key))?.resource).toBe(original.resource);
+
+        const overwrite = vi.fn(() => true);
+        expect(await queue.enqueueIf(acceptedReplacement, overwrite)).toBe(original);
+        expect(overwrite).toHaveBeenCalledWith(original);
+        expect((await queue.getItem(original.key))?.resource).toBe(acceptedReplacement.resource);
+    });
+
+    it('overwrites expired entries with enqueueIf without calling the predicate', async () => {
+        const queue = new InMemoryQueueBox();
+        const expired = createEntry('presence.state.v1', 'resource-1', {
+            resource: JSON.stringify({ version: 1 }),
+            expiryTs: Temporal.Now.instant().subtract({ seconds: 1 }),
+        });
+        const replacement = createEntry('presence.state.v1', 'resource-1', {
+            resource: JSON.stringify({ version: 2 }),
+        });
+        const enqueueIt = vi.fn(() => false);
+
+        await queue.enqueue(expired);
+
+        expect(await queue.enqueueIf(replacement, enqueueIt)).toBeUndefined();
+        expect(enqueueIt).not.toHaveBeenCalled();
+        expect((await queue.getItem(expired.key))?.resource).toBe(replacement.resource);
     });
 
     it('removes completed entries during cleanup while keeping active work', async () => {
@@ -55,16 +103,20 @@ describe('InMemoryQueueBox', () => {
         const queue = new InMemoryQueueBox();
         const expiresAt = Temporal.Now.instant().subtract({ seconds: 1 });
 
-        await queue.enqueue(createEntry('chat.message.v1', 'expired-1', {
-            expiryTs: expiresAt,
-        }));
+        await queue.enqueue(
+            createEntry('chat.message.v1', 'expired-1', {
+                expiryTs: expiresAt,
+            }),
+        );
         await queue.enqueue(createEntry('chat.message.v1', 'active-1'));
 
-        expect(await queue.getItem({
-            topicId: 'chat.message.v1',
-            resourceId: 'expired-1',
-            contextId: 'ctx-1',
-        })).toBeUndefined();
+        expect(
+            await queue.getItem({
+                topicId: 'chat.message.v1',
+                resourceId: 'expired-1',
+                contextId: 'ctx-1',
+            }),
+        ).toBeUndefined();
         expect(await queue.deleteExpired()).toBe(0);
 
         const active = await queue.reserveEntries(

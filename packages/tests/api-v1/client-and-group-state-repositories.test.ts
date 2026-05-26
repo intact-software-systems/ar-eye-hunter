@@ -54,7 +54,7 @@ describe('ClientStateRepository', () => {
                 clientInstanceId: 'instance-b',
                 sessionId: 'session-b',
             }),
-        ).toBeUndefined();
+        ).toEqual(expiredSession);
 
         expect(
             await clientRepository.listPrincipals({
@@ -137,6 +137,15 @@ describe('GroupStateRepository', () => {
         await groupRepository.putPresenceSession(expiredSession);
         await groupRepository.appendEvent(createGroupEvent('evt-2', now + 2_000));
         await groupRepository.appendEvent(createGroupEvent('evt-1', now + 1_000));
+
+        expect(
+            await groupRepository.findPresenceSession({
+                applicationId: group.applicationId,
+                workspaceId: group.workspaceId,
+                groupId: group.groupId,
+                sessionId: 'session-c',
+            }),
+        ).toEqual(expiredSession);
 
         expect(
             await groupRepository.findGroupBySlug(

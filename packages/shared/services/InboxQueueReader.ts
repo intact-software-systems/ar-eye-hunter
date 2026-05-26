@@ -4,6 +4,7 @@ import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
+import { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 export class InboxQueueReader {
     public static readonly INBOX_ENQUEUE_TYPE = EnqueuedType.APP_INBOX;
@@ -13,7 +14,8 @@ export class InboxQueueReader {
 
     private readonly onInboxMessageCallbacks = new Map<string, OnMessageCallback>();
 
-    constructor(public readonly inbox: QueueBoxResourceEntryRepository) {}
+    constructor(public readonly inbox: QueueBoxResourceEntryRepository) {
+    }
 
     onInboxMessageDo(type: string, callback: OnMessageCallback): this {
         this.onInboxMessageCallbacks.set(type, callback);
@@ -24,12 +26,25 @@ export class InboxQueueReader {
         return this.onInboxMessageCallbacks.delete(type);
     }
 
-    async enqueueIfAbsent(message: ALMessage) {
-        await this.inbox.enqueueIfAbsent(
+    async enqueueIfAbsent(message: ALMessage): Promise<ResourceEntry> {
+        return await this.inbox.enqueueIfAbsent(
             QueueBoxUtilities.toResourceEntryFromMsg(
                 message,
                 InboxQueueReader.INBOX_ENQUEUE_TYPE,
             )
+        );
+    }
+
+    async enqueueIf(
+        message: ALMessage,
+        enqueueIf: (entry: ResourceEntry) => boolean,
+    ): Promise<ResourceEntry | undefined> {
+        return await this.inbox.enqueueIf(
+            QueueBoxUtilities.toResourceEntryFromMsg(
+                message,
+                InboxQueueReader.INBOX_ENQUEUE_TYPE,
+            ),
+            enqueueIf
         );
     }
 

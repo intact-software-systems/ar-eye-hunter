@@ -21,6 +21,7 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import {
     AppClientInboxService,
     AppInboxType,
+    type ClientExpiredSessionsAppInboxPayload,
     type ClientInstanceUpsertAppInboxPayload,
     type ClientPrincipalUpsertAppInboxPayload,
     type ClientSessionConnectAppInboxPayload,
@@ -322,6 +323,224 @@ describe('AppClientInboxService', () => {
         expect(publisher.publishClientEvent).toHaveBeenCalledTimes(1);
     });
 
+    it('processes expired client sessions through the inbox and publishes written mutations', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const publisher = createPublisher();
+        let serviceNow = 2_000;
+        const expiresAtEpochMs = Date.now() - 1_000;
+        const clientStateService = createClientStateService({
+            runtimeRepository,
+            syncPublisher: publisher,
+            now: () => serviceNow,
+            serviceId: 'server-12345678',
+        });
+        await clientStateService.connectSession(
+            SCOPE,
+            'alice',
+            'alice-browser',
+            'alice-session',
+            {
+                presenceState: 'online',
+                actorPrincipalId: 'alice',
+                actorSessionId: 'alice-session',
+                lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
+                expiresAtEpochMs,
+                requestId: 'seed-client-expiry-session',
+            },
+        );
+        serviceNow = expiresAtEpochMs + 1;
+
+        const service = new AppClientInboxService(
+            reader,
+            queue as never,
+            results as never,
+            clientStateService,
+            publisher,
+            'server-12345678',
+        );
+
+        const expired = await processAppInboxMethod(reader, () =>
+            service.processExpiredSessions(serviceNow)
+        );
+
+        expect(expired.right).toHaveLength(1);
+        expect(expired.right?.[0].result.right?.event).toMatchObject({
+            eventType: 'session-expired',
+            reason: 'expired',
+            sessionId: 'alice-session',
+        });
+        expect(expired.right?.[0].result.right?.snapshot.activeSessions).toEqual([]);
+        expect(publisher.publishClientSnapshot).toHaveBeenCalledTimes(1);
+        expect(publisher.publishClientEvent).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps at most one active no-wait client expiry entry across timestamps', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const clientStateService = createClientStateServiceStub({
+            expireExpiredSessions: vi.fn(async () => []),
+        });
+        const service = new AppClientInboxService(
+            reader,
+            queue as never,
+            results as never,
+            clientStateService,
+            createPublisher(),
+            'server-12345678',
+        );
+
+        service.processExpiredSessionsNoWaiting(60_000);
+        service.processExpiredSessionsNoWaiting(120_000);
+
+        await waitForQueueEntryCount(queue, 1);
+        const entries = await readEntries(queue);
+
+        expect(activeEntries(entries)).toHaveLength(1);
+        expect(entries[0].key.resourceId).toBe('expire-client-sessions');
+        expect(readEnqueuedData<ClientExpiredSessionsAppInboxPayload>(entries[0]).atEpochMs).toBe(
+            60_000,
+        );
+        expect(clientStateService.expireExpiredSessions).not.toHaveBeenCalled();
+    });
+
+    it('keeps at most one active waiting client expiry entry across timestamps', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const expireExpiredSessions = vi.fn(async () => []);
+        const clientStateService = createClientStateServiceStub({
+            expireExpiredSessions,
+        });
+        const service = new AppClientInboxService(
+            reader,
+            queue as never,
+            results as never,
+            clientStateService,
+            createPublisher(),
+            'server-12345678',
+        );
+
+        const first = service.processExpiredSessions(60_000);
+        const second = service.processExpiredSessions(120_000);
+
+        await waitForQueueEntryCount(queue, 1);
+        const entries = await readEntries(queue);
+
+        expect(activeEntries(entries)).toHaveLength(1);
+        expect(entries[0].key.resourceId).toBe('expire-client-sessions');
+        expect(readEnqueuedData<ClientExpiredSessionsAppInboxPayload>(entries[0]).atEpochMs).toBe(
+            60_000,
+        );
+
+        await reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+
+        await expect(first).resolves.toMatchObject({ right: [] });
+        await expect(second).resolves.toMatchObject({ right: [] });
+        expect(expireExpiredSessions).toHaveBeenCalledTimes(1);
+        expect(expireExpiredSessions).toHaveBeenLastCalledWith(60_000);
+    });
+
+    it('does not replace reserved or retry client expiry entries', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const clientStateService = createClientStateServiceStub({
+            expireExpiredSessions: vi.fn(async () => []),
+        });
+        const service = new AppClientInboxService(
+            reader,
+            queue as never,
+            results as never,
+            clientStateService,
+            createPublisher(),
+            'server-12345678',
+        );
+
+        service.processExpiredSessionsNoWaiting(60_000);
+        await waitForQueueEntryCount(queue, 1);
+        let [entry] = await readEntries(queue);
+        await queue.releaseEntries([entry], EntityStatus.RESERVED);
+
+        service.processExpiredSessionsNoWaiting(120_000);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        [entry] = await readEntries(queue);
+        expect(activeEntries([entry])).toHaveLength(1);
+        expect(entry.status).toBe(EntityStatus.RESERVED);
+        expect(readEnqueuedData<ClientExpiredSessionsAppInboxPayload>(entry).atEpochMs).toBe(
+            60_000,
+        );
+
+        await queue.releaseEntries([entry], EntityStatus.RETRY);
+
+        service.processExpiredSessionsNoWaiting(180_000);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        [entry] = await readEntries(queue);
+        expect(activeEntries([entry])).toHaveLength(1);
+        expect(entry.status).toBe(EntityStatus.RETRY);
+        expect(readEnqueuedData<ClientExpiredSessionsAppInboxPayload>(entry).atEpochMs).toBe(
+            60_000,
+        );
+    });
+
+    it('skips active client expiry entries and replaces completed ones', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const expireExpiredSessions = vi.fn(async () => []);
+        const clientStateService = createClientStateServiceStub({
+            expireExpiredSessions,
+        });
+        const service = new AppClientInboxService(
+            reader,
+            queue as never,
+            results as never,
+            clientStateService,
+            createPublisher(),
+            'server-12345678',
+        );
+
+        service.processExpiredSessionsNoWaiting(60_000);
+        service.processExpiredSessionsNoWaiting(120_000);
+
+        await waitForQueueEntryCount(queue, 1);
+        let [entry] = await readEntries(queue);
+        expect(activeEntries([entry])).toHaveLength(1);
+        expect(entry.key.resourceId).toBe('expire-client-sessions');
+        expect(readEnqueuedData<ClientExpiredSessionsAppInboxPayload>(entry).atEpochMs).toBe(
+            60_000,
+        );
+
+        await reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+        expect(expireExpiredSessions).toHaveBeenCalledTimes(1);
+        expect(expireExpiredSessions).toHaveBeenLastCalledWith(60_000);
+
+        service.processExpiredSessionsNoWaiting(120_000);
+
+        await waitForQueueEntryStatus(queue, EntityStatus.NEW);
+        [entry] = await readEntries(queue);
+        expect(entry.status).toBe(EntityStatus.NEW);
+        expect(readEnqueuedData<ClientExpiredSessionsAppInboxPayload>(entry).atEpochMs).toBe(
+            120_000,
+        );
+
+        await reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+        expect(expireExpiredSessions).toHaveBeenCalledTimes(2);
+        expect(expireExpiredSessions).toHaveBeenLastCalledWith(120_000);
+    });
+
     it('returns a left result when a client inbox mutation handler fails with a non-retryable error', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
@@ -429,6 +648,11 @@ function requireClientMutationWritten(
 class TestResourceInboxResults {
     private readonly data = new Map<string, ResourceEntry>();
 
+    async replace(entry: ResourceEntry): Promise<ResourceEntry> {
+        this.data.set(toKeyAsString(entry.key), entry);
+        return entry;
+    }
+
     async writeIfAbsentOrReplaceExpired(
         entry: ResourceEntry,
     ): Promise<ResourceEntry> {
@@ -484,6 +708,67 @@ async function processAppInboxMethod<R>(
     return await resultPromise;
 }
 
+async function waitForQueueEntryCount(
+    queue: InMemoryQueueBox,
+    count: number,
+): Promise<void> {
+    for (let i = 0; i < 20; i += 1) {
+        if ((await readEntries(queue)).length >= count) {
+            return;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    throw new Error(`Expected at least ${count} app inbox entries`);
+}
+
+async function waitForQueueEntryStatus(
+    queue: InMemoryQueueBox,
+    status: EntityStatus,
+): Promise<void> {
+    for (let i = 0; i < 20; i += 1) {
+        if ((await readEntries(queue)).some((entry) => entry.status === status)) {
+            return;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    throw new Error(`Expected app inbox entry with status ${status}`);
+}
+
+async function readEntries(queue: InMemoryQueueBox): Promise<ResourceEntry[]> {
+    const entries = await Promise.all(
+        (await queue.getAllKeys()).map((key) => queue.getItem(key)),
+    );
+
+    return entries.filter((entry): entry is ResourceEntry => entry !== undefined);
+}
+
+function activeEntries(entries: ResourceEntry[]): ResourceEntry[] {
+    const activeStatuses = new Set([
+        EntityStatus.NEW,
+        EntityStatus.RESERVED,
+        EntityStatus.RETRY,
+    ]);
+
+    return entries.filter((entry) => activeStatuses.has(entry.status));
+}
+
+function readEnqueuedData<V>(entry: ResourceEntry): V {
+    const message = JSON.parse(entry.resource) as {
+        payload: {
+            resource: string;
+        };
+    };
+    const enqueue = JSON.parse(message.payload.resource) as {
+        data: V;
+    };
+
+    return enqueue.data;
+}
+
 function createClientStateServiceStub(
     overrides: Partial<ClientStateService>,
 ): ClientStateService {
@@ -497,6 +782,7 @@ function createClientStateServiceStub(
         connectSession: vi.fn(),
         heartbeatSession: vi.fn(),
         disconnectSession: vi.fn(),
+        expireExpiredSessions: vi.fn(),
         registerAuthorisedWsClientSession: vi.fn(),
         disconnectAuthorisedWsClientSession: vi.fn(),
         ...overrides,
@@ -505,10 +791,18 @@ function createClientStateServiceStub(
 
 function createPublisher() {
     return {
-        publishClientSnapshot: vi.fn(async () => undefined),
-        publishClientEvent: vi.fn(async () => undefined),
-        publishGroupSnapshot: vi.fn(async () => undefined),
-        publishGroupEvent: vi.fn(async () => undefined),
+        publishClientSnapshot: vi.fn(
+            async (_snapshot: unknown, _senderId?: string) => undefined,
+        ),
+        publishClientEvent: vi.fn(
+            async (_event: unknown, _senderId?: string) => undefined,
+        ),
+        publishGroupSnapshot: vi.fn(
+            async (_snapshot: unknown, _senderId?: string) => undefined,
+        ),
+        publishGroupEvent: vi.fn(
+            async (_event: unknown, _senderId?: string) => undefined,
+        ),
     };
 }
 

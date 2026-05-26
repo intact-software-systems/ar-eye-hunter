@@ -1,5 +1,5 @@
 import { EnqueueBoxResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
-import { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { isExpiredResourceEntry, Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import {
   ResourceInboxResultsRepository,
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
@@ -24,6 +24,27 @@ export class PSqlResultsQueueBox implements EnqueueBoxResourceEntryRepository {
     return await this.repo.begin(
       async (txRepo: ResourceInboxResultsRepository) => {
         return await txRepo.writeIfAbsentOrReplaceExpired(resourceEntry);
+      },
+    );
+  }
+
+  async enqueueIf(
+    resourceEntry: ResourceEntry,
+    enqueueIt: (existing: ResourceEntry) => boolean,
+  ): Promise<ResourceEntry | undefined> {
+    return await this.repo.begin(
+      async (txRepo: ResourceInboxResultsRepository) => {
+        const previous = await txRepo.findAnyByKey(resourceEntry.key);
+        if (!previous || isExpiredResourceEntry(previous)) {
+          await txRepo.replace(resourceEntry);
+          return undefined;
+        }
+
+        if (enqueueIt(previous)) {
+          await txRepo.replace(resourceEntry);
+        }
+
+        return previous;
       },
     );
   }

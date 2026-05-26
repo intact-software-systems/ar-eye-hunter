@@ -20,10 +20,12 @@ import type {
 } from '@shared-server/rallar-system/services/client-state-service.ts';
 import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import {
+    AppInboxEnqueueInput,
     AppInboxService,
     AppInboxType,
     SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { isCompletedOrFailed } from '@shared/queuebox/ResourceEntry.ts';
 
 export {
     AppInboxService,
@@ -76,6 +78,10 @@ export type ClientAuthorisedWsSessionConnectAppInboxPayload = Readonly<{
 export type ClientAuthorisedWsSessionDisconnectAppInboxPayload = Readonly<{
     sessionId: string;
     reason?: string;
+}>;
+
+export type ClientExpiredSessionsAppInboxPayload = Readonly<{
+    atEpochMs: number;
 }>;
 
 export class AppClientInboxService extends AppInboxService {
@@ -206,6 +212,21 @@ export class AppClientInboxService extends AppInboxService {
                 return clientStateWritten;
             },
         );
+        this.onStateMessage<ClientExpiredSessionsAppInboxPayload>(
+            AppInboxType.CLIENT_EXPIRED_SESSIONS,
+            async (input) => {
+                const clientStateWrittenResults =
+                    await this.clientStateService.expireExpiredSessions(
+                        input.atEpochMs,
+                    );
+
+                for (const clientStateWritten of clientStateWrittenResults) {
+                    await this.publishClientStateWritten(clientStateWritten);
+                }
+
+                return clientStateWrittenResults;
+            },
+        );
     }
 
     public async processAuthorisedWsClientConnect(
@@ -251,6 +272,23 @@ export class AppClientInboxService extends AppInboxService {
         });
     }
 
+    public async processExpiredSessions(atEpochMs: number = Date.now()) {
+        return await this.processEntryUntilCompletionIf<
+            ClientExpiredSessionsAppInboxPayload,
+            readonly ClientStateWritten[]
+        >(
+            this.toExpiredSessionsEnqueue(atEpochMs),
+            entry => isCompletedOrFailed(entry.status),
+        );
+    }
+
+    public processExpiredSessionsNoWaiting(atEpochMs: number = Date.now()): void {
+        this.processEntryNoWaitingIf<ClientExpiredSessionsAppInboxPayload>(
+            this.toExpiredSessionsEnqueue(atEpochMs),
+            entry => isCompletedOrFailed(entry.status),
+        );
+    }
+
     public async publishClientStateWritten(
         clientStateWritten: ClientStateWritten,
     ): Promise<void> {
@@ -275,5 +313,20 @@ export class AppClientInboxService extends AppInboxService {
             written.event,
             this.serviceId,
         );
+    }
+
+    private toExpiredSessionsEnqueue(
+        atEpochMs: number
+    ): AppInboxEnqueueInput<ClientExpiredSessionsAppInboxPayload> {
+        return {
+            type: AppInboxType.CLIENT_EXPIRED_SESSIONS,
+            topicId: AppInboxType.CLIENT_EXPIRED_SESSIONS,
+            resourceId: `expire-client-sessions`,
+            contextId: 'expire-client-sessions',
+            senderId: this.serviceId,
+            data: {
+                atEpochMs,
+            },
+        };
     }
 }

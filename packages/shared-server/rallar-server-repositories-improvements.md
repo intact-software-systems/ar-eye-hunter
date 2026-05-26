@@ -1093,6 +1093,40 @@ Recommended hardening:
 - Add server-side periodic reconciliation for expired presence sessions and snapshot publication.
 - Add tests for abrupt socket termination and server restart.
 
+Implementation status:
+
+- Implemented logical-vs-physical session expiry for client and group session repositories. Session rows now remain in
+  runtime state for a purge grace period after their logical `expiresAtEpochMs`, while snapshots still exclude logically
+  expired sessions.
+- Added client expiry reconciliation through `ClientStateService.expireExpiredSessions(...)` and
+  `AppClientInboxService.processExpiredSessions(...)`. Expired client sessions are marked `status: 'expired'`, get a
+  `session-expired` event, and are published through the app inbox.
+- Added group presence expiry reconciliation through `GroupStateService.expireExpiredPresenceSessions(...)` and
+  `AppGroupInboxService.processExpiredPresenceSessions(...)`. Group presence expiry reuses the existing
+  `session-disconnected` event shape with `reason: 'expired'`.
+- Added periodic middleware startup wiring via `initPresenceExpiryReconciliation(...)`, which enqueues no-wait app-inbox
+  scans for client and group expiry reconciliation.
+- Added terminal-state guards so late WS close cleanup does not rewrite an already expired/disconnected session or append
+  duplicate events.
+- Added per-session runtime-state advisory locks for client session mutations and group presence-session mutations. Expiry
+  reconciliation and late WS cleanup now acquire the same lock before idempotency lookup and state mutation, reducing
+  duplicate writes when multiple API processes scan the same expired session.
+
+Verification:
+
+- Added repository tests proving expired rows remain readable for reconciliation while snapshots omit them.
+- Added client/group service tests proving expiry is applied once, direct publication does not happen inside state
+  services, and late WS cleanup does not rewrite expired rows.
+- Added app-inbox tests proving expiry reconciliation publishes snapshot/event results.
+- Added a reconciliation enqueue test proving both client and group expiry scans are queued without waiting.
+- Added lock coverage proving expiry and late cleanup use the same per-session lock key.
+
+Remaining risk:
+
+- The app-inbox and state-service unit tests prove lock acquisition and idempotent behavior, but there is still no
+  real multi-process Postgres test that starts two API workers and forces both to reconcile the same expired session at
+  the same time.
+
 ## Suggested First Proofs
 
 1. Multi-workspace isolation test: prove whether state snapshots from workspace A reach a browser connected to workspace

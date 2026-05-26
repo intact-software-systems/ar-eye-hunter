@@ -25,6 +25,7 @@ export enum AppInboxType {
     CLIENT_SESSION_DISCONNECT = 'CLIENT_SESSION_DISCONNECT',
     CLIENT_AUTHORISED_WS_CONNECT = 'CLIENT_AUTHORISED_WS_CONNECT',
     CLIENT_AUTHORISED_WS_DISCONNECT = 'CLIENT_AUTHORISED_WS_DISCONNECT',
+    CLIENT_EXPIRED_SESSIONS = 'CLIENT_EXPIRED_SESSIONS',
     GROUP_CREATE = 'GROUP_CREATE',
     GROUP_UPDATE = 'GROUP_UPDATE',
     GROUP_MEMBER_UPSERT = 'GROUP_MEMBER_UPSERT',
@@ -32,6 +33,7 @@ export enum AppInboxType {
     GROUP_PRESENCE_HEARTBEAT = 'GROUP_PRESENCE_HEARTBEAT',
     GROUP_PRESENCE_DISCONNECT = 'GROUP_PRESENCE_DISCONNECT',
     GROUP_PRESENCE_DISCONNECT_BY_SESSION_ID = 'GROUP_PRESENCE_DISCONNECT_BY_SESSION_ID',
+    GROUP_EXPIRED_PRESENCE_SESSIONS = 'GROUP_EXPIRED_PRESENCE_SESSIONS',
 }
 
 export { NonRetryableException };
@@ -58,48 +60,123 @@ export class AppInboxService {
     }
 
     public processEntryNoWaiting<V, R = V>(enqueue: AppInboxEnqueueInput<V>) {
-        this.processEntryUntilCompletionInternal(enqueue, false).catch((err) => {
-            console.error(`Error processing entry without waiting: ${err}`);
-        });
+        this.processEntryUntilCompletionInternal(
+                enqueue,
+                false,
+                async (key) => {
+                    return await this.inbox.enqueueIfAbsent(
+                        newALUntargetedMessage(
+                            toQueueKeyPart(this.serviceId, 16),
+                            newALRoute(key.topicId, key.contextId, key.resourceId),
+                            enqueue.type.toString(),
+                            enqueue,
+                        ),
+                    );
+                }
+            )
+            .catch((err) => {
+                console.error(`Error processing entry without waiting: ${err}`);
+            });
+    }
+
+    // use this from client/group cleanup of expired
+    public processEntryNoWaitingIf<V, R = V>(
+        enqueue: AppInboxEnqueueInput<V>,
+        enqueueIf: (entry: ResourceEntry) => boolean
+    ) {
+        this.processEntryUntilCompletionInternal(
+                enqueue,
+                false,
+                async (key) => {
+                    return await this.inbox.enqueueIf(
+                        newALUntargetedMessage(
+                            toQueueKeyPart(this.serviceId, 16),
+                            newALRoute(key.topicId, key.contextId, key.resourceId),
+                            enqueue.type.toString(),
+                            enqueue,
+                        ),
+                        enqueueIf
+                    );
+                }
+            )
+            .catch((err) => {
+                console.error(`Error processing entry without waiting: ${err}`);
+            });
     }
 
     public async processEntryUntilCompletion<V, R = V>(
         enqueue: AppInboxEnqueueInput<V>,
     ): Promise<Either<string, R>> {
-        return await this.processEntryUntilCompletionInternal(enqueue, true);
+        return await this.processEntryUntilCompletionInternal(
+            enqueue,
+            true,
+            async (key) => {
+                return await this.inbox.enqueueIfAbsent(
+                    newALUntargetedMessage(
+                        toQueueKeyPart(this.serviceId, 16),
+                        newALRoute(key.topicId, key.contextId, key.resourceId),
+                        enqueue.type.toString(),
+                        enqueue,
+                    ),
+                );
+            }
+        );
+    }
+
+    public async processEntryUntilCompletionIf<V, R = V>(
+        enqueue: AppInboxEnqueueInput<V>,
+        enqueueIf: (entry: ResourceEntry) => boolean
+    ): Promise<Either<string, R>> {
+        return await this.processEntryUntilCompletionInternal(
+            enqueue,
+            true,
+            async (key) => {
+                return await this.inbox.enqueueIf(
+                    newALUntargetedMessage(
+                        toQueueKeyPart(this.serviceId, 16),
+                        newALRoute(key.topicId, key.contextId, key.resourceId),
+                        enqueue.type.toString(),
+                        enqueue,
+                    ),
+                    enqueueIf
+                );
+            }
+        );
     }
 
     private async processEntryUntilCompletionInternal<V, R = V>(
         enqueue: AppInboxEnqueueInput<V>,
         waitForCompletion: boolean,
+        enqueuer: (key: Key) => Promise<ResourceEntry | undefined>
     ): Promise<Either<string, R>> {
         const key: Key = this.toKey(enqueue);
 
-        await this.inbox.enqueueIfAbsent(
-            newALUntargetedMessage(
-                toQueueKeyPart(this.serviceId, 16),
-                newALRoute(key.topicId, key.contextId, key.resourceId),
-                enqueue.type.toString(),
-                enqueue,
-            ),
-        );
+        await enqueuer(key);
 
         if (!waitForCompletion) {
             return Either.ofLeft('No waiting for completion');
         }
 
-        const isCompleted = await tryWithPolicy<boolean>(async () => {
-            const isCompleted = await this.resourceInbox.isEntryWithStatus(key, [
-                EntityStatus.COMPLETED,
-                EntityStatus.FAILED,
-            ]);
+        const isCompleted =
+            await tryWithPolicy<boolean>(
+                async () => {
+                    const isCompleted =
+                        await this.resourceInbox.isEntryWithStatus(
+                            key,
+                            [
+                                EntityStatus.COMPLETED,
+                                EntityStatus.FAILED,
+                            ]
+                        );
 
-            if (!isCompleted) {
-                throw new Error('App inbox entry not found');
-            }
+                    if (!isCompleted) {
+                        throw new Error('App inbox entry not found');
+                    }
 
-            return true;
-        }, TryWithPolicy.defaults().maxElapsedMsecs(AppInboxService.MAX_ELAPSED_MSECS));
+                    return true;
+                },
+                TryWithPolicy.defaults().maxElapsedMsecs(AppInboxService.MAX_ELAPSED_MSECS)
+            );
 
         if (!isCompleted) {
             return Either.ofLeft('App inbox entry not completed');
@@ -129,28 +206,30 @@ export class AppInboxService {
         type: AppInboxType,
         handler: (data: V) => Promise<unknown>,
     ): void {
-        this.inbox.onInboxMessageDo(type, {
-            onMessage: async (message: ALMessage, entry: ResourceEntry) => {
-                const enqueue = JSON.parse(
-                    message.payload.resource,
-                ) as AppInboxEnqueueInput<V>;
+        this.inbox.onInboxMessageDo(
+            type,
+            {
+                onMessage: async (message: ALMessage, entry: ResourceEntry) => {
+                    const enqueue = JSON.parse(
+                        message.payload.resource,
+                    ) as AppInboxEnqueueInput<V>;
 
-                try {
-                    const result = await handler(enqueue.data);
-                    await this.writeAppInboxResult(entry, EntityStatus.COMPLETED, result);
-                } catch (error) {
-                    if (!(error instanceof NonRetryableException)) {
-                        throw error;
+                    try {
+                        const result = await handler(enqueue.data);
+                        await this.writeAppInboxResult(entry, EntityStatus.COMPLETED, result);
+                    } catch (error) {
+                        if (!(error instanceof NonRetryableException)) {
+                            throw error;
+                        }
+
+                        await this.writeAppInboxResult(
+                            entry,
+                            EntityStatus.FAILED,
+                            error instanceof Error ? error.message : String(error),
+                        );
                     }
-
-                    await this.writeAppInboxResult(
-                        entry,
-                        EntityStatus.FAILED,
-                        error instanceof Error ? error.message : String(error),
-                    );
-                }
-            },
-        });
+                },
+            });
     }
 
     private async writeAppInboxResult(
@@ -158,7 +237,7 @@ export class AppInboxService {
         status: EntityStatus.COMPLETED | EntityStatus.FAILED,
         value: unknown,
     ): Promise<void> {
-        await this.resourceInboxResults.writeIfAbsentOrReplaceExpired(
+        await this.resourceInboxResults.replace(
             toResourceEntryWithUpdatedResource(entry, status, value),
         );
     }

@@ -10,6 +10,7 @@ import type {
     ClientPrincipalRef,
     ClientScope,
     ClientSession,
+    ClientSessionRef,
     ClientSnapshot,
 } from '@shared/api/client-types.ts';
 import type {
@@ -31,6 +32,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 
 const DEFAULT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const CLIENT_SESSION_LOCK_NAMESPACE = 'client-state:session-locks';
 
 export type RegisterAuthorisedWsClientInput = Readonly<{
     applicationId?: string;
@@ -101,6 +103,9 @@ export type ClientStateService = Readonly<{
         sessionId: string,
         reason?: string,
     ): Promise<ClientStateWritten>;
+    expireExpiredSessions(
+        atEpochMs?: number,
+    ): Promise<readonly ClientStateWritten[]>;
 }>;
 
 export type ClientStateServiceDependencies = Readonly<{
@@ -316,6 +321,12 @@ export function createClientStateService(
                     ...scope,
                     principalId,
                 };
+                await lockClientSession(transactionRepository, {
+                    ...scope,
+                    principalId,
+                    clientInstanceId,
+                    sessionId,
+                });
                 const idempotentWritten = await findIdempotentClientMutationWritten(
                     repository,
                     principalRef,
@@ -438,6 +449,12 @@ export function createClientStateService(
                     ...scope,
                     principalId,
                 };
+                await lockClientSession(transactionRepository, {
+                    ...scope,
+                    principalId,
+                    clientInstanceId,
+                    sessionId,
+                });
                 const idempotentWritten = await findIdempotentClientMutationWritten(
                     repository,
                     principalRef,
@@ -544,6 +561,12 @@ export function createClientStateService(
                     ...scope,
                     principalId,
                 };
+                await lockClientSession(transactionRepository, {
+                    ...scope,
+                    principalId,
+                    clientInstanceId,
+                    sessionId,
+                });
                 const idempotentWritten = await findIdempotentClientMutationWritten(
                     repository,
                     principalRef,
@@ -566,6 +589,20 @@ export function createClientStateService(
                 });
                 if (!existing) {
                     throw new NonRetryableException(`Client session not found: ${sessionId}`);
+                }
+                if (
+                    existing.status !== 'active' ||
+                    existing.disconnectedAtEpochMs !== undefined
+                ) {
+                    return await addIdempotentClientMutationWritten(
+                        repository,
+                        principalRef,
+                        request.requestId,
+                        {
+                            snapshot: await requireClientSnapshot(repository, principal),
+                            event: undefined,
+                        },
+                    );
                 }
 
                 const disconnectedAtEpochMs = request.disconnectedAtEpochMs ?? now();
@@ -650,6 +687,12 @@ export function createClientStateService(
                     ...scope,
                     principalId,
                 };
+                await lockClientSession(transactionRepository, {
+                    ...scope,
+                    principalId,
+                    clientInstanceId,
+                    sessionId: authSession.sessionId,
+                });
                 const idempotentWritten = await findIdempotentClientMutationWritten(
                     repository,
                     principalRef,
@@ -807,6 +850,30 @@ export function createClientStateService(
                 },
             );
         },
+        expireExpiredSessions: async (atEpochMs = now()) => {
+            const repository = new ClientStateRepository(runtimeRepository);
+            const sessions = (await repository.listAllSessions()).filter(
+                (session) =>
+                    session.status === 'active' &&
+                    session.disconnectedAtEpochMs === undefined &&
+                    session.expiresAtEpochMs <= atEpochMs,
+            );
+            const writtenResults: ClientStateWritten[] = [];
+
+            for (const session of sessions) {
+                const written = await expireClientSession(
+                    runtimeRepository,
+                    session,
+                    atEpochMs,
+                    serviceId,
+                );
+                if (written) {
+                    writtenResults.push(written);
+                }
+            }
+
+            return writtenResults;
+        },
     };
 
     return service;
@@ -824,6 +891,112 @@ async function findClientSessionBySessionId(
         session.status === 'active' &&
         session.disconnectedAtEpochMs === undefined
     ) ?? sessions.find((session) => session.sessionId === sessionId);
+}
+
+async function expireClientSession(
+    runtimeRepository: RuntimeStateTransactionalRepositoryLike,
+    candidate: ClientSession,
+    atEpochMs: number,
+    serviceId: string,
+): Promise<ClientStateWritten | undefined> {
+    return await runtimeRepository.begin(async (transactionRepository) => {
+        const repository = new ClientStateRepository(transactionRepository);
+        const principalRef: ClientPrincipalRef = {
+            applicationId: candidate.applicationId,
+            workspaceId: candidate.workspaceId,
+            principalId: candidate.principalId,
+        };
+        await lockClientSession(transactionRepository, candidate);
+        const requestId = toExpiredClientSessionRequestId(candidate);
+        const idempotentWritten = await findIdempotentClientMutationWritten(
+            repository,
+            principalRef,
+            requestId,
+        );
+        if (idempotentWritten) {
+            return idempotentWritten;
+        }
+
+        const principal = await repository.findPrincipal(principalRef);
+        const existing = await repository.findSession(candidate);
+        if (
+            !principal ||
+            !existing ||
+            existing.status !== 'active' ||
+            existing.disconnectedAtEpochMs !== undefined ||
+            existing.expiresAtEpochMs > atEpochMs
+        ) {
+            return undefined;
+        }
+
+        const request: MutationActorInput = {
+            actorPrincipalId: existing.principalId,
+            actorSessionId: existing.sessionId,
+            reason: 'expired',
+            requestId,
+        };
+        const session: ClientSession = {
+            ...existing,
+            status: 'expired',
+            disconnectedAtEpochMs: atEpochMs,
+            disconnectReason: 'expired',
+        };
+
+        await repository.putSession(session);
+
+        const snapshotPrincipal = bumpPrincipalPresence(
+            principal,
+            atEpochMs,
+            request,
+            atEpochMs,
+            serviceId,
+        );
+        await repository.putPrincipal(snapshotPrincipal);
+
+        const event = newClientEvent(
+            'session-expired',
+            snapshotPrincipal,
+            request,
+            atEpochMs,
+            serviceId,
+            existing.clientInstanceId,
+            existing.sessionId,
+        );
+        await repository.appendEvent(event);
+
+        return await addIdempotentClientMutationWritten(
+            repository,
+            principalRef,
+            requestId,
+            {
+                snapshot: await requireClientSnapshot(
+                    repository,
+                    snapshotPrincipal,
+                ),
+                event,
+            },
+        );
+    });
+}
+
+async function lockClientSession(
+    repository: RuntimeStateTransactionalRepositoryLike,
+    ref: ClientSessionRef,
+): Promise<void> {
+    await repository.lockKey(
+        CLIENT_SESSION_LOCK_NAMESPACE,
+        toClientSessionLockKey(ref),
+    );
+}
+
+function toClientSessionLockKey(ref: ClientSessionRef): string {
+    return [
+        ref.applicationId,
+        ref.workspaceId ?? '_',
+        ref.principalId,
+        ref.clientInstanceId,
+        ref.sessionId,
+    ].join(':');
 }
 
 async function findIdempotentClientMutationWritten(
@@ -871,6 +1044,10 @@ function toAuthorisedWsClientRequestId(
     sessionId: string,
 ): string {
     return `authorised-ws:${operation}:${sessionId}`;
+}
+
+function toExpiredClientSessionRequestId(session: ClientSession): string {
+    return `expire-client-session:${session.sessionId}:${session.expiresAtEpochMs}`;
 }
 
 async function ensurePrincipal(

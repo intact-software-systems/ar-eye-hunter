@@ -233,6 +233,51 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         });
     }
 
+    async enqueueIf(
+        resourceEntry: ResourceEntry,
+        enqueueIt: (existing: ResourceEntry) => boolean,
+    ): Promise<ResourceEntry | undefined> {
+        const db = await this.openDb();
+
+        return await new Promise<ResourceEntry | undefined>((resolve, reject) => {
+            const tx = db.transaction(this.storeName, 'readwrite');
+            const store = tx.objectStore(this.storeName);
+            const keyString = toKeyAsString(resourceEntry.key);
+            let result: ResourceEntry | undefined;
+
+            tx.oncomplete = () => resolve(result);
+            tx.onabort = () => reject(tx.error ?? new Error('IndexedDB enqueueIf aborted'));
+            tx.onerror = () => reject(tx.error ?? new Error('IndexedDB enqueueIf failed'));
+
+            const getRequest = store.get(keyString);
+            getRequest.onerror = () => reject(getRequest.error ?? new Error('IndexedDB get failed during enqueueIf'));
+            getRequest.onsuccess = () => {
+                const stored = getRequest.result as StoredResourceEntry | undefined;
+                if (stored && !this.isExpiredStoredEntry(stored)) {
+                    const previous = this.toResourceEntry(stored);
+                    result = previous;
+
+                    let shouldOverwrite: boolean;
+                    try {
+                        shouldOverwrite = enqueueIt(previous);
+                    } catch (error) {
+                        reject(error);
+                        tx.abort();
+                        return;
+                    }
+
+                    if (!shouldOverwrite) {
+                        console.log('Entry already exists: ', resourceEntry.key);
+                        return;
+                    }
+                }
+
+                const writeRequest = store.put(this.toStoredEntry(resourceEntry));
+                writeRequest.onerror = () => reject(writeRequest.error ?? new Error('IndexedDB write failed during enqueueIf'));
+            };
+        });
+    }
+
     async releaseEntries(
         resources: ResourceEntry[],
         entityStatus: EntityStatus,

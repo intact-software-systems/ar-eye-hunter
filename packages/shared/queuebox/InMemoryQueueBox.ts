@@ -70,6 +70,27 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         return prev;
     }
 
+    async enqueueIf(
+        resourceEntry: ResourceEntry,
+        enqueueIt: (existing: ResourceEntry) => boolean,
+    ): Promise<ResourceEntry | undefined> {
+        const key = toKeyAsString(resourceEntry.key);
+        const prev = this.data.get(key);
+
+        if (!prev || isExpiredResourceEntry(prev)) {
+            this.data.set(key, resourceEntry);
+            return undefined;
+        }
+
+        if (enqueueIt(prev)) {
+            this.data.set(key, resourceEntry);
+        } else {
+            console.log('Entry already exists: ', resourceEntry.key);
+        }
+
+        return prev;
+    }
+
     async enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry> {
         const prev = this.data.get(toKeyAsString(resourceEntry.key));
 

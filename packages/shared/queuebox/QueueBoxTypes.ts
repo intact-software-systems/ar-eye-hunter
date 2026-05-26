@@ -40,6 +40,11 @@ export interface DequeueResourceEntryRepository {
 export interface EnqueueResourceEntryController {
     enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry>;
 
+    enqueueIf(
+        resourceEntry: ResourceEntry,
+        enqueueIt: (existing: ResourceEntry) => boolean,
+    ): Promise<ResourceEntry | undefined>;
+
     enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined>;
 
     cleanup(): void;

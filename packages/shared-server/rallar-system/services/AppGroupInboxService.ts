@@ -19,10 +19,12 @@ import type {
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import {
+    AppInboxEnqueueInput,
     AppInboxService,
     AppInboxType,
     SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { isCompletedOrFailed } from '@shared/queuebox/ResourceEntry.ts';
 
 export {
     AppInboxService,
@@ -72,6 +74,10 @@ export type GroupPresenceDisconnectAppInboxPayload = Readonly<{
 export type GroupPresenceDisconnectBySessionIdAppInboxPayload = Readonly<{
     sessionId: string;
     request?: DisconnectGroupPresenceSessionRequest;
+}>;
+
+export type GroupExpiredPresenceSessionsAppInboxPayload = Readonly<{
+    atEpochMs: number;
 }>;
 
 export class AppGroupInboxService extends AppInboxService {
@@ -197,6 +203,21 @@ export class AppGroupInboxService extends AppInboxService {
                 return groupStateWrittenResults;
             },
         );
+        this.onStateMessage<GroupExpiredPresenceSessionsAppInboxPayload>(
+            AppInboxType.GROUP_EXPIRED_PRESENCE_SESSIONS,
+            async (input) => {
+                const groupStateWrittenResults =
+                    await this.groupStateService.expireExpiredPresenceSessions(
+                        input.atEpochMs,
+                    );
+
+                for (const groupStateWritten of groupStateWrittenResults) {
+                    await this.publishGroupStateWritten(groupStateWritten);
+                }
+
+                return groupStateWrittenResults;
+            },
+        );
     }
 
     public async processPresenceDisconnectsBySessionId(
@@ -216,6 +237,25 @@ export class AppGroupInboxService extends AppInboxService {
                 request,
             },
         });
+    }
+
+    public async processExpiredPresenceSessions(atEpochMs: number = Date.now()) {
+        return await this.processEntryUntilCompletionIf<
+            GroupExpiredPresenceSessionsAppInboxPayload,
+            readonly GroupStateWritten[]
+        >(
+            this.toExpiredPresenceSessionsEnqueue(atEpochMs),
+            entry => isCompletedOrFailed(entry.status),
+        );
+    }
+
+    public processExpiredPresenceSessionsNoWaiting(
+        atEpochMs: number = Date.now(),
+    ): void {
+        this.processEntryNoWaitingIf<GroupExpiredPresenceSessionsAppInboxPayload>(
+            this.toExpiredPresenceSessionsEnqueue(atEpochMs),
+            entry => isCompletedOrFailed(entry.status),
+        );
     }
 
     private async publishGroupStateWritten(
@@ -242,5 +282,20 @@ export class AppGroupInboxService extends AppInboxService {
             written.event,
             this.serviceId,
         );
+    }
+
+    private toExpiredPresenceSessionsEnqueue(
+        atEpochMs: number,
+    ): AppInboxEnqueueInput<GroupExpiredPresenceSessionsAppInboxPayload> {
+        return {
+            type: AppInboxType.GROUP_EXPIRED_PRESENCE_SESSIONS,
+            topicId: AppInboxType.GROUP_EXPIRED_PRESENCE_SESSIONS,
+            resourceId: `expire-group-presence`,
+            contextId: 'expire-group-presence',
+            senderId: this.serviceId,
+            data: {
+                atEpochMs,
+            },
+        };
     }
 }

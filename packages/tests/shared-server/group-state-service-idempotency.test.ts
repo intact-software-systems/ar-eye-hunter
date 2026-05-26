@@ -400,6 +400,176 @@ describe("GroupStateService command idempotency", () => {
     expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
     expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
   });
+
+  it("expires stale presence sessions once and leaves publication to the app inbox", async () => {
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    await seedGroup(runtimeRepository, "room-9");
+    const expiresAtEpochMs = Date.now() - 1_000;
+    await seedPresenceSession(runtimeRepository, "room-9", {
+      lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
+      expiresAtEpochMs,
+    });
+
+    const publisher = createPublisher();
+    const now = expiresAtEpochMs + 1;
+    const service = createGroupStateService({
+      runtimeRepository,
+      syncPublisher: publisher,
+      now: () => now,
+      serviceId: "group-service",
+    });
+    const groupRef = toGroupRef("room-9");
+
+    const first = await service.expireExpiredPresenceSessions(now);
+    const second = await service.expireExpiredPresenceSessions(now);
+
+    expect(first).toHaveLength(1);
+    expect(second).toEqual([]);
+    expect(first[0].result.right?.event).toMatchObject({
+      eventType: "session-disconnected",
+      reason: "expired",
+    });
+    expect(first[0].result.right?.snapshot).toMatchObject({
+      group: {
+        ...groupRef,
+        snapshotVersion: 3,
+        presenceVersion: 2,
+      },
+      activeSessions: [],
+      onlineMemberCount: 0,
+    });
+
+    const repository = new GroupStateRepository(runtimeRepository);
+    expect(
+      await repository.findPresenceSession({
+        ...groupRef,
+        sessionId: "session-1",
+      }),
+    ).toMatchObject({
+      disconnectReason: "expired",
+      disconnectedAtEpochMs: now,
+    });
+    expect(
+      (await repository.listEvents(groupRef)).map((event) => event.eventType),
+    ).toEqual(["group-created", "session-connected", "session-disconnected"]);
+    expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
+    expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
+  });
+
+  it("does not rewrite expired presence when late websocket cleanup arrives", async () => {
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    await seedGroup(runtimeRepository, "room-10");
+    const expiresAtEpochMs = Date.now() - 1_000;
+    await seedPresenceSession(runtimeRepository, "room-10", {
+      lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
+      expiresAtEpochMs,
+    });
+    runtimeRepository.locks.splice(0);
+
+    const now = expiresAtEpochMs + 1;
+    const service = createGroupStateService({
+      runtimeRepository,
+      syncPublisher: createPublisher(),
+      now: () => now,
+      serviceId: "group-service",
+    });
+    const groupRef = toGroupRef("room-10");
+
+    await service.expireExpiredPresenceSessions(now);
+    const lateDisconnect = await service.disconnectPresenceSession(
+      SCOPE,
+      groupRef.groupId,
+      "session-1",
+      {
+        principalId: "alice",
+        reason: "socket-closed",
+        actorPrincipalId: "alice",
+        actorSessionId: "session-1",
+        requestId: "late-disconnect-after-expiry",
+      },
+    );
+
+    expect(lateDisconnect.result.right?.event).toBeUndefined();
+    const repository = new GroupStateRepository(runtimeRepository);
+    expect(
+      await repository.findPresenceSession({
+        ...groupRef,
+        sessionId: "session-1",
+      }),
+    ).toMatchObject({
+      disconnectReason: "expired",
+      disconnectedAtEpochMs: now,
+    });
+    expect(
+      (await repository.listEvents(groupRef)).map((event) => event.eventType),
+    ).toEqual(["group-created", "session-connected", "session-disconnected"]);
+    expect(
+      runtimeRepository.locks.filter(
+        (lock) =>
+          lock.namespace === "group-state:presence-session-locks" &&
+          lock.key === "app-1:workspace-1:room-10:session-1",
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("documents that a late heartbeat can revive expired presence", async () => {
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    await seedGroup(runtimeRepository, "room-11");
+    const expiresAtEpochMs = Date.now() - 1_000;
+    await seedPresenceSession(runtimeRepository, "room-11", {
+      lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
+      expiresAtEpochMs,
+    });
+
+    const now = expiresAtEpochMs + 1;
+    const service = createGroupStateService({
+      runtimeRepository,
+      syncPublisher: createPublisher(),
+      now: () => now,
+      serviceId: "group-service",
+    });
+    const groupRef = toGroupRef("room-11");
+
+    await service.expireExpiredPresenceSessions(now);
+    const lateHeartbeat = await service.heartbeatPresenceSession(
+      SCOPE,
+      groupRef.groupId,
+      "session-1",
+      {
+        principalId: "alice",
+        actorPrincipalId: "alice",
+        actorSessionId: "session-1",
+        lastHeartbeatAtEpochMs: now + 1,
+        expiresAtEpochMs: now + 60_000,
+        requestId: "late-heartbeat-after-expiry",
+      },
+    );
+
+    expect(lateHeartbeat.result.right?.event?.eventType).toBe(
+      "session-heartbeat",
+    );
+    expect(lateHeartbeat.result.right?.snapshot.activeSessions).toHaveLength(1);
+
+    const repository = new GroupStateRepository(runtimeRepository);
+    const session = await repository.findPresenceSession({
+      ...groupRef,
+      sessionId: "session-1",
+    });
+    expect(session).toMatchObject({
+      lastHeartbeatAtEpochMs: now + 1,
+      expiresAtEpochMs: now + 60_000,
+    });
+    expect(session?.disconnectedAtEpochMs).toBeUndefined();
+    expect(session?.disconnectReason).toBeUndefined();
+    expect(
+      (await repository.listEvents(groupRef)).map((event) => event.eventType),
+    ).toEqual([
+      "group-created",
+      "session-connected",
+      "session-disconnected",
+      "session-heartbeat",
+    ]);
+  });
 });
 
 async function seedGroup(
@@ -424,6 +594,10 @@ async function seedGroup(
 async function seedPresenceSession(
   runtimeRepository: FakeRuntimeStateRepository,
   groupId: string,
+  overrides: Partial<{
+    lastHeartbeatAtEpochMs: number;
+    expiresAtEpochMs: number;
+  }> = {},
 ): Promise<void> {
   await createGroupStateService({
     runtimeRepository,
@@ -434,8 +608,8 @@ async function seedPresenceSession(
     principalId: "alice",
     actorPrincipalId: "alice",
     connectedAtEpochMs: 2_000,
-    lastHeartbeatAtEpochMs: 2_000,
-    expiresAtEpochMs: Date.now() + 60_000,
+    lastHeartbeatAtEpochMs: overrides.lastHeartbeatAtEpochMs ?? 2_000,
+    expiresAtEpochMs: overrides.expiresAtEpochMs ?? Date.now() + 60_000,
     requestId: `seed-session-${groupId}`,
   });
 }

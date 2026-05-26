@@ -5,6 +5,7 @@ import { RateLimiter } from '@shared/resilience/Resilience.ts';
 import {
     EntityStatus,
     FAILED_STATUS,
+    isExpiredResourceEntry,
     Key,
     NEW_AND_RETRY_STATUSES,
     ResourceEntry,
@@ -162,6 +163,27 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                 await txRepo.replace(resourceEntry);
 
                 return previous ?? undefined;
+            }
+        );
+    }
+
+    async enqueueIf(
+        resourceEntry: ResourceEntry,
+        enqueueIt: (existing: ResourceEntry) => boolean,
+    ): Promise<ResourceEntry | undefined> {
+        return await this.repo.begin(
+            async (txRepo: ResourceInboxRepository) => {
+                const previous = await txRepo.findAnyByKey(resourceEntry.key);
+                if (!previous || isExpiredResourceEntry(previous)) {
+                    await txRepo.replace(resourceEntry);
+                    return undefined;
+                }
+
+                if (enqueueIt(previous)) {
+                    await txRepo.replace(resourceEntry);
+                }
+
+                return previous;
             }
         );
     }

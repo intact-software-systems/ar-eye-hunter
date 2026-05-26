@@ -276,6 +276,203 @@ describe('ClientStateService command idempotency', () => {
             ),
         ).toEqual(['session-connected']);
     });
+
+    it('expires stale sessions once and leaves publication to the app inbox', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const expiresAtEpochMs = Date.now() - 1_000;
+        await seedConnectedSession(
+            runtimeRepository,
+            'alice',
+            'alice-browser',
+            'session-1',
+            {
+                lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
+                expiresAtEpochMs,
+            },
+        );
+
+        const publisher = createPublisher();
+        const now = expiresAtEpochMs + 1;
+        const service = createClientStateService({
+            runtimeRepository,
+            syncPublisher: publisher,
+            now: () => now,
+            serviceId: 'client-service',
+        });
+        const principalRef = toClientPrincipalRef('alice');
+
+        const first = await service.expireExpiredSessions(now);
+        const second = await service.expireExpiredSessions(now);
+
+        expect(first).toHaveLength(1);
+        expect(second).toEqual([]);
+        expect(first[0].result.right?.event).toMatchObject({
+            eventType: 'session-expired',
+            reason: 'expired',
+            sessionId: 'session-1',
+        });
+        expect(first[0].result.right?.snapshot).toMatchObject({
+            principal: {
+                snapshotVersion: 3,
+                presenceVersion: 3,
+            },
+            activeSessions: [],
+            isOnline: false,
+        });
+
+        const repository = new ClientStateRepository(runtimeRepository);
+        expect(
+            await repository.findSession({
+                ...principalRef,
+                clientInstanceId: 'alice-browser',
+                sessionId: 'session-1',
+            }),
+        ).toMatchObject({
+            status: 'expired',
+            disconnectReason: 'expired',
+            disconnectedAtEpochMs: now,
+        });
+        expect(
+            (await repository.listEvents(principalRef)).map(
+                (event) => event.eventType,
+            ),
+        ).toEqual(['session-connected', 'session-expired']);
+        expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
+        expect(publisher.publishClientEvent).not.toHaveBeenCalled();
+    });
+
+    it('does not rewrite an expired session when a late disconnect cleanup arrives', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const expiresAtEpochMs = Date.now() - 1_000;
+        await seedConnectedSession(
+            runtimeRepository,
+            'alice',
+            'alice-browser',
+            'session-1',
+            {
+                lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
+                expiresAtEpochMs,
+            },
+        );
+        runtimeRepository.locks.splice(0);
+
+        const now = expiresAtEpochMs + 1;
+        const service = createClientStateService({
+            runtimeRepository,
+            syncPublisher: createPublisher(),
+            now: () => now,
+            serviceId: 'client-service',
+        });
+        const principalRef = toClientPrincipalRef('alice');
+
+        await service.expireExpiredSessions(now);
+        const lateDisconnect = await service.disconnectSession(
+            SCOPE,
+            principalRef.principalId,
+            'alice-browser',
+            'session-1',
+            {
+                reason: 'socket-closed',
+                actorPrincipalId: 'alice',
+                actorSessionId: 'session-1',
+                requestId: 'late-disconnect-after-expiry',
+            },
+        );
+
+        expect(lateDisconnect.result.right?.event).toBeUndefined();
+        const repository = new ClientStateRepository(runtimeRepository);
+        expect(
+            await repository.findSession({
+                ...principalRef,
+                clientInstanceId: 'alice-browser',
+                sessionId: 'session-1',
+            }),
+        ).toMatchObject({
+            status: 'expired',
+            disconnectReason: 'expired',
+            disconnectedAtEpochMs: now,
+        });
+        expect(
+            (await repository.listEvents(principalRef)).map(
+                (event) => event.eventType,
+            ),
+        ).toEqual(['session-connected', 'session-expired']);
+        expect(
+            runtimeRepository.locks.filter(
+                (lock) =>
+                    lock.namespace === 'client-state:session-locks' &&
+                    lock.key === 'app-1:workspace-1:alice:alice-browser:session-1',
+            ),
+        ).toHaveLength(2);
+    });
+
+    it('documents that a late heartbeat can revive an expired session', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const expiresAtEpochMs = Date.now() - 1_000;
+        await seedConnectedSession(
+            runtimeRepository,
+            'alice',
+            'alice-browser',
+            'session-1',
+            {
+                lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
+                expiresAtEpochMs,
+            },
+        );
+
+        const now = expiresAtEpochMs + 1;
+        const service = createClientStateService({
+            runtimeRepository,
+            syncPublisher: createPublisher(),
+            now: () => now,
+            serviceId: 'client-service',
+        });
+        const principalRef = toClientPrincipalRef('alice');
+
+        await service.expireExpiredSessions(now);
+        const lateHeartbeat = await service.heartbeatSession(
+            SCOPE,
+            principalRef.principalId,
+            'alice-browser',
+            'session-1',
+            {
+                presenceState: 'online',
+                actorPrincipalId: 'alice',
+                actorSessionId: 'session-1',
+                lastHeartbeatAtEpochMs: now + 1,
+                expiresAtEpochMs: now + 60_000,
+                requestId: 'late-heartbeat-after-expiry',
+            },
+        );
+
+        expect(lateHeartbeat.result.right?.event?.eventType).toBe(
+            'session-heartbeat',
+        );
+        expect(lateHeartbeat.result.right?.snapshot.activeSessions).toHaveLength(1);
+
+        const repository = new ClientStateRepository(runtimeRepository);
+        const session = await repository.findSession({
+            ...principalRef,
+            clientInstanceId: 'alice-browser',
+            sessionId: 'session-1',
+        });
+        expect(session).toMatchObject({
+            status: 'active',
+            lastHeartbeatAtEpochMs: now + 1,
+            expiresAtEpochMs: now + 60_000,
+        });
+        expect(session?.disconnectedAtEpochMs).toBeUndefined();
+        expect(session?.disconnectReason).toBeUndefined();
+        expect(
+            (await repository.listEvents(principalRef)).map(
+                (event) => event.eventType,
+            ),
+        ).toEqual([
+            'session-connected',
+            'session-expired',
+            'session-heartbeat',
+        ]);
+    });
 });
 
 async function seedConnectedSession(
@@ -283,6 +480,10 @@ async function seedConnectedSession(
     principalId: string,
     clientInstanceId: string,
     sessionId: string,
+    overrides: Partial<{
+        lastHeartbeatAtEpochMs: number;
+        expiresAtEpochMs: number;
+    }> = {},
 ): Promise<void> {
     await createClientStateService({
         runtimeRepository,
@@ -294,8 +495,8 @@ async function seedConnectedSession(
         actorPrincipalId: principalId,
         actorSessionId: sessionId,
         connectedAtEpochMs: 2_000,
-        lastHeartbeatAtEpochMs: 2_000,
-        expiresAtEpochMs: Date.now() + 60_000,
+        lastHeartbeatAtEpochMs: overrides.lastHeartbeatAtEpochMs ?? 2_000,
+        expiresAtEpochMs: overrides.expiresAtEpochMs ?? Date.now() + 60_000,
         requestId: `seed-${sessionId}`,
     });
 }

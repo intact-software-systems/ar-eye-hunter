@@ -27,6 +27,8 @@ import { isDefined, jsonEquals } from '@shared/repository/state-utils.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 
 const DEFAULT_GROUP_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const GROUP_PRESENCE_SESSION_LOCK_NAMESPACE =
+    'group-state:presence-session-locks';
 
 export type GroupWritten = {
     snapshot: GroupSnapshot;
@@ -87,6 +89,9 @@ export type GroupStateService = Readonly<{
     disconnectPresenceSessionsBySessionIdWritten(
         sessionId: string,
         request?: DisconnectGroupPresenceSessionRequest,
+    ): Promise<readonly GroupStateWritten[]>;
+    expireExpiredPresenceSessions(
+        atEpochMs?: number,
     ): Promise<readonly GroupStateWritten[]>;
 }>;
 
@@ -413,6 +418,11 @@ export function createGroupStateService(
                     ...scope,
                     groupId,
                 };
+                await lockGroupPresenceSession(transactionRepository, {
+                    ...scope,
+                    groupId,
+                    sessionId,
+                });
                 const idempotentWritten = await findIdempotentGroupMutationWritten(
                     repository,
                     groupRef,
@@ -515,6 +525,11 @@ export function createGroupStateService(
                     ...scope,
                     groupId,
                 };
+                await lockGroupPresenceSession(transactionRepository, {
+                    ...scope,
+                    groupId,
+                    sessionId,
+                });
                 const idempotentWritten = await findIdempotentGroupMutationWritten(
                     repository,
                     groupRef,
@@ -600,6 +615,11 @@ export function createGroupStateService(
                     ...scope,
                     groupId,
                 };
+                await lockGroupPresenceSession(transactionRepository, {
+                    ...scope,
+                    groupId,
+                    sessionId,
+                });
                 const idempotentWritten = await findIdempotentGroupMutationWritten(
                     repository,
                     groupRef,
@@ -619,6 +639,17 @@ export function createGroupStateService(
                 const existing = await repository.findPresenceSession(ref);
                 if (!existing) {
                     throw new NonRetryableException(`Group presence session not found: ${sessionId}`);
+                }
+                if (existing.disconnectedAtEpochMs !== undefined) {
+                    return await addIdempotentGroupMutationWritten(
+                        repository,
+                        groupRef,
+                        request.requestId,
+                        {
+                            snapshot: await requireGroupSnapshot(repository, group),
+                            event: undefined,
+                        },
+                    );
                 }
 
                 const timestamp = now();
@@ -723,9 +754,71 @@ export function createGroupStateService(
 
             return writtenResults;
         },
+        expireExpiredPresenceSessions: async (atEpochMs = now()) => {
+            const repository = new GroupStateRepository(runtimeRepository);
+            const sessions = (await repository.listAllPresenceSessions()).filter(
+                (session) =>
+                    session.disconnectedAtEpochMs === undefined &&
+                    session.expiresAtEpochMs <= atEpochMs,
+            );
+            const writtenResults: GroupStateWritten[] = [];
+
+            for (const session of sessions) {
+                try {
+                    const written = await service.disconnectPresenceSession(
+                        {
+                            applicationId: session.applicationId,
+                            workspaceId: session.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
+                        },
+                        session.groupId,
+                        session.sessionId,
+                        {
+                            principalId: session.principalId,
+                            reason: 'expired',
+                            disconnectedAtEpochMs: atEpochMs,
+                            lastHeartbeatAtEpochMs: session.lastHeartbeatAtEpochMs,
+                            expiresAtEpochMs: session.expiresAtEpochMs,
+                            actorPrincipalId: session.principalId,
+                            actorSessionId: session.sessionId,
+                            requestId: toExpiredGroupPresenceRequestId(session),
+                        },
+                    );
+                    writtenResults.push(written);
+                } catch (error) {
+                    const message =
+                        error instanceof Error ? error.message : String(error);
+                    if (!message.includes('not found')) {
+                        throw error;
+                    }
+                }
+            }
+
+            return writtenResults;
+        },
     };
 
     return service;
+}
+
+async function lockGroupPresenceSession(
+    repository: RuntimeStateTransactionalRepositoryLike,
+    ref: GroupRef & Readonly<{ sessionId: string }>,
+): Promise<void> {
+    await repository.lockKey(
+        GROUP_PRESENCE_SESSION_LOCK_NAMESPACE,
+        toGroupPresenceSessionLockKey(ref),
+    );
+}
+
+function toGroupPresenceSessionLockKey(
+    ref: GroupRef & Readonly<{ sessionId: string }>,
+): string {
+    return [
+        ref.applicationId,
+        ref.workspaceId ?? '_',
+        ref.groupId,
+        ref.sessionId,
+    ].join(':');
 }
 
 async function findIdempotentGroupMutationWritten(
@@ -881,6 +974,10 @@ function newGroupEvent(
         traceId: request.traceId,
         requestId: request.requestId,
     };
+}
+
+function toExpiredGroupPresenceRequestId(session: GroupPresenceSession): string {
+    return `expire-group-presence:${session.groupId}:${session.sessionId}:${session.expiresAtEpochMs}`;
 }
 
 function toGroupMemberEventType(

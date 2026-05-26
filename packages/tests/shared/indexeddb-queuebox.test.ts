@@ -2,9 +2,10 @@
 
 import '../setup-browser-indexeddb.ts';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { Temporal } from '@js-temporal/polyfill';
 import { IndexedDbQueueBox } from '@shared/queuebox/IndexedDbQueueBox.ts';
-import { EntityStatus, NEVER_EXPIRE_TS, ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, NEVER_EXPIRE_TS, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
 
 describe('IndexedDbQueueBox', () => {
@@ -33,6 +34,63 @@ describe('IndexedDbQueueBox', () => {
         expect(firstValue(reserved).resource).toBe(original.resource);
     });
 
+    it('uses enqueueIf predicate to decide whether active entries are overwritten', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const typeId = 'presence.state.v1';
+        const queue = new IndexedDbQueueBox({ dbName });
+        const original = createEntry(typeId, 'resource-1', {
+            resource: JSON.stringify({ version: 1 }),
+        });
+        const skippedReplacement = createEntry(typeId, 'resource-1', {
+            resource: JSON.stringify({ version: 2 }),
+        });
+        const acceptedReplacement = createEntry(typeId, 'resource-1', {
+            resource: JSON.stringify({ version: 3 }),
+        });
+
+        await queue.enqueueIfAbsent(original);
+
+        const skip = vi.fn(() => false);
+        const skippedPrevious = await queue.enqueueIf(skippedReplacement, skip);
+        expect(skippedPrevious?.resource).toBe(original.resource);
+        expect(skip).toHaveBeenCalledWith(
+            expect.objectContaining({
+                resource: original.resource,
+            }),
+        );
+        expect((await queue.getItem(original.key))?.resource).toBe(original.resource);
+
+        const overwrite = vi.fn(() => true);
+        const overwrittenPrevious = await queue.enqueueIf(acceptedReplacement, overwrite);
+        expect(overwrittenPrevious?.resource).toBe(original.resource);
+        expect(overwrite).toHaveBeenCalledWith(
+            expect.objectContaining({
+                resource: original.resource,
+            }),
+        );
+        expect((await queue.getItem(original.key))?.resource).toBe(acceptedReplacement.resource);
+    });
+
+    it('overwrites expired entries with enqueueIf without calling the predicate', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const typeId = 'presence.state.v1';
+        const queue = new IndexedDbQueueBox({ dbName });
+        const expired = createEntry(typeId, 'resource-1', {
+            resource: JSON.stringify({ version: 1 }),
+            expiryTs: Temporal.Now.instant().subtract({ seconds: 1 }),
+        });
+        const replacement = createEntry(typeId, 'resource-1', {
+            resource: JSON.stringify({ version: 2 }),
+        });
+        const enqueueIt = vi.fn(() => false);
+
+        await queue.enqueue(expired);
+
+        expect(await queue.enqueueIf(replacement, enqueueIt)).toBeUndefined();
+        expect(enqueueIt).not.toHaveBeenCalled();
+        expect((await queue.getItem(expired.key))?.resource).toBe(replacement.resource);
+    });
+
     it('persists entries across queue instances and supports reserve/release flow', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'chat.message.v1';
@@ -55,10 +113,7 @@ describe('IndexedDbQueueBox', () => {
         expect(reservedEntry.status).toBe(EntityStatus.RESERVED);
         expect(reservedEntry.dequeueAudit.attempts).toBe(1);
 
-        const released = await reader.releaseEntries(
-            [reservedEntry],
-            EntityStatus.COMPLETED,
-        );
+        const released = await reader.releaseEntries([reservedEntry], EntityStatus.COMPLETED);
 
         expect(firstValue(released).status).toBe(EntityStatus.COMPLETED);
 
@@ -134,9 +189,11 @@ describe('IndexedDbQueueBox', () => {
         const typeId = 'chat.message.v1';
         const queue = new IndexedDbQueueBox({ dbName });
 
-        await queue.enqueue(createEntry(typeId, 'completed-1', {
-            status: EntityStatus.COMPLETED,
-        }));
+        await queue.enqueue(
+            createEntry(typeId, 'completed-1', {
+                status: EntityStatus.COMPLETED,
+            }),
+        );
         await queue.enqueue(createEntry(typeId, 'active-1'));
 
         expect(await queue.cleanupAsync()).toBe(true);
@@ -164,15 +221,19 @@ describe('IndexedDbQueueBox', () => {
         const typeId = 'chat.message.v1';
         const queue = new IndexedDbQueueBox({ dbName });
 
-        await queue.enqueue(createEntry(typeId, 'expired-1', {
-            expiryTs: Temporal.Now.instant().subtract({ seconds: 1 }),
-        }));
+        await queue.enqueue(
+            createEntry(typeId, 'expired-1', {
+                expiryTs: Temporal.Now.instant().subtract({ seconds: 1 }),
+            }),
+        );
 
-        expect(await queue.getItem({
-            topicId: typeId,
-            resourceId: 'expired-1',
-            contextId: 'ctx-1',
-        })).toBeUndefined();
+        expect(
+            await queue.getItem({
+                topicId: typeId,
+                resourceId: 'expired-1',
+                contextId: 'ctx-1',
+            }),
+        ).toBeUndefined();
         expect(await queue.deleteExpired()).toBe(0);
         expect(await queue.cleanupAsync()).toBe(false);
     });
@@ -204,10 +265,7 @@ describe('IndexedDbQueueBox', () => {
         expect(reclaimedEntry.dequeueAudit.attempts).toBe(2);
         expect(reclaimedEntry.dequeueAudit.startTs).toBeDefined();
         expect(
-            Temporal.Instant.compare(
-                reclaimedEntry.dequeueAudit.startTs!,
-                oldStartTs,
-            ),
+            Temporal.Instant.compare(reclaimedEntry.dequeueAudit.startTs!, oldStartTs),
         ).toBeGreaterThan(0);
     });
 
@@ -216,10 +274,12 @@ describe('IndexedDbQueueBox', () => {
         const typeId = 'chat.private-text.v1';
         const queue = new IndexedDbQueueBox({ dbName });
 
-        await queue.enqueue(createEntry(typeId, 'msg-failed', {
-            status: EntityStatus.FAILED,
-            attempts: 2,
-        }));
+        await queue.enqueue(
+            createEntry(typeId, 'msg-failed', {
+                status: EntityStatus.FAILED,
+                attempts: 2,
+            }),
+        );
 
         const hasWork = await queue.isAnyEntryToLock(
             new Set([typeId]),
