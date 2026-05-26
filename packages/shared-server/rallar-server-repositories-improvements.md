@@ -1120,12 +1120,13 @@ Verification:
 - Added app-inbox tests proving expiry reconciliation publishes snapshot/event results.
 - Added a reconciliation enqueue test proving both client and group expiry scans are queued without waiting.
 - Added lock coverage proving expiry and late cleanup use the same per-session lock key.
+- Added an opt-in Postgres integration test that starts two separate Deno worker processes, blocks both on the same
+  advisory lock, then proves client and group expiry reconciliation each produce one durable terminal event.
 
 Remaining risk:
 
-- The app-inbox and state-service unit tests prove lock acquisition and idempotent behavior, but there is still no
-  real multi-process Postgres test that starts two API workers and forces both to reconcile the same expired session at
-  the same time.
+- The multi-process Postgres proof is intentionally opt-in because expiry reconciliation scans global runtime state. Run
+  it against a migrated, disposable Postgres database rather than a shared development database.
 
 ## Suggested First Proofs
 
