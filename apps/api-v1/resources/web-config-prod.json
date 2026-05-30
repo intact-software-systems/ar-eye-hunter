@@ -1,6 +1,6 @@
 {
-  "apiBaseUrl": "https://ar-eye-hunter-v1.intact-software-systems.deno.net",
-  "wsBaseUrl": "wss://ar-eye-hunter-v1.intact-software-systems.deno.net",
+  "apiBaseUrl": "https://rallar-server.intact-software-systems.deno.net",
+  "wsBaseUrl": "wss://rallar-server.intact-software-systems.deno.net",
   "endpoints": {
     "createWs": "/api/ws/:id"
   }

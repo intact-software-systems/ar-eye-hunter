@@ -2393,7 +2393,10 @@ function LoginScreen({ bootstrap, onAuthenticated }: {
                             value={username}
                             onChange={event => setUsername(event.target.value)}
                             disabled={busy}
+                            autoCapitalize="none"
                             autoComplete="username"
+                            autoCorrect="off"
+                            spellCheck={false}
                             required
                         />
                     </label>
@@ -8384,7 +8387,14 @@ function AuthCommandCenterPanel({ state, bootstrap, authSession, globalValues, o
                 </label>
                 <label className="field">
                     <span>Username</span>
-                    <input value={username} onChange={event => setUsername(event.target.value)} autoComplete="username"/>
+                    <input
+                        value={username}
+                        onChange={event => setUsername(event.target.value)}
+                        autoCapitalize="none"
+                        autoComplete="username"
+                        autoCorrect="off"
+                        spellCheck={false}
+                    />
                 </label>
                 <label className="field">
                     <span>Password</span>
