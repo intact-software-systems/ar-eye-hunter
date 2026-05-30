@@ -47,7 +47,8 @@ The SPA currently provides:
   report JSON
 - authenticated login gate for `browser-rallar` mode with browser-session restore and logout cleanup
 - tabbed operational shell split into direct `Rallar` tabs (`Quick Test`, `Auth`, `Groups/Clients`, `WebSocket`,
-  `RTC/Realtimes`, `Topology`, `RTC Diagnostics`, `Rallar Data`, `Media`, `Rallar Server`, and `Event Stream`) and
+  `RTC/Realtimes`, `Topology`, `RTC Diagnostics`, `Rallar Data`, `Media`, `Rallar Server`, `Rallar Trace`, and
+  `Event Stream`) and
   black-box-runner tabs (`Shared Test`, `Manual Rallar`, `Local Workbench`, `Flow Builder`, `Run Manager`, and
   `Event Stream`)
 - global command-center context above the tabs for API base URL, application, workspace, room/group, client, and session;
@@ -55,7 +56,8 @@ The SPA currently provides:
   Diagnostics, and Rallar Server, plus Flow Builder variables before they are manually edited
 - always-visible Rallar Browser Trace strip for signaling WebSocket status, RTC status, active group, peer counts, and
   the latest `rallar.browser.*` events emitted by the browser-side Rallar runtime during real-provider auth, RTC
-  signaling/connect, send, cleanup, and error paths
+  signaling/connect, send, cleanup, and error paths, with a `Rallar Trace` drill-in for full event payloads and failure
+  messages
 - Auth command center for login, register-and-login, restore, logout, local session clear, active session/client/token
   evidence, session/ticket TTLs, WS-ticket creation, bad-credentials checks, missing-auth-ticket checks,
   expired-session ticket checks, redacted diagnostics, and auth recipe snippets
@@ -88,8 +90,9 @@ The SPA currently provides:
 - optional Media console for local stream attach, audio/video toggles, stop controls, media policy, remote stream
   events, and copyable diagnostics
 - authenticated Rallar Server REST workbench with endpoint presets, raw request editing, auth header injection, response
-  rendering, cURL export, black-box `http.request` command export, and actions that promote response group/client/
-  session values into Global Context for Quick Test
+  rendering, explicit request lifecycle feedback for sending/success/failure, Rallar Trace request events, cURL export,
+  black-box `http.request` command export, and actions that promote response group/client/session values into Global
+  Context for Quick Test
 - REST collections in the Rallar Server tab with persisted collection/variables JSON, built-in group/client/negative
   templates, variable substitution, JSON-path extraction, status/body/header assertions, redacted collection export, and
   black-box recipe export
@@ -206,7 +209,10 @@ invalid JSON editor drafts are dropped instead of being persisted with possible 
 The `Rallar Server` tab can call API v1 REST endpoints directly from the browser. It starts from curated
 OpenAPI-derived presets, can refresh endpoint rows from `/api/openapi.json`, injects the active browser auth session
 when requested, redacts access tokens in visible exports, and can copy the selected request as a redacted black-box
-`http.request` command or cURL command.
+`http.request` command or cURL command. A request feedback strip shows whether the latest request is idle, sending,
+successful, or failed, including endpoint, status, duration, and the classified error message. Each single request also
+emits `rallar.server.rest.request.*` trace events so failures can be inspected in `Rallar Trace` with the full redacted
+payload and response body.
 
 The same tab now has a REST Collection area for repeated server checks. Collections are editable JSON, use named
 variables, substitute placeholders in request fields, extract response values into later variables, evaluate expected

@@ -27,6 +27,7 @@ describe('rallar-black-box app tabs', () => {
         expect(appTabFromValue('rtc')).toBe('rtc-diagnostics');
         expect(appTabFromValue('data')).toBe('rallar-data');
         expect(appTabFromValue('media')).toBe('media');
+        expect(appTabFromValue('trace')).toBe('rallar-trace');
         expect(appTabFromValue('server')).toBe('rallar-server');
         expect(appTabFromValue('flow')).toBe('flow-builder');
         expect(appTabFromValue('runs')).toBe('run-manager');
@@ -55,6 +56,7 @@ describe('rallar-black-box app tabs', () => {
         expect(appModeForTab('rtc-realtime')).toBe('rallar');
         expect(appModeForTab('rallar-data')).toBe('rallar');
         expect(appModeForTab('media')).toBe('rallar');
+        expect(appModeForTab('rallar-trace')).toBe('rallar');
         expect(appModeForTab('rallar-server')).toBe('rallar');
         expect(appModeForTab('shared-test')).toBe('black-box-runner');
         expect(appModeForTab('run-manager')).toBe('black-box-runner');
@@ -75,6 +77,7 @@ describe('rallar-black-box app tabs', () => {
             'rallar-data',
             'media',
             'rallar-server',
+            'rallar-trace',
             'event-stream',
         ]);
         expect(appTabsForMode('black-box-runner').map(tab => tab.id)).toEqual([
@@ -97,7 +100,8 @@ describe('rallar-black-box app tabs', () => {
         expect(nextAppTab('rtc-diagnostics', 1)).toBe('rallar-data');
         expect(nextAppTab('rallar-data', 1)).toBe('media');
         expect(nextAppTab('media', 1)).toBe('rallar-server');
-        expect(nextAppTab('rallar-server', 1)).toBe('event-stream');
+        expect(nextAppTab('rallar-server', 1)).toBe('rallar-trace');
+        expect(nextAppTab('rallar-trace', 1)).toBe('event-stream');
         expect(nextAppTab('event-stream', 1, 'rallar')).toBe(APP_TABS[0].id);
         expect(nextAppTab('auth', -1)).toBe('quick-test');
     });

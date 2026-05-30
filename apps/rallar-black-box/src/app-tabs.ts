@@ -28,6 +28,7 @@ export const APP_TABS = [
     { id: 'media', label: 'Media' },
     { id: 'local-workbench', label: 'Local Workbench' },
     { id: 'run-manager', label: 'Run Manager' },
+    { id: 'rallar-trace', label: 'Rallar Trace' },
     { id: 'event-stream', label: 'Event Stream' },
     { id: 'rallar-server', label: 'Rallar Server' },
     { id: 'flow-builder', label: 'Flow Builder' },
@@ -49,6 +50,7 @@ const RALLAR_MODE_TAB_IDS = [
     'rallar-data',
     'media',
     'rallar-server',
+    'rallar-trace',
     'event-stream',
 ] as const satisfies readonly AppTabId[];
 
@@ -82,6 +84,7 @@ const TAB_PRIMARY_MODE: Readonly<Record<AppTabId, AppModeId>> = {
     'rtc-diagnostics': 'rallar',
     'rallar-data': 'rallar',
     media: 'rallar',
+    'rallar-trace': 'rallar',
     'rallar-server': 'rallar',
     'event-stream': 'rallar',
     'local-workbench': 'black-box-runner',
@@ -137,6 +140,9 @@ const TAB_ALIASES: Readonly<Record<string, AppTabId>> = {
     orchestrator: 'run-manager',
     events: 'event-stream',
     event: 'event-stream',
+    trace: 'rallar-trace',
+    'rallar-trace': 'rallar-trace',
+    rallartrace: 'rallar-trace',
     server: 'rallar-server',
     flow: 'flow-builder',
     flows: 'flow-builder',

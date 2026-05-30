@@ -9,7 +9,8 @@ and runtime events, and provides tabbed UI surfaces for auth/session testing, ro
 testing, WebSocket command-center flows, diagnostics, received data, reports, topology, event inspection,
 authenticated Rallar Server REST calls and REST collections, scoped RTC delivery matrices, Flow Builder recipe
 composition, control-server Run Manager orchestration, control-run artifact export, shared-test recipe discovery, and
-runner artifact import. It also documents the full-stack QA coverage matrix, bounded Event Stream/Topology controls,
+runner artifact import. It also documents the full-stack QA coverage matrix, expanded Rallar Trace diagnostics, bounded
+Event Stream/Topology controls,
 and the gated live three-browser RTC matrix baseline.
 
 The default provider is simulated so the UI works without a backend. Real browser execution is available with
@@ -74,11 +75,12 @@ using the current Group text as the explicit Rallar group ID, subscribe this bro
 through `rallar.messages.ws.send(...)`, wait for receives, and copy redacted diagnostics. Browser Rallar signaling uses
 fresh API-v1 WS tickets for each socket open/reconnect because server tickets are consumed during upgrade.
 
-Rallar mode also includes focused direct tabs for `WebSocket`, `RTC/Realtimes`, `Rallar Data`, and optional `Media`
-checks. Those tabs call Rallar/Rallar Server directly, not the SPA `browser-rallar-runtime.ts` adapter. Runner mode owns
-the command-oriented `Manual Rallar` scratchpad and has a boundary panel that keeps recipes, control runs, flow exports,
-and imported artifacts separate from direct facade operations. The local sample recipe bootstrap and header `Replay
-Sample` action are runner-only, so the default Rallar workspace does not auto-run the simulated black-box scaffold.
+Rallar mode also includes focused direct tabs for `WebSocket`, `RTC/Realtimes`, `Rallar Data`, optional `Media`, and
+`Rallar Trace` checks. Those tabs call Rallar/Rallar Server directly, not the SPA `browser-rallar-runtime.ts` adapter.
+Runner mode owns the command-oriented `Manual Rallar` scratchpad and has a boundary panel that keeps recipes, control
+runs, flow exports, and imported artifacts separate from direct facade operations. The local sample recipe bootstrap and
+header `Replay Sample` action are runner-only, so the default Rallar workspace does not auto-run the simulated black-box
+scaffold.
 
 Open the SPA as a control agent:
 

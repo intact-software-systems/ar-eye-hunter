@@ -602,6 +602,8 @@ test('sends a Rallar Server REST request from the server tab', async ({ page }) 
     const serverPanel = page.locator('#panel-rallar-server');
     await serverPanel.getByRole('button', { name: 'Send' }).click();
 
+    await expect(serverPanel.locator('.rest-request-feedback')).toContainText('success');
+    await expect(serverPanel.locator('.rest-request-feedback')).toContainText('GET success');
     await expect(serverPanel).toContainText('200 OK');
     await expect(serverPanel).toContainText('"apiBaseUrl": "http://localhost:8080"');
     await expect(serverPanel).toContainText('"kind": "http.request"');
@@ -611,6 +613,41 @@ test('sends a Rallar Server REST request from the server tab', async ({ page }) 
     await expect(page.getByLabel('Global Client')).toHaveValue('server-client');
     await serverPanel.getByRole('button', { name: 'Use session globally' }).click();
     await expect(page.getByLabel('Global Session')).toHaveValue('server-session');
+
+    await page.getByRole('tab', { name: 'Rallar Trace' }).click();
+    const tracePanel = page.locator('#panel-rallar-trace');
+    await expect(tracePanel).toContainText('rallar.server.rest.request.completed');
+    await expect(tracePanel).toContainText('"status": 200');
+});
+
+test('shows explicit failed feedback and expanded Rallar trace payload for REST errors', async ({ page }) => {
+    await page.route('http://localhost:8080/api/config', async route => {
+        await route.fulfill({
+            status: 500,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                error: 'complete failure message from server',
+                detail: 'full diagnostic detail',
+            }),
+        });
+    });
+
+    await page.goto(
+        '/?provider=simulated&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&tab=rallar-server',
+    );
+
+    const serverPanel = page.locator('#panel-rallar-server');
+    await serverPanel.getByRole('button', { name: 'Send' }).click();
+
+    await expect(serverPanel.locator('.rest-request-feedback')).toContainText('failed');
+    await expect(serverPanel.locator('.rest-request-feedback')).toContainText('500');
+    await expect(serverPanel).toContainText('complete failure message from server');
+
+    await page.getByRole('tab', { name: 'Rallar Trace' }).click();
+    const tracePanel = page.locator('#panel-rallar-trace');
+    await expect(tracePanel).toContainText('rallar.server.rest.request.failed');
+    await expect(tracePanel).toContainText('HTTP 500');
+    await expect(tracePanel).toContainText('complete failure message from server');
 });
 
 test('runs a Rallar Server REST collection with assertions and extraction', async ({ page }) => {

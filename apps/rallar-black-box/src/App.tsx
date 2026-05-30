@@ -116,6 +116,7 @@ import {
     RALLAR_SERVER_ENDPOINT_PRESETS,
     applyRallarServerEndpointPreset,
     assertRallarServerRestResponse,
+    buildRallarServerRestRequest,
     buildRallarServerCollectionStepRequestInput,
     createRallarServerRestCollectionTemplates,
     defaultRallarServerWorkbenchVariables,
@@ -216,6 +217,19 @@ type RallarBrowserStatusSummary = Readonly<{
     latestTopic?: string;
     latestAtEpochMs?: number;
     rallarConnected?: boolean;
+}>;
+
+type RallarServerRequestFeedback = Readonly<{
+    state: 'idle' | 'sending' | 'success' | 'error';
+    method?: RallarServerRestMethod;
+    path?: string;
+    url?: string;
+    status?: number;
+    statusText?: string;
+    durationMs?: number;
+    errorKind?: string;
+    message?: string;
+    atEpochMs?: number;
 }>;
 
 type AppLocalRecipeEntry = Readonly<{
@@ -1126,6 +1140,20 @@ function isRallarBrowserEvent(event: RallarBlackBoxTestEvent): boolean {
         event.topic.startsWith('rallar.direct.');
 }
 
+function isRallarTraceEvent(event: RallarBlackBoxTestEvent): boolean {
+    return isRallarBrowserEvent(event) || event.topic.startsWith('rallar.server.');
+}
+
+function rallarTraceSource(event: RallarBlackBoxTestEvent): 'browser' | 'direct' | 'server' {
+    if (event.topic.startsWith('rallar.server.')) {
+        return 'server';
+    }
+    if (event.topic.startsWith('rallar.direct.')) {
+        return 'direct';
+    }
+    return 'browser';
+}
+
 function eventPayloadDetails(event: RallarBlackBoxTestEvent): Record<string, unknown> {
     const payload = optionalRecord(event.payload);
     return {
@@ -1147,6 +1175,21 @@ function eventPayloadText(event: RallarBlackBoxTestEvent): string {
         stringValue(payload.error),
         stringValue(optionalRecord(payload.error).message),
     ].filter((value): value is string => Boolean(value && value.length > 0)).join(' - ') || '-';
+}
+
+function eventFailureText(event: RallarBlackBoxTestEvent): string {
+    const payload = eventPayloadDetails(event);
+    const error = optionalRecord(payload.error);
+    const response = optionalRecord(payload.response);
+    return [
+        stringValue(payload.message),
+        stringValue(payload.reason),
+        stringValue(payload.statusText),
+        stringValue(error.message),
+        stringValue(payload.error),
+        stringValue(response.bodyText),
+        stringValue(payload.bodyText),
+    ].filter((value): value is string => Boolean(value && value.length > 0)).join('\n') || eventPayloadText(event);
 }
 
 function looksLikeWsStatus(value: Record<string, unknown>): boolean {
@@ -2703,10 +2746,11 @@ function AppModeSwitch({ activeMode, onSelect }: {
     );
 }
 
-function RallarBrowserTraceBar({ mode, state, status, onOpenEvents }: {
+function RallarBrowserTraceBar({ mode, state, status, onOpenTrace, onOpenEvents }: {
     mode: AppModeId;
     state: RallarBlackBoxTestState;
     status: RallarBrowserStatusSummary;
+    onOpenTrace(): void;
     onOpenEvents(): void;
 }) {
     const events = selectRallarBlackBoxEvents(state);
@@ -2742,6 +2786,9 @@ function RallarBrowserTraceBar({ mode, state, status, onOpenEvents }: {
                 <span className={`pill ${tone}`}>
                     {latestEvent?.severity ?? (latestEvent ? 'info' : 'idle')}
                 </span>
+                <button type="button" onClick={onOpenTrace}>
+                    Rallar Trace
+                </button>
                 <button type="button" onClick={onOpenEvents}>
                     Event Stream
                 </button>
@@ -5913,6 +5960,113 @@ function EventStreamPanel({ state }: { state: RallarBlackBoxTestState }) {
                         </div>
                     </article>
                 ))}
+            </div>
+        </section>
+    );
+}
+
+function RallarTracePanel({ state, authSession }: {
+    state: RallarBlackBoxTestState;
+    authSession?: AuthSession;
+}) {
+    const [sourceFilter, setSourceFilter] = useState<'all' | 'browser' | 'direct' | 'server'>('all');
+    const [severityFilter, setSeverityFilter] = useState<'all' | RallarBlackBoxTestSeverity>('all');
+    const [eventLimit, setEventLimit] = useState(100);
+    const traceEvents = useMemo(
+        () => selectRallarBlackBoxEvents(state).filter(isRallarTraceEvent),
+        [state],
+    );
+    const filteredEvents = useMemo(
+        () => traceEvents.filter(event =>
+            (sourceFilter === 'all' || rallarTraceSource(event) === sourceFilter) &&
+            (severityFilter === 'all' || event.severity === severityFilter)
+        ),
+        [severityFilter, sourceFilter, traceEvents],
+    );
+    const visibleEvents = useMemo(
+        () => filteredEvents.slice(-eventLimit).reverse(),
+        [eventLimit, filteredEvents],
+    );
+    const errorCount = traceEvents.filter(event => event.severity === 'error').length;
+    const warningCount = traceEvents.filter(event => event.severity === 'warning').length;
+    const hiddenCount = Math.max(0, filteredEvents.length - visibleEvents.length);
+
+    return (
+        <section className="panel rallar-trace-panel">
+            <div className="panel-heading">
+                <h2>Rallar Trace</h2>
+                <span>{visibleEvents.length} of {filteredEvents.length} visible</span>
+            </div>
+            <div className="rallar-trace-toolbar">
+                <Metric label="Events" value={String(traceEvents.length)}/>
+                <Metric label="Errors" value={String(errorCount)} tone={errorCount > 0 ? 'bad' : 'good'}/>
+                <Metric label="Warnings" value={String(warningCount)} tone={warningCount > 0 ? 'warn' : 'good'}/>
+                <label className="field compact-field">
+                    <span>Source</span>
+                    <select value={sourceFilter} onChange={event => setSourceFilter(event.target.value as typeof sourceFilter)}>
+                        {(['all', 'browser', 'direct', 'server'] as const).map(value => (
+                            <option key={value} value={value}>{value}</option>
+                        ))}
+                    </select>
+                </label>
+                <label className="field compact-field">
+                    <span>Severity</span>
+                    <select value={severityFilter} onChange={event => setSeverityFilter(event.target.value as typeof severityFilter)}>
+                        {(['all', 'debug', 'info', 'warning', 'error'] as const).map(value => (
+                            <option key={value} value={value}>{value}</option>
+                        ))}
+                    </select>
+                </label>
+                <label className="field compact-field">
+                    <span>Window</span>
+                    <select value={eventLimit} onChange={event => setEventLimit(Number(event.target.value))}>
+                        {[50, 100, 250, 500].map(limit => (
+                            <option key={limit} value={limit}>{limit}</option>
+                        ))}
+                    </select>
+                </label>
+            </div>
+            {hiddenCount > 0 && (
+                <div className="event-window-status" role="status">
+                    Showing the newest {visibleEvents.length} matching trace events. {hiddenCount} older matching events
+                    are hidden by the current window.
+                </div>
+            )}
+            <div className="rallar-trace-list">
+                {visibleEvents.length === 0 && (
+                    <div className="empty-state">No Rallar trace events</div>
+                )}
+                {visibleEvents.map(event => {
+                    const source = rallarTraceSource(event);
+                    const tone = event.severity === 'error'
+                        ? 'bad'
+                        : event.severity === 'warning'
+                            ? 'warn'
+                            : 'muted';
+                    const detail = event.severity === 'error' || event.severity === 'warning'
+                        ? eventFailureText(event)
+                        : eventPayloadText(event);
+                    return (
+                        <article className="rallar-trace-row" key={event.eventId}>
+                            <div className="event-topline">
+                                <span className={`pill ${tone}`}>{event.severity ?? 'info'}</span>
+                                <strong>{event.topic}</strong>
+                                <time>{formatTime(event.atEpochMs)}</time>
+                            </div>
+                            <div className="event-meta">
+                                <span>source {source}</span>
+                                <span>{event.kind}</span>
+                                <span>{event.actor ?? 'no actor'}</span>
+                                <span>{event.connection ?? 'no connection'}</span>
+                                <span>{event.transport ?? 'runtime'}</span>
+                            </div>
+                            <pre className="rallar-trace-message">{detail}</pre>
+                            <pre className="json-block rallar-trace-payload">
+                                {redactedJson(event.payload ?? {}, state, authSession)}
+                            </pre>
+                        </article>
+                    );
+                })}
             </div>
         </section>
     );
@@ -9580,6 +9734,70 @@ function SharedTestPanel() {
     );
 }
 
+function RallarServerRequestFeedbackPanel({ feedback, authSession }: {
+    feedback: RallarServerRequestFeedback;
+    authSession?: AuthSession;
+}) {
+    const tone = feedback.state === 'success'
+        ? 'good'
+        : feedback.state === 'error'
+            ? 'bad'
+            : feedback.state === 'sending'
+                ? 'active'
+                : 'muted';
+    const label = feedback.state === 'success'
+        ? 'success'
+        : feedback.state === 'error'
+            ? 'failed'
+            : feedback.state === 'sending'
+                ? 'sending'
+                : 'idle';
+    const title = feedback.state === 'idle'
+        ? 'No request sent yet'
+        : `${feedback.method ?? 'Request'} ${feedback.state}`;
+    const statusText = feedback.status !== undefined
+        ? `${feedback.status} ${feedback.statusText ?? ''}`.trim()
+        : feedback.errorKind ?? '-';
+    const urlText = feedback.url
+        ? redactRallarServerUrl(feedback.url, authSession)
+        : feedback.path ?? '-';
+    const message = feedback.message
+        ? redactRallarServerText(feedback.message, authSession)
+        : feedback.state === 'sending'
+            ? 'Waiting for Rallar Server response.'
+            : feedback.state === 'idle'
+                ? 'Configure an endpoint and send a request.'
+                : '-';
+
+    return (
+        <section className={`rest-request-feedback ${tone}`} role="status" aria-live="polite">
+            <div>
+                <span className={`pill ${tone}`}>{label}</span>
+                <strong>{title}</strong>
+                <small>{feedback.atEpochMs ? formatTime(feedback.atEpochMs) : '-'}</small>
+            </div>
+            <dl>
+                <div>
+                    <dt>Endpoint</dt>
+                    <dd>{urlText}</dd>
+                </div>
+                <div>
+                    <dt>Status</dt>
+                    <dd>{statusText}</dd>
+                </div>
+                <div>
+                    <dt>Duration</dt>
+                    <dd>{formatDuration(feedback.durationMs)}</dd>
+                </div>
+                <div>
+                    <dt>Message</dt>
+                    <dd>{message}</dd>
+                </div>
+            </dl>
+        </section>
+    );
+}
+
 function RallarServerPanel({ state, bootstrap, authSession, globalValues, control, onGlobalValueChange }: {
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
@@ -9676,6 +9894,9 @@ function RallarServerPanel({ state, bootstrap, authSession, globalValues, contro
     const [openApiBusy, setOpenApiBusy] = useState(false);
     const [localError, setLocalError] = useState<string | undefined>();
     const [response, setResponse] = useState<RallarServerRestResponse | undefined>();
+    const [requestFeedback, setRequestFeedback] = useState<RallarServerRequestFeedback>({
+        state: 'idle',
+    });
     const [selectedCollectionId, setSelectedCollectionId] = useState(initialCollectionDraft.selectedCollectionId);
     const [collectionText, setCollectionText] = useState(() => json(initialCollectionDraft.collection));
     const [collectionVariablesText, setCollectionVariablesText] = useState(() => json(initialCollectionDraft.variables));
@@ -9793,10 +10014,107 @@ function RallarServerPanel({ state, bootstrap, authSession, globalValues, contro
     const sendRequest = async (): Promise<void> => {
         setBusy(true);
         setLocalError(undefined);
+        setResponse(undefined);
+        let requestSummary: RallarServerRequestFeedback = {
+            state: 'sending',
+            method,
+            path,
+            atEpochMs: Date.now(),
+        };
         try {
-            setResponse(await executeRallarServerRestRequest(requestInput));
+            const request = buildRallarServerRestRequest(requestInput);
+            requestSummary = {
+                state: 'sending',
+                method: request.method,
+                path,
+                url: request.url,
+                atEpochMs: Date.now(),
+            };
+            setRequestFeedback(requestSummary);
+            rallarBlackBoxRuntimeStore.recordRuntimeEvent({
+                kind: 'event',
+                topic: 'rallar.server.rest.request.started',
+                severity: 'info',
+                actor: authSession?.username,
+                payload: {
+                    method: request.method,
+                    path,
+                    url: redactRallarServerUrl(request.url, authSession),
+                    attachAuth,
+                    responseBodyMode,
+                    timeoutMs,
+                },
+            }, `Rallar Server ${request.method} request started`);
+
+            const nextResponse = await executeRallarServerRestRequest(requestInput);
+            setResponse(nextResponse);
+            const nextFeedback: RallarServerRequestFeedback = {
+                state: nextResponse.ok ? 'success' : 'error',
+                method: request.method,
+                path,
+                url: nextResponse.url,
+                status: nextResponse.status,
+                statusText: nextResponse.statusText,
+                durationMs: nextResponse.durationMs,
+                errorKind: nextResponse.error?.kind,
+                message: nextResponse.error?.message ??
+                    (nextResponse.ok ? 'Request completed successfully.' : 'Request failed.'),
+                atEpochMs: Date.now(),
+            };
+            setRequestFeedback(nextFeedback);
+            rallarBlackBoxRuntimeStore.recordRuntimeEvent({
+                kind: nextResponse.ok ? 'event' : 'diagnostic',
+                topic: nextResponse.ok
+                    ? 'rallar.server.rest.request.completed'
+                    : 'rallar.server.rest.request.failed',
+                severity: nextResponse.ok ? 'info' : 'error',
+                actor: authSession?.username,
+                payload: {
+                    method: request.method,
+                    path,
+                    url: redactRallarServerUrl(nextResponse.url, authSession),
+                    status: nextResponse.status,
+                    statusText: nextResponse.statusText,
+                    durationMs: nextResponse.durationMs,
+                    error: nextResponse.error,
+                    bodyKind: nextResponse.bodyKind,
+                    bodyText: nextResponse.bodyText
+                        ? redactRallarServerText(nextResponse.bodyText, authSession)
+                        : undefined,
+                    bodyJson: nextResponse.bodyJson === undefined
+                        ? undefined
+                        : redactRallarServerValue(nextResponse.bodyJson, authSession),
+                },
+            }, nextResponse.ok
+                ? `Rallar Server ${request.method} request completed`
+                : `Rallar Server ${request.method} request failed`);
         } catch (error) {
-            setLocalError(error instanceof Error ? error.message : String(error));
+            const message = error instanceof Error ? error.message : String(error);
+            setLocalError(message);
+            setRequestFeedback({
+                ...requestSummary,
+                state: 'error',
+                errorKind: 'request-build',
+                message,
+                atEpochMs: Date.now(),
+            });
+            rallarBlackBoxRuntimeStore.recordRuntimeEvent({
+                kind: 'diagnostic',
+                topic: 'rallar.server.rest.request.failed',
+                severity: 'error',
+                actor: authSession?.username,
+                payload: {
+                    method: requestSummary.method,
+                    path: requestSummary.path,
+                    url: requestSummary.url
+                        ? redactRallarServerUrl(requestSummary.url, authSession)
+                        : undefined,
+                    error: {
+                        kind: 'request-build',
+                        message: redactRallarServerText(message, authSession),
+                    },
+                },
+            }, `Rallar Server ${requestSummary.method ?? 'REST'} request failed`);
         } finally {
             setBusy(false);
         }
@@ -10167,6 +10485,7 @@ function RallarServerPanel({ state, bootstrap, authSession, globalValues, contro
                     Use session globally
                 </button>
             </div>
+            <RallarServerRequestFeedbackPanel feedback={requestFeedback} authSession={authSession}/>
             {localError && (
                 <div className="workbench-error" role="status">
                     {redactRallarBlackBoxValue(localError, uiRedactionOptions(state, authSession))}
@@ -10882,6 +11201,7 @@ export default function App() {
                 mode={activeMode}
                 state={state}
                 status={browserStatus}
+                onOpenTrace={() => selectTab('rallar-trace')}
                 onOpenEvents={() => selectTab('event-stream')}
             />
             {activeMode === 'rallar' && (
@@ -11099,6 +11419,15 @@ export default function App() {
                             control={control}
                         />
                     )}
+                </section>
+                <section
+                    id="panel-rallar-trace"
+                    className="workspace-grid tab-workspace rallar-trace-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-rallar-trace"
+                    hidden={activeTab !== 'rallar-trace'}
+                >
+                    <RallarTracePanel state={state} authSession={authSession}/>
                 </section>
                 <section
                     id="panel-event-stream"

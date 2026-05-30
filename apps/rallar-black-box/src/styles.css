@@ -623,6 +623,7 @@ h3 {
 .failure-panel,
 .report-panel,
 .rallar-server-panel,
+.rallar-trace-panel,
 .flow-builder-panel,
 .run-manager-panel,
 .shared-test-catalog-panel,
@@ -670,6 +671,7 @@ h3 {
 .topology-tab-grid .topology-panel,
 .rtc-tab-grid .rtc-diagnostics-panel,
 .events-tab-grid .event-panel,
+.rallar-trace-tab-grid .rallar-trace-panel,
 .server-tab-grid .rallar-server-panel,
 .flow-builder-tab-grid .flow-builder-panel,
 .run-manager-tab-grid .run-manager-panel,
@@ -1329,6 +1331,74 @@ h3 {
     grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 8px;
     padding: 12px 14px;
+}
+
+.rest-request-feedback {
+    display: grid;
+    gap: 10px;
+    margin: 0 14px 14px;
+    padding: 12px;
+    border: 1px solid #d8dfd5;
+    border-left-width: 5px;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #1f2a25;
+}
+
+.rest-request-feedback.good {
+    border-left-color: #226a44;
+    background: #f3fbf5;
+}
+
+.rest-request-feedback.active {
+    border-left-color: #0c6f7b;
+    background: #eefafa;
+}
+
+.rest-request-feedback.warn {
+    border-left-color: #96610d;
+    background: #fff9ea;
+}
+
+.rest-request-feedback.bad {
+    border-left-color: #a83232;
+    background: #fff4f2;
+}
+
+.rest-request-feedback > div:first-child {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+}
+
+.rest-request-feedback strong,
+.rest-request-feedback small {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rest-request-feedback small {
+    margin-left: auto;
+    color: #617069;
+    font-size: 0.76rem;
+}
+
+.rest-request-feedback dl {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(100px, 0.35fr) minmax(100px, 0.35fr) minmax(0, 1fr);
+    gap: 8px;
+    margin: 0;
+}
+
+.rest-request-feedback dl div {
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid #dbe1d8;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.72);
 }
 
 .rest-response-grid {
@@ -2593,6 +2663,49 @@ dd {
     overflow: auto;
 }
 
+.rallar-trace-toolbar {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(120px, 0.45fr)) repeat(3, minmax(150px, 1fr));
+    gap: 10px;
+    padding: 12px 14px;
+}
+
+.rallar-trace-list {
+    display: grid;
+    gap: 10px;
+    max-height: 720px;
+    overflow: auto;
+    padding: 0 14px 14px;
+}
+
+.rallar-trace-row {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid #d8dfd5;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.rallar-trace-message {
+    margin: 10px 0 0;
+    padding: 10px;
+    border: 1px solid #dbe1d8;
+    border-radius: 6px;
+    background: #f8faf6;
+    color: #1f2a25;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.84rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.rallar-trace-payload {
+    max-height: 460px;
+    margin-top: 10px;
+    border: 1px solid #28322e;
+}
+
 .event-row {
     min-width: 0;
     padding: 10px;
@@ -2729,6 +2842,7 @@ dd {
     }
 
     .event-filter-grid,
+    .rallar-trace-toolbar,
     .topology-search-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
@@ -2736,6 +2850,7 @@ dd {
     .rest-context-list,
     .rest-workbench-grid,
     .rest-editors,
+    .rest-request-feedback dl,
     .rest-response-grid,
     .rest-collection-toolbar,
     .rest-collection-editors,
@@ -2910,11 +3025,13 @@ dd {
     }
 
     .event-filter-grid,
+    .rallar-trace-toolbar,
     .topology-search-grid,
     .rest-context-list,
     .rest-workbench-grid,
     .rest-editors,
     .rest-actions,
+    .rest-request-feedback dl,
     .rest-response-grid,
     .rest-collection-toolbar,
     .rest-collection-editors,

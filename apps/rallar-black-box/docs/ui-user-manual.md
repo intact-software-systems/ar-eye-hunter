@@ -104,16 +104,16 @@ values back to the current bootstrap/login context.
 
 The `Rallar Browser Trace` strip sits below Global Context. It shows the signaling WebSocket status, RTC status, active
 group, peer counts, and newest events whose source topic is `rallar.browser.*`. These events are emitted by the
-browser-side Rallar runtime and then bridged into the command-center event store. Use the `Event Stream` button to open
-the full event table; filter the topic to `rallar.browser` when you need the detailed connect, signaling, send, cleanup,
-or error timeline.
+browser-side Rallar runtime and then bridged into the command-center event store. Use `Rallar Trace` for expanded
+Rallar browser/direct/server events with full redacted payloads and complete failure messages. Use `Event Stream` for
+the generic event table and filters across every command-center event.
 
 Between Global Context and the trace strip, the `Workspace Mode` switch separates direct live Rallar work from
 black-box-runner work:
 
 - `Rallar`: Quick Test, Auth, Groups/Clients, WebSocket, RTC/Realtimes, Topology, RTC Diagnostics, Rallar Data, Media,
-  Rallar Server, and Event Stream. These tabs execute live operations through the browser Rallar facade or Rallar Server
-  directly; they do not execute black-box-runner commands.
+  Rallar Server, Rallar Trace, and Event Stream. These tabs execute live operations through the browser Rallar facade or
+  Rallar Server directly; they do not execute black-box-runner commands.
 - `Rallar black-box-runner`: Shared Test, Manual Rallar, Local Workbench, Flow Builder, Run Manager, and Event Stream.
   These tabs work with recipes, command execution, control runs, or runner artifacts. The local sample replay control
   is shown only in this workspace.
@@ -667,11 +667,13 @@ Rallar Server context. A logged-in Alice session can join
 `/groups/<groupId>/members/<alice-client-id>` with body `{"status":"active"}`. Using another principal ID is rejected,
 and sending the join request without the body produces a server `400 Bad Request`.
 
-The response area shows status, duration, body kind, classified error, parsed JSON or raw text, response headers, and
-the generated command. Response text, response URLs, command previews, and copied output are redacted for sensitive
-keys, access tokens, bearer values, tickets, cookies, and known secret values from the active session. In
-`browser-rallar` mode the tab refuses to send real-provider requests to the placeholder `https://api.example.invalid`
-API base URL.
+After `Send`, the request feedback strip shows `sending`, `success`, or `failed`, plus endpoint, HTTP status, duration,
+and the most useful error message. The response area shows status, duration, body kind, classified error, parsed JSON or
+raw text, response headers, and the generated command. Single REST requests also emit `rallar.server.rest.request.*`
+events that are visible in `Rallar Trace` with full redacted payloads and response bodies. Response text, response URLs,
+command previews, copied output, and trace payloads are redacted for sensitive keys, access tokens, bearer values,
+tickets, cookies, and known secret values from the active session. In `browser-rallar` mode the tab refuses to send
+real-provider requests to the placeholder `https://api.example.invalid` API base URL.
 
 ## Flow Builder
 
