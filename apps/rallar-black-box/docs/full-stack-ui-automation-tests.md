@@ -11,7 +11,7 @@ The app is ready for additional full-stack and command-center UI coverage from a
 - the SPA has a login gate for `browser-rallar`
 - the app shell has stable tabs and URL tab state
 - the Auth tab exposes login, register, restore, logout, WS-ticket, and negative auth operations
-- the Rooms/Clients tab exposes authenticated group, client, presence, and state-event operations
+- the Groups/Clients tab exposes authenticated group, client, presence, and state-event operations
 - the WebSocket tab exposes ticket creation, open/open API WS, send, wait, reconnect, close, cleanup, diagnostics, and
   WS/RTC recipe export operations
 - Manual Rallar can configure, join/connect, send, run scoped RTC delivery matrices, run NACK probes, inspect received
@@ -42,7 +42,7 @@ Use these files as examples:
 
 - `tests/playwright/rallar-black-box/tabbed-navigation.spec.ts`
   Deterministic local UI tests. Uses `provider=simulated`, browser route mocks where needed, and verifies tab state,
-  reload-safe state persistence, redacted draft storage, the Auth command center, Rooms/Clients command center, Rallar
+  reload-safe state persistence, redacted draft storage, the Auth command center, Groups/Clients command center, Rallar
   Server REST UI and collection runner, WebSocket command center, shared-test catalog display, and runner artifact
   import.
 - `tests/playwright/rallar-black-box/control-agent-smoke.spec.ts`
@@ -104,7 +104,7 @@ Prefer the smallest layer that proves the behavior.
 
 4. Full-stack API plus SPA tests
    Use when the SPA must talk to `apps/api-v1` through real HTTP, including login, REST workbench requests, CORS,
-   authorization headers, Auth tab operations, Rooms/Clients state operations, group state, client state, ICE config,
+   authorization headers, Auth tab operations, Groups/Clients state operations, group state, client state, ICE config,
    and websocket tickets.
 
 5. Live real-provider tests
@@ -444,9 +444,9 @@ For the Auth tab:
 Use mocked routes for deterministic redaction tests. Use full-stack API tests when checking real CORS, session expiry,
 forbidden users, or backend auth behavior.
 
-## Rooms/Clients Flow
+## Groups/Clients Flow
 
-For the Rooms/Clients tab:
+For the Groups/Clients tab:
 
 1. Seed or create an auth session.
 2. Open `?tab=rooms-clients`.

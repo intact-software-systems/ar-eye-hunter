@@ -61,7 +61,7 @@ The Rallar mode tabs now covered by this plan are:
 
 - `Quick Test`: guided Login -> Join group -> Subscribe/view messages -> Send messages -> Repeat flow
 - `Auth`
-- `Rooms/Clients`
+- `Groups/Clients`
 - `WebSocket`
 - `RTC/Realtimes`
 - `RTC Diagnostics`
@@ -98,7 +98,7 @@ The runner mode tabs covered or preserved by this plan are:
 
 ## Rallar Aspects To Cover
 
-The user's proposed Rallar-mode list is right: `Auth`, `Rooms/Clients`, `WebSocket`, `Topology`, `RTC Diagnostics`, and
+The user's proposed Rallar-mode list is right: `Auth`, `Groups/Clients`, `WebSocket`, `Topology`, `RTC Diagnostics`, and
 `Rallar Data` are core. The split tracks these Rallar aspects:
 
 - `Realtime`: direct `rallar.realtime.sendJson`, `sendBinary`, lane subscriptions, lane health, and per-peer lane
@@ -295,7 +295,7 @@ Result:
 - Added direct browser Rallar room actions for refresh, create, join, and leave alongside the existing API-v1 REST
   actions.
 - Kept REST actions for group/client/session/presence/event endpoints where server-side evidence is needed.
-- The Rooms/Clients tab now shows explicit `Current client member` and `Other browser visible` assertions for the active
+- The Groups/Clients tab now shows explicit `Current client member` and `Other browser visible` assertions for the active
   group/session and a user-supplied expected other client.
 - State event page controls remain available for group and client events, and cleanup remains available through leave,
   group presence disconnect, and client session disconnect.
@@ -491,7 +491,7 @@ Goal: Let useful Rallar-mode explorations become runner-mode tests without mergi
 
 Work:
 
-- Add "Export as runner recipe" from Quick Test, Rallar WS, Realtime/RTC, Rooms/Clients, and Rallar Server.
+- Add "Export as runner recipe" from Quick Test, Rallar WS, Realtime/RTC, Groups/Clients, and Rallar Server.
 - Add "Open in runner mode" for exported recipes.
 - Include environment prerequisites in exported recipes.
 - Add copyable direct-Rallar diagnostic bundles independent from runner artifacts.
@@ -506,7 +506,7 @@ Result:
 - Added `Copy runner recipe` and `Open runner mode` actions to Quick Test.
 - Kept Rallar WS recipe export and WS/RTC comparison recipe export in the WebSocket tab.
 - Added RTC/realtime runner-recipe export from the new RTC/Realtimes tab.
-- Kept Rooms/Clients state recipe export and Rallar Server command/collection recipe exports.
+- Kept Groups/Clients state recipe export and Rallar Server command/collection recipe exports.
 - Copyable direct diagnostics remain independent from runner artifacts and use existing redaction.
 
 ### Mode Split Iteration 13: Real-data Browser Automation
@@ -519,7 +519,7 @@ Work:
 
 - Add Playwright coverage for Rallar mode login, create/join group, subscribe WS, send WS, receive in another browser,
   repeat send, and cleanup.
-- Add coverage for Rooms/Clients membership evidence before send.
+- Add coverage for Groups/Clients membership evidence before send.
 - Add coverage for realtime/RTC direct send and received message display.
 - Add coverage for Rallar Data store write/read/update/cleanup.
 - Keep tests skip-safe unless real local services and credentials are configured.
@@ -568,13 +568,13 @@ Status: completed on 2026-05-29.
 
 Iterations 1-14 complete the mode split scope:
 
-- direct Rallar mode has a distinct navigation model, guided Quick Test flow, auth/session visibility, rooms/clients
+- direct Rallar mode has a distinct navigation model, guided Quick Test flow, auth/session visibility, groups/clients
   evidence, WS message operations, RTC/realtime operations, Rallar Data operations, optional Media operations, REST API
   promotion, and trace filtering
 - black-box-runner mode remains the recipe/control/artifact workspace, with an explicit boundary panel and promotion
   paths from direct UI evidence into copyable runner recipes
 - deterministic browser coverage exercises the mode shell, tab guardrails, REST promotion, auth/session console,
-  rooms/clients evidence, WebSocket command-center behavior, RTC matrix UI, flow builder, shared-test handoff, and
+  groups/clients evidence, WebSocket command-center behavior, RTC matrix UI, flow builder, shared-test handoff, and
   persistence
 - live-browser coverage has a new gated Quick Test two-browser WS delivery scenario alongside the existing gated
   full-stack suites

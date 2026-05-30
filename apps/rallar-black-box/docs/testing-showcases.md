@@ -51,7 +51,7 @@ Goal: verify group membership and client presence before testing delivery.
 Steps:
 
 1. Log in or restore a session.
-2. Open the `Rooms/Clients` tab.
+2. Open the `Groups/Clients` tab.
 3. Fill application, workspace, group, client/principal, instance, and session values.
 4. Click `Create group`, `Join group`, and `Connect client presence` as needed.
 5. Click `Refresh state`.
@@ -113,7 +113,7 @@ Goal: compare how the same JSON payload is represented over RTC and WebSocket pa
 
 Steps:
 
-1. Use the `Rooms/Clients` tab to create or confirm the group and client evidence when testing against a real server.
+1. Use the `Groups/Clients` tab to create or confirm the group and client evidence when testing against a real server.
 2. Open the `WebSocket` tab.
 3. Select the parity payload preset or paste the JSON payload that should also be sent over RTC.
 4. Click `Configure WS`, then `Create WS ticket` and `Open API WS` for authenticated API sockets.

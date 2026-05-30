@@ -52,7 +52,7 @@ http://localhost:5176/
 ```
 
 No login is required for the local simulated UI. The client starts with demo defaults and the current SPA executor is
-simulated, so the visible tabs, diagnostics, reports, topology, Auth, Rooms/Clients, and WebSocket surfaces work without
+simulated, so the visible tabs, diagnostics, reports, topology, Auth, Groups/Clients, and WebSocket surfaces work without
 a Rallar account or backend login.
 
 The active provider defaults to `simulated`. Real Rallar execution uses `provider=browser-rallar`, which requires a real
@@ -60,7 +60,7 @@ Rallar API base URL plus username/password or a restorable browser auth session.
 screen before entering the tabbed app shell.
 
 After login, the app shell exposes a global command-center context above the tabs. It keeps API base URL, application,
-workspace, room/group, client, and session values aligned across Quick Test, Manual Rallar, Rooms/Clients, WebSocket, RTC
+workspace, room/group, client, and session values aligned across Quick Test, Manual Rallar, Groups/Clients, WebSocket, RTC
 Diagnostics, Rallar Server, and Flow Builder defaults.
 
 The app shell now has a `Workspace Mode` switch. `Rallar` mode shows direct live-operation tabs. `Rallar

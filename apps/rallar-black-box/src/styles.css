@@ -253,6 +253,7 @@ h3 {
 .manual-command button,
 .manual-action-grid button,
 .auth-action-grid button,
+.rooms-utility-grid button,
 .rooms-action-grid button,
 .websocket-action-grid button,
 .rtc-actions button,
@@ -284,6 +285,7 @@ h3 {
 .manual-command button,
 .manual-action-grid button,
 .auth-action-grid button,
+.rooms-utility-grid button,
 .rooms-action-grid button,
 .websocket-action-grid button,
 .rtc-actions button,
@@ -701,6 +703,7 @@ h3 {
 .auth-action-grid,
 .quick-rallar-action-grid,
 .rtc-realtime-action-grid,
+.rooms-utility-grid,
 .rooms-action-grid,
 .websocket-action-grid {
     display: grid;
@@ -714,6 +717,55 @@ h3 {
 .rtc-realtime-action-grid,
 .websocket-action-grid {
     grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.rooms-utility-grid {
+    grid-template-columns: repeat(2, minmax(0, 180px));
+}
+
+.rooms-action-sections {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    padding: 0 14px 12px;
+}
+
+.rooms-action-category {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 12px;
+    border-top: 1px solid #d7e0db;
+    padding-top: 12px;
+}
+
+.rooms-action-category h3,
+.rooms-action-subsection h4 {
+    margin: 0;
+    color: #26332d;
+    line-height: 1.25;
+}
+
+.rooms-action-category h3 {
+    font-size: 1rem;
+}
+
+.rooms-action-subsection {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.rooms-action-subsection h4 {
+    color: #65736c;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.rooms-action-category .rooms-action-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 0;
 }
 
 .quick-rallar-summary-grid {
@@ -2740,9 +2792,14 @@ dd {
     .auth-action-grid,
     .quick-rallar-action-grid,
     .rtc-realtime-action-grid,
+    .rooms-utility-grid,
     .rooms-action-grid,
     .websocket-action-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .rooms-action-sections {
+        grid-template-columns: 1fr;
     }
 
     .rest-subpanel:first-child {
@@ -2893,6 +2950,8 @@ dd {
     .auth-action-grid,
     .auth-session-list,
     .rooms-context-grid,
+    .rooms-utility-grid,
+    .rooms-action-sections,
     .rooms-action-grid,
     .rooms-observed-grid,
     .rooms-state-grid,

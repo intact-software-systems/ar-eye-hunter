@@ -282,6 +282,13 @@ type RoomsClientsAction = Readonly<{
     query?: Readonly<Record<string, unknown>>;
 }>;
 
+type RoomsClientsActionCategory = Readonly<{
+    categoryId: 'groups' | 'clients';
+    title: string;
+    description: string;
+    actions: readonly RoomsClientsAction[];
+}>;
+
 type RoomStateRow = Readonly<{
     rowId: string;
     groupId: string;
@@ -632,24 +639,39 @@ const SHARED_TEST_ARTIFACT_FILE_NAMES = [
     ...RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT.optionalFiles,
 ] as const;
 
-const ROOMS_CLIENTS_ACTIONS: readonly RoomsClientsAction[] = [
-    { actionId: 'list-groups', label: 'List groups', presetId: 'groups-list' },
-    { actionId: 'list-clients', label: 'List clients', presetId: 'clients-list' },
-    { actionId: 'create-group', label: 'Create group', presetId: 'group-create' },
-    { actionId: 'read-group', label: 'Read group', presetId: 'group-read' },
-    { actionId: 'join-group', label: 'Join group', presetId: 'group-member-join' },
-    { actionId: 'leave-group', label: 'Leave group', presetId: 'group-member-leave' },
-    { actionId: 'client-session-connect', label: 'Connect client presence', presetId: 'client-session-connect' },
-    { actionId: 'client-session-heartbeat', label: 'Heartbeat client', presetId: 'client-session-heartbeat' },
-    { actionId: 'client-session-disconnect', label: 'Disconnect client', presetId: 'client-session-disconnect' },
-    { actionId: 'group-presence-connect', label: 'Connect group presence', presetId: 'group-presence-connect' },
-    { actionId: 'group-presence-heartbeat', label: 'Heartbeat group', presetId: 'group-presence-heartbeat' },
-    { actionId: 'group-presence-disconnect', label: 'Disconnect group', presetId: 'group-presence-disconnect' },
-    { actionId: 'group-events', label: 'List group events', presetId: 'group-events' },
-    { actionId: 'group-events-page', label: 'List group events page', presetId: 'group-events-page', query: { limit: 20 } },
-    { actionId: 'client-events', label: 'List client events', presetId: 'client-events' },
-    { actionId: 'client-events-page', label: 'List client events page', presetId: 'client-events-page', query: { limit: 20 } },
+const ROOMS_CLIENTS_ACTION_GROUPS: readonly RoomsClientsActionCategory[] = [
+    {
+        categoryId: 'groups',
+        title: 'Groups',
+        description: 'Group records, membership, group presence, and group event evidence.',
+        actions: [
+            { actionId: 'list-groups', label: 'List groups', presetId: 'groups-list' },
+            { actionId: 'create-group', label: 'Create group', presetId: 'group-create' },
+            { actionId: 'read-group', label: 'Read group', presetId: 'group-read' },
+            { actionId: 'join-group', label: 'Join group', presetId: 'group-member-join' },
+            { actionId: 'leave-group', label: 'Leave group', presetId: 'group-member-leave' },
+            { actionId: 'group-presence-connect', label: 'Connect group presence', presetId: 'group-presence-connect' },
+            { actionId: 'group-presence-heartbeat', label: 'Heartbeat group', presetId: 'group-presence-heartbeat' },
+            { actionId: 'group-presence-disconnect', label: 'Disconnect group', presetId: 'group-presence-disconnect' },
+            { actionId: 'group-events', label: 'List group events', presetId: 'group-events' },
+            { actionId: 'group-events-page', label: 'List group events page', presetId: 'group-events-page', query: { limit: 20 } },
+        ],
+    },
+    {
+        categoryId: 'clients',
+        title: 'Clients',
+        description: 'Client snapshots, client session presence, and client event evidence.',
+        actions: [
+            { actionId: 'list-clients', label: 'List clients', presetId: 'clients-list' },
+            { actionId: 'client-session-connect', label: 'Connect client presence', presetId: 'client-session-connect' },
+            { actionId: 'client-session-heartbeat', label: 'Heartbeat client', presetId: 'client-session-heartbeat' },
+            { actionId: 'client-session-disconnect', label: 'Disconnect client', presetId: 'client-session-disconnect' },
+            { actionId: 'client-events', label: 'List client events', presetId: 'client-events' },
+            { actionId: 'client-events-page', label: 'List client events page', presetId: 'client-events-page', query: { limit: 20 } },
+        ],
+    },
 ];
+const ROOMS_CLIENTS_ACTIONS: readonly RoomsClientsAction[] = ROOMS_CLIENTS_ACTION_GROUPS.flatMap(group => group.actions);
 
 const DEFAULT_EVENT_FILTERS: EventFilters = {
     kind: 'all',
@@ -8910,7 +8932,7 @@ function RoomsClientsPanel({ state, bootstrap, authSession, globalValues, onGlob
     return (
         <section className="panel rooms-clients-panel">
             <div className="panel-heading">
-                <h2>Rooms/Clients</h2>
+                <h2>Groups/Clients</h2>
                 <span className={`pill ${authSession ? 'good' : 'bad'}`}>
                     {authSession ? 'auth attached' : 'needs auth'}
                 </span>
@@ -8949,37 +8971,60 @@ function RoomsClientsPanel({ state, bootstrap, authSession, globalValues, onGlob
                     <input type="number" min={0} value={timeoutMs} onChange={event => setTimeoutMs(Number(event.target.value))}/>
                 </label>
             </div>
-            <div className="rooms-action-grid">
+            <div className="rooms-utility-grid">
                 <button type="button" disabled={Boolean(busyAction) || !authSession} onClick={() => void refreshState()}>
                     Refresh state
                 </button>
-                <button type="button" disabled={Boolean(busyAction) || !authSession || bootstrap.providerMode !== 'browser-rallar'} onClick={() => void runDirectRoomsAction('refresh')}>
-                    Direct refresh
-                </button>
-                <button type="button" disabled={Boolean(busyAction) || !authSession || bootstrap.providerMode !== 'browser-rallar'} onClick={() => void runDirectRoomsAction('create')}>
-                    Direct create
-                </button>
-                <button type="button" disabled={Boolean(busyAction) || !authSession || bootstrap.providerMode !== 'browser-rallar'} onClick={() => void runDirectRoomsAction('join')}>
-                    Direct join
-                </button>
-                <button type="button" disabled={Boolean(busyAction) || !authSession || bootstrap.providerMode !== 'browser-rallar'} onClick={() => void runDirectRoomsAction('leave')}>
-                    Direct leave
-                </button>
-                {ROOMS_CLIENTS_ACTIONS.map(action => (
-                    <button
-                        key={action.actionId}
-                        type="button"
-                        disabled={Boolean(busyAction) || !authSession}
-                        onClick={() => void runPresetAction(action)}
-                    >
-                        {action.label}
-                    </button>
-                ))}
                 <button type="button" onClick={copyStateRecipe}>
                     Copy state recipe
                 </button>
             </div>
-            <div className="rooms-filter-row" aria-label="Rooms and clients filters">
+            <div className="rooms-action-sections" aria-label="Groups and clients actions">
+                {ROOMS_CLIENTS_ACTION_GROUPS.map(category => (
+                    <section
+                        key={category.categoryId}
+                        className="rooms-action-category"
+                        aria-label={`${category.title}. ${category.description}`}
+                    >
+                        <h3>{category.title}</h3>
+                        {category.categoryId === 'groups' ? (
+                            <div className="rooms-action-subsection">
+                                <h4>Rallar facade</h4>
+                                <div className="rooms-action-grid">
+                                    <button type="button" disabled={Boolean(busyAction) || !authSession || bootstrap.providerMode !== 'browser-rallar'} onClick={() => void runDirectRoomsAction('refresh')}>
+                                        Rallar refresh
+                                    </button>
+                                    <button type="button" disabled={Boolean(busyAction) || !authSession || bootstrap.providerMode !== 'browser-rallar'} onClick={() => void runDirectRoomsAction('create')}>
+                                        Rallar create group
+                                    </button>
+                                    <button type="button" disabled={Boolean(busyAction) || !authSession || bootstrap.providerMode !== 'browser-rallar'} onClick={() => void runDirectRoomsAction('join')}>
+                                        Rallar join group
+                                    </button>
+                                    <button type="button" disabled={Boolean(busyAction) || !authSession || bootstrap.providerMode !== 'browser-rallar'} onClick={() => void runDirectRoomsAction('leave')}>
+                                        Rallar leave group
+                                    </button>
+                                </div>
+                            </div>
+                        ) : null}
+                        <div className="rooms-action-subsection">
+                            <h4>Rallar Server REST</h4>
+                            <div className="rooms-action-grid">
+                                {category.actions.map(action => (
+                                    <button
+                                        key={action.actionId}
+                                        type="button"
+                                        disabled={Boolean(busyAction) || !authSession}
+                                        onClick={() => void runPresetAction(action)}
+                                    >
+                                        {action.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </section>
+                ))}
+            </div>
+            <div className="rooms-filter-row" aria-label="Groups and clients filters">
                 <label className="check-field">
                     <input
                         type="checkbox"

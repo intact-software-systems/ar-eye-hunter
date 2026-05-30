@@ -44,8 +44,8 @@ real runtime state and realistic diagnostic/message events for offline UI work. 
 selected with real Rallar config, runner-owned command tabs use the browser adapter and call the browser Rallar facade
 for RTC, WebSocket, HTTP, health, close, and reset behavior.
 
-The `Auth`, `Rooms/Clients`, `WebSocket`, and `Rallar Server` tabs can also execute focused REST calls directly from the
-browser. Those calls are immediate `fetch` operations, not runtime commands. The focused Auth and Rooms/Clients actions
+The `Auth`, `Groups/Clients`, `WebSocket`, and `Rallar Server` tabs can also execute focused REST calls directly from the
+browser. Those calls are immediate `fetch` operations, not runtime commands. The focused Auth and Groups/Clients actions
 keep their own visible action logs and can copy recipe snippets. In Rallar mode, the WebSocket tab sends and subscribes
 through the shared browser Rallar facade (`rallar.messages.ws.*`) and records `rallar.direct.*` diagnostics instead of
 executing runtime `ws.send` commands. Its lower-level raw socket/ticket diagnostics use browser REST/WebSocket APIs
@@ -367,7 +367,7 @@ When the SPA runs in `browser-rallar` mode and the Rallar signaling socket is al
 can route through `rallar.messages.ws.send(...)` instead of a raw command-center WebSocket. Room-scoped app messages
 should include the Rallar addressing envelope used by the WebSocket tab. The WebSocket tab defaults to the
 room-scoped group-message preset and follows the joined/global group promoted by Quick Test, Manual Rallar, or
-Rooms/Clients create/join actions:
+Groups/Clients create/join actions:
 
 ```json
 {

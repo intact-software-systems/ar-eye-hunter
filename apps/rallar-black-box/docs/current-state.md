@@ -7,7 +7,7 @@ actions, remote control commands, runtime events, stats, and reports use one com
 ## Implemented
 
 The SPA implementation is complete through command-center Iteration 38: the first full-stack harness, real-payload
-delivery slices, reload-safe UI draft persistence, shared-test bridge, Auth command center, Rooms/Clients command
+delivery slices, reload-safe UI draft persistence, shared-test bridge, Auth command center, Groups/Clients command
 center, REST collections, WebSocket command center, scoped RTC delivery matrix, Flow Builder, control-server Run
 Manager, control-run artifact export, full-stack QA matrix, large-run event/topology controls, and live three-browser
 RTC matrix baseline are in place. The
@@ -46,12 +46,12 @@ The SPA currently provides:
 - visible panels for configuration, recipes, command queue, active command, command history, events, stats, failures, and
   report JSON
 - authenticated login gate for `browser-rallar` mode with browser-session restore and logout cleanup
-- tabbed operational shell split into direct `Rallar` tabs (`Quick Test`, `Auth`, `Rooms/Clients`, `WebSocket`,
+- tabbed operational shell split into direct `Rallar` tabs (`Quick Test`, `Auth`, `Groups/Clients`, `WebSocket`,
   `RTC/Realtimes`, `Topology`, `RTC Diagnostics`, `Rallar Data`, `Media`, `Rallar Server`, and `Event Stream`) and
   black-box-runner tabs (`Shared Test`, `Manual Rallar`, `Local Workbench`, `Flow Builder`, `Run Manager`, and
   `Event Stream`)
 - global command-center context above the tabs for API base URL, application, workspace, room/group, client, and session;
-  login populates client/session and the context seeds Quick Test, Manual Rallar, Rooms/Clients, WebSocket, RTC
+  login populates client/session and the context seeds Quick Test, Manual Rallar, Groups/Clients, WebSocket, RTC
   Diagnostics, and Rallar Server, plus Flow Builder variables before they are manually edited
 - always-visible Rallar Browser Trace strip for signaling WebSocket status, RTC status, active group, peer counts, and
   the latest `rallar.browser.*` events emitted by the browser-side Rallar runtime during real-provider auth, RTC
@@ -59,7 +59,7 @@ The SPA currently provides:
 - Auth command center for login, register-and-login, restore, logout, local session clear, active session/client/token
   evidence, session/ticket TTLs, WS-ticket creation, bad-credentials checks, missing-auth-ticket checks,
   expired-session ticket checks, redacted diagnostics, and auth recipe snippets
-- Rooms/Clients command center for reusable state variables, direct Rallar room refresh/create/join/leave actions,
+- Groups/Clients command center for reusable state variables, direct Rallar room refresh/create/join/leave actions,
   group/client/presence/event REST actions, group and client state tables, optional online/member filters, room/client
   sorting, state event rows, current-client/other-browser membership assertions, expected/observed/missing client
   metrics, cleanup actions, and state recipe snippets
@@ -101,7 +101,7 @@ The SPA currently provides:
   enqueueing bulk commands, resetting runs, deleting runs, inspecting recent commands/results/events, validating
   exported run artifacts, and copying artifact bundles/events JSONL/results JSONL/failure bundles
 - full-stack QA coverage ownership in `src/full-stack-qa-matrix.ts`, with skip-gated Playwright specs mapped to auth,
-  rooms/clients, WebSocket, REST, recipes/artifacts, RTC, control, and resilience evidence
+  groups/clients, WebSocket, REST, recipes/artifacts, RTC, control, and resilience evidence
 - reload-safe UI persistence for selected tab, selected command, Manual Rallar drafts, Event Stream filters, and Rallar
   Server request drafts
 - UI-level redaction for command previews, copied recipes, reports, received payloads, diagnostic bundles, REST response
@@ -219,7 +219,7 @@ for local runner work.
 The `Auth` tab turns login/session behavior into a repeatable manual workflow. It can create or restore sessions, create
 WS tickets, run basic negative auth checks, show redacted session/ticket state, and copy an auth recipe snippet.
 
-The `Rooms/Clients` tab turns group, client, session, presence, and state-event endpoints into one live state view. It
+The `Groups/Clients` tab turns group, client, session, presence, and state-event endpoints into one live state view. It
 uses the active auth session for API-v1 state calls and displays server evidence beside runtime expected/observed client
 diagnostics. The group and client tables now include local filters for groups with members and online clients plus
 sorting by activity, mutation time, creation time, counts, status, or name.

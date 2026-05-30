@@ -21,6 +21,7 @@ describe('rallar-black-box app tabs', () => {
         expect(appTabFromValue('event-stream')).toBe('event-stream');
         expect(appTabFromValue('login')).toBe('auth');
         expect(appTabFromValue('rooms')).toBe('rooms-clients');
+        expect(appTabFromValue('groups')).toBe('rooms-clients');
         expect(appTabFromValue('ws')).toBe('websocket');
         expect(appTabFromValue('realtime')).toBe('rtc-realtime');
         expect(appTabFromValue('rtc')).toBe('rtc-diagnostics');
@@ -48,6 +49,7 @@ describe('rallar-black-box app tabs', () => {
     });
 
     it('maps tabs to their workspace modes', () => {
+        expect(APP_TABS.find(tab => tab.id === 'rooms-clients')?.label).toBe('Groups/Clients');
         expect(appModeForTab('quick-test')).toBe('rallar');
         expect(appModeForTab('manual-rallar')).toBe('black-box-runner');
         expect(appModeForTab('rtc-realtime')).toBe('rallar');

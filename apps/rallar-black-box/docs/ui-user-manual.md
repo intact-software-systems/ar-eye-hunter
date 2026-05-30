@@ -73,7 +73,7 @@ The top tabs split the workspace into:
 
 - `Auth`
 - `Manual Rallar`
-- `Rooms/Clients`
+- `Groups/Clients`
 - `WebSocket`
 - `Topology`
 - `RTC Diagnostics`
@@ -98,7 +98,7 @@ Above the tabs, the `Global Context` bar holds the common values used by the com
 - session ID
 
 When a user logs in, the client ID and session ID are populated from the authenticated browser session. Editing the
-global values updates the defaults used by Manual Rallar, Rooms/Clients, WebSocket, RTC Diagnostics, Rallar Server, and
+global values updates the defaults used by Manual Rallar, Groups/Clients, WebSocket, RTC Diagnostics, Rallar Server, and
 Flow Builder without changing payloads, timeouts, or endpoint-specific fields. `Use login/context` resets the global
 values back to the current bootstrap/login context.
 
@@ -111,7 +111,7 @@ or error timeline.
 Between Global Context and the trace strip, the `Workspace Mode` switch separates direct live Rallar work from
 black-box-runner work:
 
-- `Rallar`: Quick Test, Auth, Rooms/Clients, WebSocket, RTC/Realtimes, Topology, RTC Diagnostics, Rallar Data, Media,
+- `Rallar`: Quick Test, Auth, Groups/Clients, WebSocket, RTC/Realtimes, Topology, RTC Diagnostics, Rallar Data, Media,
   Rallar Server, and Event Stream. These tabs execute live operations through the browser Rallar facade or Rallar Server
   directly; they do not execute black-box-runner commands.
 - `Rallar black-box-runner`: Shared Test, Manual Rallar, Local Workbench, Flow Builder, Run Manager, and Event Stream.
@@ -189,9 +189,9 @@ Actions:
 The panel shows provider mode, user, client ID, session ID, token presence, session expiry, WS-ticket presence, and
 ticket expiry. Token, ticket, and password values are redacted in visible output.
 
-## Rooms/Clients
+## Groups/Clients
 
-The `Rooms/Clients` tab is for state evidence around groups, clients, sessions, and presence.
+The `Groups/Clients` tab is for state evidence around groups, clients, sessions, and presence.
 
 Variables:
 
@@ -204,9 +204,10 @@ Variables:
 - session ID
 - timeout
 
-Actions include list groups, list clients, create group, read group, join, leave, client session connect, client
-heartbeat, client disconnect, group presence connect, group heartbeat, group disconnect, group events, group events
-page, client events, client events page, refresh state, and copy state recipe.
+Actions are grouped into `Groups` and `Clients`. Group actions include Rallar facade refresh/create/join/leave buttons
+plus REST buttons for list, create, read, join, leave, group presence, and group events. Client actions include REST
+buttons for list, client session connect/heartbeat/disconnect, and client events. `Refresh state` and `Copy state recipe`
+remain as shared utility actions.
 
 The tab renders group rows, client rows, state event rows, recent REST actions, and expected/observed/missing client
 metrics from RTC diagnostics. Use this tab when you need server-side evidence that a group, membership row, client
@@ -266,7 +267,7 @@ socket upgrade, so every raw `Open` should use a fresh ticket.
 
 For a group message, set `WS Scope` to `room`, set `Group` to the same group joined by the browsers, and use the same
 `Type ID` and `Topic ID` on every sender and receiver. Groups joined from Quick Test, Manual Rallar actions, or
-Rooms/Clients create/join actions are promoted into Global Context, and the WebSocket tab follows that value while its
+Groups/Clients create/join actions are promoted into Global Context, and the WebSocket tab follows that value while its
 group field has not been intentionally changed. Changing `Group` also updates `Context ID` while it still matches the
 previous default, so the normal group path is `Group = my-group` and `Context ID = my-group`.
 

@@ -76,7 +76,7 @@ export const FULL_STACK_QA_MATRIX: readonly FullStackQaCase[] = [
     {
         id: 'rooms-state-refresh',
         area: 'rooms-clients',
-        intent: 'Rooms/clients state can be read after group creation and presence changes.',
+        intent: 'Groups/clients state can be read after group creation and presence changes.',
         polarity: 'positive',
         testFile: 'full-stack-browser-rallar-resilience.spec.ts',
         skipGate: 'RALLAR_BLACK_BOX_FULL_STACK=1',
