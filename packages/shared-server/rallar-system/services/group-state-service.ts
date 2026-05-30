@@ -191,8 +191,7 @@ export function createGroupStateService(
                     purgeAfterEpochMs: request.purgeAfterEpochMs,
                 };
 
-                await repository.putGroup(group);
-                await repository.putMember({
+                const ownerMember: GroupMember = {
                     applicationId: scope.applicationId,
                     workspaceId: scope.workspaceId,
                     groupId: request.groupId,
@@ -201,7 +200,17 @@ export function createGroupStateService(
                     status: 'active',
                     joined: created,
                     updated: created,
-                });
+                };
+                const snapshot: GroupSnapshot = {
+                    group,
+                    members: [ownerMember],
+                    activeSessions: [],
+                    memberCount: 1,
+                    onlineMemberCount: 0,
+                };
+
+                await repository.putGroup(group);
+                await repository.putMember(ownerMember);
 
                 const event = newGroupEvent(
                     'group-created',
@@ -223,7 +232,7 @@ export function createGroupStateService(
                     {
                         status: 'created',
                         result: Either.ofRight({
-                            snapshot: await requireGroupSnapshot(repository, ref),
+                            snapshot,
                             event,
                         }),
                     },

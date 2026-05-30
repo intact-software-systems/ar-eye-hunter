@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { GroupRef } from "@shared/api/group-types.ts";
 import type { StateScope } from "@shared/api/state-types.ts";
+import type { RuntimeStateEntry } from "@shared-server/runtime-state/RuntimeStateRepository.ts";
 import { GroupStateRepository } from "@shared-server/rallar-system/repositories/GroupStateRepository.ts";
 import { createGroupStateService } from "@shared-server/rallar-system/services/group-state-service.ts";
 import type { StateSyncPublisher } from "@shared-server/rallar-system/state-sync-publisher.ts";
@@ -108,6 +109,45 @@ describe("GroupStateService command idempotency", () => {
     expect(
       (await repository.listEvents(groupRef)).map((event) => event.eventType),
     ).toEqual(["group-created"]);
+  });
+
+  it("returns the createGroup snapshot without reading it back from the repository", async () => {
+    const runtimeRepository = new PrefixReadFailingRuntimeStateRepository();
+    const service = createGroupStateService({
+      runtimeRepository,
+      syncPublisher: createPublisher(),
+      now: () => 1_000,
+      serviceId: "group-service",
+    });
+
+    await expect(
+      service.createGroup(SCOPE, {
+        groupId: "room-no-readback",
+        displayName: "Room no readback",
+        kind: "room",
+        joinMode: "open",
+        createdByPrincipalId: "alice",
+        requestId: "create-room-no-readback",
+      }),
+    ).resolves.toMatchObject({
+      status: "created",
+      result: {
+        right: {
+          snapshot: {
+            members: [
+              {
+                principalId: "alice",
+                role: "owner",
+                status: "active",
+              },
+            ],
+            activeSessions: [],
+            memberCount: 1,
+            onlineMemberCount: 0,
+          },
+        },
+      },
+    });
   });
 
   it("replays createGroup with the same requestId without applying a different payload", async () => {
@@ -646,4 +686,15 @@ function createPublisher(
       }
     }),
   };
+}
+
+class PrefixReadFailingRuntimeStateRepository extends FakeRuntimeStateRepository {
+  override findEntriesByPrefix(
+    namespace: string,
+    keyPrefix: string,
+  ): Promise<readonly RuntimeStateEntry[]> {
+    return Promise.reject(
+      new Error(`Unexpected createGroup snapshot readback: ${namespace}/${keyPrefix}`),
+    );
+  }
 }
