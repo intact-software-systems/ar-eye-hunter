@@ -43,6 +43,7 @@ import {
 import {
     initPresenceExpiryReconciliation,
 } from '@shared-server/rallar-system/services/presence-expiry-reconciliation-service.ts';
+import { getApiTimingSink } from './services/timing-service.ts';
 
 export type Middleware = RallarMiddlewareRuntime;
 
@@ -72,6 +73,7 @@ function initialise(): Middleware {
     const resilienceOutbox = toResilienceDto();
     const clientsRepository = createClientStateRepository(sql);
     const groupsRepository = createGroupStateRepository(sql);
+    const timing = getApiTimingSink();
     const groupSnapshotReadThroughCache = createGroupStateSnapshotReadThroughCache({
         groupsRepository,
     });
@@ -106,9 +108,11 @@ function initialise(): Middleware {
                     runtimeRepository: createRuntimeStateRepository(sql),
                     syncPublisher: stateSyncPublisher,
                     serviceId: myServerId,
+                    timing,
                 }),
                 stateSyncPublisher,
                 myServerId,
+                timing,
             );
         },
         createAppClientInboxService: ({ inboxQueueReader, wsQBoxServerService }) => {
@@ -124,9 +128,11 @@ function initialise(): Middleware {
                     runtimeRepository: createRuntimeStateRepository(sql),
                     syncPublisher: stateSyncPublisher,
                     serviceId: myServerId,
+                    timing,
                 }),
                 stateSyncPublisher,
                 myServerId,
+                timing,
             );
         },
         resilience: {

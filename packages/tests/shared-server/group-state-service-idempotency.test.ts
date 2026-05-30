@@ -4,6 +4,7 @@ import type { StateScope } from "@shared/api/state-types.ts";
 import type { RuntimeStateEntry } from "@shared-server/runtime-state/RuntimeStateRepository.ts";
 import { GroupStateRepository } from "@shared-server/rallar-system/repositories/GroupStateRepository.ts";
 import { createGroupStateService } from "@shared-server/rallar-system/services/group-state-service.ts";
+import type { RallarTimingEvent } from "@shared-server/rallar-system/services/timing.ts";
 import type { StateSyncPublisher } from "@shared-server/rallar-system/state-sync-publisher.ts";
 import { FakeRuntimeStateRepository } from "./fake-runtime-state-repository.ts";
 
@@ -13,6 +14,43 @@ const SCOPE: StateScope = {
 };
 
 describe("GroupStateService command idempotency", () => {
+  it("records timing for group state service methods when a timing sink is supplied", async () => {
+    const timingEvents: RallarTimingEvent[] = [];
+    const service = createGroupStateService({
+      runtimeRepository: new FakeRuntimeStateRepository(),
+      syncPublisher: createPublisher(),
+      now: () => 1_000,
+      serviceId: "group-service",
+      timing: (event) => timingEvents.push(event),
+    });
+
+    await service.createGroup(SCOPE, {
+      groupId: "timed-room",
+      displayName: "Timed Room",
+      kind: "room",
+      joinMode: "open",
+      createdByPrincipalId: "alice",
+      requestId: "create-timed-room",
+    });
+
+    expect(timingEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          component: "group-state-service",
+          operation: "createGroup",
+          status: "ok",
+          serviceId: "group-service",
+          requestId: "create-timed-room",
+          applicationId: SCOPE.applicationId,
+          workspaceId: SCOPE.workspaceId,
+          groupId: "timed-room",
+          principalId: "alice",
+        }),
+      ]),
+    );
+    expect(typeof timingEvents[0]?.durationMs).toBe("number");
+  });
+
   it("retries createGroup with the same requestId without creating duplicate state or events", async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const publisher = createPublisher();

@@ -5,6 +5,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 const SCOPE: StateScope = {
@@ -13,6 +14,42 @@ const SCOPE: StateScope = {
 };
 
 describe('ClientStateService command idempotency', () => {
+    it('records timing for client state service methods when a timing sink is supplied', async () => {
+        const timingEvents: RallarTimingEvent[] = [];
+        const service = createClientStateService({
+            runtimeRepository: new FakeRuntimeStateRepository(),
+            syncPublisher: createPublisher(),
+            now: () => 1_000,
+            serviceId: 'client-service',
+            timing: (event) => timingEvents.push(event),
+        });
+
+        await service.upsertPrincipal(SCOPE, 'alice', {
+            username: 'alice',
+            displayName: 'Alice',
+            actorPrincipalId: 'alice',
+            actorSessionId: 'alice-session',
+            requestId: 'upsert-alice-timed',
+        });
+
+        expect(timingEvents).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    component: 'client-state-service',
+                    operation: 'upsertPrincipal',
+                    status: 'ok',
+                    serviceId: 'client-service',
+                    requestId: 'upsert-alice-timed',
+                    applicationId: SCOPE.applicationId,
+                    workspaceId: SCOPE.workspaceId,
+                    principalId: 'alice',
+                    sessionId: 'alice-session',
+                }),
+            ]),
+        );
+        expect(typeof timingEvents[0]?.durationMs).toBe('number');
+    });
+
     it('replays upsertPrincipal with the same requestId without applying a different payload', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const publisher = createPublisher();

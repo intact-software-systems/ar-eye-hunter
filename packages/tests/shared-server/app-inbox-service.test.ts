@@ -32,6 +32,7 @@ import {
     type GroupStateWritten,
     GroupWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { toResultsDomain } from '@shared-server/postgres/resource-inbox/repository-utils.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
@@ -48,6 +49,7 @@ describe('AppInboxService', () => {
         const results = new TestResourceInboxResults();
         const written = createGroupWritten('groupcreate-long-1234');
         const stateWritten = createGroupStateWritten(written);
+        const timingEvents: RallarTimingEvent[] = [];
         const groupStateService = createGroupStateServiceStub({
             createGroup: vi.fn(async () => stateWritten),
         });
@@ -64,6 +66,7 @@ describe('AppInboxService', () => {
             groupStateService,
             publisher,
             'server-12345678',
+            (event) => timingEvents.push(event),
         );
 
         const resultPromise = service.processEntryUntilCompletion<
@@ -111,6 +114,22 @@ describe('AppInboxService', () => {
         expect(entry?.key.topicId.length).toBeLessThanOrEqual(36);
         expect(entry?.key.contextId.length).toBeLessThanOrEqual(35);
         expect(entry?.audit.createdBy.length).toBeLessThanOrEqual(16);
+        expect(timingEvents).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    component: 'app-inbox',
+                    operation: 'processEntryUntilCompletion',
+                    status: 'ok',
+                    serviceId: 'server-12345678',
+                }),
+                expect.objectContaining({
+                    component: 'app-inbox-handler',
+                    operation: AppInboxType.GROUP_CREATE,
+                    status: 'ok',
+                    serviceId: 'server-12345678',
+                }),
+            ]),
+        );
     });
 
     it('returns an error result when the same group is created with a different idempotency key', async () => {

@@ -30,6 +30,10 @@ import type { StateSyncPublisher } from '../state-sync-publisher.ts';
 import { arrayEquals, isDefined, jsonEquals, } from '@shared/repository/state-utils.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import {
+    timeRallarAsync,
+    type RallarTimingSink,
+} from './timing.ts';
 
 const DEFAULT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const CLIENT_SESSION_LOCK_NAMESPACE = 'client-state:session-locks';
@@ -114,6 +118,7 @@ export type ClientStateServiceDependencies = Readonly<{
     authSessionRepository?: Pick<AuthSessionRepository, 'findBySessionId'>;
     now?: () => number;
     serviceId: string;
+    timing?: RallarTimingSink;
 }>;
 
 export function createClientStateService(
@@ -876,7 +881,198 @@ export function createClientStateService(
         },
     };
 
-    return service;
+    return withClientStateServiceTiming(service, dependencies.timing, serviceId);
+}
+
+function withClientStateServiceTiming(
+    service: ClientStateService,
+    timing: RallarTimingSink | undefined,
+    serviceId: string,
+): ClientStateService {
+    if (!timing) {
+        return service;
+    }
+
+    return {
+        listSnapshots: async (scope) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'client-state-service',
+                    operation: 'listSnapshots',
+                    serviceId,
+                    applicationId: scope.applicationId,
+                    workspaceId: scope.workspaceId,
+                },
+                () => service.listSnapshots(scope),
+            ),
+        readSnapshot: async (ref) =>
+            await timeRallarAsync(
+                timing,
+                toClientTimingInput(serviceId, 'readSnapshot', ref),
+                () => service.readSnapshot(ref),
+            ),
+        readPresenceSnapshot: async (ref) =>
+            await timeRallarAsync(
+                timing,
+                toClientTimingInput(serviceId, 'readPresenceSnapshot', ref),
+                () => service.readPresenceSnapshot(ref),
+            ),
+        listEvents: async (ref) =>
+            await timeRallarAsync(
+                timing,
+                toClientTimingInput(serviceId, 'listEvents', ref),
+                () => service.listEvents(ref),
+            ),
+        upsertPrincipal: async (scope, principalId, request) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'client-state-service',
+                    operation: 'upsertPrincipal',
+                    serviceId,
+                    requestId: request.requestId,
+                    applicationId: scope.applicationId,
+                    workspaceId: scope.workspaceId,
+                    principalId,
+                    sessionId: request.actorSessionId,
+                },
+                () => service.upsertPrincipal(scope, principalId, request),
+            ),
+        upsertInstance: async (scope, principalId, clientInstanceId, request) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'client-state-service',
+                    operation: 'upsertInstance',
+                    serviceId,
+                    requestId: request.requestId,
+                    applicationId: scope.applicationId,
+                    workspaceId: scope.workspaceId,
+                    principalId,
+                    sessionId: request.actorSessionId,
+                    details: {
+                        clientInstanceId,
+                    },
+                },
+                () => service.upsertInstance(scope, principalId, clientInstanceId, request),
+            ),
+        connectSession: async (scope, principalId, clientInstanceId, sessionId, request) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'client-state-service',
+                    operation: 'connectSession',
+                    serviceId,
+                    requestId: request.requestId,
+                    applicationId: scope.applicationId,
+                    workspaceId: scope.workspaceId,
+                    principalId,
+                    sessionId,
+                    details: {
+                        clientInstanceId,
+                    },
+                },
+                () => service.connectSession(scope, principalId, clientInstanceId, sessionId, request),
+            ),
+        heartbeatSession: async (scope, principalId, clientInstanceId, sessionId, request) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'client-state-service',
+                    operation: 'heartbeatSession',
+                    serviceId,
+                    requestId: request.requestId,
+                    applicationId: scope.applicationId,
+                    workspaceId: scope.workspaceId,
+                    principalId,
+                    sessionId,
+                    details: {
+                        clientInstanceId,
+                    },
+                },
+                () => service.heartbeatSession(scope, principalId, clientInstanceId, sessionId, request),
+            ),
+        disconnectSession: async (scope, principalId, clientInstanceId, sessionId, request) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'client-state-service',
+                    operation: 'disconnectSession',
+                    serviceId,
+                    requestId: request.requestId,
+                    applicationId: scope.applicationId,
+                    workspaceId: scope.workspaceId,
+                    principalId,
+                    sessionId,
+                    details: {
+                        clientInstanceId,
+                    },
+                },
+                () => service.disconnectSession(scope, principalId, clientInstanceId, sessionId, request),
+            ),
+        registerAuthorisedWsClientSession: async (authSession, input) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'client-state-service',
+                    operation: 'registerAuthorisedWsClientSession',
+                    serviceId,
+                    requestId: authSession.sessionId,
+                    applicationId: input?.applicationId,
+                    workspaceId: input?.workspaceId,
+                    principalId: input?.principalId ?? authSession.clientId,
+                    sessionId: authSession.sessionId,
+                    details: {
+                        clientInstanceId: input?.clientInstanceId,
+                    },
+                },
+                () => service.registerAuthorisedWsClientSession(authSession, input),
+            ),
+        disconnectAuthorisedWsClientSession: async (sessionId, reason) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'client-state-service',
+                    operation: 'disconnectAuthorisedWsClientSession',
+                    serviceId,
+                    requestId: sessionId,
+                    sessionId,
+                    details: {
+                        reason,
+                    },
+                },
+                () => service.disconnectAuthorisedWsClientSession(sessionId, reason),
+            ),
+        expireExpiredSessions: async (atEpochMs) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'client-state-service',
+                    operation: 'expireExpiredSessions',
+                    serviceId,
+                    details: {
+                        atEpochMs,
+                    },
+                },
+                () => service.expireExpiredSessions(atEpochMs),
+            ),
+    };
+}
+
+function toClientTimingInput(
+    serviceId: string,
+    operation: string,
+    ref: ClientPrincipalRef,
+) {
+    return {
+        component: 'client-state-service',
+        operation,
+        serviceId,
+        applicationId: ref.applicationId,
+        workspaceId: ref.workspaceId,
+        principalId: ref.principalId,
+    };
 }
 
 async function findClientSessionBySessionId(

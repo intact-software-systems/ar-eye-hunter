@@ -9,6 +9,7 @@ import {
 import { myServerId } from '../runtime/runtime-identity.ts';
 import { createAuthSessionRepository, createRuntimeStateRepository, } from '../repository/createStateRepositories.ts';
 import { getWsStateSyncPublisher } from './state-sync-service.ts';
+import { getApiTimingSink } from './timing-service.ts';
 
 export {
     type ClientMutationWritten,
@@ -27,5 +28,6 @@ export function getClientStateService(): ClientStateService {
         syncPublisher: getWsStateSyncPublisher(),
         authSessionRepository: createAuthSessionRepository(runtimeRepository),
         serviceId: myServerId,
+        timing: getApiTimingSink(),
     });
 }

@@ -5,6 +5,7 @@ import { cors } from 'jsr:@hono/hono/cors';
 import { requireApiAuthSession, toAuthErrorResponse } from './services/request-auth-service.ts';
 import { createRallarServer } from './create-rallar-server.ts';
 import { createStateApiResilienceMiddleware } from './services/state-api-resilience-middleware.ts';
+import { createHttpTimingMiddleware } from './services/http-timing-middleware.ts';
 
 const app: Hono = new Hono();
 const corsOrigins = readCorsOrigins();
@@ -16,12 +17,14 @@ app.use(
       origin: (origin) => resolveCorsOrigin(origin, corsOrigins),
       allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       allowHeaders: ['Content-Type', 'Authorization', 'x-client-id'],
-      exposeHeaders: ['Content-Length'],
+      exposeHeaders: ['Content-Length', 'Server-Timing', 'x-request-id'],
       maxAge: 600, // Cache the preflight for 10 minutes
       credentials: true,
     },
   ),
 );
+
+app.use('/api/*', createHttpTimingMiddleware());
 
 app.use('/api/state/*', async (c, next) => {
   try {

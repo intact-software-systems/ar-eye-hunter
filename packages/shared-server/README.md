@@ -9,6 +9,7 @@ runtime entrypoint, and one deployment configuration.
 - Rallar middleware construction in `rallar-system/middleware/`.
 - Server-side WebSocket topic routing, system topic installation, lifecycle wiring, and queue pub/sub bridge contracts.
 - Server domain services for clients, groups, auth sessions, auth users, request auth, rate limiting, and state sync.
+- Reusable timing event contracts and state-service/app-inbox instrumentation hooks.
 - Runtime-state repository contracts plus JSON store helpers.
 - Current Postgres adapters under `postgres/`.
 
@@ -19,6 +20,7 @@ runtime entrypoint, and one deployment configuration.
 - Environment variable loading and process-local runtime identity generation.
 - Static app resources such as `authorised-clients.json`.
 - API-v1 OpenAPI, CORS, and route composition details.
+- HTTP request timing middleware and deployment-specific timing sink configuration.
 - Concrete app database connection lifecycle.
 
 ## Current Boundary
@@ -37,6 +39,17 @@ means api-v1 owns:
 - `createRallarServerApplication(...)` composes facade, REST route installers, and WS route installer.
 - `installQueueBoxPubSubBridge(...)` wires queuebox inbox/outbox events to a generic pub/sub bridge.
 - `registerAuthUser(...)` and `loginAuthUser(...)` implement auth domain rules without app-local JSON loading.
+- `rallar-system/services/timing.ts` defines timing events and no-op-safe instrumentation helpers. API apps decide
+  whether those events go to console, metrics, traces, or tests.
+
+## Timing And Observability
+
+The shared services accept an optional timing sink. When supplied, group/client state-service methods and app-inbox
+processing emit structured `rallar.timing` events with component, operation, duration, status, scope IDs, and request
+IDs. They do not emit request bodies, auth tokens, or mutation payloads.
+
+`apps/api-v1` owns the HTTP middleware and console sink. Its default sink logs one JSON line per timing event and can be
+disabled with `RALLAR_TIMING_LOGS=false`.
 
 ## Runtime State Storage
 

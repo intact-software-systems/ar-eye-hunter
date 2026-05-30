@@ -25,6 +25,10 @@ import type { StateSyncPublisher } from '../state-sync-publisher.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { isDefined, jsonEquals } from '@shared/repository/state-utils.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import {
+    timeRallarAsync,
+    type RallarTimingSink,
+} from './timing.ts';
 
 const DEFAULT_GROUP_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const GROUP_PRESENCE_SESSION_LOCK_NAMESPACE =
@@ -100,6 +104,7 @@ export type GroupStateServiceDependencies = Readonly<{
     syncPublisher: StateSyncPublisher;
     now?: () => number;
     serviceId: string;
+    timing?: RallarTimingSink;
 }>;
 
 export function createGroupStateService(
@@ -806,7 +811,193 @@ export function createGroupStateService(
         },
     };
 
-    return service;
+    return withGroupStateServiceTiming(service, dependencies.timing, serviceId);
+}
+
+function withGroupStateServiceTiming(
+    service: GroupStateService,
+    timing: RallarTimingSink | undefined,
+    serviceId: string,
+): GroupStateService {
+    if (!timing) {
+        return service;
+    }
+
+    return {
+        listSnapshots: async (scope) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'group-state-service',
+                    operation: 'listSnapshots',
+                    serviceId,
+                    applicationId: scope.applicationId,
+                    workspaceId: scope.workspaceId,
+                },
+                () => service.listSnapshots(scope),
+            ),
+        readSnapshot: async (ref) =>
+            await timeRallarAsync(
+                timing,
+                toGroupTimingInput(serviceId, 'readSnapshot', ref),
+                () => service.readSnapshot(ref),
+            ),
+        listEvents: async (ref) =>
+            await timeRallarAsync(
+                timing,
+                toGroupTimingInput(serviceId, 'listEvents', ref),
+                () => service.listEvents(ref),
+            ),
+        createGroup: async (scope, request) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'group-state-service',
+                    operation: 'createGroup',
+                    serviceId,
+                    requestId: request.requestId,
+                    applicationId: scope.applicationId,
+                    workspaceId: scope.workspaceId,
+                    groupId: request.groupId,
+                    principalId: request.createdByPrincipalId,
+                },
+                () => service.createGroup(scope, request),
+            ),
+        updateGroup: async (scope, groupId, request) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'group-state-service',
+                    operation: 'updateGroup',
+                    serviceId,
+                    requestId: request.requestId,
+                    applicationId: scope.applicationId,
+                    workspaceId: scope.workspaceId,
+                    groupId,
+                    principalId: request.actorPrincipalId,
+                    sessionId: request.actorSessionId,
+                },
+                () => service.updateGroup(scope, groupId, request),
+            ),
+        upsertMember: async (scope, groupId, principalId, request) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'group-state-service',
+                    operation: 'upsertMember',
+                    serviceId,
+                    requestId: request.requestId,
+                    applicationId: scope.applicationId,
+                    workspaceId: scope.workspaceId,
+                    groupId,
+                    principalId,
+                    sessionId: request.actorSessionId,
+                },
+                () => service.upsertMember(scope, groupId, principalId, request),
+            ),
+        connectPresenceSession: async (scope, groupId, sessionId, request) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'group-state-service',
+                    operation: 'connectPresenceSession',
+                    serviceId,
+                    requestId: request.requestId,
+                    applicationId: scope.applicationId,
+                    workspaceId: scope.workspaceId,
+                    groupId,
+                    principalId: request.principalId,
+                    sessionId,
+                },
+                () => service.connectPresenceSession(scope, groupId, sessionId, request),
+            ),
+        heartbeatPresenceSession: async (scope, groupId, sessionId, request) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'group-state-service',
+                    operation: 'heartbeatPresenceSession',
+                    serviceId,
+                    requestId: request.requestId,
+                    applicationId: scope.applicationId,
+                    workspaceId: scope.workspaceId,
+                    groupId,
+                    principalId: request.principalId,
+                    sessionId,
+                },
+                () => service.heartbeatPresenceSession(scope, groupId, sessionId, request),
+            ),
+        disconnectPresenceSession: async (scope, groupId, sessionId, request) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'group-state-service',
+                    operation: 'disconnectPresenceSession',
+                    serviceId,
+                    requestId: request.requestId,
+                    applicationId: scope.applicationId,
+                    workspaceId: scope.workspaceId,
+                    groupId,
+                    principalId: request.principalId,
+                    sessionId,
+                },
+                () => service.disconnectPresenceSession(scope, groupId, sessionId, request),
+            ),
+        disconnectPresenceSessionsBySessionId: async (sessionId, request) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'group-state-service',
+                    operation: 'disconnectPresenceSessionsBySessionId',
+                    serviceId,
+                    requestId: request?.requestId,
+                    principalId: request?.principalId,
+                    sessionId,
+                },
+                () => service.disconnectPresenceSessionsBySessionId(sessionId, request),
+            ),
+        disconnectPresenceSessionsBySessionIdWritten: async (sessionId, request) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'group-state-service',
+                    operation: 'disconnectPresenceSessionsBySessionIdWritten',
+                    serviceId,
+                    requestId: request?.requestId,
+                    principalId: request?.principalId,
+                    sessionId,
+                },
+                () => service.disconnectPresenceSessionsBySessionIdWritten(sessionId, request),
+            ),
+        expireExpiredPresenceSessions: async (atEpochMs) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'group-state-service',
+                    operation: 'expireExpiredPresenceSessions',
+                    serviceId,
+                    details: {
+                        atEpochMs,
+                    },
+                },
+                () => service.expireExpiredPresenceSessions(atEpochMs),
+            ),
+    };
+}
+
+function toGroupTimingInput(
+    serviceId: string,
+    operation: string,
+    ref: GroupRef,
+) {
+    return {
+        component: 'group-state-service',
+        operation,
+        serviceId,
+        applicationId: ref.applicationId,
+        workspaceId: ref.workspaceId,
+        groupId: ref.groupId,
+    };
 }
 
 async function lockGroupPresenceSession(

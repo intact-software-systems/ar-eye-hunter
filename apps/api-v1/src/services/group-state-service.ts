@@ -6,6 +6,7 @@ import {
 import { myServerId } from '../runtime/runtime-identity.ts';
 import { createRuntimeStateRepository } from '../repository/createStateRepositories.ts';
 import { getWsStateSyncPublisher } from './state-sync-service.ts';
+import { getApiTimingSink } from './timing-service.ts';
 
 export { createGroupStateService, type GroupStateService, type GroupStateServiceDependencies };
 
@@ -14,5 +15,6 @@ export function getGroupStateService(): GroupStateService {
         runtimeRepository: createRuntimeStateRepository(),
         syncPublisher: getWsStateSyncPublisher(),
         serviceId: myServerId,
+        timing: getApiTimingSink(),
     });
 }

@@ -26,6 +26,7 @@ import {
     SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { isCompletedOrFailed } from '@shared/queuebox/ResourceEntry.ts';
+import type { RallarTimingSink } from './timing.ts';
 
 export {
     AppInboxService,
@@ -92,6 +93,7 @@ export class AppClientInboxService extends AppInboxService {
         public readonly clientStateService: ClientStateService,
         public readonly stateSyncPublisher: StateSyncPublisher,
         public override readonly serviceId: string,
+        timing?: RallarTimingSink,
     ) {
         super(
             inbox,
@@ -99,6 +101,7 @@ export class AppClientInboxService extends AppInboxService {
             resourceInboxResults,
             serviceId,
             SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+            timing,
         );
 
         this.onStateMessage<ClientPrincipalUpsertAppInboxPayload>(

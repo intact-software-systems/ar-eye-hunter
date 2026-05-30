@@ -13,6 +13,7 @@ import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/
 import {
     ResourceInboxResultsRepository
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import { type RallarTimingSink, timeRallarAsync, } from './timing.ts';
 
 export const SIMPLER_GROUP_STATE_APP_INBOX_TOPIC = 'app-inbox.group-state';
 export const SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC = 'app-inbox.client-state';
@@ -56,6 +57,7 @@ export class AppInboxService {
         public readonly resourceInboxResults: ResourceInboxResultsRepository,
         public readonly serviceId: string,
         private readonly defaultTopicId: string = SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
+        private readonly timing?: RallarTimingSink,
     ) {
     }
 
@@ -151,38 +153,57 @@ export class AppInboxService {
     ): Promise<Either<string, R>> {
         const key: Key = this.toKey(enqueue);
 
-        await enqueuer(key);
-
-        if (!waitForCompletion) {
-            return Either.ofLeft('No waiting for completion');
-        }
-
-        const isCompleted =
-            await tryWithPolicy<boolean>(
-                async () => {
-                    const isCompleted =
-                        await this.resourceInbox.isEntryWithStatus(
-                            key,
-                            [
-                                EntityStatus.COMPLETED,
-                                EntityStatus.FAILED,
-                            ]
-                        );
-
-                    if (!isCompleted) {
-                        throw new Error('App inbox entry not found');
-                    }
-
-                    return true;
+        return await timeRallarAsync(
+            this.timing,
+            {
+                component: 'app-inbox',
+                operation: 'processEntryUntilCompletion',
+                serviceId: this.serviceId,
+                requestId: enqueue.resourceId,
+                details: {
+                    type: enqueue.type,
+                    waitForCompletion,
+                    topicId: key.topicId,
+                    contextId: key.contextId,
+                    resourceId: key.resourceId,
+                    senderId: enqueue.senderId,
                 },
-                TryWithPolicy.defaults().maxElapsedMsecs(AppInboxService.MAX_ELAPSED_MSECS)
-            );
+            },
+            async () => {
+                await enqueuer(key);
 
-        if (!isCompleted) {
-            return Either.ofLeft('App inbox entry not completed');
-        }
+                if (!waitForCompletion) {
+                    return Either.ofLeft('No waiting for completion');
+                }
 
-        return await this.findByKeyAndReturnEither<R>(key);
+                const isCompleted =
+                    await tryWithPolicy<boolean>(
+                        async () => {
+                            const isCompleted =
+                                await this.resourceInbox.isEntryWithStatus(
+                                    key,
+                                    [
+                                        EntityStatus.COMPLETED,
+                                        EntityStatus.FAILED,
+                                    ]
+                                );
+
+                            if (!isCompleted) {
+                                throw new Error('App inbox entry not found');
+                            }
+
+                            return true;
+                        },
+                        TryWithPolicy.defaults().maxElapsedMsecs(AppInboxService.MAX_ELAPSED_MSECS)
+                    );
+
+                if (!isCompleted) {
+                    return Either.ofLeft('App inbox entry not completed');
+                }
+
+                return await this.findByKeyAndReturnEither<R>(key);
+            },
+        );
     }
 
     private async findByKeyAndReturnEither<R>(
@@ -214,20 +235,38 @@ export class AppInboxService {
                         message.payload.resource,
                     ) as AppInboxEnqueueInput<V>;
 
-                    try {
-                        const result = await handler(enqueue.data);
-                        await this.writeAppInboxResult(entry, EntityStatus.COMPLETED, result);
-                    } catch (error) {
-                        if (!(error instanceof NonRetryableException)) {
-                            throw error;
-                        }
+                    await timeRallarAsync(
+                        this.timing,
+                        {
+                            component: 'app-inbox-handler',
+                            operation: String(type),
+                            serviceId: this.serviceId,
+                            requestId: enqueue.resourceId,
+                            details: {
+                                type: enqueue.type,
+                                topicId: entry.key.topicId,
+                                contextId: entry.key.contextId,
+                                resourceId: entry.key.resourceId,
+                                senderId: enqueue.senderId,
+                            },
+                        },
+                        async () => {
+                            try {
+                                const result = await handler(enqueue.data);
+                                await this.writeAppInboxResult(entry, EntityStatus.COMPLETED, result);
+                            } catch (error) {
+                                if (!(error instanceof NonRetryableException)) {
+                                    throw error;
+                                }
 
-                        await this.writeAppInboxResult(
-                            entry,
-                            EntityStatus.FAILED,
-                            error instanceof Error ? error.message : String(error),
-                        );
-                    }
+                                await this.writeAppInboxResult(
+                                    entry,
+                                    EntityStatus.FAILED,
+                                    error instanceof Error ? error.message : String(error),
+                                );
+                            }
+                        },
+                    );
                 },
             });
     }

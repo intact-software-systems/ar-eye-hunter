@@ -18,6 +18,7 @@ export * from './rallar-system/services/AppGroupInboxService.ts';
 export * from './rallar-system/services/AppInboxService.ts';
 export * from './rallar-system/services/group-state-service.ts';
 export * from './rallar-system/services/group-state-snapshot-read-through-cache.ts';
+export * from './rallar-system/services/timing.ts';
 export * from './rallar-system/services/ws-lifecycle-service.ts';
 export * from './rallar-system/services/ws-topic-room-authorizer.ts';
 export * from './rallar-system/state-sync-publisher.ts';
