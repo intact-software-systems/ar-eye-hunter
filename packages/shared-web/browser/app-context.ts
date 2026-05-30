@@ -81,6 +81,7 @@ export async function initMiddleware(
 }
 
 export function clearMiddleware(): void {
+    ctx?.middleware.heartbeat?.stop();
     ctx = undefined;
     initPromise = undefined;
 }

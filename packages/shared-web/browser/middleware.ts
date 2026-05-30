@@ -32,6 +32,7 @@ import * as qbox from '@shared-web/browser/qbox-engine.ts';
 import * as rtcEngine from '@shared-web/browser/rtc-engine.ts';
 import * as wsEngine from '@shared-web/browser/ws-engine.ts';
 import * as heartbeat from '@shared-web/browser/heartbeat.ts';
+import type { HeartbeatHandle } from '@shared-web/browser/heartbeat.ts';
 import { initialiseBrowserCacheRepositories } from '@shared-web/browser/browser-cache-repositories.ts';
 import {
     configureBrowserALRuntimeStores,
@@ -46,6 +47,7 @@ export type Middleware = {
     rtcRxStreamer: WebRtcRxStreamerService;
     webRtcGroupManager: WebRtcGroupManager;
     webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
+    heartbeat: HeartbeatHandle;
 };
 
 export type MiddlewareInitOptions = Readonly<{
@@ -220,7 +222,9 @@ export async function initialiseMiddleware(
         groupSnapshots,
     );
 
-    await heartbeat.initHeartbeat(clientData);
+    const heartbeatHandle = await heartbeat.initHeartbeat(clientData, {
+        authSession: session,
+    });
 
     return {
         qboxEngine: qboxEngine,
@@ -229,6 +233,7 @@ export async function initialiseMiddleware(
         rtcRxStreamer: rtcRxStreamer,
         webRtcGroupManager: webRtcGroupManager,
         webRtcOverlayMulticastManager: webRtcOverlayMulticastManager,
+        heartbeat: heartbeatHandle,
     };
 }
 

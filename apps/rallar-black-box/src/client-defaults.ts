@@ -24,7 +24,7 @@ export const RALLAR_BLACK_BOX_CLIENT_DEFAULTS = {
     topicId: 'room.manual.topic',
     targetClient: 'bob',
     multicastClients: 'bob,charlie',
-    timeoutMs: 5_000,
+    timeoutMs: 10_000,
     statsIntervalMs: 5_000,
     demoUsername: 'alice',
     demoPassword: 'local-demo-password',

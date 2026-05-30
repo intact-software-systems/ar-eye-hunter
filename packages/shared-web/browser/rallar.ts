@@ -1950,12 +1950,14 @@ class BrowserRallarFacade implements RallarFacade {
                 RALLAR_REALTIME_LIFECYCLE_CALLBACK_ID,
             );
             this.unregisterRtcStatusCallbacks(ctx);
+            ctx.middleware.rtcRxStreamer.stopAllHeartbeats();
             const peerIds = ctx.middleware.webRtcConnectionService.knownPeerIds();
             for (const peerId of peerIds) {
                 ctx.middleware.webRtcConnectionService.disconnectPeer(peerId);
             }
             this.unregisterRemoteStreamCallback();
             ctx.middleware.rtcRxStreamer.stopLocalMedia('all');
+            ctx.middleware.heartbeat?.stop();
             ctx.middleware.qboxEngine.stop();
             ctx.middleware.webSocketQueueBox.close(
                 1000,

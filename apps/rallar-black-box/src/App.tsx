@@ -6038,6 +6038,9 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
     const [ticket, setTicket] = useState<AuthCommandCenterTicket | undefined>();
     const [subscription, setSubscription] = useState<WebSocketSubscriptionState | undefined>();
     const rawSocketRef = useRef<WebSocket | undefined>(undefined);
+    const rawSocketAuthKey = authSession
+        ? `${authSession.clientId}:${authSession.sessionId}`
+        : 'anonymous';
     const stateRef = useRef(state);
     const defaultContextRef = useRef(defaultContext);
     const diagnostics = useMemo(
@@ -6123,6 +6126,20 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
     ]);
 
     useEffect(() => () => subscription?.unsubscribe(), [subscription]);
+
+    useEffect(() => {
+        return () => {
+            const socket = rawSocketRef.current;
+            rawSocketRef.current = undefined;
+            if (
+                socket &&
+                socket.readyState !== WebSocket.CLOSING &&
+                socket.readyState !== WebSocket.CLOSED
+            ) {
+                socket.close(1000, 'rallar-black-box auth cleanup');
+            }
+        };
+    }, [rawSocketAuthKey]);
 
     const updateValue = <K extends keyof WebSocketCommandCenterValues>(
         key: K,
@@ -6414,7 +6431,9 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
         setBusyAction('Close WebSocket');
         setLocalError(undefined);
         try {
-            rawSocketRef.current?.close(values.closeCode, reason);
+            const socket = rawSocketRef.current;
+            rawSocketRef.current = undefined;
+            socket?.close(values.closeCode, reason);
             recordWebSocketEvent(
                 'rallar.direct.raw_ws.close.requested',
                 {

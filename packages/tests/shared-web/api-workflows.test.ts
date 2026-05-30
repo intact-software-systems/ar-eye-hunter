@@ -20,6 +20,7 @@ import {
 type FetchCall = Readonly<{
     url: string;
     method: string;
+    headers: Record<string, string>;
     body?: unknown;
     signal?: AbortSignal | null;
 }>;
@@ -63,8 +64,8 @@ describe('state API workflows', () => {
 
         expect(result).toEqual({ clients, groups });
         expect(fetchCalls.map((call) => call.url)).toEqual([
-            '/api/state/apps/ar-eye-hunter/workspaces/default/clients',
-            '/api/state/apps/ar-eye-hunter/workspaces/default/groups',
+            '/api/state/apps/rallar-server/workspaces/default/clients',
+            '/api/state/apps/rallar-server/workspaces/default/groups',
         ]);
     });
 
@@ -87,8 +88,8 @@ describe('state API workflows', () => {
         await refreshStateSnapshots();
 
         expect(fetchCalls.map((call) => call.url)).toEqual([
-            'https://api.example.test/api/state/apps/ar-eye-hunter/workspaces/default/clients',
-            'https://api.example.test/api/state/apps/ar-eye-hunter/workspaces/default/groups',
+            'https://api.example.test/api/state/apps/rallar-server/workspaces/default/clients',
+            'https://api.example.test/api/state/apps/rallar-server/workspaces/default/groups',
         ]);
     });
 
@@ -601,6 +602,39 @@ describe('state API workflows', () => {
         expect(clientRequestIds[0]).not.toBe(groupRequestIds[0]);
     });
 
+    it('uses the provided auth session for heartbeat requests', async () => {
+        const clientData: ClientInfo = {
+            clientId: 'principal-1',
+            sessionId: 'session-1',
+            isOnline: true,
+        };
+        stubFetch(({ url, method }) => {
+            if (
+                method === 'POST' &&
+                url.includes('/clients/principal-1/') &&
+                url.endsWith('/sessions/session-1/heartbeat')
+            ) {
+                return jsonResponse(clientSnapshot('principal-1'));
+            }
+
+            return notFoundResponse();
+        });
+
+        await refreshStateHeartbeat(clientData, [], {
+            authSession: {
+                clientId: 'principal-1',
+                username: 'alice',
+                sessionId: 'session-1',
+                accessToken: 'token-1',
+                expiresAtEpochMs: Date.now() + 60_000,
+            },
+        });
+
+        expect(fetchCalls).toHaveLength(1);
+        expect(fetchCalls[0].headers.authorization).toBe('Bearer token-1');
+        expect(fetchCalls[0].headers['x-client-id']).toBe('principal-1');
+    });
+
     it('passes command timeout aborts into endpoint fetch calls', async () => {
         vi.useFakeTimers();
         const signals: AbortSignal[] = [];
@@ -649,6 +683,7 @@ describe('state API workflows', () => {
                 const call: FetchCall = {
                     url: String(input),
                     method: init?.method ?? 'GET',
+                    headers: Object.fromEntries(new Headers(init?.headers).entries()),
                     body: init?.body ? JSON.parse(String(init.body)) : undefined,
                     signal: init?.signal,
                 };

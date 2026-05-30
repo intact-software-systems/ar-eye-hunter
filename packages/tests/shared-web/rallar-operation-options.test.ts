@@ -63,9 +63,13 @@ const mocks = vi.hoisted(() => {
                 onRemoteStreamDo: vi.fn(),
                 removeOnRemoteStreamCallbackById: vi.fn(),
                 stopLocalMedia: vi.fn(),
+                stopAllHeartbeats: vi.fn(),
             },
             webRtcGroupManager: {},
             webRtcConnectionService,
+            heartbeat: {
+                stop: vi.fn(),
+            },
             webSocketQueueBox: {
                 enqueueOutboxIfAbsent: vi.fn(async () => ({
                     status: 'enqueued',
@@ -2708,6 +2712,9 @@ describe('Rallar operation options', () => {
 
         expect(mocks.ctx.middleware.webSocketQueueBox.close)
             .toHaveBeenCalledWith(1000, 'rallar-disconnect');
+        expect(mocks.ctx.middleware.heartbeat.stop).toHaveBeenCalledOnce();
+        expect(mocks.ctx.middleware.rtcRxStreamer.stopAllHeartbeats)
+            .toHaveBeenCalledOnce();
         expect(mocks.logoutFromApi).toHaveBeenCalledOnce();
         expect(mocks.clearSession).toHaveBeenCalledOnce();
     });

@@ -181,6 +181,13 @@ export class WebRtcRxStreamerService {
         this.heartbeatByPeerId.delete(peerDto.peerId);
     }
 
+    stopAllHeartbeats(): void {
+        for (const heartbeat of this.heartbeatByPeerId.values()) {
+            heartbeat.stop();
+        }
+        this.heartbeatByPeerId.clear();
+    }
+
     enableDefaultCallbacks(): WebRtcRxStreamerService {
         this.onOutboxMessageDo(
             this.input.sessionId + '-rtc-outbox',

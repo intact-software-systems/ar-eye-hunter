@@ -1,4 +1,4 @@
-import type { ClientInfo } from '@shared/api/api-config.ts';
+import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientSnapshot as ClientStateSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -39,6 +39,7 @@ export type StateHeartbeatWorkflowValue =
 
 export type RefreshStateHeartbeatOptions = Readonly<{
     scope?: StateScope;
+    authSession?: AuthSession;
     heartbeatAtEpochMs?: number;
     ttlMs?: number;
     policies?: CommandsOrchestratorPolicies<StateHeartbeatWorkflowValue>;
@@ -304,7 +305,10 @@ export async function refreshStateHeartbeat(
                         requestId: clientHeartbeatRequestId,
                     },
                     scope,
-                    { signal },
+                    {
+                        signal,
+                        authSession: options.authSession,
+                    },
                 )),
         )
         .parallel(
@@ -330,7 +334,10 @@ export async function refreshStateHeartbeat(
                                 requestId: groupHeartbeatRequestId,
                             },
                             scope,
-                            { signal },
+                            {
+                                signal,
+                                authSession: options.authSession,
+                            },
                         ),
                     {
                         errorOnNull: false,
