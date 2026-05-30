@@ -108,17 +108,14 @@ export async function initialiseMiddleware(
         options,
     );
 
-    const wsTicket = await runMiddlewareCommand(
-        (signal) => createWebSocketTicket({ signal }),
-        options,
-    );
-    if (wsTicket.sessionId !== session.sessionId) {
-        throw new Error('WebSocket ticket does not match the current session.');
-    }
+    const socket = new JsonWebSocketClient(async (connectOptions) => {
+        const wsTicket = await createWebSocketTicket({ signal: connectOptions.signal });
+        if (wsTicket.sessionId !== session.sessionId) {
+            throw new Error('WebSocket ticket does not match the current session.');
+        }
 
-    const socket = new JsonWebSocketClient(
-        toCreateWsUrl(apiConfig, session, wsTicket.ticket),
-    );
+        return toCreateWsUrl(apiConfig, session, wsTicket.ticket);
+    });
 
     await runMiddlewareVoidCommand((signal) => socket.connect({ signal }), options)
         .catch((error) => {

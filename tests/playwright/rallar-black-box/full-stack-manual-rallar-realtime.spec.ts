@@ -2,6 +2,7 @@ import { expect, type Page, test } from '@playwright/test';
 import {
     expectFullStackApiReady,
     loginThroughUi,
+    readBrowserAuthSession,
     readFullStackConfig,
     uniqueSuffix,
 } from './full-stack-helpers.ts';
@@ -47,7 +48,9 @@ async function connectManualAgent(
     const sessionId = await page.locator('#panel-manual-rallar')
         .getByLabel('Session', { exact: true })
         .inputValue();
+    const authSession = await readBrowserAuthSession(page);
     expect(sessionId).not.toHaveLength(0);
+    expect(sessionId).toBe(authSession.sessionId);
 
     await page.locator('#panel-manual-rallar')
         .getByRole('button', {

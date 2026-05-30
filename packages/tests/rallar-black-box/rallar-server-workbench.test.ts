@@ -2,12 +2,19 @@ import { describe, expect, it } from 'vitest';
 import type { AuthSession } from '../../../packages/shared/api/api-config.ts';
 import {
     applyRallarServerEndpointPreset,
+    assertRallarServerRestResponse,
+    buildRallarServerCollectionStepRequestInput,
     buildRallarServerRestRequest,
+    createRallarServerRestCollectionTemplates,
     defaultRallarServerWorkbenchVariables,
     executeRallarServerRestRequest,
+    extractRallarServerRestVariables,
     extractRallarServerOpenApiEndpoints,
+    readRallarServerJsonPath,
+    resolveRallarServerCollectionValue,
     toRallarServerBlackBoxCommand,
     toRallarServerCurl,
+    toRallarServerRestCollectionRecipe,
 } from '../../../apps/rallar-black-box/src/rallar-server-workbench.ts';
 
 const authSession: AuthSession = {
@@ -231,5 +238,111 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
         expect(curl).not.toContain('secret-token');
         expect(curl).not.toContain('query-secret');
         expect(curl).not.toContain('body-secret');
+    });
+
+    it('resolves REST collection variables into requests', () => {
+        const templates = createRallarServerRestCollectionTemplates(
+            defaultRallarServerWorkbenchVariables({
+                applicationId: 'app',
+                workspaceId: 'workspace',
+                groupId: 'bb-group',
+                principalId: 'alice-client',
+            }),
+        );
+        const collection = templates.find(entry => entry.collectionId === 'group-membership-evidence');
+        expect(collection).toBeDefined();
+
+        const input = buildRallarServerCollectionStepRequestInput({
+            step: collection!.steps[0],
+            apiBaseUrl: 'http://localhost:8080',
+            variables: collection!.variables ?? {},
+            authSession,
+            defaultTimeoutMs: 5000,
+        });
+
+        expect(input.path).toBe('/api/state/apps/app/workspaces/workspace/groups');
+        expect(JSON.parse(input.bodyText)).toMatchObject({
+            groupId: 'bb-group',
+            createdByPrincipalId: 'alice-client',
+        });
+        expect(input.attachAuth).toBe(true);
+    });
+
+    it('evaluates collection assertions and extracts variables', () => {
+        const response = {
+            ok: true,
+            url: 'http://localhost:8080/api/state',
+            status: 200,
+            statusText: 'OK',
+            durationMs: 12,
+            headers: { 'content-type': 'application/json', 'x-snapshot-version': '3' },
+            bodyText: JSON.stringify({
+                group: { groupId: 'bb-group' },
+                members: [{ principalId: 'alice-client' }],
+            }),
+            bodyJson: {
+                group: { groupId: 'bb-group' },
+                members: [{ principalId: 'alice-client' }],
+            },
+            bodyKind: 'json' as const,
+        };
+
+        expect(readRallarServerJsonPath(response.bodyJson, '$.members[0].principalId'))
+            .toBe('alice-client');
+        expect(resolveRallarServerCollectionValue(
+            '/groups/{{groupId}}/${principalId}',
+            { groupId: 'bb-group', principalId: 'alice-client' },
+        )).toBe('/groups/bb-group/alice-client');
+
+        const assertions = assertRallarServerRestResponse(response, {
+            status: [200, 201],
+            body: [{ path: '$.group.groupId', equals: '{{groupId}}' }],
+            headers: [{ name: 'x-snapshot-version', exists: true }],
+        }, { groupId: 'bb-group' });
+
+        expect(assertions.every(assertion => assertion.ok)).toBe(true);
+        expect(extractRallarServerRestVariables(response, [
+            { name: 'observedGroupId', path: '$.group.groupId' },
+            { name: 'snapshotVersion', from: 'headers', header: 'x-snapshot-version' },
+            { name: 'statusCode', from: 'status' },
+        ])).toEqual({
+            observedGroupId: 'bb-group',
+            snapshotVersion: '3',
+            statusCode: 200,
+        });
+    });
+
+    it('exports REST collections as black-box recipes with assertion metadata', () => {
+        const collection = createRallarServerRestCollectionTemplates(
+            defaultRallarServerWorkbenchVariables({
+                applicationId: 'app',
+                workspaceId: 'workspace',
+                groupId: 'bb-group',
+                principalId: 'alice-client',
+            }),
+        )[0];
+
+        const recipe = toRallarServerRestCollectionRecipe({
+            collection,
+            apiBaseUrl: 'http://localhost:8080',
+            variables: collection.variables ?? {},
+            authSession,
+            defaultTimeoutMs: 5000,
+        }) as {
+            recipeId: string;
+            commands: Array<{
+                kind: string;
+                commandId: string;
+                metadata?: { restCollection?: { expect?: unknown; attachAuth?: boolean } };
+            }>;
+        };
+
+        expect(recipe.recipeId).toBe('group-membership-evidence');
+        expect(recipe.commands[0]).toMatchObject({
+            kind: 'http.request',
+            commandId: 'group-membership-evidence-1-create-group',
+        });
+        expect(recipe.commands[0].metadata?.restCollection?.attachAuth).toBe(true);
+        expect(recipe.commands[2].metadata?.restCollection?.expect).toBeDefined();
     });
 });

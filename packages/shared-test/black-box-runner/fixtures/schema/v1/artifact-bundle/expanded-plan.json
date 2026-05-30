@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "schemaVersion": 1,
+  "seed": 42,
+  "replay": false,
+  "generator": {
+    "count": 1,
+    "operations": [
+      {
+        "name": "alice-to-bob",
+        "index": 1,
+        "weight": 1,
+        "stepCount": 1
+      }
+    ]
+  },
+  "decisions": [
+    {
+      "sequence": 1,
+      "operation": "alice-to-bob",
+      "operationIndex": 1,
+      "random": 0.123456,
+      "randomInt": 123456
+    }
+  ],
+  "steps": [
+    {
+      "name": "aliceTrafficToBob",
+      "type": "rtc.send",
+      "connection": "aliceRtc"
+    }
+  ],
+  "replayRecipe": {
+    "execution": {
+      "trafficPlan": {
+        "expandedPlan": {
+          "version": 1,
+          "seed": 42,
+          "steps": [
+            {
+              "name": "aliceTrafficToBob",
+              "type": "rtc.send",
+              "connection": "aliceRtc"
+            }
+          ]
+        }
+      }
+    },
+    "steps": [
+      {
+        "name": "aliceTrafficToBob",
+        "type": "rtc.send",
+        "connection": "aliceRtc"
+      }
+    ]
+  }
+}

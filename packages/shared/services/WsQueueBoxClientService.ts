@@ -1,5 +1,6 @@
 import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
 import { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
+import { Command } from '../cache/Command.ts';
 import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy, } from '../resilience/TryWith.ts';
 import { OnMessageCallback, OnOutboxWebSocketMessageCallback, } from './InboxOutboxContracts.ts';
 import { JsonWebSocketClient } from '../websocket/JsonWebSocketClient.ts';
@@ -39,6 +40,7 @@ export type WsQueueBoxClientServiceOptions = Readonly<{
 
 export type WsQueueBoxClientReconnectOptions = Readonly<{
     maxAttempts: number;
+    connectTimeoutMsecs: number;
     retryIntervalMsecs: number;
     maxRetryIntervalMsecs: number;
     canReconnect: () => boolean;
@@ -46,6 +48,7 @@ export type WsQueueBoxClientReconnectOptions = Readonly<{
 
 export const DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS: WsQueueBoxClientReconnectOptions = {
     maxAttempts: 12,
+    connectTimeoutMsecs: 10_000,
     retryIntervalMsecs: 500,
     maxRetryIntervalMsecs: 20_000,
     canReconnect: () => true,
@@ -399,9 +402,25 @@ export class WsQueueBoxClientService {
         }
 
         this.reconnectStatus.attempts++;
-        await this.socket.connect();
+        await this.connectSocketForReconnect();
         this.reconnectStatus.attempts = 0;
         this.reconnectStatus.exhausted = false;
+    }
+
+    private async connectSocketForReconnect(): Promise<void> {
+        const timeoutMs = this.options.reconnect.connectTimeoutMsecs;
+        if (timeoutMs <= 0) {
+            await this.socket.connect();
+            return;
+        }
+
+        await new Command<void>(
+            (signal) => this.socket.connect({ signal }),
+            {
+                timeoutMs,
+                errorOnNull: false,
+            },
+        ).run();
     }
 
     private toReconnectPolicy(reconnectGeneration: number): TryWithPolicy {

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "kind": "black-box-runner.recipe-catalog-entry",
+  "entry": {
+    "id": "fixture-memory-traffic",
+    "title": "Fixture Memory Traffic",
+    "description": "Versioned fixture for command-center recipe catalog validation.",
+    "recipePath": "examples/rtc-rallar-memory-seeded-traffic.json",
+    "category": "generic-runner-semantics",
+    "providerMode": "rallar-memory",
+    "executionMode": "run",
+    "expectedResult": "pass",
+    "liveSupport": "offline",
+    "profiles": ["deterministic", "traffic"],
+    "artifactName": "fixture-memory-traffic",
+    "prerequisites": {
+      "requiredEnvVars": [],
+      "httpServices": [],
+      "requiresPlaywright": false,
+      "injectedEnv": {}
+    },
+    "support": {
+      "deterministic": true,
+      "dryRun": false,
+      "live": false,
+      "remoteBrowser": false,
+      "artifacts": true,
+      "replayArtifacts": true
+    },
+    "commands": [
+      {
+        "label": "Root matrix entry",
+        "command": "npm run test:shared-black-box:matrix:traffic -- --id=memory-seeded-traffic",
+        "description": "Runs a seeded traffic recipe through the matrix."
+      }
+    ],
+    "uiHints": {
+      "badges": ["run", "expected-pass", "deterministic", "traffic"],
+      "recommendedSurface": "recipe-catalog"
+    }
+  }
+}

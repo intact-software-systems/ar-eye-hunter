@@ -33,9 +33,12 @@ export type RtcMembershipDiagnostics = Readonly<{
     sessionId?: string;
     expectedClients: readonly string[];
     observedClients: readonly string[];
+    readyPeerIds: readonly string[];
+    activePeerIds: readonly string[];
     missingClients: readonly string[];
     extraClients: readonly string[];
     staleClients: readonly string[];
+    nackCodes: readonly string[];
     peerCount?: number;
     laneHealth?: unknown;
     sourceTopic?: string;
@@ -108,6 +111,10 @@ function unique(values: readonly (string | undefined)[]): readonly string[] {
     return [...new Set(values.filter((value): value is string => Boolean(value)))].sort();
 }
 
+function latestDefined<T>(values: readonly (T | undefined)[]): T | undefined {
+    return values.findLast(value => value !== undefined);
+}
+
 function stringArray(value: unknown): readonly string[] {
     return unique(asArray(value).map(entry => stringValue(entry)));
 }
@@ -142,7 +149,14 @@ function isFailureEvent(event: RallarBlackBoxTestEvent): boolean {
         topic.includes('failure') ||
         topic.includes('timeout') ||
         topic.includes('mismatch') ||
-        topic.includes('not_found');
+        topic.includes('not_found') ||
+        topic.includes('missing-peer') ||
+        topic.includes('stale-agent') ||
+        topic.includes('duplicate-session') ||
+        topic.includes('permission-denied') ||
+        topic.includes('closed-transport') ||
+        topic.includes('not-yet-in-sync') ||
+        topic.includes('nack');
 }
 
 function stageFromPhase(value: unknown): RtcConnectStageId | undefined {
@@ -239,11 +253,28 @@ function deriveStages(events: readonly RallarBlackBoxTestEvent[]): readonly RtcC
 function gatherClientIdsFromPayload(payload: Record<string, unknown>): Readonly<{
     expected: readonly string[];
     observed: readonly string[];
+    ready: readonly string[];
+    active: readonly string[];
     stale: readonly string[];
+    nackCodes: readonly string[];
 }> {
     const nestedData = asRecord(payload.data);
+    const nack = asRecord(payload.nack);
     const results = asArray(payload.results)
         .map(result => stringValue(asRecord(result).peerId));
+    const ready = unique([
+        ...stringArray(payload.readyPeerIds),
+        ...stringArray(payload.readyPeers),
+        ...stringArray(payload.readyClients),
+        ...stringArray(nestedData.readyPeerIds),
+    ]);
+    const active = unique([
+        ...stringArray(payload.activePeerIds),
+        ...stringArray(payload.activePeers),
+        ...stringArray(payload.activeClients),
+        ...stringArray(payload.connectedPeerIds),
+        ...stringArray(nestedData.activePeerIds),
+    ]);
     return {
         expected: unique([
             ...stringArray(payload.expectedClients),
@@ -263,14 +294,24 @@ function gatherClientIdsFromPayload(payload: Record<string, unknown>): Readonly<
             ...stringArray(payload.observedClientIds),
             ...stringArray(payload.connectedClients),
             ...stringArray(payload.peerIds),
+            ...ready,
+            ...active,
             ...stringArray(nestedData.senderId),
         ]),
+        ready,
+        active,
         stale: unique([
             stringValue(payload.staleClient),
             stringValue(payload.staleClientId),
             stringValue(payload.staleSessionId),
             ...stringArray(payload.staleClients),
             ...stringArray(payload.staleClientIds),
+        ]),
+        nackCodes: unique([
+            stringValue(payload.nackCode),
+            stringValue(payload.negativeCase),
+            stringValue(nack.code),
+            ...stringArray(payload.nackCodes),
         ]),
     };
 }
@@ -284,14 +325,18 @@ function deriveMembership(
     const latest = related.at(-1);
     const latestPayload = latest ? payloadOf(latest) : {};
     const observedSets = related.map(event => gatherClientIdsFromPayload(payloadOf(event)));
+    const relatedPayloads = related.map(payloadOf);
     const expectedClients = unique(observedSets.flatMap(set => set.expected));
     const observedClients = unique(observedSets.flatMap(set => set.observed));
+    const readyPeerIds = unique(observedSets.flatMap(set => set.ready));
+    const activePeerIds = unique(observedSets.flatMap(set => set.active));
     const staleClients = unique([
         ...observedSets.flatMap(set => set.stale),
         ...related
             .filter(event => lowerTopic(event).includes('stale'))
             .map(event => stringValue(payloadOf(event).sessionId)),
     ]);
+    const nackCodes = unique(observedSets.flatMap(set => set.nackCodes));
     const missingClients = expectedClients.filter(client => !observedClients.includes(client));
     const extraClients = expectedClients.length === 0
         ? []
@@ -305,11 +350,16 @@ function deriveMembership(
         sessionId: stringValue(latestPayload.sessionId) ?? config?.sessionId,
         expectedClients,
         observedClients,
+        readyPeerIds,
+        activePeerIds,
         missingClients,
         extraClients,
         staleClients,
-        peerCount: numberValue(latestPayload.peerCount) ?? state.latestStats?.rallar?.peerCount,
-        laneHealth: latestPayload.laneHealth ?? state.latestStats?.rallar?.laneHealth,
+        nackCodes,
+        peerCount: latestDefined(relatedPayloads.map(payload => numberValue(payload.peerCount))) ??
+            state.latestStats?.rallar?.peerCount,
+        laneHealth: latestDefined(relatedPayloads.map(payload => payload.laneHealth)) ??
+            state.latestStats?.rallar?.laneHealth,
         sourceTopic: latest?.topic,
     };
 }
@@ -354,7 +404,9 @@ function deriveLatency(
 function failureMessage(event: RallarBlackBoxTestEvent): string {
     const payload = payloadOf(event);
     const error = asRecord(payload.error);
+    const nack = asRecord(payload.nack);
     return stringValue(error.message) ??
+        stringValue(nack.message) ??
         stringValue(payload.message) ??
         stringValue(payload.reason) ??
         event.topic;
@@ -371,6 +423,13 @@ function failureSource(event: RallarBlackBoxTestEvent): RtcFailureDiagnostics['s
     }
     if (topic.includes('auth') || topic.includes('login') || topic.includes('session')) {
         return 'rallar-auth';
+    }
+    if (
+        topic.includes('not-yet-in-sync') ||
+        topic.includes('nack') ||
+        stringValue(payloadOf(event).negativeCase) === 'not-yet-in-sync'
+    ) {
+        return 'rallar-runtime';
     }
     if (
         topic.includes('permission') ||

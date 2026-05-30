@@ -1,0 +1,193 @@
+{
+  "variables": {
+    "roomId": "bb-memory-room",
+    "otherRoomId": "bb-memory-other-room"
+  },
+  "connections": {
+    "aliceRtc": {
+      "type": "rtc",
+      "provider": "rallar-memory",
+      "actor": "alice",
+      "peerId": "alice",
+      "roomId": "{roomId}",
+      "remotePeerId": "bob"
+    },
+    "bobRtc": {
+      "type": "rtc",
+      "provider": "rallar-memory",
+      "actor": "bob",
+      "peerId": "bob",
+      "roomId": "{roomId}",
+      "remotePeerId": "alice"
+    },
+    "charlieRtc": {
+      "type": "rtc",
+      "provider": "rallar-memory",
+      "actor": "charlie",
+      "peerId": "charlie",
+      "roomId": "{roomId}"
+    },
+    "danaRtc": {
+      "type": "rtc",
+      "provider": "rallar-memory",
+      "actor": "dana",
+      "peerId": "dana",
+      "roomId": "{otherRoomId}"
+    }
+  },
+  "steps": [
+    {
+      "name": "connectAlice",
+      "type": "rtc.connect",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "connectBob",
+      "type": "rtc.connect",
+      "connection": "bobRtc"
+    },
+    {
+      "name": "connectCharlie",
+      "type": "rtc.connect",
+      "connection": "charlieRtc"
+    },
+    {
+      "name": "connectDanaOtherRoom",
+      "type": "rtc.connect",
+      "connection": "danaRtc"
+    },
+    {
+      "name": "aliceSendsDirectToBob",
+      "type": "rtc.send",
+      "connection": "aliceRtc",
+      "request": {
+        "send": {
+          "topic": "black-box.delivery.direct",
+          "toPeerId": "bob",
+          "payload": {
+            "text": "direct to bob"
+          }
+        },
+        "outputs": {
+          "directDeliveredTo": "matchedMessage.data.deliveredTo",
+          "directDeliveryMode": "matchedMessage.data.deliveryMode",
+          "directPayload": "matchedMessage.data.payload"
+        }
+      },
+      "expect": {
+        "connection": "bobRtc",
+        "withinMs": 1000,
+        "message": {
+          "topic": "black-box.delivery.direct",
+          "toPeerId": "bob",
+          "payload": {
+            "text": "direct to bob"
+          }
+        }
+      }
+    },
+    {
+      "name": "aliceBroadcastsToRoom",
+      "type": "rtc.send",
+      "connection": "aliceRtc",
+      "request": {
+        "send": {
+          "topic": "black-box.delivery.broadcast",
+          "broadcast": true,
+          "payload": {
+            "text": "broadcast to room"
+          }
+        },
+        "outputs": {
+          "broadcastBobDeliveredTo": "matchedMessage.data.deliveredTo",
+          "broadcastBobDeliveryMode": "matchedMessage.data.deliveryMode",
+          "broadcastPayloadBob": "matchedMessage.data.payload"
+        }
+      },
+      "expect": {
+        "connection": "bobRtc",
+        "withinMs": 1000,
+        "message": {
+          "topic": "black-box.delivery.broadcast",
+          "broadcast": true,
+          "payload": {
+            "text": "broadcast to room"
+          }
+        }
+      }
+    },
+    {
+      "name": "charlieReceivesBroadcast",
+      "type": "rtc.wait",
+      "connection": "charlieRtc",
+      "request": {
+        "outputs": {
+          "broadcastCharlieDeliveredTo": "matchedMessage.data.deliveredTo",
+          "broadcastCharlieDeliveryMode": "matchedMessage.data.deliveryMode",
+          "broadcastPayloadCharlie": "matchedMessage.data.payload"
+        }
+      },
+      "expect": {
+        "connection": "charlieRtc",
+        "withinMs": 1000,
+        "message": {
+          "topic": "black-box.delivery.broadcast",
+          "broadcast": true,
+          "payload": {
+            "text": "broadcast to room"
+          }
+        }
+      }
+    },
+    {
+      "name": "assertDirectAndBroadcastOutcomes",
+      "type": "assert",
+      "actual": {
+        "directDeliveredTo": "{directDeliveredTo}",
+        "directDeliveryMode": "{directDeliveryMode}",
+        "broadcastBobDeliveredTo": "{broadcastBobDeliveredTo}",
+        "broadcastBobDeliveryMode": "{broadcastBobDeliveryMode}",
+        "broadcastCharlieDeliveredTo": "{broadcastCharlieDeliveredTo}",
+        "broadcastCharlieDeliveryMode": "{broadcastCharlieDeliveryMode}",
+        "broadcastPayloadBob": "{broadcastPayloadBob}",
+        "broadcastPayloadCharlie": "{broadcastPayloadCharlie}"
+      },
+      "expect": {
+        "body": {
+          "directDeliveredTo": "bob",
+          "directDeliveryMode": "direct",
+          "broadcastBobDeliveredTo": "bob",
+          "broadcastBobDeliveryMode": "broadcast",
+          "broadcastCharlieDeliveredTo": "charlie",
+          "broadcastCharlieDeliveryMode": "broadcast",
+          "broadcastPayloadBob": {
+            "text": "broadcast to room"
+          },
+          "broadcastPayloadCharlie": {
+            "text": "broadcast to room"
+          }
+        }
+      }
+    },
+    {
+      "name": "closeAlice",
+      "type": "rtc.close",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "closeBob",
+      "type": "rtc.close",
+      "connection": "bobRtc"
+    },
+    {
+      "name": "closeCharlie",
+      "type": "rtc.close",
+      "connection": "charlieRtc"
+    },
+    {
+      "name": "closeDana",
+      "type": "rtc.close",
+      "connection": "danaRtc"
+    }
+  ]
+}

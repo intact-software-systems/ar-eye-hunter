@@ -22,6 +22,15 @@ export type EnqueueControlCommandInput = Readonly<{
     deadlineEpochMs?: number;
 }>;
 
+export type ControlRunSnapshotBounds = Readonly<{
+    commands?: number;
+    results?: number;
+    events?: number;
+    stats?: number;
+    reports?: number;
+    heartbeats?: number;
+}>;
+
 export type RallarBlackBoxControlServiceOptions = Readonly<{
     now?: () => number;
     commandIdFactory?: () => string;
@@ -322,15 +331,119 @@ export class RallarBlackBoxControlService {
         this.touch(run);
     }
 
-    snapshot(): ControlServerSnapshot {
+    resetRun(runId: string): ControlRunSnapshot | undefined {
+        const run = this.runs.get(runId);
+        if (!run) {
+            return undefined;
+        }
+
+        run.commands.clear();
+        run.results.clear();
+        run.events = [];
+        run.stats = [];
+        run.reports = [];
+        run.heartbeats = [];
+        for (const agent of run.agents.values()) {
+            agent.receivedResultCount = 0;
+            agent.receivedEventCount = 0;
+            agent.completedCommandIds.clear();
+            agent.resumeCompletedCommandIds.clear();
+            agent.commandEnqueueTimestamps = [];
+        }
+        this.touch(run);
+        return this.snapshotRunValue(run);
+    }
+
+    deleteRun(runId: string): boolean {
+        return this.runs.delete(runId);
+    }
+
+    pruneRuns(maxRuns: number | undefined): readonly string[] {
+        if (maxRuns === undefined || maxRuns <= 0 || this.runs.size <= maxRuns) {
+            return [];
+        }
+
+        const keep = new Set(
+            Array.from(this.runs.values())
+                .sort((left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs)
+                .slice(0, maxRuns)
+                .map(run => run.runId),
+        );
+        const deletedRunIds: string[] = [];
+        for (const runId of this.runs.keys()) {
+            if (keep.has(runId)) {
+                continue;
+            }
+            this.runs.delete(runId);
+            deletedRunIds.push(runId);
+        }
+        return deletedRunIds;
+    }
+
+    restoreSnapshot(snapshot: ControlServerSnapshot): void {
+        this.runs.clear();
+        for (const runSnapshot of snapshot.runs) {
+            const run: StoredRun = {
+                runId: runSnapshot.runId,
+                createdAtEpochMs: runSnapshot.createdAtEpochMs,
+                updatedAtEpochMs: runSnapshot.updatedAtEpochMs,
+                agents: new Map(),
+                commands: new Map(),
+                results: new Map(),
+                events: [...runSnapshot.events],
+                stats: [...runSnapshot.stats],
+                reports: [...runSnapshot.reports],
+                heartbeats: [...runSnapshot.heartbeats],
+                tokens: new Map(),
+            };
+            for (const agentSnapshot of runSnapshot.agents) {
+                run.agents.set(agentSnapshot.agentId, {
+                    runId: agentSnapshot.runId,
+                    agentId: agentSnapshot.agentId,
+                    connected: false,
+                    registeredAtEpochMs: agentSnapshot.registeredAtEpochMs,
+                    disconnectedAtEpochMs: agentSnapshot.disconnectedAtEpochMs,
+                    lastSeenAtEpochMs: agentSnapshot.lastSeenAtEpochMs,
+                    lastHeartbeatAtEpochMs: agentSnapshot.lastHeartbeatAtEpochMs,
+                    status: agentSnapshot.status,
+                    connectionSequence: agentSnapshot.connectionSequence,
+                    reconnectCount: agentSnapshot.reconnectCount,
+                    receivedResultCount: agentSnapshot.receivedResultCount,
+                    receivedEventCount: agentSnapshot.receivedEventCount,
+                    completedCommandIds: new Set(agentSnapshot.completedCommandIds),
+                    resumeCompletedCommandIds: new Set(agentSnapshot.resumeCompletedCommandIds),
+                    commandEnqueueTimestamps: [],
+                });
+            }
+            for (const commandSnapshot of runSnapshot.commands) {
+                run.commands.set(commandSnapshot.envelope.commandId, {
+                    envelope: commandSnapshot.envelope,
+                    fingerprint: this.commandFingerprint(commandSnapshot.envelope),
+                    queuedAtEpochMs: commandSnapshot.queuedAtEpochMs,
+                    dispatchedAtEpochMs: commandSnapshot.dispatchedAtEpochMs,
+                    completedAtEpochMs: commandSnapshot.completedAtEpochMs,
+                    dispatchCount: commandSnapshot.dispatchCount,
+                });
+            }
+            for (const result of runSnapshot.results) {
+                run.results.set(result.commandId, result);
+            }
+            this.runs.set(run.runId, run);
+        }
+    }
+
+    snapshot(bounds: ControlRunSnapshotBounds = {}): ControlServerSnapshot {
         return {
-            runs: Array.from(this.runs.values(), (run) => this.snapshotRunValue(run)),
+            runs: Array.from(this.runs.values(), (run) => this.snapshotRunValue(run, bounds)),
         };
     }
 
-    snapshotRun(runId: string): ControlRunSnapshot | undefined {
+    snapshotRun(
+        runId: string,
+        bounds: ControlRunSnapshotBounds = {},
+    ): ControlRunSnapshot | undefined {
         const run = this.runs.get(runId);
-        return run ? this.snapshotRunValue(run) : undefined;
+        return run ? this.snapshotRunValue(run, bounds) : undefined;
     }
 
     private register(envelope: ControlRegisterEnvelope): void {
@@ -482,7 +595,26 @@ export class RallarBlackBoxControlService {
         run.updatedAtEpochMs = this.now();
     }
 
-    private snapshotRunValue(run: StoredRun): ControlRunSnapshot {
+    private boundedTail<T>(values: readonly T[], limit: number | undefined): readonly T[] {
+        if (limit === undefined || !Number.isFinite(limit) || limit < 0) {
+            return values;
+        }
+
+        return values.slice(Math.max(0, values.length - Math.floor(limit)));
+    }
+
+    private snapshotRunValue(
+        run: StoredRun,
+        bounds: ControlRunSnapshotBounds = {},
+    ): ControlRunSnapshot {
+        const commands = Array.from(run.commands.values(), (command) => ({
+            envelope: command.envelope,
+            queuedAtEpochMs: command.queuedAtEpochMs,
+            dispatchedAtEpochMs: command.dispatchedAtEpochMs,
+            completedAtEpochMs: command.completedAtEpochMs,
+            dispatchCount: command.dispatchCount,
+        }));
+        const results = Array.from(run.results.values());
         return {
             runId: run.runId,
             createdAtEpochMs: run.createdAtEpochMs,
@@ -503,18 +635,12 @@ export class RallarBlackBoxControlService {
                 completedCommandIds: Array.from(agent.completedCommandIds),
                 resumeCompletedCommandIds: Array.from(agent.resumeCompletedCommandIds),
             })),
-            commands: Array.from(run.commands.values(), (command) => ({
-                envelope: command.envelope,
-                queuedAtEpochMs: command.queuedAtEpochMs,
-                dispatchedAtEpochMs: command.dispatchedAtEpochMs,
-                completedAtEpochMs: command.completedAtEpochMs,
-                dispatchCount: command.dispatchCount,
-            })),
-            results: Array.from(run.results.values()),
-            events: [...run.events],
-            stats: [...run.stats],
-            reports: [...run.reports],
-            heartbeats: [...run.heartbeats],
+            commands: this.boundedTail(commands, bounds.commands),
+            results: this.boundedTail(results, bounds.results),
+            events: this.boundedTail(run.events, bounds.events),
+            stats: this.boundedTail(run.stats, bounds.stats),
+            reports: this.boundedTail(run.reports, bounds.reports),
+            heartbeats: this.boundedTail(run.heartbeats, bounds.heartbeats),
         };
     }
 }

@@ -1,0 +1,384 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://localhost:8080"
+    },
+    "rallarWsBaseUrl": {
+      "env": "RALLAR_WS_BASE_URL",
+      "default": "ws://localhost:8080"
+    },
+    "username": {
+      "env": "RALLAR_BB_USERNAME",
+      "default": "alice"
+    },
+    "password": {
+      "env": "RALLAR_BB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_APPLICATION_ID",
+      "default": "ar-eye-hunter"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_WORKSPACE_ID",
+      "default": "default"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_GROUP_ID",
+      "default": "bb-group"
+    },
+    "groupName": {
+      "env": "RALLAR_BB_GROUP_NAME",
+      "default": "bb-group"
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    },
+    "rallarWs": {
+      "type": "ws",
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "loginUser",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{username}",
+          "password": "{password}"
+        },
+        "outputs": {
+          "clientId": "body.clientId",
+          "accessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "sessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "username": "{username}",
+          "sessionId": "string",
+          "expiresAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "deriveAuthHeader",
+      "type": "set",
+      "output": "authHeader",
+      "value": "Bearer {accessToken}"
+    },
+    {
+      "name": "createGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{authHeader}",
+          "x-client-id": "{clientId}"
+        },
+        "body": {
+          "requestId": "create-{groupId}",
+          "groupId": "{groupId}",
+          "displayName": "{groupName}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{clientId}"
+        }
+      },
+      "expect": {
+        "statusCode": [
+          201,
+          409
+        ],
+        "bodyAnyOf": [
+          {
+            "group": {
+              "groupId": "{groupId}",
+              "displayName": "{groupName}",
+              "kind": "room"
+            }
+          },
+          {
+            "error": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "joinGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{clientId}",
+        "headers": {
+          "Authorization": "{authHeader}",
+          "x-client-id": "{clientId}"
+        },
+        "body": {
+          "requestId": "join-{groupId}-{clientId}",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          },
+          "members": [
+            {
+              "principalId": "{clientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "connectGroupPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}",
+        "headers": {
+          "Authorization": "{authHeader}",
+          "x-client-id": "{clientId}"
+        },
+        "body": {
+          "requestId": "presence-{sessionId}",
+          "principalId": "{clientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          },
+          "activeSessions": [
+            {
+              "sessionId": "{sessionId}",
+              "principalId": "{clientId}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "readGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{authHeader}",
+          "x-client-id": "{clientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          },
+          "members": [
+            {
+              "principalId": "{clientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "listGroupEvents",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events",
+        "headers": {
+          "Authorization": "{authHeader}",
+          "x-client-id": "{clientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "createWebSocketTicket",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket",
+        "headers": {
+          "Authorization": "{authHeader}",
+          "x-client-id": "{clientId}"
+        },
+        "outputs": {
+          "wsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ticket": "string",
+          "sessionId": "{sessionId}",
+          "expiresAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "deriveWebSocketUrl",
+      "type": "set",
+      "output": "wsUrl",
+      "value": "{rallarWsBaseUrl}/api/ws/{sessionId}?ticket={wsTicket}"
+    },
+    {
+      "name": "openWebSocket",
+      "type": "ws.open",
+      "connection": "rallarWs",
+      "request": {
+        "url": "{wsUrl}",
+        "timeoutMs": 10000
+      }
+    },
+    {
+      "name": "sendWebSocketEchoToSelf",
+      "type": "ws.send",
+      "connection": "rallarWs",
+      "request": {
+        "send": {
+          "id": {
+            "v": 2,
+            "msgId": "bb-ws-smoke-{sessionId}",
+            "ts": 0,
+            "senderId": "{sessionId}",
+            "sessionId": "{sessionId}",
+            "traceId": "bb-ws-smoke"
+          },
+          "route": {
+            "topicId": "app.black-box.echo",
+            "resourceId": "bb-ws-smoke-{sessionId}",
+            "contextId": "{applicationId}:{workspaceId}"
+          },
+          "targets": {
+            "mode": "unicast",
+            "toPeerId": "{sessionId}"
+          },
+          "delivery": {
+            "reliability": "best-effort",
+            "ack": "none"
+          },
+          "payload": {
+            "typeId": "app.black-box.echo",
+            "contentType": "application/json",
+            "resource": "{\"text\":\"hello over ws\",\"groupId\":\"{groupId}\"}"
+          }
+        },
+        "outputs": {
+          "echoMessageId": "matchedMessage.data.id.msgId",
+          "echoTopic": "matchedMessage.data.route.topicId"
+        }
+      },
+      "expect": {
+        "connection": "rallarWs",
+        "withinMs": 10000,
+        "message": {
+          "id": {
+            "msgId": "bb-ws-smoke-{sessionId}"
+          },
+          "route": {
+            "topicId": "app.black-box.echo"
+          },
+          "payload": {
+            "typeId": "app.black-box.echo",
+            "resource": "{\"text\":\"hello over ws\",\"groupId\":\"{groupId}\"}"
+          }
+        }
+      }
+    },
+    {
+      "name": "closeWebSocket",
+      "type": "ws.close",
+      "connection": "rallarWs",
+      "request": {
+        "code": 1000,
+        "reason": "black-box recipe done"
+      }
+    },
+    {
+      "name": "disconnectGroupPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/disconnect",
+        "headers": {
+          "Authorization": "{authHeader}",
+          "x-client-id": "{clientId}"
+        },
+        "body": {
+          "requestId": "disconnect-{sessionId}",
+          "principalId": "{clientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "logoutUser",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/logout",
+        "headers": {
+          "Authorization": "{authHeader}",
+          "x-client-id": "{clientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "loggedOut": true
+        }
+      }
+    }
+  ]
+}

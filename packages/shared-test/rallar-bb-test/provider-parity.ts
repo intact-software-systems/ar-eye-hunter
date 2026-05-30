@@ -67,6 +67,7 @@ export type RallarBlackBoxRunnerParityOptions = Readonly<{
     provider?: RallarBlackBoxRunnerProviderName;
     scenarioExecutionNumber?: number;
     includeReceiveWaits?: boolean;
+    messageShape?: 'raw' | 'event';
 }>;
 
 export type RallarBlackBoxRunnerParityOmittedCommand = Readonly<{
@@ -176,8 +177,8 @@ function parityPayload(
         return {
             payload: envelope,
             roomId,
-            typeId: 'rallar.black-box.parity',
-            topicId: `rallar.black-box.parity.${deliveryMode}`,
+            typeId: 'room.black-box.parity',
+            topicId: `room.black-box.parity.${deliveryMode}`,
             ...(deliveryMode !== 'broadcast' && peerIds.length > 0
                 ? { nextHopPeerIds: peerIds }
                 : {}),
@@ -466,7 +467,33 @@ function toExpectedConnections(command: RallarBlackBoxTestCommand): readonly str
     return parityFromCommand(command)?.expectedConnections ?? [];
 }
 
-function sendResponse(command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send' }>): Record<string, unknown> {
+function usesEventShapedRtcMessages(
+    provider: RallarBlackBoxRunnerProviderName,
+    messageShape?: RallarBlackBoxRunnerParityOptions['messageShape'],
+): boolean {
+    if (messageShape) {
+        return messageShape === 'event';
+    }
+
+    return provider === 'rallar-remote-browser';
+}
+
+function expectedRtcMessage(
+    provider: RallarBlackBoxRunnerProviderName,
+    command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send' }>,
+    messageShape?: RallarBlackBoxRunnerParityOptions['messageShape'],
+): unknown {
+    const expected = command.expect ?? command.send;
+    return usesEventShapedRtcMessages(provider, messageShape)
+        ? { data: expected }
+        : expected;
+}
+
+function sendResponse(
+    provider: RallarBlackBoxRunnerProviderName,
+    command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send' }>,
+    messageShape?: RallarBlackBoxRunnerParityOptions['messageShape'],
+): Record<string, unknown> {
     const expectedConnections = toExpectedConnections(command);
     if (expectedConnections.length !== 1) {
         return {};
@@ -475,7 +502,7 @@ function sendResponse(command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.s
     return {
         connection: expectedConnections[0],
         withinMs: command.timeoutMs,
-        message: command.expect ?? command.send,
+        message: expectedRtcMessage(provider, command, messageShape),
     };
 }
 
@@ -485,6 +512,7 @@ function waitInteractions(
     config: RallarBlackBoxTestConfig,
     scenarioExecutionNumber: number,
     nextInteractionNumber: number,
+    messageShape?: RallarBlackBoxRunnerParityOptions['messageShape'],
 ): readonly Record<string, unknown>[] {
     const parity = parityFromCommand(command);
     if (!parity) {
@@ -528,7 +556,7 @@ function waitInteractions(
             {
                 connection,
                 withinMs: command.timeoutMs,
-                message: command.expect ?? command.send,
+                message: expectedRtcMessage(provider, command, messageShape),
             },
             waitParity,
         );
@@ -605,7 +633,7 @@ export function toRallarBlackBoxRunnerParityInteractions(
                     action: 'send',
                     send: command.send,
                 },
-                sendResponse(command),
+                sendResponse(provider, command, options.messageShape),
                 parity ?? parityMetadata('send.direct', {
                     runnerAction: 'send',
                 }),
@@ -619,6 +647,7 @@ export function toRallarBlackBoxRunnerParityInteractions(
                     config,
                     scenarioExecutionNumber,
                     interactionExecutionNumber,
+                    options.messageShape,
                 );
                 interactions.push(...waits);
                 interactionExecutionNumber += waits.length;

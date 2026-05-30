@@ -615,6 +615,230 @@ describe('rallar-bb-test', () => {
         )).toBe(true);
     });
 
+    it('routes ws.send through browser Rallar signaling when no raw socket is open', async () => {
+        const sends: unknown[] = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                connect: async () => ({ connected: true }),
+                send: async () => ({ sent: true }),
+                sendWs: async (input) => {
+                    sends.push(input);
+                    return {
+                        status: 'sent',
+                        transport: 'ws',
+                    };
+                },
+                close: async () => ({ closed: true }),
+                health: async () => ({ connected: true }),
+            },
+        });
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-browser-ws',
+            config: {
+                apiBaseUrl: 'https://api.example.test',
+                actor: 'alice',
+                roomId: 'room-1',
+                control: {
+                    providerMode: 'browser-rallar',
+                },
+            },
+        });
+        const sendResult = await runtime.execute({
+            kind: 'ws.send',
+            commandId: 'ws-send-rallar',
+            connection: 'rallarApi',
+            data: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-a',
+                scope: 'room',
+                roomId: 'room-1',
+                groupId: 'room-1',
+                typeId: 'room.black-box.ws.probe',
+                topicId: 'room.black-box.ws.probe',
+                contextId: 'room-1',
+                payload: {
+                    text: 'hello over signaling',
+                },
+            },
+        });
+
+        expect(sendResult.ok).toBe(true);
+        expect(sends).toEqual([{
+            applicationId: 'app-1',
+            workspaceId: 'workspace-a',
+            scope: 'room',
+            roomId: 'room-1',
+            groupId: 'room-1',
+            typeId: 'room.black-box.ws.probe',
+            topicId: 'room.black-box.ws.probe',
+            contextId: 'room-1',
+            payload: {
+                text: 'hello over signaling',
+            },
+        }]);
+        expect(sendResult.value).toMatchObject({
+            connection: 'rallarApi',
+            via: 'rallar-signaling-websocket',
+        });
+        expect(selectRallarBlackBoxEvents(runtime.state()).some((event) =>
+            event.topic === 'rallar.bb.ws.sent_via_rallar_signaling'
+        )).toBe(true);
+    });
+
+    it('prefers browser Rallar signaling for app WS envelopes even when a raw socket is open', async () => {
+        class FakeSocket {
+            readonly url: string;
+            readonly protocol = '';
+            readyState = 0;
+            readonly sent: unknown[] = [];
+            private readonly listeners = new Map<string, Array<(event: unknown) => void>>();
+
+            constructor(url: string) {
+                this.url = url;
+                queueMicrotask(() => {
+                    this.readyState = 1;
+                    this.emit('open', {});
+                });
+            }
+
+            addEventListener(type: string, listener: (event: unknown) => void): void {
+                this.listeners.set(type, [
+                    ...(this.listeners.get(type) ?? []),
+                    listener,
+                ]);
+            }
+
+            removeEventListener(type: string, listener: (event: unknown) => void): void {
+                this.listeners.set(
+                    type,
+                    (this.listeners.get(type) ?? []).filter(entry => entry !== listener),
+                );
+            }
+
+            send(data: unknown): void {
+                this.sent.push(data);
+            }
+
+            close(code?: number, reason?: string): void {
+                this.readyState = 3;
+                this.emit('close', {
+                    code,
+                    reason,
+                    wasClean: true,
+                });
+            }
+
+            private emit(type: string, event: unknown): void {
+                (this.listeners.get(type) ?? []).forEach(listener => listener(event));
+            }
+        }
+
+        const sockets: FakeSocket[] = [];
+        const connects: unknown[] = [];
+        const sends: unknown[] = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            webSocketFactory: (url) => {
+                const socket = new FakeSocket(url);
+                sockets.push(socket);
+                return socket;
+            },
+            rallarRuntime: {
+                connect: async (config) => {
+                    connects.push(config);
+                    return { connected: true };
+                },
+                send: async () => ({ sent: true }),
+                sendWs: async (input) => {
+                    if (connects.length === 0) {
+                        throw new Error('Black-box Rallar runtime is not connected.');
+                    }
+                    sends.push(input);
+                    return {
+                        status: 'sent',
+                        transport: 'ws',
+                    };
+                },
+                close: async () => ({ closed: true }),
+                health: async () => ({ connected: true }),
+            },
+        });
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-browser-ws',
+            config: {
+                apiBaseUrl: 'https://api.example.test',
+                actor: 'alice',
+                sessionId: 'alice-session',
+                roomId: 'room-1',
+                rallar: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-a',
+                    restoreSession: true,
+                },
+                control: {
+                    providerMode: 'browser-rallar',
+                },
+            },
+        });
+        const openResult = await runtime.execute({
+            kind: 'ws.open',
+            commandId: 'ws-open-rallar',
+            connection: 'rallarApi',
+            url: 'wss://control.example.test/ws',
+        });
+        const sendResult = await runtime.execute({
+            kind: 'ws.send',
+            commandId: 'ws-send-rallar',
+            connection: 'rallarApi',
+            data: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-a',
+                scope: 'room',
+                roomId: 'room-1',
+                groupId: 'room-1',
+                typeId: 'room.manual.message',
+                topicId: 'room.manual.message',
+                contextId: 'room-1',
+                payload: {
+                    text: 'hello over app ws',
+                },
+            },
+        });
+
+        expect(openResult.ok).toBe(true);
+        expect(sendResult.ok).toBe(true);
+        expect(sockets[0].sent).toEqual([]);
+        expect(connects).toHaveLength(1);
+        expect(connects[0]).toMatchObject({
+            connection: 'rallarApi',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                applicationId: 'app-1',
+                workspaceId: 'workspace-a',
+                restoreSession: true,
+                transport: 'realtime',
+            },
+        });
+        expect(sends).toEqual([{
+            applicationId: 'app-1',
+            workspaceId: 'workspace-a',
+            scope: 'room',
+            roomId: 'room-1',
+            groupId: 'room-1',
+            typeId: 'room.manual.message',
+            topicId: 'room.manual.message',
+            contextId: 'room-1',
+            payload: {
+                text: 'hello over app ws',
+            },
+        }]);
+    });
+
     it('drives a black-box runner RTC scenario through the facade adapter', async () => {
         const runtime = createRallarBlackBoxTestRuntime({
             commandExecutor: async (command, context) => {

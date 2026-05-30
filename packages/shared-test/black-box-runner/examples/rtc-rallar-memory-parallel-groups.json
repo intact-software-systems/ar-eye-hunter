@@ -1,0 +1,244 @@
+{
+  "variables": {
+    "roomId": "bb-memory-parallel-room"
+  },
+  "connections": {
+    "aliceRtc": {
+      "type": "rtc",
+      "provider": "rallar-memory",
+      "actor": "alice",
+      "peerId": "alice",
+      "roomId": "{roomId}",
+      "remotePeerId": "bob"
+    },
+    "bobRtc": {
+      "type": "rtc",
+      "provider": "rallar-memory",
+      "actor": "bob",
+      "peerId": "bob",
+      "roomId": "{roomId}",
+      "remotePeerId": "alice"
+    },
+    "charlieRtc": {
+      "type": "rtc",
+      "provider": "rallar-memory",
+      "actor": "charlie",
+      "peerId": "charlie",
+      "roomId": "{roomId}"
+    }
+  },
+  "steps": [
+    {
+      "name": "connectAlice",
+      "type": "rtc.connect",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "connectBob",
+      "type": "rtc.connect",
+      "connection": "bobRtc"
+    },
+    {
+      "name": "connectCharlie",
+      "type": "rtc.connect",
+      "connection": "charlieRtc"
+    },
+    {
+      "name": "parallelRtcTraffic",
+      "type": "parallel",
+      "maxConcurrency": 2,
+      "groups": [
+        {
+          "name": "direct",
+          "steps": [
+            {
+              "name": "bobSendsDirectToAlice",
+              "type": "rtc.send",
+              "connection": "bobRtc",
+              "request": {
+                "send": {
+                  "topic": "black-box.parallel.direct",
+                  "toPeerId": "alice",
+                  "payload": {
+                    "text": "direct from bob"
+                  }
+                }
+              },
+              "expect": {
+                "connection": "aliceRtc",
+                "withinMs": 1000,
+                "consume": true,
+                "message": {
+                  "topic": "black-box.parallel.direct",
+                  "toPeerId": "alice",
+                  "payload": {
+                    "text": "direct from bob"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "broadcast",
+          "steps": [
+            {
+              "name": "aliceBroadcastsToRoom",
+              "type": "rtc.send",
+              "connection": "aliceRtc",
+              "request": {
+                "send": {
+                  "topic": "black-box.parallel.broadcast",
+                  "broadcast": true,
+                  "payload": {
+                    "text": "broadcast from alice"
+                  }
+                }
+              },
+              "expect": {
+                "connection": "bobRtc",
+                "withinMs": 1000,
+                "consume": true,
+                "message": {
+                  "topic": "black-box.parallel.broadcast",
+                  "broadcast": true,
+                  "payload": {
+                    "text": "broadcast from alice"
+                  }
+                }
+              }
+            },
+            {
+              "name": "charlieReceivesParallelBroadcast",
+              "type": "rtc.wait",
+              "connection": "charlieRtc",
+              "expect": {
+                "connection": "charlieRtc",
+                "withinMs": 1000,
+                "consume": true,
+                "message": {
+                  "topic": "black-box.parallel.broadcast",
+                  "broadcast": true,
+                  "payload": {
+                    "text": "broadcast from alice"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "parallelCloseAfterTraffic",
+      "type": "parallel",
+      "maxConcurrency": 3,
+      "groups": [
+        {
+          "name": "close-alice",
+          "steps": [
+            {
+              "name": "closeAliceAfterTraffic",
+              "type": "rtc.close",
+              "connection": "aliceRtc"
+            }
+          ]
+        },
+        {
+          "name": "close-bob",
+          "steps": [
+            {
+              "name": "closeBobAfterTraffic",
+              "type": "rtc.close",
+              "connection": "bobRtc"
+            }
+          ]
+        },
+        {
+          "name": "close-charlie",
+          "steps": [
+            {
+              "name": "closeCharlieAfterTraffic",
+              "type": "rtc.close",
+              "connection": "charlieRtc"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "parallelReconnect",
+      "type": "parallel",
+      "maxConcurrency": 3,
+      "groups": [
+        {
+          "name": "reconnect-alice",
+          "steps": [
+            {
+              "name": "reconnectAlice",
+              "type": "rtc.connect",
+              "connection": "aliceRtc"
+            }
+          ]
+        },
+        {
+          "name": "reconnect-bob",
+          "steps": [
+            {
+              "name": "reconnectBob",
+              "type": "rtc.connect",
+              "connection": "bobRtc"
+            }
+          ]
+        },
+        {
+          "name": "reconnect-charlie",
+          "steps": [
+            {
+              "name": "reconnectCharlie",
+              "type": "rtc.connect",
+              "connection": "charlieRtc"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "parallelFinalClose",
+      "type": "parallel",
+      "maxConcurrency": 3,
+      "groups": [
+        {
+          "name": "final-close-alice",
+          "steps": [
+            {
+              "name": "closeAlice",
+              "type": "rtc.close",
+              "connection": "aliceRtc"
+            }
+          ]
+        },
+        {
+          "name": "final-close-bob",
+          "steps": [
+            {
+              "name": "closeBob",
+              "type": "rtc.close",
+              "connection": "bobRtc"
+            }
+          ]
+        },
+        {
+          "name": "final-close-charlie",
+          "steps": [
+            {
+              "name": "closeCharlie",
+              "type": "rtc.close",
+              "connection": "charlieRtc"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

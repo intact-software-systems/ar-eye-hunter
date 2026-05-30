@@ -128,6 +128,8 @@ describe('rallar-black-box RTC diagnostics', () => {
             }),
             event('event-channel', 'rallar.browser.data_channel.ready', 170, {
                 laneHealth: 'open',
+                readyPeerIds: ['alice-session', 'bob-session'],
+                activePeerIds: ['alice-session', 'bob-session'],
             }),
             {
                 eventId: 'event-message',
@@ -169,6 +171,8 @@ describe('rallar-black-box RTC diagnostics', () => {
             sessionId: 'alice-session',
             expectedClients: ['alice-session', 'bob-session'],
             observedClients: ['alice-session', 'bob-session'],
+            readyPeerIds: ['alice-session', 'bob-session'],
+            activePeerIds: ['alice-session', 'bob-session'],
             missingClients: [],
             staleClients: [],
         });
@@ -233,6 +237,45 @@ describe('rallar-black-box RTC diagnostics', () => {
             message: 'channel timeout',
         });
         expect(diagnostics.membership.missingClients).toEqual(['bob-session']);
+    });
+
+    it('surfaces ready peers, active peers, lane health, and NACK evidence', () => {
+        const diagnostics = deriveRtcDiagnostics(state([
+            event('event-send', 'rallar.bb.fake.rtc.send_completed', 130, {
+                expectedClients: ['bob-session', 'charlie-session'],
+                readyPeerIds: ['bob-session'],
+                activePeerIds: ['bob-session'],
+                laneHealth: 'degraded',
+                peerCount: 1,
+            }),
+            {
+                ...event('event-nack', 'rallar.bb.fake.rtc.not-yet-in-sync', 140, {
+                    negativeCase: 'not-yet-in-sync',
+                    nack: {
+                        code: 'not-yet-in-sync',
+                        message: 'Snapshot is behind the minimum requested version.',
+                    },
+                    expectedClients: ['bob-session', 'charlie-session'],
+                    observedClients: ['bob-session'],
+                }),
+                severity: 'warning',
+            },
+        ], [
+            result('send-1', 'rtc.send', 120, 20),
+        ]));
+
+        expect(diagnostics.membership).toMatchObject({
+            readyPeerIds: ['bob-session'],
+            activePeerIds: ['bob-session'],
+            missingClients: ['charlie-session'],
+            nackCodes: ['not-yet-in-sync'],
+            peerCount: 1,
+            laneHealth: 'degraded',
+        });
+        expect(diagnostics.failure).toMatchObject({
+            source: 'rallar-runtime',
+            message: 'Snapshot is behind the minimum requested version.',
+        });
     });
 
     it('classifies control, provider config, auth, permission, and cleanup failures', () => {

@@ -238,6 +238,42 @@ describe('state API workflows', () => {
         });
     });
 
+    it('creates and joins a state group with an explicit group id', async () => {
+        stubFetch(({ url, method, body }) => {
+            if (method === 'POST' && url.endsWith('/groups')) {
+                const request = body as { groupId: string };
+                return jsonResponse(groupSnapshot(request.groupId));
+            }
+
+            if (
+                method === 'PUT' &&
+                url.endsWith('/groups/rallar/sessions/session-1')
+            ) {
+                return jsonResponse(groupSnapshot('rallar'));
+            }
+
+            return notFoundResponse();
+        });
+
+        const result = await createAndJoinStateGroup(
+            'Rallar',
+            'principal-1',
+            'session-1',
+            undefined,
+            {},
+            'rallar',
+        );
+
+        expect(result.group.groupId).toBe('rallar');
+        expect(fetchCalls.map((call) => call.method)).toEqual(['POST', 'PUT']);
+        expect(fetchCalls[0].body).toMatchObject({
+            groupId: 'rallar',
+            slug: 'rallar',
+            displayName: 'Rallar',
+            createdByPrincipalId: 'principal-1',
+        });
+    });
+
     it('reuses state group workflow request IDs across HTTP command retries', async () => {
         vi.spyOn(crypto, 'randomUUID')
             .mockReturnValueOnce('group-retry' as ReturnType<typeof crypto.randomUUID>)

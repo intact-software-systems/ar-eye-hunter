@@ -1,0 +1,28 @@
+{
+  "summary": {
+    "total": 2,
+    "success": 1,
+    "failure": 1
+  },
+  "failures": [
+    {
+      "resultKey": "aliceWaits-i2-r1",
+      "name": "aliceWaits",
+      "transport": "RTC",
+      "action": "wait",
+      "connection": "aliceRtc",
+      "expected": {
+        "message": {
+          "topic": "fixture.message"
+        }
+      },
+      "actual": {
+        "reason": "timeout",
+        "token": "<redacted:apiToken>"
+      }
+    }
+  ],
+  "outputs": {
+    "authHeader": "Bearer <redacted:apiToken>"
+  }
+}

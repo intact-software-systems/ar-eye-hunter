@@ -29,6 +29,13 @@ Deno.test('control OpenAPI spec describes the current server and control endpoin
     assertEquals(spec.openapi, '3.1.0');
     assertEquals(spec.servers?.[0]?.url, 'http://127.0.0.1:5180');
     assert(spec.paths?.['/health']);
+    assert(spec.paths?.['/retention/cleanup']);
+    assert(spec.paths?.['/runs/{runId}/commands']);
+    assert(spec.paths?.['/runs/{runId}/reset']);
+    assert(spec.paths?.['/runs/{runId}/artifacts']);
+    assert(spec.paths?.['/runs/{runId}/events.jsonl']);
+    assert(spec.paths?.['/runs/{runId}/results.jsonl']);
+    assert(spec.paths?.['/runs/{runId}/failure-bundle']);
     assert(spec.paths?.['/runs/{runId}/agents/{agentId}/commands']);
     assert(spec.paths?.['/control']);
 });

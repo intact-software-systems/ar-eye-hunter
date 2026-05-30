@@ -6,9 +6,9 @@
     "@shared-test/": "../../packages/shared-test/"
   },
   "tasks": {
-    "dev": "deno run --watch --allow-net --allow-env src/main.ts",
-    "start": "deno run --allow-net --allow-env src/main.ts",
-    "check": "deno check src/main.ts test/control-service.test.ts test/swagger-routes.test.ts",
+    "dev": "deno run --watch --allow-net --allow-env --allow-read --allow-write src/main.ts",
+    "start": "deno run --allow-net --allow-env --allow-read --allow-write src/main.ts",
+    "check": "deno check src/main.ts test/control-service.test.ts test/swagger-routes.test.ts test/control-artifacts.test.ts",
     "test": "deno test"
   },
   "compilerOptions": {

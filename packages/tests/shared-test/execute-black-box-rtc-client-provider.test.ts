@@ -3419,7 +3419,13 @@ Deno.test('createRallarBrowserRtcProvider resolves expect.connection to realtime
 
 Deno.test('createRallarBrowserRtcProvider resolves expect.connection to messages.rtc nextHopPeerIds', async () => {
     const pagesByConnection: Record<string, any> = {}
+    const connectInputs: any[] = []
     const sentInputs: any[] = []
+    const roomRef = {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-a',
+        groupId: 'room-1',
+    }
 
     function createPage() {
         return {
@@ -3443,6 +3449,7 @@ Deno.test('createRallarBrowserRtcProvider resolves expect.connection to messages
 
             async evaluate(_fn: (...args: any[]) => unknown, input?: any) {
                 if (input?.connection) {
+                    connectInputs.push(input)
                     pagesByConnection[input.connection] = this
                     return {
                         status: 'connected',
@@ -3528,14 +3535,18 @@ Deno.test('createRallarBrowserRtcProvider resolves expect.connection to messages
                         connection: 'aliceRtc',
                         provider: 'rallar-browser',
                         actor: 'alice',
-                        roomId: 'room-1',
-                        rallar: {
-                            apiBaseUrl: 'https://api.example.test',
-                            username: 'alice',
-                            password: 'secret',
-                            transport: 'messages.rtc',
-                            typeId: 'chat.message',
-                            topicId: 'chat',
+                            roomId: 'room-1',
+                            roomRef,
+                            rallar: {
+                                apiBaseUrl: 'https://api.example.test',
+                                username: 'alice',
+                                password: 'secret',
+                                transport: 'messages.rtc',
+                                applicationId: 'app-1',
+                                workspaceId: 'workspace-a',
+                                roomRef,
+                                typeId: 'chat.message',
+                                topicId: 'chat',
                         },
                         scenarioExecutionNumber: 1,
                         interactionExecutionNumber: 1,
@@ -3551,14 +3562,18 @@ Deno.test('createRallarBrowserRtcProvider resolves expect.connection to messages
                         connection: 'bobRtc',
                         provider: 'rallar-browser',
                         actor: 'bob',
-                        roomId: 'room-1',
-                        rallar: {
-                            apiBaseUrl: 'https://api.example.test',
-                            username: 'bob',
-                            password: 'secret',
-                            transport: 'messages.rtc',
-                            typeId: 'chat.message',
-                            topicId: 'chat',
+                            roomId: 'room-1',
+                            roomRef,
+                            rallar: {
+                                apiBaseUrl: 'https://api.example.test',
+                                username: 'bob',
+                                password: 'secret',
+                                transport: 'messages.rtc',
+                                applicationId: 'app-1',
+                                workspaceId: 'workspace-a',
+                                roomRef,
+                                typeId: 'chat.message',
+                                topicId: 'chat',
                         },
                         scenarioExecutionNumber: 1,
                         interactionExecutionNumber: 2,
@@ -3575,6 +3590,8 @@ Deno.test('createRallarBrowserRtcProvider resolves expect.connection to messages
                         provider: 'rallar-browser',
                         actor: 'alice',
                         roomId: 'room-1',
+                        roomRef,
+                        minSnapshotVersion: 9,
                         send: {
                             payload: {
                                 text: 'hello bob',
@@ -3610,9 +3627,21 @@ Deno.test('createRallarBrowserRtcProvider resolves expect.connection to messages
 
     assertEquals(report.summary.failure, 0)
     assertEquals(report.resultsByName.aliceSendsToBob[0].status, 'SUCCESS')
+    assertEquals(report.resultsByName.aliceSendsToBob[0].actual.diagnostics.roomRef, roomRef)
+    assertEquals(
+        report.resultsByName.aliceSendsToBob[0].actual.sendResult.nextHopPeerIds,
+        ['bob-rallar-session'],
+    )
+    assertEquals(connectInputs[0].roomRef, roomRef)
+    assertEquals(connectInputs[0].rallar.scope, {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-a',
+    })
     assertEquals(sentInputs[0].nextHopPeerIds, ['bob-rallar-session'])
     assertEquals(sentInputs[0].peerIds, undefined)
     assertEquals(sentInputs[0].roomId, 'room-1')
+    assertEquals(sentInputs[0].roomRef, roomRef)
+    assertEquals(sentInputs[0].minSnapshotVersion, 9)
     assertEquals(sentInputs[0].payload, {
         text: 'hello bob',
     })
@@ -7252,6 +7281,86 @@ Deno.test('createRallarWebRtcProvider reports in-memory runtime failure when tar
     )
 })
 
+Deno.test('createRtcProviderFromClientFactory preserves failed send result details', async () => {
+    const fakeClient = createFakeRtcClient()
+    fakeClient.send = async () => {
+        const error = new Error('fake send had no route') as Error & {
+            sendResult?: unknown
+            diagnostics?: unknown
+        }
+        error.sendResult = {
+            status: 'no-peers',
+            peerIds: [],
+        }
+        error.diagnostics = {
+            phase: 'send',
+            reason: 'no-route',
+        }
+        throw error
+    }
+
+    const provider = createRtcProviderFromClientFactory({
+        createClient: () => fakeClient,
+    })
+
+    const report = await executeBlackBox(
+        [
+            {
+                RTC: {
+                    request: {
+                        action: 'connect',
+                        connection: 'aliceRtc',
+                        provider: 'fake',
+                        actor: 'alice',
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 1,
+                    },
+                    response: {},
+                },
+                connectAlice: {},
+            },
+            {
+                RTC: {
+                    request: {
+                        action: 'send',
+                        connection: 'aliceRtc',
+                        provider: 'fake',
+                        actor: 'alice',
+                        send: {
+                            topic: 'chat.message',
+                        },
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 2,
+                    },
+                    response: {},
+                },
+                aliceSendsWithoutRoute: {},
+            },
+        ],
+        0,
+        {
+            rtcProviders: {
+                fake: provider,
+            },
+        },
+    )
+
+    const sendResult = report.resultsByName.aliceSendsWithoutRoute[0]
+
+    assertEquals(report.summary.failure, 1)
+    assertEquals(sendResult.status, 'FAILURE')
+    assertEquals(sendResult.result, 'RTC send failed')
+    assertEquals(sendResult.actual.sendResult, {
+        status: 'no-peers',
+        peerIds: [],
+    })
+    assertEquals(sendResult.actual.diagnostics, {
+        phase: 'send',
+        reason: 'no-route',
+    })
+    assertEquals(typeof sendResult.actual.sendLatencyMs, 'number')
+})
+
 Deno.test('RTC success status includes generic routing diagnostics', async () => {
     const provider = createRallarInMemoryProvider()
 
@@ -7297,6 +7406,360 @@ Deno.test('RTC success status includes generic routing diagnostics', async () =>
     assertEquals(result.actual.groupId, 'group-1')
     assertEquals(result.actual.overlayId, 'overlay-1')
     assertEquals(result.actual.remotePeerId, 'bob')
+})
+
+Deno.test('createRtcProviderFromClientFactory supports rtc.wait expect.diagnostic', async () => {
+    const fakeClient = createFakeRtcClient()
+
+    const provider = createRtcProviderFromClientFactory({
+        createClient: () => fakeClient,
+    })
+
+    const reportPromise = executeBlackBox(
+        [
+            {
+                RTC: {
+                    request: {
+                        action: 'connect',
+                        connection: 'aliceRtc',
+                        provider: 'fake',
+                        actor: 'alice',
+                        roomId: 'room-1',
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 1,
+                    },
+                    response: {},
+                },
+                connectAlice: {},
+            },
+            {
+                RTC: {
+                    request: {
+                        action: 'wait',
+                        connection: 'aliceRtc',
+                        provider: 'fake',
+                        actor: 'alice',
+                        roomId: 'room-1',
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 2,
+                    },
+                    response: {
+                        withinMs: 1000,
+                        diagnostic: {
+                            topic: 'fake.rtc.ready',
+                            data: {
+                                phase: 'lane-open',
+                                status: 'partial',
+                            },
+                        },
+                    },
+                },
+                waitForDiagnostic: {},
+            },
+        ],
+        0,
+        {
+            rtcProviders: {
+                fake: provider,
+            },
+        },
+    )
+
+    setTimeout(() => {
+        fakeClient.emitMessage({
+            kind: 'diagnostic',
+            topic: 'fake.rtc.ready',
+            data: {
+                phase: 'lane-open',
+                status: 'partial',
+            },
+        })
+    }, 25)
+
+    const report = await reportPromise
+
+    assertEquals(report.summary.failure, 0)
+    assertEquals(report.resultsByName.waitForDiagnostic[0].status, 'SUCCESS')
+    assertEquals(
+        report.resultsByName.waitForDiagnostic[0].actual.matchedDiagnostic.topic,
+        'fake.rtc.ready',
+    )
+    assertEquals(report.rtcDiagnostics.aliceRtc[0].topic, 'fake.rtc.ready')
+    assertEquals(report.rtcMessages.aliceRtc[0].data.topic, 'fake.rtc.ready')
+})
+
+Deno.test('createRtcProviderFromClientFactory supports rtc.wait expect.health', async () => {
+    const fakeClient = createFakeRtcClient()
+    let ready = false
+    fakeClient.diagnostics = () => ({
+        ready,
+        phase: ready ? 'ready' : 'connecting',
+    })
+
+    const provider = createRtcProviderFromClientFactory({
+        createClient: () => fakeClient,
+    })
+
+    const reportPromise = executeBlackBox(
+        [
+            {
+                RTC: {
+                    request: {
+                        action: 'connect',
+                        connection: 'aliceRtc',
+                        provider: 'fake',
+                        actor: 'alice',
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 1,
+                    },
+                    response: {},
+                },
+                connectAlice: {},
+            },
+            {
+                RTC: {
+                    request: {
+                        action: 'wait',
+                        connection: 'aliceRtc',
+                        provider: 'fake',
+                        actor: 'alice',
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 2,
+                    },
+                    response: {
+                        withinMs: 1000,
+                        health: {
+                            ready: true,
+                            phase: 'ready',
+                        },
+                    },
+                },
+                waitForHealth: {},
+            },
+        ],
+        0,
+        {
+            rtcProviders: {
+                fake: provider,
+            },
+        },
+    )
+
+    setTimeout(() => {
+        ready = true
+    }, 25)
+
+    const report = await reportPromise
+
+    assertEquals(report.summary.failure, 0)
+    assertEquals(report.resultsByName.waitForHealth[0].status, 'SUCCESS')
+    assertEquals(report.resultsByName.waitForHealth[0].actual.matchedHealth, {
+        ready: true,
+        phase: 'ready',
+    })
+})
+
+Deno.test('createRtcProviderFromClientFactory reports RTC connect, send, and first-payload latency', async () => {
+    const fakeClient = createFakeRtcClient()
+    fakeClient.send = async (message: unknown) => {
+        fakeClient.sentMessages.push(message)
+        setTimeout(() => {
+            fakeClient.emitMessage({
+                topic: 'chat.message',
+                payload: {
+                    text: 'hello',
+                },
+            })
+        }, 10)
+    }
+
+    const provider = createRtcProviderFromClientFactory({
+        createClient: () => fakeClient,
+    })
+
+    const report = await executeBlackBox(
+        [
+            {
+                RTC: {
+                    request: {
+                        action: 'connect',
+                        connection: 'aliceRtc',
+                        provider: 'fake',
+                        actor: 'alice',
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 1,
+                    },
+                    response: {},
+                },
+                connectAlice: {},
+            },
+            {
+                RTC: {
+                    request: {
+                        action: 'send',
+                        connection: 'aliceRtc',
+                        provider: 'fake',
+                        actor: 'alice',
+                        send: {
+                            topic: 'chat.message',
+                        },
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 2,
+                    },
+                    response: {
+                        withinMs: 1000,
+                        message: {
+                            topic: 'chat.message',
+                            payload: {
+                                text: 'hello',
+                            },
+                        },
+                    },
+                },
+                aliceSends: {},
+            },
+        ],
+        0,
+        {
+            rtcProviders: {
+                fake: provider,
+            },
+        },
+    )
+
+    const connectResult = report.resultsByName.connectAlice[0]
+    const sendResult = report.resultsByName.aliceSends[0]
+
+    assertEquals(report.summary.failure, 0)
+    assertEquals(typeof connectResult.actual.connectLatencyMs, 'number')
+    assertEquals(typeof sendResult.actual.sendLatencyMs, 'number')
+    assertEquals(typeof sendResult.actual.firstPayloadLatencyMs, 'number')
+    assertEquals(sendResult.actual.firstPayloadLatencyMs >= 0, true)
+})
+
+Deno.test('createRtcProviderFromClientFactory reports missing RTC diagnostics clearly', async () => {
+    const fakeClient = createFakeRtcClient()
+
+    const provider = createRtcProviderFromClientFactory({
+        createClient: () => fakeClient,
+    })
+
+    const report = await executeBlackBox(
+        [
+            {
+                RTC: {
+                    request: {
+                        action: 'connect',
+                        connection: 'aliceRtc',
+                        provider: 'fake',
+                        actor: 'alice',
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 1,
+                    },
+                    response: {},
+                },
+                connectAlice: {},
+            },
+            {
+                RTC: {
+                    request: {
+                        action: 'wait',
+                        connection: 'aliceRtc',
+                        provider: 'fake',
+                        actor: 'alice',
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 2,
+                    },
+                    response: {
+                        withinMs: 20,
+                        diagnostic: {
+                            topic: 'fake.rtc.never-ready',
+                        },
+                    },
+                },
+                waitForMissingDiagnostic: {},
+            },
+        ],
+        0,
+        {
+            rtcProviders: {
+                fake: provider,
+            },
+        },
+    )
+
+    assertEquals(report.summary.failure, 1)
+    assertEquals(
+        report.resultsByName.waitForMissingDiagnostic[0].result,
+        'Expected RTC diagnostic was not received',
+    )
+    assertEquals(report.resultsByName.waitForMissingDiagnostic[0].actual.diagnostics, [])
+})
+
+Deno.test('createRtcProviderFromClientFactory reports missing RTC health clearly', async () => {
+    const fakeClient = createFakeRtcClient()
+    fakeClient.diagnostics = () => ({
+        ready: false,
+        phase: 'connecting',
+    })
+
+    const provider = createRtcProviderFromClientFactory({
+        createClient: () => fakeClient,
+    })
+
+    const report = await executeBlackBox(
+        [
+            {
+                RTC: {
+                    request: {
+                        action: 'connect',
+                        connection: 'aliceRtc',
+                        provider: 'fake',
+                        actor: 'alice',
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 1,
+                    },
+                    response: {},
+                },
+                connectAlice: {},
+            },
+            {
+                RTC: {
+                    request: {
+                        action: 'wait',
+                        connection: 'aliceRtc',
+                        provider: 'fake',
+                        actor: 'alice',
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 2,
+                    },
+                    response: {
+                        withinMs: 20,
+                        health: {
+                            ready: true,
+                        },
+                    },
+                },
+                waitForMissingHealth: {},
+            },
+        ],
+        0,
+        {
+            rtcProviders: {
+                fake: provider,
+            },
+        },
+    )
+
+    assertEquals(report.summary.failure, 1)
+    assertEquals(
+        report.resultsByName.waitForMissingHealth[0].result,
+        'Expected RTC health was not observed',
+    )
+    assertEquals(report.resultsByName.waitForMissingHealth[0].actual.health, {
+        ready: false,
+        phase: 'connecting',
+    })
 })
 
 Deno.test('RTC failure status includes generic routing diagnostics', async () => {

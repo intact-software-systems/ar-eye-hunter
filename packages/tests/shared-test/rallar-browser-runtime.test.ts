@@ -12,8 +12,10 @@ const facade = vi.hoisted(() => {
         session,
         unsubscribeRealtime: vi.fn(),
         unsubscribeMessagesRtc: vi.fn(),
+        unsubscribeMessagesWs: vi.fn(),
         rallar: {
             configure: vi.fn(),
+            setDefaults: vi.fn(),
             auth: {
                 restore: vi.fn(),
                 login: vi.fn(),
@@ -35,6 +37,10 @@ const facade = vi.hoisted(() => {
                     onMessage: vi.fn(),
                     send: vi.fn(),
                 },
+                ws: {
+                    onMessage: vi.fn(),
+                    send: vi.fn(),
+                },
             },
             disconnect: vi.fn(),
             status: vi.fn(),
@@ -53,9 +59,15 @@ type Runtime = Readonly<{
         connection: string;
         actor?: string;
         roomId?: string;
+        roomRef?: {
+            applicationId: string;
+            workspaceId?: string;
+            groupId: string;
+        };
         rallar: Record<string, unknown>;
     }): Promise<unknown>;
     send(input: unknown): Promise<unknown>;
+    sendWs(input: unknown): Promise<unknown>;
     close(): Promise<unknown>;
 }>;
 
@@ -71,6 +83,7 @@ function resetFacade(): void {
     vi.clearAllMocks();
     events.length = 0;
     facade.rallar.auth.restore.mockReturnValue(undefined);
+    facade.rallar.setDefaults.mockReturnValue(undefined);
     facade.rallar.auth.login.mockResolvedValue(facade.session);
     facade.rallar.auth.registerAndLogin.mockResolvedValue(facade.session);
     facade.rallar.auth.logout.mockResolvedValue(undefined);
@@ -79,9 +92,11 @@ function resetFacade(): void {
     facade.rallar.rooms.leave.mockResolvedValue({});
     facade.rallar.realtime.onJson.mockReturnValue(facade.unsubscribeRealtime);
     facade.rallar.messages.rtc.onMessage.mockReturnValue(facade.unsubscribeMessagesRtc);
+    facade.rallar.messages.ws.onMessage.mockReturnValue(facade.unsubscribeMessagesWs);
     facade.rallar.realtime.health.mockReturnValue([]);
     facade.rallar.realtime.sendJson.mockResolvedValue([]);
     facade.rallar.messages.rtc.send.mockResolvedValue({});
+    facade.rallar.messages.ws.send.mockResolvedValue({});
     facade.rallar.disconnect.mockResolvedValue(undefined);
     facade.rallar.status.mockReturnValue({ connected: true });
     facade.rallar.isConnected.mockReturnValue(true);
@@ -202,6 +217,191 @@ describe('browser Rallar black-box runtime', () => {
             'rallar.browser.cleanup.logout_completed',
             'rallar.browser.closed',
         ]));
+    });
+
+    it('applies scoped Rallar defaults and passes room references through sends', async () => {
+        const runtime = await loadRuntime();
+        const roomRef = {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-a',
+            groupId: 'room-1',
+        };
+
+        const connectResult = await runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            roomRef,
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                applicationId: 'app-1',
+                workspaceId: 'workspace-a',
+                roomRef,
+                transport: 'messages.rtc',
+                typeId: 'chat.message',
+                topicId: 'chat',
+            },
+        });
+
+        expect(facade.rallar.setDefaults).toHaveBeenCalledWith({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-a',
+            room: {
+                roomId: 'room-1',
+                roomRef,
+            },
+            realtime: {
+                laneId: 'realtime',
+            },
+            rtc: {},
+        });
+        expect(facade.rallar.rooms.join).toHaveBeenCalledWith('room-1', {
+            timeoutMs: undefined,
+            scope: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-a',
+            },
+        });
+        expect(connectResult).toMatchObject({
+            scope: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-a',
+            },
+            roomRef,
+        });
+
+        await runtime.send({
+            payload: {
+                text: 'hello scoped room',
+            },
+            minSnapshotVersion: 42,
+        });
+
+        expect(facade.rallar.messages.rtc.send).toHaveBeenCalledWith(expect.objectContaining({
+            roomId: 'room-1',
+            roomRef,
+            minSnapshotVersion: 42,
+            payload: {
+                text: 'hello scoped room',
+            },
+        }));
+    });
+
+    it('subscribes to app WebSocket messages before sending and emits received payloads', async () => {
+        const runtime = await loadRuntime();
+        const roomRef = {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-a',
+            groupId: 'bb-group',
+        };
+        let wsHandler: ((message: Record<string, unknown>) => void) | undefined;
+        facade.rallar.messages.ws.onMessage.mockImplementation((
+            _selector: unknown,
+            handler: (message: Record<string, unknown>) => void,
+        ) => {
+            wsHandler = handler;
+            return facade.unsubscribeMessagesWs;
+        });
+        facade.rallar.messages.ws.send.mockResolvedValue({
+            status: 'sent',
+            messageId: 'ws-message-1',
+        });
+
+        await runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'bb-group',
+            roomRef,
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                applicationId: 'app-1',
+                workspaceId: 'workspace-a',
+                roomRef,
+            },
+        });
+        const sendResult = await runtime.sendWs({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-a',
+            scope: 'room',
+            roomId: 'bb-group',
+            groupId: 'bb-group',
+            typeId: 'room.manual.message',
+            topicId: 'room.manual.message',
+            contextId: 'bb-group',
+            payload: {
+                text: 'hello over ws',
+            },
+        });
+
+        expect(sendResult).toMatchObject({
+            status: 'sent',
+            transport: 'ws',
+            roomId: 'bb-group',
+            scope: 'room',
+            typeId: 'room.manual.message',
+            topicId: 'room.manual.message',
+            contextId: 'bb-group',
+            message: {
+                text: 'hello over ws',
+            },
+        });
+        expect(facade.rallar.messages.ws.onMessage).toHaveBeenCalledWith({
+            typeId: 'room.manual.message',
+            topicId: 'room.manual.message',
+        }, expect.any(Function));
+        expect(facade.rallar.messages.ws.send).toHaveBeenCalledWith(expect.objectContaining({
+            roomId: 'bb-group',
+            roomRef,
+            scope: 'room',
+            typeId: 'room.manual.message',
+            topicId: 'room.manual.message',
+            contextId: 'bb-group',
+            payload: {
+                text: 'hello over ws',
+            },
+        }));
+
+        wsHandler?.({
+            roomId: 'bb-group',
+            senderId: 'bob-session',
+            typeId: 'room.manual.message',
+            topicId: 'room.manual.message',
+            contextId: 'bb-group',
+            payload: {
+                text: 'received over ws',
+            },
+        });
+
+        expect(events).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                kind: 'diagnostic',
+                topic: 'rallar.browser.ws.subscribed',
+                connection: 'aliceRtc',
+                roomId: 'bb-group',
+                typeId: 'room.manual.message',
+                topicId: 'room.manual.message',
+            }),
+            expect.objectContaining({
+                kind: 'message',
+                topic: 'rallar.browser.ws.message',
+                connection: 'aliceRtc',
+                roomId: 'bb-group',
+                senderId: 'bob-session',
+                typeId: 'room.manual.message',
+                topicId: 'room.manual.message',
+                contextId: 'bb-group',
+                data: {
+                    text: 'received over ws',
+                },
+            }),
+        ]));
+
+        await runtime.close();
+        expect(facade.unsubscribeMessagesWs).toHaveBeenCalledTimes(1);
     });
 
     it('emits room join failure diagnostics for permission-style failures', async () => {

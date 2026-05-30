@@ -33,6 +33,10 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     calls.push('send');
                     return { sent: true };
                 },
+                sendWs: async () => {
+                    calls.push('sendWs');
+                    return { wsSent: true };
+                },
                 close: async () => {
                     calls.push('close');
                     return { closed: true };
@@ -47,11 +51,12 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
 
             await runtime.connect({ connection: 'aliceRtc', rallar: {} });
             await runtime.send({ data: { text: 'hello' } });
+            await runtime.sendWs({ typeId: 'room.manual.message', payload: { text: 'hello ws' } });
             await runtime.health();
             await runtime.close();
         });
 
-        expect(calls).toEqual(['connect', 'send', 'health', 'close']);
+        expect(calls).toEqual(['connect', 'send', 'sendWs', 'health', 'close']);
     });
 
     it('bridges browser Rallar events into the shared runtime', async () => {
@@ -204,5 +209,93 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 event.commandId === 'send-real-command-path'
             )).toBe(true);
         });
+    });
+
+    it('fails realtime send commands when the browser runtime resolves no peers', async () => {
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                connect: vi.fn(async () => ({ connected: true })),
+                send: vi.fn(async () => ({
+                    status: 'no-peers',
+                    transport: 'realtime',
+                    roomId: 'awesome',
+                    peerIds: [],
+                    results: [],
+                    health: [],
+                })),
+                close: vi.fn(),
+                health: vi.fn(),
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'rtc.send',
+            commandId: 'manual-send-no-peers',
+            connection: 'aliceRtc',
+            transport: 'realtime',
+            send: {
+                roomId: 'awesome',
+                data: {
+                    text: 'hello solo room',
+                },
+            },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatchObject({
+            code: 'RALLAR_BB_RTC_NO_PEERS',
+            message: 'RTC send resolved no target peers.',
+        });
+        expect(selectRallarBlackBoxDiagnostics(runtime.state()).some(event =>
+            event.topic === 'rallar.bb.rtc.send_failed' &&
+            event.commandId === 'manual-send-no-peers' &&
+            event.severity === 'error'
+        )).toBe(true);
+    });
+
+    it('fails messages.rtc send commands when the browser runtime reports no route', async () => {
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                connect: vi.fn(async () => ({ connected: true })),
+                send: vi.fn(async () => ({
+                    status: 'sent',
+                    transport: 'messages.rtc',
+                    roomId: 'awesome',
+                    message: {
+                        status: 'no-route',
+                        reason: 'No outbound transport route for message test-msg',
+                    },
+                    health: [],
+                })),
+                close: vi.fn(),
+                health: vi.fn(),
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'rtc.send',
+            commandId: 'manual-send-no-route',
+            connection: 'aliceRtc',
+            transport: 'messages.rtc',
+            send: {
+                roomId: 'awesome',
+                typeId: 'manual.type',
+                topicId: 'manual.topic',
+                payload: {
+                    text: 'hello solo room',
+                },
+            },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatchObject({
+            code: 'RALLAR_BB_RTC_NO_ROUTE',
+            message: 'RTC send failed with status no-route: No outbound transport route for message test-msg',
+        });
+        expect(selectRallarBlackBoxDiagnostics(runtime.state()).some(event =>
+            event.topic === 'rallar.bb.rtc.send_failed' &&
+            event.commandId === 'manual-send-no-route' &&
+            event.severity === 'error'
+        )).toBe(true);
     });
 });

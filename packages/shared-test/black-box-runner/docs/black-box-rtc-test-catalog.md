@@ -462,4 +462,4 @@ Supported checks:
 - The default `rallar` provider remains signaling-only.
 - `rallar-browser` live mode requires deployed Rallar endpoint access and test credentials.
 - Browser-backed test stability still needs real-environment failure-mode tuning.
-- Seeded random step plans and bounded parallel step groups are documented as Iteration 11 future work, but are not implemented yet.
+- Seeded traffic plans and bounded parallel step groups are implemented in the generic runner with deterministic `rallar-memory` examples and gated live `rallar-browser`/`rallar-remote-browser` baselines.

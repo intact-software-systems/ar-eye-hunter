@@ -1,0 +1,117 @@
+{
+  "variables": {
+    "roomId": "bb-memory-soak-room"
+  },
+  "execution": {
+    "failFast": true,
+    "soak": {
+      "iterations": 5,
+      "delayMs": 5,
+      "maxArtifactEvents": 200,
+      "setupSteps": [
+        "connectAlice",
+        "connectBob"
+      ],
+      "loopSteps": [
+        "aliceSendsToBob",
+        "bobSendsToAlice"
+      ],
+      "cleanupSteps": [
+        "closeAlice",
+        "closeBob"
+      ]
+    }
+  },
+  "connections": {
+    "aliceRtc": {
+      "type": "rtc",
+      "provider": "rallar-memory",
+      "actor": "alice",
+      "peerId": "alice",
+      "roomId": "{roomId}",
+      "remotePeerId": "bob"
+    },
+    "bobRtc": {
+      "type": "rtc",
+      "provider": "rallar-memory",
+      "actor": "bob",
+      "peerId": "bob",
+      "roomId": "{roomId}",
+      "remotePeerId": "alice"
+    }
+  },
+  "steps": [
+    {
+      "name": "connectAlice",
+      "type": "rtc.connect",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "connectBob",
+      "type": "rtc.connect",
+      "connection": "bobRtc"
+    },
+    {
+      "name": "aliceSendsToBob",
+      "type": "rtc.send",
+      "connection": "aliceRtc",
+      "request": {
+        "send": {
+          "topic": "black-box.soak.alice",
+          "toPeerId": "bob",
+          "payload": {
+            "text": "soak ping from alice"
+          }
+        }
+      },
+      "expect": {
+        "connection": "bobRtc",
+        "withinMs": 1000,
+        "consume": true,
+        "message": {
+          "topic": "black-box.soak.alice",
+          "toPeerId": "bob",
+          "payload": {
+            "text": "soak ping from alice"
+          }
+        }
+      }
+    },
+    {
+      "name": "bobSendsToAlice",
+      "type": "rtc.send",
+      "connection": "bobRtc",
+      "request": {
+        "send": {
+          "topic": "black-box.soak.bob",
+          "toPeerId": "alice",
+          "payload": {
+            "text": "soak ping from bob"
+          }
+        }
+      },
+      "expect": {
+        "connection": "aliceRtc",
+        "withinMs": 1000,
+        "consume": true,
+        "message": {
+          "topic": "black-box.soak.bob",
+          "toPeerId": "alice",
+          "payload": {
+            "text": "soak ping from bob"
+          }
+        }
+      }
+    },
+    {
+      "name": "closeAlice",
+      "type": "rtc.close",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "closeBob",
+      "type": "rtc.close",
+      "connection": "bobRtc"
+    }
+  ]
+}

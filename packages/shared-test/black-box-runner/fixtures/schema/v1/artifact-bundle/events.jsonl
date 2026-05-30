@@ -1,0 +1,5 @@
+{"kind":"step-result","name":"connectAlice","status":"SUCCESS","transport":"RTC","action":"connect","connection":"aliceRtc","durationMs":4}
+{"kind":"rtc-diagnostic","connection":"aliceRtc","value":{"topic":"rallar.browser.connect_started"}}
+{"kind":"rtc-message","connection":"aliceRtc","value":{"topic":"fixture.message","payload":{"text":"hello"}}}
+{"kind":"step-result","name":"aliceWaits","status":"FAILURE","transport":"RTC","action":"wait","connection":"aliceRtc","actual":{"reason":"timeout","token":"<redacted:apiToken>"}}
+{"kind":"artifact-truncated","totalEvents":7,"emittedEvents":4,"omittedEvents":3}

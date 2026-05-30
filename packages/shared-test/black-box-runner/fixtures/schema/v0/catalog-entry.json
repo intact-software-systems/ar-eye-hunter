@@ -1,0 +1,9 @@
+{
+  "id": "fixture-legacy-browser-live",
+  "recipe": "examples/rtc-rallar-browser-messages-rtc.json",
+  "category": "rallar-browser",
+  "mode": "run",
+  "profiles": ["browser-live", "live"],
+  "artifactName": "fixture-legacy-browser-live",
+  "description": "Legacy catalog entry without command-center UI fields."
+}

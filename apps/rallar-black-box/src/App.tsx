@@ -1,7 +1,7 @@
-import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type ChangeEvent, type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import Sigma from 'sigma';
-import type { AuthSession } from '@shared/api/api-config.ts';
-import { readSession } from '@shared/api/auth.ts';
+import type { AuthSession, WebSocketTicketResponse } from '@shared/api/api-config.ts';
+import { clearSession, readSession } from '@shared/api/auth.ts';
 import {
     selectRallarBlackBoxActiveCommand,
     selectRallarBlackBoxCommandHistory,
@@ -13,12 +13,14 @@ import {
 } from '@shared-test/rallar-bb-test/selectors.ts';
 import type {
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestConfig,
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestEventKind,
     RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntimeStatus,
     RallarBlackBoxTestSeverity,
     RallarBlackBoxTestRedactionOptions,
+    RallarBlackBoxTestRuntimeEventInput,
     RallarBlackBoxTestState,
     RallarBlackBoxTestTransport,
 } from '@shared-test/rallar-bb-test/types.ts';
@@ -36,15 +38,38 @@ import {
 } from './auth-flow.ts';
 import type { RallarBlackBoxControlSnapshot } from './control-client.ts';
 import {
+    controlHttpBaseUrlFromWsUrl,
+    controlRunAgentRows,
+    controlRunCommandRows,
+    controlRunManagerStats,
+    deleteControlRun,
+    enqueueBulkControlCommand,
+    fetchControlRunSnapshot,
+    fetchControlRunArtifactBundle,
+    fetchControlRunFailureBundle,
+    fetchControlRunJsonl,
+    fetchControlServerSnapshot,
+    resetControlRun,
+    type ControlRunAgentRow,
+    type ControlRunArtifactBundle,
+    type ControlRunCommandRow,
+    type ControlRunSnapshot,
+    type ControlServerSnapshot,
+} from './control-run-manager.ts';
+import {
     RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE,
     RALLAR_BLACK_BOX_RECIPE_FIXTURES,
     recipeFixtureText,
 } from './recipe-fixtures.ts';
+import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from './client-defaults.ts';
 import {
     DEFAULT_MANUAL_WORKBENCH_VALUES,
     MANUAL_PAYLOAD_PRESETS,
     buildManualWorkbenchCommands,
     deriveManualReceivedMessages,
+    manualRtcDeliveryMatrixCommands,
+    manualRtcNackProbeCommands,
+    manualRtcNegativeRecipeSnippet,
     manualRecipeSnippet,
     parseManualPayload,
     type ManualActionHistoryEntry,
@@ -63,44 +88,96 @@ import {
     type RallarTopologyFilter,
 } from './topology-graph.ts';
 import {
-    APP_TABS,
+    APP_MODES,
+    DEFAULT_APP_MODE_ID,
     DEFAULT_APP_TAB_ID,
+    appModeForTab,
+    appModeFromValue,
+    appTabInMode,
     appTabFromValue,
+    appTabsForMode,
+    defaultAppTabForMode,
     nextAppTab,
+    type AppModeId,
     type AppTabId,
 } from './app-tabs.ts';
 import {
+    FLOW_BUILDER_TEMPLATES,
+    addFlowBuilderStep,
+    buildFlowBuilderRecipe,
+    buildFlowBuilderRunnerScenario,
+    flowBuilderText,
+    parseFlowBuilderDefinition,
+    templateFlowBuilderText,
+    type FlowBuilderDefinition,
+    type FlowBuilderStepKind,
+} from './flow-builder.ts';
+import {
     RALLAR_SERVER_ENDPOINT_PRESETS,
     applyRallarServerEndpointPreset,
+    assertRallarServerRestResponse,
+    buildRallarServerCollectionStepRequestInput,
+    createRallarServerRestCollectionTemplates,
     defaultRallarServerWorkbenchVariables,
     executeRallarServerRestRequest,
+    extractRallarServerRestVariables,
     fetchRallarServerOpenApiEndpoints,
     redactRallarServerText,
     redactRallarServerUrl,
     redactRallarServerValue,
     toRallarServerBlackBoxCommand,
     toRallarServerCurl,
+    toRallarServerRestCollectionRecipe,
     type RallarServerEndpointPreset,
     type RallarServerResponseBodyMode,
+    type RallarServerRestCollection,
+    type RallarServerRestCollectionStepResult,
+    type RallarServerRestCollectionVariables,
     type RallarServerRestMethod,
     type RallarServerRestRequestInput,
     type RallarServerRestResponse,
+    type RallarServerWorkbenchVariables,
 } from './rallar-server-workbench.ts';
+import {
+    configureDirectRallarFacade,
+    createDirectRallarRuntimeEvent,
+    runDirectRallarGroupCreate,
+    runDirectRallarGroupJoin,
+    runDirectRallarStatusCheck,
+    runDirectRallarWsSend,
+    runDirectRallarWsSubscribe,
+    type DirectRallarOperationResult,
+} from './direct-rallar-operations.ts';
 import {
     readEventFilters,
     readManualWorkbenchDraft,
+    readRallarServerRestCollectionDraft,
     readRallarServerWorkbenchDraft,
+    readStoredAppMode,
     readStoredAppTab,
     readStoredSelectedCommandId,
     writeEventFilters,
     writeManualWorkbenchDraft,
+    writeRallarServerRestCollectionDraft,
     writeRallarServerWorkbenchDraft,
+    writeStoredAppMode,
     writeStoredAppTab,
     writeStoredSelectedCommandId,
     type ManualWorkbenchDraft,
     type RallarBlackBoxUiStorage,
+    type RallarServerRestCollectionDraft,
     type RallarServerWorkbenchDraft,
 } from './ui-persistence.ts';
+import {
+    RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT,
+    RALLAR_BLACK_BOX_SHARED_TEST_COVERAGE_HANDOFF,
+    RALLAR_BLACK_BOX_SHARED_TEST_RECIPE_CATALOG,
+    parseRallarBlackBoxSharedTestArtifactBundle,
+    type RallarBlackBoxSharedTestArtifactBundleFiles,
+    type RallarBlackBoxSharedTestArtifactValidationIssue,
+    type RallarBlackBoxSharedTestParsedArtifactBundle,
+    type RallarBlackBoxSharedTestRecipeCatalogEntry,
+} from './shared-test-handoff-fixtures.ts';
 
 type CommandQueueRow = Readonly<{
     id: string;
@@ -118,9 +195,461 @@ type EventFilters = Readonly<{
     connection: string;
     actor: string;
     transport: string;
+    group: string;
+    peer: string;
+    selector: string;
     topic: string;
     severity: string;
 }>;
+
+type RallarBrowserStatusSummary = Readonly<{
+    signalingLabel: string;
+    signalingTone: string;
+    signalingDetail: string;
+    rtcLabel: string;
+    rtcTone: string;
+    rtcDetail: string;
+    rtcGroup: string;
+    rtcConnection: string;
+    rtcTransport: string;
+    peerSummary: string;
+    latestTopic?: string;
+    latestAtEpochMs?: number;
+    rallarConnected?: boolean;
+}>;
+
+type AppLocalRecipeEntry = Readonly<{
+    id: string;
+    title: string;
+    description: string;
+    path: string;
+    providerMode: string;
+    requirements: readonly string[];
+    expectedResult: string;
+}>;
+
+type CommandCenterRestActionLog = Readonly<{
+    actionId: string;
+    label: string;
+    atEpochMs: number;
+    ok: boolean;
+    status: number;
+    statusText: string;
+    durationMs: number;
+    errorKind?: string;
+    bodyJson?: unknown;
+}>;
+
+type AuthCommandCenterTicket = Readonly<{
+    ticket: string;
+    sessionId: string;
+    expiresAtEpochMs: number;
+    issuedAtEpochMs: number;
+}>;
+
+type CommandCenterGlobalValues = Readonly<{
+    apiBaseUrl: string;
+    applicationId: string;
+    workspaceId: string;
+    clientId: string;
+    sessionId: string;
+    roomId: string;
+}>;
+
+type RoomsClientsActionId =
+    | 'refresh-state'
+    | 'list-groups'
+    | 'list-clients'
+    | 'create-group'
+    | 'read-group'
+    | 'join-group'
+    | 'leave-group'
+    | 'client-session-connect'
+    | 'client-session-heartbeat'
+    | 'client-session-disconnect'
+    | 'group-presence-connect'
+    | 'group-presence-heartbeat'
+    | 'group-presence-disconnect'
+    | 'group-events'
+    | 'group-events-page'
+    | 'client-events'
+    | 'client-events-page';
+
+type RoomsClientsAction = Readonly<{
+    actionId: RoomsClientsActionId;
+    label: string;
+    presetId?: string;
+    query?: Readonly<Record<string, unknown>>;
+}>;
+
+type RoomStateRow = Readonly<{
+    rowId: string;
+    groupId: string;
+    displayName: string;
+    status: string;
+    members: number;
+    online: number;
+    sessions: readonly string[];
+    createdAtEpochMs?: number;
+    updatedAtEpochMs?: number;
+    activeAtEpochMs?: number;
+    mutatedAtEpochMs?: number;
+    snapshotVersion?: number;
+}>;
+
+type ClientStateRow = Readonly<{
+    rowId: string;
+    principalId: string;
+    username: string;
+    status: string;
+    online: string;
+    sessions: readonly string[];
+    createdAtEpochMs?: number;
+    updatedAtEpochMs?: number;
+    activeAtEpochMs?: number;
+    mutatedAtEpochMs?: number;
+    snapshotVersion?: number;
+}>;
+
+type GroupSortId =
+    | 'active-desc'
+    | 'mutated-desc'
+    | 'created-desc'
+    | 'online-desc'
+    | 'members-desc'
+    | 'name-asc'
+    | 'status-asc';
+
+type ClientSortId =
+    | 'online-active-desc'
+    | 'active-desc'
+    | 'mutated-desc'
+    | 'created-desc'
+    | 'sessions-desc'
+    | 'name-asc'
+    | 'status-asc';
+
+type StateEventRow = Readonly<{
+    rowId: string;
+    eventType: string;
+    subject: string;
+    snapshotVersion: string;
+    atEpochMs?: number;
+}>;
+
+type WebSocketPayloadPreset = Readonly<{
+    presetId: string;
+    label: string;
+    description: string;
+    payload: unknown;
+    values?: Partial<Pick<
+        WebSocketCommandCenterValues,
+        'wsScope' | 'typeId' | 'topicId' | 'contextId'
+    >>;
+}>;
+
+type WebSocketRoutePreview = Readonly<{
+    destination: string;
+    destinationDetail: string;
+    selector: string;
+    selectorDetail: string;
+    transport: string;
+    transportDetail: string;
+    sendLabel: string;
+}>;
+
+type WebSocketCommandCenterValues = Readonly<{
+    apiBaseUrl: string;
+    connection: string;
+    applicationId: string;
+    workspaceId: string;
+    groupId: string;
+    wsScope: 'room' | 'all' | 'world';
+    typeId: string;
+    topicId: string;
+    contextId: string;
+    resourceId: string;
+    wsUrl: string;
+    protocols: string;
+    payloadText: string;
+    timeoutMs: number;
+    closeCode: number;
+    closeReason: string;
+}>;
+
+type WebSocketEventRow = Readonly<{
+    eventId: string;
+    kind: RallarBlackBoxTestEventKind;
+    topic: string;
+    atEpochMs: number;
+    severity: string;
+    payload?: unknown;
+}>;
+
+type WebSocketReceivedMessageRow = Readonly<{
+    eventId: string;
+    atEpochMs: number;
+    senderId: string;
+    roomId: string;
+    typeId: string;
+    topicId: string;
+    contextId: string;
+    resourceId: string;
+    payload?: unknown;
+}>;
+
+type WebSocketDiagnostic = Readonly<{
+    readyState: string;
+    status: 'idle' | 'open' | 'closed' | 'simulated' | 'error';
+    statusLabel: string;
+    lastOpenAtEpochMs?: number;
+    lastCloseAtEpochMs?: number;
+    closeCode?: unknown;
+    closeReason?: unknown;
+    inboundCount: number;
+    outboundCount: number;
+    errorCount: number;
+    recentEvents: readonly WebSocketEventRow[];
+    receivedMessages: readonly WebSocketReceivedMessageRow[];
+}>;
+
+type WebSocketSubscriptionState = Readonly<{
+    label: string;
+    destination: string;
+    groupId: string;
+    subscribedAtEpochMs: number;
+    unsubscribe(): void;
+}>;
+
+type QuickRallarTransport = 'ws';
+
+type QuickRallarValues = Readonly<{
+    transport: QuickRallarTransport;
+    typeId: string;
+    topicId: string;
+    contextId: string;
+    resourceId: string;
+    payloadText: string;
+    timeoutMs: number;
+}>;
+
+type QuickRallarSubscriptionState = Readonly<{
+    transport: QuickRallarTransport;
+    label: string;
+    groupId: string;
+    subscribedAtEpochMs: number;
+    unsubscribe(): void;
+}>;
+
+type QuickRallarReceivedMessageRow = Readonly<{
+    rowId: string;
+    atEpochMs: number;
+    transport: QuickRallarTransport;
+    senderId: string;
+    roomId: string;
+    typeId: string;
+    topicId: string;
+    contextId: string;
+    resourceId: string;
+    payload?: unknown;
+    raw?: unknown;
+}>;
+
+type RtcRealtimeTransport = 'realtime' | 'messages.rtc';
+
+type RtcRealtimeReceivedRow = Readonly<{
+    rowId: string;
+    atEpochMs: number;
+    transport: RtcRealtimeTransport;
+    peerId: string;
+    laneId: string;
+    roomId: string;
+    typeId: string;
+    topicId: string;
+    contextId: string;
+    payload?: unknown;
+    raw?: unknown;
+}>;
+
+type RallarDataOperation =
+    | 'define'
+    | 'open'
+    | 'lookup'
+    | 'hydrate'
+    | 'when-idle'
+    | 'read'
+    | 'get'
+    | 'keys'
+    | 'list-keys'
+    | 'read-entries'
+    | 'get-entries'
+    | 'read-all'
+    | 'get-all'
+    | 'set'
+    | 'update'
+    | 'update-or-create'
+    | 'set-if-absent'
+    | 'compare-and-set'
+    | 'get-and-set'
+    | 'delete'
+    | 'delete-expired'
+    | 'clear'
+    | 'flush'
+    | 'export'
+    | 'estimate-usage'
+    | 'close'
+    | 'destroy'
+    | 'close-scope'
+    | 'clear-scope'
+    | 'destroy-scope';
+
+type RallarDataChangeRow = Readonly<{
+    rowId: string;
+    atEpochMs: number;
+    event: unknown;
+}>;
+
+type RallarDataUiStore = Awaited<ReturnType<Awaited<ReturnType<typeof loadBrowserRallarFacade>>['data']['open']>>;
+
+type MediaRemoteStreamRow = Readonly<{
+    rowId: string;
+    atEpochMs: number;
+    peerId: string;
+    streamId: string;
+}>;
+
+const GROUP_SORT_OPTIONS: readonly Readonly<{ value: GroupSortId; label: string }>[] = [
+    { value: 'active-desc', label: 'Recently active' },
+    { value: 'mutated-desc', label: 'Mutated newest' },
+    { value: 'created-desc', label: 'Created newest' },
+    { value: 'online-desc', label: 'Online members' },
+    { value: 'members-desc', label: 'Members' },
+    { value: 'name-asc', label: 'Name / ID' },
+    { value: 'status-asc', label: 'Status' },
+];
+
+const CLIENT_SORT_OPTIONS: readonly Readonly<{ value: ClientSortId; label: string }>[] = [
+    { value: 'online-active-desc', label: 'Online first' },
+    { value: 'active-desc', label: 'Recently active' },
+    { value: 'mutated-desc', label: 'Mutated newest' },
+    { value: 'created-desc', label: 'Created newest' },
+    { value: 'sessions-desc', label: 'Sessions' },
+    { value: 'name-asc', label: 'Name / ID' },
+    { value: 'status-asc', label: 'Status' },
+];
+
+const APP_LOCAL_RECIPE_CATALOG: readonly AppLocalRecipeEntry[] = [
+    {
+        id: 'app-local-group-ws-setup',
+        title: 'Group And WebSocket Setup',
+        description: 'Creates or reuses bb-group, joins it, acquires a WebSocket ticket, and opens the API socket.',
+        path: 'apps/rallar-black-box/examples/rallar-server-group-ws-setup.recipe.json',
+        providerMode: 'browser-rallar',
+        requirements: [
+            'logged-in browser session',
+            'Rallar Server API base URL',
+            'auth and group endpoints',
+        ],
+        expectedResult: 'group joined and WebSocket opened',
+    },
+    {
+        id: 'app-local-rtc-connect-send',
+        title: 'RTC Connect And Send',
+        description: 'Uses the logged-in session and group context to connect RTC and send a realtime payload.',
+        path: 'apps/rallar-black-box/examples/rallar-server-rtc-connect-send.recipe.json',
+        providerMode: 'browser-rallar',
+        requirements: [
+            'logged-in browser session',
+            'existing or creatable group',
+            'RTC signaling available',
+        ],
+        expectedResult: 'RTC connect succeeds and payload is sent',
+    },
+];
+
+const WEBSOCKET_PAYLOAD_PRESETS: readonly WebSocketPayloadPreset[] = [
+    {
+        presetId: 'ping',
+        label: 'Ping - all WS subscribers',
+        description: 'Broadcast liveness payload with scope all. It is not tied to the Group field.',
+        payload: {
+            seq: 1,
+            text: 'ping from rallar-black-box',
+        },
+        values: {
+            wsScope: 'all',
+            typeId: 'app.black-box.ws.ping',
+            topicId: 'app.black-box.ws.ping',
+            contextId: 'all',
+        },
+    },
+    {
+        presetId: 'group-message',
+        label: 'Group Message - current group',
+        description: 'Broadcast payload to the configured Group using room scope.',
+        payload: {
+            deliveryMode: 'broadcast',
+            text: 'hello from rallar-black-box',
+        },
+        values: {
+            wsScope: 'room',
+            typeId: 'room.manual.message',
+            topicId: 'room.manual.message',
+        },
+    },
+    {
+        presetId: 'parity-probe',
+        label: 'Compare WS vs RTC - current group',
+        description: 'Use this payload when comparing WebSocket and RTC delivery for the same group.',
+        payload: {
+            transport: 'ws',
+            seq: 1,
+        },
+        values: {
+            wsScope: 'room',
+            typeId: 'room.black-box.transport-check',
+            topicId: 'room.black-box.transport-check',
+        },
+    },
+];
+const DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID = 'group-message';
+
+const QUICK_RALLAR_DEFAULT_VALUES: QuickRallarValues = {
+    transport: 'ws',
+    typeId: 'room.manual.message',
+    topicId: 'room.manual.message',
+    contextId: '',
+    resourceId: '',
+    payloadText: json({
+        text: 'hello from quick Rallar test',
+        seq: 1,
+    }),
+    timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
+};
+
+const SHARED_TEST_ARTIFACT_FILE_NAMES = [
+    ...RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT.requiredFiles,
+    ...RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT.optionalFiles,
+] as const;
+
+const ROOMS_CLIENTS_ACTIONS: readonly RoomsClientsAction[] = [
+    { actionId: 'list-groups', label: 'List groups', presetId: 'groups-list' },
+    { actionId: 'list-clients', label: 'List clients', presetId: 'clients-list' },
+    { actionId: 'create-group', label: 'Create group', presetId: 'group-create' },
+    { actionId: 'read-group', label: 'Read group', presetId: 'group-read' },
+    { actionId: 'join-group', label: 'Join group', presetId: 'group-member-join' },
+    { actionId: 'leave-group', label: 'Leave group', presetId: 'group-member-leave' },
+    { actionId: 'client-session-connect', label: 'Connect client presence', presetId: 'client-session-connect' },
+    { actionId: 'client-session-heartbeat', label: 'Heartbeat client', presetId: 'client-session-heartbeat' },
+    { actionId: 'client-session-disconnect', label: 'Disconnect client', presetId: 'client-session-disconnect' },
+    { actionId: 'group-presence-connect', label: 'Connect group presence', presetId: 'group-presence-connect' },
+    { actionId: 'group-presence-heartbeat', label: 'Heartbeat group', presetId: 'group-presence-heartbeat' },
+    { actionId: 'group-presence-disconnect', label: 'Disconnect group', presetId: 'group-presence-disconnect' },
+    { actionId: 'group-events', label: 'List group events', presetId: 'group-events' },
+    { actionId: 'group-events-page', label: 'List group events page', presetId: 'group-events-page', query: { limit: 20 } },
+    { actionId: 'client-events', label: 'List client events', presetId: 'client-events' },
+    { actionId: 'client-events-page', label: 'List client events page', presetId: 'client-events-page', query: { limit: 20 } },
+];
 
 const DEFAULT_EVENT_FILTERS: EventFilters = {
     kind: 'all',
@@ -128,6 +657,9 @@ const DEFAULT_EVENT_FILTERS: EventFilters = {
     connection: '',
     actor: '',
     transport: '',
+    group: '',
+    peer: '',
+    selector: '',
     topic: '',
     severity: '',
 };
@@ -149,30 +681,63 @@ function eventFilterFromValue(value: string): EventFilter {
         : 'all';
 }
 
-function readInitialAppTab(): AppTabId {
+type AppNavigationState = Readonly<{
+    mode: AppModeId;
+    tab: AppTabId;
+}>;
+
+function readInitialAppNavigation(): AppNavigationState {
     if (typeof window === 'undefined') {
-        return DEFAULT_APP_TAB_ID;
+        return {
+            mode: DEFAULT_APP_MODE_ID,
+            tab: DEFAULT_APP_TAB_ID,
+        };
     }
 
     const params = new URLSearchParams(window.location.search);
+    const explicitModeValue = params.get('workspace') ?? params.get('appMode');
+    const explicitMode = explicitModeValue
+        ? appModeFromValue(explicitModeValue)
+        : undefined;
     const explicitTab = params.get('tab');
     if (explicitTab) {
         const tab = appTabFromValue(explicitTab);
+        const mode = explicitMode && appTabInMode(tab, explicitMode)
+            ? explicitMode
+            : appModeForTab(tab);
+        writeStoredAppMode(browserUiStorage(), mode);
         writeStoredAppTab(browserUiStorage(), tab);
-        return tab;
+        return {
+            mode,
+            tab,
+        };
     }
 
-    return readStoredAppTab(browserUiStorage()) ?? DEFAULT_APP_TAB_ID;
+    const storedMode = readStoredAppMode(browserUiStorage());
+    const mode = explicitMode ?? storedMode ?? DEFAULT_APP_MODE_ID;
+    const storedTab = readStoredAppTab(browserUiStorage());
+    const tab = storedTab && appTabInMode(storedTab, mode)
+        ? storedTab
+        : defaultAppTabForMode(mode);
+
+    writeStoredAppMode(browserUiStorage(), mode);
+    writeStoredAppTab(browserUiStorage(), tab);
+    return {
+        mode,
+        tab,
+    };
 }
 
-function writeAppTabToUrl(tab: AppTabId): void {
+function writeAppNavigationToUrl(navigation: AppNavigationState): void {
     if (typeof window === 'undefined') {
         return;
     }
 
-    writeStoredAppTab(browserUiStorage(), tab);
+    writeStoredAppMode(browserUiStorage(), navigation.mode);
+    writeStoredAppTab(browserUiStorage(), navigation.tab);
     const url = new URL(window.location.href);
-    url.searchParams.set('tab', tab);
+    url.searchParams.set('workspace', navigation.mode);
+    url.searchParams.set('tab', navigation.tab);
     window.history.replaceState(null, '', url);
 }
 
@@ -226,8 +791,40 @@ function formatDuration(ms: number | undefined): string {
     return `${Math.round(ms)} ms`;
 }
 
+function formatRelativeDuration(ms: number | undefined): string {
+    if (ms === undefined || !Number.isFinite(ms)) {
+        return '-';
+    }
+
+    const sign = ms < 0 ? '-' : '';
+    const absoluteMs = Math.abs(ms);
+    const totalSeconds = Math.round(absoluteMs / 1000);
+    const totalMinutes = Math.round(totalSeconds / 60);
+    const totalHours = Math.round(totalMinutes / 60);
+    if (totalSeconds < 90) {
+        return `${sign}${totalSeconds}s`;
+    }
+    if (totalMinutes < 90) {
+        return `${sign}${totalMinutes}m`;
+    }
+
+    return `${sign}${totalHours}h`;
+}
+
 function json(value: unknown): string {
     return JSON.stringify(value ?? null, null, 2);
+}
+
+function parseJsonText(text: string, fallback: unknown = {}): unknown {
+    const trimmed = text.trim();
+    return trimmed.length > 0 ? JSON.parse(trimmed) as unknown : fallback;
+}
+
+function splitCsvValues(value: string): readonly string[] {
+    return value
+        .split(',')
+        .map(entry => entry.trim())
+        .filter(Boolean);
 }
 
 function browserUiStorage(): RallarBlackBoxUiStorage | undefined {
@@ -320,6 +917,9 @@ function eventMatchesFilters(event: RallarBlackBoxTestEvent, filters: EventFilte
     if (filters.actor && event.actor !== filters.actor) return false;
     if (filters.transport && event.transport !== filters.transport) return false;
     if (filters.severity && event.severity !== filters.severity) return false;
+    if (filters.group && eventGroupValue(event) !== filters.group) return false;
+    if (filters.peer && eventPeerValue(event) !== filters.peer) return false;
+    if (filters.selector && eventSelectorValue(event) !== filters.selector) return false;
     if (
         filters.topic &&
         !event.topic.toLowerCase().includes(filters.topic.toLowerCase())
@@ -328,6 +928,1116 @@ function eventMatchesFilters(event: RallarBlackBoxTestEvent, filters: EventFilte
     }
 
     return true;
+}
+
+function firstStringValue(values: readonly unknown[]): string | undefined {
+    return values.find((value): value is string =>
+        typeof value === 'string' && value.trim().length > 0
+    );
+}
+
+function findStringDeep(value: unknown, keys: readonly string[], depth = 0): string | undefined {
+    if (depth > 4 || value === undefined || value === null) {
+        return undefined;
+    }
+    if (Array.isArray(value)) {
+        for (const item of value) {
+            const found = findStringDeep(item, keys, depth + 1);
+            if (found) return found;
+        }
+        return undefined;
+    }
+    if (typeof value !== 'object') {
+        return undefined;
+    }
+
+    const record = value as Record<string, unknown>;
+    for (const key of keys) {
+        const candidate = record[key];
+        if (typeof candidate === 'string' && candidate.trim().length > 0) {
+            return candidate;
+        }
+    }
+    for (const child of Object.values(record)) {
+        const found = findStringDeep(child, keys, depth + 1);
+        if (found) return found;
+    }
+    return undefined;
+}
+
+function eventGroupValue(event: RallarBlackBoxTestEvent): string | undefined {
+    const payload = eventPayloadDetails(event);
+    return firstStringValue([
+        payload.roomId,
+        payload.groupId,
+        optionalRecord(payload.roomRef).groupId,
+    ]);
+}
+
+function eventPeerValue(event: RallarBlackBoxTestEvent): string | undefined {
+    const payload = eventPayloadDetails(event);
+    return firstStringValue([
+        payload.peerId,
+        payload.remotePeerId,
+        payload.senderId,
+        payload.targetClient,
+    ]);
+}
+
+function eventSelectorValue(event: RallarBlackBoxTestEvent): string | undefined {
+    const payload = eventPayloadDetails(event);
+    const typeId = stringValue(payload.typeId);
+    const topicId = stringValue(payload.topicId) ?? stringValue(payload.topic);
+    if (!typeId && !topicId) {
+        return undefined;
+    }
+
+    return `${topicId ?? '*'} / ${typeId ?? '-'}`;
+}
+
+function catalogEntryMatches(
+    entry: RallarBlackBoxSharedTestRecipeCatalogEntry,
+    query: string,
+    profile: string,
+): boolean {
+    if (profile && !entry.profiles.includes(profile)) {
+        return false;
+    }
+
+    if (!query) {
+        return true;
+    }
+
+    const haystack = [
+        entry.id,
+        entry.title,
+        entry.description,
+        entry.recipePath,
+        entry.category,
+        entry.providerMode,
+        entry.liveSupport,
+        ...entry.profiles,
+        ...entry.uiHints.badges,
+    ].join(' ').toLowerCase();
+
+    return haystack.includes(query.toLowerCase());
+}
+
+function catalogRequirements(entry: RallarBlackBoxSharedTestRecipeCatalogEntry): readonly string[] {
+    return [
+        ...entry.prerequisites.requiredEnvVars.map(env => `env:${env}`),
+        ...entry.prerequisites.httpServices.map(service => `${service.name}:${service.env}`),
+        ...(entry.prerequisites.requiresPlaywright ? ['Playwright'] : []),
+    ];
+}
+
+function artifactIssueText(issue: RallarBlackBoxSharedTestArtifactValidationIssue): string {
+    const file = issue.file ?? 'bundle';
+    return `${file} ${issue.path}: ${issue.message}`;
+}
+
+function artifactEventTitle(event: Record<string, unknown>): string {
+    return String(event.name ?? event.connection ?? event.kind ?? 'event');
+}
+
+function artifactEventDetail(event: Record<string, unknown>): string {
+    return [
+        event.status,
+        event.transport,
+        event.action,
+        event.connection,
+    ].filter(Boolean).join(' - ') || '-';
+}
+
+function recordArray(value: unknown): readonly Record<string, unknown>[] {
+    if (Array.isArray(value)) {
+        return value.filter((item): item is Record<string, unknown> =>
+            Boolean(item) && typeof item === 'object' && !Array.isArray(item)
+        );
+    }
+
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return [value as Record<string, unknown>];
+    }
+
+    return [];
+}
+
+function optionalRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : {};
+}
+
+function numberOrZero(value: unknown): number {
+    return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function auditAtEpochMs(value: unknown): number | undefined {
+    return optionalNumber(optionalRecord(value).atEpochMs);
+}
+
+function maxNumber(values: readonly (number | undefined)[]): number | undefined {
+    const numbers = values.filter((value): value is number => value !== undefined);
+    return numbers.length > 0 ? Math.max(...numbers) : undefined;
+}
+
+function compareNumberDesc(left: number | undefined, right: number | undefined): number {
+    return (right ?? Number.NEGATIVE_INFINITY) - (left ?? Number.NEGATIVE_INFINITY);
+}
+
+function compareText(left: string, right: string): number {
+    return left.localeCompare(right, undefined, { sensitivity: 'base', numeric: true });
+}
+
+function firstComparison(...comparisons: readonly number[]): number {
+    return comparisons.find(value => value !== 0) ?? 0;
+}
+
+function isRallarBrowserEvent(event: RallarBlackBoxTestEvent): boolean {
+    return event.topic === 'rallar.browser.event' ||
+        event.topic.startsWith('rallar.browser.') ||
+        event.topic.startsWith('rallar.direct.');
+}
+
+function eventPayloadDetails(event: RallarBlackBoxTestEvent): Record<string, unknown> {
+    const payload = optionalRecord(event.payload);
+    return {
+        ...payload,
+        ...optionalRecord(payload.data),
+    };
+}
+
+function eventPayloadText(event: RallarBlackBoxTestEvent): string {
+    const payload = eventPayloadDetails(event);
+    return [
+        stringValue(payload.phase),
+        stringValue(payload.status),
+        stringValue(optionalRecord(payload.status).readyState),
+        stringValue(payload.action),
+        stringValue(payload.kind),
+        stringValue(payload.connection),
+        stringValue(payload.remotePeerId),
+        stringValue(payload.error),
+        stringValue(optionalRecord(payload.error).message),
+    ].filter((value): value is string => Boolean(value && value.length > 0)).join(' - ') || '-';
+}
+
+function looksLikeWsStatus(value: Record<string, unknown>): boolean {
+    return 'readyState' in value ||
+        'isOpen' in value ||
+        'connectState' in value ||
+        'reconnecting' in value;
+}
+
+function looksLikeRtcStatus(value: Record<string, unknown>): boolean {
+    return 'knownPeerIds' in value ||
+        'activePeerIds' in value ||
+        'readyPeerIds' in value ||
+        'peerIdsWithNoReconnectableLanes' in value ||
+        'peers' in value ||
+        'laneId' in value;
+}
+
+function wsStatusFromDetails(details: Record<string, unknown>): Record<string, unknown> | undefined {
+    const explicit = optionalRecord(details.wsStatus);
+    if (looksLikeWsStatus(explicit)) return explicit;
+    const nestedStatus = optionalRecord(details.status);
+    return looksLikeWsStatus(nestedStatus) ? nestedStatus : undefined;
+}
+
+function rtcStatusFromDetails(details: Record<string, unknown>): Record<string, unknown> | undefined {
+    const explicit = optionalRecord(details.rtcStatus);
+    if (looksLikeRtcStatus(explicit)) return explicit;
+    const nestedStatus = optionalRecord(details.status);
+    return looksLikeRtcStatus(nestedStatus) ? nestedStatus : undefined;
+}
+
+function arrayCount(value: unknown): number {
+    return Array.isArray(value) ? value.length : 0;
+}
+
+function deriveWsStatusLabel(status?: Record<string, unknown>): Pick<RallarBrowserStatusSummary, 'signalingLabel' | 'signalingTone' | 'signalingDetail'> {
+    if (!status) {
+        return {
+            signalingLabel: 'not observed',
+            signalingTone: 'muted',
+            signalingDetail: '-',
+        };
+    }
+
+    const readyState = stringValue(status.readyState);
+    const connectState = stringValue(status.connectState);
+    const reconnecting = status.reconnecting === true;
+    const reconnectExhausted = status.reconnectExhausted === true;
+    const label = reconnectExhausted
+        ? 'exhausted'
+        : reconnecting
+            ? 'reconnecting'
+            : status.isOpen === true || readyState === 'open'
+                ? 'open'
+                : readyState ?? connectState ?? 'unknown';
+    const tone = label === 'open'
+        ? 'good'
+        : label === 'connecting' || label === 'reconnecting'
+            ? 'active'
+            : label === 'closed' || label === 'closing' || label === 'exhausted'
+                ? 'warn'
+                : 'muted';
+    const attempts = optionalNumber(status.reconnectAttempts);
+    const maxAttempts = optionalNumber(status.maxReconnectAttempts);
+
+    return {
+        signalingLabel: label,
+        signalingTone: tone,
+        signalingDetail: [
+            connectState,
+            attempts !== undefined ? `${attempts}/${maxAttempts ?? '-'} reconnects` : undefined,
+        ].filter((value): value is string => Boolean(value && value.length > 0)).join(' - ') || '-',
+    };
+}
+
+function deriveRtcStatusLabel(
+    status: Record<string, unknown> | undefined,
+    latestDetails: Record<string, unknown> | undefined,
+    latestTopic?: string,
+): Pick<RallarBrowserStatusSummary, 'rtcLabel' | 'rtcTone' | 'peerSummary' | 'rallarConnected'> {
+    const readyPeers = arrayCount(status?.readyPeerIds);
+    const activePeers = arrayCount(status?.activePeerIds);
+    const knownPeers = arrayCount(status?.knownPeerIds);
+    const noReconnectable = arrayCount(status?.peerIdsWithNoReconnectableLanes);
+    const rallarConnected = latestDetails?.rallarConnected === true ||
+        stringValue(latestDetails?.status) === 'connected';
+    const closed = latestTopic?.includes('closed') === true ||
+        latestTopic?.includes('disconnect_completed') === true;
+    const label = closed
+        ? 'closed'
+        : readyPeers > 0
+            ? 'ready'
+            : activePeers > 0
+                ? 'active'
+                : knownPeers > 0
+                    ? 'peers known'
+                    : rallarConnected
+                        ? 'connected'
+                        : status
+                            ? 'no peers'
+                            : 'not observed';
+    const tone = label === 'ready' || label === 'active' || label === 'connected'
+        ? 'good'
+        : label === 'peers known' || label === 'no peers'
+            ? 'warn'
+            : label === 'closed'
+                ? 'muted'
+                : 'muted';
+
+    return {
+        rtcLabel: label,
+        rtcTone: noReconnectable > 0 ? 'warn' : tone,
+        peerSummary: `ready ${readyPeers} / active ${activePeers} / known ${knownPeers}`,
+        rallarConnected,
+    };
+}
+
+function deriveRallarBrowserStatus(
+    state: RallarBlackBoxTestState,
+    globalValues?: CommandCenterGlobalValues,
+): RallarBrowserStatusSummary {
+    const events = selectRallarBlackBoxEvents(state).filter(isRallarBrowserEvent);
+    const latestEvent = events.at(-1);
+    const latestDetails = latestEvent ? eventPayloadDetails(latestEvent) : undefined;
+    const latestWsStatus = events
+        .map(event => wsStatusFromDetails(eventPayloadDetails(event)))
+        .findLast(Boolean);
+    const latestRtcEvent = events.findLast(event => {
+        const details = eventPayloadDetails(event);
+        return Boolean(rtcStatusFromDetails(details)) ||
+            event.topic.includes('connect_completed') ||
+            event.topic.includes('closed') ||
+            event.topic.includes('rtc.lifecycle');
+    });
+    const latestRtcDetails = latestRtcEvent ? eventPayloadDetails(latestRtcEvent) : latestDetails;
+    const latestRtcStatus = latestRtcDetails ? rtcStatusFromDetails(latestRtcDetails) : undefined;
+    const ws = deriveWsStatusLabel(latestWsStatus);
+    const rtc = deriveRtcStatusLabel(latestRtcStatus, latestRtcDetails, latestRtcEvent?.topic);
+    const group = stringValue(latestRtcDetails?.roomId) ??
+        stringValue(optionalRecord(latestRtcDetails?.roomRef).groupId) ??
+        globalValues?.roomId ??
+        state.currentConfig?.roomId ??
+        '-';
+
+    return {
+        ...ws,
+        ...rtc,
+        rtcDetail: stringValue(latestRtcDetails?.laneId) ??
+            stringValue(latestRtcDetails?.typeId) ??
+            '-',
+        rtcGroup: group,
+        rtcConnection: latestRtcEvent?.connection ?? String(state.currentConfig?.defaults?.connection ?? 'default'),
+        rtcTransport: latestRtcEvent?.transport ?? state.currentConfig?.transport ?? '-',
+        latestTopic: latestEvent?.topic,
+        latestAtEpochMs: latestEvent?.atEpochMs,
+    };
+}
+
+function stringOrDash(value: unknown): string {
+    return typeof value === 'string' && value.length > 0 ? value : '-';
+}
+
+function rowsFromGroupSnapshots(value: unknown): readonly RoomStateRow[] {
+    return recordArray(value).map((snapshot, index) => {
+        const group = optionalRecord(snapshot.group);
+        const members = recordArray(snapshot.members);
+        const activeSessions = recordArray(snapshot.activeSessions);
+        const groupId = stringOrDash(group.groupId ?? snapshot.groupId);
+        const createdAtEpochMs = auditAtEpochMs(group.created);
+        const updatedAtEpochMs = auditAtEpochMs(group.updated);
+        const activeAtEpochMs = maxNumber(activeSessions.flatMap(session => [
+            optionalNumber(session.lastHeartbeatAtEpochMs),
+            optionalNumber(session.connectedAtEpochMs),
+        ]));
+        const mutatedAtEpochMs = maxNumber([
+            updatedAtEpochMs,
+            createdAtEpochMs,
+            activeAtEpochMs,
+            ...members.flatMap(member => [
+                auditAtEpochMs(member.updated),
+                auditAtEpochMs(member.joined),
+                auditAtEpochMs(member.left),
+                auditAtEpochMs(member.removed),
+                auditAtEpochMs(member.banned),
+            ]),
+        ]);
+        return {
+            rowId: `${groupId}-${index}`,
+            groupId,
+            displayName: stringOrDash(group.displayName ?? group.slug ?? groupId),
+            status: stringOrDash(group.status),
+            members: numberOrZero(snapshot.memberCount),
+            online: numberOrZero(snapshot.onlineMemberCount),
+            sessions: activeSessions.map(session => stringOrDash(session.sessionId)),
+            createdAtEpochMs,
+            updatedAtEpochMs,
+            activeAtEpochMs,
+            mutatedAtEpochMs,
+            snapshotVersion: optionalNumber(group.snapshotVersion),
+        };
+    });
+}
+
+function rowsFromClientSnapshots(value: unknown): readonly ClientStateRow[] {
+    return recordArray(value).map((snapshot, index) => {
+        const principal = optionalRecord(snapshot.principal);
+        const instances = recordArray(snapshot.instances);
+        const activeSessions = recordArray(snapshot.activeSessions);
+        const principalId = stringOrDash(principal.principalId ?? snapshot.principalId);
+        const createdAtEpochMs = auditAtEpochMs(principal.created);
+        const updatedAtEpochMs = auditAtEpochMs(principal.updated);
+        const activeAtEpochMs = maxNumber([
+            optionalNumber(snapshot.lastSeenAtEpochMs),
+            optionalNumber(principal.lastSeenAtEpochMs),
+            ...activeSessions.flatMap(session => [
+                optionalNumber(session.lastHeartbeatAtEpochMs),
+                optionalNumber(session.connectedAtEpochMs),
+                optionalNumber(session.authenticatedAtEpochMs),
+            ]),
+        ]);
+        const mutatedAtEpochMs = maxNumber([
+            updatedAtEpochMs,
+            createdAtEpochMs,
+            activeAtEpochMs,
+            ...instances.flatMap(instance => [
+                auditAtEpochMs(instance.updated),
+                auditAtEpochMs(instance.registered),
+                auditAtEpochMs(instance.revoked),
+            ]),
+        ]);
+        return {
+            rowId: `${principalId}-${index}`,
+            principalId,
+            username: stringOrDash(principal.username ?? principal.displayName ?? principalId),
+            status: stringOrDash(principal.status),
+            online: snapshot.isOnline === true ? 'online' : 'offline',
+            sessions: activeSessions.map(session => stringOrDash(session.sessionId)),
+            createdAtEpochMs,
+            updatedAtEpochMs,
+            activeAtEpochMs,
+            mutatedAtEpochMs,
+            snapshotVersion: optionalNumber(principal.snapshotVersion),
+        };
+    });
+}
+
+function sortGroupRows(rows: readonly RoomStateRow[], sortId: GroupSortId): readonly RoomStateRow[] {
+    return [...rows].sort((left, right) => {
+        switch (sortId) {
+            case 'active-desc':
+                return firstComparison(
+                    compareNumberDesc(left.activeAtEpochMs, right.activeAtEpochMs),
+                    right.online - left.online,
+                    right.members - left.members,
+                    compareText(left.displayName, right.displayName),
+                );
+            case 'mutated-desc':
+                return firstComparison(
+                    compareNumberDesc(left.mutatedAtEpochMs, right.mutatedAtEpochMs),
+                    compareText(left.displayName, right.displayName),
+                );
+            case 'created-desc':
+                return firstComparison(
+                    compareNumberDesc(left.createdAtEpochMs, right.createdAtEpochMs),
+                    compareText(left.displayName, right.displayName),
+                );
+            case 'online-desc':
+                return firstComparison(
+                    right.online - left.online,
+                    compareNumberDesc(left.activeAtEpochMs, right.activeAtEpochMs),
+                    compareText(left.displayName, right.displayName),
+                );
+            case 'members-desc':
+                return firstComparison(
+                    right.members - left.members,
+                    right.online - left.online,
+                    compareText(left.displayName, right.displayName),
+                );
+            case 'status-asc':
+                return firstComparison(
+                    compareText(left.status, right.status),
+                    compareText(left.displayName, right.displayName),
+                );
+            case 'name-asc':
+                return compareText(left.displayName, right.displayName);
+        }
+    });
+}
+
+function sortClientRows(rows: readonly ClientStateRow[], sortId: ClientSortId): readonly ClientStateRow[] {
+    return [...rows].sort((left, right) => {
+        switch (sortId) {
+            case 'online-active-desc':
+                return firstComparison(
+                    Number(right.online === 'online') - Number(left.online === 'online'),
+                    compareNumberDesc(left.activeAtEpochMs, right.activeAtEpochMs),
+                    compareText(left.username, right.username),
+                );
+            case 'active-desc':
+                return firstComparison(
+                    compareNumberDesc(left.activeAtEpochMs, right.activeAtEpochMs),
+                    compareText(left.username, right.username),
+                );
+            case 'mutated-desc':
+                return firstComparison(
+                    compareNumberDesc(left.mutatedAtEpochMs, right.mutatedAtEpochMs),
+                    compareText(left.username, right.username),
+                );
+            case 'created-desc':
+                return firstComparison(
+                    compareNumberDesc(left.createdAtEpochMs, right.createdAtEpochMs),
+                    compareText(left.username, right.username),
+                );
+            case 'sessions-desc':
+                return firstComparison(
+                    right.sessions.length - left.sessions.length,
+                    Number(right.online === 'online') - Number(left.online === 'online'),
+                    compareText(left.username, right.username),
+                );
+            case 'status-asc':
+                return firstComparison(
+                    compareText(left.status, right.status),
+                    compareText(left.username, right.username),
+                );
+            case 'name-asc':
+                return compareText(left.username, right.username);
+        }
+    });
+}
+
+function rowsFromStateEvents(value: unknown): readonly StateEventRow[] {
+    const rows = Array.isArray(value)
+        ? value
+        : recordArray(optionalRecord(value).events);
+    return rows
+        .filter((item): item is Record<string, unknown> =>
+            Boolean(item) && typeof item === 'object' && !Array.isArray(item)
+        )
+        .map((event, index) => ({
+            rowId: stringOrDash(event.eventId ?? `${event.eventType ?? 'event'}-${index}`),
+            eventType: stringOrDash(event.eventType),
+            subject: stringOrDash(event.groupId ?? event.principalId ?? event.sessionId),
+            snapshotVersion: String(event.snapshotVersion ?? '-'),
+            atEpochMs: typeof event.occurredAtEpochMs === 'number' ? event.occurredAtEpochMs : undefined,
+        }));
+}
+
+function rallarServerPresetById(presetId: string): RallarServerEndpointPreset {
+    const preset = RALLAR_SERVER_ENDPOINT_PRESETS.find(entry => entry.presetId === presetId);
+    if (!preset) {
+        throw new Error(`Unknown Rallar Server preset: ${presetId}`);
+    }
+    return preset;
+}
+
+function buildPresetRequestInput(input: Readonly<{
+    presetId: string;
+    variables: RallarServerWorkbenchVariables;
+    apiBaseUrl: string;
+    authSession?: AuthSession;
+    timeoutMs: number;
+    query?: Readonly<Record<string, unknown>>;
+    attachAuth?: boolean;
+}>): RallarServerRestRequestInput {
+    const draft = applyRallarServerEndpointPreset(
+        rallarServerPresetById(input.presetId),
+        input.variables,
+    );
+    const query = {
+        ...JSON.parse(draft.queryText || '{}') as Record<string, unknown>,
+        ...(input.query ?? {}),
+    };
+    return {
+        apiBaseUrl: input.apiBaseUrl,
+        method: draft.method,
+        path: draft.path,
+        headersText: draft.headersText,
+        queryText: JSON.stringify(query, null, 2),
+        bodyText: draft.bodyText,
+        responseBodyMode: draft.responseBodyMode,
+        attachAuth: input.attachAuth ?? draft.attachAuth,
+        authSession: input.authSession,
+        timeoutMs: input.timeoutMs,
+    };
+}
+
+function restLogEntry(
+    label: string,
+    response: RallarServerRestResponse,
+): CommandCenterRestActionLog {
+    return {
+        actionId: `${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now()}`,
+        label,
+        atEpochMs: Date.now(),
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        durationMs: response.durationMs,
+        errorKind: response.error?.kind,
+        bodyJson: response.bodyJson,
+    };
+}
+
+function authRecipeSnippet(username: string): string {
+    return json({
+        recipeId: 'rallar-auth-command-center',
+        name: 'Rallar auth command-center recipe',
+        continueOnFailure: true,
+        commands: [
+            {
+                kind: 'http.request',
+                commandId: 'auth-login',
+                request: {
+                    path: '/api/auth/login',
+                    method: 'POST',
+                    body: {
+                        username: username || '<username>',
+                        password: '<password>',
+                    },
+                },
+                response: {
+                    body: 'json',
+                },
+            },
+            {
+                kind: 'http.request',
+                commandId: 'auth-ws-ticket',
+                request: {
+                    path: '/api/auth/ws-ticket',
+                    method: 'POST',
+                    body: {},
+                },
+                response: {
+                    body: 'json',
+                },
+            },
+            {
+                kind: 'http.request',
+                commandId: 'auth-missing-token-negative',
+                request: {
+                    path: '/api/auth/ws-ticket',
+                    method: 'POST',
+                    body: {},
+                },
+                response: {
+                    body: 'json',
+                },
+                metadata: {
+                    expectedStatus: 401,
+                },
+            },
+        ],
+    });
+}
+
+function defaultWebSocketApiUrl(apiBaseUrl: string): string {
+    try {
+        const url = new URL(apiBaseUrl);
+        url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+        url.pathname = '/api/ws/{auth.sessionId}';
+        url.search = 'ticket={auth.wsTicket}';
+        return url.toString();
+    } catch {
+        return 'ws://localhost:8080/api/ws/{auth.sessionId}?ticket={auth.wsTicket}';
+    }
+}
+
+function resolveWebSocketUrlTemplate(
+    template: string,
+    apiBaseUrl: string,
+    authSession: AuthSession | undefined,
+    ticket: AuthCommandCenterTicket | undefined,
+): string {
+    const wsBaseUrl = (() => {
+        try {
+            const url = new URL(apiBaseUrl);
+            url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+            url.pathname = '';
+            url.search = '';
+            url.hash = '';
+            return url.toString().replace(/\/$/, '');
+        } catch {
+            return 'ws://localhost:8080';
+        }
+    })();
+    return template
+        .replaceAll('{auth.sessionId}', encodeURIComponent(authSession?.sessionId ?? ticket?.sessionId ?? ''))
+        .replaceAll('{auth.wsTicket}', encodeURIComponent(ticket?.ticket ?? ''))
+        .replaceAll('{config.wsBaseUrl}', wsBaseUrl);
+}
+
+function webSocketPayloadPresetText(presetId: string): string | undefined {
+    const preset = WEBSOCKET_PAYLOAD_PRESETS.find(entry => entry.presetId === presetId);
+    return preset ? json(preset.payload) : undefined;
+}
+
+function defaultWebSocketTypeId(): string {
+    return webSocketPayloadPresetById(DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID).values?.typeId ??
+        'room.manual.message';
+}
+
+function defaultWebSocketTopicId(): string {
+    return webSocketPayloadPresetById(DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID).values?.topicId ??
+        defaultWebSocketTypeId();
+}
+
+function defaultWebSocketScope(): WebSocketCommandCenterValues['wsScope'] {
+    return webSocketPayloadPresetById(DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID).values?.wsScope ?? 'room';
+}
+
+function webSocketPayloadPresetById(presetId: string): WebSocketPayloadPreset {
+    return WEBSOCKET_PAYLOAD_PRESETS.find(entry => entry.presetId === presetId) ??
+        WEBSOCKET_PAYLOAD_PRESETS[0];
+}
+
+function defaultWebSocketValuesFromContext(
+    globalValues: CommandCenterGlobalValues | undefined,
+    config: RallarBlackBoxTestConfig | undefined,
+    bootstrap: RallarBlackBoxBootstrapConfig,
+): Pick<
+    WebSocketCommandCenterValues,
+    'apiBaseUrl' | 'applicationId' | 'workspaceId' | 'groupId' | 'contextId'
+> {
+    const groupId = stringValue(globalValues?.roomId) ?? stringValue(config?.roomId) ?? bootstrap.roomId;
+    return {
+        apiBaseUrl: globalValues?.apiBaseUrl ?? config?.apiBaseUrl ?? bootstrap.apiBaseUrl,
+        applicationId: globalValues?.applicationId ?? stringValue(config?.rallar?.applicationId) ?? 'ar-eye-hunter',
+        workspaceId: globalValues?.workspaceId ?? stringValue(config?.rallar?.workspaceId) ?? 'default',
+        groupId,
+        contextId: groupId || 'all',
+    };
+}
+
+function webSocketSendData(
+    values: WebSocketCommandCenterValues,
+    payload: unknown,
+): unknown {
+    const payloadRecord = optionalRecord(payload);
+    const hasTypedFields = [
+        'payload',
+        'data',
+        'typeId',
+        'topicId',
+        'roomId',
+        'groupId',
+        'scope',
+        'contextId',
+        'resourceId',
+    ].some(key => key in payloadRecord);
+    const base = hasTypedFields ? payloadRecord : { payload };
+    const wsScope = (base.scope === 'room' || base.scope === 'all' || base.scope === 'world')
+        ? base.scope
+        : values.wsScope;
+    const explicitGroupId = stringValue(base.roomId) ?? stringValue(base.groupId);
+    const groupId = explicitGroupId ?? (wsScope === 'room' ? values.groupId : '');
+    const typeId = stringValue(base.typeId) ?? values.typeId;
+    const topicId = stringValue(base.topicId) ?? values.topicId ?? typeId;
+    const contextId = stringValue(base.contextId) ?? values.contextId ?? groupId ?? wsScope;
+
+    return {
+        ...base,
+        applicationId: stringValue(base.applicationId) ?? values.applicationId,
+        workspaceId: stringValue(base.workspaceId) ?? values.workspaceId,
+        ...(groupId ? { roomId: groupId, groupId } : {}),
+        scope: wsScope,
+        typeId,
+        topicId,
+        contextId,
+        ...(values.resourceId && !('resourceId' in base) ? { resourceId: values.resourceId } : {}),
+    };
+}
+
+function webSocketRoutePreview(input: Readonly<{
+    values: WebSocketCommandCenterValues;
+    diagnostics: WebSocketDiagnostic;
+    providerMode: string;
+    browserStatus: RallarBrowserStatusSummary;
+}>): WebSocketRoutePreview {
+    const { values, diagnostics, providerMode, browserStatus } = input;
+    const groupId = values.groupId.trim();
+    const typeId = values.typeId.trim() || '-';
+    const topicId = values.topicId.trim() || '*';
+    const contextId = values.contextId.trim() || values.wsScope;
+    const destination = values.wsScope === 'room'
+        ? groupId
+            ? `Group ${groupId}`
+            : 'No group selected'
+        : values.wsScope === 'all'
+            ? 'All WS subscribers'
+            : 'World scope';
+    const destinationDetail = values.wsScope === 'room'
+        ? groupId
+            ? `Application ${values.applicationId || '-'} / workspace ${values.workspaceId || '-'}`
+            : 'Room-scoped messages need a Group before send.'
+        : values.wsScope === 'all'
+            ? 'Group is ignored for this send.'
+            : 'Uses Rallar world scope; Group is ignored.';
+    const usesRallarAppWebSocket = providerMode === 'browser-rallar';
+    const transport = usesRallarAppWebSocket
+        ? 'Rallar app WS'
+        : diagnostics.status === 'open'
+            ? 'Raw WebSocket'
+            : providerMode === 'simulated'
+                ? 'Simulated WebSocket'
+                : 'No open WS';
+    const transportDetail = usesRallarAppWebSocket
+        ? browserStatus.signalingLabel === 'open'
+            ? `Uses open Rallar signaling for ${values.connection}`
+            : `Connects Rallar signaling for ${values.connection}`
+        : `Connection ${values.connection}`;
+
+    return {
+        destination,
+        destinationDetail,
+        selector: `${topicId} / ${typeId}`,
+        selectorDetail: `Context ${contextId}`,
+        transport,
+        transportDetail,
+        sendLabel: values.wsScope === 'room'
+            ? groupId
+                ? `Send JSON to group ${groupId}`
+                : 'Send JSON to group'
+            : values.wsScope === 'all'
+                ? 'Send JSON to all'
+                : 'Send JSON to world',
+    };
+}
+
+function webSocketConfigureCommand(input: Readonly<{
+    values: WebSocketCommandCenterValues;
+    bootstrap: RallarBlackBoxBootstrapConfig;
+    providerMode: string;
+    authSession?: AuthSession;
+    sequence: number;
+}>): RallarBlackBoxTestCommand {
+    const browserRallar = input.providerMode === 'browser-rallar';
+    const rallar = browserRallar
+        ? {
+            ...(input.authSession?.username ?? input.bootstrap.rallarUsername
+                ? { username: input.authSession?.username ?? input.bootstrap.rallarUsername }
+                : {}),
+            ...(input.bootstrap.rallarPassword ? { password: input.bootstrap.rallarPassword } : {}),
+            ...(input.authSession || input.bootstrap.rallarRestoreSession ? { restoreSession: true } : {}),
+            ...(input.bootstrap.rallarRegister ? { register: true } : {}),
+            ...(input.bootstrap.rallarLogoutOnClose ? { logoutOnClose: true } : {}),
+            leaveRoomOnClose: input.bootstrap.rallarLeaveRoomOnClose,
+            applicationId: input.values.applicationId,
+            workspaceId: input.values.workspaceId,
+            scope: {
+                applicationId: input.values.applicationId,
+                workspaceId: input.values.workspaceId,
+            },
+            ...(input.values.groupId
+                ? {
+                    roomRef: {
+                        applicationId: input.values.applicationId,
+                        workspaceId: input.values.workspaceId,
+                        groupId: input.values.groupId,
+                    },
+                }
+                : {}),
+            typeId: input.values.typeId,
+            topicId: input.values.topicId,
+        }
+        : undefined;
+
+    return {
+        kind: 'configure',
+        commandId: `ws-configure-${input.sequence}`,
+        label: 'Configure WebSocket command center',
+        config: {
+            runId: `websocket-command-center-${input.sequence}`,
+            agentId: input.bootstrap.agentId,
+            environment: input.bootstrap.environment,
+            apiBaseUrl: input.values.apiBaseUrl,
+            actor: input.authSession?.username ?? input.bootstrap.actor,
+            sessionId: input.authSession?.sessionId ?? input.bootstrap.sessionId,
+            roomId: input.values.groupId,
+            transport: 'ws',
+            ...(rallar ? { rallar } : {}),
+            control: {
+                mode: 'websocket-command-center',
+                providerMode: input.providerMode,
+                protocolVersion: 1,
+                connected: false,
+            },
+            defaults: {
+                timeoutMs: input.values.timeoutMs,
+                connection: input.values.connection,
+                providerMode: input.providerMode,
+            },
+        },
+    };
+}
+
+function webSocketOpenCommand(
+    values: WebSocketCommandCenterValues,
+    sequence: number,
+    url = values.wsUrl,
+): RallarBlackBoxTestCommand {
+    const protocols = values.protocols
+        .split(',')
+        .map(entry => entry.trim())
+        .filter(Boolean);
+    return {
+        kind: 'ws.open',
+        commandId: `ws-open-${sequence}`,
+        label: 'Open WebSocket',
+        connection: values.connection,
+        url,
+        ...(protocols.length > 0 ? { protocols } : {}),
+        timeoutMs: values.timeoutMs,
+    };
+}
+
+function webSocketSendCommand(
+    values: WebSocketCommandCenterValues,
+    payload: unknown,
+    sequence: number,
+): RallarBlackBoxTestCommand {
+    return {
+        kind: 'ws.send',
+        commandId: `ws-send-${sequence}`,
+        label: 'Send WebSocket JSON',
+        connection: values.connection,
+        data: webSocketSendData(values, payload),
+        timeoutMs: values.timeoutMs,
+    };
+}
+
+function webSocketCloseCommand(
+    values: WebSocketCommandCenterValues,
+    sequence: number,
+    reason = values.closeReason,
+): RallarBlackBoxTestCommand {
+    return {
+        kind: 'ws.close',
+        commandId: `ws-close-${sequence}`,
+        label: 'Close WebSocket',
+        connection: values.connection,
+        code: Number.isFinite(values.closeCode) ? values.closeCode : 1000,
+        reason,
+        timeoutMs: values.timeoutMs,
+    };
+}
+
+function webSocketCommandCenterRecipe(input: Readonly<{
+    values: WebSocketCommandCenterValues;
+    payload: unknown;
+    bootstrap: RallarBlackBoxBootstrapConfig;
+    providerMode: string;
+    authSession?: AuthSession;
+    sequence: number;
+    includeRtcParity?: boolean;
+}>): string {
+    const commands: RallarBlackBoxTestCommand[] = [
+        webSocketConfigureCommand(input),
+        webSocketOpenCommand(input.values, input.sequence + 1),
+        webSocketSendCommand(input.values, input.payload, input.sequence + 2),
+    ];
+    if (input.includeRtcParity) {
+        commands.push(
+            {
+                kind: 'rtc.connect',
+                commandId: `ws-rtc-parity-connect-${input.sequence + 3}`,
+                label: 'Connect RTC comparison client',
+                connection: `${input.values.connection}-rtc`,
+                actor: input.authSession?.username ?? input.bootstrap.actor,
+                roomId: input.bootstrap.roomId,
+                transport: 'realtime',
+                timeoutMs: input.values.timeoutMs,
+                rallar: {
+                    sessionId: input.authSession?.sessionId ?? input.bootstrap.sessionId,
+                },
+            },
+            {
+                kind: 'rtc.send',
+                commandId: `ws-rtc-parity-send-${input.sequence + 4}`,
+                label: 'Send RTC comparison JSON',
+                connection: `${input.values.connection}-rtc`,
+                transport: 'realtime',
+                send: input.payload,
+                timeoutMs: input.values.timeoutMs,
+            },
+        );
+    }
+    commands.push(webSocketCloseCommand(input.values, input.sequence + commands.length + 1));
+
+    return json({
+        recipeId: input.includeRtcParity
+            ? 'rallar-websocket-rtc-parity-command-center'
+            : 'rallar-websocket-command-center',
+        name: input.includeRtcParity
+            ? 'Rallar WebSocket and RTC comparison command-center recipe'
+            : 'Rallar WebSocket command-center recipe',
+        continueOnFailure: false,
+        commands: redactRallarBlackBoxValue(commands, {
+            secretValues: uiSecretValues(undefined, input.authSession, [
+                input.bootstrap.rallarPassword,
+            ]),
+        }),
+    });
+}
+
+function deriveWebSocketDiagnostics(
+    state: RallarBlackBoxTestState,
+    connection: string,
+): WebSocketDiagnostic {
+    const history = selectRallarBlackBoxCommandHistory(state);
+    const events = selectRallarBlackBoxEvents(state)
+        .filter(event => event.transport === 'ws')
+        .filter(event => !connection || !event.connection || event.connection === connection);
+    const recentEvents = events.slice(-16).map(event => ({
+        eventId: event.eventId,
+        kind: event.kind,
+        topic: event.topic,
+        atEpochMs: event.atEpochMs,
+        severity: event.severity ?? 'info',
+        payload: event.payload,
+    }));
+    const receivedMessages = events
+        .filter(event => event.kind === 'message')
+        .slice(-16)
+        .map(event => {
+            const payload = optionalRecord(event.payload);
+            const data = payload.data;
+            const dataRecord = optionalRecord(data);
+            const messagePayload = 'payload' in dataRecord
+                ? dataRecord.payload
+                : data ?? event.payload;
+            return {
+                eventId: event.eventId,
+                atEpochMs: event.atEpochMs,
+                senderId: String(payload.senderId ?? dataRecord.senderId ?? '-'),
+                roomId: String(payload.roomId ?? dataRecord.roomId ?? dataRecord.groupId ?? '-'),
+                typeId: String(payload.typeId ?? dataRecord.typeId ?? '-'),
+                topicId: String(payload.topicId ?? dataRecord.topicId ?? '-'),
+                contextId: String(payload.contextId ?? dataRecord.contextId ?? '-'),
+                resourceId: String(payload.resourceId ?? dataRecord.resourceId ?? '-'),
+                payload: messagePayload,
+            };
+        });
+    const openEvents = events.filter(event =>
+        event.topic.includes('ws.opened') || event.topic.includes('ws.open_skipped')
+    );
+    const closeEvents = events.filter(event => event.topic.includes('ws.closed'));
+    const errorEvents = events.filter(event =>
+        event.severity === 'error' || event.topic.includes('ws.error')
+    );
+    const lastOpen = openEvents.at(-1);
+    const lastClose = closeEvents.at(-1);
+    const lastError = errorEvents.at(-1);
+    const openedAfterClose = Boolean(lastOpen && (!lastClose || lastOpen.atEpochMs >= lastClose.atEpochMs));
+    const closedAfterOpen = Boolean(lastClose && (!lastOpen || lastClose.atEpochMs >= lastOpen.atEpochMs));
+    const simulated = Boolean(lastOpen?.topic.includes('open_skipped'));
+    const status = lastError && (!lastClose || lastError.atEpochMs >= lastClose.atEpochMs)
+        ? 'error'
+        : simulated
+            ? 'simulated'
+            : openedAfterClose
+                ? 'open'
+                : closedAfterOpen
+                    ? 'closed'
+                    : 'idle';
+    const statusLabel = status === 'simulated'
+        ? 'simulated'
+        : status;
+    const openPayload = optionalRecord(lastOpen?.payload);
+    const closePayload = optionalRecord(lastClose?.payload);
+    const failedWsResults = history.filter(result =>
+        (result.kind === 'ws.open' || result.kind === 'ws.send' || result.kind === 'ws.close') &&
+        !result.ok
+    );
+    const outboundCount = history.filter(result =>
+        result.kind === 'ws.send' &&
+        (optionalRecord(result.value).connection === connection || connection.length === 0)
+    ).length;
+
+    return {
+        readyState: String(openPayload.readyState ?? (status === 'open' ? 'open' : status)),
+        status,
+        statusLabel,
+        lastOpenAtEpochMs: lastOpen?.atEpochMs,
+        lastCloseAtEpochMs: lastClose?.atEpochMs,
+        closeCode: closePayload.code,
+        closeReason: closePayload.reason,
+        inboundCount: events.filter(event => event.kind === 'message').length,
+        outboundCount,
+        errorCount: errorEvents.length + failedWsResults.length,
+        recentEvents,
+        receivedMessages,
+    };
+}
+
+function parseRallarServerCollectionText(text: string): RallarServerRestCollection {
+    const value = JSON.parse(text) as unknown;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error('Collection JSON must be an object.');
+    }
+    const collection = value as RallarServerRestCollection;
+    if (!collection.collectionId || !collection.name || !Array.isArray(collection.steps)) {
+        throw new Error('Collection JSON requires collectionId, name, and steps.');
+    }
+    return collection;
+}
+
+function parseRallarServerCollectionVariablesText(text: string): RallarServerRestCollectionVariables {
+    const value = JSON.parse(text || '{}') as unknown;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error('Collection variables must be a JSON object.');
+    }
+    return value as RallarServerRestCollectionVariables;
 }
 
 function createReportSnapshot(state: RallarBlackBoxTestState): unknown {
@@ -424,24 +2134,132 @@ function stringValue(value: unknown): string | undefined {
         : undefined;
 }
 
+function commandCenterGlobalValuesFromState(
+    state: RallarBlackBoxTestState,
+    bootstrap: RallarBlackBoxBootstrapConfig,
+    authSession?: AuthSession,
+): CommandCenterGlobalValues {
+    const config = selectRallarBlackBoxCurrentConfig(state);
+    const configRallar = recordValue(config?.rallar);
+    return {
+        apiBaseUrl: config?.apiBaseUrl ?? bootstrap.apiBaseUrl,
+        applicationId: stringValue(
+            config?.defaults?.applicationId ?? configRallar.applicationId,
+        ) ?? DEFAULT_MANUAL_WORKBENCH_VALUES.applicationId,
+        workspaceId: stringValue(
+            config?.defaults?.workspaceId ?? configRallar.workspaceId,
+        ) ?? DEFAULT_MANUAL_WORKBENCH_VALUES.workspaceId,
+        clientId: authSession?.clientId ?? authSession?.username ?? config?.actor ?? bootstrap.actor,
+        sessionId: authSession?.sessionId ?? config?.sessionId ?? bootstrap.sessionId,
+        roomId: config?.roomId ?? bootstrap.roomId,
+    };
+}
+
+function sameCommandCenterGlobalValues(
+    left: CommandCenterGlobalValues,
+    right: CommandCenterGlobalValues,
+): boolean {
+    return left.apiBaseUrl === right.apiBaseUrl &&
+        left.applicationId === right.applicationId &&
+        left.workspaceId === right.workspaceId &&
+        left.clientId === right.clientId &&
+        left.sessionId === right.sessionId &&
+        left.roomId === right.roomId;
+}
+
+function bootstrapPatchFromGlobalValues(
+    values: CommandCenterGlobalValues,
+): Partial<RallarBlackBoxBootstrapConfig> {
+    return {
+        apiBaseUrl: values.apiBaseUrl,
+        actor: values.clientId,
+        sessionId: values.sessionId,
+        roomId: values.roomId,
+    };
+}
+
+function flowBuilderVariablesFromGlobalValues(
+    variables: Readonly<Record<string, unknown>>,
+    globalValues?: CommandCenterGlobalValues,
+): Readonly<Record<string, unknown>> {
+    if (!globalValues) {
+        return variables;
+    }
+
+    return {
+        ...variables,
+        apiBaseUrl: globalValues.apiBaseUrl,
+        applicationId: globalValues.applicationId,
+        workspaceId: globalValues.workspaceId,
+        groupId: globalValues.roomId,
+        actor: globalValues.clientId,
+        sessionId: globalValues.sessionId,
+        username: globalValues.clientId,
+    };
+}
+
 function booleanValue(value: unknown, fallback = false): boolean {
     return typeof value === 'boolean' ? value : fallback;
+}
+
+function jsonTextValue(value: unknown, fallback = ''): string {
+    if (typeof value === 'string') {
+        return value;
+    }
+
+    if (value && typeof value === 'object') {
+        try {
+            return JSON.stringify(value);
+        } catch {
+            return fallback;
+        }
+    }
+
+    return fallback;
+}
+
+function numberValue(value: unknown, fallback: number): number {
+    return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
 function manualValuesFromState(
     state: RallarBlackBoxTestState,
     bootstrap: RallarBlackBoxBootstrapConfig,
     authSession?: AuthSession,
+    globalValues?: CommandCenterGlobalValues,
 ): ManualWorkbenchValues {
     const config = selectRallarBlackBoxCurrentConfig(state);
     const configRallar = recordValue(config?.rallar);
+    const clientId = globalValues?.clientId ||
+        authSession?.clientId ||
+        authSession?.username ||
+        config?.actor ||
+        bootstrap.actor;
     return {
         ...DEFAULT_MANUAL_WORKBENCH_VALUES,
         environment: config?.environment ?? bootstrap.environment,
-        apiBaseUrl: config?.apiBaseUrl ?? bootstrap.apiBaseUrl,
-        actor: config?.actor ?? authSession?.username ?? bootstrap.actor,
-        sessionId: config?.sessionId ?? authSession?.sessionId ?? bootstrap.sessionId,
-        groupId: config?.roomId ?? bootstrap.roomId,
+        apiBaseUrl: globalValues?.apiBaseUrl ?? config?.apiBaseUrl ?? bootstrap.apiBaseUrl,
+        applicationId: globalValues?.applicationId ?? stringValue(
+            config?.defaults?.applicationId ?? configRallar.applicationId,
+        ) ?? DEFAULT_MANUAL_WORKBENCH_VALUES.applicationId,
+        workspaceId: globalValues?.workspaceId ?? stringValue(
+            config?.defaults?.workspaceId ?? configRallar.workspaceId,
+        ) ?? DEFAULT_MANUAL_WORKBENCH_VALUES.workspaceId,
+        actor: clientId,
+        sessionId: globalValues?.sessionId ?? authSession?.sessionId ?? config?.sessionId ?? bootstrap.sessionId,
+        groupId: globalValues?.roomId ?? config?.roomId ?? bootstrap.roomId,
+        scopeText: jsonTextValue(
+            config?.defaults?.scope ?? configRallar.scope,
+            DEFAULT_MANUAL_WORKBENCH_VALUES.scopeText,
+        ),
+        roomRefText: jsonTextValue(
+            config?.defaults?.roomRef ?? configRallar.roomRef,
+            DEFAULT_MANUAL_WORKBENCH_VALUES.roomRefText,
+        ),
+        minSnapshotVersion: numberValue(
+            config?.defaults?.minSnapshotVersion ?? configRallar.minSnapshotVersion,
+            DEFAULT_MANUAL_WORKBENCH_VALUES.minSnapshotVersion,
+        ),
         connection: String(config?.defaults?.connection ?? DEFAULT_MANUAL_WORKBENCH_VALUES.connection),
         transport: manualTransportFrom(config?.transport ?? bootstrap.transport),
         providerMode: config
@@ -507,6 +2325,13 @@ function readCurrentAuthSession(): AuthSession | undefined {
 }
 
 async function loadBrowserRallarFacade() {
+    const directFacade = typeof window === 'undefined'
+        ? undefined
+        : (window as Window & { __rallarDirectFacade?: unknown }).__rallarDirectFacade;
+    if (directFacade) {
+        return directFacade as typeof import('@shared-web/browser/rallar.ts').rallar;
+    }
+
     return (await import('@shared-web/browser/rallar.ts')).rallar;
 }
 
@@ -620,9 +2445,13 @@ function LoginScreen({ bootstrap, onAuthenticated }: {
     );
 }
 
-function Header({ state, control, bootstrapping, lastAction, authSession, authBusy, onLogout }: {
+function Header({ mode, state, control, bootstrap, globalValues, browserStatus, bootstrapping, lastAction, authSession, authBusy, onLogout }: {
+    mode: AppModeId;
     state: RallarBlackBoxTestState;
     control: RallarBlackBoxControlSnapshot;
+    bootstrap: RallarBlackBoxBootstrapConfig;
+    globalValues: CommandCenterGlobalValues;
+    browserStatus: RallarBrowserStatusSummary;
     bootstrapping: boolean;
     lastAction?: string;
     authSession?: AuthSession;
@@ -633,28 +2462,44 @@ function Header({ state, control, bootstrapping, lastAction, authSession, authBu
     const stats = selectRallarBlackBoxLatestStats(state);
     const activeCommand = selectRallarBlackBoxActiveCommand(state);
     const firstFailure = selectRallarBlackBoxFirstFailure(state);
-    const providerMode = rallarBlackBoxProviderModeFromConfig(config);
+    const providerMode = config
+        ? rallarBlackBoxProviderModeFromConfig(config)
+        : bootstrap.providerMode;
     const rallarValue = providerMode === 'simulated'
         ? 'simulated'
-        : stats?.rallar?.connected ? 'connected' : 'not connected';
+        : browserStatus.rallarConnected || stats?.rallar?.connected ? 'connected' : 'not connected';
+    const effectiveRoom = globalValues.roomId || config?.roomId || bootstrap.roomId || 'not joined';
+    const effectiveUser = authSession?.username ??
+        authSession?.clientId ??
+        globalValues.clientId ??
+        config?.actor ??
+        bootstrap.actor ??
+        'none';
+    const effectiveSession = authSession?.sessionId ??
+        globalValues.sessionId ??
+        config?.sessionId ??
+        bootstrap.sessionId ??
+        'none';
 
     return (
         <header className="run-header">
             <div className="run-title">
                 <p className="eyebrow">Rallar black-box agent</p>
-                <h1>{config?.runId ?? 'No run loaded'}</h1>
+                <h1>{config?.runId ?? bootstrap.runId ?? 'No run loaded'}</h1>
             </div>
             <div className="header-grid" aria-label="Run state">
-                <Metric label="Agent" value={config?.agentId ?? 'unassigned'}/>
+                <Metric label="Agent" value={config?.agentId ?? bootstrap.agentId ?? 'unassigned'}/>
                 <Metric label="Protocol" value="1"/>
                 <Metric label="Provider" value={providerMode} tone={providerMode === 'simulated' ? 'warn' : 'active'}/>
                 <Metric label="Control" value={control.state} tone={statusTone(control.state)}/>
                 <Metric label="Runtime" value={state.status} tone={statusTone(state.status)}/>
-                <Metric label="Rallar" value={rallarValue} tone={stats?.rallar?.connected ? 'good' : providerMode === 'simulated' ? 'warn' : 'muted'}/>
-                <Metric label="Environment" value={config?.environment ?? 'local'}/>
-                <Metric label="Room" value={config?.roomId ?? 'not joined'}/>
-                <Metric label="User" value={authSession?.username ?? config?.actor ?? 'none'}/>
-                <Metric label="Session" value={authSession?.sessionId ?? config?.sessionId ?? 'none'}/>
+                <Metric label="Rallar" value={rallarValue} tone={browserStatus.rallarConnected || stats?.rallar?.connected ? 'good' : providerMode === 'simulated' ? 'warn' : 'muted'}/>
+                <Metric label="Signal WS" value={browserStatus.signalingLabel} tone={browserStatus.signalingTone}/>
+                <Metric label="RTC" value={browserStatus.rtcLabel} tone={browserStatus.rtcTone}/>
+                <Metric label="Environment" value={config?.environment ?? bootstrap.environment ?? 'local'}/>
+                <Metric label="Room" value={effectiveRoom}/>
+                <Metric label="User" value={effectiveUser}/>
+                <Metric label="Session" value={effectiveSession}/>
                 <Metric label="Active" value={activeCommand?.commandId ?? 'none'} tone={activeCommand ? 'active' : 'muted'}/>
                 <Metric label="Failure" value={firstFailure?.commandId ?? 'none'} tone={firstFailure ? 'bad' : 'good'}/>
             </div>
@@ -663,13 +2508,15 @@ function Header({ state, control, bootstrapping, lastAction, authSession, authBu
                     {bootstrapping ? 'running' : 'ready'}
                 </span>
                 <span className="last-action">{lastAction ?? 'Waiting for runtime events'}</span>
-                <button
-                    type="button"
-                    onClick={() => void rallarBlackBoxRuntimeStore.runSample()}
-                    disabled={bootstrapping || providerMode === 'browser-rallar'}
-                >
-                    Replay Sample
-                </button>
+                {mode === 'black-box-runner' && (
+                    <button
+                        type="button"
+                        onClick={() => void rallarBlackBoxRuntimeStore.runSample()}
+                        disabled={bootstrapping || providerMode === 'browser-rallar'}
+                    >
+                        Replay Sample
+                    </button>
+                )}
                 {authSession && (
                     <button
                         type="button"
@@ -684,7 +2531,8 @@ function Header({ state, control, bootstrapping, lastAction, authSession, authBu
     );
 }
 
-function AppTabs({ activeTab, onSelect }: {
+function AppTabs({ activeMode, activeTab, onSelect }: {
+    activeMode: AppModeId;
     activeTab: AppTabId;
     onSelect(tab: AppTabId): void;
 }) {
@@ -697,13 +2545,15 @@ function AppTabs({ activeTab, onSelect }: {
         }
 
         event.preventDefault();
-        onSelect(nextAppTab(tab, event.key === 'ArrowRight' ? 1 : -1));
+        onSelect(nextAppTab(tab, event.key === 'ArrowRight' ? 1 : -1, activeMode));
     };
+    const tabs = appTabsForMode(activeMode);
+    const activeModeLabel = APP_MODES.find(mode => mode.id === activeMode)?.label ?? 'Workspace';
 
     return (
         <nav className="app-tabs" aria-label="Rallar black-box sections">
-            <div role="tablist" aria-label="Workspace tabs">
-                {APP_TABS.map(tab => (
+            <div role="tablist" aria-label={`${activeModeLabel} tabs`}>
+                {tabs.map(tab => (
                     <button
                         key={tab.id}
                         id={`tab-${tab.id}`}
@@ -721,6 +2571,923 @@ function AppTabs({ activeTab, onSelect }: {
                 ))}
             </div>
         </nav>
+    );
+}
+
+function GlobalContextBar({ values, authSession, onChange, onReset }: {
+    values: CommandCenterGlobalValues;
+    authSession?: AuthSession;
+    onChange<K extends keyof CommandCenterGlobalValues>(
+        key: K,
+        value: CommandCenterGlobalValues[K],
+    ): void;
+    onReset(): void;
+}) {
+    return (
+        <section className="global-context-bar" aria-label="Global command context">
+            <div className="global-context-heading">
+                <h2>Global Context</h2>
+                <span className={`pill ${authSession ? 'good' : 'muted'}`}>
+                    {authSession ? 'login synced' : 'editable defaults'}
+                </span>
+                <button type="button" onClick={onReset}>
+                    Use login/context
+                </button>
+            </div>
+            <div className="global-context-grid">
+                <label className="field">
+                    <span>API Base URL</span>
+                    <input
+                        aria-label="Global Server URL"
+                        value={values.apiBaseUrl}
+                        onChange={event => onChange('apiBaseUrl', event.target.value)}
+                    />
+                </label>
+                <label className="field">
+                    <span>Application</span>
+                    <input
+                        aria-label="Global Application"
+                        value={values.applicationId}
+                        onChange={event => onChange('applicationId', event.target.value)}
+                    />
+                </label>
+                <label className="field">
+                    <span>Workspace</span>
+                    <input
+                        aria-label="Global Workspace"
+                        value={values.workspaceId}
+                        onChange={event => onChange('workspaceId', event.target.value)}
+                    />
+                </label>
+                <label className="field">
+                    <span>Room / Group</span>
+                    <input
+                        aria-label="Global Room"
+                        value={values.roomId}
+                        onChange={event => onChange('roomId', event.target.value)}
+                    />
+                </label>
+                <label className="field">
+                    <span>Client</span>
+                    <input
+                        aria-label="Global Client"
+                        value={values.clientId}
+                        onChange={event => onChange('clientId', event.target.value)}
+                    />
+                </label>
+                <label className="field">
+                    <span>Session</span>
+                    <input
+                        aria-label="Global Session"
+                        value={values.sessionId}
+                        onChange={event => onChange('sessionId', event.target.value)}
+                    />
+                </label>
+            </div>
+        </section>
+    );
+}
+
+function AppModeSwitch({ activeMode, onSelect }: {
+    activeMode: AppModeId;
+    onSelect(mode: AppModeId): void;
+}) {
+    return (
+        <section className="app-mode-switch" aria-label="Rallar workspace mode">
+            <div className="app-mode-copy">
+                <h2>Workspace Mode</h2>
+                <p>
+                    Choose direct live Rallar operations or black-box-runner recipes, control runs, and artifacts.
+                </p>
+            </div>
+            <div className="app-mode-options">
+                {APP_MODES.map(mode => (
+                    <button
+                        key={mode.id}
+                        type="button"
+                        aria-pressed={activeMode === mode.id}
+                        className={activeMode === mode.id ? 'selected' : ''}
+                        onClick={() => onSelect(mode.id)}
+                    >
+                        <strong>{mode.label}</strong>
+                        <span>{mode.description}</span>
+                    </button>
+                ))}
+            </div>
+        </section>
+    );
+}
+
+function RallarBrowserTraceBar({ mode, state, status, onOpenEvents }: {
+    mode: AppModeId;
+    state: RallarBlackBoxTestState;
+    status: RallarBrowserStatusSummary;
+    onOpenEvents(): void;
+}) {
+    const events = selectRallarBlackBoxEvents(state);
+    const rallarEvents = useMemo(
+        () => events.filter(isRallarBrowserEvent),
+        [events],
+    );
+    const recentEvents = rallarEvents.slice(-4).reverse();
+    const latestEvent = rallarEvents.at(-1);
+    const errorCount = rallarEvents.filter(event => event.severity === 'error').length;
+    const warningCount = rallarEvents.filter(event => event.severity === 'warning').length;
+    const tone = latestEvent?.severity === 'error'
+        ? 'bad'
+        : latestEvent?.severity === 'warning'
+            ? 'warn'
+            : latestEvent
+                ? 'good'
+                : 'muted';
+    const modeLabel = mode === 'black-box-runner'
+        ? 'black-box-runner mode'
+        : 'Rallar mode';
+    const eventSource = mode === 'black-box-runner'
+        ? 'Runner/control events'
+        : 'Live Rallar events';
+
+    return (
+        <section className="rallar-browser-trace-bar" aria-label="Rallar browser trace">
+            <div className="rallar-trace-heading">
+                <h2>Rallar Browser Trace</h2>
+                <span className={`pill ${tone}`}>
+                    {modeLabel}
+                </span>
+                <span className={`pill ${tone}`}>
+                    {latestEvent?.severity ?? (latestEvent ? 'info' : 'idle')}
+                </span>
+                <button type="button" onClick={onOpenEvents}>
+                    Event Stream
+                </button>
+            </div>
+            <div className="rallar-trace-summary">
+                <span>Source: {eventSource}</span>
+                <span>Signal WS: {status.signalingLabel}</span>
+                <span>RTC: {status.rtcLabel}</span>
+                <span>Group: {status.rtcGroup}</span>
+                <span>Peers: {status.peerSummary}</span>
+                <span>{rallarEvents.length} events</span>
+                <span>{errorCount} errors / {warningCount} warnings</span>
+                <span>{latestEvent ? formatTime(latestEvent.atEpochMs) : '-'}</span>
+            </div>
+            <div className="rallar-trace-events">
+                {recentEvents.length === 0 && (
+                    <div className="empty-state">No Rallar browser events</div>
+                )}
+                {recentEvents.map(event => (
+                    <article className="rallar-trace-event" key={event.eventId}>
+                        <span
+                            className={`status-dot ${
+                                event.severity === 'error'
+                                    ? 'failed'
+                                    : event.severity === 'warning'
+                                        ? 'warning'
+                                        : 'completed'
+                            }`}
+                        />
+                        <strong>{event.topic}</strong>
+                        <small>{eventPayloadText(event)}</small>
+                    </article>
+                ))}
+            </div>
+        </section>
+    );
+}
+
+function DirectRallarBoundaryPanel({ state, bootstrap, globalValues, authSession }: {
+    state: RallarBlackBoxTestState;
+    bootstrap: RallarBlackBoxBootstrapConfig;
+    globalValues: CommandCenterGlobalValues;
+    authSession?: AuthSession;
+}) {
+    const [busy, setBusy] = useState(false);
+    const [result, setResult] = useState<DirectRallarOperationResult | undefined>();
+    const providerMode = bootstrap.providerMode;
+    const realBackendReady = providerMode === 'browser-rallar';
+    const canRun = realBackendReady && Boolean(authSession) && !busy;
+    const resultValue = optionalRecord(result?.value);
+    const resultError = result?.error;
+
+    const runStatusCheck = async (): Promise<void> => {
+        setBusy(true);
+        try {
+            const nextResult = await runDirectRallarStatusCheck({
+                providerMode,
+                apiBaseUrl: globalValues.apiBaseUrl,
+                applicationId: globalValues.applicationId,
+                workspaceId: globalValues.workspaceId,
+                roomId: globalValues.roomId,
+                actor: authSession?.username ?? bootstrap.actor,
+                authSession,
+                timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
+            }, loadBrowserRallarFacade);
+            nextResult.events.forEach(event => {
+                rallarBlackBoxRuntimeStore.recordRuntimeEvent(event);
+            });
+            rallarBlackBoxRuntimeStore.recordRuntimeEvent({
+                kind: 'state',
+                topic: `rallar.direct.status.${nextResult.status}`,
+                severity: nextResult.status === 'failed' ? 'error' : 'info',
+                actor: authSession?.username ?? bootstrap.actor,
+                payload: {
+                    status: nextResult.status,
+                    durationMs: nextResult.durationMs,
+                    error: nextResult.error,
+                },
+            }, nextResult.status === 'failed'
+                ? 'Direct Rallar status check failed'
+                : 'Direct Rallar status check completed');
+            setResult(nextResult);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <section className="panel direct-rallar-boundary-panel" aria-label="Direct Rallar operation boundary">
+            <div className="panel-heading">
+                <h2>Direct Rallar Operations</h2>
+                <span className={`pill ${realBackendReady ? 'good' : 'warn'}`}>
+                    {realBackendReady ? 'real backend' : 'real backend required'}
+                </span>
+            </div>
+            <p className="direct-rallar-copy">
+                Rallar mode actions call the browser Rallar facade directly and emit `rallar.direct.*` events. They do
+                not execute black-box-runner recipe commands.
+            </p>
+            <div className="direct-rallar-grid">
+                <Metric label="Provider" value={providerMode} tone={realBackendReady ? 'good' : 'warn'}/>
+                <Metric label="API" value={globalValues.apiBaseUrl}/>
+                <Metric label="Session" value={authSession?.sessionId ?? 'not logged in'} tone={authSession ? 'good' : 'warn'}/>
+                <Metric label="Direct status" value={result?.status ?? 'not checked'} tone={result?.status === 'failed' ? 'bad' : result?.status === 'completed' ? 'good' : 'muted'}/>
+                <Metric label="Connected" value={String(resultValue.connected ?? '-')} tone={resultValue.connected ? 'good' : 'muted'}/>
+                <Metric label="Duration" value={formatDuration(result?.durationMs)}/>
+            </div>
+            <div className="direct-rallar-actions">
+                <button type="button" disabled={!canRun} onClick={() => void runStatusCheck()}>
+                    {busy ? 'Checking Direct Rallar' : 'Check Direct Rallar'}
+                </button>
+            </div>
+            {!realBackendReady && (
+                <div className="command-center-status" role="status">
+                    Direct Rallar operations require `provider=browser-rallar`. Simulated data remains available in the
+                    black-box-runner workspace and local workbench.
+                </div>
+            )}
+            {realBackendReady && !authSession && (
+                <div className="command-center-status" role="status">
+                    Direct Rallar operations require a logged-in browser session.
+                </div>
+            )}
+            {resultError && (
+                <div className="workbench-error" role="status">
+                    {resultError.message}
+                </div>
+            )}
+            {result && (
+                <pre className="mini-json">{redactedJson({
+                    status: result.status,
+                    value: result.value,
+                    error: result.error,
+                }, state, authSession)}</pre>
+            )}
+        </section>
+    );
+}
+
+function RunnerModeBoundaryPanel({ control }: {
+    control: RallarBlackBoxControlSnapshot;
+}) {
+    return (
+        <section className="panel runner-mode-boundary-panel" aria-label="Runner mode boundary">
+            <div className="panel-heading">
+                <h2>Runner Workspace</h2>
+                <span className="pill active">recipes and artifacts</span>
+            </div>
+            <p className="direct-rallar-copy">
+                This workspace uses black-box-runner recipes, control-server runs, flow exports, and imported evidence.
+                It does not call browser Rallar facade methods directly.
+            </p>
+            <div className="direct-rallar-grid">
+                <Metric label="Control" value={control.state}/>
+                <Metric label="Mode" value="black-box-runner"/>
+                <Metric label="Direct facade" value="not used" tone="muted"/>
+                <Metric label="Primary tabs" value="Shared Test / Local Workbench / Flow Builder / Run Manager"/>
+            </div>
+        </section>
+    );
+}
+
+function QuickRallarTestPanel({ state, bootstrap, authSession, globalValues, browserStatus, onGlobalValueChange, onOpenRunnerMode }: {
+    state: RallarBlackBoxTestState;
+    bootstrap: RallarBlackBoxBootstrapConfig;
+    authSession?: AuthSession;
+    globalValues: CommandCenterGlobalValues;
+    browserStatus: RallarBrowserStatusSummary;
+    onGlobalValueChange<K extends keyof CommandCenterGlobalValues>(
+        key: K,
+        value: CommandCenterGlobalValues[K],
+    ): void;
+    onOpenRunnerMode(): void;
+}) {
+    const [values, setValues] = useState<QuickRallarValues>(() => ({
+        ...QUICK_RALLAR_DEFAULT_VALUES,
+        contextId: globalValues.roomId || 'room',
+    }));
+    const [busyAction, setBusyAction] = useState<string | undefined>();
+    const [localError, setLocalError] = useState<string | undefined>();
+    const [lastResult, setLastResult] = useState<DirectRallarOperationResult | undefined>();
+    const [subscription, setSubscription] = useState<QuickRallarSubscriptionState | undefined>();
+    const [receivedMessages, setReceivedMessages] = useState<readonly QuickRallarReceivedMessageRow[]>([]);
+    const [waitStatus, setWaitStatus] = useState('idle');
+    const subscriptionRef = useRef<QuickRallarSubscriptionState | undefined>(undefined);
+    const receivedCountRef = useRef(0);
+    const previousGlobalGroupRef = useRef(globalValues.roomId);
+    const providerMode = bootstrap.providerMode;
+    const realBackendReady = providerMode === 'browser-rallar';
+    const canUseDirectRallar = realBackendReady && Boolean(authSession) && !busyAction;
+    const activeGroupId = globalValues.roomId.trim();
+    const activeTypeId = values.typeId.trim();
+    const activeTopicId = values.topicId.trim() || activeTypeId;
+    const activeContextId = values.contextId.trim() || activeGroupId || 'room';
+    const selectorLabel = `${activeTopicId || '*'} / ${activeTypeId || '-'}`;
+    const payloadResult = useMemo(() => {
+        try {
+            return {
+                ok: true as const,
+                value: JSON.parse(values.payloadText) as unknown,
+            };
+        } catch (error) {
+            return {
+                ok: false as const,
+                error: error instanceof Error ? error.message : String(error),
+            };
+        }
+    }, [values.payloadText]);
+
+    useEffect(() => {
+        subscriptionRef.current = subscription;
+    }, [subscription]);
+
+    useEffect(() => {
+        receivedCountRef.current = receivedMessages.length;
+    }, [receivedMessages.length]);
+
+    useEffect(() => () => {
+        subscriptionRef.current?.unsubscribe();
+    }, []);
+
+    useEffect(() => {
+        const previousGroup = previousGlobalGroupRef.current;
+        previousGlobalGroupRef.current = globalValues.roomId;
+        setValues(current => {
+            if (current.contextId && current.contextId !== previousGroup) {
+                return current;
+            }
+
+            return {
+                ...current,
+                contextId: globalValues.roomId || 'room',
+            };
+        });
+    }, [globalValues.roomId]);
+
+    const operationContext = (): Parameters<typeof runDirectRallarStatusCheck>[0] => ({
+        providerMode,
+        apiBaseUrl: globalValues.apiBaseUrl,
+        applicationId: globalValues.applicationId,
+        workspaceId: globalValues.workspaceId,
+        roomId: activeGroupId,
+        actor: authSession?.username ?? authSession?.clientId ?? bootstrap.actor,
+        connection: 'quick-test',
+        authSession,
+        timeoutMs: values.timeoutMs,
+    });
+
+    const updateValue = <K extends keyof QuickRallarValues>(
+        key: K,
+        value: QuickRallarValues[K],
+    ): void => {
+        setValues(current => ({
+            ...current,
+            [key]: value,
+        }));
+    };
+
+    const updateGroupId = (groupId: string): void => {
+        const previousGroupId = globalValues.roomId;
+        onGlobalValueChange('roomId', groupId);
+        setValues(current => ({
+            ...current,
+            contextId: !current.contextId || current.contextId === previousGroupId
+                ? groupId || 'room'
+                : current.contextId,
+        }));
+    };
+
+    const recordDirectResult = (
+        result: DirectRallarOperationResult,
+        completedAction: string,
+        failedAction: string,
+    ): void => {
+        result.events.forEach(event => {
+            rallarBlackBoxRuntimeStore.recordRuntimeEvent(event);
+        });
+        rallarBlackBoxRuntimeStore.recordRuntimeEvent({
+            kind: 'state',
+            topic: `rallar.direct.quick.${result.kind}.${result.status}`,
+            transport: result.kind.startsWith('ws.') ? 'ws' : undefined,
+            severity: result.status === 'failed' ? 'error' : 'info',
+            actor: authSession?.username ?? authSession?.clientId ?? bootstrap.actor,
+            payload: {
+                status: result.status,
+                durationMs: result.durationMs,
+                groupId: activeGroupId,
+                selector: {
+                    typeId: activeTypeId,
+                    topicId: activeTopicId,
+                    contextId: activeContextId,
+                },
+                error: result.error,
+            },
+        }, result.status === 'failed' ? failedAction : completedAction);
+        setLastResult(result);
+        if (result.status === 'failed') {
+            setLocalError(result.error?.message ?? failedAction);
+        }
+    };
+
+    const runOperation = async (
+        busyLabel: string,
+        action: () => Promise<DirectRallarOperationResult>,
+        completedAction: string,
+        failedAction: string,
+        onCompleted?: (result: DirectRallarOperationResult) => void,
+    ): Promise<void> => {
+        setBusyAction(busyLabel);
+        setLocalError(undefined);
+        try {
+            const result = await action();
+            recordDirectResult(result, completedAction, failedAction);
+            if (result.status === 'completed') {
+                onCompleted?.(result);
+            }
+        } catch (error) {
+            setLocalError(error instanceof Error ? error.message : String(error));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const createGroup = (): Promise<void> =>
+        runOperation(
+            'Create and join group',
+            () => runDirectRallarGroupCreate(operationContext(), loadBrowserRallarFacade),
+            'Quick Test group created and joined',
+            'Quick Test group create failed',
+            result => {
+                const groupId = stringValue(optionalRecord(result.value).groupId);
+                if (groupId) {
+                    updateGroupId(groupId);
+                }
+            },
+        );
+
+    const joinGroup = (): Promise<void> =>
+        runOperation(
+            'Join group',
+            () => runDirectRallarGroupJoin(operationContext(), loadBrowserRallarFacade),
+            'Quick Test group joined',
+            'Quick Test group join failed',
+        );
+
+    const messageRowFromRallarMessage = (
+        message: Record<string, unknown>,
+    ): QuickRallarReceivedMessageRow => {
+        const nestedMessage = optionalRecord(message.message);
+        const payload = 'payload' in message
+            ? message.payload
+            : 'payload' in nestedMessage
+                ? nestedMessage.payload
+                : message;
+        return {
+            rowId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            atEpochMs: optionalNumber(message.receivedAtEpochMs) ?? Date.now(),
+            transport: 'ws',
+            senderId: String(message.senderId ?? nestedMessage.senderId ?? '-'),
+            roomId: String(message.roomId ?? message.groupId ?? nestedMessage.roomId ?? activeGroupId ?? '-'),
+            typeId: String(message.typeId ?? nestedMessage.typeId ?? activeTypeId ?? '-'),
+            topicId: String(message.topicId ?? nestedMessage.topicId ?? activeTopicId ?? '-'),
+            contextId: String(message.contextId ?? nestedMessage.contextId ?? activeContextId ?? '-'),
+            resourceId: String(message.resourceId ?? nestedMessage.resourceId ?? '-'),
+            payload,
+            raw: message,
+        };
+    };
+
+    const subscribeWs = async (): Promise<void> => {
+        if (!activeTypeId) {
+            setLocalError('WS subscribe requires a Type ID.');
+            return;
+        }
+        if (!activeGroupId) {
+            setLocalError('WS subscribe requires a group.');
+            return;
+        }
+        setBusyAction('Subscribe WS');
+        setLocalError(undefined);
+        subscriptionRef.current?.unsubscribe();
+        setSubscription(undefined);
+        const context = operationContext();
+        const selector = {
+            typeId: activeTypeId,
+            ...(activeTopicId ? { topicId: activeTopicId } : {}),
+        };
+        try {
+            const result = await runDirectRallarWsSubscribe(
+                context,
+                selector,
+                message => {
+                    const row = messageRowFromRallarMessage(message);
+                    setReceivedMessages(current => [...current, row].slice(-50));
+                    rallarBlackBoxRuntimeStore.recordRuntimeEvent(
+                        createDirectRallarRuntimeEvent({
+                            kind: 'message',
+                            topic: 'rallar.direct.ws.message',
+                            context,
+                            transport: 'ws',
+                            payload: {
+                                senderId: row.senderId,
+                                roomId: row.roomId,
+                                typeId: row.typeId,
+                                topicId: row.topicId,
+                                contextId: row.contextId,
+                                resourceId: row.resourceId,
+                                payload: row.payload,
+                                raw: row.raw,
+                            },
+                        }),
+                        'Quick Test WS message received',
+                    );
+                },
+                loadBrowserRallarFacade,
+            );
+            recordDirectResult(
+                result,
+                'Quick Test WS subscribed',
+                'Quick Test WS subscribe failed',
+            );
+            if (result.status === 'completed' && result.unsubscribe) {
+                setSubscription({
+                    transport: 'ws',
+                    label: selectorLabel,
+                    groupId: activeGroupId,
+                    subscribedAtEpochMs: Date.now(),
+                    unsubscribe: result.unsubscribe,
+                });
+                setWaitStatus('subscribed');
+            }
+        } catch (error) {
+            setLocalError(error instanceof Error ? error.message : String(error));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const unsubscribeWs = (): void => {
+        subscriptionRef.current?.unsubscribe();
+        setSubscription(undefined);
+        setWaitStatus('unsubscribed');
+        rallarBlackBoxRuntimeStore.recordRuntimeEvent(
+            createDirectRallarRuntimeEvent({
+                topic: 'rallar.direct.ws.unsubscribe.completed',
+                context: operationContext(),
+                transport: 'ws',
+                payload: {
+                    groupId: activeGroupId,
+                    selector: selectorLabel,
+                },
+            }),
+            'Quick Test WS unsubscribed',
+        );
+    };
+
+    const sendWs = (): Promise<void> => {
+        if (!payloadResult.ok) {
+            setLocalError(payloadResult.error);
+            return Promise.resolve();
+        }
+        if (!activeGroupId) {
+            setLocalError('WS send requires a group.');
+            return Promise.resolve();
+        }
+        return runOperation(
+            'Send WS JSON',
+            () => runDirectRallarWsSend(operationContext(), {
+                scope: 'room',
+                typeId: activeTypeId,
+                topicId: activeTopicId,
+                contextId: activeContextId,
+                resourceId: values.resourceId.trim() || undefined,
+                payload: payloadResult.value,
+            }, loadBrowserRallarFacade),
+            'Quick Test WS JSON sent',
+            'Quick Test WS send failed',
+        );
+    };
+
+    const waitForReceive = async (): Promise<void> => {
+        const startCount = receivedCountRef.current;
+        const startedAt = Date.now();
+        setWaitStatus('waiting');
+        setBusyAction('Wait for receive');
+        setLocalError(undefined);
+        try {
+            await new Promise<void>((resolve, reject) => {
+                const interval = window.setInterval(() => {
+                    if (receivedCountRef.current > startCount) {
+                        window.clearInterval(interval);
+                        resolve();
+                        return;
+                    }
+                    if (Date.now() - startedAt > values.timeoutMs) {
+                        window.clearInterval(interval);
+                        reject(new Error('Timed out waiting for a Quick Test WebSocket receive.'));
+                    }
+                }, 100);
+            });
+            setWaitStatus('message observed');
+            rallarBlackBoxRuntimeStore.recordRuntimeEvent(
+                createDirectRallarRuntimeEvent({
+                    topic: 'rallar.direct.quick.receive.completed',
+                    context: operationContext(),
+                    transport: 'ws',
+                    payload: {
+                        waitedMs: Date.now() - startedAt,
+                        receivedCount: receivedCountRef.current,
+                    },
+                }),
+                'Quick Test receive observed',
+            );
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            setWaitStatus('timeout');
+            setLocalError(message);
+            rallarBlackBoxRuntimeStore.recordRuntimeEvent(
+                createDirectRallarRuntimeEvent({
+                    topic: 'rallar.direct.quick.receive.timeout',
+                    context: operationContext(),
+                    transport: 'ws',
+                    severity: 'error',
+                    payload: {
+                        waitedMs: Date.now() - startedAt,
+                        receivedCount: receivedCountRef.current,
+                        error: message,
+                    },
+                }),
+                'Quick Test receive timed out',
+            );
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const copyDiagnostics = (): void => {
+        void navigator.clipboard?.writeText(redactedJson({
+            providerMode,
+            context: {
+                apiBaseUrl: globalValues.apiBaseUrl,
+                applicationId: globalValues.applicationId,
+                workspaceId: globalValues.workspaceId,
+                groupId: activeGroupId,
+                actor: authSession?.username ?? authSession?.clientId ?? bootstrap.actor,
+                sessionId: authSession?.sessionId,
+            },
+            values,
+            selector: {
+                typeId: activeTypeId,
+                topicId: activeTopicId,
+                contextId: activeContextId,
+            },
+            browserStatus,
+            subscription: subscription
+                ? {
+                    transport: subscription.transport,
+                    label: subscription.label,
+                    groupId: subscription.groupId,
+                    subscribedAtEpochMs: subscription.subscribedAtEpochMs,
+                }
+                : undefined,
+            waitStatus,
+            localError,
+            lastResult,
+            receivedMessages: receivedMessages.slice(-8),
+        }, state, authSession));
+    };
+
+    const copyRunnerRecipe = (): void => {
+        const payload = payloadResult.ok ? payloadResult.value : {};
+        void navigator.clipboard?.writeText(redactedJson({
+            recipeId: 'rallar-quick-test-ws-group',
+            name: 'Rallar Quick Test WS group send',
+            requirements: [
+                'provider=browser-rallar',
+                'logged-in browser session',
+                'Rallar Server API reachable',
+                'receiver browser subscribed to same group/type/topic',
+            ],
+            continueOnFailure: false,
+            commands: [
+                {
+                    kind: 'configure',
+                    commandId: 'quick-configure',
+                    config: {
+                        runId: 'rallar-quick-test-export',
+                        apiBaseUrl: globalValues.apiBaseUrl,
+                        actor: authSession?.username ?? bootstrap.actor,
+                        sessionId: authSession?.sessionId ?? globalValues.sessionId,
+                        roomId: activeGroupId,
+                        providerMode,
+                        rallar: {
+                            restoreSession: true,
+                            applicationId: globalValues.applicationId,
+                            workspaceId: globalValues.workspaceId,
+                            roomRef: {
+                                applicationId: globalValues.applicationId,
+                                workspaceId: globalValues.workspaceId,
+                                groupId: activeGroupId,
+                            },
+                            typeId: activeTypeId,
+                            topicId: activeTopicId,
+                        },
+                    },
+                },
+                {
+                    kind: 'ws.send',
+                    commandId: 'quick-ws-send',
+                    connection: 'quick-test',
+                    data: {
+                        scope: 'room',
+                        roomId: activeGroupId,
+                        typeId: activeTypeId,
+                        topicId: activeTopicId,
+                        contextId: activeContextId,
+                        payload,
+                    },
+                    timeoutMs: values.timeoutMs,
+                },
+            ],
+        }, state, authSession));
+    };
+
+    return (
+        <section className="panel quick-rallar-test-panel" aria-label="Rallar Quick Test">
+            <div className="panel-heading">
+                <h2>Quick Test</h2>
+                <span className={`pill ${subscription ? 'good' : realBackendReady ? 'muted' : 'warn'}`}>
+                    {subscription ? 'listening' : realBackendReady ? 'ready' : 'real backend required'}
+                </span>
+            </div>
+            <div className="quick-rallar-summary-grid">
+                <Metric label="Provider" value={providerMode} tone={realBackendReady ? 'good' : 'warn'}/>
+                <Metric label="API" value={globalValues.apiBaseUrl}/>
+                <Metric label="User" value={authSession?.username ?? 'not logged in'} tone={authSession ? 'good' : 'warn'}/>
+                <Metric label="Session" value={authSession?.sessionId ?? '-'} tone={authSession ? 'good' : 'muted'}/>
+                <Metric label="Group" value={activeGroupId || '-'} tone={activeGroupId ? 'good' : 'warn'}/>
+                <Metric label="Signal WS" value={browserStatus.signalingLabel} tone={browserStatus.signalingTone}/>
+                <Metric label="Subscription" value={subscription?.label ?? 'not listening'} tone={subscription ? 'good' : 'muted'}/>
+                <Metric label="Received" value={String(receivedMessages.length)}/>
+                <Metric label="Wait" value={waitStatus}/>
+                <Metric label="Last action" value={lastResult?.status ?? '-'}/>
+            </div>
+            <div className="quick-rallar-context-grid">
+                <label className="field">
+                    <span>Group</span>
+                    <input value={globalValues.roomId} onChange={event => updateGroupId(event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Transport</span>
+                    <select value={values.transport} onChange={event => updateValue('transport', event.target.value as QuickRallarTransport)}>
+                        <option value="ws">WS group message</option>
+                    </select>
+                </label>
+                <label className="field">
+                    <span>Type ID</span>
+                    <input value={values.typeId} onChange={event => updateValue('typeId', event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Topic ID</span>
+                    <input value={values.topicId} onChange={event => updateValue('topicId', event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Context ID</span>
+                    <input value={values.contextId} onChange={event => updateValue('contextId', event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Resource ID</span>
+                    <input value={values.resourceId} onChange={event => updateValue('resourceId', event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Timeout</span>
+                    <input type="number" min={0} value={values.timeoutMs} onChange={event => updateValue('timeoutMs', Number(event.target.value))}/>
+                </label>
+            </div>
+            <div className="quick-rallar-route-grid" aria-label="Quick Test route">
+                <div>
+                    <span>Destination</span>
+                    <strong>{activeGroupId ? `Group ${activeGroupId}` : 'No group selected'}</strong>
+                    <small>{globalValues.applicationId || '-'} / {globalValues.workspaceId || '-'}</small>
+                </div>
+                <div>
+                    <span>Selector</span>
+                    <strong>{selectorLabel}</strong>
+                    <small>Context {activeContextId}</small>
+                </div>
+                <div>
+                    <span>Receive</span>
+                    <strong>{subscription ? 'Subscribed' : 'Not subscribed'}</strong>
+                    <small>{subscription ? formatTime(subscription.subscribedAtEpochMs) : 'Subscribe WS before receiving'}</small>
+                </div>
+            </div>
+            <div className="quick-rallar-action-grid">
+                <button type="button" disabled={!canUseDirectRallar || !activeGroupId} onClick={() => void createGroup()}>
+                    Create and join group
+                </button>
+                <button type="button" disabled={!canUseDirectRallar || !activeGroupId} onClick={() => void joinGroup()}>
+                    Join group
+                </button>
+                <button type="button" disabled={!canUseDirectRallar || !activeGroupId || !activeTypeId} onClick={() => void subscribeWs()}>
+                    Subscribe WS
+                </button>
+                <button type="button" disabled={!subscription} onClick={unsubscribeWs}>
+                    Unsubscribe WS
+                </button>
+                <button type="button" disabled={!canUseDirectRallar || !activeGroupId || !activeTypeId || !payloadResult.ok} onClick={() => void sendWs()}>
+                    Send WS JSON
+                </button>
+                <button type="button" disabled={!subscription || Boolean(busyAction)} onClick={() => void waitForReceive()}>
+                    Wait for receive
+                </button>
+                <button type="button" onClick={copyDiagnostics}>
+                    Copy diagnostics
+                </button>
+                <button type="button" onClick={copyRunnerRecipe}>
+                    Copy runner recipe
+                </button>
+                <button type="button" onClick={onOpenRunnerMode}>
+                    Open runner mode
+                </button>
+            </div>
+            <div className="quick-rallar-payload-grid">
+                <label className="json-editor">
+                    <span>Payload JSON</span>
+                    <textarea
+                        value={values.payloadText}
+                        onChange={event => updateValue('payloadText', event.target.value)}
+                        spellCheck={false}
+                    />
+                </label>
+                <div className="quick-rallar-received-panel" aria-label="Quick Test received messages">
+                    <div className="websocket-received-heading">
+                        <div>
+                            <h3>Received Messages</h3>
+                            <p>{subscription ? `Listening to ${subscription.label} in ${subscription.groupId}.` : 'Not listening.'}</p>
+                        </div>
+                        <span className={`pill ${subscription ? 'good' : 'muted'}`}>
+                            {subscription ? 'listening' : 'idle'}
+                        </span>
+                    </div>
+                    <div className="websocket-received-list">
+                        {receivedMessages.length === 0 && (
+                            <div className="empty-state">No received messages</div>
+                        )}
+                        {receivedMessages.slice().reverse().map(message => (
+                            <article className="websocket-received-row" key={message.rowId}>
+                                <div>
+                                    <strong>{message.topicId} / {message.typeId}</strong>
+                                    <small>{formatTime(message.atEpochMs)} - group {message.roomId}</small>
+                                    <small>sender {message.senderId} - context {message.contextId}</small>
+                                </div>
+                                <pre className="mini-json">{redactedJson(message.payload, state, authSession)}</pre>
+                            </article>
+                        ))}
+                    </div>
+                </div>
+            </div>
+            {(!realBackendReady || !authSession || localError || !payloadResult.ok || busyAction) && (
+                <div className={localError || !payloadResult.ok ? 'workbench-error' : 'command-center-status'} role="status">
+                    {localError ??
+                        (!payloadResult.ok
+                            ? payloadResult.error
+                            : !realBackendReady
+                                ? 'Quick Test requires provider=browser-rallar.'
+                                : !authSession
+                                    ? 'Quick Test requires a logged-in browser session.'
+                                    : busyAction)}
+                </div>
+            )}
+        </section>
     );
 }
 
@@ -856,16 +3623,32 @@ function WorkbenchPanel({ busy, runState, loadedFixtureId, lastError }: {
     );
 }
 
-function ManualRallarWorkbenchPanel({ state, bootstrap, authSession, busy, onSelectCommand }: {
+function ManualRallarWorkbenchPanel({ state, bootstrap, authSession, globalValues, globalValuesEdited, busy, onSelectCommand, onGlobalValueChange }: {
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
     authSession?: AuthSession;
+    globalValues?: CommandCenterGlobalValues;
+    globalValuesEdited?: boolean;
     busy: boolean;
     onSelectCommand(commandId: string): void;
+    onGlobalValueChange?<K extends keyof CommandCenterGlobalValues>(
+        key: K,
+        value: CommandCenterGlobalValues[K],
+    ): void;
 }) {
     const defaultValues = useMemo(
-        () => manualValuesFromState(state, bootstrap, authSession),
-        [authSession, bootstrap, state.currentConfig],
+        () => manualValuesFromState(state, bootstrap, authSession, globalValues),
+        [
+            authSession,
+            bootstrap,
+            globalValues?.apiBaseUrl,
+            globalValues?.applicationId,
+            globalValues?.clientId,
+            globalValues?.roomId,
+            globalValues?.sessionId,
+            globalValues?.workspaceId,
+            state.currentConfig,
+        ],
     );
     const defaultDraft = useMemo<ManualWorkbenchDraft>(() => ({
         values: defaultValues,
@@ -896,12 +3679,88 @@ function ManualRallarWorkbenchPanel({ state, bootstrap, authSession, busy, onSel
         [payloadResult, sequence, values],
     );
     const recipeText = useMemo(() => manualRecipeSnippet(history), [history]);
+    const negativeRecipeText = useMemo(
+        () => payloadResult.ok
+            ? manualRtcNegativeRecipeSnippet(values, payloadResult.value)
+            : payloadResult.error,
+        [payloadResult, values],
+    );
 
     useEffect(() => {
         if (!valuesEdited) {
             setValues(defaultValues);
         }
     }, [defaultValues, valuesEdited]);
+
+    useEffect(() => {
+        if (!authSession) {
+            return;
+        }
+
+        setValues(current => {
+            const clientId = globalValues?.clientId || authSession.clientId || authSession.username;
+            const sessionId = globalValues?.sessionId || authSession.sessionId;
+            const nextValues = {
+                ...current,
+                actor: clientId,
+                sessionId,
+                rallarUsername: authSession.username,
+                rallarRestoreSession: true,
+            };
+
+            return (
+                    current.actor === nextValues.actor &&
+                    current.sessionId === nextValues.sessionId &&
+                    current.rallarUsername === nextValues.rallarUsername &&
+                    current.rallarRestoreSession === nextValues.rallarRestoreSession
+                )
+                ? current
+                : nextValues;
+        });
+    }, [
+        authSession?.clientId,
+        authSession?.sessionId,
+        authSession?.username,
+        globalValues?.clientId,
+        globalValues?.sessionId,
+    ]);
+
+    useEffect(() => {
+        if (!globalValues || !globalValuesEdited) {
+            return;
+        }
+
+        setValues(current => {
+            const nextValues = {
+                ...current,
+                apiBaseUrl: globalValues.apiBaseUrl,
+                applicationId: globalValues.applicationId,
+                workspaceId: globalValues.workspaceId,
+                actor: globalValues.clientId,
+                sessionId: globalValues.sessionId,
+                groupId: globalValues.roomId,
+            };
+
+            return (
+                    current.apiBaseUrl === nextValues.apiBaseUrl &&
+                    current.applicationId === nextValues.applicationId &&
+                    current.workspaceId === nextValues.workspaceId &&
+                    current.actor === nextValues.actor &&
+                    current.sessionId === nextValues.sessionId &&
+                    current.groupId === nextValues.groupId
+                )
+                ? current
+                : nextValues;
+        });
+    }, [
+        globalValues?.apiBaseUrl,
+        globalValues?.applicationId,
+        globalValues?.clientId,
+        globalValues?.roomId,
+        globalValues?.sessionId,
+        globalValues?.workspaceId,
+        globalValuesEdited,
+    ]);
 
     useEffect(() => {
         writeManualWorkbenchDraft(browserUiStorage(), {
@@ -936,21 +3795,11 @@ function ManualRallarWorkbenchPanel({ state, bootstrap, authSession, busy, onSel
         }
     };
 
-    const runManualAction = async (action: ManualWorkbenchAction): Promise<void> => {
-        setLocalError(undefined);
-        if (action === 'send' && !payloadResult.ok) {
-            setLocalError(payloadResult.error);
-            return;
-        }
-
-        const label = actionLabel(action);
-        const startSequence = sequence;
-        const commands = buildManualWorkbenchCommands(
-            action,
-            values,
-            payloadResult.ok ? payloadResult.value : null,
-            startSequence,
-        );
+    const runManualCommandSet = async (
+        label: string,
+        commands: readonly RallarBlackBoxTestCommand[],
+        startSequence: number,
+    ): Promise<void> => {
         const entry: ManualActionHistoryEntry = {
             actionId: `manual-action-${startSequence}`,
             label,
@@ -973,9 +3822,98 @@ function ManualRallarWorkbenchPanel({ state, bootstrap, authSession, busy, onSel
         }
     };
 
+    const runManualAction = async (action: ManualWorkbenchAction): Promise<void> => {
+        setLocalError(undefined);
+        if (action === 'send' && !payloadResult.ok) {
+            setLocalError(payloadResult.error);
+            return;
+        }
+        const selectedGroupId = values.groupId.trim();
+        if (
+            selectedGroupId &&
+            onGlobalValueChange &&
+            ['configure', 'join', 'connect', 'send'].includes(action) &&
+            globalValues?.roomId !== selectedGroupId
+        ) {
+            onGlobalValueChange('roomId', selectedGroupId);
+        }
+
+        const label = actionLabel(action);
+        const startSequence = sequence;
+        const commands = buildManualWorkbenchCommands(
+            action,
+            values,
+            payloadResult.ok ? payloadResult.value : null,
+            startSequence,
+        );
+        await runManualCommandSet(label, commands, startSequence);
+    };
+
+    const runRtcMatrix = async (
+        transport: Extract<ManualWorkbenchTransport, 'realtime' | 'messages.rtc'>,
+    ): Promise<void> => {
+        setLocalError(undefined);
+        if (!payloadResult.ok) {
+            setLocalError(payloadResult.error);
+            return;
+        }
+
+        const label = `RTC ${transport} delivery matrix`;
+        const startSequence = sequence;
+        const commands = manualRtcDeliveryMatrixCommands(
+            values,
+            payloadResult.value,
+            startSequence,
+            transport,
+        );
+        await runManualCommandSet(label, commands, startSequence);
+    };
+
+    const runRtcNackProbe = async (): Promise<void> => {
+        setLocalError(undefined);
+        if (!payloadResult.ok) {
+            setLocalError(payloadResult.error);
+            return;
+        }
+
+        const startSequence = sequence;
+        await runManualCommandSet(
+            'RTC not-yet-in-sync probe',
+            manualRtcNackProbeCommands(values, payloadResult.value, startSequence),
+            startSequence,
+        );
+    };
+
     const copyRecipeSnippet = (): void => {
         if (navigator.clipboard) {
             void navigator.clipboard.writeText(recipeText);
+        }
+    };
+
+    const copyRtcMatrixRecipe = (): void => {
+        if (!payloadResult.ok || !navigator.clipboard) {
+            return;
+        }
+
+        const realtime = manualRtcDeliveryMatrixCommands(values, payloadResult.value, 1, 'realtime');
+        const messages = manualRtcDeliveryMatrixCommands(
+            values,
+            payloadResult.value,
+            realtime.length + 2,
+            'messages.rtc',
+        );
+        void navigator.clipboard.writeText(JSON.stringify({
+            recipeId: 'manual-rtc-delivery-matrix',
+            name: 'Manual RTC delivery matrix',
+            description: 'Direct, multicast, and broadcast delivery over realtime and messages.rtc.',
+            continueOnFailure: false,
+            commands: [...realtime, ...messages],
+        }, null, 2));
+    };
+
+    const copyNegativeRecipe = (): void => {
+        if (navigator.clipboard) {
+            void navigator.clipboard.writeText(negativeRecipeText);
         }
     };
 
@@ -1005,6 +3943,22 @@ function ManualRallarWorkbenchPanel({ state, bootstrap, authSession, busy, onSel
                     />
                 </label>
                 <label className="field">
+                    <span>Application</span>
+                    <input
+                        value={values.applicationId}
+                        onChange={event => updateValue('applicationId', event.target.value)}
+                        disabled={busy}
+                    />
+                </label>
+                <label className="field">
+                    <span>Workspace</span>
+                    <input
+                        value={values.workspaceId}
+                        onChange={event => updateValue('workspaceId', event.target.value)}
+                        disabled={busy}
+                    />
+                </label>
+                <label className="field">
                     <span>Actor</span>
                     <input
                         value={values.actor}
@@ -1025,6 +3979,34 @@ function ManualRallarWorkbenchPanel({ state, bootstrap, authSession, busy, onSel
                     <input
                         value={values.groupId}
                         onChange={event => updateValue('groupId', event.target.value)}
+                        disabled={busy}
+                    />
+                </label>
+                <label className="field">
+                    <span>Scope JSON</span>
+                    <input
+                        value={values.scopeText}
+                        onChange={event => updateValue('scopeText', event.target.value)}
+                        disabled={busy}
+                        placeholder='{"workspaceId":"default"}'
+                    />
+                </label>
+                <label className="field">
+                    <span>Room Ref JSON</span>
+                    <input
+                        value={values.roomRefText}
+                        onChange={event => updateValue('roomRefText', event.target.value)}
+                        disabled={busy}
+                        placeholder='{"groupId":"bb-group"}'
+                    />
+                </label>
+                <label className="field">
+                    <span>Min Snapshot</span>
+                    <input
+                        type="number"
+                        min={0}
+                        value={values.minSnapshotVersion}
+                        onChange={event => updateValue('minSnapshotVersion', Number(event.target.value))}
                         disabled={busy}
                     />
                 </label>
@@ -1178,6 +4160,41 @@ function ManualRallarWorkbenchPanel({ state, bootstrap, authSession, busy, onSel
                     </button>
                 ))}
             </div>
+            <div className="manual-matrix-card">
+                <div className="section-heading">
+                    <h3>RTC Delivery Matrix</h3>
+                    <span>direct, multicast, broadcast</span>
+                </div>
+                <div className="manual-action-grid">
+                    <button
+                        type="button"
+                        disabled={busy || !payloadResult.ok}
+                        onClick={() => void runRtcMatrix('realtime')}
+                    >
+                        Run Realtime Matrix
+                    </button>
+                    <button
+                        type="button"
+                        disabled={busy || !payloadResult.ok}
+                        onClick={() => void runRtcMatrix('messages.rtc')}
+                    >
+                        Run Messages Matrix
+                    </button>
+                    <button
+                        type="button"
+                        disabled={busy || !payloadResult.ok}
+                        onClick={() => void runRtcNackProbe()}
+                    >
+                        NACK Probe
+                    </button>
+                    <button type="button" onClick={copyRtcMatrixRecipe} disabled={!payloadResult.ok}>
+                        Copy Matrix Recipe
+                    </button>
+                    <button type="button" onClick={copyNegativeRecipe} disabled={!payloadResult.ok}>
+                        Copy Negative Recipe
+                    </button>
+                </div>
+            </div>
             <div className="manual-history">
                 <div className="section-heading">
                     <h3>Manual Actions</h3>
@@ -1283,10 +4300,11 @@ function ReceivedDataInboxPanel({ state, onSelectCommand }: {
     );
 }
 
-function RtcDiagnosticsPanel({ state, bootstrap, authSession, busy, onSelectCommand }: {
+function RtcDiagnosticsPanel({ state, bootstrap, authSession, globalValues, busy, onSelectCommand }: {
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
     authSession?: AuthSession;
+    globalValues?: CommandCenterGlobalValues;
     busy: boolean;
     onSelectCommand(commandId: string): void;
 }) {
@@ -1294,35 +4312,106 @@ function RtcDiagnosticsPanel({ state, bootstrap, authSession, busy, onSelectComm
     const [sequence, setSequence] = useState(1);
     const [bundleVisible, setBundleVisible] = useState(false);
     const [localError, setLocalError] = useState<string | undefined>();
+    const providerMode = bootstrap.providerMode;
+    const canRunDirect = providerMode === 'browser-rallar' && Boolean(authSession) && !busy;
     const bundleText = useMemo(
         () => redactedJson(diagnostics.bundle, state, authSession),
         [authSession, diagnostics.bundle, state],
     );
+    const directContext = (): Parameters<typeof runDirectRallarStatusCheck>[0] => ({
+        providerMode,
+        apiBaseUrl: globalValues?.apiBaseUrl ?? bootstrap.apiBaseUrl,
+        applicationId: globalValues?.applicationId ?? DEFAULT_MANUAL_WORKBENCH_VALUES.applicationId,
+        workspaceId: globalValues?.workspaceId ?? DEFAULT_MANUAL_WORKBENCH_VALUES.workspaceId,
+        roomId: globalValues?.roomId ?? bootstrap.roomId,
+        actor: authSession?.username ?? authSession?.clientId ?? bootstrap.actor,
+        connection: 'rtc-diagnostics',
+        authSession,
+        timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
+    });
+    const recordRtcDiagnostic = (
+        topic: string,
+        payload: unknown,
+        lastAction: string,
+        severity: RallarBlackBoxTestRuntimeEventInput['severity'] = 'info',
+    ): void => {
+        rallarBlackBoxRuntimeStore.recordRuntimeEvent(
+            createDirectRallarRuntimeEvent({
+                topic,
+                context: directContext(),
+                transport: 'realtime',
+                severity,
+                payload,
+            }),
+            lastAction,
+        );
+    };
     const runAction = async (
         label: string,
         action: ManualWorkbenchAction | 'reconnect' | 'cleanup',
     ): Promise<void> => {
         setLocalError(undefined);
-        const values = manualValuesFromState(state, bootstrap, authSession);
-        const startSequence = sequence;
-        const commands = action === 'reconnect'
-            ? [
-                ...buildManualWorkbenchCommands('close', values, null, startSequence),
-                ...buildManualWorkbenchCommands('connect', values, null, startSequence + 1),
-            ]
-            : action === 'cleanup'
-                ? [
-                    ...buildManualWorkbenchCommands('close', values, null, startSequence),
-                    ...buildManualWorkbenchCommands('reset', values, null, startSequence + 1),
-                ]
-                : buildManualWorkbenchCommands(action, values, null, startSequence);
-        setSequence(current => current + commands.length + 1);
-        onSelectCommand(commands.at(-1)?.commandId ?? commands[0]?.commandId ?? label);
-
         try {
-            await rallarBlackBoxRuntimeStore.executeManualCommands(commands, label);
+            if (providerMode !== 'browser-rallar') {
+                throw new Error('RTC Diagnostics actions require provider=browser-rallar.');
+            }
+            if (!authSession) {
+                throw new Error('RTC Diagnostics actions require a logged-in browser session.');
+            }
+            const facade = await loadBrowserRallarFacade();
+            const context = directContext();
+            configureDirectRallarFacade(facade, context);
+            if (action === 'reconnect' || action === 'cleanup' || action === 'close') {
+                await facade.disconnect();
+            }
+            let result: unknown;
+            if (action === 'cleanup' || action === 'close' || action === 'reset') {
+                result = {
+                    action,
+                    disconnected: true,
+                    wsStatus: facade.ws.status(),
+                    rtcStatus: facade.rtc.status(),
+                };
+            } else {
+                const startResult = await facade.start({
+                    connect: true,
+                    refreshRooms: false,
+                    refreshPeople: false,
+                    timeoutMs: context.timeoutMs,
+                });
+                if (context.roomId) {
+                    await facade.rooms.join(context.roomId, {
+                        scope: {
+                            applicationId: context.applicationId,
+                            workspaceId: context.workspaceId,
+                        },
+                        timeoutMs: context.timeoutMs,
+                    });
+                }
+                result = {
+                    action,
+                    connected: startResult.connected || facade.isConnected(),
+                    status: facade.status(),
+                    wsStatus: facade.ws.status(),
+                    rtcStatus: facade.rtc.status(),
+                    realtimeHealth: facade.realtime.health(),
+                };
+            }
+            setSequence(current => current + 1);
+            recordRtcDiagnostic(
+                `rallar.direct.rtc_diagnostics.${label.toLowerCase().replaceAll(' ', '_')}.completed`,
+                result,
+                label,
+            );
         } catch (error) {
-            setLocalError(error instanceof Error ? error.message : String(error));
+            const message = error instanceof Error ? error.message : String(error);
+            setLocalError(message);
+            recordRtcDiagnostic(
+                `rallar.direct.rtc_diagnostics.${label.toLowerCase().replaceAll(' ', '_')}.failed`,
+                { error: message },
+                `${label} failed`,
+                'error',
+            );
         }
     };
     const copyBundle = (): void => {
@@ -1342,35 +4431,35 @@ function RtcDiagnosticsPanel({ state, bootstrap, authSession, busy, onSelectComm
             <div className="rtc-actions">
                 <button
                     type="button"
-                    disabled={busy}
+                    disabled={!canRunDirect}
                     onClick={() => void runAction('RTC reconnect check', 'reconnect')}
                 >
                     Reconnect
                 </button>
                 <button
                     type="button"
-                    disabled={busy}
+                    disabled={!canRunDirect}
                     onClick={() => void runAction('RTC rejoin check', 'connect')}
                 >
                     Rejoin
                 </button>
                 <button
                     type="button"
-                    disabled={busy}
+                    disabled={!canRunDirect}
                     onClick={() => void runAction('RTC health check', 'health')}
                 >
                     Health
                 </button>
                 <button
                     type="button"
-                    disabled={busy}
+                    disabled={!canRunDirect}
                     onClick={() => void runAction('RTC close', 'close')}
                 >
                     Close
                 </button>
                 <button
                     type="button"
-                    disabled={busy}
+                    disabled={!canRunDirect}
                     onClick={() => void runAction('RTC cleanup', 'cleanup')}
                 >
                     Cleanup
@@ -1432,6 +4521,14 @@ function RtcDiagnosticsPanel({ state, bootstrap, authSession, busy, onSelectComm
                     <dd>{formatList(diagnostics.membership.observedClients)}</dd>
                 </div>
                 <div>
+                    <dt>Ready Peers</dt>
+                    <dd>{formatList(diagnostics.membership.readyPeerIds)}</dd>
+                </div>
+                <div>
+                    <dt>Active Peers</dt>
+                    <dd>{formatList(diagnostics.membership.activePeerIds)}</dd>
+                </div>
+                <div>
                     <dt>Missing</dt>
                     <dd>{formatList(diagnostics.membership.missingClients)}</dd>
                 </div>
@@ -1446,6 +4543,10 @@ function RtcDiagnosticsPanel({ state, bootstrap, authSession, busy, onSelectComm
                 <div>
                     <dt>Lane Health</dt>
                     <dd>{String(diagnostics.membership.laneHealth ?? '-')}</dd>
+                </div>
+                <div>
+                    <dt>NACK</dt>
+                    <dd>{formatList(diagnostics.membership.nackCodes)}</dd>
                 </div>
             </dl>
             {diagnostics.failure && (
@@ -1480,13 +4581,16 @@ function TopologyGraphPanel({ state, active, onSelectCommand }: {
     onSelectCommand(commandId: string): void;
 }) {
     const [filter, setFilter] = useState<RallarTopologyFilter>('all');
+    const [query, setQuery] = useState('');
+    const [nodeLimit, setNodeLimit] = useState(18);
     const containerRef = useRef<HTMLDivElement | null>(null);
     const topology = useMemo(() => deriveRallarTopologyGraph(state), [state]);
     const visibleCounts = useMemo(
         () => visibleTopologyCounts(topology.graph, filter),
         [filter, topology.graph],
     );
-    const visibleNodes = useMemo(() => {
+    const matchingNodes = useMemo(() => {
+        const normalizedQuery = query.trim().toLowerCase();
         const rows: Array<Readonly<{
             id: string;
             label: string;
@@ -1496,6 +4600,12 @@ function TopologyGraphPanel({ state, active, onSelectCommand }: {
         }>> = [];
         topology.graph.forEachNode((id, attrs) => {
             if (filter !== 'all' && attrs.status !== filter) {
+                return;
+            }
+            if (
+                normalizedQuery.length > 0 &&
+                !`${id} ${attrs.label} ${attrs.kind} ${attrs.status}`.toLowerCase().includes(normalizedQuery)
+            ) {
                 return;
             }
             rows.push({
@@ -1510,9 +4620,12 @@ function TopologyGraphPanel({ state, active, onSelectCommand }: {
             .sort((left, right) =>
                 left.kind.localeCompare(right.kind) ||
                 left.label.localeCompare(right.label)
-            )
-            .slice(0, 18);
-    }, [filter, topology.graph]);
+            );
+    }, [filter, query, topology.graph]);
+    const visibleNodes = useMemo(
+        () => matchingNodes.slice(0, nodeLimit),
+        [matchingNodes, nodeLimit],
+    );
     const routeResults = useMemo(
         () => state.commandHistory
             .filter(result => result.kind === 'rtc.send' || result.kind === 'ws.send')
@@ -1520,6 +4633,15 @@ function TopologyGraphPanel({ state, active, onSelectCommand }: {
             .reverse(),
         [state.commandHistory],
     );
+    const routeSummary = useMemo(() => {
+        const routes = state.commandHistory.filter(result => result.kind === 'rtc.send' || result.kind === 'ws.send');
+        return {
+            total: routes.length,
+            failed: routes.filter(result => !result.ok).length,
+            rtc: routes.filter(result => result.kind === 'rtc.send').length,
+            ws: routes.filter(result => result.kind === 'ws.send').length,
+        };
+    }, [state.commandHistory]);
 
     useEffect(() => {
         if (!active) {
@@ -1568,6 +4690,24 @@ function TopologyGraphPanel({ state, active, onSelectCommand }: {
                     </button>
                 ))}
             </div>
+            <div className="topology-search-grid">
+                <label className="field compact-field">
+                    <span>Search</span>
+                    <input
+                        value={query}
+                        onChange={event => setQuery(event.target.value)}
+                        placeholder="node, route, status"
+                    />
+                </label>
+                <label className="field compact-field">
+                    <span>Node Limit</span>
+                    <select value={nodeLimit} onChange={event => setNodeLimit(Number(event.target.value))}>
+                        {[18, 50, 100, 200].map(limit => (
+                            <option key={limit} value={limit}>{limit}</option>
+                        ))}
+                    </select>
+                </label>
+            </div>
             <div className="topology-summary-grid">
                 <Metric label="Edges" value={String(visibleCounts.edges)}/>
                 <Metric label="Rooms" value={String(topology.summary.rooms)}/>
@@ -1583,13 +4723,17 @@ function TopologyGraphPanel({ state, active, onSelectCommand }: {
                     value={String(topology.summary.failedNodes + topology.summary.failedEdges)}
                     tone={topology.summary.failedNodes + topology.summary.failedEdges > 0 ? 'bad' : 'good'}
                 />
+                <Metric label="Route cmds" value={String(routeSummary.total)}/>
+                <Metric label="RTC routes" value={String(routeSummary.rtc)}/>
+                <Metric label="WS routes" value={String(routeSummary.ws)}/>
+                <Metric label="Route failures" value={String(routeSummary.failed)} tone={routeSummary.failed > 0 ? 'bad' : 'good'}/>
             </div>
             <div className="sigma-host" ref={containerRef} aria-label="Rallar topology graph"/>
             <div className="topology-lists">
                 <div className="topology-node-list">
                     <div className="section-heading">
                         <h3>Nodes</h3>
-                        <span>{visibleNodes.length} visible</span>
+                        <span>{visibleNodes.length} of {matchingNodes.length}</span>
                     </div>
                     <div className="topology-list-body">
                         {visibleNodes.length === 0 && (
@@ -1732,6 +4876,642 @@ function ControlPanel({ state, control }: {
                 </div>
             )}
         </section>
+    );
+}
+
+const RUN_MANAGER_SNAPSHOT_BOUNDS = {
+    commands: 120,
+    results: 120,
+    events: 160,
+    stats: 60,
+    reports: 40,
+    heartbeats: 80,
+} as const;
+
+const RUN_MANAGER_COMMAND_PRESETS: readonly {
+    presetId: string;
+    label: string;
+    command: RallarBlackBoxTestCommand;
+}[] = [
+    {
+        presetId: 'health',
+        label: 'Health',
+        command: {
+            kind: 'health',
+            label: 'Run manager health probe',
+        },
+    },
+    {
+        presetId: 'stats',
+        label: 'Stats',
+        command: {
+            kind: 'stats',
+            label: 'Run manager stats snapshot',
+        },
+    },
+    {
+        presetId: 'reset',
+        label: 'Browser Reset',
+        command: {
+            kind: 'reset',
+            label: 'Run manager browser reset',
+        },
+    },
+];
+
+function parseRunManagerCommandText(text: string): RallarBlackBoxTestCommand {
+    const value = JSON.parse(text) as unknown;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error('Command JSON must be an object.');
+    }
+    const command = value as RallarBlackBoxTestCommand;
+    if (typeof command.kind !== 'string' || command.kind.length === 0) {
+        throw new Error('Command JSON requires kind.');
+    }
+    return command;
+}
+
+function runManagerCommandPrefix(command: RallarBlackBoxTestCommand): string {
+    const base = command.commandId ?? command.kind;
+    return `${base.replace(/[^A-Za-z0-9_.:-]+/g, '-')}-${Date.now()}`;
+}
+
+function sameStringArray(left: readonly string[], right: readonly string[]): boolean {
+    return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function RunManagerPanel({ state, bootstrap, control }: {
+    state: RallarBlackBoxTestState;
+    bootstrap: RallarBlackBoxBootstrapConfig;
+    control: RallarBlackBoxControlSnapshot;
+}) {
+    const [baseUrl, setBaseUrl] = useState(() =>
+        controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl)
+    );
+    const [token, setToken] = useState('');
+    const [selectedRunId, setSelectedRunId] = useState(control.runId ?? bootstrap.runId ?? '');
+    const [selectedAgentIds, setSelectedAgentIds] = useState<readonly string[]>([]);
+    const [commandText, setCommandText] = useState(() => json(RUN_MANAGER_COMMAND_PRESETS[0].command));
+    const [snapshot, setSnapshot] = useState<ControlServerSnapshot | undefined>();
+    const [run, setRun] = useState<ControlRunSnapshot | undefined>();
+    const [artifactBundle, setArtifactBundle] = useState<ControlRunArtifactBundle | undefined>();
+    const [busyAction, setBusyAction] = useState<string | undefined>();
+    const [error, setError] = useState<string | undefined>();
+    const [lastAction, setLastAction] = useState<string | undefined>();
+    const didInitialRefresh = useRef(false);
+    const stats = useMemo(() => controlRunManagerStats(snapshot), [snapshot]);
+    const agentRows = useMemo(() => controlRunAgentRows(run), [run]);
+    const agentRowsKey = agentRows.map(row => row.agentId).join('\u0000');
+    const commandRows = useMemo(() => controlRunCommandRows(run).slice(0, 24), [run]);
+    const runOptions = useMemo(
+        () => [...(snapshot?.runs ?? [])].sort((left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs),
+        [snapshot],
+    );
+    const selectedAgentSet = useMemo(() => new Set(selectedAgentIds), [selectedAgentIds]);
+    const recentResults = useMemo(() => [...(run?.results ?? [])].reverse().slice(0, 12), [run]);
+    const recentEvents = useMemo(() => [...(run?.events ?? [])].reverse().slice(0, 12), [run]);
+    const parsedArtifact = useMemo(
+        () => artifactBundle
+            ? parseRallarBlackBoxSharedTestArtifactBundle(artifactBundle.files)
+            : undefined,
+        [artifactBundle],
+    );
+    const canTargetAgents = Boolean(run && selectedAgentIds.length > 0);
+
+    const refresh = async (preferredRunId = selectedRunId): Promise<void> => {
+        setBusyAction('refresh');
+        setError(undefined);
+        try {
+            const serverSnapshot = await fetchControlServerSnapshot({
+                baseUrl,
+                token,
+                bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
+            });
+            setSnapshot(serverSnapshot);
+            const preferredCandidates = [
+                preferredRunId,
+                control.runId,
+                bootstrap.runId,
+            ].filter((value): value is string => Boolean(value && value.length > 0));
+            const knownRunIds = new Set(serverSnapshot.runs.map(candidate => candidate.runId));
+            const knownPreferredRunId = preferredCandidates.find(candidate => knownRunIds.has(candidate));
+            const nextRunId = knownPreferredRunId ?? serverSnapshot.runs[0]?.runId ?? '';
+            setSelectedRunId(nextRunId);
+            if (nextRunId) {
+                const nextRun = await fetchControlRunSnapshot({
+                    baseUrl,
+                    token,
+                    runId: nextRunId,
+                    bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
+                });
+                setRun(nextRun);
+                setArtifactBundle(undefined);
+            } else {
+                setRun(undefined);
+                setArtifactBundle(undefined);
+            }
+            setLastAction(`Refreshed ${serverSnapshot.runs.length} run(s).`);
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    useEffect(() => {
+        if (didInitialRefresh.current) {
+            return;
+        }
+
+        didInitialRefresh.current = true;
+        void refresh();
+        // The initial refresh intentionally uses the first rendered form values.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+        const availableAgentIds = agentRows.map(row => row.agentId);
+        setSelectedAgentIds(previous => {
+            const kept = previous.filter(agentId => availableAgentIds.includes(agentId));
+            const next = kept.length > 0 ? kept : availableAgentIds;
+            return sameStringArray(previous, next) ? previous : next;
+        });
+    }, [agentRowsKey]);
+
+    const loadRun = async (runId: string): Promise<void> => {
+        setSelectedRunId(runId);
+        setArtifactBundle(undefined);
+        if (!runId) {
+            setRun(undefined);
+            return;
+        }
+
+        setBusyAction('load-run');
+        setError(undefined);
+        try {
+            setRun(await fetchControlRunSnapshot({
+                baseUrl,
+                token,
+                runId,
+                bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
+            }));
+            setLastAction(`Loaded ${runId}.`);
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const enqueueSelected = async (): Promise<void> => {
+        if (!run) {
+            setError('Select a run before enqueueing commands.');
+            return;
+        }
+        if (selectedAgentIds.length === 0) {
+            setError('Select at least one agent.');
+            return;
+        }
+
+        setBusyAction('enqueue');
+        setError(undefined);
+        try {
+            const command = parseRunManagerCommandText(commandText);
+            const result = await enqueueBulkControlCommand({
+                baseUrl,
+                token,
+                runId: run.runId,
+                agentIds: selectedAgentIds,
+                command,
+                commandIdPrefix: runManagerCommandPrefix(command),
+            });
+            setLastAction(`Queued ${result.commands.length} command(s).`);
+            await refresh(run.runId);
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const resetSelectedRun = async (): Promise<void> => {
+        if (!run) {
+            return;
+        }
+
+        setBusyAction('reset-run');
+        setError(undefined);
+        try {
+            const resetRun = await resetControlRun({
+                baseUrl,
+                token,
+                runId: run.runId,
+            });
+            setRun(resetRun);
+            setLastAction(`Reset ${run.runId}.`);
+            await refresh(run.runId);
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const deleteSelectedRun = async (): Promise<void> => {
+        if (!run) {
+            return;
+        }
+
+        const deletedRunId = run.runId;
+        setBusyAction('delete-run');
+        setError(undefined);
+        try {
+            await deleteControlRun({
+                baseUrl,
+                token,
+                runId: deletedRunId,
+            });
+            setRun(undefined);
+            setSelectedRunId('');
+            setSelectedAgentIds([]);
+            setArtifactBundle(undefined);
+            setLastAction(`Deleted ${deletedRunId}.`);
+            await refresh('');
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const toggleAgent = (agentId: string): void => {
+        setSelectedAgentIds(previous => previous.includes(agentId)
+            ? previous.filter(value => value !== agentId)
+            : [...previous, agentId]
+        );
+    };
+
+    const loadArtifactBundle = async (): Promise<void> => {
+        if (!run) {
+            return;
+        }
+
+        setBusyAction('artifact');
+        setError(undefined);
+        try {
+            const bundle = await fetchControlRunArtifactBundle({
+                baseUrl,
+                token,
+                runId: run.runId,
+            });
+            setArtifactBundle(bundle);
+            setLastAction(`Loaded artifact bundle for ${run.runId}.`);
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const copyArtifactBundle = async (): Promise<void> => {
+        const bundle = artifactBundle ?? (run
+            ? await fetchControlRunArtifactBundle({ baseUrl, token, runId: run.runId })
+            : undefined);
+        if (bundle) {
+            setArtifactBundle(bundle);
+            await navigator.clipboard?.writeText(json(bundle.files));
+            setLastAction('Copied artifact bundle.');
+        }
+    };
+
+    const copyJsonl = async (kind: 'events' | 'results'): Promise<void> => {
+        if (!run) {
+            return;
+        }
+        const text = await fetchControlRunJsonl({
+            baseUrl,
+            token,
+            runId: run.runId,
+            kind,
+        });
+        await navigator.clipboard?.writeText(text);
+        setLastAction(`Copied ${kind} JSONL.`);
+    };
+
+    const copyFailureBundle = async (): Promise<void> => {
+        if (!run) {
+            return;
+        }
+        const bundle = await fetchControlRunFailureBundle({
+            baseUrl,
+            token,
+            runId: run.runId,
+        });
+        await navigator.clipboard?.writeText(json(bundle));
+        setLastAction('Copied failure bundle.');
+    };
+
+    return (
+        <section className="panel run-manager-panel">
+            <div className="panel-heading">
+                <h2>Run Manager</h2>
+                <span>{busyAction ?? lastAction ?? 'idle'}</span>
+            </div>
+            <div className="run-manager-toolbar">
+                <label className="field">
+                    <span>Control HTTP Base URL</span>
+                    <input
+                        value={baseUrl}
+                        onChange={event => setBaseUrl(event.target.value)}
+                    />
+                </label>
+                <label className="field">
+                    <span>Token</span>
+                    <input
+                        value={token}
+                        onChange={event => setToken(event.target.value)}
+                        type="password"
+                        autoComplete="off"
+                    />
+                </label>
+                <label className="field">
+                    <span>Run</span>
+                    <select
+                        value={selectedRunId}
+                        onChange={event => void loadRun(event.target.value)}
+                    >
+                        <option value="">Select run</option>
+                        {runOptions.map(option => (
+                            <option key={option.runId} value={option.runId}>
+                                {option.runId}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+                <button type="button" disabled={Boolean(busyAction)} onClick={() => void refresh()}>
+                    Refresh
+                </button>
+                <button type="button" disabled={!run || Boolean(busyAction)} onClick={() => void resetSelectedRun()}>
+                    Reset Run
+                </button>
+                <button type="button" disabled={!run || Boolean(busyAction)} onClick={() => void deleteSelectedRun()}>
+                    Delete Run
+                </button>
+            </div>
+            <div className="run-manager-summary-grid">
+                <Metric label="Runs" value={String(stats.runCount)}/>
+                <Metric label="Agents" value={String(stats.agentCount)}/>
+                <Metric label="Connected" value={String(stats.connectedAgentCount)} tone="active"/>
+                <Metric label="Queued" value={String(stats.queuedCommandCount)} tone="warn"/>
+                <Metric label="Completed" value={String(stats.completedCommandCount)} tone="good"/>
+                <Metric label="Results" value={String(stats.resultCount)}/>
+                <Metric label="Events" value={String(stats.eventCount)}/>
+                <Metric label="Reports" value={String(stats.reportCount)}/>
+            </div>
+            {error && (
+                <div className="workbench-error run-manager-error" role="status">
+                    {error}
+                </div>
+            )}
+            <div className="run-manager-layout">
+                <section className="run-manager-subpanel">
+                    <div className="section-heading">
+                        <h3>Runs</h3>
+                        <span>{runOptions.length}</span>
+                    </div>
+                    <div className="run-manager-run-list">
+                        {runOptions.map(option => (
+                            <button
+                                type="button"
+                                key={option.runId}
+                                className={`run-manager-run-row ${option.runId === run?.runId ? 'selected' : ''}`}
+                                onClick={() => void loadRun(option.runId)}
+                            >
+                                <span>
+                                    <strong>{option.runId}</strong>
+                                    <small>{formatTime(option.updatedAtEpochMs)}</small>
+                                </span>
+                                <span className="pill muted">{option.agents.length} agents</span>
+                            </button>
+                        ))}
+                        {runOptions.length === 0 && (
+                            <div className="empty-state">No runs</div>
+                        )}
+                    </div>
+                </section>
+                <section className="run-manager-subpanel run-manager-agents-panel">
+                    <div className="section-heading">
+                        <h3>Agents</h3>
+                        <span>{selectedAgentIds.length} selected</span>
+                    </div>
+                    <div className="run-manager-agent-list">
+                        {agentRows.map(row => (
+                            <RunManagerAgentRow
+                                key={row.agentId}
+                                row={row}
+                                selected={selectedAgentSet.has(row.agentId)}
+                                onToggle={toggleAgent}
+                            />
+                        ))}
+                        {agentRows.length === 0 && (
+                            <div className="empty-state">No agents</div>
+                        )}
+                    </div>
+                    <div className="run-manager-command-editor">
+                        <div className="run-manager-preset-grid">
+                            {RUN_MANAGER_COMMAND_PRESETS.map(preset => (
+                                <button
+                                    key={preset.presetId}
+                                    type="button"
+                                    onClick={() => setCommandText(json(preset.command))}
+                                >
+                                    {preset.label}
+                                </button>
+                            ))}
+                        </div>
+                        <label className="field">
+                            <span>Command JSON</span>
+                            <textarea
+                                value={commandText}
+                                onChange={event => setCommandText(event.target.value)}
+                                spellCheck={false}
+                            />
+                        </label>
+                        <button
+                            type="button"
+                            disabled={!canTargetAgents || Boolean(busyAction)}
+                            onClick={() => void enqueueSelected()}
+                        >
+                            Enqueue Selected
+                        </button>
+                    </div>
+                </section>
+                <section className="run-manager-subpanel run-manager-telemetry-panel">
+                    <div className="section-heading">
+                        <h3>Telemetry</h3>
+                        <span>{run?.runId ?? 'no run'}</span>
+                    </div>
+                    <RunManagerCommandList rows={commandRows}/>
+                    <div className="run-manager-telemetry-grid">
+                        <section>
+                            <h3>Results</h3>
+                            <div className="run-manager-mini-list">
+                                {recentResults.map(result => (
+                                    <div key={`${result.agentId}-${result.commandId}`} className="run-manager-mini-row">
+                                        <strong>{result.commandId}</strong>
+                                        <span className={`pill ${result.ok ? 'good' : 'bad'}`}>
+                                            {result.ok ? 'ok' : 'failed'}
+                                        </span>
+                                        <small>{result.agentId}</small>
+                                    </div>
+                                ))}
+                                {recentResults.length === 0 && <div className="empty-state">No results</div>}
+                            </div>
+                        </section>
+                        <section>
+                            <h3>Recent Events</h3>
+                            <div className="run-manager-mini-list">
+                                {recentEvents.map((event, index) => (
+                                    <div
+                                        key={`${event.agentId}-${event.eventId ?? index}`}
+                                        className="run-manager-mini-row"
+                                    >
+                                        <strong>{event.kind}</strong>
+                                        <span className="pill muted">{event.agentId}</span>
+                                        <small>{formatTime(event.atEpochMs)}</small>
+                                        <pre className="mini-json">
+                                            {redactedJson(event.payload, state, undefined, [token])}
+                                        </pre>
+                                    </div>
+                                ))}
+                                {recentEvents.length === 0 && <div className="empty-state">No events</div>}
+                            </div>
+                        </section>
+                    </div>
+                    <section className="run-manager-artifacts">
+                        <div className="section-heading">
+                            <h3>Artifacts</h3>
+                            <span className={`pill ${parsedArtifact?.ok ? 'good' : parsedArtifact ? 'bad' : 'muted'}`}>
+                                {parsedArtifact?.ok ? 'valid' : parsedArtifact ? 'invalid' : 'not loaded'}
+                            </span>
+                        </div>
+                        <div className="run-manager-artifact-actions">
+                            <button
+                                type="button"
+                                disabled={!run || Boolean(busyAction)}
+                                onClick={() => void loadArtifactBundle()}
+                            >
+                                Load Artifact
+                            </button>
+                            <button
+                                type="button"
+                                disabled={!run || Boolean(busyAction)}
+                                onClick={() => void copyArtifactBundle()}
+                            >
+                                Copy Artifact Bundle
+                            </button>
+                            <button
+                                type="button"
+                                disabled={!run || Boolean(busyAction)}
+                                onClick={() => void copyJsonl('events')}
+                            >
+                                Copy Events JSONL
+                            </button>
+                            <button
+                                type="button"
+                                disabled={!run || Boolean(busyAction)}
+                                onClick={() => void copyJsonl('results')}
+                            >
+                                Copy Results JSONL
+                            </button>
+                            <button
+                                type="button"
+                                disabled={!run || Boolean(busyAction)}
+                                onClick={() => void copyFailureBundle()}
+                            >
+                                Copy Failure Bundle
+                            </button>
+                        </div>
+                        {parsedArtifact?.value && (
+                            <div className="run-manager-artifact-summary">
+                                <Metric label="Total" value={String(parsedArtifact.value.report.summary.total)}/>
+                                <Metric label="Success" value={String(parsedArtifact.value.report.summary.success)} tone="good"/>
+                                <Metric label="Failure" value={String(parsedArtifact.value.report.summary.failure)} tone={parsedArtifact.value.report.summary.failure > 0 ? 'bad' : 'good'}/>
+                                <Metric label="Events" value={String(parsedArtifact.value.views.eventStream.length)}/>
+                            </div>
+                        )}
+                        {parsedArtifact && parsedArtifact.issues.length > 0 && (
+                            <div className="artifact-issue-list" role="status">
+                                {parsedArtifact.issues.slice(0, 6).map((issue, index) => (
+                                    <div
+                                        className={`artifact-issue-row ${issue.severity}`}
+                                        key={`${issue.severity}-${issue.file ?? 'bundle'}-${issue.path}-${index}`}
+                                    >
+                                        <strong>{issue.severity}</strong>
+                                        <span>{artifactIssueText(issue)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {parsedArtifact?.value && (
+                            <pre className="json-block">
+                                {json(parsedArtifact.value.views.failures.length > 0
+                                    ? parsedArtifact.value.views.failures.slice(0, 8)
+                                    : parsedArtifact.value.report.resultsList.slice(0, 8))}
+                            </pre>
+                        )}
+                    </section>
+                </section>
+            </div>
+        </section>
+    );
+}
+
+function RunManagerAgentRow({ row, selected, onToggle }: {
+    row: ControlRunAgentRow;
+    selected: boolean;
+    onToggle(agentId: string): void;
+}) {
+    return (
+        <label className={`run-manager-agent-row ${selected ? 'selected' : ''}`}>
+            <input
+                type="checkbox"
+                checked={selected}
+                onChange={() => onToggle(row.agentId)}
+                aria-label={`Select agent ${row.agentId}`}
+            />
+            <span>
+                <strong>{row.agentId}</strong>
+                <small>{row.status} - heartbeat {formatTime(row.lastHeartbeatAtEpochMs)}</small>
+            </span>
+            <span className={`pill ${row.connected ? 'active' : 'muted'}`}>
+                {row.connected ? 'connected' : 'offline'}
+            </span>
+            <span className="run-manager-agent-counts">
+                {row.queuedCommandCount} queued / {row.completedCommandCount} done
+            </span>
+        </label>
+    );
+}
+
+function RunManagerCommandList({ rows }: {
+    rows: readonly ControlRunCommandRow[];
+}) {
+    return (
+        <div className="run-manager-command-list">
+            {rows.map(row => (
+                <div key={`${row.agentId}-${row.commandId}`} className="run-manager-command-row">
+                    <span>
+                        <strong>{row.commandId}</strong>
+                        <small>{row.agentId} - {row.kind}</small>
+                    </span>
+                    <span className={`pill ${statusTone(row.status)}`}>{row.status}</span>
+                    <span>{row.dispatchCount} dispatches</span>
+                    <span>{formatTime(row.completedAtEpochMs ?? row.queuedAtEpochMs)}</span>
+                </div>
+            ))}
+            {rows.length === 0 && <div className="empty-state">No commands</div>}
+        </div>
     );
 }
 
@@ -1963,6 +5743,7 @@ function CommandHistoryPanel({ history, selectedCommandId, onSelect }: {
 
 function EventStreamPanel({ state }: { state: RallarBlackBoxTestState }) {
     const events = selectRallarBlackBoxEvents(state);
+    const [eventLimit, setEventLimit] = useState(40);
     const [filters, setFilters] = useState<EventFilters>(() => {
         const stored = readEventFilters(browserUiStorage(), DEFAULT_EVENT_FILTERS);
         return {
@@ -1974,6 +5755,11 @@ function EventStreamPanel({ state }: { state: RallarBlackBoxTestState }) {
         () => events.filter(event => eventMatchesFilters(event, filters)),
         [events, filters],
     );
+    const visibleEvents = useMemo(
+        () => filtered.slice(-eventLimit).reverse(),
+        [eventLimit, filtered],
+    );
+    const hiddenCount = Math.max(0, filtered.length - visibleEvents.length);
     const kindFilters = EVENT_KIND_FILTERS;
     const commandIds = uniqueValues(events.map(event => event.commandId));
     const connections = uniqueValues(events.map(event => event.connection));
@@ -1981,6 +5767,9 @@ function EventStreamPanel({ state }: { state: RallarBlackBoxTestState }) {
     const transports = uniqueValues(
         events.map(event => event.transport as RallarBlackBoxTestTransport | undefined),
     );
+    const groups = uniqueValues(events.map(eventGroupValue));
+    const peers = uniqueValues(events.map(eventPeerValue));
+    const selectors = uniqueValues(events.map(eventSelectorValue));
     const severities = uniqueValues(
         events.map(event => event.severity as RallarBlackBoxTestSeverity | undefined),
     );
@@ -1993,7 +5782,7 @@ function EventStreamPanel({ state }: { state: RallarBlackBoxTestState }) {
         <section className="panel event-panel">
             <div className="panel-heading">
                 <h2>Event Stream</h2>
-                <span>{filtered.length} visible</span>
+                <span>{visibleEvents.length} of {filtered.length} visible</span>
             </div>
             <div className="segmented" role="group" aria-label="Event kind filter">
                 {kindFilters.map(kind => (
@@ -2033,6 +5822,24 @@ function EventStreamPanel({ state }: { state: RallarBlackBoxTestState }) {
                     onChange={transport => setFilters(current => ({ ...current, transport }))}
                 />
                 <FilterSelect
+                    label="Group"
+                    value={filters.group}
+                    values={groups}
+                    onChange={group => setFilters(current => ({ ...current, group }))}
+                />
+                <FilterSelect
+                    label="Peer"
+                    value={filters.peer}
+                    values={peers}
+                    onChange={peer => setFilters(current => ({ ...current, peer }))}
+                />
+                <FilterSelect
+                    label="Selector"
+                    value={filters.selector}
+                    values={selectors}
+                    onChange={selector => setFilters(current => ({ ...current, selector }))}
+                />
+                <FilterSelect
                     label="Severity"
                     value={filters.severity}
                     values={severities}
@@ -2048,9 +5855,23 @@ function EventStreamPanel({ state }: { state: RallarBlackBoxTestState }) {
                         }))}
                     />
                 </label>
+                <label className="field compact-field">
+                    <span>Window</span>
+                    <select value={eventLimit} onChange={event => setEventLimit(Number(event.target.value))}>
+                        {[40, 100, 250, 500].map(limit => (
+                            <option key={limit} value={limit}>{limit}</option>
+                        ))}
+                    </select>
+                </label>
             </div>
+            {hiddenCount > 0 && (
+                <div className="event-window-status" role="status">
+                    Showing the newest {visibleEvents.length} matching events. {hiddenCount} older matching events are
+                    hidden by the current window.
+                </div>
+            )}
             <div className="event-list">
-                {filtered.slice(-40).reverse().map(event => (
+                {visibleEvents.map(event => (
                     <article className="event-row" key={event.eventId}>
                         <div className="event-topline">
                             <span
@@ -2173,19 +5994,3538 @@ function ReportPanel({ state, authSession }: {
     );
 }
 
-function RallarServerPanel({ state, bootstrap, authSession, control }: {
+function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValues, browserStatus, busy, onSelectCommand }: {
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
     authSession?: AuthSession;
+    globalValues?: CommandCenterGlobalValues;
+    browserStatus: RallarBrowserStatusSummary;
+    busy: boolean;
+    onSelectCommand(commandId: string): void;
+}) {
+    const config = selectRallarBlackBoxCurrentConfig(state);
+    const providerMode = config
+        ? rallarBlackBoxProviderModeFromConfig(config)
+        : bootstrap.providerMode;
+    const defaultContext = defaultWebSocketValuesFromContext(globalValues, config, bootstrap);
+    const [values, setValues] = useState<WebSocketCommandCenterValues>(() => ({
+        apiBaseUrl: defaultContext.apiBaseUrl,
+        connection: 'rallarApi',
+        applicationId: defaultContext.applicationId,
+        workspaceId: defaultContext.workspaceId,
+        groupId: defaultContext.groupId,
+        wsScope: defaultWebSocketScope(),
+        typeId: defaultWebSocketTypeId(),
+        topicId: defaultWebSocketTopicId(),
+        contextId: webSocketPayloadPresetById(DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID).values?.contextId ??
+            defaultContext.contextId,
+        resourceId: '',
+        wsUrl: defaultWebSocketApiUrl(defaultContext.apiBaseUrl),
+        protocols: '',
+        payloadText: webSocketPayloadPresetText(DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID) ?? '{}',
+        timeoutMs: 5_000,
+        closeCode: 1000,
+        closeReason: 'rallar-black-box cleanup',
+    }));
+    const [payloadPresetId, setPayloadPresetId] = useState(DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID);
+    const [sequence, setSequence] = useState(1);
+    const [localError, setLocalError] = useState<string | undefined>();
+    const [busyAction, setBusyAction] = useState<string | undefined>();
+    const [waitStatus, setWaitStatus] = useState<string>('idle');
+    const [ticket, setTicket] = useState<AuthCommandCenterTicket | undefined>();
+    const [subscription, setSubscription] = useState<WebSocketSubscriptionState | undefined>();
+    const rawSocketRef = useRef<WebSocket | undefined>(undefined);
+    const stateRef = useRef(state);
+    const defaultContextRef = useRef(defaultContext);
+    const diagnostics = useMemo(
+        () => deriveWebSocketDiagnostics(state, values.connection),
+        [state, values.connection],
+    );
+    const activePreset = useMemo(
+        () => webSocketPayloadPresetById(payloadPresetId),
+        [payloadPresetId],
+    );
+    const canSendViaRallarSignaling = providerMode === 'browser-rallar';
+    const routePreview = useMemo(
+        () => webSocketRoutePreview({
+            values,
+            diagnostics,
+            providerMode,
+            browserStatus,
+        }),
+        [browserStatus, diagnostics, providerMode, values],
+    );
+    const subscriptionStatusLabel = subscription ? 'listening' : 'not listening';
+    const subscriptionStatusTone = subscription ? 'good' : 'muted';
+    const receiveStatusText = subscription
+        ? `Listening for ${subscription.label} at ${subscription.destination}.`
+        : providerMode === 'browser-rallar'
+            ? 'Not listening. Click Subscribe WS to receive app messages in this browser.'
+            : 'Received messages appear here when WS message events are emitted.';
+    const payloadResult = useMemo(() => {
+        try {
+            return {
+                ok: true as const,
+                value: JSON.parse(values.payloadText) as unknown,
+            };
+        } catch (error) {
+            return {
+                ok: false as const,
+                error: error instanceof Error ? error.message : String(error),
+            };
+        }
+    }, [values.payloadText]);
+
+    useEffect(() => {
+        stateRef.current = state;
+    }, [state]);
+
+    useEffect(() => {
+        const previousDefault = defaultContextRef.current;
+        defaultContextRef.current = defaultContext;
+        setValues(current => {
+            const previousDefaultWsUrl = defaultWebSocketApiUrl(previousDefault.apiBaseUrl);
+            const next = {
+                ...current,
+                apiBaseUrl: current.apiBaseUrl === previousDefault.apiBaseUrl
+                    ? defaultContext.apiBaseUrl
+                    : current.apiBaseUrl,
+                applicationId: current.applicationId === previousDefault.applicationId
+                    ? defaultContext.applicationId
+                    : current.applicationId,
+                workspaceId: current.workspaceId === previousDefault.workspaceId
+                    ? defaultContext.workspaceId
+                    : current.workspaceId,
+                groupId: current.groupId === previousDefault.groupId || current.groupId === ''
+                    ? defaultContext.groupId
+                    : current.groupId,
+                contextId: current.contextId === previousDefault.contextId ||
+                    current.contextId === previousDefault.groupId ||
+                    current.contextId === ''
+                    ? defaultContext.contextId
+                    : current.contextId,
+                wsUrl: current.wsUrl === previousDefaultWsUrl
+                    ? defaultWebSocketApiUrl(defaultContext.apiBaseUrl)
+                    : current.wsUrl,
+            };
+
+            return JSON.stringify(next) === JSON.stringify(current) ? current : next;
+        });
+    }, [
+        defaultContext.apiBaseUrl,
+        defaultContext.applicationId,
+        defaultContext.workspaceId,
+        defaultContext.groupId,
+        defaultContext.contextId,
+    ]);
+
+    useEffect(() => () => subscription?.unsubscribe(), [subscription]);
+
+    const updateValue = <K extends keyof WebSocketCommandCenterValues>(
+        key: K,
+        value: WebSocketCommandCenterValues[K],
+    ): void => {
+        setValues(current => ({
+            ...current,
+            [key]: value,
+        }));
+    };
+
+    const updateGroupId = (groupId: string): void => {
+        setValues(current => ({
+            ...current,
+            groupId,
+            contextId: current.contextId === current.groupId ||
+                current.contextId === '' ||
+                current.contextId === 'all' ||
+                current.contextId === current.wsScope
+                ? groupId || current.wsScope
+                : current.contextId,
+        }));
+    };
+
+    const updateWsScope = (wsScope: WebSocketCommandCenterValues['wsScope']): void => {
+        setValues(current => ({
+            ...current,
+            wsScope,
+            contextId: current.contextId === current.wsScope ||
+                current.contextId === current.groupId ||
+                current.contextId === 'all' ||
+                current.contextId === 'world' ||
+                current.contextId === 'room'
+                ? wsScope === 'room'
+                    ? current.groupId || 'room'
+                    : wsScope
+                : current.contextId,
+        }));
+    };
+
+    const selectPayloadPreset = (presetId: string): void => {
+        setPayloadPresetId(presetId);
+        const preset = WEBSOCKET_PAYLOAD_PRESETS.find(entry => entry.presetId === presetId);
+        if (preset?.values) {
+            setValues(current => ({
+                ...current,
+                ...preset.values,
+                contextId: preset.values?.contextId ?? current.groupId ?? current.contextId,
+            }));
+        }
+        const text = webSocketPayloadPresetText(presetId);
+        if (text) {
+            updateValue('payloadText', text);
+        }
+    };
+
+    const directContext = (): Parameters<typeof runDirectRallarStatusCheck>[0] => ({
+        providerMode,
+        apiBaseUrl: values.apiBaseUrl,
+        applicationId: values.applicationId,
+        workspaceId: values.workspaceId,
+        roomId: values.groupId.trim(),
+        actor: authSession?.username ?? authSession?.clientId ?? bootstrap.actor,
+        connection: values.connection,
+        authSession,
+        timeoutMs: values.timeoutMs,
+    });
+
+    const recordWebSocketEvent = (
+        topic: string,
+        payload: unknown,
+        lastAction: string,
+        severity: RallarBlackBoxTestRuntimeEventInput['severity'] = 'info',
+        kind: RallarBlackBoxTestRuntimeEventInput['kind'] = 'diagnostic',
+    ): void => {
+        rallarBlackBoxRuntimeStore.recordRuntimeEvent(
+            createDirectRallarRuntimeEvent({
+                topic,
+                context: directContext(),
+                kind,
+                transport: 'ws',
+                severity,
+                payload,
+            }),
+            lastAction,
+        );
+    };
+
+    const recordDirectResult = (
+        result: DirectRallarOperationResult,
+        completedAction: string,
+        failedAction: string,
+    ): void => {
+        result.events.forEach(event => rallarBlackBoxRuntimeStore.recordRuntimeEvent(event));
+        if (result.status === 'failed') {
+            setLocalError(result.error?.message ?? failedAction);
+            setWaitStatus('failed');
+        } else {
+            setWaitStatus('completed');
+        }
+        recordWebSocketEvent(
+            `rallar.direct.websocket.${result.kind}.${result.status}`,
+            {
+                status: result.status,
+                durationMs: result.durationMs,
+                value: result.value,
+                error: result.error,
+            },
+            result.status === 'failed' ? failedAction : completedAction,
+            result.status === 'failed' ? 'error' : 'info',
+            'state',
+        );
+    };
+
+    const configure = async (): Promise<void> => {
+        setBusyAction('Configure WebSocket');
+        setLocalError(undefined);
+        try {
+            setSequence(current => current + 1);
+            recordWebSocketEvent(
+                'rallar.direct.raw_ws.configure.completed',
+                {
+                    connection: values.connection,
+                    apiBaseUrl: values.apiBaseUrl,
+                    wsUrl: values.wsUrl,
+                    groupId: values.groupId,
+                    selector: {
+                        typeId: values.typeId,
+                        topicId: values.topicId,
+                    },
+                },
+                'Configure WebSocket',
+            );
+            setWaitStatus('configured');
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const requestWsTicket = async (): Promise<AuthCommandCenterTicket> => {
+        const response = await executeRallarServerRestRequest({
+            apiBaseUrl: values.apiBaseUrl,
+            method: 'POST',
+            path: '/api/auth/ws-ticket',
+            headersText: '{}',
+            queryText: '{}',
+            bodyText: '{}',
+            responseBodyMode: 'json',
+            attachAuth: true,
+            authSession,
+            timeoutMs: values.timeoutMs,
+        });
+        const body = optionalRecord(response.bodyJson);
+        if (
+            response.ok &&
+            typeof body.ticket === 'string' &&
+            typeof body.sessionId === 'string' &&
+            typeof body.expiresAtEpochMs === 'number'
+        ) {
+            const wsTicket = body as WebSocketTicketResponse;
+            const nextTicket = {
+                ticket: wsTicket.ticket,
+                sessionId: wsTicket.sessionId,
+                expiresAtEpochMs: wsTicket.expiresAtEpochMs,
+                issuedAtEpochMs: Date.now(),
+            };
+            setTicket(nextTicket);
+            return nextTicket;
+        }
+
+        throw new Error(response.error?.message ?? `WS ticket request returned ${response.status}`);
+    };
+
+    const open = async (url = values.wsUrl, options: { useTicket?: boolean } = { useTicket: true }): Promise<void> => {
+        setBusyAction('Open WebSocket');
+        setLocalError(undefined);
+        try {
+            const nextTicket = options.useTicket === false
+                ? undefined
+                : await requestWsTicket();
+            const resolvedUrl = resolveWebSocketUrlTemplate(url, values.apiBaseUrl, authSession, nextTicket);
+            const protocols = values.protocols
+                .split(',')
+                .map(entry => entry.trim())
+                .filter(Boolean);
+            rawSocketRef.current?.close(values.closeCode, 'replace raw socket');
+            const socket = new WebSocket(resolvedUrl, protocols.length > 0 ? protocols : undefined);
+            rawSocketRef.current = socket;
+            setSequence(current => current + 1);
+            socket.addEventListener('open', () => {
+                recordWebSocketEvent(
+                    'rallar.direct.raw_ws.open.completed',
+                    {
+                        connection: values.connection,
+                        url: resolvedUrl,
+                        readyState: socket.readyState,
+                    },
+                    'Open WebSocket',
+                );
+                setWaitStatus('raw ws open');
+            });
+            socket.addEventListener('message', event => {
+                let data: unknown = event.data;
+                if (typeof event.data === 'string') {
+                    try {
+                        data = JSON.parse(event.data);
+                    } catch {
+                        data = event.data;
+                    }
+                }
+                recordWebSocketEvent(
+                    'rallar.direct.raw_ws.message',
+                    {
+                        connection: values.connection,
+                        data,
+                    },
+                    'Raw WebSocket message received',
+                    'info',
+                    'message',
+                );
+            });
+            socket.addEventListener('error', () => {
+                recordWebSocketEvent(
+                    'rallar.direct.raw_ws.error',
+                    {
+                        connection: values.connection,
+                        url: resolvedUrl,
+                        readyState: socket.readyState,
+                    },
+                    'Raw WebSocket error',
+                    'error',
+                );
+                setWaitStatus('raw ws error');
+            });
+            socket.addEventListener('close', event => {
+                recordWebSocketEvent(
+                    'rallar.direct.raw_ws.close',
+                    {
+                        connection: values.connection,
+                        code: event.code,
+                        reason: event.reason,
+                        wasClean: event.wasClean,
+                    },
+                    'Raw WebSocket closed',
+                    event.wasClean ? 'info' : 'warning',
+                );
+                setWaitStatus('raw ws closed');
+            });
+        } catch (error) {
+            setLocalError(error instanceof Error ? error.message : String(error));
+            setWaitStatus('raw ws open failed');
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const send = async (): Promise<void> => {
+        if (!payloadResult.ok) {
+            setLocalError(payloadResult.error);
+            return;
+        }
+        if (values.wsScope === 'room' && !values.groupId.trim()) {
+            setLocalError('Room-scoped WS sends require a Group.');
+            return;
+        }
+        setBusyAction('Send WebSocket JSON');
+        setLocalError(undefined);
+        try {
+            const result = await runDirectRallarWsSend(directContext(), {
+                scope: values.wsScope,
+                typeId: values.typeId,
+                topicId: values.topicId,
+                contextId: values.contextId,
+                resourceId: values.resourceId || undefined,
+                payload: payloadResult.value,
+            }, loadBrowserRallarFacade);
+            setSequence(current => current + 1);
+            recordDirectResult(
+                result,
+                'Rallar WS JSON sent',
+                'Rallar WS send failed',
+            );
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const close = async (reason = values.closeReason): Promise<void> => {
+        setBusyAction('Close WebSocket');
+        setLocalError(undefined);
+        try {
+            rawSocketRef.current?.close(values.closeCode, reason);
+            recordWebSocketEvent(
+                'rallar.direct.raw_ws.close.requested',
+                {
+                    connection: values.connection,
+                    closeCode: values.closeCode,
+                    closeReason: reason,
+                },
+                'Close WebSocket',
+            );
+            setSequence(current => current + 1);
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const reconnect = async (): Promise<void> => {
+        await close('reconnect');
+        await open(values.wsUrl);
+    };
+
+    const cleanup = async (): Promise<void> => {
+        setTicket(undefined);
+        await close('cleanup');
+    };
+
+    const subscribeWs = async (): Promise<void> => {
+        if (!values.typeId.trim()) {
+            setLocalError('WS subscription requires a Type ID.');
+            return;
+        }
+        if (values.wsScope === 'room' && !values.groupId.trim()) {
+            setLocalError('Room-scoped WS subscriptions require a Group.');
+            return;
+        }
+        setBusyAction('Subscribe WS');
+        setLocalError(undefined);
+        try {
+            subscription?.unsubscribe();
+            const selector = {
+                typeId: values.typeId,
+                ...(values.topicId ? { topicId: values.topicId } : {}),
+            };
+            const result = await runDirectRallarWsSubscribe(
+                directContext(),
+                selector,
+                message => {
+                    const record = optionalRecord(message);
+                    recordWebSocketEvent(
+                        'rallar.direct.ws.message',
+                        {
+                            roomId: record.roomId ?? record.groupId ?? values.groupId,
+                            applicationId: values.applicationId,
+                            workspaceId: values.workspaceId,
+                            typeId: record.typeId ?? values.typeId,
+                            topicId: record.topicId ?? values.topicId,
+                            contextId: record.contextId ?? values.contextId,
+                            resourceId: record.resourceId,
+                            senderId: record.senderId,
+                            data: record.payload ?? message,
+                            raw: message,
+                        },
+                        'Rallar WS message received',
+                        'info',
+                        'message',
+                    );
+                },
+                loadBrowserRallarFacade,
+            );
+            recordDirectResult(
+                result,
+                'Rallar WS subscribed',
+                'Rallar WS subscribe failed',
+            );
+            if (result.status === 'completed' && result.unsubscribe) {
+                setSubscription({
+                    label: `${selector.topicId ?? '*'} / ${selector.typeId}`,
+                    destination: routePreview.destination,
+                    groupId: values.groupId,
+                    subscribedAtEpochMs: Date.now(),
+                    unsubscribe: result.unsubscribe,
+                });
+                setWaitStatus('subscribed');
+            }
+        } catch (error) {
+            setLocalError(error instanceof Error ? error.message : String(error));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const unsubscribeWs = (): void => {
+        subscription?.unsubscribe();
+        setSubscription(undefined);
+        setWaitStatus('unsubscribed');
+    };
+
+    const createTicket = async (): Promise<void> => {
+        setBusyAction('Create WS ticket');
+        setLocalError(undefined);
+        try {
+            const nextTicket = await requestWsTicket();
+            recordWebSocketEvent(
+                'rallar.direct.raw_ws.ticket.created',
+                {
+                    sessionId: nextTicket.sessionId,
+                    expiresAtEpochMs: nextTicket.expiresAtEpochMs,
+                    ticket: '<redacted:ws-ticket>',
+                },
+                'Create WS ticket',
+            );
+        } catch (error) {
+            setLocalError(error instanceof Error ? error.message : String(error));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const waitForMessage = async (): Promise<void> => {
+        const startCount = diagnostics.inboundCount;
+        const startedAt = Date.now();
+        setWaitStatus('waiting');
+        setBusyAction('Wait for WS message');
+        try {
+            await new Promise<void>((resolve, reject) => {
+                const interval = window.setInterval(() => {
+                    const latest = deriveWebSocketDiagnostics(
+                        stateRef.current,
+                        values.connection,
+                    );
+                    if (latest.inboundCount > startCount) {
+                        window.clearInterval(interval);
+                        resolve();
+                        return;
+                    }
+                    if (Date.now() - startedAt > values.timeoutMs) {
+                        window.clearInterval(interval);
+                        reject(new Error('Timed out waiting for WebSocket message.'));
+                    }
+                }, 100);
+            });
+            setWaitStatus('message observed');
+        } catch (error) {
+            setWaitStatus('timeout');
+            setLocalError(error instanceof Error ? error.message : String(error));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const waitForRallarWsOpen = async (): Promise<void> => {
+        setBusyAction('Wait for Rallar WS open');
+        setLocalError(undefined);
+        try {
+            if (providerMode !== 'browser-rallar') {
+                throw new Error('Rallar WS wait requires provider=browser-rallar.');
+            }
+            if (!authSession) {
+                throw new Error('Rallar WS wait requires a logged-in browser session.');
+            }
+            const facade = await loadBrowserRallarFacade();
+            facade.configure({ apiBaseUrl: values.apiBaseUrl });
+            facade.setDefaults({
+                applicationId: values.applicationId,
+                workspaceId: values.workspaceId,
+                room: values.groupId
+                    ? {
+                        roomId: values.groupId,
+                        roomRef: {
+                            applicationId: values.applicationId,
+                            workspaceId: values.workspaceId,
+                            groupId: values.groupId,
+                        },
+                    }
+                    : undefined,
+            });
+            await facade.start({
+                connect: true,
+                refreshRooms: false,
+                refreshPeople: false,
+                timeoutMs: values.timeoutMs,
+            });
+            const result = await facade.ws.waitForOpen({ timeoutMs: values.timeoutMs });
+            rallarBlackBoxRuntimeStore.recordRuntimeEvent(
+                createDirectRallarRuntimeEvent({
+                    topic: result.status === 'open'
+                        ? 'rallar.direct.ws.wait_open.completed'
+                        : 'rallar.direct.ws.wait_open.failed',
+                    context: {
+                        providerMode,
+                        apiBaseUrl: values.apiBaseUrl,
+                        applicationId: values.applicationId,
+                        workspaceId: values.workspaceId,
+                        roomId: values.groupId,
+                        actor: authSession.username ?? authSession.clientId ?? bootstrap.actor,
+                        connection: values.connection,
+                        authSession,
+                        timeoutMs: values.timeoutMs,
+                    },
+                    transport: 'ws',
+                    severity: result.status === 'open' ? 'info' : 'error',
+                    payload: result,
+                }),
+                result.status === 'open'
+                    ? 'Rallar WS open observed'
+                    : 'Rallar WS open wait failed',
+            );
+            setWaitStatus(result.status === 'open' ? 'rallar ws open' : result.status);
+        } catch (error) {
+            setWaitStatus('rallar ws wait failed');
+            setLocalError(error instanceof Error ? error.message : String(error));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const copyDiagnostics = (): void => {
+        void navigator.clipboard?.writeText(redactedJson({
+            values,
+            diagnostics,
+            subscription: subscription
+                ? {
+                    label: subscription.label,
+                    destination: subscription.destination,
+                    groupId: subscription.groupId,
+                    subscribedAtEpochMs: subscription.subscribedAtEpochMs,
+                }
+                : undefined,
+            ticket: ticket
+                ? {
+                    ...ticket,
+                    ticket: '<redacted:ws-ticket>',
+                    expiresInMs: ticket.expiresAtEpochMs - Date.now(),
+                }
+                : undefined,
+            waitStatus,
+        }, state, authSession));
+    };
+
+    const copyRecipe = (includeRtcParity = false): void => {
+        if (!payloadResult.ok) {
+            setLocalError(payloadResult.error);
+            return;
+        }
+        void navigator.clipboard?.writeText(webSocketCommandCenterRecipe({
+            values,
+            payload: payloadResult.value,
+            bootstrap,
+            providerMode,
+            authSession,
+            sequence,
+            includeRtcParity,
+        }));
+    };
+
+    const openMissingTicket = (): Promise<void> =>
+        open('{config.wsBaseUrl}/api/ws/{auth.sessionId}', { useTicket: false });
+
+    return (
+        <section className="panel websocket-command-center-panel">
+            <div className="panel-heading">
+                <h2>WebSocket Command Center</h2>
+                <span className={`pill ${diagnostics.status === 'error' ? 'bad' : diagnostics.status === 'open' ? 'good' : 'muted'}`}>
+                    {diagnostics.statusLabel}
+                </span>
+            </div>
+            <div className="websocket-context-grid">
+                <label className="field">
+                    <span>API Base URL</span>
+                    <input value={values.apiBaseUrl} onChange={event => updateValue('apiBaseUrl', event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Connection</span>
+                    <input value={values.connection} onChange={event => updateValue('connection', event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Application</span>
+                    <input value={values.applicationId} onChange={event => updateValue('applicationId', event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Workspace</span>
+                    <input value={values.workspaceId} onChange={event => updateValue('workspaceId', event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Group</span>
+                    <input value={values.groupId} onChange={event => updateGroupId(event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>WS Scope</span>
+                    <select value={values.wsScope} onChange={event => updateWsScope(event.target.value as WebSocketCommandCenterValues['wsScope'])}>
+                        <option value="room">room</option>
+                        <option value="all">all</option>
+                        <option value="world">world</option>
+                    </select>
+                </label>
+                <label className="field">
+                    <span>Type ID</span>
+                    <input value={values.typeId} onChange={event => updateValue('typeId', event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Topic ID</span>
+                    <input value={values.topicId} onChange={event => updateValue('topicId', event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Context ID</span>
+                    <input value={values.contextId} onChange={event => updateValue('contextId', event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Resource ID</span>
+                    <input value={values.resourceId} onChange={event => updateValue('resourceId', event.target.value)}/>
+                </label>
+                <label className="field websocket-url-field">
+                    <span>WebSocket URL</span>
+                    <input value={values.wsUrl} onChange={event => updateValue('wsUrl', event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Protocols</span>
+                    <input value={values.protocols} onChange={event => updateValue('protocols', event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Timeout</span>
+                    <input type="number" min={0} value={values.timeoutMs} onChange={event => updateValue('timeoutMs', Number(event.target.value))}/>
+                </label>
+                <label className="field">
+                    <span>Close Code</span>
+                    <input type="number" value={values.closeCode} onChange={event => updateValue('closeCode', Number(event.target.value))}/>
+                </label>
+                <label className="field">
+                    <span>Close Reason</span>
+                    <input value={values.closeReason} onChange={event => updateValue('closeReason', event.target.value)}/>
+                </label>
+            </div>
+            <div className="websocket-action-section">
+                <div className="section-heading">
+                    <h3>Rallar WS Messages</h3>
+                    <span>rallar.messages.ws</span>
+                </div>
+                <div className="websocket-action-grid">
+                    <button type="button" disabled={busy || Boolean(busyAction)} onClick={() => void send()}>
+                        {routePreview.sendLabel}
+                    </button>
+                    <button type="button" disabled={busy || Boolean(busyAction) || providerMode !== 'browser-rallar' || !authSession} onClick={() => void subscribeWs()}>
+                        Subscribe WS
+                    </button>
+                    <button type="button" disabled={!subscription} onClick={unsubscribeWs}>
+                        Unsubscribe WS
+                    </button>
+                    <button type="button" disabled={busy || Boolean(busyAction) || providerMode !== 'browser-rallar' || !authSession} onClick={() => void waitForRallarWsOpen()}>
+                        Wait Rallar WS open
+                    </button>
+                    <button type="button" disabled={busy || Boolean(busyAction)} onClick={() => void waitForMessage()}>
+                        Wait for message
+                    </button>
+                    <button type="button" onClick={() => copyRecipe(false)}>
+                        Copy WS recipe
+                    </button>
+                    <button type="button" onClick={() => copyRecipe(true)}>
+                        Copy WS/RTC compare recipe
+                    </button>
+                </div>
+            </div>
+            <div className="websocket-action-section">
+                <div className="section-heading">
+                    <h3>Raw WebSocket Diagnostics</h3>
+                    <span>ticket/socket checks</span>
+                </div>
+                <div className="websocket-action-grid">
+                    <button type="button" disabled={busy || Boolean(busyAction)} onClick={() => void configure()}>
+                        Configure WS
+                    </button>
+                    <button type="button" disabled={busy || Boolean(busyAction) || !authSession} onClick={() => void createTicket()}>
+                        Create WS ticket
+                    </button>
+                    <button type="button" disabled={busy || Boolean(busyAction)} onClick={() => void open()}>
+                        Open
+                    </button>
+                    <button type="button" disabled={busy || Boolean(busyAction)} onClick={() => void open(defaultWebSocketApiUrl(values.apiBaseUrl))}>
+                        Open API WS
+                    </button>
+                    <button type="button" disabled={busy || Boolean(busyAction)} onClick={() => void reconnect()}>
+                        Reconnect
+                    </button>
+                    <button type="button" disabled={busy || Boolean(busyAction)} onClick={() => void close()}>
+                        Close
+                    </button>
+                    <button type="button" disabled={busy || Boolean(busyAction)} onClick={() => void cleanup()}>
+                        Cleanup
+                    </button>
+                    <button type="button" disabled={busy || Boolean(busyAction)} onClick={() => void openMissingTicket()}>
+                        Missing ticket open
+                    </button>
+                    <button type="button" onClick={copyDiagnostics}>
+                        Copy diagnostics
+                    </button>
+                </div>
+            </div>
+            <div className="websocket-payload-grid">
+                <label className="field">
+                    <span>Payload Preset</span>
+                    <select value={payloadPresetId} onChange={event => selectPayloadPreset(event.target.value)}>
+                        {WEBSOCKET_PAYLOAD_PRESETS.map(preset => (
+                            <option key={preset.presetId} value={preset.presetId}>{preset.label}</option>
+                        ))}
+                    </select>
+                    <small>{activePreset.description}</small>
+                </label>
+                <label className="json-editor">
+                    <span>Payload JSON</span>
+                    <textarea
+                        value={values.payloadText}
+                        onChange={event => updateValue('payloadText', event.target.value)}
+                        spellCheck={false}
+                    />
+                </label>
+            </div>
+            <div className="websocket-route-preview" aria-label="WebSocket route preview">
+                <div>
+                    <span>Destination</span>
+                    <strong>{routePreview.destination}</strong>
+                    <small>{routePreview.destinationDetail}</small>
+                </div>
+                <div>
+                    <span>Selector</span>
+                    <strong>{routePreview.selector}</strong>
+                    <small>{routePreview.selectorDetail}</small>
+                </div>
+                <div>
+                    <span>Transport</span>
+                    <strong>{routePreview.transport}</strong>
+                    <small>{routePreview.transportDetail}</small>
+                </div>
+            </div>
+            <div className="websocket-received-panel" aria-label="Received WebSocket messages">
+                <div className="websocket-received-heading">
+                    <div>
+                        <h3>Received WS Messages</h3>
+                        <p>{receiveStatusText}</p>
+                    </div>
+                    <span className={`pill ${subscriptionStatusTone}`}>
+                        {subscriptionStatusLabel}
+                    </span>
+                </div>
+                <div className="websocket-received-summary">
+                    <Metric label="Listening group" value={subscription?.groupId || '-'}/>
+                    <Metric label="Listening selector" value={subscription?.label ?? '-'}/>
+                    <Metric label="Received" value={String(diagnostics.receivedMessages.length)}/>
+                    <Metric label="Listening since" value={formatTime(subscription?.subscribedAtEpochMs)}/>
+                    <Metric label="Last received" value={formatTime(diagnostics.receivedMessages.at(-1)?.atEpochMs)}/>
+                </div>
+                <div className="websocket-received-list">
+                    {diagnostics.receivedMessages.length === 0 && (
+                        <div className="empty-state">No received WebSocket messages</div>
+                    )}
+                    {diagnostics.receivedMessages.slice().reverse().map(message => (
+                        <article className="websocket-received-row" key={message.eventId}>
+                            <div>
+                                <strong>{message.topicId} / {message.typeId}</strong>
+                                <small>
+                                    {formatTime(message.atEpochMs)} - group {message.roomId} - sender {message.senderId}
+                                </small>
+                                <small>context {message.contextId} - resource {message.resourceId}</small>
+                            </div>
+                            <pre className="mini-json">{redactedJson(message.payload, state, authSession)}</pre>
+                        </article>
+                    ))}
+                </div>
+            </div>
+            <div className="websocket-status-grid">
+                <Metric label="Provider" value={providerMode}/>
+                <Metric label="Raw WS" value={diagnostics.statusLabel} tone={diagnostics.status === 'open' ? 'good' : diagnostics.status === 'error' ? 'bad' : 'muted'}/>
+                <Metric label="Signal WS" value={browserStatus.signalingLabel} tone={browserStatus.signalingTone}/>
+                <Metric label="Rallar WS send" value={canSendViaRallarSignaling || diagnostics.status === 'open' ? 'available' : '-'} tone={canSendViaRallarSignaling || diagnostics.status === 'open' ? 'good' : 'muted'}/>
+                <Metric label="Raw ready state" value={diagnostics.readyState}/>
+                <Metric label="Inbound" value={String(diagnostics.inboundCount)}/>
+                <Metric label="Outbound" value={String(diagnostics.outboundCount)}/>
+                <Metric label="Errors" value={String(diagnostics.errorCount)} tone={diagnostics.errorCount > 0 ? 'bad' : 'good'}/>
+                <Metric label="Wait" value={waitStatus}/>
+                <Metric label="Group" value={values.groupId || '-'}/>
+                <Metric label="Selector" value={`${values.topicId || '*'} / ${values.typeId || '-'}`}/>
+                <Metric label="Subscription" value={subscription?.label ?? '-'}/>
+                <Metric label="Ticket" value={ticket ? 'redacted' : '-'}/>
+                <Metric label="Ticket expires" value={formatTime(ticket?.expiresAtEpochMs)}/>
+                <Metric label="Last open" value={formatTime(diagnostics.lastOpenAtEpochMs)}/>
+                <Metric label="Last close" value={formatTime(diagnostics.lastCloseAtEpochMs)}/>
+                <Metric label="Close code" value={String(diagnostics.closeCode ?? '-')}/>
+                <Metric label="Close reason" value={String(diagnostics.closeReason ?? '-')}/>
+            </div>
+            {(busyAction || localError || !payloadResult.ok) && (
+                <div className={localError || !payloadResult.ok ? 'workbench-error' : 'command-center-status'} role="status">
+                    {localError ?? (!payloadResult.ok ? payloadResult.error : busyAction)}
+                </div>
+            )}
+            {canSendViaRallarSignaling && !localError && (
+                <div className="command-center-status" role="status">
+                    Send JSON uses rallar.messages.ws.send and connects Rallar signaling if needed. Open is only for
+                    raw WebSocket checks.
+                </div>
+            )}
+            <div className="websocket-event-log-heading">
+                <h3>WebSocket Event Log</h3>
+                <span>{diagnostics.recentEvents.length} recent</span>
+            </div>
+            <div className="websocket-event-list">
+                {diagnostics.recentEvents.length === 0 && (
+                    <div className="empty-state">No WebSocket events yet</div>
+                )}
+                {diagnostics.recentEvents.slice().reverse().map(event => (
+                    <article className="websocket-event-row" key={event.eventId}>
+                        <div>
+                            <strong>{event.topic}</strong>
+                            <small>{formatTime(event.atEpochMs)} - {event.kind}</small>
+                        </div>
+                        <span className={`pill ${event.severity === 'error' ? 'bad' : event.kind === 'message' ? 'good' : 'muted'}`}>
+                            {event.severity}
+                        </span>
+                        <pre className="mini-json">{redactedJson(event.payload, state, authSession)}</pre>
+                    </article>
+                ))}
+            </div>
+        </section>
+    );
+}
+
+function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
+    state: RallarBlackBoxTestState;
+    bootstrap: RallarBlackBoxBootstrapConfig;
+    authSession?: AuthSession;
+    globalValues: CommandCenterGlobalValues;
+}) {
+    const [transport, setTransport] = useState<RtcRealtimeTransport>('realtime');
+    const [laneId, setLaneId] = useState('realtime');
+    const [peerIdsText, setPeerIdsText] = useState('');
+    const [typeId, setTypeId] = useState('room.manual.message');
+    const [topicId, setTopicId] = useState('room.manual.message');
+    const [contextId, setContextId] = useState(globalValues.roomId || 'room');
+    const [payloadText, setPayloadText] = useState(() => json({
+        text: 'hello from direct RTC/Realtimes',
+        seq: 1,
+    }));
+    const [minSnapshotVersion, setMinSnapshotVersion] = useState('');
+    const [reliability, setReliability] = useState<'best-effort' | 'at-least-once'>('at-least-once');
+    const [ack, setAck] = useState<'none' | 'receiver' | 'all-logical-recipients' | 'group-leader'>('none');
+    const [ownership, setOwnership] = useState<'shared' | 'exclusive'>('shared');
+    const [timeoutMs, setTimeoutMs] = useState<number>(RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs);
+    const [busyAction, setBusyAction] = useState<string | undefined>();
+    const [localError, setLocalError] = useState<string | undefined>();
+    const [result, setResult] = useState<unknown>();
+    const [received, setReceived] = useState<readonly RtcRealtimeReceivedRow[]>([]);
+    const [health, setHealth] = useState<unknown>();
+    const subscriptionsRef = useRef<readonly (() => void)[]>([]);
+    const providerMode = bootstrap.providerMode;
+    const realBackendReady = providerMode === 'browser-rallar';
+    const activeGroupId = globalValues.roomId.trim();
+    const peerIds = splitCsvValues(peerIdsText);
+    const canRun = realBackendReady && Boolean(authSession) && !busyAction;
+
+    useEffect(() => {
+        setContextId(current => current && current !== 'room' ? current : globalValues.roomId || 'room');
+    }, [globalValues.roomId]);
+
+    useEffect(() => () => {
+        subscriptionsRef.current.forEach(unsubscribe => unsubscribe());
+        subscriptionsRef.current = [];
+    }, []);
+
+    const context = () => ({
+        providerMode,
+        apiBaseUrl: globalValues.apiBaseUrl,
+        applicationId: globalValues.applicationId,
+        workspaceId: globalValues.workspaceId,
+        roomId: activeGroupId,
+        actor: authSession?.username ?? authSession?.clientId ?? bootstrap.actor,
+        connection: 'rtc-realtime',
+        authSession,
+        timeoutMs,
+    });
+
+    const recordDirectEvent = (
+        topic: string,
+        severity: RallarBlackBoxTestSeverity,
+        payload: unknown,
+        lastAction: string,
+    ): void => {
+        rallarBlackBoxRuntimeStore.recordRuntimeEvent(
+            createDirectRallarRuntimeEvent({
+                topic,
+                context: context(),
+                transport,
+                severity,
+                payload,
+            }),
+            lastAction,
+        );
+    };
+
+    const withFacade = async <T,>(action: (facade: Awaited<ReturnType<typeof loadBrowserRallarFacade>>) => Promise<T>): Promise<T> => {
+        if (!realBackendReady) {
+            throw new Error('RTC/Realtimes requires provider=browser-rallar.');
+        }
+        if (!authSession) {
+            throw new Error('RTC/Realtimes requires a logged-in browser session.');
+        }
+        const facade = await loadBrowserRallarFacade();
+        configureDirectRallarFacade(facade, context());
+        await facade.start({
+            connect: true,
+            refreshRooms: false,
+            refreshPeople: false,
+            timeoutMs,
+        });
+        if (activeGroupId) {
+            await facade.rooms.join(activeGroupId, {
+                scope: {
+                    applicationId: globalValues.applicationId,
+                    workspaceId: globalValues.workspaceId,
+                },
+                timeoutMs,
+            });
+        }
+        return await action(facade);
+    };
+
+    const runAction = async (label: string, action: () => Promise<unknown>): Promise<void> => {
+        setBusyAction(label);
+        setLocalError(undefined);
+        try {
+            const nextResult = await action();
+            setResult(nextResult);
+            recordDirectEvent(
+                `rallar.direct.${transport}.${label.toLowerCase().replaceAll(' ', '_')}.completed`,
+                'info',
+                nextResult,
+                `${label} completed`,
+            );
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            setLocalError(message);
+            recordDirectEvent(
+                `rallar.direct.${transport}.${label.toLowerCase().replaceAll(' ', '_')}.failed`,
+                'error',
+                { error: message },
+                `${label} failed`,
+            );
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const addReceived = (row: RtcRealtimeReceivedRow): void => {
+        setReceived(current => [...current, row].slice(-50));
+        recordDirectEvent('rallar.direct.rtc_realtime.message', 'info', row, 'RTC/Realtimes message received');
+    };
+
+    const subscribeRealtime = (): Promise<void> =>
+        runAction('Subscribe realtime', async () => {
+            return await withFacade(async facade => {
+                const unsubscribe = facade.realtime.onJson<unknown>(laneId, message => {
+                    addReceived({
+                        rowId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                        atEpochMs: message.receivedAtEpochMs,
+                        transport: 'realtime',
+                        peerId: message.peerId,
+                        laneId: message.laneId,
+                        roomId: activeGroupId || '-',
+                        typeId: '-',
+                        topicId: '-',
+                        contextId: activeGroupId || '-',
+                        payload: message.data,
+                        raw: message,
+                    });
+                });
+                subscriptionsRef.current = [...subscriptionsRef.current, unsubscribe];
+                return {
+                    subscribed: 'realtime',
+                    laneId,
+                };
+            });
+        });
+
+    const subscribeRtcMessages = (): Promise<void> =>
+        runAction('Subscribe RTC messages', async () => {
+            return await withFacade(async facade => {
+                const selector = {
+                    typeId,
+                    ...(topicId ? { topicId } : {}),
+                };
+                const unsubscribe = facade.messages.rtc.onMessage(selector, message => {
+                    const record = optionalRecord(message);
+                    addReceived({
+                        rowId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                        atEpochMs: Date.now(),
+                        transport: 'messages.rtc',
+                        peerId: String(record.senderId ?? record.peerId ?? '-'),
+                        laneId,
+                        roomId: String(record.roomId ?? activeGroupId ?? '-'),
+                        typeId: String(record.typeId ?? typeId),
+                        topicId: String(record.topicId ?? topicId),
+                        contextId: String(record.contextId ?? contextId),
+                        payload: record.payload ?? message,
+                        raw: message,
+                    });
+                });
+                subscriptionsRef.current = [...subscriptionsRef.current, unsubscribe];
+                return {
+                    subscribed: 'messages.rtc',
+                    selector,
+                };
+            });
+        });
+
+    const clearSubscriptions = (): void => {
+        subscriptionsRef.current.forEach(unsubscribe => unsubscribe());
+        subscriptionsRef.current = [];
+        recordDirectEvent('rallar.direct.rtc_realtime.unsubscribe.completed', 'info', {}, 'RTC/Realtimes subscriptions cleared');
+    };
+
+    const sendRealtime = (): Promise<void> =>
+        runAction('Send realtime JSON', async () => {
+            const payload = parseJsonText(payloadText, {});
+            return await withFacade(async facade =>
+                await facade.realtime.sendJson({
+                    data: payload,
+                    laneId,
+                    roomId: activeGroupId,
+                    roomRef: activeGroupId
+                        ? {
+                            applicationId: globalValues.applicationId,
+                            workspaceId: globalValues.workspaceId,
+                            groupId: activeGroupId,
+                        }
+                        : undefined,
+                    peerIds: peerIds.length > 0 ? peerIds : undefined,
+                    openTimeoutMs: timeoutMs,
+                })
+            );
+        });
+
+    const sendRtcMessage = (): Promise<void> =>
+        runAction('Send RTC message', async () => {
+            const payload = parseJsonText(payloadText, {});
+            return await withFacade(async facade =>
+                await facade.messages.rtc.send({
+                    roomId: activeGroupId,
+                    roomRef: activeGroupId
+                        ? {
+                            applicationId: globalValues.applicationId,
+                            workspaceId: globalValues.workspaceId,
+                            groupId: activeGroupId,
+                        }
+                        : undefined,
+                    typeId,
+                    topicId,
+                    contextId: contextId || activeGroupId || typeId,
+                    payload,
+                    minSnapshotVersion: minSnapshotVersion.trim()
+                        ? Number(minSnapshotVersion)
+                        : undefined,
+                    reliability,
+                    ack,
+                    ownership,
+                    nextHopPeerIds: peerIds.length > 0 ? peerIds : undefined,
+                    overlayId: activeGroupId || undefined,
+                })
+            );
+        });
+
+    const waitForRoomLane = (): Promise<void> =>
+        runAction('Wait room lane', async () =>
+            await withFacade(async facade =>
+                await facade.rtc.waitForRoomLane(
+                    {
+                        applicationId: globalValues.applicationId,
+                        workspaceId: globalValues.workspaceId,
+                        groupId: activeGroupId,
+                    },
+                    laneId,
+                    { timeoutMs },
+                )
+            )
+        );
+
+    const refreshHealth = (): Promise<void> =>
+        runAction('Refresh lane health', async () => {
+            return await withFacade(async facade => {
+                const nextHealth = facade.realtime.health({
+                    peerIds: peerIds.length > 0 ? peerIds : undefined,
+                    laneIds: laneId ? [laneId] : undefined,
+                });
+                setHealth(nextHealth);
+                return nextHealth;
+            });
+        });
+
+    const copyRecipe = (): void => {
+        const payload = (() => {
+            try {
+                return parseJsonText(payloadText, {});
+            } catch {
+                return {};
+            }
+        })();
+        void navigator.clipboard?.writeText(redactedJson({
+            recipeId: 'rallar-direct-rtc-realtime-export',
+            name: 'Direct RTC/Realtimes export from Rallar Black Box',
+            requirements: [
+                'provider=browser-rallar',
+                'logged-in browser session',
+                'joined group with RTC signaling available',
+            ],
+            commands: [
+                {
+                    kind: 'rtc.connect',
+                    commandId: 'rtc-realtime-connect',
+                    roomId: activeGroupId,
+                    transport,
+                    timeoutMs,
+                    rallar: {
+                        applicationId: globalValues.applicationId,
+                        workspaceId: globalValues.workspaceId,
+                        roomRef: {
+                            applicationId: globalValues.applicationId,
+                            workspaceId: globalValues.workspaceId,
+                            groupId: activeGroupId,
+                        },
+                    },
+                },
+                {
+                    kind: 'rtc.send',
+                    commandId: 'rtc-realtime-send',
+                    roomId: activeGroupId,
+                    transport,
+                    send: payload,
+                    targetClient: peerIds[0],
+                    rallar: {
+                        typeId,
+                        topicId,
+                        contextId,
+                        laneId,
+                    },
+                    timeoutMs,
+                },
+            ],
+        }, state, authSession));
+    };
+
+    return (
+        <section className="panel rtc-realtime-panel" aria-label="RTC/Realtimes">
+            <div className="panel-heading">
+                <h2>RTC/Realtimes</h2>
+                <span className={`pill ${realBackendReady ? 'good' : 'warn'}`}>
+                    {realBackendReady ? 'direct Rallar' : 'real backend required'}
+                </span>
+            </div>
+            <div className="rtc-realtime-summary-grid">
+                <Metric label="Provider" value={providerMode} tone={realBackendReady ? 'good' : 'warn'}/>
+                <Metric label="Group" value={activeGroupId || '-'} tone={activeGroupId ? 'good' : 'warn'}/>
+                <Metric label="Transport" value={transport}/>
+                <Metric label="Lane" value={laneId || '-'}/>
+                <Metric label="Peer targets" value={peerIds.length ? peerIds.join(', ') : 'room/default'}/>
+                <Metric label="Subscriptions" value={String(subscriptionsRef.current.length)}/>
+                <Metric label="Received" value={String(received.length)}/>
+            </div>
+            <div className="rtc-realtime-context-grid">
+                <label className="field">
+                    <span>Transport</span>
+                    <select value={transport} onChange={event => setTransport(event.target.value as RtcRealtimeTransport)}>
+                        <option value="realtime">realtime.sendJson</option>
+                        <option value="messages.rtc">messages.rtc.send</option>
+                    </select>
+                </label>
+                <label className="field">
+                    <span>Lane ID</span>
+                    <input value={laneId} onChange={event => setLaneId(event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Peer IDs</span>
+                    <input value={peerIdsText} onChange={event => setPeerIdsText(event.target.value)} placeholder="comma separated"/>
+                </label>
+                <label className="field">
+                    <span>Type ID</span>
+                    <input value={typeId} onChange={event => setTypeId(event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Topic ID</span>
+                    <input value={topicId} onChange={event => setTopicId(event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Context ID</span>
+                    <input value={contextId} onChange={event => setContextId(event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Min Snapshot</span>
+                    <input value={minSnapshotVersion} onChange={event => setMinSnapshotVersion(event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Timeout</span>
+                    <input type="number" min={0} value={timeoutMs} onChange={event => setTimeoutMs(Number(event.target.value))}/>
+                </label>
+                <label className="field">
+                    <span>Reliability</span>
+                    <select value={reliability} onChange={event => setReliability(event.target.value as typeof reliability)}>
+                        <option value="at-least-once">at-least-once</option>
+                        <option value="best-effort">best-effort</option>
+                    </select>
+                </label>
+                <label className="field">
+                    <span>Ack</span>
+                    <select value={ack} onChange={event => setAck(event.target.value as typeof ack)}>
+                        <option value="none">none</option>
+                        <option value="receiver">receiver</option>
+                        <option value="all-logical-recipients">all-logical-recipients</option>
+                        <option value="group-leader">group-leader</option>
+                    </select>
+                </label>
+                <label className="field">
+                    <span>Ownership</span>
+                    <select value={ownership} onChange={event => setOwnership(event.target.value as typeof ownership)}>
+                        <option value="shared">shared</option>
+                        <option value="exclusive">exclusive</option>
+                    </select>
+                </label>
+            </div>
+            <div className="rtc-realtime-action-grid">
+                <button type="button" disabled={!canRun} onClick={() => void subscribeRealtime()}>
+                    Subscribe realtime
+                </button>
+                <button type="button" disabled={!canRun} onClick={() => void subscribeRtcMessages()}>
+                    Subscribe RTC messages
+                </button>
+                <button type="button" disabled={!canRun} onClick={() => void sendRealtime()}>
+                    Send realtime JSON
+                </button>
+                <button type="button" disabled={!canRun} onClick={() => void sendRtcMessage()}>
+                    Send RTC message
+                </button>
+                <button type="button" disabled={!canRun || !activeGroupId} onClick={() => void waitForRoomLane()}>
+                    Wait room lane
+                </button>
+                <button type="button" disabled={!canRun} onClick={() => void refreshHealth()}>
+                    Refresh lane health
+                </button>
+                <button type="button" disabled={subscriptionsRef.current.length === 0} onClick={clearSubscriptions}>
+                    Clear subscriptions
+                </button>
+                <button type="button" onClick={copyRecipe}>
+                    Copy RTC recipe
+                </button>
+            </div>
+            <div className="rtc-realtime-work-grid">
+                <label className="json-editor">
+                    <span>Payload JSON</span>
+                    <textarea value={payloadText} onChange={event => setPayloadText(event.target.value)} spellCheck={false}/>
+                </label>
+                <section className="rtc-realtime-received-panel" aria-label="RTC/Realtimes received messages">
+                    <div className="section-heading">
+                        <h3>Received Messages</h3>
+                        <span>{received.length} rows</span>
+                    </div>
+                    <div className="websocket-received-list">
+                        {received.length === 0 && <div className="empty-state">No received RTC/Realtimes messages</div>}
+                        {received.slice().reverse().map(message => (
+                            <article className="websocket-received-row" key={message.rowId}>
+                                <div>
+                                    <strong>{message.transport} {message.topicId} / {message.typeId}</strong>
+                                    <small>{formatTime(message.atEpochMs)} - peer {message.peerId}</small>
+                                    <small>group {message.roomId} - lane {message.laneId} - context {message.contextId}</small>
+                                </div>
+                                <pre className="mini-json">{redactedJson(message.payload, state, authSession)}</pre>
+                            </article>
+                        ))}
+                    </div>
+                </section>
+            </div>
+            {(busyAction || localError || !realBackendReady || !authSession) && (
+                <div className={localError ? 'workbench-error' : 'command-center-status'} role="status">
+                    {localError ??
+                        (!realBackendReady
+                            ? 'RTC/Realtimes requires provider=browser-rallar.'
+                            : !authSession
+                                ? 'RTC/Realtimes requires a logged-in browser session.'
+                                : busyAction)}
+                </div>
+            )}
+            <div className="rtc-realtime-result-grid">
+                <section>
+                    <div className="section-heading">
+                        <h3>Last Result</h3>
+                        <span>{busyAction ?? 'idle'}</span>
+                    </div>
+                    <pre className="mini-json">{redactedJson(result ?? {}, state, authSession)}</pre>
+                </section>
+                <section>
+                    <div className="section-heading">
+                        <h3>Lane Health</h3>
+                        <span>{Array.isArray(health) ? health.length : 0} rows</span>
+                    </div>
+                    <pre className="mini-json">{redactedJson(health ?? [], state, authSession)}</pre>
+                </section>
+            </div>
+        </section>
+    );
+}
+
+function RallarDataPanel({ state, bootstrap, authSession, globalValues }: {
+    state: RallarBlackBoxTestState;
+    bootstrap: RallarBlackBoxBootstrapConfig;
+    authSession?: AuthSession;
+    globalValues: CommandCenterGlobalValues;
+}) {
+    const [storeName, setStoreName] = useState('rallar-black-box-store');
+    const [scopeMode, setScopeMode] = useState<'app' | 'principal' | 'session' | 'custom'>('session');
+    const [customScope, setCustomScope] = useState('custom:rallar-black-box');
+    const [durability, setDurability] = useState<'write-through' | 'write-behind'>('write-through');
+    const [hydrateMode, setHydrateMode] = useState<'eager' | 'lazy'>('eager');
+    const [key, setKey] = useState('probe');
+    const [valueText, setValueText] = useState(() => json({
+        text: 'hello from Rallar Data',
+        seq: 1,
+    }));
+    const [expectedText, setExpectedText] = useState('');
+    const [operation, setOperation] = useState<RallarDataOperation>('open');
+    const [busyAction, setBusyAction] = useState<string | undefined>();
+    const [localError, setLocalError] = useState<string | undefined>();
+    const [storeOpen, setStoreOpen] = useState(false);
+    const [hydrated, setHydrated] = useState(false);
+    const [result, setResult] = useState<unknown>();
+    const [changes, setChanges] = useState<readonly RallarDataChangeRow[]>([]);
+    const storeRef = useRef<RallarDataUiStore | undefined>(undefined);
+    const unsubscribeRef = useRef<(() => void) | undefined>(undefined);
+    const providerMode = bootstrap.providerMode;
+    const realBackendReady = providerMode === 'browser-rallar';
+    const canRun = realBackendReady && !busyAction;
+    const resolvedScope = scopeMode === 'app'
+        ? `app:${globalValues.applicationId}:${globalValues.workspaceId}`
+        : scopeMode === 'principal'
+            ? `principal:${globalValues.clientId || authSession?.clientId || bootstrap.actor}`
+            : scopeMode === 'session'
+                ? `session:${globalValues.sessionId || authSession?.sessionId || bootstrap.sessionId}`
+                : customScope;
+
+    useEffect(() => () => {
+        unsubscribeRef.current?.();
+        void storeRef.current?.close();
+    }, []);
+
+    const options = () => ({
+        scope: resolvedScope,
+        durability,
+        hydrate: hydrateMode,
+        sync: true,
+    });
+
+    const recordDataEvent = (
+        topic: string,
+        severity: RallarBlackBoxTestSeverity,
+        payload: unknown,
+        lastAction: string,
+    ): void => {
+        rallarBlackBoxRuntimeStore.recordRuntimeEvent(
+            createDirectRallarRuntimeEvent({
+                topic,
+                context: {
+                    providerMode,
+                    apiBaseUrl: globalValues.apiBaseUrl,
+                    applicationId: globalValues.applicationId,
+                    workspaceId: globalValues.workspaceId,
+                    roomId: globalValues.roomId,
+                    actor: authSession?.username ?? authSession?.clientId ?? bootstrap.actor,
+                    connection: 'rallar-data',
+                    authSession,
+                    timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
+                },
+                payload: {
+                    storeName,
+                    scope: resolvedScope,
+                    ...optionalRecord(payload),
+                },
+                severity,
+            }),
+            lastAction,
+        );
+    };
+
+    const loadFacade = async (): Promise<Awaited<ReturnType<typeof loadBrowserRallarFacade>>> => {
+        if (!realBackendReady) {
+            throw new Error('Rallar Data console requires provider=browser-rallar.');
+        }
+        const facade = await loadBrowserRallarFacade();
+        facade.configure({ apiBaseUrl: globalValues.apiBaseUrl });
+        facade.setDefaults({
+            applicationId: globalValues.applicationId,
+            workspaceId: globalValues.workspaceId,
+        });
+        return facade;
+    };
+
+    const attachChangeListener = (store: RallarDataUiStore): void => {
+        unsubscribeRef.current?.();
+        unsubscribeRef.current = store.onChange(event => {
+            const row = {
+                rowId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                atEpochMs: Date.now(),
+                event,
+            };
+            setChanges(current => [...current, row].slice(-50));
+            recordDataEvent('rallar.direct.data.change', 'info', row, 'Rallar Data changed');
+        });
+    };
+
+    const openStore = async (): Promise<RallarDataUiStore> => {
+        if (storeRef.current) {
+            return storeRef.current;
+        }
+        const facade = await loadFacade();
+        const store = await facade.data.open<unknown>(storeName, options());
+        storeRef.current = store;
+        setStoreOpen(true);
+        setHydrated(store.isHydrated());
+        attachChangeListener(store);
+        return store;
+    };
+
+    const resetOpenStore = (): void => {
+        unsubscribeRef.current?.();
+        unsubscribeRef.current = undefined;
+        storeRef.current = undefined;
+        setStoreOpen(false);
+        setHydrated(false);
+    };
+
+    const parseValue = (): unknown => parseJsonText(valueText, null);
+    const parseExpected = (): unknown | undefined =>
+        expectedText.trim() ? parseJsonText(expectedText, undefined) : undefined;
+
+    const runOperation = async (): Promise<void> => {
+        setBusyAction(operation);
+        setLocalError(undefined);
+        try {
+            const facade = await loadFacade();
+            let nextResult: unknown;
+            if (operation === 'define') {
+                nextResult = facade.data.define(storeName, options());
+            } else if (operation === 'open') {
+                nextResult = await openStore();
+            } else if (operation === 'lookup') {
+                const lookedUp = facade.data.lookup<unknown>(storeName, options());
+                if (lookedUp) {
+                    storeRef.current = lookedUp;
+                    setStoreOpen(true);
+                    setHydrated(lookedUp.isHydrated());
+                    attachChangeListener(lookedUp);
+                }
+                nextResult = lookedUp
+                    ? {
+                        name: lookedUp.name,
+                        repositoryId: lookedUp.repositoryId,
+                        hydrated: lookedUp.isHydrated(),
+                    }
+                    : undefined;
+            } else if (operation === 'close') {
+                nextResult = await facade.data.close(storeName, options());
+                resetOpenStore();
+            } else if (operation === 'destroy') {
+                nextResult = await facade.data.destroy(storeName, options());
+                resetOpenStore();
+            } else if (operation === 'close-scope') {
+                nextResult = await facade.data.closeScope(resolvedScope);
+                resetOpenStore();
+            } else if (operation === 'clear-scope') {
+                nextResult = await facade.data.clearScope(resolvedScope);
+            } else if (operation === 'destroy-scope') {
+                nextResult = await facade.data.destroyScope(resolvedScope);
+                resetOpenStore();
+            } else {
+                const store = await openStore();
+                switch (operation) {
+                    case 'hydrate':
+                        await store.hydrate();
+                        nextResult = { hydrated: store.isHydrated() };
+                        break;
+                    case 'when-idle':
+                        await store.whenIdle();
+                        nextResult = { idle: true };
+                        break;
+                    case 'read':
+                        nextResult = store.read(key);
+                        break;
+                    case 'get':
+                        nextResult = await store.get(key);
+                        break;
+                    case 'keys':
+                        nextResult = store.keys();
+                        break;
+                    case 'list-keys':
+                        nextResult = await store.listKeys();
+                        break;
+                    case 'read-entries':
+                        nextResult = store.readEntries();
+                        break;
+                    case 'get-entries':
+                        nextResult = await store.getEntries();
+                        break;
+                    case 'read-all':
+                        nextResult = store.readAllValues();
+                        break;
+                    case 'get-all':
+                        nextResult = await store.getAll();
+                        break;
+                    case 'set':
+                        await store.set(key, parseValue());
+                        nextResult = await store.get(key);
+                        break;
+                    case 'update':
+                        nextResult = await store.update(key, () => parseValue());
+                        break;
+                    case 'update-or-create':
+                        nextResult = await store.updateOrCreate(key, () => parseValue());
+                        break;
+                    case 'set-if-absent':
+                        nextResult = await store.setIfAbsent(key, () => parseValue());
+                        break;
+                    case 'compare-and-set':
+                        nextResult = await store.compareAndSet(key, parseExpected(), parseValue());
+                        break;
+                    case 'get-and-set':
+                        nextResult = await store.getAndSet(key, parseValue());
+                        break;
+                    case 'delete':
+                        nextResult = await store.delete(key);
+                        break;
+                    case 'delete-expired':
+                        nextResult = await store.deleteExpired();
+                        break;
+                    case 'clear':
+                        await store.clear();
+                        nextResult = { cleared: true };
+                        break;
+                    case 'flush':
+                        await store.flush();
+                        nextResult = { flushed: true };
+                        break;
+                    case 'export':
+                        nextResult = await store.exportData();
+                        break;
+                    case 'estimate-usage':
+                        nextResult = await store.estimateUsage();
+                        break;
+                    default:
+                        nextResult = undefined;
+                }
+                setHydrated(store.isHydrated());
+            }
+            setResult(nextResult);
+            recordDataEvent('rallar.direct.data.operation.completed', 'info', {
+                operation,
+                result: nextResult,
+            }, `Rallar Data ${operation} completed`);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            setLocalError(message);
+            recordDataEvent('rallar.direct.data.operation.failed', 'error', {
+                operation,
+                error: message,
+            }, `Rallar Data ${operation} failed`);
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const copyDiagnostics = (): void => {
+        void navigator.clipboard?.writeText(redactedJson({
+            providerMode,
+            storeName,
+            scope: resolvedScope,
+            durability,
+            hydrateMode,
+            storeOpen,
+            hydrated,
+            operation,
+            key,
+            result,
+            changes: changes.slice(-8),
+        }, state, authSession));
+    };
+
+    const operations: readonly RallarDataOperation[] = [
+        'define',
+        'open',
+        'lookup',
+        'hydrate',
+        'when-idle',
+        'read',
+        'get',
+        'keys',
+        'list-keys',
+        'read-entries',
+        'get-entries',
+        'read-all',
+        'get-all',
+        'set',
+        'update',
+        'update-or-create',
+        'set-if-absent',
+        'compare-and-set',
+        'get-and-set',
+        'delete',
+        'delete-expired',
+        'clear',
+        'flush',
+        'export',
+        'estimate-usage',
+        'close',
+        'destroy',
+        'close-scope',
+        'clear-scope',
+        'destroy-scope',
+    ];
+
+    return (
+        <section className="panel rallar-data-panel" aria-label="Rallar Data">
+            <div className="panel-heading">
+                <h2>Rallar Data</h2>
+                <span className={`pill ${storeOpen ? 'good' : realBackendReady ? 'muted' : 'warn'}`}>
+                    {storeOpen ? 'store open' : realBackendReady ? 'idle' : 'real backend required'}
+                </span>
+            </div>
+            <div className="rallar-data-summary-grid">
+                <Metric label="Provider" value={providerMode} tone={realBackendReady ? 'good' : 'warn'}/>
+                <Metric label="Store" value={storeName}/>
+                <Metric label="Scope" value={resolvedScope}/>
+                <Metric label="Open" value={storeOpen ? 'yes' : 'no'} tone={storeOpen ? 'good' : 'muted'}/>
+                <Metric label="Hydrated" value={hydrated ? 'yes' : 'no'} tone={hydrated ? 'good' : 'muted'}/>
+                <Metric label="Changes" value={String(changes.length)}/>
+            </div>
+            <div className="rallar-data-context-grid">
+                <label className="field">
+                    <span>Store</span>
+                    <input value={storeName} onChange={event => {
+                        resetOpenStore();
+                        setStoreName(event.target.value);
+                    }}/>
+                </label>
+                <label className="field">
+                    <span>Scope</span>
+                    <select value={scopeMode} onChange={event => {
+                        resetOpenStore();
+                        setScopeMode(event.target.value as typeof scopeMode);
+                    }}>
+                        <option value="app">app</option>
+                        <option value="principal">principal</option>
+                        <option value="session">session</option>
+                        <option value="custom">custom</option>
+                    </select>
+                </label>
+                <label className="field">
+                    <span>Custom Scope</span>
+                    <input value={customScope} onChange={event => setCustomScope(event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Durability</span>
+                    <select value={durability} onChange={event => {
+                        resetOpenStore();
+                        setDurability(event.target.value as typeof durability);
+                    }}>
+                        <option value="write-through">write-through</option>
+                        <option value="write-behind">write-behind</option>
+                    </select>
+                </label>
+                <label className="field">
+                    <span>Hydration</span>
+                    <select value={hydrateMode} onChange={event => {
+                        resetOpenStore();
+                        setHydrateMode(event.target.value as typeof hydrateMode);
+                    }}>
+                        <option value="eager">eager</option>
+                        <option value="lazy">lazy</option>
+                    </select>
+                </label>
+                <label className="field">
+                    <span>Operation</span>
+                    <select value={operation} onChange={event => setOperation(event.target.value as RallarDataOperation)}>
+                        {operations.map(entry => <option key={entry} value={entry}>{entry}</option>)}
+                    </select>
+                </label>
+                <label className="field">
+                    <span>Key</span>
+                    <input value={key} onChange={event => setKey(event.target.value)}/>
+                </label>
+            </div>
+            <div className="rallar-data-actions">
+                <button type="button" disabled={!canRun} onClick={() => void runOperation()}>
+                    Run data operation
+                </button>
+                <button type="button" onClick={copyDiagnostics}>
+                    Copy diagnostics
+                </button>
+            </div>
+            <div className="rallar-data-work-grid">
+                <label className="json-editor">
+                    <span>Value JSON</span>
+                    <textarea value={valueText} onChange={event => setValueText(event.target.value)} spellCheck={false}/>
+                </label>
+                <label className="json-editor">
+                    <span>Expected JSON</span>
+                    <textarea value={expectedText} onChange={event => setExpectedText(event.target.value)} spellCheck={false}/>
+                </label>
+                <section className="rallar-data-result-panel">
+                    <div className="section-heading">
+                        <h3>Result</h3>
+                        <span>{busyAction ?? operation}</span>
+                    </div>
+                    <pre className="mini-json">{redactedJson(result ?? {}, state, authSession)}</pre>
+                </section>
+                <section className="rallar-data-result-panel">
+                    <div className="section-heading">
+                        <h3>Change Events</h3>
+                        <span>{changes.length} rows</span>
+                    </div>
+                    <div className="websocket-received-list">
+                        {changes.length === 0 && <div className="empty-state">No Rallar Data changes</div>}
+                        {changes.slice().reverse().map(change => (
+                            <article className="websocket-received-row" key={change.rowId}>
+                                <div>
+                                    <strong>{formatTime(change.atEpochMs)}</strong>
+                                    <small>{storeName}</small>
+                                </div>
+                                <pre className="mini-json">{redactedJson(change.event, state, authSession)}</pre>
+                            </article>
+                        ))}
+                    </div>
+                </section>
+            </div>
+            {(busyAction || localError || !realBackendReady) && (
+                <div className={localError ? 'workbench-error' : 'command-center-status'} role="status">
+                    {localError ?? (!realBackendReady ? 'Rallar Data requires provider=browser-rallar.' : busyAction)}
+                </div>
+            )}
+        </section>
+    );
+}
+
+function MediaConsolePanel({ state, bootstrap, authSession, globalValues }: {
+    state: RallarBlackBoxTestState;
+    bootstrap: RallarBlackBoxBootstrapConfig;
+    authSession?: AuthSession;
+    globalValues: CommandCenterGlobalValues;
+}) {
+    const [audioEnabled, setAudioEnabled] = useState(true);
+    const [videoEnabled, setVideoEnabled] = useState(true);
+    const [policyText, setPolicyText] = useState(() => json({
+        receiveAudio: true,
+        receiveVideo: true,
+    }));
+    const [localStreamId, setLocalStreamId] = useState<string | undefined>();
+    const [busyAction, setBusyAction] = useState<string | undefined>();
+    const [localError, setLocalError] = useState<string | undefined>();
+    const [result, setResult] = useState<unknown>();
+    const [remoteStreams, setRemoteStreams] = useState<readonly MediaRemoteStreamRow[]>([]);
+    const unsubscribeRef = useRef<(() => void) | undefined>(undefined);
+    const providerMode = bootstrap.providerMode;
+    const realBackendReady = providerMode === 'browser-rallar';
+    const canRun = realBackendReady && Boolean(authSession) && !busyAction;
+
+    useEffect(() => () => {
+        unsubscribeRef.current?.();
+    }, []);
+
+    const recordMediaEvent = (
+        topic: string,
+        severity: RallarBlackBoxTestSeverity,
+        payload: unknown,
+        lastAction: string,
+    ): void => {
+        rallarBlackBoxRuntimeStore.recordRuntimeEvent(
+            createDirectRallarRuntimeEvent({
+                topic,
+                context: {
+                    providerMode,
+                    apiBaseUrl: globalValues.apiBaseUrl,
+                    applicationId: globalValues.applicationId,
+                    workspaceId: globalValues.workspaceId,
+                    roomId: globalValues.roomId,
+                    actor: authSession?.username ?? authSession?.clientId ?? bootstrap.actor,
+                    connection: 'media',
+                    authSession,
+                },
+                transport: 'realtime',
+                severity,
+                payload,
+            }),
+            lastAction,
+        );
+    };
+
+    const withFacade = async <T,>(action: (facade: Awaited<ReturnType<typeof loadBrowserRallarFacade>>) => Promise<T>): Promise<T> => {
+        if (!realBackendReady) {
+            throw new Error('Media console requires provider=browser-rallar.');
+        }
+        if (!authSession) {
+            throw new Error('Media console requires a logged-in browser session.');
+        }
+        const facade = await loadBrowserRallarFacade();
+        facade.configure({ apiBaseUrl: globalValues.apiBaseUrl });
+        facade.setDefaults({
+            applicationId: globalValues.applicationId,
+            workspaceId: globalValues.workspaceId,
+            room: globalValues.roomId
+                ? {
+                    roomId: globalValues.roomId,
+                    roomRef: {
+                        applicationId: globalValues.applicationId,
+                        workspaceId: globalValues.workspaceId,
+                        groupId: globalValues.roomId,
+                    },
+                }
+                : undefined,
+        });
+        await facade.start({
+            connect: true,
+            refreshRooms: false,
+            refreshPeople: false,
+            timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
+        });
+        return await action(facade);
+    };
+
+    const runMediaAction = async (label: string, action: () => Promise<unknown>): Promise<void> => {
+        setBusyAction(label);
+        setLocalError(undefined);
+        try {
+            const nextResult = await action();
+            setResult(nextResult);
+            recordMediaEvent(`rallar.direct.media.${label.toLowerCase().replaceAll(' ', '_')}.completed`, 'info', nextResult, `${label} completed`);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            setLocalError(message);
+            recordMediaEvent(`rallar.direct.media.${label.toLowerCase().replaceAll(' ', '_')}.failed`, 'error', { error: message }, `${label} failed`);
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const attachLocal = (): Promise<void> =>
+        runMediaAction('Attach local stream', async () => {
+            if (!navigator.mediaDevices?.getUserMedia) {
+                throw new Error('Browser mediaDevices.getUserMedia is not available.');
+            }
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: audioEnabled,
+                video: videoEnabled,
+            });
+            await withFacade(async facade => {
+                await facade.media.setLocalStream(stream);
+            });
+            setLocalStreamId(stream.id);
+            return {
+                streamId: stream.id,
+                tracks: stream.getTracks().map(track => ({
+                    kind: track.kind,
+                    enabled: track.enabled,
+                    readyState: track.readyState,
+                })),
+            };
+        });
+
+    const toggleAudio = (): Promise<void> =>
+        runMediaAction('Set audio', async () => {
+            const next = !audioEnabled;
+            await withFacade(async facade => {
+                await facade.media.setAudioEnabled(next);
+            });
+            setAudioEnabled(next);
+            return { audioEnabled: next };
+        });
+
+    const toggleVideo = (): Promise<void> =>
+        runMediaAction('Set video', async () => {
+            const next = !videoEnabled;
+            await withFacade(async facade => {
+                await facade.media.setVideoEnabled(next);
+            });
+            setVideoEnabled(next);
+            return { videoEnabled: next };
+        });
+
+    const stopLocal = (kind: 'audio' | 'video' | 'all'): Promise<void> =>
+        runMediaAction(`Stop ${kind}`, async () => {
+            await withFacade(async facade => {
+                await facade.media.stopLocal(kind);
+            });
+            if (kind === 'all') {
+                setLocalStreamId(undefined);
+            }
+            return { stopped: kind };
+        });
+
+    const applyPolicy = (): Promise<void> =>
+        runMediaAction('Apply media policy', async () => {
+            const policy = parseJsonText(policyText, {});
+            await withFacade(async facade => {
+                await facade.media.setPolicy(policy as Parameters<typeof facade.media.setPolicy>[0]);
+            });
+            return policy;
+        });
+
+    const subscribeRemote = (): Promise<void> =>
+        runMediaAction('Subscribe remote streams', async () => {
+            return await withFacade(async facade => {
+                unsubscribeRef.current?.();
+                unsubscribeRef.current = facade.media.onRemoteStream(remote => {
+                    const row = {
+                        rowId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                        atEpochMs: Date.now(),
+                        peerId: remote.peerId,
+                        streamId: remote.stream.id,
+                    };
+                    setRemoteStreams(current => [...current, row].slice(-30));
+                    recordMediaEvent('rallar.direct.media.remote_stream', 'info', row, 'Remote media stream observed');
+                });
+                return { subscribed: true };
+            });
+        });
+
+    const copyDiagnostics = (): void => {
+        void navigator.clipboard?.writeText(redactedJson({
+            providerMode,
+            localStreamId,
+            audioEnabled,
+            videoEnabled,
+            policy: (() => {
+                try {
+                    return parseJsonText(policyText, {});
+                } catch {
+                    return policyText;
+                }
+            })(),
+            remoteStreams,
+            result,
+            localError,
+        }, state, authSession));
+    };
+
+    return (
+        <section className="panel media-console-panel" aria-label="Media Console">
+            <div className="panel-heading">
+                <h2>Media</h2>
+                <span className={`pill ${localStreamId ? 'good' : realBackendReady ? 'muted' : 'warn'}`}>
+                    {localStreamId ? 'local attached' : realBackendReady ? 'idle' : 'real backend required'}
+                </span>
+            </div>
+            <div className="media-summary-grid">
+                <Metric label="Provider" value={providerMode} tone={realBackendReady ? 'good' : 'warn'}/>
+                <Metric label="Local stream" value={localStreamId ?? '-'}/>
+                <Metric label="Audio" value={audioEnabled ? 'enabled' : 'disabled'}/>
+                <Metric label="Video" value={videoEnabled ? 'enabled' : 'disabled'}/>
+                <Metric label="Remote streams" value={String(remoteStreams.length)}/>
+            </div>
+            <div className="media-action-grid">
+                <button type="button" disabled={!canRun} onClick={() => void attachLocal()}>
+                    Attach local stream
+                </button>
+                <button type="button" disabled={!canRun} onClick={() => void toggleAudio()}>
+                    Toggle audio
+                </button>
+                <button type="button" disabled={!canRun} onClick={() => void toggleVideo()}>
+                    Toggle video
+                </button>
+                <button type="button" disabled={!canRun} onClick={() => void stopLocal('audio')}>
+                    Stop audio
+                </button>
+                <button type="button" disabled={!canRun} onClick={() => void stopLocal('video')}>
+                    Stop video
+                </button>
+                <button type="button" disabled={!canRun} onClick={() => void stopLocal('all')}>
+                    Stop all
+                </button>
+                <button type="button" disabled={!canRun} onClick={() => void applyPolicy()}>
+                    Apply media policy
+                </button>
+                <button type="button" disabled={!canRun} onClick={() => void subscribeRemote()}>
+                    Subscribe remote streams
+                </button>
+                <button type="button" onClick={copyDiagnostics}>
+                    Copy diagnostics
+                </button>
+            </div>
+            <div className="media-work-grid">
+                <label className="json-editor">
+                    <span>Media Policy JSON</span>
+                    <textarea value={policyText} onChange={event => setPolicyText(event.target.value)} spellCheck={false}/>
+                </label>
+                <section className="media-result-panel">
+                    <div className="section-heading">
+                        <h3>Remote Streams</h3>
+                        <span>{remoteStreams.length} rows</span>
+                    </div>
+                    <div className="websocket-received-list">
+                        {remoteStreams.length === 0 && <div className="empty-state">No remote streams</div>}
+                        {remoteStreams.slice().reverse().map(remote => (
+                            <article className="state-table-row" key={remote.rowId}>
+                                <div>
+                                    <strong>{remote.peerId}</strong>
+                                    <small>{remote.streamId}</small>
+                                </div>
+                                <span>{formatTime(remote.atEpochMs)}</span>
+                            </article>
+                        ))}
+                    </div>
+                </section>
+                <section className="media-result-panel">
+                    <div className="section-heading">
+                        <h3>Result</h3>
+                        <span>{busyAction ?? 'idle'}</span>
+                    </div>
+                    <pre className="mini-json">{redactedJson(result ?? {}, state, authSession)}</pre>
+                </section>
+            </div>
+            {(busyAction || localError || !realBackendReady || !authSession) && (
+                <div className={localError ? 'workbench-error' : 'command-center-status'} role="status">
+                    {localError ??
+                        (!realBackendReady
+                            ? 'Media console requires provider=browser-rallar.'
+                            : !authSession
+                                ? 'Media console requires a logged-in browser session.'
+                                : busyAction)}
+                </div>
+            )}
+        </section>
+    );
+}
+
+function AuthCommandCenterPanel({ state, bootstrap, authSession, globalValues, onAuthenticated, onLogout }: {
+    state: RallarBlackBoxTestState;
+    bootstrap: RallarBlackBoxBootstrapConfig;
+    authSession?: AuthSession;
+    globalValues?: CommandCenterGlobalValues;
+    onAuthenticated(session?: AuthSession): void;
+    onLogout(): Promise<void>;
+}) {
+    const config = selectRallarBlackBoxCurrentConfig(state);
+    const providerMode = rallarBlackBoxProviderModeFromConfig(config);
+    const [apiBaseUrl, setApiBaseUrl] = useState(globalValues?.apiBaseUrl ?? config?.apiBaseUrl ?? bootstrap.apiBaseUrl);
+    const [username, setUsername] = useState(authSession?.username ?? bootstrap.rallarUsername ?? bootstrap.actor);
+    const [password, setPassword] = useState(bootstrap.rallarPassword ?? '');
+    const [busyAction, setBusyAction] = useState<string | undefined>();
+    const [localError, setLocalError] = useState<string | undefined>();
+    const [ticket, setTicket] = useState<AuthCommandCenterTicket | undefined>();
+    const [actions, setActions] = useState<readonly CommandCenterRestActionLog[]>([]);
+    const recipeText = useMemo(() => authRecipeSnippet(username), [username]);
+    const diagnosticsText = useMemo(
+        () => redactedJson({
+            providerMode,
+            apiBaseUrl,
+            session: authSession,
+            wsTicket: ticket
+                ? {
+                    ...ticket,
+                    ticket: '<redacted:ws-ticket>',
+                    expiresInMs: ticket.expiresAtEpochMs - Date.now(),
+                }
+                : undefined,
+            recentActions: actions.slice(-6),
+        }, state, authSession),
+        [actions, apiBaseUrl, authSession, providerMode, state, ticket],
+    );
+    const sessionExpiresInMs = authSession
+        ? authSession.expiresAtEpochMs - Date.now()
+        : undefined;
+    const wsTicketExpiresInMs = ticket
+        ? ticket.expiresAtEpochMs - Date.now()
+        : undefined;
+
+    const appendAction = (entry: CommandCenterRestActionLog): void => {
+        setActions(current => [...current, entry].slice(-12));
+    };
+
+    useEffect(() => {
+        if (globalValues?.apiBaseUrl) {
+            setApiBaseUrl(globalValues.apiBaseUrl);
+        }
+    }, [globalValues?.apiBaseUrl]);
+
+    const runWithBusy = async (label: string, action: () => Promise<void>): Promise<void> => {
+        setBusyAction(label);
+        setLocalError(undefined);
+        try {
+            await action();
+        } catch (error) {
+            setLocalError(authErrorMessage(error));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const login = async (register: boolean): Promise<void> => {
+        await runWithBusy(register ? 'Register and login' : 'Login', async () => {
+            const session = await authenticateRallarBlackBox(await loadBrowserRallarFacade(), {
+                apiBaseUrl,
+                username,
+                password,
+                register,
+            });
+            rallarBlackBoxRuntimeStore.updateBootstrapConfig(
+                bootstrapPatchFromAuthSession(session, apiBaseUrl),
+            );
+            onAuthenticated(session);
+            appendAction({
+                actionId: `auth-${register ? 'register-login' : 'login'}-${Date.now()}`,
+                label: register ? 'Register and login' : 'Login',
+                atEpochMs: Date.now(),
+                ok: true,
+                status: register ? 201 : 200,
+                statusText: 'OK',
+                durationMs: 0,
+                bodyJson: session,
+            });
+        });
+    };
+
+    const restore = (): void => {
+        const restored = readCurrentAuthSession();
+        onAuthenticated(restored);
+        if (!restored) {
+            setLocalError('No restorable browser auth session was found.');
+            return;
+        }
+        rallarBlackBoxRuntimeStore.updateBootstrapConfig(
+            bootstrapPatchFromAuthSession(restored, apiBaseUrl),
+        );
+        appendAction({
+            actionId: `auth-restore-${Date.now()}`,
+            label: 'Restore session',
+            atEpochMs: Date.now(),
+            ok: true,
+            status: 200,
+            statusText: 'Restored',
+            durationMs: 0,
+            bodyJson: restored,
+        });
+    };
+
+    const clearLocal = (): void => {
+        clearSession();
+        setTicket(undefined);
+        onAuthenticated(undefined);
+        appendAction({
+            actionId: `auth-clear-${Date.now()}`,
+            label: 'Clear local session',
+            atEpochMs: Date.now(),
+            ok: true,
+            status: 200,
+            statusText: 'Cleared',
+            durationMs: 0,
+        });
+    };
+
+    const createWsTicket = async (): Promise<void> => {
+        await runWithBusy('Create WS ticket', async () => {
+            const response = await executeRallarServerRestRequest({
+                apiBaseUrl,
+                method: 'POST',
+                path: '/api/auth/ws-ticket',
+                headersText: '{}',
+                queryText: '{}',
+                bodyText: '{}',
+                responseBodyMode: 'json',
+                attachAuth: true,
+                authSession,
+                timeoutMs: 5_000,
+            });
+            appendAction(restLogEntry('Create WS ticket', response));
+            const body = optionalRecord(response.bodyJson);
+            if (
+                response.ok &&
+                typeof body.ticket === 'string' &&
+                typeof body.sessionId === 'string' &&
+                typeof body.expiresAtEpochMs === 'number'
+            ) {
+                const wsTicket = body as WebSocketTicketResponse;
+                setTicket({
+                    ticket: wsTicket.ticket,
+                    sessionId: wsTicket.sessionId,
+                    expiresAtEpochMs: wsTicket.expiresAtEpochMs,
+                    issuedAtEpochMs: Date.now(),
+                });
+            }
+        });
+    };
+
+    const negativeWsTicket = async (): Promise<void> => {
+        await runWithBusy('Missing auth WS ticket', async () => {
+            const response = await executeRallarServerRestRequest({
+                apiBaseUrl,
+                method: 'POST',
+                path: '/api/auth/ws-ticket',
+                headersText: '{}',
+                queryText: '{}',
+                bodyText: '{}',
+                responseBodyMode: 'json',
+                attachAuth: false,
+                timeoutMs: 5_000,
+            });
+            appendAction(restLogEntry('Missing auth WS ticket', response));
+        });
+    };
+
+    const expiredWsTicket = async (): Promise<void> => {
+        await runWithBusy('Expired auth WS ticket', async () => {
+            const expiredSession = authSession
+                ? {
+                    ...authSession,
+                    expiresAtEpochMs: Date.now() - 1_000,
+                }
+                : undefined;
+            const response = await executeRallarServerRestRequest({
+                apiBaseUrl,
+                method: 'POST',
+                path: '/api/auth/ws-ticket',
+                headersText: '{}',
+                queryText: '{}',
+                bodyText: '{}',
+                responseBodyMode: 'json',
+                attachAuth: true,
+                authSession: expiredSession,
+                timeoutMs: 5_000,
+            });
+            appendAction(restLogEntry('Expired auth WS ticket', response));
+        });
+    };
+
+    const negativeLogin = async (): Promise<void> => {
+        await runWithBusy('Bad credentials', async () => {
+            const response = await executeRallarServerRestRequest({
+                apiBaseUrl,
+                method: 'POST',
+                path: '/api/auth/login',
+                headersText: '{}',
+                queryText: '{}',
+                bodyText: JSON.stringify({
+                    username: username || 'unknown',
+                    password: `${password || 'bad'}-invalid`,
+                }),
+                responseBodyMode: 'json',
+                attachAuth: false,
+                timeoutMs: 5_000,
+            });
+            appendAction(restLogEntry('Bad credentials', response));
+        });
+    };
+
+    const copyDiagnostics = (): void => {
+        void navigator.clipboard?.writeText(diagnosticsText);
+    };
+
+    const copyRecipe = (): void => {
+        void navigator.clipboard?.writeText(recipeText);
+    };
+
+    return (
+        <section className="panel auth-command-center-panel">
+            <div className="panel-heading">
+                <h2>Auth Command Center</h2>
+                <span className={`pill ${authSession ? 'good' : 'warn'}`}>
+                    {authSession ? 'session active' : 'no session'}
+                </span>
+            </div>
+            <div className="auth-command-grid">
+                <label className="field">
+                    <span>API Base URL</span>
+                    <input value={apiBaseUrl} onChange={event => setApiBaseUrl(event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Username</span>
+                    <input value={username} onChange={event => setUsername(event.target.value)} autoComplete="username"/>
+                </label>
+                <label className="field">
+                    <span>Password</span>
+                    <input
+                        type="password"
+                        value={password}
+                        onChange={event => setPassword(event.target.value)}
+                        autoComplete="current-password"
+                    />
+                </label>
+            </div>
+            <div className="auth-action-grid">
+                <button type="button" disabled={Boolean(busyAction)} onClick={() => void login(false)}>
+                    Login
+                </button>
+                <button type="button" disabled={Boolean(busyAction)} onClick={() => void login(true)}>
+                    Register and login
+                </button>
+                <button type="button" disabled={Boolean(busyAction)} onClick={restore}>
+                    Restore session
+                </button>
+                <button type="button" disabled={Boolean(busyAction) || !authSession} onClick={() => void onLogout()}>
+                    Logout
+                </button>
+                <button type="button" disabled={Boolean(busyAction)} onClick={clearLocal}>
+                    Clear local session
+                </button>
+                <button type="button" disabled={Boolean(busyAction) || !authSession} onClick={() => void createWsTicket()}>
+                    Create WS ticket
+                </button>
+                <button type="button" disabled={Boolean(busyAction)} onClick={() => void negativeLogin()}>
+                    Bad credentials
+                </button>
+                <button type="button" disabled={Boolean(busyAction)} onClick={() => void negativeWsTicket()}>
+                    Missing auth ticket
+                </button>
+                <button type="button" disabled={Boolean(busyAction) || !authSession} onClick={() => void expiredWsTicket()}>
+                    Expired auth ticket
+                </button>
+                <button type="button" onClick={copyDiagnostics}>
+                    Copy diagnostics
+                </button>
+                <button type="button" onClick={copyRecipe}>
+                    Copy auth recipe
+                </button>
+            </div>
+            <dl className="config-list auth-session-list">
+                <div>
+                    <dt>Provider</dt>
+                    <dd>{providerMode}</dd>
+                </div>
+                <div>
+                    <dt>User</dt>
+                    <dd>{authSession?.username ?? '-'}</dd>
+                </div>
+                <div>
+                    <dt>Client</dt>
+                    <dd>{authSession?.clientId ?? '-'}</dd>
+                </div>
+                <div>
+                    <dt>Session</dt>
+                    <dd>{authSession?.sessionId ?? '-'}</dd>
+                </div>
+                <div>
+                    <dt>Token</dt>
+                    <dd>{authSession?.accessToken ? 'redacted' : '-'}</dd>
+                </div>
+                <div>
+                    <dt>Session expires</dt>
+                    <dd>{formatTime(authSession?.expiresAtEpochMs)}</dd>
+                </div>
+                <div>
+                    <dt>Session TTL</dt>
+                    <dd>{formatRelativeDuration(sessionExpiresInMs)}</dd>
+                </div>
+                <div>
+                    <dt>WS ticket</dt>
+                    <dd>{ticket ? 'redacted' : '-'}</dd>
+                </div>
+                <div>
+                    <dt>Ticket expires</dt>
+                    <dd>{formatTime(ticket?.expiresAtEpochMs)}</dd>
+                </div>
+                <div>
+                    <dt>Ticket TTL</dt>
+                    <dd>{formatRelativeDuration(wsTicketExpiresInMs)}</dd>
+                </div>
+            </dl>
+            <div className="command-center-status auth-session-guidance" role="note">
+                Use separate browser contexts for Alice, Bob, and Charlie so each tab has its own local `auth.session`.
+                The session ID here must match Global Context before REST, WS, RTC, or Rallar Data actions should be
+                expected to authorize.
+            </div>
+            {busyAction && (
+                <div className="command-center-status" role="status">{busyAction}</div>
+            )}
+            {localError && (
+                <div className="workbench-error" role="status">
+                    {redactRallarBlackBoxValue(localError, uiRedactionOptions(state, authSession, [password]))}
+                </div>
+            )}
+            <div className="command-center-action-list">
+                {actions.length === 0 && <div className="empty-state">No auth actions yet</div>}
+                {actions.slice().reverse().map(action => (
+                    <article className="command-center-action-row" key={action.actionId}>
+                        <div>
+                            <strong>{action.label}</strong>
+                            <small>{formatTime(action.atEpochMs)} - {formatDuration(action.durationMs)}</small>
+                        </div>
+                        <span className={`pill ${action.ok ? 'good' : 'bad'}`}>
+                            {action.status || action.errorKind || 'local'}
+                        </span>
+                        <pre className="mini-json">{redactedJson(action.bodyJson ?? action.errorKind ?? action.statusText, state, authSession, [password])}</pre>
+                    </article>
+                ))}
+            </div>
+        </section>
+    );
+}
+
+function RoomsClientsPanel({ state, bootstrap, authSession, globalValues, onGlobalValueChange }: {
+    state: RallarBlackBoxTestState;
+    bootstrap: RallarBlackBoxBootstrapConfig;
+    authSession?: AuthSession;
+    globalValues?: CommandCenterGlobalValues;
+    onGlobalValueChange?<K extends keyof CommandCenterGlobalValues>(
+        key: K,
+        value: CommandCenterGlobalValues[K],
+    ): void;
+}) {
+    const config = selectRallarBlackBoxCurrentConfig(state);
+    const diagnostics = useMemo(() => deriveRtcDiagnostics(state), [state]);
+    const defaultVariables = useMemo(
+        () => defaultRallarServerWorkbenchVariables({
+            applicationId: globalValues?.applicationId,
+            workspaceId: globalValues?.workspaceId,
+            principalId: globalValues?.clientId ?? authSession?.clientId ?? config?.actor ?? bootstrap.actor,
+            sessionId: globalValues?.sessionId ?? authSession?.sessionId ?? config?.sessionId ?? bootstrap.sessionId,
+            groupId: globalValues?.roomId ?? config?.roomId ?? bootstrap.roomId,
+            username: authSession?.username ?? globalValues?.clientId ?? config?.actor ?? bootstrap.actor,
+        }),
+        [
+            authSession?.clientId,
+            authSession?.sessionId,
+            authSession?.username,
+            bootstrap.actor,
+            bootstrap.roomId,
+            bootstrap.sessionId,
+            config?.actor,
+            config?.roomId,
+            config?.sessionId,
+            globalValues?.applicationId,
+            globalValues?.clientId,
+            globalValues?.roomId,
+            globalValues?.sessionId,
+            globalValues?.workspaceId,
+        ],
+    );
+    const [apiBaseUrl, setApiBaseUrl] = useState(globalValues?.apiBaseUrl ?? config?.apiBaseUrl ?? bootstrap.apiBaseUrl);
+    const [variables, setVariables] = useState<RallarServerWorkbenchVariables>(defaultVariables);
+    const [timeoutMs, setTimeoutMs] = useState(5_000);
+    const [busyAction, setBusyAction] = useState<string | undefined>();
+    const [localError, setLocalError] = useState<string | undefined>();
+    const [actions, setActions] = useState<readonly CommandCenterRestActionLog[]>([]);
+    const [groupsBody, setGroupsBody] = useState<unknown>();
+    const [clientsBody, setClientsBody] = useState<unknown>();
+    const [groupEventsBody, setGroupEventsBody] = useState<unknown>();
+    const [clientEventsBody, setClientEventsBody] = useState<unknown>();
+    const [onlyGroupsWithMembers, setOnlyGroupsWithMembers] = useState(false);
+    const [onlyOnlineClients, setOnlyOnlineClients] = useState(false);
+    const [groupSort, setGroupSort] = useState<GroupSortId>('active-desc');
+    const [clientSort, setClientSort] = useState<ClientSortId>('online-active-desc');
+    const [expectedOtherClient, setExpectedOtherClient] = useState('bob');
+
+    useEffect(() => {
+        setApiBaseUrl(globalValues?.apiBaseUrl ?? config?.apiBaseUrl ?? bootstrap.apiBaseUrl);
+    }, [bootstrap.apiBaseUrl, config?.apiBaseUrl, globalValues?.apiBaseUrl]);
+
+    useEffect(() => {
+        setVariables(current => ({
+            ...current,
+            applicationId: globalValues ? defaultVariables.applicationId : current.applicationId || defaultVariables.applicationId,
+            workspaceId: globalValues ? defaultVariables.workspaceId : current.workspaceId || defaultVariables.workspaceId,
+            principalId: globalValues ? defaultVariables.principalId : current.principalId || defaultVariables.principalId,
+            sessionId: globalValues ? defaultVariables.sessionId : current.sessionId || defaultVariables.sessionId,
+            groupId: globalValues ? defaultVariables.groupId : current.groupId || defaultVariables.groupId,
+            username: globalValues ? defaultVariables.username : current.username || defaultVariables.username,
+            clientInstanceId: current.clientInstanceId || defaultVariables.clientInstanceId,
+        }));
+    }, [defaultVariables, globalValues]);
+
+    const updateVariable = <K extends keyof RallarServerWorkbenchVariables>(
+        key: K,
+        value: RallarServerWorkbenchVariables[K],
+    ): void => {
+        setVariables(current => ({
+            ...current,
+            [key]: value,
+        }));
+    };
+
+    const appendAction = (entry: CommandCenterRestActionLog): void => {
+        setActions(current => [...current, entry].slice(-16));
+    };
+
+    const promoteGroupToGlobal = (body?: unknown): void => {
+        const groupId = findStringDeep(body, ['groupId', 'roomId']) ?? variables.groupId.trim();
+        if (groupId && onGlobalValueChange && globalValues?.roomId !== groupId) {
+            onGlobalValueChange('roomId', groupId);
+        }
+    };
+
+    const applyResponseBody = (actionId: RoomsClientsActionId, body: unknown): void => {
+        if (
+            actionId === 'list-groups' ||
+            actionId === 'create-group' ||
+            actionId === 'read-group' ||
+            actionId === 'join-group' ||
+            actionId === 'leave-group' ||
+            actionId === 'group-presence-connect' ||
+            actionId === 'group-presence-heartbeat' ||
+            actionId === 'group-presence-disconnect'
+        ) {
+            setGroupsBody(body);
+        }
+        if (
+            actionId === 'list-clients' ||
+            actionId === 'client-session-connect' ||
+            actionId === 'client-session-heartbeat' ||
+            actionId === 'client-session-disconnect'
+        ) {
+            setClientsBody(body);
+        }
+        if (actionId === 'group-events' || actionId === 'group-events-page') {
+            setGroupEventsBody(body);
+        }
+        if (actionId === 'client-events' || actionId === 'client-events-page') {
+            setClientEventsBody(body);
+        }
+    };
+
+    const runPresetAction = async (action: RoomsClientsAction): Promise<void> => {
+        if (!action.presetId) {
+            return;
+        }
+        setBusyAction(action.label);
+        setLocalError(undefined);
+        try {
+            const response = await executeRallarServerRestRequest(
+                buildPresetRequestInput({
+                    presetId: action.presetId,
+                    variables,
+                    apiBaseUrl,
+                    authSession,
+                    timeoutMs,
+                    query: action.query,
+                }),
+            );
+            appendAction(restLogEntry(action.label, response));
+            if (response.bodyJson !== undefined) {
+                applyResponseBody(action.actionId, response.bodyJson);
+            }
+            if (
+                response.ok &&
+                ['create-group', 'read-group', 'join-group', 'group-presence-connect', 'group-presence-heartbeat'].includes(action.actionId)
+            ) {
+                promoteGroupToGlobal(response.bodyJson);
+            }
+        } catch (error) {
+            setLocalError(error instanceof Error ? error.message : String(error));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const refreshState = async (): Promise<void> => {
+        setBusyAction('Refresh state');
+        setLocalError(undefined);
+        try {
+            for (const actionId of ['list-groups', 'list-clients', 'read-group', 'client-events-page', 'group-events-page'] as const) {
+                const action = ROOMS_CLIENTS_ACTIONS.find(entry => entry.actionId === actionId);
+                if (!action?.presetId) {
+                    continue;
+                }
+                const response = await executeRallarServerRestRequest(
+                    buildPresetRequestInput({
+                        presetId: action.presetId,
+                        variables,
+                        apiBaseUrl,
+                        authSession,
+                        timeoutMs,
+                        query: action.query,
+                    }),
+                );
+                appendAction(restLogEntry(action.label, response));
+                if (response.bodyJson !== undefined) {
+                    applyResponseBody(action.actionId, response.bodyJson);
+                }
+            }
+        } catch (error) {
+            setLocalError(error instanceof Error ? error.message : String(error));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const runDirectRoomsAction = async (
+        action: 'refresh' | 'create' | 'join' | 'leave',
+    ): Promise<void> => {
+        const providerMode = bootstrap.providerMode;
+        setBusyAction(`Direct room ${action}`);
+        setLocalError(undefined);
+        try {
+            if (providerMode !== 'browser-rallar') {
+                throw new Error('Direct room actions require provider=browser-rallar.');
+            }
+            const facade = await loadBrowserRallarFacade();
+            const context = {
+                providerMode,
+                apiBaseUrl,
+                applicationId: variables.applicationId,
+                workspaceId: variables.workspaceId,
+                roomId: variables.groupId,
+                actor: authSession?.username ?? authSession?.clientId ?? bootstrap.actor,
+                connection: 'rooms-clients',
+                authSession,
+                timeoutMs,
+            };
+            configureDirectRallarFacade(facade, context);
+            await facade.start({
+                connect: true,
+                refreshRooms: false,
+                refreshPeople: false,
+                timeoutMs,
+            });
+
+            let body: unknown;
+            if (action === 'refresh') {
+                body = await facade.rooms.refresh({
+                    scope: {
+                        applicationId: variables.applicationId,
+                        workspaceId: variables.workspaceId,
+                    },
+                    timeoutMs,
+                });
+            } else if (action === 'create') {
+                body = await facade.rooms.create({
+                    displayName: variables.groupId,
+                    scope: {
+                        applicationId: variables.applicationId,
+                        workspaceId: variables.workspaceId,
+                    },
+                    timeoutMs,
+                });
+            } else if (action === 'join') {
+                body = await facade.rooms.join(variables.groupId, {
+                    scope: {
+                        applicationId: variables.applicationId,
+                        workspaceId: variables.workspaceId,
+                    },
+                    timeoutMs,
+                });
+            } else {
+                body = await facade.rooms.leave({
+                    roomId: variables.groupId,
+                    scope: {
+                        applicationId: variables.applicationId,
+                        workspaceId: variables.workspaceId,
+                    },
+                    timeoutMs,
+                });
+            }
+
+            if (action === 'refresh') {
+                const roomState = optionalRecord(body);
+                setGroupsBody(recordArray(roomState.rooms).map(row => optionalRecord(row).snapshot ?? row));
+                setClientsBody(recordArray(roomState.members).map(row => optionalRecord(row).client ?? row));
+            } else if (body !== undefined) {
+                setGroupsBody(body);
+            }
+            if (action === 'create' || action === 'join') {
+                promoteGroupToGlobal(body);
+            }
+            appendAction({
+                actionId: `direct-room-${action}-${Date.now()}`,
+                label: `Direct room ${action}`,
+                atEpochMs: Date.now(),
+                ok: true,
+                status: 200,
+                statusText: 'OK',
+                durationMs: 0,
+                bodyJson: body,
+            });
+            rallarBlackBoxRuntimeStore.recordRuntimeEvent(
+                createDirectRallarRuntimeEvent({
+                    topic: `rallar.direct.rooms.${action}.completed`,
+                    context,
+                    payload: {
+                        action,
+                        result: body,
+                    },
+                }),
+                `Direct room ${action} completed`,
+            );
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            setLocalError(message);
+            appendAction({
+                actionId: `direct-room-${action}-${Date.now()}`,
+                label: `Direct room ${action}`,
+                atEpochMs: Date.now(),
+                ok: false,
+                status: 0,
+                statusText: message,
+                durationMs: 0,
+                errorKind: 'direct-rallar',
+            });
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const copyStateRecipe = (): void => {
+        const commands = ROOMS_CLIENTS_ACTIONS
+            .filter(action => [
+                'create-group',
+                'join-group',
+                'group-presence-connect',
+                'client-session-connect',
+                'group-events-page',
+                'client-events-page',
+            ].includes(action.actionId))
+            .map((action, index) => {
+                const input = buildPresetRequestInput({
+                    presetId: action.presetId!,
+                    variables,
+                    apiBaseUrl,
+                    authSession,
+                    timeoutMs,
+                    query: action.query,
+                });
+                return toRallarServerBlackBoxCommand(input, `rooms-clients-${index + 1}-${action.actionId}`);
+            });
+        void navigator.clipboard?.writeText(json({
+            recipeId: 'rallar-rooms-clients-command-center',
+            name: 'Rallar rooms and clients command-center recipe',
+            continueOnFailure: false,
+            commands,
+        }));
+    };
+
+    const groupRows = rowsFromGroupSnapshots(groupsBody);
+    const clientRows = rowsFromClientSnapshots(clientsBody);
+    const visibleGroupRows = onlyGroupsWithMembers
+        ? groupRows.filter(row => row.members > 0)
+        : groupRows;
+    const visibleClientRows = onlyOnlineClients
+        ? clientRows.filter(row => row.online === 'online' || row.sessions.length > 0)
+        : clientRows;
+    const sortedGroupRows = sortGroupRows(visibleGroupRows, groupSort);
+    const sortedClientRows = sortClientRows(visibleClientRows, clientSort);
+    const stateEvents = [
+        ...rowsFromStateEvents(groupEventsBody),
+        ...rowsFromStateEvents(clientEventsBody),
+    ].slice(-32).reverse();
+    const expectedClients = diagnostics.membership.expectedClients;
+    const observedClients = diagnostics.membership.observedClients;
+    const missingClients = expectedClients.filter(client => !observedClients.includes(client));
+    const activeGroupRow = groupRows.find(row =>
+        row.groupId === variables.groupId ||
+        row.displayName === variables.groupId
+    );
+    const currentSessionInGroup = Boolean(
+        variables.sessionId &&
+        activeGroupRow?.sessions.includes(variables.sessionId)
+    );
+    const currentClientRow = clientRows.find(row =>
+        row.principalId === variables.principalId ||
+        row.username === variables.username ||
+        row.sessions.includes(variables.sessionId)
+    );
+    const currentClientOnline = currentClientRow?.online === 'online' ||
+        (currentClientRow?.sessions.length ?? 0) > 0 ||
+        currentSessionInGroup;
+    const expectedOtherClientVisible = expectedOtherClient.trim().length === 0
+        ? false
+        : clientRows.some(row =>
+            [row.principalId, row.username, ...row.sessions].some(value =>
+                value.toLowerCase().includes(expectedOtherClient.trim().toLowerCase())
+            ) &&
+            (row.online === 'online' || row.sessions.length > 0)
+        );
+
+    return (
+        <section className="panel rooms-clients-panel">
+            <div className="panel-heading">
+                <h2>Rooms/Clients</h2>
+                <span className={`pill ${authSession ? 'good' : 'bad'}`}>
+                    {authSession ? 'auth attached' : 'needs auth'}
+                </span>
+            </div>
+            <div className="rooms-context-grid">
+                <label className="field">
+                    <span>API Base URL</span>
+                    <input value={apiBaseUrl} onChange={event => setApiBaseUrl(event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Application</span>
+                    <input value={variables.applicationId} onChange={event => updateVariable('applicationId', event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Workspace</span>
+                    <input value={variables.workspaceId} onChange={event => updateVariable('workspaceId', event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Group</span>
+                    <input value={variables.groupId} onChange={event => updateVariable('groupId', event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Principal / Client</span>
+                    <input value={variables.principalId} onChange={event => updateVariable('principalId', event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Instance</span>
+                    <input value={variables.clientInstanceId} onChange={event => updateVariable('clientInstanceId', event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Session</span>
+                    <input value={variables.sessionId} onChange={event => updateVariable('sessionId', event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Timeout</span>
+                    <input type="number" min={0} value={timeoutMs} onChange={event => setTimeoutMs(Number(event.target.value))}/>
+                </label>
+            </div>
+            <div className="rooms-action-grid">
+                <button type="button" disabled={Boolean(busyAction) || !authSession} onClick={() => void refreshState()}>
+                    Refresh state
+                </button>
+                <button type="button" disabled={Boolean(busyAction) || !authSession || bootstrap.providerMode !== 'browser-rallar'} onClick={() => void runDirectRoomsAction('refresh')}>
+                    Direct refresh
+                </button>
+                <button type="button" disabled={Boolean(busyAction) || !authSession || bootstrap.providerMode !== 'browser-rallar'} onClick={() => void runDirectRoomsAction('create')}>
+                    Direct create
+                </button>
+                <button type="button" disabled={Boolean(busyAction) || !authSession || bootstrap.providerMode !== 'browser-rallar'} onClick={() => void runDirectRoomsAction('join')}>
+                    Direct join
+                </button>
+                <button type="button" disabled={Boolean(busyAction) || !authSession || bootstrap.providerMode !== 'browser-rallar'} onClick={() => void runDirectRoomsAction('leave')}>
+                    Direct leave
+                </button>
+                {ROOMS_CLIENTS_ACTIONS.map(action => (
+                    <button
+                        key={action.actionId}
+                        type="button"
+                        disabled={Boolean(busyAction) || !authSession}
+                        onClick={() => void runPresetAction(action)}
+                    >
+                        {action.label}
+                    </button>
+                ))}
+                <button type="button" onClick={copyStateRecipe}>
+                    Copy state recipe
+                </button>
+            </div>
+            <div className="rooms-filter-row" aria-label="Rooms and clients filters">
+                <label className="check-field">
+                    <input
+                        type="checkbox"
+                        checked={onlyGroupsWithMembers}
+                        onChange={event => setOnlyGroupsWithMembers(event.target.checked)}
+                    />
+                    <span>Groups with members</span>
+                </label>
+                <label className="check-field">
+                    <input
+                        type="checkbox"
+                        checked={onlyOnlineClients}
+                        onChange={event => setOnlyOnlineClients(event.target.checked)}
+                    />
+                    <span>Online clients</span>
+                </label>
+                <span className="filter-summary">
+                    {visibleGroupRows.length}/{groupRows.length} groups, {visibleClientRows.length}/{clientRows.length} clients
+                </span>
+                <label className="field compact-field rooms-sort-field">
+                    <span>Group sort</span>
+                    <select
+                        aria-label="Group sort"
+                        value={groupSort}
+                        onChange={event => setGroupSort(event.target.value as GroupSortId)}
+                    >
+                        {GROUP_SORT_OPTIONS.map(option => (
+                            <option key={option.value} value={option.value}>
+                                {option.label}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+                <label className="field compact-field rooms-sort-field">
+                    <span>Client sort</span>
+                    <select
+                        aria-label="Client sort"
+                        value={clientSort}
+                        onChange={event => setClientSort(event.target.value as ClientSortId)}
+                    >
+                        {CLIENT_SORT_OPTIONS.map(option => (
+                            <option key={option.value} value={option.value}>
+                                {option.label}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+                <label className="field compact-field rooms-sort-field">
+                    <span>Expected other client</span>
+                    <input
+                        aria-label="Expected other client"
+                        value={expectedOtherClient}
+                        onChange={event => setExpectedOtherClient(event.target.value)}
+                    />
+                </label>
+            </div>
+            {busyAction && (
+                <div className="command-center-status" role="status">{busyAction}</div>
+            )}
+            {localError && (
+                <div className="workbench-error" role="status">
+                    {redactRallarBlackBoxValue(localError, uiRedactionOptions(state, authSession))}
+                </div>
+            )}
+            <div className="rooms-observed-grid">
+                <Metric label="Expected clients" value={String(expectedClients.length)}/>
+                <Metric label="Observed clients" value={String(observedClients.length)} tone={missingClients.length ? 'warn' : 'good'}/>
+                <Metric label="Missing clients" value={String(missingClients.length)} tone={missingClients.length ? 'bad' : 'good'}/>
+                <Metric label="Group rows" value={String(visibleGroupRows.length)}/>
+                <Metric label="Client rows" value={String(visibleClientRows.length)}/>
+                <Metric label="Events" value={String(stateEvents.length)}/>
+                <Metric label="Current client member" value={currentClientOnline ? 'yes' : 'no'} tone={currentClientOnline ? 'good' : 'warn'}/>
+                <Metric label="Other browser visible" value={expectedOtherClientVisible ? 'yes' : 'no'} tone={expectedOtherClientVisible ? 'good' : 'warn'}/>
+            </div>
+            <div className="rooms-state-grid">
+                <section className="rooms-subpanel">
+                    <div className="section-heading">
+                        <h3>Groups</h3>
+                        <span>{visibleGroupRows.length} rows</span>
+                    </div>
+                    <div className="state-table">
+                        {visibleGroupRows.length === 0 && (
+                            <div className="empty-state">
+                                {groupRows.length === 0 ? 'No group state loaded' : 'No groups match filters'}
+                            </div>
+                        )}
+                        {sortedGroupRows.map(row => (
+                            <article className="state-table-row" key={row.rowId}>
+                                <div>
+                                    <strong>{row.displayName}</strong>
+                                    <small>{row.groupId}</small>
+                                </div>
+                                <span>{row.status}</span>
+                                <span>{row.members} members</span>
+                                <span>{row.online} online</span>
+                                <small>
+                                    {(row.sessions.join(', ') || '-')}{' - active '}
+                                    {formatTime(row.activeAtEpochMs)}
+                                </small>
+                            </article>
+                        ))}
+                    </div>
+                </section>
+                <section className="rooms-subpanel">
+                    <div className="section-heading">
+                        <h3>Clients</h3>
+                        <span>{visibleClientRows.length} rows</span>
+                    </div>
+                    <div className="state-table">
+                        {visibleClientRows.length === 0 && (
+                            <div className="empty-state">
+                                {clientRows.length === 0 ? 'No client state loaded' : 'No clients match filters'}
+                            </div>
+                        )}
+                        {sortedClientRows.map(row => (
+                            <article className="state-table-row" key={row.rowId}>
+                                <div>
+                                    <strong>{row.username}</strong>
+                                    <small>{row.principalId}</small>
+                                </div>
+                                <span>{row.status}</span>
+                                <span>{row.online}</span>
+                                <span>{row.sessions.length} sessions</span>
+                                <small>
+                                    {(row.sessions.join(', ') || '-')}{' - active '}
+                                    {formatTime(row.activeAtEpochMs)}
+                                </small>
+                            </article>
+                        ))}
+                    </div>
+                </section>
+                <section className="rooms-subpanel rooms-events-panel">
+                    <div className="section-heading">
+                        <h3>State Events</h3>
+                        <span>{stateEvents.length} rows</span>
+                    </div>
+                    <div className="state-table">
+                        {stateEvents.length === 0 && <div className="empty-state">No state events loaded</div>}
+                        {stateEvents.map(row => (
+                            <article className="state-table-row" key={row.rowId}>
+                                <div>
+                                    <strong>{row.eventType}</strong>
+                                    <small>{row.rowId}</small>
+                                </div>
+                                <span>{row.subject}</span>
+                                <span>v{row.snapshotVersion}</span>
+                                <span>{formatTime(row.atEpochMs)}</span>
+                            </article>
+                        ))}
+                    </div>
+                </section>
+                <section className="rooms-subpanel">
+                    <div className="section-heading">
+                        <h3>Actions</h3>
+                        <span>{actions.length} recent</span>
+                    </div>
+                    <div className="command-center-action-list">
+                        {actions.length === 0 && <div className="empty-state">No state actions yet</div>}
+                        {actions.slice().reverse().map(action => (
+                            <article className="command-center-action-row" key={action.actionId}>
+                                <div>
+                                    <strong>{action.label}</strong>
+                                    <small>{formatTime(action.atEpochMs)} - {formatDuration(action.durationMs)}</small>
+                                </div>
+                                <span className={`pill ${action.ok ? 'good' : 'bad'}`}>
+                                    {action.status || action.errorKind || 'local'}
+                                </span>
+                            </article>
+                        ))}
+                    </div>
+                </section>
+            </div>
+        </section>
+    );
+}
+
+function SharedTestCatalogPanel() {
+    const catalog = RALLAR_BLACK_BOX_SHARED_TEST_RECIPE_CATALOG;
+    const profileOptions = useMemo(
+        () => uniqueValues(catalog.entries.flatMap(entry => entry.profiles)),
+        [catalog.entries],
+    );
+    const [query, setQuery] = useState('');
+    const [profile, setProfile] = useState('');
+    const [selectedEntryId, setSelectedEntryId] = useState(catalog.entries[0]?.id ?? '');
+    const filteredEntries = useMemo(
+        () => catalog.entries.filter(entry => catalogEntryMatches(entry, query.trim(), profile)),
+        [catalog.entries, profile, query],
+    );
+    const selectedEntry = catalog.entries.find(entry => entry.id === selectedEntryId) ??
+        filteredEntries[0] ??
+        catalog.entries[0];
+    const liveCount = catalog.entries.filter(entry => entry.support.live).length;
+    const replayCount = catalog.entries.filter(entry => entry.support.replayArtifacts).length;
+
+    const copyText = (value: string): void => {
+        void navigator.clipboard?.writeText(value);
+    };
+
+    return (
+        <section className="panel shared-test-catalog-panel">
+            <div className="panel-heading">
+                <h2>Recipe Catalog</h2>
+                <span>{filteredEntries.length} visible</span>
+            </div>
+            <div className="shared-test-summary-grid">
+                <Metric label="Catalog" value={catalog.generatedFrom}/>
+                <Metric label="Recipes" value={String(catalog.entries.length)}/>
+                <Metric label="Live gated" value={String(liveCount)} tone={liveCount > 0 ? 'active' : 'muted'}/>
+                <Metric label="Replay" value={String(replayCount)} tone={replayCount > 0 ? 'good' : 'muted'}/>
+            </div>
+            <div className="shared-test-filter-grid">
+                <label className="field">
+                    <span>Search</span>
+                    <input
+                        value={query}
+                        onChange={event => setQuery(event.target.value)}
+                        placeholder="recipe, provider, profile"
+                    />
+                </label>
+                <label className="field">
+                    <span>Profile</span>
+                    <select value={profile} onChange={event => setProfile(event.target.value)}>
+                        <option value="">All profiles</option>
+                        {profileOptions.map(entry => (
+                            <option key={entry} value={entry}>{entry}</option>
+                        ))}
+                    </select>
+                </label>
+            </div>
+            <div className="shared-test-catalog-grid">
+                <section className="shared-test-subpanel">
+                    <div className="section-heading">
+                        <h3>App-local Recipes</h3>
+                        <span>{APP_LOCAL_RECIPE_CATALOG.length} recipes</span>
+                    </div>
+                    <div className="shared-test-card-list">
+                        {APP_LOCAL_RECIPE_CATALOG.map(entry => (
+                            <article className="shared-test-recipe-row" key={entry.id}>
+                                <div>
+                                    <strong>{entry.title}</strong>
+                                    <small>{entry.path}</small>
+                                </div>
+                                <p>{entry.description}</p>
+                                <div className="badge-list">
+                                    <span className="pill active">{entry.providerMode}</span>
+                                    <span className="pill good">{entry.expectedResult}</span>
+                                </div>
+                                <details>
+                                    <summary>Requirements</summary>
+                                    <ul>
+                                        {entry.requirements.map(requirement => (
+                                            <li key={requirement}>{requirement}</li>
+                                        ))}
+                                    </ul>
+                                </details>
+                                <button type="button" onClick={() => copyText(entry.path)}>
+                                    Copy Path
+                                </button>
+                            </article>
+                        ))}
+                    </div>
+                </section>
+                <section className="shared-test-subpanel">
+                    <div className="section-heading">
+                        <h3>Shared-test Recipes</h3>
+                        <span>{filteredEntries.length} entries</span>
+                    </div>
+                    <div className="shared-test-card-list">
+                        {filteredEntries.length === 0 && (
+                            <div className="empty-state">No shared-test recipes match the filters</div>
+                        )}
+                        {filteredEntries.map(entry => (
+                            <button
+                                type="button"
+                                key={entry.id}
+                                className={`shared-test-catalog-row ${selectedEntry?.id === entry.id ? 'selected' : ''}`}
+                                onClick={() => setSelectedEntryId(entry.id)}
+                            >
+                                <span>
+                                    <strong>{entry.title}</strong>
+                                    <small>{entry.recipePath}</small>
+                                </span>
+                                <span className="badge-list">
+                                    <span className="pill active">{entry.providerMode}</span>
+                                    <span className={`pill ${entry.liveSupport === 'gated-live' ? 'warn' : 'good'}`}>
+                                        {entry.liveSupport}
+                                    </span>
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                </section>
+                <section className="shared-test-subpanel shared-test-detail-panel">
+                    <div className="section-heading">
+                        <h3>Selected Recipe</h3>
+                        <span>{selectedEntry?.expectedResult ?? '-'}</span>
+                    </div>
+                    {selectedEntry ? (
+                        <>
+                            <dl className="config-list shared-test-detail-list">
+                                <div>
+                                    <dt>ID</dt>
+                                    <dd>{selectedEntry.id}</dd>
+                                </div>
+                                <div>
+                                    <dt>Provider</dt>
+                                    <dd>{selectedEntry.providerMode}</dd>
+                                </div>
+                                <div>
+                                    <dt>Category</dt>
+                                    <dd>{selectedEntry.category}</dd>
+                                </div>
+                                <div>
+                                    <dt>Mode</dt>
+                                    <dd>{selectedEntry.executionMode}</dd>
+                                </div>
+                                <div>
+                                    <dt>Artifact</dt>
+                                    <dd>{selectedEntry.artifactName}</dd>
+                                </div>
+                                <div>
+                                    <dt>Surface</dt>
+                                    <dd>{selectedEntry.uiHints.recommendedSurface}</dd>
+                                </div>
+                            </dl>
+                            <p className="shared-test-description">{selectedEntry.description}</p>
+                            <div className="badge-list shared-test-badges">
+                                {selectedEntry.uiHints.badges.map(badge => (
+                                    <span className="pill muted" key={badge}>{badge}</span>
+                                ))}
+                            </div>
+                            <div className="shared-test-requirements">
+                                <h3>Prerequisites</h3>
+                                {catalogRequirements(selectedEntry).length === 0 ? (
+                                    <div className="empty-state">No live prerequisites</div>
+                                ) : (
+                                    <ul>
+                                        {catalogRequirements(selectedEntry).map(requirement => (
+                                            <li key={requirement}>{requirement}</li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                            <div className="shared-test-command-list">
+                                <h3>Commands</h3>
+                                {selectedEntry.commands.map(command => (
+                                    <article className="shared-test-command-row" key={command.label}>
+                                        <div>
+                                            <strong>{command.label}</strong>
+                                            <small>{command.description}</small>
+                                        </div>
+                                        <pre className="mini-json">{command.command}</pre>
+                                        <button type="button" onClick={() => copyText(command.command)}>
+                                            Copy Command
+                                        </button>
+                                    </article>
+                                ))}
+                            </div>
+                        </>
+                    ) : (
+                        <div className="empty-state">No recipe selected</div>
+                    )}
+                </section>
+            </div>
+        </section>
+    );
+}
+
+function SharedTestArtifactImportPanel() {
+    const [files, setFiles] = useState<RallarBlackBoxSharedTestArtifactBundleFiles>({});
+    const [parseResult, setParseResult] = useState<
+        ReturnType<typeof parseRallarBlackBoxSharedTestArtifactBundle> | undefined
+    >();
+    const [readError, setReadError] = useState<string | undefined>();
+    const parsed = parseResult?.value;
+    const acceptedFileNames = new Set<string>(SHARED_TEST_ARTIFACT_FILE_NAMES);
+
+    const parseFiles = (nextFiles: RallarBlackBoxSharedTestArtifactBundleFiles): void => {
+        setFiles(nextFiles);
+        setParseResult(parseRallarBlackBoxSharedTestArtifactBundle(nextFiles));
+    };
+
+    const handleFiles = async (event: ChangeEvent<HTMLInputElement>): Promise<void> => {
+        setReadError(undefined);
+        const selectedFiles = Array.from(event.target.files ?? []);
+        const nextFiles: RallarBlackBoxSharedTestArtifactBundleFiles = {};
+
+        try {
+            for (const file of selectedFiles) {
+                if (!acceptedFileNames.has(file.name)) {
+                    continue;
+                }
+                nextFiles[file.name as keyof RallarBlackBoxSharedTestArtifactBundleFiles] = await file.text();
+            }
+            parseFiles(nextFiles);
+        } catch (error) {
+            setReadError(error instanceof Error ? error.message : String(error));
+        }
+    };
+
+    const copyReplayRecipe = (): void => {
+        if (parsed?.views.replayRecipe) {
+            void navigator.clipboard?.writeText(json(parsed.views.replayRecipe));
+        }
+    };
+
+    const loadedFiles = Object.keys(files).length;
+
+    return (
+        <section className="panel shared-test-artifact-panel">
+            <div className="panel-heading">
+                <h2>Artifact Import</h2>
+                <span className={`pill ${parseResult?.ok ? 'good' : parseResult ? 'bad' : 'muted'}`}>
+                    {parseResult?.ok ? 'valid' : parseResult ? 'invalid' : 'idle'}
+                </span>
+            </div>
+            <div className="artifact-import-controls">
+                <label className="field">
+                    <span>Artifact Files</span>
+                    <input
+                        type="file"
+                        multiple
+                        accept=".json,.jsonl,application/json"
+                        onChange={event => void handleFiles(event)}
+                    />
+                </label>
+                <button type="button" onClick={() => parseFiles(files)} disabled={loadedFiles === 0}>
+                    Validate Bundle
+                </button>
+            </div>
+            <div className="artifact-file-grid">
+                {SHARED_TEST_ARTIFACT_FILE_NAMES.map(fileName => {
+                    const required = RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT.requiredFiles.includes(fileName);
+                    const loaded = files[fileName] !== undefined;
+                    return (
+                        <div key={fileName} className={`artifact-file-row ${loaded ? 'loaded' : ''}`}>
+                            <strong>{fileName}</strong>
+                            <span className={`pill ${loaded ? 'good' : required ? 'bad' : 'muted'}`}>
+                                {loaded ? 'loaded' : required ? 'required' : 'optional'}
+                            </span>
+                        </div>
+                    );
+                })}
+            </div>
+            {(readError || (parseResult && parseResult.issues.length > 0)) && (
+                <div className="artifact-issue-list" role="status">
+                    {readError && <div className="workbench-error">{readError}</div>}
+                    {parseResult?.issues.map((issue, index) => (
+                        <div
+                            className={`artifact-issue-row ${issue.severity}`}
+                            key={`${issue.severity}-${issue.file ?? 'bundle'}-${issue.path}-${index}`}
+                        >
+                            <strong>{issue.severity}</strong>
+                            <span>{artifactIssueText(issue)}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
+            {parsed && (
+                <div className="artifact-view-grid">
+                    <section className="shared-test-subpanel artifact-summary-panel">
+                        <div className="section-heading">
+                            <h3>Imported Summary</h3>
+                            <span>schema {parsed.schemaVersion}</span>
+                        </div>
+                        <div className="shared-test-summary-grid">
+                            <Metric label="Total" value={String(parsed.report.summary.total)}/>
+                            <Metric label="Success" value={String(parsed.report.summary.success)} tone="good"/>
+                            <Metric label="Failure" value={String(parsed.report.summary.failure)} tone={parsed.report.summary.failure > 0 ? 'bad' : 'good'}/>
+                            <Metric label="Events" value={String(parsed.views.eventStream.length)}/>
+                            <Metric label="RTC diagnostics" value={String(parsed.views.rtcDiagnostics.length)}/>
+                            <Metric label="RTC messages" value={String(parsed.views.rtcMessages.length)}/>
+                            <Metric label="WS messages" value={String(parsed.views.wsMessages.length)}/>
+                            <Metric label="Replay" value={parsed.views.replayRecipe ? 'available' : 'none'} tone={parsed.views.replayRecipe ? 'good' : 'muted'}/>
+                        </div>
+                    </section>
+                    <section className="shared-test-subpanel">
+                        <div className="section-heading">
+                            <h3>Imported Event Stream</h3>
+                            <span>{parsed.views.eventStream.length} events</span>
+                        </div>
+                        <div className="artifact-event-list">
+                            {parsed.views.eventStream.slice(0, 24).map((event, index) => (
+                                <article className="event-row" key={`${event.kind}-${index}`}>
+                                    <div className="event-topline">
+                                        <span className="pill muted">{event.kind}</span>
+                                        <strong>{artifactEventTitle(event)}</strong>
+                                    </div>
+                                    <div className="event-meta">
+                                        <span>{artifactEventDetail(event)}</span>
+                                    </div>
+                                </article>
+                            ))}
+                        </div>
+                    </section>
+                    <section className="shared-test-subpanel">
+                        <div className="section-heading">
+                            <h3>Imported RTC Diagnostics</h3>
+                            <span>{parsed.views.rtcDiagnostics.length} events</span>
+                        </div>
+                        <pre className="json-block">{json(parsed.views.rtcDiagnostics.slice(0, 12))}</pre>
+                    </section>
+                    <section className="shared-test-subpanel">
+                        <div className="section-heading">
+                            <h3>Imported Failure Focus</h3>
+                            <span>{parsed.views.failures.length} failures</span>
+                        </div>
+                        <pre className="json-block">{json(parsed.views.failures.slice(0, 12))}</pre>
+                    </section>
+                    {parsed.views.replayRecipe && (
+                        <section className="shared-test-subpanel artifact-replay-panel">
+                            <div className="section-heading">
+                                <h3>Replay Recipe</h3>
+                                <button type="button" onClick={copyReplayRecipe}>Copy Replay</button>
+                            </div>
+                            <pre className="json-block">{json(parsed.views.replayRecipe)}</pre>
+                        </section>
+                    )}
+                </div>
+            )}
+        </section>
+    );
+}
+
+function SharedTestPanel() {
+    return (
+        <div className="shared-test-stack">
+            <SharedTestCatalogPanel/>
+            <SharedTestArtifactImportPanel/>
+            <section className="panel shared-test-coverage-panel">
+                <div className="panel-heading">
+                    <h2>Coverage Ownership</h2>
+                    <span>{RALLAR_BLACK_BOX_SHARED_TEST_COVERAGE_HANDOFF.length} owners</span>
+                </div>
+                <div className="coverage-owner-grid">
+                    {RALLAR_BLACK_BOX_SHARED_TEST_COVERAGE_HANDOFF.map(owner => (
+                        <article className="coverage-owner-row" key={owner.owner}>
+                            <h3>{owner.owner}</h3>
+                            <strong>Owns</strong>
+                            <ul>
+                                {owner.owns.map(item => <li key={item}>{item}</li>)}
+                            </ul>
+                            <strong>Does not own</strong>
+                            <ul>
+                                {owner.doesNotOwn.map(item => <li key={item}>{item}</li>)}
+                            </ul>
+                        </article>
+                    ))}
+                </div>
+            </section>
+        </div>
+    );
+}
+
+function RallarServerPanel({ state, bootstrap, authSession, globalValues, control, onGlobalValueChange }: {
+    state: RallarBlackBoxTestState;
+    bootstrap: RallarBlackBoxBootstrapConfig;
+    authSession?: AuthSession;
+    globalValues?: CommandCenterGlobalValues;
     control: RallarBlackBoxControlSnapshot;
+    onGlobalValueChange?<K extends keyof CommandCenterGlobalValues>(
+        key: K,
+        value: CommandCenterGlobalValues[K],
+    ): void;
 }) {
     const config = selectRallarBlackBoxCurrentConfig(state);
     const providerMode = rallarBlackBoxProviderModeFromConfig(config);
     const variables = useMemo(
         () => defaultRallarServerWorkbenchVariables({
-            principalId: authSession?.clientId ?? config?.actor ?? bootstrap.actor,
-            sessionId: authSession?.sessionId ?? config?.sessionId ?? bootstrap.sessionId,
-            groupId: config?.roomId ?? bootstrap.roomId,
+            applicationId: globalValues?.applicationId,
+            workspaceId: globalValues?.workspaceId,
+            principalId: globalValues?.clientId ?? authSession?.clientId ?? config?.actor ?? bootstrap.actor,
+            sessionId: globalValues?.sessionId ?? authSession?.sessionId ?? config?.sessionId ?? bootstrap.sessionId,
+            groupId: globalValues?.roomId ?? config?.roomId ?? bootstrap.roomId,
             username: authSession?.username ?? config?.actor ?? bootstrap.actor,
         }),
         [
@@ -2198,6 +9538,11 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
             config?.actor,
             config?.roomId,
             config?.sessionId,
+            globalValues?.applicationId,
+            globalValues?.clientId,
+            globalValues?.roomId,
+            globalValues?.sessionId,
+            globalValues?.workspaceId,
         ],
     );
     const initialDraft = useMemo(
@@ -2205,7 +9550,7 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
         [variables],
     );
     const defaultServerDraft = useMemo<RallarServerWorkbenchDraft>(() => ({
-        apiBaseUrl: config?.apiBaseUrl ?? bootstrap.apiBaseUrl,
+        apiBaseUrl: globalValues?.apiBaseUrl ?? config?.apiBaseUrl ?? bootstrap.apiBaseUrl,
         selectedPresetId: RALLAR_SERVER_ENDPOINT_PRESETS[0].presetId,
         method: initialDraft.method,
         path: initialDraft.path,
@@ -2215,7 +9560,19 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
         responseBodyMode: initialDraft.responseBodyMode,
         attachAuth: initialDraft.attachAuth,
         timeoutMs: 5_000,
-    }), [bootstrap.apiBaseUrl, config?.apiBaseUrl, initialDraft]);
+    }), [bootstrap.apiBaseUrl, config?.apiBaseUrl, globalValues?.apiBaseUrl, initialDraft]);
+    const collectionTemplates = useMemo(
+        () => createRallarServerRestCollectionTemplates(variables),
+        [variables],
+    );
+    const defaultCollectionDraft = useMemo<RallarServerRestCollectionDraft>(() => {
+        const collection = collectionTemplates[0];
+        return {
+            selectedCollectionId: collection.collectionId,
+            collection,
+            variables: collection.variables ?? {},
+        };
+    }, [collectionTemplates]);
     const [initialServerDraft] = useState(() => {
         const stored = readRallarServerWorkbenchDraft(browserUiStorage(), defaultServerDraft);
         return {
@@ -2223,6 +9580,10 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
             restored: Boolean(stored),
         };
     });
+    const [initialCollectionDraft] = useState(() =>
+        readRallarServerRestCollectionDraft(browserUiStorage(), defaultCollectionDraft) ??
+        defaultCollectionDraft
+    );
     const [serverDraftEdited, setServerDraftEdited] = useState(initialServerDraft.restored);
     const [apiBaseUrl, setApiBaseUrl] = useState(initialServerDraft.draft.apiBaseUrl);
     const [selectedPresetId, setSelectedPresetId] = useState(initialServerDraft.draft.selectedPresetId);
@@ -2241,6 +9602,12 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
     const [openApiBusy, setOpenApiBusy] = useState(false);
     const [localError, setLocalError] = useState<string | undefined>();
     const [response, setResponse] = useState<RallarServerRestResponse | undefined>();
+    const [selectedCollectionId, setSelectedCollectionId] = useState(initialCollectionDraft.selectedCollectionId);
+    const [collectionText, setCollectionText] = useState(() => json(initialCollectionDraft.collection));
+    const [collectionVariablesText, setCollectionVariablesText] = useState(() => json(initialCollectionDraft.variables));
+    const [collectionBusy, setCollectionBusy] = useState(false);
+    const [collectionError, setCollectionError] = useState<string | undefined>();
+    const [collectionResults, setCollectionResults] = useState<readonly RallarServerRestCollectionStepResult[]>([]);
     const allPresets = useMemo(
         () => [...RALLAR_SERVER_ENDPOINT_PRESETS, ...serverOpenApiPresets],
         [serverOpenApiPresets],
@@ -2280,12 +9647,16 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
     const responseHeadersText = response
         ? json(redactRallarServerValue(response.headers, authSession))
         : '{}';
+    const latestBody = response?.bodyJson;
+    const latestGroupId = findStringDeep(latestBody, ['groupId', 'roomId']);
+    const latestClientId = findStringDeep(latestBody, ['clientId', 'principalId', 'username']);
+    const latestSessionId = findStringDeep(latestBody, ['sessionId']);
 
     useEffect(() => {
         if (!serverDraftEdited) {
-            setApiBaseUrl(config?.apiBaseUrl ?? bootstrap.apiBaseUrl);
+            setApiBaseUrl(globalValues?.apiBaseUrl ?? config?.apiBaseUrl ?? bootstrap.apiBaseUrl);
         }
-    }, [bootstrap.apiBaseUrl, config?.apiBaseUrl, serverDraftEdited]);
+    }, [bootstrap.apiBaseUrl, config?.apiBaseUrl, globalValues?.apiBaseUrl, serverDraftEdited]);
 
     useEffect(() => {
         writeRallarServerWorkbenchDraft(browserUiStorage(), {
@@ -2312,6 +9683,23 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
         responseBodyMode,
         selectedPresetId,
         timeoutMs,
+    ]);
+
+    useEffect(() => {
+        try {
+            writeRallarServerRestCollectionDraft(browserUiStorage(), {
+                selectedCollectionId,
+                collection: parseRallarServerCollectionText(collectionText),
+                variables: parseRallarServerCollectionVariablesText(collectionVariablesText),
+            }, uiSecretValues(undefined, authSession));
+        } catch {
+            // Invalid collection drafts remain editable but are not persisted.
+        }
+    }, [
+        authSession?.accessToken,
+        collectionText,
+        collectionVariablesText,
+        selectedCollectionId,
     ]);
 
     const applyPreset = (preset: RallarServerEndpointPreset): void => {
@@ -2362,6 +9750,138 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
 
     const copyCommand = (): void => {
         void navigator.clipboard?.writeText(commandPreview);
+    };
+
+    const applyCollectionTemplate = (collectionId: string): void => {
+        const template = collectionTemplates.find(entry => entry.collectionId === collectionId);
+        if (!template) {
+            return;
+        }
+        setSelectedCollectionId(template.collectionId);
+        setCollectionText(json(template));
+        setCollectionVariablesText(json(template.variables ?? {}));
+        setCollectionResults([]);
+        setCollectionError(undefined);
+    };
+
+    const addCurrentRequestToCollection = (): void => {
+        try {
+            const collection = parseRallarServerCollectionText(collectionText);
+            const bodyValue = bodyText.trim().length === 0 || method === 'GET'
+                ? undefined
+                : JSON.parse(bodyText) as unknown;
+            const nextStep = {
+                stepId: `request-${collection.steps.length + 1}`,
+                label: activePreset.label,
+                request: {
+                    method,
+                    path,
+                    headers: JSON.parse(headersText || '{}') as Record<string, unknown>,
+                    query: JSON.parse(queryText || '{}') as Record<string, unknown>,
+                    ...(bodyValue === undefined ? {} : { body: bodyValue }),
+                    responseBodyMode,
+                    attachAuth,
+                    timeoutMs,
+                },
+                expect: {
+                    status: response?.status ?? 200,
+                },
+            };
+            setCollectionText(json({
+                ...collection,
+                steps: [...collection.steps, nextStep],
+            }));
+            setCollectionError(undefined);
+        } catch (error) {
+            setCollectionError(error instanceof Error ? error.message : String(error));
+        }
+    };
+
+    const runCollection = async (): Promise<void> => {
+        setCollectionBusy(true);
+        setCollectionError(undefined);
+        setCollectionResults([]);
+        try {
+            const collection = parseRallarServerCollectionText(collectionText);
+            let collectionVariables: RallarServerRestCollectionVariables = {
+                ...(collection.variables ?? {}),
+                ...parseRallarServerCollectionVariablesText(collectionVariablesText),
+            };
+            const nextResults: RallarServerRestCollectionStepResult[] = [];
+
+            for (const step of collection.steps) {
+                const stepResponse = await executeRallarServerRestRequest(
+                    buildRallarServerCollectionStepRequestInput({
+                        step,
+                        apiBaseUrl,
+                        variables: collectionVariables,
+                        authSession,
+                        defaultTimeoutMs: timeoutMs,
+                        forbidPlaceholderBaseUrl: providerMode === 'browser-rallar',
+                    }),
+                );
+                const assertions = assertRallarServerRestResponse(
+                    stepResponse,
+                    step.expect,
+                    collectionVariables,
+                );
+                const extracted = extractRallarServerRestVariables(stepResponse, step.extract);
+                const ok = assertions.every(assertion => assertion.ok);
+                const result = {
+                    stepId: step.stepId,
+                    label: step.label,
+                    ok,
+                    response: stepResponse,
+                    assertions,
+                    extracted,
+                };
+                nextResults.push(result);
+                setCollectionResults([...nextResults]);
+                collectionVariables = {
+                    ...collectionVariables,
+                    ...extracted,
+                };
+                setCollectionVariablesText(json(collectionVariables));
+                if (!ok) {
+                    break;
+                }
+            }
+        } catch (error) {
+            setCollectionError(error instanceof Error ? error.message : String(error));
+        } finally {
+            setCollectionBusy(false);
+        }
+    };
+
+    const copyCollection = (): void => {
+        try {
+            const collection = parseRallarServerCollectionText(collectionText);
+            const collectionVariables = parseRallarServerCollectionVariablesText(collectionVariablesText);
+            void navigator.clipboard?.writeText(redactedJson({
+                ...collection,
+                variables: collectionVariables,
+            }, state, authSession));
+        } catch (error) {
+            setCollectionError(error instanceof Error ? error.message : String(error));
+        }
+    };
+
+    const copyCollectionRecipe = (): void => {
+        try {
+            const collection = parseRallarServerCollectionText(collectionText);
+            const collectionVariables = parseRallarServerCollectionVariablesText(collectionVariablesText);
+            const recipe = toRallarServerRestCollectionRecipe({
+                collection,
+                apiBaseUrl,
+                variables: collectionVariables,
+                authSession,
+                defaultTimeoutMs: timeoutMs,
+                forbidPlaceholderBaseUrl: providerMode === 'browser-rallar',
+            });
+            void navigator.clipboard?.writeText(redactedJson(recipe, state, authSession));
+        } catch (error) {
+            setCollectionError(error instanceof Error ? error.message : String(error));
+        }
     };
 
     return (
@@ -2551,12 +10071,120 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
                 <button type="button" onClick={copyCommand}>
                     Copy Command
                 </button>
+                <button
+                    type="button"
+                    disabled={!latestGroupId || !onGlobalValueChange}
+                    onClick={() => latestGroupId && onGlobalValueChange?.('roomId', latestGroupId)}
+                >
+                    Use group in Quick Test
+                </button>
+                <button
+                    type="button"
+                    disabled={!latestClientId || !onGlobalValueChange}
+                    onClick={() => latestClientId && onGlobalValueChange?.('clientId', latestClientId)}
+                >
+                    Use client globally
+                </button>
+                <button
+                    type="button"
+                    disabled={!latestSessionId || !onGlobalValueChange}
+                    onClick={() => latestSessionId && onGlobalValueChange?.('sessionId', latestSessionId)}
+                >
+                    Use session globally
+                </button>
             </div>
             {localError && (
                 <div className="workbench-error" role="status">
                     {redactRallarBlackBoxValue(localError, uiRedactionOptions(state, authSession))}
                 </div>
             )}
+            <section className="rest-collection-panel">
+                <div className="section-heading">
+                    <h3>REST Collection</h3>
+                    <span>{collectionResults.length} results</span>
+                </div>
+                <div className="rest-collection-toolbar">
+                    <label className="field">
+                        <span>Collection Template</span>
+                        <select
+                            value={selectedCollectionId}
+                            onChange={event => applyCollectionTemplate(event.target.value)}
+                        >
+                            {collectionTemplates.map(template => (
+                                <option key={template.collectionId} value={template.collectionId}>
+                                    {template.name}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <button type="button" onClick={addCurrentRequestToCollection}>
+                        Add Current Request
+                    </button>
+                    <button type="button" onClick={() => void runCollection()} disabled={collectionBusy}>
+                        {collectionBusy ? 'Running Collection' : 'Run Collection'}
+                    </button>
+                    <button type="button" onClick={copyCollection}>
+                        Copy Collection
+                    </button>
+                    <button type="button" onClick={copyCollectionRecipe}>
+                        Copy Collection Recipe
+                    </button>
+                </div>
+                <div className="rest-collection-editors">
+                    <label className="json-editor">
+                        <span>Variables JSON</span>
+                        <textarea
+                            value={collectionVariablesText}
+                            onChange={event => setCollectionVariablesText(event.target.value)}
+                            spellCheck={false}
+                        />
+                    </label>
+                    <label className="json-editor">
+                        <span>Collection JSON</span>
+                        <textarea
+                            value={collectionText}
+                            onChange={event => setCollectionText(event.target.value)}
+                            spellCheck={false}
+                        />
+                    </label>
+                </div>
+                {collectionError && (
+                    <div className="workbench-error" role="status">
+                        {redactRallarBlackBoxValue(collectionError, uiRedactionOptions(state, authSession))}
+                    </div>
+                )}
+                <div className="rest-collection-results">
+                    {collectionResults.length === 0 && (
+                        <div className="empty-state">No collection results yet</div>
+                    )}
+                    {collectionResults.map(result => (
+                        <article className="rest-collection-result-row" key={result.stepId}>
+                            <div>
+                                <strong>{result.label}</strong>
+                                <small>{result.stepId} - {formatDuration(result.response.durationMs)}</small>
+                            </div>
+                            <span className={`pill ${result.ok ? 'good' : 'bad'}`}>
+                                {result.response.status || result.response.error?.kind || 'failed'}
+                            </span>
+                            <div className="rest-assertion-list">
+                                {result.assertions.map(assertion => (
+                                    <span
+                                        className={`pill ${assertion.ok ? 'good' : 'bad'}`}
+                                        key={assertion.label}
+                                    >
+                                        {assertion.label}
+                                    </span>
+                                ))}
+                            </div>
+                            {Object.keys(result.extracted).length > 0 && (
+                                <pre className="mini-json">
+                                    {redactedJson(result.extracted, state, authSession)}
+                                </pre>
+                            )}
+                        </article>
+                    ))}
+                </div>
+            </section>
             <div className="rest-response-grid">
                 <section className="rest-subpanel">
                     <div className="section-heading">
@@ -2613,6 +10241,328 @@ function RallarServerPanel({ state, bootstrap, authSession, control }: {
     );
 }
 
+function parseVariablesText(text: string): Readonly<{
+    ok: true;
+    variables: Readonly<Record<string, unknown>>;
+}> | Readonly<{ ok: false; error: string }> {
+    try {
+        const parsed = JSON.parse(text) as unknown;
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+            ? { ok: true, variables: parsed as Record<string, unknown> }
+            : { ok: false, error: 'Variables JSON must be an object.' };
+    } catch (error) {
+        return {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+        };
+    }
+}
+
+const FLOW_STEP_BUTTONS: readonly FlowBuilderStepKind[] = [
+    'auth.login',
+    'rest.request',
+    'ws.open',
+    'ws.send',
+    'rtc.connect',
+    'rtc.send',
+    'wait',
+    'cleanup',
+];
+
+function flowStepCommandIds(
+    recipeCommands: readonly RallarBlackBoxTestCommand[],
+    stepId: string,
+): readonly string[] {
+    return recipeCommands
+        .filter(command => recordValue(command.metadata?.flow).stepId === stepId)
+        .map((command, index) => command.commandId ?? `${command.kind}-${index + 1}`);
+}
+
+function FlowBuilderPanel({ state, authSession, globalValues, busy, onSelectCommand }: {
+    state: RallarBlackBoxTestState;
+    authSession?: AuthSession;
+    globalValues?: CommandCenterGlobalValues;
+    busy: boolean;
+    onSelectCommand(commandId: string): void;
+}) {
+    const [templateId, setTemplateId] = useState(FLOW_BUILDER_TEMPLATES[0].templateId);
+    const [flowText, setFlowText] = useState(() => templateFlowBuilderText(templateId));
+    const [variablesText, setVariablesText] = useState(() =>
+        JSON.stringify(
+            flowBuilderVariablesFromGlobalValues(FLOW_BUILDER_TEMPLATES[0].flow.variables, globalValues),
+            null,
+            2,
+        )
+    );
+    const [variablesEdited, setVariablesEdited] = useState(false);
+    const [sequence, setSequence] = useState(1);
+    const [localError, setLocalError] = useState<string | undefined>();
+    const flowResult = useMemo(() => parseFlowBuilderDefinition(flowText), [flowText]);
+    const variablesResult = useMemo(() => parseVariablesText(variablesText), [variablesText]);
+    const recipe = useMemo(() => {
+        if (!flowResult.ok || !variablesResult.ok) {
+            return undefined;
+        }
+
+        return buildFlowBuilderRecipe(flowResult.flow, variablesResult.variables);
+    }, [flowResult, variablesResult]);
+    const runnerScenario = useMemo(() => {
+        if (!flowResult.ok || !variablesResult.ok) {
+            return undefined;
+        }
+
+        return buildFlowBuilderRunnerScenario(flowResult.flow, variablesResult.variables);
+    }, [flowResult, variablesResult]);
+    const parseError = !flowResult.ok
+        ? flowResult.error
+        : !variablesResult.ok
+            ? variablesResult.error
+            : undefined;
+    const recipeText = recipe
+        ? redactedJson(recipe, state, authSession)
+        : parseError ?? 'No recipe preview available.';
+    const runnerText = runnerScenario
+        ? redactedJson(runnerScenario, state, authSession)
+        : recipeText;
+
+    const selectTemplate = (nextTemplateId: string): void => {
+        const template = FLOW_BUILDER_TEMPLATES.find(entry => entry.templateId === nextTemplateId) ??
+            FLOW_BUILDER_TEMPLATES[0];
+        setTemplateId(template.templateId);
+        setFlowText(flowBuilderText(template.flow));
+        setVariablesText(JSON.stringify(
+            flowBuilderVariablesFromGlobalValues(template.flow.variables, globalValues),
+            null,
+            2,
+        ));
+        setVariablesEdited(false);
+        setLocalError(undefined);
+    };
+
+    useEffect(() => {
+        if (variablesEdited) {
+            return;
+        }
+
+        const template = FLOW_BUILDER_TEMPLATES.find(entry => entry.templateId === templateId) ??
+            FLOW_BUILDER_TEMPLATES[0];
+        setVariablesText(JSON.stringify(
+            flowBuilderVariablesFromGlobalValues(template.flow.variables, globalValues),
+            null,
+            2,
+        ));
+    }, [
+        globalValues?.apiBaseUrl,
+        globalValues?.applicationId,
+        globalValues?.clientId,
+        globalValues?.roomId,
+        globalValues?.sessionId,
+        globalValues?.workspaceId,
+        templateId,
+        variablesEdited,
+    ]);
+
+    const addStep = (kind: FlowBuilderStepKind): void => {
+        if (!flowResult.ok) {
+            setLocalError(flowResult.error);
+            return;
+        }
+
+        setFlowText(flowBuilderText(addFlowBuilderStep(flowResult.flow, kind)));
+    };
+
+    const normalizeFlowJson = (): void => {
+        if (!flowResult.ok) {
+            setLocalError(flowResult.error);
+            return;
+        }
+
+        setFlowText(flowBuilderText(flowResult.flow));
+        setLocalError(undefined);
+    };
+
+    const runFlow = async (): Promise<void> => {
+        setLocalError(undefined);
+        if (!recipe) {
+            setLocalError(parseError ?? 'No flow recipe is available.');
+            return;
+        }
+
+        const commandId = `flow-builder-run-${sequence}`;
+        setSequence(current => current + 1);
+        onSelectCommand(commandId);
+        try {
+            await rallarBlackBoxRuntimeStore.executeManualCommands([{
+                kind: 'recipe.run',
+                commandId,
+                label: `Run ${recipe.name ?? recipe.recipeId}`,
+                recipe,
+            }], 'Run Flow Builder');
+        } catch (error) {
+            setLocalError(error instanceof Error ? error.message : String(error));
+        }
+    };
+
+    const copyText = (text: string): void => {
+        void navigator.clipboard?.writeText(text);
+    };
+
+    const flow = flowResult.ok ? flowResult.flow : undefined;
+    return (
+        <section className="panel flow-builder-panel">
+            <div className="panel-heading">
+                <h2>Flow Builder</h2>
+                <span className={`pill ${parseError ? 'bad' : 'good'}`}>
+                    {parseError ? 'invalid' : `${recipe?.commands.length ?? 0} commands`}
+                </span>
+            </div>
+            <div className="flow-builder-toolbar">
+                <label className="field">
+                    <span>Template</span>
+                    <select
+                        value={templateId}
+                        onChange={event => selectTemplate(event.target.value)}
+                        disabled={busy}
+                    >
+                        {FLOW_BUILDER_TEMPLATES.map(template => (
+                            <option key={template.templateId} value={template.templateId}>
+                                {template.label}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+                <button type="button" onClick={normalizeFlowJson}>
+                    Normalize JSON
+                </button>
+                <button type="button" onClick={() => void runFlow()} disabled={busy || !recipe}>
+                    Run Flow
+                </button>
+                <button type="button" onClick={() => copyText(recipeText)} disabled={!recipe}>
+                    Copy SPA Recipe
+                </button>
+                <button type="button" onClick={() => copyText(runnerText)} disabled={!runnerScenario}>
+                    Copy Runner Scenario
+                </button>
+            </div>
+            <div className="flow-builder-add-grid" aria-label="Add flow step">
+                {FLOW_STEP_BUTTONS.map(kind => (
+                    <button
+                        key={kind}
+                        type="button"
+                        onClick={() => addStep(kind)}
+                        disabled={busy}
+                    >
+                        Add {kind}
+                    </button>
+                ))}
+            </div>
+            <div className="flow-builder-editors">
+                <label className="json-editor">
+                    <span>Variables JSON</span>
+                    <textarea
+                        value={variablesText}
+                        onChange={event => {
+                            setVariablesEdited(true);
+                            setVariablesText(event.target.value);
+                        }}
+                        spellCheck={false}
+                        disabled={busy}
+                    />
+                </label>
+                <label className="json-editor">
+                    <span>Flow JSON</span>
+                    <textarea
+                        value={flowText}
+                        onChange={event => setFlowText(event.target.value)}
+                        spellCheck={false}
+                        disabled={busy}
+                    />
+                </label>
+            </div>
+            {(parseError || localError) && (
+                <div className="workbench-error" role="status">
+                    {redactRallarBlackBoxValue(
+                        localError ?? parseError,
+                        uiRedactionOptions(state, authSession),
+                    )}
+                </div>
+            )}
+            <div className="flow-builder-layout">
+                <section className="flow-builder-steps">
+                    <div className="section-heading">
+                        <h3>Steps</h3>
+                        <span>{flow?.steps.length ?? 0} steps</span>
+                    </div>
+                    <div className="flow-step-list">
+                        {!flow && (
+                            <div className="empty-state">No valid flow loaded</div>
+                        )}
+                        {flow?.steps.map(step => {
+                            const commandIds = recipe ? flowStepCommandIds(recipe.commands, step.stepId) : [];
+                            const results = commandIds
+                                .map(commandId => state.resultCache[commandId])
+                                .filter((result): result is RallarBlackBoxTestResult => Boolean(result));
+                            const failed = results.find(result => !result.ok);
+                            const completed = commandIds.length > 0 && results.length === commandIds.length;
+                            const status = failed
+                                ? 'failed'
+                                : completed
+                                    ? 'completed'
+                                    : step.enabled === false
+                                        ? 'skipped'
+                                        : 'pending';
+                            return (
+                                <article className="flow-step-row" key={step.stepId}>
+                                    <div>
+                                        <strong>{step.label}</strong>
+                                        <small>{step.stepId} - {step.kind}</small>
+                                    </div>
+                                    <span className={`pill ${status === 'completed' ? 'good' : statusTone(status)}`}>
+                                        {status}
+                                    </span>
+                                    <div className="manual-command-links">
+                                        {commandIds.map(commandId => (
+                                            <button
+                                                type="button"
+                                                key={commandId}
+                                                onClick={() => onSelectCommand(commandId)}
+                                            >
+                                                {commandId}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {(step.expect !== undefined || step.extract !== undefined) && (
+                                        <pre className="mini-json">
+                                            {redactedJson({
+                                                expect: step.expect,
+                                                extract: step.extract,
+                                            }, state, authSession)}
+                                        </pre>
+                                    )}
+                                </article>
+                            );
+                        })}
+                    </div>
+                </section>
+                <section className="flow-builder-preview">
+                    <div className="section-heading">
+                        <h3>SPA Recipe Preview</h3>
+                        <span>{recipe?.recipeId ?? '-'}</span>
+                    </div>
+                    <pre className="json-block">{recipeText}</pre>
+                </section>
+                <section className="flow-builder-preview">
+                    <div className="section-heading">
+                        <h3>Runner Scenario Preview</h3>
+                        <span>black-box-runner</span>
+                    </div>
+                    <pre className="json-block">{runnerText}</pre>
+                </section>
+            </div>
+        </section>
+    );
+}
+
 export default function App() {
     const {
         state,
@@ -2632,12 +10582,37 @@ export default function App() {
     const [selectedCommandId, setSelectedCommandId] = useState<string | undefined>(() =>
         readStoredSelectedCommandId(browserUiStorage())
     );
-    const [activeTab, setActiveTab] = useState<AppTabId>(() => readInitialAppTab());
+    const [navigation, setNavigation] = useState<AppNavigationState>(() =>
+        readInitialAppNavigation()
+    );
+    const { mode: activeMode, tab: activeTab } = navigation;
     const [authSession, setAuthSession] = useState<AuthSession | undefined>(() =>
         readCurrentAuthSession()
     );
     const [authBusy, setAuthBusy] = useState(false);
     const [authError, setAuthError] = useState<string | undefined>();
+    const defaultGlobalValues = useMemo(
+        () => commandCenterGlobalValuesFromState(state, bootstrap, authSession),
+        [
+            authSession?.clientId,
+            authSession?.sessionId,
+            authSession?.username,
+            bootstrap.actor,
+            bootstrap.apiBaseUrl,
+            bootstrap.roomId,
+            bootstrap.sessionId,
+            state.currentConfig,
+        ],
+    );
+    const [globalValues, setGlobalValues] = useState<CommandCenterGlobalValues>(defaultGlobalValues);
+    const [globalValuesEdited, setGlobalValuesEdited] = useState(false);
+    const browserStatus = useMemo(
+        () => deriveRallarBrowserStatus(state, globalValues),
+        [globalValues, state],
+    );
+    const lastGlobalAuthKey = useRef<string | undefined>(
+        authSession ? `${authSession.clientId ?? authSession.username}:${authSession.sessionId}` : undefined,
+    );
     const requiresLogin = bootstrap.providerMode === 'browser-rallar';
     const canEnterApp = !requiresLogin || Boolean(authSession);
 
@@ -2646,7 +10621,7 @@ export default function App() {
             return;
         }
 
-        const handlePopState = (): void => setActiveTab(readInitialAppTab());
+        const handlePopState = (): void => setNavigation(readInitialAppNavigation());
         window.addEventListener('popstate', handlePopState);
         return () => window.removeEventListener('popstate', handlePopState);
     }, []);
@@ -2670,10 +10645,50 @@ export default function App() {
     }, [authSession, bootstrap.apiBaseUrl, requiresLogin]);
 
     useEffect(() => {
-        if (canEnterApp) {
+        const authKey = authSession
+            ? `${authSession.clientId ?? authSession.username}:${authSession.sessionId}`
+            : undefined;
+        const authChanged = authKey !== lastGlobalAuthKey.current;
+        lastGlobalAuthKey.current = authKey;
+
+        setGlobalValues(current => {
+            if (!globalValuesEdited) {
+                return sameCommandCenterGlobalValues(current, defaultGlobalValues)
+                    ? current
+                    : defaultGlobalValues;
+            }
+
+            const nextValues = {
+                ...current,
+                apiBaseUrl: current.apiBaseUrl || defaultGlobalValues.apiBaseUrl,
+                applicationId: current.applicationId || defaultGlobalValues.applicationId,
+                workspaceId: current.workspaceId || defaultGlobalValues.workspaceId,
+                roomId: current.roomId || defaultGlobalValues.roomId,
+                clientId: authChanged && authSession
+                    ? authSession.clientId ?? authSession.username
+                    : current.clientId || defaultGlobalValues.clientId,
+                sessionId: authChanged && authSession
+                    ? authSession.sessionId
+                    : current.sessionId || defaultGlobalValues.sessionId,
+            };
+
+            return sameCommandCenterGlobalValues(current, nextValues)
+                ? current
+                : nextValues;
+        });
+    }, [
+        authSession?.clientId,
+        authSession?.sessionId,
+        authSession?.username,
+        defaultGlobalValues,
+        globalValuesEdited,
+    ]);
+
+    useEffect(() => {
+        if (canEnterApp && activeMode === 'black-box-runner') {
             rallarBlackBoxRuntimeStore.ensureBootstrapped();
         }
-    }, [canEnterApp]);
+    }, [activeMode, canEnterApp]);
 
     useEffect(() => {
         if (activeCommand) {
@@ -2691,9 +10706,47 @@ export default function App() {
     }, [selectedCommandId]);
 
     const selectedResult = findSelectedResult(history, selectedCommandId);
+    const selectNavigation = (nextNavigation: AppNavigationState): void => {
+        setNavigation(nextNavigation);
+        writeAppNavigationToUrl(nextNavigation);
+    };
     const selectTab = (tab: AppTabId): void => {
-        setActiveTab(tab);
-        writeAppTabToUrl(tab);
+        const mode = appTabInMode(tab, activeMode)
+            ? activeMode
+            : appModeForTab(tab);
+        selectNavigation({
+            mode,
+            tab,
+        });
+    };
+    const selectMode = (mode: AppModeId): void => {
+        selectNavigation({
+            mode,
+            tab: appTabInMode(activeTab, mode)
+                ? activeTab
+                : defaultAppTabForMode(mode),
+        });
+    };
+    const updateGlobalValue = <K extends keyof CommandCenterGlobalValues>(
+        key: K,
+        value: CommandCenterGlobalValues[K],
+    ): void => {
+        const nextValues = {
+            ...globalValues,
+            [key]: value,
+        };
+        setGlobalValues(nextValues);
+        setGlobalValuesEdited(true);
+        rallarBlackBoxRuntimeStore.updateBootstrapConfig(
+            bootstrapPatchFromGlobalValues(nextValues),
+        );
+    };
+    const resetGlobalValues = (): void => {
+        setGlobalValues(defaultGlobalValues);
+        setGlobalValuesEdited(false);
+        rallarBlackBoxRuntimeStore.updateBootstrapConfig(
+            bootstrapPatchFromGlobalValues(defaultGlobalValues),
+        );
     };
 
     const logout = async (): Promise<void> => {
@@ -2702,10 +10755,7 @@ export default function App() {
         try {
             const facade = await loadBrowserRallarFacade();
             facade.configure({ apiBaseUrl: bootstrap.apiBaseUrl });
-            await rallarBlackBoxRuntimeStore.executeManualCommand({
-                kind: 'close',
-                commandId: `logout-close-${Date.now()}`,
-            }, 'Closing Rallar session');
+            await facade.disconnect();
             await facade.auth.logout();
         } catch (error) {
             setAuthError(authErrorMessage(error));
@@ -2730,8 +10780,12 @@ export default function App() {
     return (
         <main className="app-shell">
             <Header
+                mode={activeMode}
                 state={state}
                 control={control}
+                bootstrap={bootstrap}
+                globalValues={globalValues}
+                browserStatus={browserStatus}
                 bootstrapping={bootstrapping}
                 lastAction={lastAction}
                 authSession={authSession}
@@ -2743,8 +10797,65 @@ export default function App() {
                     {authError}
                 </div>
             )}
-            <AppTabs activeTab={activeTab} onSelect={selectTab}/>
+            <GlobalContextBar
+                values={globalValues}
+                authSession={authSession}
+                onChange={updateGlobalValue}
+                onReset={resetGlobalValues}
+            />
+            <AppModeSwitch activeMode={activeMode} onSelect={selectMode}/>
+            <RallarBrowserTraceBar
+                mode={activeMode}
+                state={state}
+                status={browserStatus}
+                onOpenEvents={() => selectTab('event-stream')}
+            />
+            {activeMode === 'rallar' && (
+                <DirectRallarBoundaryPanel
+                    state={state}
+                    bootstrap={bootstrap}
+                    globalValues={globalValues}
+                    authSession={authSession}
+                />
+            )}
+            {activeMode === 'black-box-runner' && (
+                <RunnerModeBoundaryPanel control={control}/>
+            )}
+            <AppTabs activeMode={activeMode} activeTab={activeTab} onSelect={selectTab}/>
             <div className="tab-shell">
+                <section
+                    id="panel-quick-test"
+                    className="workspace-grid tab-workspace quick-test-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-quick-test"
+                    hidden={activeTab !== 'quick-test'}
+                >
+                    <QuickRallarTestPanel
+                        state={state}
+                        bootstrap={bootstrap}
+                        authSession={authSession}
+                        globalValues={globalValues}
+                        browserStatus={browserStatus}
+                        onGlobalValueChange={updateGlobalValue}
+                        onOpenRunnerMode={() => selectMode('black-box-runner')}
+                    />
+                </section>
+                <section
+                    id="panel-auth"
+                    className="workspace-grid tab-workspace auth-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-auth"
+                    hidden={activeTab !== 'auth'}
+                >
+                    <AuthCommandCenterPanel
+                        state={state}
+                        bootstrap={bootstrap}
+                        authSession={authSession}
+                        globalValues={globalValues}
+                        onAuthenticated={session => setAuthSession(session)}
+                        onLogout={logout}
+                    />
+                </section>
                 <section
                     id="panel-manual-rallar"
                     className="workspace-grid tab-workspace manual-tab-grid"
@@ -2756,8 +10867,11 @@ export default function App() {
                         state={state}
                         bootstrap={bootstrap}
                         authSession={authSession}
+                        globalValues={globalValues}
+                        globalValuesEdited={globalValuesEdited}
                         busy={busy}
                         onSelectCommand={setSelectedCommandId}
+                        onGlobalValueChange={updateGlobalValue}
                     />
                     <ReceivedDataInboxPanel
                         state={state}
@@ -2767,6 +10881,52 @@ export default function App() {
                         history={history}
                         selectedCommandId={selectedCommandId}
                         onSelect={setSelectedCommandId}
+                    />
+                </section>
+                <section
+                    id="panel-rooms-clients"
+                    className="workspace-grid tab-workspace rooms-clients-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-rooms-clients"
+                    hidden={activeTab !== 'rooms-clients'}
+                >
+                    <RoomsClientsPanel
+                        state={state}
+                        bootstrap={bootstrap}
+                        authSession={authSession}
+                        globalValues={globalValues}
+                        onGlobalValueChange={updateGlobalValue}
+                    />
+                </section>
+                <section
+                    id="panel-websocket"
+                    className="workspace-grid tab-workspace websocket-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-websocket"
+                    hidden={activeTab !== 'websocket'}
+                >
+                    <WebSocketCommandCenterPanel
+                        state={state}
+                        bootstrap={bootstrap}
+                        authSession={authSession}
+                        globalValues={globalValues}
+                        browserStatus={browserStatus}
+                        busy={busy}
+                        onSelectCommand={setSelectedCommandId}
+                    />
+                </section>
+                <section
+                    id="panel-rtc-realtime"
+                    className="workspace-grid tab-workspace rtc-realtime-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-rtc-realtime"
+                    hidden={activeTab !== 'rtc-realtime'}
+                >
+                    <RtcRealtimePanel
+                        state={state}
+                        bootstrap={bootstrap}
+                        authSession={authSession}
+                        globalValues={globalValues}
                     />
                 </section>
                 <section
@@ -2793,11 +10953,40 @@ export default function App() {
                         state={state}
                         bootstrap={bootstrap}
                         authSession={authSession}
+                        globalValues={globalValues}
                         busy={busy}
                         onSelectCommand={setSelectedCommandId}
                     />
                     <FailurePanel state={state} authSession={authSession}/>
                     <StatsPanel state={state}/>
+                </section>
+                <section
+                    id="panel-rallar-data"
+                    className="workspace-grid tab-workspace rallar-data-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-rallar-data"
+                    hidden={activeTab !== 'rallar-data'}
+                >
+                    <RallarDataPanel
+                        state={state}
+                        bootstrap={bootstrap}
+                        authSession={authSession}
+                        globalValues={globalValues}
+                    />
+                </section>
+                <section
+                    id="panel-media"
+                    className="workspace-grid tab-workspace media-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-media"
+                    hidden={activeTab !== 'media'}
+                >
+                    <MediaConsolePanel
+                        state={state}
+                        bootstrap={bootstrap}
+                        authSession={authSession}
+                        globalValues={globalValues}
+                    />
                 </section>
                 <section
                     id="panel-local-workbench"
@@ -2821,6 +11010,21 @@ export default function App() {
                         onSelect={setSelectedCommandId}
                     />
                     <ReportPanel state={state} authSession={authSession}/>
+                </section>
+                <section
+                    id="panel-run-manager"
+                    className="workspace-grid tab-workspace run-manager-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-run-manager"
+                    hidden={activeTab !== 'run-manager'}
+                >
+                    {activeMode === 'black-box-runner' && activeTab === 'run-manager' && (
+                        <RunManagerPanel
+                            state={state}
+                            bootstrap={bootstrap}
+                            control={control}
+                        />
+                    )}
                 </section>
                 <section
                     id="panel-event-stream"
@@ -2856,8 +11060,34 @@ export default function App() {
                         state={state}
                         bootstrap={bootstrap}
                         authSession={authSession}
+                        globalValues={globalValues}
                         control={control}
+                        onGlobalValueChange={updateGlobalValue}
                     />
+                </section>
+                <section
+                    id="panel-flow-builder"
+                    className="workspace-grid tab-workspace flow-builder-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-flow-builder"
+                    hidden={activeTab !== 'flow-builder'}
+                >
+                    <FlowBuilderPanel
+                        state={state}
+                        authSession={authSession}
+                        globalValues={globalValues}
+                        busy={busy}
+                        onSelectCommand={setSelectedCommandId}
+                    />
+                </section>
+                <section
+                    id="panel-shared-test"
+                    className="workspace-grid tab-workspace shared-test-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-shared-test"
+                    hidden={activeTab !== 'shared-test'}
+                >
+                    <SharedTestPanel/>
                 </section>
             </div>
         </main>

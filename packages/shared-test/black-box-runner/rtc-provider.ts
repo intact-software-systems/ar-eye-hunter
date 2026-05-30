@@ -13,10 +13,11 @@ export type RtcProvider = {
 
 export type RtcClient = {
     connect: () => Promise<void>
-    send: (message: any, interaction?: any, config?: any, context?: any) => Promise<void>
+    send: (message: any, interaction?: any, config?: any, context?: any) => Promise<any>
     close: (interaction?: any, config?: any, context?: any) => Promise<void>
     onMessage?: (handler: (message: any) => void) => void
     onClose?: (handler: (event: any) => void) => void
+    diagnostics?: () => any
 }
 
 export type RtcClientProviderOptions = {
@@ -29,11 +30,24 @@ function toRtcReportFields(interaction: any): any {
         actor: interaction.request.actor,
         peerId: interaction.request.peerId,
         roomId: interaction.request.roomId,
+        roomRef: interaction.request.roomRef,
+        scope: interaction.request.scope,
+        applicationId: interaction.request.applicationId,
+        workspaceId: interaction.request.workspaceId,
+        minSnapshotVersion: interaction.request.minSnapshotVersion,
         groupId: interaction.request.groupId,
         overlayId: interaction.request.overlayId,
         remotePeerId: interaction.request.remotePeerId,
         action: interaction.request.action,
         connection: interaction.request.connection,
+    };
+}
+
+function toOutputReportFields(interaction: any): any {
+    return {
+        output: interaction.request.output,
+        outputPath: interaction.request.outputPath,
+        outputs: interaction.request.outputs,
     };
 }
 
@@ -52,6 +66,7 @@ export function toRtcFailureStatus(config: any, interaction: any, result: string
             ...toRtcReportFields(interaction),
             ...details,
         },
+        ...toOutputReportFields(interaction),
         ...config,
     };
 }
@@ -91,7 +106,7 @@ export function toRtcSuccessStatus(config: any, interaction: any, details: any =
             ...toRtcReportFields(interaction),
             ...details,
         },
-        output: interaction.request.output,
+        ...toOutputReportFields(interaction),
         input: interaction.request.input,
     };
 }
@@ -124,12 +139,70 @@ export function rememberRtcMessage(connectionName: string, message: any, context
     context.rtcMessages[connectionName].push(message);
 }
 
+export function rememberRtcDiagnostic(connectionName: string, diagnostic: any, context: any): void {
+    if (!context.rtcDiagnostics) {
+        context.rtcDiagnostics = {};
+    }
+    if (!context.rtcDiagnostics[connectionName]) {
+        context.rtcDiagnostics[connectionName] = [];
+    }
+
+    context.rtcDiagnostics[connectionName].push(diagnostic);
+}
+
 export function rememberRtcCloseEvent(connectionName: string, closeEvent: any, context: any): void {
     if (!context.rtcCloseEvents[connectionName]) {
         context.rtcCloseEvents[connectionName] = [];
     }
 
     context.rtcCloseEvents[connectionName].push(closeEvent);
+}
+
+function findRtcDiagnosticIndex(
+    diagnostics: any[],
+    expectedDiagnostic: any,
+    interaction: any,
+    excludedIndexes: number[] = [],
+): number {
+    return diagnostics.findIndex((diagnostic, index) => {
+        if (excludedIndexes.includes(index)) {
+            return false;
+        }
+
+        const result = compareJson(
+            expectedDiagnostic,
+            diagnostic,
+            toRtcComparisonConfig(interaction),
+        );
+
+        return result.isEqual;
+    });
+}
+
+function findRtcDiagnosticIndexFrom(
+    diagnostics: any[],
+    expectedDiagnostic: any,
+    interaction: any,
+    fromIndex = 0,
+    excludedIndexes: number[] = [],
+): number {
+    for (let index = fromIndex; index < diagnostics.length; index++) {
+        if (excludedIndexes.includes(index)) {
+            continue;
+        }
+
+        const result = compareJson(
+            expectedDiagnostic,
+            diagnostics[index],
+            toRtcComparisonConfig(interaction),
+        );
+
+        if (result.isEqual) {
+            return index;
+        }
+    }
+
+    return -1;
 }
 
 function findRtcCloseEventIndex(closeEvents: any[], expectedCloseEvent: any, interaction: any): number {
@@ -142,6 +215,18 @@ function findRtcCloseEventIndex(closeEvents: any[], expectedCloseEvent: any, int
 
         return result.isEqual;
     });
+}
+
+function toLatencyMs(startedAtEpochMs: any, endedAtEpochMs: any): number | undefined {
+    if (
+        typeof startedAtEpochMs !== 'number' ||
+        typeof endedAtEpochMs !== 'number' ||
+        endedAtEpochMs < startedAtEpochMs
+    ) {
+        return undefined;
+    }
+
+    return endedAtEpochMs - startedAtEpochMs;
 }
 
 function toRtcComparisonConfig(interaction: any): any {
@@ -232,6 +317,10 @@ export function waitForRtcMessage(interaction: any, config: any, context: any, d
                     connection: connectionName,
                     matchedMessage: match,
                     consumed: consume,
+                    firstPayloadLatencyMs: toLatencyMs(
+                        details.sendStartedAtEpochMs,
+                        match.receivedAtEpochMs,
+                    ),
                     waitedMs: Date.now() - startedAt,
                 }));
                 return;
@@ -244,6 +333,194 @@ export function waitForRtcMessage(interaction: any, config: any, context: any, d
                     connection: connectionName,
                     expectedMessage,
                     messages,
+                    waitedMs: Date.now() - startedAt,
+                }));
+            }
+        }, 25);
+    });
+}
+
+export function waitForRtcDiagnostic(interaction: any, config: any, context: any, details: any = {}): Promise<any> {
+    const request = interaction.request;
+    const connectionName = toRtcExpectedConnectionName(interaction);
+    const expectedDiagnostic = interaction.response.diagnostic;
+    const timeoutMs = Number.parseInt(interaction.response.withinMs || request.timeoutMs || 5000);
+    const startedAt = Date.now();
+    const consume = interaction.response.consume === true;
+
+    if (expectedDiagnostic === undefined) {
+        return Promise.resolve(toRtcFailureStatus(config, interaction, 'RTC wait expects expect.diagnostic', {
+            ...details,
+            connection: connectionName,
+        }));
+    }
+
+    return new Promise(resolve => {
+        const interval = setInterval(() => {
+            const diagnostics = context.rtcDiagnostics?.[connectionName] || [];
+            const matchIndex = findRtcDiagnosticIndex(diagnostics, expectedDiagnostic, interaction);
+
+            if (matchIndex >= 0) {
+                clearInterval(interval);
+                const match = diagnostics[matchIndex];
+
+                if (consume) {
+                    diagnostics.splice(matchIndex, 1);
+                }
+
+                resolve(toRtcSuccessStatus(config, interaction, {
+                    ...details,
+                    connection: connectionName,
+                    matchedDiagnostic: match,
+                    consumed: consume,
+                    waitedMs: Date.now() - startedAt,
+                }));
+                return;
+            }
+
+            if (Date.now() - startedAt >= timeoutMs) {
+                clearInterval(interval);
+                resolve(toRtcFailureStatus(config, interaction, 'Expected RTC diagnostic was not received', {
+                    ...details,
+                    connection: connectionName,
+                    expectedDiagnostic,
+                    diagnostics,
+                    waitedMs: Date.now() - startedAt,
+                }));
+            }
+        }, 25);
+    });
+}
+
+export function waitForRtcDiagnostics(interaction: any, config: any, context: any, details: any = {}): Promise<any> {
+    const request = interaction.request;
+    const connectionName = toRtcExpectedConnectionName(interaction);
+    const expectedDiagnostics = interaction.response.diagnostics;
+    const timeoutMs = Number.parseInt(interaction.response.withinMs || request.timeoutMs || 5000);
+    const startedAt = Date.now();
+    const consume = interaction.response.consume === true;
+    const ordered = interaction.response.ordered === true;
+
+    if (!Array.isArray(expectedDiagnostics) || expectedDiagnostics.length <= 0) {
+        return Promise.resolve(toRtcFailureStatus(config, interaction, 'Expected RTC diagnostics must be a non-empty array', {
+            ...details,
+            connection: connectionName,
+            expectedDiagnostics,
+        }));
+    }
+
+    return new Promise(resolve => {
+        const interval = setInterval(() => {
+            const diagnostics = context.rtcDiagnostics?.[connectionName] || [];
+            const matchedDiagnostics: any[] = [];
+            const matchedIndexes: number[] = [];
+            let nextOrderedSearchIndex = 0;
+
+            for (const expectedDiagnostic of expectedDiagnostics) {
+                const matchIndex = ordered
+                    ? findRtcDiagnosticIndexFrom(diagnostics, expectedDiagnostic, interaction, nextOrderedSearchIndex, matchedIndexes)
+                    : findRtcDiagnosticIndex(diagnostics, expectedDiagnostic, interaction, matchedIndexes);
+
+                if (matchIndex >= 0) {
+                    matchedIndexes.push(matchIndex);
+                    matchedDiagnostics.push({
+                        expectedDiagnostic,
+                        matchedDiagnostic: diagnostics[matchIndex],
+                    });
+
+                    if (ordered) {
+                        nextOrderedSearchIndex = matchIndex + 1;
+                    }
+                } else if (ordered) {
+                    break;
+                }
+            }
+
+            if (matchedDiagnostics.length === expectedDiagnostics.length) {
+                clearInterval(interval);
+
+                if (consume) {
+                    matchedIndexes
+                        .sort((a, b) => b - a)
+                        .forEach(index => diagnostics.splice(index, 1));
+                }
+
+                resolve(toRtcSuccessStatus(config, interaction, {
+                    ...details,
+                    connection: connectionName,
+                    matchedDiagnostics,
+                    consumed: consume,
+                    ordered,
+                    waitedMs: Date.now() - startedAt,
+                }));
+                return;
+            }
+
+            if (Date.now() - startedAt >= timeoutMs) {
+                clearInterval(interval);
+                resolve(toRtcFailureStatus(config, interaction, ordered
+                    ? 'Expected RTC diagnostics were not received in the expected order'
+                    : 'Expected RTC diagnostics were not received', {
+                    ...details,
+                    connection: connectionName,
+                    expectedDiagnostics,
+                    matchedDiagnostics,
+                    missingDiagnostics: expectedDiagnostics.filter((expectedDiagnostic: any) => {
+                        return matchedDiagnostics.every(match => match.expectedDiagnostic !== expectedDiagnostic);
+                    }),
+                    ordered,
+                    diagnostics,
+                    waitedMs: Date.now() - startedAt,
+                }));
+            }
+        }, 25);
+    });
+}
+
+export function waitForRtcHealth(interaction: any, config: any, context: any, details: any = {}): Promise<any> {
+    const request = interaction.request;
+    const connectionName = toRtcExpectedConnectionName(interaction);
+    const expectedHealth = interaction.response.health;
+    const timeoutMs = Number.parseInt(interaction.response.withinMs || request.timeoutMs || 5000);
+    const startedAt = Date.now();
+
+    if (expectedHealth === undefined) {
+        return Promise.resolve(toRtcFailureStatus(config, interaction, 'RTC wait expects expect.health', {
+            ...details,
+            connection: connectionName,
+        }));
+    }
+
+    return new Promise(resolve => {
+        const interval = setInterval(() => {
+            const connection = context.rtcConnections?.[connectionName];
+            const health = connection?.client?.diagnostics?.() ?? connection?.diagnostics;
+            if (connection && health !== undefined) {
+                connection.diagnostics = health;
+            }
+
+            if (health !== undefined && compareJson(
+                expectedHealth,
+                health,
+                toRtcComparisonConfig(interaction),
+            ).isEqual) {
+                clearInterval(interval);
+                resolve(toRtcSuccessStatus(config, interaction, {
+                    ...details,
+                    connection: connectionName,
+                    matchedHealth: health,
+                    waitedMs: Date.now() - startedAt,
+                }));
+                return;
+            }
+
+            if (Date.now() - startedAt >= timeoutMs) {
+                clearInterval(interval);
+                resolve(toRtcFailureStatus(config, interaction, 'Expected RTC health was not observed', {
+                    ...details,
+                    connection: connectionName,
+                    expectedHealth,
+                    health,
                     waitedMs: Date.now() - startedAt,
                 }));
             }
@@ -448,21 +725,62 @@ function toStoredRtcCloseEvent(event: any, interaction: any): any {
     };
 }
 
+function isRtcDiagnosticMessage(message: any): boolean {
+    return message?.kind === 'diagnostic';
+}
+
+function toStoredRtcDiagnostic(message: any, interaction: any, connectionName: string): any {
+    return {
+        kind: 'diagnostic',
+        topic: message.topic,
+        severity: message.severity ?? (message.error ? 'error' : 'info'),
+        atEpochMs: message.atEpochMs ?? Date.now(),
+        connection: message.connection ?? connectionName,
+        provider: message.provider ?? interaction.request.provider,
+        actor: message.actor ?? interaction.request.actor,
+        peerId: message.peerId ?? interaction.request.peerId,
+        remotePeerId: message.remotePeerId ?? interaction.request.remotePeerId,
+        roomId: message.roomId ?? interaction.request.roomId,
+        roomRef: message.roomRef ?? interaction.request.roomRef,
+        scope: message.scope ?? interaction.request.scope,
+        applicationId: message.applicationId ?? interaction.request.applicationId,
+        workspaceId: message.workspaceId ?? interaction.request.workspaceId,
+        groupId: message.groupId ?? interaction.request.groupId,
+        overlayId: message.overlayId ?? interaction.request.overlayId,
+        data: message.data,
+        error: message.error,
+        event: message,
+    };
+}
+
 export function createRtcProviderFromClientFactory(options: RtcClientProviderOptions): RtcProvider {
     return {
         connect: async (interaction: any, config: any, context: any): Promise<any> => {
             const connectionName = toRtcConnectionName(interaction.request);
+            const connectStartedAtEpochMs = Date.now();
 
             try {
                 const client = await options.createClient(interaction.request, config, context);
 
                 client.onMessage?.((message: any) => {
+                    if (isRtcDiagnosticMessage(message)) {
+                        rememberRtcDiagnostic(
+                            connectionName,
+                            toStoredRtcDiagnostic(message, interaction, connectionName),
+                            context,
+                        );
+                    }
+
                     rememberRtcMessage(connectionName, {
                         data: message,
                         receivedAtEpochMs: Date.now(),
                         provider: interaction.request.provider,
                         actor: interaction.request.actor,
                         roomId: interaction.request.roomId,
+                        roomRef: message?.roomRef ?? interaction.request.roomRef,
+                        scope: message?.scope ?? interaction.request.scope,
+                        applicationId: message?.applicationId ?? interaction.request.applicationId,
+                        workspaceId: message?.workspaceId ?? interaction.request.workspaceId,
                     }, context);
                 });
 
@@ -475,6 +793,8 @@ export function createRtcProviderFromClientFactory(options: RtcClientProviderOpt
                 });
 
                 await client.connect();
+                const connectedAtEpochMs = Date.now();
+                const diagnostics = client.diagnostics?.();
 
                 context.rtcConnections[connectionName] = {
                     client,
@@ -482,10 +802,15 @@ export function createRtcProviderFromClientFactory(options: RtcClientProviderOpt
                     actor: interaction.request.actor,
                     roomId: interaction.request.roomId,
                     request: interaction.request,
-                    connectedAtEpochMs: Date.now(),
+                    connectStartedAtEpochMs,
+                    connectedAtEpochMs,
+                    connectLatencyMs: connectedAtEpochMs - connectStartedAtEpochMs,
+                    diagnostics,
                 };
 
                 context.rtcMessages[connectionName] = context.rtcMessages[connectionName] || [];
+                context.rtcDiagnostics = context.rtcDiagnostics || {};
+                context.rtcDiagnostics[connectionName] = context.rtcDiagnostics[connectionName] || [];
                 context.rtcCloseEvents[connectionName] = context.rtcCloseEvents[connectionName] || [];
 
                 return toRtcSuccessStatus(config, interaction, {
@@ -494,14 +819,22 @@ export function createRtcProviderFromClientFactory(options: RtcClientProviderOpt
                     provider: interaction.request.provider,
                     actor: interaction.request.actor,
                     roomId: interaction.request.roomId,
+                    diagnostics,
+                    connectStartedAtEpochMs,
+                    connectedAtEpochMs,
+                    connectLatencyMs: connectedAtEpochMs - connectStartedAtEpochMs,
                 });
             } catch (e) {
+                const failedAtEpochMs = Date.now();
                 return toRtcFailureStatus(config, interaction, 'RTC connect failed', {
                     connection: connectionName,
                     exception: e instanceof Error ? e.message : String(e),
                     provider: interaction.request.provider,
                     actor: interaction.request.actor,
                     roomId: interaction.request.roomId,
+                    connectStartedAtEpochMs,
+                    connectFailedAtEpochMs: failedAtEpochMs,
+                    connectLatencyMs: failedAtEpochMs - connectStartedAtEpochMs,
                 });
             }
         },
@@ -511,6 +844,7 @@ export function createRtcProviderFromClientFactory(options: RtcClientProviderOpt
             const connection = context.rtcConnections[connectionName];
             const client = connection?.client as RtcClient | undefined;
             const payload = toRtcPayload(interaction.request);
+            let sendStartedAtEpochMs: number | undefined;
 
             if (!client) {
                 return toRtcFailureStatus(config, interaction, 'RTC connection is not open', {
@@ -519,15 +853,40 @@ export function createRtcProviderFromClientFactory(options: RtcClientProviderOpt
             }
 
             try {
-                await client.send(payload, interaction, config, context);
+                sendStartedAtEpochMs = Date.now();
+                const sendResult = await client.send(payload, interaction, config, context);
+                const sendEndedAtEpochMs = Date.now();
+                const diagnostics = client.diagnostics?.();
+                connection.lastSendStartedAtEpochMs = sendStartedAtEpochMs;
+                connection.lastSendEndedAtEpochMs = sendEndedAtEpochMs;
+                connection.lastSendLatencyMs = sendEndedAtEpochMs - sendStartedAtEpochMs;
+                if (sendResult !== undefined) {
+                    connection.lastSendResult = sendResult;
+                }
+                if (diagnostics !== undefined) {
+                    connection.diagnostics = diagnostics;
+                }
             } catch (e) {
+                const sendFailedAtEpochMs = Date.now();
+                const errorRecord = e && typeof e === 'object'
+                    ? e as any
+                    : {};
+                const sendResult = errorRecord.sendResult ?? errorRecord.response;
+                const diagnostics = errorRecord.diagnostics;
                 return toRtcFailureStatus(config, interaction, 'RTC send failed', {
                     connection: connectionName,
                     sent: payload,
+                    ...(sendResult !== undefined ? { sendResult } : {}),
+                    ...(diagnostics !== undefined ? { diagnostics } : {}),
                     exception: e instanceof Error ? e.message : String(e),
                     provider: interaction.request.provider,
                     actor: interaction.request.actor,
                     roomId: interaction.request.roomId,
+                    sendStartedAtEpochMs,
+                    sendFailedAtEpochMs,
+                    sendLatencyMs: sendStartedAtEpochMs !== undefined
+                        ? sendFailedAtEpochMs - sendStartedAtEpochMs
+                        : undefined,
                 });
             }
 
@@ -535,6 +894,47 @@ export function createRtcProviderFromClientFactory(options: RtcClientProviderOpt
                 return waitForRtcMessages(interaction, config, context, {
                     sentConnection: connectionName,
                     sent: payload,
+                    sendResult: connection.lastSendResult,
+                    sendStartedAtEpochMs: connection.lastSendStartedAtEpochMs,
+                    sendEndedAtEpochMs: connection.lastSendEndedAtEpochMs,
+                    sendLatencyMs: connection.lastSendLatencyMs,
+                    diagnostics: connection.diagnostics,
+                });
+            }
+
+            if (interaction.response?.diagnostics) {
+                return waitForRtcDiagnostics(interaction, config, context, {
+                    sentConnection: connectionName,
+                    sent: payload,
+                    sendResult: connection.lastSendResult,
+                    sendStartedAtEpochMs: connection.lastSendStartedAtEpochMs,
+                    sendEndedAtEpochMs: connection.lastSendEndedAtEpochMs,
+                    sendLatencyMs: connection.lastSendLatencyMs,
+                    diagnostics: connection.diagnostics,
+                });
+            }
+
+            if (interaction.response?.diagnostic) {
+                return waitForRtcDiagnostic(interaction, config, context, {
+                    sentConnection: connectionName,
+                    sent: payload,
+                    sendResult: connection.lastSendResult,
+                    sendStartedAtEpochMs: connection.lastSendStartedAtEpochMs,
+                    sendEndedAtEpochMs: connection.lastSendEndedAtEpochMs,
+                    sendLatencyMs: connection.lastSendLatencyMs,
+                    diagnostics: connection.diagnostics,
+                });
+            }
+
+            if (interaction.response?.health !== undefined) {
+                return waitForRtcHealth(interaction, config, context, {
+                    sentConnection: connectionName,
+                    sent: payload,
+                    sendResult: connection.lastSendResult,
+                    sendStartedAtEpochMs: connection.lastSendStartedAtEpochMs,
+                    sendEndedAtEpochMs: connection.lastSendEndedAtEpochMs,
+                    sendLatencyMs: connection.lastSendLatencyMs,
+                    diagnostics: connection.diagnostics,
                 });
             }
 
@@ -542,6 +942,11 @@ export function createRtcProviderFromClientFactory(options: RtcClientProviderOpt
                 return waitForRtcMessage(interaction, config, context, {
                     sentConnection: connectionName,
                     sent: payload,
+                    sendResult: connection.lastSendResult,
+                    sendStartedAtEpochMs: connection.lastSendStartedAtEpochMs,
+                    sendEndedAtEpochMs: connection.lastSendEndedAtEpochMs,
+                    sendLatencyMs: connection.lastSendLatencyMs,
+                    diagnostics: connection.diagnostics,
                 });
             }
 
@@ -551,12 +956,29 @@ export function createRtcProviderFromClientFactory(options: RtcClientProviderOpt
                 provider: interaction.request.provider,
                 actor: interaction.request.actor,
                 roomId: interaction.request.roomId,
+                sendResult: connection.lastSendResult,
+                sendStartedAtEpochMs: connection.lastSendStartedAtEpochMs,
+                sendEndedAtEpochMs: connection.lastSendEndedAtEpochMs,
+                sendLatencyMs: connection.lastSendLatencyMs,
+                diagnostics: connection.diagnostics,
             });
         },
 
         wait: async (interaction: any, config: any, context: any): Promise<any> => {
             if (interaction.response?.close !== undefined) {
                 return waitForRtcClose(interaction, config, context);
+            }
+
+            if (interaction.response?.diagnostics) {
+                return waitForRtcDiagnostics(interaction, config, context);
+            }
+
+            if (interaction.response?.diagnostic) {
+                return waitForRtcDiagnostic(interaction, config, context);
+            }
+
+            if (interaction.response?.health !== undefined) {
+                return waitForRtcHealth(interaction, config, context);
             }
 
             if (interaction.response?.messages) {
@@ -567,7 +989,7 @@ export function createRtcProviderFromClientFactory(options: RtcClientProviderOpt
                 return waitForRtcMessage(interaction, config, context);
             }
 
-            return toRtcFailureStatus(config, interaction, 'RTC wait expects expect.message, expect.messages, or expect.close', {
+            return toRtcFailureStatus(config, interaction, 'RTC wait expects expect.message, expect.messages, expect.diagnostic, expect.diagnostics, expect.health, or expect.close', {
                 connection: toRtcExpectedConnectionName(interaction),
             });
         },

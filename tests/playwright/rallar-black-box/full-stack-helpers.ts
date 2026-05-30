@@ -11,10 +11,20 @@ export type FullStackUser = Readonly<{
     actor: string;
 }>;
 
+export type BrowserAuthSession = Readonly<{
+    clientId: string;
+    username: string;
+    sessionId: string;
+    accessToken: string;
+    expiresAtEpochMs: number;
+}>;
+
 export type FullStackConfig = Readonly<{
     enabled: boolean;
     skipReason: string;
     apiBaseUrl: string;
+    applicationId: string;
+    workspaceId: string;
     roomId: string;
     userA: FullStackUser;
     userB: FullStackUser;
@@ -36,12 +46,17 @@ type ControlRunSnapshot = Readonly<{
 export function readFullStackConfig(): FullStackConfig {
     const enabled = process.env.RALLAR_BLACK_BOX_FULL_STACK === '1' ||
         process.env.RALLAR_BLACK_BOX_FULL_STACK === 'true';
+    const configuredRoomId = envValue('VITE_RALLAR_ROOM_ID');
 
     return {
         enabled,
         skipReason: 'Set RALLAR_BLACK_BOX_FULL_STACK=1 and provide a working root .env/DATABASE_URL for apps/api-v1 to run full-stack Rallar Black Box tests.',
         apiBaseUrl: normalizeBaseUrl(envValue('VITE_RALLAR_API_BASE_URL') ?? 'http://localhost:8080'),
-        roomId: envValue('VITE_RALLAR_ROOM_ID') ?? `rallar-bb-full-stack-${Date.now()}`,
+        applicationId: envValue('VITE_RALLAR_APPLICATION_ID') ?? 'ar-eye-hunter',
+        workspaceId: envValue('VITE_RALLAR_WORKSPACE_ID') ?? 'default',
+        roomId: configuredRoomId && configuredRoomId !== 'your-room-id'
+            ? configuredRoomId
+            : `rallar-bb-full-stack-${Date.now()}`,
         userA: {
             username: envValue('VITE_RALLAR_USERNAME') ?? 'alice',
             password: envValue('VITE_RALLAR_PASSWORD') ?? 'secret',
@@ -80,7 +95,7 @@ export async function loginThroughUi(
     user: FullStackUser,
     input: Readonly<{
         suffix: string;
-        tab?: 'manual-rallar' | 'rallar-server' | 'event-stream' | 'local-workbench';
+        tab?: 'quick-test' | 'manual-rallar' | 'rallar-server' | 'event-stream' | 'local-workbench' | 'rallar-data';
         registerBeforeLogin?: boolean;
     }>,
 ): Promise<void> {
@@ -94,7 +109,7 @@ export async function loginThroughUi(
         tab: input.tab ?? 'rallar-server',
     });
 
-    await page.goto(`/?${query.toString()}`);
+    await page.goto(`${FULL_STACK_SPA_ORIGIN}/?${query.toString()}`);
     await expect(page.getByRole('heading', { name: 'Rallar Server Login' })).toBeVisible();
     await page.getByLabel('API Base URL').fill(config.apiBaseUrl);
     await page.getByLabel('Username').fill(user.username);
@@ -126,6 +141,20 @@ export async function sendWsTicketFromRestWorkbench(
     await expect(panel).toContainText('"ticket"');
 
     return outgoingRequest.headers();
+}
+
+export async function readBrowserAuthSession(page: Page): Promise<BrowserAuthSession> {
+    const session = await page.evaluate(() => {
+        const raw = window.localStorage.getItem('auth.session');
+        return raw ? JSON.parse(raw) as unknown : undefined;
+    }) as Partial<BrowserAuthSession> | undefined;
+
+    expect(session?.clientId).toBeTruthy();
+    expect(session?.username).toBeTruthy();
+    expect(session?.sessionId).toBeTruthy();
+    expect(session?.accessToken).toBeTruthy();
+
+    return session as BrowserAuthSession;
 }
 
 export async function enqueueControlCommand(

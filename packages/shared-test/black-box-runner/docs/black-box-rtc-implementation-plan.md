@@ -774,7 +774,13 @@ Remaining operational gap: this repository session has not executed the live mod
 
 ### Iteration 10: Soak And Monitoring Runner
 
-Status: documented future work only. No implementation yet.
+Status: partially implemented after this original plan was written.
+
+The generic runner now supports same-connection deterministic soak through
+`execution.soak` and `npm run test:shared-black-box:memory:soak`. Short gated
+live browser and remote-browser `messages.rtc` soak baselines are available
+through `npm run test:shared-black-box:matrix:live:soak`. Long-running
+browser-backed soak monitoring remains future work.
 
 Add a long-running RTC soak mode for monitoring behavior over hours.
 
@@ -832,7 +838,17 @@ Open design questions:
 
 ### Iteration 11: Seeded Random And Parallel Step Plans
 
-Status: documented future work only. No implementation yet.
+Status: implemented for the generic deterministic runner after this original
+plan was written.
+
+Use `execution.trafficPlan` for seeded weighted traffic with
+`expanded-plan.json` replay artifacts, and `type: "parallel"` for bounded
+parallel groups. Deterministic `rallar-memory` examples are available through
+`npm run test:shared-black-box:memory:traffic` and
+`npm run test:shared-black-box:memory:parallel`.
+Short gated live browser and remote-browser `messages.rtc` baselines are
+available through `npm run test:shared-black-box:matrix:live:traffic` and
+`npm run test:shared-black-box:matrix:live:parallel`.
 
 Add a controlled randomness layer for black-box scenarios.
 

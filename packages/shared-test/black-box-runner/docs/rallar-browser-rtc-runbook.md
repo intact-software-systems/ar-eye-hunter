@@ -270,7 +270,26 @@ done
 
 This repeatedly starts browsers, connects, sends, waits, closes, and validates cleanup.
 
-Long-lived soak monitoring is not implemented yet. Iteration 10 in `black-box-rtc-implementation-plan.md` documents the intended future runner: keep connections open for hours, send periodic messages, record rolling metrics, write redacted JSONL logs, and emit a final summary report.
+Same-connection soak mode is available for deterministic runner coverage:
+
+```bash
+npm run test:shared-black-box:memory:soak
+```
+
+That recipe keeps `rallar-memory` RTC connections open across repeated
+bidirectional sends and records `summary.soak` plus `metrics.soak`.
+
+Live browser and remote-browser baselines are available as gated recipe-matrix
+profiles:
+
+```bash
+npm run test:shared-black-box:matrix:live:soak
+npm run test:shared-black-box:matrix:live:traffic
+npm run test:shared-black-box:matrix:live:parallel
+```
+
+These profiles skip with explicit gate reasons unless the Rallar API, test
+credentials, Playwright, and optional control-server agent are configured.
 
 ## Provider Choice
 

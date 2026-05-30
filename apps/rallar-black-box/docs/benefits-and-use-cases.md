@@ -29,6 +29,7 @@ Failures are easier to investigate because the app shows:
 - first failure details
 - latest stats
 - received data
+- WebSocket command state and event evidence
 - RTC connect diagnostics
 - topology graph
 - redacted report snapshot
@@ -43,11 +44,20 @@ The manual workbench can create and execute normal commands without writing a re
 - direct client targeting
 - multicast metadata
 - broadcast metadata
+- scoped application/workspace/roomRef behavior
 - RTC versus WebSocket payload shape
+- not-yet-in-sync and NACK evidence
 - reconnect and cleanup behavior
 - received payload visibility
 
 When a manual sequence becomes useful, it can be copied as a recipe snippet.
+
+The WebSocket command center narrows that same workflow for socket-specific checks: ticket creation, open, send, wait,
+reconnect, close, cleanup, close reasons, and WS/RTC parity recipes are visible without editing a full JSON recipe
+first.
+
+The Flow Builder takes the next step when a probe becomes a sequence: auth-shaped REST, server REST, WebSocket, RTC,
+wait, and cleanup steps can be composed, run as a SPA recipe, and exported as a runner scenario.
 
 ### Better RTC Investigation
 
@@ -86,6 +96,10 @@ reports. That makes it easier to compare failures between:
 - a black-box runner scenario
 - a future monitor-ingested run
 
+Run Manager artifact export turns a local control-server run into redacted files that can be attached to issues or
+loaded back into the Shared Test artifact viewer. That matters when a failure only reproduces with multiple visible
+browser agents and the useful evidence is spread across results, events, reports, and heartbeats.
+
 ### Security Hooks
 
 Remote browser control is risky. The implementation already includes important hooks:
@@ -114,7 +128,9 @@ The tool is currently best for:
 - checking diagnostics and report shape
 - validating topology and received-message UI behavior
 - smoke-testing the browser agent registration and command/result loop
+- discovering and reusing shared-test runner recipes and artifact contracts as the command-center bridge matures
 
 Because the default SPA mode is simulated, local UI runs are not final proof of live deployed Rallar RTC behavior. Use
-`provider=browser-rallar` plus real environment config for the gated one-agent connect/send and two-agent delivery
-smokes.
+`provider=browser-rallar` plus real environment config for the gated one-agent connect/send, two-agent delivery, Manual
+Rallar realtime, and three-browser RTC matrix smokes. Use `packages/shared-test/black-box-runner` for external JSON
+recipe execution, deterministic soak/traffic/parallel coverage, and redacted runner artifacts.

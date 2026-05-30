@@ -1,11 +1,31 @@
 {
   "variables": {
-    "rallarApiBaseUrl": "https://api.example.com",
-    "roomId": "room-1",
-    "aliceUsername": "alice",
-    "alicePassword": "secret",
-    "bobUsername": "bob",
-    "bobPassword": "secret"
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "https://api.example.com"
+    },
+    "roomId": {
+      "env": "RALLAR_BB_GROUP_ID",
+      "default": "room-1"
+    },
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    }
   },
   "connections": {
     "aliceRtc": {

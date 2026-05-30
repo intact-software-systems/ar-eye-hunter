@@ -1,0 +1,69 @@
+{
+  "metadata": {
+    "expectedOutcome": "failure",
+    "purpose": "Demonstrates the failure report produced when an expected RTC diagnostic is not observed."
+  },
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://localhost:8080"
+    },
+    "roomId": {
+      "env": "RALLAR_BB_GROUP_ID",
+      "default": "bb-group"
+    },
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    }
+  },
+  "connections": {
+    "aliceRtc": {
+      "type": "rtc",
+      "provider": "rallar-browser",
+      "actor": "alice",
+      "roomId": "{roomId}",
+      "browser": {
+        "headless": true,
+        "timeoutMs": 15000
+      },
+      "rallar": {
+        "apiBaseUrl": "{rallarApiBaseUrl}",
+        "username": "{aliceUsername}",
+        "password": "{alicePassword}",
+        "transport": "realtime",
+        "laneId": "realtime",
+        "openTimeoutMs": 10000,
+        "timeoutMs": 15000
+      }
+    }
+  },
+  "steps": [
+    {
+      "name": "connectAlice",
+      "type": "rtc.connect",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "waitForMissingDiagnostic",
+      "type": "rtc.wait",
+      "connection": "aliceRtc",
+      "expect": {
+        "withinMs": 250,
+        "diagnostic": {
+          "topic": "rallar.browser.example.missing_readiness_signal"
+        }
+      }
+    },
+    {
+      "name": "closeAlice",
+      "type": "rtc.close",
+      "connection": "aliceRtc"
+    }
+  ]
+}

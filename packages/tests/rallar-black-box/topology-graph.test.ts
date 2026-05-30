@@ -61,7 +61,7 @@ describe('rallar-black-box topology graph', () => {
                     senderId: 'alice-session',
                     peerIds: ['bob-session'],
                     data: {
-                        topic: 'manual.message',
+                        topic: 'room.manual.message',
                         text: 'hello',
                     },
                 },

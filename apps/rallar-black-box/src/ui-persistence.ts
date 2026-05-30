@@ -1,11 +1,13 @@
-import type { AppTabId } from './app-tabs.ts';
-import { appTabFromValue } from './app-tabs.ts';
+import type { AppModeId, AppTabId } from './app-tabs.ts';
+import { appModeFromValue, appTabFromValue } from './app-tabs.ts';
 import type {
     ManualDeliveryMode,
     ManualWorkbenchTransport,
     ManualWorkbenchValues,
 } from './manual-workbench.ts';
 import type {
+    RallarServerRestCollection,
+    RallarServerRestCollectionVariables,
     RallarServerResponseBodyMode,
     RallarServerRestMethod,
 } from './rallar-server-workbench.ts';
@@ -14,10 +16,12 @@ import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction
 export type RallarBlackBoxUiStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
 export const UI_STORAGE_KEYS = {
+    activeMode: 'rallar-black-box.ui.active-mode',
     activeTab: 'rallar-black-box.ui.active-tab',
     selectedCommandId: 'rallar-black-box.ui.selected-command-id',
     manualDraft: 'rallar-black-box.ui.manual-draft.v1',
     rallarServerDraft: 'rallar-black-box.ui.rallar-server-draft.v1',
+    rallarServerCollectionDraft: 'rallar-black-box.ui.rallar-server-collection-draft.v1',
     eventFilters: 'rallar-black-box.ui.event-filters.v1',
 } as const;
 
@@ -27,6 +31,9 @@ export type PersistedEventFilters = Readonly<{
     connection: string;
     actor: string;
     transport: string;
+    group: string;
+    peer: string;
+    selector: string;
     topic: string;
     severity: string;
 }>;
@@ -48,6 +55,12 @@ export type RallarServerWorkbenchDraft = Readonly<{
     responseBodyMode: RallarServerResponseBodyMode;
     attachAuth: boolean;
     timeoutMs: number;
+}>;
+
+export type RallarServerRestCollectionDraft = Readonly<{
+    selectedCollectionId: string;
+    collection: RallarServerRestCollection;
+    variables: RallarServerRestCollectionVariables;
 }>;
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -146,6 +159,15 @@ export function writeStoredAppTab(storage: RallarBlackBoxUiStorage | undefined, 
     writeString(storage, UI_STORAGE_KEYS.activeTab, tab);
 }
 
+export function readStoredAppMode(storage: RallarBlackBoxUiStorage | undefined): AppModeId | undefined {
+    const value = readString(storage, UI_STORAGE_KEYS.activeMode);
+    return value ? appModeFromValue(value) : undefined;
+}
+
+export function writeStoredAppMode(storage: RallarBlackBoxUiStorage | undefined, mode: AppModeId): void {
+    writeString(storage, UI_STORAGE_KEYS.activeMode, mode);
+}
+
 export function readStoredSelectedCommandId(
     storage: RallarBlackBoxUiStorage | undefined,
 ): string | undefined {
@@ -201,9 +223,17 @@ export function readManualWorkbenchDraft(
             ...defaults.values,
             environment: stringValue(values.environment, defaults.values.environment),
             apiBaseUrl: stringValue(values.apiBaseUrl, defaults.values.apiBaseUrl),
+            applicationId: stringValue(values.applicationId, defaults.values.applicationId),
+            workspaceId: stringValue(values.workspaceId, defaults.values.workspaceId),
             actor: stringValue(values.actor, defaults.values.actor),
             sessionId: stringValue(values.sessionId, defaults.values.sessionId),
             groupId: stringValue(values.groupId, defaults.values.groupId),
+            scopeText: stringValue(values.scopeText, defaults.values.scopeText),
+            roomRefText: stringValue(values.roomRefText, defaults.values.roomRefText),
+            minSnapshotVersion: numberValue(
+                values.minSnapshotVersion,
+                defaults.values.minSnapshotVersion,
+            ),
             connection: stringValue(values.connection, defaults.values.connection),
             targetClient: stringValue(values.targetClient, defaults.values.targetClient),
             multicastClients: stringValue(values.multicastClients, defaults.values.multicastClients),
@@ -307,6 +337,44 @@ export function writeRallarServerWorkbenchDraft(
     );
 }
 
+export function readRallarServerRestCollectionDraft(
+    storage: RallarBlackBoxUiStorage | undefined,
+    defaults: RallarServerRestCollectionDraft,
+): RallarServerRestCollectionDraft | undefined {
+    const record = asRecord(readJson(storage, UI_STORAGE_KEYS.rallarServerCollectionDraft));
+    if (Object.keys(record).length === 0) {
+        return undefined;
+    }
+
+    const collection = asRecord(record.collection);
+    const variables = asRecord(record.variables);
+    return {
+        selectedCollectionId: stringValue(record.selectedCollectionId, defaults.selectedCollectionId),
+        collection: Object.keys(collection).length > 0
+            ? collection as unknown as RallarServerRestCollection
+            : defaults.collection,
+        variables: Object.keys(variables).length > 0
+            ? variables
+            : defaults.variables,
+    };
+}
+
+export function writeRallarServerRestCollectionDraft(
+    storage: RallarBlackBoxUiStorage | undefined,
+    draft: RallarServerRestCollectionDraft,
+    secretValues: readonly string[] = [],
+): void {
+    writeJson(
+        storage,
+        UI_STORAGE_KEYS.rallarServerCollectionDraft,
+        {
+            selectedCollectionId: draft.selectedCollectionId,
+            collection: redactRallarBlackBoxValue(draft.collection, { secretValues }),
+            variables: redactRallarBlackBoxValue(draft.variables, { secretValues }),
+        },
+    );
+}
+
 export function readEventFilters(
     storage: RallarBlackBoxUiStorage | undefined,
     defaults: PersistedEventFilters,
@@ -318,6 +386,9 @@ export function readEventFilters(
         connection: stringValue(record.connection, defaults.connection),
         actor: stringValue(record.actor, defaults.actor),
         transport: stringValue(record.transport, defaults.transport),
+        group: stringValue(record.group, defaults.group),
+        peer: stringValue(record.peer, defaults.peer),
+        selector: stringValue(record.selector, defaults.selector),
         topic: stringValue(record.topic, defaults.topic),
         severity: stringValue(record.severity, defaults.severity),
     };

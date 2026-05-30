@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "summary": {
+    "total": 2,
+    "success": 1,
+    "failure": 1,
+    "failFast": false,
+    "durationMs": 12,
+    "trafficPlan": {
+      "seed": 42,
+      "replay": false,
+      "decisionCount": 1,
+      "stepCount": 2
+    }
+  },
+  "results": {
+    "connectAlice-i1-r1": {
+      "name": "connectAlice",
+      "status": "SUCCESS"
+    },
+    "aliceWaits-i2-r1": {
+      "name": "aliceWaits",
+      "status": "FAILURE"
+    }
+  },
+  "resultsList": [
+    {
+      "resultKey": "connectAlice-i1-r1",
+      "name": "connectAlice",
+      "status": "SUCCESS",
+      "transport": "RTC",
+      "action": "connect",
+      "connection": "aliceRtc",
+      "actual": {
+        "connectLatencyMs": 4
+      }
+    },
+    {
+      "resultKey": "aliceWaits-i2-r1",
+      "name": "aliceWaits",
+      "status": "FAILURE",
+      "transport": "RTC",
+      "action": "wait",
+      "connection": "aliceRtc",
+      "expected": {
+        "message": {
+          "topic": "fixture.message"
+        }
+      },
+      "actual": {
+        "reason": "timeout",
+        "token": "<redacted:apiToken>"
+      }
+    }
+  ],
+  "resultsByName": {
+    "connectAlice": [
+      {
+        "status": "SUCCESS"
+      }
+    ],
+    "aliceWaits": [
+      {
+        "status": "FAILURE"
+      }
+    ]
+  },
+  "outputs": {
+    "authHeader": "Bearer <redacted:apiToken>"
+  },
+  "wsMessages": {},
+  "wsCloseEvents": {},
+  "rtcMessages": {
+    "aliceRtc": [
+      {
+        "topic": "fixture.message"
+      }
+    ]
+  },
+  "rtcDiagnostics": {
+    "aliceRtc": [
+      {
+        "topic": "rallar.browser.connect_started"
+      }
+    ]
+  },
+  "rtcCloseEvents": {}
+}

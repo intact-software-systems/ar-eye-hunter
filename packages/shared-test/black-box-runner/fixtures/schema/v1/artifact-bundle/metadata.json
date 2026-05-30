@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "artifactSchemaVersion": 1,
+  "generatedAtEpochMs": 1779952000000,
+  "config": "packages/shared-test/black-box-runner/examples/fixture.json",
+  "workingDirectory": ".",
+  "dryRun": false,
+  "execution": "run",
+  "summary": {
+    "total": 2,
+    "success": 1,
+    "failure": 1
+  },
+  "command": [
+    "deno",
+    "run",
+    "-A",
+    "packages/shared-test/black-box-runner/scenario-black-box.ts"
+  ]
+}

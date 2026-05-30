@@ -1,0 +1,151 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://localhost:8080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_APPLICATION_ID",
+      "default": "black-box-app"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_WORKSPACE_ID",
+      "default": "default"
+    },
+    "roomId": {
+      "env": "RALLAR_BB_GROUP_ID",
+      "default": "bb-group"
+    },
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "messageTypeId": "black-box.stale-state.message",
+    "topicId": "black-box.stale-state",
+    "nackTypeId": "al.control.nack.v1",
+    "futureSnapshotVersion": 999999
+  },
+  "connections": {
+    "aliceRtc": {
+      "type": "rtc",
+      "provider": "rallar-browser",
+      "actor": "alice",
+      "roomId": "{roomId}",
+      "roomRef": {
+        "applicationId": "{applicationId}",
+        "workspaceId": "{workspaceId}",
+        "groupId": "{roomId}"
+      },
+      "browser": {
+        "headless": true,
+        "timeoutMs": 15000
+      },
+      "rallar": {
+        "apiBaseUrl": "{rallarApiBaseUrl}",
+        "username": "{aliceUsername}",
+        "password": "{alicePassword}",
+        "transport": "messages.rtc",
+        "typeId": "{messageTypeId}",
+        "topicId": "{topicId}",
+        "messageSelector": {
+          "typeId": "{nackTypeId}"
+        },
+        "contextId": "{applicationId}:{workspaceId}:{roomId}",
+        "timeoutMs": 15000
+      }
+    },
+    "bobRtc": {
+      "type": "rtc",
+      "provider": "rallar-browser",
+      "actor": "bob",
+      "roomId": "{roomId}",
+      "roomRef": {
+        "applicationId": "{applicationId}",
+        "workspaceId": "{workspaceId}",
+        "groupId": "{roomId}"
+      },
+      "browser": {
+        "headless": true,
+        "timeoutMs": 15000
+      },
+      "rallar": {
+        "apiBaseUrl": "{rallarApiBaseUrl}",
+        "username": "{bobUsername}",
+        "password": "{bobPassword}",
+        "transport": "messages.rtc",
+        "typeId": "{messageTypeId}",
+        "topicId": "{topicId}",
+        "timeoutMs": 15000
+      }
+    }
+  },
+  "steps": [
+    {
+      "name": "connectAlice",
+      "type": "rtc.connect",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "connectBobNackObserver",
+      "type": "rtc.connect",
+      "connection": "bobRtc"
+    },
+    {
+      "name": "aliceSendsWithFutureSnapshot",
+      "type": "rtc.send",
+      "connection": "aliceRtc",
+      "request": {
+        "roomRef": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}",
+          "groupId": "{roomId}"
+        },
+        "minSnapshotVersion": "{futureSnapshotVersion}",
+        "send": {
+          "typeId": "{messageTypeId}",
+          "topicId": "{topicId}",
+          "payload": {
+            "from": "alice",
+            "text": "this send requires a future group snapshot"
+          }
+        }
+      },
+      "expect": {
+        "connection": "aliceRtc",
+        "withinMs": 10000,
+        "message": {
+          "kind": "message",
+          "topic": "rallar.browser.messages.rtc.message",
+          "typeId": "{nackTypeId}",
+          "data": {
+            "reason": "not-yet-in-sync"
+          }
+        }
+      }
+    },
+    {
+      "name": "closeAlice",
+      "type": "rtc.close",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "closeBob",
+      "type": "rtc.close",
+      "connection": "bobRtc"
+    }
+  ]
+}

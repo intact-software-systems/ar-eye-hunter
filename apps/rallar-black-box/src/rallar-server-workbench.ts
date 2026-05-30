@@ -79,6 +79,80 @@ export type RallarServerWorkbenchVariables = Readonly<{
     username: string;
 }>;
 
+export type RallarServerRestCollectionVariables = Readonly<Record<string, unknown>>;
+
+export type RallarServerRestCollectionBodyExpectation = Readonly<{
+    path: string;
+    equals?: unknown;
+    contains?: string;
+    exists?: boolean;
+}>;
+
+export type RallarServerRestCollectionHeaderExpectation = Readonly<{
+    name: string;
+    equals?: string;
+    contains?: string;
+    exists?: boolean;
+}>;
+
+export type RallarServerRestCollectionExpectation = Readonly<{
+    ok?: boolean;
+    status?: number | readonly number[];
+    body?: readonly RallarServerRestCollectionBodyExpectation[];
+    headers?: readonly RallarServerRestCollectionHeaderExpectation[];
+}>;
+
+export type RallarServerRestCollectionExtraction = Readonly<{
+    name: string;
+    from?: 'body' | 'headers' | 'status';
+    path?: string;
+    header?: string;
+    fallback?: unknown;
+}>;
+
+export type RallarServerRestCollectionRequest = Readonly<{
+    method: RallarServerRestMethod;
+    path: string;
+    headers?: Readonly<Record<string, unknown>>;
+    query?: Readonly<Record<string, unknown>>;
+    body?: unknown;
+    responseBodyMode?: RallarServerResponseBodyMode;
+    attachAuth?: boolean;
+    timeoutMs?: number;
+}>;
+
+export type RallarServerRestCollectionStep = Readonly<{
+    stepId: string;
+    label: string;
+    request: RallarServerRestCollectionRequest;
+    expect?: RallarServerRestCollectionExpectation;
+    extract?: readonly RallarServerRestCollectionExtraction[];
+}>;
+
+export type RallarServerRestCollection = Readonly<{
+    collectionId: string;
+    name: string;
+    description?: string;
+    variables?: RallarServerRestCollectionVariables;
+    steps: readonly RallarServerRestCollectionStep[];
+}>;
+
+export type RallarServerRestAssertionResult = Readonly<{
+    label: string;
+    ok: boolean;
+    expected?: unknown;
+    actual?: unknown;
+}>;
+
+export type RallarServerRestCollectionStepResult = Readonly<{
+    stepId: string;
+    label: string;
+    ok: boolean;
+    response: RallarServerRestResponse;
+    assertions: readonly RallarServerRestAssertionResult[];
+    extracted: RallarServerRestCollectionVariables;
+}>;
+
 type OpenApiDocument = Readonly<{
     paths?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
 }>;
@@ -142,6 +216,14 @@ export const RALLAR_SERVER_ENDPOINT_PRESETS: readonly RallarServerEndpointPreset
         requiresAuth: true,
     },
     {
+        presetId: 'client-events-page',
+        tag: 'Client State',
+        label: 'List current client events page',
+        method: 'GET',
+        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/events/page',
+        requiresAuth: true,
+    },
+    {
         presetId: 'client-principal-upsert',
         tag: 'Client State',
         label: 'Upsert current client principal',
@@ -193,6 +275,15 @@ export const RALLAR_SERVER_ENDPOINT_PRESETS: readonly RallarServerEndpointPreset
         },
     },
     {
+        presetId: 'client-session-disconnect',
+        tag: 'Client State',
+        label: 'Disconnect current client session',
+        method: 'POST',
+        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}/sessions/{sessionId}/disconnect',
+        requiresAuth: true,
+        body: {},
+    },
+    {
         presetId: 'groups-list',
         tag: 'Group State',
         label: 'List groups',
@@ -239,6 +330,17 @@ export const RALLAR_SERVER_ENDPOINT_PRESETS: readonly RallarServerEndpointPreset
         },
     },
     {
+        presetId: 'group-member-leave',
+        tag: 'Group State',
+        label: 'Leave group',
+        method: 'PUT',
+        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}',
+        requiresAuth: true,
+        body: {
+            status: 'left',
+        },
+    },
+    {
         presetId: 'group-presence-connect',
         tag: 'Group State',
         label: 'Connect group presence',
@@ -280,6 +382,14 @@ export const RALLAR_SERVER_ENDPOINT_PRESETS: readonly RallarServerEndpointPreset
         requiresAuth: true,
     },
     {
+        presetId: 'group-events-page',
+        tag: 'Group State',
+        label: 'List group events page',
+        method: 'GET',
+        pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events/page',
+        requiresAuth: true,
+    },
+    {
         presetId: 'graph-global',
         tag: 'Graph',
         label: 'Read global graph',
@@ -318,6 +428,217 @@ export function defaultRallarServerWorkbenchVariables(input: Partial<RallarServe
         groupId: input.groupId || 'rallar-black-box-room',
         username: input.username || principalId,
     };
+}
+
+export function createRallarServerRestCollectionTemplates(
+    variables: RallarServerWorkbenchVariables,
+): readonly RallarServerRestCollection[] {
+    const baseVariables = {
+        applicationId: variables.applicationId,
+        workspaceId: variables.workspaceId,
+        groupId: variables.groupId,
+        principalId: variables.principalId,
+        clientInstanceId: variables.clientInstanceId,
+        sessionId: variables.sessionId,
+        username: variables.username,
+        missingGroupId: `${variables.groupId}-missing`,
+        otherPrincipalId: `${variables.principalId}-not-self`,
+    };
+
+    return [
+        {
+            collectionId: 'group-membership-evidence',
+            name: 'Group membership evidence',
+            description: 'Create/read/join a group and verify the latest group snapshot.',
+            variables: baseVariables,
+            steps: [
+                {
+                    stepId: 'create-group',
+                    label: 'Create group',
+                    request: {
+                        method: 'POST',
+                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/groups',
+                        attachAuth: true,
+                        responseBodyMode: 'json',
+                        body: {
+                            groupId: '{{groupId}}',
+                            displayName: '{{groupId}}',
+                            description: 'Created by rallar-black-box REST collection',
+                            kind: 'room',
+                            joinMode: 'open',
+                            createdByPrincipalId: '{{principalId}}',
+                        },
+                    },
+                    expect: {
+                        status: [200, 201, 409],
+                    },
+                },
+                {
+                    stepId: 'join-group',
+                    label: 'Join group',
+                    request: {
+                        method: 'PUT',
+                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/groups/{{groupId}}/members/{{principalId}}',
+                        attachAuth: true,
+                        responseBodyMode: 'json',
+                        body: {
+                            status: 'active',
+                        },
+                    },
+                    expect: {
+                        status: [200, 201],
+                    },
+                },
+                {
+                    stepId: 'read-group',
+                    label: 'Read group',
+                    request: {
+                        method: 'GET',
+                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/groups/{{groupId}}',
+                        attachAuth: true,
+                        responseBodyMode: 'json',
+                    },
+                    expect: {
+                        status: 200,
+                        body: [
+                            {
+                                path: '$.group.groupId',
+                                equals: '{{groupId}}',
+                            },
+                        ],
+                    },
+                    extract: [
+                        {
+                            name: 'observedGroupId',
+                            path: '$.group.groupId',
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            collectionId: 'client-presence-lifecycle',
+            name: 'Client presence lifecycle',
+            description: 'Upsert client state, connect presence, and list client/group events.',
+            variables: baseVariables,
+            steps: [
+                {
+                    stepId: 'upsert-principal',
+                    label: 'Upsert principal',
+                    request: {
+                        method: 'PUT',
+                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/clients/{{principalId}}/principal',
+                        attachAuth: true,
+                        responseBodyMode: 'json',
+                        body: {
+                            username: '{{username}}',
+                            displayName: '{{username}}',
+                            status: 'active',
+                        },
+                    },
+                    expect: { status: [200, 201] },
+                },
+                {
+                    stepId: 'connect-client-session',
+                    label: 'Connect client session',
+                    request: {
+                        method: 'PUT',
+                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/clients/{{principalId}}/instances/{{clientInstanceId}}/sessions/{{sessionId}}',
+                        attachAuth: true,
+                        responseBodyMode: 'json',
+                        body: {
+                            presenceState: 'online',
+                            transport: 'rtc',
+                            connectionId: 'rallar-black-box',
+                        },
+                    },
+                    expect: { status: [200, 201] },
+                },
+                {
+                    stepId: 'connect-group-presence',
+                    label: 'Connect group presence',
+                    request: {
+                        method: 'PUT',
+                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/groups/{{groupId}}/sessions/{{sessionId}}',
+                        attachAuth: true,
+                        responseBodyMode: 'json',
+                        body: {
+                            principalId: '{{principalId}}',
+                        },
+                    },
+                    expect: { status: [200, 201] },
+                },
+                {
+                    stepId: 'client-events-page',
+                    label: 'List client events page',
+                    request: {
+                        method: 'GET',
+                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/clients/{{principalId}}/events/page',
+                        query: { limit: 20 },
+                        attachAuth: true,
+                        responseBodyMode: 'json',
+                    },
+                    expect: { status: 200 },
+                },
+            ],
+        },
+        {
+            collectionId: 'negative-auth-state-cases',
+            name: 'Negative auth and state cases',
+            description: 'Check missing auth, forbidden self-service, duplicate group, and missing group behavior.',
+            variables: baseVariables,
+            steps: [
+                {
+                    stepId: 'missing-auth-ws-ticket',
+                    label: 'Missing auth WS ticket',
+                    request: {
+                        method: 'POST',
+                        path: '/api/auth/ws-ticket',
+                        attachAuth: false,
+                        responseBodyMode: 'json',
+                        body: {},
+                    },
+                    expect: { status: 401 },
+                },
+                {
+                    stepId: 'missing-auth-ice',
+                    label: 'Missing auth ICE config',
+                    request: {
+                        method: 'GET',
+                        path: '/api/webrtc/ice',
+                        attachAuth: false,
+                        responseBodyMode: 'json',
+                    },
+                    expect: { status: 401 },
+                },
+                {
+                    stepId: 'forbidden-other-principal-join',
+                    label: 'Forbidden other-principal join',
+                    request: {
+                        method: 'PUT',
+                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/groups/{{groupId}}/members/{{otherPrincipalId}}',
+                        attachAuth: true,
+                        responseBodyMode: 'json',
+                        body: {
+                            status: 'active',
+                        },
+                    },
+                    expect: { status: 403 },
+                },
+                {
+                    stepId: 'missing-group-read',
+                    label: 'Missing group read',
+                    request: {
+                        method: 'GET',
+                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/groups/{{missingGroupId}}',
+                        attachAuth: true,
+                        responseBodyMode: 'json',
+                    },
+                    expect: { status: 404 },
+                },
+            ],
+        },
+    ];
 }
 
 export function applyRallarServerEndpointPreset(
@@ -489,6 +810,232 @@ export function toRallarServerBlackBoxCommand(
     };
 }
 
+export function buildRallarServerCollectionStepRequestInput(input: Readonly<{
+    step: RallarServerRestCollectionStep;
+    apiBaseUrl: string;
+    variables: RallarServerRestCollectionVariables;
+    authSession?: AuthSession;
+    defaultTimeoutMs: number;
+    forbidPlaceholderBaseUrl?: boolean;
+}>): RallarServerRestRequestInput {
+    const request = resolveRallarServerCollectionValue(
+        input.step.request,
+        input.variables,
+    ) as RallarServerRestCollectionRequest;
+
+    return {
+        apiBaseUrl: input.apiBaseUrl,
+        method: request.method,
+        path: request.path,
+        headersText: request.headers ? JSON.stringify(request.headers, null, 2) : '{}',
+        queryText: request.query ? JSON.stringify(request.query, null, 2) : '{}',
+        bodyText: request.body === undefined || request.method === 'GET'
+            ? ''
+            : JSON.stringify(request.body, null, 2),
+        responseBodyMode: request.responseBodyMode ?? 'auto',
+        attachAuth: request.attachAuth ?? false,
+        authSession: input.authSession,
+        timeoutMs: request.timeoutMs ?? input.defaultTimeoutMs,
+        forbidPlaceholderBaseUrl: input.forbidPlaceholderBaseUrl,
+    };
+}
+
+export function assertRallarServerRestResponse(
+    response: RallarServerRestResponse,
+    expectation: RallarServerRestCollectionExpectation | undefined,
+    variables: RallarServerRestCollectionVariables = {},
+): readonly RallarServerRestAssertionResult[] {
+    if (!expectation) {
+        return [
+            {
+                label: 'response ok',
+                ok: response.ok,
+                expected: true,
+                actual: response.ok,
+            },
+        ];
+    }
+
+    const results: RallarServerRestAssertionResult[] = [];
+    if (expectation.ok !== undefined) {
+        results.push({
+            label: 'response ok',
+            ok: response.ok === expectation.ok,
+            expected: expectation.ok,
+            actual: response.ok,
+        });
+    }
+    if (expectation.status !== undefined) {
+        const expectedStatuses = Array.isArray(expectation.status)
+            ? expectation.status
+            : [expectation.status];
+        results.push({
+            label: 'status',
+            ok: expectedStatuses.includes(response.status),
+            expected: expectedStatuses,
+            actual: response.status,
+        });
+    }
+
+    for (const bodyExpectation of expectation.body ?? []) {
+        const actual = readRallarServerJsonPath(response.bodyJson, bodyExpectation.path);
+        results.push(...evaluateCollectionValueExpectation(
+            `body ${bodyExpectation.path}`,
+            actual,
+            bodyExpectation,
+            variables,
+        ));
+    }
+
+    const headers = lowerCaseHeaders(response.headers);
+    for (const headerExpectation of expectation.headers ?? []) {
+        const actual = headers[headerExpectation.name.toLowerCase()];
+        results.push(...evaluateCollectionValueExpectation(
+            `header ${headerExpectation.name}`,
+            actual,
+            headerExpectation,
+            variables,
+        ));
+    }
+
+    return results.length > 0
+        ? results
+        : [{ label: 'response captured', ok: true }];
+}
+
+export function extractRallarServerRestVariables(
+    response: RallarServerRestResponse,
+    extractions: readonly RallarServerRestCollectionExtraction[] | undefined,
+): RallarServerRestCollectionVariables {
+    const extracted: Record<string, unknown> = {};
+    const headers = lowerCaseHeaders(response.headers);
+
+    for (const extraction of extractions ?? []) {
+        const from = extraction.from ?? 'body';
+        let value: unknown;
+        if (from === 'status') {
+            value = response.status;
+        } else if (from === 'headers') {
+            const headerName = extraction.header ?? extraction.path ?? '';
+            value = headers[headerName.toLowerCase()];
+        } else {
+            value = readRallarServerJsonPath(response.bodyJson, extraction.path ?? '$');
+        }
+
+        extracted[extraction.name] = value === undefined ? extraction.fallback : value;
+    }
+
+    return extracted;
+}
+
+export function resolveRallarServerCollectionValue(
+    value: unknown,
+    variables: RallarServerRestCollectionVariables,
+): unknown {
+    if (typeof value === 'string') {
+        return value.replace(
+            /\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}|\$\{([A-Za-z0-9_.-]+)\}/g,
+            (match, moustacheKey: string | undefined, dollarKey: string | undefined) => {
+                const key = moustacheKey ?? dollarKey;
+                const resolved = readRallarServerJsonPath(variables, key);
+                return resolved === undefined || resolved === null ? match : String(resolved);
+            },
+        );
+    }
+    if (Array.isArray(value)) {
+        return value.map(item => resolveRallarServerCollectionValue(item, variables));
+    }
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(
+            Object.entries(value).map(([key, entry]) => [
+                key,
+                resolveRallarServerCollectionValue(entry, variables),
+            ]),
+        );
+    }
+
+    return value;
+}
+
+export function readRallarServerJsonPath(value: unknown, path: string | undefined): unknown {
+    if (!path || path === '$') {
+        return value;
+    }
+
+    const normalized = path.startsWith('$.')
+        ? path.slice(2)
+        : path.startsWith('$')
+            ? path.slice(1).replace(/^\./, '')
+            : path;
+    if (!normalized) {
+        return value;
+    }
+
+    const tokens = [...normalized.matchAll(/([^.[\]]+)|\[(\d+)\]/g)]
+        .map(match => match[1] ?? match[2])
+        .filter(Boolean);
+    let current = value;
+    for (const token of tokens) {
+        if (Array.isArray(current)) {
+            const index = Number(token);
+            current = Number.isInteger(index) ? current[index] : undefined;
+        } else if (current && typeof current === 'object') {
+            current = (current as Record<string, unknown>)[token];
+        } else {
+            return undefined;
+        }
+    }
+
+    return current;
+}
+
+export function toRallarServerRestCollectionRecipe(input: Readonly<{
+    collection: RallarServerRestCollection;
+    apiBaseUrl: string;
+    variables: RallarServerRestCollectionVariables;
+    authSession?: AuthSession;
+    defaultTimeoutMs: number;
+    forbidPlaceholderBaseUrl?: boolean;
+}>): unknown {
+    const variables = {
+        ...(input.collection.variables ?? {}),
+        ...input.variables,
+    };
+
+    return {
+        recipeId: input.collection.collectionId,
+        name: input.collection.name,
+        continueOnFailure: false,
+        commands: input.collection.steps.map((step, index) => {
+            const requestInput = buildRallarServerCollectionStepRequestInput({
+                step,
+                apiBaseUrl: input.apiBaseUrl,
+                variables,
+                authSession: input.authSession,
+                defaultTimeoutMs: input.defaultTimeoutMs,
+                forbidPlaceholderBaseUrl: input.forbidPlaceholderBaseUrl,
+            });
+            const command = toRallarServerBlackBoxCommand(
+                requestInput,
+                `${input.collection.collectionId}-${index + 1}-${step.stepId}`,
+            );
+            return {
+                ...command,
+                label: step.label,
+                metadata: {
+                    restCollection: {
+                        collectionId: input.collection.collectionId,
+                        stepId: step.stepId,
+                        attachAuth: requestInput.attachAuth,
+                        expect: step.expect,
+                        extract: step.extract,
+                    },
+                },
+            };
+        }),
+    };
+}
+
 export function toRallarServerCurl(
     input: RallarServerRestRequestInput,
 ): string {
@@ -595,6 +1142,58 @@ export async function fetchRallarServerOpenApiEndpoints(
     }
 
     return extractRallarServerOpenApiEndpoints(await response.json() as OpenApiDocument);
+}
+
+function evaluateCollectionValueExpectation(
+    label: string,
+    actual: unknown,
+    expectation: Readonly<{
+        equals?: unknown;
+        contains?: string;
+        exists?: boolean;
+    }>,
+    variables: RallarServerRestCollectionVariables,
+): readonly RallarServerRestAssertionResult[] {
+    const results: RallarServerRestAssertionResult[] = [];
+
+    if (expectation.exists !== undefined) {
+        const exists = actual !== undefined && actual !== null;
+        results.push({
+            label: `${label} exists`,
+            ok: exists === expectation.exists,
+            expected: expectation.exists,
+            actual: exists,
+        });
+    }
+    if (Object.prototype.hasOwnProperty.call(expectation, 'equals')) {
+        const expected = resolveRallarServerCollectionValue(expectation.equals, variables);
+        results.push({
+            label: `${label} equals`,
+            ok: stableJson(actual) === stableJson(expected),
+            expected,
+            actual,
+        });
+    }
+    if (expectation.contains !== undefined) {
+        results.push({
+            label: `${label} contains`,
+            ok: stableJson(actual).includes(expectation.contains),
+            expected: expectation.contains,
+            actual,
+        });
+    }
+
+    return results;
+}
+
+function lowerCaseHeaders(headers: Readonly<Record<string, string>>): Readonly<Record<string, string>> {
+    return Object.fromEntries(
+        Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]),
+    );
+}
+
+function stableJson(value: unknown): string {
+    return typeof value === 'string' ? value : JSON.stringify(value);
 }
 
 function normalizeRallarServerBaseUrl(

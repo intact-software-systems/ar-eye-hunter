@@ -190,7 +190,7 @@ export const RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE: RallarBlackBoxTestCommand 
     transport: 'realtime',
     send: {
         data: {
-            topic: 'manual.message',
+            topic: 'room.manual.message',
             text: 'hello from manual command',
         },
     },

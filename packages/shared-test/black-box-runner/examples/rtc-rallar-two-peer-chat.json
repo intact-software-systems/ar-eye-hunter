@@ -1,7 +1,13 @@
 {
   "variables": {
-    "roomId": "room-1",
-    "signalingUrl": "ws://localhost:8080/ws"
+    "roomId": {
+      "env": "RALLAR_BB_GROUP_ID",
+      "default": "room-1"
+    },
+    "signalingUrl": {
+      "env": "RALLAR_SIGNALING_URL",
+      "default": "ws://localhost:8080/ws"
+    }
   },
   "connections": {
     "aliceRtc": {

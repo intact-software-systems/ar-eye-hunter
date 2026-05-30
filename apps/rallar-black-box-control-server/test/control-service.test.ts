@@ -291,6 +291,127 @@ Deno.test('control service stores stats and redacted reports separately', () => 
     assertEquals(JSON.stringify(run.reports).includes('<redacted>'), true);
 });
 
+Deno.test('control service returns bounded snapshots and resets or deletes runs', () => {
+    const service = createRallarBlackBoxControlService();
+
+    service.receiveClientEnvelope(registerEnvelope());
+    service.enqueueCommand({
+        runId: 'run-1',
+        agentId: 'agent-1',
+        commandId: 'configure-1',
+        command: configureCommand(),
+    });
+    service.enqueueCommand({
+        runId: 'run-1',
+        agentId: 'agent-1',
+        commandId: 'configure-2',
+        command: {
+            kind: 'configure',
+            config: {
+                runId: 'run-1',
+                agentId: 'agent-1',
+                actor: 'alice',
+                roomId: 'room-2',
+            },
+        },
+    });
+    service.receiveClientEnvelope({
+        kind: 'heartbeat',
+        protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+        runId: 'run-1',
+        agentId: 'agent-1',
+        atEpochMs: 1_500,
+        status: 'running',
+    });
+    service.receiveClientEnvelope({
+        kind: 'diagnostic',
+        protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+        runId: 'run-1',
+        agentId: 'agent-1',
+        atEpochMs: 1_600,
+        eventId: 'event-1',
+        payload: {
+            topic: 'first',
+        },
+    });
+    service.receiveClientEnvelope({
+        kind: 'diagnostic',
+        protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+        runId: 'run-1',
+        agentId: 'agent-1',
+        atEpochMs: 1_700,
+        eventId: 'event-2',
+        payload: {
+            topic: 'second',
+        },
+    });
+
+    const bounded = service.snapshotRun('run-1', {
+        commands: 1,
+        events: 1,
+        heartbeats: 0,
+    });
+    assert(bounded);
+    assertEquals(bounded.commands.map(command => command.envelope.commandId), ['configure-2']);
+    assertEquals(bounded.events.map(event => event.eventId), ['event-2']);
+    assertEquals(bounded.heartbeats.length, 0);
+
+    const reset = service.resetRun('run-1');
+    assert(reset);
+    assertEquals(reset.agents.length, 1);
+    assertEquals(reset.commands.length, 0);
+    assertEquals(reset.events.length, 0);
+    assertEquals(reset.heartbeats.length, 0);
+    assertEquals(reset.agents[0].receivedEventCount, 0);
+
+    assertEquals(service.deleteRun('run-1'), true);
+    assertEquals(service.snapshotRun('run-1'), undefined);
+    assertEquals(service.deleteRun('run-1'), false);
+});
+
+Deno.test('control service restores persisted snapshots as disconnected runs', () => {
+    const service = createRallarBlackBoxControlService();
+    service.receiveClientEnvelope(registerEnvelope());
+    service.enqueueCommand({
+        runId: 'run-1',
+        agentId: 'agent-1',
+        commandId: 'configure-1',
+        command: configureCommand(),
+    });
+    const snapshot = service.snapshot();
+
+    const restored = createRallarBlackBoxControlService();
+    restored.restoreSnapshot(snapshot);
+    const run = restored.snapshotRun('run-1');
+
+    assert(run);
+    assertEquals(run.agents[0].agentId, 'agent-1');
+    assertEquals(run.agents[0].connected, false);
+    assertEquals(run.commands[0].envelope.commandId, 'configure-1');
+});
+
+Deno.test('control service prunes old runs by update time', () => {
+    let now = 1_000;
+    const service = createRallarBlackBoxControlService({
+        now: () => now++,
+    });
+    service.enqueueCommand({
+        runId: 'run-old',
+        agentId: 'agent-1',
+        commandId: 'old-1',
+        command: configureCommand(),
+    });
+    service.enqueueCommand({
+        runId: 'run-new',
+        agentId: 'agent-1',
+        commandId: 'new-1',
+        command: configureCommand(),
+    });
+
+    assertEquals(service.pruneRuns(1), ['run-old']);
+    assertEquals(service.snapshot().runs.map(run => run.runId), ['run-new']);
+});
+
 Deno.test('control protocol parses client envelopes before server ingestion', () => {
     const parsed = parseControlClientMessage(JSON.stringify(registerEnvelope(['configure-1'])));
 

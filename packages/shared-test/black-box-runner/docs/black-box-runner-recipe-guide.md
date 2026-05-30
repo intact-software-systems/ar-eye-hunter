@@ -1,0 +1,671 @@
+# Black-box Runner Recipe Guide
+
+This guide defines the recipe contract for
+`packages/shared-test/black-box-runner`.
+
+The runner is a JSON recipe executor for observable network behavior. A recipe
+should describe HTTP requests, WebSocket actions, RTC provider actions, and
+assertions against the resulting responses or messages. The runner should not
+become a second implementation of the Rallar browser facade, Rallar Server, or
+Rallar room/member lifecycle.
+
+Companion package, server, browser, and app-level coverage is documented in
+`packages/shared-test/rallar-bb-test/docs/companion-coverage.md`.
+
+## Preferred Recipe Shape
+
+Use the top-level `steps` shape for new recipes:
+
+```json
+{
+  "variables": {
+    "apiBaseUrl": "http://localhost:8080"
+  },
+  "defaults": {
+    "timeoutMs": 5000
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{apiBaseUrl}"
+    }
+  },
+  "steps": [
+    {
+      "name": "health",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/health"
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}
+```
+
+`variables` are resolved before execution. Values produced by earlier steps can
+be referenced through `outputs`, `results`, `resultsList`, or `resultsByName`.
+An exact placeholder such as `{outputs.token}` preserves the resolved value type.
+An inline placeholder such as `Bearer {outputs.token}` is converted to text.
+
+`defaults` and `connections` provide request defaults. Step-level request fields
+override connection fields, and connection fields override defaults.
+
+Environment-backed variables are supported:
+
+```json
+{
+  "variables": {
+    "apiToken": {
+      "env": "RALLAR_API_TOKEN",
+      "required": true,
+      "secret": true
+    },
+    "apiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://localhost:8080"
+    }
+  }
+}
+```
+
+Secret environment values are available to placeholders during execution, but
+matching report strings are redacted as `<redacted:variableName>`.
+
+Top-level `secrets` or `secretVariables` can also mark ordinary variables as
+redacted:
+
+```json
+{
+  "variables": {
+    "apiToken": "dev-token"
+  },
+  "secretVariables": ["apiToken"]
+}
+```
+
+## Step Families
+
+### HTTP
+
+Use HTTP steps for REST API calls and ordinary fetch-compatible network checks.
+
+Common fields:
+
+- `type`: `http` or `http.request`
+- `connection`: optional connection name from `connections`
+- `request.method`: HTTP method, defaulting to `GET`
+- `request.path` or `request.url`: endpoint path or absolute URL
+- `request.headers`: request headers
+- `request.body` or `request.form`: JSON body or form body
+- `request.timeoutMs`: request timeout
+- `request.resilience`: retry configuration
+- `expect.status`: expected HTTP status
+- `expect.statusCode`: expected HTTP status or accepted status array
+- `expect.statusCodes`: accepted status array
+- `expect.body`: expected response JSON
+- `expect.bodyAnyOf`: accepted response body shapes
+- `expect.comparison`: comparison mode
+- `output`: optional output name for the step result
+- `outputPath`: optional path inside the result to store under `output`
+- `outputs`: optional map of output names to result paths
+
+HTTP examples should treat Rallar Server as an external service. For example,
+create or join a group by calling the public REST API, then assert the HTTP
+response and save any needed IDs or tokens for later steps.
+
+Accepted status arrays are useful for idempotent operations:
+
+```json
+{
+  "name": "createGroup",
+  "type": "http",
+  "connection": "api",
+  "request": {
+    "method": "POST",
+    "path": "/groups",
+    "body": {
+      "name": "bb-group"
+    },
+    "outputs": {
+      "groupId": "body.group.id",
+      "createStatus": "statusCode"
+    }
+  },
+  "expect": {
+    "statusCode": [201, 409],
+    "bodyAnyOf": [
+      {
+        "group": {
+          "id": "string"
+        }
+      },
+      {
+        "code": "already-exists"
+      }
+    ]
+  }
+}
+```
+
+### WS
+
+Use WS steps for raw WebSocket lifecycle and message assertions.
+
+Supported actions:
+
+- `ws.open`
+- `ws.send`
+- `ws.wait`
+- `ws.close`
+
+Common fields:
+
+- `connection`: logical socket name
+- `request.url` or `request.path`: WebSocket URL
+- `request.send`, `request.message`, or `request.body`: outbound payload
+- `expect.message`: one expected inbound message
+- `expect.messages`: multiple expected inbound messages
+- `expect.close`: expected close event
+- `expect.withinMs`: wait timeout
+- `expect.consume`: remove a matched message or close event from the store
+- `expect.ordered`: require expected messages in order
+- `output`, `outputPath`, `outputs`: extract values from the WS step result
+
+WS steps are transport-level. Do not add Rallar-specific commands such as
+`rallar.messages.ws.send` to the runner core. Express that behavior as a normal
+WebSocket payload and assertion.
+
+WS `send` results preserve observable send metadata in `actual`:
+
+- `sendResult.status`
+- `sendResult.readyState` and `sendResult.readyStateName`
+- `sendResult.bufferedAmount`
+- `sendResult.wirePayload`
+- `sendStartedAtEpochMs`, `sendEndedAtEpochMs`, and `sendLatencyMs`
+
+These fields can be extracted with `outputPath` or `outputs`, then compared with
+later `ASSERT` steps.
+
+### RTC
+
+Use RTC steps for provider-backed peer communication. The runner owns the
+generic lifecycle; providers own the actual implementation.
+
+Supported actions:
+
+- `rtc.connect`
+- `rtc.send`
+- `rtc.wait`
+- `rtc.close`
+
+Common fields:
+
+- `connection`: logical RTC connection name
+- `provider`: RTC provider name, defaulting to `rallar`
+- `actor`, `peerId`, `roomId`, `groupId`, `overlayId`: generic connection data
+- `request.send`: provider-specific send payload
+- `expect.connection`: target connection for message expectations
+- `expect.message`: expected message or diagnostic event
+- `expect.messages`: multiple expected messages or diagnostic events
+- `expect.diagnostic`: one expected provider diagnostic event
+- `expect.diagnostics`: multiple expected provider diagnostic events
+- `expect.health`: expected provider health/diagnostic snapshot
+- `expect.close`: expected close event
+- `expect.withinMs`: wait timeout
+- `output`, `outputPath`, `outputs`: extract values from the RTC step result
+
+Provider-specific fields are allowed inside provider-owned objects such as
+`rallar`, `browser`, `control`, or `signaling`. The runner should pass those
+fields through and report provider results; it should not learn Rallar facade
+methods as first-class recipe commands.
+
+For `rallar-browser` and `rallar-remote-browser`, scoped Rallar fields can be
+placed on the connection, under `rallar`, or on a send request:
+`applicationId`, `workspaceId`, `scope`, `roomRef`, and
+`minSnapshotVersion`. The providers forward these to the browser Rallar facade
+and expose the resolved values in RTC diagnostics.
+
+RTC result `actual` fields include timing diagnostics where the provider can
+measure them: `connectLatencyMs`, `sendLatencyMs`, and
+`firstPayloadLatencyMs`. `expect.diagnostic` matches entries in
+`rtcDiagnostics[connection]`, while `expect.health` polls the current provider
+diagnostics snapshot. This is useful for sensitive browser RTC setup where the
+test needs to distinguish auth, page load, room join, data-channel readiness,
+and missing-signal timeouts.
+
+RTC `send` results preserve provider-owned `sendResult` values. If a provider
+throws after receiving an externally meaningful send response, it can attach
+`sendResult` or `response` to the error; the runner copies that value into the
+failure report. This is how recipes can distinguish no-peer, stale-state,
+closed, queued, dropped, or replaced outcomes when the provider exposes them.
+In `--dry-run` mode, RTC providers are not invoked. For `send` and `wait` steps
+with message expectations, the report includes synthetic `sendResult` and
+`matchedMessage` fields marked with `dryRun: true` so recipes can still validate
+output extraction and downstream `ASSERT` wiring.
+
+Delivery semantics should stay recipe-level:
+
+- Use `rallar-memory` for deterministic direct and room broadcast examples.
+- Use `rallar-browser` with `transport: "messages.rtc"` for real Rallar room
+  multicast delivery.
+- Use normal WS messages with AL `targets` for Rallar Server WS unicast,
+  multicast, or broadcast behavior.
+- Compare transport parity by extracting WS and RTC payload outputs and using an
+  `ASSERT` step.
+
+### ASSERT
+
+Use ASSERT steps for generic comparisons between expected and actual values.
+
+Common fields:
+
+- `type`: `assert`
+- `request.actual` or `actual`: actual value
+- `expect.expected`, `expect.expect`, or `expect.body`: expected value
+- `expect.anyOf`: accepted expected values
+- `expect.comparison`: comparison mode
+- `expect.ignoreJsonKeys`: keys to ignore
+- `expect.ignoreJsonPaths`: paths to ignore
+
+ASSERT steps are useful after a previous step stored a result in `outputs` or
+when a recipe needs to compare two observed payloads.
+
+### SET
+
+Use SET steps to store a value under a reusable output name.
+
+Common fields:
+
+- `type`: `set`
+- `output`: output name
+- `value` or `request.value`: value to store
+
+Prefer SET for simple constants or derived values that make later steps easier
+to read. More complex extraction and transformation support is tracked as later
+work in the shared-test gap analysis.
+
+## Output Extraction
+
+Every successful step can store result values for later placeholders.
+
+Use `output` without `outputPath` to store the whole `actual` value:
+
+```json
+{
+  "name": "login",
+  "type": "http",
+  "request": {
+    "method": "POST",
+    "path": "/login",
+    "output": "loginResult"
+  }
+}
+```
+
+Use `outputPath` to store one value under `output`:
+
+```json
+{
+  "name": "login",
+  "type": "http",
+  "request": {
+    "method": "POST",
+    "path": "/login",
+    "output": "accessToken",
+    "outputPath": "body.access_token"
+  }
+}
+```
+
+Use `outputs` to store multiple values:
+
+```json
+{
+  "request": {
+    "outputs": {
+      "accessToken": {
+        "path": "body.access_token",
+        "secret": true
+      },
+      "userId": "body.user.id",
+      "status": "statusCode"
+    }
+  }
+}
+```
+
+Output paths are resolved against the full step result first, then the step
+`actual` value, then `actual.body`. These paths are equivalent for a typical
+HTTP body value: `actual.body.access_token` and `body.access_token`.
+
+Array indexes can be written with dots or brackets:
+
+```text
+matchedMessages.0.matchedMessage.data.id
+matchedMessages[0].matchedMessage.data.id
+```
+
+If output extraction is configured and the path is missing, the step becomes a
+failure. This prevents later steps from silently using missing IDs or tokens.
+
+## Retry And Wait Controls
+
+HTTP retry configuration lives under `request.resilience.retry` or
+`request.retry`:
+
+```json
+{
+  "request": {
+    "resilience": {
+      "retry": {
+        "maxAttempts": 3,
+        "backoffMs": 100,
+        "backoffMultiplier": 2,
+        "onStatus": [429, 503],
+        "onException": true
+      }
+    }
+  }
+}
+```
+
+WS and RTC waits use `expect.withinMs`. Message waits can also use
+`expect.consume` and `expect.ordered`.
+
+There is no separate poll step yet. Model polling with HTTP retry for transient
+status codes or with explicit repeated steps until a recipe needs a stronger
+generic polling primitive.
+
+## Scale Runs
+
+Use scale runs when the same recipe should execute more than once and produce
+one aggregate report:
+
+```bash
+deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
+  -c packages/shared-test/black-box-runner/examples/rtc-rallar-memory-delivery-semantics.json \
+  --iterations=3 \
+  --artifact-dir=.artifacts/shared-test/rallar-memory-scale
+```
+
+The same values can live in the recipe:
+
+```json
+{
+  "execution": {
+    "scale": {
+      "iterations": 3,
+      "delayMs": 100,
+      "stopOnFailure": false
+    }
+  }
+}
+```
+
+Supported controls are `iterations`/`runs`, `maxRuns`, `durationMs` or
+`maxDurationMs`, `delayMs`, and `stopOnFailure`. Duration-only runs are capped
+at 1000 iterations unless `maxRuns` is set. A repeated run keeps each recipe
+execution independent; it does not keep RTC connections open between runs.
+
+The aggregate report keeps flattened `resultsList` entries with `runIndex` and
+`stepResultKey`, `outputsByRun`, per-run summaries, and `metrics` for transport
+counts, action counts, status counts, run/step/connect/send/first-payload
+latency, failure counts, reconnect counts, and cleanup counts.
+
+## Same-Connection Soak Runs
+
+Use soak mode when the same WS or RTC connections should stay open across
+repeated traffic. This is different from scale mode: setup steps run once,
+loop steps repeat inside the same scenario context, and cleanup steps run once
+after the loop.
+
+```json
+{
+  "execution": {
+    "soak": {
+      "iterations": 5,
+      "delayMs": 5,
+      "maxArtifactEvents": 200,
+      "setupSteps": ["connectAlice", "connectBob"],
+      "loopSteps": ["aliceSendsToBob", "bobSendsToAlice"],
+      "cleanupSteps": ["closeAlice", "closeBob"]
+    }
+  }
+}
+```
+
+`setupSteps`, `loopSteps`, and `cleanupSteps` can contain step names from the
+top-level `steps` array or inline step objects. The runner expands the recipe
+before execution, annotates loop results with `repeatIndex`, `soakPhase`,
+`soakIteration`, and `soakLoopIndex`, and executes everything in one context so
+connection state is reused.
+
+Supported controls are `iterations`/`runs`, `messageCount`/`messages`,
+`durationMs` or `maxDurationMs`, `delayMs`, `stopOnFailure`, and
+`maxArtifactEvents`. `iterations` repeats the complete loop. `messageCount`
+caps loop-step executions, so a two-step loop with `messageCount: 5` runs two
+full loops plus the first step from the third loop. Duration-based soak
+currently derives a bounded loop count when paired with a delay; use explicit
+`iterations` or `messageCount` when exact loop counts matter.
+
+Soak reports include `summary.soak`, `metrics.soak`, and `artifactLimits`.
+Metrics include observed iterations, transport/action/status counts, send and
+wait success counts, connect/send/first-payload latency percentiles, reconnect
+observations, close events, and cleanup status. Artifact event streams honor
+`maxArtifactEvents` and append an `artifact-truncated` sentinel when events were
+omitted.
+
+Run the deterministic memory soak locally:
+
+```bash
+npm run test:shared-black-box:memory:soak
+npm run test:shared-black-box:matrix:soak
+```
+
+Run the gated live browser/remote-browser soak profile only when the Rallar
+API, test credentials, Playwright, and optional control server are provisioned:
+
+```bash
+npm run test:shared-black-box:matrix:live:soak
+```
+
+## Seeded Traffic Plans
+
+Use `execution.trafficPlan` when a recipe should generate reproducible traffic
+from weighted operations before execution. The runner expands the plan into a
+concrete `steps` array first, then runs ordinary HTTP, WS, RTC, ASSERT, and SET
+steps. Generated recipes still use the normal provider boundary.
+
+```json
+{
+  "execution": {
+    "trafficPlan": {
+      "seed": 1337,
+      "count": 6,
+      "setupSteps": ["connectAlice", "connectBob"],
+      "cleanupSteps": ["closeAlice", "closeBob"],
+      "operations": [
+        {
+          "name": "alice-to-bob",
+          "weight": 2,
+          "steps": ["aliceTrafficToBob"]
+        },
+        {
+          "name": "bob-to-alice",
+          "weight": 1,
+          "steps": ["bobTrafficToAlice"]
+        }
+      ]
+    }
+  }
+}
+```
+
+Operation `steps`, `setupSteps`, and `cleanupSteps` can reference top-level
+step names or contain inline step objects. Step templates can use these
+placeholders: `{traffic.seed}`, `{traffic.sequence}`,
+`{traffic.iteration}`, `{traffic.operation}`, `{traffic.operationIndex}`,
+`{traffic.random}`, and `{traffic.randomInt}`. Exact placeholders preserve
+their generated type. Inline placeholders are rendered as text.
+
+Generated operation steps are expanded before normal scenario variable
+resolution. Keep generated step templates limited to `{traffic.*}`
+placeholders, or rely on connection-level defaults for values such as Rallar
+`typeId`, `topicId`, `contextId`, and `roomRef`.
+
+Artifact bundles for traffic plans include `expanded-plan.json`. That file
+contains the seed, generator summary, operation decisions, concrete expanded
+steps, and a replay recipe. To replay the exact generated plan, point another
+recipe at the artifact:
+
+```json
+{
+  "execution": {
+    "trafficPlan": {
+      "replayFrom": ".artifacts/shared-test/rallar-memory-traffic/expanded-plan.json"
+    }
+  },
+  "steps": []
+}
+```
+
+Run deterministic traffic locally:
+
+```bash
+npm run test:shared-black-box:memory:traffic
+npm run test:shared-black-box:matrix:traffic
+```
+
+Run the gated live browser/remote-browser traffic profile when real Rallar RTC
+delivery should be checked:
+
+```bash
+npm run test:shared-black-box:matrix:live:traffic
+```
+
+## Parallel Step Groups
+
+Use `type: "parallel"` for bounded concurrent actors. A parallel step contains
+groups, each with sequential steps. Groups run concurrently up to
+`maxConcurrency`; each child step remains a normal HTTP, WS, RTC, ASSERT, or SET
+step.
+
+```json
+{
+  "name": "parallelRtcTraffic",
+  "type": "parallel",
+  "maxConcurrency": 2,
+  "groups": [
+    {
+      "name": "direct",
+      "steps": [
+        {
+          "name": "bobSendsDirectToAlice",
+          "type": "rtc.send",
+          "connection": "bobRtc"
+        }
+      ]
+    }
+  ]
+}
+```
+
+The parent parallel result has transport `PARALLEL` and reports group count,
+max concurrency, child success/failure counts, per-group result keys, duration,
+and timeout status. Child results are sorted deterministically by interaction
+execution number in `resultsList` and artifacts.
+
+`timeoutMs` marks the parent parallel step as failed when the completed group
+duration exceeds the configured timeout. Branches are not forcibly interrupted;
+the report keeps partial failures and child result keys visible. Use unique
+output names inside parallel groups unless overwriting an output is the behavior
+being tested.
+
+Run deterministic parallel RTC coverage locally:
+
+```bash
+npm run test:shared-black-box:memory:parallel
+npm run test:shared-black-box:matrix:parallel
+```
+
+Run the gated live browser/remote-browser parallel profile to check concurrent
+browser actor behavior:
+
+```bash
+npm run test:shared-black-box:matrix:live:parallel
+```
+
+## Artifacts
+
+Use `--artifact-dir`, `--artifacts`, or `--record-dir` to write a redacted
+artifact bundle:
+
+```bash
+deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
+  -c packages/shared-test/black-box-runner/examples/rtc-rallar-memory-delivery-semantics.json \
+  --artifact-dir=.artifacts/shared-test/rallar-memory-delivery
+```
+
+The bundle contains `report.json`, `events.jsonl`, `failures.json`, and
+`metadata.json`. See `black-box-runner-artifacts.md` and
+`black-box-runner-recipe-matrix.md` for the artifact contract, matrix profiles,
+live gates, and CI command shape.
+
+## Provider Boundary
+
+The RTC provider name matters:
+
+| Provider | Boundary |
+| --- | --- |
+| `rallar-stub` | Fake provider for parser and runner smoke tests. |
+| `rallar-memory` | Deterministic in-memory provider for runner semantics such as direct, broadcast, close, and reconnect behavior. |
+| `rallar` | WebSocket signaling-only provider. A successful connect means signaling transport opened, not a real WebRTC data path. |
+| `rallar-browser` | Browser-backed provider that uses Playwright and the real browser Rallar facade for Rallar auth, room setup, and RTC payload delivery. |
+| `rallar-remote-browser` | Control-server-backed browser provider for visible or remote browser execution through `rallar-bb-test`. |
+
+Use `rallar-memory` when testing runner behavior. Use `rallar-browser` when the
+goal is real Rallar RTC behavior in a browser. Use `rallar` only when the test
+is specifically about signaling WebSocket behavior.
+
+Use `rallar-remote-browser` when the same recipe should run through a control
+server and visible/remote browser agent. The recipe remains generic: HTTP
+steps become `http.request` control commands, WS steps become `ws.open`,
+`ws.send`, and `ws.close` control commands, and RTC steps become `rtc.connect`,
+`rtc.send`, `wait`, and `close` provider operations. Remote events are mapped
+back into the same report stores used by local providers.
+
+Provider adapters may call Rallar facade methods internally. Recipes should
+still describe observable network behavior: HTTP calls, WS messages, RTC
+connect/send/wait/close, and assertions.
+
+## Authoring Checklist
+
+- Start with the external behavior being tested.
+- Use HTTP for REST APIs, WS for socket protocols, and RTC for provider-backed
+  peer delivery.
+- Put provider-specific configuration under provider-specific objects.
+- Assert observable responses, messages, close events, diagnostics, and failure
+  modes.
+- Keep credentials and secrets out of committed examples.
+- Prefer explicit connection names for actors such as `aliceRtc`, `bobRtc`, and
+  `serverWs`.
+- Use `--dry-run` before a live browser or network run when changing recipes.
+
+## Related Docs
+
+- `black-box-runner-artifacts.md`
+- `black-box-runner-artifact-reader.md`
+- `black-box-runner-command-center-handoff.md`
+- `black-box-runner-recipe-matrix.md`
+- `../../docs/shared-test-verification.md`
+
+- [Examples index](../examples/README.md)
+- [RTC provider guide](black-box-rtc-provider.md)
+- [RTC test catalog](black-box-rtc-test-catalog.md)
+- [Rallar browser RTC runbook](rallar-browser-rtc-runbook.md)
+- [Shared-test gap analysis](../../rallar-shared-test-gap-analysis.md)

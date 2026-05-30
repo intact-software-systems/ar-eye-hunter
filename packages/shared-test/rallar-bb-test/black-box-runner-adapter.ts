@@ -25,6 +25,77 @@ function firstDefined(...values: any[]): any {
     return values.find(value => value !== undefined);
 }
 
+function toRallarScope(request: any): Record<string, unknown> | undefined {
+    const rallar = asRecord(request.rallar);
+    const scope = asRecord(firstDefined(request.scope, rallar.scope));
+    const roomRef = asRecord(firstDefined(request.roomRef, rallar.roomRef));
+    const applicationId = firstDefined(
+        request.applicationId,
+        rallar.applicationId,
+        scope.applicationId,
+        roomRef.applicationId,
+    );
+    if (applicationId === undefined) {
+        return undefined;
+    }
+
+    const workspaceId = firstDefined(
+        request.workspaceId,
+        rallar.workspaceId,
+        scope.workspaceId,
+        roomRef.workspaceId,
+    );
+
+    return {
+        applicationId: String(applicationId),
+        ...(workspaceId !== undefined ? { workspaceId: String(workspaceId) } : {}),
+    };
+}
+
+function toRallarRoomRef(request: any): Record<string, unknown> | undefined {
+    const rallar = asRecord(request.rallar);
+    const explicitRoomRef = asRecord(firstDefined(request.roomRef, rallar.roomRef));
+    if (explicitRoomRef.applicationId && explicitRoomRef.groupId) {
+        return {
+            applicationId: String(explicitRoomRef.applicationId),
+            ...(explicitRoomRef.workspaceId !== undefined
+                ? { workspaceId: String(explicitRoomRef.workspaceId) }
+                : {}),
+            groupId: String(explicitRoomRef.groupId),
+        };
+    }
+
+    const roomId = firstDefined(request.roomId, rallar.roomId);
+    const scope = toRallarScope(request);
+    if (!roomId || !scope?.applicationId) {
+        return undefined;
+    }
+
+    return {
+        applicationId: scope.applicationId,
+        ...(scope.workspaceId !== undefined ? { workspaceId: scope.workspaceId } : {}),
+        groupId: String(roomId),
+    };
+}
+
+function toRallarScopeFields(request: any): Record<string, unknown> {
+    const rallar = asRecord(request.rallar);
+    const scope = toRallarScope(request);
+    const roomRef = toRallarRoomRef(request);
+    const minSnapshotVersion = firstDefined(
+        request.minSnapshotVersion,
+        rallar.minSnapshotVersion,
+    );
+
+    return {
+        ...(scope?.applicationId ? { applicationId: scope.applicationId } : {}),
+        ...(scope?.workspaceId !== undefined ? { workspaceId: scope.workspaceId } : {}),
+        ...(scope ? { scope } : {}),
+        ...(roomRef ? { roomRef } : {}),
+        ...(minSnapshotVersion !== undefined ? { minSnapshotVersion } : {}),
+    };
+}
+
 function toConnectionName(request: any): string {
     return String(firstDefined(
         request.connection,
@@ -104,6 +175,7 @@ function toConnectCommand(
     commandId: string,
 ): RallarBlackBoxTestCommand {
     const rallar = asRecord(request.rallar);
+    const scopeFields = toRallarScopeFields(request);
     const apiBaseUrl = firstDefined(
         rallar.apiBaseUrl,
         request.apiBaseUrl,
@@ -117,11 +189,13 @@ function toConnectCommand(
         connection,
         actor: request.actor,
         roomId: request.roomId,
+        ...scopeFields,
         transport,
         rallar: {
             ...rallar,
             ...(apiBaseUrl ? { apiBaseUrl } : {}),
             ...(transport ? { transport } : {}),
+            ...scopeFields,
         },
         metadata: {
             ...(request.parity ? { parity: request.parity } : {}),
@@ -138,12 +212,27 @@ function toSendCommand(
     interaction: any,
 ): RallarBlackBoxTestCommand {
     const rallar = asRecord(request.rallar);
+    const scopeFields = toRallarScopeFields(request);
+    const send = message && typeof message === 'object' && !Array.isArray(message)
+        ? {
+            ...message,
+            ...Object.fromEntries(
+                Object.entries(scopeFields).filter(([key]) => !(key in message)),
+            ),
+        }
+        : Object.keys(scopeFields).length > 0
+            ? {
+                data: message,
+                ...scopeFields,
+            }
+            : message;
     return {
         kind: 'rtc.send',
         commandId,
         connection,
-        send: message,
+        send,
         expect: interaction?.response,
+        ...scopeFields,
         transport: toRtcTransport(firstDefined(rallar.transport, request.transport)),
         metadata: {
             ...(request.parity ? { parity: request.parity } : {}),

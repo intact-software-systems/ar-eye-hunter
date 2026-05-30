@@ -7,7 +7,15 @@ The black-box RTC foundation is in a good state.
 The current supported RTC test categories are cataloged in:
 
 ```text
-packages/shared-test/black-box-runner/black-box-rtc-test-catalog.md
+packages/shared-test/black-box-runner/docs/black-box-rtc-test-catalog.md
+```
+
+Recipe authoring and example classification are documented in:
+
+```text
+packages/shared-test/black-box-runner/docs/black-box-runner-recipe-guide.md
+packages/shared-test/black-box-runner/examples/README.md
+packages/shared-test/rallar-shared-test-gap-analysis.md
 ```
 
 Latest observed test result:
@@ -118,6 +126,10 @@ Config-level dry-run is also supported:
 ```
 
 RTC dry-run does not invoke RTC providers and does not mutate RTC runtime state.
+For RTC `send` and `wait` steps with message expectations, dry-run reports also
+include synthetic `sendResult` and `matchedMessage` fields marked with
+`dryRun: true`. That lets recipes validate output extraction and downstream
+`ASSERT` wiring without claiming real network delivery occurred.
 
 ### Generic RTC Report Diagnostics
 
@@ -404,18 +416,108 @@ Iteration 9 adds a deployed-service validation harness:
 - `--record-dir` writes redacted artifacts for CI/debug capture
 - shared-test exposes `npm --workspace @ar-eye-hunter/shared-test run rtc:browser:validate`
 
-Iteration 10 is documented as future work only:
+Scoped delivery pass-through is now supported:
 
-- long-running soak/monitor mode for browser-backed RTC is not implemented yet
-- the intended shape is a runner that keeps RTC connections open for hours and sends periodic messages
-- planned outputs are rolling metrics, redacted JSONL event logs, and a final summary report
+- `rallar-browser` and `rallar-remote-browser` accept `applicationId`,
+  `workspaceId`, `scope`, `roomRef`, and `minSnapshotVersion`
+- browser runtime defaults and room joins use the resolved scoped room
+- realtime sends receive `roomRef`
+- `messages.rtc` sends receive `roomRef` and `minSnapshotVersion`
+- RTC step results preserve provider diagnostics when available
 
-Iteration 11 is documented as future work only:
+Generic RTC readiness diagnostics are now supported:
 
-- seeded random step plans and bounded parallel step groups are not implemented yet
-- the intended shape is deterministic setup, randomized traffic, deterministic cleanup
-- the design must record both seed and expanded executable plan for replay
+- provider diagnostic events are stored in `rtcDiagnostics[connection]`
+- `rtc.wait` and `rtc.send` can assert `expect.diagnostic` and
+  `expect.diagnostics`
+- `rtc.wait` and `rtc.send` can poll provider snapshots with `expect.health`
+- connect results include `connectLatencyMs`
+- send results include `sendLatencyMs`
+- send-and-wait results include `firstPayloadLatencyMs` when a matched payload
+  has a receive timestamp
+
+Repeated scale runs are now supported for deterministic timing and traffic
+smoke tests:
+
+- `--iterations` / `--runs` repeats the same recipe and returns one aggregate
+  report
+- `--duration-ms` / `--max-duration-ms` can bound repeated runs by elapsed time
+- `--delay-ms` adds delay between independent recipe runs
+- `execution.scale` can configure the same controls inside a recipe
+- aggregate reports include `runs`, flattened results with `runIndex`,
+  `outputsByRun`, and metrics for latency, failures, reconnects, and cleanup
+- `npm run test:shared-black-box:memory:scale` runs the deterministic
+  `rallar-memory` delivery recipe three times and writes artifacts
+
+Same-connection soak, seeded traffic, and bounded parallel groups are now
+implemented in the generic scenario runner:
+
+- `execution.soak` keeps one connection set open across repeated loop traffic
+- `execution.trafficPlan` records seed, decisions, and `expanded-plan.json` for replay
+- `type: "parallel"` runs bounded groups with deterministic report ordering
+- deterministic `rallar-memory` examples cover traffic, direct/broadcast parallel delivery, close, and reconnect
+- gated live `rallar-browser` and `rallar-remote-browser` examples cover
+  `messages.rtc` same-connection soak, seeded traffic, and bounded parallel
+  sends
 - not all events are safe to randomize; connection setup, credentials, room prerequisites, and cleanup should usually remain deterministic
+
+## Shared-test Delivery Semantics Update
+
+The shared-test improvement pass now has delivery/NACK recipes that keep the
+runner provider-neutral:
+
+- `examples/rtc-rallar-memory-delivery-semantics.json` asserts direct and room
+  broadcast delivery with deterministic in-memory peers.
+- `examples/rtc-rallar-memory-routing-failures.json` intentionally records
+  no-recipient, closed-target, and send-after-close failures with `failFast:
+  false`.
+- `examples/rtc-rallar-browser-messages-rtc-multicast.json` exercises real
+  browser-backed Rallar `messages.rtc` room multicast.
+- `examples/rallar-server-ws-rtc-payload-parity.json` extracts the same payload
+  from authenticated WS and browser RTC sends, then compares them with `ASSERT`.
+- `examples/rtc-rallar-browser-not-yet-in-sync.json` remains the observable
+  stale-state/NACK recipe.
+
+WS sends now report `actual.sendResult` with ready state, buffered amount, wire
+payload, and send timing. RTC sends preserve provider `sendResult` values in
+success results and failed provider send responses when the provider attaches
+them to the thrown error.
+
+Remote browser bridge alignment is now improved:
+
+- `rallar-remote-browser` maps remote RTC messages to the same event-shaped
+  payload style as `rallar-browser`
+- remote RTC diagnostics can be asserted with `expect.diagnostic` and
+  `expect.diagnostics`
+- remote RTC health can be polled with `expect.health` through control-server
+  `health` commands
+- remote RTC connect/send results include timing fields and send results
+- remote HTTP results preserve command metadata in `actual.remote`,
+  `actual.commandId`, and `actual.result`
+- `examples/rtc-rallar-browser-provider-mode-parity.json` can run with either
+  `RALLAR_BB_RTC_PROVIDER=rallar-browser` or
+  `RALLAR_BB_RTC_PROVIDER=rallar-remote-browser`
+
+Generic black-box artifacts are now supported by the scenario CLI:
+
+- `--artifact-dir`, `--artifacts`, and `--record-dir` write redacted artifacts
+- `report.json` contains the full redacted report
+- `events.jsonl` contains step, WS, RTC, diagnostic, and close events
+- `failures.json` contains copyable failure bundles
+- `metadata.json` records run mode, config path, summary, and redacted command
+- root package scripts expose dry-run, deterministic memory, browser dry-run,
+  browser live, deterministic scale, and remote dry-run commands
+
+Companion coverage outside the runner is now documented and guarded:
+
+- `rallar-bb-test/companion-coverage.ts` contains the executable coverage
+  manifest and forbidden facade-method command names
+- `rallar-bb-test/docs/companion-coverage.md` maps browser facade, server
+  facade, app-specific, bridge, and runner responsibilities
+- `rallar-companion-coverage.test.ts` asserts that direct facade surfaces stay
+  outside the black-box runner layer
+- `npm run test:shared-black-box:companion` runs the manifest, bridge,
+  provider-parity, shared-web facade, and shared-server facade companion suites
 
 ## Important Naming Distinction
 
@@ -437,8 +539,7 @@ Still incomplete:
 
 - browser/Deno integration tests around the real implementation
 - first recorded live deployed-service run and failure-mode tuning using `rallar-browser-live-validation.mts --mode=live`
-- Iteration 10 soak/monitor runner implementation
-- Iteration 11 seeded random/parallel step plan implementation
+- longer-duration live soak profiles beyond the short gated baselines
 
 ## Recommended Next Step
 

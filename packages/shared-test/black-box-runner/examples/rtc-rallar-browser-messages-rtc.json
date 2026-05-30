@@ -1,13 +1,39 @@
 {
   "variables": {
-    "rallarApiBaseUrl": "https://api.example.com",
-    "roomId": "room-1",
-    "aliceUsername": "alice",
-    "alicePassword": "secret",
-    "bobUsername": "bob",
-    "bobPassword": "secret",
-    "messageTypeId": "black-box.chat.message",
-    "topicId": "black-box.chat"
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "https://api.example.com"
+    },
+    "roomId": {
+      "env": "RALLAR_BB_GROUP_ID",
+      "default": "room-1"
+    },
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "messageTypeId": {
+      "env": "RALLAR_MESSAGE_TYPE_ID",
+      "default": "black-box.chat.message"
+    },
+    "topicId": {
+      "env": "RALLAR_TOPIC_ID",
+      "default": "black-box.chat"
+    }
   },
   "connections": {
     "aliceRtc": {

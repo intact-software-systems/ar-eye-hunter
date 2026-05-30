@@ -1,0 +1,697 @@
+{
+  "version": 1,
+  "description": "Runnable variants for black-box runner examples. Profiles let local smoke, live service, remote-browser, and intentional failure diagnostics use the same catalog.",
+  "entries": [
+    {
+      "id": "memory-delivery",
+      "recipe": "examples/rtc-rallar-memory-delivery-semantics.json",
+      "category": "generic-runner-semantics",
+      "mode": "run",
+      "profiles": ["quick", "deterministic"],
+      "expectedExitCode": 0,
+      "artifactName": "memory-delivery",
+      "description": "Deterministic in-memory direct and broadcast delivery smoke."
+    },
+    {
+      "id": "memory-routing-failures",
+      "recipe": "examples/rtc-rallar-memory-routing-failures.json",
+      "category": "generic-runner-semantics",
+      "mode": "run",
+      "profiles": ["deterministic", "failure-diagnostics"],
+      "expectedExitCode": 1,
+      "artifactName": "memory-routing-failures",
+      "description": "Intentional no-recipient and closed-target failures for report diagnostics."
+    },
+    {
+      "id": "memory-same-connection-soak",
+      "recipe": "examples/rtc-rallar-memory-same-connection-soak.json",
+      "category": "generic-runner-semantics",
+      "mode": "run",
+      "profiles": ["deterministic", "soak"],
+      "expectedExitCode": 0,
+      "artifactName": "memory-same-connection-soak",
+      "description": "Deterministic same-connection RTC soak with setup once, repeated send/wait loops, and cleanup once."
+    },
+    {
+      "id": "memory-seeded-traffic",
+      "recipe": "examples/rtc-rallar-memory-seeded-traffic.json",
+      "category": "generic-runner-semantics",
+      "mode": "run",
+      "profiles": ["deterministic", "traffic"],
+      "expectedExitCode": 0,
+      "artifactName": "memory-seeded-traffic",
+      "description": "Deterministic seeded traffic plan that expands weighted RTC operations into a replayable concrete plan."
+    },
+    {
+      "id": "memory-parallel-groups",
+      "recipe": "examples/rtc-rallar-memory-parallel-groups.json",
+      "category": "generic-runner-semantics",
+      "mode": "run",
+      "profiles": ["deterministic", "parallel"],
+      "expectedExitCode": 0,
+      "artifactName": "memory-parallel-groups",
+      "description": "Deterministic bounded parallel RTC groups covering direct and broadcast delivery."
+    },
+    {
+      "id": "browser-connect-dry",
+      "recipe": "examples/rtc-rallar-browser-connect.json",
+      "category": "rallar-browser",
+      "mode": "dry-run",
+      "profiles": ["quick", "dry"],
+      "expectedExitCode": 0,
+      "artifactName": "browser-connect-dry",
+      "description": "Dry-run browser-backed connect/close recipe expansion."
+    },
+    {
+      "id": "browser-connect-live",
+      "recipe": "examples/rtc-rallar-browser-connect.json",
+      "category": "rallar-browser",
+      "mode": "run",
+      "profiles": ["browser-live", "live"],
+      "expectedExitCode": 0,
+      "artifactName": "browser-connect-live",
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ALICE_USERNAME",
+          "RALLAR_ALICE_PASSWORD",
+          "RALLAR_BOB_USERNAME",
+          "RALLAR_BOB_PASSWORD"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          }
+        ],
+        "playwright": true
+      },
+      "description": "Live browser-backed connect/close smoke."
+    },
+    {
+      "id": "browser-realtime-dry",
+      "recipe": "examples/rtc-rallar-browser-realtime.json",
+      "category": "rallar-browser",
+      "mode": "dry-run",
+      "profiles": ["quick", "dry"],
+      "expectedExitCode": 0,
+      "artifactName": "browser-realtime-dry",
+      "description": "Dry-run realtime RTC recipe expansion."
+    },
+    {
+      "id": "browser-realtime-live",
+      "recipe": "examples/rtc-rallar-browser-realtime.json",
+      "category": "rallar-browser",
+      "mode": "run",
+      "profiles": ["browser-live", "live"],
+      "expectedExitCode": 0,
+      "artifactName": "browser-realtime-live",
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ALICE_USERNAME",
+          "RALLAR_ALICE_PASSWORD",
+          "RALLAR_BOB_USERNAME",
+          "RALLAR_BOB_PASSWORD"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          }
+        ],
+        "playwright": true
+      },
+      "description": "Live browser-backed realtime payload delivery."
+    },
+    {
+      "id": "browser-messages-rtc-dry",
+      "recipe": "examples/rtc-rallar-browser-messages-rtc.json",
+      "category": "rallar-browser",
+      "mode": "dry-run",
+      "profiles": ["quick", "dry"],
+      "expectedExitCode": 0,
+      "artifactName": "browser-messages-rtc-dry",
+      "description": "Dry-run app-level messages.rtc recipe expansion."
+    },
+    {
+      "id": "browser-messages-rtc-live",
+      "recipe": "examples/rtc-rallar-browser-messages-rtc.json",
+      "category": "rallar-browser",
+      "mode": "run",
+      "profiles": ["browser-live", "live"],
+      "expectedExitCode": 0,
+      "artifactName": "browser-messages-rtc-live",
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ALICE_USERNAME",
+          "RALLAR_ALICE_PASSWORD",
+          "RALLAR_BOB_USERNAME",
+          "RALLAR_BOB_PASSWORD"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          }
+        ],
+        "playwright": true
+      },
+      "description": "Live app-level messages.rtc delivery."
+    },
+    {
+      "id": "browser-messages-rtc-same-connection-soak-live",
+      "recipe": "examples/rtc-rallar-browser-messages-rtc-same-connection-soak.json",
+      "category": "rallar-browser",
+      "mode": "run",
+      "profiles": ["live-soak", "browser-live", "live"],
+      "expectedExitCode": 0,
+      "artifactName": "browser-messages-rtc-same-connection-soak-live",
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ALICE_USERNAME",
+          "RALLAR_ALICE_PASSWORD",
+          "RALLAR_BOB_USERNAME",
+          "RALLAR_BOB_PASSWORD"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          }
+        ],
+        "playwright": true
+      },
+      "description": "Gated live browser-backed messages.rtc same-connection soak."
+    },
+    {
+      "id": "browser-messages-rtc-seeded-traffic-live",
+      "recipe": "examples/rtc-rallar-browser-messages-rtc-seeded-traffic.json",
+      "category": "rallar-browser",
+      "mode": "run",
+      "profiles": ["live-traffic", "browser-live", "live"],
+      "expectedExitCode": 0,
+      "artifactName": "browser-messages-rtc-seeded-traffic-live",
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ALICE_USERNAME",
+          "RALLAR_ALICE_PASSWORD",
+          "RALLAR_BOB_USERNAME",
+          "RALLAR_BOB_PASSWORD"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          }
+        ],
+        "playwright": true
+      },
+      "description": "Gated live browser-backed seeded messages.rtc traffic with expanded-plan artifacts."
+    },
+    {
+      "id": "browser-messages-rtc-parallel-groups-live",
+      "recipe": "examples/rtc-rallar-browser-messages-rtc-parallel-groups.json",
+      "category": "rallar-browser",
+      "mode": "run",
+      "profiles": ["live-parallel", "browser-live", "live"],
+      "expectedExitCode": 0,
+      "artifactName": "browser-messages-rtc-parallel-groups-live",
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ALICE_USERNAME",
+          "RALLAR_ALICE_PASSWORD",
+          "RALLAR_BOB_USERNAME",
+          "RALLAR_BOB_PASSWORD"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          }
+        ],
+        "playwright": true
+      },
+      "description": "Gated live browser-backed bounded parallel messages.rtc traffic."
+    },
+    {
+      "id": "browser-messages-rtc-multicast-dry",
+      "recipe": "examples/rtc-rallar-browser-messages-rtc-multicast.json",
+      "category": "rallar-browser",
+      "mode": "dry-run",
+      "profiles": ["dry"],
+      "expectedExitCode": 0,
+      "artifactName": "browser-messages-rtc-multicast-dry",
+      "description": "Dry-run app-level messages.rtc multicast recipe expansion."
+    },
+    {
+      "id": "browser-messages-rtc-multicast-live",
+      "recipe": "examples/rtc-rallar-browser-messages-rtc-multicast.json",
+      "category": "rallar-browser",
+      "mode": "run",
+      "profiles": ["browser-live", "live"],
+      "expectedExitCode": 0,
+      "artifactName": "browser-messages-rtc-multicast-live",
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ALICE_USERNAME",
+          "RALLAR_ALICE_PASSWORD",
+          "RALLAR_BOB_USERNAME",
+          "RALLAR_BOB_PASSWORD",
+          "RALLAR_CHARLIE_USERNAME",
+          "RALLAR_CHARLIE_PASSWORD"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          }
+        ],
+        "playwright": true
+      },
+      "description": "Live room multicast over app-level messages.rtc."
+    },
+    {
+      "id": "browser-provider-mode-parity-dry",
+      "recipe": "examples/rtc-rallar-browser-provider-mode-parity.json",
+      "category": "rallar-browser",
+      "mode": "dry-run",
+      "profiles": ["quick", "dry"],
+      "expectedExitCode": 0,
+      "artifactName": "browser-provider-mode-parity-dry",
+      "description": "Dry-run local browser provider-mode parity recipe."
+    },
+    {
+      "id": "remote-provider-mode-parity-dry",
+      "recipe": "examples/rtc-rallar-browser-provider-mode-parity.json",
+      "category": "rallar-remote-browser",
+      "mode": "dry-run",
+      "profiles": ["quick", "dry", "remote-dry"],
+      "expectedExitCode": 0,
+      "artifactName": "remote-provider-mode-parity-dry",
+      "env": {
+        "RALLAR_BB_RTC_PROVIDER": "rallar-remote-browser"
+      },
+      "description": "Dry-run remote-browser provider-mode parity wiring."
+    },
+    {
+      "id": "remote-provider-mode-parity-live",
+      "recipe": "examples/rtc-rallar-browser-provider-mode-parity.json",
+      "category": "rallar-remote-browser",
+      "mode": "run",
+      "profiles": ["remote-live", "live"],
+      "expectedExitCode": 0,
+      "artifactName": "remote-provider-mode-parity-live",
+      "env": {
+        "RALLAR_BB_RTC_PROVIDER": "rallar-remote-browser"
+      },
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ALICE_USERNAME",
+          "RALLAR_ALICE_PASSWORD",
+          "RALLAR_BOB_USERNAME",
+          "RALLAR_BOB_PASSWORD",
+          "RALLAR_BLACK_BOX_CONTROL_BASE_URL",
+          "RALLAR_BLACK_BOX_AGENT_ID"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          },
+          {
+            "name": "Rallar black-box control server",
+            "env": "RALLAR_BLACK_BOX_CONTROL_BASE_URL",
+            "default": "http://localhost:5180"
+          }
+        ]
+      },
+      "description": "Live remote-browser provider-mode parity through the control server."
+    },
+    {
+      "id": "remote-messages-rtc-same-connection-soak-live",
+      "recipe": "examples/rtc-rallar-browser-messages-rtc-same-connection-soak.json",
+      "category": "rallar-remote-browser",
+      "mode": "run",
+      "profiles": ["live-soak", "remote-live", "live"],
+      "expectedExitCode": 0,
+      "artifactName": "remote-messages-rtc-same-connection-soak-live",
+      "env": {
+        "RALLAR_BB_RTC_PROVIDER": "rallar-remote-browser"
+      },
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ALICE_USERNAME",
+          "RALLAR_ALICE_PASSWORD",
+          "RALLAR_BOB_USERNAME",
+          "RALLAR_BOB_PASSWORD",
+          "RALLAR_BLACK_BOX_CONTROL_BASE_URL",
+          "RALLAR_BLACK_BOX_AGENT_ID"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          },
+          {
+            "name": "Rallar black-box control server",
+            "env": "RALLAR_BLACK_BOX_CONTROL_BASE_URL",
+            "default": "http://localhost:5180"
+          }
+        ]
+      },
+      "description": "Gated remote-browser messages.rtc same-connection soak through the control server."
+    },
+    {
+      "id": "remote-messages-rtc-seeded-traffic-live",
+      "recipe": "examples/rtc-rallar-browser-messages-rtc-seeded-traffic.json",
+      "category": "rallar-remote-browser",
+      "mode": "run",
+      "profiles": ["live-traffic", "remote-live", "live"],
+      "expectedExitCode": 0,
+      "artifactName": "remote-messages-rtc-seeded-traffic-live",
+      "env": {
+        "RALLAR_BB_RTC_PROVIDER": "rallar-remote-browser"
+      },
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ALICE_USERNAME",
+          "RALLAR_ALICE_PASSWORD",
+          "RALLAR_BOB_USERNAME",
+          "RALLAR_BOB_PASSWORD",
+          "RALLAR_BLACK_BOX_CONTROL_BASE_URL",
+          "RALLAR_BLACK_BOX_AGENT_ID"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          },
+          {
+            "name": "Rallar black-box control server",
+            "env": "RALLAR_BLACK_BOX_CONTROL_BASE_URL",
+            "default": "http://localhost:5180"
+          }
+        ]
+      },
+      "description": "Gated remote-browser seeded messages.rtc traffic with expanded-plan artifacts."
+    },
+    {
+      "id": "remote-messages-rtc-parallel-groups-live",
+      "recipe": "examples/rtc-rallar-browser-messages-rtc-parallel-groups.json",
+      "category": "rallar-remote-browser",
+      "mode": "run",
+      "profiles": ["live-parallel", "remote-live", "live"],
+      "expectedExitCode": 0,
+      "artifactName": "remote-messages-rtc-parallel-groups-live",
+      "env": {
+        "RALLAR_BB_RTC_PROVIDER": "rallar-remote-browser"
+      },
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ALICE_USERNAME",
+          "RALLAR_ALICE_PASSWORD",
+          "RALLAR_BOB_USERNAME",
+          "RALLAR_BOB_PASSWORD",
+          "RALLAR_BLACK_BOX_CONTROL_BASE_URL",
+          "RALLAR_BLACK_BOX_AGENT_ID"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          },
+          {
+            "name": "Rallar black-box control server",
+            "env": "RALLAR_BLACK_BOX_CONTROL_BASE_URL",
+            "default": "http://localhost:5180"
+          }
+        ]
+      },
+      "description": "Gated remote-browser bounded parallel messages.rtc traffic through the control server."
+    },
+    {
+      "id": "browser-scoped-workspaces-dry",
+      "recipe": "examples/rtc-rallar-browser-scoped-workspaces.json",
+      "category": "rallar-browser",
+      "mode": "dry-run",
+      "profiles": ["dry"],
+      "expectedExitCode": 0,
+      "artifactName": "browser-scoped-workspaces-dry",
+      "description": "Dry-run scoped-workspace delivery recipe expansion."
+    },
+    {
+      "id": "browser-scoped-workspaces-live",
+      "recipe": "examples/rtc-rallar-browser-scoped-workspaces.json",
+      "category": "rallar-browser",
+      "mode": "run",
+      "profiles": ["browser-live", "live"],
+      "expectedExitCode": 0,
+      "artifactName": "browser-scoped-workspaces-live",
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ALICE_USERNAME",
+          "RALLAR_ALICE_PASSWORD",
+          "RALLAR_BOB_USERNAME",
+          "RALLAR_BOB_PASSWORD",
+          "RALLAR_CHARLIE_USERNAME",
+          "RALLAR_CHARLIE_PASSWORD"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          }
+        ],
+        "playwright": true
+      },
+      "description": "Live same-room-id scoped-workspace isolation."
+    },
+    {
+      "id": "browser-not-yet-in-sync-dry",
+      "recipe": "examples/rtc-rallar-browser-not-yet-in-sync.json",
+      "category": "rallar-browser",
+      "mode": "dry-run",
+      "profiles": ["dry"],
+      "expectedExitCode": 0,
+      "artifactName": "browser-not-yet-in-sync-dry",
+      "description": "Dry-run stale-state NACK recipe expansion."
+    },
+    {
+      "id": "browser-not-yet-in-sync-live",
+      "recipe": "examples/rtc-rallar-browser-not-yet-in-sync.json",
+      "category": "rallar-browser",
+      "mode": "run",
+      "profiles": ["browser-live", "live"],
+      "expectedExitCode": 0,
+      "artifactName": "browser-not-yet-in-sync-live",
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ALICE_USERNAME",
+          "RALLAR_ALICE_PASSWORD",
+          "RALLAR_BOB_USERNAME",
+          "RALLAR_BOB_PASSWORD"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          }
+        ],
+        "playwright": true
+      },
+      "description": "Live stale-state NACK observation."
+    },
+    {
+      "id": "browser-readiness-diagnostics-dry",
+      "recipe": "examples/rtc-rallar-browser-readiness-diagnostics.json",
+      "category": "rallar-browser",
+      "mode": "dry-run",
+      "profiles": ["dry"],
+      "expectedExitCode": 0,
+      "artifactName": "browser-readiness-diagnostics-dry",
+      "description": "Dry-run readiness diagnostics recipe expansion."
+    },
+    {
+      "id": "browser-readiness-diagnostics-live",
+      "recipe": "examples/rtc-rallar-browser-readiness-diagnostics.json",
+      "category": "rallar-browser",
+      "mode": "run",
+      "profiles": ["browser-live", "live"],
+      "expectedExitCode": 0,
+      "artifactName": "browser-readiness-diagnostics-live",
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ALICE_USERNAME",
+          "RALLAR_ALICE_PASSWORD"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          }
+        ],
+        "playwright": true
+      },
+      "description": "Live browser readiness diagnostics and health wait."
+    },
+    {
+      "id": "browser-timeout-diagnostics-live",
+      "recipe": "examples/rtc-rallar-browser-timeout-diagnostics.json",
+      "category": "rallar-browser",
+      "mode": "run",
+      "profiles": ["browser-live", "live", "failure-diagnostics"],
+      "expectedExitCode": 1,
+      "artifactName": "browser-timeout-diagnostics-live",
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ALICE_USERNAME",
+          "RALLAR_ALICE_PASSWORD"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          }
+        ],
+        "playwright": true
+      },
+      "description": "Intentional live missing-diagnostic failure artifact."
+    },
+    {
+      "id": "rallar-server-register-login-live",
+      "recipe": "examples/rallar-server-register-login.json",
+      "category": "rallar-server",
+      "mode": "run",
+      "profiles": ["rallar-server-live", "live"],
+      "expectedExitCode": 0,
+      "artifactName": "rallar-server-register-login-live",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          }
+        ]
+      },
+      "description": "Live REST register/login/logout and invalid-password rejection."
+    },
+    {
+      "id": "rallar-server-auth-group-ws-smoke-live",
+      "recipe": "examples/rallar-server-auth-group-ws-smoke.json",
+      "category": "rallar-server",
+      "mode": "run",
+      "profiles": ["rallar-server-live", "live"],
+      "expectedExitCode": 0,
+      "artifactName": "rallar-server-auth-group-ws-smoke-live",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          }
+        ]
+      },
+      "description": "Live REST group setup plus authenticated WS smoke."
+    },
+    {
+      "id": "rallar-server-negative-auth-live",
+      "recipe": "examples/rallar-server-negative-auth.json",
+      "category": "rallar-server",
+      "mode": "run",
+      "profiles": ["rallar-server-live", "live"],
+      "expectedExitCode": 0,
+      "artifactName": "rallar-server-negative-auth-live",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          }
+        ]
+      },
+      "description": "Live REST negative-auth assertions."
+    },
+    {
+      "id": "rallar-server-ws-rtc-payload-parity-live",
+      "recipe": "examples/rallar-server-ws-rtc-payload-parity.json",
+      "category": "mixed-rallar-server-browser",
+      "mode": "run",
+      "profiles": ["rallar-server-live", "browser-live", "live"],
+      "expectedExitCode": 0,
+      "artifactName": "rallar-server-ws-rtc-payload-parity-live",
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ALICE_USERNAME",
+          "RALLAR_ALICE_PASSWORD",
+          "RALLAR_BOB_USERNAME",
+          "RALLAR_BOB_PASSWORD"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          }
+        ],
+        "playwright": true
+      },
+      "description": "Live WS versus RTC payload parity."
+    },
+    {
+      "id": "rallar-signaling-two-peer-chat-dry",
+      "recipe": "examples/rtc-rallar-two-peer-chat.json",
+      "category": "rallar-signaling",
+      "mode": "dry-run",
+      "profiles": ["dry"],
+      "expectedExitCode": 0,
+      "artifactName": "rallar-signaling-two-peer-chat-dry",
+      "description": "Dry-run signaling-only two-peer chat recipe expansion."
+    },
+    {
+      "id": "rallar-signaling-two-peer-chat-live",
+      "recipe": "examples/rtc-rallar-two-peer-chat.json",
+      "category": "rallar-signaling",
+      "mode": "run",
+      "profiles": ["signaling-live", "live"],
+      "expectedExitCode": 0,
+      "artifactName": "rallar-signaling-two-peer-chat-live",
+      "requires": {
+        "env": ["RALLAR_SIGNALING_URL"]
+      },
+      "description": "Live signaling-only provider check. Requires a signaling server URL."
+    }
+  ]
+}

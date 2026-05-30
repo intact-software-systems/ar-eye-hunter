@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "generatedAtEpochMs": 1779952000000,
+  "profile": "fixture",
+  "requireGates": false,
+  "runs": [
+    {
+      "id": "fixture-memory-traffic",
+      "recipe": "examples/rtc-rallar-memory-seeded-traffic.json",
+      "status": "PASSED",
+      "expectedExitCode": 0,
+      "code": 0,
+      "durationMs": 12,
+      "artifactDir": ".artifacts/shared-test/fixture-memory-traffic",
+      "summary": {
+        "total": 2,
+        "success": 1,
+        "failure": 1
+      }
+    }
+  ],
+  "summary": {
+    "PASSED": 1,
+    "FAILED": 0,
+    "SKIPPED": 0
+  }
+}

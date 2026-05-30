@@ -352,12 +352,12 @@ async function readRequestWithRequestId<T extends { requestId?: string }>(c: {
 }
 
 function unwrapGroupStateWritten(written: GroupStateWritten): GroupMutationWritten {
-    return written.result.fold(
-        (error) => {
-            throw new Error(error);
-        },
-        (value) => value,
-    );
+    const mutation = written.result.right;
+    if (!mutation) {
+        throw new Error(written.result.left ?? 'Client mutation failed');
+    }
+
+    return mutation;
 }
 
 function toGroupAppInboxContextId(scope: StateScope, groupId: string): string {

@@ -46,6 +46,15 @@ test.describe('full-stack control orchestration', () => {
         const run = await fetchControlRun(request, runId);
         expect(run.results?.some(result => result.commandId === commandId && result.ok === true)).toBe(true);
         expect((run.events ?? []).length).toBeGreaterThan(0);
+        const artifactResponse = await request.get(
+            `http://127.0.0.1:5180/runs/${encodeURIComponent(runId)}/artifacts`,
+        );
+        expect(artifactResponse.ok()).toBe(true);
+        const artifact = await artifactResponse.json() as {
+            files?: Record<string, string>;
+        };
+        expect(artifact.files?.['report.json']).toContain(commandId);
+        expect(artifact.files?.['events.jsonl']).toContain('step-result');
         await page.getByRole('tab', { name: 'Event Stream' }).click();
         await expect(page.locator('#panel-event-stream')).toContainText(commandId);
     });

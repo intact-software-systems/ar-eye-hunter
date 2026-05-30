@@ -96,8 +96,9 @@ export async function createAndJoinStateGroup(
     sessionId: string,
     scope: StateScope = defaultStateScope(),
     policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue> = {},
+    requestedGroupId?: string,
 ): Promise<GroupStateSnapshot> {
-    const groupId = crypto.randomUUID();
+    const groupId = requestedGroupId?.trim() || crypto.randomUUID();
     const createRequestId = toWorkflowRequestId('group-create', groupId);
     const presenceRequestId = toWorkflowRequestId(
         'group-presence-connect',

@@ -1,18 +1,22 @@
+export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
+    'configure',
+    'recipe.load',
+    'recipe.run',
+    'recipe.cancel',
+    'rtc.connect',
+    'rtc.send',
+    'ws.open',
+    'ws.send',
+    'ws.close',
+    'http.request',
+    'health',
+    'stats',
+    'close',
+    'reset',
+] as const;
+
 export type RallarBlackBoxTestCommandKind =
-    | 'configure'
-    | 'recipe.load'
-    | 'recipe.run'
-    | 'recipe.cancel'
-    | 'rtc.connect'
-    | 'rtc.send'
-    | 'ws.open'
-    | 'ws.send'
-    | 'ws.close'
-    | 'http.request'
-    | 'health'
-    | 'stats'
-    | 'close'
-    | 'reset';
+    typeof RALLAR_BLACK_BOX_TEST_COMMAND_KINDS[number];
 
 export type RallarBlackBoxTestTransport =
     | 'realtime'
@@ -102,6 +106,11 @@ export type RallarBlackBoxTestRtcConnectCommand =
     connection?: string;
     actor?: string;
     roomId?: string;
+    applicationId?: string;
+    workspaceId?: string;
+    scope?: Readonly<Record<string, unknown>>;
+    roomRef?: Readonly<Record<string, unknown>>;
+    minSnapshotVersion?: number;
     transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
     rallar?: Readonly<Record<string, unknown>>;
 }>;
@@ -112,6 +121,11 @@ export type RallarBlackBoxTestRtcSendCommand =
     connection?: string;
     send?: unknown;
     expect?: unknown;
+    applicationId?: string;
+    workspaceId?: string;
+    scope?: Readonly<Record<string, unknown>>;
+    roomRef?: Readonly<Record<string, unknown>>;
+    minSnapshotVersion?: number;
     transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
 }>;
 

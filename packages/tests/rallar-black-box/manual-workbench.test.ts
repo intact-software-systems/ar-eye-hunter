@@ -4,6 +4,8 @@ import {
     DEFAULT_MANUAL_WORKBENCH_VALUES,
     buildManualWorkbenchCommands,
     deriveManualReceivedMessages,
+    manualRtcDeliveryMatrixCommands,
+    manualRtcNegativeRecipeSnippet,
     manualRecipeSnippet,
     parseManualPayload,
     type ManualActionHistoryEntry,
@@ -74,6 +76,57 @@ describe('rallar-black-box manual workbench helpers', () => {
         });
     });
 
+    it('carries scoped RTC fields into connect, send, and group setup commands', () => {
+        const values = {
+            ...DEFAULT_MANUAL_WORKBENCH_VALUES,
+            providerMode: 'browser-rallar' as const,
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId: 'group-1',
+            scopeText: '{"tenant":"tenant-1"}',
+            roomRefText: '{"type":"group","id":"group-1"}',
+            minSnapshotVersion: 42,
+            transport: 'messages.rtc' as const,
+        };
+        const commands = buildManualWorkbenchCommands('join', values, {}, 20);
+        const [send] = buildManualWorkbenchCommands('send', values, { text: 'hello' }, 30);
+
+        expect(commands[0]).toMatchObject({
+            kind: 'configure',
+            config: {
+                defaults: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    scope: { tenant: 'tenant-1' },
+                    roomRef: { type: 'group', id: 'group-1' },
+                    minSnapshotVersion: 42,
+                },
+            },
+        });
+        expect(commands[1]).toMatchObject({
+            kind: 'http.request',
+            request: {
+                path: '/api/state/apps/app-1/workspaces/workspace-1/groups',
+            },
+        });
+        expect(commands[2]).toMatchObject({
+            kind: 'rtc.connect',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            scope: { tenant: 'tenant-1' },
+            roomRef: { type: 'group', id: 'group-1' },
+            minSnapshotVersion: 42,
+        });
+        expect(send).toMatchObject({
+            kind: 'rtc.send',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            scope: { tenant: 'tenant-1' },
+            roomRef: { type: 'group', id: 'group-1' },
+            minSnapshotVersion: 42,
+        });
+    });
+
     it('wraps WebSocket broadcast sends with group delivery metadata', () => {
         const [command] = buildManualWorkbenchCommands(
             'send',
@@ -91,7 +144,7 @@ describe('rallar-black-box manual workbench helpers', () => {
             commandId: 'manual-ws-send-broadcast-9',
             data: {
                 groupId: 'rallar-black-box-room',
-                topic: 'manual.message',
+                topic: 'room.manual.message',
                 deliveryMode: 'broadcast',
                 targets: [],
                 payload: {
@@ -161,6 +214,89 @@ describe('rallar-black-box manual workbench helpers', () => {
         expect(commands[2]).toMatchObject({
             commandId: 'manual-rtc-connect-22',
             roomId: 'room-from-manual',
+        });
+    });
+
+    it('builds RTC delivery matrix commands for direct, multicast, and broadcast', () => {
+        const commands = manualRtcDeliveryMatrixCommands(
+            {
+                ...DEFAULT_MANUAL_WORKBENCH_VALUES,
+                transport: 'realtime',
+                targetClient: 'bob-peer',
+                multicastClients: 'bob-peer, charlie-peer',
+            },
+            { text: 'matrix' },
+            40,
+            'realtime',
+        );
+
+        expect(commands.map(command => command.commandId)).toEqual([
+            'manual-configure-40',
+            'manual-rtc-connect-41',
+            'manual-rtc-send-direct-42',
+            'manual-rtc-send-multicast-43',
+            'manual-rtc-send-broadcast-44',
+        ]);
+        expect(commands.map(command => command.kind)).toEqual([
+            'configure',
+            'rtc.connect',
+            'rtc.send',
+            'rtc.send',
+            'rtc.send',
+        ]);
+        expect(commands[2]).toMatchObject({
+            metadata: {
+                manual: {
+                    deliveryMode: 'direct',
+                    targets: ['bob-peer'],
+                },
+            },
+        });
+        expect(commands[3]).toMatchObject({
+            metadata: {
+                manual: {
+                    deliveryMode: 'multicast',
+                    targets: ['bob-peer', 'charlie-peer'],
+                },
+            },
+        });
+        expect(commands[4]).toMatchObject({
+            metadata: {
+                manual: {
+                    deliveryMode: 'broadcast',
+                    targets: [],
+                },
+            },
+        });
+    });
+
+    it('generates RTC negative recipe entries for NACK and delivery failures', () => {
+        const recipe = JSON.parse(manualRtcNegativeRecipeSnippet({
+            ...DEFAULT_MANUAL_WORKBENCH_VALUES,
+            transport: 'messages.rtc',
+        }, { text: 'negative' })) as {
+            continueOnFailure: boolean;
+            commands: Array<{ commandId: string; metadata?: Record<string, unknown>; expect?: unknown }>;
+        };
+
+        expect(recipe.continueOnFailure).toBe(true);
+        expect(recipe.commands.map(command => command.commandId)).toContain(
+            'manual-rtc-negative-missing-peer',
+        );
+        expect(recipe.commands.map(command => command.commandId)).toContain(
+            'manual-rtc-nack-not-yet-in-sync-9',
+        );
+        expect(recipe.commands.find(command =>
+            command.commandId === 'manual-rtc-nack-not-yet-in-sync-9'
+        )).toMatchObject({
+            metadata: {
+                negativeCase: 'not-yet-in-sync',
+                expectedOutcome: 'nack',
+            },
+            expect: {
+                outcome: 'nack',
+                code: 'not-yet-in-sync',
+            },
         });
     });
 

@@ -1,0 +1,95 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://localhost:8080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_APPLICATION_ID",
+      "default": "ar-eye-hunter"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_WORKSPACE_ID",
+      "default": "default"
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "rejectMissingBearerToken",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": "Unauthorized: Missing bearer token"
+        }
+      }
+    },
+    {
+      "name": "rejectMissingClientIdHeader",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "Bearer invalid-token"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": "Unauthorized: Missing x-client-id header"
+        }
+      }
+    },
+    {
+      "name": "rejectInvalidLogin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "not-a-real-user",
+          "password": "not-a-real-password"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": "Invalid username or password"
+        }
+      }
+    },
+    {
+      "name": "rejectWebSocketTicketWithoutAuth",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": "Unauthorized: Missing bearer token"
+        }
+      }
+    }
+  ]
+}

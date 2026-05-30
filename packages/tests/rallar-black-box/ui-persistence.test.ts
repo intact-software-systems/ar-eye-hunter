@@ -3,12 +3,14 @@ import { DEFAULT_MANUAL_WORKBENCH_VALUES } from '../../../apps/rallar-black-box/
 import {
     readManualWorkbenchDraft,
     readRallarServerWorkbenchDraft,
+    readStoredAppMode,
     readStoredAppTab,
     sanitizeManualWorkbenchDraft,
     sanitizeRallarServerWorkbenchDraft,
     UI_STORAGE_KEYS,
     writeManualWorkbenchDraft,
     writeRallarServerWorkbenchDraft,
+    writeStoredAppMode,
     writeStoredAppTab,
     type RallarBlackBoxUiStorage,
 } from '../../../apps/rallar-black-box/src/ui-persistence.ts';
@@ -37,6 +39,15 @@ describe('rallar-black-box UI persistence', () => {
 
         expect(readStoredAppTab(storage)).toBe('rallar-server');
         expect(storage.getItem(UI_STORAGE_KEYS.activeTab)).toBe('rallar-server');
+    });
+
+    it('stores the active workspace mode as a small non-secret preference', () => {
+        const storage = new MemoryStorage();
+
+        writeStoredAppMode(storage, 'black-box-runner');
+
+        expect(readStoredAppMode(storage)).toBe('black-box-runner');
+        expect(storage.getItem(UI_STORAGE_KEYS.activeMode)).toBe('black-box-runner');
     });
 
     it('removes Manual Rallar passwords and redacts persisted payload drafts', () => {

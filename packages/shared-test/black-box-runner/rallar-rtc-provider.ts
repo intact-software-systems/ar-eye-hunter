@@ -107,8 +107,9 @@ export function createRallarRtcClientFromOperations(
 }
 
 export type RallarRtcRuntimeSession = {
-    send: (message: any) => Promise<void> | void
+    send: (message: any) => Promise<any> | any
     close: () => Promise<void> | void
+    connectDiagnostics?: any
 }
 
 export type RallarRtcRuntime = {

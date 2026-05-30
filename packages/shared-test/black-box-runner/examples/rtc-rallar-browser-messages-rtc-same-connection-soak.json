@@ -1,0 +1,242 @@
+{
+  "variables": {
+    "rtcProvider": {
+      "env": "RALLAR_BB_RTC_PROVIDER",
+      "default": "rallar-browser"
+    },
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://localhost:8080"
+    },
+    "controlBaseUrl": {
+      "env": "RALLAR_BLACK_BOX_CONTROL_BASE_URL",
+      "default": "http://localhost:5180"
+    },
+    "controlRunId": {
+      "env": "RALLAR_BLACK_BOX_RUN_ID",
+      "default": "remote-browser-live-soak"
+    },
+    "controlAgentId": {
+      "env": "RALLAR_BLACK_BOX_AGENT_ID",
+      "default": "visible-agent-local"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_APPLICATION_ID",
+      "default": "black-box-app"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_WORKSPACE_ID",
+      "default": "default"
+    },
+    "roomId": {
+      "env": "RALLAR_BB_SOAK_GROUP_ID",
+      "default": "bb-live-soak-group"
+    },
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "messageTypeId": "black-box.live.soak.message",
+    "topicId": "black-box.live.soak"
+  },
+  "execution": {
+    "failFast": true,
+    "soak": {
+      "iterations": 3,
+      "delayMs": 50,
+      "maxArtifactEvents": 400,
+      "setupSteps": [
+        "connectAlice",
+        "connectBob"
+      ],
+      "loopSteps": [
+        "aliceSendsToBob",
+        "bobSendsToAlice"
+      ],
+      "cleanupSteps": [
+        "closeAlice",
+        "closeBob"
+      ]
+    }
+  },
+  "connections": {
+    "aliceRtc": {
+      "type": "rtc",
+      "provider": "{rtcProvider}",
+      "actor": "alice",
+      "roomId": "{roomId}",
+      "roomRef": {
+        "applicationId": "{applicationId}",
+        "workspaceId": "{workspaceId}",
+        "groupId": "{roomId}"
+      },
+      "browser": {
+        "headless": true,
+        "timeoutMs": 15000
+      },
+      "control": {
+        "baseUrl": "{controlBaseUrl}",
+        "runId": "{controlRunId}",
+        "agentId": "{controlAgentId}",
+        "timeoutMs": 15000
+      },
+      "rallar": {
+        "apiBaseUrl": "{rallarApiBaseUrl}",
+        "username": "{aliceUsername}",
+        "password": "{alicePassword}",
+        "transport": "messages.rtc",
+        "typeId": "{messageTypeId}",
+        "topicId": "{topicId}",
+        "contextId": "{applicationId}:{workspaceId}:{roomId}",
+        "timeoutMs": 15000
+      }
+    },
+    "bobRtc": {
+      "type": "rtc",
+      "provider": "{rtcProvider}",
+      "actor": "bob",
+      "roomId": "{roomId}",
+      "roomRef": {
+        "applicationId": "{applicationId}",
+        "workspaceId": "{workspaceId}",
+        "groupId": "{roomId}"
+      },
+      "browser": {
+        "headless": true,
+        "timeoutMs": 15000
+      },
+      "control": {
+        "baseUrl": "{controlBaseUrl}",
+        "runId": "{controlRunId}",
+        "agentId": "{controlAgentId}",
+        "timeoutMs": 15000
+      },
+      "rallar": {
+        "apiBaseUrl": "{rallarApiBaseUrl}",
+        "username": "{bobUsername}",
+        "password": "{bobPassword}",
+        "transport": "messages.rtc",
+        "typeId": "{messageTypeId}",
+        "topicId": "{topicId}",
+        "contextId": "{applicationId}:{workspaceId}:{roomId}",
+        "timeoutMs": 15000
+      }
+    }
+  },
+  "steps": [
+    {
+      "name": "connectAlice",
+      "type": "rtc.connect",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "connectBob",
+      "type": "rtc.connect",
+      "connection": "bobRtc"
+    },
+    {
+      "name": "aliceSendsToBob",
+      "type": "rtc.send",
+      "connection": "aliceRtc",
+      "request": {
+        "send": {
+          "typeId": "{messageTypeId}",
+          "topicId": "{topicId}",
+          "contextId": "{applicationId}:{workspaceId}:{roomId}",
+          "roomRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{roomId}"
+          },
+          "payload": {
+            "from": "alice",
+            "to": "bob",
+            "flow": "live-soak",
+            "text": "live soak ping from alice"
+          }
+        }
+      },
+      "expect": {
+        "connection": "bobRtc",
+        "withinMs": 12000,
+        "consume": true,
+        "message": {
+          "kind": "message",
+          "topic": "rallar.browser.messages.rtc.message",
+          "typeId": "{messageTypeId}",
+          "topicId": "{topicId}",
+          "data": {
+            "from": "alice",
+            "to": "bob",
+            "flow": "live-soak",
+            "text": "live soak ping from alice"
+          }
+        }
+      }
+    },
+    {
+      "name": "bobSendsToAlice",
+      "type": "rtc.send",
+      "connection": "bobRtc",
+      "request": {
+        "send": {
+          "typeId": "{messageTypeId}",
+          "topicId": "{topicId}",
+          "contextId": "{applicationId}:{workspaceId}:{roomId}",
+          "roomRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{roomId}"
+          },
+          "payload": {
+            "from": "bob",
+            "to": "alice",
+            "flow": "live-soak",
+            "text": "live soak ping from bob"
+          }
+        }
+      },
+      "expect": {
+        "connection": "aliceRtc",
+        "withinMs": 12000,
+        "consume": true,
+        "message": {
+          "kind": "message",
+          "topic": "rallar.browser.messages.rtc.message",
+          "typeId": "{messageTypeId}",
+          "topicId": "{topicId}",
+          "data": {
+            "from": "bob",
+            "to": "alice",
+            "flow": "live-soak",
+            "text": "live soak ping from bob"
+          }
+        }
+      }
+    },
+    {
+      "name": "closeAlice",
+      "type": "rtc.close",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "closeBob",
+      "type": "rtc.close",
+      "connection": "bobRtc"
+    }
+  ]
+}

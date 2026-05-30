@@ -1,0 +1,18 @@
+{
+  "summary": {
+    "total": 1,
+    "success": 1,
+    "failure": 0
+  },
+  "resultsList": [
+    {
+      "resultKey": "legacyConnect-i1-r1",
+      "name": "legacyConnect",
+      "status": "SUCCESS",
+      "transport": "RTC",
+      "action": "connect",
+      "connection": "legacyRtc"
+    }
+  ],
+  "outputs": {}
+}

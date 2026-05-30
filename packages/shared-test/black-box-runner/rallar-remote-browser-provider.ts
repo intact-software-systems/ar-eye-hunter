@@ -6,6 +6,7 @@ import type {
 } from '../rallar-bb-test/types.ts';
 import {
     rememberRtcCloseEvent,
+    rememberRtcDiagnostic,
     rememberRtcMessage,
     type RtcProvider,
     toRtcConnectionName,
@@ -14,6 +15,9 @@ import {
     toRtcPayload,
     toRtcSuccessStatus,
     waitForRtcClose,
+    waitForRtcDiagnostic,
+    waitForRtcDiagnostics,
+    waitForRtcHealth,
     waitForRtcMessage,
     waitForRtcMessages,
 } from './rtc-provider.ts';
@@ -96,6 +100,87 @@ function firstString(...values: readonly unknown[]): string | undefined {
         }
     }
     return undefined;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : {};
+}
+
+function firstDefined(...values: readonly unknown[]): unknown {
+    return values.find(value => value !== undefined);
+}
+
+function toRallarScope(request: any): Record<string, unknown> | undefined {
+    const rallar = asRecord(request.rallar);
+    const scope = asRecord(firstDefined(request.scope, rallar.scope));
+    const roomRef = asRecord(firstDefined(request.roomRef, rallar.roomRef));
+    const applicationId = firstDefined(
+        request.applicationId,
+        rallar.applicationId,
+        scope.applicationId,
+        roomRef.applicationId,
+    );
+    if (applicationId === undefined) {
+        return undefined;
+    }
+
+    const workspaceId = firstDefined(
+        request.workspaceId,
+        rallar.workspaceId,
+        scope.workspaceId,
+        roomRef.workspaceId,
+    );
+
+    return {
+        applicationId: String(applicationId),
+        ...(workspaceId !== undefined ? { workspaceId: String(workspaceId) } : {}),
+    };
+}
+
+function toRallarRoomRef(request: any): Record<string, unknown> | undefined {
+    const rallar = asRecord(request.rallar);
+    const explicitRoomRef = asRecord(firstDefined(request.roomRef, rallar.roomRef));
+    if (explicitRoomRef.applicationId && explicitRoomRef.groupId) {
+        return {
+            applicationId: String(explicitRoomRef.applicationId),
+            ...(explicitRoomRef.workspaceId !== undefined
+                ? { workspaceId: String(explicitRoomRef.workspaceId) }
+                : {}),
+            groupId: String(explicitRoomRef.groupId),
+        };
+    }
+
+    const scope = toRallarScope(request);
+    const roomId = firstDefined(request.roomId, rallar.roomId);
+    if (!scope?.applicationId || !roomId) {
+        return undefined;
+    }
+
+    return {
+        applicationId: scope.applicationId,
+        ...(scope.workspaceId !== undefined ? { workspaceId: scope.workspaceId } : {}),
+        groupId: String(roomId),
+    };
+}
+
+function toRallarScopeFields(request: any): Record<string, unknown> {
+    const scope = toRallarScope(request);
+    const roomRef = toRallarRoomRef(request);
+    const rallar = asRecord(request.rallar);
+    const minSnapshotVersion = firstDefined(
+        request.minSnapshotVersion,
+        rallar.minSnapshotVersion,
+    );
+
+    return {
+        ...(scope?.applicationId ? { applicationId: scope.applicationId } : {}),
+        ...(scope?.workspaceId !== undefined ? { workspaceId: scope.workspaceId } : {}),
+        ...(scope ? { scope } : {}),
+        ...(roomRef ? { roomRef } : {}),
+        ...(minSnapshotVersion !== undefined ? { minSnapshotVersion } : {}),
+    };
 }
 
 function toNumber(value: unknown, fallback: number): number {
@@ -243,14 +328,19 @@ function toTransport(request: any): 'realtime' | 'messages.rtc' | undefined {
 
 function toConnectCommand(commandId: string, interaction: any): RallarBlackBoxTestCommand {
     const request = interaction.request;
+    const scopeFields = toRallarScopeFields(request);
     return {
         kind: 'rtc.connect',
         commandId,
         connection: toRtcConnectionName(request),
         actor: request.actor,
         roomId: request.roomId,
+        ...scopeFields,
         transport: toTransport(request),
-        rallar: request.rallar,
+        rallar: {
+            ...asRecord(request.rallar),
+            ...scopeFields,
+        },
         timeoutMs: request.timeoutMs,
         metadata: {
             ...(request.parity ? { parity: request.parity } : {}),
@@ -261,12 +351,26 @@ function toConnectCommand(commandId: string, interaction: any): RallarBlackBoxTe
 
 function toSendCommand(commandId: string, interaction: any): RallarBlackBoxTestCommand {
     const request = interaction.request;
+    const scopeFields = toRallarScopeFields(request);
+    const payload = toRtcPayload(request);
+    const send = payload && typeof payload === 'object' && !Array.isArray(payload)
+        ? {
+            ...payload,
+            ...Object.fromEntries(
+                Object.entries(scopeFields).filter(([key]) => !(key in payload)),
+            ),
+        }
+        : {
+            data: payload,
+            ...scopeFields,
+        };
     return {
         kind: 'rtc.send',
         commandId,
         connection: toRtcConnectionName(request),
-        send: toRtcPayload(request),
+        send,
         expect: interaction.response?.message ?? interaction.response?.messages,
+        ...scopeFields,
         transport: toTransport(request),
         timeoutMs: request.timeoutMs,
         metadata: {
@@ -286,6 +390,18 @@ function toCloseCommand(commandId: string, interaction: any): RallarBlackBoxTest
             ...(request.parity ? { parity: request.parity } : {}),
             connection: toRtcConnectionName(request),
             blackBoxRunner: request,
+        },
+    };
+}
+
+function toHealthCommand(commandId: string, interaction: any): RallarBlackBoxTestCommand {
+    return {
+        kind: 'health',
+        commandId,
+        timeoutMs: interaction.request?.timeoutMs,
+        metadata: {
+            connection: toRtcConnectionName(interaction.request ?? {}),
+            blackBoxRunner: interaction.request,
         },
     };
 }
@@ -385,6 +501,52 @@ function rememberRemoteWsCloseEvent(connectionName: string, closeEvent: any, con
     context.wsCloseEvents[connectionName].push(closeEvent);
 }
 
+function toRemotePayloadRecord(payload: RallarBlackBoxTestEvent): Record<string, unknown> {
+    return payload.payload && typeof payload.payload === 'object' && !Array.isArray(payload.payload)
+        ? payload.payload as Record<string, unknown>
+        : {};
+}
+
+function toRemoteRtcMessageData(payload: RallarBlackBoxTestEvent, connectionName: string): Record<string, unknown> {
+    const payloadRecord = toRemotePayloadRecord(payload);
+    const data = Object.prototype.hasOwnProperty.call(payloadRecord, 'data')
+        ? payloadRecord.data
+        : payload.payload;
+
+    return {
+        kind: 'message',
+        topic: payload.topic,
+        connection: connectionName,
+        actor: payload.actor,
+        transport: payload.transport,
+        roomId: payloadRecord.roomId,
+        roomRef: payloadRecord.roomRef,
+        scope: payloadRecord.scope,
+        applicationId: payloadRecord.applicationId,
+        workspaceId: payloadRecord.workspaceId,
+        laneId: payloadRecord.laneId,
+        peerId: payloadRecord.peerId,
+        remotePeerId: payloadRecord.remotePeerId,
+        senderId: payloadRecord.senderId,
+        typeId: payloadRecord.typeId,
+        topicId: payloadRecord.topicId,
+        contextId: payloadRecord.contextId,
+        resourceId: payloadRecord.resourceId,
+        data,
+        event: payload,
+    };
+}
+
+function isRemoteRtcCloseEvent(payload: RallarBlackBoxTestEvent): boolean {
+    return payload.kind === 'event' &&
+        payload.transport !== 'ws' &&
+        (
+            payload.topic === 'rallar.bb.rtc.closed' ||
+            payload.topic === 'rallar.browser.rtc.closed' ||
+            payload.topic === 'rallar.browser.provider.closed'
+        );
+}
+
 function syncRemoteEvents(snapshot: ControlRunSnapshot | undefined, context: any): void {
     const state = remoteState(context);
     for (const event of snapshot?.events ?? []) {
@@ -395,14 +557,40 @@ function syncRemoteEvents(snapshot: ControlRunSnapshot | undefined, context: any
 
         state.seenEventIds.add(id);
         const payload = eventPayload(event);
+        if (payload?.kind === 'diagnostic') {
+            const connectionName = payload.connection ?? 'default';
+            const payloadRecord = payload.payload && typeof payload.payload === 'object'
+                ? payload.payload as Record<string, unknown>
+                : {};
+            rememberRtcDiagnostic(connectionName, {
+                kind: 'diagnostic',
+                topic: payload.topic,
+                severity: payload.severity ?? 'info',
+                atEpochMs: payload.atEpochMs,
+                commandId: payload.commandId,
+                connection: connectionName,
+                provider: 'rallar-remote-browser',
+                actor: payload.actor,
+                transport: payload.transport,
+                roomId: payloadRecord.roomId,
+                roomRef: payloadRecord.roomRef,
+                scope: payloadRecord.scope,
+                applicationId: payloadRecord.applicationId,
+                workspaceId: payloadRecord.workspaceId,
+                data: payloadRecord.data ?? payload.payload,
+                error: payloadRecord.error,
+                event: payload,
+            }, context);
+            continue;
+        }
+
         if (payload?.kind === 'message') {
             const connectionName = payload.connection ?? 'default';
-            const messagePayload = payload.payload &&
-                    typeof payload.payload === 'object' &&
-                    'data' in payload.payload
-                ? (payload.payload as { data: unknown }).data
-                : payload.payload;
             if (payload.transport === 'ws') {
+                const payloadRecord = toRemotePayloadRecord(payload);
+                const messagePayload = Object.prototype.hasOwnProperty.call(payloadRecord, 'data')
+                    ? payloadRecord.data
+                    : payload.payload;
                 rememberRemoteWsMessage(connectionName, {
                     data: parseRemoteWsData(messagePayload),
                     receivedAtEpochMs: payload.atEpochMs,
@@ -412,12 +600,17 @@ function syncRemoteEvents(snapshot: ControlRunSnapshot | undefined, context: any
                 continue;
             }
 
+            const messageData = toRemoteRtcMessageData(payload, connectionName);
             rememberRtcMessage(connectionName, {
-                data: messagePayload,
+                data: messageData,
                 receivedAtEpochMs: payload.atEpochMs,
                 provider: 'rallar-remote-browser',
                 actor: payload.actor,
-                roomId: (payload.payload as { roomId?: unknown } | undefined)?.roomId,
+                roomId: messageData.roomId,
+                roomRef: messageData.roomRef,
+                scope: messageData.scope,
+                applicationId: messageData.applicationId,
+                workspaceId: messageData.workspaceId,
                 commandId: payload.commandId,
             }, context);
             continue;
@@ -437,6 +630,20 @@ function syncRemoteEvents(snapshot: ControlRunSnapshot | undefined, context: any
                 closedAtEpochMs: payload.atEpochMs,
                 provider: 'rallar-remote-browser',
                 commandId: payload.commandId,
+            }, context);
+        }
+
+        if (payload && isRemoteRtcCloseEvent(payload)) {
+            const connectionName = payload.connection ?? 'default';
+            const closePayload = toRemotePayloadRecord(payload);
+            rememberRtcCloseEvent(connectionName, {
+                ...closePayload,
+                closedAtEpochMs: payload.atEpochMs,
+                provider: 'rallar-remote-browser',
+                actor: payload.actor,
+                transport: payload.transport,
+                commandId: payload.commandId,
+                event: payload,
             }, context);
         }
     }
@@ -481,6 +688,14 @@ async function waitForCommandResult(
 
 function resultDetails(result: ControlResultEnvelope): any {
     return result.result?.value ?? result.error?.details ?? result.error ?? result.result;
+}
+
+function toRemoteSendResult(status: string, connectionName: string, result: ControlResultEnvelope): any {
+    return {
+        status,
+        connection: connectionName,
+        remoteResult: resultDetails(result),
+    };
 }
 
 export async function executeRallarRemoteBrowserCommand(
@@ -535,6 +750,104 @@ async function waitWithRemoteEventSync(
     }
 }
 
+async function updateRemoteHealthDiagnostics(
+    remote: RemoteProviderConfig,
+    fetchFn: RallarRemoteBrowserControlFetch,
+    context: any,
+    interaction: any,
+    commandId: string,
+): Promise<void> {
+    const connectionName = toRtcExpectedConnectionName(interaction);
+    const result = await executeRemoteCommand(
+        remote,
+        fetchFn,
+        context,
+        toHealthCommand(commandId, interaction),
+    );
+    if (!result.ok) {
+        return;
+    }
+
+    const health = resultDetails(result);
+    if (context.rtcConnections?.[connectionName]) {
+        context.rtcConnections[connectionName].diagnostics = health;
+    }
+    rememberRtcDiagnostic(connectionName, {
+        kind: 'diagnostic',
+        topic: 'rallar.remote-browser.health',
+        severity: 'info',
+        atEpochMs: Date.now(),
+        commandId,
+        connection: connectionName,
+        provider: 'rallar-remote-browser',
+        data: health,
+        event: result,
+    }, context);
+}
+
+function startRemoteHealthSync(
+    remote: RemoteProviderConfig,
+    fetchFn: RallarRemoteBrowserControlFetch,
+    context: any,
+    interaction: any,
+    commandIdPrefix: string,
+): number {
+    let syncing = false;
+    let sequence = 0;
+    return setInterval(() => {
+        if (syncing) {
+            return;
+        }
+
+        syncing = true;
+        sequence += 1;
+        void updateRemoteHealthDiagnostics(
+            remote,
+            fetchFn,
+            context,
+            interaction,
+            `${commandIdPrefix}-health-${sequence}`,
+        )
+            .catch(() => {
+                // waitForRtcHealth reports missing health through its normal timeout diagnostics.
+            })
+            .finally(() => {
+                syncing = false;
+            });
+    }, remote.pollIntervalMs) as unknown as number;
+}
+
+async function waitForRemoteRtcHealth(
+    remote: RemoteProviderConfig,
+    fetchFn: RallarRemoteBrowserControlFetch,
+    context: any,
+    interaction: any,
+    config: any,
+    details: any = {},
+): Promise<any> {
+    const commandIdPrefix = commandIdFor('health', interaction);
+    await updateRemoteHealthDiagnostics(
+        remote,
+        fetchFn,
+        context,
+        interaction,
+        `${commandIdPrefix}-health-0`,
+    ).catch(() => undefined);
+
+    const interval = startRemoteHealthSync(
+        remote,
+        fetchFn,
+        context,
+        interaction,
+        commandIdPrefix,
+    );
+    try {
+        return await waitForRtcHealth(interaction, config, context, details);
+    } finally {
+        clearInterval(interval);
+    }
+}
+
 function toFailureFromError(config: any, interaction: any, message: string, error: unknown): any {
     return toRtcFailureStatus(config, interaction, message, {
         exception: error instanceof Error ? error.message : String(error),
@@ -552,17 +865,23 @@ export function createRallarRemoteBrowserRtcProvider(
             const commandId = commandIdFor('connect', interaction);
             const command = toConnectCommand(commandId, interaction);
             const connectionName = toRtcConnectionName(interaction.request);
+            const connectStartedAtEpochMs = Date.now();
 
             try {
                 const result = await executeRemoteCommand(remote, fetchFn, context, command);
+                const connectedAtEpochMs = Date.now();
                 if (!result.ok) {
                     return toRtcFailureStatus(config, interaction, 'Remote RTC connect failed', {
                         connection: connectionName,
                         remote,
                         result,
+                        connectStartedAtEpochMs,
+                        connectFailedAtEpochMs: connectedAtEpochMs,
+                        connectLatencyMs: connectedAtEpochMs - connectStartedAtEpochMs,
                     });
                 }
 
+                const diagnostics = resultDetails(result);
                 context.rtcConnections[connectionName] = {
                     client: {
                         connect: async () => {
@@ -585,10 +904,15 @@ export function createRallarRemoteBrowserRtcProvider(
                     actor: interaction.request.actor,
                     roomId: interaction.request.roomId,
                     request: interaction.request,
-                    connectedAtEpochMs: Date.now(),
+                    connectStartedAtEpochMs,
+                    connectedAtEpochMs,
+                    connectLatencyMs: connectedAtEpochMs - connectStartedAtEpochMs,
+                    diagnostics,
                     commandId,
                 };
                 context.rtcMessages[connectionName] = context.rtcMessages[connectionName] || [];
+                context.rtcDiagnostics = context.rtcDiagnostics || {};
+                context.rtcDiagnostics[connectionName] = context.rtcDiagnostics[connectionName] || [];
                 context.rtcCloseEvents[connectionName] = context.rtcCloseEvents[connectionName] || [];
 
                 return toRtcSuccessStatus(config, interaction, {
@@ -597,7 +921,12 @@ export function createRallarRemoteBrowserRtcProvider(
                     provider: interaction.request.provider,
                     remote,
                     commandId,
-                    result: resultDetails(result),
+                    ...toRallarScopeFields(interaction.request),
+                    result: diagnostics,
+                    diagnostics,
+                    connectStartedAtEpochMs,
+                    connectedAtEpochMs,
+                    connectLatencyMs: connectedAtEpochMs - connectStartedAtEpochMs,
                 });
             } catch (error) {
                 return toFailureFromError(config, interaction, 'Remote RTC connect failed', error);
@@ -617,22 +946,34 @@ export function createRallarRemoteBrowserRtcProvider(
             const command = toSendCommand(commandId, interaction);
 
             try {
+                const sendStartedAtEpochMs = Date.now();
                 const result = await executeRemoteCommand(remote, fetchFn, context, command);
+                const sendEndedAtEpochMs = Date.now();
                 if (!result.ok) {
                     return toRtcFailureStatus(config, interaction, 'Remote RTC send failed', {
                         connection: connectionName,
                         remote,
                         result,
+                        sendResult: toRemoteSendResult('failed', connectionName, result),
+                        sendStartedAtEpochMs,
+                        sendEndedAtEpochMs,
+                        sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs,
                     });
                 }
 
+                const sent = command.kind === 'rtc.send' ? command.send : undefined;
                 const details = {
                     connection: connectionName,
-                    sent: toRtcPayload(interaction.request),
+                    sent,
                     provider: interaction.request.provider,
                     remote,
                     commandId,
+                    ...toRallarScopeFields(interaction.request),
                     result: resultDetails(result),
+                    sendResult: toRemoteSendResult('sent', connectionName, result),
+                    sendStartedAtEpochMs,
+                    sendEndedAtEpochMs,
+                    sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs,
                 };
 
                 if (interaction.response?.messages) {
@@ -641,6 +982,35 @@ export function createRallarRemoteBrowserRtcProvider(
                         fetchFn,
                         context,
                         () => waitForRtcMessages(interaction, config, context, details),
+                    );
+                }
+
+                if (interaction.response?.diagnostics) {
+                    return waitWithRemoteEventSync(
+                        remote,
+                        fetchFn,
+                        context,
+                        () => waitForRtcDiagnostics(interaction, config, context, details),
+                    );
+                }
+
+                if (interaction.response?.diagnostic) {
+                    return waitWithRemoteEventSync(
+                        remote,
+                        fetchFn,
+                        context,
+                        () => waitForRtcDiagnostic(interaction, config, context, details),
+                    );
+                }
+
+                if (interaction.response?.health !== undefined) {
+                    return await waitForRemoteRtcHealth(
+                        remote,
+                        fetchFn,
+                        context,
+                        interaction,
+                        config,
+                        details,
                     );
                 }
 
@@ -667,14 +1037,48 @@ export function createRallarRemoteBrowserRtcProvider(
                         remote,
                     });
                 }
+                if (interaction.response?.diagnostics) {
+                    return waitForRtcDiagnostics(interaction, config, context, {
+                        remote,
+                    });
+                }
+                if (interaction.response?.diagnostic) {
+                    return waitForRtcDiagnostic(interaction, config, context, {
+                        remote,
+                    });
+                }
+                if (interaction.response?.health !== undefined) {
+                    return waitForRemoteRtcHealth(
+                        remote,
+                        fetchFn,
+                        context,
+                        interaction,
+                        config,
+                        {
+                            remote,
+                        },
+                    );
+                }
                 if (interaction.response?.messages) {
                     return waitForRtcMessages(interaction, config, context, {
                         remote,
                     });
                 }
-                return waitForRtcMessage(interaction, config, context, {
-                    remote,
-                });
+                if (interaction.response?.message) {
+                    return waitForRtcMessage(interaction, config, context, {
+                        remote,
+                    });
+                }
+
+                return Promise.resolve(toRtcFailureStatus(
+                    config,
+                    interaction,
+                    'RTC wait expects expect.message, expect.messages, expect.diagnostic, expect.diagnostics, expect.health, or expect.close',
+                    {
+                        connection: toRtcExpectedConnectionName(interaction),
+                        remote,
+                    },
+                ));
             });
         },
 

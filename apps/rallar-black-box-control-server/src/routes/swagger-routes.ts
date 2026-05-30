@@ -6,7 +6,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
         title: 'Rallar Black Box Control Server',
         version: '0.1.0',
         description:
-            'Local orchestration API for browser-based Rallar black-box test agents. The server queues commands, dispatches them to SPA agents over WebSocket, and stores results, events, stats, reports, and heartbeats in memory.',
+            'Local orchestration API for browser-based Rallar black-box test agents. The server queues commands, dispatches them to SPA agents over WebSocket, stores results, events, stats, reports, and heartbeats, and exports redacted run artifacts.',
     },
     servers: [
         {
@@ -21,6 +21,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
         { name: 'Commands' },
         { name: 'Reports' },
         { name: 'Tokens' },
+        { name: 'Retention' },
         { name: 'Control WebSocket' },
     ],
     paths: {
@@ -44,6 +45,14 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
             get: {
                 tags: ['Runs'],
                 summary: 'List run snapshots',
+                parameters: [
+                    { $ref: '#/components/parameters/LimitCommands' },
+                    { $ref: '#/components/parameters/LimitResults' },
+                    { $ref: '#/components/parameters/LimitEvents' },
+                    { $ref: '#/components/parameters/LimitStats' },
+                    { $ref: '#/components/parameters/LimitReports' },
+                    { $ref: '#/components/parameters/LimitHeartbeats' },
+                ],
                 responses: {
                     '200': {
                         description: 'All in-memory runs known by the control server.',
@@ -56,17 +65,209 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                 },
             },
         },
+        '/retention/cleanup': {
+            post: {
+                tags: ['Retention'],
+                summary: 'Apply configured run retention',
+                description:
+                    'Deletes the oldest in-memory runs beyond `RALLAR_BLACK_BOX_RETENTION_MAX_RUNS`. Requires the admin token when configured.',
+                security: [{ bearerAuth: [] }, { queryToken: [] }],
+                responses: {
+                    '200': {
+                        description: 'Retention cleanup result.',
+                        content: {
+                            'application/json': {
+                                schema: { $ref: '#/components/schemas/RetentionCleanupResponse' },
+                            },
+                        },
+                    },
+                    '401': { $ref: '#/components/responses/Unauthorized' },
+                },
+            },
+        },
         '/runs/{runId}': {
             get: {
                 tags: ['Runs'],
                 summary: 'Read one run snapshot',
-                parameters: [{ $ref: '#/components/parameters/RunId' }],
+                parameters: [
+                    { $ref: '#/components/parameters/RunId' },
+                    { $ref: '#/components/parameters/LimitCommands' },
+                    { $ref: '#/components/parameters/LimitResults' },
+                    { $ref: '#/components/parameters/LimitEvents' },
+                    { $ref: '#/components/parameters/LimitStats' },
+                    { $ref: '#/components/parameters/LimitReports' },
+                    { $ref: '#/components/parameters/LimitHeartbeats' },
+                ],
                 responses: {
                     '200': {
                         description: 'Run snapshot.',
                         content: {
                             'application/json': {
                                 schema: { $ref: '#/components/schemas/ControlRunSnapshot' },
+                            },
+                        },
+                    },
+                    '404': { $ref: '#/components/responses/NotFound' },
+                },
+            },
+            delete: {
+                tags: ['Runs'],
+                summary: 'Delete one run',
+                description:
+                    'Removes the in-memory run and closes any connected browser-agent sockets for that run. Requires the admin token when configured.',
+                security: [{ bearerAuth: [] }, { queryToken: [] }],
+                parameters: [{ $ref: '#/components/parameters/RunId' }],
+                responses: {
+                    '200': {
+                        description: 'Run deleted.',
+                        content: {
+                            'application/json': {
+                                schema: { $ref: '#/components/schemas/DeleteRunResponse' },
+                            },
+                        },
+                    },
+                    '401': { $ref: '#/components/responses/Unauthorized' },
+                    '404': { $ref: '#/components/responses/NotFound' },
+                },
+            },
+        },
+        '/runs/{runId}/reset': {
+            post: {
+                tags: ['Runs'],
+                summary: 'Reset one run snapshot',
+                description:
+                    'Clears queued commands, results, events, stats, reports, heartbeats, and agent counters while keeping known agents and run tokens. Requires the admin token when configured.',
+                security: [{ bearerAuth: [] }, { queryToken: [] }],
+                parameters: [{ $ref: '#/components/parameters/RunId' }],
+                responses: {
+                    '200': {
+                        description: 'Run reset.',
+                        content: {
+                            'application/json': {
+                                schema: { $ref: '#/components/schemas/ResetRunResponse' },
+                            },
+                        },
+                    },
+                    '401': { $ref: '#/components/responses/Unauthorized' },
+                    '404': { $ref: '#/components/responses/NotFound' },
+                },
+            },
+        },
+        '/runs/{runId}/commands': {
+            post: {
+                tags: ['Commands'],
+                summary: 'Queue a command for multiple browser agents',
+                description:
+                    'Queues one command per selected agent. Requires the admin token when configured and is intended for run-manager bulk orchestration.',
+                security: [{ bearerAuth: [] }, { queryToken: [] }],
+                parameters: [{ $ref: '#/components/parameters/RunId' }],
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: { $ref: '#/components/schemas/BulkEnqueueCommandRequest' },
+                        },
+                    },
+                },
+                responses: {
+                    '202': {
+                        description: 'Commands accepted and queued.',
+                        content: {
+                            'application/json': {
+                                schema: { $ref: '#/components/schemas/BulkCommandAcceptedResponse' },
+                            },
+                        },
+                    },
+                    '400': { $ref: '#/components/responses/BadRequest' },
+                    '401': { $ref: '#/components/responses/Unauthorized' },
+                    '403': { $ref: '#/components/responses/Forbidden' },
+                    '429': { $ref: '#/components/responses/TooManyRequests' },
+                },
+            },
+        },
+        '/runs/{runId}/artifacts': {
+            get: {
+                tags: ['Reports'],
+                summary: 'Export a run artifact bundle',
+                description:
+                    'Returns redacted report.json, events.jsonl, failures.json, and metadata.json strings for attaching failed runs to issues or importing into the SPA artifact browser.',
+                parameters: [{ $ref: '#/components/parameters/RunId' }],
+                responses: {
+                    '200': {
+                        description: 'Control run artifact bundle.',
+                        content: {
+                            'application/json': {
+                                schema: { $ref: '#/components/schemas/ControlRunArtifactBundle' },
+                            },
+                        },
+                    },
+                    '404': { $ref: '#/components/responses/NotFound' },
+                },
+            },
+        },
+        '/runs/{runId}/artifacts/{fileName}': {
+            get: {
+                tags: ['Reports'],
+                summary: 'Export one run artifact file',
+                parameters: [
+                    { $ref: '#/components/parameters/RunId' },
+                    { $ref: '#/components/parameters/ArtifactFileName' },
+                ],
+                responses: {
+                    '200': {
+                        description: 'Artifact file content.',
+                        content: {
+                            'application/json': { schema: { type: 'object' } },
+                            'application/x-ndjson': { schema: { type: 'string' } },
+                        },
+                    },
+                    '404': { $ref: '#/components/responses/NotFound' },
+                },
+            },
+        },
+        '/runs/{runId}/events.jsonl': {
+            get: {
+                tags: ['Reports'],
+                summary: 'Export run events as JSONL',
+                parameters: [{ $ref: '#/components/parameters/RunId' }],
+                responses: {
+                    '200': {
+                        description: 'JSONL event stream.',
+                        content: {
+                            'application/x-ndjson': { schema: { type: 'string' } },
+                        },
+                    },
+                    '404': { $ref: '#/components/responses/NotFound' },
+                },
+            },
+        },
+        '/runs/{runId}/results.jsonl': {
+            get: {
+                tags: ['Reports'],
+                summary: 'Export run results as JSONL',
+                parameters: [{ $ref: '#/components/parameters/RunId' }],
+                responses: {
+                    '200': {
+                        description: 'JSONL result stream.',
+                        content: {
+                            'application/x-ndjson': { schema: { type: 'string' } },
+                        },
+                    },
+                    '404': { $ref: '#/components/responses/NotFound' },
+                },
+            },
+        },
+        '/runs/{runId}/failure-bundle': {
+            get: {
+                tags: ['Reports'],
+                summary: 'Export a copyable failure bundle',
+                parameters: [{ $ref: '#/components/parameters/RunId' }],
+                responses: {
+                    '200': {
+                        description: 'Failure-focused report bundle.',
+                        content: {
+                            'application/json': {
+                                schema: { $ref: '#/components/schemas/ControlRunFailureBundle' },
                             },
                         },
                     },
@@ -286,6 +487,57 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                 required: true,
                 schema: { type: 'string' },
             },
+            ArtifactFileName: {
+                name: 'fileName',
+                in: 'path',
+                required: true,
+                schema: {
+                    type: 'string',
+                    enum: ['report.json', 'events.jsonl', 'failures.json', 'metadata.json'],
+                },
+            },
+            LimitCommands: {
+                name: 'limitCommands',
+                in: 'query',
+                required: false,
+                schema: { type: 'integer', minimum: 0 },
+                description: 'Return only the most recent queued command snapshots.',
+            },
+            LimitResults: {
+                name: 'limitResults',
+                in: 'query',
+                required: false,
+                schema: { type: 'integer', minimum: 0 },
+                description: 'Return only the most recent command results.',
+            },
+            LimitEvents: {
+                name: 'limitEvents',
+                in: 'query',
+                required: false,
+                schema: { type: 'integer', minimum: 0 },
+                description: 'Return only the most recent events.',
+            },
+            LimitStats: {
+                name: 'limitStats',
+                in: 'query',
+                required: false,
+                schema: { type: 'integer', minimum: 0 },
+                description: 'Return only the most recent stats envelopes.',
+            },
+            LimitReports: {
+                name: 'limitReports',
+                in: 'query',
+                required: false,
+                schema: { type: 'integer', minimum: 0 },
+                description: 'Return only the most recent report envelopes.',
+            },
+            LimitHeartbeats: {
+                name: 'limitHeartbeats',
+                in: 'query',
+                required: false,
+                schema: { type: 'integer', minimum: 0 },
+                description: 'Return only the most recent heartbeat envelopes.',
+            },
         },
         responses: {
             BadRequest: {
@@ -461,12 +713,101 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                     deadlineEpochMs: { type: 'integer' },
                 },
             },
+            BulkEnqueueCommandRequest: {
+                type: 'object',
+                required: ['agentIds', 'command'],
+                properties: {
+                    agentIds: {
+                        type: 'array',
+                        minItems: 1,
+                        items: { type: 'string' },
+                    },
+                    commandId: {
+                        type: 'string',
+                        description:
+                            'Exact command id when one agent is targeted; used as a prefix when multiple agents are targeted.',
+                    },
+                    commandIdPrefix: {
+                        type: 'string',
+                        description: 'Optional command id prefix for generated per-agent command ids.',
+                    },
+                    command: { $ref: '#/components/schemas/RallarBlackBoxTestCommand' },
+                    deadlineEpochMs: { type: 'integer' },
+                },
+            },
             CommandAcceptedResponse: {
                 type: 'object',
                 required: ['accepted', 'command'],
                 properties: {
                     accepted: { type: 'boolean' },
                     command: { $ref: '#/components/schemas/ControlCommandEnvelope' },
+                },
+            },
+            BulkCommandAcceptedResponse: {
+                type: 'object',
+                required: ['accepted', 'commands'],
+                properties: {
+                    accepted: { type: 'boolean' },
+                    commands: {
+                        type: 'array',
+                        items: { $ref: '#/components/schemas/ControlCommandEnvelope' },
+                    },
+                },
+            },
+            ResetRunResponse: {
+                type: 'object',
+                required: ['reset', 'run'],
+                properties: {
+                    reset: { type: 'boolean' },
+                    run: { $ref: '#/components/schemas/ControlRunSnapshot' },
+                },
+            },
+            DeleteRunResponse: {
+                type: 'object',
+                required: ['deleted', 'runId'],
+                properties: {
+                    deleted: { type: 'boolean' },
+                    runId: { type: 'string' },
+                },
+            },
+            RetentionCleanupResponse: {
+                type: 'object',
+                required: ['deletedRunIds', 'retainedRuns', 'maxRuns'],
+                properties: {
+                    deletedRunIds: { type: 'array', items: { type: 'string' } },
+                    retainedRuns: { type: 'integer' },
+                    maxRuns: { type: 'integer' },
+                },
+            },
+            ControlRunArtifactBundle: {
+                type: 'object',
+                required: ['artifactSchemaVersion', 'runId', 'generatedAtEpochMs', 'files'],
+                properties: {
+                    artifactSchemaVersion: { type: 'integer', enum: [1] },
+                    runId: { type: 'string' },
+                    generatedAtEpochMs: { type: 'integer' },
+                    files: {
+                        type: 'object',
+                        required: ['report.json', 'events.jsonl', 'failures.json', 'metadata.json'],
+                        properties: {
+                            'report.json': { type: 'string' },
+                            'events.jsonl': { type: 'string' },
+                            'failures.json': { type: 'string' },
+                            'metadata.json': { type: 'string' },
+                        },
+                    },
+                },
+            },
+            ControlRunFailureBundle: {
+                type: 'object',
+                required: ['summary', 'failures', 'outputs'],
+                properties: {
+                    summary: { type: 'object', additionalProperties: true },
+                    failures: {
+                        type: 'array',
+                        items: { type: 'object', additionalProperties: true },
+                    },
+                    outputs: { type: 'object', additionalProperties: true },
                 },
             },
             ControlCommandEnvelope: {
@@ -710,7 +1051,7 @@ function responseHeaders(
 ): Headers {
     const headers = new Headers({
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+        'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Rallar-Run-Token',
         ...extra,
     });

@@ -21,6 +21,7 @@ type BlackBoxRallarConnectionConfig = {
     peerId?: string
     remotePeerId?: string
     roomId?: string
+    roomRef?: any
     rallar: any
 }
 
@@ -187,11 +188,82 @@ function toEffectiveProviderOptions(
     };
 }
 
+function toRallarScope(request: any): any {
+    const rallar = asObject(request.rallar);
+    const scope = asObject(firstDefined(request.scope, rallar.scope));
+    const roomRef = asObject(firstDefined(request.roomRef, rallar.roomRef));
+    const applicationId = firstDefined(
+        request.applicationId,
+        rallar.applicationId,
+        scope.applicationId,
+        roomRef.applicationId,
+    );
+    if (applicationId === undefined) {
+        return undefined;
+    }
+
+    const workspaceId = firstDefined(
+        request.workspaceId,
+        rallar.workspaceId,
+        scope.workspaceId,
+        roomRef.workspaceId,
+    );
+
+    return {
+        applicationId: String(applicationId),
+        ...(workspaceId !== undefined ? { workspaceId: String(workspaceId) } : {}),
+    };
+}
+
+function toRallarRoomRef(request: any, fallbackRoomId?: string): any {
+    const rallar = asObject(request.rallar);
+    const explicitRoomRef = asObject(firstDefined(request.roomRef, rallar.roomRef));
+    if (explicitRoomRef.applicationId && explicitRoomRef.groupId) {
+        return {
+            applicationId: String(explicitRoomRef.applicationId),
+            ...(explicitRoomRef.workspaceId !== undefined
+                ? { workspaceId: String(explicitRoomRef.workspaceId) }
+                : {}),
+            groupId: String(explicitRoomRef.groupId),
+        };
+    }
+
+    const roomId = firstDefined(request.roomId, rallar.roomId, fallbackRoomId);
+    const scope = toRallarScope(request);
+    if (!roomId || !scope?.applicationId) {
+        return undefined;
+    }
+
+    return {
+        applicationId: scope.applicationId,
+        ...(scope.workspaceId !== undefined ? { workspaceId: scope.workspaceId } : {}),
+        groupId: String(roomId),
+    };
+}
+
+function toRallarScopeDiagnostics(request: any, fallbackRoomId?: string): any {
+    const scope = toRallarScope(request);
+    const roomRef = toRallarRoomRef(request, fallbackRoomId);
+
+    return {
+        ...(scope?.applicationId ? { applicationId: scope.applicationId } : {}),
+        ...(scope?.workspaceId !== undefined ? { workspaceId: scope.workspaceId } : {}),
+        ...(scope ? { scope } : {}),
+        ...(roomRef ? { roomRef } : {}),
+    };
+}
+
+function scopedRequestField(request: any, key: string): any {
+    const rallar = asObject(request.rallar);
+    return firstDefined(request[key], rallar[key]);
+}
+
 function toBrowserRuntimeConfig(
     args: RallarRtcClientArgs,
 ): BlackBoxRallarConnectionConfig {
     const request = args.request || {};
     const rallar = asObject(request.rallar);
+    const scopeDiagnostics = toRallarScopeDiagnostics(request, args.roomId);
 
     return {
         connection: args.connection,
@@ -199,6 +271,7 @@ function toBrowserRuntimeConfig(
         peerId: args.peerId,
         remotePeerId: args.remotePeerId,
         roomId: args.roomId,
+        roomRef: scopeDiagnostics.roomRef,
         rallar: {
             ...rallar,
             apiBaseUrl: firstDefined(
@@ -216,6 +289,14 @@ function toBrowserRuntimeConfig(
             contextId: firstDefined(rallar.contextId, request.contextId),
             resourceId: firstDefined(rallar.resourceId, request.resourceId),
             messageSelector: firstDefined(rallar.messageSelector, request.messageSelector),
+            applicationId: scopeDiagnostics.applicationId,
+            workspaceId: scopeDiagnostics.workspaceId,
+            scope: scopeDiagnostics.scope,
+            roomRef: scopeDiagnostics.roomRef,
+            minSnapshotVersion: firstDefined(
+                rallar.minSnapshotVersion,
+                request.minSnapshotVersion,
+            ),
             openTimeoutMs: firstDefined(rallar.openTimeoutMs, request.openTimeoutMs),
             timeoutMs: firstDefined(
                 rallar.timeoutMs,
@@ -362,6 +443,7 @@ function dispatchBrowserEvent(
         roomId: event.roomId || args.roomId,
         groupId: args.groupId,
         overlayId: args.overlayId,
+        ...toRallarScopeDiagnostics(args.request, event.roomId || args.roomId),
     };
 
     if (event.kind === 'close') {
@@ -390,6 +472,7 @@ function dispatchProviderDiagnostic(
         roomId: args.roomId,
         groupId: args.groupId,
         overlayId: args.overlayId,
+        ...toRallarScopeDiagnostics(args.request, args.roomId),
         data,
     });
 }
@@ -411,6 +494,7 @@ function dispatchProviderClose(
         roomId: args.roomId,
         groupId: args.groupId,
         overlayId: args.overlayId,
+        ...toRallarScopeDiagnostics(args.request, args.roomId),
         closedAtEpochMs: Date.now(),
         ...data,
     });
@@ -527,6 +611,10 @@ function isBrowserRealtimeSendEnvelope(message: any): boolean {
             hasOwn(message, 'data') ||
             hasOwn(message, 'laneId') ||
             hasOwn(message, 'roomId') ||
+            hasOwn(message, 'roomRef') ||
+            hasOwn(message, 'applicationId') ||
+            hasOwn(message, 'workspaceId') ||
+            hasOwn(message, 'scope') ||
             hasOwn(message, 'peerIds') ||
             hasOwn(message, 'remotePeerId') ||
             hasOwn(message, 'openTimeoutMs') ||
@@ -545,6 +633,10 @@ function isBrowserMessagesRtcSendEnvelope(message: any): boolean {
             hasOwn(message, 'contextId') ||
             hasOwn(message, 'resourceId') ||
             hasOwn(message, 'roomId') ||
+            hasOwn(message, 'roomRef') ||
+            hasOwn(message, 'applicationId') ||
+            hasOwn(message, 'workspaceId') ||
+            hasOwn(message, 'scope') ||
             hasOwn(message, 'peerIds') ||
             hasOwn(message, 'nextHopPeerIds') ||
             hasOwn(message, 'ttlHops') ||
@@ -553,6 +645,7 @@ function isBrowserMessagesRtcSendEnvelope(message: any): boolean {
             hasOwn(message, 'ack') ||
             hasOwn(message, 'ownership') ||
             hasOwn(message, 'membershipEpoch') ||
+            hasOwn(message, 'minSnapshotVersion') ||
             hasOwn(message, 'seq') ||
             hasOwn(message, 'orderingKey') ||
             hasOwn(message, 'overlayId') ||
@@ -639,6 +732,27 @@ function toBrowserTransportSendInput(
 
     if (input.roomId === undefined && args.roomId !== undefined) {
         input.roomId = args.roomId;
+    }
+
+    const sendRequest = interaction?.request ?? args.request ?? {};
+    const scopeDiagnostics = toRallarScopeDiagnostics(sendRequest, input.roomId ?? args.roomId);
+    if (input.applicationId === undefined && scopeDiagnostics.applicationId !== undefined) {
+        input.applicationId = scopeDiagnostics.applicationId;
+    }
+    if (input.workspaceId === undefined && scopeDiagnostics.workspaceId !== undefined) {
+        input.workspaceId = scopeDiagnostics.workspaceId;
+    }
+    if (input.scope === undefined && scopeDiagnostics.scope !== undefined) {
+        input.scope = scopeDiagnostics.scope;
+    }
+    if (input.roomRef === undefined && scopeDiagnostics.roomRef !== undefined) {
+        input.roomRef = scopeDiagnostics.roomRef;
+    }
+    if (input.minSnapshotVersion === undefined) {
+        const minSnapshotVersion = scopedRequestField(sendRequest, 'minSnapshotVersion');
+        if (minSnapshotVersion !== undefined) {
+            input.minSnapshotVersion = minSnapshotVersion;
+        }
     }
 
     return input;
@@ -903,6 +1017,8 @@ async function createBrowserSession(
     }
 
     return {
+        connectDiagnostics: session.connectDiagnostics,
+
         send: async (message: any) => {
             let response: any;
 
@@ -920,17 +1036,23 @@ async function createBrowserSession(
                     response,
                 );
                 assertBrowserSendSucceeded(response);
+                return response;
             } catch (error) {
+                const failedSendDiagnostics = {
+                    sent: message,
+                    response,
+                    error: serializeError(error),
+                };
                 dispatchProviderDiagnostic(
                     'rallar.browser.provider.send_failed',
                     args,
                     dispatcher,
-                    {
-                        sent: message,
-                        response,
-                        error: serializeError(error),
-                    },
+                    failedSendDiagnostics,
                 );
+                if (error && typeof error === 'object') {
+                    (error as any).sendResult = response;
+                    (error as any).diagnostics = failedSendDiagnostics;
+                }
                 throw error;
             }
         },
@@ -978,6 +1100,8 @@ function createRallarBrowserRtcClient(
     const args = toRallarRtcClientArgs(request);
     const dispatcher = createRallarRtcClientEventDispatcher();
     let runtimeSession: RallarRtcRuntimeSession | undefined;
+    let connectDiagnostics: any;
+    let lastSendDiagnostics: any;
 
     return {
         connect: async () => {
@@ -987,6 +1111,7 @@ function createRallarBrowserRtcClient(
                 context,
                 options,
             );
+            connectDiagnostics = (runtimeSession as any).connectDiagnostics;
         },
 
         send: async (message: any, interaction?: any, _config?: any, sendContext?: any) => {
@@ -997,12 +1122,13 @@ function createRallarBrowserRtcClient(
                 );
             }
 
-            await runtimeSession.send(toBrowserTransportSendInput(
+            lastSendDiagnostics = await runtimeSession.send(toBrowserTransportSendInput(
                 message,
                 interaction,
                 args,
                 sendContext || context,
             ));
+            return lastSendDiagnostics;
         },
 
         close: async () => {
@@ -1020,6 +1146,14 @@ function createRallarBrowserRtcClient(
 
         onClose(handler: (event: any) => void): void {
             dispatcher.onClose(handler);
+        },
+
+        diagnostics(): any {
+            return {
+                ...toRallarScopeDiagnostics(args.request, args.roomId),
+                connect: connectDiagnostics,
+                lastSend: lastSendDiagnostics,
+            };
         },
     };
 }

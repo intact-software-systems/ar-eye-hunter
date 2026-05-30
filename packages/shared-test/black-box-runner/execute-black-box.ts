@@ -5,6 +5,7 @@ import {
     rememberRtcCloseEvent,
     type RtcClient,
     type RtcProvider,
+    toRtcPayload,
     toRtcFailureStatus, toRtcSuccessStatus,
 } from './rtc-provider.ts';
 import { createRallarStubRtcProvider } from './rallar-stub-rtc-provider.ts';
@@ -26,6 +27,176 @@ import type { RallarBlackBoxTestCommand } from '../rallar-bb-test/types.ts';
 const SUCCESS = 'SUCCESS';
 const FAILURE = 'FAILURE';
 
+declare const process: { env: Record<string, string | undefined> } | undefined;
+
+type Redaction = {
+    name: string
+    value: string
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function defaultEnvironment(): Record<string, string | undefined> {
+    return typeof process !== 'undefined'
+        ? process.env
+        : {};
+}
+
+function isEnvVariableDescriptor(value: unknown): value is Record<string, unknown> {
+    return isRecord(value) &&
+        (typeof value.env === 'string' || typeof value.fromEnv === 'string');
+}
+
+function toSecretNameSet(secretVariables: unknown): Set<string> {
+    if (Array.isArray(secretVariables)) {
+        return new Set(secretVariables.map(String));
+    }
+
+    if (typeof secretVariables === 'string') {
+        return new Set(
+            secretVariables
+                .split(',')
+                .map(value => value.trim())
+                .filter(value => value.length > 0),
+        );
+    }
+
+    return new Set();
+}
+
+function addRedaction(redactions: Redaction[], name: string, value: unknown): void {
+    if (value === undefined || value === null) {
+        return;
+    }
+
+    const text = String(value);
+    if (text.length <= 0) {
+        return;
+    }
+
+    if (redactions.some(redaction => redaction.name === name && redaction.value === text)) {
+        return;
+    }
+
+    redactions.push({
+        name,
+        value: text,
+    });
+}
+
+function normalizeRedactions(redactions: unknown): Redaction[] {
+    if (Array.isArray(redactions)) {
+        return redactions.flatMap(redaction => {
+            if (isRecord(redaction) && typeof redaction.value === 'string' && redaction.value.length > 0) {
+                return [{
+                    name: typeof redaction.name === 'string' && redaction.name.length > 0
+                        ? redaction.name
+                        : 'secret',
+                    value: redaction.value,
+                }];
+            }
+
+            return [];
+        });
+    }
+
+    if (isRecord(redactions)) {
+        return Object.entries(redactions).flatMap(([name, value]) => {
+            if (value === undefined || value === null || String(value).length <= 0) {
+                return [];
+            }
+
+            return [{
+                name,
+                value: String(value),
+            }];
+        });
+    }
+
+    return [];
+}
+
+export function resolveBlackBoxVariables(
+    rawVariables: Record<string, unknown> = {},
+    environment: Record<string, string | undefined> = defaultEnvironment(),
+    secretVariables: unknown = [],
+): { variables: Record<string, unknown>, redactions: Redaction[] } {
+    const secrets = toSecretNameSet(secretVariables);
+    const variables: Record<string, unknown> = {};
+    const redactions: Redaction[] = [];
+
+    Object.entries(rawVariables || {}).forEach(([key, value]) => {
+        if (isEnvVariableDescriptor(value)) {
+            const envName = String(value.env ?? value.fromEnv);
+            const envValue = environment[envName];
+            const hasEnvValue = envValue !== undefined && (envValue.length > 0 || value.allowEmpty === true);
+            const fallbackValue = value.default !== undefined
+                ? value.default
+                : value.fallback;
+
+            if (!hasEnvValue && fallbackValue === undefined && value.required === true) {
+                throw new Error(`Missing required environment variable ${envName} for black-box variable ${key}`);
+            }
+
+            const resolvedValue = hasEnvValue
+                ? envValue
+                : fallbackValue;
+
+            variables[key] = resolvedValue;
+
+            if (value.secret === true || value.redact === true || secrets.has(key)) {
+                addRedaction(redactions, String(value.redactAs || key), resolvedValue);
+            }
+
+            return;
+        }
+
+        variables[key] = value;
+
+        if (secrets.has(key)) {
+            addRedaction(redactions, key, value);
+        }
+    });
+
+    return {
+        variables,
+        redactions,
+    };
+}
+
+function redactString(value: string, redactions: Redaction[]): string {
+    return redactions.reduce((text, redaction) => {
+        return redaction.value.length > 0
+            ? text.replaceAll(redaction.value, `<redacted:${redaction.name}>`)
+            : text;
+    }, value);
+}
+
+export function redactBlackBoxData<T>(value: T, redactions: Redaction[] = []): T {
+    if (redactions.length <= 0) {
+        return value;
+    }
+
+    if (typeof value === 'string') {
+        return redactString(value, redactions) as T;
+    }
+
+    if (Array.isArray(value)) {
+        return value.map(item => redactBlackBoxData(item, redactions)) as T;
+    }
+
+    if (isRecord(value)) {
+        return Object.fromEntries(
+            Object.entries(value)
+                .map(([key, nested]) => [key, redactBlackBoxData(nested, redactions)]),
+        ) as T;
+    }
+
+    return value;
+}
+
 function createRtcProviders(): Record<string, RtcProvider> {
     return {
         rallar: createRallarWebRtcWebSocketSignalingProvider(),
@@ -37,8 +208,14 @@ function createRtcProviders(): Record<string, RtcProvider> {
 }
 
 function createScenarioContext(options: any = {}): any {
+    const resolvedVariables = resolveBlackBoxVariables(
+        options.variables || {},
+        options.environment || defaultEnvironment(),
+        options.secretVariables || options.secrets || [],
+    );
+
     return {
-        variables: options.variables || {},
+        variables: resolvedVariables.variables,
         outputs: {},
         results: {},
         resultsList: [],
@@ -48,6 +225,7 @@ function createScenarioContext(options: any = {}): any {
         wsCloseEvents: {},
         rtcConnections: {},
         rtcMessages: {},
+        rtcDiagnostics: {},
         rtcCloseEvents: {},
         rtcProviders: {
             ...createRtcProviders(),
@@ -55,6 +233,10 @@ function createScenarioContext(options: any = {}): any {
         },
         options,
         dryRun: options?.dryRun === true,
+        redactions: [
+            ...resolvedVariables.redactions,
+            ...normalizeRedactions(options.redactions),
+        ],
     };
 }
 
@@ -79,6 +261,161 @@ function resolvePath(path: string, root: any): any {
     }
 
     return resolved;
+}
+
+function pathSegments(path: string): string[] {
+    return path
+        .replaceAll(/\[(\d+)]/g, '.$1')
+        .split('.')
+        .map(segment => segment.trim())
+        .filter(segment => segment.length > 0);
+}
+
+function tryResolvePath(path: string, root: any): { found: boolean, value?: any } {
+    const segments = pathSegments(path);
+    let value = root;
+
+    for (const segment of segments) {
+        if (value === undefined || value === null) {
+            return {
+                found: false,
+            };
+        }
+
+        value = value[segment];
+    }
+
+    return value === undefined
+        ? {
+            found: false,
+        }
+        : {
+            found: true,
+            value,
+        };
+}
+
+function extractOutputPath(result: any, outputPath: unknown): any {
+    if (outputPath === undefined || outputPath === null || outputPath === '') {
+        return result.actual;
+    }
+
+    if (typeof outputPath !== 'string') {
+        throw new Error('Output path must be a string');
+    }
+
+    const roots = [
+        result,
+        result?.actual,
+        result?.actual?.body,
+    ];
+
+    for (const root of roots) {
+        const resolved = tryResolvePath(outputPath, root);
+        if (resolved.found) {
+            return resolved.value;
+        }
+    }
+
+    throw new Error('Cannot resolve output path {' + outputPath + '}');
+}
+
+type OutputExtraction = {
+    name: string
+    path?: unknown
+    secret?: boolean
+    redactAs?: string
+}
+
+function outputExtractions(result: any): OutputExtraction[] {
+    const extractions: OutputExtraction[] = [];
+
+    if (typeof result.output === 'string' && result.output.length > 0) {
+        extractions.push({
+            name: result.output,
+            path: result.outputPath,
+        });
+    }
+
+    if (isRecord(result.outputs)) {
+        Object.entries(result.outputs).forEach(([name, spec]) => {
+            if (typeof spec === 'string') {
+                extractions.push({
+                    name,
+                    path: spec,
+                });
+                return;
+            }
+
+            if (isRecord(spec)) {
+                extractions.push({
+                    name,
+                    path: spec.path ?? spec.from ?? spec.outputPath,
+                    secret: spec.secret === true || spec.redact === true,
+                    redactAs: typeof spec.redactAs === 'string' ? spec.redactAs : undefined,
+                });
+                return;
+            }
+
+            extractions.push({
+                name,
+                path: spec,
+            });
+        });
+    }
+
+    return extractions;
+}
+
+function withExtractedOutputs(result: any, context: any): any {
+    if (result?.status !== SUCCESS) {
+        return result;
+    }
+
+    const extractions = outputExtractions(result);
+    if (extractions.length <= 0) {
+        return result;
+    }
+
+    const extractionErrors: any[] = [];
+    const extractedOutputs: Array<OutputExtraction & { value: any }> = [];
+
+    extractions.forEach(extraction => {
+        try {
+            const value = extractOutputPath(result, extraction.path);
+            extractedOutputs.push({
+                ...extraction,
+                value,
+            });
+        } catch (error) {
+            extractionErrors.push({
+                output: extraction.name,
+                path: extraction.path,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    });
+
+    if (extractionErrors.length <= 0) {
+        extractedOutputs.forEach(extraction => {
+            context.outputs[extraction.name] = extraction.value;
+            if (extraction.secret) {
+                addRedaction(context.redactions, extraction.redactAs || extraction.name, extraction.value);
+            }
+        });
+
+        return result;
+    }
+
+    return {
+        ...result,
+        status: FAILURE,
+        result: 'Output extraction failed',
+        details: {
+            ...(isRecord(result.details) ? result.details : {}),
+            outputExtractionErrors: extractionErrors,
+        },
+    };
 }
 
 function stringifyResolvedValue(value: any): string {
@@ -132,17 +469,17 @@ function toResultKey(interactionData: any): string {
         .join('-');
 }
 
-function storeInteractionData(interactionData: any, context: any): void {
+function storeInteractionData(interactionData: any, context: any): any {
     if (!interactionData || !interactionData.name) {
-        return;
+        return interactionData;
     }
 
     const resultKey = toResultKey(interactionData);
 
-    const resultWithKey = {
+    const resultWithKey = withExtractedOutputs({
         ...interactionData,
         resultKey,
-    };
+    }, context);
 
     context.results[resultKey] = resultWithKey;
     context.resultsList.push(resultWithKey);
@@ -153,9 +490,7 @@ function storeInteractionData(interactionData: any, context: any): void {
 
     context.resultsByName[interactionData.name].push(resultWithKey);
 
-    if (interactionData.output) {
-        context.outputs[interactionData.output] = interactionData.actual;
-    }
+    return resultWithKey;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -278,6 +613,14 @@ function toStatus(
     };
 }
 
+function toOutputReportFields(interaction: any): any {
+    return {
+        output: interaction.request.output,
+        outputPath: interaction.request.outputPath,
+        outputs: interaction.request.outputs,
+    };
+}
+
 function toSuccessStatus(config: any, actualJson: any, response: any, interaction: any): any {
     return {
         name: config.interactionName,
@@ -296,38 +639,99 @@ function toSuccessStatus(config: any, actualJson: any, response: any, interactio
             statusCode: response.status,
             statusText: response.statusText,
         },
-        output: interaction.request.output,
+        ...toOutputReportFields(interaction),
         input: interaction.request.input,
     };
 }
 
+function toNumberList(value: unknown): number[] {
+    if (Array.isArray(value)) {
+        return value
+            .map(item => Number.parseInt(String(item), 10))
+            .filter(item => Number.isFinite(item));
+    }
+
+    if (typeof value === 'string' && value.includes(',')) {
+        return toNumberList(value.split(','));
+    }
+
+    if (value !== undefined && value !== null) {
+        const parsed = Number.parseInt(String(value), 10);
+        return Number.isFinite(parsed)
+            ? [parsed]
+            : [];
+    }
+
+    return [];
+}
+
+function expectedHttpStatusCodes(response: any): number[] {
+    return [
+        ...toNumberList(response?.statusCode),
+        ...toNumberList(response?.status),
+        ...toNumberList(response?.statusCodes),
+        ...toNumberList(response?.allowedStatusCodes),
+    ];
+}
+
+function bodyExpectationAlternatives(response: any): any[] {
+    const alternatives = response?.bodyAnyOf ?? response?.anyBodyOf ?? response?.bodyIn;
+
+    return Array.isArray(alternatives)
+        ? alternatives
+        : [];
+}
+
+function compareExpectedBody(expectedBody: any, actualJson: any, interaction: any): any {
+    return compareJson(
+        expectedBody,
+        actualJson,
+        toConfig(
+            interaction.response?.comparison || COMPARISON.COMPATIBLE,
+            interaction.response?.ignoreJsonKeys || [],
+            interaction.response?.ignoreJsonPaths || [],
+        ),
+    );
+}
+
 function toHttpInteractionStatus(config: any, interaction: any, response: any, actualJson: any): any {
-    if (!response.ok) {
+    const expectedStatuses = expectedHttpStatusCodes(interaction.response);
+    const hasExpectedStatus = expectedStatuses.length > 0;
+
+    if (hasExpectedStatus && !expectedStatuses.includes(Number.parseInt(String(response.status), 10))) {
+        return toStatus(config, 'Expected responseCode not the same as actual responseCode', actualJson, response, interaction, {
+            expectedStatusCodes: expectedStatuses,
+        });
+    }
+
+    if (!response.ok && !hasExpectedStatus) {
         return toStatus(config, 'Server request failed.', actualJson, response, interaction);
     }
 
-    if (interaction?.response?.body !== undefined) {
+    const bodyAlternatives = bodyExpectationAlternatives(interaction.response);
+    if (bodyAlternatives.length > 0) {
         if (actualJson === undefined || actualJson === null) {
             return toStatus(config, 'Server with no body in response. Expects a body.', actualJson, response, interaction);
         }
 
-        const results = compareJson(
-            interaction.response.body,
-            actualJson,
-            toConfig(
-                interaction.response?.comparison || COMPARISON.COMPATIBLE,
-                interaction.response?.ignoreJsonKeys || [],
-                interaction.response?.ignoreJsonPaths || [],
-            ),
-        );
+        const comparisons = bodyAlternatives.map(expectedBody => compareExpectedBody(expectedBody, actualJson, interaction));
+        const matchedIndex = comparisons.findIndex(result => result.isEqual);
+        if (matchedIndex < 0) {
+            return toStatus(config, 'Expected response not to match any accepted response body', actualJson, response, interaction, {
+                bodyAnyOf: bodyAlternatives,
+                comparisons,
+            });
+        }
+    } else if (interaction?.response?.body !== undefined) {
+        if (actualJson === undefined || actualJson === null) {
+            return toStatus(config, 'Server with no body in response. Expects a body.', actualJson, response, interaction);
+        }
+
+        const results = compareExpectedBody(interaction.response.body, actualJson, interaction);
 
         if (!results.isEqual) {
             return toStatus(config, 'Expected response not the same as actual response', actualJson, response, interaction, results);
         }
-    }
-
-    if (interaction?.response?.statusCode !== undefined && Number.parseInt(interaction.response.statusCode) !== response.status) {
-        return toStatus(config, 'Expected responseCode not the same as actual responseCode', actualJson, response, interaction);
     }
 
     return toSuccessStatus(config, actualJson, response, interaction);
@@ -335,7 +739,7 @@ function toHttpInteractionStatus(config: any, interaction: any, response: any, a
 
 function toInteractionName(interactionWithConfig: any): string {
     return Object.keys(interactionWithConfig)
-        .filter(key => !['HTTP', 'MQ', 'WS', 'RTC', 'WEBRTC', 'ASSERT', 'SET'].includes(key))[0];
+        .filter(key => !['HTTP', 'MQ', 'WS', 'RTC', 'WEBRTC', 'ASSERT', 'SET', 'PARALLEL'].includes(key))[0];
 }
 
 function toInteractionConfig(interactionWithConfig: any): any {
@@ -354,7 +758,8 @@ function toExecutableInteraction(interaction: any): any {
         || interaction?.RTC
         || interaction?.WEBRTC
         || interaction?.ASSERT
-        || interaction?.SET;
+        || interaction?.SET
+        || interaction?.PARALLEL;
 }
 
 function toSetSuccessStatus(config: any, interaction: any, value: any): any {
@@ -365,9 +770,10 @@ function toSetSuccessStatus(config: any, interaction: any, value: any): any {
         scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
         interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
         repeatIndex: config.interaction.request.repeatIndex,
+        delayMs: config.interaction.request.delayMs,
         expected: interaction.response,
         actual: value,
-        output: interaction.request.output,
+        ...toOutputReportFields(interaction),
         input: interaction.request.input,
     };
 }
@@ -388,29 +794,34 @@ function toSetFailureStatus(config: any, interaction: any, result: string, detai
     };
 }
 
-function executeSetInteraction(interaction: any, config: any): Promise<any> {
+async function executeSetInteraction(interaction: any, config: any): Promise<any> {
     const output = interaction.request.output;
     const value = interaction.request.value !== undefined
         ? interaction.request.value
         : interaction.response.actual;
+    const delayMs = Number.parseInt(String(interaction.request.delayMs ?? 0), 10);
 
     if (!output) {
-        return Promise.resolve(toSetFailureStatus(
+        return toSetFailureStatus(
             config,
             interaction,
             'Set step is missing output. Use output to name the stored value.',
-        ));
+        );
     }
 
     if (value === undefined) {
-        return Promise.resolve(toSetFailureStatus(
+        return toSetFailureStatus(
             config,
             interaction,
             'Set step is missing value. Use value or request.value.',
-        ));
+        );
     }
 
-    return Promise.resolve(toSetSuccessStatus(config, interaction, value));
+    if (Number.isFinite(delayMs) && delayMs > 0) {
+        await sleep(delayMs);
+    }
+
+    return toSetSuccessStatus(config, interaction, value);
 }
 
 function toAssertSuccessStatus(config: any, interaction: any, actual: any, details: any = {}): any {
@@ -424,7 +835,7 @@ function toAssertSuccessStatus(config: any, interaction: any, actual: any, detai
         expected: interaction.response,
         actual,
         details,
-        output: interaction.request.output,
+        ...toOutputReportFields(interaction),
         input: interaction.request.input,
     };
 }
@@ -446,6 +857,9 @@ function toAssertFailureStatus(config: any, interaction: any, actual: any, resul
 }
 
 function executeAssertInteraction(interaction: any, config: any, _context: any): Promise<any> {
+    const expectedAlternatives = Array.isArray(interaction.response.anyOf)
+        ? interaction.response.anyOf
+        : [];
     const expected = interaction.response.body !== undefined
         ? interaction.response.body
         : interaction.response.expect !== undefined
@@ -456,7 +870,7 @@ function executeAssertInteraction(interaction: any, config: any, _context: any):
         ? interaction.response.actual
         : interaction.request.actual;
 
-    if (expected === undefined) {
+    if (expected === undefined && expectedAlternatives.length <= 0) {
         return Promise.resolve(toAssertFailureStatus(
             config,
             interaction,
@@ -472,6 +886,37 @@ function executeAssertInteraction(interaction: any, config: any, _context: any):
             actual,
             'Assert step is missing actual value. Use actual or expect.actual.',
         ));
+    }
+
+    if (expectedAlternatives.length > 0) {
+        const comparisons = expectedAlternatives.map((expectedValue: any) => compareJson(
+            expectedValue,
+            actual,
+            toConfig(
+                interaction.response?.comparison || COMPARISON.COMPATIBLE,
+                interaction.response?.ignoreJsonKeys || [],
+                interaction.response?.ignoreJsonPaths || [],
+            ),
+        ));
+        const matchedIndex = comparisons.findIndex((result: any) => result.isEqual);
+
+        if (matchedIndex < 0) {
+            return Promise.resolve(toAssertFailureStatus(
+                config,
+                interaction,
+                actual,
+                'Assert comparison failed',
+                {
+                    anyOf: expectedAlternatives,
+                    comparisons,
+                },
+            ));
+        }
+
+        return Promise.resolve(toAssertSuccessStatus(config, interaction, actual, {
+            anyOfMatchedIndex: matchedIndex,
+            comparison: comparisons[matchedIndex],
+        }));
     }
 
     const comparisonResult = compareJson(
@@ -730,6 +1175,16 @@ function toRemoteHttpResponse(result: RallarRemoteBrowserControlResultEnvelope):
     };
 }
 
+function withRemoteHttpDetails(status: any, details: any): any {
+    return {
+        ...status,
+        actual: {
+            ...status.actual,
+            ...details,
+        },
+    };
+}
+
 async function executeRemoteHttpInteraction(interaction: any, config: any, context: any): Promise<any> {
     const remote = resolveRallarRemoteBrowserConfig(
         interaction.request,
@@ -763,11 +1218,18 @@ async function executeRemoteHttpInteraction(interaction: any, config: any, conte
         }
 
         const response = toRemoteHttpResponse(result);
-        return toHttpInteractionStatus(
-            config,
-            interaction,
-            response,
-            parseRemoteHttpBody(response.body),
+        return withRemoteHttpDetails(
+            toHttpInteractionStatus(
+                config,
+                interaction,
+                response,
+                parseRemoteHttpBody(response.body),
+            ),
+            {
+                remote,
+                commandId,
+                result: remoteResultValue(result),
+            },
         );
     } catch (e) {
         const error = e instanceof Error ? e : new Error(String(e));
@@ -862,6 +1324,51 @@ function toWsUrl(request: any): string | undefined {
     return request.url || request.path;
 }
 
+function toWsReadyStateName(readyState: any): string {
+    if (readyState === WebSocket.CONNECTING) {
+        return 'CONNECTING';
+    }
+    if (readyState === WebSocket.OPEN) {
+        return 'OPEN';
+    }
+    if (readyState === WebSocket.CLOSING) {
+        return 'CLOSING';
+    }
+    if (readyState === WebSocket.CLOSED) {
+        return 'CLOSED';
+    }
+
+    return 'UNKNOWN';
+}
+
+function toWsSocketState(ws: any): any {
+    if (!ws) {
+        return {
+            readyState: undefined,
+            readyStateName: 'MISSING',
+        };
+    }
+
+    return {
+        readyState: ws.readyState,
+        readyStateName: toWsReadyStateName(ws.readyState),
+        bufferedAmount: typeof ws.bufferedAmount === 'number'
+            ? ws.bufferedAmount
+            : undefined,
+    };
+}
+
+function toWsSendResult(status: string, ws: any, connectionName: string, wirePayload: string, details: any = {}): any {
+    return {
+        status,
+        connection: connectionName,
+        ...toWsSocketState(ws),
+        wirePayload,
+        wirePayloadLength: wirePayload.length,
+        ...details,
+    };
+}
+
 function parseWsData(data: any): any {
     if (typeof data !== 'string') {
         return data;
@@ -920,7 +1427,7 @@ function toWsSuccessStatus(config: any, interaction: any, details: any = {}): an
         repeatIndex: config.interaction.request.repeatIndex,
         expected: interaction.response,
         actual: details,
-        output: interaction.request.output,
+        ...toOutputReportFields(interaction),
         input: interaction.request.input,
     };
 }
@@ -1084,6 +1591,7 @@ function sendWs(interaction: any, config: any, context: any): Promise<any> {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
         return Promise.resolve(toWsFailureStatus(config, interaction, 'WebSocket connection is not open', {
             connection: connectionName,
+            ...toWsSocketState(ws),
         }));
     }
 
@@ -1097,25 +1605,46 @@ function sendWs(interaction: any, config: any, context: any): Promise<any> {
         ? payload
         : JSON.stringify(payload !== undefined ? payload : {});
 
-    ws.send(wirePayload);
+    const sendStartedAtEpochMs = Date.now();
+    try {
+        ws.send(wirePayload);
+    } catch (e) {
+        const sendFailedAtEpochMs = Date.now();
+        return Promise.resolve(toWsFailureStatus(config, interaction, 'WebSocket send failed', {
+            connection: connectionName,
+            sent: payload,
+            sendResult: toWsSendResult('failed', ws, connectionName, wirePayload, {
+                exception: e instanceof Error ? e.message : String(e),
+            }),
+            sendStartedAtEpochMs,
+            sendFailedAtEpochMs,
+            sendLatencyMs: sendFailedAtEpochMs - sendStartedAtEpochMs,
+            exception: e instanceof Error ? e.message : String(e),
+        }));
+    }
+
+    const sendEndedAtEpochMs = Date.now();
+    const sendResult = toWsSendResult('sent', ws, connectionName, wirePayload);
+    const details = {
+        sentConnection: connectionName,
+        sent: payload,
+        sendResult,
+        sendStartedAtEpochMs,
+        sendEndedAtEpochMs,
+        sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs,
+    };
 
     if (interaction.response?.messages) {
-        return waitForWsMessages(interaction, config, context, {
-            sentConnection: connectionName,
-            sent: payload,
-        });
+        return waitForWsMessages(interaction, config, context, details);
     }
 
     if (interaction.response?.message) {
-        return waitForWsMessage(interaction, config, context, {
-            sentConnection: connectionName,
-            sent: payload,
-        });
+        return waitForWsMessage(interaction, config, context, details);
     }
 
     return Promise.resolve(toWsSuccessStatus(config, interaction, {
         connection: connectionName,
-        sent: payload,
+        ...details,
     }));
 }
 
@@ -1506,24 +2035,44 @@ async function sendRemoteWs(interaction: any, config: any, context: any): Promis
     const remote = toRemoteWsConfig(interaction, config, context);
     const fetchFn = remoteBrowserFetch(context);
     const commandId = toRallarRemoteBrowserCommandId('ws-send', interaction);
+    const sentPayload = toRemoteWsPayload(interaction.request);
 
     try {
         const command = toRemoteWsSendCommand(commandId, interaction, context);
+        const sendStartedAtEpochMs = Date.now();
         const result = await executeRallarRemoteBrowserCommand(remote, fetchFn, context, command);
+        const sendEndedAtEpochMs = Date.now();
         if (!result.ok) {
             return toRemoteWsFailure(config, interaction, 'Remote WebSocket send failed', {
                 connection: connectionName,
                 remote,
                 result,
+                sent: sentPayload,
+                sendResult: {
+                    status: 'failed',
+                    connection: connectionName,
+                    remoteResult: remoteResultValue(result),
+                },
+                sendStartedAtEpochMs,
+                sendEndedAtEpochMs,
+                sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs,
             });
         }
 
         const details = {
             sentConnection: connectionName,
-            sent: toRemoteWsPayload(interaction.request),
+            sent: sentPayload,
             remote,
             commandId,
             result: remoteResultValue(result),
+            sendResult: {
+                status: 'sent',
+                connection: connectionName,
+                remoteResult: remoteResultValue(result),
+            },
+            sendStartedAtEpochMs,
+            sendEndedAtEpochMs,
+            sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs,
         };
 
         if (interaction.response?.messages) {
@@ -1547,15 +2096,25 @@ async function sendRemoteWs(interaction: any, config: any, context: any): Promis
         await syncRallarRemoteBrowserEvents(remote, fetchFn, context);
         return toWsSuccessStatus(config, interaction, {
             connection: connectionName,
-            sent: toRemoteWsPayload(interaction.request),
+            sent: sentPayload,
             remote,
             commandId,
             result: remoteResultValue(result),
+            sendResult: details.sendResult,
+            sendStartedAtEpochMs,
+            sendEndedAtEpochMs,
+            sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs,
         });
     } catch (error) {
         return toRemoteWsFailure(config, interaction, 'Remote WebSocket send failed', {
             connection: connectionName,
             remote,
+            sent: sentPayload,
+            sendResult: {
+                status: 'failed',
+                connection: connectionName,
+                exception: error instanceof Error ? error.message : String(error),
+            },
             exception: error instanceof Error ? error.message : String(error),
         });
     }
@@ -1631,7 +2190,7 @@ async function closeRemoteWs(interaction: any, config: any, context: any): Promi
 function executeRemoteWsInteraction(interaction: any, config: any, context: any): Promise<any> {
     const action = interaction.request.action || 'send';
 
-    if (action === 'connect') {
+    if (action === 'connect' || action === 'open') {
         return openRemoteWs(interaction, config, context);
     }
 
@@ -1657,7 +2216,7 @@ function executeWsInteraction(interaction: any, config: any, context: any): Prom
         return executeRemoteWsInteraction(interaction, config, context);
     }
 
-    if (action === 'connect') {
+    if (action === 'connect' || action === 'open') {
         return openWs(interaction, config, context);
     }
 
@@ -1697,7 +2256,28 @@ function toOutputKey(interactionData: any): string {
 }
 
 function toResultEntries(results: any): any[] {
-    return Object.values(results || {});
+    return Object.values(results || {})
+        .sort((left: any, right: any) => {
+            const leftScenario = Number(left?.scenarioExecutionNumber || 0);
+            const rightScenario = Number(right?.scenarioExecutionNumber || 0);
+            if (leftScenario !== rightScenario) {
+                return leftScenario - rightScenario;
+            }
+
+            const leftInteraction = Number(left?.interactionExecutionNumber || 0);
+            const rightInteraction = Number(right?.interactionExecutionNumber || 0);
+            if (leftInteraction !== rightInteraction) {
+                return leftInteraction - rightInteraction;
+            }
+
+            const leftRepeat = Number(left?.repeatIndex || 0);
+            const rightRepeat = Number(right?.repeatIndex || 0);
+            if (leftRepeat !== rightRepeat) {
+                return leftRepeat - rightRepeat;
+            }
+
+            return String(left?.name || '').localeCompare(String(right?.name || ''));
+        });
 }
 
 function toSummary(results: any, options: any, startedAtEpochMs: number, endedAtEpochMs: number): any {
@@ -1731,19 +2311,28 @@ function toSummary(results: any, options: any, startedAtEpochMs: number, endedAt
 }
 
 function toReport(context: any, options: any, startedAtEpochMs: number, endedAtEpochMs: number): any {
-    return {
+    const resultsList = toResultEntries(context.results);
+    const results = Object.fromEntries(resultsList.map((result: any) => [result.resultKey, result]));
+    const resultsByName = resultsList.reduce<Record<string, any[]>>((byName, result: any) => {
+        byName[result.name] = byName[result.name] || [];
+        byName[result.name].push(result);
+        return byName;
+    }, {});
+
+    return redactBlackBoxData({
         summary: toSummary(context.results, options, startedAtEpochMs, endedAtEpochMs),
-        results: context.results,
-        resultsList: context.resultsList,
-        resultsByName: context.resultsByName,
+        results,
+        resultsList,
+        resultsByName,
         outputs: context.outputs,
         wsMessages: context.wsMessages,
         wsCloseEvents: context.wsCloseEvents,
         rtcConnections: context.rtcConnections,
         rtcMessages: context.rtcMessages,
+        rtcDiagnostics: context.rtcDiagnostics,
         rtcCloseEvents: context.rtcCloseEvents,
         rtcProviderNames: Object.keys(context.rtcProviders || {}),
-    };
+    }, context.redactions);
 }
 
 function fetchDataBasic(request: any): Promise<Response> {
@@ -1783,19 +2372,64 @@ function isDryRunExecution(interaction: any, config: any, context: any): boolean
         || context?.executionOptions?.dryRun === true
 }
 
+function toDryRunRtcMessage(interaction: any, message: any): any {
+    return {
+        data: message,
+        receivedAtEpochMs: undefined,
+        provider: interaction.request.provider,
+        actor: interaction.request.actor,
+        roomId: interaction.request.roomId,
+        dryRun: true,
+    };
+}
+
+function toDryRunRtcDetails(interaction: any, action: string): any {
+    const details: any = {
+        dryRun: true,
+        normalized: {
+            ...interaction.request,
+            response: interaction.response,
+        },
+    };
+
+    if (action === 'send') {
+        details.sentConnection = interaction.request.connection;
+        details.sent = toRtcPayload(interaction.request);
+        details.sendResult = {
+            status: 'sent',
+            dryRun: true,
+        };
+    }
+
+    if (interaction.response?.message !== undefined) {
+        details.connection = interaction.response.connection || interaction.request.connection;
+        details.matchedMessage = toDryRunRtcMessage(interaction, interaction.response.message);
+        details.consumed = interaction.response.consume === true;
+        details.firstPayloadLatencyMs = 0;
+        details.waitedMs = 0;
+    }
+
+    if (Array.isArray(interaction.response?.messages)) {
+        details.connection = interaction.response.connection || interaction.request.connection;
+        details.matchedMessages = interaction.response.messages.map((message: any, index: number) => ({
+            expectedMessage: message,
+            matchedMessage: toDryRunRtcMessage(interaction, message),
+            matchIndex: index,
+        }));
+        details.consumed = interaction.response.consume === true;
+        details.waitedMs = 0;
+    }
+
+    return details;
+}
+
 function executeRtcInteraction(interaction: any, config: any, context: any): Promise<any> {
     const action = interaction.request.action || 'send';
     const providerName = interaction.request.provider || 'rallar';
     const provider = context.rtcProviders?.[providerName] || createMissingRtcProvider(providerName);
 
     if (isDryRunExecution(interaction, config, context)) {
-        return Promise.resolve(toRtcSuccessStatus(config, interaction, {
-            dryRun: true,
-            normalized: {
-                ...interaction.request,
-                response: interaction.response,
-            },
-        }))
+        return Promise.resolve(toRtcSuccessStatus(config, interaction, toDryRunRtcDetails(interaction, action)))
     }
 
     if (action === 'connect') {
@@ -1849,6 +2483,10 @@ function executeInteraction(interactionWithConfig: any, context: any): Promise<a
         return executeSetInteraction(interaction, config);
     }
 
+    if (interactionWithConfig.PARALLEL) {
+        return executeParallelInteraction(interaction, config, context);
+    }
+
     if (interactionWithConfig.WS) {
         return executeWsInteraction(interaction, config, context);
     }
@@ -1886,6 +2524,136 @@ function executeInteraction(interactionWithConfig: any, context: any): Promise<a
         });
 }
 
+function toParallelFailureStatus(config: any, interaction: any, result: string, details: any = {}): any {
+    return {
+        name: config.interactionName,
+        status: FAILURE,
+        transport: 'PARALLEL',
+        action: interaction.request.action || 'run',
+        result,
+        scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
+        interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
+        repeatIndex: config.interaction.request.repeatIndex,
+        expected: interaction.response,
+        actual: details,
+    };
+}
+
+function toParallelSuccessStatus(config: any, interaction: any, actual: any): any {
+    return {
+        name: config.interactionName,
+        status: SUCCESS,
+        transport: 'PARALLEL',
+        action: interaction.request.action || 'run',
+        scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
+        interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
+        repeatIndex: config.interaction.request.repeatIndex,
+        expected: interaction.response,
+        actual,
+    };
+}
+
+async function runBoundedParallel<T, R>(
+    items: T[],
+    maxConcurrency: number,
+    worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+    const results: R[] = new Array(items.length);
+    let nextIndex = 0;
+
+    async function runWorker(): Promise<void> {
+        while (nextIndex < items.length) {
+            const index = nextIndex;
+            nextIndex++;
+            results[index] = await worker(items[index], index);
+        }
+    }
+
+    const workerCount = Math.max(1, Math.min(maxConcurrency, items.length));
+    await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+
+    return results;
+}
+
+async function executeParallelInteraction(interaction: any, config: any, context: any): Promise<any> {
+    const groups = Array.isArray(interaction.request.groups)
+        ? interaction.request.groups
+        : [];
+
+    if (groups.length <= 0) {
+        return toParallelFailureStatus(config, interaction, 'Parallel step requires at least one group with steps.');
+    }
+
+    const maxConcurrency = Math.max(
+        1,
+        Number.parseInt(String(interaction.request.maxConcurrency || groups.length), 10) || groups.length,
+    );
+    const timeoutMs = Number.parseInt(String(interaction.request.timeoutMs || 0), 10);
+    const groupFailFast = interaction.request.failFast !== false;
+    const startedAtEpochMs = Date.now();
+
+    const groupResults = await runBoundedParallel(groups, maxConcurrency, async (group: any, groupIndex: number) => {
+        const groupStartedAtEpochMs = Date.now();
+        const steps = Array.isArray(group.steps)
+            ? group.steps
+            : [];
+
+        if (steps.length <= 0) {
+            return {
+                name: String(group.name || 'group-' + (groupIndex + 1)),
+                index: group.index || groupIndex + 1,
+                status: FAILURE,
+                success: 0,
+                failure: 1,
+                result: 'Parallel group has no steps.',
+                durationMs: Date.now() - groupStartedAtEpochMs,
+            };
+        }
+
+        const stepResults = await executeBlackBoxRecursive(steps, 0, {
+            ...context.options,
+            failFast: groupFailFast,
+        }, context);
+        const resultValues = Object.values(stepResults || {}) as any[];
+        const failureCount = resultValues.filter(result => result?.status === FAILURE).length;
+
+        return {
+            name: String(group.name || 'group-' + (groupIndex + 1)),
+            index: group.index || groupIndex + 1,
+            status: failureCount > 0 ? FAILURE : SUCCESS,
+            success: resultValues.filter(result => result?.status === SUCCESS).length,
+            failure: failureCount,
+            resultKeys: resultValues.map(result => result?.resultKey).filter(Boolean),
+            durationMs: Date.now() - groupStartedAtEpochMs,
+        };
+    });
+
+    const durationMs = Date.now() - startedAtEpochMs;
+    const failure = groupResults.reduce((count, group) => count + Number((group as any).failure || 0), 0);
+    const success = groupResults.reduce((count, group) => count + Number((group as any).success || 0), 0);
+    const timedOut = Number.isFinite(timeoutMs) && timeoutMs > 0 && durationMs > timeoutMs;
+    const actual = {
+        groups: groupResults,
+        groupCount: groupResults.length,
+        maxConcurrency,
+        timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : undefined,
+        timedOut,
+        durationMs,
+        success,
+        failure,
+    };
+
+    if (timedOut) {
+        return toParallelFailureStatus(config, interaction, 'Parallel step exceeded timeout.', actual);
+    }
+
+    if (failure > 0) {
+        return toParallelFailureStatus(config, interaction, 'Parallel step had failed child steps.', actual);
+    }
+
+    return toParallelSuccessStatus(config, interaction, actual);
+}
+
 function executeBlackBoxRecursive(
     interactions: any[],
     index: number,
@@ -1893,13 +2661,13 @@ function executeBlackBoxRecursive(
     context: any,
 ): Promise<any> {
     const executeNext = (interactionData: any): any => {
-        storeInteractionData(interactionData, context);
+        const storedInteractionData = storeInteractionData(interactionData, context);
 
         const data = {
-            [toResultKey(interactionData)]: interactionData,
+            [toResultKey(storedInteractionData)]: storedInteractionData,
         };
 
-        if (interactionData.status === FAILURE && options.failFast !== false) {
+        if (storedInteractionData.status === FAILURE && options.failFast !== false) {
             return data;
         }
 

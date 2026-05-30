@@ -2035,10 +2035,10 @@ describe('Rallar operation options', () => {
     it('exposes read-only WS diagnostics after connecting', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         mocks.ctx.middleware.webSocketQueueBox.readHealth.mockReturnValue({
             sessionId: 'session-1',
-            url: 'ws://localhost/ws',
+            url: 'ws://localhost/ws?ticket=secret-ticket&other=value#fragment',
             readyState: 'open',
             readyStateCode: 1,
             isOpen: true,
@@ -2084,7 +2084,7 @@ describe('Rallar operation options', () => {
             });
         mocks.ctx.middleware.webSocketQueueBox.readHealth.mockReturnValue({
             sessionId: 'session-1',
-            url: 'ws://localhost/ws',
+            url: 'ws://localhost/ws?ticket=secret-ticket',
             readyState: 'open',
             readyStateCode: 1,
             isOpen: true,
@@ -2135,6 +2135,7 @@ describe('Rallar operation options', () => {
             expect.objectContaining({
                 kind: 'connected',
                 status: expect.objectContaining({
+                    url: 'ws://localhost/ws',
                     readyState: 'open',
                     reconnectEnabled: true,
                 }),
@@ -2554,6 +2555,31 @@ describe('Rallar operation options', () => {
         expect(mocks.initMiddleware).toHaveBeenCalledWith({
             dataChannelLanes: lanes,
         });
+    });
+
+    it('disconnects stale middleware before connecting with a replaced auth session', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const nextSession = {
+            ...mocks.ctx.session,
+            sessionId: 'session-2',
+            accessToken: 'token-2',
+        };
+        const nextCtx = {
+            ...mocks.ctx,
+            session: nextSession,
+        } as ApiMiddleware;
+        const facade = createRallarFacade();
+
+        await facade.connect();
+        mocks.readSession.mockReturnValue(nextSession);
+        mocks.initMiddleware.mockResolvedValue(nextCtx);
+
+        await facade.connect();
+
+        expect(mocks.clearMiddleware).toHaveBeenCalledOnce();
+        expect(mocks.initMiddleware).toHaveBeenCalledTimes(2);
     });
 
     it('keeps the legacy scope shorthand for refresh operations', async () => {

@@ -302,12 +302,12 @@ async function processClientAppInbox<V>(
 function requireClientStateWrittenSnapshot(
     written: ClientStateWritten,
 ): ClientSnapshot {
-    return written.result.fold(
-        (error) => {
-            throw new Error(error);
-        },
-        (value) => value.snapshot,
-    );
+    const mutation = written.result.right;
+    if (!mutation || !mutation.snapshot) {
+        throw new Error(written.result.left ?? 'Client mutation failed');
+    }
+
+    return mutation.snapshot;
 }
 
 async function readRequestWithRequestId<T extends { requestId?: string }>(c: {

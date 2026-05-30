@@ -43,6 +43,7 @@ describe('JsonWebSocketClient', () => {
 
         const first = client.connect();
         const second = client.connect();
+        await Promise.resolve();
 
         expect(FakeWebSocket.instances).toHaveLength(1);
 
@@ -86,6 +87,7 @@ describe('JsonWebSocketClient', () => {
         expect(client.removeOnMessageCallbackById('message')).toBe(true);
 
         const connectPromise = client.connect();
+        await Promise.resolve();
         const socket = FakeWebSocket.instances[0];
 
         socket.readyState = FakeWebSocket.CLOSED;
@@ -122,6 +124,7 @@ describe('JsonWebSocketClient', () => {
         });
 
         const firstConnect = client.connect();
+        await Promise.resolve();
         const firstSocket = FakeWebSocket.instances[0];
 
         await firstSocket.emit('error', { type: 'error' });
@@ -130,6 +133,7 @@ describe('JsonWebSocketClient', () => {
         expect(onError).toHaveBeenCalledOnce();
 
         const secondConnect = client.connect();
+        await Promise.resolve();
         expect(FakeWebSocket.instances).toHaveLength(2);
 
         const secondSocket = FakeWebSocket.instances[1];
@@ -137,6 +141,72 @@ describe('JsonWebSocketClient', () => {
         await secondSocket.emit('open', { type: 'open' });
 
         await expect(secondConnect).resolves.toBeUndefined();
+    });
+
+    it('resolves a fresh URL for each new socket connection', async () => {
+        vi.stubGlobal('WebSocket', FakeWebSocket);
+
+        let sequence = 0;
+        const client = new JsonWebSocketClient(() => `ws://test?ticket=${++sequence}`);
+
+        const firstConnect = client.connect();
+        await Promise.resolve();
+        expect(FakeWebSocket.instances[0].url).toBe('ws://test?ticket=1');
+        FakeWebSocket.instances[0].readyState = FakeWebSocket.OPEN;
+        await FakeWebSocket.instances[0].emit('open', { type: 'open' });
+        await expect(firstConnect).resolves.toBeUndefined();
+        expect(client.url).toBe('ws://test?ticket=1');
+
+        client.close(1000, 'test-reconnect');
+
+        const secondConnect = client.connect();
+        await Promise.resolve();
+        expect(FakeWebSocket.instances[1].url).toBe('ws://test?ticket=2');
+        FakeWebSocket.instances[1].readyState = FakeWebSocket.OPEN;
+        await FakeWebSocket.instances[1].emit('open', { type: 'open' });
+        await expect(secondConnect).resolves.toBeUndefined();
+        expect(client.url).toBe('ws://test?ticket=2');
+    });
+
+    it('keeps a reconnect started by a close callback as the active pending connection', async () => {
+        vi.stubGlobal('WebSocket', FakeWebSocket);
+
+        let sequence = 0;
+        const client = new JsonWebSocketClient(() => `ws://test?ticket=${++sequence}`);
+        let reconnectPromise: Promise<void> | undefined;
+
+        client.onWebsocketCallbacksDo('reconnect', {
+            onClose: () => {
+                reconnectPromise = client.connect();
+            },
+        });
+
+        const firstConnect = client.connect();
+        await Promise.resolve();
+        const firstSocket = FakeWebSocket.instances[0];
+        firstSocket.readyState = FakeWebSocket.OPEN;
+        await firstSocket.emit('open', { type: 'open' });
+        await expect(firstConnect).resolves.toBeUndefined();
+
+        firstSocket.readyState = FakeWebSocket.CLOSED;
+        await firstSocket.emit('close', {
+            type: 'close',
+            code: 1006,
+            reason: 'network-lost',
+        });
+        const joinedReconnect = client.connect();
+        await Promise.resolve();
+
+        expect(FakeWebSocket.instances).toHaveLength(2);
+        const secondSocket = FakeWebSocket.instances[1];
+        expect(secondSocket.url).toBe('ws://test?ticket=2');
+        secondSocket.readyState = FakeWebSocket.OPEN;
+        await secondSocket.emit('open', { type: 'open' });
+
+        expect(reconnectPromise).toBeDefined();
+        await expect(reconnectPromise!).resolves.toBeUndefined();
+        await expect(joinedReconnect).resolves.toBeUndefined();
+        expect(client.ws).toBe(secondSocket);
     });
 });
 
@@ -516,6 +586,59 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
         );
     });
 
+    it('times out an individual reconnect attempt', async () => {
+        vi.useFakeTimers();
+        const consoleWarn = vi
+            .spyOn(console, 'warn')
+            .mockImplementation(() => {
+            });
+        const signals: AbortSignal[] = [];
+        const socket = createReconnectSocketHarness({
+            connect: async (options?: { signal?: AbortSignal }) => {
+                if (options?.signal) {
+                    signals.push(options.signal);
+                }
+                return await new Promise<void>(() => {
+                });
+            },
+        });
+        const service = createWsQueueBoxService(
+            socket.client,
+            {
+                reconnect: {
+                    maxAttempts: 1,
+                    connectTimeoutMsecs: 25,
+                    retryIntervalMsecs: 0,
+                    maxRetryIntervalMsecs: 0,
+                },
+            },
+        );
+
+        service.enableReconnect();
+        socket.webSocketCallbacks?.onClose?.({
+            type: 'close',
+            code: 1006,
+            reason: 'network-lost',
+        } as CloseEvent);
+
+        expect(socket.connect).toHaveBeenCalledOnce();
+        await vi.advanceTimersByTimeAsync(25);
+
+        expect(signals).toHaveLength(1);
+        expect(signals[0].aborted).toBe(true);
+        expect(service.readHealth()).toMatchObject({
+            reconnectEnabled: false,
+            reconnecting: false,
+            reconnectAttempts: 1,
+            maxReconnectAttempts: 1,
+            reconnectExhausted: true,
+        });
+        expect(consoleWarn).toHaveBeenCalledWith(
+            expect.stringContaining('WebSocket reconnect exhausted after 1 attempts'),
+            expect.anything(),
+        );
+    });
+
     it('does not reconnect when reconnect eligibility is false', async () => {
         const socket = createReconnectSocketHarness();
         const service = createWsQueueBoxService(
@@ -619,7 +742,7 @@ function createWsQueueBoxService(
 
 function createReconnectSocketHarness(
     options: Readonly<{
-        connect?: () => Promise<void>;
+        connect?: (options?: { signal?: AbortSignal }) => Promise<void>;
     }> = {},
 ) {
     const state: {
@@ -642,7 +765,7 @@ function createReconnectSocketHarness(
             state.webSocketCallbacks = callbacks;
             return client;
         }),
-        connect: vi.fn(options.connect ?? (async () => {
+        connect: vi.fn(options.connect ?? (async (_options?: { signal?: AbortSignal }) => {
         })),
         close: vi.fn((_code?: number, _reason?: string) => {
             client.ws = undefined;

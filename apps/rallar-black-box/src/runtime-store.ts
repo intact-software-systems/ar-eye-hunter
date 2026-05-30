@@ -11,6 +11,7 @@ import type {
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntime,
+    RallarBlackBoxTestRuntimeEventInput,
     RallarBlackBoxTestState,
 } from '@shared-test/rallar-bb-test/types.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES, } from './recipe-fixtures.ts';
@@ -545,11 +546,18 @@ async function providerCommandExecutor(
                     payload: {
                         phase,
                         roomId: command.roomId,
+                        applicationId: command.applicationId,
+                        workspaceId: command.workspaceId,
+                        scope: command.scope,
+                        roomRef: command.roomRef,
+                        minSnapshotVersion: command.minSnapshotVersion,
                         sessionId,
                         expectedClients,
                         observedClients: phase === 'peer-discovery' || phase === 'data-channel'
                             ? expectedClients
                             : [sessionId],
+                        readyPeerIds: phase === 'data-channel' ? expectedClients : [],
+                        activePeerIds: phase === 'data-channel' ? expectedClients : [sessionId],
                         peerCount: phase === 'peer-discovery' || phase === 'data-channel'
                             ? expectedClients.length
                             : 1,
@@ -567,9 +575,16 @@ async function providerCommandExecutor(
                 severity: 'info',
                 payload: {
                     roomId: command.roomId,
+                    applicationId: command.applicationId,
+                    workspaceId: command.workspaceId,
+                    scope: command.scope,
+                    roomRef: command.roomRef,
+                    minSnapshotVersion: command.minSnapshotVersion,
                     sessionId,
                     expectedClients,
                     observedClients: expectedClients,
+                    readyPeerIds: expectedClients,
+                    activePeerIds: expectedClients,
                     peerCount: expectedClients.length,
                     laneHealth: 'open',
                 },
@@ -582,6 +597,11 @@ async function providerCommandExecutor(
                     connection: command.connection,
                     actor: command.actor,
                     roomId: command.roomId,
+                    applicationId: command.applicationId,
+                    workspaceId: command.workspaceId,
+                    scope: command.scope,
+                    roomRef: command.roomRef,
+                    minSnapshotVersion: command.minSnapshotVersion,
                     transport: command.transport,
                     sessionId,
                     expectedClients,
@@ -590,7 +610,65 @@ async function providerCommandExecutor(
                 nextStatus: context.state().status,
             };
         }
-        case 'rtc.send':
+        case 'rtc.send': {
+            const manualMetadata = command.metadata?.manual as Record<string, unknown> | undefined;
+            const targets = Array.isArray(manualMetadata?.targets)
+                ? manualMetadata.targets.map(String)
+                : [];
+            const deliveryMode = commandString(manualMetadata?.deliveryMode, 'direct');
+            const negativeCase = typeof command.metadata?.negativeCase === 'string'
+                ? command.metadata.negativeCase
+                : undefined;
+            if (negativeCase) {
+                context.recordEvent({
+                    kind: 'diagnostic',
+                    topic: `rallar.bb.fake.rtc.${negativeCase}`,
+                    commandId: command.commandId,
+                    connection: command.connection,
+                    transport: command.transport,
+                    severity: negativeCase === 'not-yet-in-sync' ? 'warning' : 'error',
+                    payload: {
+                        negativeCase,
+                        deliveryMode,
+                        targets,
+                        applicationId: command.applicationId,
+                        workspaceId: command.workspaceId,
+                        scope: command.scope,
+                        roomRef: command.roomRef,
+                        minSnapshotVersion: command.minSnapshotVersion,
+                        nack: negativeCase === 'not-yet-in-sync'
+                            ? {
+                                code: 'not-yet-in-sync',
+                                message: 'Snapshot is behind the minimum requested version.',
+                            }
+                            : undefined,
+                    },
+                });
+            }
+            context.recordEvent({
+                kind: 'diagnostic',
+                topic: 'rallar.bb.fake.rtc.send_completed',
+                commandId: command.commandId,
+                connection: command.connection,
+                transport: command.transport,
+                severity: 'info',
+                payload: {
+                    deliveryMode,
+                    targets,
+                    applicationId: command.applicationId,
+                    workspaceId: command.workspaceId,
+                    scope: command.scope,
+                    roomRef: command.roomRef,
+                    minSnapshotVersion: command.minSnapshotVersion,
+                    expectedClients: targets,
+                    observedClients: deliveryMode === 'broadcast' ? targets : targets,
+                    readyPeerIds: targets,
+                    activePeerIds: targets,
+                    peerCount: targets.length,
+                    laneHealth: negativeCase ? 'degraded' : 'open',
+                    firstPayloadMs: runtimeDelayFor(command),
+                },
+            });
             context.recordEvent({
                 kind: 'message',
                 topic: 'rallar.bb.fake.rtc.message',
@@ -602,6 +680,8 @@ async function providerCommandExecutor(
                     direction: 'loopback',
                     data: command.send,
                     receivedAtEpochMs: Date.now(),
+                    deliveryMode,
+                    targets,
                 },
             });
             return {
@@ -611,10 +691,18 @@ async function providerCommandExecutor(
                     sent: true,
                     connection: command.connection,
                     transport: command.transport,
+                    deliveryMode,
+                    targets,
+                    applicationId: command.applicationId,
+                    workspaceId: command.workspaceId,
+                    scope: command.scope,
+                    roomRef: command.roomRef,
+                    minSnapshotVersion: command.minSnapshotVersion,
                     payloadBytes: JSON.stringify(command.send ?? {}).length,
                 },
                 nextStatus: context.state().status,
             };
+        }
         case 'ws.open':
             context.recordEvent({
                 kind: 'diagnostic',
@@ -847,6 +935,20 @@ class RallarBlackBoxRuntimeStore {
             lastAction: 'Control WebSocket disconnected',
         };
         this.emit();
+    }
+
+    recordRuntimeEvent(
+        event: RallarBlackBoxTestRuntimeEventInput,
+        lastAction?: string,
+    ): void {
+        this.runtime.recordEvent(event);
+        if (lastAction) {
+            this.snapshot = {
+                ...this.snapshot,
+                lastAction,
+            };
+            this.emit();
+        }
     }
 
     async runSample(): Promise<void> {

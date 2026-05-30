@@ -3,8 +3,20 @@ import {
     parseControlClientMessage,
     validateRallarBlackBoxTestCommand,
 } from '../../rallar-black-box/src/control-protocol.ts';
-import type { EnqueueControlCommandInput } from './control-service.ts';
+import type {
+    ControlServerSnapshot,
+    ControlRunSnapshotBounds,
+    EnqueueControlCommandInput,
+} from './control-service.ts';
 import { createRallarBlackBoxControlService } from './control-service.ts';
+import {
+    controlRunArtifactContentType,
+    controlRunArtifactFileNameFromValue,
+    controlRunEventsJsonl,
+    controlRunFailureBundle,
+    controlRunResultsJsonl,
+    createControlRunArtifactBundle,
+} from './control-artifacts.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandKind,
@@ -28,6 +40,8 @@ type SecurityOptions = Readonly<{
     httpAllowedOrigins: readonly string[];
     wsAllowedHosts: readonly string[];
     wsAllowedOrigins: readonly string[];
+    storageDir?: string;
+    retentionMaxRuns: number;
 }>;
 
 const security = resolveSecurityOptions();
@@ -41,6 +55,8 @@ const agentSockets = new Map<string, WebSocket>();
 const socketAgents = new WeakMap<WebSocket, { runId: string; agentId: string }>();
 
 const port = Number(Deno.env.get('PORT') ?? DEFAULT_PORT);
+
+await restorePersistedSnapshot();
 
 Deno.serve({ port }, async (request) => {
     const url = new URL(request.url);
@@ -72,14 +88,113 @@ Deno.serve({ port }, async (request) => {
     }
 
     if (isRead && url.pathname === '/runs') {
-        return jsonResponse(controlService.snapshot());
+        return jsonResponse(controlService.snapshot(snapshotBoundsFromUrl(url)));
+    }
+
+    if (request.method === 'POST' && url.pathname === '/retention/cleanup') {
+        if (!authorizeAdminRequest(request, url)) {
+            return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
+        }
+        const deletedRunIds = controlService.pruneRuns(security.retentionMaxRuns);
+        persistControlSnapshot();
+        return jsonResponse({
+            deletedRunIds,
+            retainedRuns: controlService.snapshot().runs.length,
+            maxRuns: security.retentionMaxRuns,
+        });
     }
 
     const runMatch = url.pathname.match(/^\/runs\/([^/]+)$/);
     if (isRead && runMatch) {
         const runId = decodeURIComponent(runMatch[1]);
-        const run = controlService.snapshotRun(runId);
+        const run = controlService.snapshotRun(runId, snapshotBoundsFromUrl(url));
         return run ? jsonResponse(run) : jsonResponse({ error: 'Run not found.' }, 404);
+    }
+
+    if (request.method === 'DELETE' && runMatch) {
+        const runId = decodeURIComponent(runMatch[1]);
+        if (!authorizeAdminRequest(request, url)) {
+            return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
+        }
+        closeRunSockets(runId);
+        const deleted = controlService.deleteRun(runId);
+        persistControlSnapshot();
+        return deleted
+            ? jsonResponse({ deleted: true, runId })
+            : jsonResponse({ error: 'Run not found.' }, 404);
+    }
+
+    const runResetMatch = url.pathname.match(/^\/runs\/([^/]+)\/reset$/);
+    if (request.method === 'POST' && runResetMatch) {
+        const runId = decodeURIComponent(runResetMatch[1]);
+        if (!authorizeAdminRequest(request, url)) {
+            return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
+        }
+        const run = controlService.resetRun(runId);
+        persistControlSnapshot();
+        return run
+            ? jsonResponse({ reset: true, run })
+            : jsonResponse({ error: 'Run not found.' }, 404);
+    }
+
+    const runCommandsMatch = url.pathname.match(/^\/runs\/([^/]+)\/commands$/);
+    if (request.method === 'POST' && runCommandsMatch) {
+        const runId = decodeURIComponent(runCommandsMatch[1]);
+        if (!authorizeAdminRequest(request, url)) {
+            return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
+        }
+        return await enqueueBulkCommand(request, runId);
+    }
+
+    const runArtifactsMatch = url.pathname.match(/^\/runs\/([^/]+)\/artifacts$/);
+    if (isRead && runArtifactsMatch) {
+        const runId = decodeURIComponent(runArtifactsMatch[1]);
+        const run = controlService.snapshotRun(runId);
+        return run
+            ? jsonResponse(createControlRunArtifactBundle(run))
+            : jsonResponse({ error: 'Run not found.' }, 404);
+    }
+
+    const runArtifactFileMatch = url.pathname.match(/^\/runs\/([^/]+)\/artifacts\/([^/]+)$/);
+    if (isRead && runArtifactFileMatch) {
+        const runId = decodeURIComponent(runArtifactFileMatch[1]);
+        const fileName = controlRunArtifactFileNameFromValue(decodeURIComponent(runArtifactFileMatch[2]));
+        if (!fileName) {
+            return jsonResponse({ error: 'Artifact file not found.' }, 404);
+        }
+        const run = controlService.snapshotRun(runId);
+        if (!run) {
+            return jsonResponse({ error: 'Run not found.' }, 404);
+        }
+        const bundle = createControlRunArtifactBundle(run);
+        return textResponse(bundle.files[fileName], 200, controlRunArtifactContentType(fileName));
+    }
+
+    const runEventsJsonlMatch = url.pathname.match(/^\/runs\/([^/]+)\/events\.jsonl$/);
+    if (isRead && runEventsJsonlMatch) {
+        const runId = decodeURIComponent(runEventsJsonlMatch[1]);
+        const run = controlService.snapshotRun(runId);
+        return run
+            ? textResponse(controlRunEventsJsonl(run), 200, 'application/x-ndjson; charset=utf-8')
+            : jsonResponse({ error: 'Run not found.' }, 404);
+    }
+
+    const runResultsJsonlMatch = url.pathname.match(/^\/runs\/([^/]+)\/results\.jsonl$/);
+    if (isRead && runResultsJsonlMatch) {
+        const runId = decodeURIComponent(runResultsJsonlMatch[1]);
+        const run = controlService.snapshotRun(runId);
+        return run
+            ? textResponse(controlRunResultsJsonl(run), 200, 'application/x-ndjson; charset=utf-8')
+            : jsonResponse({ error: 'Run not found.' }, 404);
+    }
+
+    const runFailureBundleMatch = url.pathname.match(/^\/runs\/([^/]+)\/failure-bundle$/);
+    if (isRead && runFailureBundleMatch) {
+        const runId = decodeURIComponent(runFailureBundleMatch[1]);
+        const run = controlService.snapshotRun(runId);
+        return run
+            ? jsonResponse(controlRunFailureBundle(run))
+            : jsonResponse({ error: 'Run not found.' }, 404);
     }
 
     const agentCommandMatch = url.pathname.match(/^\/runs\/([^/]+)\/agents\/([^/]+)\/commands$/);
@@ -151,6 +266,7 @@ function handleControlSocket(request: Request): Response {
             registerSocket(socket, received.runId, received.agentId);
             sendDispatchableCommands(received.runId, received.agentId);
         }
+        persistControlSnapshot();
     };
 
     socket.onclose = () => {
@@ -163,6 +279,7 @@ function handleControlSocket(request: Request): Response {
         if (agentSockets.get(key) === socket) {
             agentSockets.delete(key);
             controlService.markAgentDisconnected(agent.runId, agent.agentId);
+            persistControlSnapshot();
         }
     };
 
@@ -212,9 +329,102 @@ async function enqueueCommand(
         }, error instanceof Error && error.message.includes('rate limit') ? 429 : 400);
     }
     sendDispatchableCommands(runId, agentId);
+    persistControlSnapshot();
     return jsonResponse({
         accepted: true,
         command: envelope,
+    }, 202);
+}
+
+async function enqueueBulkCommand(
+    request: Request,
+    runId: string,
+): Promise<Response> {
+    let body: unknown;
+    try {
+        body = await readJsonBody(request);
+    } catch (error) {
+        return jsonResponse({
+            error: error instanceof Error ? error.message : String(error),
+        }, 400);
+    }
+
+    if (!body || typeof body !== 'object' || !('command' in body)) {
+        return jsonResponse({ error: 'Bulk command request requires command.' }, 400);
+    }
+
+    const record = body as {
+        agentIds?: unknown;
+        command?: unknown;
+        commandId?: unknown;
+        commandIdPrefix?: unknown;
+        deadlineEpochMs?: unknown;
+    };
+    const agentIds = Array.isArray(record.agentIds)
+        ? record.agentIds
+            .map(agentId => typeof agentId === 'string' ? agentId.trim() : '')
+            .filter(agentId => agentId.length > 0)
+        : [];
+    if (agentIds.length === 0) {
+        return jsonResponse({ error: 'Bulk command request requires agentIds.' }, 400);
+    }
+
+    const validation = validateRallarBlackBoxTestCommand(record.command);
+    if (!validation.ok) {
+        return jsonResponse({ error: validation.error }, 400);
+    }
+
+    const commandTemplate = record.command as RallarBlackBoxTestCommand;
+    const destinationError = validateBrowserCommandDestination(commandTemplate);
+    if (destinationError) {
+        return jsonResponse({ error: destinationError }, 403);
+    }
+
+    const baseCommandId = typeof record.commandId === 'string' && record.commandId.trim().length > 0
+        ? record.commandId.trim()
+        : typeof record.commandIdPrefix === 'string' && record.commandIdPrefix.trim().length > 0
+        ? record.commandIdPrefix.trim()
+        : typeof commandTemplate.commandId === 'string' && commandTemplate.commandId.trim().length > 0
+        ? commandTemplate.commandId.trim()
+        : undefined;
+    const deadlineEpochMs = typeof record.deadlineEpochMs === 'number'
+        ? record.deadlineEpochMs
+        : undefined;
+    const commands: ControlCommandEnvelope[] = [];
+
+    try {
+        agentIds.forEach((agentId, index) => {
+            const commandId = baseCommandId
+                ? agentIds.length === 1 && typeof record.commandId === 'string'
+                    ? baseCommandId
+                    : `${baseCommandId}-${safeCommandIdSegment(agentId)}`
+                : undefined;
+            const command: RallarBlackBoxTestCommand = commandId
+                ? {
+                    ...commandTemplate,
+                    commandId,
+                } as RallarBlackBoxTestCommand
+                : commandTemplate;
+            const envelope = controlService.enqueueCommand({
+                runId,
+                agentId,
+                commandId: commandId ?? `bulk-${Date.now()}-${index + 1}`,
+                command,
+                deadlineEpochMs,
+            });
+            commands.push(envelope);
+        });
+    } catch (error) {
+        return jsonResponse({
+            error: error instanceof Error ? error.message : String(error),
+        }, error instanceof Error && error.message.includes('rate limit') ? 429 : 400);
+    }
+
+    agentIds.forEach(agentId => sendDispatchableCommands(runId, agentId));
+    persistControlSnapshot();
+    return jsonResponse({
+        accepted: true,
+        commands,
     }, 202);
 }
 
@@ -250,6 +460,7 @@ async function uploadReport(
     }
 
     controlService.receiveClientEnvelope(parsed.envelope);
+    persistControlSnapshot();
     return jsonResponse({
         accepted: true,
     }, 202);
@@ -281,6 +492,7 @@ async function issueRunToken(
         ttlMs: effectiveTtlMs,
     });
 
+    persistControlSnapshot();
     return jsonResponse(token, 201);
 }
 
@@ -302,6 +514,8 @@ function resolveSecurityOptions(): SecurityOptions {
         httpAllowedOrigins: envList('RALLAR_BLACK_BOX_HTTP_ALLOWED_ORIGINS'),
         wsAllowedHosts: envList('RALLAR_BLACK_BOX_WS_ALLOWED_HOSTS'),
         wsAllowedOrigins: envList('RALLAR_BLACK_BOX_WS_ALLOWED_ORIGINS'),
+        storageDir: envString('RALLAR_BLACK_BOX_STORAGE_DIR'),
+        retentionMaxRuns: envNumber('RALLAR_BLACK_BOX_RETENTION_MAX_RUNS', 0),
     };
 }
 
@@ -473,6 +687,22 @@ function registerSocket(socket: WebSocket, runId: string, agentId: string): void
     agentSockets.set(key, socket);
 }
 
+function closeRunSockets(runId: string): void {
+    const prefix = `${runId}\u0000`;
+    for (const [key, socket] of agentSockets.entries()) {
+        if (!key.startsWith(prefix)) {
+            continue;
+        }
+
+        agentSockets.delete(key);
+        try {
+            socket.close(1000, 'run deleted');
+        } catch (_error) {
+            // Socket cleanup is best-effort when a run is removed.
+        }
+    }
+}
+
 function sendDispatchableCommands(runId: string, agentId: string): void {
     const socket = agentSockets.get(agentKey(runId, agentId));
     if (!socket || socket.readyState !== OPEN_STATE) {
@@ -493,10 +723,106 @@ function agentKey(runId: string, agentId: string): string {
     return `${runId}\u0000${agentId}`;
 }
 
+function safeCommandIdSegment(value: string): string {
+    return value.trim().replace(/[^A-Za-z0-9_.:-]+/g, '-').replace(/^-+|-+$/g, '') ||
+        'agent';
+}
+
+function snapshotBoundsFromUrl(url: URL): ControlRunSnapshotBounds {
+    return {
+        commands: limitParam(url, 'limitCommands'),
+        results: limitParam(url, 'limitResults'),
+        events: limitParam(url, 'limitEvents'),
+        stats: limitParam(url, 'limitStats'),
+        reports: limitParam(url, 'limitReports'),
+        heartbeats: limitParam(url, 'limitHeartbeats'),
+    };
+}
+
+function limitParam(url: URL, key: string): number | undefined {
+    const value = url.searchParams.get(key);
+    if (!value) {
+        return undefined;
+    }
+
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function persistedSnapshotPath(): string | undefined {
+    if (!security.storageDir) {
+        return undefined;
+    }
+
+    return `${security.storageDir.replace(/\/+$/, '')}/control-snapshot.json`;
+}
+
+async function restorePersistedSnapshot(): Promise<void> {
+    const path = persistedSnapshotPath();
+    if (!path) {
+        return;
+    }
+
+    try {
+        const text = await Deno.readTextFile(path);
+        const parsed = JSON.parse(text) as { snapshot?: ControlServerSnapshot };
+        if (parsed.snapshot?.runs) {
+            controlService.restoreSnapshot(parsed.snapshot);
+            console.log(`Restored Rallar black-box control snapshot from ${path}`);
+        }
+    } catch (error) {
+        if (error instanceof Deno.errors.NotFound) {
+            return;
+        }
+        console.warn(`Could not restore control snapshot from ${path}: ${errorMessage(error)}`);
+    }
+}
+
+function persistControlSnapshot(): void {
+    const deletedRunIds = controlService.pruneRuns(security.retentionMaxRuns);
+    if (deletedRunIds.length > 0) {
+        closeDeletedRunSockets(deletedRunIds);
+    }
+
+    const path = persistedSnapshotPath();
+    if (!path) {
+        return;
+    }
+
+    const snapshot = controlService.snapshot();
+    const payload = JSON.stringify({
+        schemaVersion: 1,
+        savedAtEpochMs: Date.now(),
+        snapshot,
+    }, null, 2);
+    void Deno.mkdir(security.storageDir!, { recursive: true })
+        .then(() => Deno.writeTextFile(path, payload))
+        .catch(error => {
+            console.warn(`Could not persist control snapshot to ${path}: ${errorMessage(error)}`);
+        });
+}
+
+function closeDeletedRunSockets(runIds: readonly string[]): void {
+    for (const runId of runIds) {
+        closeRunSockets(runId);
+    }
+}
+
+function errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
 function jsonResponse(value: unknown, status = 200): Response {
     return new Response(JSON.stringify(value, null, 2), {
         status,
         headers: responseHeaders('application/json'),
+    });
+}
+
+function textResponse(value: string, status = 200, contentType = 'text/plain; charset=utf-8'): Response {
+    return new Response(value, {
+        status,
+        headers: responseHeaders(contentType),
     });
 }
 
@@ -510,7 +836,7 @@ function emptyResponse(status: number): Response {
 function responseHeaders(contentType?: string): Headers {
     const headers = new Headers({
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+        'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Rallar-Run-Token',
     });
     if (contentType) {

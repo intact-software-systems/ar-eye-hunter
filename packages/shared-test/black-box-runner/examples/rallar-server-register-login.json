@@ -1,0 +1,137 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://localhost:8080"
+    },
+    "username": {
+      "env": "RALLAR_BB_REGISTER_USERNAME",
+      "default": "bb-recipe-user"
+    },
+    "password": {
+      "env": "RALLAR_BB_REGISTER_PASSWORD",
+      "default": "bb-recipe-password",
+      "secret": true
+    },
+    "displayName": {
+      "env": "RALLAR_BB_REGISTER_DISPLAY_NAME",
+      "default": "Black-box Recipe User"
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerUser",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "{username}",
+          "password": "{password}",
+          "displayName": "{displayName}"
+        }
+      },
+      "expect": {
+        "statusCode": [
+          201,
+          409
+        ],
+        "bodyAnyOf": [
+          {
+            "clientId": "string",
+            "username": "{username}"
+          },
+          {
+            "error": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loginRegisteredUser",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{username}",
+          "password": "{password}"
+        },
+        "outputs": {
+          "clientId": "body.clientId",
+          "accessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "sessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "username": "{username}",
+          "sessionId": "string",
+          "expiresAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "deriveAuthHeader",
+      "type": "set",
+      "output": "authHeader",
+      "value": "Bearer {accessToken}"
+    },
+    {
+      "name": "logoutRegisteredUser",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/logout",
+        "headers": {
+          "Authorization": "{authHeader}",
+          "x-client-id": "{clientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "loggedOut": true
+        }
+      }
+    },
+    {
+      "name": "rejectWrongPassword",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{username}",
+          "password": "wrong-password"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": "Invalid username or password"
+        }
+      }
+    }
+  ]
+}

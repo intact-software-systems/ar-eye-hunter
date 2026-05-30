@@ -1,0 +1,215 @@
+import { describe, expect, it } from 'vitest';
+import {
+    controlHttpBaseUrlFromWsUrl,
+    controlRunAgentRows,
+    controlRunCommandRows,
+    controlRunManagerStats,
+    enqueueBulkControlCommand,
+    fetchControlRunArtifactBundle,
+    fetchControlRunFailureBundle,
+    fetchControlRunJsonl,
+    fetchControlRunSnapshot,
+    fetchControlServerSnapshot,
+    type ControlRunSnapshot,
+    type ControlServerSnapshot,
+} from '../../../apps/rallar-black-box/src/control-run-manager.ts';
+import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '../../../apps/rallar-black-box/src/control-protocol.ts';
+
+const runSnapshot: ControlRunSnapshot = {
+    runId: 'run-1',
+    createdAtEpochMs: 1_000,
+    updatedAtEpochMs: 2_000,
+    agents: [
+        {
+            runId: 'run-1',
+            agentId: 'agent-b',
+            connected: false,
+            connectionSequence: 1,
+            reconnectCount: 0,
+            receivedResultCount: 0,
+            receivedEventCount: 1,
+            completedCommandIds: [],
+            resumeCompletedCommandIds: [],
+        },
+        {
+            runId: 'run-1',
+            agentId: 'agent-a',
+            connected: true,
+            lastHeartbeatAtEpochMs: 1_900,
+            status: 'running',
+            connectionSequence: 2,
+            reconnectCount: 1,
+            receivedResultCount: 1,
+            receivedEventCount: 2,
+            completedCommandIds: ['cmd-1'],
+            resumeCompletedCommandIds: [],
+        },
+    ],
+    commands: [
+        {
+            envelope: {
+                kind: 'command',
+                protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+                runId: 'run-1',
+                agentId: 'agent-a',
+                commandId: 'cmd-1',
+                command: { kind: 'health' },
+            },
+            queuedAtEpochMs: 1_200,
+            dispatchedAtEpochMs: 1_300,
+            completedAtEpochMs: 1_400,
+            dispatchCount: 1,
+        },
+        {
+            envelope: {
+                kind: 'command',
+                protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+                runId: 'run-1',
+                agentId: 'agent-b',
+                commandId: 'cmd-2',
+                command: { kind: 'stats' },
+            },
+            queuedAtEpochMs: 1_500,
+            dispatchCount: 0,
+        },
+    ],
+    results: [
+        {
+            kind: 'result',
+            protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+            runId: 'run-1',
+            agentId: 'agent-a',
+            commandId: 'cmd-1',
+            ok: true,
+        },
+    ],
+    events: [
+        {
+            kind: 'diagnostic',
+            protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+            runId: 'run-1',
+            agentId: 'agent-a',
+            atEpochMs: 1_600,
+            payload: { topic: 'rallar.bb.control.command_received' },
+        },
+    ],
+    stats: [],
+    reports: [],
+    heartbeats: [],
+};
+
+describe('rallar-black-box control run manager', () => {
+    it('derives HTTP base URLs from control WebSocket URLs', () => {
+        expect(controlHttpBaseUrlFromWsUrl('ws://localhost:5180/control')).toBe('http://localhost:5180');
+        expect(controlHttpBaseUrlFromWsUrl('wss://example.test/control?token=secret')).toBe('https://example.test');
+        expect(controlHttpBaseUrlFromWsUrl(undefined)).toBe('http://localhost:5180');
+    });
+
+    it('summarizes snapshots and derives sorted agent and command rows', () => {
+        const snapshot: ControlServerSnapshot = { runs: [runSnapshot] };
+
+        expect(controlRunManagerStats(snapshot)).toMatchObject({
+            runCount: 1,
+            agentCount: 2,
+            connectedAgentCount: 1,
+            queuedCommandCount: 1,
+            completedCommandCount: 1,
+            resultCount: 1,
+            eventCount: 1,
+        });
+        expect(controlRunAgentRows(runSnapshot).map(row => row.agentId)).toEqual(['agent-a', 'agent-b']);
+        expect(controlRunCommandRows(runSnapshot).map(row => [row.commandId, row.status])).toEqual([
+            ['cmd-2', 'queued'],
+            ['cmd-1', 'completed'],
+        ]);
+    });
+
+    it('fetches bounded snapshots and enqueues bulk commands', async () => {
+        const requests: Array<{ url: string; init?: RequestInit }> = [];
+        const fetchFn = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+            const url = String(input);
+            requests.push({ url, init });
+            if (url.includes('/runs/run-1/commands')) {
+                return new Response(JSON.stringify({
+                    accepted: true,
+                    commands: [],
+                }), { status: 202 });
+            }
+            if (url.includes('/runs/run-1/artifacts')) {
+                return new Response(JSON.stringify({
+                    artifactSchemaVersion: 1,
+                    runId: 'run-1',
+                    generatedAtEpochMs: 2_000,
+                    files: {
+                        'report.json': '{}',
+                        'events.jsonl': '',
+                        'failures.json': '{}',
+                        'metadata.json': '{}',
+                    },
+                }), { status: 200 });
+            }
+            if (url.includes('/runs/run-1/events.jsonl')) {
+                return new Response('{"kind":"step-result"}\n', { status: 200 });
+            }
+            if (url.includes('/runs/run-1/failure-bundle')) {
+                return new Response(JSON.stringify({ failures: [] }), { status: 200 });
+            }
+            if (url.includes('/runs/run-1')) {
+                return new Response(JSON.stringify(runSnapshot), { status: 200 });
+            }
+            return new Response(JSON.stringify({ runs: [runSnapshot] }), { status: 200 });
+        };
+
+        await fetchControlServerSnapshot({
+            baseUrl: 'http://control.test',
+            token: 'run-token',
+            bounds: { commands: 5, events: 10 },
+            fetchFn,
+        });
+        await fetchControlRunSnapshot({
+            baseUrl: 'http://control.test',
+            runId: 'run-1',
+            bounds: { results: 3 },
+            fetchFn,
+        });
+        await enqueueBulkControlCommand({
+            baseUrl: 'http://control.test',
+            runId: 'run-1',
+            agentIds: ['agent-a', 'agent-b'],
+            command: { kind: 'health' },
+            commandIdPrefix: 'health-bulk',
+            token: 'admin-token',
+            fetchFn,
+        });
+        const artifact = await fetchControlRunArtifactBundle({
+            baseUrl: 'http://control.test',
+            runId: 'run-1',
+            fetchFn,
+        });
+        const eventsJsonl = await fetchControlRunJsonl({
+            baseUrl: 'http://control.test',
+            runId: 'run-1',
+            kind: 'events',
+            fetchFn,
+        });
+        const failureBundle = await fetchControlRunFailureBundle({
+            baseUrl: 'http://control.test',
+            runId: 'run-1',
+            fetchFn,
+        });
+
+        expect(requests[0].url).toContain('/runs?limitCommands=5&limitEvents=10');
+        expect((requests[0].init?.headers as Record<string, string>).Authorization).toBe('Bearer run-token');
+        expect(requests[1].url).toContain('/runs/run-1?limitResults=3');
+        expect(requests[2].url).toBe('http://control.test/runs/run-1/commands');
+        expect(requests[2].init?.method).toBe('POST');
+        expect(JSON.parse(String(requests[2].init?.body))).toMatchObject({
+            agentIds: ['agent-a', 'agent-b'],
+            commandIdPrefix: 'health-bulk',
+            command: { kind: 'health' },
+        });
+        expect(artifact.files['report.json']).toBe('{}');
+        expect(eventsJsonl).toContain('step-result');
+        expect(failureBundle).toEqual({ failures: [] });
+    });
+});

@@ -274,6 +274,7 @@ export type RallarPeopleState = Readonly<{
 export type RallarCreateRoomInput =
     & RallarScopedOperationOptions
     & Readonly<{
+    groupId?: string;
     displayName: string;
 }>;
 
@@ -1223,6 +1224,7 @@ class BrowserRallarFacade implements RallarFacade {
                 session.sessionId,
                 operationScope,
                 toRallarWorkflowPolicies(operationOptions),
+                createInput.groupId,
             );
             this.setCurrentRoom(snapshot);
             await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
@@ -1841,6 +1843,14 @@ class BrowserRallarFacade implements RallarFacade {
         const connectOptions = toRallarOperationOptions(
             this.resolveOperationOptions(options),
         );
+        const session = readSession();
+        if (
+            this.ctx &&
+            (!session || this.ctx.session.sessionId !== session.sessionId)
+        ) {
+            await this.disconnect();
+        }
+
         if (this.ctx) {
             return this.ctx;
         }
@@ -2155,7 +2165,7 @@ class BrowserRallarFacade implements RallarFacade {
         const health = ctx.middleware.webSocketQueueBox.readHealth();
         return {
             sessionId: health.sessionId,
-            url: health.url,
+            url: toPublicWsStatusUrl(health.url),
             connectState: this.connectState,
             readyState: health.readyState,
             readyStateCode: health.readyStateCode,
@@ -4114,6 +4124,21 @@ function normalizeWaitTimeoutMs(timeoutMs: number | undefined): number {
     }
 
     return Math.max(0, Math.floor(timeoutMs));
+}
+
+function toPublicWsStatusUrl(url: string | undefined): string | undefined {
+    if (!url) {
+        return url;
+    }
+
+    try {
+        const parsed = new URL(url);
+        parsed.search = '';
+        parsed.hash = '';
+        return parsed.toString();
+    } catch {
+        return url.split(/[?#]/, 1)[0];
+    }
 }
 
 function toWsWaitForOpenResult(
