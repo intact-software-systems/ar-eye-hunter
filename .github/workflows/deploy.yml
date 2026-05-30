@@ -56,6 +56,28 @@ jobs:
           npm run build
 
   # ----------------------------
+  # Web SPA → Cloudflare Pages
+  # ----------------------------
+  deploy-rallar-kit:
+    name: Deploy Rallar Kit black-box Web (Cloudflare Pages)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install & build Rallar Kit black-box Web
+        working-directory: apps/rallar-black-box
+        run: |
+          npm install
+          npm run build
+
+  # ----------------------------
   # API → Deno Deploy
   # ----------------------------
   deploy-api:
