@@ -52,7 +52,7 @@ export function readFullStackConfig(): FullStackConfig {
         enabled,
         skipReason: 'Set RALLAR_BLACK_BOX_FULL_STACK=1 and provide a working root .env/DATABASE_URL for apps/api-v1 to run full-stack Rallar Black Box tests.',
         apiBaseUrl: normalizeBaseUrl(envValue('VITE_RALLAR_API_BASE_URL') ?? 'http://localhost:8080'),
-        applicationId: envValue('VITE_RALLAR_APPLICATION_ID') ?? 'ar-eye-hunter',
+        applicationId: envValue('VITE_RALLAR_APPLICATION_ID') ?? 'rallar-black-box',
         workspaceId: envValue('VITE_RALLAR_WORKSPACE_ID') ?? 'default',
         roomId: configuredRoomId && configuredRoomId !== 'your-room-id'
             ? configuredRoomId

@@ -1652,7 +1652,7 @@ function defaultWebSocketValuesFromContext(
     const groupId = stringValue(globalValues?.roomId) ?? stringValue(config?.roomId) ?? bootstrap.roomId;
     return {
         apiBaseUrl: globalValues?.apiBaseUrl ?? config?.apiBaseUrl ?? bootstrap.apiBaseUrl,
-        applicationId: globalValues?.applicationId ?? stringValue(config?.rallar?.applicationId) ?? 'ar-eye-hunter',
+        applicationId: globalValues?.applicationId ?? stringValue(config?.rallar?.applicationId) ?? 'rallar-black-box',
         workspaceId: globalValues?.workspaceId ?? stringValue(config?.rallar?.workspaceId) ?? 'default',
         groupId,
         contextId: groupId || 'all',

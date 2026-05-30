@@ -7,7 +7,7 @@ import type {
 } from './client-types.ts';
 import type { Group, GroupJoinMode, GroupMemberStatus, GroupRole, GroupStatus, } from './group-types.ts';
 
-export const DEFAULT_STATE_APPLICATION_ID = 'ar-eye-hunter';
+export const DEFAULT_STATE_APPLICATION_ID = 'rallar-server';
 export const DEFAULT_STATE_WORKSPACE_ID = 'default';
 
 export type StateScope = Readonly<{
