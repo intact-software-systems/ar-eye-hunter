@@ -69,6 +69,21 @@ REST workbench: the latest operation shows target, status, duration, and failure
 surface whether this browser is currently subscribed/listening, and RTC Diagnostics includes event/message/failure and
 phase-duration time-series charts.
 
+The SPA is responsive across phone, tablet, laptop, and large desktop widths. iPhone Max-sized screens use safe-area
+padding, one-column command panels, touch-sized buttons, mobile-safe form inputs, stacked state/event cards, and
+horizontal tab scrolling. The top `Rallar Kit` runtime header, `Global Context`, `Rallar Browser Trace`, direct-operation
+boundary, and command input sections are collapsible, and the logout button stays compact when the header is expanded.
+iPad and laptop widths keep denser two-column layouts where they fit; ultra-wide screens keep the same desktop layout
+inside the maximum-width app shell.
+
+Rallar trace rows include wall-clock time, relative age, delta from the previous trace event, source, kind, severity,
+transport, connection, actor when available, and a short payload summary before the expanded redacted payload in the
+`Rallar Trace` tab.
+
+The direct-operation panels keep status visible while large input areas can be collapsed. Quick Test separates summary,
+input, and payload/receive sections; Auth, Groups/Clients, WebSocket, RTC/Realtimes, Rallar Data, Media, Rallar Server,
+Manual Rallar, and Local Workbench expose the same collapse pattern for their main inputs.
+
 The app shell now has a `Workspace Mode` switch. `Rallar` mode shows direct live-operation tabs. `Rallar
 black-box-runner` mode shows recipe, control-run, flow-builder, and artifact workflows. Existing `tab` deep links still
 work and infer the correct workspace for runner-owned tabs. Switching into runner mode with the browser-rallar provider

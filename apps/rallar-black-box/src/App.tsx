@@ -1,4 +1,14 @@
-import { type ChangeEvent, type FormEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
+import {
+    type ChangeEvent,
+    type FormEvent,
+    type KeyboardEvent,
+    type ReactNode,
+    useEffect,
+    useId,
+    useMemo,
+    useRef,
+    useState,
+} from 'react';
 import Sigma from 'sigma';
 import type { AuthSession, WebSocketTicketResponse } from '@shared/api/api-config.ts';
 import { clearSession, readSession } from '@shared/api/auth.ts';
@@ -1258,6 +1268,33 @@ function eventFailureText(event: RallarBlackBoxTestEvent): string {
     ].filter((value): value is string => Boolean(value && value.length > 0)).join('\n') || eventPayloadText(event);
 }
 
+function traceTimingText(
+    event: RallarBlackBoxTestEvent,
+    previousEvent: RallarBlackBoxTestEvent | undefined,
+    now: number,
+): string {
+    const ageMs = Math.max(0, now - event.atEpochMs);
+    const deltaMs = previousEvent
+        ? Math.max(0, event.atEpochMs - previousEvent.atEpochMs)
+        : undefined;
+    return [
+        formatTime(event.atEpochMs),
+        `${formatRelativeDuration(ageMs)} ago`,
+        deltaMs === undefined ? 'first' : `+${formatDuration(deltaMs)}`,
+    ].join(' - ');
+}
+
+function traceMetaText(event: RallarBlackBoxTestEvent): string {
+    return [
+        rallarTraceSource(event),
+        event.kind,
+        event.severity,
+        event.transport ?? 'runtime',
+        event.connection,
+        event.actor,
+    ].filter((value): value is string => Boolean(value && value.length > 0)).join(' - ');
+}
+
 function looksLikeWsStatus(value: Record<string, unknown>): boolean {
     return 'readyState' in value ||
         'isOpen' in value ||
@@ -2504,7 +2541,7 @@ function LoginScreen({ bootstrap, onAuthenticated }: {
         <main className="auth-shell">
             <section className="auth-panel">
                 <div className="auth-heading">
-                    <p className="eyebrow">Rallar black-box agent</p>
+                    <p className="eyebrow">Rallar Kit</p>
                     <h1>Rallar Server Login</h1>
                     <span className="pill active">{bootstrap.providerMode}</span>
                 </div>
@@ -2592,6 +2629,7 @@ function Header({ mode, state, control, bootstrap, globalValues, browserStatus, 
     authBusy: boolean;
     onLogout(): void;
 }) {
+    const [mobileExpanded, setMobileExpanded] = useState(false);
     const config = selectRallarBlackBoxCurrentConfig(state);
     const stats = selectRallarBlackBoxLatestStats(state);
     const activeCommand = selectRallarBlackBoxActiveCommand(state);
@@ -2616,12 +2654,21 @@ function Header({ mode, state, control, bootstrap, globalValues, browserStatus, 
         'none';
 
     return (
-        <header className="run-header">
+        <header className={`run-header ${mobileExpanded ? 'expanded' : 'collapsed'}`}>
             <div className="run-title">
-                <p className="eyebrow">Rallar black-box agent</p>
+                <p className="eyebrow">Rallar Kit</p>
                 <h1>{config?.runId ?? bootstrap.runId ?? 'No run loaded'}</h1>
+                <button
+                    type="button"
+                    className="header-toggle"
+                    aria-expanded={mobileExpanded}
+                    aria-controls="run-header-details run-header-actions"
+                    onClick={() => setMobileExpanded(current => !current)}
+                >
+                    {mobileExpanded ? 'Hide status' : 'Show status'}
+                </button>
             </div>
-            <div className="header-grid" aria-label="Run state">
+            <div className="header-grid" id="run-header-details" aria-label="Run state">
                 <Metric label="Agent" value={config?.agentId ?? bootstrap.agentId ?? 'unassigned'}/>
                 <Metric label="Protocol" value="1"/>
                 <Metric label="Provider" value={providerMode} tone={providerMode === 'simulated' ? 'warn' : 'active'}/>
@@ -2637,7 +2684,7 @@ function Header({ mode, state, control, bootstrap, globalValues, browserStatus, 
                 <Metric label="Active" value={activeCommand?.commandId ?? 'none'} tone={activeCommand ? 'active' : 'muted'}/>
                 <Metric label="Failure" value={firstFailure?.commandId ?? 'none'} tone={firstFailure ? 'bad' : 'good'}/>
             </div>
-            <div className="header-actions">
+            <div className="header-actions" id="run-header-actions">
                 <span className={`pill ${bootstrapping ? 'active' : 'good'}`}>
                     {bootstrapping ? 'running' : 'ready'}
                 </span>
@@ -2654,6 +2701,7 @@ function Header({ mode, state, control, bootstrap, globalValues, browserStatus, 
                 {authSession && (
                     <button
                         type="button"
+                        className="header-logout-button"
                         onClick={onLogout}
                         disabled={authBusy}
                     >
@@ -2717,18 +2765,32 @@ function GlobalContextBar({ values, authSession, onChange, onReset }: {
     ): void;
     onReset(): void;
 }) {
+    const [mobileExpanded, setMobileExpanded] = useState(false);
+
     return (
-        <section className="global-context-bar" aria-label="Global command context">
+        <section
+            className={`global-context-bar ${mobileExpanded ? 'expanded' : 'collapsed'}`}
+            aria-label="Global command context"
+        >
             <div className="global-context-heading">
                 <h2>Global Context</h2>
                 <span className={`pill ${authSession ? 'good' : 'muted'}`}>
                     {authSession ? 'login synced' : 'editable defaults'}
                 </span>
-                <button type="button" onClick={onReset}>
+                <button
+                    type="button"
+                    className="global-context-toggle"
+                    aria-expanded={mobileExpanded}
+                    aria-controls="global-context-fields"
+                    onClick={() => setMobileExpanded(current => !current)}
+                >
+                    {mobileExpanded ? 'Hide values' : 'Show values'}
+                </button>
+                <button type="button" className="global-context-reset" onClick={onReset}>
                     Use login/context
                 </button>
             </div>
-            <div className="global-context-grid">
+            <div className="global-context-grid" id="global-context-fields">
                 <label className="field">
                     <span>API Base URL</span>
                     <input
@@ -2812,6 +2874,45 @@ function AppModeSwitch({ activeMode, onSelect }: {
     );
 }
 
+function CollapsiblePanelSection({ title, meta, defaultExpanded = true, className, contentClassName, children }: {
+    title: string;
+    meta?: ReactNode;
+    defaultExpanded?: boolean;
+    className?: string;
+    contentClassName?: string;
+    children: ReactNode;
+}) {
+    const [expanded, setExpanded] = useState(defaultExpanded);
+    const contentId = useId();
+    const toggleLabel = `${expanded ? 'Hide' : 'Show'} ${title}`;
+
+    return (
+        <section className={`collapsible-panel-section ${expanded ? 'expanded' : 'collapsed'} ${className ?? ''}`}>
+            <div className="collapsible-section-heading">
+                <h3>{title}</h3>
+                {meta && <span className="collapsible-section-meta">{meta}</span>}
+                <button
+                    type="button"
+                    className="collapsible-toggle"
+                    aria-expanded={expanded}
+                    aria-controls={contentId}
+                    aria-label={toggleLabel}
+                    onClick={() => setExpanded(current => !current)}
+                >
+                    {expanded ? 'Hide' : 'Show'}
+                </button>
+            </div>
+            <div
+                id={contentId}
+                className={`collapsible-section-content ${contentClassName ?? ''}`}
+                hidden={!expanded}
+            >
+                {children}
+            </div>
+        </section>
+    );
+}
+
 function RallarBrowserTraceBar({ mode, state, status, onOpenTrace, onOpenEvents }: {
     mode: AppModeId;
     state: RallarBlackBoxTestState;
@@ -2841,9 +2942,15 @@ function RallarBrowserTraceBar({ mode, state, status, onOpenTrace, onOpenEvents 
     const eventSource = mode === 'black-box-runner'
         ? 'Runner/control events'
         : 'Live Rallar events';
+    const now = useNow(1_000);
+    const eventIndexById = useMemo(
+        () => new Map(rallarEvents.map((event, index) => [event.eventId, index])),
+        [rallarEvents],
+    );
+    const [expanded, setExpanded] = useState(true);
 
     return (
-        <section className="rallar-browser-trace-bar" aria-label="Rallar browser trace">
+        <section className={`rallar-browser-trace-bar ${expanded ? 'expanded' : 'collapsed'}`} aria-label="Rallar browser trace">
             <div className="rallar-trace-heading">
                 <h2>Rallar Browser Trace</h2>
                 <span className={`pill ${tone}`}>
@@ -2852,6 +2959,16 @@ function RallarBrowserTraceBar({ mode, state, status, onOpenTrace, onOpenEvents 
                 <span className={`pill ${tone}`}>
                     {latestEvent?.severity ?? (latestEvent ? 'info' : 'idle')}
                 </span>
+                <button
+                    type="button"
+                    className="collapsible-toggle"
+                    aria-expanded={expanded}
+                    aria-controls="rallar-browser-trace-content"
+                    aria-label={`${expanded ? 'Hide' : 'Show'} Rallar Browser Trace`}
+                    onClick={() => setExpanded(current => !current)}
+                >
+                    {expanded ? 'Hide' : 'Show'}
+                </button>
                 <button type="button" onClick={onOpenTrace}>
                     Rallar Trace
                 </button>
@@ -2859,35 +2976,43 @@ function RallarBrowserTraceBar({ mode, state, status, onOpenTrace, onOpenEvents 
                     Event Stream
                 </button>
             </div>
-            <div className="rallar-trace-summary">
-                <span>Source: {eventSource}</span>
-                <span>Signal WS: {status.signalingLabel}</span>
-                <span>RTC: {status.rtcLabel}</span>
-                <span>Group: {status.rtcGroup}</span>
-                <span>Peers: {status.peerSummary}</span>
-                <span>{rallarEvents.length} events</span>
-                <span>{errorCount} errors / {warningCount} warnings</span>
-                <span>{latestEvent ? formatTime(latestEvent.atEpochMs) : '-'}</span>
-            </div>
-            <div className="rallar-trace-events">
-                {recentEvents.length === 0 && (
-                    <div className="empty-state">No Rallar browser events</div>
-                )}
-                {recentEvents.map(event => (
-                    <article className="rallar-trace-event" key={event.eventId}>
-                        <span
-                            className={`status-dot ${
-                                event.severity === 'error'
-                                    ? 'failed'
-                                    : event.severity === 'warning'
-                                        ? 'warning'
-                                        : 'completed'
-                            }`}
-                        />
-                        <strong>{event.topic}</strong>
-                        <small>{eventPayloadText(event)}</small>
-                    </article>
-                ))}
+            <div id="rallar-browser-trace-content" className="rallar-trace-content" hidden={!expanded}>
+                <div className="rallar-trace-summary">
+                    <span>Source: {eventSource}</span>
+                    <span>Signal WS: {status.signalingLabel}</span>
+                    <span>RTC: {status.rtcLabel}</span>
+                    <span>Group: {status.rtcGroup}</span>
+                    <span>Peers: {status.peerSummary}</span>
+                    <span>{rallarEvents.length} events</span>
+                    <span>{errorCount} errors / {warningCount} warnings</span>
+                    <span>{latestEvent ? formatTime(latestEvent.atEpochMs) : '-'}</span>
+                </div>
+                <div className="rallar-trace-events">
+                    {recentEvents.length === 0 && (
+                        <div className="empty-state">No Rallar browser events</div>
+                    )}
+                    {recentEvents.map(event => {
+                        const eventIndex = eventIndexById.get(event.eventId) ?? -1;
+                        const previousEvent = eventIndex > 0 ? rallarEvents[eventIndex - 1] : undefined;
+                        return (
+                            <article className="rallar-trace-event" key={event.eventId}>
+                                <span
+                                    className={`status-dot ${
+                                        event.severity === 'error'
+                                            ? 'failed'
+                                            : event.severity === 'warning'
+                                                ? 'warning'
+                                                : 'completed'
+                                    }`}
+                                />
+                                <strong>{event.topic}</strong>
+                                <small>{traceTimingText(event, previousEvent, now)}</small>
+                                <em>{traceMetaText(event)}</em>
+                                <small>{eventPayloadText(event)}</small>
+                            </article>
+                        );
+                    })}
+                </div>
             </div>
         </section>
     );
@@ -2906,6 +3031,7 @@ function DirectRallarBoundaryPanel({ state, bootstrap, globalValues, authSession
     const canRun = realBackendReady && Boolean(authSession) && !busy;
     const resultValue = optionalRecord(result?.value);
     const resultError = result?.error;
+    const [expanded, setExpanded] = useState(true);
 
     const runStatusCheck = async (): Promise<void> => {
         setBusy(true);
@@ -2943,53 +3069,65 @@ function DirectRallarBoundaryPanel({ state, bootstrap, globalValues, authSession
     };
 
     return (
-        <section className="panel direct-rallar-boundary-panel" aria-label="Direct Rallar operation boundary">
+        <section className={`panel direct-rallar-boundary-panel ${expanded ? 'expanded' : 'collapsed'}`} aria-label="Direct Rallar operation boundary">
             <div className="panel-heading">
                 <h2>Direct Rallar Operations</h2>
                 <span className={`pill ${realBackendReady ? 'good' : 'warn'}`}>
                     {realBackendReady ? 'real backend' : 'real backend required'}
                 </span>
-            </div>
-            <p className="direct-rallar-copy">
-                Rallar mode actions call the browser Rallar facade directly and emit `rallar.direct.*` events. They do
-                not execute black-box-runner recipe commands.
-            </p>
-            <div className="direct-rallar-grid">
-                <Metric label="Provider" value={providerMode} tone={realBackendReady ? 'good' : 'warn'}/>
-                <Metric label="API" value={globalValues.apiBaseUrl}/>
-                <Metric label="Session" value={authSession?.sessionId ?? 'not logged in'} tone={authSession ? 'good' : 'warn'}/>
-                <Metric label="Direct status" value={result?.status ?? 'not checked'} tone={result?.status === 'failed' ? 'bad' : result?.status === 'completed' ? 'good' : 'muted'}/>
-                <Metric label="Connected" value={String(resultValue.connected ?? '-')} tone={resultValue.connected ? 'good' : 'muted'}/>
-                <Metric label="Duration" value={formatDuration(result?.durationMs)}/>
-            </div>
-            <div className="direct-rallar-actions">
-                <button type="button" disabled={!canRun} onClick={() => void runStatusCheck()}>
-                    {busy ? 'Checking Direct Rallar' : 'Check Direct Rallar'}
+                <button
+                    type="button"
+                    className="collapsible-toggle"
+                    aria-expanded={expanded}
+                    aria-controls="direct-rallar-boundary-content"
+                    aria-label={`${expanded ? 'Hide' : 'Show'} Direct Rallar Operations`}
+                    onClick={() => setExpanded(current => !current)}
+                >
+                    {expanded ? 'Hide' : 'Show'}
                 </button>
             </div>
-            {!realBackendReady && (
-                <div className="command-center-status" role="status">
-                    Direct Rallar operations require `provider=browser-rallar`. Simulated data remains available in the
-                    black-box-runner workspace and local workbench.
+            <div id="direct-rallar-boundary-content" className="direct-rallar-content" hidden={!expanded}>
+                <p className="direct-rallar-copy">
+                    Rallar mode actions call the browser Rallar facade directly and emit `rallar.direct.*` events. They do
+                    not execute black-box-runner recipe commands.
+                </p>
+                <div className="direct-rallar-grid">
+                    <Metric label="Provider" value={providerMode} tone={realBackendReady ? 'good' : 'warn'}/>
+                    <Metric label="API" value={globalValues.apiBaseUrl}/>
+                    <Metric label="Session" value={authSession?.sessionId ?? 'not logged in'} tone={authSession ? 'good' : 'warn'}/>
+                    <Metric label="Direct status" value={result?.status ?? 'not checked'} tone={result?.status === 'failed' ? 'bad' : result?.status === 'completed' ? 'good' : 'muted'}/>
+                    <Metric label="Connected" value={String(resultValue.connected ?? '-')} tone={resultValue.connected ? 'good' : 'muted'}/>
+                    <Metric label="Duration" value={formatDuration(result?.durationMs)}/>
                 </div>
-            )}
-            {realBackendReady && !authSession && (
-                <div className="command-center-status" role="status">
-                    Direct Rallar operations require a logged-in browser session.
+                <div className="direct-rallar-actions">
+                    <button type="button" disabled={!canRun} onClick={() => void runStatusCheck()}>
+                        {busy ? 'Checking Direct Rallar' : 'Check Direct Rallar'}
+                    </button>
                 </div>
-            )}
-            {resultError && (
-                <div className="workbench-error" role="status">
-                    {resultError.message}
-                </div>
-            )}
-            {result && (
-                <pre className="mini-json">{redactedJson({
-                    status: result.status,
-                    value: result.value,
-                    error: result.error,
-                }, state, authSession)}</pre>
-            )}
+                {!realBackendReady && (
+                    <div className="command-center-status" role="status">
+                        Direct Rallar operations require `provider=browser-rallar`. Simulated data remains available in the
+                        black-box-runner workspace and local workbench.
+                    </div>
+                )}
+                {realBackendReady && !authSession && (
+                    <div className="command-center-status" role="status">
+                        Direct Rallar operations require a logged-in browser session.
+                    </div>
+                )}
+                {resultError && (
+                    <div className="workbench-error" role="status">
+                        {resultError.message}
+                    </div>
+                )}
+                {result && (
+                    <pre className="mini-json">{redactedJson({
+                        status: result.status,
+                        value: result.value,
+                        error: result.error,
+                    }, state, authSession)}</pre>
+                )}
+            </div>
         </section>
     );
 }
@@ -3487,67 +3625,71 @@ function QuickRallarTestPanel({ state, bootstrap, authSession, globalValues, bro
                     {subscription ? 'listening' : realBackendReady ? 'ready' : 'real backend required'}
                 </span>
             </div>
-            <div className="quick-rallar-summary-grid">
-                <Metric label="Provider" value={providerMode} tone={realBackendReady ? 'good' : 'warn'}/>
-                <Metric label="API" value={globalValues.apiBaseUrl}/>
-                <Metric label="User" value={authSession?.username ?? 'not logged in'} tone={authSession ? 'good' : 'warn'}/>
-                <Metric label="Session" value={authSession?.sessionId ?? '-'} tone={authSession ? 'good' : 'muted'}/>
-                <Metric label="Group" value={activeGroupId || '-'} tone={activeGroupId ? 'good' : 'warn'}/>
-                <Metric label="Signal WS" value={browserStatus.signalingLabel} tone={browserStatus.signalingTone}/>
-                <Metric label="Subscription" value={subscription?.label ?? 'not listening'} tone={subscription ? 'good' : 'muted'}/>
-                <Metric label="Received" value={String(receivedMessages.length)}/>
-                <Metric label="Wait" value={waitStatus}/>
-                <Metric label="Last action" value={lastResult?.status ?? '-'}/>
-            </div>
-            <div className="quick-rallar-context-grid">
-                <label className="field">
-                    <span>Group</span>
-                    <input value={globalValues.roomId} onChange={event => updateGroupId(event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Transport</span>
-                    <select value={values.transport} onChange={event => updateValue('transport', event.target.value as QuickRallarTransport)}>
-                        <option value="ws">WS group message</option>
-                    </select>
-                </label>
-                <label className="field">
-                    <span>Type ID</span>
-                    <input value={values.typeId} onChange={event => updateValue('typeId', event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Topic ID</span>
-                    <input value={values.topicId} onChange={event => updateValue('topicId', event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Context ID</span>
-                    <input value={values.contextId} onChange={event => updateValue('contextId', event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Resource ID</span>
-                    <input value={values.resourceId} onChange={event => updateValue('resourceId', event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Timeout</span>
-                    <input type="number" min={0} value={values.timeoutMs} onChange={event => updateValue('timeoutMs', Number(event.target.value))}/>
-                </label>
-            </div>
-            <div className="quick-rallar-route-grid" aria-label="Quick Test route">
-                <div>
-                    <span>Destination</span>
-                    <strong>{activeGroupId ? `Group ${activeGroupId}` : 'No group selected'}</strong>
-                    <small>{globalValues.applicationId || '-'} / {globalValues.workspaceId || '-'}</small>
+            <CollapsiblePanelSection title="Quick Test Info" meta={subscription ? 'listening' : waitStatus}>
+                <div className="quick-rallar-summary-grid">
+                    <Metric label="Provider" value={providerMode} tone={realBackendReady ? 'good' : 'warn'}/>
+                    <Metric label="API" value={globalValues.apiBaseUrl}/>
+                    <Metric label="User" value={authSession?.username ?? 'not logged in'} tone={authSession ? 'good' : 'warn'}/>
+                    <Metric label="Session" value={authSession?.sessionId ?? '-'} tone={authSession ? 'good' : 'muted'}/>
+                    <Metric label="Group" value={activeGroupId || '-'} tone={activeGroupId ? 'good' : 'warn'}/>
+                    <Metric label="Signal WS" value={browserStatus.signalingLabel} tone={browserStatus.signalingTone}/>
+                    <Metric label="Subscription" value={subscription?.label ?? 'not listening'} tone={subscription ? 'good' : 'muted'}/>
+                    <Metric label="Received" value={String(receivedMessages.length)}/>
+                    <Metric label="Wait" value={waitStatus}/>
+                    <Metric label="Last action" value={lastResult?.status ?? '-'}/>
                 </div>
-                <div>
-                    <span>Selector</span>
-                    <strong>{selectorLabel}</strong>
-                    <small>Context {activeContextId}</small>
+                <div className="quick-rallar-route-grid" aria-label="Quick Test route">
+                    <div>
+                        <span>Destination</span>
+                        <strong>{activeGroupId ? `Group ${activeGroupId}` : 'No group selected'}</strong>
+                        <small>{globalValues.applicationId || '-'} / {globalValues.workspaceId || '-'}</small>
+                    </div>
+                    <div>
+                        <span>Selector</span>
+                        <strong>{selectorLabel}</strong>
+                        <small>Context {activeContextId}</small>
+                    </div>
+                    <div>
+                        <span>Receive</span>
+                        <strong>{subscription ? 'Subscribed' : 'Not subscribed'}</strong>
+                        <small>{subscription ? formatTime(subscription.subscribedAtEpochMs) : 'Subscribe WS before receiving'}</small>
+                    </div>
                 </div>
-                <div>
-                    <span>Receive</span>
-                    <strong>{subscription ? 'Subscribed' : 'Not subscribed'}</strong>
-                    <small>{subscription ? formatTime(subscription.subscribedAtEpochMs) : 'Subscribe WS before receiving'}</small>
+            </CollapsiblePanelSection>
+            <CollapsiblePanelSection title="Quick Test Inputs" meta={`${activeGroupId || '-'} / ${selectorLabel}`}>
+                <div className="quick-rallar-context-grid">
+                    <label className="field">
+                        <span>Group</span>
+                        <input value={globalValues.roomId} onChange={event => updateGroupId(event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Transport</span>
+                        <select value={values.transport} onChange={event => updateValue('transport', event.target.value as QuickRallarTransport)}>
+                            <option value="ws">WS group message</option>
+                        </select>
+                    </label>
+                    <label className="field">
+                        <span>Type ID</span>
+                        <input value={values.typeId} onChange={event => updateValue('typeId', event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Topic ID</span>
+                        <input value={values.topicId} onChange={event => updateValue('topicId', event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Context ID</span>
+                        <input value={values.contextId} onChange={event => updateValue('contextId', event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Resource ID</span>
+                        <input value={values.resourceId} onChange={event => updateValue('resourceId', event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Timeout</span>
+                        <input type="number" min={0} value={values.timeoutMs} onChange={event => updateValue('timeoutMs', Number(event.target.value))}/>
+                    </label>
                 </div>
-            </div>
+            </CollapsiblePanelSection>
             <div className="quick-rallar-action-grid">
                 <button type="button" disabled={!canUseDirectRallar || !activeGroupId} onClick={() => void createGroup()}>
                     Create and join group
@@ -3577,42 +3719,44 @@ function QuickRallarTestPanel({ state, bootstrap, authSession, globalValues, bro
                     Open runner mode
                 </button>
             </div>
-            <div className="quick-rallar-payload-grid">
-                <label className="json-editor">
-                    <span>Payload JSON</span>
-                    <textarea
-                        value={values.payloadText}
-                        onChange={event => updateValue('payloadText', event.target.value)}
-                        spellCheck={false}
-                    />
-                </label>
-                <div className="quick-rallar-received-panel" aria-label="Quick Test received messages">
-                    <div className="websocket-received-heading">
-                        <div>
-                            <h3>Received Messages</h3>
-                            <p>{subscription ? `Listening to ${subscription.label} in ${subscription.groupId}.` : 'Not listening.'}</p>
+            <CollapsiblePanelSection title="Quick Test Payload" meta={`${receivedMessages.length} received`}>
+                <div className="quick-rallar-payload-grid">
+                    <label className="json-editor">
+                        <span>Payload JSON</span>
+                        <textarea
+                            value={values.payloadText}
+                            onChange={event => updateValue('payloadText', event.target.value)}
+                            spellCheck={false}
+                        />
+                    </label>
+                    <div className="quick-rallar-received-panel" aria-label="Quick Test received messages">
+                        <div className="websocket-received-heading">
+                            <div>
+                                <h3>Received Messages</h3>
+                                <p>{subscription ? `Listening to ${subscription.label} in ${subscription.groupId}.` : 'Not listening.'}</p>
+                            </div>
+                            <span className={`pill ${subscription ? 'good' : 'muted'}`}>
+                                {subscription ? 'listening' : 'idle'}
+                            </span>
                         </div>
-                        <span className={`pill ${subscription ? 'good' : 'muted'}`}>
-                            {subscription ? 'listening' : 'idle'}
-                        </span>
-                    </div>
-                    <div className="websocket-received-list">
-                        {receivedMessages.length === 0 && (
-                            <div className="empty-state">No received messages</div>
-                        )}
-                        {receivedMessages.slice().reverse().map(message => (
-                            <article className="websocket-received-row" key={message.rowId}>
-                                <div>
-                                    <strong>{message.topicId} / {message.typeId}</strong>
-                                    <small>{formatTime(message.atEpochMs)} - group {message.roomId}</small>
-                                    <small>sender {message.senderId} - context {message.contextId}</small>
-                                </div>
-                                <pre className="mini-json">{redactedJson(message.payload, state, authSession)}</pre>
-                            </article>
-                        ))}
+                        <div className="websocket-received-list">
+                            {receivedMessages.length === 0 && (
+                                <div className="empty-state">No received messages</div>
+                            )}
+                            {receivedMessages.slice().reverse().map(message => (
+                                <article className="websocket-received-row" key={message.rowId}>
+                                    <div>
+                                        <strong>{message.topicId} / {message.typeId}</strong>
+                                        <small>{formatTime(message.atEpochMs)} - group {message.roomId}</small>
+                                        <small>sender {message.senderId} - context {message.contextId}</small>
+                                    </div>
+                                    <pre className="mini-json">{redactedJson(message.payload, state, authSession)}</pre>
+                                </article>
+                            ))}
+                        </div>
                     </div>
                 </div>
-            </div>
+            </CollapsiblePanelSection>
             {(!realBackendReady || !authSession || localError || !payloadResult.ok || busyAction) && (
                 <div className={localError || !payloadResult.ok ? 'workbench-error' : 'command-center-status'} role="status">
                     {localError ??
@@ -3669,89 +3813,91 @@ function WorkbenchPanel({ busy, runState, loadedFixtureId, lastError }: {
                 <h2>Local Workbench</h2>
                 <span className={`pill ${statusTone(runState)}`}>{runState}</span>
             </div>
-            <div className="workbench-controls">
-                <label className="field">
-                    <span>Fixture</span>
-                    <select
-                        value={fixtureId}
-                        onChange={event => selectFixture(event.target.value)}
-                        disabled={busy}
-                    >
-                        {RALLAR_BLACK_BOX_RECIPE_FIXTURES.map(entry => (
-                            <option key={entry.fixtureId} value={entry.fixtureId}>
-                                {entry.label}
-                            </option>
-                        ))}
-                    </select>
-                </label>
-                <p className="fixture-description">{fixture.description}</p>
-                <div className="workbench-actions">
-                    <button
-                        type="button"
-                        onClick={() => runAction(() =>
-                            rallarBlackBoxRuntimeStore.loadRecipeFromJson(recipeText, fixtureId)
-                        )}
-                        disabled={busy}
-                    >
-                        Load
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => runAction(() =>
-                            rallarBlackBoxRuntimeStore.runLoadedRecipe()
-                        )}
-                        disabled={busy}
-                    >
-                        Run
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => runAction(() =>
-                            rallarBlackBoxRuntimeStore.cancelRecipe()
-                        )}
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => runAction(() =>
-                            rallarBlackBoxRuntimeStore.resetWorkbench()
-                        )}
-                        disabled={busy}
-                    >
-                        Reset
-                    </button>
+            <CollapsiblePanelSection title="Workbench Inputs" meta={fixture.label}>
+                <div className="workbench-controls">
+                    <label className="field">
+                        <span>Fixture</span>
+                        <select
+                            value={fixtureId}
+                            onChange={event => selectFixture(event.target.value)}
+                            disabled={busy}
+                        >
+                            {RALLAR_BLACK_BOX_RECIPE_FIXTURES.map(entry => (
+                                <option key={entry.fixtureId} value={entry.fixtureId}>
+                                    {entry.label}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <p className="fixture-description">{fixture.description}</p>
+                    <div className="workbench-actions">
+                        <button
+                            type="button"
+                            onClick={() => runAction(() =>
+                                rallarBlackBoxRuntimeStore.loadRecipeFromJson(recipeText, fixtureId)
+                            )}
+                            disabled={busy}
+                        >
+                            Load
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => runAction(() =>
+                                rallarBlackBoxRuntimeStore.runLoadedRecipe()
+                            )}
+                            disabled={busy}
+                        >
+                            Run
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => runAction(() =>
+                                rallarBlackBoxRuntimeStore.cancelRecipe()
+                            )}
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => runAction(() =>
+                                rallarBlackBoxRuntimeStore.resetWorkbench()
+                            )}
+                            disabled={busy}
+                        >
+                            Reset
+                        </button>
+                    </div>
                 </div>
-            </div>
-            <label className="json-editor">
-                <span>Recipe JSON</span>
-                <textarea
-                    value={recipeText}
-                    onChange={event => setRecipeText(event.target.value)}
-                    spellCheck={false}
-                    disabled={busy}
-                />
-            </label>
-            <div className="manual-command">
                 <label className="json-editor">
-                    <span>Manual Command JSON</span>
+                    <span>Recipe JSON</span>
                     <textarea
-                        value={commandText}
-                        onChange={event => setCommandText(event.target.value)}
+                        value={recipeText}
+                        onChange={event => setRecipeText(event.target.value)}
                         spellCheck={false}
                         disabled={busy}
                     />
                 </label>
-                <button
-                    type="button"
-                    onClick={() => runAction(() =>
-                        rallarBlackBoxRuntimeStore.executeCommandFromJson(commandText)
-                    )}
-                    disabled={busy}
-                >
-                    Execute Command
-                </button>
-            </div>
+                <div className="manual-command">
+                    <label className="json-editor">
+                        <span>Manual Command JSON</span>
+                        <textarea
+                            value={commandText}
+                            onChange={event => setCommandText(event.target.value)}
+                            spellCheck={false}
+                            disabled={busy}
+                        />
+                    </label>
+                    <button
+                        type="button"
+                        onClick={() => runAction(() =>
+                            rallarBlackBoxRuntimeStore.executeCommandFromJson(commandText)
+                        )}
+                        disabled={busy}
+                    >
+                        Execute Command
+                    </button>
+                </div>
+            </CollapsiblePanelSection>
             {(localError || lastError) && (
                 <div className="workbench-error" role="status">
                     {localError ?? lastError}
@@ -4063,15 +4209,16 @@ function ManualRallarWorkbenchPanel({ state, bootstrap, authSession, globalValue
                     {payloadResult.ok ? 'json valid' : 'json invalid'}
                 </span>
             </div>
-            <div className="manual-rallar-grid">
-                <label className="field">
-                    <span>Environment</span>
-                    <input
-                        value={values.environment}
-                        onChange={event => updateValue('environment', event.target.value)}
-                        disabled={busy}
-                    />
-                </label>
+            <CollapsiblePanelSection title="Manual Rallar Inputs" meta={`${values.groupId || '-'} / ${values.transport}`}>
+                <div className="manual-rallar-grid">
+                    <label className="field">
+                        <span>Environment</span>
+                        <input
+                            value={values.environment}
+                            onChange={event => updateValue('environment', event.target.value)}
+                            disabled={busy}
+                        />
+                    </label>
                 <label className="field">
                     <span>API Base URL</span>
                     <input
@@ -4227,49 +4374,52 @@ function ManualRallarWorkbenchPanel({ state, bootstrap, authSession, globalValue
                         disabled={busy || values.transport !== 'messages.rtc'}
                     />
                 </label>
-            </div>
-            <div className="segmented delivery-toggle" role="group" aria-label="Delivery mode">
-                {(['direct', 'multicast', 'broadcast'] as const).map(mode => (
-                    <button
-                        key={mode}
-                        type="button"
-                        className={values.deliveryMode === mode ? 'selected' : ''}
-                        onClick={() => updateValue('deliveryMode', mode as ManualDeliveryMode)}
+                </div>
+                <div className="segmented delivery-toggle" role="group" aria-label="Delivery mode">
+                    {(['direct', 'multicast', 'broadcast'] as const).map(mode => (
+                        <button
+                            key={mode}
+                            type="button"
+                            className={values.deliveryMode === mode ? 'selected' : ''}
+                            onClick={() => updateValue('deliveryMode', mode as ManualDeliveryMode)}
+                            disabled={busy}
+                        >
+                            {mode}
+                        </button>
+                    ))}
+                </div>
+            </CollapsiblePanelSection>
+            <CollapsiblePanelSection title="Manual Payload" meta={payloadResult.ok ? 'json valid' : 'json invalid'}>
+                <div className="payload-toolbar">
+                    <label className="field compact-field">
+                        <span>Payload Preset</span>
+                        <select
+                            value={payloadPresetId}
+                            onChange={event => selectPreset(event.target.value)}
+                            disabled={busy}
+                        >
+                            <option value="custom">Custom</option>
+                            {MANUAL_PAYLOAD_PRESETS.map(preset => (
+                                <option key={preset.presetId} value={preset.presetId}>
+                                    {preset.label}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                </div>
+                <label className="json-editor manual-payload-editor">
+                    <span>Payload JSON</span>
+                    <textarea
+                        value={payloadText}
+                        onChange={event => {
+                            setPayloadPresetId('custom');
+                            setPayloadText(event.target.value);
+                        }}
+                        spellCheck={false}
                         disabled={busy}
-                    >
-                        {mode}
-                    </button>
-                ))}
-            </div>
-            <div className="payload-toolbar">
-                <label className="field compact-field">
-                    <span>Payload Preset</span>
-                    <select
-                        value={payloadPresetId}
-                        onChange={event => selectPreset(event.target.value)}
-                        disabled={busy}
-                    >
-                        <option value="custom">Custom</option>
-                        {MANUAL_PAYLOAD_PRESETS.map(preset => (
-                            <option key={preset.presetId} value={preset.presetId}>
-                                {preset.label}
-                            </option>
-                        ))}
-                    </select>
+                    />
                 </label>
-            </div>
-            <label className="json-editor manual-payload-editor">
-                <span>Payload JSON</span>
-                <textarea
-                    value={payloadText}
-                    onChange={event => {
-                        setPayloadPresetId('custom');
-                        setPayloadText(event.target.value);
-                    }}
-                    spellCheck={false}
-                    disabled={busy}
-                />
-            </label>
+            </CollapsiblePanelSection>
             <div className="manual-preview">
                 <div className="section-heading">
                     <h3>Command Preview</h3>
@@ -6088,6 +6238,7 @@ function RallarTracePanel({ state, authSession }: {
     state: RallarBlackBoxTestState;
     authSession?: AuthSession;
 }) {
+    const now = useNow(1_000);
     const [sourceFilter, setSourceFilter] = useState<'all' | 'browser' | 'direct' | 'server'>('all');
     const [severityFilter, setSeverityFilter] = useState<'all' | RallarBlackBoxTestSeverity>('all');
     const [eventLimit, setEventLimit] = useState(100);
@@ -6105,6 +6256,10 @@ function RallarTracePanel({ state, authSession }: {
     const visibleEvents = useMemo(
         () => filteredEvents.slice(-eventLimit).reverse(),
         [eventLimit, filteredEvents],
+    );
+    const eventIndexById = useMemo(
+        () => new Map(traceEvents.map((event, index) => [event.eventId, index])),
+        [traceEvents],
     );
     const errorCount = traceEvents.filter(event => event.severity === 'error').length;
     const warningCount = traceEvents.filter(event => event.severity === 'warning').length;
@@ -6157,6 +6312,8 @@ function RallarTracePanel({ state, authSession }: {
                 )}
                 {visibleEvents.map(event => {
                     const source = rallarTraceSource(event);
+                    const eventIndex = eventIndexById.get(event.eventId) ?? -1;
+                    const previousEvent = eventIndex > 0 ? traceEvents[eventIndex - 1] : undefined;
                     const tone = event.severity === 'error'
                         ? 'bad'
                         : event.severity === 'warning'
@@ -6178,6 +6335,9 @@ function RallarTracePanel({ state, authSession }: {
                                 <span>{event.actor ?? 'no actor'}</span>
                                 <span>{event.connection ?? 'no connection'}</span>
                                 <span>{event.transport ?? 'runtime'}</span>
+                                <span>{traceTimingText(event, previousEvent, now)}</span>
+                                <span>{event.commandId ?? 'no command'}</span>
+                                <span>{event.eventId}</span>
                             </div>
                             <pre className="rallar-trace-message">{detail}</pre>
                             <pre className="json-block rallar-trace-payload">
@@ -7258,72 +7418,74 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
                     {diagnostics.statusLabel}
                 </span>
             </div>
-            <div className="websocket-context-grid">
-                <label className="field">
-                    <span>API Base URL</span>
-                    <input value={values.apiBaseUrl} onChange={event => updateValue('apiBaseUrl', event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Connection</span>
-                    <input value={values.connection} onChange={event => updateValue('connection', event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Application</span>
-                    <input value={values.applicationId} onChange={event => updateValue('applicationId', event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Workspace</span>
-                    <input value={values.workspaceId} onChange={event => updateValue('workspaceId', event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Group</span>
-                    <input value={values.groupId} onChange={event => updateGroupId(event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>WS Scope</span>
-                    <select value={values.wsScope} onChange={event => updateWsScope(event.target.value as WebSocketCommandCenterValues['wsScope'])}>
-                        <option value="room">room</option>
-                        <option value="all">all</option>
-                        <option value="world">world</option>
-                    </select>
-                </label>
-                <label className="field">
-                    <span>Type ID</span>
-                    <input value={values.typeId} onChange={event => updateValue('typeId', event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Topic ID</span>
-                    <input value={values.topicId} onChange={event => updateValue('topicId', event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Context ID</span>
-                    <input value={values.contextId} onChange={event => updateValue('contextId', event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Resource ID</span>
-                    <input value={values.resourceId} onChange={event => updateValue('resourceId', event.target.value)}/>
-                </label>
-                <label className="field websocket-url-field">
-                    <span>WebSocket URL</span>
-                    <input value={values.wsUrl} onChange={event => updateValue('wsUrl', event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Protocols</span>
-                    <input value={values.protocols} onChange={event => updateValue('protocols', event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Timeout</span>
-                    <input type="number" min={0} value={values.timeoutMs} onChange={event => updateValue('timeoutMs', Number(event.target.value))}/>
-                </label>
-                <label className="field">
-                    <span>Close Code</span>
-                    <input type="number" value={values.closeCode} onChange={event => updateValue('closeCode', Number(event.target.value))}/>
-                </label>
-                <label className="field">
-                    <span>Close Reason</span>
-                    <input value={values.closeReason} onChange={event => updateValue('closeReason', event.target.value)}/>
-                </label>
-            </div>
+            <CollapsiblePanelSection title="WebSocket Inputs" meta={routePreview.destination}>
+                <div className="websocket-context-grid">
+                    <label className="field">
+                        <span>API Base URL</span>
+                        <input value={values.apiBaseUrl} onChange={event => updateValue('apiBaseUrl', event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Connection</span>
+                        <input value={values.connection} onChange={event => updateValue('connection', event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Application</span>
+                        <input value={values.applicationId} onChange={event => updateValue('applicationId', event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Workspace</span>
+                        <input value={values.workspaceId} onChange={event => updateValue('workspaceId', event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Group</span>
+                        <input value={values.groupId} onChange={event => updateGroupId(event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>WS Scope</span>
+                        <select value={values.wsScope} onChange={event => updateWsScope(event.target.value as WebSocketCommandCenterValues['wsScope'])}>
+                            <option value="room">room</option>
+                            <option value="all">all</option>
+                            <option value="world">world</option>
+                        </select>
+                    </label>
+                    <label className="field">
+                        <span>Type ID</span>
+                        <input value={values.typeId} onChange={event => updateValue('typeId', event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Topic ID</span>
+                        <input value={values.topicId} onChange={event => updateValue('topicId', event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Context ID</span>
+                        <input value={values.contextId} onChange={event => updateValue('contextId', event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Resource ID</span>
+                        <input value={values.resourceId} onChange={event => updateValue('resourceId', event.target.value)}/>
+                    </label>
+                    <label className="field websocket-url-field">
+                        <span>WebSocket URL</span>
+                        <input value={values.wsUrl} onChange={event => updateValue('wsUrl', event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Protocols</span>
+                        <input value={values.protocols} onChange={event => updateValue('protocols', event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Timeout</span>
+                        <input type="number" min={0} value={values.timeoutMs} onChange={event => updateValue('timeoutMs', Number(event.target.value))}/>
+                    </label>
+                    <label className="field">
+                        <span>Close Code</span>
+                        <input type="number" value={values.closeCode} onChange={event => updateValue('closeCode', Number(event.target.value))}/>
+                    </label>
+                    <label className="field">
+                        <span>Close Reason</span>
+                        <input value={values.closeReason} onChange={event => updateValue('closeReason', event.target.value)}/>
+                    </label>
+                </div>
+            </CollapsiblePanelSection>
             <CommandCenterActionFeedbackPanel
                 feedback={actionFeedback}
                 state={state}
@@ -7413,25 +7575,27 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
                     </button>
                 </div>
             </div>
-            <div className="websocket-payload-grid">
-                <label className="field">
-                    <span>Payload Preset</span>
-                    <select value={payloadPresetId} onChange={event => selectPayloadPreset(event.target.value)}>
-                        {WEBSOCKET_PAYLOAD_PRESETS.map(preset => (
-                            <option key={preset.presetId} value={preset.presetId}>{preset.label}</option>
-                        ))}
-                    </select>
-                    <small>{activePreset.description}</small>
-                </label>
-                <label className="json-editor">
-                    <span>Payload JSON</span>
-                    <textarea
-                        value={values.payloadText}
-                        onChange={event => updateValue('payloadText', event.target.value)}
-                        spellCheck={false}
-                    />
-                </label>
-            </div>
+            <CollapsiblePanelSection title="WebSocket Payload" meta={activePreset.label}>
+                <div className="websocket-payload-grid">
+                    <label className="field">
+                        <span>Payload Preset</span>
+                        <select value={payloadPresetId} onChange={event => selectPayloadPreset(event.target.value)}>
+                            {WEBSOCKET_PAYLOAD_PRESETS.map(preset => (
+                                <option key={preset.presetId} value={preset.presetId}>{preset.label}</option>
+                            ))}
+                        </select>
+                        <small>{activePreset.description}</small>
+                    </label>
+                    <label className="json-editor">
+                        <span>Payload JSON</span>
+                        <textarea
+                            value={values.payloadText}
+                            onChange={event => updateValue('payloadText', event.target.value)}
+                            spellCheck={false}
+                        />
+                    </label>
+                </div>
+            </CollapsiblePanelSection>
             <div className="websocket-route-preview" aria-label="WebSocket route preview">
                 <div>
                     <span>Destination</span>
@@ -8048,66 +8212,68 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
                 <Metric label="Subscribed selector" value={subscriptions.at(-1)?.label ?? '-'}/>
                 <Metric label="Subscribed since" value={formatTime(subscriptions.at(-1)?.subscribedAtEpochMs)}/>
             </div>
-            <div className="rtc-realtime-context-grid">
-                <label className="field">
-                    <span>Transport</span>
-                    <select value={transport} onChange={event => setTransport(event.target.value as RtcRealtimeTransport)}>
-                        <option value="realtime">realtime.sendJson</option>
-                        <option value="messages.rtc">messages.rtc.send</option>
-                    </select>
-                </label>
-                <label className="field">
-                    <span>Lane ID</span>
-                    <input value={laneId} onChange={event => setLaneId(event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Peer IDs</span>
-                    <input value={peerIdsText} onChange={event => setPeerIdsText(event.target.value)} placeholder="comma separated"/>
-                </label>
-                <label className="field">
-                    <span>Type ID</span>
-                    <input value={typeId} onChange={event => setTypeId(event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Topic ID</span>
-                    <input value={topicId} onChange={event => setTopicId(event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Context ID</span>
-                    <input value={contextId} onChange={event => setContextId(event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Min Snapshot</span>
-                    <input value={minSnapshotVersion} onChange={event => setMinSnapshotVersion(event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Timeout</span>
-                    <input type="number" min={0} value={timeoutMs} onChange={event => setTimeoutMs(Number(event.target.value))}/>
-                </label>
-                <label className="field">
-                    <span>Reliability</span>
-                    <select value={reliability} onChange={event => setReliability(event.target.value as typeof reliability)}>
-                        <option value="best-effort">best-effort</option>
-                        <option value="at-least-once">at-least-once</option>
-                    </select>
-                </label>
-                <label className="field">
-                    <span>Ack</span>
-                    <select value={ack} onChange={event => setAck(event.target.value as typeof ack)}>
-                        <option value="none">none</option>
-                        <option value="receiver">receiver</option>
-                        <option value="all-logical-recipients">all-logical-recipients</option>
-                        <option value="group-leader">group-leader</option>
-                    </select>
-                </label>
-                <label className="field">
-                    <span>Ownership</span>
-                    <select value={ownership} onChange={event => setOwnership(event.target.value as typeof ownership)}>
-                        <option value="shared">shared</option>
-                        <option value="exclusive">exclusive</option>
-                    </select>
-                </label>
-            </div>
+            <CollapsiblePanelSection title="RTC/Realtimes Inputs" meta={`${activeGroupId || '-'} / ${transport}`}>
+                <div className="rtc-realtime-context-grid">
+                    <label className="field">
+                        <span>Transport</span>
+                        <select value={transport} onChange={event => setTransport(event.target.value as RtcRealtimeTransport)}>
+                            <option value="realtime">realtime.sendJson</option>
+                            <option value="messages.rtc">messages.rtc.send</option>
+                        </select>
+                    </label>
+                    <label className="field">
+                        <span>Lane ID</span>
+                        <input value={laneId} onChange={event => setLaneId(event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Peer IDs</span>
+                        <input value={peerIdsText} onChange={event => setPeerIdsText(event.target.value)} placeholder="comma separated"/>
+                    </label>
+                    <label className="field">
+                        <span>Type ID</span>
+                        <input value={typeId} onChange={event => setTypeId(event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Topic ID</span>
+                        <input value={topicId} onChange={event => setTopicId(event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Context ID</span>
+                        <input value={contextId} onChange={event => setContextId(event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Min Snapshot</span>
+                        <input value={minSnapshotVersion} onChange={event => setMinSnapshotVersion(event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Timeout</span>
+                        <input type="number" min={0} value={timeoutMs} onChange={event => setTimeoutMs(Number(event.target.value))}/>
+                    </label>
+                    <label className="field">
+                        <span>Reliability</span>
+                        <select value={reliability} onChange={event => setReliability(event.target.value as typeof reliability)}>
+                            <option value="best-effort">best-effort</option>
+                            <option value="at-least-once">at-least-once</option>
+                        </select>
+                    </label>
+                    <label className="field">
+                        <span>Ack</span>
+                        <select value={ack} onChange={event => setAck(event.target.value as typeof ack)}>
+                            <option value="none">none</option>
+                            <option value="receiver">receiver</option>
+                            <option value="all-logical-recipients">all-logical-recipients</option>
+                            <option value="group-leader">group-leader</option>
+                        </select>
+                    </label>
+                    <label className="field">
+                        <span>Ownership</span>
+                        <select value={ownership} onChange={event => setOwnership(event.target.value as typeof ownership)}>
+                            <option value="shared">shared</option>
+                            <option value="exclusive">exclusive</option>
+                        </select>
+                    </label>
+                </div>
+            </CollapsiblePanelSection>
             <div className="rtc-realtime-action-grid">
                 <button type="button" disabled={!canRun} onClick={() => void subscribeRealtime()}>
                     Subscribe realtime
@@ -8134,31 +8300,33 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
                     Copy RTC recipe
                 </button>
             </div>
-            <div className="rtc-realtime-work-grid">
-                <label className="json-editor">
-                    <span>Payload JSON</span>
-                    <textarea value={payloadText} onChange={event => setPayloadText(event.target.value)} spellCheck={false}/>
-                </label>
-                <section className="rtc-realtime-received-panel" aria-label="RTC/Realtimes received messages">
-                    <div className="section-heading">
-                        <h3>Received Messages</h3>
-                        <span>{received.length} rows</span>
-                    </div>
-                    <div className="websocket-received-list">
-                        {received.length === 0 && <div className="empty-state">No received RTC/Realtimes messages</div>}
-                        {received.slice().reverse().map(message => (
-                            <article className="websocket-received-row" key={message.rowId}>
-                                <div>
-                                    <strong>{message.transport} {message.topicId} / {message.typeId}</strong>
-                                    <small>{formatTime(message.atEpochMs)} - peer {message.peerId}</small>
-                                    <small>group {message.roomId} - lane {message.laneId} - context {message.contextId}</small>
-                                </div>
-                                <pre className="mini-json">{redactedJson(message.payload, state, authSession)}</pre>
-                            </article>
-                        ))}
-                    </div>
-                </section>
-            </div>
+            <CollapsiblePanelSection title="RTC/Realtimes Payload" meta={`${received.length} received`}>
+                <div className="rtc-realtime-work-grid">
+                    <label className="json-editor">
+                        <span>Payload JSON</span>
+                        <textarea value={payloadText} onChange={event => setPayloadText(event.target.value)} spellCheck={false}/>
+                    </label>
+                    <section className="rtc-realtime-received-panel" aria-label="RTC/Realtimes received messages">
+                        <div className="section-heading">
+                            <h3>Received Messages</h3>
+                            <span>{received.length} rows</span>
+                        </div>
+                        <div className="websocket-received-list">
+                            {received.length === 0 && <div className="empty-state">No received RTC/Realtimes messages</div>}
+                            {received.slice().reverse().map(message => (
+                                <article className="websocket-received-row" key={message.rowId}>
+                                    <div>
+                                        <strong>{message.transport} {message.topicId} / {message.typeId}</strong>
+                                        <small>{formatTime(message.atEpochMs)} - peer {message.peerId}</small>
+                                        <small>group {message.roomId} - lane {message.laneId} - context {message.contextId}</small>
+                                    </div>
+                                    <pre className="mini-json">{redactedJson(message.payload, state, authSession)}</pre>
+                                </article>
+                            ))}
+                        </div>
+                    </section>
+                </div>
+            </CollapsiblePanelSection>
             {(localError || !realBackendReady || !authSession) && (
                 <div className={localError ? 'workbench-error' : 'command-center-status'} role="status">
                     {localError ??
@@ -8520,61 +8688,63 @@ function RallarDataPanel({ state, bootstrap, authSession, globalValues }: {
                 <Metric label="Hydrated" value={hydrated ? 'yes' : 'no'} tone={hydrated ? 'good' : 'muted'}/>
                 <Metric label="Changes" value={String(changes.length)}/>
             </div>
-            <div className="rallar-data-context-grid">
-                <label className="field">
-                    <span>Store</span>
-                    <input value={storeName} onChange={event => {
-                        resetOpenStore();
-                        setStoreName(event.target.value);
-                    }}/>
-                </label>
-                <label className="field">
-                    <span>Scope</span>
-                    <select value={scopeMode} onChange={event => {
-                        resetOpenStore();
-                        setScopeMode(event.target.value as typeof scopeMode);
-                    }}>
-                        <option value="app">app</option>
-                        <option value="principal">principal</option>
-                        <option value="session">session</option>
-                        <option value="custom">custom</option>
-                    </select>
-                </label>
-                <label className="field">
-                    <span>Custom Scope</span>
-                    <input value={customScope} onChange={event => setCustomScope(event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Durability</span>
-                    <select value={durability} onChange={event => {
-                        resetOpenStore();
-                        setDurability(event.target.value as typeof durability);
-                    }}>
-                        <option value="write-through">write-through</option>
-                        <option value="write-behind">write-behind</option>
-                    </select>
-                </label>
-                <label className="field">
-                    <span>Hydration</span>
-                    <select value={hydrateMode} onChange={event => {
-                        resetOpenStore();
-                        setHydrateMode(event.target.value as typeof hydrateMode);
-                    }}>
-                        <option value="eager">eager</option>
-                        <option value="lazy">lazy</option>
-                    </select>
-                </label>
-                <label className="field">
-                    <span>Operation</span>
-                    <select value={operation} onChange={event => setOperation(event.target.value as RallarDataOperation)}>
-                        {operations.map(entry => <option key={entry} value={entry}>{entry}</option>)}
-                    </select>
-                </label>
-                <label className="field">
-                    <span>Key</span>
-                    <input value={key} onChange={event => setKey(event.target.value)}/>
-                </label>
-            </div>
+            <CollapsiblePanelSection title="Rallar Data Inputs" meta={`${storeName} / ${operation}`}>
+                <div className="rallar-data-context-grid">
+                    <label className="field">
+                        <span>Store</span>
+                        <input value={storeName} onChange={event => {
+                            resetOpenStore();
+                            setStoreName(event.target.value);
+                        }}/>
+                    </label>
+                    <label className="field">
+                        <span>Scope</span>
+                        <select value={scopeMode} onChange={event => {
+                            resetOpenStore();
+                            setScopeMode(event.target.value as typeof scopeMode);
+                        }}>
+                            <option value="app">app</option>
+                            <option value="principal">principal</option>
+                            <option value="session">session</option>
+                            <option value="custom">custom</option>
+                        </select>
+                    </label>
+                    <label className="field">
+                        <span>Custom Scope</span>
+                        <input value={customScope} onChange={event => setCustomScope(event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Durability</span>
+                        <select value={durability} onChange={event => {
+                            resetOpenStore();
+                            setDurability(event.target.value as typeof durability);
+                        }}>
+                            <option value="write-through">write-through</option>
+                            <option value="write-behind">write-behind</option>
+                        </select>
+                    </label>
+                    <label className="field">
+                        <span>Hydration</span>
+                        <select value={hydrateMode} onChange={event => {
+                            resetOpenStore();
+                            setHydrateMode(event.target.value as typeof hydrateMode);
+                        }}>
+                            <option value="eager">eager</option>
+                            <option value="lazy">lazy</option>
+                        </select>
+                    </label>
+                    <label className="field">
+                        <span>Operation</span>
+                        <select value={operation} onChange={event => setOperation(event.target.value as RallarDataOperation)}>
+                            {operations.map(entry => <option key={entry} value={entry}>{entry}</option>)}
+                        </select>
+                    </label>
+                    <label className="field">
+                        <span>Key</span>
+                        <input value={key} onChange={event => setKey(event.target.value)}/>
+                    </label>
+                </div>
+            </CollapsiblePanelSection>
             <div className="rallar-data-actions">
                 <button type="button" disabled={!canRun} onClick={() => void runOperation()}>
                     Run data operation
@@ -8583,41 +8753,43 @@ function RallarDataPanel({ state, bootstrap, authSession, globalValues }: {
                     Copy diagnostics
                 </button>
             </div>
-            <div className="rallar-data-work-grid">
-                <label className="json-editor">
-                    <span>Value JSON</span>
-                    <textarea value={valueText} onChange={event => setValueText(event.target.value)} spellCheck={false}/>
-                </label>
-                <label className="json-editor">
-                    <span>Expected JSON</span>
-                    <textarea value={expectedText} onChange={event => setExpectedText(event.target.value)} spellCheck={false}/>
-                </label>
-                <section className="rallar-data-result-panel">
-                    <div className="section-heading">
-                        <h3>Result</h3>
-                        <span>{busyAction ?? operation}</span>
-                    </div>
-                    <pre className="mini-json">{redactedJson(result ?? {}, state, authSession)}</pre>
-                </section>
-                <section className="rallar-data-result-panel">
-                    <div className="section-heading">
-                        <h3>Change Events</h3>
-                        <span>{changes.length} rows</span>
-                    </div>
-                    <div className="websocket-received-list">
-                        {changes.length === 0 && <div className="empty-state">No Rallar Data changes</div>}
-                        {changes.slice().reverse().map(change => (
-                            <article className="websocket-received-row" key={change.rowId}>
-                                <div>
-                                    <strong>{formatTime(change.atEpochMs)}</strong>
-                                    <small>{storeName}</small>
-                                </div>
-                                <pre className="mini-json">{redactedJson(change.event, state, authSession)}</pre>
-                            </article>
-                        ))}
-                    </div>
-                </section>
-            </div>
+            <CollapsiblePanelSection title="Rallar Data Values" meta={`${changes.length} changes`}>
+                <div className="rallar-data-work-grid">
+                    <label className="json-editor">
+                        <span>Value JSON</span>
+                        <textarea value={valueText} onChange={event => setValueText(event.target.value)} spellCheck={false}/>
+                    </label>
+                    <label className="json-editor">
+                        <span>Expected JSON</span>
+                        <textarea value={expectedText} onChange={event => setExpectedText(event.target.value)} spellCheck={false}/>
+                    </label>
+                    <section className="rallar-data-result-panel">
+                        <div className="section-heading">
+                            <h3>Result</h3>
+                            <span>{busyAction ?? operation}</span>
+                        </div>
+                        <pre className="mini-json">{redactedJson(result ?? {}, state, authSession)}</pre>
+                    </section>
+                    <section className="rallar-data-result-panel">
+                        <div className="section-heading">
+                            <h3>Change Events</h3>
+                            <span>{changes.length} rows</span>
+                        </div>
+                        <div className="websocket-received-list">
+                            {changes.length === 0 && <div className="empty-state">No Rallar Data changes</div>}
+                            {changes.slice().reverse().map(change => (
+                                <article className="websocket-received-row" key={change.rowId}>
+                                    <div>
+                                        <strong>{formatTime(change.atEpochMs)}</strong>
+                                        <small>{storeName}</small>
+                                    </div>
+                                    <pre className="mini-json">{redactedJson(change.event, state, authSession)}</pre>
+                                </article>
+                            ))}
+                        </div>
+                    </section>
+                </div>
+            </CollapsiblePanelSection>
             {(busyAction || localError || !realBackendReady) && (
                 <div className={localError ? 'workbench-error' : 'command-center-status'} role="status">
                     {localError ?? (!realBackendReady ? 'Rallar Data requires provider=browser-rallar.' : busyAction)}
@@ -8872,37 +9044,39 @@ function MediaConsolePanel({ state, bootstrap, authSession, globalValues }: {
                     Copy diagnostics
                 </button>
             </div>
-            <div className="media-work-grid">
-                <label className="json-editor">
-                    <span>Media Policy JSON</span>
-                    <textarea value={policyText} onChange={event => setPolicyText(event.target.value)} spellCheck={false}/>
-                </label>
-                <section className="media-result-panel">
-                    <div className="section-heading">
-                        <h3>Remote Streams</h3>
-                        <span>{remoteStreams.length} rows</span>
-                    </div>
-                    <div className="websocket-received-list">
-                        {remoteStreams.length === 0 && <div className="empty-state">No remote streams</div>}
-                        {remoteStreams.slice().reverse().map(remote => (
-                            <article className="state-table-row" key={remote.rowId}>
-                                <div>
-                                    <strong>{remote.peerId}</strong>
-                                    <small>{remote.streamId}</small>
-                                </div>
-                                <span>{formatTime(remote.atEpochMs)}</span>
-                            </article>
-                        ))}
-                    </div>
-                </section>
-                <section className="media-result-panel">
-                    <div className="section-heading">
-                        <h3>Result</h3>
-                        <span>{busyAction ?? 'idle'}</span>
-                    </div>
-                    <pre className="mini-json">{redactedJson(result ?? {}, state, authSession)}</pre>
-                </section>
-            </div>
+            <CollapsiblePanelSection title="Media Inputs" meta={`${remoteStreams.length} remote`}>
+                <div className="media-work-grid">
+                    <label className="json-editor">
+                        <span>Media Policy JSON</span>
+                        <textarea value={policyText} onChange={event => setPolicyText(event.target.value)} spellCheck={false}/>
+                    </label>
+                    <section className="media-result-panel">
+                        <div className="section-heading">
+                            <h3>Remote Streams</h3>
+                            <span>{remoteStreams.length} rows</span>
+                        </div>
+                        <div className="websocket-received-list">
+                            {remoteStreams.length === 0 && <div className="empty-state">No remote streams</div>}
+                            {remoteStreams.slice().reverse().map(remote => (
+                                <article className="state-table-row" key={remote.rowId}>
+                                    <div>
+                                        <strong>{remote.peerId}</strong>
+                                        <small>{remote.streamId}</small>
+                                    </div>
+                                    <span>{formatTime(remote.atEpochMs)}</span>
+                                </article>
+                            ))}
+                        </div>
+                    </section>
+                    <section className="media-result-panel">
+                        <div className="section-heading">
+                            <h3>Result</h3>
+                            <span>{busyAction ?? 'idle'}</span>
+                        </div>
+                        <pre className="mini-json">{redactedJson(result ?? {}, state, authSession)}</pre>
+                    </section>
+                </div>
+            </CollapsiblePanelSection>
             {(busyAction || localError || !realBackendReady || !authSession) && (
                 <div className={localError ? 'workbench-error' : 'command-center-status'} role="status">
                     {localError ??
@@ -9152,32 +9326,34 @@ function AuthCommandCenterPanel({ state, bootstrap, authSession, globalValues, o
                     {authSession ? 'session active' : 'no session'}
                 </span>
             </div>
-            <div className="auth-command-grid">
-                <label className="field">
-                    <span>API Base URL</span>
-                    <input value={apiBaseUrl} onChange={event => setApiBaseUrl(event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Username</span>
-                    <input
-                        value={username}
-                        onChange={event => setUsername(event.target.value)}
-                        autoCapitalize="none"
-                        autoComplete="username"
-                        autoCorrect="off"
-                        spellCheck={false}
-                    />
-                </label>
-                <label className="field">
-                    <span>Password</span>
-                    <input
-                        type="password"
-                        value={password}
-                        onChange={event => setPassword(event.target.value)}
-                        autoComplete="current-password"
-                    />
-                </label>
-            </div>
+            <CollapsiblePanelSection title="Auth Inputs" meta={authSession ? authSession.username : 'not logged in'}>
+                <div className="auth-command-grid">
+                    <label className="field">
+                        <span>API Base URL</span>
+                        <input value={apiBaseUrl} onChange={event => setApiBaseUrl(event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Username</span>
+                        <input
+                            value={username}
+                            onChange={event => setUsername(event.target.value)}
+                            autoCapitalize="none"
+                            autoComplete="username"
+                            autoCorrect="off"
+                            spellCheck={false}
+                        />
+                    </label>
+                    <label className="field">
+                        <span>Password</span>
+                        <input
+                            type="password"
+                            value={password}
+                            onChange={event => setPassword(event.target.value)}
+                            autoComplete="current-password"
+                        />
+                    </label>
+                </div>
+            </CollapsiblePanelSection>
             <div className="auth-action-grid">
                 <button type="button" disabled={Boolean(busyAction)} onClick={() => void login(false)}>
                     Login
@@ -9763,40 +9939,42 @@ function RoomsClientsPanel({ state, bootstrap, authSession, globalValues, onGlob
                     {authSession ? 'auth attached' : 'needs auth'}
                 </span>
             </div>
-            <div className="rooms-context-grid">
-                <label className="field">
-                    <span>API Base URL</span>
-                    <input value={apiBaseUrl} onChange={event => setApiBaseUrl(event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Application</span>
-                    <input value={variables.applicationId} onChange={event => updateVariable('applicationId', event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Workspace</span>
-                    <input value={variables.workspaceId} onChange={event => updateVariable('workspaceId', event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Group</span>
-                    <input value={variables.groupId} onChange={event => updateVariable('groupId', event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Principal / Client</span>
-                    <input value={variables.principalId} onChange={event => updateVariable('principalId', event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Instance</span>
-                    <input value={variables.clientInstanceId} onChange={event => updateVariable('clientInstanceId', event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Session</span>
-                    <input value={variables.sessionId} onChange={event => updateVariable('sessionId', event.target.value)}/>
-                </label>
-                <label className="field">
-                    <span>Timeout</span>
-                    <input type="number" min={0} value={timeoutMs} onChange={event => setTimeoutMs(Number(event.target.value))}/>
-                </label>
-            </div>
+            <CollapsiblePanelSection title="Groups/Clients Inputs" meta={`${variables.groupId || '-'} / ${variables.principalId || '-'}`}>
+                <div className="rooms-context-grid">
+                    <label className="field">
+                        <span>API Base URL</span>
+                        <input value={apiBaseUrl} onChange={event => setApiBaseUrl(event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Application</span>
+                        <input value={variables.applicationId} onChange={event => updateVariable('applicationId', event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Workspace</span>
+                        <input value={variables.workspaceId} onChange={event => updateVariable('workspaceId', event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Group</span>
+                        <input value={variables.groupId} onChange={event => updateVariable('groupId', event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Principal / Client</span>
+                        <input value={variables.principalId} onChange={event => updateVariable('principalId', event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Instance</span>
+                        <input value={variables.clientInstanceId} onChange={event => updateVariable('clientInstanceId', event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Session</span>
+                        <input value={variables.sessionId} onChange={event => updateVariable('sessionId', event.target.value)}/>
+                    </label>
+                    <label className="field">
+                        <span>Timeout</span>
+                        <input type="number" min={0} value={timeoutMs} onChange={event => setTimeoutMs(Number(event.target.value))}/>
+                    </label>
+                </div>
+            </CollapsiblePanelSection>
             <div className="rooms-utility-grid">
                 <button type="button" disabled={Boolean(busyAction) || !authSession} onClick={() => void refreshState()}>
                     Refresh state
@@ -11057,135 +11235,137 @@ function RallarServerPanel({ state, bootstrap, authSession, globalValues, contro
                     <dd>{serverOpenApiPresets.length > 0 ? 'server OpenAPI' : 'local OpenAPI'}</dd>
                 </div>
             </dl>
-            <div className="rest-workbench-grid">
-                <label className="field">
-                    <span>Endpoint</span>
-                    <select
-                        value={selectedPresetId}
-                        onChange={event => {
-                            const nextPreset = allPresets.find(preset =>
-                                preset.presetId === event.target.value
-                            );
-                            if (nextPreset) {
-                                applyPreset(nextPreset);
-                            }
-                        }}
-                    >
-                        {allPresets.map(preset => (
-                            <option key={preset.presetId} value={preset.presetId}>
-                                {preset.tag} - {preset.label}
-                            </option>
-                        ))}
-                    </select>
-                </label>
-                <label className="field">
-                    <span>API Base URL</span>
-                    <input
-                        value={apiBaseUrl}
-                        onChange={event => {
-                            setServerDraftEdited(true);
-                            setApiBaseUrl(event.target.value);
-                        }}
-                    />
-                </label>
-                <label className="field compact-field">
-                    <span>Method</span>
-                    <select
-                        value={method}
-                        onChange={event => {
-                            setServerDraftEdited(true);
-                            setMethod(event.target.value as RallarServerRestMethod);
-                        }}
-                    >
-                        {(['GET', 'POST', 'PUT', 'DELETE'] as const).map(entry => (
-                            <option key={entry} value={entry}>{entry}</option>
-                        ))}
-                    </select>
-                </label>
-                <label className="field compact-field">
-                    <span>Timeout</span>
-                    <input
-                        type="number"
-                        min={0}
-                        value={timeoutMs}
-                        onChange={event => {
-                            setServerDraftEdited(true);
-                            setTimeoutMs(Number(event.target.value));
-                        }}
-                    />
-                </label>
-                <label className="field rest-path-field">
-                    <span>Path</span>
-                    <input
-                        value={path}
-                        onChange={event => {
-                            setServerDraftEdited(true);
-                            setPath(event.target.value);
-                        }}
-                    />
-                </label>
-                <label className="field compact-field">
-                    <span>Body Mode</span>
-                    <select
-                        value={responseBodyMode}
-                        onChange={event => {
-                            setServerDraftEdited(true);
-                            setResponseBodyMode(event.target.value as RallarServerResponseBodyMode);
-                        }}
-                    >
-                        {(['auto', 'json', 'text', 'none'] as const).map(entry => (
-                            <option key={entry} value={entry}>{entry}</option>
-                        ))}
-                    </select>
-                </label>
-                <label className="check-field rest-auth-check">
-                    <input
-                        type="checkbox"
-                        checked={attachAuth}
-                        onChange={event => {
-                            setServerDraftEdited(true);
-                            setAttachAuth(event.target.checked);
-                        }}
-                    />
-                    <span>Attach auth</span>
-                </label>
-            </div>
-            <div className="rest-editors">
-                <label className="json-editor">
-                    <span>Query JSON</span>
-                    <textarea
-                        value={queryText}
-                        onChange={event => {
-                            setServerDraftEdited(true);
-                            setQueryText(event.target.value);
-                        }}
-                        spellCheck={false}
-                    />
-                </label>
-                <label className="json-editor">
-                    <span>Headers JSON</span>
-                    <textarea
-                        value={headersText}
-                        onChange={event => {
-                            setServerDraftEdited(true);
-                            setHeadersText(event.target.value);
-                        }}
-                        spellCheck={false}
-                    />
-                </label>
-                <label className="json-editor">
-                    <span>Body JSON</span>
-                    <textarea
-                        value={bodyText}
-                        onChange={event => {
-                            setServerDraftEdited(true);
-                            setBodyText(event.target.value);
-                        }}
-                        spellCheck={false}
-                        disabled={method === 'GET'}
-                    />
-                </label>
-            </div>
+            <CollapsiblePanelSection title="REST Request Inputs" meta={`${method} ${path}`}>
+                <div className="rest-workbench-grid">
+                    <label className="field">
+                        <span>Endpoint</span>
+                        <select
+                            value={selectedPresetId}
+                            onChange={event => {
+                                const nextPreset = allPresets.find(preset =>
+                                    preset.presetId === event.target.value
+                                );
+                                if (nextPreset) {
+                                    applyPreset(nextPreset);
+                                }
+                            }}
+                        >
+                            {allPresets.map(preset => (
+                                <option key={preset.presetId} value={preset.presetId}>
+                                    {preset.tag} - {preset.label}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <label className="field">
+                        <span>API Base URL</span>
+                        <input
+                            value={apiBaseUrl}
+                            onChange={event => {
+                                setServerDraftEdited(true);
+                                setApiBaseUrl(event.target.value);
+                            }}
+                        />
+                    </label>
+                    <label className="field compact-field">
+                        <span>Method</span>
+                        <select
+                            value={method}
+                            onChange={event => {
+                                setServerDraftEdited(true);
+                                setMethod(event.target.value as RallarServerRestMethod);
+                            }}
+                        >
+                            {(['GET', 'POST', 'PUT', 'DELETE'] as const).map(entry => (
+                                <option key={entry} value={entry}>{entry}</option>
+                            ))}
+                        </select>
+                    </label>
+                    <label className="field compact-field">
+                        <span>Timeout</span>
+                        <input
+                            type="number"
+                            min={0}
+                            value={timeoutMs}
+                            onChange={event => {
+                                setServerDraftEdited(true);
+                                setTimeoutMs(Number(event.target.value));
+                            }}
+                        />
+                    </label>
+                    <label className="field rest-path-field">
+                        <span>Path</span>
+                        <input
+                            value={path}
+                            onChange={event => {
+                                setServerDraftEdited(true);
+                                setPath(event.target.value);
+                            }}
+                        />
+                    </label>
+                    <label className="field compact-field">
+                        <span>Body Mode</span>
+                        <select
+                            value={responseBodyMode}
+                            onChange={event => {
+                                setServerDraftEdited(true);
+                                setResponseBodyMode(event.target.value as RallarServerResponseBodyMode);
+                            }}
+                        >
+                            {(['auto', 'json', 'text', 'none'] as const).map(entry => (
+                                <option key={entry} value={entry}>{entry}</option>
+                            ))}
+                        </select>
+                    </label>
+                    <label className="check-field rest-auth-check">
+                        <input
+                            type="checkbox"
+                            checked={attachAuth}
+                            onChange={event => {
+                                setServerDraftEdited(true);
+                                setAttachAuth(event.target.checked);
+                            }}
+                        />
+                        <span>Attach auth</span>
+                    </label>
+                </div>
+                <div className="rest-editors">
+                    <label className="json-editor">
+                        <span>Query JSON</span>
+                        <textarea
+                            value={queryText}
+                            onChange={event => {
+                                setServerDraftEdited(true);
+                                setQueryText(event.target.value);
+                            }}
+                            spellCheck={false}
+                        />
+                    </label>
+                    <label className="json-editor">
+                        <span>Headers JSON</span>
+                        <textarea
+                            value={headersText}
+                            onChange={event => {
+                                setServerDraftEdited(true);
+                                setHeadersText(event.target.value);
+                            }}
+                            spellCheck={false}
+                        />
+                    </label>
+                    <label className="json-editor">
+                        <span>Body JSON</span>
+                        <textarea
+                            value={bodyText}
+                            onChange={event => {
+                                setServerDraftEdited(true);
+                                setBodyText(event.target.value);
+                            }}
+                            spellCheck={false}
+                            disabled={method === 'GET'}
+                        />
+                    </label>
+                </div>
+            </CollapsiblePanelSection>
             <div className="rest-actions">
                 <button type="button" onClick={() => void sendRequest()} disabled={busy}>
                     {busy ? 'Sending' : 'Send'}

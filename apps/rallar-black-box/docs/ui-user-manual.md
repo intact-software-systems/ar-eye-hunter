@@ -69,6 +69,9 @@ The header summarizes the current runtime:
 Use this first when a run looks idle. It tells you whether the app is waiting locally, running a command, connected to a
 control server, or stuck in reconnect.
 
+On narrow screens the top `Rallar Kit` header starts compact. Use `Show status` to expand the runtime metrics and action
+buttons, including logout; use `Hide status` to return to the compact view.
+
 The top tabs split the workspace into:
 
 - `Auth`
@@ -102,11 +105,19 @@ global values updates the defaults used by Manual Rallar, Groups/Clients, WebSoc
 Flow Builder without changing payloads, timeouts, or endpoint-specific fields. `Use login/context` resets the global
 values back to the current bootstrap/login context.
 
+On narrow screens `Global Context` starts collapsed so the tabs and active command surface stay close to the top. Use
+`Show values` when you need to edit API, application, workspace, group, client, or session defaults.
+
 The `Rallar Browser Trace` strip sits below Global Context. It shows the signaling WebSocket status, RTC status, active
 group, peer counts, and newest events whose source topic is `rallar.browser.*`. These events are emitted by the
-browser-side Rallar runtime and then bridged into the command-center event store. Use `Rallar Trace` for expanded
-Rallar browser/direct/server events with full redacted payloads and complete failure messages. Use `Event Stream` for
-the generic event table and filters across every command-center event.
+browser-side Rallar runtime and then bridged into the command-center event store. Each trace item includes wall-clock
+time, relative age, delta from the previous trace event, source, kind, severity, transport, connection, actor when
+available, and a short payload/failure summary. Use `Rallar Trace` for expanded Rallar browser/direct/server events with
+full redacted payloads and complete failure messages. Use `Event Stream` for the generic event table and filters across
+every command-center event.
+
+The trace strip can be collapsed with `Hide` when you need more vertical space. Its heading remains visible with mode
+and latest severity, and `Show` restores the status summary and recent event rows.
 
 Between Global Context and the trace strip, the `Workspace Mode` switch separates direct live Rallar work from
 black-box-runner work:
@@ -121,10 +132,26 @@ black-box-runner work:
 The active mode is stored in the `workspace` query parameter. Existing `tab` deep links still work; opening a
 runner-owned tab such as `shared-test` or `run-manager` automatically selects the black-box-runner workspace.
 
+## Mobile And Tablet Use
+
+The UI supports phone, tablet, laptop, and large desktop widths. On iPhone Max-sized screens the command-center panels
+collapse to one-column controls, action buttons use touch-friendly heights, JSON editors stay full width, and dense
+state/event rows render as stacked cards instead of compressed tables. Inputs use mobile-safe font sizes to avoid iOS
+auto-zoom while editing API URLs, groups, selectors, and JSON.
+
+Large sections are collapsible so the active operation stays close to the top of the screen. The runtime header, Global
+Context, Rallar Browser Trace, Direct Rallar Operations, Quick Test summary, and the main input/payload sections in each
+mode can be hidden and shown without losing form values or active subscriptions.
+
+On iPad-sized screens the UI keeps compact two-column layouts where there is enough room, while laptops and larger
+screens use the wider dashboard grids. Ultra-wide screens keep the same desktop layout in a centered maximum-width shell
+instead of stretching controls indefinitely.
+
 In `Rallar` mode, the `Direct Rallar Operations` panel establishes the direct-operation boundary. Its `Check Direct
 Rallar` action calls the browser Rallar facade directly, applies the current Global Context defaults, starts/connects
 Rallar, and emits `rallar.direct.*` diagnostics into the trace and event stream. If the app is running with the
-simulated provider, the panel shows `real backend required` and does not fall back to fake data.
+simulated provider, the panel shows `real backend required` and does not fall back to fake data. The panel is
+collapsible; the boundary/status heading remains visible when its details are hidden.
 
 The default Rallar tab is `Quick Test`. It is the fastest path for real WS group traffic with two browser sessions:
 create or join the group, subscribe the receiving browser, send JSON from either browser, and inspect received messages
@@ -143,6 +170,9 @@ values for API base URL, application, workspace, and group, plus the logged-in b
 The top summary shows provider mode, API, user, session, group, signaling WS status, subscription status, receive count,
 wait status, and last direct action result. The route preview shows the active destination group, type/topic selector,
 context, and whether this browser is subscribed.
+
+Quick Test is split into collapsible `Quick Test Info`, `Quick Test Inputs`, and `Quick Test Payload` sections. Collapse
+the summary or payload sections on phones to keep the group/join/send buttons immediately reachable.
 
 Controls include:
 

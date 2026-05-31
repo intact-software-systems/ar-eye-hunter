@@ -5,15 +5,29 @@
     font-synthesis: none;
     line-height: 1.5;
     text-rendering: optimizeLegibility;
+    --page-gutter: 18px;
+    --mobile-page-gutter: 10px;
 }
 
 * {
     box-sizing: border-box;
 }
 
+[hidden] {
+    display: none !important;
+}
+
+html {
+    min-width: 320px;
+    min-height: 100%;
+    background: #f4f6f2;
+}
+
 body {
     min-width: 320px;
+    min-height: 100svh;
     margin: 0;
+    overflow-x: hidden;
     background: linear-gradient(180deg, rgba(244, 246, 242, 0.98), rgba(230, 234, 226, 0.98)),
     repeating-linear-gradient(
             90deg,
@@ -24,10 +38,16 @@ body {
     );
 }
 
+#root {
+    min-height: 100svh;
+}
+
 button,
 input,
 select,
 textarea {
+    max-width: 100%;
+    min-width: 0;
     font: inherit;
 }
 
@@ -42,16 +62,24 @@ button:disabled {
 
 .app-shell {
     width: min(1680px, 100%);
-    min-height: 100vh;
+    min-height: 100svh;
     margin: 0 auto;
-    padding: 18px;
+    padding:
+            max(var(--page-gutter), env(safe-area-inset-top, 0px))
+            max(var(--page-gutter), env(safe-area-inset-right, 0px))
+            max(var(--page-gutter), env(safe-area-inset-bottom, 0px))
+            max(var(--page-gutter), env(safe-area-inset-left, 0px));
 }
 
 .auth-shell {
     display: grid;
     place-items: center;
-    min-height: 100vh;
-    padding: 18px;
+    min-height: 100svh;
+    padding:
+            max(var(--page-gutter), env(safe-area-inset-top, 0px))
+            max(var(--page-gutter), env(safe-area-inset-right, 0px))
+            max(var(--page-gutter), env(safe-area-inset-bottom, 0px))
+            max(var(--page-gutter), env(safe-area-inset-left, 0px));
 }
 
 .auth-panel {
@@ -139,6 +167,12 @@ button:disabled {
     min-width: 0;
     flex-direction: column;
     justify-content: center;
+    gap: 6px;
+}
+
+.header-toggle,
+.global-context-toggle {
+    display: none;
 }
 
 .eyebrow {
@@ -240,6 +274,10 @@ h3 {
     gap: 10px;
 }
 
+.header-logout-button {
+    align-self: flex-start;
+}
+
 .last-action {
     min-width: 0;
     color: #46524d;
@@ -272,6 +310,7 @@ h3 {
 .manual-command-links button,
 .control-actions button,
 .panel-heading button,
+.collapsible-toggle,
 .event-meta button,
 .queue-row {
     border: 1px solid #bdc8c0;
@@ -302,7 +341,8 @@ h3 {
 .shared-test-recipe-row button,
 .heading-actions button,
 .control-actions button,
-.panel-heading button {
+.panel-heading button,
+.collapsible-toggle {
     min-height: 38px;
     padding: 8px 12px;
     font-weight: 700;
@@ -425,6 +465,18 @@ h3 {
     background: #ffffff;
 }
 
+.rallar-browser-trace-bar.collapsed {
+    grid-template-columns: 1fr;
+}
+
+.rallar-trace-content {
+    display: grid;
+    grid-column: 2 / -1;
+    grid-template-columns: minmax(260px, 0.9fr) minmax(300px, 1.4fr);
+    gap: 12px;
+    min-width: 0;
+}
+
 .rallar-trace-heading,
 .rallar-trace-summary,
 .rallar-trace-event {
@@ -472,6 +524,9 @@ h3 {
 }
 
 .rallar-trace-event {
+    display: grid;
+    grid-template-columns: 12px minmax(160px, 1fr) minmax(150px, auto) minmax(180px, auto);
+    align-items: center;
     color: #47564f;
     font-size: 0.78rem;
 }
@@ -485,16 +540,34 @@ h3 {
 }
 
 .rallar-trace-event small {
-    min-width: 96px;
+    min-width: 0;
     overflow: hidden;
     color: #65736d;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
+.rallar-trace-event em {
+    min-width: 0;
+    overflow: hidden;
+    color: #65736d;
+    font-size: 0.74rem;
+    font-style: normal;
+    font-weight: 800;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rallar-trace-event small:last-child {
+    grid-column: 2 / -1;
+}
+
 .app-tabs {
     margin-top: 14px;
     overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
     border: 1px solid #c8d0c5;
     border-radius: 8px;
     background: #fbfcf8;
@@ -563,6 +636,12 @@ h3 {
     font-weight: 800;
 }
 
+.direct-rallar-content {
+    display: grid;
+    gap: 0;
+    min-width: 0;
+}
+
 .tab-shell > [hidden] {
     display: none;
 }
@@ -599,6 +678,59 @@ h3 {
     color: #65746d;
     font-size: 0.84rem;
     white-space: nowrap;
+}
+
+.collapsible-panel-section {
+    min-width: 0;
+    margin: 0 14px 12px;
+    overflow: hidden;
+    border: 1px solid #d4ddd7;
+    border-radius: 6px;
+    background: #fbfcfa;
+}
+
+.collapsible-section-heading {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    border-bottom: 1px solid #dde5df;
+}
+
+.collapsible-panel-section.collapsed .collapsible-section-heading {
+    border-bottom: 0;
+}
+
+.collapsible-section-heading h3 {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: #26332d;
+    font-size: 0.9rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.collapsible-section-meta {
+    min-width: 0;
+    overflow: hidden;
+    color: #65736d;
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.collapsible-toggle {
+    flex: 0 0 auto;
+    color: #30403a;
+}
+
+.collapsible-section-content {
+    display: grid;
+    min-width: 0;
 }
 
 .config-panel,
@@ -2971,6 +3103,7 @@ dd {
     .run-manager-artifact-summary,
     .global-context-grid,
     .rallar-browser-trace-bar,
+    .rallar-trace-content,
     .auth-command-grid,
     .quick-rallar-summary-grid,
     .quick-rallar-context-grid,
@@ -3085,7 +3218,89 @@ dd {
 
 @media (max-width: 760px) {
     .app-shell {
-        padding: 10px;
+        padding:
+                max(var(--mobile-page-gutter), env(safe-area-inset-top, 0px))
+                max(var(--mobile-page-gutter), env(safe-area-inset-right, 0px))
+                max(14px, env(safe-area-inset-bottom, 0px))
+                max(var(--mobile-page-gutter), env(safe-area-inset-left, 0px));
+    }
+
+    .auth-shell {
+        padding:
+                max(var(--mobile-page-gutter), env(safe-area-inset-top, 0px))
+                max(var(--mobile-page-gutter), env(safe-area-inset-right, 0px))
+                max(14px, env(safe-area-inset-bottom, 0px))
+                max(var(--mobile-page-gutter), env(safe-area-inset-left, 0px));
+    }
+
+    input,
+    select,
+    textarea {
+        font-size: 16px;
+    }
+
+    button,
+    .field input,
+    .field select,
+    .auth-form button,
+    .app-tabs button,
+    .app-mode-options button,
+    .global-context-heading button,
+    .rallar-trace-heading button {
+        min-height: 44px;
+    }
+
+    .run-header,
+    .global-context-bar,
+    .app-mode-switch,
+    .rallar-browser-trace-bar,
+    .app-tabs,
+    .panel {
+        border-radius: 6px;
+    }
+
+    .run-header {
+        gap: 12px;
+        padding: 12px;
+    }
+
+    .run-title {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 6px 10px;
+    }
+
+    .run-title .eyebrow,
+    .run-title h1 {
+        grid-column: 1;
+    }
+
+    .header-toggle {
+        display: inline-flex;
+        grid-column: 2;
+        grid-row: 1 / 3;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        padding: 6px 10px;
+        border: 1px solid #bdc8c0;
+        border-radius: 6px;
+        background: #ffffff;
+        color: #30403a;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .run-header.collapsed .header-grid,
+    .run-header.collapsed .header-actions {
+        display: none;
+    }
+
+    .workspace-grid,
+    .tab-workspace {
+        gap: 10px;
+        margin-top: 10px;
     }
 
     .header-grid,
@@ -3103,10 +3318,96 @@ dd {
     .global-context-heading {
         align-items: flex-start;
         flex-wrap: wrap;
+        padding: 10px;
     }
 
     .global-context-heading button {
         margin-left: 0;
+    }
+
+    .global-context-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .global-context-bar.collapsed .global-context-grid {
+        display: none;
+    }
+
+    .global-context-grid,
+    .app-mode-switch,
+    .rallar-browser-trace-bar,
+    .rallar-trace-content,
+    .auth-command-grid,
+    .quick-rallar-context-grid,
+    .rtc-realtime-context-grid,
+    .rallar-data-context-grid,
+    .rooms-context-grid,
+    .websocket-context-grid {
+        gap: 8px;
+        padding: 10px;
+    }
+
+    .rallar-trace-content {
+        grid-column: 1 / -1;
+    }
+
+    .collapsible-panel-section {
+        margin: 0 10px 10px;
+    }
+
+    .collapsible-section-heading {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .collapsible-section-heading h3,
+    .collapsible-section-meta {
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .app-mode-switch {
+        align-items: stretch;
+    }
+
+    .app-mode-options button {
+        min-height: 58px;
+    }
+
+    .rallar-trace-heading,
+    .rallar-trace-summary,
+    .rallar-trace-event,
+    .section-heading,
+    .panel-heading,
+    .websocket-received-heading,
+    .websocket-event-log-heading {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .panel-heading {
+        min-height: 0;
+        padding: 10px;
+    }
+
+    .panel-heading span,
+    .section-heading span {
+        white-space: normal;
+    }
+
+    .app-tabs {
+        margin-top: 10px;
+    }
+
+    .app-tabs div {
+        gap: 8px;
+        padding: 8px;
+    }
+
+    .app-tabs button {
+        padding: 9px 12px;
     }
 
     .event-panel {
@@ -3154,6 +3455,7 @@ dd {
     .run-manager-artifact-summary,
     .global-context-grid,
     .rallar-browser-trace-bar,
+    .rallar-trace-content,
     .auth-command-grid,
     .quick-rallar-summary-grid,
     .quick-rallar-context-grid,
@@ -3210,6 +3512,143 @@ dd {
 
     .rest-path-field {
         grid-column: auto;
+    }
+
+    .auth-action-grid,
+    .quick-rallar-action-grid,
+    .rtc-realtime-action-grid,
+    .rooms-utility-grid,
+    .rooms-action-grid,
+    .websocket-action-grid,
+    .rest-actions,
+    .media-action-grid,
+    .manual-action-grid,
+    .workbench-actions,
+    .control-actions {
+        gap: 10px;
+    }
+
+    .direct-rallar-actions,
+    .header-actions,
+    .heading-actions {
+        align-items: stretch;
+    }
+
+    .direct-rallar-actions button,
+    .header-actions button,
+    .heading-actions button {
+        flex: 1 1 150px;
+        min-height: 44px;
+    }
+
+    .header-actions .header-logout-button {
+        flex: 0 0 auto;
+        align-self: flex-start;
+        min-height: 40px;
+        padding: 6px 10px;
+    }
+
+    .rooms-filter-row {
+        align-items: stretch;
+        gap: 8px;
+        padding: 0 10px 10px;
+    }
+
+    .rooms-sort-field {
+        width: 100%;
+    }
+
+    .metric {
+        padding: 8px 9px;
+    }
+
+    .metric span,
+    .metric strong,
+    .rest-request-feedback strong,
+    .rest-request-feedback small,
+    .command-center-action-row strong,
+    .command-center-action-row small,
+    .state-table-row strong,
+    .state-table-row small,
+    .websocket-received-row strong,
+    .websocket-received-row small,
+    .websocket-event-row strong,
+    .websocket-event-row small,
+    .rallar-trace-event strong,
+    .rallar-trace-event small,
+    .rallar-trace-event em {
+        overflow: visible;
+        text-overflow: clip;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .rallar-trace-event {
+        grid-template-columns: 12px minmax(0, 1fr);
+        align-items: start;
+    }
+
+    .rallar-trace-event strong,
+    .rallar-trace-event small,
+    .rallar-trace-event em {
+        grid-column: 2 / -1;
+    }
+
+    .rest-request-feedback {
+        margin: 0 10px 12px;
+        padding: 10px;
+    }
+
+    .rest-request-feedback > div:first-child {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .rest-request-feedback small {
+        margin-left: 0;
+    }
+
+    .rest-request-feedback dl div {
+        padding: 8px;
+    }
+
+    .json-editor,
+    .command-center-action-list,
+    .websocket-event-list,
+    .rooms-state-grid,
+    .rooms-observed-grid,
+    .websocket-status-grid,
+    .rtc-realtime-summary-grid,
+    .rtc-realtime-result-grid,
+    .rtc-latency-grid,
+    .rtc-membership-list,
+    .rtc-timeseries-panel,
+    .quick-rallar-summary-grid,
+    .command-center-live-grid,
+    .config-list,
+    .config-grid,
+    .result-summary {
+        padding-right: 10px;
+        padding-left: 10px;
+    }
+
+    .json-editor textarea,
+    .quick-rallar-payload-grid textarea,
+    .rtc-realtime-work-grid textarea,
+    .rallar-data-work-grid textarea,
+    .media-work-grid textarea,
+    .manual-command .json-editor textarea {
+        min-height: 150px;
+    }
+
+    .mini-json,
+    .json-block,
+    .report-output {
+        font-size: 0.72rem;
+    }
+
+    .mini-json {
+        max-height: 220px;
     }
 
     .manual-action-row {
