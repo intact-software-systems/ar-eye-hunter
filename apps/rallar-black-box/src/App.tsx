@@ -530,6 +530,7 @@ type RallarDataChangeRow = Readonly<{
     event: unknown;
 }>;
 
+type BrowserRallarFacade = Awaited<ReturnType<typeof loadBrowserRallarFacade>>;
 type RallarDataUiStore = Awaited<ReturnType<Awaited<ReturnType<typeof loadBrowserRallarFacade>>['data']['open']>>;
 
 type MediaRemoteStreamRow = Readonly<{
@@ -7149,7 +7150,7 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
         seq: 1,
     }));
     const [minSnapshotVersion, setMinSnapshotVersion] = useState('');
-    const [reliability, setReliability] = useState<'best-effort' | 'at-least-once'>('at-least-once');
+    const [reliability, setReliability] = useState<'best-effort' | 'at-least-once'>('best-effort');
     const [ack, setAck] = useState<'none' | 'receiver' | 'all-logical-recipients' | 'group-leader'>('none');
     const [ownership, setOwnership] = useState<'shared' | 'exclusive'>('shared');
     const [timeoutMs, setTimeoutMs] = useState<number>(RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs);
@@ -7190,7 +7191,7 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
         topic: string,
         severity: RallarBlackBoxTestSeverity,
         payload: unknown,
-        lastAction: string,
+        lastAction?: string,
     ): void => {
         rallarBlackBoxRuntimeStore.recordRuntimeEvent(
             createDirectRallarRuntimeEvent({
@@ -7204,31 +7205,116 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
         );
     };
 
-    const withFacade = async <T,>(action: (facade: Awaited<ReturnType<typeof loadBrowserRallarFacade>>) => Promise<T>): Promise<T> => {
+    const nowMs = (): number => typeof performance === 'undefined' ? Date.now() : performance.now();
+
+    const recordPhase = (
+        phase: string,
+        severity: RallarBlackBoxTestSeverity,
+        payload: Record<string, unknown>,
+    ): void => {
+        recordDirectEvent(
+            'rallar.direct.rtc_realtime.phase',
+            severity,
+            {
+                phase,
+                ...payload,
+            },
+        );
+    };
+
+    const runTimedPhase = async <T,>(
+        phase: string,
+        action: () => Promise<T> | T,
+        details: Record<string, unknown> = {},
+    ): Promise<T> => {
+        const startedAtMs = nowMs();
+        try {
+            const value = await action();
+            recordPhase(phase, 'info', {
+                ...details,
+                status: 'ok',
+                durationMs: Math.round((nowMs() - startedAtMs) * 100) / 100,
+            });
+            return value;
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            recordPhase(phase, 'error', {
+                ...details,
+                status: 'error',
+                durationMs: Math.round((nowMs() - startedAtMs) * 100) / 100,
+                error: message,
+            });
+            throw error;
+        }
+    };
+
+    const isFacadeJoinedToActiveGroup = (facade: BrowserRallarFacade): boolean => {
+        if (!activeGroupId || !authSession?.sessionId) {
+            return false;
+        }
+
+        const snapshot = optionalRecord(facade.rooms.current());
+        const group = optionalRecord(snapshot.group);
+        const groupId = stringValue(group.groupId ?? snapshot.groupId);
+        if (groupId !== activeGroupId) {
+            return false;
+        }
+
+        return recordArray(snapshot.activeSessions)
+            .some(session => stringValue(session.sessionId) === authSession.sessionId);
+    };
+
+    const ensureActiveGroupJoined = async (facade: BrowserRallarFacade): Promise<void> => {
+        if (!activeGroupId) {
+            return;
+        }
+
+        if (isFacadeJoinedToActiveGroup(facade)) {
+            recordPhase('join', 'info', {
+                status: 'skipped',
+                groupId: activeGroupId,
+                reason: 'current browser session is already active in the group',
+            });
+            return;
+        }
+
+        await runTimedPhase(
+            'join',
+            () => facade.rooms.join(activeGroupId, {
+                scope: {
+                    applicationId: globalValues.applicationId,
+                    workspaceId: globalValues.workspaceId,
+                },
+                timeoutMs,
+            }),
+            {
+                groupId: activeGroupId,
+            },
+        );
+    };
+
+    const withFacade = async <T,>(
+        actionLabel: string,
+        action: (facade: BrowserRallarFacade) => Promise<T>,
+    ): Promise<T> => {
         if (!realBackendReady) {
             throw new Error('RTC/Realtimes requires provider=browser-rallar.');
         }
         if (!authSession) {
             throw new Error('RTC/Realtimes requires a logged-in browser session.');
         }
-        const facade = await loadBrowserRallarFacade();
-        configureDirectRallarFacade(facade, context());
-        await facade.start({
+        const facade = await runTimedPhase('load-facade', () => loadBrowserRallarFacade());
+        await runTimedPhase('configure', () => {
+            configureDirectRallarFacade(facade, context());
+        });
+        await runTimedPhase('start', () => facade.start({
             connect: true,
             refreshRooms: false,
             refreshPeople: false,
             timeoutMs,
-        });
-        if (activeGroupId) {
-            await facade.rooms.join(activeGroupId, {
-                scope: {
-                    applicationId: globalValues.applicationId,
-                    workspaceId: globalValues.workspaceId,
-                },
-                timeoutMs,
-            });
-        }
-        return await action(facade);
+        }));
+        await ensureActiveGroupJoined(facade);
+        return await runTimedPhase(actionLabel, () => action(facade));
     };
 
     const runAction = async (label: string, action: () => Promise<unknown>): Promise<void> => {
@@ -7264,7 +7350,7 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
 
     const subscribeRealtime = (): Promise<void> =>
         runAction('Subscribe realtime', async () => {
-            return await withFacade(async facade => {
+            return await withFacade('subscribe-realtime', async facade => {
                 const unsubscribe = facade.realtime.onJson<unknown>(laneId, message => {
                     addReceived({
                         rowId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -7290,7 +7376,7 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
 
     const subscribeRtcMessages = (): Promise<void> =>
         runAction('Subscribe RTC messages', async () => {
-            return await withFacade(async facade => {
+            return await withFacade('subscribe-rtc-messages', async facade => {
                 const selector = {
                     typeId,
                     ...(topicId ? { topicId } : {}),
@@ -7328,7 +7414,7 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
     const sendRealtime = (): Promise<void> =>
         runAction('Send realtime JSON', async () => {
             const payload = parseJsonText(payloadText, {});
-            return await withFacade(async facade =>
+            return await withFacade('send-realtime-json', async facade =>
                 await facade.realtime.sendJson({
                     data: payload,
                     laneId,
@@ -7349,7 +7435,7 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
     const sendRtcMessage = (): Promise<void> =>
         runAction('Send RTC message', async () => {
             const payload = parseJsonText(payloadText, {});
-            return await withFacade(async facade =>
+            return await withFacade('send-rtc-message', async facade =>
                 await facade.messages.rtc.send({
                     roomId: activeGroupId,
                     roomRef: activeGroupId
@@ -7377,7 +7463,7 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
 
     const waitForRoomLane = (): Promise<void> =>
         runAction('Wait room lane', async () =>
-            await withFacade(async facade =>
+            await withFacade('wait-room-lane', async facade =>
                 await facade.rtc.waitForRoomLane(
                     {
                         applicationId: globalValues.applicationId,
@@ -7392,7 +7478,7 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
 
     const refreshHealth = (): Promise<void> =>
         runAction('Refresh lane health', async () => {
-            return await withFacade(async facade => {
+            return await withFacade('refresh-lane-health', async facade => {
                 const nextHealth = facade.realtime.health({
                     peerIds: peerIds.length > 0 ? peerIds : undefined,
                     laneIds: laneId ? [laneId] : undefined,
@@ -7510,8 +7596,8 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
                 <label className="field">
                     <span>Reliability</span>
                     <select value={reliability} onChange={event => setReliability(event.target.value as typeof reliability)}>
-                        <option value="at-least-once">at-least-once</option>
                         <option value="best-effort">best-effort</option>
+                        <option value="at-least-once">at-least-once</option>
                     </select>
                 </label>
                 <label className="field">

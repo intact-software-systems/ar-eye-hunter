@@ -163,6 +163,51 @@ describe('engine', () => {
             vi.useRealTimers();
         }
     });
+
+    it('wakes an idle scheduled engine when work is enqueued', async () => {
+        vi.useFakeTimers();
+        try {
+            const engine = new InboxOutboxEngine();
+            let remainingWork = 0;
+            let isWorkCalls = 0;
+            let runCount = 0;
+
+            engine.includeTask(
+                'test-task',
+                {
+                    name: 'test-task',
+                    maxConcurrency: () => 1,
+                    isWork: () => {
+                        isWorkCalls += 1;
+                        return remainingWork > 0;
+                    },
+                    runnable: async () => {
+                        runCount += 1;
+                        remainingWork -= 1;
+                    },
+                    ongoingTasks: [],
+                },
+            );
+
+            engine.start();
+            await vi.advanceTimersByTimeAsync(0);
+            await vi.advanceTimersByTimeAsync(10);
+
+            const idleChecks = isWorkCalls;
+            remainingWork = 1;
+            engine.wake();
+
+            await vi.advanceTimersByTimeAsync(0);
+            await vi.advanceTimersByTimeAsync(10);
+
+            expect(isWorkCalls).toBeGreaterThan(idleChecks);
+            expect(runCount).toBe(1);
+
+            engine.stop();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
 });
 
 async function executeOnceWithTimers(

@@ -84,7 +84,9 @@ The SPA currently provides:
   `rallar.messages.ws.send(...)`, wait for receives, inspect sender/group/type/topic/context/resource details, and copy
   redacted diagnostics
 - RTC/Realtimes console for direct `realtime.sendJson`, `realtime.onJson`, `messages.rtc.send`,
-  `messages.rtc.onMessage`, room-lane waits, lane health, received-message display, and RTC runner-recipe export
+  `messages.rtc.onMessage`, room-lane waits, lane health, received-message display, phase timing events, and RTC
+  runner-recipe export; interactive `messages.rtc` sends default to `best-effort`, while repeated actions skip the
+  group join when the current browser session is already active in the selected group
 - Rallar Data console for scoped stores, store lifecycle, read/write/update/CAS/delete/export/usage operations,
   change-event display, scope cleanup, and copyable diagnostics
 - optional Media console for local stream attach, audio/video toggles, stop controls, media policy, remote stream

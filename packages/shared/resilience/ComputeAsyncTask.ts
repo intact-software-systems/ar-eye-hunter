@@ -244,9 +244,12 @@ export namespace Loops {
         let totalNumTasksCreated = 0;
 
         while (
-            numIsWorkIterations++ <= input.maxIsWorkIterations &&
+            numIsWorkIterations <= input.maxIsWorkIterations &&
             numSuccessiveNoTasksCreated <= input.maxSuccessiveNoTasksCreated
             ) {
+
+            numIsWorkIterations++;
+
             // one "round" across all tasks
             let createdThisRound = 0;
 
@@ -276,6 +279,12 @@ export namespace Loops {
                 numSuccessiveNoTasksCreated = 0;
             } else {
                 numSuccessiveNoTasksCreated++;
+                if (
+                    numIsWorkIterations > input.maxIsWorkIterations ||
+                    numSuccessiveNoTasksCreated > input.maxSuccessiveNoTasksCreated
+                ) {
+                    break;
+                }
                 const backoff = toExponentialBackoffMs(numSuccessiveNoTasksCreated, input.maxBackoffMs);
                 await sleep(backoff);
             }
@@ -284,7 +293,7 @@ export namespace Loops {
         return {
             tasks,
             totalNumTasksCreated,
-            numIsWorkIterations: numIsWorkIterations - 1,
+            numIsWorkIterations,
             numSuccessiveNoTasksCreated
         };
     }

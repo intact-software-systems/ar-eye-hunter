@@ -13,7 +13,8 @@ export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTranspor
 
     constructor(
         public readonly qbox: WsQueueBoxClientService,
-        public readonly typeId: string
+        public readonly typeId: string,
+        private readonly wakeOutbox?: () => void,
     ) {
     }
 
@@ -68,7 +69,7 @@ export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTranspor
     }
 
     async send(payload: QRtcSignalingMessage): Promise<void> {
-        await this.qbox.enqueueOutboxIfAbsent(
+        const result = await this.qbox.enqueueOutboxIfAbsent(
             newALUnicastMessage(
                 payload.fromId,
                 newALEventRoute(this.typeId, payload.toId),
@@ -77,5 +78,8 @@ export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTranspor
                 payload
             )
         );
+        if (result.status === 'enqueued' || result.status === 'duplicate') {
+            this.wakeOutbox?.();
+        }
     }
 }

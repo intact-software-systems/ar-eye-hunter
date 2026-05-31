@@ -123,6 +123,74 @@ describe('ComputeAsyncTask', () => {
         expect(c3).toBe(0);
     });
 
+    test('Loops.runWhileWork does not sleep after the terminal no-work iteration', async () => {
+        let checks = 0;
+        let sleepCalls = 0;
+
+        const computed = await Loops.runWhileWork({
+            tasks: [
+                {
+                    name: 'idle-task',
+                    maxConcurrency: () => 1,
+                    isWork: () => {
+                        checks++;
+                        return false;
+                    },
+                    runnable: async () => {
+                        throw new Error('idle task should not run');
+                    },
+                    ongoingTasks: [],
+                },
+            ],
+            maxBackoffMs: 100,
+            maxIsWorkIterations: 100,
+            maxSuccessiveNoTasksCreated: 0,
+            sleep: async () => {
+                sleepCalls++;
+            },
+        });
+
+        expect(checks).toBe(1);
+        expect(sleepCalls).toBe(0);
+        expect(computed.totalNumTasksCreated).toBe(0);
+        expect(computed.numIsWorkIterations).toBe(1);
+        expect(computed.numSuccessiveNoTasksCreated).toBe(1);
+    });
+
+    test('Loops.runWhileWork sleeps only between nonterminal no-work iterations', async () => {
+        let checks = 0;
+        const sleepDelays: number[] = [];
+
+        const computed = await Loops.runWhileWork({
+            tasks: [
+                {
+                    name: 'idle-task',
+                    maxConcurrency: () => 1,
+                    isWork: () => {
+                        checks++;
+                        return false;
+                    },
+                    runnable: async () => {
+                        throw new Error('idle task should not run');
+                    },
+                    ongoingTasks: [],
+                },
+            ],
+            maxBackoffMs: 100,
+            maxIsWorkIterations: 100,
+            maxSuccessiveNoTasksCreated: 2,
+            sleep: async (delayMs) => {
+                sleepDelays.push(delayMs);
+            },
+        });
+
+        expect(checks).toBe(3);
+        expect(sleepDelays).toEqual([10, 20]);
+        expect(computed.totalNumTasksCreated).toBe(0);
+        expect(computed.numIsWorkIterations).toBe(3);
+        expect(computed.numSuccessiveNoTasksCreated).toBe(3);
+    });
+
     test('Circuit breaker gating via isWork is obeyed', async () => {
         // simple circuit breaker: allow while consecutive failures <= maxFailures
         const maxConsecutiveFailures = 5;

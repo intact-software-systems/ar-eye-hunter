@@ -155,6 +155,7 @@ export type RallarServerWsFacadeOptions = Readonly<{
     allowImplicitUserTopics?: boolean;
     defaultFanout?: RallarServerWsFanout;
     authorizeRoomMessage?: RallarServerWsRoomAuthorizer;
+    wakeOutbox?: () => void;
 }>;
 
 export type DynamicWsTopicRouterOptions = RallarServerWsFacadeOptions;
@@ -219,6 +220,7 @@ export class RallarServerWsFacade {
     private readonly allowImplicitUserTopics: boolean;
     private readonly defaultFanout: RallarServerWsFanout;
     private readonly authorizeRoomMessage?: RallarServerWsRoomAuthorizer;
+    private readonly wakeOutbox?: () => void;
     private installed = false;
 
     constructor(
@@ -230,6 +232,7 @@ export class RallarServerWsFacade {
         this.allowImplicitUserTopics = options.allowImplicitUserTopics ?? true;
         this.defaultFanout = options.defaultFanout ?? 'live-only';
         this.authorizeRoomMessage = options.authorizeRoomMessage;
+        this.wakeOutbox = options.wakeOutbox;
     }
 
     install(): this {
@@ -562,6 +565,7 @@ export class RallarServerWsFacade {
                 const result = await this.wsQBoxServerService.enqueueOutboxIfAbsent(
                     message,
                 );
+                wakeOutboxIfQueued(this.wakeOutbox, result);
                 return toOutboxPublishResult(message, fanout, result);
             }
             case 'live-only': {
@@ -866,6 +870,15 @@ function toOutboxPublishResult(
         enqueueStatus: result.status,
         reason: result.reason,
     };
+}
+
+function wakeOutboxIfQueued(
+    wakeOutbox: (() => void) | undefined,
+    result: ALOutboundEnqueueResult,
+): void {
+    if (result.status === 'enqueued' || result.status === 'duplicate') {
+        wakeOutbox?.();
+    }
 }
 
 function toOutboxPublishStatus(

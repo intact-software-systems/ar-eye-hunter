@@ -307,6 +307,11 @@ The `RTC/Realtimes` tab is for direct browser Rallar RTC work. It can subscribe 
 typed `messages.rtc` messages, send realtime JSON, send `messages.rtc` payloads with reliability/ack/ownership and
 min-snapshot controls, wait for a room lane, refresh lane health, and copy an RTC runner recipe.
 
+For interactive testing, `messages.rtc` defaults to `best-effort` so an open data channel sends immediately. Choose
+`at-least-once` when the test specifically needs durable local-outbox behavior. The tab records
+`rallar.direct.rtc_realtime.phase` timing events for facade load, configure, start, join, and send/subscribe actions.
+After the browser session is already active in the selected group, later sends skip the repeated join call.
+
 ## Rallar Data
 
 The `Rallar Data` tab exposes scoped browser stores. Select app, principal, session, or custom scope; choose durability

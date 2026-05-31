@@ -1462,10 +1462,13 @@ class BrowserRallarFacade implements RallarFacade {
                     },
                 );
 
+                const enqueueResult = await ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent(msg);
+                wakeQBoxEngineIfQueued(ctx.middleware.qboxEngine, enqueueResult);
+
                 return toRallarMessageSendResult(
                     'rtc',
                     msg,
-                    await ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent(msg),
+                    enqueueResult,
                 );
             },
             onMessage: <T = unknown>(
@@ -1521,10 +1524,13 @@ class BrowserRallarFacade implements RallarFacade {
                     },
                 );
 
+                const enqueueResult = await ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent(msg);
+                wakeQBoxEngineIfQueued(ctx.middleware.qboxEngine, enqueueResult);
+
                 return toRallarMessageSendResult(
                     'ws',
                     msg,
-                    await ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent(msg),
+                    enqueueResult,
                 );
             },
             onMessage: <T = unknown>(
@@ -4557,6 +4563,15 @@ function toRallarMessageSendResult(
         entries: result.entries,
         reason: result.reason,
     };
+}
+
+function wakeQBoxEngineIfQueued(
+    engine: Readonly<{ wake(): void }>,
+    result: ALOutboundEnqueueResult,
+): void {
+    if (result.status === 'enqueued' || result.status === 'duplicate') {
+        engine.wake();
+    }
 }
 
 export function normalizeRallarMessageSelector(

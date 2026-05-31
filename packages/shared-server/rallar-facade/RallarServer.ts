@@ -26,6 +26,7 @@ export type RallarServerRuntime = Readonly<{
     wsQBoxServerService: WsQueueBoxServerService;
     qboxEngine?: Readonly<{
         start(): void;
+        wake?(): void;
     }>;
 }>;
 
@@ -67,7 +68,10 @@ export class RallarServer<TRuntime extends RallarServerRuntime = RallarServerRun
     ) {
         const wsTopicsFacade = new RallarServerWsFacade(
             runtime.wsQBoxServerService,
-            wsOptions,
+            {
+                ...wsOptions,
+                wakeOutbox: () => runtime.qboxEngine?.wake?.(),
+            },
         );
 
         this.ws = new RallarServerWebSocketFacade(wsTopicsFacade);

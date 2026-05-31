@@ -460,6 +460,24 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
         expect(sent.id.senderId).toBe(payload.fromId);
         expect(JSON.parse(sent.payload.resource)).toEqual(payload);
     });
+
+    it('wakes the queue-box engine when signaling payloads queue outbox work', async () => {
+        const qbox = createQboxHarness();
+        qbox.enqueueOutboxIfAbsent.mockResolvedValueOnce({
+            status: 'enqueued',
+            entries: [],
+        });
+        const wakeOutbox = vi.fn();
+        const transport = new WsRtcSignalingTransportUsingWsQBox(
+            qbox.service as never,
+            'rtc',
+            wakeOutbox,
+        );
+
+        await transport.send(createSignalingPayload());
+
+        expect(wakeOutbox).toHaveBeenCalledOnce();
+    });
 });
 
 describe('WsQueueBoxClientService reconnect lifecycle', () => {

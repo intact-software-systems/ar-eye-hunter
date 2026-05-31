@@ -51,6 +51,7 @@ const mocks = vi.hoisted(() => {
         authFetch: vi.fn(),
         middleware: {
             qboxEngine: {
+                wake: vi.fn(),
                 stop: vi.fn(),
             },
             rtcRxStreamer: {
@@ -3557,6 +3558,28 @@ describe('Rallar operation options', () => {
         });
     });
 
+    it('wakes the queue-box engine when RTC send queues durable outbox work', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        mocks.ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent.mockResolvedValueOnce({
+            status: 'enqueued',
+            entries: [],
+        });
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
+
+        await createRallarFacade().messages.rtc.send({
+            roomId: 'room-1',
+            typeId: 'chat.message.v1',
+            resourceId: 'msg-queued-rtc',
+            payload: {
+                text: 'queued rtc',
+            },
+        });
+
+        expect(mocks.ctx.middleware.qboxEngine.wake).toHaveBeenCalledOnce();
+    });
+
     it('adds cached room snapshotVersion as minSnapshotVersion on RTC room sends', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
@@ -3656,6 +3679,7 @@ describe('Rallar operation options', () => {
 
         expect(mocks.ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent)
             .toHaveBeenCalledOnce();
+        expect(mocks.ctx.middleware.qboxEngine.wake).not.toHaveBeenCalled();
         expect(result).toMatchObject({
             transport: 'ws',
             status: 'sent-immediate',
@@ -3675,6 +3699,28 @@ describe('Rallar operation options', () => {
                 },
             },
         });
+    });
+
+    it('wakes the queue-box engine when WS send queues durable outbox work', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        mocks.ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent
+            .mockResolvedValueOnce({
+                status: 'enqueued',
+                entries: [],
+            });
+
+        await createRallarFacade().messages.ws.send({
+            scope: 'all',
+            typeId: 'chat.message.v1',
+            resourceId: 'msg-queued-ws',
+            payload: {
+                text: 'queued ws',
+            },
+        });
+
+        expect(mocks.ctx.middleware.qboxEngine.wake).toHaveBeenCalledOnce();
     });
 
     it('adds cached room snapshotVersion as minSnapshotVersion on WS room sends', async () => {

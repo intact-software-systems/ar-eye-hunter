@@ -98,4 +98,18 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(rtcDiagnosticsPanel).toContain('loadBrowserRallarFacade');
         expect(rtcDiagnosticsPanel).toContain('facade.start');
     });
+
+    it('keeps RTC sends on the direct facade fast path after the room is joined', () => {
+        const source = appSource();
+        const rtcRealtimePanel = sourceBetween(
+            source,
+            'function RtcRealtimePanel',
+            'function RallarDataPanel',
+        );
+
+        expect(rtcRealtimePanel).toContain("'rallar.direct.rtc_realtime.phase'");
+        expect(rtcRealtimePanel).toContain('isFacadeJoinedToActiveGroup');
+        expect(rtcRealtimePanel).toContain("status: 'skipped'");
+        expect(rtcRealtimePanel).toContain("useState<'best-effort' | 'at-least-once'>('best-effort')");
+    });
 });

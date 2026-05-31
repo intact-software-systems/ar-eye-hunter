@@ -107,6 +107,7 @@ export function initialiseRtcRxStreamer(
 
 export async function initialiseRtcConnectionService(
     webSocketQueueBox: WsQueueBoxClientService,
+    qboxEngine: InboxOutboxEngine,
     clientData: ClientInfo,
     iceCandidates: IceConfig,
     dataChannelName: string,
@@ -116,7 +117,11 @@ export async function initialiseRtcConnectionService(
     }> = {},
 ): Promise<WebRtcConnectionService> {
     const rtcQBox = new WebRtcConnectionService(
-        new WsRtcSignalingTransportUsingWsQBox(webSocketQueueBox, rtcSignalingTopicId),
+        new WsRtcSignalingTransportUsingWsQBox(
+            webSocketQueueBox,
+            rtcSignalingTopicId,
+            () => qboxEngine.wake(),
+        ),
         {
             sessionId: clientData.sessionId,
             token: 'NOT_CREATED_YET',

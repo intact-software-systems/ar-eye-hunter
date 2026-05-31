@@ -31,8 +31,8 @@ import * as cache from './data-caches.ts';
 import * as qbox from '@shared-web/browser/qbox-engine.ts';
 import * as rtcEngine from '@shared-web/browser/rtc-engine.ts';
 import * as wsEngine from '@shared-web/browser/ws-engine.ts';
-import * as heartbeat from '@shared-web/browser/heartbeat.ts';
 import type { HeartbeatHandle } from '@shared-web/browser/heartbeat.ts';
+import * as heartbeat from '@shared-web/browser/heartbeat.ts';
 import { initialiseBrowserCacheRepositories } from '@shared-web/browser/browser-cache-repositories.ts';
 import {
     configureBrowserALRuntimeStores,
@@ -142,6 +142,7 @@ export async function initialiseMiddleware(
     const webRtcConnectionService = await rtcEngine
         .initialiseRtcConnectionService(
             webSocketQueueBox,
+            qboxEngine,
             clientData,
             iceCandidates,
             'rtc-data-channel',
@@ -170,18 +171,27 @@ export async function initialiseMiddleware(
         AppTopics.rtt,
         {
             onHeartbeat: (rtt: RttMeasurementInfo): Promise<void> => {
-                webSocketQueueBox.enqueueOutboxIfAbsent(
-                    newALUntargetedMessage<RttMeasurementInfo>(
-                        clientData.sessionId,
-                        newALRoute(
+                void webSocketQueueBox.enqueueOutboxIfAbsent(
+                        newALUntargetedMessage<RttMeasurementInfo>(
+                            clientData.sessionId,
+                            newALRoute(
+                                AppTopics.rtt,
+                                pairKey(rtt.sessionIdFrom, rtt.sessionIdTo),
+                                `${rtt.version}`,
+                            ),
                             AppTopics.rtt,
-                            pairKey(rtt.sessionIdFrom, rtt.sessionIdTo),
-                            `${rtt.version}`,
+                            rtt,
                         ),
-                        AppTopics.rtt,
-                        rtt,
-                    ),
-                );
+                    )
+                    .then((result) => {
+                        if (result.status === 'enqueued' || result.status === 'duplicate') {
+                            qboxEngine.wake();
+                        }
+                    })
+                    .catch((error) => {
+                        console.error('Failed to enqueue RTT heartbeat', error);
+                    });
+
                 return Promise.resolve();
             },
         },

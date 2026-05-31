@@ -5,11 +5,12 @@ import { CircuitBreaker, CircuitBreakerPolicy } from '../resilience/Resilience.t
 const NOT_SET = -1;
 
 export class InboxOutboxEngine {
-    private static readonly MAX_BACKOFF: Temporal.Duration = Temporal.Duration.from({ seconds: 1 });
-    private static readonly MAX_IS_WORK_CHECKS: number = 10_000;
-    private static readonly MAX_SUCCESSIVE_NO_TASKS_CREATED: number = 10;
-    private static readonly FIXED_DELAY_SCHEDULED_ENGINE: Temporal.Duration = Temporal.Duration.from({ seconds: 1 });
-    private static readonly MAX_IDLE_SCHEDULED_ENGINE: Temporal.Duration = Temporal.Duration.from({ seconds: 30 });
+    private static readonly MAX_BACKOFF: Temporal.Duration = Temporal.Duration.from({ milliseconds: 100 });
+    private static readonly MAX_IS_WORK_CHECKS: number = 1_000;
+    // The outer scheduler owns idle backoff; keep each engine pass responsive.
+    private static readonly MAX_SUCCESSIVE_NO_TASKS_CREATED: number = 0;
+    private static readonly FIXED_DELAY_SCHEDULED_ENGINE: Temporal.Duration = Temporal.Duration.from({ milliseconds: 100 });
+    private static readonly MAX_IDLE_SCHEDULED_ENGINE: Temporal.Duration = Temporal.Duration.from({ seconds: 3 });
     private static readonly SCHEDULE_JITTER_RATIO = 0.2;
 
     private static readonly defaultDuration: Temporal.Duration = Temporal.Duration.from({ seconds: 10 });
@@ -26,6 +27,8 @@ export class InboxOutboxEngine {
 
     private running = false;
     private timer: number = NOT_SET;
+    private executing = false;
+    private wakeAfterExecution = false;
     private successiveIdleExecutions = 0;
 
     private tasks: Map<string, ComputeAsyncTask.Loops.TaskDto> = new Map<string, ComputeAsyncTask.Loops.TaskDto>();
@@ -50,10 +53,31 @@ export class InboxOutboxEngine {
 
     stop(): void {
         this.running = false;
+        this.wakeAfterExecution = false;
         if (this.timer !== NOT_SET) {
             clearTimeout(this.timer);
         }
         this.timer = NOT_SET;
+    }
+
+    wake(): void {
+        if (!this.running) {
+            return;
+        }
+
+        this.successiveIdleExecutions = 0;
+
+        if (this.timer !== NOT_SET) {
+            clearTimeout(this.timer);
+            this.timer = NOT_SET;
+        }
+
+        if (this.executing) {
+            this.wakeAfterExecution = true;
+            return;
+        }
+
+        this.scheduleEngine(0);
     }
 
     async executeOnce() {
@@ -66,17 +90,31 @@ export class InboxOutboxEngine {
             return;
         }
 
-        this.timer = self.setTimeout(() => void this.selfSchedulingTaskEngine(), delayMs);
+        if (this.timer !== NOT_SET) {
+            clearTimeout(this.timer);
+        }
+        this.timer = setTimeout(() => void this.selfSchedulingTaskEngine(), delayMs) as unknown as number;
     }
 
     private async selfSchedulingTaskEngine(): Promise<void> {
+        if (this.executing) {
+            this.wakeAfterExecution = true;
+            return;
+        }
+
         this.timer = NOT_SET;
+        this.executing = true;
         let taskCreated = false;
         try {
             taskCreated = await this.executeTaskEngine();
         } finally {
+            this.executing = false;
             if (this.running) {
-                this.scheduleEngine(this.nextScheduleDelayMs(taskCreated));
+                const delayMs = this.wakeAfterExecution
+                    ? 0
+                    : this.nextScheduleDelayMs(taskCreated);
+                this.wakeAfterExecution = false;
+                this.scheduleEngine(delayMs);
             }
         }
     }

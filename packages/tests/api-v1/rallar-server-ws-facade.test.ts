@@ -108,7 +108,8 @@ describe('RallarServerWsFacade', () => {
     });
 
     it('can route registered topics through the QueueBox outbox', async () => {
-        const { facade, service } = createFacade();
+        const wakeOutbox = vi.fn();
+        const { facade, service } = createFacade({ wakeOutbox });
         const enqueue = vi.spyOn(service, 'enqueueOutboxIfAbsent');
         facade.defineTopic({
             topicId: 'app.todo',
@@ -121,11 +122,16 @@ describe('RallarServerWsFacade', () => {
             'all',
             'todo.item.updated.v1',
             { title: 'Durable fanout', done: false },
+            {
+                reliability: 'at-least-once',
+                ack: 'receiver',
+            },
         );
 
         await facade.handle(message);
 
         expect(enqueue).toHaveBeenCalledWith(message);
+        expect(wakeOutbox).toHaveBeenCalledOnce();
     });
 
     it('can require explicit topic definitions while still rejecting custom prefixes', async () => {
@@ -329,7 +335,7 @@ describe('RallarServer.ws.publish current behavior', () => {
     });
 
     it('returns queued-outbox metadata for durable outbox fanout', async () => {
-        const { server, service, socket, outbox } = createServerFacade();
+        const { server, service, socket, outbox, qboxEngine } = createServerFacade();
         const enqueue = vi.spyOn(service, 'enqueueOutboxIfAbsent');
         const message = newALBroadcastMessage(
             'server-1',
@@ -357,6 +363,7 @@ describe('RallarServer.ws.publish current behavior', () => {
         expect(result.entries).toHaveLength(1);
         expect((outbox as any).data.size).toBe(1);
         expect(socket.sent).toHaveLength(0);
+        expect(qboxEngine.wake).toHaveBeenCalledOnce();
     });
 
     it('returns none metadata without sending or enqueueing', async () => {
@@ -458,9 +465,14 @@ function createServerFacade(
             targetResolver: options.targetResolver ?? createTargetResolver(),
         },
     );
+    const qboxEngine = {
+        start: vi.fn(),
+        wake: vi.fn(),
+    };
     const server = createRallarServerFacade({
         runtime: {
             wsQBoxServerService: service,
+            qboxEngine,
         },
     });
 
@@ -470,6 +482,7 @@ function createServerFacade(
         socket,
         inbox,
         outbox,
+        qboxEngine,
     };
 }
 
