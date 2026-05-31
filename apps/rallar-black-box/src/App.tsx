@@ -34,6 +34,18 @@ import type {
     RallarBlackBoxTestState,
     RallarBlackBoxTestTransport,
 } from '@shared-test/rallar-bb-test/types.ts';
+import {
+    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
+    RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
+    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
+    formatJsonSchemaValidationErrors,
+    validateJsonSchema,
+} from '@shared-test/rallar-bb-test/schema.ts';
+import {
+    validateDistributedRunManifestContract,
+    type RallarBlackBoxDistributedGroupRef,
+    type RallarBlackBoxDistributedRunManifest,
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import {
     type RallarBlackBoxBootstrapConfig,
@@ -48,27 +60,44 @@ import {
 } from './auth-flow.ts';
 import type { RallarBlackBoxControlSnapshot } from './control-client.ts';
 import {
+    cancelDistributedRun,
+    createDistributedRun,
     controlHttpBaseUrlFromWsUrl,
     controlRunAgentRows,
     controlRunCommandRows,
     controlRunManagerStats,
     deleteControlRun,
     enqueueBulkControlCommand,
+    fetchDistributedRun,
+    fetchDistributedRunArtifactBundle,
+    fetchDistributedRuns,
     fetchControlRunSnapshot,
     fetchControlRunArtifactBundle,
     fetchControlRunFailureBundle,
     fetchControlRunJsonl,
     fetchControlServerSnapshot,
     resetControlRun,
+    stageDistributedRun,
+    startDistributedRun,
+    type ControlDistributedRunArtifactBundle,
+    type ControlDistributedRunSnapshot,
     type ControlRunAgentRow,
     type ControlRunArtifactBundle,
     type ControlRunCommandRow,
     type ControlRunSnapshot,
     type ControlServerSnapshot,
 } from './control-run-manager.ts';
+import { RUN_MANAGER_COMMAND_PRESETS } from './run-manager-presets.ts';
 import {
     RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE,
     RALLAR_BLACK_BOX_RECIPE_FIXTURES,
+    RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS,
+    RALLAR_BLACK_BOX_RTC_REALTIME_MAX_DURATION_SECONDS,
+    RALLAR_BLACK_BOX_RTC_REALTIME_MIN_DURATION_SECONDS,
+    RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
+    RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
+    createRallarBlackBoxRtcRealtimeRecipe,
+    normalizeRallarBlackBoxRtcRealtimeDurationSeconds,
     recipeFixtureText,
 } from './recipe-fixtures.ts';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from './client-defaults.ts';
@@ -123,6 +152,32 @@ import {
     type FlowBuilderDefinition,
     type FlowBuilderStepKind,
 } from './flow-builder.ts';
+import {
+    DISTRIBUTED_RECIPE_ROLE_PATTERN_OPTIONS,
+    buildDistributedRunManifest,
+    compareDistributedRuns,
+    defaultDistributedRecipeTargetIds,
+    deriveDistributedRunMonitor,
+    distributedRecipeStateTone,
+    distributedRecipeTargetRows,
+    filterDistributedRuns,
+    type DistributedRunCompareSummary,
+    type DistributedRunMonitor,
+    type DistributedRunProgressStatus,
+    type DistributedRecipeCatalogItem,
+    type DistributedRecipeRolePattern,
+    type DistributedRecipeTargetPolicyMode,
+    type DistributedRecipeTargetRow,
+} from './distributed-recipes.ts';
+import {
+    commandExampleSnippets,
+    schemaAuthoringSummary,
+    schemaAuthoringTone,
+    validateSchemaAuthoringText,
+    validateSchemaAuthoringValue,
+    type CommandExampleSnippet,
+    type SchemaAuthoringValidation,
+} from './schema-authoring.ts';
 import {
     RALLAR_SERVER_ENDPOINT_PRESETS,
     applyRallarServerEndpointPreset,
@@ -620,6 +675,62 @@ const APP_LOCAL_RECIPE_CATALOG: readonly AppLocalRecipeEntry[] = [
         expectedResult: 'RTC connect succeeds and payload is sent',
     },
 ];
+
+const DISTRIBUTED_RECIPE_CATALOG: readonly DistributedRecipeCatalogItem[] =
+    RALLAR_BLACK_BOX_RECIPE_FIXTURES.map(fixture => ({
+        itemId: fixture.fixtureId,
+        title: fixture.label,
+        description: fixture.description,
+        recipe: fixture.recipe,
+        providerMode: fixture.recipe.commands.some(command =>
+            command.kind.startsWith('rtc') ||
+            command.kind.startsWith('ws') ||
+            command.kind === 'http.request'
+        )
+            ? 'browser-rallar'
+            : 'simulated',
+        profiles: fixture.fixtureId === RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID
+            ? ['rtc', 'realtime', 'soak']
+            : [
+                fixture.fixtureId.includes('rtc') || fixture.recipe.commands.some(command => command.kind.startsWith('rtc'))
+                    ? 'rtc'
+                    : 'general',
+                fixture.fixtureId.includes('failure') ? 'negative' : 'smoke',
+            ],
+        prerequisites: fixture.recipe.commands.some(command =>
+            command.kind.startsWith('rtc') ||
+            command.kind.startsWith('ws') ||
+            command.kind === 'http.request'
+        )
+            ? ['connected browser control agents', 'matching global group', 'live Rallar backend for real delivery']
+            : ['connected browser control agents'],
+        live: fixture.recipe.commands.some(command =>
+            command.kind.startsWith('rtc') ||
+            command.kind.startsWith('ws') ||
+            command.kind === 'http.request'
+        ),
+        source: 'app-local',
+    }));
+
+function configuredDistributedRecipeCatalogItem(
+    item: DistributedRecipeCatalogItem,
+    input: Readonly<{
+        group: RallarBlackBoxDistributedGroupRef;
+        rtcRealtimeDurationSeconds: number;
+    }>,
+): DistributedRecipeCatalogItem {
+    if (item.itemId !== RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID) {
+        return item;
+    }
+
+    return {
+        ...item,
+        recipe: createRallarBlackBoxRtcRealtimeRecipe({
+            durationSeconds: input.rtcRealtimeDurationSeconds,
+            group: input.group,
+        }),
+    };
+}
 
 const WEBSOCKET_PAYLOAD_PRESETS: readonly WebSocketPayloadPreset[] = [
     {
@@ -1141,6 +1252,198 @@ function catalogRequirements(entry: RallarBlackBoxSharedTestRecipeCatalogEntry):
         ...entry.prerequisites.httpServices.map(service => `${service.name}:${service.env}`),
         ...(entry.prerequisites.requiresPlaywright ? ['Playwright'] : []),
     ];
+}
+
+function distributedRecipeMatches(
+    item: DistributedRecipeCatalogItem,
+    query: string,
+    profile: string,
+): boolean {
+    if (profile && !item.profiles.includes(profile)) {
+        return false;
+    }
+    const trimmed = query.trim().toLowerCase();
+    if (!trimmed) {
+        return true;
+    }
+
+    const haystack = [
+        item.itemId,
+        item.title,
+        item.description,
+        item.recipe.recipeId,
+        item.providerMode,
+        ...item.profiles,
+        ...item.recipe.commands.map(command => command.kind),
+    ].join(' ').toLowerCase();
+    return haystack.includes(trimmed);
+}
+
+function validateDistributedRecipeManifest(
+    manifest: RallarBlackBoxDistributedRunManifest,
+): string | undefined {
+    const schemaValidation = validateJsonSchema(
+        RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
+        manifest,
+    );
+    if (!schemaValidation.ok) {
+        return formatJsonSchemaValidationErrors(schemaValidation.errors);
+    }
+
+    const contractValidation = validateDistributedRunManifestContract(manifest);
+    if (!contractValidation.ok) {
+        return contractValidation.errors
+            .map(error => `${error.path}: ${error.message}`)
+            .join('\n');
+    }
+
+    return undefined;
+}
+
+function safeIdSegment(value: string): string {
+    return value.trim().replace(/[^A-Za-z0-9_.:-]+/g, '-').replace(/^-+|-+$/g, '') || 'value';
+}
+
+function dateInputStartEpoch(value: string): number | undefined {
+    if (!value) {
+        return undefined;
+    }
+    const epochMs = new Date(`${value}T00:00:00`).getTime();
+    return Number.isFinite(epochMs) ? epochMs : undefined;
+}
+
+function dateInputEndEpoch(value: string): number | undefined {
+    if (!value) {
+        return undefined;
+    }
+    const epochMs = new Date(`${value}T23:59:59.999`).getTime();
+    return Number.isFinite(epochMs) ? epochMs : undefined;
+}
+
+function SchemaAuthoringPanel({ validation, compact = false }: {
+    validation: SchemaAuthoringValidation;
+    compact?: boolean;
+}) {
+    return (
+        <section className={`schema-authoring-panel ${compact ? 'compact' : ''} ${schemaAuthoringTone(validation)}`}>
+            <div className="schema-authoring-heading">
+                <strong>{validation.title}</strong>
+                <span className={`pill ${schemaAuthoringTone(validation)}`}>
+                    {schemaAuthoringSummary(validation)}
+                </span>
+            </div>
+            {!validation.ok && (
+                <div className="schema-error-list">
+                    {validation.errors.slice(0, 8).map((issue, index) => (
+                        <div className="schema-error-row" key={`${issue.path}-${index}`}>
+                            <strong>{issue.path}</strong>
+                            <span>{issue.message}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
+            {validation.ok && validation.capabilities.length > 0 && (
+                <SchemaCapabilitySummary validation={validation}/>
+            )}
+            {validation.ok && validation.capabilities.length === 0 && validation.target === 'runner-scenario' && (
+                <div className="schema-capability-empty">
+                    Provider-neutral runner scenario schema valid.
+                </div>
+            )}
+        </section>
+    );
+}
+
+function SchemaCapabilitySummary({ validation }: { validation: SchemaAuthoringValidation }) {
+    if (validation.capabilities.length === 0) {
+        return (
+            <div className="schema-capability-empty">
+                No browser-agent command capabilities detected.
+            </div>
+        );
+    }
+
+    return (
+        <div className="schema-capability-summary">
+            <div className="schema-chip-row">
+                {validation.commandKinds.map(kind => (
+                    <span className="pill muted" key={kind}>{kind}</span>
+                ))}
+                <span className={`pill ${validation.distributedCompatible ? 'good' : 'warn'}`}>
+                    {validation.distributedCompatible ? 'distributed-ready' : 'local-only command'}
+                </span>
+            </div>
+            <div className="schema-capability-grid">
+                <SchemaCapabilityList title="Provider modes" values={validation.providerModes}/>
+                <SchemaCapabilityList title="Runtime surfaces" values={validation.runtimeSurfaces}/>
+                <SchemaCapabilityList title="Live requirements" values={validation.liveServiceRequirements}/>
+                <SchemaCapabilityList title="Artifacts" values={validation.artifactExpectations}/>
+            </div>
+            <div className="schema-command-capabilities">
+                {validation.capabilities.map(capability => (
+                    <article className="schema-command-capability" key={capability.kind}>
+                        <strong>{capability.title}</strong>
+                        <small>{capability.kind}</small>
+                        <p>{capability.description}</p>
+                    </article>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function SchemaCapabilityList({ title, values }: { title: string; values: readonly string[] }) {
+    return (
+        <div className="schema-capability-list">
+            <strong>{title}</strong>
+            <span>{values.length > 0 ? values.join(', ') : 'none'}</span>
+        </div>
+    );
+}
+
+function CommandExamplePicker({ onInsert, onCopy }: {
+    onInsert(text: string): void;
+    onCopy(text: string): void;
+}) {
+    const snippets = useMemo(() => commandExampleSnippets(), []);
+    const [selectedKind, setSelectedKind] = useState(snippets[0]?.kind ?? 'health');
+    const selected = snippets.find(snippet => snippet.kind === selectedKind) ?? snippets[0];
+    if (!selected) {
+        return null;
+    }
+    const selectedValidation = validateSchemaAuthoringText('command', selected.commandText);
+
+    return (
+        <section className="command-example-picker">
+            <div className="section-heading compact">
+                <h3>Command Examples</h3>
+                <span>{snippets.length} generated</span>
+            </div>
+            <div className="command-example-controls">
+                <label className="field">
+                    <span>Kind</span>
+                    <select
+                        value={selected.kind}
+                        onChange={event => setSelectedKind(event.target.value as CommandExampleSnippet['kind'])}
+                    >
+                        {snippets.map(snippet => (
+                            <option key={snippet.kind} value={snippet.kind}>
+                                {snippet.kind} - {snippet.title}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+                <button type="button" onClick={() => onInsert(selected.commandText)}>
+                    Insert
+                </button>
+                <button type="button" onClick={() => onCopy(selected.commandText)}>
+                    Copy
+                </button>
+            </div>
+            <pre className="mini-json">{selected.commandText}</pre>
+            <SchemaAuthoringPanel validation={selectedValidation} compact/>
+        </section>
+    );
 }
 
 function artifactIssueText(issue: RallarBlackBoxSharedTestArtifactValidationIssue): string {
@@ -3787,6 +4090,14 @@ function WorkbenchPanel({ busy, runState, loadedFixtureId, lastError }: {
         JSON.stringify(RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE, null, 2)
     );
     const [localError, setLocalError] = useState<string | undefined>();
+    const recipeValidation = useMemo(
+        () => validateSchemaAuthoringText('recipe', recipeText),
+        [recipeText],
+    );
+    const commandValidation = useMemo(
+        () => validateSchemaAuthoringText('command', commandText),
+        [commandText],
+    );
 
     const runAction = async (action: () => Promise<void>): Promise<void> => {
         setLocalError(undefined);
@@ -3836,7 +4147,7 @@ function WorkbenchPanel({ busy, runState, loadedFixtureId, lastError }: {
                             onClick={() => runAction(() =>
                                 rallarBlackBoxRuntimeStore.loadRecipeFromJson(recipeText, fixtureId)
                             )}
-                            disabled={busy}
+                            disabled={busy || !recipeValidation.ok}
                         >
                             Load
                         </button>
@@ -3877,6 +4188,7 @@ function WorkbenchPanel({ busy, runState, loadedFixtureId, lastError }: {
                         disabled={busy}
                     />
                 </label>
+                <SchemaAuthoringPanel validation={recipeValidation}/>
                 <div className="manual-command">
                     <label className="json-editor">
                         <span>Manual Command JSON</span>
@@ -3887,12 +4199,17 @@ function WorkbenchPanel({ busy, runState, loadedFixtureId, lastError }: {
                             disabled={busy}
                         />
                     </label>
+                    <SchemaAuthoringPanel validation={commandValidation}/>
+                    <CommandExamplePicker
+                        onInsert={setCommandText}
+                        onCopy={text => void navigator.clipboard?.writeText(text)}
+                    />
                     <button
                         type="button"
                         onClick={() => runAction(() =>
                             rallarBlackBoxRuntimeStore.executeCommandFromJson(commandText)
                         )}
-                        disabled={busy}
+                        disabled={busy || !commandValidation.ok}
                     >
                         Execute Command
                     </button>
@@ -3968,6 +4285,27 @@ function ManualRallarWorkbenchPanel({ state, bootstrap, authSession, globalValue
             ? manualRtcNegativeRecipeSnippet(values, payloadResult.value)
             : payloadResult.error,
         [payloadResult, values],
+    );
+    const previewRecipeValidation = useMemo(
+        () => payloadResult.ok
+            ? validateSchemaAuthoringValue('recipe', {
+                recipeId: 'manual-rallar-command-preview',
+                commands: previewCommands,
+            })
+            : undefined,
+        [payloadResult.ok, previewCommands],
+    );
+    const manualRecipeValidation = useMemo(
+        () => recipeText.trim().length > 0
+            ? validateSchemaAuthoringText('recipe', recipeText)
+            : undefined,
+        [recipeText],
+    );
+    const negativeRecipeValidation = useMemo(
+        () => payloadResult.ok
+            ? validateSchemaAuthoringText('recipe', negativeRecipeText)
+            : undefined,
+        [negativeRecipeText, payloadResult.ok],
     );
 
     useEffect(() => {
@@ -4435,6 +4773,9 @@ function ManualRallarWorkbenchPanel({ state, bootstrap, authSession, globalValue
                         )
                         : payloadResult.error}
                 </pre>
+                {previewRecipeValidation && (
+                    <SchemaAuthoringPanel validation={previewRecipeValidation} compact/>
+                )}
             </div>
             <div className="manual-action-grid">
                 {(['configure', 'join', 'connect', 'send', 'health', 'close', 'reset'] as const).map(action => (
@@ -4482,6 +4823,9 @@ function ManualRallarWorkbenchPanel({ state, bootstrap, authSession, globalValue
                         Copy Negative Recipe
                     </button>
                 </div>
+                {negativeRecipeValidation && (
+                    <SchemaAuthoringPanel validation={negativeRecipeValidation} compact/>
+                )}
             </div>
             <div className="manual-history">
                 <div className="section-heading">
@@ -4525,12 +4869,17 @@ function ManualRallarWorkbenchPanel({ state, bootstrap, authSession, globalValue
                     })}
                 </div>
                 {recipeVisible && (
-                    <textarea
-                        className="report-output manual-recipe-output"
-                        value={recipeText}
-                        readOnly
-                        spellCheck={false}
-                    />
+                    <>
+                        <textarea
+                            className="report-output manual-recipe-output"
+                            value={recipeText}
+                            readOnly
+                            spellCheck={false}
+                        />
+                        {manualRecipeValidation && (
+                            <SchemaAuthoringPanel validation={manualRecipeValidation} compact/>
+                        )}
+                    </>
                 )}
             </div>
             {localError && (
@@ -5229,47 +5578,16 @@ const RUN_MANAGER_SNAPSHOT_BOUNDS = {
     heartbeats: 80,
 } as const;
 
-const RUN_MANAGER_COMMAND_PRESETS: readonly {
-    presetId: string;
-    label: string;
-    command: RallarBlackBoxTestCommand;
-}[] = [
-    {
-        presetId: 'health',
-        label: 'Health',
-        command: {
-            kind: 'health',
-            label: 'Run manager health probe',
-        },
-    },
-    {
-        presetId: 'stats',
-        label: 'Stats',
-        command: {
-            kind: 'stats',
-            label: 'Run manager stats snapshot',
-        },
-    },
-    {
-        presetId: 'reset',
-        label: 'Browser Reset',
-        command: {
-            kind: 'reset',
-            label: 'Run manager browser reset',
-        },
-    },
-];
-
 function parseRunManagerCommandText(text: string): RallarBlackBoxTestCommand {
     const value = JSON.parse(text) as unknown;
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new Error('Command JSON must be an object.');
     }
-    const command = value as RallarBlackBoxTestCommand;
-    if (typeof command.kind !== 'string' || command.kind.length === 0) {
-        throw new Error('Command JSON requires kind.');
+    const result = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, value);
+    if (!result.ok) {
+        throw new Error(`Command JSON failed schema validation:\n${formatJsonSchemaValidationErrors(result.errors)}`);
     }
-    return command;
+    return value as RallarBlackBoxTestCommand;
 }
 
 function runManagerCommandPrefix(command: RallarBlackBoxTestCommand): string {
@@ -5316,6 +5634,10 @@ function RunManagerPanel({ state, bootstrap, control }: {
             ? parseRallarBlackBoxSharedTestArtifactBundle(artifactBundle.files)
             : undefined,
         [artifactBundle],
+    );
+    const commandValidation = useMemo(
+        () => validateSchemaAuthoringText('command', commandText),
+        [commandText],
     );
     const canTargetAgents = Boolean(run && selectedAgentIds.length > 0);
 
@@ -5678,9 +6000,14 @@ function RunManagerPanel({ state, bootstrap, control }: {
                                 spellCheck={false}
                             />
                         </label>
+                        <SchemaAuthoringPanel validation={commandValidation}/>
+                        <CommandExamplePicker
+                            onInsert={setCommandText}
+                            onCopy={text => void navigator.clipboard?.writeText(text)}
+                        />
                         <button
                             type="button"
-                            disabled={!canTargetAgents || Boolean(busyAction)}
+                            disabled={!canTargetAgents || Boolean(busyAction) || !commandValidation.ok}
                             onClick={() => void enqueueSelected()}
                         >
                             Enqueue Selected
@@ -5808,6 +6135,1273 @@ function RunManagerPanel({ state, bootstrap, control }: {
     );
 }
 
+function DistributedRecipesPanel({ state, bootstrap, control, globalValues }: {
+    state: RallarBlackBoxTestState;
+    bootstrap: RallarBlackBoxBootstrapConfig;
+    control: RallarBlackBoxControlSnapshot;
+    globalValues: CommandCenterGlobalValues;
+}) {
+    const [baseUrl, setBaseUrl] = useState(() =>
+        controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl)
+    );
+    const [token, setToken] = useState('');
+    const [selectedRunId, setSelectedRunId] = useState(control.runId ?? bootstrap.runId ?? '');
+    const [distributedRunId, setDistributedRunId] = useState(() =>
+        `dist-${safeIdSegment(globalValues.roomId || 'group')}-${Date.now()}`
+    );
+    const [query, setQuery] = useState('');
+    const [profile, setProfile] = useState('');
+    const [selectedRecipeIds, setSelectedRecipeIds] = useState<readonly string[]>(
+        () => DISTRIBUTED_RECIPE_CATALOG.slice(0, 1).map(item => item.itemId),
+    );
+    const [rtcRealtimeDurationSeconds, setRtcRealtimeDurationSeconds] = useState(
+        RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS,
+    );
+    const [targetPolicyMode, setTargetPolicyMode] =
+        useState<DistributedRecipeTargetPolicyMode>('selected-agents');
+    const [rolePattern, setRolePattern] = useState<DistributedRecipeRolePattern>('all-agents');
+    const [ackTimeoutMs, setAckTimeoutMs] = useState(15_000);
+    const [startMode, setStartMode] =
+        useState<RallarBlackBoxDistributedRunManifest['startMode']>('manual');
+    const [startDelayMs, setStartDelayMs] = useState(3_000);
+    const [selectedAgentIds, setSelectedAgentIds] = useState<readonly string[]>([]);
+    const [snapshot, setSnapshot] = useState<ControlServerSnapshot | undefined>();
+    const [run, setRun] = useState<ControlRunSnapshot | undefined>();
+    const [distributedRuns, setDistributedRuns] = useState<readonly ControlDistributedRunSnapshot[]>([]);
+    const [selectedDistributedRun, setSelectedDistributedRun] = useState<ControlDistributedRunSnapshot | undefined>();
+    const [artifactBundle, setArtifactBundle] = useState<ControlDistributedRunArtifactBundle | undefined>();
+    const [busyAction, setBusyAction] = useState<string | undefined>();
+    const [error, setError] = useState<string | undefined>();
+    const [lastAction, setLastAction] = useState<string | undefined>();
+    const [historyQuery, setHistoryQuery] = useState('');
+    const [historyStatus, setHistoryStatus] = useState('');
+    const [historyGroup, setHistoryGroup] = useState('');
+    const [historyRecipe, setHistoryRecipe] = useState('');
+    const [historyProfile, setHistoryProfile] = useState('');
+    const [historyUser, setHistoryUser] = useState('');
+    const [historyFailureType, setHistoryFailureType] = useState('');
+    const [historyFromDate, setHistoryFromDate] = useState('');
+    const [historyToDate, setHistoryToDate] = useState('');
+    const [compareLeftId, setCompareLeftId] = useState('');
+    const [compareRightId, setCompareRightId] = useState('');
+    const didInitialRefresh = useRef(false);
+    const groupRef = useMemo(() => ({
+        applicationId: globalValues.applicationId,
+        workspaceId: globalValues.workspaceId,
+        groupId: globalValues.roomId,
+    }), [globalValues.applicationId, globalValues.roomId, globalValues.workspaceId]);
+    const recipeCatalog = useMemo(
+        () => DISTRIBUTED_RECIPE_CATALOG.map(item => configuredDistributedRecipeCatalogItem(item, {
+            group: groupRef,
+            rtcRealtimeDurationSeconds,
+        })),
+        [groupRef, rtcRealtimeDurationSeconds],
+    );
+    const runOptions = useMemo(
+        () => [...(snapshot?.runs ?? [])].sort((left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs),
+        [snapshot],
+    );
+    const profileOptions = useMemo(
+        () => uniqueValues(recipeCatalog.flatMap(item => item.profiles)),
+        [recipeCatalog],
+    );
+    const filteredRecipes = useMemo(
+        () => recipeCatalog.filter(item =>
+            distributedRecipeMatches(item, query, profile)
+        ),
+        [profile, query, recipeCatalog],
+    );
+    const selectedRecipes = useMemo(
+        () => recipeCatalog.filter(item => selectedRecipeIds.includes(item.itemId)),
+        [recipeCatalog, selectedRecipeIds],
+    );
+    const targetRows = useMemo(
+        () => distributedRecipeTargetRows({
+            run,
+            group: groupRef,
+            nowEpochMs: Date.now(),
+        }),
+        [groupRef, run],
+    );
+    const selectedAgentSet = useMemo(() => new Set(selectedAgentIds), [selectedAgentIds]);
+    const targetableRows = targetRows.filter(row => row.targetable);
+    const manifest = useMemo(() => {
+        if (!selectedRunId || selectedRecipes.length === 0 || !groupRef.groupId) {
+            return undefined;
+        }
+        return buildDistributedRunManifest({
+            distributedRunId,
+            controlRunId: selectedRunId,
+            displayName: `Distributed ${selectedRecipes.map(item => item.title).join(', ')}`,
+            group: groupRef,
+            recipes: selectedRecipes,
+            targetAgentIds: selectedAgentIds,
+            targetPolicyMode,
+            rolePattern,
+            ackTimeoutMs,
+            startMode: startMode ?? 'manual',
+            startDeadlineEpochMs: startMode === 'scheduled'
+                ? Date.now() + Math.max(1, startDelayMs)
+                : undefined,
+            expectedParticipantCount: selectedAgentIds.length > 0
+                ? selectedAgentIds.length
+                : undefined,
+        });
+    }, [
+        ackTimeoutMs,
+        distributedRunId,
+        groupRef,
+        rolePattern,
+        selectedAgentIds,
+        selectedRecipes,
+        selectedRunId,
+        startDelayMs,
+        startMode,
+        targetPolicyMode,
+    ]);
+    const manifestValidation = useMemo(
+        () => manifest ? validateDistributedRecipeManifest(manifest) : 'Select a run, group, and at least one recipe.',
+        [manifest],
+    );
+    const manifestAuthoringValidation = useMemo(
+        () => manifest ? validateSchemaAuthoringValue('distributed-run-manifest', manifest) : undefined,
+        [manifest],
+    );
+    const currentDistributedRuns = useMemo(
+        () => distributedRuns
+            .filter(item => item.controlRunId === selectedRunId)
+            .sort((left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs),
+        [distributedRuns, selectedRunId],
+    );
+    const historyStatusOptions = useMemo(
+        () => uniqueValues(distributedRuns.map(item => item.state)),
+        [distributedRuns],
+    );
+    const historyRecipeOptions = useMemo(
+        () => uniqueValues(distributedRuns.flatMap(item => item.manifest.recipes.map((selection, index) =>
+            selection.recipeId ?? selection.recipe?.recipeId ?? `recipe-${index + 1}`
+        ))),
+        [distributedRuns],
+    );
+    const historyGroupOptions = useMemo(
+        () => uniqueValues(distributedRuns.map(item => item.manifest.group.groupId)),
+        [distributedRuns],
+    );
+    const historyProfileOptions = useMemo(
+        () => uniqueValues(distributedRuns.flatMap(item =>
+            item.manifest.recipes.map(selection => selection.profile).filter((value): value is string => Boolean(value))
+        )),
+        [distributedRuns],
+    );
+    const historyRows = useMemo(
+        () => filterDistributedRuns(distributedRuns, {
+            query: historyQuery,
+            groupId: historyGroup,
+            recipeId: historyRecipe,
+            profile: historyProfile,
+            user: historyUser,
+            status: historyStatus,
+            failureType: historyFailureType,
+            fromEpochMs: dateInputStartEpoch(historyFromDate),
+            toEpochMs: dateInputEndEpoch(historyToDate),
+        }),
+        [
+            distributedRuns,
+            historyFailureType,
+            historyFromDate,
+            historyGroup,
+            historyProfile,
+            historyQuery,
+            historyRecipe,
+            historyStatus,
+            historyToDate,
+            historyUser,
+        ],
+    );
+    const selectedMonitor = useMemo(
+        () => selectedDistributedRun
+            ? deriveDistributedRunMonitor({
+                distributedRun: selectedDistributedRun,
+                controlRun: run,
+                artifactBundle,
+            })
+            : undefined,
+        [artifactBundle, run, selectedDistributedRun],
+    );
+    const compareLeftRun = useMemo(
+        () => distributedRuns.find(item => item.distributedRunId === compareLeftId),
+        [compareLeftId, distributedRuns],
+    );
+    const compareRightRun = useMemo(
+        () => distributedRuns.find(item => item.distributedRunId === compareRightId),
+        [compareRightId, distributedRuns],
+    );
+    const compareSummary = useMemo(
+        () => compareLeftRun && compareRightRun
+            ? compareDistributedRuns({
+                left: compareLeftRun,
+                right: compareRightRun,
+                leftControlRun: compareLeftRun.controlRunId === run?.runId ? run : undefined,
+                rightControlRun: compareRightRun.controlRunId === run?.runId ? run : undefined,
+            })
+            : undefined,
+        [compareLeftRun, compareRightRun, run],
+    );
+    const liveSelectedRecipeCount = selectedRecipes.filter(item => item.live).length;
+    const rtcRealtimeSelected = selectedRecipeIds.includes(RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID);
+    const rtcRealtimeFrameCount = rtcRealtimeDurationSeconds * RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ;
+
+    const refresh = async (preferredRunId = selectedRunId, preferredDistributedRunId = distributedRunId): Promise<void> => {
+        setBusyAction('refresh');
+        setError(undefined);
+        try {
+            const [serverSnapshot, distributedList] = await Promise.all([
+                fetchControlServerSnapshot({
+                    baseUrl,
+                    token,
+                    bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
+                }),
+                fetchDistributedRuns({
+                    baseUrl,
+                    token,
+                }),
+            ]);
+            setSnapshot(serverSnapshot);
+            setDistributedRuns(distributedList);
+            const knownRunIds = new Set(serverSnapshot.runs.map(option => option.runId));
+            const nextRunId = [
+                preferredRunId,
+                control.runId,
+                bootstrap.runId,
+                serverSnapshot.runs[0]?.runId,
+            ].find(candidate => candidate && knownRunIds.has(candidate)) ?? '';
+            setSelectedRunId(nextRunId);
+            if (nextRunId) {
+                setRun(await fetchControlRunSnapshot({
+                    baseUrl,
+                    token,
+                    runId: nextRunId,
+                    bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
+                }));
+            } else {
+                setRun(undefined);
+            }
+            const nextDistributedRun = distributedList.find(item =>
+                item.distributedRunId === preferredDistributedRunId
+            );
+            setSelectedDistributedRun(nextDistributedRun);
+            setArtifactBundle(undefined);
+            setLastAction(`Refreshed ${serverSnapshot.runs.length} run(s), ${distributedList.length} distributed run(s).`);
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    useEffect(() => {
+        if (didInitialRefresh.current) {
+            return;
+        }
+        didInitialRefresh.current = true;
+        void refresh();
+        // The initial refresh intentionally uses the first rendered form values.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+        const defaults = defaultDistributedRecipeTargetIds(targetRows);
+        setSelectedAgentIds(previous => {
+            const kept = previous.filter(agentId => targetRows.some(row => row.agentId === agentId));
+            const next = kept.length > 0 ? kept : defaults;
+            return sameStringArray(previous, next) ? previous : next;
+        });
+    }, [targetRows]);
+
+    const loadRun = async (runId: string): Promise<void> => {
+        setSelectedRunId(runId);
+        setArtifactBundle(undefined);
+        setError(undefined);
+        if (!runId) {
+            setRun(undefined);
+            return;
+        }
+        setBusyAction('load-run');
+        try {
+            setRun(await fetchControlRunSnapshot({
+                baseUrl,
+                token,
+                runId,
+                bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
+            }));
+            setLastAction(`Loaded ${runId}.`);
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const resolveTargets = async (): Promise<void> => {
+        await loadRun(selectedRunId);
+        const defaults = defaultDistributedRecipeTargetIds(targetRows);
+        setSelectedAgentIds(defaults);
+        setLastAction(`Resolved ${defaults.length} target agent(s).`);
+    };
+
+    const ensureCreatedDistributedRun = async (): Promise<ControlDistributedRunSnapshot> => {
+        if (!manifest) {
+            throw new Error('Build a valid distributed run manifest before creating the run.');
+        }
+        if (manifestValidation) {
+            throw new Error(manifestValidation);
+        }
+        const existing = selectedDistributedRun?.distributedRunId === manifest.distributedRunId
+            ? selectedDistributedRun
+            : distributedRuns.find(item => item.distributedRunId === manifest.distributedRunId);
+        if (existing) {
+            return existing;
+        }
+        const created = await createDistributedRun({
+            baseUrl,
+            token,
+            manifest,
+        });
+        setSelectedDistributedRun(created);
+        setDistributedRuns(current => [created, ...current]);
+        return created;
+    };
+
+    const createRun = async (): Promise<void> => {
+        setBusyAction('create');
+        setError(undefined);
+        try {
+            const created = await ensureCreatedDistributedRun();
+            setLastAction(`Created ${created.distributedRunId}.`);
+            await refresh(created.controlRunId, created.distributedRunId);
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const stageRun = async (): Promise<void> => {
+        setBusyAction('stage');
+        setError(undefined);
+        try {
+            const created = await ensureCreatedDistributedRun();
+            const staged = await stageDistributedRun({
+                baseUrl,
+                token,
+                distributedRunId: created.distributedRunId,
+            });
+            setSelectedDistributedRun(staged);
+            setLastAction(`Staged ${staged.distributedRunId}.`);
+            await refresh(staged.controlRunId, staged.distributedRunId);
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const startRun = async (): Promise<void> => {
+        const target = selectedDistributedRun ?? distributedRuns.find(item => item.distributedRunId === distributedRunId);
+        if (!target) {
+            setError('Create or stage a distributed run before starting it.');
+            return;
+        }
+        setBusyAction('start');
+        setError(undefined);
+        try {
+            const started = await startDistributedRun({
+                baseUrl,
+                token,
+                distributedRunId: target.distributedRunId,
+            });
+            setSelectedDistributedRun(started);
+            setLastAction(`Started ${started.distributedRunId}.`);
+            await refresh(started.controlRunId, started.distributedRunId);
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const cancelRun = async (): Promise<void> => {
+        const target = selectedDistributedRun ?? distributedRuns.find(item => item.distributedRunId === distributedRunId);
+        if (!target) {
+            setError('Select a distributed run before cancelling it.');
+            return;
+        }
+        setBusyAction('cancel');
+        setError(undefined);
+        try {
+            const cancelled = await cancelDistributedRun({
+                baseUrl,
+                token,
+                distributedRunId: target.distributedRunId,
+                reason: 'Cancelled from Rallar Kit Distributed Recipes UI.',
+            });
+            setSelectedDistributedRun(cancelled);
+            setLastAction(`Cancelled ${cancelled.distributedRunId}.`);
+            await refresh(cancelled.controlRunId, cancelled.distributedRunId);
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const loadArtifact = async (): Promise<void> => {
+        const target = selectedDistributedRun ?? distributedRuns.find(item => item.distributedRunId === distributedRunId);
+        if (!target) {
+            setError('Select a distributed run before exporting artifacts.');
+            return;
+        }
+        setBusyAction('artifact');
+        setError(undefined);
+        try {
+            const bundle = await fetchDistributedRunArtifactBundle({
+                baseUrl,
+                token,
+                distributedRunId: target.distributedRunId,
+            });
+            setArtifactBundle(bundle);
+            setLastAction(`Loaded distributed artifact for ${target.distributedRunId}.`);
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const copyArtifact = async (): Promise<void> => {
+        const bundle = artifactBundle;
+        if (!bundle) {
+            return;
+        }
+        await navigator.clipboard?.writeText(json(bundle.files));
+        setLastAction('Copied distributed artifact files.');
+    };
+
+    const loadDistributedRun = async (id: string): Promise<void> => {
+        setDistributedRunId(id);
+        setBusyAction('load-distributed-run');
+        setError(undefined);
+        try {
+            const loaded = await fetchDistributedRun({
+                baseUrl,
+                token,
+                distributedRunId: id,
+            });
+            setSelectedDistributedRun(loaded);
+            setSelectedRunId(loaded.controlRunId);
+            await loadRun(loaded.controlRunId);
+            setLastAction(`Loaded ${id}.`);
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const toggleRecipe = (itemId: string): void => {
+        setSelectedRecipeIds(previous => previous.includes(itemId)
+            ? previous.filter(value => value !== itemId)
+            : [...previous, itemId]
+        );
+    };
+
+    const toggleAgent = (agentId: string): void => {
+        setSelectedAgentIds(previous => previous.includes(agentId)
+            ? previous.filter(value => value !== agentId)
+            : [...previous, agentId]
+        );
+    };
+
+    const selectRolePattern = (value: DistributedRecipeRolePattern): void => {
+        setRolePattern(value);
+        if (value !== 'all-agents') {
+            setTargetPolicyMode('role-map');
+        } else if (targetPolicyMode === 'role-map') {
+            setTargetPolicyMode('selected-agents');
+        }
+    };
+
+    const generateNewRunId = (): void => {
+        setDistributedRunId(`dist-${safeIdSegment(globalValues.roomId || 'group')}-${Date.now()}`);
+        setSelectedDistributedRun(undefined);
+        setArtifactBundle(undefined);
+    };
+
+    return (
+        <section className="panel distributed-recipes-panel">
+            <div className="panel-heading">
+                <h2>Distributed Recipes</h2>
+                <span>{busyAction ?? lastAction ?? 'idle'}</span>
+            </div>
+            <div className="distributed-toolbar">
+                <label className="field">
+                    <span>Control HTTP Base URL</span>
+                    <input value={baseUrl} onChange={event => setBaseUrl(event.target.value)}/>
+                </label>
+                <label className="field">
+                    <span>Token</span>
+                    <input
+                        value={token}
+                        onChange={event => setToken(event.target.value)}
+                        type="password"
+                        autoComplete="off"
+                    />
+                </label>
+                <label className="field">
+                    <span>Control Run</span>
+                    <select value={selectedRunId} onChange={event => void loadRun(event.target.value)}>
+                        <option value="">Select run</option>
+                        {runOptions.map(option => (
+                            <option key={option.runId} value={option.runId}>{option.runId}</option>
+                        ))}
+                    </select>
+                </label>
+                <button type="button" disabled={Boolean(busyAction)} onClick={() => void refresh()}>
+                    Refresh
+                </button>
+                <button type="button" disabled={Boolean(busyAction) || !selectedRunId} onClick={() => void resolveTargets()}>
+                    Resolve targets
+                </button>
+            </div>
+            <div className="distributed-summary-grid">
+                <Metric label="Group" value={groupRef.groupId || 'not set'} tone={groupRef.groupId ? 'active' : 'bad'}/>
+                <Metric label="Scope" value={`${groupRef.applicationId || '-'}/${groupRef.workspaceId || '-'}`}/>
+                <Metric label="Recipes" value={String(selectedRecipes.length)} tone={selectedRecipes.length > 0 ? 'good' : 'bad'}/>
+                <Metric label="Targets" value={`${selectedAgentIds.length}/${targetableRows.length}`} tone={selectedAgentIds.length > 0 ? 'active' : 'bad'}/>
+                <Metric label="Live recipes" value={String(liveSelectedRecipeCount)} tone={liveSelectedRecipeCount > 0 ? 'warn' : 'muted'}/>
+                <Metric label="Distributed runs" value={String(distributedRuns.length)}/>
+            </div>
+            {error && (
+                <div className="workbench-error run-manager-error" role="status">
+                    {String(redactRallarBlackBoxValue(
+                        error,
+                        uiRedactionOptions(state, undefined, [token]),
+                    ))}
+                </div>
+            )}
+            {manifestValidation && (
+                <div className="workbench-error run-manager-error" role="status">
+                    {manifestValidation}
+                </div>
+            )}
+            {liveSelectedRecipeCount > 0 && (
+                <div className="distributed-warning" role="status">
+                    Live recipes can send real HTTP, WebSocket, or RTC traffic through connected browser agents.
+                </div>
+            )}
+            <div className="distributed-layout">
+                <section className="distributed-subpanel distributed-recipes-catalog">
+                    <div className="section-heading">
+                        <h3>Recipe Catalog</h3>
+                        <span>{filteredRecipes.length} visible</span>
+                    </div>
+                    <div className="shared-test-filter-grid distributed-filter-grid">
+                        <label className="field">
+                            <span>Search</span>
+                            <input
+                                value={query}
+                                onChange={event => setQuery(event.target.value)}
+                                placeholder="recipe, profile, command"
+                            />
+                        </label>
+                        <label className="field">
+                            <span>Profile</span>
+                            <select value={profile} onChange={event => setProfile(event.target.value)}>
+                                <option value="">All profiles</option>
+                                {profileOptions.map(option => (
+                                    <option key={option} value={option}>{option}</option>
+                                ))}
+                            </select>
+                        </label>
+                        {rtcRealtimeSelected && (
+                            <label className="field">
+                                <span>RTC Realtime Length Seconds</span>
+                                <input
+                                    type="number"
+                                    min={RALLAR_BLACK_BOX_RTC_REALTIME_MIN_DURATION_SECONDS}
+                                    max={RALLAR_BLACK_BOX_RTC_REALTIME_MAX_DURATION_SECONDS}
+                                    value={rtcRealtimeDurationSeconds}
+                                    onChange={event => {
+                                        setRtcRealtimeDurationSeconds(
+                                            normalizeRallarBlackBoxRtcRealtimeDurationSeconds(event.target.value),
+                                        );
+                                    }}
+                                />
+                                <small>
+                                    {rtcRealtimeFrameCount} position frames at {RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ} Hz.
+                                </small>
+                            </label>
+                        )}
+                    </div>
+                    <div className="distributed-recipe-list">
+                        {filteredRecipes.map(item => {
+                            const selected = selectedRecipeIds.includes(item.itemId);
+                            const validation = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, item.recipe);
+                            const authoringValidation = validateSchemaAuthoringValue('recipe', item.recipe);
+                            return (
+                                <article className={`distributed-recipe-row ${selected ? 'selected' : ''}`} key={item.itemId}>
+                                    <label>
+                                        <input
+                                            type="checkbox"
+                                            checked={selected}
+                                            onChange={() => toggleRecipe(item.itemId)}
+                                        />
+                                        <span>
+                                            <strong>{item.title}</strong>
+                                            <small>{item.recipe.recipeId} - {item.recipe.commands.length} commands</small>
+                                        </span>
+                                    </label>
+                                    <p>{item.description}</p>
+                                    <div className="badge-list">
+                                        <span className={`pill ${item.live ? 'warn' : 'muted'}`}>
+                                            {item.live ? 'live traffic' : 'local'}
+                                        </span>
+                                        <span className={`pill ${validation.ok ? 'good' : 'bad'}`}>
+                                            {validation.ok ? 'schema valid' : 'schema invalid'}
+                                        </span>
+                                        {item.profiles.map(entry => (
+                                            <span className="pill muted" key={entry}>{entry}</span>
+                                        ))}
+                                    </div>
+                                    <details>
+                                        <summary>Prerequisites</summary>
+                                        <ul>
+                                            {item.prerequisites.map(requirement => (
+                                                <li key={requirement}>{requirement}</li>
+                                            ))}
+                                        </ul>
+                                    </details>
+                                    <details>
+                                        <summary>Capabilities</summary>
+                                        <SchemaCapabilitySummary validation={authoringValidation}/>
+                                    </details>
+                                </article>
+                            );
+                        })}
+                    </div>
+                </section>
+                <section className="distributed-subpanel">
+                    <div className="section-heading">
+                        <h3>Target Resolution</h3>
+                        <span>{targetRows.length} agents</span>
+                    </div>
+                    <div className="distributed-options-grid">
+                        <label className="field">
+                            <span>Target Policy</span>
+                            <select
+                                value={targetPolicyMode}
+                                onChange={event => setTargetPolicyMode(event.target.value as DistributedRecipeTargetPolicyMode)}
+                            >
+                                <option value="selected-agents">Selected agents</option>
+                                <option value="all-online-group-members">All online group members</option>
+                                <option value="role-map" disabled={rolePattern === 'all-agents'}>Role map</option>
+                            </select>
+                        </label>
+                        <label className="field">
+                            <span>Role Pattern</span>
+                            <select
+                                value={rolePattern}
+                                onChange={event => selectRolePattern(event.target.value as DistributedRecipeRolePattern)}
+                            >
+                                {DISTRIBUTED_RECIPE_ROLE_PATTERN_OPTIONS.map(option => (
+                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="field">
+                            <span>ACK Timeout Ms</span>
+                            <input
+                                type="number"
+                                min={1}
+                                value={ackTimeoutMs}
+                                onChange={event => setAckTimeoutMs(Number.parseInt(event.target.value, 10) || 1)}
+                            />
+                        </label>
+                        <label className="field">
+                            <span>Start Mode</span>
+                            <select
+                                value={startMode}
+                                onChange={event => setStartMode(event.target.value as RallarBlackBoxDistributedRunManifest['startMode'])}
+                            >
+                                <option value="manual">Manual</option>
+                                <option value="auto-after-ready">Auto after ready</option>
+                                <option value="scheduled">Scheduled</option>
+                            </select>
+                        </label>
+                        {startMode === 'scheduled' && (
+                            <label className="field">
+                                <span>Start Delay Ms</span>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    value={startDelayMs}
+                                    onChange={event => setStartDelayMs(Number.parseInt(event.target.value, 10) || 1)}
+                                />
+                            </label>
+                        )}
+                    </div>
+                    <div className="distributed-target-list">
+                        {targetRows.map(row => (
+                            <DistributedTargetRow
+                                key={row.agentId}
+                                row={row}
+                                selected={selectedAgentSet.has(row.agentId)}
+                                disabled={!row.targetable}
+                                onToggle={toggleAgent}
+                            />
+                        ))}
+                        {targetRows.length === 0 && <div className="empty-state">No control agents in selected run</div>}
+                    </div>
+                </section>
+                <section className="distributed-subpanel">
+                    <div className="section-heading">
+                        <h3>Run Control</h3>
+                        <span className={`pill ${distributedRecipeStateTone(selectedDistributedRun?.state ?? 'draft')}`}>
+                            {selectedDistributedRun?.state ?? 'draft'}
+                        </span>
+                    </div>
+                    <div className="distributed-run-id-row">
+                        <label className="field">
+                            <span>Distributed Run ID</span>
+                            <input
+                                value={distributedRunId}
+                                onChange={event => {
+                                    setDistributedRunId(event.target.value);
+                                    setSelectedDistributedRun(undefined);
+                                    setArtifactBundle(undefined);
+                                }}
+                            />
+                        </label>
+                        <button type="button" onClick={generateNewRunId} disabled={Boolean(busyAction)}>
+                            New ID
+                        </button>
+                    </div>
+                    <div className="distributed-action-grid">
+                        <button type="button" disabled={Boolean(busyAction) || Boolean(manifestValidation)} onClick={() => void createRun()}>
+                            Create
+                        </button>
+                        <button type="button" disabled={Boolean(busyAction) || Boolean(manifestValidation)} onClick={() => void stageRun()}>
+                            Stage
+                        </button>
+                        <button type="button" disabled={Boolean(busyAction) || !selectedDistributedRun} onClick={() => void startRun()}>
+                            Start
+                        </button>
+                        <button type="button" disabled={Boolean(busyAction) || !selectedDistributedRun} onClick={() => void cancelRun()}>
+                            Cancel
+                        </button>
+                        <button type="button" disabled={Boolean(busyAction) || !selectedDistributedRun} onClick={() => void loadArtifact()}>
+                            Export artifact
+                        </button>
+                        <button type="button" disabled={!artifactBundle} onClick={() => void copyArtifact()}>
+                            Copy artifact
+                        </button>
+                    </div>
+                    {selectedDistributedRun && (
+                        <DistributedRunSummary run={selectedDistributedRun}/>
+                    )}
+                    <div className="section-heading compact">
+                        <h3>Distributed Runs</h3>
+                        <span>{currentDistributedRuns.length}</span>
+                    </div>
+                    <div className="distributed-run-list">
+                        {currentDistributedRuns.map(item => (
+                            <button
+                                type="button"
+                                key={item.distributedRunId}
+                                className={`distributed-run-row ${item.distributedRunId === selectedDistributedRun?.distributedRunId ? 'selected' : ''}`}
+                                onClick={() => void loadDistributedRun(item.distributedRunId)}
+                            >
+                                <span>
+                                    <strong>{item.distributedRunId}</strong>
+                                    <small>{item.manifest.displayName ?? item.controlRunId}</small>
+                                </span>
+                                <span className={`pill ${distributedRecipeStateTone(item.state)}`}>{item.state}</span>
+                                <small>{formatTime(item.updatedAtEpochMs)}</small>
+                            </button>
+                        ))}
+                        {currentDistributedRuns.length === 0 && <div className="empty-state">No distributed runs for selected control run</div>}
+                    </div>
+                    {artifactBundle && (
+                        <div className="distributed-artifact-summary">
+                            <Metric label="Artifact" value={`schema ${artifactBundle.artifactSchemaVersion}`}/>
+                            <Metric label="Files" value={String(Object.keys(artifactBundle.files).length)} tone="good"/>
+                            <Metric label="Generated" value={formatTime(artifactBundle.generatedAtEpochMs)}/>
+                        </div>
+                    )}
+                </section>
+                <section className="distributed-subpanel distributed-manifest-panel">
+                    <div className="section-heading">
+                        <h3>Manifest Preview</h3>
+                        <span className={`pill ${manifestValidation ? 'bad' : 'good'}`}>
+                            {manifestValidation ? 'invalid' : 'valid'}
+                        </span>
+                    </div>
+                    <pre className="json-block">{json(manifest)}</pre>
+                    {manifestAuthoringValidation && (
+                        <SchemaAuthoringPanel validation={manifestAuthoringValidation}/>
+                    )}
+                </section>
+                <DistributedRunMonitorPanel monitor={selectedMonitor}/>
+                <section className="distributed-subpanel distributed-history-panel">
+                    <div className="section-heading">
+                        <h3>Historical Runs</h3>
+                        <span>{historyRows.length}/{distributedRuns.length}</span>
+                    </div>
+                    <div className="distributed-history-filters">
+                        <label className="field">
+                            <span>Search</span>
+                            <input
+                                value={historyQuery}
+                                onChange={event => setHistoryQuery(event.target.value)}
+                                placeholder="run, group, recipe, failure"
+                            />
+                        </label>
+                        <label className="field">
+                            <span>Status</span>
+                            <select value={historyStatus} onChange={event => setHistoryStatus(event.target.value)}>
+                                <option value="">Any</option>
+                                {historyStatusOptions.map(option => (
+                                    <option key={option} value={option}>{option}</option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="field">
+                            <span>Group</span>
+                            <select value={historyGroup} onChange={event => setHistoryGroup(event.target.value)}>
+                                <option value="">Any</option>
+                                {historyGroupOptions.map(option => (
+                                    <option key={option} value={option}>{option}</option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="field">
+                            <span>Recipe</span>
+                            <select value={historyRecipe} onChange={event => setHistoryRecipe(event.target.value)}>
+                                <option value="">Any</option>
+                                {historyRecipeOptions.map(option => (
+                                    <option key={option} value={option}>{option}</option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="field">
+                            <span>Profile</span>
+                            <select value={historyProfile} onChange={event => setHistoryProfile(event.target.value)}>
+                                <option value="">Any</option>
+                                {historyProfileOptions.map(option => (
+                                    <option key={option} value={option}>{option}</option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="field">
+                            <span>User</span>
+                            <input value={historyUser} onChange={event => setHistoryUser(event.target.value)}/>
+                        </label>
+                        <label className="field">
+                            <span>Failure</span>
+                            <select
+                                value={historyFailureType}
+                                onChange={event => setHistoryFailureType(event.target.value)}
+                            >
+                                <option value="">Any</option>
+                                <option value="any">Any failure</option>
+                                <option value="run">Run</option>
+                                <option value="participant">Participant</option>
+                                <option value="recipe">Recipe</option>
+                                <option value="timed-out">Timed out</option>
+                            </select>
+                        </label>
+                        <label className="field">
+                            <span>From</span>
+                            <input
+                                type="date"
+                                value={historyFromDate}
+                                onChange={event => setHistoryFromDate(event.target.value)}
+                            />
+                        </label>
+                        <label className="field">
+                            <span>To</span>
+                            <input
+                                type="date"
+                                value={historyToDate}
+                                onChange={event => setHistoryToDate(event.target.value)}
+                            />
+                        </label>
+                    </div>
+                    <div className="distributed-run-list distributed-history-list">
+                        {historyRows.map(item => (
+                            <button
+                                type="button"
+                                key={item.distributedRunId}
+                                className={`distributed-run-row ${item.distributedRunId === selectedDistributedRun?.distributedRunId ? 'selected' : ''}`}
+                                onClick={() => void loadDistributedRun(item.distributedRunId)}
+                            >
+                                <span>
+                                    <strong>{item.distributedRunId}</strong>
+                                    <small>
+                                        {item.manifest.group.groupId} - {item.manifest.recipes
+                                            .map((selection, index) => selection.recipeId ?? selection.recipe?.recipeId ?? `recipe-${index + 1}`)
+                                            .join(', ')}
+                                    </small>
+                                </span>
+                                <span className={`pill ${distributedRecipeStateTone(item.state)}`}>{item.state}</span>
+                                <small>{formatTime(item.updatedAtEpochMs)}</small>
+                            </button>
+                        ))}
+                        {historyRows.length === 0 && <div className="empty-state">No distributed runs match the filters</div>}
+                    </div>
+                </section>
+                <DistributedRunComparePanel
+                    runs={distributedRuns}
+                    leftId={compareLeftId}
+                    rightId={compareRightId}
+                    summary={compareSummary}
+                    onLeftChange={setCompareLeftId}
+                    onRightChange={setCompareRightId}
+                />
+            </div>
+        </section>
+    );
+}
+
+function DistributedRunMonitorPanel({ monitor }: { monitor: DistributedRunMonitor | undefined }) {
+    return (
+        <section className="distributed-subpanel distributed-monitor-panel">
+            <div className="section-heading">
+                <h3>Monitor</h3>
+                <span className={`pill ${monitor ? distributedRecipeStateTone(monitor.state) : 'muted'}`}>
+                    {monitor?.state ?? 'no run'}
+                </span>
+            </div>
+            {!monitor && (
+                <div className="empty-state">Select a distributed run to inspect monitor evidence</div>
+            )}
+            {monitor && (
+                <>
+                    <div className="distributed-monitor-metrics">
+                        <Metric label="Commands" value={`${monitor.commandCounts.completed}/${monitor.commandCounts.total}`}/>
+                        <Metric
+                            label="Failed commands"
+                            value={String(monitor.commandCounts.failed)}
+                            tone={monitor.commandCounts.failed > 0 ? 'bad' : 'good'}
+                        />
+                        <Metric label="Results" value={`${monitor.resultCounts.ok}/${monitor.resultCounts.total}`}/>
+                        <Metric
+                            label="P50 latency"
+                            value={formatDuration(monitor.latency.p50Ms)}
+                            tone={monitor.latency.p50Ms !== undefined ? 'active' : 'muted'}
+                        />
+                        <Metric label="P95 latency" value={formatDuration(monitor.latency.p95Ms)}/>
+                        <Metric
+                            label="Artifact"
+                            value={monitor.artifact.status}
+                            tone={monitor.artifact.status === 'valid'
+                                ? 'good'
+                                : monitor.artifact.status === 'not-loaded'
+                                ? 'muted'
+                                : 'bad'}
+                        />
+                    </div>
+                    <div className="distributed-monitor-grid">
+                        <section>
+                            <h3>Failures First</h3>
+                            <div className="distributed-monitor-list">
+                                {monitor.failures.slice(0, 8).map((failure, index) => (
+                                    <div className="distributed-monitor-row failure" key={`${failure.key}-${index}`}>
+                                        <strong>{failure.code ?? failure.kind}</strong>
+                                        <span>{failure.message}</span>
+                                        <small>{failure.agentId ?? failure.recipeId ?? failure.commandId ?? failure.key}</small>
+                                    </div>
+                                ))}
+                                {monitor.failures.length === 0 && <div className="empty-state">No failures</div>}
+                            </div>
+                        </section>
+                        <section>
+                            <h3>Agent Progress</h3>
+                            <div className="distributed-monitor-list">
+                                {monitor.agentProgress.map(row => (
+                                    <div className="distributed-monitor-row" key={row.agentId}>
+                                        <strong>{row.agentId}</strong>
+                                        <span className={`pill ${distributedProgressTone(row.readiness)}`}>
+                                            ack {row.readiness}
+                                        </span>
+                                        <span className={`pill ${distributedProgressTone(row.execution)}`}>
+                                            run {row.execution}
+                                        </span>
+                                        <small>
+                                            {row.role ?? 'no role'} - {row.completedCommandCount} commands - {row.eventCount} events
+                                        </small>
+                                    </div>
+                                ))}
+                                {monitor.agentProgress.length === 0 && <div className="empty-state">No agent progress</div>}
+                            </div>
+                        </section>
+                        <section>
+                            <h3>Recipe Progress</h3>
+                            <div className="distributed-monitor-list">
+                                {monitor.recipeProgress.map(row => (
+                                    <div className="distributed-monitor-row" key={`${row.recipeId}-${row.role ?? 'all'}`}>
+                                        <strong>{row.recipeId}</strong>
+                                        <span className="pill good">{row.passedCount} passed</span>
+                                        <span className={`pill ${row.failedCount > 0 ? 'bad' : 'muted'}`}>
+                                            {row.failedCount} failed
+                                        </span>
+                                        <small>
+                                            {row.profile ?? 'default'} - {row.queuedCount} queued - {row.runningCount} running - {row.missingCount} missing
+                                        </small>
+                                    </div>
+                                ))}
+                                {monitor.recipeProgress.length === 0 && <div className="empty-state">No recipe progress</div>}
+                            </div>
+                        </section>
+                        <section>
+                            <h3>ACK Readiness</h3>
+                            <div className="distributed-monitor-list">
+                                {monitor.readiness.map(row => (
+                                    <div className="distributed-monitor-row" key={row.agentId}>
+                                        <strong>{row.agentId}</strong>
+                                        <span className={`pill ${distributedProgressTone(row.status)}`}>{row.status}</span>
+                                        <small>{row.commandId ?? 'no command'} - {formatDuration(row.latencyMs)}</small>
+                                        {row.error && <small>{row.error}</small>}
+                                    </div>
+                                ))}
+                                {monitor.readiness.length === 0 && <div className="empty-state">No ACK rows</div>}
+                            </div>
+                        </section>
+                        <section>
+                            <h3>Run Events</h3>
+                            <div className="distributed-monitor-list">
+                                {monitor.events.slice(-12).map(event => (
+                                    <div className="distributed-monitor-row" key={event.eventId}>
+                                        <strong>{event.kind}</strong>
+                                        <span className="pill muted">{event.agentId}</span>
+                                        <small>{formatTime(event.atEpochMs)} - {event.topic ?? event.commandId ?? 'event'}</small>
+                                        <small>{event.summary}</small>
+                                    </div>
+                                ))}
+                                {monitor.events.length === 0 && <div className="empty-state">No linked events</div>}
+                            </div>
+                        </section>
+                        <section>
+                            <h3>Timeline</h3>
+                            <div className="distributed-monitor-list">
+                                {monitor.timeline.slice(-16).map(item => (
+                                    <div className="distributed-monitor-row" key={item.id}>
+                                        <strong>{item.label}</strong>
+                                        <span className={`pill ${item.tone}`}>{item.kind}</span>
+                                        <small>{formatTime(item.atEpochMs)} - {item.agentId ?? item.recipeId ?? item.commandId ?? item.phase ?? '-'}</small>
+                                        {item.detail && <small>{item.detail}</small>}
+                                    </div>
+                                ))}
+                                {monitor.timeline.length === 0 && <div className="empty-state">No timeline entries</div>}
+                            </div>
+                        </section>
+                    </div>
+                    <div className={`distributed-artifact-validation ${monitor.artifact.status}`}>
+                        <strong>{monitor.artifact.status}</strong>
+                        <span>{monitor.artifact.message}</span>
+                    </div>
+                </>
+            )}
+        </section>
+    );
+}
+
+function DistributedRunComparePanel({ runs, leftId, rightId, summary, onLeftChange, onRightChange }: {
+    runs: readonly ControlDistributedRunSnapshot[];
+    leftId: string;
+    rightId: string;
+    summary: DistributedRunCompareSummary | undefined;
+    onLeftChange(value: string): void;
+    onRightChange(value: string): void;
+}) {
+    const options = [...runs].sort((left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs);
+    return (
+        <section className="distributed-subpanel distributed-compare-panel">
+            <div className="section-heading">
+                <h3>Compare Runs</h3>
+                <span>{summary ? `${summary.leftId} -> ${summary.rightId}` : 'select two'}</span>
+            </div>
+            <div className="distributed-compare-selectors">
+                <label className="field">
+                    <span>Left</span>
+                    <select value={leftId} onChange={event => onLeftChange(event.target.value)}>
+                        <option value="">Select run</option>
+                        {options.map(option => (
+                            <option key={option.distributedRunId} value={option.distributedRunId}>
+                                {option.distributedRunId}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+                <label className="field">
+                    <span>Right</span>
+                    <select value={rightId} onChange={event => onRightChange(event.target.value)}>
+                        <option value="">Select run</option>
+                        {options.map(option => (
+                            <option key={option.distributedRunId} value={option.distributedRunId}>
+                                {option.distributedRunId}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+            </div>
+            {!summary && <div className="empty-state">Choose two distributed runs to compare</div>}
+            {summary && (
+                <>
+                    <div className="distributed-monitor-metrics">
+                        <Metric label="Left failures" value={String(summary.failureDelta.leftCount)}/>
+                        <Metric label="Right failures" value={String(summary.failureDelta.rightCount)}/>
+                        <Metric label="Duration delta" value={formatSignedDuration(summary.timingDelta.durationDeltaMs)}/>
+                        <Metric label="Message delta" value={formatSignedNumber(summary.receivedMessageDelta.delta)}/>
+                    </div>
+                    <div className="distributed-compare-grid">
+                        <DistributedCompareList
+                            title="Recipes Left Only"
+                            values={summary.recipeDelta.leftOnly}
+                        />
+                        <DistributedCompareList
+                            title="Recipes Right Only"
+                            values={summary.recipeDelta.rightOnly}
+                        />
+                        <DistributedCompareList
+                            title="Profile Changes"
+                            values={summary.recipeDelta.changedProfiles}
+                        />
+                        <DistributedCompareList
+                            title="Participants Left Only"
+                            values={summary.participantDelta.leftOnly}
+                        />
+                        <DistributedCompareList
+                            title="Participants Right Only"
+                            values={summary.participantDelta.rightOnly}
+                        />
+                        <DistributedCompareList
+                            title="Failures Right Only"
+                            values={summary.failureDelta.rightOnly}
+                            tone="bad"
+                        />
+                        <DistributedCompareList
+                            title="Messages Left Only"
+                            values={summary.receivedMessageDelta.leftOnly}
+                        />
+                        <DistributedCompareList
+                            title="Messages Right Only"
+                            values={summary.receivedMessageDelta.rightOnly}
+                        />
+                    </div>
+                </>
+            )}
+        </section>
+    );
+}
+
+function DistributedCompareList({ title, values, tone = 'muted' }: {
+    title: string;
+    values: readonly string[];
+    tone?: string;
+}) {
+    return (
+        <section>
+            <h3>{title}</h3>
+            <div className="distributed-monitor-list compact">
+                {values.slice(0, 8).map(value => (
+                    <div className="distributed-monitor-row" key={value}>
+                        <span className={`pill ${tone}`}>{value}</span>
+                    </div>
+                ))}
+                {values.length === 0 && <div className="empty-state">No delta</div>}
+            </div>
+        </section>
+    );
+}
+
+function distributedProgressTone(status: DistributedRunProgressStatus): string {
+    if (status === 'ready' || status === 'passed') {
+        return 'good';
+    }
+    if (status === 'failed') {
+        return 'bad';
+    }
+    if (status === 'running' || status === 'queued') {
+        return 'active';
+    }
+    if (status === 'cancelled' || status === 'missing') {
+        return 'warn';
+    }
+    return 'muted';
+}
+
+function formatSignedDuration(ms: number | undefined): string {
+    if (ms === undefined) {
+        return '-';
+    }
+    return `${ms >= 0 ? '+' : ''}${formatDuration(ms)}`;
+}
+
+function formatSignedNumber(value: number): string {
+    return `${value >= 0 ? '+' : ''}${value}`;
+}
+
+function DistributedTargetRow({ row, selected, disabled, onToggle }: {
+    row: DistributedRecipeTargetRow;
+    selected: boolean;
+    disabled: boolean;
+    onToggle(agentId: string): void;
+}) {
+    return (
+        <label className={`distributed-target-row ${selected ? 'selected' : ''} ${disabled ? 'disabled' : ''}`}>
+            <input
+                type="checkbox"
+                checked={selected}
+                disabled={disabled}
+                onChange={() => onToggle(row.agentId)}
+                aria-label={`Select distributed target ${row.agentId}`}
+            />
+            <span>
+                <strong>{row.agentId}</strong>
+                <small>{row.principalId ?? 'no principal'} - heartbeat {formatTime(row.lastHeartbeatAtEpochMs)}</small>
+                <small>{row.applicationId ?? '-'}/{row.workspaceId ?? '-'} group {row.groupId ?? '-'}</small>
+            </span>
+            <span className={`pill ${row.targetable ? 'good' : row.status === 'offline' ? 'muted' : 'warn'}`}>
+                {row.status}
+            </span>
+            <small>{row.reason}</small>
+        </label>
+    );
+}
+
+function DistributedRunSummary({ run }: { run: ControlDistributedRunSnapshot }) {
+    return (
+        <div className="distributed-run-summary">
+            <Metric label="State" value={run.state} tone={distributedRecipeStateTone(run.state)}/>
+            <Metric label="Targets" value={String(run.targetAgentIds.length)}/>
+            <Metric label="Commands" value={String(run.commandLinks.length)}/>
+            <Metric label="Ready" value={String(run.rollup.summary.readyParticipants)} tone="active"/>
+            <Metric label="Passed" value={String(run.rollup.summary.passedRecipes)} tone="good"/>
+            <Metric label="Failures" value={String(run.rollup.summary.blockingFailures)} tone={run.rollup.summary.blockingFailures > 0 ? 'bad' : 'muted'}/>
+            {run.error && (
+                <div className="distributed-run-error">
+                    <strong>{run.error.code}</strong>
+                    <span>{run.error.message}</span>
+                </div>
+            )}
+            {run.rollup.failures.length > 0 && (
+                <pre className="mini-json">{json(run.rollup.failures.slice(0, 6))}</pre>
+            )}
+        </div>
+    );
+}
+
 function RunManagerAgentRow({ row, selected, onToggle }: {
     row: ControlRunAgentRow;
     selected: boolean;
@@ -5824,6 +7418,7 @@ function RunManagerAgentRow({ row, selected, onToggle }: {
             <span>
                 <strong>{row.agentId}</strong>
                 <small>{row.status} - heartbeat {formatTime(row.lastHeartbeatAtEpochMs)}</small>
+                {row.identitySummary && <small>{row.identitySummary}</small>}
             </span>
             <span className={`pill ${row.connected ? 'active' : 'muted'}`}>
                 {row.connected ? 'connected' : 'offline'}
@@ -11636,6 +13231,14 @@ function FlowBuilderPanel({ state, authSession, globalValues, busy, onSelectComm
     const runnerText = runnerScenario
         ? redactedJson(runnerScenario, state, authSession)
         : recipeText;
+    const recipeValidation = useMemo(
+        () => recipe ? validateSchemaAuthoringValue('recipe', recipe) : undefined,
+        [recipe],
+    );
+    const runnerValidation = useMemo(
+        () => runnerScenario ? validateSchemaAuthoringValue('runner-scenario', runnerScenario) : undefined,
+        [runnerScenario],
+    );
 
     const selectTemplate = (nextTemplateId: string): void => {
         const template = FLOW_BUILDER_TEMPLATES.find(entry => entry.templateId === nextTemplateId) ??
@@ -11862,6 +13465,9 @@ function FlowBuilderPanel({ state, authSession, globalValues, busy, onSelectComm
                         <span>{recipe?.recipeId ?? '-'}</span>
                     </div>
                     <pre className="json-block">{recipeText}</pre>
+                    {recipeValidation && (
+                        <SchemaAuthoringPanel validation={recipeValidation}/>
+                    )}
                 </section>
                 <section className="flow-builder-preview">
                     <div className="section-heading">
@@ -11869,6 +13475,9 @@ function FlowBuilderPanel({ state, authSession, globalValues, busy, onSelectComm
                         <span>black-box-runner</span>
                     </div>
                     <pre className="json-block">{runnerText}</pre>
+                    {runnerValidation && (
+                        <SchemaAuthoringPanel validation={runnerValidation}/>
+                    )}
                 </section>
             </div>
         </section>
@@ -12336,6 +13945,22 @@ export default function App() {
                             state={state}
                             bootstrap={bootstrap}
                             control={control}
+                        />
+                    )}
+                </section>
+                <section
+                    id="panel-distributed-recipes"
+                    className="workspace-grid tab-workspace distributed-recipes-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-distributed-recipes"
+                    hidden={activeTab !== 'distributed-recipes'}
+                >
+                    {activeMode === 'black-box-runner' && activeTab === 'distributed-recipes' && (
+                        <DistributedRecipesPanel
+                            state={state}
+                            bootstrap={bootstrap}
+                            control={control}
+                            globalValues={globalValues}
                         />
                     )}
                 </section>

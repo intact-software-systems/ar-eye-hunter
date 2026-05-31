@@ -105,6 +105,11 @@ The SPA currently provides:
 - Run Manager workspace backed by the control server for listing bounded run snapshots, selecting agent groups,
   enqueueing bulk commands, resetting runs, deleting runs, inspecting recent commands/results/events, validating
   exported run artifacts, and copying artifact bundles/events JSONL/results JSONL/failure bundles
+- Distributed Recipes workspace for selecting app-local browser-agent recipes, resolving control agents against the
+  current Global Context group, building distributed-run manifests, staging, starting, cancelling, refreshing, and
+  exporting distributed-run artifacts, including a configurable `rtc-realtime` recipe that sends game-style RTC position
+  frames at a target 20 Hz cadence, plus monitor/history/compare views for linked events, failures, ACK readiness,
+  per-agent/per-recipe progress, latency summaries, artifact validation, historical filters, and two-run deltas
 - full-stack QA coverage ownership in `src/full-stack-qa-matrix.ts`, with skip-gated Playwright specs mapped to auth,
   groups/clients, WebSocket, REST, recipes/artifacts, RTC, control, and resilience evidence
 - reload-safe UI persistence for selected tab, selected command, Manual Rallar drafts, Event Stream filters, and Rallar
@@ -127,8 +132,10 @@ The SPA currently provides:
   summaries for larger runs
 - a Provider Parity recipe fixture for connect, direct send, multicast metadata, broadcast metadata, health, close, and
   reset checks
-- a browser-safe re-export of the shared-test recipe catalog, artifact contract, coverage handoff, artifact parser, and
-  schema validators for upcoming command-center recipe/artifact UI work
+- a browser-safe re-export of the shared-test recipe catalog, artifact contract, coverage handoff, artifact parser,
+  schema validators, command capabilities, and generated command examples used by the command-center authoring UI
+- schema-driven authoring feedback in Local Workbench, Manual Rallar exports, Run Manager command JSON, Flow Builder
+  exports, and Distributed Recipes manifests/catalog entries
 - `Shared Test` workspace for app-local recipe discovery, shared-test fixture catalog browsing, copyable runner
   commands, coverage ownership, and validated runner artifact bundle import
 - a gated live three-browser full-stack baseline that uses real `browser-rallar` agents to create/join an isolated

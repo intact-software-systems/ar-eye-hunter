@@ -1,3 +1,8 @@
+import {
+    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
+    RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
+} from '@shared-test/rallar-bb-test/schema.ts';
+
 type JsonRecord = Record<string, unknown>;
 
 const CONTROL_OPENAPI_SPEC: JsonRecord = {
@@ -18,6 +23,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
         { name: 'Docs' },
         { name: 'Health' },
         { name: 'Runs' },
+        { name: 'Distributed Runs' },
         { name: 'Commands' },
         { name: 'Reports' },
         { name: 'Tokens' },
@@ -62,6 +68,182 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                             },
                         },
                     },
+                },
+            },
+        },
+        '/distributed-runs': {
+            get: {
+                tags: ['Distributed Runs'],
+                summary: 'List distributed run snapshots',
+                responses: {
+                    '200': {
+                        description: 'Distributed runs known by the control server.',
+                        content: {
+                            'application/json': {
+                                schema: { $ref: '#/components/schemas/DistributedRunListResponse' },
+                            },
+                        },
+                    },
+                },
+            },
+            post: {
+                tags: ['Distributed Runs'],
+                summary: 'Create a distributed recipe run',
+                description:
+                    'Creates distributed orchestration metadata over a lower-level control run. Requires the admin token when configured.',
+                security: [{ bearerAuth: [] }, { queryToken: [] }],
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: {
+                                oneOf: [
+                                    { $ref: '#/components/schemas/DistributedRunManifest' },
+                                    {
+                                        type: 'object',
+                                        required: ['manifest'],
+                                        properties: {
+                                            manifest: { $ref: '#/components/schemas/DistributedRunManifest' },
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                },
+                responses: {
+                    '201': {
+                        description: 'Distributed run created.',
+                        content: {
+                            'application/json': {
+                                schema: { $ref: '#/components/schemas/ControlDistributedRunSnapshot' },
+                            },
+                        },
+                    },
+                    '400': { $ref: '#/components/responses/BadRequest' },
+                    '401': { $ref: '#/components/responses/Unauthorized' },
+                },
+            },
+        },
+        '/distributed-runs/{distributedRunId}': {
+            get: {
+                tags: ['Distributed Runs'],
+                summary: 'Read one distributed run snapshot',
+                parameters: [{ $ref: '#/components/parameters/DistributedRunId' }],
+                responses: {
+                    '200': {
+                        description: 'Distributed run snapshot.',
+                        content: {
+                            'application/json': {
+                                schema: { $ref: '#/components/schemas/ControlDistributedRunSnapshot' },
+                            },
+                        },
+                    },
+                    '404': { $ref: '#/components/responses/NotFound' },
+                },
+            },
+        },
+        '/distributed-runs/{distributedRunId}/stage': {
+            post: {
+                tags: ['Distributed Runs'],
+                summary: 'Stage a distributed run',
+                description:
+                    'Queues recipe-load or preflight commands for target agents. Command results become the explicit readiness ACKs.',
+                security: [{ bearerAuth: [] }, { queryToken: [] }],
+                parameters: [{ $ref: '#/components/parameters/DistributedRunId' }],
+                responses: {
+                    '202': {
+                        description: 'Staging commands queued.',
+                        content: {
+                            'application/json': {
+                                schema: { $ref: '#/components/schemas/ControlDistributedRunSnapshot' },
+                            },
+                        },
+                    },
+                    '400': { $ref: '#/components/responses/BadRequest' },
+                    '401': { $ref: '#/components/responses/Unauthorized' },
+                    '404': { $ref: '#/components/responses/NotFound' },
+                    '409': { $ref: '#/components/responses/Conflict' },
+                    '429': { $ref: '#/components/responses/TooManyRequests' },
+                },
+            },
+        },
+        '/distributed-runs/{distributedRunId}/start': {
+            post: {
+                tags: ['Distributed Runs'],
+                summary: 'Start a distributed run',
+                description:
+                    'Queues recipe-run commands for target agents. Scheduled manifests pass the start deadline through to the command envelopes.',
+                security: [{ bearerAuth: [] }, { queryToken: [] }],
+                parameters: [{ $ref: '#/components/parameters/DistributedRunId' }],
+                responses: {
+                    '202': {
+                        description: 'Start commands queued.',
+                        content: {
+                            'application/json': {
+                                schema: { $ref: '#/components/schemas/ControlDistributedRunSnapshot' },
+                            },
+                        },
+                    },
+                    '400': { $ref: '#/components/responses/BadRequest' },
+                    '401': { $ref: '#/components/responses/Unauthorized' },
+                    '404': { $ref: '#/components/responses/NotFound' },
+                    '409': { $ref: '#/components/responses/Conflict' },
+                    '429': { $ref: '#/components/responses/TooManyRequests' },
+                },
+            },
+        },
+        '/distributed-runs/{distributedRunId}/cancel': {
+            post: {
+                tags: ['Distributed Runs'],
+                summary: 'Cancel a distributed run',
+                description: 'Marks the distributed run cancelled and queues recipe-cancel commands for target agents.',
+                security: [{ bearerAuth: [] }, { queryToken: [] }],
+                parameters: [{ $ref: '#/components/parameters/DistributedRunId' }],
+                requestBody: {
+                    required: false,
+                    content: {
+                        'application/json': {
+                            schema: {
+                                type: 'object',
+                                properties: {
+                                    reason: { type: 'string' },
+                                },
+                            },
+                        },
+                    },
+                },
+                responses: {
+                    '202': {
+                        description: 'Distributed run cancelled.',
+                        content: {
+                            'application/json': {
+                                schema: { $ref: '#/components/schemas/ControlDistributedRunSnapshot' },
+                            },
+                        },
+                    },
+                    '400': { $ref: '#/components/responses/BadRequest' },
+                    '401': { $ref: '#/components/responses/Unauthorized' },
+                    '404': { $ref: '#/components/responses/NotFound' },
+                    '429': { $ref: '#/components/responses/TooManyRequests' },
+                },
+            },
+        },
+        '/distributed-runs/{distributedRunId}/artifacts': {
+            get: {
+                tags: ['Distributed Runs'],
+                summary: 'Export a distributed run artifact bundle',
+                parameters: [{ $ref: '#/components/parameters/DistributedRunId' }],
+                responses: {
+                    '200': {
+                        description: 'Distributed run artifact bundle.',
+                        content: {
+                            'application/json': {
+                                schema: { $ref: '#/components/schemas/ControlDistributedRunArtifactBundle' },
+                            },
+                        },
+                    },
+                    '404': { $ref: '#/components/responses/NotFound' },
                 },
             },
         },
@@ -487,6 +669,12 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                 required: true,
                 schema: { type: 'string' },
             },
+            DistributedRunId: {
+                name: 'distributedRunId',
+                in: 'path',
+                required: true,
+                schema: { type: 'string' },
+            },
             ArtifactFileName: {
                 name: 'fileName',
                 in: 'path',
@@ -572,6 +760,14 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                     },
                 },
             },
+            Conflict: {
+                description: 'Resource state does not allow the requested action.',
+                content: {
+                    'application/json': {
+                        schema: { $ref: '#/components/schemas/ErrorResponse' },
+                    },
+                },
+            },
             TooManyRequests: {
                 description: 'Command rate limit exceeded.',
                 content: {
@@ -612,6 +808,93 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                     runs: {
                         type: 'array',
                         items: { $ref: '#/components/schemas/ControlRunSnapshot' },
+                    },
+                    distributedRuns: {
+                        type: 'array',
+                        items: { $ref: '#/components/schemas/ControlDistributedRunSnapshot' },
+                    },
+                },
+            },
+            DistributedRunListResponse: {
+                type: 'object',
+                required: ['distributedRuns'],
+                properties: {
+                    distributedRuns: {
+                        type: 'array',
+                        items: { $ref: '#/components/schemas/ControlDistributedRunSnapshot' },
+                    },
+                },
+            },
+            DistributedRunManifest: RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
+            ControlDistributedRunSnapshot: {
+                type: 'object',
+                required: [
+                    'distributedRunId',
+                    'controlRunId',
+                    'manifest',
+                    'state',
+                    'createdAtEpochMs',
+                    'updatedAtEpochMs',
+                    'targetAgentIds',
+                    'commandLinks',
+                    'rollup',
+                ],
+                properties: {
+                    distributedRunId: { type: 'string' },
+                    controlRunId: { type: 'string' },
+                    manifest: { $ref: '#/components/schemas/DistributedRunManifest' },
+                    state: {
+                        type: 'string',
+                        enum: [
+                            'draft',
+                            'resolving-targets',
+                            'staging',
+                            'waiting-for-ack',
+                            'ready',
+                            'running',
+                            'passed',
+                            'failed',
+                            'cancelled',
+                            'timed-out',
+                        ],
+                    },
+                    createdAtEpochMs: { type: 'integer' },
+                    updatedAtEpochMs: { type: 'integer' },
+                    stagedAtEpochMs: { type: 'integer' },
+                    startedAtEpochMs: { type: 'integer' },
+                    cancelledAtEpochMs: { type: 'integer' },
+                    completedAtEpochMs: { type: 'integer' },
+                    targetAgentIds: { type: 'array', items: { type: 'string' } },
+                    commandLinks: {
+                        type: 'array',
+                        items: { $ref: '#/components/schemas/ControlDistributedRunCommandLink' },
+                    },
+                    rollup: { $ref: '#/components/schemas/ControlDistributedRunRollup' },
+                    error: { type: 'object', additionalProperties: true },
+                },
+            },
+            ControlDistributedRunCommandLink: {
+                type: 'object',
+                required: ['phase', 'agentId', 'commandId', 'queuedAtEpochMs'],
+                properties: {
+                    phase: { type: 'string', enum: ['stage', 'start', 'cancel'] },
+                    agentId: { type: 'string' },
+                    commandId: { type: 'string' },
+                    recipeId: { type: 'string' },
+                    role: { type: 'string' },
+                    queuedAtEpochMs: { type: 'integer' },
+                },
+            },
+            ControlDistributedRunRollup: {
+                type: 'object',
+                required: ['state', 'ok', 'summary', 'failures'],
+                properties: {
+                    state: { type: 'string' },
+                    ok: { type: 'boolean' },
+                    summary: { type: 'object', additionalProperties: true },
+                    failures: {
+                        type: 'array',
+                        items: { type: 'object', additionalProperties: true },
                     },
                 },
             },
@@ -685,6 +968,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                     lastSeenAtEpochMs: { type: 'integer' },
                     lastHeartbeatAtEpochMs: { type: 'integer' },
                     status: { type: 'string' },
+                    identity: { $ref: '#/components/schemas/ControlAgentIdentity' },
                     connectionSequence: { type: 'integer' },
                     reconnectCount: { type: 'integer' },
                     receivedResultCount: { type: 'integer' },
@@ -692,6 +976,26 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                     completedCommandIds: { type: 'array', items: { type: 'string' } },
                     resumeCompletedCommandIds: { type: 'array', items: { type: 'string' } },
                 },
+            },
+            ControlAgentIdentity: {
+                type: 'object',
+                description:
+                    'Latest Rallar identity metadata reported by a browser control agent. Used for distributed recipe target resolution.',
+                properties: {
+                    principalId: { type: 'string' },
+                    clientId: { type: 'string' },
+                    username: { type: 'string' },
+                    sessionId: { type: 'string' },
+                    clientInstanceId: { type: 'string' },
+                    applicationId: { type: 'string' },
+                    workspaceId: { type: 'string' },
+                    groupId: { type: 'string' },
+                    providerMode: { type: 'string' },
+                    browserLabel: { type: 'string' },
+                    sessionLabel: { type: 'string' },
+                    updatedAtEpochMs: { type: 'integer' },
+                },
+                additionalProperties: false,
             },
             ControlQueuedCommandSnapshot: {
                 type: 'object',
@@ -798,6 +1102,24 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                     },
                 },
             },
+            ControlDistributedRunArtifactBundle: {
+                type: 'object',
+                required: ['artifactSchemaVersion', 'distributedRunId', 'generatedAtEpochMs', 'files'],
+                properties: {
+                    artifactSchemaVersion: { type: 'integer', enum: [1] },
+                    distributedRunId: { type: 'string' },
+                    generatedAtEpochMs: { type: 'integer' },
+                    files: {
+                        type: 'object',
+                        required: ['distributed-run.json', 'manifest.json', 'control-run.json'],
+                        properties: {
+                            'distributed-run.json': { type: 'string' },
+                            'manifest.json': { type: 'string' },
+                            'control-run.json': { type: 'string' },
+                        },
+                    },
+                },
+            },
             ControlRunFailureBundle: {
                 type: 'object',
                 required: ['summary', 'failures', 'outputs'],
@@ -862,6 +1184,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                     agentId: { type: 'string' },
                     atEpochMs: { type: 'integer' },
                     status: { type: 'string' },
+                    identity: { $ref: '#/components/schemas/ControlAgentIdentity' },
                     lastCommandId: { type: 'string' },
                     lastEventAtEpochMs: { type: 'integer' },
                 },
@@ -887,59 +1210,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                     },
                 },
             },
-            RallarBlackBoxTestCommand: {
-                type: 'object',
-                required: ['kind'],
-                properties: {
-                    kind: {
-                        type: 'string',
-                        enum: [
-                            'configure',
-                            'recipe.load',
-                            'recipe.run',
-                            'recipe.cancel',
-                            'rtc.connect',
-                            'rtc.send',
-                            'ws.open',
-                            'ws.send',
-                            'ws.close',
-                            'http.request',
-                            'health',
-                            'stats',
-                            'close',
-                            'reset',
-                        ],
-                    },
-                    commandId: { type: 'string' },
-                    label: { type: 'string' },
-                    deadlineEpochMs: { type: 'integer' },
-                    timeoutMs: { type: 'integer' },
-                    metadata: { type: 'object', additionalProperties: true },
-                    config: { type: 'object', additionalProperties: true },
-                    connection: { type: 'string' },
-                    actor: { type: 'string' },
-                    roomId: { type: 'string' },
-                    transport: { type: 'string', enum: ['realtime', 'messages.rtc', 'ws', 'http'] },
-                    rallar: { type: 'object', additionalProperties: true },
-                    send: {},
-                    expect: {},
-                    url: { type: 'string' },
-                    protocols: {
-                        oneOf: [
-                            { type: 'string' },
-                            { type: 'array', items: { type: 'string' } },
-                        ],
-                    },
-                    headers: { type: 'object', additionalProperties: { type: 'string' } },
-                    data: {},
-                    code: { type: 'integer' },
-                    reason: { type: 'string' },
-                    request: { type: 'object', additionalProperties: true },
-                    response: { type: 'object', additionalProperties: true },
-                    recipe: { type: 'object', additionalProperties: true },
-                },
-                additionalProperties: true,
-            },
+            RallarBlackBoxTestCommand: RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
         },
     },
 };

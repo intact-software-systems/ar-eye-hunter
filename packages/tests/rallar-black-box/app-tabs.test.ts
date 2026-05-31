@@ -31,6 +31,7 @@ describe('rallar-black-box app tabs', () => {
         expect(appTabFromValue('server')).toBe('rallar-server');
         expect(appTabFromValue('flow')).toBe('flow-builder');
         expect(appTabFromValue('runs')).toBe('run-manager');
+        expect(appTabFromValue('distributed')).toBe('distributed-recipes');
         expect(appTabFromValue('catalog')).toBe('shared-test');
         expect(appTabFromValue('artifacts')).toBe('shared-test');
     });
@@ -60,6 +61,7 @@ describe('rallar-black-box app tabs', () => {
         expect(appModeForTab('rallar-server')).toBe('rallar');
         expect(appModeForTab('shared-test')).toBe('black-box-runner');
         expect(appModeForTab('run-manager')).toBe('black-box-runner');
+        expect(appModeForTab('distributed-recipes')).toBe('black-box-runner');
         expect(defaultAppTabForMode('rallar')).toBe('quick-test');
         expect(defaultAppTabForMode('black-box-runner')).toBe('shared-test');
         expect(appTabInMode('websocket', 'rallar')).toBe(true);
@@ -86,6 +88,7 @@ describe('rallar-black-box app tabs', () => {
             'local-workbench',
             'flow-builder',
             'run-manager',
+            'distributed-recipes',
             'event-stream',
         ]);
     });
@@ -112,7 +115,8 @@ describe('rallar-black-box app tabs', () => {
         expect(nextAppTab('manual-rallar', -1)).toBe('shared-test');
         expect(nextAppTab('local-workbench', 1)).toBe('flow-builder');
         expect(nextAppTab('flow-builder', 1)).toBe('run-manager');
-        expect(nextAppTab('run-manager', 1)).toBe('event-stream');
+        expect(nextAppTab('run-manager', 1)).toBe('distributed-recipes');
+        expect(nextAppTab('distributed-recipes', 1)).toBe('event-stream');
         expect(nextAppTab('event-stream', 1, 'black-box-runner')).toBe('shared-test');
         expect(nextAppTab('shared-test', -1)).toBe('event-stream');
     });

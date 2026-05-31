@@ -4,6 +4,7 @@ import type {
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestResult,
 } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxControlAgentIdentity } from '@shared-test/rallar-bb-test/distributed-run.ts';
 
 export const RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION = 1;
 
@@ -24,6 +25,7 @@ export type ControlRegisterEnvelope = Readonly<{
     agentId: string;
     token?: string;
     atEpochMs: number;
+    identity?: RallarBlackBoxControlAgentIdentity;
     resume: Readonly<{
         completedCommandIds: readonly string[];
     }>;
@@ -36,6 +38,7 @@ export type ControlHeartbeatEnvelope = Readonly<{
     agentId: string;
     atEpochMs: number;
     status: string;
+    identity?: RallarBlackBoxControlAgentIdentity;
     lastCommandId?: string;
     lastEventAtEpochMs?: number;
 }>;
@@ -335,11 +338,21 @@ function validateWsCommand(command: Record<string, unknown>): ControlCommandVali
 }
 
 function validateRtcCommand(command: Record<string, unknown>): ControlCommandValidationResult {
-    for (const field of ['connection', 'actor', 'roomId']) {
+    for (const field of ['connection', 'actor', 'roomId', 'applicationId', 'workspaceId']) {
         const result = validateStringField(command, field, 'rtc');
         if (!result.ok) {
             return result;
         }
+    }
+    for (const field of ['scope', 'roomRef']) {
+        const result = validateObjectField(command, field, 'rtc');
+        if (!result.ok) {
+            return result;
+        }
+    }
+    const minSnapshotVersion = validateNumberField(command, 'minSnapshotVersion', 'rtc');
+    if (!minSnapshotVersion.ok) {
+        return minSnapshotVersion;
     }
     if (
         command.transport !== undefined &&
@@ -349,6 +362,39 @@ function validateRtcCommand(command: Record<string, unknown>): ControlCommandVal
         return fail('rtc.transport must be realtime or messages.rtc.');
     }
     return validateObjectField(command, 'rallar', 'rtc');
+}
+
+function optionalString(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim().length > 0
+        ? value
+        : undefined;
+}
+
+function parseControlAgentIdentity(value: unknown): RallarBlackBoxControlAgentIdentity | undefined {
+    if (!isRecord(value)) {
+        return undefined;
+    }
+
+    const identity: RallarBlackBoxControlAgentIdentity = {
+        principalId: optionalString(value.principalId),
+        clientId: optionalString(value.clientId),
+        username: optionalString(value.username),
+        sessionId: optionalString(value.sessionId),
+        clientInstanceId: optionalString(value.clientInstanceId),
+        applicationId: optionalString(value.applicationId),
+        workspaceId: optionalString(value.workspaceId),
+        groupId: optionalString(value.groupId),
+        providerMode: optionalString(value.providerMode),
+        browserLabel: optionalString(value.browserLabel),
+        sessionLabel: optionalString(value.sessionLabel),
+        updatedAtEpochMs: typeof value.updatedAtEpochMs === 'number'
+            ? value.updatedAtEpochMs
+            : undefined,
+    };
+
+    return Object.values(identity).some(entry => entry !== undefined)
+        ? identity
+        : undefined;
 }
 
 export function validateRallarBlackBoxTestCommand(
@@ -382,10 +428,41 @@ export function validateRallarBlackBoxTestCommand(
             result = validateKeys(command, [...base, 'reason'], 'recipe.cancel');
             return !result.ok ? result : validateStringField(command, 'reason', 'recipe.cancel');
         case 'rtc.connect':
-            result = validateKeys(command, [...base, 'connection', 'actor', 'roomId', 'transport', 'rallar'], 'rtc.connect');
+            result = validateKeys(
+                command,
+                [
+                    ...base,
+                    'connection',
+                    'actor',
+                    'roomId',
+                    'applicationId',
+                    'workspaceId',
+                    'scope',
+                    'roomRef',
+                    'minSnapshotVersion',
+                    'transport',
+                    'rallar',
+                ],
+                'rtc.connect',
+            );
             return !result.ok ? result : validateRtcCommand(command);
         case 'rtc.send':
-            result = validateKeys(command, [...base, 'connection', 'send', 'expect', 'transport'], 'rtc.send');
+            result = validateKeys(
+                command,
+                [
+                    ...base,
+                    'connection',
+                    'send',
+                    'expect',
+                    'applicationId',
+                    'workspaceId',
+                    'scope',
+                    'roomRef',
+                    'minSnapshotVersion',
+                    'transport',
+                ],
+                'rtc.send',
+            );
             return !result.ok ? result : validateRtcCommand(command);
         case 'ws.open':
             result = validateKeys(command, [...base, 'connection', 'url', 'protocols', 'headers'], 'ws.open');
@@ -533,6 +610,7 @@ export function parseControlClientMessage(data: unknown): ParseControlClientMess
                     agentId: parsed.agentId,
                     token: typeof parsed.token === 'string' ? parsed.token : undefined,
                     atEpochMs: parsed.atEpochMs,
+                    identity: parseControlAgentIdentity(parsed.identity),
                     resume: {
                         completedCommandIds: parsed.resume.completedCommandIds,
                     },
@@ -554,6 +632,7 @@ export function parseControlClientMessage(data: unknown): ParseControlClientMess
                     agentId: parsed.agentId,
                     atEpochMs: parsed.atEpochMs,
                     status: parsed.status,
+                    identity: parseControlAgentIdentity(parsed.identity),
                     lastCommandId: typeof parsed.lastCommandId === 'string'
                         ? parsed.lastCommandId
                         : undefined,

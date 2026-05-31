@@ -12,6 +12,32 @@ export {
     validateBlackBoxRunnerRecipeCatalogEntryFixture as validateRallarBlackBoxSharedTestRecipeCatalogEntryFixture,
 } from '@shared-test/black-box-runner/artifact-reader.ts';
 
+export {
+    BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA as RALLAR_BLACK_BOX_SHARED_TEST_RUNNER_SCENARIO_SCHEMA,
+    validateBlackBoxRunnerScenarioRecipe as validateRallarBlackBoxSharedTestRunnerScenario,
+} from '@shared-test/black-box-runner/schema.ts';
+
+export {
+    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES,
+    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_TERMINAL_STATES,
+    RALLAR_BLACK_BOX_DISTRIBUTED_START_MODES,
+    RALLAR_BLACK_BOX_DISTRIBUTED_TARGET_POLICY_MODES,
+    isDistributedRunTerminalState,
+    rollupDistributedRunResult,
+    validateDistributedRunManifestContract,
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
+
+export {
+    RALLAR_BLACK_BOX_COMMAND_CAPABILITIES,
+    RALLAR_BLACK_BOX_CONTROL_COMMAND_ENVELOPE_SCHEMA,
+    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
+    RALLAR_BLACK_BOX_SCHEMA_CATALOG,
+    RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
+    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
+    formatJsonSchemaValidationErrors,
+    validateJsonSchema,
+} from '@shared-test/rallar-bb-test/schema.ts';
+
 export type {
     BlackBoxRunnerArtifactBundleContract as RallarBlackBoxSharedTestArtifactContract,
     BlackBoxRunnerCoverageHandoff as RallarBlackBoxSharedTestCoverageHandoff,

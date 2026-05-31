@@ -12,6 +12,8 @@ export const RALLAR_BLACK_BOX_CLIENT_DEFAULTS = {
     agentId: 'visible-agent-local',
     environment: 'local',
     apiBaseUrl: 'https://api.example.invalid',
+    applicationId: 'rallar-black-box',
+    workspaceId: 'default',
     actor: 'alice',
     sessionId: 'visible-session-alice',
     roomId: 'rallar-black-box-room',

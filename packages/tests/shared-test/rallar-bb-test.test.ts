@@ -441,6 +441,38 @@ describe('rallar-bb-test', () => {
         });
     });
 
+    it('honors local browser command delays before live adapter execution', async () => {
+        const sendCallEpochMs: number[] = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                connect: async () => ({ connected: true }),
+                send: async () => {
+                    sendCallEpochMs.push(Date.now());
+                    return { sent: true };
+                },
+                close: async () => ({ closed: true }),
+                health: async () => ({ connected: true }),
+            },
+        });
+
+        const startedAtEpochMs = Date.now();
+        const result = await runtime.execute({
+            kind: 'rtc.send',
+            commandId: 'delayed-send',
+            metadata: {
+                localDelayMs: 25,
+            },
+            send: {
+                data: {
+                    text: 'delayed',
+                },
+            },
+        });
+
+        expect(result.ok).toBe(true);
+        expect(sendCallEpochMs[0] - startedAtEpochMs).toBeGreaterThanOrEqual(20);
+    });
+
     it('executes browser-native HTTP requests through the adapter', async () => {
         const fetchCalls: unknown[] = [];
         const runtime = createRallarBlackBoxBrowserTestRuntime({

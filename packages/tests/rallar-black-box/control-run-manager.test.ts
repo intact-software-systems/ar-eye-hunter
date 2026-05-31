@@ -4,12 +4,19 @@ import {
     controlRunAgentRows,
     controlRunCommandRows,
     controlRunManagerStats,
+    createDistributedRun,
     enqueueBulkControlCommand,
+    fetchDistributedRun,
+    fetchDistributedRunArtifactBundle,
+    fetchDistributedRuns,
     fetchControlRunArtifactBundle,
     fetchControlRunFailureBundle,
     fetchControlRunJsonl,
     fetchControlRunSnapshot,
     fetchControlServerSnapshot,
+    stageDistributedRun,
+    startDistributedRun,
+    cancelDistributedRun,
     type ControlRunSnapshot,
     type ControlServerSnapshot,
 } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
@@ -37,6 +44,13 @@ const runSnapshot: ControlRunSnapshot = {
             connected: true,
             lastHeartbeatAtEpochMs: 1_900,
             status: 'running',
+            identity: {
+                principalId: 'alice',
+                sessionId: 'session-1',
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+                groupId: 'bb-group',
+            },
             connectionSequence: 2,
             reconnectCount: 1,
             receivedResultCount: 1,
@@ -118,6 +132,8 @@ describe('rallar-black-box control run manager', () => {
             eventCount: 1,
         });
         expect(controlRunAgentRows(runSnapshot).map(row => row.agentId)).toEqual(['agent-a', 'agent-b']);
+        expect(controlRunAgentRows(runSnapshot)[0].identitySummary).toContain('alice');
+        expect(controlRunAgentRows(runSnapshot)[0].identitySummary).toContain('group bb-group');
         expect(controlRunCommandRows(runSnapshot).map(row => [row.commandId, row.status])).toEqual([
             ['cmd-2', 'queued'],
             ['cmd-1', 'completed'],
@@ -211,5 +227,126 @@ describe('rallar-black-box control run manager', () => {
         expect(artifact.files['report.json']).toBe('{}');
         expect(eventsJsonl).toContain('step-result');
         expect(failureBundle).toEqual({ failures: [] });
+    });
+
+    it('calls distributed-run lifecycle endpoints', async () => {
+        const requests: Array<{ url: string; init?: RequestInit }> = [];
+        const distributedRun = {
+            distributedRunId: 'dist-1',
+            controlRunId: 'run-1',
+            manifest: {
+                schemaVersion: 1,
+                distributedRunId: 'dist-1',
+                controlRunId: 'run-1',
+                group: {
+                    applicationId: 'rallar-server',
+                    workspaceId: 'default',
+                    groupId: 'bb-group',
+                },
+                recipes: [
+                    {
+                        recipeId: 'health-only',
+                        recipe: {
+                            recipeId: 'health-only',
+                            commands: [{ kind: 'health' }],
+                        },
+                    },
+                ],
+                targetPolicy: {
+                    mode: 'selected-agents',
+                    agentIds: ['agent-a'],
+                },
+            },
+            state: 'draft',
+            createdAtEpochMs: 1_000,
+            updatedAtEpochMs: 1_000,
+            targetAgentIds: ['agent-a'],
+            commandLinks: [],
+            rollup: {
+                state: 'draft',
+                ok: false,
+                summary: {
+                    participants: 1,
+                    requiredParticipants: 1,
+                    readyParticipants: 0,
+                    passedParticipants: 0,
+                    failedParticipants: 0,
+                    recipes: 0,
+                    requiredRecipes: 0,
+                    passedRecipes: 0,
+                    failedRecipes: 0,
+                    blockingFailures: 0,
+                },
+                failures: [],
+            },
+        };
+        const fetchFn = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+            const url = String(input);
+            requests.push({ url, init });
+            if (url.endsWith('/distributed-runs')) {
+                if (init?.method === 'POST') {
+                    return new Response(JSON.stringify(distributedRun), { status: 201 });
+                }
+                return new Response(JSON.stringify({ distributedRuns: [distributedRun] }), { status: 200 });
+            }
+            if (url.endsWith('/stage') || url.endsWith('/start') || url.endsWith('/cancel')) {
+                return new Response(JSON.stringify({ ...distributedRun, state: 'running' }), { status: 202 });
+            }
+            if (url.endsWith('/artifacts')) {
+                return new Response(JSON.stringify({
+                    artifactSchemaVersion: 1,
+                    distributedRunId: 'dist-1',
+                    generatedAtEpochMs: 2_000,
+                    files: {
+                        'distributed-run.json': '{}',
+                        'manifest.json': '{}',
+                        'control-run.json': '{}',
+                    },
+                }), { status: 200 });
+            }
+            return new Response(JSON.stringify(distributedRun), { status: 200 });
+        };
+
+        await fetchDistributedRuns({ baseUrl: 'http://control.test', token: 'admin-token', fetchFn });
+        await fetchDistributedRun({
+            baseUrl: 'http://control.test',
+            distributedRunId: 'dist-1',
+            fetchFn,
+        });
+        await createDistributedRun({
+            baseUrl: 'http://control.test',
+            token: 'admin-token',
+            manifest: distributedRun.manifest,
+            fetchFn,
+        });
+        await stageDistributedRun({ baseUrl: 'http://control.test', distributedRunId: 'dist-1', fetchFn });
+        await startDistributedRun({ baseUrl: 'http://control.test', distributedRunId: 'dist-1', fetchFn });
+        await cancelDistributedRun({
+            baseUrl: 'http://control.test',
+            distributedRunId: 'dist-1',
+            reason: 'stop',
+            fetchFn,
+        });
+        const artifact = await fetchDistributedRunArtifactBundle({
+            baseUrl: 'http://control.test',
+            distributedRunId: 'dist-1',
+            fetchFn,
+        });
+
+        expect(requests.map(request => request.url)).toEqual([
+            'http://control.test/distributed-runs',
+            'http://control.test/distributed-runs/dist-1',
+            'http://control.test/distributed-runs',
+            'http://control.test/distributed-runs/dist-1/stage',
+            'http://control.test/distributed-runs/dist-1/start',
+            'http://control.test/distributed-runs/dist-1/cancel',
+            'http://control.test/distributed-runs/dist-1/artifacts',
+        ]);
+        expect(JSON.parse(String(requests[2].init?.body))).toEqual({
+            manifest: distributedRun.manifest,
+        });
+        expect(JSON.parse(String(requests[5].init?.body))).toEqual({ reason: 'stop' });
+        expect((requests[0].init?.headers as Record<string, string>).Authorization).toBe('Bearer admin-token');
+        expect(artifact.files['manifest.json']).toBe('{}');
     });
 });

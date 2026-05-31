@@ -203,7 +203,7 @@ describe('rallar-black-box manual workbench helpers', () => {
             commandId: 'manual-group-create-21',
             request: {
                 method: 'POST',
-                path: '/api/state/apps/ar-eye-hunter/workspaces/default/groups',
+                path: `/api/state/apps/${DEFAULT_MANUAL_WORKBENCH_VALUES.applicationId}/workspaces/default/groups`,
                 body: {
                     groupId: 'room-from-manual',
                     kind: 'room',

@@ -21,6 +21,15 @@ import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandKind,
 } from '@shared-test/rallar-bb-test/types.ts';
+import {
+    validateDistributedRunManifestContract,
+    type RallarBlackBoxDistributedRunManifest,
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
+import {
+    formatJsonSchemaValidationErrors,
+    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
+    validateJsonSchema,
+} from '@shared-test/rallar-bb-test/schema.ts';
 import { handleSwaggerRoute, swaggerFallbackResponse } from './routes/swagger-routes.ts';
 
 const DEFAULT_PORT = 5180;
@@ -85,6 +94,53 @@ Deno.serve({ port }, async (request) => {
             app: 'rallar-black-box-control-server',
             protocolVersion: 1,
         });
+    }
+
+    if (isRead && url.pathname === '/distributed-runs') {
+        return jsonResponse({
+            distributedRuns: controlService.listDistributedRuns(),
+        });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/distributed-runs') {
+        if (!authorizeAdminRequest(request, url)) {
+            return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
+        }
+        return await createDistributedRun(request);
+    }
+
+    const distributedRunMatch = url.pathname.match(/^\/distributed-runs\/([^/]+)$/);
+    if (isRead && distributedRunMatch) {
+        const distributedRunId = decodeURIComponent(distributedRunMatch[1]);
+        const distributedRun = controlService.snapshotDistributedRun(distributedRunId);
+        return distributedRun
+            ? jsonResponse(distributedRun)
+            : jsonResponse({ error: 'Distributed run not found.' }, 404);
+    }
+
+    const distributedRunActionMatch = url.pathname.match(
+        /^\/distributed-runs\/([^/]+)\/(stage|start|cancel)$/,
+    );
+    if (request.method === 'POST' && distributedRunActionMatch) {
+        if (!authorizeAdminRequest(request, url)) {
+            return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
+        }
+        return await mutateDistributedRun(
+            request,
+            decodeURIComponent(distributedRunActionMatch[1]),
+            distributedRunActionMatch[2] as 'stage' | 'start' | 'cancel',
+        );
+    }
+
+    const distributedRunArtifactsMatch = url.pathname.match(
+        /^\/distributed-runs\/([^/]+)\/artifacts$/,
+    );
+    if (isRead && distributedRunArtifactsMatch) {
+        const distributedRunId = decodeURIComponent(distributedRunArtifactsMatch[1]);
+        const bundle = controlService.distributedRunArtifactBundle(distributedRunId);
+        return bundle
+            ? jsonResponse(bundle)
+            : jsonResponse({ error: 'Distributed run not found.' }, 404);
     }
 
     if (isRead && url.pathname === '/runs') {
@@ -284,6 +340,98 @@ function handleControlSocket(request: Request): Response {
     };
 
     return response;
+}
+
+async function createDistributedRun(request: Request): Promise<Response> {
+    let manifest: RallarBlackBoxDistributedRunManifest;
+    try {
+        manifest = await readDistributedRunManifest(request);
+    } catch (error) {
+        return jsonResponse({ error: errorMessage(error) }, 400);
+    }
+
+    try {
+        const distributedRun = controlService.createDistributedRun(manifest);
+        persistControlSnapshot();
+        return jsonResponse(distributedRun, 201);
+    } catch (error) {
+        return distributedRunErrorResponse(error);
+    }
+}
+
+async function mutateDistributedRun(
+    request: Request,
+    distributedRunId: string,
+    action: 'stage' | 'start' | 'cancel',
+): Promise<Response> {
+    let reason: string | undefined;
+    if (action === 'cancel') {
+        try {
+            const body = await readJsonBody(request, true);
+            if (isRecord(body) && typeof body.reason === 'string' && body.reason.trim().length > 0) {
+                reason = body.reason.trim();
+            }
+        } catch (error) {
+            return jsonResponse({ error: errorMessage(error) }, 400);
+        }
+    }
+
+    try {
+        const distributedRun = action === 'stage'
+            ? controlService.stageDistributedRun(distributedRunId)
+            : action === 'start'
+            ? controlService.startDistributedRun(distributedRunId)
+            : controlService.cancelDistributedRun(distributedRunId, reason);
+        distributedRun.targetAgentIds.forEach(agentId =>
+            sendDispatchableCommands(distributedRun.controlRunId, agentId)
+        );
+        persistControlSnapshot();
+        return jsonResponse(distributedRun, 202);
+    } catch (error) {
+        return distributedRunErrorResponse(error);
+    }
+}
+
+async function readDistributedRunManifest(
+    request: Request,
+): Promise<RallarBlackBoxDistributedRunManifest> {
+    const body = await readJsonBody(request);
+    const manifest = isRecord(body) && 'manifest' in body
+        ? body.manifest
+        : body;
+
+    const schemaValidation = validateJsonSchema(
+        RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
+        manifest,
+    );
+    if (!schemaValidation.ok) {
+        throw new Error(formatJsonSchemaValidationErrors(schemaValidation.errors));
+    }
+
+    const contractValidation = validateDistributedRunManifestContract(
+        manifest as RallarBlackBoxDistributedRunManifest,
+    );
+    if (!contractValidation.ok) {
+        throw new Error(
+            contractValidation.errors
+                .map(error => `${error.path}: ${error.message}`)
+                .join('\n'),
+        );
+    }
+
+    return manifest as RallarBlackBoxDistributedRunManifest;
+}
+
+function distributedRunErrorResponse(error: unknown): Response {
+    const message = errorMessage(error);
+    const status = message.includes('not found')
+        ? 404
+        : message.includes('terminal state')
+        ? 409
+        : message.includes('rate limit')
+        ? 429
+        : 400;
+    return jsonResponse({ error: message }, status);
 }
 
 async function enqueueCommand(
@@ -810,6 +958,10 @@ function closeDeletedRunSockets(runIds: readonly string[]): void {
 
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function jsonResponse(value: unknown, status = 200): Response {

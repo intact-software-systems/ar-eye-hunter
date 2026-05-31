@@ -379,9 +379,13 @@ Use it to:
 - reset the workbench
 - execute one raw command JSON payload
 
-The built-in fixtures cover RTC smoke, WebSocket plus HTTP smoke, expected failure, and a cancellable long-running
-recipe. These fixtures use the current SPA executor, so they validate the command and UI path rather than live Rallar
-network traffic.
+Recipe JSON and command JSON are validated with the shared `rallar-bb-test` schemas next to the editors. Invalid JSON
+or schema-invalid content blocks load/execute actions. The command editor also has generated snippets for every command
+kind with provider modes, runtime surfaces, live-service requirements, expected artifacts, and distributed compatibility.
+
+The built-in fixtures cover RTC smoke, WebSocket plus HTTP smoke, provider parity, RTC realtime position traffic,
+expected failure, and a cancellable long-running recipe. These fixtures use the current SPA executor, so they validate
+the command and UI path rather than live Rallar network traffic.
 
 The shared-test runner has a larger recipe catalog for HTTP, WS, RTC, soak, seeded traffic, bounded parallel groups,
 and artifact generation. Use the `Shared Test` tab to browse selected shared-test entries, copy runner commands, and
@@ -441,6 +445,8 @@ The command preview shows the redacted `rallar-bb-test` command or command list 
 history links back to command results, and the recipe output can turn the manual session into a repeatable redacted
 recipe. Scoped RTC fields are passed through to `rtc.connect` and `rtc.send` so real-provider tests can exercise the
 same application, workspace, scope, room reference, and snapshot-version constraints that Rallar Server uses.
+Generated preview, matrix, negative, and history recipes are schema-validated in the tab so export mistakes are visible
+before the copied recipe is reused by an agent or runner.
 
 ## Received Data Inbox
 
@@ -562,6 +568,11 @@ Actions:
 - load and validate a redacted run artifact bundle
 - copy artifact bundle files, events JSONL, results JSONL, and failure bundle JSON
 
+Command JSON is validated with the shared command schema before enqueue. The editor shows schema errors inline and has
+generated snippets for every command kind. Snippets can be inserted or copied, and each snippet shows provider modes,
+runtime surfaces, live-service requirements, expected artifacts, and whether it is suitable for distributed control-agent
+execution.
+
 It shows:
 
 - run, agent, connected, queued, completed, result, event, and report counts
@@ -578,6 +589,49 @@ enqueueing a `reset` command to the selected agents.
 The control server can export a shared-test-compatible artifact bundle from a run. The Run Manager validates that bundle
 with the same parser used by the `Shared Test` artifact import panel, so the copied files can be attached to issues or
 loaded back into the SPA.
+
+## Distributed Recipes
+
+The `Distributed Recipes` tab is the group-aware front end for distributed browser-agent tests.
+
+Use it after at least one browser is connected to the control server as an agent. The tab uses Global Context for
+application, workspace, and group. `Resolve targets` compares those values with each agent's reported Rallar identity
+and marks agents as matched, stale, offline, different group, or missing identity.
+
+Main workflow:
+
+- choose one or more app-local recipes from the catalog
+- select the control run and resolve target agents
+- choose target policy, ACK timeout, start mode, and optional role pattern
+- configure recipe-specific options when shown, such as the `RTC Realtime` length in seconds
+- review the generated distributed-run manifest
+- create or stage the run
+- start or cancel it
+- export the distributed-run artifact bundle
+
+Role patterns support all agents running the same recipes, sender/receiver pairs, one sender with many receivers, and a
+three-browser matrix. Live recipes are marked because they can send real HTTP, WebSocket, or RTC traffic through
+connected browsers.
+`RTC Realtime` builds one normal browser-agent recipe named `rtc-realtime`: it connects to the current Global Context
+group, then sends game-style position payloads over `realtime` at a target 20 Hz cadence for the configured duration.
+The manifest preview shows the generated command count before the run is created.
+Catalog entries expose command capability help, including provider modes, runtime surfaces, live-service requirements,
+artifact expectations, and whether the commands can run through distributed control agents. The generated manifest is
+validated with the same shared schema and distributed-run contract used by the control server.
+
+The monitor section appears after a distributed run is selected. It shows:
+
+- command/result counts and latency summaries
+- failures first
+- per-agent progress and ACK readiness
+- per-recipe progress
+- linked control-run events for the distributed run
+- lifecycle timeline
+- artifact validation status after `Export artifact`
+
+Use `Historical Runs` to filter previous distributed runs by group, recipe, profile, user, status, date, failure type, or
+free-text query. Use `Compare Runs` to inspect recipe/profile changes, participant changes, failure deltas, timing
+deltas, and received-message deltas for two runs.
 
 ## Bootstrap
 
@@ -743,6 +797,8 @@ Actions:
 The tab shows step status, command links, expected result metadata, extraction metadata, a SPA recipe preview, and a
 runner scenario preview. Variables can use `{{name}}`, `${name}`, or `{name}` placeholders. Exact placeholders preserve
 structured values, so a payload variable can become a JSON object instead of a string.
+Both generated previews are schema-validated: the SPA recipe uses the browser-agent recipe schema, and the runner
+scenario uses the provider-neutral black-box-runner scenario schema.
 
 ## Shared Test
 

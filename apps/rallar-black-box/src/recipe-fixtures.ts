@@ -1,5 +1,6 @@
 import { createRallarBlackBoxProviderParityRecipe } from '@shared-test/rallar-bb-test/provider-parity.ts';
 import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRecipe, } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
 
 export type RallarBlackBoxRecipeFixture = Readonly<{
     fixtureId: string;
@@ -7,6 +8,151 @@ export type RallarBlackBoxRecipeFixture = Readonly<{
     description: string;
     recipe: RallarBlackBoxTestRecipe;
 }>;
+
+export const RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID = 'rtc-realtime';
+export const RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ = 20;
+export const RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS =
+    Math.round(1_000 / RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ);
+export const RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS = 5;
+export const RALLAR_BLACK_BOX_RTC_REALTIME_MIN_DURATION_SECONDS = 1;
+export const RALLAR_BLACK_BOX_RTC_REALTIME_MAX_DURATION_SECONDS = 60;
+
+export type RallarBlackBoxRtcRealtimeRecipeOptions = Readonly<{
+    durationSeconds?: number;
+    group?: RallarBlackBoxDistributedGroupRef;
+    connection?: string;
+}>;
+
+export function normalizeRallarBlackBoxRtcRealtimeDurationSeconds(value: unknown): number {
+    const numeric = typeof value === 'number'
+        ? value
+        : typeof value === 'string'
+            ? Number.parseFloat(value)
+            : RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS;
+    if (!Number.isFinite(numeric)) {
+        return RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS;
+    }
+
+    return Math.min(
+        RALLAR_BLACK_BOX_RTC_REALTIME_MAX_DURATION_SECONDS,
+        Math.max(RALLAR_BLACK_BOX_RTC_REALTIME_MIN_DURATION_SECONDS, Math.round(numeric)),
+    );
+}
+
+function rtcRealtimePositionFrame(frame: number): Readonly<Record<string, number>> {
+    const elapsedSeconds = frame / RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ;
+    const radius = 12;
+    return {
+        x: Number((Math.cos(elapsedSeconds) * radius).toFixed(3)),
+        y: 0,
+        z: Number((Math.sin(elapsedSeconds) * radius).toFixed(3)),
+        headingDeg: Number(((elapsedSeconds * 90) % 360).toFixed(1)),
+        velocityMps: 4,
+    };
+}
+
+export function createRallarBlackBoxRtcRealtimeRecipe(
+    options: RallarBlackBoxRtcRealtimeRecipeOptions = {},
+): RallarBlackBoxTestRecipe {
+    const durationSeconds = normalizeRallarBlackBoxRtcRealtimeDurationSeconds(options.durationSeconds);
+    const frameCount = durationSeconds * RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ;
+    const connection = options.connection ?? 'rtcRealtime';
+    const group = options.group ?? {
+        applicationId: 'rallar-server',
+        workspaceId: 'default',
+        groupId: 'rallar-black-box-room',
+    };
+    const roomRef = {
+        applicationId: group.applicationId,
+        workspaceId: group.workspaceId,
+        groupId: group.groupId,
+    };
+    const sendCommands: RallarBlackBoxTestCommand[] = Array.from({ length: frameCount }, (_entry, index) => ({
+        kind: 'rtc.send',
+        commandId: `rtc-realtime-position-${String(index + 1).padStart(4, '0')}`,
+        connection,
+        transport: 'realtime',
+        applicationId: group.applicationId,
+        workspaceId: group.workspaceId,
+        roomRef,
+        timeoutMs: 3_000,
+        metadata: {
+            localDelayMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+            realtime: {
+                rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
+                intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+                durationSeconds,
+                frame: index + 1,
+                totalFrames: frameCount,
+            },
+        },
+        send: {
+            roomId: group.groupId,
+            roomRef,
+            openTimeoutMs: 10_000,
+            data: {
+                topic: 'room.black-box.rtc-realtime.position',
+                typeId: 'room.black-box.rtc-realtime.position',
+                actor: '{auth.clientId}',
+                seq: index,
+                rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
+                intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+                durationSeconds,
+                totalFrames: frameCount,
+                tMs: index * RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+                position: rtcRealtimePositionFrame(index),
+            },
+        },
+    }));
+
+    return {
+        recipeId: RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
+        name: 'RTC realtime position stream',
+        description: 'Connect RTC and send game-style position updates at 20 Hz for the configured duration.',
+        continueOnFailure: false,
+        metadata: {
+            profile: 'rtc-realtime',
+            rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
+            intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+            durationSeconds,
+            frameCount,
+            group,
+        },
+        commands: [
+            {
+                kind: 'rtc.connect',
+                commandId: 'rtc-realtime-connect',
+                connection,
+                actor: '{auth.clientId}',
+                roomId: group.groupId,
+                applicationId: group.applicationId,
+                workspaceId: group.workspaceId,
+                roomRef,
+                transport: 'realtime',
+                timeoutMs: 10_000,
+                metadata: {
+                    realtime: {
+                        rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
+                        durationSeconds,
+                        frameCount,
+                    },
+                },
+            },
+            ...sendCommands,
+            {
+                kind: 'stats',
+                commandId: 'rtc-realtime-stats',
+                metadata: {
+                    realtime: {
+                        rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
+                        durationSeconds,
+                        frameCount,
+                    },
+                },
+            },
+        ],
+    };
+}
 
 export const RALLAR_BLACK_BOX_RECIPE_FIXTURES: readonly RallarBlackBoxRecipeFixture[] = [
     {
@@ -104,6 +250,12 @@ export const RALLAR_BLACK_BOX_RECIPE_FIXTURES: readonly RallarBlackBoxRecipeFixt
         label: 'Provider Parity',
         description: 'Portable SPA and runner recipe covering connect, direct, multicast, broadcast, health, close, and reset.',
         recipe: createRallarBlackBoxProviderParityRecipe(),
+    },
+    {
+        fixtureId: RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
+        label: 'RTC Realtime',
+        description: 'Sends game-style position updates over RTC at 20 Hz for a configurable duration.',
+        recipe: createRallarBlackBoxRtcRealtimeRecipe(),
     },
     {
         fixtureId: 'expected-failure',

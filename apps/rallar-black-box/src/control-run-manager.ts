@@ -4,6 +4,12 @@ import type {
     ControlHeartbeatEnvelope,
     ControlResultEnvelope,
 } from './control-protocol.ts';
+import type { RallarBlackBoxControlAgentIdentity } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type {
+    RallarBlackBoxDistributedRunManifest,
+    RallarBlackBoxDistributedRunRollup,
+    RallarBlackBoxDistributedRunState,
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
 
 export type ControlQueuedCommandSnapshot = Readonly<{
@@ -23,6 +29,7 @@ export type ControlAgentSnapshot = Readonly<{
     lastSeenAtEpochMs?: number;
     lastHeartbeatAtEpochMs?: number;
     status?: string;
+    identity?: RallarBlackBoxControlAgentIdentity;
     connectionSequence: number;
     reconnectCount: number;
     receivedResultCount: number;
@@ -46,6 +53,7 @@ export type ControlRunSnapshot = Readonly<{
 
 export type ControlServerSnapshot = Readonly<{
     runs: readonly ControlRunSnapshot[];
+    distributedRuns?: readonly ControlDistributedRunSnapshot[];
 }>;
 
 export type ControlSnapshotBounds = Readonly<{
@@ -75,6 +83,8 @@ export type ControlRunAgentRow = Readonly<{
     status: string;
     lastSeenAtEpochMs?: number;
     lastHeartbeatAtEpochMs?: number;
+    identity?: RallarBlackBoxControlAgentIdentity;
+    identitySummary?: string;
     queuedCommandCount: number;
     completedCommandCount: number;
     receivedResultCount: number;
@@ -113,6 +123,52 @@ export type ControlRunArtifactBundle = Readonly<{
     runId: string;
     generatedAtEpochMs: number;
     files: Readonly<Record<ControlRunArtifactFileName, string>>;
+}>;
+
+export type ControlDistributedRunCommandPhase = 'stage' | 'start' | 'cancel';
+
+export type ControlDistributedRunCommandLink = Readonly<{
+    phase: ControlDistributedRunCommandPhase;
+    agentId: string;
+    commandId: string;
+    recipeId?: string;
+    role?: string;
+    queuedAtEpochMs: number;
+}>;
+
+export type ControlDistributedRunSnapshot = Readonly<{
+    distributedRunId: string;
+    controlRunId: string;
+    manifest: RallarBlackBoxDistributedRunManifest;
+    state: RallarBlackBoxDistributedRunState;
+    createdAtEpochMs: number;
+    updatedAtEpochMs: number;
+    stagedAtEpochMs?: number;
+    startedAtEpochMs?: number;
+    cancelledAtEpochMs?: number;
+    completedAtEpochMs?: number;
+    targetAgentIds: readonly string[];
+    commandLinks: readonly ControlDistributedRunCommandLink[];
+    rollup: RallarBlackBoxDistributedRunRollup;
+    error?: Readonly<{
+        code: string;
+        message: string;
+        details?: unknown;
+    }>;
+}>;
+
+export type ControlDistributedRunListResponse = Readonly<{
+    distributedRuns: readonly ControlDistributedRunSnapshot[];
+}>;
+
+export type ControlDistributedRunArtifactBundle = Readonly<{
+    artifactSchemaVersion: number;
+    distributedRunId: string;
+    generatedAtEpochMs: number;
+    files: Readonly<Record<
+        'distributed-run.json' | 'manifest.json' | 'control-run.json',
+        string
+    >>;
 }>;
 
 const DEFAULT_CONTROL_HTTP_BASE_URL = 'http://localhost:5180';
@@ -184,6 +240,8 @@ export function controlRunAgentRows(run: ControlRunSnapshot | undefined): readon
             status: agent.status ?? (agent.connected ? 'connected' : 'offline'),
             lastSeenAtEpochMs: agent.lastSeenAtEpochMs,
             lastHeartbeatAtEpochMs: agent.lastHeartbeatAtEpochMs,
+            identity: agent.identity,
+            identitySummary: controlAgentIdentitySummary(agent.identity),
             queuedCommandCount: run.commands.filter(command =>
                 command.envelope.agentId === agent.agentId &&
                 command.completedAtEpochMs === undefined
@@ -193,6 +251,28 @@ export function controlRunAgentRows(run: ControlRunSnapshot | undefined): readon
             receivedEventCount: agent.receivedEventCount,
             reconnectCount: agent.reconnectCount,
         }));
+}
+
+export function controlAgentIdentitySummary(
+    identity: RallarBlackBoxControlAgentIdentity | undefined,
+): string | undefined {
+    if (!identity) {
+        return undefined;
+    }
+
+    const principal = identity.principalId ?? identity.clientId ?? identity.username;
+    const group = identity.groupId;
+    const session = identity.sessionId;
+    const scope = [identity.applicationId, identity.workspaceId]
+        .filter(Boolean)
+        .join('/');
+
+    return [
+        principal,
+        group ? `group ${group}` : undefined,
+        session ? `session ${session}` : undefined,
+        scope ? `scope ${scope}` : undefined,
+    ].filter(Boolean).join(' - ') || undefined;
 }
 
 export function controlRunCommandRows(
@@ -369,6 +449,133 @@ export async function fetchControlRunFailureBundle(input: Readonly<{
         },
     );
     return readJsonResponse<unknown>(response);
+}
+
+export async function fetchDistributedRuns(input: Readonly<{
+    baseUrl: string;
+    token?: string;
+    fetchFn?: ControlRunManagerFetch;
+}>): Promise<readonly ControlDistributedRunSnapshot[]> {
+    const response = await (input.fetchFn ?? fetch)(
+        new URL('/distributed-runs', normalizedBaseUrl(input.baseUrl)),
+        {
+            headers: authorizationHeaders(input.token),
+        },
+    );
+    const body = await readJsonResponse<ControlDistributedRunListResponse>(response);
+    return body.distributedRuns;
+}
+
+export async function fetchDistributedRun(input: Readonly<{
+    baseUrl: string;
+    distributedRunId: string;
+    token?: string;
+    fetchFn?: ControlRunManagerFetch;
+}>): Promise<ControlDistributedRunSnapshot> {
+    const response = await (input.fetchFn ?? fetch)(
+        new URL(`/distributed-runs/${encodeURIComponent(input.distributedRunId)}`, normalizedBaseUrl(input.baseUrl)),
+        {
+            headers: authorizationHeaders(input.token),
+        },
+    );
+    return readJsonResponse<ControlDistributedRunSnapshot>(response);
+}
+
+export async function createDistributedRun(input: Readonly<{
+    baseUrl: string;
+    manifest: RallarBlackBoxDistributedRunManifest;
+    token?: string;
+    fetchFn?: ControlRunManagerFetch;
+}>): Promise<ControlDistributedRunSnapshot> {
+    const response = await (input.fetchFn ?? fetch)(
+        new URL('/distributed-runs', normalizedBaseUrl(input.baseUrl)),
+        {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...authorizationHeaders(input.token),
+            },
+            body: JSON.stringify({
+                manifest: input.manifest,
+            }),
+        },
+    );
+    return readJsonResponse<ControlDistributedRunSnapshot>(response);
+}
+
+export async function stageDistributedRun(input: Readonly<{
+    baseUrl: string;
+    distributedRunId: string;
+    token?: string;
+    fetchFn?: ControlRunManagerFetch;
+}>): Promise<ControlDistributedRunSnapshot> {
+    return mutateDistributedRun(input, 'stage');
+}
+
+export async function startDistributedRun(input: Readonly<{
+    baseUrl: string;
+    distributedRunId: string;
+    token?: string;
+    fetchFn?: ControlRunManagerFetch;
+}>): Promise<ControlDistributedRunSnapshot> {
+    return mutateDistributedRun(input, 'start');
+}
+
+export async function cancelDistributedRun(input: Readonly<{
+    baseUrl: string;
+    distributedRunId: string;
+    reason?: string;
+    token?: string;
+    fetchFn?: ControlRunManagerFetch;
+}>): Promise<ControlDistributedRunSnapshot> {
+    return mutateDistributedRun(input, 'cancel');
+}
+
+export async function fetchDistributedRunArtifactBundle(input: Readonly<{
+    baseUrl: string;
+    distributedRunId: string;
+    token?: string;
+    fetchFn?: ControlRunManagerFetch;
+}>): Promise<ControlDistributedRunArtifactBundle> {
+    const response = await (input.fetchFn ?? fetch)(
+        new URL(
+            `/distributed-runs/${encodeURIComponent(input.distributedRunId)}/artifacts`,
+            normalizedBaseUrl(input.baseUrl),
+        ),
+        {
+            headers: authorizationHeaders(input.token),
+        },
+    );
+    return readJsonResponse<ControlDistributedRunArtifactBundle>(response);
+}
+
+async function mutateDistributedRun(
+    input: Readonly<{
+        baseUrl: string;
+        distributedRunId: string;
+        reason?: string;
+        token?: string;
+        fetchFn?: ControlRunManagerFetch;
+    }>,
+    action: ControlDistributedRunCommandPhase,
+): Promise<ControlDistributedRunSnapshot> {
+    const response = await (input.fetchFn ?? fetch)(
+        new URL(
+            `/distributed-runs/${encodeURIComponent(input.distributedRunId)}/${action}`,
+            normalizedBaseUrl(input.baseUrl),
+        ),
+        {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...authorizationHeaders(input.token),
+            },
+            body: action === 'cancel' && input.reason
+                ? JSON.stringify({ reason: input.reason })
+                : undefined,
+        },
+    );
+    return readJsonResponse<ControlDistributedRunSnapshot>(response);
 }
 
 function normalizedBaseUrl(baseUrl: string): string {

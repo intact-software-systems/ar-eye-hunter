@@ -28,6 +28,7 @@ export type FullStackConfig = Readonly<{
     roomId: string;
     userA: FullStackUser;
     userB: FullStackUser;
+    userC: FullStackUser;
 }>;
 
 type ControlResult = Readonly<{
@@ -72,6 +73,14 @@ export function readFullStackConfig(): FullStackConfig {
                 envValue('VITE_RALLAR_B_USERNAME') ??
                 'bob',
             actor: envValue('VITE_RALLAR_B_ACTOR') ?? 'bob',
+        },
+        userC: {
+            username: envValue('VITE_RALLAR_C_USERNAME') ?? 'charlie',
+            password: envValue('VITE_RALLAR_C_PASSWORD') ?? 'secret',
+            clientId: envValue('VITE_RALLAR_C_CLIENT_ID') ??
+                envValue('VITE_RALLAR_C_USERNAME') ??
+                'charlie',
+            actor: envValue('VITE_RALLAR_C_ACTOR') ?? 'charlie',
         },
     };
 }

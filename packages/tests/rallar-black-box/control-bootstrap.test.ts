@@ -45,6 +45,8 @@ describe('rallar-black-box control bootstrap', () => {
             agentId: 'visible-agent-local',
             environment: 'local',
             apiBaseUrl: 'https://api.example.invalid',
+            applicationId: 'rallar-black-box',
+            workspaceId: 'default',
             actor: 'alice',
             sessionId: 'visible-session-alice',
             roomId: 'rallar-black-box-room',
@@ -75,20 +77,26 @@ describe('rallar-black-box control bootstrap', () => {
         const bootstrap = resolveRallarBlackBoxBootstrapConfig('', {
             VITE_RALLAR_ENVIRONMENT: 'staging',
             VITE_RALLAR_API_BASE_URL: 'https://api.example.test',
+            VITE_RALLAR_APPLICATION_ID: 'app-env',
+            VITE_RALLAR_WORKSPACE_ID: 'workspace-env',
             VITE_RALLAR_ACTOR: 'bob',
             VITE_RALLAR_SESSION_ID: 'bob-session',
             VITE_RALLAR_ROOM_ID: 'room-env',
             VITE_RALLAR_TRANSPORT: 'messages.rtc',
+            VITE_RALLAR_HEARTBEAT_INTERVAL_MS: '250',
         });
 
         expect(bootstrap).toMatchObject({
             mode: 'local-workbench',
             environment: 'staging',
             apiBaseUrl: 'https://api.example.test',
+            applicationId: 'app-env',
+            workspaceId: 'workspace-env',
             actor: 'bob',
             sessionId: 'bob-session',
             roomId: 'room-env',
             transport: 'messages.rtc',
+            heartbeatIntervalMs: 250,
             source: 'environment',
         });
     });

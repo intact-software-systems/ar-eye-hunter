@@ -28,6 +28,7 @@ export const APP_TABS = [
     { id: 'media', label: 'Media' },
     { id: 'local-workbench', label: 'Local Workbench' },
     { id: 'run-manager', label: 'Run Manager' },
+    { id: 'distributed-recipes', label: 'Distributed Recipes' },
     { id: 'rallar-trace', label: 'Rallar Trace' },
     { id: 'event-stream', label: 'Event Stream' },
     { id: 'rallar-server', label: 'Rallar Server' },
@@ -60,6 +61,7 @@ const BLACK_BOX_RUNNER_MODE_TAB_IDS = [
     'local-workbench',
     'flow-builder',
     'run-manager',
+    'distributed-recipes',
     'event-stream',
 ] as const satisfies readonly AppTabId[];
 
@@ -89,6 +91,7 @@ const TAB_PRIMARY_MODE: Readonly<Record<AppTabId, AppModeId>> = {
     'event-stream': 'rallar',
     'local-workbench': 'black-box-runner',
     'run-manager': 'black-box-runner',
+    'distributed-recipes': 'black-box-runner',
     'flow-builder': 'black-box-runner',
     'shared-test': 'black-box-runner',
 };
@@ -138,6 +141,10 @@ const TAB_ALIASES: Readonly<Record<string, AppTabId>> = {
     manager: 'run-manager',
     control: 'run-manager',
     orchestrator: 'run-manager',
+    distributed: 'distributed-recipes',
+    'distributed-recipes': 'distributed-recipes',
+    'distributed-runs': 'distributed-recipes',
+    dist: 'distributed-recipes',
     events: 'event-stream',
     event: 'event-stream',
     trace: 'rallar-trace',

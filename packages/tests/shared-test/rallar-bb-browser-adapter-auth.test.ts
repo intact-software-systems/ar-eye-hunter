@@ -259,4 +259,74 @@ describe('rallar-bb browser adapter auth', () => {
             },
         ]);
     });
+
+    it('resolves logged-in auth placeholders in browser Rallar WS sends', async () => {
+        storage.setItem('auth.session', JSON.stringify({
+            clientId: 'alice',
+            accessToken: 'token-1',
+            username: 'alice',
+            sessionId: 'session-1',
+            expiresAtEpochMs: Date.now() + 60_000,
+        }));
+        const sends: unknown[] = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                connect: async () => ({ connected: true }),
+                send: async () => ({ sent: true }),
+                sendWs: async (input) => {
+                    sends.push(input);
+                    return { sent: true };
+                },
+                close: async () => ({ closed: true }),
+                health: async () => ({ ok: true }),
+            },
+        });
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-ws-auth-placeholders',
+            config: {
+                apiBaseUrl: 'https://api.example.test',
+                control: {
+                    providerMode: 'browser-rallar',
+                },
+            },
+        });
+        const result = await runtime.execute({
+            kind: 'ws.send',
+            commandId: 'ws-send-auth-placeholders',
+            connection: 'rallarApi',
+            data: {
+                typeId: 'room.manual.message',
+                topicId: 'room.manual.message',
+                resourceId: 'message-{auth.clientId}',
+                payload: {
+                    sentBy: '{auth.clientId}',
+                    sessionId: '{auth.sessionId}',
+                },
+            },
+        });
+
+        expect(result.ok).toBe(true);
+        expect(sends).toEqual([
+            {
+                typeId: 'room.manual.message',
+                topicId: 'room.manual.message',
+                resourceId: 'message-alice',
+                payload: {
+                    sentBy: 'alice',
+                    sessionId: 'session-1',
+                },
+            },
+        ]);
+        expect(result.value).toMatchObject({
+            sent: {
+                resourceId: 'message-alice',
+                payload: {
+                    sentBy: 'alice',
+                    sessionId: 'session-1',
+                },
+            },
+        });
+    });
 });

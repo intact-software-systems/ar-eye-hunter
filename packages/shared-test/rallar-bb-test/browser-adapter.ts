@@ -151,6 +151,19 @@ function toStringValue(value: unknown): string | undefined {
     return value === undefined || value === null ? undefined : String(value);
 }
 
+function commandLocalDelayMs(command: CommandWithId): number {
+    const value = command.metadata?.localDelayMs;
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return 0;
+    }
+
+    return Math.max(0, value);
+}
+
+function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function nonEmptyStringValue(value: unknown): string | undefined {
     const stringValue = toStringValue(value)?.trim();
     return stringValue && stringValue.length > 0 ? stringValue : undefined;
@@ -646,6 +659,11 @@ class BrowserCommandAdapter {
         command: CommandWithId,
         context: RallarBlackBoxTestCommandContext,
     ): Promise<RallarBlackBoxTestCommandOutcome | undefined> {
+        const delayMs = commandLocalDelayMs(command);
+        if (delayMs > 0) {
+            await sleep(delayMs);
+        }
+
         switch (command.kind) {
             case 'rtc.connect':
                 return await this.connectRtc(command, context);
@@ -1203,9 +1221,13 @@ class BrowserCommandAdapter {
         if (!sendWs) {
             throw new Error('Browser Rallar runtime does not support ws.send.');
         }
+        const data = replaceCommandPlaceholders(command.data, {
+            config: context.config(),
+            session: readOptionalBrowserSession(),
+        });
         let result: unknown;
         try {
-            result = await sendWs(command.data);
+            result = await sendWs(data);
         } catch (error) {
             if (!isRuntimeNotConnectedError(error)) {
                 throw error;
@@ -1213,7 +1235,7 @@ class BrowserCommandAdapter {
             await runtime.connect(
                 this.toRallarWebSocketConnectionConfig(command, context.config()),
             );
-            result = await sendWs(command.data);
+            result = await sendWs(data);
         }
 
         context.recordEvent({
@@ -1234,7 +1256,7 @@ class BrowserCommandAdapter {
             value: {
                 connection,
                 via: 'rallar-signaling-websocket',
-                sent: command.data,
+                sent: data,
                 rallar: result,
             },
         };

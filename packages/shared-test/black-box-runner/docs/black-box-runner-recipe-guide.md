@@ -12,6 +12,11 @@ Rallar room/member lifecycle.
 Companion package, server, browser, and app-level coverage is documented in
 `packages/shared-test/rallar-bb-test/docs/companion-coverage.md`.
 
+Machine-readable schema coverage is documented in
+`packages/shared-test/rallar-bb-test/docs/schema-and-capabilities.md`. The
+runner scenario schema lives in `packages/shared-test/black-box-runner/schema.ts`
+as `BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA`.
+
 ## Preferred Recipe Shape
 
 Use the top-level `steps` shape for new recipes:

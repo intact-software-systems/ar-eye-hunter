@@ -1074,6 +1074,419 @@ Exit criteria:
 - A command-center flow can become a shared-test recipe, run through local
   tooling, and return artifacts to the SPA with a clear chain of evidence.
 
+### Iteration 43: Recipe Capability Inventory And Schemas
+
+Status: completed on 2026-05-31.
+
+Goal: Make black-box recipe capabilities explicit, machine-readable, and
+usable by the SPA, control server, and shared-test runner.
+
+Work:
+
+- Inventory `rallar-bb-test` command recipes and black-box-runner scenario
+  recipes.
+- Add capability metadata for command kind, fields, examples, supported
+  provider modes, live-service requirements, and artifact expectations.
+- Generate JSON Schema for command, recipe, control envelope, black-box-runner
+  scenario, and distributed-run manifest shapes.
+- Validate app-local recipes, shared-test examples, Flow Builder exports, Run
+  Manager command presets, and control-server OpenAPI examples.
+- Document schema ownership, compatibility, and versioning.
+
+Exit criteria:
+
+- Invalid recipe JSON fails with actionable schema errors before it is sent to
+  a browser agent, control server, or runner.
+
+Results:
+
+- Added `packages/shared-test/rallar-bb-test/schema.ts` with:
+  - one capability metadata entry per `rallar-bb-test` command kind
+  - provider-mode, runtime-surface, live-service, and artifact-expectation metadata
+  - JSON Schema objects for commands, recipes, control command envelopes, and distributed-run manifests
+  - browser-safe validation and error-formatting helpers
+- Added `packages/shared-test/black-box-runner/schema.ts` for the separate runner scenario format built around
+  `variables`, `connections`, and `steps`.
+- Exported the schemas and capabilities through `src/shared-test-handoff-fixtures.ts` so command-center UI work can reuse
+  the same contract.
+- Reused the shared command schema in the control-server OpenAPI document.
+- Moved Run Manager command presets into `src/run-manager-presets.ts` and validated edited command JSON against the
+  shared command schema before enqueueing it.
+- Added schema contract coverage for command capabilities, app-local recipes, shared-test runner examples, Flow Builder
+  exports, Manual Rallar snippets, Run Manager presets, control-server OpenAPI command examples, control command
+  envelopes, and a distributed-run manifest example.
+- Added `packages/shared-test/rallar-bb-test/docs/schema-and-capabilities.md` and linked it from app and runner docs.
+
+Verification:
+
+- `npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts` passed.
+- `npx vitest run packages/tests/rallar-black-box/control-run-manager.test.ts packages/tests/rallar-black-box/flow-builder.test.ts packages/tests/rallar-black-box/manual-workbench.test.ts packages/tests/shared-test/rallar-bb-test-schema.test.ts`
+  passed.
+- `npm --workspace @ar-eye-hunter/shared-test run check:ts` passed.
+- `npm --workspace @ar-eye-hunter/shared-test run check` passed.
+- `npm --workspace rallar-black-box run typecheck` passed.
+- `npm run build:rallar-black-box` passed.
+- `cd apps/rallar-black-box-control-server && deno task check` passed.
+- `cd apps/rallar-black-box-control-server && deno task test` passed.
+
+### Iteration 44: Distributed Run Contract
+
+Status: completed on 2026-05-31.
+
+Goal: Define a first-class distributed recipe test lifecycle on top of the
+existing recipe and control-agent contracts.
+
+Work:
+
+- Add a distributed-run manifest with run ID, group reference, selected recipes,
+  target policy, participant count, variables, per-agent roles, ACK/readiness
+  timeout, start mode, and artifact policy.
+- Define distributed states: draft, resolving targets, staging,
+  waiting-for-ack, ready, running, passed, failed, cancelled, and timed-out.
+- Define per-agent and per-recipe rollup behavior.
+- Add JSON Schema for the distributed-run manifest.
+
+Exit criteria:
+
+- A distributed recipe test can be represented as JSON without depending on SPA
+  component state.
+
+Results:
+
+- Added `packages/shared-test/rallar-bb-test/distributed-run.ts` with:
+  - distributed-run lifecycle states and terminal-state helper
+  - target policy modes and start modes
+  - manifest, group, recipe-selection, role-assignment, artifact-policy, participant-result, and recipe-result types
+  - domain validation for standalone manifests
+  - participant/recipe rollup behavior into one distributed-run state
+- Expanded `RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA` to match the richer contract, including shared variables,
+  secret refs, role assignments, ACK timeout, scheduled-start deadline, and artifact policy.
+- Exported distributed-run constants and helpers through `src/shared-test-handoff-fixtures.ts`.
+- Added `packages/tests/shared-test/rallar-bb-test-distributed-run.test.ts` for lifecycle, manifest validation, and
+  rollup semantics.
+- Added `packages/shared-test/rallar-bb-test/docs/distributed-run-contract.md` and linked it from the app docs and schema
+  docs.
+
+Verification:
+
+- `npx vitest run packages/tests/shared-test/rallar-bb-test-distributed-run.test.ts packages/tests/shared-test/rallar-bb-test-schema.test.ts`
+  passed.
+- `npm --workspace @ar-eye-hunter/shared-test run check:ts` passed.
+- `npm --workspace @ar-eye-hunter/shared-test run check` passed.
+- `npm --workspace rallar-black-box run typecheck` passed.
+- `npm run build:rallar-black-box` passed.
+- `cd apps/rallar-black-box-control-server && deno task check` passed.
+- `git diff --check -- apps/rallar-black-box apps/rallar-black-box-control-server packages/shared-test packages/tests/shared-test packages/tests/rallar-black-box`
+  passed.
+
+### Iteration 45: Group Member To Control Agent Mapping
+
+Status: completed on 2026-05-31.
+
+Goal: Let runner-mode tests target members of the current Rallar group instead
+of requiring manual agent ID selection.
+
+Work:
+
+- Extend control-agent registration/heartbeat metadata with Rallar identity:
+  username/client ID, session ID, application ID, workspace ID, current group,
+  provider mode, and browser/session labels.
+- Extend control-server snapshots with that identity metadata.
+- Resolve current group members from Rallar Server and correlate them with
+  connected control agents.
+- Show matched, unmatched, offline, stale, and duplicate sessions before a run.
+- Add target policies for all online group members, selected matched agents,
+  required expected agents, and dry-run target resolution.
+
+Exit criteria:
+
+- The UI can explain exactly which group members will run a recipe and why any
+  member is not targetable.
+
+Results:
+
+- Added shared `RallarBlackBoxControlAgentIdentity` metadata for browser control agents.
+- Control-agent register and heartbeat envelopes now include current Rallar identity metadata derived from runtime config:
+  principal/client/username, session, client instance, application, workspace, group, provider mode, browser label,
+  session label, and update time.
+- Control-server agent snapshots now store the latest identity metadata, expose it through snapshots, and preserve it
+  through snapshot restore.
+- Control-server OpenAPI now documents `ControlAgentIdentity` on agent snapshots and heartbeat envelopes.
+- Run Manager agent rows expose identity metadata and show a compact identity summary for connected agents.
+- Added shared matching helpers in `packages/shared-test/rallar-bb-test/distributed-run.ts`:
+  - `resolveGroupMemberControlAgentMatches(...)`
+  - `resolveDistributedTargetAgentIds(...)`
+- Matching now explains `matched`, `unmatched-group-member`, `offline-agent`, `stale-agent`, `duplicate-session`,
+  `agent-without-group-member`, and `agent-without-identity` cases before a distributed run is staged.
+- Target-policy filtering only returns targetable matched agents for `all-online-group-members`, `selected-agents`, and
+  `role-map`.
+- Updated distributed-run docs with the identity and target-resolution contract.
+
+Verification:
+
+- `npx vitest run packages/tests/shared-test/rallar-bb-test-distributed-run.test.ts packages/tests/rallar-black-box/control-client.test.ts packages/tests/rallar-black-box/control-run-manager.test.ts`
+  passed.
+- `cd apps/rallar-black-box-control-server && deno task test` passed.
+- `npm --workspace @ar-eye-hunter/shared-test run check:ts` passed.
+- `npm --workspace @ar-eye-hunter/shared-test run check` passed.
+- `npm --workspace rallar-black-box run typecheck` passed.
+- `cd apps/rallar-black-box-control-server && deno task check` passed.
+
+### Iteration 46: Control Server Distributed Orchestrator
+
+Status: completed on 2026-05-31.
+
+Goal: Move distributed-run staging, ACK/readiness, start, cancel, and export
+logic into the control server.
+
+Work:
+
+- Add distributed-run endpoints for create/list/read/stage/start/cancel/export.
+- Stage recipes by enqueueing load/preflight commands to target agents.
+- Treat ACK/readiness as explicit command results.
+- Start agents via scheduled `deadlineEpochMs` or an explicit distributed start
+  command if needed.
+- Persist distributed-run state with links to underlying control-run commands,
+  results, events, reports, and artifacts.
+- Keep existing `/runs` endpoints compatible.
+
+Exit criteria:
+
+- A distributed run can be staged, started, cancelled, monitored, and exported
+  through server APIs.
+
+Results:
+
+- Added first-class distributed-run state to the control server, linked to the
+  existing lower-level control-run commands/results/events.
+- Added APIs for create/list/read/stage/start/cancel/export under
+  `/distributed-runs`.
+- Staging queues `recipe.load` for inline recipes or `health` preflight for
+  recipe references; stage ACK/readiness is derived from command results.
+- Expected participant count mismatches fail before commands are queued, and
+  `ackTimeoutMs` rolls up missing ACKs to `timed-out`.
+- Start queues `recipe.run` and uses `startDeadlineEpochMs` as the command
+  deadline for scheduled manifests.
+- Cancel queues `recipe.cancel` for target agents and marks the distributed run
+  terminal.
+- Target resolution supports selected agents, role maps, and online agents whose
+  reported Rallar identity matches the manifest group.
+- Snapshots and artifact bundles expose target agents, command links, rollup
+  state, failures, manifest JSON, distributed-run JSON, and the linked
+  control-run JSON.
+- OpenAPI documents the new distributed-run endpoints and schemas.
+
+Verification:
+
+- `cd apps/rallar-black-box-control-server && deno task check` passed.
+- `cd apps/rallar-black-box-control-server && deno task test` passed.
+- `npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts`
+  passed.
+
+### Iteration 47: Distributed Recipes UI
+
+Status: completed on 2026-05-31.
+
+Goal: Add a user-friendly runner-mode surface for choosing preconfigured
+recipes and executing them across browser agents.
+
+Work:
+
+- Add a `Distributed Recipes` tab or runner-mode subpanel.
+- Show catalog recipes with multi-select, profile filters, live/offline badges,
+  prerequisites, and schema validity.
+- Show Global Context group and target resolution status.
+- Show target agents as matched, connected, ready, running, passed, failed,
+  stale, or offline.
+- Add Resolve targets, Stage, Start, Cancel, Refresh, and Export artifact
+  actions.
+- Add role assignment for all-agents, sender/receiver, one-sender-many-receiver,
+  and three-browser matrix patterns.
+
+Exit criteria:
+
+- A user can choose recipes, stage them, start them across group browsers, and
+  understand progress without editing raw command JSON.
+
+Results:
+
+- Added the `Distributed Recipes` runner-mode tab.
+- Added typed SPA control-server helpers for distributed-run list/read/create,
+  stage, start, cancel, and artifact export.
+- Added app-local browser-agent recipe catalog selection with search, profile
+  filters, live-traffic badges, prerequisites, and schema validation badges.
+- Added Global Context group target resolution against selected control-run
+  agents with matched, stale, offline, different-group, and missing-identity
+  states.
+- Added target policy, ACK timeout, start mode, role-pattern, distributed-run ID,
+  manifest preview, create, stage, start, cancel, refresh, resolve-targets,
+  export-artifact, and copy-artifact controls.
+- Added distributed-run summaries for state, target count, command links,
+  readiness, passed recipes, blocking failures, and artifact metadata.
+
+Verification:
+
+- `npm --workspace rallar-black-box run typecheck` passed.
+- `npx vitest run packages/tests/rallar-black-box/app-tabs.test.ts packages/tests/rallar-black-box/rallar-mode-boundary.test.ts packages/tests/rallar-black-box/control-run-manager.test.ts packages/tests/rallar-black-box/distributed-recipes.test.ts`
+  passed.
+- `npm run build:rallar-black-box` passed.
+
+### Iteration 48: Live Monitoring And Historical Distributed Runs
+
+Status: completed on 2026-05-31.
+
+Goal: Make ongoing and previous distributed recipe tests inspectable from the
+SPA.
+
+Work:
+
+- Add timeline, per-agent progress, per-recipe progress, ACK table, failure
+  focus, filtered event stream, latency summaries, and artifact validation.
+- Add historical distributed-run filters by group, recipe, profile, user,
+  status, date, and failure type.
+- Add comparison for two distributed runs with participant, failure, timing, and
+  received-message deltas.
+- Reuse control-run artifact bundles and add distributed-run metadata as an
+  optional artifact file.
+
+Exit criteria:
+
+- Ongoing and historical distributed tests can be reviewed with enough evidence
+  to reproduce failures.
+
+Results:
+
+- Added distributed-run monitor helpers for lifecycle timelines, command/result
+  counts, per-agent progress, per-recipe progress, ACK readiness, failure focus,
+  filtered events, latency summaries, artifact validation, history filtering,
+  and two-run comparison.
+- Added a `Distributed Recipes` monitor panel with failures first, ACK rows,
+  agent/recipe progress, linked event stream, timeline, latency metrics, and
+  artifact status.
+- Added historical distributed-run filters for group, recipe, profile, user,
+  status, date, failure type, and search text.
+- Added two-run comparison for recipe/profile changes, participant deltas,
+  failure deltas, timing deltas, and received-message deltas.
+
+Verification:
+
+- `npx vitest run packages/tests/rallar-black-box/app-tabs.test.ts packages/tests/rallar-black-box/rallar-mode-boundary.test.ts packages/tests/rallar-black-box/control-run-manager.test.ts packages/tests/rallar-black-box/distributed-recipes.test.ts`
+  passed.
+- `npm --workspace rallar-black-box run typecheck` passed.
+- `npm run build:rallar-black-box` passed.
+
+### Iteration 49: Schema-Driven Authoring And Validation UI
+
+Status: completed on 2026-05-31.
+
+Goal: Use generated JSON Schema to make recipe editing and distributed-run
+configuration safer.
+
+Work:
+
+- Validate Local Workbench recipes, Manual Rallar exports, Flow Builder exports,
+  Run Manager command JSON, and Distributed Run manifests in the browser.
+- Show schema errors next to the relevant JSON editor.
+- Add generated examples/snippets for each command kind.
+- Show capability help for provider mode, live-service prerequisites, expected
+  artifacts, and distributed compatibility.
+
+Exit criteria:
+
+- Humans and AI assistants can author/edit recipes in the UI with immediate
+  validation and capability guidance.
+
+Results:
+
+- Added `src/schema-authoring.ts` for shared browser-side validation of command
+  JSON, browser-agent recipes, distributed-run manifests, and runner scenarios.
+- Local Workbench validates recipe JSON and manual command JSON next to the
+  editors, blocks invalid load/execute actions, and exposes generated command
+  examples.
+- Manual Rallar validates generated preview/export recipes, including delivery
+  matrix and negative recipe exports.
+- Run Manager validates command JSON before enqueue and shows command example
+  snippets plus capability metadata.
+- Flow Builder validates SPA recipe and black-box-runner scenario exports.
+- Distributed Recipes validates manifest previews and shows capability details
+  in catalog rows.
+- Capability help includes provider modes, runtime surfaces, live-service
+  requirements, artifact expectations, and distributed compatibility.
+
+Verification:
+
+- `npx vitest run packages/tests/rallar-black-box/schema-authoring.test.ts packages/tests/rallar-black-box/app-tabs.test.ts packages/tests/rallar-black-box/rallar-mode-boundary.test.ts packages/tests/rallar-black-box/control-run-manager.test.ts packages/tests/rallar-black-box/distributed-recipes.test.ts`
+  passed.
+- `npm --workspace rallar-black-box run typecheck` passed.
+- `npm run build:rallar-black-box` passed.
+
+### Iteration 50: Full-Stack Distributed Recipe QA
+
+Status: completed on 2026-05-31.
+
+Goal: Prove distributed recipe execution with real browser agents and real
+data.
+
+Work:
+
+- Add skip-safe Playwright tests with at least three browser contexts connected
+  as control agents.
+- Create/join a real Rallar group and resolve targets from that group.
+- Execute an all-agent ACK recipe, a sender/receiver WS recipe, and a small
+  RTC/realtime recipe.
+- Add negative tests for missing agent, schema failure, ACK timeout,
+  disconnect-after-stage, and one-agent recipe failure rollup.
+- Verify distributed-run artifact export and historical-run display.
+
+Exit criteria:
+
+- Distributed recipe execution has full-stack coverage and produces reproducible
+  redacted artifacts.
+
+Results:
+
+- Added `full-stack-distributed-recipes.spec.ts`, covering the distributed-run
+  API and SPA evidence path with three browser control agents.
+- The simulated full-stack path now proves group identity target resolution,
+  all-agent ACK staging/start, distributed artifact export, and historical-run
+  display.
+- Added negative coverage for invalid manifest schema, missing expected target
+  count, ACK timeout, disconnect-after-stage, and one-agent recipe failure
+  rollup.
+- Added an opt-in live path gated by
+  `RALLAR_BLACK_BOX_DISTRIBUTED_RECIPES=1`. It creates and joins a real Rallar
+  group, runs group-target ACK, sends WS data and verifies receiving browsers,
+  then connects RTC and verifies realtime delivery.
+- Added a default third live user (`charlie/secret`) for local API-v1 fixture
+  runs, so the distributed root command can execute the live browser test
+  instead of skipping because agent C auth is absent.
+- Changed the live distributed WS recipe to use a server-accepted `room.*`
+  user topic and resolved auth placeholders before browser-Rallar `ws.send`,
+  avoiding reserved `rallar.*` topic rejection during real fanout.
+- Fixed the live event matcher so browser `kind: "message"` events are matched
+  before diagnostic payload unwrapping.
+- Aligned control-protocol validation with scoped RTC command fields used by
+  distributed recipes.
+- Control-agent bootstrap now accepts application/workspace defaults and
+  `heartbeatIntervalMs`, making reported group identity immediate enough for
+  distributed target resolution.
+- Added `npm run test:e2e:rallar-black-box:full-stack:real:distributed`.
+- Added `docs/distributed-recipe-full-stack-qa.md`.
+
+Verification:
+
+- `npm --workspace rallar-black-box run typecheck` passed.
+- `npx vitest run packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/rallar-black-box/distributed-recipes.test.ts`
+  passed.
+- `npx vitest run packages/tests/shared-test/rallar-bb-browser-adapter-auth.test.ts packages/tests/shared-test/rallar-bb-test.test.ts packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/rallar-black-box/distributed-recipes.test.ts`
+  passed.
+- `deno test apps/rallar-black-box-control-server/test/control-service.test.ts`
+  passed.
+- `npm run test:e2e:rallar-black-box:full-stack:real:distributed` passed with
+  live three-browser ACK, WS receive, RTC connect, and realtime send enabled.
+- `npx playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts --list`
+  passed.
+
 ## Review After Iteration 38
 
 The existing command-center iteration list is still the right product roadmap.
@@ -1088,9 +1501,21 @@ Iteration 37 bounded the largest visible event/topology rendering surfaces, and
 Iteration 38 added the first skip-safe three-browser live RTC matrix baseline
 with explicit coverage accounting.
 
+Iterations 43 through 50 are now complete for group-aware distributed recipe
+execution. They build on existing Shared Test catalog display, Run Manager bulk
+enqueue, control-agent orchestration, and artifact export, and now include
+schema-backed recipe validation, a distributed-run manifest, group member to
+control-agent mapping, explicit ACK/readiness, distributed-run server APIs, a
+user-friendly Distributed Recipes UI, historical distributed-run monitoring,
+schema-driven authoring, and skip-safe full-stack coverage.
+
 The main remaining risk is integration, not contract design:
 
 - the SPA still needs full matrix loading and large multi-run artifact browsing
+- distributed recipe execution now has the shared contract, target matching,
+  server orchestration APIs, first user-facing UI, historical monitoring, and
+  full-stack coverage; remaining work is mostly retention, saved filters,
+  large-run browsing, and provisioned negative live fixtures
 - the control server still needs retention policy, artifact search, and deeper
   durable storage decisions
 - live permission, expiry, forbidden, CORS, and server-restart cases need
@@ -1102,7 +1527,11 @@ The main remaining risk is integration, not contract design:
 
 ## Recommended Next Step
 
-Start with Iteration 39 if following the plan order.
+Start with Iteration 39 if following the original plan order. If the priority is
+distributed recipe execution from the UI, continue with Iteration 48 now that
+Iterations 43 through 47 have added the schema/capability foundation, the
+distributed-run contract, group-member to control-agent target matching,
+server-owned lifecycle orchestration, and the first Distributed Recipes UI.
 
 Reasoning:
 
@@ -1128,3 +1557,13 @@ Reasoning:
 - Iteration 39 should follow if the next priority is hardening real negative
   cases. Choose Iteration 40 instead when artifact operations and saved run
   comparison become the workflow bottleneck.
+- Iteration 43 is complete. It prevents the later distributed UI and
+  orchestration work from relying on loosely validated JSON.
+- Iteration 44 is complete. The manifest and lifecycle contract are stable
+  enough for server orchestration and UI controls to build on.
+- Iteration 45 is complete. The SPA/control server now have a reliable way to
+  map current Rallar group members to connected browser control agents.
+- Iteration 46 is complete. The control server owns distributed-run lifecycle
+  orchestration.
+- Iteration 47 is complete. The next distributed-recipe step is Iteration 48:
+  add deeper live monitoring and historical distributed-run browsing.

@@ -303,6 +303,9 @@ h3 {
 .run-manager-preset-grid button,
 .run-manager-command-editor button,
 .run-manager-artifact-actions button,
+.distributed-toolbar button,
+.distributed-action-grid button,
+.distributed-run-id-row button,
 .artifact-import-controls button,
 .shared-test-command-row button,
 .shared-test-recipe-row button,
@@ -336,6 +339,9 @@ h3 {
 .run-manager-preset-grid button,
 .run-manager-command-editor button,
 .run-manager-artifact-actions button,
+.distributed-toolbar button,
+.distributed-action-grid button,
+.distributed-run-id-row button,
 .artifact-import-controls button,
 .shared-test-command-row button,
 .shared-test-recipe-row button,
@@ -758,6 +764,7 @@ h3 {
 .rallar-trace-panel,
 .flow-builder-panel,
 .run-manager-panel,
+.distributed-recipes-panel,
 .shared-test-catalog-panel,
 .shared-test-artifact-panel,
 .shared-test-coverage-panel {
@@ -807,6 +814,7 @@ h3 {
 .server-tab-grid .rallar-server-panel,
 .flow-builder-tab-grid .flow-builder-panel,
 .run-manager-tab-grid .run-manager-panel,
+.distributed-recipes-tab-grid .distributed-recipes-panel,
 .quick-test-tab-grid .quick-rallar-test-panel,
 .auth-tab-grid .auth-command-center-panel,
 .rooms-clients-tab-grid .rooms-clients-panel,
@@ -1999,6 +2007,318 @@ h3 {
     max-height: 240px;
 }
 
+.distributed-toolbar {
+    display: grid;
+    grid-template-columns: minmax(240px, 1fr) minmax(160px, 0.42fr) minmax(220px, 0.72fr) repeat(2, minmax(130px, 0.34fr));
+    gap: 8px;
+    align-items: end;
+    padding: 12px 14px;
+}
+
+.distributed-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
+    padding: 0 14px 12px;
+}
+
+.distributed-warning {
+    margin: 0 14px 12px;
+    padding: 10px 12px;
+    border: 1px solid #d99d3a;
+    border-radius: 6px;
+    background: #fff7e3;
+    color: #6b4b0a;
+    font-weight: 700;
+}
+
+.distributed-layout {
+    display: grid;
+    grid-template-columns: minmax(320px, 0.92fr) minmax(360px, 1fr) minmax(400px, 1.05fr);
+    gap: 12px;
+    padding: 0 14px 14px;
+}
+
+.distributed-subpanel {
+    min-width: 0;
+    border: 1px solid #d8dfd5;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.distributed-subpanel .section-heading {
+    padding: 12px 12px 0;
+}
+
+.distributed-subpanel .section-heading.compact {
+    padding-top: 0;
+}
+
+.distributed-filter-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(132px, 0.34fr);
+    padding: 12px;
+}
+
+.distributed-recipe-list,
+.distributed-target-list,
+.distributed-run-list {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+}
+
+.distributed-recipe-row,
+.distributed-target-row,
+.distributed-run-row {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid #dbe1d8;
+    border-radius: 6px;
+    background: #f8faf6;
+}
+
+.distributed-recipe-row.selected,
+.distributed-target-row.selected,
+.distributed-run-row.selected {
+    border-color: #0c6f7b;
+    background: #eaf8f9;
+}
+
+.distributed-recipe-row label,
+.distributed-target-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+}
+
+.distributed-recipe-row label {
+    gap: 8px;
+}
+
+.distributed-target-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+}
+
+.distributed-target-row.disabled {
+    opacity: 0.74;
+}
+
+.distributed-target-row > small,
+.distributed-recipe-row p,
+.distributed-recipe-row details {
+    grid-column: 2 / -1;
+}
+
+.distributed-recipe-row strong,
+.distributed-recipe-row small,
+.distributed-target-row strong,
+.distributed-target-row small,
+.distributed-run-row strong,
+.distributed-run-row small {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.distributed-recipe-row small,
+.distributed-target-row small,
+.distributed-run-row small {
+    color: #65746d;
+    font-size: 0.74rem;
+}
+
+.distributed-recipe-row p {
+    margin: 0;
+    color: #46524d;
+    font-size: 0.86rem;
+}
+
+.distributed-recipe-row ul {
+    margin: 6px 0 0;
+    padding-left: 18px;
+}
+
+.distributed-options-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px;
+}
+
+.distributed-run-id-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(88px, auto);
+    gap: 8px;
+    align-items: end;
+    padding: 12px;
+}
+
+.distributed-action-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    padding: 0 12px 12px;
+}
+
+.distributed-run-summary,
+.distributed-artifact-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    padding: 0 12px 12px;
+}
+
+.distributed-run-summary .mini-json,
+.distributed-run-error {
+    grid-column: 1 / -1;
+}
+
+.distributed-run-error {
+    display: grid;
+    gap: 4px;
+    padding: 10px;
+    border: 1px solid #d58b8b;
+    border-radius: 6px;
+    background: #fff0f0;
+    color: #7d1717;
+}
+
+.distributed-run-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    text-align: left;
+}
+
+.distributed-manifest-panel {
+    grid-column: 1 / -1;
+}
+
+.distributed-manifest-panel .json-block {
+    margin: 12px;
+    max-height: 420px;
+}
+
+.distributed-monitor-panel,
+.distributed-history-panel,
+.distributed-compare-panel {
+    grid-column: 1 / -1;
+}
+
+.distributed-monitor-metrics {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px;
+}
+
+.distributed-monitor-grid,
+.distributed-compare-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    padding: 0 12px 12px;
+}
+
+.distributed-monitor-grid > section,
+.distributed-compare-grid > section {
+    min-width: 0;
+}
+
+.distributed-monitor-grid h3,
+.distributed-compare-grid h3 {
+    margin: 0 0 8px;
+    font-size: 0.9rem;
+}
+
+.distributed-monitor-list {
+    display: grid;
+    gap: 6px;
+    min-height: 0;
+    max-height: 360px;
+    overflow: auto;
+}
+
+.distributed-monitor-list.compact {
+    max-height: 220px;
+}
+
+.distributed-monitor-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid #dbe1d8;
+    border-radius: 6px;
+    background: #f8faf6;
+}
+
+.distributed-monitor-row.failure {
+    border-color: #d58b8b;
+    background: #fff0f0;
+}
+
+.distributed-monitor-row strong,
+.distributed-monitor-row span,
+.distributed-monitor-row small {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.distributed-monitor-row small {
+    grid-column: 1 / -1;
+    color: #65746d;
+    font-size: 0.74rem;
+}
+
+.distributed-history-filters {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px;
+}
+
+.distributed-history-list {
+    padding-top: 0;
+}
+
+.distributed-compare-selectors {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px;
+}
+
+.distributed-artifact-validation {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 8px;
+    margin: 0 12px 12px;
+    padding: 10px;
+    border: 1px solid #d8dfd5;
+    border-radius: 6px;
+    background: #f8faf6;
+}
+
+.distributed-artifact-validation.valid {
+    border-color: #6ca56f;
+    background: #eef9ef;
+}
+
+.distributed-artifact-validation.missing-file,
+.distributed-artifact-validation.invalid-json {
+    border-color: #d58b8b;
+    background: #fff0f0;
+}
+
 .shared-test-summary-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2312,6 +2632,11 @@ h3 {
 .manual-command button {
     width: calc(100% - 28px);
     margin: 0 14px;
+}
+
+.manual-command .command-example-picker button {
+    width: auto;
+    margin: 0;
 }
 
 .manual-rallar-grid {
@@ -2639,6 +2964,131 @@ h3 {
     color: #a83232;
     font-size: 0.86rem;
     overflow-wrap: anywhere;
+}
+
+.schema-authoring-panel,
+.command-example-picker {
+    display: grid;
+    gap: 10px;
+    margin: 10px 0;
+    padding: 10px;
+    border: 1px solid #d8dfd5;
+    border-radius: 6px;
+    background: #f8faf6;
+}
+
+.schema-authoring-panel.compact {
+    margin: 8px 0 0;
+    padding: 8px;
+}
+
+.schema-authoring-panel.good {
+    border-color: #6ca56f;
+    background: #eef9ef;
+}
+
+.schema-authoring-panel.warn {
+    border-color: #d99d3a;
+    background: #fff7e3;
+}
+
+.schema-authoring-panel.bad {
+    border-color: #d58b8b;
+    background: #fff0f0;
+}
+
+.schema-authoring-heading,
+.schema-chip-row {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.schema-authoring-heading strong {
+    min-width: 0;
+    flex: 1;
+}
+
+.schema-error-list,
+.schema-command-capabilities {
+    display: grid;
+    gap: 6px;
+}
+
+.schema-error-row,
+.schema-command-capability {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid #dbe1d8;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.schema-error-row strong,
+.schema-error-row span,
+.schema-command-capability strong,
+.schema-command-capability small,
+.schema-command-capability p {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.schema-error-row strong {
+    color: #a83232;
+}
+
+.schema-command-capability p {
+    margin: 0;
+    color: #46524d;
+    font-size: 0.82rem;
+}
+
+.schema-command-capability small,
+.schema-capability-list span,
+.schema-capability-empty {
+    color: #65746d;
+    font-size: 0.76rem;
+}
+
+.schema-capability-summary {
+    display: grid;
+    gap: 8px;
+}
+
+.schema-capability-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.schema-capability-list {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid #dbe1d8;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.schema-capability-list span {
+    overflow-wrap: anywhere;
+}
+
+.command-example-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) repeat(2, minmax(86px, auto));
+    gap: 8px;
+    align-items: end;
+}
+
+.command-example-picker .mini-json {
+    margin: 0;
+    max-height: 220px;
 }
 
 .config-list,
@@ -3101,6 +3551,13 @@ dd {
     .run-manager-telemetry-grid,
     .run-manager-artifact-actions,
     .run-manager-artifact-summary,
+    .distributed-toolbar,
+    .distributed-summary-grid,
+    .distributed-layout,
+    .distributed-options-grid,
+    .distributed-action-grid,
+    .distributed-run-summary,
+    .distributed-artifact-summary,
     .global-context-grid,
     .rallar-browser-trace-bar,
     .rallar-trace-content,
@@ -3136,7 +3593,21 @@ dd {
     .shared-test-catalog-grid,
     .artifact-file-grid,
     .artifact-view-grid,
-    .coverage-owner-grid {
+    .coverage-owner-grid,
+    .distributed-toolbar,
+    .distributed-summary-grid,
+    .distributed-layout,
+    .distributed-options-grid,
+    .distributed-action-grid,
+    .distributed-run-summary,
+    .distributed-artifact-summary,
+    .distributed-monitor-metrics,
+    .distributed-monitor-grid,
+    .distributed-history-filters,
+    .distributed-compare-selectors,
+    .distributed-compare-grid,
+    .schema-capability-grid,
+    .command-example-controls {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
@@ -3453,6 +3924,22 @@ dd {
     .run-manager-telemetry-grid,
     .run-manager-artifact-actions,
     .run-manager-artifact-summary,
+    .distributed-toolbar,
+    .distributed-summary-grid,
+    .distributed-layout,
+    .distributed-filter-grid,
+    .distributed-options-grid,
+    .distributed-action-grid,
+    .distributed-run-id-row,
+    .distributed-run-summary,
+    .distributed-artifact-summary,
+    .distributed-monitor-metrics,
+    .distributed-monitor-grid,
+    .distributed-history-filters,
+    .distributed-compare-selectors,
+    .distributed-compare-grid,
+    .schema-capability-grid,
+    .command-example-controls,
     .global-context-grid,
     .rallar-browser-trace-bar,
     .rallar-trace-content,
@@ -3704,7 +4191,10 @@ dd {
     .run-manager-run-row,
     .run-manager-agent-row,
     .run-manager-command-row,
-    .run-manager-mini-row {
+    .run-manager-mini-row,
+    .distributed-target-row,
+    .distributed-run-row,
+    .distributed-monitor-row {
         grid-template-columns: 1fr;
     }
 

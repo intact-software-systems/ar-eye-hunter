@@ -49,10 +49,13 @@ export type RallarBlackBoxBootstrapConfig = Readonly<{
     runId: string;
     agentId: string;
     controlToken?: string;
+    heartbeatIntervalMs?: number;
     statsIntervalMs?: number;
     finalReportUploadUrl?: string;
     environment: string;
     apiBaseUrl: string;
+    applicationId: string;
+    workspaceId: string;
     actor: string;
     sessionId: string;
     roomId: string;
@@ -296,6 +299,12 @@ export function resolveRallarBlackBoxBootstrapConfig(
         runId,
         agentId,
         controlToken: paramValue(params, env, 'controlToken', 'VITE_RALLAR_CONTROL_TOKEN'),
+        heartbeatIntervalMs: numberParamValue(paramValue(
+            params,
+            env,
+            'heartbeatIntervalMs',
+            'VITE_RALLAR_HEARTBEAT_INTERVAL_MS',
+        )),
         statsIntervalMs: numberParamValue(paramValue(
             params,
             env,
@@ -312,6 +321,10 @@ export function resolveRallarBlackBoxBootstrapConfig(
             RALLAR_BLACK_BOX_CLIENT_DEFAULTS.environment,
         apiBaseUrl: paramValue(params, env, 'apiBaseUrl', 'VITE_RALLAR_API_BASE_URL') ??
             RALLAR_BLACK_BOX_CLIENT_DEFAULTS.apiBaseUrl,
+        applicationId: paramValue(params, env, 'applicationId', 'VITE_RALLAR_APPLICATION_ID') ??
+            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.applicationId,
+        workspaceId: paramValue(params, env, 'workspaceId', 'VITE_RALLAR_WORKSPACE_ID') ??
+            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.workspaceId,
         actor: paramValue(params, env, 'actor', 'VITE_RALLAR_ACTOR') ??
             RALLAR_BLACK_BOX_CLIENT_DEFAULTS.actor,
         sessionId: paramValue(params, env, 'sessionId', 'VITE_RALLAR_SESSION_ID') ??
@@ -422,6 +435,9 @@ function remoteControlConfig(
             timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
             connection: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.remoteConnection,
             providerMode: bootstrap.providerMode,
+            applicationId: bootstrap.applicationId,
+            workspaceId: bootstrap.workspaceId,
+            groupId: bootstrap.roomId,
         },
     };
 }
@@ -849,6 +865,7 @@ class RallarBlackBoxRuntimeStore {
         this.controlClient = new RallarBlackBoxControlClient({
             runtime: this.runtime,
             token: this.bootstrapConfig.controlToken,
+            heartbeatIntervalMs: this.bootstrapConfig.heartbeatIntervalMs,
             statsIntervalMs: this.bootstrapConfig.statsIntervalMs,
             finalReportUploadUrl: this.bootstrapConfig.finalReportUploadUrl,
             onSnapshot: control => {

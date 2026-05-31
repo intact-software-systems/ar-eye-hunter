@@ -1,7 +1,7 @@
 # Rallar Black Box Documentation
 
-This folder documents the current state of `apps/rallar-black-box` after the command-center Iteration 38 work and the
-shared-test Iterations 1-19 runner/handoff work.
+This folder documents the current state of `apps/rallar-black-box` after the command-center distributed recipe
+Iterations 43-50 and the shared-test Iterations 1-19 runner/handoff work.
 
 The app is a browser-based black-box test agent and visible debugging workbench for Rallar RTC, WebSocket, and HTTP test
 flows. It uses the shared `rallar-bb-test` command contract, can connect to a WebSocket control server, streams results
@@ -28,6 +28,14 @@ WebSocket, and browser HTTP commands when a real Rallar environment is configure
   shared-test-runner-backed, or still planned.
 - [Rallar Mode Split Iteration Plan](./mode-split-iteration-plan.md): proposed split between direct Rallar operations
   and black-box-runner recipe/artifact workflows.
+- [Distributed Recipe Execution Iterations](./distributed-recipe-execution-iterations.md): planned group-aware
+  distributed recipe execution, ACK/readiness, monitoring, historical runs, and JSON schema work.
+- [Distributed Recipe Full-stack QA](./distributed-recipe-full-stack-qa.md): how to run simulated and live
+  three-browser distributed recipe Playwright coverage.
+- [Shared-test Schema And Capabilities](../../../packages/shared-test/rallar-bb-test/docs/schema-and-capabilities.md):
+  shared command, recipe, control-envelope, distributed-manifest, and runner-scenario schema ownership.
+- [Distributed Run Contract](../../../packages/shared-test/rallar-bb-test/docs/distributed-run-contract.md): shared
+  distributed-run manifest fields, lifecycle states, target policy, and rollup rules.
 - [Examples Index](./examples-index.md): app-local and shared-test recipe entry points with prerequisites.
 - [Full-stack UI Automation Tests](./full-stack-ui-automation-tests.md): how to author Playwright tests for simulated
   UI, control-agent, API-backed, shared-test handoff, and live two-browser flows.
@@ -152,6 +160,19 @@ npm run test:e2e:rallar-black-box:full-stack:real:live-rtc-3
 
 That command is gated by `RALLAR_BLACK_BOX_LIVE_RTC_MATRIX=1` and covers real direct, multicast, broadcast,
 not-yet-in-sync/NACK probing, stale-send failure, and control artifact export across `realtime` and `messages.rtc`.
+
+Run the distributed recipe full-stack slice when you want to validate the control-server distributed-run workflow:
+
+```sh
+npm run test:e2e:rallar-black-box:full-stack:real:distributed
+```
+
+The simulated distributed coverage runs with the full-stack gate. The live WS and RTC delivery section additionally
+requires `RALLAR_BLACK_BOX_DISTRIBUTED_RECIPES=1`. Local API-v1 fixture runs use `alice/secret`, `bob/secret`, and
+`charlie/secret` by default; override them with `VITE_RALLAR_AGENT_A/B/C_USERNAME` and
+`VITE_RALLAR_AGENT_A/B/C_PASSWORD`, or restored-session variables, for provisioned environments.
+Live distributed WS recipes use `room.*` topics because Rallar Server reserves
+`rallar.*` for system traffic and will reject those topics before dynamic fanout.
 For the exhaustive sender/receiver matrix, run:
 
 ```sh
@@ -191,8 +212,12 @@ bundles. It still leaves actual shell execution to explicit local tooling or the
 - `src/flow-builder.ts`: flow templates, variable substitution, SPA recipe export, runner scenario export, and flow-step
   insertion for the Flow Builder tab.
 - `src/control-run-manager.ts`: typed control-server snapshot loading, run/agent row derivation, bulk enqueue,
-  reset/delete, artifact export loading, JSONL/failure-bundle fetches, and control URL normalization for the Run Manager
-  tab.
+  reset/delete, artifact export loading, JSONL/failure-bundle fetches, distributed-run lifecycle calls, and control URL
+  normalization for the Run Manager and Distributed Recipes tabs.
+- `src/distributed-recipes.ts`: Distributed Recipes target-resolution, role-pattern, manifest-building, monitor,
+  history-filter, compare, artifact-validation, and state-tone helpers.
+- `src/schema-authoring.ts`: browser-side schema validation and capability summaries for command JSON, recipes,
+  distributed-run manifests, runner scenarios, and generated command examples.
 - `src/full-stack-qa-matrix.ts`: full-stack command-center QA ownership and evidence mapping.
 - `src/live-rtc-three-browser-coverage.ts`: coverage accounting for the live three-browser RTC matrix.
 - `src/browser-rallar-runtime.ts`: lazy bridge used by black-box-runner command execution and runner-owned Manual
@@ -204,7 +229,9 @@ bundles. It still leaves actual shell execution to explicit local tooling or the
 - `src/rtc-diagnostics.ts`: event-derived RTC diagnostics.
 - `src/topology-graph.ts`: graphology topology derivation used by the Sigma view.
 - `src/shared-test-handoff-fixtures.ts`: browser-safe re-export of the shared-test recipe catalog, artifact contract,
-  coverage handoff, artifact parser, and schema validators for command-center work.
+  coverage handoff, artifact parser, distributed-run helpers, command capabilities, and schema validators for
+  command-center work.
+- `src/run-manager-presets.ts`: schema-validated Run Manager command presets.
 - `apps/rallar-black-box-control-server`: local control server used for orchestration, smoke tests, optional snapshot
   persistence, and redacted run artifact export.
 - `packages/shared-test/rallar-bb-test`: shared command/result/event/runtime contract.

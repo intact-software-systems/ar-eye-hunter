@@ -7,6 +7,7 @@ import type {
     RallarBlackBoxTestState,
     RallarBlackBoxTestStatsSnapshot,
 } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxControlAgentIdentity } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import {
     type ControlClientEnvelope,
@@ -39,6 +40,7 @@ export type RallarBlackBoxControlSnapshot = Readonly<{
     reconnectAttempt: number;
     sentCount: number;
     receivedCount: number;
+    identity?: RallarBlackBoxControlAgentIdentity;
     lastError?: string;
 }>;
 
@@ -151,6 +153,59 @@ function asRecord(value: unknown): Record<string, unknown> {
     return value && typeof value === 'object' && !Array.isArray(value)
         ? value as Record<string, unknown>
         : {};
+}
+
+function firstString(...values: readonly unknown[]): string | undefined {
+    for (const value of values) {
+        if (typeof value === 'string' && value.trim().length > 0) {
+            return value.trim();
+        }
+    }
+
+    return undefined;
+}
+
+function toControlAgentIdentity(
+    state: RallarBlackBoxTestState,
+    agentId: string,
+): RallarBlackBoxControlAgentIdentity | undefined {
+    const config = state.currentConfig;
+    if (!config) {
+        return {
+            sessionLabel: agentId,
+            updatedAtEpochMs: Date.now(),
+        };
+    }
+
+    const rallar = asRecord(config.rallar);
+    const rallarScope = asRecord(rallar.scope);
+    const defaults = asRecord(config.defaults);
+    const control = asRecord(config.control);
+    const browser = asRecord(config.browser);
+    const principalId = firstString(rallar.principalId, rallar.clientId, config.actor);
+    const sessionId = firstString(rallar.sessionId, config.sessionId);
+    const identity: RallarBlackBoxControlAgentIdentity = {
+        principalId,
+        clientId: firstString(rallar.clientId, principalId),
+        username: firstString(rallar.username, config.actor, principalId),
+        sessionId,
+        clientInstanceId: firstString(rallar.clientInstanceId, rallar.instanceId, principalId),
+        applicationId: firstString(defaults.applicationId, rallar.applicationId, rallarScope.applicationId),
+        workspaceId: firstString(defaults.workspaceId, rallar.workspaceId, rallarScope.workspaceId),
+        groupId: firstString(defaults.groupId, rallar.groupId, config.roomId),
+        providerMode: firstString(control.providerMode, defaults.providerMode, rallar.providerMode),
+        browserLabel: firstString(browser.label, browser.name, globalThis.navigator?.userAgent),
+        sessionLabel: firstString(
+            browser.sessionLabel,
+            sessionId && principalId ? `${principalId}:${sessionId}` : undefined,
+            agentId,
+        ),
+        updatedAtEpochMs: Date.now(),
+    };
+
+    return Object.values(identity).some(value => value !== undefined)
+        ? identity
+        : undefined;
 }
 
 function toStatsSnapshot(
@@ -472,6 +527,8 @@ export class RallarBlackBoxControlClient {
 
     private sendRegister(): void {
         const options = this.requireOptions();
+        const identity = toControlAgentIdentity(this.runtime.state(), options.agentId);
+        this.setSnapshot({ identity });
         this.sendEnvelope({
             kind: 'register',
             protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
@@ -479,6 +536,7 @@ export class RallarBlackBoxControlClient {
             agentId: options.agentId,
             token: options.token ?? this.token,
             atEpochMs: Date.now(),
+            identity,
             resume: {
                 completedCommandIds: Object.keys(this.runtime.state().resultCache),
             },
@@ -488,6 +546,7 @@ export class RallarBlackBoxControlClient {
     private sendHeartbeat(): void {
         const options = this.requireOptions();
         const state = this.runtime.state();
+        const identity = toControlAgentIdentity(state, options.agentId);
         this.sendEnvelope({
             kind: 'heartbeat',
             protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
@@ -495,11 +554,13 @@ export class RallarBlackBoxControlClient {
             agentId: options.agentId,
             atEpochMs: Date.now(),
             status: state.status,
+            identity,
             lastCommandId: state.commandHistory.at(-1)?.commandId,
             lastEventAtEpochMs: state.events.at(-1)?.atEpochMs,
         });
         this.setSnapshot({
             lastHeartbeatAtEpochMs: Date.now(),
+            identity,
         });
     }
 

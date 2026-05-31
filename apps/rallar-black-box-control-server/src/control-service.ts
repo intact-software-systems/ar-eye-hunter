@@ -12,6 +12,17 @@ import type {
     RallarBlackBoxTestCommandKind,
     RallarBlackBoxTestRedactionOptions,
 } from '@shared-test/rallar-bb-test/types.ts';
+import {
+    isDistributedRunTerminalState,
+    rollupDistributedRunResult,
+    type RallarBlackBoxControlAgentIdentity,
+    type RallarBlackBoxDistributedParticipantResult,
+    type RallarBlackBoxDistributedRecipeResult,
+    type RallarBlackBoxDistributedRunManifest,
+    type RallarBlackBoxDistributedRunRollup,
+    type RallarBlackBoxDistributedRunState,
+    type RallarBlackBoxDistributedRunRecipeSelection,
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 
 export type EnqueueControlCommandInput = Readonly<{
@@ -49,6 +60,48 @@ export type ControlRunToken = Readonly<{
     expiresAtEpochMs: number;
 }>;
 
+export type ControlDistributedRunCommandPhase = 'stage' | 'start' | 'cancel';
+
+export type ControlDistributedRunCommandLink = Readonly<{
+    phase: ControlDistributedRunCommandPhase;
+    agentId: string;
+    commandId: string;
+    recipeId?: string;
+    role?: string;
+    queuedAtEpochMs: number;
+}>;
+
+export type ControlDistributedRunSnapshot = Readonly<{
+    distributedRunId: string;
+    controlRunId: string;
+    manifest: RallarBlackBoxDistributedRunManifest;
+    state: RallarBlackBoxDistributedRunState;
+    createdAtEpochMs: number;
+    updatedAtEpochMs: number;
+    stagedAtEpochMs?: number;
+    startedAtEpochMs?: number;
+    cancelledAtEpochMs?: number;
+    completedAtEpochMs?: number;
+    targetAgentIds: readonly string[];
+    commandLinks: readonly ControlDistributedRunCommandLink[];
+    rollup: RallarBlackBoxDistributedRunRollup;
+    error?: Readonly<{
+        code: string;
+        message: string;
+        details?: unknown;
+    }>;
+}>;
+
+export type ControlDistributedRunArtifactBundle = Readonly<{
+    artifactSchemaVersion: 1;
+    distributedRunId: string;
+    generatedAtEpochMs: number;
+    files: Readonly<Record<
+        'distributed-run.json' | 'manifest.json' | 'control-run.json',
+        string
+    >>;
+}>;
+
 export type RallarBlackBoxControlServiceReceiveResult = Readonly<{
     kind: ControlClientEnvelope['kind'];
     runId: string;
@@ -72,6 +125,7 @@ export type ControlAgentSnapshot = Readonly<{
     lastSeenAtEpochMs?: number;
     lastHeartbeatAtEpochMs?: number;
     status?: string;
+    identity?: RallarBlackBoxControlAgentIdentity;
     connectionSequence: number;
     reconnectCount: number;
     receivedResultCount: number;
@@ -95,6 +149,7 @@ export type ControlRunSnapshot = Readonly<{
 
 export type ControlServerSnapshot = Readonly<{
     runs: readonly ControlRunSnapshot[];
+    distributedRuns?: readonly ControlDistributedRunSnapshot[];
 }>;
 
 type StoredCommand = {
@@ -116,6 +171,7 @@ type StoredAgent = {
     lastSeenAtEpochMs?: number;
     lastHeartbeatAtEpochMs?: number;
     status?: string;
+    identity?: RallarBlackBoxControlAgentIdentity;
     connectionSequence: number;
     reconnectCount: number;
     receivedResultCount: number;
@@ -147,6 +203,22 @@ type StoredRun = {
     tokens: Map<string, StoredToken>;
 };
 
+type StoredDistributedRun = {
+    distributedRunId: string;
+    controlRunId: string;
+    manifest: RallarBlackBoxDistributedRunManifest;
+    state: RallarBlackBoxDistributedRunState;
+    createdAtEpochMs: number;
+    updatedAtEpochMs: number;
+    stagedAtEpochMs?: number;
+    startedAtEpochMs?: number;
+    cancelledAtEpochMs?: number;
+    completedAtEpochMs?: number;
+    targetAgentIds: string[];
+    commandLinks: ControlDistributedRunCommandLink[];
+    error?: ControlDistributedRunSnapshot['error'];
+};
+
 export class RallarBlackBoxControlService {
     private readonly now: () => number;
     private readonly commandIdFactory: () => string;
@@ -156,6 +228,7 @@ export class RallarBlackBoxControlService {
     private readonly commandRateLimitWindowMs: number;
     private readonly runTokenTtlMs: number;
     private readonly runs = new Map<string, StoredRun>();
+    private readonly distributedRuns = new Map<string, StoredDistributedRun>();
 
     constructor(options: RallarBlackBoxControlServiceOptions = {}) {
         this.now = options.now ?? (() => Date.now());
@@ -284,6 +357,214 @@ export class RallarBlackBoxControlService {
         );
     }
 
+    createDistributedRun(
+        manifest: RallarBlackBoxDistributedRunManifest,
+    ): ControlDistributedRunSnapshot {
+        const controlRunId = cleanSegment(manifest.controlRunId) ?? manifest.distributedRunId;
+        if (this.distributedRuns.has(manifest.distributedRunId)) {
+            throw new Error(`Distributed run ${manifest.distributedRunId} already exists.`);
+        }
+
+        this.ensureRun(controlRunId);
+        const now = this.now();
+        const stored: StoredDistributedRun = {
+            distributedRunId: manifest.distributedRunId,
+            controlRunId,
+            manifest: {
+                ...manifest,
+                schemaVersion: manifest.schemaVersion ?? 1,
+                controlRunId,
+            },
+            state: 'draft',
+            createdAtEpochMs: now,
+            updatedAtEpochMs: now,
+            targetAgentIds: [],
+            commandLinks: [],
+        };
+        stored.targetAgentIds = this.resolveDistributedTargetAgentIds(stored);
+        this.distributedRuns.set(stored.distributedRunId, stored);
+        return this.snapshotDistributedRunValue(stored);
+    }
+
+    listDistributedRuns(): readonly ControlDistributedRunSnapshot[] {
+        return Array.from(
+            this.distributedRuns.values(),
+            distributedRun => this.snapshotDistributedRunValue(distributedRun),
+        );
+    }
+
+    snapshotDistributedRun(
+        distributedRunId: string,
+    ): ControlDistributedRunSnapshot | undefined {
+        const distributedRun = this.distributedRuns.get(distributedRunId);
+        return distributedRun ? this.snapshotDistributedRunValue(distributedRun) : undefined;
+    }
+
+    stageDistributedRun(distributedRunId: string): ControlDistributedRunSnapshot {
+        const distributedRun = this.requireDistributedRun(distributedRunId);
+        this.assertDistributedRunCanMutate(distributedRun, 'stage');
+        distributedRun.targetAgentIds = this.resolveDistributedTargetAgentIds(distributedRun);
+        distributedRun.updatedAtEpochMs = this.now();
+
+        if (distributedRun.targetAgentIds.length === 0) {
+            distributedRun.state = 'failed';
+            distributedRun.completedAtEpochMs = this.now();
+            distributedRun.error = {
+                code: 'RALLAR_BB_DISTRIBUTED_NO_TARGET_AGENTS',
+                message: 'No target control agents were resolved for this distributed run.',
+                details: {
+                    targetPolicy: distributedRun.manifest.targetPolicy,
+                    group: distributedRun.manifest.group,
+                },
+            };
+            return this.snapshotDistributedRunValue(distributedRun);
+        }
+        const expectedParticipantCount = distributedRun.manifest.targetPolicy.expectedParticipantCount;
+        if (
+            expectedParticipantCount !== undefined &&
+            distributedRun.targetAgentIds.length !== expectedParticipantCount
+        ) {
+            distributedRun.state = 'failed';
+            distributedRun.completedAtEpochMs = this.now();
+            distributedRun.error = {
+                code: 'RALLAR_BB_DISTRIBUTED_TARGET_COUNT_MISMATCH',
+                message: `Resolved ${distributedRun.targetAgentIds.length} target agents, expected ${expectedParticipantCount}.`,
+                details: {
+                    targetAgentIds: distributedRun.targetAgentIds,
+                    expectedParticipantCount,
+                },
+            };
+            return this.snapshotDistributedRunValue(distributedRun);
+        }
+
+        for (const agentId of distributedRun.targetAgentIds) {
+            for (const selection of this.recipeSelectionsForAgent(distributedRun.manifest, agentId)) {
+                this.enqueueLinkedDistributedCommand(
+                    distributedRun,
+                    'stage',
+                    agentId,
+                    selection,
+                    this.stageCommandForSelection(distributedRun, agentId, selection),
+                );
+            }
+        }
+
+        distributedRun.state = 'waiting-for-ack';
+        distributedRun.stagedAtEpochMs ??= this.now();
+        distributedRun.updatedAtEpochMs = this.now();
+        return this.snapshotDistributedRunValue(distributedRun);
+    }
+
+    startDistributedRun(distributedRunId: string): ControlDistributedRunSnapshot {
+        const distributedRun = this.requireDistributedRun(distributedRunId);
+        this.assertDistributedRunCanMutate(distributedRun, 'start');
+        if (distributedRun.targetAgentIds.length === 0) {
+            distributedRun.targetAgentIds = this.resolveDistributedTargetAgentIds(distributedRun);
+        }
+        if (distributedRun.targetAgentIds.length === 0) {
+            distributedRun.state = 'failed';
+            distributedRun.completedAtEpochMs = this.now();
+            distributedRun.error = {
+                code: 'RALLAR_BB_DISTRIBUTED_NO_TARGET_AGENTS',
+                message: 'No target control agents were resolved for this distributed run.',
+                details: {
+                    targetPolicy: distributedRun.manifest.targetPolicy,
+                    group: distributedRun.manifest.group,
+                },
+            };
+            return this.snapshotDistributedRunValue(distributedRun);
+        }
+        const expectedParticipantCount = distributedRun.manifest.targetPolicy.expectedParticipantCount;
+        if (
+            expectedParticipantCount !== undefined &&
+            distributedRun.targetAgentIds.length !== expectedParticipantCount
+        ) {
+            distributedRun.state = 'failed';
+            distributedRun.completedAtEpochMs = this.now();
+            distributedRun.error = {
+                code: 'RALLAR_BB_DISTRIBUTED_TARGET_COUNT_MISMATCH',
+                message: `Resolved ${distributedRun.targetAgentIds.length} target agents, expected ${expectedParticipantCount}.`,
+                details: {
+                    targetAgentIds: distributedRun.targetAgentIds,
+                    expectedParticipantCount,
+                },
+            };
+            return this.snapshotDistributedRunValue(distributedRun);
+        }
+
+        for (const agentId of distributedRun.targetAgentIds) {
+            for (const selection of this.recipeSelectionsForAgent(distributedRun.manifest, agentId)) {
+                this.enqueueLinkedDistributedCommand(
+                    distributedRun,
+                    'start',
+                    agentId,
+                    selection,
+                    this.startCommandForSelection(distributedRun, agentId, selection),
+                );
+            }
+        }
+
+        distributedRun.state = 'running';
+        distributedRun.startedAtEpochMs ??= this.now();
+        distributedRun.updatedAtEpochMs = this.now();
+        return this.snapshotDistributedRunValue(distributedRun);
+    }
+
+    cancelDistributedRun(
+        distributedRunId: string,
+        reason = 'Distributed run cancelled.',
+    ): ControlDistributedRunSnapshot {
+        const distributedRun = this.requireDistributedRun(distributedRunId);
+        if (!isDistributedRunTerminalState(distributedRun.state)) {
+            if (distributedRun.targetAgentIds.length === 0) {
+                distributedRun.targetAgentIds = this.resolveDistributedTargetAgentIds(distributedRun);
+            }
+            for (const agentId of distributedRun.targetAgentIds) {
+                const commandId = this.distributedCommandId(distributedRun, 'cancel', agentId, 'run');
+                this.enqueueLinkedDistributedCommand(distributedRun, 'cancel', agentId, undefined, {
+                    kind: 'recipe.cancel',
+                    commandId,
+                    label: `Cancel distributed run ${distributedRun.distributedRunId}`,
+                    reason,
+                    metadata: this.distributedCommandMetadata(
+                        distributedRun,
+                        'cancel',
+                        agentId,
+                        undefined,
+                    ),
+                });
+            }
+            distributedRun.state = 'cancelled';
+            distributedRun.cancelledAtEpochMs = this.now();
+            distributedRun.completedAtEpochMs = distributedRun.cancelledAtEpochMs;
+            distributedRun.updatedAtEpochMs = distributedRun.cancelledAtEpochMs;
+        }
+
+        return this.snapshotDistributedRunValue(distributedRun);
+    }
+
+    distributedRunArtifactBundle(
+        distributedRunId: string,
+    ): ControlDistributedRunArtifactBundle | undefined {
+        const distributedRun = this.distributedRuns.get(distributedRunId);
+        if (!distributedRun) {
+            return undefined;
+        }
+
+        const snapshot = this.snapshotDistributedRunValue(distributedRun);
+        const controlRun = this.snapshotRun(distributedRun.controlRunId);
+        return {
+            artifactSchemaVersion: 1,
+            distributedRunId,
+            generatedAtEpochMs: this.now(),
+            files: {
+                'distributed-run.json': JSON.stringify(snapshot, null, 2),
+                'manifest.json': JSON.stringify(snapshot.manifest, null, 2),
+                'control-run.json': JSON.stringify(controlRun ?? null, null, 2),
+            },
+        };
+    }
+
     takeDispatchableCommands(runId: string, agentId: string): readonly ControlCommandEnvelope[] {
         const run = this.runs.get(runId);
         const agent = run?.agents.get(agentId);
@@ -355,7 +636,15 @@ export class RallarBlackBoxControlService {
     }
 
     deleteRun(runId: string): boolean {
-        return this.runs.delete(runId);
+        const deleted = this.runs.delete(runId);
+        if (deleted) {
+            for (const [distributedRunId, distributedRun] of this.distributedRuns.entries()) {
+                if (distributedRun.controlRunId === runId) {
+                    this.distributedRuns.delete(distributedRunId);
+                }
+            }
+        }
+        return deleted;
     }
 
     pruneRuns(maxRuns: number | undefined): readonly string[] {
@@ -377,11 +666,17 @@ export class RallarBlackBoxControlService {
             this.runs.delete(runId);
             deletedRunIds.push(runId);
         }
+        for (const [distributedRunId, distributedRun] of this.distributedRuns.entries()) {
+            if (deletedRunIds.includes(distributedRun.controlRunId)) {
+                this.distributedRuns.delete(distributedRunId);
+            }
+        }
         return deletedRunIds;
     }
 
     restoreSnapshot(snapshot: ControlServerSnapshot): void {
         this.runs.clear();
+        this.distributedRuns.clear();
         for (const runSnapshot of snapshot.runs) {
             const run: StoredRun = {
                 runId: runSnapshot.runId,
@@ -406,6 +701,7 @@ export class RallarBlackBoxControlService {
                     lastSeenAtEpochMs: agentSnapshot.lastSeenAtEpochMs,
                     lastHeartbeatAtEpochMs: agentSnapshot.lastHeartbeatAtEpochMs,
                     status: agentSnapshot.status,
+                    identity: agentSnapshot.identity,
                     connectionSequence: agentSnapshot.connectionSequence,
                     reconnectCount: agentSnapshot.reconnectCount,
                     receivedResultCount: agentSnapshot.receivedResultCount,
@@ -430,11 +726,29 @@ export class RallarBlackBoxControlService {
             }
             this.runs.set(run.runId, run);
         }
+        for (const distributedRunSnapshot of snapshot.distributedRuns ?? []) {
+            this.distributedRuns.set(distributedRunSnapshot.distributedRunId, {
+                distributedRunId: distributedRunSnapshot.distributedRunId,
+                controlRunId: distributedRunSnapshot.controlRunId,
+                manifest: distributedRunSnapshot.manifest,
+                state: distributedRunSnapshot.state,
+                createdAtEpochMs: distributedRunSnapshot.createdAtEpochMs,
+                updatedAtEpochMs: distributedRunSnapshot.updatedAtEpochMs,
+                stagedAtEpochMs: distributedRunSnapshot.stagedAtEpochMs,
+                startedAtEpochMs: distributedRunSnapshot.startedAtEpochMs,
+                cancelledAtEpochMs: distributedRunSnapshot.cancelledAtEpochMs,
+                completedAtEpochMs: distributedRunSnapshot.completedAtEpochMs,
+                targetAgentIds: [...distributedRunSnapshot.targetAgentIds],
+                commandLinks: [...distributedRunSnapshot.commandLinks],
+                error: distributedRunSnapshot.error,
+            });
+        }
     }
 
     snapshot(bounds: ControlRunSnapshotBounds = {}): ControlServerSnapshot {
         return {
             runs: Array.from(this.runs.values(), (run) => this.snapshotRunValue(run, bounds)),
+            distributedRuns: this.listDistributedRuns(),
         };
     }
 
@@ -454,6 +768,7 @@ export class RallarBlackBoxControlService {
         agent.registeredAtEpochMs = envelope.atEpochMs;
         agent.disconnectedAtEpochMs = undefined;
         agent.lastSeenAtEpochMs = this.now();
+        agent.identity = envelope.identity ?? agent.identity;
         agent.connectionSequence += 1;
         if (reconnecting) {
             agent.reconnectCount += 1;
@@ -468,6 +783,7 @@ export class RallarBlackBoxControlService {
         agent.lastHeartbeatAtEpochMs = envelope.atEpochMs;
         agent.lastSeenAtEpochMs = this.now();
         agent.status = envelope.status;
+        agent.identity = envelope.identity ?? agent.identity;
         run.heartbeats.push(envelope);
         this.touch(run);
     }
@@ -486,6 +802,7 @@ export class RallarBlackBoxControlService {
             command.completedAtEpochMs = this.now();
         }
         this.touch(run);
+        this.refreshDistributedRunsForControlRun(run.runId);
     }
 
     private receiveEvent(envelope: ControlEventEnvelope): void {
@@ -542,6 +859,496 @@ export class RallarBlackBoxControlService {
             command: envelope.command,
             deadlineEpochMs: envelope.deadlineEpochMs,
         });
+    }
+
+    private requireDistributedRun(distributedRunId: string): StoredDistributedRun {
+        const distributedRun = this.distributedRuns.get(distributedRunId);
+        if (!distributedRun) {
+            throw new Error(`Distributed run not found: ${distributedRunId}.`);
+        }
+        return distributedRun;
+    }
+
+    private assertDistributedRunCanMutate(
+        distributedRun: StoredDistributedRun,
+        action: ControlDistributedRunCommandPhase,
+    ): void {
+        if (!isDistributedRunTerminalState(distributedRun.state)) {
+            return;
+        }
+
+        throw new Error(
+            `Cannot ${action} distributed run ${distributedRun.distributedRunId} in terminal state ${distributedRun.state}.`,
+        );
+    }
+
+    private resolveDistributedTargetAgentIds(distributedRun: StoredDistributedRun): string[] {
+        const policy = distributedRun.manifest.targetPolicy;
+        const unique = (values: readonly string[]) => [...new Set(
+            values.map(cleanSegment).filter((value): value is string => Boolean(value)),
+        )];
+
+        if (policy.mode === 'selected-agents') {
+            return unique(policy.agentIds ?? []);
+        }
+
+        if (policy.mode === 'role-map') {
+            return unique([
+                ...Object.values(policy.roles ?? {}).flat(),
+                ...(distributedRun.manifest.roleAssignments ?? []).map(assignment => assignment.agentId),
+            ]);
+        }
+
+        const run = this.runs.get(distributedRun.controlRunId);
+        if (!run) {
+            return [];
+        }
+
+        return Array.from(run.agents.values())
+            .filter(agent => agent.connected && this.identityMatchesDistributedGroup(agent.identity, distributedRun.manifest))
+            .map(agent => agent.agentId);
+    }
+
+    private identityMatchesDistributedGroup(
+        identity: RallarBlackBoxControlAgentIdentity | undefined,
+        manifest: RallarBlackBoxDistributedRunManifest,
+    ): boolean {
+        return identity?.applicationId === manifest.group.applicationId &&
+            identity.workspaceId === manifest.group.workspaceId &&
+            identity.groupId === manifest.group.groupId;
+    }
+
+    private recipeSelectionsForAgent(
+        manifest: RallarBlackBoxDistributedRunManifest,
+        agentId: string,
+    ): readonly RallarBlackBoxDistributedRunRecipeSelection[] {
+        const roles = this.rolesForAgent(manifest, agentId);
+        const assignments = (manifest.roleAssignments ?? [])
+            .filter(assignment => assignment.agentId === agentId);
+        const assignedRecipeIds = new Set(
+            assignments.flatMap(assignment => assignment.recipeIds ?? []),
+        );
+        const selections = manifest.recipes.filter(selection => {
+            const recipeId = this.recipeKey(selection);
+            if (assignedRecipeIds.size > 0 && recipeId && assignedRecipeIds.has(recipeId)) {
+                return true;
+            }
+            if (selection.role) {
+                return roles.has(selection.role);
+            }
+            return assignedRecipeIds.size === 0;
+        });
+
+        return selections.length > 0
+            ? selections
+            : manifest.recipes.filter(selection => !selection.role);
+    }
+
+    private rolesForAgent(
+        manifest: RallarBlackBoxDistributedRunManifest,
+        agentId: string,
+    ): Set<string> {
+        const roles = new Set<string>();
+        for (const [role, agentIds] of Object.entries(manifest.targetPolicy.roles ?? {})) {
+            if (agentIds.includes(agentId)) {
+                roles.add(role);
+            }
+        }
+        for (const assignment of manifest.roleAssignments ?? []) {
+            if (assignment.agentId === agentId) {
+                roles.add(assignment.role);
+            }
+        }
+        return roles;
+    }
+
+    private stageCommandForSelection(
+        distributedRun: StoredDistributedRun,
+        agentId: string,
+        selection: RallarBlackBoxDistributedRunRecipeSelection,
+    ): RallarBlackBoxTestCommand {
+        const commandId = this.distributedCommandId(
+            distributedRun,
+            'stage',
+            agentId,
+            this.recipeKey(selection) ?? 'recipe',
+        );
+        if (selection.recipe) {
+            return {
+                kind: 'recipe.load',
+                commandId,
+                label: `Stage ${selection.recipe.recipeId}`,
+                recipe: selection.recipe,
+                metadata: this.distributedCommandMetadata(distributedRun, 'stage', agentId, selection),
+            };
+        }
+
+        return {
+            kind: 'health',
+            commandId,
+            label: `Preflight ${selection.recipeId ?? 'recipe reference'}`,
+            metadata: {
+                ...this.distributedCommandMetadata(distributedRun, 'stage', agentId, selection),
+                recipeReferenceOnly: true,
+            },
+        };
+    }
+
+    private startCommandForSelection(
+        distributedRun: StoredDistributedRun,
+        agentId: string,
+        selection: RallarBlackBoxDistributedRunRecipeSelection,
+    ): RallarBlackBoxTestCommand {
+        const commandId = this.distributedCommandId(
+            distributedRun,
+            'start',
+            agentId,
+            this.recipeKey(selection) ?? 'recipe',
+        );
+        return selection.recipe
+            ? {
+                kind: 'recipe.run',
+                commandId,
+                label: `Run ${selection.recipe.recipeId}`,
+                recipe: selection.recipe,
+                metadata: this.distributedCommandMetadata(distributedRun, 'start', agentId, selection),
+            }
+            : {
+                kind: 'recipe.run',
+                commandId,
+                label: `Run ${selection.recipeId ?? 'loaded recipe'}`,
+                metadata: this.distributedCommandMetadata(distributedRun, 'start', agentId, selection),
+            };
+    }
+
+    private enqueueLinkedDistributedCommand(
+        distributedRun: StoredDistributedRun,
+        phase: ControlDistributedRunCommandPhase,
+        agentId: string,
+        selection: RallarBlackBoxDistributedRunRecipeSelection | undefined,
+        command: RallarBlackBoxTestCommand,
+    ): ControlCommandEnvelope {
+        const recipeId = selection ? this.recipeKey(selection) : undefined;
+        const existingLink = distributedRun.commandLinks.find(link =>
+            link.phase === phase &&
+            link.agentId === agentId &&
+            link.recipeId === recipeId
+        );
+        if (existingLink) {
+            const run = this.runs.get(distributedRun.controlRunId);
+            const existingCommand = run?.commands.get(existingLink.commandId);
+            if (existingCommand) {
+                return existingCommand.envelope;
+            }
+        }
+
+        const envelope = this.enqueueCommand({
+            runId: distributedRun.controlRunId,
+            agentId,
+            commandId: command.commandId,
+            command,
+            deadlineEpochMs: phase === 'start'
+                ? distributedRun.manifest.startDeadlineEpochMs
+                : undefined,
+        });
+        distributedRun.commandLinks.push({
+            phase,
+            agentId,
+            commandId: envelope.commandId,
+            recipeId,
+            role: selection?.role,
+            queuedAtEpochMs: this.now(),
+        });
+        distributedRun.updatedAtEpochMs = this.now();
+        return envelope;
+    }
+
+    private distributedCommandMetadata(
+        distributedRun: StoredDistributedRun,
+        phase: ControlDistributedRunCommandPhase,
+        agentId: string,
+        selection: RallarBlackBoxDistributedRunRecipeSelection | undefined,
+    ): Readonly<Record<string, unknown>> {
+        return {
+            distributedRun: {
+                distributedRunId: distributedRun.distributedRunId,
+                controlRunId: distributedRun.controlRunId,
+                phase,
+                agentId,
+                recipeId: selection ? this.recipeKey(selection) : undefined,
+                role: selection?.role,
+                profile: selection?.profile,
+            },
+        };
+    }
+
+    private distributedCommandId(
+        distributedRun: StoredDistributedRun,
+        phase: ControlDistributedRunCommandPhase,
+        agentId: string,
+        recipeKey: string,
+    ): string {
+        return [
+            'distributed',
+            safeCommandIdSegment(distributedRun.distributedRunId),
+            phase,
+            safeCommandIdSegment(agentId),
+            safeCommandIdSegment(recipeKey),
+        ].join('-');
+    }
+
+    private recipeKey(selection: RallarBlackBoxDistributedRunRecipeSelection): string | undefined {
+        return cleanSegment(selection.recipeId) ??
+            cleanSegment(selection.recipe?.recipeId) ??
+            cleanSegment(selection.role) ??
+            undefined;
+    }
+
+    private snapshotDistributedRunValue(
+        distributedRun: StoredDistributedRun,
+    ): ControlDistributedRunSnapshot {
+        const rollup = this.refreshDistributedRunState(distributedRun);
+        return {
+            distributedRunId: distributedRun.distributedRunId,
+            controlRunId: distributedRun.controlRunId,
+            manifest: distributedRun.manifest,
+            state: distributedRun.state,
+            createdAtEpochMs: distributedRun.createdAtEpochMs,
+            updatedAtEpochMs: distributedRun.updatedAtEpochMs,
+            stagedAtEpochMs: distributedRun.stagedAtEpochMs,
+            startedAtEpochMs: distributedRun.startedAtEpochMs,
+            cancelledAtEpochMs: distributedRun.cancelledAtEpochMs,
+            completedAtEpochMs: distributedRun.completedAtEpochMs,
+            targetAgentIds: [...distributedRun.targetAgentIds],
+            commandLinks: [...distributedRun.commandLinks],
+            rollup,
+            error: distributedRun.error,
+        };
+    }
+
+    private refreshDistributedRunsForControlRun(controlRunId: string): void {
+        for (const distributedRun of this.distributedRuns.values()) {
+            if (distributedRun.controlRunId === controlRunId) {
+                this.refreshDistributedRunState(distributedRun);
+            }
+        }
+    }
+
+    private refreshDistributedRunState(
+        distributedRun: StoredDistributedRun,
+    ): RallarBlackBoxDistributedRunRollup {
+        const evaluated = this.evaluateDistributedRun(distributedRun);
+        if (evaluated.state !== distributedRun.state) {
+            distributedRun.state = evaluated.state;
+            distributedRun.updatedAtEpochMs = this.now();
+            if (isDistributedRunTerminalState(evaluated.state)) {
+                distributedRun.completedAtEpochMs ??= this.now();
+            }
+        }
+        return evaluated;
+    }
+
+    private evaluateDistributedRun(
+        distributedRun: StoredDistributedRun,
+    ): RallarBlackBoxDistributedRunRollup {
+        const run = this.runs.get(distributedRun.controlRunId);
+        const participants = distributedRun.targetAgentIds.map(agentId =>
+            this.distributedParticipantResult(distributedRun, run, agentId)
+        );
+        const recipes = distributedRun.commandLinks
+            .filter(link => link.phase === 'start')
+            .map(link => this.distributedRecipeResult(distributedRun, run, link));
+
+        return rollupDistributedRunResult({
+            stateHint: distributedRun.state,
+            participants,
+            recipes,
+        });
+    }
+
+    private distributedParticipantResult(
+        distributedRun: StoredDistributedRun,
+        run: StoredRun | undefined,
+        agentId: string,
+    ): RallarBlackBoxDistributedParticipantResult {
+        const agent = run?.agents.get(agentId);
+        const stageLinks = distributedRun.commandLinks
+            .filter(link => link.phase === 'stage' && link.agentId === agentId);
+        const startLinks = distributedRun.commandLinks
+            .filter(link => link.phase === 'start' && link.agentId === agentId);
+        const stageResults = stageLinks
+            .map(link => run?.results.get(link.commandId))
+            .filter((result): result is ControlResultEnvelope => Boolean(result));
+        const startResults = startLinks
+            .map(link => run?.results.get(link.commandId))
+            .filter((result): result is ControlResultEnvelope => Boolean(result));
+        const failedResult = [...stageResults, ...startResults].find(result => !result.ok);
+        const roles = Array.from(this.rolesForAgent(distributedRun.manifest, agentId));
+        const ackTimedOut = this.distributedRunAckTimedOut(distributedRun);
+
+        if (failedResult) {
+            return {
+                agentId,
+                clientId: agent?.identity?.clientId,
+                sessionId: agent?.identity?.sessionId,
+                roles,
+                state: 'failed',
+                ok: false,
+                error: this.resultError(failedResult),
+            };
+        }
+
+        if (
+            ackTimedOut &&
+            startLinks.length === 0 &&
+            (stageLinks.length === 0 || stageResults.length < stageLinks.length)
+        ) {
+            return {
+                agentId,
+                clientId: agent?.identity?.clientId,
+                sessionId: agent?.identity?.sessionId,
+                roles,
+                state: 'timed-out',
+                ok: false,
+                error: {
+                    code: 'RALLAR_BB_DISTRIBUTED_ACK_TIMEOUT',
+                    message: `Agent ${agentId} did not ACK distributed-run staging before ackTimeoutMs.`,
+                    details: {
+                        ackTimeoutMs: distributedRun.manifest.ackTimeoutMs,
+                        stagedAtEpochMs: distributedRun.stagedAtEpochMs,
+                    },
+                },
+            };
+        }
+
+        if (startLinks.length > 0) {
+            if (startResults.length === startLinks.length) {
+                return {
+                    agentId,
+                    clientId: agent?.identity?.clientId,
+                    sessionId: agent?.identity?.sessionId,
+                    roles,
+                    state: 'passed',
+                    ok: true,
+                    startedAtEpochMs: this.firstStartedAt(startResults),
+                    endedAtEpochMs: this.lastEndedAt(startResults),
+                };
+            }
+            return {
+                agentId,
+                clientId: agent?.identity?.clientId,
+                sessionId: agent?.identity?.sessionId,
+                roles,
+                state: 'running',
+            };
+        }
+
+        if (stageLinks.length > 0 && stageResults.length === stageLinks.length) {
+            return {
+                agentId,
+                clientId: agent?.identity?.clientId,
+                sessionId: agent?.identity?.sessionId,
+                roles,
+                state: 'ready',
+                ok: true,
+                acknowledgedAtEpochMs: this.lastEndedAt(stageResults),
+            };
+        }
+
+        if (stageResults.length > 0) {
+            return {
+                agentId,
+                clientId: agent?.identity?.clientId,
+                sessionId: agent?.identity?.sessionId,
+                roles,
+                state: 'acknowledged',
+            };
+        }
+
+        return {
+            agentId,
+            clientId: agent?.identity?.clientId,
+            sessionId: agent?.identity?.sessionId,
+            roles,
+            state: agent && !agent.connected ? 'disconnected' : 'targeted',
+        };
+    }
+
+    private distributedRunAckTimedOut(distributedRun: StoredDistributedRun): boolean {
+        return (distributedRun.state === 'waiting-for-ack' || distributedRun.state === 'timed-out') &&
+            distributedRun.stagedAtEpochMs !== undefined &&
+            distributedRun.manifest.ackTimeoutMs !== undefined &&
+            this.now() > distributedRun.stagedAtEpochMs + distributedRun.manifest.ackTimeoutMs;
+    }
+
+    private distributedRecipeResult(
+        _distributedRun: StoredDistributedRun,
+        run: StoredRun | undefined,
+        link: ControlDistributedRunCommandLink,
+    ): RallarBlackBoxDistributedRecipeResult {
+        const command = run?.commands.get(link.commandId);
+        const result = run?.results.get(link.commandId);
+        const recipeKey = [
+            link.agentId,
+            link.recipeId ?? link.role ?? link.commandId,
+        ].join(':');
+
+        if (!result) {
+            return {
+                recipeKey,
+                recipeId: link.recipeId,
+                agentId: link.agentId,
+                role: link.role,
+                state: command?.dispatchedAtEpochMs ? 'running' : 'pending',
+            };
+        }
+
+        return {
+            recipeKey,
+            recipeId: link.recipeId,
+            agentId: link.agentId,
+            role: link.role,
+            state: result.ok ? 'passed' : 'failed',
+            ok: result.ok,
+            commandResultCount: this.nestedRecipeResultCount(result),
+            failureCount: result.ok ? 0 : 1,
+            startedAtEpochMs: result.result?.startedAtEpochMs,
+            endedAtEpochMs: result.result?.endedAtEpochMs,
+            error: result.ok ? undefined : this.resultError(result),
+        };
+    }
+
+    private resultError(result: ControlResultEnvelope): Readonly<{
+        code: string;
+        message: string;
+        details?: unknown;
+    }> {
+        return result.error ?? result.result?.error ?? {
+            code: 'RALLAR_BB_DISTRIBUTED_COMMAND_FAILED',
+            message: `Distributed command ${result.commandId} failed.`,
+        };
+    }
+
+    private nestedRecipeResultCount(result: ControlResultEnvelope): number {
+        const value = result.result?.value;
+        if (value && typeof value === 'object' && Array.isArray((value as { results?: unknown }).results)) {
+            return (value as { results: readonly unknown[] }).results.length;
+        }
+        return result.result ? 1 : 0;
+    }
+
+    private firstStartedAt(results: readonly ControlResultEnvelope[]): number | undefined {
+        return results
+            .map(result => result.result?.startedAtEpochMs)
+            .filter((value): value is number => typeof value === 'number')
+            .sort((left, right) => left - right)[0];
+    }
+
+    private lastEndedAt(results: readonly ControlResultEnvelope[]): number | undefined {
+        return results
+            .map(result => result.result?.endedAtEpochMs)
+            .filter((value): value is number => typeof value === 'number')
+            .sort((left, right) => right - left)[0];
     }
 
     private ensureRun(runId: string): StoredRun {
@@ -628,6 +1435,7 @@ export class RallarBlackBoxControlService {
                 lastSeenAtEpochMs: agent.lastSeenAtEpochMs,
                 lastHeartbeatAtEpochMs: agent.lastHeartbeatAtEpochMs,
                 status: agent.status,
+                identity: agent.identity,
                 connectionSequence: agent.connectionSequence,
                 reconnectCount: agent.reconnectCount,
                 receivedResultCount: agent.receivedResultCount,
@@ -649,4 +1457,15 @@ export function createRallarBlackBoxControlService(
     options: RallarBlackBoxControlServiceOptions = {},
 ): RallarBlackBoxControlService {
     return new RallarBlackBoxControlService(options);
+}
+
+function cleanSegment(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim().length > 0
+        ? value.trim()
+        : undefined;
+}
+
+function safeCommandIdSegment(value: string): string {
+    return value.trim().replace(/[^A-Za-z0-9_.:-]+/g, '-').replace(/^-+|-+$/g, '') ||
+        'segment';
 }

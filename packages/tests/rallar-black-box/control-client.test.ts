@@ -170,6 +170,9 @@ describe('rallar-black-box control client', () => {
                 kind: 'register',
                 runId: 'run-1',
                 agentId: 'agent-1',
+                identity: {
+                    sessionLabel: 'agent-1',
+                },
             });
 
             socket.message(JSON.stringify(commandEnvelope('configure-1', configureCommand())));
