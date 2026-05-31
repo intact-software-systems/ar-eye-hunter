@@ -13,7 +13,12 @@ import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/
 import {
     ResourceInboxResultsRepository
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import { type RallarTimingSink, timeRallarAsync, } from './timing.ts';
+import {
+    type RallarTimingDetails,
+    recordRallarTiming,
+    type RallarTimingSink,
+    timeRallarAsync,
+} from './timing.ts';
 
 export const SIMPLER_GROUP_STATE_APP_INBOX_TOPIC = 'app-inbox.group-state';
 export const SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC = 'app-inbox.client-state';
@@ -48,8 +53,23 @@ export type AppInboxEnqueueInput<V> = {
     data: V;
 };
 
+export type AppInboxServiceOptions = Readonly<{
+    phaseTiming?: boolean;
+    waitMaxElapsedMsecs?: number;
+    waitRetryIntervalMsecs?: number;
+    waitMaxRetryIntervalMsecs?: number;
+    waitJitterRatio?: number;
+}>;
+
+type NormalizedAppInboxServiceOptions = Required<AppInboxServiceOptions>;
+
 export class AppInboxService {
     public static readonly MAX_ELAPSED_MSECS = 10_000;
+    public static readonly WAIT_RETRY_INTERVAL_MSECS = 500;
+    public static readonly WAIT_MAX_RETRY_INTERVAL_MSECS = 20_000;
+    public static readonly WAIT_JITTER_RATIO = 0.2;
+
+    private readonly options: NormalizedAppInboxServiceOptions;
 
     constructor(
         public readonly inbox: InboxQueueReader,
@@ -58,7 +78,27 @@ export class AppInboxService {
         public readonly serviceId: string,
         private readonly defaultTopicId: string = SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
         private readonly timing?: RallarTimingSink,
+        options: AppInboxServiceOptions = {},
     ) {
+        this.options = {
+            phaseTiming: options.phaseTiming ?? false,
+            waitMaxElapsedMsecs: toNonNegativeFiniteNumber(
+                options.waitMaxElapsedMsecs,
+                AppInboxService.MAX_ELAPSED_MSECS,
+            ),
+            waitRetryIntervalMsecs: toNonNegativeFiniteNumber(
+                options.waitRetryIntervalMsecs,
+                AppInboxService.WAIT_RETRY_INTERVAL_MSECS,
+            ),
+            waitMaxRetryIntervalMsecs: toNonNegativeFiniteNumber(
+                options.waitMaxRetryIntervalMsecs,
+                AppInboxService.WAIT_MAX_RETRY_INTERVAL_MSECS,
+            ),
+            waitJitterRatio: toRatio(
+                options.waitJitterRatio,
+                AppInboxService.WAIT_JITTER_RATIO,
+            ),
+        };
     }
 
     public processEntryNoWaiting<V, R = V>(enqueue: AppInboxEnqueueInput<V>) {
@@ -170,14 +210,22 @@ export class AppInboxService {
                 },
             },
             async () => {
-                await enqueuer(key);
+                await this.timePhase(
+                    'enqueue',
+                    enqueue,
+                    key,
+                    async () => await enqueuer(key),
+                );
 
                 if (!waitForCompletion) {
                     return Either.ofLeft('No waiting for completion');
                 }
 
-                const isCompleted =
-                    await tryWithPolicy<boolean>(
+                const isCompleted = await this.timePhase(
+                    'wait-completion',
+                    enqueue,
+                    key,
+                    async () => await tryWithPolicy<boolean>(
                         async () => {
                             const isCompleted =
                                 await this.resourceInbox.isEntryWithStatus(
@@ -194,14 +242,23 @@ export class AppInboxService {
 
                             return true;
                         },
-                        TryWithPolicy.defaults().maxElapsedMsecs(AppInboxService.MAX_ELAPSED_MSECS)
-                    );
+                        this.toWaitPolicy(enqueue, key),
+                    ),
+                    {
+                        waitMaxElapsedMsecs: this.options.waitMaxElapsedMsecs,
+                    },
+                );
 
                 if (!isCompleted) {
                     return Either.ofLeft('App inbox entry not completed');
                 }
 
-                return await this.findByKeyAndReturnEither<R>(key);
+                return await this.timePhase(
+                    'read-result',
+                    enqueue,
+                    key,
+                    async () => await this.findByKeyAndReturnEither<R>(key),
+                );
             },
         );
     }
@@ -252,17 +309,42 @@ export class AppInboxService {
                         },
                         async () => {
                             try {
-                                const result = await handler(enqueue.data);
-                                await this.writeAppInboxResult(entry, EntityStatus.COMPLETED, result);
+                                const result = await this.timePhase(
+                                    'handler-action',
+                                    enqueue,
+                                    entry.key,
+                                    async () => await handler(enqueue.data),
+                                );
+                                await this.timePhase(
+                                    'write-result',
+                                    enqueue,
+                                    entry.key,
+                                    async () => {
+                                        await this.writeAppInboxResult(
+                                            entry,
+                                            EntityStatus.COMPLETED,
+                                            result,
+                                        );
+                                    },
+                                    { resultStatus: EntityStatus.COMPLETED },
+                                );
                             } catch (error) {
                                 if (!(error instanceof NonRetryableException)) {
                                     throw error;
                                 }
 
-                                await this.writeAppInboxResult(
-                                    entry,
-                                    EntityStatus.FAILED,
-                                    error instanceof Error ? error.message : String(error),
+                                await this.timePhase(
+                                    'write-result',
+                                    enqueue,
+                                    entry.key,
+                                    async () => {
+                                        await this.writeAppInboxResult(
+                                            entry,
+                                            EntityStatus.FAILED,
+                                            error instanceof Error ? error.message : String(error),
+                                        );
+                                    },
+                                    { resultStatus: EntityStatus.FAILED },
                                 );
                             }
                         },
@@ -279,6 +361,89 @@ export class AppInboxService {
         await this.resourceInboxResults.replace(
             toResourceEntryWithUpdatedResource(entry, status, value),
         );
+    }
+
+    private toWaitPolicy<V>(
+        enqueue: AppInboxEnqueueInput<V>,
+        key: Key,
+    ): TryWithPolicy {
+        let policy = TryWithPolicy.defaults()
+            .label(`app-inbox:${key.topicId}:${key.resourceId}`)
+            .maxElapsedMsecs(this.options.waitMaxElapsedMsecs)
+            .retryIntervalMsecs(this.options.waitRetryIntervalMsecs)
+            .maxRetryIntervalMsecs(this.options.waitMaxRetryIntervalMsecs)
+            .jitterRatio(this.options.waitJitterRatio);
+
+        if (this.options.phaseTiming) {
+            policy = policy.onRetry((context) => {
+                recordRallarTiming(
+                    this.timing,
+                    {
+                        component: 'app-inbox-phase',
+                        operation: 'wait-retry',
+                        serviceId: this.serviceId,
+                        requestId: enqueue.resourceId,
+                        details: {
+                            ...this.toTimingDetails(enqueue, key),
+                            attempt: context.attempt,
+                            nextAttempt: context.nextAttempt,
+                            delayMsecs: context.delayMsecs,
+                            elapsedMsecs: context.elapsedMsecs,
+                            errorName: context.error instanceof Error
+                                ? context.error.name
+                                : undefined,
+                            errorMessage: context.error instanceof Error
+                                ? context.error.message
+                                : String(context.error),
+                        },
+                    },
+                    'ok',
+                    0,
+                );
+            });
+        }
+
+        return policy;
+    }
+
+    private async timePhase<T, V>(
+        operation: string,
+        enqueue: AppInboxEnqueueInput<V>,
+        key: Key,
+        action: () => Promise<T>,
+        details: RallarTimingDetails = {},
+    ): Promise<T> {
+        if (!this.options.phaseTiming) {
+            return await action();
+        }
+
+        return await timeRallarAsync(
+            this.timing,
+            {
+                component: 'app-inbox-phase',
+                operation,
+                serviceId: this.serviceId,
+                requestId: enqueue.resourceId,
+                details: {
+                    ...this.toTimingDetails(enqueue, key),
+                    ...details,
+                },
+            },
+            action,
+        );
+    }
+
+    private toTimingDetails<V>(
+        enqueue: AppInboxEnqueueInput<V>,
+        key: Key,
+    ): RallarTimingDetails {
+        return {
+            type: enqueue.type,
+            topicId: key.topicId,
+            contextId: key.contextId,
+            resourceId: key.resourceId,
+            senderId: enqueue.senderId,
+        };
     }
 
     private toKey<V>(enqueue: AppInboxEnqueueInput<V>) {
@@ -339,4 +504,21 @@ function fnv1a64(value: string): string {
     }
 
     return hash.toString(36);
+}
+
+function toNonNegativeFiniteNumber(
+    value: number | undefined,
+    fallback: number,
+): number {
+    return value === undefined || !Number.isFinite(value) || value < 0
+        ? fallback
+        : value;
+}
+
+function toRatio(value: number | undefined, fallback: number): number {
+    if (value === undefined || !Number.isFinite(value)) {
+        return fallback;
+    }
+
+    return Math.max(0, Math.min(1, value));
 }

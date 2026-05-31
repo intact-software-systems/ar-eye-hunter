@@ -49,3 +49,26 @@ Deno.test('HTTP timing middleware records request duration and response headers'
   );
   assert.equal(typeof events[0].durationMs, 'number');
 });
+
+Deno.test('HTTP timing middleware records 4xx responses as errors', async () => {
+  const events: RallarTimingEvent[] = [];
+  const app = new Hono();
+
+  app.use('/api/*', createHttpTimingMiddleware({
+    timing: (event) => events.push(event),
+  }));
+  app.post('/api/reject', (c) => c.json({ error: 'bad input' }, 400));
+
+  const response = await app.request('/api/reject', {
+    method: 'POST',
+    headers: {
+      'x-request-id': 'request-400',
+    },
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].status, 'error');
+  assert.equal(events[0].httpStatus, 400);
+  assert.equal(events[0].error?.message, 'HTTP 400');
+});

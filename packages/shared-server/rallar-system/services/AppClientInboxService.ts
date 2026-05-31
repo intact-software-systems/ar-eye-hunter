@@ -22,6 +22,7 @@ import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync
 import {
     AppInboxEnqueueInput,
     AppInboxService,
+    type AppInboxServiceOptions,
     AppInboxType,
     SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
@@ -32,6 +33,7 @@ export {
     AppInboxService,
     AppInboxType,
     type AppInboxEnqueueInput,
+    type AppInboxServiceOptions,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 export type ClientPrincipalUpsertAppInboxPayload = Readonly<{
@@ -94,6 +96,7 @@ export class AppClientInboxService extends AppInboxService {
         public readonly stateSyncPublisher: StateSyncPublisher,
         public override readonly serviceId: string,
         timing?: RallarTimingSink,
+        options?: AppInboxServiceOptions,
     ) {
         super(
             inbox,
@@ -102,6 +105,7 @@ export class AppClientInboxService extends AppInboxService {
             serviceId,
             SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
             timing,
+            options,
         );
 
         this.onStateMessage<ClientPrincipalUpsertAppInboxPayload>(

@@ -67,6 +67,13 @@ describe('AppInboxService', () => {
             publisher,
             'server-12345678',
             (event) => timingEvents.push(event),
+            {
+                phaseTiming: true,
+                waitMaxElapsedMsecs: 5_000,
+                waitRetryIntervalMsecs: 1,
+                waitMaxRetryIntervalMsecs: 1,
+                waitJitterRatio: 0,
+            },
         );
 
         const resultPromise = service.processEntryUntilCompletion<
@@ -125,6 +132,36 @@ describe('AppInboxService', () => {
                 expect.objectContaining({
                     component: 'app-inbox-handler',
                     operation: AppInboxType.GROUP_CREATE,
+                    status: 'ok',
+                    serviceId: 'server-12345678',
+                }),
+                expect.objectContaining({
+                    component: 'app-inbox-phase',
+                    operation: 'enqueue',
+                    status: 'ok',
+                    serviceId: 'server-12345678',
+                }),
+                expect.objectContaining({
+                    component: 'app-inbox-phase',
+                    operation: 'wait-completion',
+                    status: 'ok',
+                    serviceId: 'server-12345678',
+                }),
+                expect.objectContaining({
+                    component: 'app-inbox-phase',
+                    operation: 'read-result',
+                    status: 'ok',
+                    serviceId: 'server-12345678',
+                }),
+                expect.objectContaining({
+                    component: 'app-inbox-phase',
+                    operation: 'handler-action',
+                    status: 'ok',
+                    serviceId: 'server-12345678',
+                }),
+                expect.objectContaining({
+                    component: 'app-inbox-phase',
+                    operation: 'write-result',
                     status: 'ok',
                     serviceId: 'server-12345678',
                 }),

@@ -66,7 +66,7 @@ export async function initHeartbeat(
         }
     };
 
-    await runHeartbeat();
+    void runHeartbeat();
     return handle;
 }
 

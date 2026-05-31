@@ -51,6 +51,19 @@ IDs. They do not emit request bodies, auth tokens, or mutation payloads.
 `apps/api-v1` owns the HTTP middleware and console sink. Its default sink logs one JSON line per timing event and can be
 disabled with `RALLAR_TIMING_LOGS=false`.
 
+App-inbox wait behaviour is configurable by the API app. `apps/api-v1` currently reads:
+
+- `RALLAR_APP_INBOX_PHASE_TIMING`: emit optional `app-inbox-phase` events for enqueue, wait, result read, handler, and
+  result write phases. Defaults to `false`.
+- `RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS`: maximum synchronous wait for completion. Defaults to `30000`.
+- `RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS`: initial completion poll interval. Defaults to `250`.
+- `RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS`: maximum completion poll interval. Defaults to `1000`.
+- `RALLAR_APP_INBOX_WAIT_JITTER_RATIO`: completion poll jitter ratio. Defaults to `0.1`.
+
+Potential app-inbox completion notifications are described in
+`rallar-system/app-inbox-completion-notifications.md`. Notifications should be used to wake waiters, while
+`resource_inbox_results` remains the durable source of truth.
+
 ## Runtime State Storage
 
 `runtime_state_store` is shared-server infrastructure storage. It is used for middleware state such as auth sessions,

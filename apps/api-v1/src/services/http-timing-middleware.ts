@@ -29,6 +29,8 @@ export function createHttpTimingMiddleware(
       throw error;
     } finally {
       const durationMs = nowMs() - startedAt;
+      const httpStatus = thrown === undefined ? c.res.status : 500;
+      const failed = thrown !== undefined || httpStatus >= 400;
       c.header('server-timing', `total;dur=${Math.round(durationMs * 100) / 100}`);
       recordRallarTiming(
         timing,
@@ -38,16 +40,16 @@ export function createHttpTimingMiddleware(
           requestId,
           method: c.req.method,
           path: c.req.path,
-          httpStatus: thrown === undefined ? c.res.status : 500,
+          httpStatus,
           details: {
             clientId: c.req.header('x-client-id'),
             origin: c.req.header('origin'),
             userAgent: c.req.header('user-agent'),
           },
         },
-        thrown === undefined ? 'ok' : 'error',
+        failed ? 'error' : 'ok',
         durationMs,
-        thrown,
+        thrown ?? (failed ? new Error(`HTTP ${httpStatus}`) : undefined),
       );
     }
   };
