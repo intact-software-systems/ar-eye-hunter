@@ -64,6 +64,11 @@ After login, the app shell exposes a global command-center context above the tab
 workspace, room/group, client, and session values aligned across Quick Test, Manual Rallar, Groups/Clients, WebSocket, RTC
 Diagnostics, Rallar Server, and Flow Builder defaults.
 
+Groups/Clients, WebSocket, and RTC/Realtimes now use the same prominent action-feedback pattern as the Rallar Server
+REST workbench: the latest operation shows target, status, duration, and failure text. WebSocket and RTC/Realtimes also
+surface whether this browser is currently subscribed/listening, and RTC Diagnostics includes event/message/failure and
+phase-duration time-series charts.
+
 The app shell now has a `Workspace Mode` switch. `Rallar` mode shows direct live-operation tabs. `Rallar
 black-box-runner` mode shows recipe, control-run, flow-builder, and artifact workflows. Existing `tab` deep links still
 work and infer the correct workspace for runner-owned tabs. Switching into runner mode with the browser-rallar provider

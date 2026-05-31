@@ -64,11 +64,39 @@ export type RtcFailureDiagnostics = Readonly<{
     details?: unknown;
 }>;
 
+export type RtcDiagnosticsTimeseriesSeriesId =
+    | 'events'
+    | 'messages'
+    | 'failures'
+    | 'phase-duration';
+
+export type RtcDiagnosticsTimeseriesPoint = Readonly<{
+    atEpochMs: number;
+    value: number;
+}>;
+
+export type RtcDiagnosticsTimeseriesSeries = Readonly<{
+    seriesId: RtcDiagnosticsTimeseriesSeriesId;
+    label: string;
+    unit: string;
+    tone: 'good' | 'warn' | 'bad' | 'active' | 'muted';
+    latest: number;
+    max: number;
+    points: readonly RtcDiagnosticsTimeseriesPoint[];
+}>;
+
+export type RtcDiagnosticsTimeseriesOptions = Readonly<{
+    bucketCount?: number;
+    bucketMs?: number;
+    endAtEpochMs?: number;
+}>;
+
 export type RtcDiagnosticsSnapshot = Readonly<{
     stages: readonly RtcConnectStage[];
     membership: RtcMembershipDiagnostics;
     latency: RtcLatencyDiagnostics;
     failure?: RtcFailureDiagnostics;
+    timeseries: readonly RtcDiagnosticsTimeseriesSeries[];
     recentEvents: readonly RallarBlackBoxTestEvent[];
     recentResults: readonly RallarBlackBoxTestResult[];
     bundle: unknown;
@@ -138,6 +166,26 @@ function eventLooksRtcRelated(event: RallarBlackBoxTestEvent): boolean {
         topic.includes('realtime') ||
         topic.includes('connect') ||
         topic.includes('peer') ||
+        topic.includes('data_channel') ||
+        topic.includes('data-channel');
+}
+
+function eventLooksRtcTimeseriesRelated(event: RallarBlackBoxTestEvent): boolean {
+    const topic = lowerTopic(event);
+    return event.transport === 'realtime' ||
+        event.transport === 'messages.rtc' ||
+        topic.includes('rtc') ||
+        topic.includes('realtime') ||
+        topic.includes('auth') ||
+        topic.includes('runtime') ||
+        topic.includes('bootstrap') ||
+        topic.includes('group') ||
+        topic.includes('room') ||
+        topic.includes('join') ||
+        topic.includes('connect') ||
+        topic.includes('signal') ||
+        topic.includes('peer') ||
+        topic.includes('lane') ||
         topic.includes('data_channel') ||
         topic.includes('data-channel');
 }
@@ -468,6 +516,127 @@ function deriveFailure(
     };
 }
 
+const DEFAULT_TIMESERIES_BUCKET_COUNT = 12;
+const MIN_TIMESERIES_BUCKET_MS = 1_000;
+const MAX_TIMESERIES_BUCKET_MS = 60_000;
+
+function bucketMsForEvents(
+    events: readonly RallarBlackBoxTestEvent[],
+    bucketCount: number,
+): number {
+    if (events.length < 2) {
+        return 5_000;
+    }
+
+    const spanMs = Math.max(1, events.at(-1)!.atEpochMs - events[0]!.atEpochMs);
+    const rawBucketMs = Math.ceil(spanMs / Math.max(1, bucketCount - 1));
+    return Math.min(MAX_TIMESERIES_BUCKET_MS, Math.max(MIN_TIMESERIES_BUCKET_MS, rawBucketMs));
+}
+
+function makeBucketPoints(
+    startAtEpochMs: number,
+    bucketMs: number,
+    bucketCount: number,
+    values: readonly number[],
+): readonly RtcDiagnosticsTimeseriesPoint[] {
+    return Array.from({ length: bucketCount }, (_, index) => ({
+        atEpochMs: startAtEpochMs + (index * bucketMs),
+        value: Math.round((values[index] ?? 0) * 100) / 100,
+    }));
+}
+
+function makeSeries(input: Readonly<{
+    seriesId: RtcDiagnosticsTimeseriesSeriesId;
+    label: string;
+    unit: string;
+    tone: RtcDiagnosticsTimeseriesSeries['tone'];
+    points: readonly RtcDiagnosticsTimeseriesPoint[];
+}>): RtcDiagnosticsTimeseriesSeries {
+    const values = input.points.map(point => point.value);
+    return {
+        ...input,
+        latest: values.at(-1) ?? 0,
+        max: Math.max(0, ...values),
+    };
+}
+
+export function deriveRtcDiagnosticsTimeseries(
+    state: RallarBlackBoxTestState,
+    options: RtcDiagnosticsTimeseriesOptions = {},
+): readonly RtcDiagnosticsTimeseriesSeries[] {
+    const relatedEvents = state.events
+        .filter(eventLooksRtcTimeseriesRelated)
+        .slice()
+        .sort((left, right) => left.atEpochMs - right.atEpochMs);
+    const bucketCount = Math.max(2, options.bucketCount ?? DEFAULT_TIMESERIES_BUCKET_COUNT);
+    const bucketMs = Math.max(1, options.bucketMs ?? bucketMsForEvents(relatedEvents, bucketCount));
+    const latestEventAt = relatedEvents.at(-1)?.atEpochMs;
+    const endAtEpochMs = options.endAtEpochMs ?? latestEventAt ?? Date.now();
+    const alignedEnd = Math.ceil(endAtEpochMs / bucketMs) * bucketMs;
+    const startAtEpochMs = alignedEnd - ((bucketCount - 1) * bucketMs);
+    const eventCounts = Array(bucketCount).fill(0) as number[];
+    const messageCounts = Array(bucketCount).fill(0) as number[];
+    const failureCounts = Array(bucketCount).fill(0) as number[];
+    const phaseDurationSums = Array(bucketCount).fill(0) as number[];
+    const phaseDurationCounts = Array(bucketCount).fill(0) as number[];
+
+    for (const event of relatedEvents) {
+        const index = Math.floor((event.atEpochMs - startAtEpochMs) / bucketMs);
+        if (index < 0 || index >= bucketCount) {
+            continue;
+        }
+
+        eventCounts[index] += 1;
+        if (event.kind === 'message') {
+            messageCounts[index] += 1;
+        }
+        if (isFailureEvent(event)) {
+            failureCounts[index] += 1;
+        }
+
+        const durationMs = numberValue(payloadOf(event).durationMs);
+        if (durationMs !== undefined) {
+            phaseDurationSums[index] += durationMs;
+            phaseDurationCounts[index] += 1;
+        }
+    }
+
+    const phaseDurations = phaseDurationSums.map((sum, index) =>
+        phaseDurationCounts[index] > 0 ? sum / phaseDurationCounts[index] : 0
+    );
+
+    return [
+        makeSeries({
+            seriesId: 'events',
+            label: 'RTC events',
+            unit: 'events',
+            tone: 'active',
+            points: makeBucketPoints(startAtEpochMs, bucketMs, bucketCount, eventCounts),
+        }),
+        makeSeries({
+            seriesId: 'messages',
+            label: 'Messages',
+            unit: 'messages',
+            tone: 'good',
+            points: makeBucketPoints(startAtEpochMs, bucketMs, bucketCount, messageCounts),
+        }),
+        makeSeries({
+            seriesId: 'failures',
+            label: 'Failures',
+            unit: 'failures',
+            tone: failureCounts.some(count => count > 0) ? 'bad' : 'muted',
+            points: makeBucketPoints(startAtEpochMs, bucketMs, bucketCount, failureCounts),
+        }),
+        makeSeries({
+            seriesId: 'phase-duration',
+            label: 'Phase duration',
+            unit: 'ms',
+            tone: 'warn',
+            points: makeBucketPoints(startAtEpochMs, bucketMs, bucketCount, phaseDurations),
+        }),
+    ];
+}
+
 function isRelevantResult(result: RallarBlackBoxTestResult): boolean {
     return result.kind === 'rtc.connect' ||
         result.kind === 'rtc.send' ||
@@ -487,6 +656,7 @@ export function deriveRtcDiagnostics(
     const membership = deriveMembership(state, state.events);
     const latency = deriveLatency(state, state.events);
     const failure = deriveFailure(state.events);
+    const timeseries = deriveRtcDiagnosticsTimeseries(state);
     const bundle = {
         generatedAtEpochMs: Date.now(),
         runId: state.currentConfig?.runId,
@@ -516,6 +686,7 @@ export function deriveRtcDiagnostics(
         membership,
         latency,
         failure,
+        timeseries,
         latestStats: state.latestStats,
         recentResults,
         recentEvents,
@@ -526,6 +697,7 @@ export function deriveRtcDiagnostics(
         membership,
         latency,
         failure,
+        timeseries,
         recentEvents,
         recentResults,
         bundle,

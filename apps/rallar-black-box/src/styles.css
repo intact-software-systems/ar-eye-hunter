@@ -777,6 +777,13 @@ h3 {
     padding: 12px 14px;
 }
 
+.command-center-live-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
+    padding: 0 14px 12px;
+}
+
 .quick-rallar-route-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -896,6 +903,104 @@ h3 {
 
 .rtc-realtime-result-grid .mini-json {
     margin: 10px;
+}
+
+.rtc-timeseries-panel {
+    display: grid;
+    gap: 10px;
+    margin: 0 14px 12px;
+    padding: 12px;
+    border: 1px solid #d8dfd5;
+    border-radius: 6px;
+    background: #fbfcfa;
+}
+
+.rtc-timeseries-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.rtc-timeseries-card {
+    display: grid;
+    min-width: 0;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid #d8dfd5;
+    border-left-width: 4px;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.rtc-timeseries-card.good {
+    border-left-color: #226a44;
+}
+
+.rtc-timeseries-card.active {
+    border-left-color: #0c6f7b;
+}
+
+.rtc-timeseries-card.warn {
+    border-left-color: #96610d;
+}
+
+.rtc-timeseries-card.bad {
+    border-left-color: #a83232;
+}
+
+.rtc-timeseries-card.muted {
+    border-left-color: #87938d;
+}
+
+.rtc-timeseries-card strong,
+.rtc-timeseries-card small {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rtc-timeseries-card small {
+    color: #65746d;
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.rtc-timeseries-chart {
+    display: block;
+    width: 100%;
+    height: 72px;
+}
+
+.rtc-timeseries-chart line {
+    stroke: #d9e1dc;
+    stroke-width: 1.5;
+}
+
+.rtc-timeseries-chart polyline {
+    fill: none;
+    stroke: #0c6f7b;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 3;
+    vector-effect: non-scaling-stroke;
+}
+
+.rtc-timeseries-card.good .rtc-timeseries-chart polyline {
+    stroke: #226a44;
+}
+
+.rtc-timeseries-card.warn .rtc-timeseries-chart polyline {
+    stroke: #96610d;
+}
+
+.rtc-timeseries-card.bad .rtc-timeseries-chart polyline {
+    stroke: #a83232;
+}
+
+.rtc-timeseries-card.muted .rtc-timeseries-chart polyline {
+    stroke: #87938d;
 }
 
 .rallar-data-summary-grid {
@@ -2871,10 +2976,12 @@ dd {
     .quick-rallar-context-grid,
     .quick-rallar-route-grid,
     .quick-rallar-payload-grid,
+    .command-center-live-grid,
     .rtc-realtime-summary-grid,
     .rtc-realtime-context-grid,
     .rtc-realtime-work-grid,
     .rtc-realtime-result-grid,
+    .rtc-timeseries-grid,
     .rallar-data-summary-grid,
     .rallar-data-context-grid,
     .rallar-data-work-grid,
@@ -3053,11 +3160,13 @@ dd {
     .quick-rallar-action-grid,
     .quick-rallar-route-grid,
     .quick-rallar-payload-grid,
+    .command-center-live-grid,
     .rtc-realtime-summary-grid,
     .rtc-realtime-context-grid,
     .rtc-realtime-action-grid,
     .rtc-realtime-work-grid,
     .rtc-realtime-result-grid,
+    .rtc-timeseries-grid,
     .rallar-data-summary-grid,
     .rallar-data-context-grid,
     .rallar-data-work-grid,

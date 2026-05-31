@@ -81,6 +81,7 @@ import {
 import {
     deriveRtcDiagnostics,
     type RtcConnectStageStatus,
+    type RtcDiagnosticsTimeseriesSeries,
 } from './rtc-diagnostics.ts';
 import {
     deriveRallarTopologyGraph,
@@ -228,6 +229,17 @@ type RallarServerRequestFeedback = Readonly<{
     statusText?: string;
     durationMs?: number;
     errorKind?: string;
+    message?: string;
+    atEpochMs?: number;
+}>;
+
+type CommandCenterActionFeedback = Readonly<{
+    state: 'idle' | 'running' | 'success' | 'error';
+    label?: string;
+    target?: string;
+    status?: string | number;
+    statusText?: string;
+    durationMs?: number;
     message?: string;
     atEpochMs?: number;
 }>;
@@ -490,6 +502,16 @@ type RtcRealtimeReceivedRow = Readonly<{
     contextId: string;
     payload?: unknown;
     raw?: unknown;
+}>;
+
+type RtcRealtimeSubscriptionRow = Readonly<{
+    subscriptionId: string;
+    transport: RtcRealtimeTransport;
+    label: string;
+    laneId: string;
+    groupId: string;
+    subscribedAtEpochMs: number;
+    unsubscribe(): void;
 }>;
 
 type RallarDataOperation =
@@ -826,6 +848,49 @@ function formatDuration(ms: number | undefined): string {
     }
 
     return `${Math.round(ms)} ms`;
+}
+
+function idleActionFeedback(message: string): CommandCenterActionFeedback {
+    return {
+        state: 'idle',
+        message,
+    };
+}
+
+function runningActionFeedback(
+    label: string,
+    target?: string,
+    message = 'Action is running.',
+): CommandCenterActionFeedback {
+    return {
+        state: 'running',
+        label,
+        target,
+        message,
+        atEpochMs: Date.now(),
+    };
+}
+
+function completedActionFeedback(input: Readonly<{
+    label: string;
+    startedAtEpochMs: number;
+    target?: string;
+    ok: boolean;
+    status?: string | number;
+    statusText?: string;
+    durationMs?: number;
+    message?: string;
+}>): CommandCenterActionFeedback {
+    return {
+        state: input.ok ? 'success' : 'error',
+        label: input.label,
+        target: input.target,
+        status: input.status,
+        statusText: input.statusText,
+        durationMs: input.durationMs ?? Math.max(0, Date.now() - input.startedAtEpochMs),
+        message: input.message,
+        atEpochMs: Date.now(),
+    };
 }
 
 function formatRelativeDuration(ms: number | undefined): string {
@@ -4373,6 +4438,58 @@ function ReceivedDataInboxPanel({ state, onSelectCommand }: {
     );
 }
 
+function timeseriesPolyline(series: RtcDiagnosticsTimeseriesSeries): string {
+    const points = series.points;
+    if (points.length === 0) {
+        return '';
+    }
+
+    const width = 220;
+    const height = 64;
+    const max = Math.max(1, series.max);
+    const lastIndex = Math.max(1, points.length - 1);
+    return points.map((point, index) => {
+        const x = (index / lastIndex) * width;
+        const y = height - ((point.value / max) * height);
+        return `${Math.round(x * 100) / 100},${Math.round(y * 100) / 100}`;
+    }).join(' ');
+}
+
+function RtcDiagnosticsTimeseriesPanel({ series }: {
+    series: readonly RtcDiagnosticsTimeseriesSeries[];
+}) {
+    return (
+        <section className="rtc-timeseries-panel" aria-label="RTC diagnostics time-series">
+            <div className="section-heading">
+                <h3>Time Series</h3>
+                <span>{series[0]?.points.length ?? 0} buckets</span>
+            </div>
+            <div className="rtc-timeseries-grid">
+                {series.map(entry => (
+                    <article className={`rtc-timeseries-card ${entry.tone}`} key={entry.seriesId}>
+                        <div>
+                            <strong>{entry.label}</strong>
+                            <small>
+                                latest {entry.latest} {entry.unit} - max {entry.max} {entry.unit}
+                            </small>
+                        </div>
+                        <svg
+                            className="rtc-timeseries-chart"
+                            viewBox="0 0 220 64"
+                            preserveAspectRatio="none"
+                            role="img"
+                            aria-label={`${entry.label} over time`}
+                        >
+                            <line x1="0" x2="220" y1="64" y2="64"/>
+                            <polyline points={timeseriesPolyline(entry)}/>
+                        </svg>
+                    </article>
+                ))}
+            </div>
+        </section>
+    );
+}
+
 function RtcDiagnosticsPanel({ state, bootstrap, authSession, globalValues, busy, onSelectCommand }: {
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
@@ -4555,6 +4672,7 @@ function RtcDiagnosticsPanel({ state, bootstrap, authSession, globalValues, busy
                 <Metric label="Avg command" value={formatDuration(diagnostics.latency.averageCommandMs)}/>
                 <Metric label="Max command" value={formatDuration(diagnostics.latency.maxCommandMs)}/>
             </div>
+            <RtcDiagnosticsTimeseriesPanel series={diagnostics.timeseries}/>
             <div className="rtc-stage-list">
                 {diagnostics.stages.map(stage => (
                     <article className="rtc-stage-row" key={stage.stageId}>
@@ -6211,6 +6329,9 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
     const [sequence, setSequence] = useState(1);
     const [localError, setLocalError] = useState<string | undefined>();
     const [busyAction, setBusyAction] = useState<string | undefined>();
+    const [actionFeedback, setActionFeedback] = useState<CommandCenterActionFeedback>(() =>
+        idleActionFeedback('Run a WebSocket operation to see action status.')
+    );
     const [waitStatus, setWaitStatus] = useState<string>('idle');
     const [ticket, setTicket] = useState<AuthCommandCenterTicket | undefined>();
     const [subscription, setSubscription] = useState<WebSocketSubscriptionState | undefined>();
@@ -6434,6 +6555,13 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
     const configure = async (): Promise<void> => {
         setBusyAction('Configure WebSocket');
         setLocalError(undefined);
+        const label = 'Configure WebSocket';
+        const startedAtEpochMs = Date.now();
+        setActionFeedback(runningActionFeedback(
+            label,
+            values.connection,
+            'Recording the current WebSocket configuration.',
+        ));
         try {
             setSequence(current => current + 1);
             recordWebSocketEvent(
@@ -6451,6 +6579,25 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
                 'Configure WebSocket',
             );
             setWaitStatus('configured');
+            setActionFeedback(completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: values.connection,
+                ok: true,
+                status: 'configured',
+                message: `Configured ${routePreview.destination}.`,
+            }));
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            setLocalError(message);
+            setActionFeedback(completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: values.connection,
+                ok: false,
+                statusText: 'error',
+                message,
+            }));
         } finally {
             setBusyAction(undefined);
         }
@@ -6493,11 +6640,21 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
     const open = async (url = values.wsUrl, options: { useTicket?: boolean } = { useTicket: true }): Promise<void> => {
         setBusyAction('Open WebSocket');
         setLocalError(undefined);
+        const label = options.useTicket === false ? 'Open WebSocket without ticket' : 'Open WebSocket';
+        const startedAtEpochMs = Date.now();
+        setActionFeedback(runningActionFeedback(
+            label,
+            url,
+            options.useTicket === false
+                ? 'Opening raw WebSocket without acquiring a ticket.'
+                : 'Creating a ticket and opening the raw WebSocket.',
+        ));
         try {
             const nextTicket = options.useTicket === false
                 ? undefined
                 : await requestWsTicket();
             const resolvedUrl = resolveWebSocketUrlTemplate(url, values.apiBaseUrl, authSession, nextTicket);
+            setActionFeedback(runningActionFeedback(label, resolvedUrl, 'Opening raw WebSocket connection.'));
             const protocols = values.protocols
                 .split(',')
                 .map(entry => entry.trim())
@@ -6517,6 +6674,14 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
                     'Open WebSocket',
                 );
                 setWaitStatus('raw ws open');
+                setActionFeedback(completedActionFeedback({
+                    label,
+                    startedAtEpochMs,
+                    target: resolvedUrl,
+                    ok: true,
+                    status: 'open',
+                    message: 'Raw WebSocket is open.',
+                }));
             });
             socket.addEventListener('message', event => {
                 let data: unknown = event.data;
@@ -6550,6 +6715,14 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
                     'error',
                 );
                 setWaitStatus('raw ws error');
+                setActionFeedback(completedActionFeedback({
+                    label,
+                    startedAtEpochMs,
+                    target: resolvedUrl,
+                    ok: false,
+                    statusText: 'error',
+                    message: 'Raw WebSocket emitted an error.',
+                }));
             });
             socket.addEventListener('close', event => {
                 recordWebSocketEvent(
@@ -6565,9 +6738,26 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
                 );
                 setWaitStatus('raw ws closed');
             });
+            setActionFeedback(completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: resolvedUrl,
+                ok: true,
+                status: 'requested',
+                message: 'Raw WebSocket open was requested.',
+            }));
         } catch (error) {
-            setLocalError(error instanceof Error ? error.message : String(error));
+            const message = error instanceof Error ? error.message : String(error);
+            setLocalError(message);
             setWaitStatus('raw ws open failed');
+            setActionFeedback(completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: url,
+                ok: false,
+                statusText: 'error',
+                message,
+            }));
         } finally {
             setBusyAction(undefined);
         }
@@ -6576,14 +6766,38 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
     const send = async (): Promise<void> => {
         if (!payloadResult.ok) {
             setLocalError(payloadResult.error);
+            setActionFeedback(completedActionFeedback({
+                label: 'Send WebSocket JSON',
+                startedAtEpochMs: Date.now(),
+                target: routePreview.destination,
+                ok: false,
+                statusText: 'invalid payload',
+                message: payloadResult.error,
+            }));
             return;
         }
         if (values.wsScope === 'room' && !values.groupId.trim()) {
-            setLocalError('Room-scoped WS sends require a Group.');
+            const message = 'Room-scoped WS sends require a Group.';
+            setLocalError(message);
+            setActionFeedback(completedActionFeedback({
+                label: 'Send WebSocket JSON',
+                startedAtEpochMs: Date.now(),
+                target: routePreview.destination,
+                ok: false,
+                statusText: 'invalid target',
+                message,
+            }));
             return;
         }
         setBusyAction('Send WebSocket JSON');
         setLocalError(undefined);
+        const label = 'Send WebSocket JSON';
+        const startedAtEpochMs = Date.now();
+        setActionFeedback(runningActionFeedback(
+            label,
+            routePreview.destination,
+            `Sending ${routePreview.selector} through Rallar WS messages.`,
+        ));
         try {
             const result = await runDirectRallarWsSend(directContext(), {
                 scope: values.wsScope,
@@ -6599,6 +6813,28 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
                 'Rallar WS JSON sent',
                 'Rallar WS send failed',
             );
+            setActionFeedback(completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: routePreview.destination,
+                ok: result.status === 'completed',
+                status: result.status,
+                durationMs: result.durationMs,
+                message: result.status === 'completed'
+                    ? `Sent ${routePreview.selector}.`
+                    : result.error?.message ?? 'Rallar WS send failed.',
+            }));
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            setLocalError(message);
+            setActionFeedback(completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: routePreview.destination,
+                ok: false,
+                statusText: 'error',
+                message,
+            }));
         } finally {
             setBusyAction(undefined);
         }
@@ -6607,6 +6843,9 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
     const close = async (reason = values.closeReason): Promise<void> => {
         setBusyAction('Close WebSocket');
         setLocalError(undefined);
+        const label = 'Close WebSocket';
+        const startedAtEpochMs = Date.now();
+        setActionFeedback(runningActionFeedback(label, values.wsUrl, 'Closing the raw WebSocket if one is open.'));
         try {
             const socket = rawSocketRef.current;
             rawSocketRef.current = undefined;
@@ -6621,6 +6860,25 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
                 'Close WebSocket',
             );
             setSequence(current => current + 1);
+            setActionFeedback(completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: values.wsUrl,
+                ok: true,
+                status: socket ? 'close requested' : 'no socket',
+                message: socket ? 'Raw WebSocket close was requested.' : 'No raw WebSocket was open.',
+            }));
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            setLocalError(message);
+            setActionFeedback(completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: values.wsUrl,
+                ok: false,
+                statusText: 'error',
+                message,
+            }));
         } finally {
             setBusyAction(undefined);
         }
@@ -6638,15 +6896,40 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
 
     const subscribeWs = async (): Promise<void> => {
         if (!values.typeId.trim()) {
-            setLocalError('WS subscription requires a Type ID.');
+            const message = 'WS subscription requires a Type ID.';
+            setLocalError(message);
+            setActionFeedback(completedActionFeedback({
+                label: 'Subscribe WS',
+                startedAtEpochMs: Date.now(),
+                target: routePreview.destination,
+                ok: false,
+                statusText: 'invalid selector',
+                message,
+            }));
             return;
         }
         if (values.wsScope === 'room' && !values.groupId.trim()) {
-            setLocalError('Room-scoped WS subscriptions require a Group.');
+            const message = 'Room-scoped WS subscriptions require a Group.';
+            setLocalError(message);
+            setActionFeedback(completedActionFeedback({
+                label: 'Subscribe WS',
+                startedAtEpochMs: Date.now(),
+                target: routePreview.destination,
+                ok: false,
+                statusText: 'invalid target',
+                message,
+            }));
             return;
         }
         setBusyAction('Subscribe WS');
         setLocalError(undefined);
+        const label = 'Subscribe WS';
+        const startedAtEpochMs = Date.now();
+        setActionFeedback(runningActionFeedback(
+            label,
+            routePreview.destination,
+            `Subscribing to ${routePreview.selector}.`,
+        ));
         try {
             subscription?.unsubscribe();
             const selector = {
@@ -6694,22 +6977,54 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
                 });
                 setWaitStatus('subscribed');
             }
+            setActionFeedback(completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: routePreview.destination,
+                ok: result.status === 'completed',
+                status: result.status,
+                durationMs: result.durationMs,
+                message: result.status === 'completed'
+                    ? `Subscribed to ${selector.topicId ?? '*'} / ${selector.typeId}.`
+                    : result.error?.message ?? 'Rallar WS subscribe failed.',
+            }));
         } catch (error) {
-            setLocalError(error instanceof Error ? error.message : String(error));
+            const message = error instanceof Error ? error.message : String(error);
+            setLocalError(message);
+            setActionFeedback(completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: routePreview.destination,
+                ok: false,
+                statusText: 'error',
+                message,
+            }));
         } finally {
             setBusyAction(undefined);
         }
     };
 
     const unsubscribeWs = (): void => {
+        const startedAtEpochMs = Date.now();
         subscription?.unsubscribe();
         setSubscription(undefined);
         setWaitStatus('unsubscribed');
+        setActionFeedback(completedActionFeedback({
+            label: 'Unsubscribe WS',
+            startedAtEpochMs,
+            target: subscription?.destination ?? routePreview.destination,
+            ok: true,
+            status: subscription ? 'unsubscribed' : 'no subscription',
+            message: subscription ? 'Rallar WS subscription cleared.' : 'No Rallar WS subscription was active.',
+        }));
     };
 
     const createTicket = async (): Promise<void> => {
         setBusyAction('Create WS ticket');
         setLocalError(undefined);
+        const label = 'Create WS ticket';
+        const startedAtEpochMs = Date.now();
+        setActionFeedback(runningActionFeedback(label, '/api/auth/ws-ticket', 'Requesting a WebSocket ticket.'));
         try {
             const nextTicket = await requestWsTicket();
             recordWebSocketEvent(
@@ -6721,8 +7036,25 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
                 },
                 'Create WS ticket',
             );
+            setActionFeedback(completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: '/api/auth/ws-ticket',
+                ok: true,
+                status: 'created',
+                message: `Ticket expires at ${formatTime(nextTicket.expiresAtEpochMs)}.`,
+            }));
         } catch (error) {
-            setLocalError(error instanceof Error ? error.message : String(error));
+            const message = error instanceof Error ? error.message : String(error);
+            setLocalError(message);
+            setActionFeedback(completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: '/api/auth/ws-ticket',
+                ok: false,
+                statusText: 'error',
+                message,
+            }));
         } finally {
             setBusyAction(undefined);
         }
@@ -6731,8 +7063,15 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
     const waitForMessage = async (): Promise<void> => {
         const startCount = diagnostics.inboundCount;
         const startedAt = Date.now();
+        const label = 'Wait for WS message';
         setWaitStatus('waiting');
-        setBusyAction('Wait for WS message');
+        setBusyAction(label);
+        setLocalError(undefined);
+        setActionFeedback(runningActionFeedback(
+            label,
+            values.connection,
+            `Waiting up to ${formatDuration(values.timeoutMs)} for inbound WS traffic.`,
+        ));
         try {
             await new Promise<void>((resolve, reject) => {
                 const interval = window.setInterval(() => {
@@ -6752,9 +7091,26 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
                 }, 100);
             });
             setWaitStatus('message observed');
+            setActionFeedback(completedActionFeedback({
+                label,
+                startedAtEpochMs: startedAt,
+                target: values.connection,
+                ok: true,
+                status: 'observed',
+                message: 'A WebSocket message was observed.',
+            }));
         } catch (error) {
             setWaitStatus('timeout');
-            setLocalError(error instanceof Error ? error.message : String(error));
+            const message = error instanceof Error ? error.message : String(error);
+            setLocalError(message);
+            setActionFeedback(completedActionFeedback({
+                label,
+                startedAtEpochMs: startedAt,
+                target: values.connection,
+                ok: false,
+                statusText: 'timeout',
+                message,
+            }));
         } finally {
             setBusyAction(undefined);
         }
@@ -6763,6 +7119,13 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
     const waitForRallarWsOpen = async (): Promise<void> => {
         setBusyAction('Wait for Rallar WS open');
         setLocalError(undefined);
+        const label = 'Wait for Rallar WS open';
+        const startedAtEpochMs = Date.now();
+        setActionFeedback(runningActionFeedback(
+            label,
+            values.apiBaseUrl,
+            'Starting Rallar signaling and waiting for WS open.',
+        ));
         try {
             if (providerMode !== 'browser-rallar') {
                 throw new Error('Rallar WS wait requires provider=browser-rallar.');
@@ -6818,9 +7181,28 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
                     : 'Rallar WS open wait failed',
             );
             setWaitStatus(result.status === 'open' ? 'rallar ws open' : result.status);
+            setActionFeedback(completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: values.apiBaseUrl,
+                ok: result.status === 'open',
+                status: result.status,
+                message: result.status === 'open'
+                    ? 'Rallar signaling WebSocket is open.'
+                    : 'Rallar signaling WebSocket did not open.',
+            }));
         } catch (error) {
             setWaitStatus('rallar ws wait failed');
-            setLocalError(error instanceof Error ? error.message : String(error));
+            const message = error instanceof Error ? error.message : String(error);
+            setLocalError(message);
+            setActionFeedback(completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: values.apiBaseUrl,
+                ok: false,
+                statusText: 'error',
+                message,
+            }));
         } finally {
             setBusyAction(undefined);
         }
@@ -6941,6 +7323,31 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
                     <span>Close Reason</span>
                     <input value={values.closeReason} onChange={event => updateValue('closeReason', event.target.value)}/>
                 </label>
+            </div>
+            <CommandCenterActionFeedbackPanel
+                feedback={actionFeedback}
+                state={state}
+                authSession={authSession}
+            />
+            <div className="command-center-live-grid" aria-label="WebSocket live subscription status">
+                <Metric
+                    label="WS subscribed"
+                    value={subscription ? 'yes' : 'no'}
+                    tone={subscription ? 'good' : 'warn'}
+                />
+                <Metric label="Subscribed group" value={subscription?.groupId || '-'}/>
+                <Metric label="Subscribed selector" value={subscription?.label ?? '-'}/>
+                <Metric label="Subscribed since" value={formatTime(subscription?.subscribedAtEpochMs)}/>
+                <Metric
+                    label="Signal WS"
+                    value={browserStatus.signalingLabel}
+                    tone={browserStatus.signalingTone}
+                />
+                <Metric
+                    label="Raw WS"
+                    value={diagnostics.statusLabel}
+                    tone={diagnostics.status === 'open' ? 'good' : diagnostics.status === 'error' ? 'bad' : 'muted'}
+                />
             </div>
             <div className="websocket-action-section">
                 <div className="section-heading">
@@ -7097,9 +7504,9 @@ function WebSocketCommandCenterPanel({ state, bootstrap, authSession, globalValu
                 <Metric label="Close code" value={String(diagnostics.closeCode ?? '-')}/>
                 <Metric label="Close reason" value={String(diagnostics.closeReason ?? '-')}/>
             </div>
-            {(busyAction || localError || !payloadResult.ok) && (
+            {(localError || !payloadResult.ok) && (
                 <div className={localError || !payloadResult.ok ? 'workbench-error' : 'command-center-status'} role="status">
-                    {localError ?? (!payloadResult.ok ? payloadResult.error : busyAction)}
+                    {localError ?? (!payloadResult.ok ? payloadResult.error : undefined)}
                 </div>
             )}
             {canSendViaRallarSignaling && !localError && (
@@ -7156,10 +7563,14 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
     const [timeoutMs, setTimeoutMs] = useState<number>(RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs);
     const [busyAction, setBusyAction] = useState<string | undefined>();
     const [localError, setLocalError] = useState<string | undefined>();
+    const [actionFeedback, setActionFeedback] = useState<CommandCenterActionFeedback>(() =>
+        idleActionFeedback('Run an RTC/Realtimes operation to see action status.')
+    );
     const [result, setResult] = useState<unknown>();
     const [received, setReceived] = useState<readonly RtcRealtimeReceivedRow[]>([]);
     const [health, setHealth] = useState<unknown>();
-    const subscriptionsRef = useRef<readonly (() => void)[]>([]);
+    const [subscriptions, setSubscriptions] = useState<readonly RtcRealtimeSubscriptionRow[]>([]);
+    const subscriptionsRef = useRef<readonly RtcRealtimeSubscriptionRow[]>([]);
     const providerMode = bootstrap.providerMode;
     const realBackendReady = providerMode === 'browser-rallar';
     const activeGroupId = globalValues.roomId.trim();
@@ -7171,7 +7582,7 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
     }, [globalValues.roomId]);
 
     useEffect(() => () => {
-        subscriptionsRef.current.forEach(unsubscribe => unsubscribe());
+        subscriptionsRef.current.forEach(subscription => subscription.unsubscribe());
         subscriptionsRef.current = [];
     }, []);
 
@@ -7320,9 +7731,23 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
     const runAction = async (label: string, action: () => Promise<unknown>): Promise<void> => {
         setBusyAction(label);
         setLocalError(undefined);
+        const startedAtEpochMs = Date.now();
+        setActionFeedback(runningActionFeedback(
+            label,
+            `${activeGroupId || '-'} / ${transport}`,
+            'Calling the browser Rallar facade.',
+        ));
         try {
             const nextResult = await action();
             setResult(nextResult);
+            setActionFeedback(completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: `${activeGroupId || '-'} / ${transport}`,
+                ok: true,
+                status: 'completed',
+                message: `${label} completed.`,
+            }));
             recordDirectEvent(
                 `rallar.direct.${transport}.${label.toLowerCase().replaceAll(' ', '_')}.completed`,
                 'info',
@@ -7332,6 +7757,14 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             setLocalError(message);
+            setActionFeedback(completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: `${activeGroupId || '-'} / ${transport}`,
+                ok: false,
+                statusText: 'error',
+                message,
+            }));
             recordDirectEvent(
                 `rallar.direct.${transport}.${label.toLowerCase().replaceAll(' ', '_')}.failed`,
                 'error',
@@ -7341,6 +7774,17 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
         } finally {
             setBusyAction(undefined);
         }
+    };
+
+    const addSubscription = (subscription: RtcRealtimeSubscriptionRow): void => {
+        subscriptionsRef.current
+            .filter(entry => entry.subscriptionId === subscription.subscriptionId)
+            .forEach(entry => entry.unsubscribe());
+        subscriptionsRef.current = [
+            ...subscriptionsRef.current.filter(entry => entry.subscriptionId !== subscription.subscriptionId),
+            subscription,
+        ];
+        setSubscriptions(subscriptionsRef.current);
     };
 
     const addReceived = (row: RtcRealtimeReceivedRow): void => {
@@ -7366,7 +7810,15 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
                         raw: message,
                     });
                 });
-                subscriptionsRef.current = [...subscriptionsRef.current, unsubscribe];
+                addSubscription({
+                    subscriptionId: `realtime:${activeGroupId || '-'}:${laneId || '-'}`,
+                    transport: 'realtime',
+                    label: `lane ${laneId || '-'}`,
+                    laneId,
+                    groupId: activeGroupId || '-',
+                    subscribedAtEpochMs: Date.now(),
+                    unsubscribe,
+                });
                 return {
                     subscribed: 'realtime',
                     laneId,
@@ -7397,7 +7849,15 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
                         raw: message,
                     });
                 });
-                subscriptionsRef.current = [...subscriptionsRef.current, unsubscribe];
+                addSubscription({
+                    subscriptionId: `messages.rtc:${activeGroupId || '-'}:${topicId || '*'}:${typeId}`,
+                    transport: 'messages.rtc',
+                    label: `${topicId || '*'} / ${typeId}`,
+                    laneId,
+                    groupId: activeGroupId || '-',
+                    subscribedAtEpochMs: Date.now(),
+                    unsubscribe,
+                });
                 return {
                     subscribed: 'messages.rtc',
                     selector,
@@ -7406,8 +7866,18 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
         });
 
     const clearSubscriptions = (): void => {
-        subscriptionsRef.current.forEach(unsubscribe => unsubscribe());
+        const startedAtEpochMs = Date.now();
+        subscriptionsRef.current.forEach(subscription => subscription.unsubscribe());
         subscriptionsRef.current = [];
+        setSubscriptions([]);
+        setActionFeedback(completedActionFeedback({
+            label: 'Clear RTC/Realtimes subscriptions',
+            startedAtEpochMs,
+            target: activeGroupId || '-',
+            ok: true,
+            status: 'cleared',
+            message: 'RTC/Realtimes subscriptions cleared.',
+        }));
         recordDirectEvent('rallar.direct.rtc_realtime.unsubscribe.completed', 'info', {}, 'RTC/Realtimes subscriptions cleared');
     };
 
@@ -7554,8 +8024,29 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
                 <Metric label="Transport" value={transport}/>
                 <Metric label="Lane" value={laneId || '-'}/>
                 <Metric label="Peer targets" value={peerIds.length ? peerIds.join(', ') : 'room/default'}/>
-                <Metric label="Subscriptions" value={String(subscriptionsRef.current.length)}/>
+                <Metric label="Subscriptions" value={String(subscriptions.length)}/>
                 <Metric label="Received" value={String(received.length)}/>
+            </div>
+            <CommandCenterActionFeedbackPanel
+                feedback={actionFeedback}
+                state={state}
+                authSession={authSession}
+            />
+            <div className="command-center-live-grid" aria-label="RTC realtime subscription status">
+                <Metric
+                    label="Realtime sub"
+                    value={subscriptions.some(subscription => subscription.transport === 'realtime') ? 'yes' : 'no'}
+                    tone={subscriptions.some(subscription => subscription.transport === 'realtime') ? 'good' : 'warn'}
+                />
+                <Metric
+                    label="RTC message sub"
+                    value={subscriptions.some(subscription => subscription.transport === 'messages.rtc') ? 'yes' : 'no'}
+                    tone={subscriptions.some(subscription => subscription.transport === 'messages.rtc') ? 'good' : 'warn'}
+                />
+                <Metric label="Subscribed group" value={subscriptions.at(-1)?.groupId ?? '-'}/>
+                <Metric label="Subscribed lane" value={subscriptions.at(-1)?.laneId ?? '-'}/>
+                <Metric label="Subscribed selector" value={subscriptions.at(-1)?.label ?? '-'}/>
+                <Metric label="Subscribed since" value={formatTime(subscriptions.at(-1)?.subscribedAtEpochMs)}/>
             </div>
             <div className="rtc-realtime-context-grid">
                 <label className="field">
@@ -7636,7 +8127,7 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
                 <button type="button" disabled={!canRun} onClick={() => void refreshHealth()}>
                     Refresh lane health
                 </button>
-                <button type="button" disabled={subscriptionsRef.current.length === 0} onClick={clearSubscriptions}>
+                <button type="button" disabled={subscriptions.length === 0} onClick={clearSubscriptions}>
                     Clear subscriptions
                 </button>
                 <button type="button" onClick={copyRecipe}>
@@ -7668,14 +8159,14 @@ function RtcRealtimePanel({ state, bootstrap, authSession, globalValues }: {
                     </div>
                 </section>
             </div>
-            {(busyAction || localError || !realBackendReady || !authSession) && (
+            {(localError || !realBackendReady || !authSession) && (
                 <div className={localError ? 'workbench-error' : 'command-center-status'} role="status">
                     {localError ??
                         (!realBackendReady
                             ? 'RTC/Realtimes requires provider=browser-rallar.'
                             : !authSession
                                 ? 'RTC/Realtimes requires a logged-in browser session.'
-                                : busyAction)}
+                                : undefined)}
                 </div>
             )}
             <div className="rtc-realtime-result-grid">
@@ -8839,6 +9330,9 @@ function RoomsClientsPanel({ state, bootstrap, authSession, globalValues, onGlob
     const [timeoutMs, setTimeoutMs] = useState(5_000);
     const [busyAction, setBusyAction] = useState<string | undefined>();
     const [localError, setLocalError] = useState<string | undefined>();
+    const [actionFeedback, setActionFeedback] = useState<CommandCenterActionFeedback>(() =>
+        idleActionFeedback('Run a Groups/Clients operation to see request status.')
+    );
     const [actions, setActions] = useState<readonly CommandCenterRestActionLog[]>([]);
     const [groupsBody, setGroupsBody] = useState<unknown>();
     const [clientsBody, setClientsBody] = useState<unknown>();
@@ -8923,18 +9417,35 @@ function RoomsClientsPanel({ state, bootstrap, authSession, globalValues, onGlob
         }
         setBusyAction(action.label);
         setLocalError(undefined);
+        const startedAtEpochMs = Date.now();
         try {
-            const response = await executeRallarServerRestRequest(
-                buildPresetRequestInput({
-                    presetId: action.presetId,
-                    variables,
-                    apiBaseUrl,
-                    authSession,
-                    timeoutMs,
-                    query: action.query,
-                }),
-            );
+            const requestInput = buildPresetRequestInput({
+                presetId: action.presetId,
+                variables,
+                apiBaseUrl,
+                authSession,
+                timeoutMs,
+                query: action.query,
+            });
+            setActionFeedback(runningActionFeedback(
+                action.label,
+                requestInput.path,
+                'Sending authenticated Rallar Server request.',
+            ));
+            const response = await executeRallarServerRestRequest(requestInput);
             appendAction(restLogEntry(action.label, response));
+            setActionFeedback(completedActionFeedback({
+                label: action.label,
+                startedAtEpochMs,
+                target: response.url,
+                ok: response.ok,
+                status: response.status,
+                statusText: response.statusText,
+                durationMs: response.durationMs,
+                message: response.ok
+                    ? 'Request completed.'
+                    : response.error?.message ?? 'Request failed.',
+            }));
             if (response.bodyJson !== undefined) {
                 applyResponseBody(action.actionId, response.bodyJson);
             }
@@ -8945,7 +9456,16 @@ function RoomsClientsPanel({ state, bootstrap, authSession, globalValues, onGlob
                 promoteGroupToGlobal(response.bodyJson);
             }
         } catch (error) {
-            setLocalError(error instanceof Error ? error.message : String(error));
+            const message = error instanceof Error ? error.message : String(error);
+            setLocalError(message);
+            setActionFeedback(completedActionFeedback({
+                label: action.label,
+                startedAtEpochMs,
+                target: action.presetId,
+                ok: false,
+                statusText: 'error',
+                message,
+            }));
         } finally {
             setBusyAction(undefined);
         }
@@ -8954,29 +9474,72 @@ function RoomsClientsPanel({ state, bootstrap, authSession, globalValues, onGlob
     const refreshState = async (): Promise<void> => {
         setBusyAction('Refresh state');
         setLocalError(undefined);
+        const startedAtEpochMs = Date.now();
+        let completed = 0;
+        let failedResponse: RallarServerRestResponse | undefined;
         try {
             for (const actionId of ['list-groups', 'list-clients', 'read-group', 'client-events-page', 'group-events-page'] as const) {
                 const action = ROOMS_CLIENTS_ACTIONS.find(entry => entry.actionId === actionId);
                 if (!action?.presetId) {
                     continue;
                 }
-                const response = await executeRallarServerRestRequest(
-                    buildPresetRequestInput({
-                        presetId: action.presetId,
-                        variables,
-                        apiBaseUrl,
-                        authSession,
-                        timeoutMs,
-                        query: action.query,
-                    }),
-                );
+                const requestInput = buildPresetRequestInput({
+                    presetId: action.presetId,
+                    variables,
+                    apiBaseUrl,
+                    authSession,
+                    timeoutMs,
+                    query: action.query,
+                });
+                setActionFeedback(runningActionFeedback(
+                    `Refresh state: ${action.label}`,
+                    requestInput.path,
+                    `Running refresh step ${completed + 1}.`,
+                ));
+                const response = await executeRallarServerRestRequest(requestInput);
                 appendAction(restLogEntry(action.label, response));
+                completed += 1;
+                if (!response.ok && !failedResponse) {
+                    failedResponse = response;
+                }
+                setActionFeedback(completedActionFeedback({
+                    label: `Refresh state: ${action.label}`,
+                    startedAtEpochMs,
+                    target: response.url,
+                    ok: response.ok,
+                    status: response.status,
+                    statusText: response.statusText,
+                    durationMs: response.durationMs,
+                    message: response.ok
+                        ? `Refresh step ${completed} completed.`
+                        : response.error?.message ?? 'Refresh step failed.',
+                }));
                 if (response.bodyJson !== undefined) {
                     applyResponseBody(action.actionId, response.bodyJson);
                 }
             }
+            setActionFeedback(completedActionFeedback({
+                label: 'Refresh state',
+                startedAtEpochMs,
+                target: `${apiBaseUrl}/api/state`,
+                ok: !failedResponse,
+                status: failedResponse?.status ?? 'ok',
+                statusText: failedResponse?.statusText,
+                message: failedResponse
+                    ? `Refresh completed with a failed step: ${failedResponse.error?.message ?? failedResponse.statusText}.`
+                    : `${completed} state requests completed.`,
+            }));
         } catch (error) {
-            setLocalError(error instanceof Error ? error.message : String(error));
+            const message = error instanceof Error ? error.message : String(error);
+            setLocalError(message);
+            setActionFeedback(completedActionFeedback({
+                label: 'Refresh state',
+                startedAtEpochMs,
+                target: `${apiBaseUrl}/api/state`,
+                ok: false,
+                statusText: 'error',
+                message,
+            }));
         } finally {
             setBusyAction(undefined);
         }
@@ -8988,6 +9551,13 @@ function RoomsClientsPanel({ state, bootstrap, authSession, globalValues, onGlob
         const providerMode = bootstrap.providerMode;
         setBusyAction(`Direct room ${action}`);
         setLocalError(undefined);
+        const label = `Direct room ${action}`;
+        const startedAtEpochMs = Date.now();
+        setActionFeedback(runningActionFeedback(
+            label,
+            variables.groupId,
+            'Calling the browser Rallar facade.',
+        ));
         try {
             if (providerMode !== 'browser-rallar') {
                 throw new Error('Direct room actions require provider=browser-rallar.');
@@ -9061,14 +9631,22 @@ function RoomsClientsPanel({ state, bootstrap, authSession, globalValues, onGlob
             }
             appendAction({
                 actionId: `direct-room-${action}-${Date.now()}`,
-                label: `Direct room ${action}`,
+                label,
                 atEpochMs: Date.now(),
                 ok: true,
                 status: 200,
                 statusText: 'OK',
-                durationMs: 0,
+                durationMs: Math.max(0, Date.now() - startedAtEpochMs),
                 bodyJson: body,
             });
+            setActionFeedback(completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: variables.groupId,
+                ok: true,
+                status: 'ok',
+                message: 'Rallar facade action completed.',
+            }));
             rallarBlackBoxRuntimeStore.recordRuntimeEvent(
                 createDirectRallarRuntimeEvent({
                     topic: `rallar.direct.rooms.${action}.completed`,
@@ -9085,14 +9663,22 @@ function RoomsClientsPanel({ state, bootstrap, authSession, globalValues, onGlob
             setLocalError(message);
             appendAction({
                 actionId: `direct-room-${action}-${Date.now()}`,
-                label: `Direct room ${action}`,
+                label,
                 atEpochMs: Date.now(),
                 ok: false,
                 status: 0,
                 statusText: message,
-                durationMs: 0,
+                durationMs: Math.max(0, Date.now() - startedAtEpochMs),
                 errorKind: 'direct-rallar',
             });
+            setActionFeedback(completedActionFeedback({
+                label,
+                startedAtEpochMs,
+                target: variables.groupId,
+                ok: false,
+                statusText: 'error',
+                message,
+            }));
         } finally {
             setBusyAction(undefined);
         }
@@ -9219,6 +9805,11 @@ function RoomsClientsPanel({ state, bootstrap, authSession, globalValues, onGlob
                     Copy state recipe
                 </button>
             </div>
+            <CommandCenterActionFeedbackPanel
+                feedback={actionFeedback}
+                state={state}
+                authSession={authSession}
+            />
             <div className="rooms-action-sections" aria-label="Groups and clients actions">
                 {ROOMS_CLIENTS_ACTION_GROUPS.map(category => (
                     <section
@@ -9321,9 +9912,6 @@ function RoomsClientsPanel({ state, bootstrap, authSession, globalValues, onGlob
                     />
                 </label>
             </div>
-            {busyAction && (
-                <div className="command-center-status" role="status">{busyAction}</div>
-            )}
             {localError && (
                 <div className="workbench-error" role="status">
                     {redactRallarBlackBoxValue(localError, uiRedactionOptions(state, authSession))}
@@ -9817,6 +10405,71 @@ function SharedTestPanel() {
                 </div>
             </section>
         </div>
+    );
+}
+
+function CommandCenterActionFeedbackPanel({ feedback, state, authSession }: {
+    feedback: CommandCenterActionFeedback;
+    state?: RallarBlackBoxTestState;
+    authSession?: AuthSession;
+}) {
+    const tone = feedback.state === 'success'
+        ? 'good'
+        : feedback.state === 'error'
+            ? 'bad'
+            : feedback.state === 'running'
+                ? 'active'
+                : 'muted';
+    const label = feedback.state === 'success'
+        ? 'success'
+        : feedback.state === 'error'
+            ? 'failed'
+            : feedback.state === 'running'
+                ? 'running'
+                : 'idle';
+    const title = feedback.state === 'idle'
+        ? 'No action run yet'
+        : feedback.label ?? 'Action';
+    const targetText = feedback.target
+        ? String(redactRallarBlackBoxValue(feedback.target, uiRedactionOptions(state, authSession)))
+        : '-';
+    const statusText = feedback.status !== undefined
+        ? `${feedback.status} ${feedback.statusText ?? ''}`.trim()
+        : feedback.statusText ?? '-';
+    const message = feedback.message
+        ? String(redactRallarBlackBoxValue(feedback.message, uiRedactionOptions(state, authSession)))
+        : feedback.state === 'running'
+            ? 'Waiting for completion.'
+            : feedback.state === 'idle'
+                ? 'Run an operation to see live feedback.'
+                : '-';
+
+    return (
+        <section className={`rest-request-feedback ${tone}`} role="status" aria-live="polite">
+            <div>
+                <span className={`pill ${tone}`}>{label}</span>
+                <strong>{title}</strong>
+                <small>{feedback.atEpochMs ? formatTime(feedback.atEpochMs) : '-'}</small>
+            </div>
+            <dl>
+                <div>
+                    <dt>Target</dt>
+                    <dd>{targetText}</dd>
+                </div>
+                <div>
+                    <dt>Status</dt>
+                    <dd>{statusText}</dd>
+                </div>
+                <div>
+                    <dt>Duration</dt>
+                    <dd>{formatDuration(feedback.durationMs)}</dd>
+                </div>
+                <div>
+                    <dt>Message</dt>
+                    <dd>{message}</dd>
+                </div>
+            </dl>
+        </section>
     );
 }
 

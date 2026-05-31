@@ -46,11 +46,13 @@ for RTC, WebSocket, HTTP, health, close, and reset behavior.
 
 The `Auth`, `Groups/Clients`, `WebSocket`, and `Rallar Server` tabs can also execute focused REST calls directly from the
 browser. Those calls are immediate `fetch` operations, not runtime commands. The focused Auth and Groups/Clients actions
-keep their own visible action logs and can copy recipe snippets. In Rallar mode, the WebSocket tab sends and subscribes
-through the shared browser Rallar facade (`rallar.messages.ws.*`) and records `rallar.direct.*` diagnostics instead of
-executing runtime `ws.send` commands. Its lower-level raw socket/ticket diagnostics use browser REST/WebSocket APIs
-directly. The Rallar Server tab can copy the selected request as a black-box `http.request` command when the same
-request should become part of a repeatable recipe or remote-control run.
+keep their own visible action logs and can copy recipe snippets. Groups/Clients, WebSocket, and RTC/Realtimes also show
+a latest-action status strip with target, status, duration, and error text so a button press has immediate visible
+feedback. In Rallar mode, the WebSocket tab sends and subscribes through the shared browser Rallar facade
+(`rallar.messages.ws.*`) and records `rallar.direct.*` diagnostics instead of executing runtime `ws.send` commands. Its
+lower-level raw socket/ticket diagnostics use browser REST/WebSocket APIs directly. The Rallar Server tab can copy the
+selected request as a black-box `http.request` command when the same request should become part of a repeatable recipe
+or remote-control run.
 Its REST Collection area also executes browser `fetch` calls directly, evaluates command-center assertions locally, and
 copies the flow as `http.request` recipe commands with assertion/extraction metadata for later runner or control-server
 use.

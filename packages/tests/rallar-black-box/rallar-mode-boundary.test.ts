@@ -112,4 +112,20 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(rtcRealtimePanel).toContain("status: 'skipped'");
         expect(rtcRealtimePanel).toContain("useState<'best-effort' | 'at-least-once'>('best-effort')");
     });
+
+    it('surfaces action feedback and live subscription state in direct command panels', () => {
+        const source = appSource();
+        const roomsClientsPanel = sourceBetween(source, 'function RoomsClientsPanel', 'function SharedTestCatalogPanel');
+        const websocketPanel = sourceBetween(source, 'function WebSocketCommandCenterPanel', 'function RtcRealtimePanel');
+        const rtcRealtimePanel = sourceBetween(source, 'function RtcRealtimePanel', 'function RallarDataPanel');
+        const rtcDiagnosticsPanel = sourceBetween(source, 'function RtcDiagnosticsPanel', 'function TopologyGraphPanel');
+
+        expect(roomsClientsPanel).toContain('CommandCenterActionFeedbackPanel');
+        expect(websocketPanel).toContain('CommandCenterActionFeedbackPanel');
+        expect(websocketPanel).toContain('WS subscribed');
+        expect(rtcRealtimePanel).toContain('CommandCenterActionFeedbackPanel');
+        expect(rtcRealtimePanel).toContain('Realtime sub');
+        expect(rtcRealtimePanel).toContain('RTC message sub');
+        expect(rtcDiagnosticsPanel).toContain('RtcDiagnosticsTimeseriesPanel');
+    });
 });

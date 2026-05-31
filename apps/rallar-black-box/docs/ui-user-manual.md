@@ -209,6 +209,10 @@ plus REST buttons for list, create, read, join, leave, group presence, and group
 buttons for list, client session connect/heartbeat/disconnect, and client events. `Refresh state` and `Copy state recipe`
 remain as shared utility actions.
 
+The latest operation is shown in a request-style status strip with target, status, duration, and the most useful message.
+Use that strip for immediate success/failure feedback, then use the recent action list and state tables for historical
+evidence.
+
 The tab renders group rows, client rows, state event rows, recent REST actions, and expected/observed/missing client
 metrics from RTC diagnostics. Use this tab when you need server-side evidence that a group, membership row, client
 session, or presence record exists before testing WS or RTC delivery.
@@ -256,9 +260,11 @@ of broadcasting to all subscribers. `Ping - all WS subscribers` is still availab
 all-scope liveness probe.
 
 The route preview below the payload editor shows the exact destination, selector, context, and transport before send.
-The `Received WS Messages` panel shows whether this browser is listening, the active subscription selector, received
-message count, and the latest received WS payloads. A browser must be `listening` before it can display app-level Rallar
-WS messages from another browser.
+The latest-operation status strip shows target, status, duration, and failure text for sends, subscribes, waits, ticket
+creation, and raw socket actions. The live status row makes the current app-level WS subscription explicit: subscribed
+yes/no, subscribed group, selector, subscribed-since time, signaling WS status, and raw WS status. The `Received WS
+Messages` panel shows the same listening state plus received message count and latest payloads. A browser must be
+`listening` before it can display app-level Rallar WS messages from another browser.
 
 Actions are split into two groups. `Rallar WS Messages` contains the app-message actions that call
 `rallar.messages.ws.*` and `rallar.ws.waitForOpen(...)`. `Raw WebSocket Diagnostics` contains ticket and socket-level
@@ -311,6 +317,11 @@ For interactive testing, `messages.rtc` defaults to `best-effort` so an open dat
 `at-least-once` when the test specifically needs durable local-outbox behavior. The tab records
 `rallar.direct.rtc_realtime.phase` timing events for facade load, configure, start, join, and send/subscribe actions.
 After the browser session is already active in the selected group, later sends skip the repeated join call.
+
+The latest-operation status strip shows target, status, duration, and failure text for subscribe/send/wait/health
+actions. The live subscription row shows whether realtime lane and `messages.rtc` listeners are active, which group/lane
+or selector they use, and when the newest subscription was installed. Received RTC/Realtimes payloads stay visible in
+the tab until cleared by page reload or navigation cleanup.
 
 ## Rallar Data
 
@@ -436,6 +447,7 @@ It derives:
 - lane health
 - NACK codes
 - command and connect latency
+- RTC event/message/failure/phase-duration time-series graphs
 - focused failure details
 - copyable diagnostic bundle
 

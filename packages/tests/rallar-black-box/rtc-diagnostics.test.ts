@@ -6,6 +6,7 @@ import type {
 } from '../../shared-test/rallar-bb-test/types.ts';
 import {
     deriveRtcDiagnostics,
+    deriveRtcDiagnosticsTimeseries,
     rtcConnectStageIdForEvent,
 } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
 
@@ -276,6 +277,52 @@ describe('rallar-black-box RTC diagnostics', () => {
             source: 'rallar-runtime',
             message: 'Snapshot is behind the minimum requested version.',
         });
+    });
+
+    it('derives RTC time-series buckets for events, messages, failures, and phase durations', () => {
+        const sampleState = state([
+            event('event-phase-1', 'rallar.direct.rtc_realtime.phase', 1_000, {
+                phase: 'start',
+                durationMs: 10,
+            }),
+            {
+                ...event('event-message', 'rallar.direct.rtc_realtime.message', 2_000),
+                kind: 'message',
+            },
+            {
+                ...event('event-ws-message', 'rallar.direct.ws.message', 2_000),
+                kind: 'message',
+                transport: 'ws',
+            },
+            {
+                ...event('event-failed', 'rallar.direct.rtc_realtime.phase', 3_000, {
+                    phase: 'send',
+                    durationMs: 30,
+                    error: 'failed',
+                }),
+                severity: 'error',
+            },
+        ]);
+        const diagnostics = deriveRtcDiagnostics(sampleState);
+        const series = deriveRtcDiagnosticsTimeseries(
+            sampleState,
+            { bucketCount: 4, bucketMs: 1_000, endAtEpochMs: 3_000 },
+        );
+
+        expect(diagnostics.timeseries.map(entry => entry.seriesId)).toEqual([
+            'events',
+            'messages',
+            'failures',
+            'phase-duration',
+        ]);
+        expect(series.find(entry => entry.seriesId === 'events')?.points.map(point => point.value))
+            .toEqual([0, 1, 1, 1]);
+        expect(series.find(entry => entry.seriesId === 'messages')?.points.map(point => point.value))
+            .toEqual([0, 0, 1, 0]);
+        expect(series.find(entry => entry.seriesId === 'failures')?.points.map(point => point.value))
+            .toEqual([0, 0, 0, 1]);
+        expect(series.find(entry => entry.seriesId === 'phase-duration')?.points.map(point => point.value))
+            .toEqual([0, 10, 0, 30]);
     });
 
     it('classifies control, provider config, auth, permission, and cleanup failures', () => {
