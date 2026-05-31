@@ -66,7 +66,8 @@ Diagnostics, Rallar Server, and Flow Builder defaults.
 
 The app shell now has a `Workspace Mode` switch. `Rallar` mode shows direct live-operation tabs. `Rallar
 black-box-runner` mode shows recipe, control-run, flow-builder, and artifact workflows. Existing `tab` deep links still
-work and infer the correct workspace for runner-owned tabs.
+work and infer the correct workspace for runner-owned tabs. Switching into runner mode with the browser-rallar provider
+does not reset or close the live direct Rallar facade; explicit reset/close actions still perform cleanup.
 
 `Rallar` mode also has a direct-operation boundary panel. The first direct action, `Check Direct Rallar`, calls the
 browser Rallar facade directly and emits `rallar.direct.*` diagnostics instead of creating black-box-runner command

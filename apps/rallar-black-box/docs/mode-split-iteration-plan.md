@@ -164,6 +164,8 @@ Result:
 - Kept shared `Event Stream` available in both modes.
 - Updated the Rallar Browser Trace strip to show the active mode and event source.
 - Kept existing panel state mounted so manual form drafts and runner workbench state survive mode switches.
+- Revised browser-rallar runner bootstrap so first entry into `Rallar black-box-runner` configures the runner workbench
+  without issuing a reset/close against the direct Rallar facade.
 
 ### Mode Split Iteration 2: Direct Rallar Operation Boundary
 

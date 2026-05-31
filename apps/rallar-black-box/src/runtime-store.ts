@@ -974,7 +974,18 @@ class RallarBlackBoxRuntimeStore {
 
     async configureLocalWorkbenchOnly(): Promise<void> {
         try {
-            await this.resetForRun('Configuring local browser-rallar workbench');
+            const runNumber = this.runSequence++;
+            this.snapshot = {
+                ...this.snapshot,
+                bootstrapping: true,
+                busy: true,
+                runState: 'waiting',
+                lastAction: 'Configuring local browser-rallar workbench',
+                lastError: undefined,
+            };
+            this.emit();
+
+            await this.configureRuntime(runNumber);
             this.snapshot = {
                 ...this.snapshot,
                 bootstrapping: false,

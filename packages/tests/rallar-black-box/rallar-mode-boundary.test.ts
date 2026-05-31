@@ -40,6 +40,23 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(source).toContain("if (canEnterApp && activeMode === 'black-box-runner')");
     });
 
+    it('does not reset the browser-rallar runtime when runner mode is first opened', () => {
+        const source = appSource();
+        const runtimeBootstrap = readFileSync(
+            new URL('../../../apps/rallar-black-box/src/runtime-store.ts', import.meta.url),
+            'utf8',
+        );
+        const configureLocalWorkbenchOnly = sourceBetween(
+            runtimeBootstrap,
+            'async configureLocalWorkbenchOnly(): Promise<void>',
+            'async bootstrapControlAgent(): Promise<void>',
+        );
+
+        expect(configureLocalWorkbenchOnly).toContain('await this.configureRuntime(runNumber)');
+        expect(configureLocalWorkbenchOnly).not.toContain('resetForRun');
+        expect(source).toContain("if (canEnterApp && activeMode === 'black-box-runner')");
+    });
+
     it('does not execute black-box runtime commands from direct Rallar panels', () => {
         const source = appSource();
         const directPanels = [
