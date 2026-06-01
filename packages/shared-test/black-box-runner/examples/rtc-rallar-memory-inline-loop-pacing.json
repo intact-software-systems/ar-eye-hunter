@@ -1,0 +1,109 @@
+{
+  "variables": {
+    "roomId": "bb-memory-inline-loop-pacing-room"
+  },
+  "connections": {
+    "aliceRtc": {
+      "type": "rtc",
+      "provider": "rallar-memory",
+      "actor": "alice",
+      "peerId": "alice",
+      "roomId": "{roomId}",
+      "remotePeerId": "bob"
+    },
+    "bobRtc": {
+      "type": "rtc",
+      "provider": "rallar-memory",
+      "actor": "bob",
+      "peerId": "bob",
+      "roomId": "{roomId}",
+      "remotePeerId": "alice"
+    }
+  },
+  "steps": [
+    {
+      "name": "connectAlice",
+      "type": "rtc.connect",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "connectBob",
+      "type": "rtc.connect",
+      "connection": "bobRtc"
+    },
+    {
+      "name": "aliceRealtimeLoop",
+      "type": "loop",
+      "count": 4,
+      "rateHz": 20,
+      "steps": [
+        {
+          "name": "aliceFrame{loop.index}",
+          "type": "rtc.send",
+          "connection": "aliceRtc",
+          "request": {
+            "send": {
+              "topic": "black-box.realtime.frame",
+              "toPeerId": "bob",
+              "payload": {
+                "frame": "{loop.index}",
+                "iteration": "{loop.iteration}",
+                "elapsedMs": "{loop.elapsedMs}",
+                "position": {
+                  "x": "{loop.index}",
+                  "y": 0
+                }
+              }
+            },
+            "outputs": {
+              "lastFrame": "matchedMessage.data.payload.frame",
+              "lastElapsedMs": "matchedMessage.data.payload.elapsedMs"
+            }
+          },
+          "expect": {
+            "connection": "bobRtc",
+            "withinMs": 1000,
+            "consume": true,
+            "message": {
+              "topic": "black-box.realtime.frame",
+              "toPeerId": "bob",
+              "payload": {
+                "frame": "{loop.index}",
+                "iteration": "{loop.iteration}",
+                "elapsedMs": "{loop.elapsedMs}",
+                "position": {
+                  "x": "{loop.index}",
+                  "y": 0
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "assertLoopCompleted",
+      "type": "assert",
+      "actual": {
+        "lastFrame": "{lastFrame}",
+        "lastElapsedMs": "{lastElapsedMs}"
+      },
+      "expect": {
+        "body": {
+          "lastFrame": 4,
+          "lastElapsedMs": 150
+        }
+      }
+    },
+    {
+      "name": "closeAlice",
+      "type": "rtc.close",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "closeBob",
+      "type": "rtc.close",
+      "connection": "bobRtc"
+    }
+  ]
+}

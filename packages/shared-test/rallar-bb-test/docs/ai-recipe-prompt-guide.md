@@ -156,6 +156,118 @@ Constraints:
   and distributed metadata.
 ```
 
+## Prompt: Looped RTC Realtime
+
+Use this when you want a compact distributed recipe that sends game-style
+position updates without generating one command per frame.
+
+```text
+Generate one Rallar black-box distributed run manifest.
+
+Use:
+- RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA
+- Inline recipes must use RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA commands.
+
+Goal:
+- Target all online members of group bb-group.
+- Connect RTC for each browser agent.
+- Run a looped realtime send at 20 Hz for 5 seconds.
+- Include frame number, elapsed milliseconds, actor, groupId, and position in
+  every payload.
+
+Constants:
+- applicationId: rallar-server
+- workspaceId: default
+- groupId: bb-group
+- connection: distributed-rtc
+- transport: realtime
+- frameCount: 100
+- intervalMs: 50
+
+Constraints:
+- Output JSON only.
+- Use schemaVersion 1.
+- Use targetPolicy mode all-online-group-members.
+- Use a recipe with rtc.connect, loop, and stats commands.
+- The loop command must contain exactly one rtc.send child command.
+- Use loop placeholders {loop.index}, {loop.iteration}, and {loop.elapsedMs}.
+- Put rateHz, intervalMs, frameCount, and durationSeconds in metadata, not as
+  unknown top-level loop fields.
+- Include roomRef on RTC commands.
+- Use timeoutMs 60000 for rtc.connect and rtc.send.
+- Do not include credentials or access tokens.
+```
+
+## Prompt: Parallel WS And RTC Groups
+
+Use this when one browser agent should run bounded concurrent branches, for
+example to compare WS and RTC send behavior from the same local runtime.
+
+```text
+Generate one rallar-bb-test recipe JSON object.
+
+Use:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
+
+Goal:
+- Run two bounded parallel groups.
+- The ws branch sends one group-scoped WebSocket JSON message.
+- The rtc branch sends one realtime RTC JSON message.
+- After both branches complete, capture stats.
+
+Constants:
+- applicationId: rallar-server
+- workspaceId: default
+- groupId: bb-group
+- ws connection: rallarApi
+- rtc connection: distributed-rtc
+- topic: room.black-box.parallel
+
+Constraints:
+- Output JSON only.
+- Use recipeId parallel-ws-rtc-smoke.
+- Use one top-level parallel command with maxConcurrency 2.
+- Inside each group, commands must remain sequential.
+- The WS send data must include typeId, topicId, contextId, roomRef, and
+  payload.messageId.
+- The RTC send must include transport realtime, roomRef, and payload.messageId.
+- Do not add Rallar facade method names such as messages.rtc.send or
+  realtime.sendJson.
+```
+
+## Prompt: Wait And Assert Evidence
+
+Use this when a recipe should prove that local browser-agent evidence was
+observed, not merely that a send command returned.
+
+```text
+Generate one rallar-bb-test recipe JSON object.
+
+Use:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
+
+Goal:
+- Send one RTC realtime payload.
+- Wait until a browser-agent message event is observed for the payload topic.
+- Assert that at least one message is present in runtime state.
+- Capture stats after the assertion.
+
+Constants:
+- connection: distributed-rtc
+- groupId: bb-group
+- topic: room.black-box.wait-assert
+
+Constraints:
+- Output JSON only.
+- Use command kinds rtc.send, wait, assert, and stats.
+- The wait command must match kind message, transport realtime, payloadPath
+  data.topic, equals room.black-box.wait-assert, timeoutMs 15000.
+- The assert command must use source state.messages.length, operator gte, and
+  expected 1.
+- Do not use JavaScript expressions in assert.source.
+- Do not embed credentials or tokens.
+```
+
 ## Prompt: Black-box-runner RTC Scenario
 
 Use this when you want a provider-neutral black-box-runner scenario instead of
@@ -183,6 +295,39 @@ Constraints:
 - Use provider-neutral steps only.
 - Do not use Rallar facade implementation details.
 - Include clear step names.
+```
+
+## Prompt: Black-box-runner Inline Loop And Pacing
+
+Use this when the output should be a provider-neutral runner scenario with
+replayable traffic artifacts.
+
+```text
+Generate a black-box-runner scenario recipe.
+
+Use:
+- BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA
+
+Goal:
+- Connect two rallar-memory RTC actors in one room.
+- Send 20 Hz position frames from Alice to Bob for 2 seconds.
+- Assert Bob receives each frame.
+- Make the recipe deterministic and runnable without live services.
+
+Constants:
+- roomId: bb-memory-loop-room
+- frameCount: 40
+- rateHz: 20
+
+Constraints:
+- Output JSON only.
+- Use provider-neutral steps only.
+- Use an inline type "loop" step for the repeated sends.
+- Use {loop.index}, {loop.iteration}, and {loop.elapsedMs} placeholders.
+- Use rateHz on the loop, or intervalMs 50 if rateHz is not accepted by the
+  target runner version.
+- Include rtc.connect before the loop and rtc.close after it.
+- Do not add Rallar facade implementation details.
 ```
 
 ## Prompt: Repair A Generated Recipe

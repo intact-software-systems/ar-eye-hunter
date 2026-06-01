@@ -75,9 +75,10 @@ long-lived execution context. `report.json` includes `summary.soak`,
 `artifact-truncated` event with total, emitted, and omitted counts.
 
 Seeded traffic commands also write `expanded-plan.json`. It contains the seed,
-generator summary, operation decisions, concrete expanded steps, and a replay
-recipe. Use this file with `execution.trafficPlan.replayFrom` to rerun a
-failure exactly.
+generator summary, pacing configuration, operation decisions, concrete expanded
+steps, and a replay recipe. Inline loops inside traffic operations are expanded
+before the artifact is written. Use this file with
+`execution.trafficPlan.replayFrom` to rerun a failure exactly.
 
 Parallel group commands use the ordinary artifact files. Parent `PARALLEL`
 step results include group summaries and child result keys, while child step

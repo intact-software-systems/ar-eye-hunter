@@ -882,6 +882,65 @@ describe('scenario-black-box CLI', () => {
             .toEqual([1, 2]);
     });
 
+    it('expands inline loop steps with deterministic pacing metadata', async () => {
+        const workingDirectory = await writeTempConfig({
+            steps: [
+                {
+                    name: 'positionLoop',
+                    type: 'loop',
+                    count: 3,
+                    intervalMs: 1,
+                    steps: [
+                        {
+                            name: 'frame{loop.index}',
+                            type: 'set',
+                            output: 'frame{loop.index}',
+                            value: {
+                                index: '{loop.index}',
+                                iteration: '{loop.iteration}',
+                                stepIndex: '{loop.stepIndex}',
+                                count: '{loop.count}',
+                                elapsedMs: '{loop.elapsedMs}',
+                            },
+                        },
+                    ],
+                },
+            ],
+        });
+
+        const result = await runScenarioCli([
+            '-w',
+            workingDirectory,
+            '-c',
+            'config.json',
+        ]);
+
+        expect(result.code).toBe(0);
+        expect(result.stderr).toBe('');
+
+        const report = JSON.parse(result.stdout);
+
+        expect(report.summary).toMatchObject({
+            total: 5,
+            success: 5,
+            failure: 0,
+        });
+        expect(report.outputs.frame1).toEqual({
+            index: 1,
+            iteration: 1,
+            stepIndex: 1,
+            count: 3,
+            elapsedMs: 0,
+        });
+        expect(report.outputs.frame2.iteration).toBe(2);
+        expect(report.outputs.frame3.elapsedMs).toBe(2);
+        expect(report.resultsByName.positionLoopDelay).toHaveLength(2);
+        expect(report.resultsByName.positionLoopDelay.map((entry: { delayMs: number }) => entry.delayMs))
+            .toEqual([1, 1]);
+        expect(report.resultsList.map((entry: { name: string }) => entry.name))
+            .toEqual(['frame1', 'positionLoopDelay', 'frame2', 'positionLoopDelay', 'frame3']);
+    });
+
     it('expands seeded traffic plans and replays the recorded plan', async () => {
         const workingDirectory = await writeTempConfig({
             execution: {
@@ -980,6 +1039,114 @@ describe('scenario-black-box CLI', () => {
             replay: true,
             decisionCount: 5,
             stepCount: 5,
+        });
+        expect(replayReport.resultsList.map((entry: { name: string }) => entry.name))
+            .toEqual(report.resultsList.map((entry: { name: string }) => entry.name));
+        expect(replayReport.outputs).toEqual(report.outputs);
+    });
+
+    it('records traffic plan rate, burst, and max-in-flight pacing in expanded plans', async () => {
+        const workingDirectory = await writeTempConfig({
+            execution: {
+                trafficPlan: {
+                    seed: 20260601,
+                    count: 5,
+                    rateHz: 20,
+                    jitterMs: 0,
+                    burstSize: 2,
+                    maxInFlight: 2,
+                    operations: [
+                        {
+                            name: 'position',
+                            weight: 1,
+                            steps: [
+                                {
+                                    name: 'position{traffic.sequence}',
+                                    type: 'set',
+                                    output: 'position{traffic.sequence}',
+                                    value: {
+                                        sequence: '{traffic.sequence}',
+                                        operation: '{traffic.operation}',
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+            steps: [],
+        });
+        const artifactDir = path.join(workingDirectory, 'traffic-pacing-artifacts');
+
+        const result = await runScenarioCli([
+            '-w',
+            workingDirectory,
+            '-c',
+            'config.json',
+            '--artifact-dir',
+            artifactDir,
+        ]);
+
+        expect(result.code).toBe(0);
+        expect(result.stderr).toBe('');
+
+        const report = JSON.parse(result.stdout);
+        const expandedPlan = JSON.parse(await readFile(path.join(artifactDir, 'expanded-plan.json'), 'utf8'));
+
+        expect(report.summary.trafficPlan).toMatchObject({
+            seed: 20260601,
+            replay: false,
+            decisionCount: 5,
+            stepCount: 7,
+        });
+        expect(expandedPlan.generator.pacing).toMatchObject({
+            rateHz: 20,
+            intervalMs: 50,
+            jitterMs: 0,
+            burstSize: 2,
+            maxInFlight: 2,
+        });
+        expect(expandedPlan.decisions.map((decision: { delayMs: number }) => decision.delayMs))
+            .toEqual([0, 50, 0, 50, 0]);
+        expect(expandedPlan.steps.map((step: { name: string }) => step.name))
+            .toEqual([
+                'position1',
+                'position2',
+                'trafficDelay',
+                'position3',
+                'position4',
+                'trafficDelay',
+                'position5',
+            ]);
+        expect(report.resultsByName.trafficDelay.map((entry: { delayMs: number }) => entry.delayMs))
+            .toEqual([50, 50]);
+
+        await writeFile(
+            path.join(workingDirectory, 'replay-pacing.json'),
+            JSON.stringify({
+                execution: {
+                    trafficPlan: {
+                        replayFrom: 'traffic-pacing-artifacts/expanded-plan.json',
+                    },
+                },
+                steps: [],
+            }, null, 2),
+        );
+
+        const replay = await runScenarioCli([
+            '-w',
+            workingDirectory,
+            '-c',
+            'replay-pacing.json',
+        ]);
+        const replayReport = JSON.parse(replay.stdout);
+
+        expect(replay.code).toBe(0);
+        expect(replayReport.summary.trafficPlan).toMatchObject({
+            seed: 20260601,
+            replay: true,
+            decisionCount: 5,
+            stepCount: 7,
         });
         expect(replayReport.resultsList.map((entry: { name: string }) => entry.name))
             .toEqual(report.resultsList.map((entry: { name: string }) => entry.name));

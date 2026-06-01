@@ -23,7 +23,8 @@ What exists:
 - The `Distributed Recipes` tab can create manifests, resolve targets from the selected control run and Global Context
   group, stage, start, cancel, refresh, and export distributed runs.
 - The catalog includes a configurable `rtc-realtime` browser-agent recipe for 20 Hz RTC position payload streams against
-  the current Global Context group.
+  the current Global Context group. The recipe uses one compact `loop` command for the frame stream and the catalog
+  shows the effective frame count.
 - Automatic target selection from the current Rallar group exists server-side and is exposed in the SPA for online
   control agents that report matching identity.
 - The `Distributed Recipes` tab now includes a monitor view with lifecycle timeline, per-agent progress,
@@ -283,6 +284,9 @@ Results:
 - Stage commands use `recipe.load` for inline recipes and `health` preflight for recipe references; ACK/readiness is
   derived from command results.
 - `ackTimeoutMs` is enforced from the staged timestamp and rolls up to `timed-out` when required agents do not ACK.
+- Manifests can opt into a `barrier` phase after stage ACKs. The control server queues one linked `health` command per
+  target as `barrier.ready` evidence, times out missing agents, fails disconnects while waiting, and uses barrier
+  completion before auto or scheduled starts.
 - Start commands use `recipe.run` and pass scheduled `startDeadlineEpochMs` through as command deadline.
 - Cancel queues `recipe.cancel` and marks the distributed run terminal.
 - Distributed snapshots include target agents, command links, rollup status, failures, and artifact JSON files linking
@@ -382,7 +386,8 @@ Results:
   failures, latency summaries, ACK readiness, per-agent progress, per-recipe progress, artifact validation, timeline
   rows, history filtering, and two-run comparison.
 - Extended the `Distributed Recipes` tab with a monitor panel that shows failures first, agent/recipe progress, ACK
-  readiness, linked event stream, lifecycle timeline, command/result counts, latency metrics, and artifact status.
+  readiness, optional barrier readiness, linked event stream, lifecycle timeline, command/result counts, latency
+  metrics, and artifact status.
 - Added historical distributed-run filters by group, recipe, profile, user, status, date, failure type, and text query.
 - Added compare controls for two distributed runs covering changed recipe/profile, participant deltas, failure deltas,
   duration deltas, and received-message deltas when the linked control run snapshot is loaded.
@@ -497,3 +502,204 @@ Verification:
   WS receive, RTC connect, and realtime send path enabled.
 - `npx playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts --list` discovered the new
   distributed recipe tests with skip-safe live gating.
+
+## Iteration 51: Composite Recipe UX And Preflight
+
+Status: planned.
+
+Goal: Make looped, parallel, wait, and assert-based distributed recipes understandable before a user sends them to
+browser agents.
+
+Context:
+
+- `rallar-bb-test` now supports composite browser-agent primitives such as `loop`, `parallel`, `wait`, and `assert`.
+- The Distributed Recipes catalog already shows a compact command preview and recursively detects command kinds, but the
+  UI does not yet explain the nested execution shape in enough detail.
+
+Work:
+
+- Add a recipe preflight summary in the Distributed Recipes catalog and manifest preview.
+- Show:
+  - top-level command count
+  - effective operation count
+  - loop count, duration, interval, and estimated frames/messages
+  - parallel group count and max concurrency
+  - wait/assert predicates and timeout risk
+  - command kinds discovered inside nested recipes
+  - live-service requirements discovered inside nested recipes
+- Add badges or warnings for recipes that require real Rallar auth, real WebSocket signaling, RTC peers, or a live
+  control server.
+- Add a compact tree view for selected recipes so users can inspect parent and child commands without reading raw JSON.
+- Keep raw JSON available for copy/debug workflows.
+
+Exit criteria:
+
+- A user can select a composite distributed recipe and understand what it will do, which live services it needs, and
+  how much work it will schedule before staging the run.
+- Recipes with nested live traffic produce visible compatibility warnings before execution.
+
+Suggested verification:
+
+- Add Vitest coverage for composite preflight derivation helpers.
+- Add Playwright coverage that selects the `rtc-realtime` and `composite-evidence` recipes and verifies the UI shows
+  loop, parallel, wait/assert, effective-operation, and live-service details.
+
+## Iteration 52: Structured WS/RTC Runtime Diagnostics In The SPA
+
+Status: planned.
+
+Goal: Surface Rallar runtime warnings and transport diagnostics in the SPA instead of leaving them only in the browser
+developer console.
+
+Context:
+
+- The live three-browser distributed recipe test passed, but the browser console showed useful warning signals:
+  - `Unhandled WS message: ...`
+  - `Received data channel for different data channel name: rtc-data-channel vs rtc-realtime`
+- These signals are important during live distributed testing because they can explain missing messages, confusing
+  routing, or unexpected RTC lane behavior.
+
+Work:
+
+- Add a structured diagnostics path from the browser Rallar facade/runtime into Rallar Trace, Event Stream, and RTC
+  Diagnostics.
+- Capture unhandled WebSocket message events with type ID, topic ID, route/context/resource IDs, sender ID, and a
+  payload summary.
+- Capture RTC data-channel mismatch events with peer ID, expected channel/lane label, observed channel label, current
+  RTC connection state, and whether the event was ignored or accepted.
+- Add severity levels such as `info`, `warn`, and `error`.
+- Add filtering for diagnostics by transport, group, recipe/run ID, agent, and severity.
+- Avoid treating every diagnostic as a failed test; make the distinction between observable warnings and terminal
+  recipe failures explicit.
+
+Exit criteria:
+
+- Runtime WS/RTC warnings that currently appear in the browser console are also visible in the SPA.
+- Distributed recipe failures can link to relevant runtime diagnostics when timestamps, agent IDs, or command IDs match.
+
+Suggested verification:
+
+- Add unit coverage for diagnostic normalization and redaction.
+- Add Playwright coverage that injects or observes a warning diagnostic and verifies it appears in Rallar Trace or Event
+  Stream with useful fields.
+- Add a live-gated regression check once the live warning source is deterministic enough to assert without flakiness.
+
+## Iteration 53: Composite Run Monitor Drilldowns
+
+Status: planned.
+
+Goal: Make distributed run monitoring useful for composite recipes after they start running.
+
+Context:
+
+- Distributed runs already show agent progress, recipe progress, command links, timeline rows, artifact status, and
+  failure rollups.
+- Composite commands add another level of execution: a parent command can contain loop iterations, child commands,
+  parallel groups, and nested wait/assert results.
+
+Work:
+
+- Extend the Distributed Recipes monitor to show expandable parent/child command results.
+- For `loop` commands, show:
+  - current or final iteration count
+  - child result count
+  - pass/fail counts
+  - first failed iteration and command
+  - elapsed duration and average cadence when available
+- For `parallel` commands, show:
+  - group count
+  - max concurrency
+  - per-group state
+  - failed group and first failed child command
+- For `wait` and `assert`, show matched event/result details, timeout status, and failed predicate information.
+- Link nested child results back to command IDs, agent IDs, recipe IDs, and artifacts.
+- Preserve the existing high-level monitor so simple recipes remain easy to read.
+
+Exit criteria:
+
+- A failed composite recipe can be debugged from the monitor without opening raw artifacts first.
+- Loop and parallel progress are visible enough to distinguish transport failure, timing failure, and assertion failure.
+
+Suggested verification:
+
+- Add Vitest coverage for nested result summarization helpers.
+- Add Playwright coverage using a simulated distributed recipe with loop, parallel, wait, assert, and one controlled
+  failure to verify drilldown rendering and failure focus.
+
+## Iteration 54: Schema Authoring Prompt Templates In The SPA
+
+Status: planned.
+
+Goal: Make it easier for humans or AI assistants to generate valid distributed recipes from the JSON Schema and existing
+capability metadata.
+
+Context:
+
+- The schema and AI prompt guide now make it possible to generate black-box-runner and `rallar-bb-test` recipes.
+- The SPA can become a practical authoring surface by exposing schema snippets, prompt templates, and preflight feedback
+  close to the recipe editor/catalog.
+
+Work:
+
+- Add copyable prompt templates for common distributed recipe requests:
+  - live group ACK
+  - WS send and receive between browser agents
+  - RTC realtime position stream
+  - looped RTC load test
+  - parallel WS/RTC smoke
+  - wait/assert evidence recipe
+- Add copyable schema snippets for browser-agent recipes and distributed-run manifests.
+- Add a "Generate With AI" guidance panel that explains required inputs without embedding any AI provider dependency.
+- Include current Global Context values as optional prompt variables, with secrets redacted.
+- Add validation feedback that can be copied back into an AI prompt when generated JSON fails schema validation.
+
+Exit criteria:
+
+- A user can copy a prompt plus schema context from the SPA, ask an AI to generate a distributed recipe, paste the JSON
+  back into the SPA, and get actionable validation/preflight feedback.
+
+Suggested verification:
+
+- Add unit coverage for prompt-template rendering and redaction.
+- Add Playwright coverage for copying a prompt template and inserting a generated/example recipe into the authoring
+  surface.
+
+## Iteration 55: Live Distributed Warning Regression Coverage
+
+Status: planned.
+
+Goal: Keep the live distributed workflow from regressing as composite recipes and diagnostics become richer.
+
+Context:
+
+- Iteration 50 added skip-safe full-stack coverage for live ACK, WS receive, RTC connect, and realtime send.
+- The next risk is that warnings remain invisible or are introduced by future transport changes while the tests still
+  pass on the happy path.
+
+Work:
+
+- Extend live-gated Playwright coverage to verify diagnostic visibility for live distributed runs.
+- Assert that WS receive and RTC receive evidence appears in both:
+  - distributed run artifacts/results
+  - visible SPA monitor/trace surfaces
+- Add a test path for a composite live recipe such as `rtc-realtime` that verifies effective frame count, loop summary,
+  and at least one received payload.
+- Add a controlled negative live scenario when practical:
+  - missing target agent
+  - RTC no-peer/no-route
+  - wait timeout
+  - schema validation failure before staging
+- Capture console warnings/errors as artifacts and fail only on configured high-severity diagnostics, not harmless known
+  warnings.
+- Document the live environment variables and local server startup commands needed to run this coverage.
+
+Exit criteria:
+
+- Live distributed recipe tests prove not only that data arrived, but also that the SPA shows the data, diagnostics, and
+  composite execution details needed for a human to debug the run.
+
+Suggested verification:
+
+- `npm run test:e2e:rallar-black-box:full-stack:real:distributed` passes with the expanded live assertions when the
+  required local or production Rallar services are configured.
+- The same command remains skip-safe when the required environment variables or services are not present.

@@ -5,6 +5,7 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES = [
     'resolving-targets',
     'staging',
     'waiting-for-ack',
+    'waiting-for-barrier',
     'ready',
     'running',
     'passed',
@@ -156,6 +157,11 @@ export type RallarBlackBoxDistributedArtifactPolicy = Readonly<{
     retentionDays?: number;
 }>;
 
+export type RallarBlackBoxDistributedBarrierPolicy = Readonly<{
+    enabled?: boolean;
+    timeoutMs?: number;
+}>;
+
 export type RallarBlackBoxDistributedRunManifest = Readonly<{
     schemaVersion?: 1;
     distributedRunId: string;
@@ -169,6 +175,7 @@ export type RallarBlackBoxDistributedRunManifest = Readonly<{
     secretRefs?: readonly string[];
     roleAssignments?: readonly RallarBlackBoxDistributedRoleAssignment[];
     ackTimeoutMs?: number;
+    barrier?: RallarBlackBoxDistributedBarrierPolicy;
     startMode?: RallarBlackBoxDistributedStartMode;
     startDeadlineEpochMs?: number;
     artifactPolicy?: RallarBlackBoxDistributedArtifactPolicy;
@@ -331,6 +338,16 @@ export function validateDistributedRunManifestContract(
         errors.push({
             path: '$.ackTimeoutMs',
             message: 'ACK timeout must be an integer >= 1.',
+        });
+    }
+
+    if (
+        manifest.barrier?.timeoutMs !== undefined &&
+        (!Number.isInteger(manifest.barrier.timeoutMs) || manifest.barrier.timeoutMs < 1)
+    ) {
+        errors.push({
+            path: '$.barrier.timeoutMs',
+            message: 'Barrier timeout must be an integer >= 1.',
         });
     }
 
@@ -568,6 +585,9 @@ function deriveRollupState(
     }
 
     if (participants.some(item => item.state === 'acknowledged')) {
+        if (stateHint === 'waiting-for-barrier') {
+            return 'waiting-for-barrier';
+        }
         return 'waiting-for-ack';
     }
 

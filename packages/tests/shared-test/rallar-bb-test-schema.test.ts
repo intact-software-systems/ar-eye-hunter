@@ -88,6 +88,116 @@ describe('rallar-bb-test capability and schema contract', () => {
         }
     });
 
+    it('validates composite loop, parallel, wait, and assert command contracts recursively', () => {
+        const compositeRecipe: RallarBlackBoxTestRecipe = {
+            recipeId: 'composite-contract',
+            commands: [
+                {
+                    kind: 'loop',
+                    commandId: 'loop-health',
+                    count: 2,
+                    intervalMs: 10,
+                    commands: [
+                        {
+                            kind: 'health',
+                            commandId: 'loop-child-health',
+                        },
+                    ],
+                },
+                {
+                    kind: 'parallel',
+                    commandId: 'parallel-health',
+                    maxConcurrency: 2,
+                    groups: [
+                        {
+                            groupId: 'left',
+                            commands: [{ kind: 'health', commandId: 'left-health' }],
+                        },
+                        {
+                            groupId: 'right',
+                            commands: [{ kind: 'stats', commandId: 'right-stats' }],
+                        },
+                    ],
+                },
+                {
+                    kind: 'wait',
+                    commandId: 'wait-for-message',
+                    timeoutMs: 1_000,
+                    match: {
+                        kind: 'message',
+                        topic: 'rallar.browser.realtime.message',
+                        transport: 'realtime',
+                        payloadPath: 'data.topic',
+                        equals: 'room.position',
+                    },
+                },
+                {
+                    kind: 'assert',
+                    commandId: 'assert-message-count',
+                    source: 'state.messages.length',
+                    operator: 'gte',
+                    expected: 1,
+                },
+            ],
+        };
+
+        expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, compositeRecipe);
+
+        const invalidNested = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+            kind: 'loop',
+            commandId: 'loop-invalid',
+            commands: [
+                {
+                    kind: 'http.request',
+                    commandId: 'missing-request',
+                },
+            ],
+        });
+        expect(invalidNested.ok).toBe(false);
+        if (!invalidNested.ok) {
+            expect(formatJsonSchemaValidationErrors(invalidNested.errors)).toContain('Missing required property request');
+        }
+
+        const invalidConcurrency = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+            kind: 'parallel',
+            commandId: 'parallel-invalid',
+            maxConcurrency: 99,
+            groups: [
+                {
+                    groupId: 'only',
+                    commands: [{ kind: 'health' }],
+                },
+            ],
+        });
+        expect(invalidConcurrency.ok).toBe(false);
+        if (!invalidConcurrency.ok) {
+            expect(formatJsonSchemaValidationErrors(invalidConcurrency.errors)).toContain('Expected number <=');
+        }
+
+        const invalidWait = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+            kind: 'wait',
+            commandId: 'wait-invalid',
+            match: {
+                kind: 'unknown-event-kind',
+            },
+        });
+        expect(invalidWait.ok).toBe(false);
+        if (!invalidWait.ok) {
+            expect(formatJsonSchemaValidationErrors(invalidWait.errors)).toContain('Expected one of');
+        }
+
+        const invalidAssert = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+            kind: 'assert',
+            commandId: 'assert-invalid',
+            source: 'state.messages.length',
+            operator: 'greaterThan',
+        });
+        expect(invalidAssert.ok).toBe(false);
+        if (!invalidAssert.ok) {
+            expect(formatJsonSchemaValidationErrors(invalidAssert.errors)).toContain('Expected one of');
+        }
+    });
+
     it('validates every shared-test black-box-runner example scenario', () => {
         const exampleNames = readdirSync(runnerExamplesRoot).filter(name => name.endsWith('.json'));
         expect(exampleNames.length).toBeGreaterThan(0);
@@ -132,6 +242,10 @@ describe('rallar-bb-test capability and schema contract', () => {
                 expectedParticipantCount: 2,
             },
             ackTimeoutMs: 5_000,
+            barrier: {
+                enabled: true,
+                timeoutMs: 5_000,
+            },
             startMode: 'manual',
         });
 

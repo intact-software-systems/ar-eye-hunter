@@ -32,6 +32,10 @@ Important optional fields:
 - `roleAssignments`: per-agent role and recipe assignment.
 - `ackTimeoutMs`: readiness/ACK timeout before the run is considered failed or
   timed out.
+- `barrier`: optional start-synchronization phase. When `enabled` is true, the
+  control server queues one `barrier` command per target after all stage ACKs
+  have passed and waits for `barrier.ready` evidence before the run can start.
+  `barrier.timeoutMs` defaults to `ackTimeoutMs` or 15 seconds.
 - `startMode`: `manual`, `auto-after-ready`, or `scheduled`.
 - `startDeadlineEpochMs`: required when `startMode` is `scheduled`.
 - `artifactPolicy`: event JSONL, result JSONL, failure bundle, and distributed
@@ -45,6 +49,7 @@ validation for domain checks such as:
 - `role-map` requires roles or role assignments
 - scheduled runs require `startDeadlineEpochMs`
 - ACK timeout and expected participant count must be positive integers
+- barrier timeout must be a positive integer when supplied
 
 ## Lifecycle States
 
@@ -54,6 +59,7 @@ The distributed run lifecycle states are:
 - `resolving-targets`
 - `staging`
 - `waiting-for-ack`
+- `waiting-for-barrier`
 - `ready`
 - `running`
 - `passed`
@@ -90,6 +96,8 @@ The rollup rules are deliberately simple and deterministic:
   `running`.
 - If all required participants are ready before recipe execution, the run is
   `ready`.
+- If stage ACKs passed but the optional barrier has not finished, the run is
+  `waiting-for-barrier`.
 - If any required participant has acknowledged but not all are ready, the run is
   `waiting-for-ack`.
 - Otherwise the state remains the supplied non-terminal hint or `draft`.
@@ -158,15 +166,24 @@ queues `recipe.load` commands when the manifest contains inline recipes. For
 recipe references without an inline recipe, staging queues a `health` preflight
 so the target agent can ACK readiness without the server reimplementing a
 recipe catalog. Starting queues `recipe.run`; scheduled manifests pass
-`startDeadlineEpochMs` through as the command deadline. Cancelling queues
-`recipe.cancel` for target agents and marks the distributed run terminal.
+`startDeadlineEpochMs` through as the command deadline. When `barrier.enabled`
+is true, the control server inserts a `barrier` phase between staging and
+starting. Each target receives a `health` command with distributed metadata
+identifying `barrier.ready`; successful command results are the ready evidence.
+`auto-after-ready` starts as soon as all barrier commands pass. `scheduled`
+holds the ready run until `startDeadlineEpochMs`; heartbeat/register/result
+traffic or a snapshot refresh can advance and dispatch the start commands.
+Cancelling queues `recipe.cancel` for target agents and marks the distributed
+run terminal.
 
 ACK/readiness is represented by normal command results, not WebSocket send
 success. The control server derives participant readiness, running state, pass,
 fail, cancel, and exportable artifacts from the linked control-run commands and
 results. Expected participant count mismatches fail during staging/start before
 commands are queued. Missing stage ACKs after `ackTimeoutMs` roll up to
-`timed-out`.
+`timed-out`. Missing barrier readiness after the barrier timeout also rolls up
+to `timed-out`; disconnecting while a required agent is waiting at the barrier
+rolls up to `failed`.
 
 ## JSON Schema
 

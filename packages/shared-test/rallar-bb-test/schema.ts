@@ -1,4 +1,5 @@
 import {
+    RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
     RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
     type RallarBlackBoxTestCommand,
 } from './types.ts';
@@ -24,6 +25,8 @@ export type JsonSchema = Readonly<{
     oneOf?: readonly JsonSchema[];
     anyOf?: readonly JsonSchema[];
     minimum?: number;
+    maximum?: number;
+    minItems?: number;
     examples?: readonly unknown[];
     default?: unknown;
 }>;
@@ -76,6 +79,7 @@ const integerSchema: JsonSchema = { type: 'integer' };
 const booleanSchema: JsonSchema = { type: 'boolean' };
 const recordSchema: JsonSchema = { type: 'object', additionalProperties: true };
 const stringRecordSchema: JsonSchema = { type: 'object', additionalProperties: stringSchema };
+const recursiveCommandSchema = {} as JsonSchema & { oneOf?: readonly JsonSchema[] };
 
 function commandBaseProperties(kind: RallarBlackBoxCommandCapability['kind']): Record<string, JsonSchema> {
     return {
@@ -184,6 +188,44 @@ const httpResponseSchema: JsonSchema = {
     additionalProperties: false,
 };
 
+const waitMatchSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+        kind: { type: 'string', enum: ['event', 'diagnostic', 'message', 'stats', 'report', 'result', 'state'] },
+        topic: stringSchema,
+        commandId: stringSchema,
+        connection: stringSchema,
+        transport: { type: 'string', enum: ['realtime', 'messages.rtc', 'ws', 'http'] },
+        severity: { type: 'string', enum: ['debug', 'info', 'warning', 'error'] },
+        payloadPath: stringSchema,
+        equals: anySchema,
+        contains: stringSchema,
+        exists: booleanSchema,
+    },
+    additionalProperties: false,
+};
+
+const assertOperatorSchema: JsonSchema = {
+    type: 'string',
+    enum: ['equals', 'notEquals', 'contains', 'exists', 'gte', 'lte'],
+};
+
+const parallelGroupSchema: JsonSchema = {
+    type: 'object',
+    required: ['commands'],
+    properties: {
+        groupId: stringSchema,
+        label: stringSchema,
+        commands: {
+            type: 'array',
+            minItems: 1,
+            items: recursiveCommandSchema,
+        },
+        metadata: recordSchema,
+    },
+    additionalProperties: false,
+};
+
 const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], JsonSchema>> = {
     configure: strictCommandSchema('configure', ['config'], {
         config: configSchema,
@@ -196,6 +238,53 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
     }),
     'recipe.cancel': strictCommandSchema('recipe.cancel', [], {
         reason: stringSchema,
+    }),
+    loop: strictCommandSchema('loop', ['commands'], {
+        commands: {
+            type: 'array',
+            minItems: 1,
+            items: recursiveCommandSchema,
+        },
+        count: {
+            type: 'integer',
+            minimum: 1,
+            maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopCount,
+        },
+        durationMs: {
+            type: 'integer',
+            minimum: 1,
+            maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs,
+        },
+        intervalMs: { type: 'integer', minimum: 0 },
+        delayMs: { type: 'integer', minimum: 0 },
+        continueOnFailure: booleanSchema,
+        maxCommands: {
+            type: 'integer',
+            minimum: 1,
+            maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands,
+        },
+    }),
+    parallel: strictCommandSchema('parallel', ['groups'], {
+        groups: {
+            type: 'array',
+            minItems: 1,
+            items: parallelGroupSchema,
+        },
+        maxConcurrency: {
+            type: 'integer',
+            minimum: 1,
+            maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxParallelConcurrency,
+        },
+        failFast: booleanSchema,
+        continueOnFailure: booleanSchema,
+    }),
+    wait: strictCommandSchema('wait', ['match'], {
+        match: waitMatchSchema,
+    }),
+    assert: strictCommandSchema('assert', ['source', 'operator'], {
+        source: stringSchema,
+        operator: assertOperatorSchema,
+        expected: anySchema,
     }),
     'rtc.connect': strictCommandSchema('rtc.connect', [], {
         connection: stringSchema,
@@ -327,6 +416,144 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             kind: 'recipe.cancel',
             commandId: 'cancel-active-recipe',
             reason: 'operator requested cancellation',
+        },
+    },
+    {
+        kind: 'loop',
+        title: 'Loop Commands',
+        description: 'Composite browser-agent command that repeats child commands with bounded count or duration and optional cadence.',
+        requiredFields: ['commands'],
+        optionalFields: [
+            'count',
+            'durationMs',
+            'intervalMs',
+            'delayMs',
+            'continueOnFailure',
+            'maxCommands',
+            'commandId',
+            'label',
+            'timeoutMs',
+            'deadlineEpochMs',
+            'metadata',
+        ],
+        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'rallar-memory', 'mixed'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: ['same live requirements as its child commands'],
+        artifactExpectations: ['parent loop rollup', 'per-child command results', 'iteration metadata'],
+        example: {
+            kind: 'loop',
+            commandId: 'loop-rtc-position',
+            count: 3,
+            intervalMs: 50,
+            commands: [
+                {
+                    kind: 'rtc.send',
+                    commandId: 'loop-position-send',
+                    connection: 'aliceRtc',
+                    transport: 'realtime',
+                    send: {
+                        roomId: 'bb-group',
+                        data: {
+                            topic: 'schema.example.loop.position',
+                            seq: '{loop.index}',
+                        },
+                    },
+                },
+            ],
+        },
+    },
+    {
+        kind: 'parallel',
+        title: 'Parallel Command Groups',
+        description: 'Composite browser-agent command that runs bounded groups concurrently while each group runs its child commands sequentially.',
+        requiredFields: ['groups'],
+        optionalFields: [
+            'maxConcurrency',
+            'failFast',
+            'continueOnFailure',
+            'commandId',
+            'label',
+            'timeoutMs',
+            'deadlineEpochMs',
+            'metadata',
+        ],
+        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'rallar-memory', 'mixed'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: ['same live requirements as its child commands'],
+        artifactExpectations: ['parent parallel rollup', 'per-group summaries', 'per-child command results'],
+        example: {
+            kind: 'parallel',
+            commandId: 'parallel-room-traffic',
+            maxConcurrency: 2,
+            failFast: true,
+            groups: [
+                {
+                    groupId: 'alice-sends',
+                    commands: [
+                        {
+                            kind: 'ws.send',
+                            commandId: 'alice-ws-send',
+                            connection: 'apiWs',
+                            data: {
+                                typeId: 'schema.example.parallel.alice',
+                                payload: {
+                                    text: 'alice',
+                                },
+                            },
+                        },
+                    ],
+                },
+                {
+                    groupId: 'bob-sends',
+                    commands: [
+                        {
+                            kind: 'health',
+                            commandId: 'bob-health',
+                        },
+                    ],
+                },
+            ],
+        },
+    },
+    {
+        kind: 'wait',
+        title: 'Wait For Runtime Evidence',
+        description: 'Waits for an existing or future browser-agent runtime event, diagnostic, message, result, stats, or report that matches simple fields.',
+        requiredFields: ['match'],
+        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
+        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'rallar-memory', 'mixed'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: ['the matching evidence must be emitted by earlier or concurrent commands, browser adapters, or provider event bridges'],
+        artifactExpectations: ['matched event in the command result', 'timeout failure when evidence does not appear'],
+        example: {
+            kind: 'wait',
+            commandId: 'wait-for-room-position',
+            timeoutMs: 5_000,
+            match: {
+                kind: 'message',
+                topic: 'rallar.browser.realtime.message',
+                transport: 'realtime',
+                payloadPath: 'data.topic',
+                equals: 'room.position',
+            },
+        },
+    },
+    {
+        kind: 'assert',
+        title: 'Assert Runtime Evidence',
+        description: 'Checks a simple read-only browser-agent source such as state, config, last result, events, messages, diagnostics, stats, or failures.',
+        requiredFields: ['source', 'operator'],
+        optionalFields: ['expected', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
+        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'rallar-memory', 'mixed'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: ['the asserted source must be present in the browser-agent runtime state'],
+        artifactExpectations: ['assert result with redacted actual and expected values', 'failed command result when the assertion is false'],
+        example: {
+            kind: 'assert',
+            commandId: 'assert-received-count',
+            source: 'state.messages.length',
+            operator: 'gte',
+            expected: 1,
         },
     },
     {
@@ -562,6 +789,8 @@ export const RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA: JsonSchema = {
     examples: RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map(capability => capability.example),
 };
 
+recursiveCommandSchema.oneOf = RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA.oneOf;
+
 export const RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA: JsonSchema = {
     $schema: JSON_SCHEMA_DRAFT,
     $id: `${SCHEMA_BASE_ID}/rallar-bb-test-recipe.schema.json`,
@@ -680,6 +909,14 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
             },
         },
         ackTimeoutMs: { type: 'integer', minimum: 1 },
+        barrier: {
+            type: 'object',
+            properties: {
+                enabled: booleanSchema,
+                timeoutMs: { type: 'integer', minimum: 1 },
+            },
+            additionalProperties: false,
+        },
         startMode: {
             type: 'string',
             enum: RALLAR_BLACK_BOX_DISTRIBUTED_START_MODES,
@@ -769,6 +1006,14 @@ function validateNode(
 
     if (typeof schema.minimum === 'number' && typeof value === 'number' && value < schema.minimum) {
         errors.push({ path, message: `Expected number >= ${schema.minimum}.` });
+    }
+
+    if (typeof schema.maximum === 'number' && typeof value === 'number' && value > schema.maximum) {
+        errors.push({ path, message: `Expected number <= ${schema.maximum}.` });
+    }
+
+    if (typeof schema.minItems === 'number' && Array.isArray(value) && value.length < schema.minItems) {
+        errors.push({ path, message: `Expected at least ${schema.minItems} item(s).` });
     }
 
     if (schema.items && Array.isArray(value)) {

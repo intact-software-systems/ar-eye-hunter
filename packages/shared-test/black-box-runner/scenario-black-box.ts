@@ -334,6 +334,14 @@ function toExecutableStep(
                 trafficSequence: step.trafficSequence,
                 trafficOperation: step.trafficOperation,
                 trafficSeed: step.trafficSeed,
+                trafficPacing: step.trafficPacing,
+                loopName: step.loopName,
+                loopIndex: step.loopIndex,
+                loopIteration: step.loopIteration,
+                loopStepIndex: step.loopStepIndex,
+                loopCount: step.loopCount,
+                loopElapsedMs: step.loopElapsedMs,
+                loopPhase: step.loopPhase,
                 parallelGroup: step.parallelGroup,
                 parallelGroupIndex: step.parallelGroupIndex,
                 parallelStepIndex: step.parallelStepIndex,
@@ -482,6 +490,21 @@ function toExecutableParallelStep(
                 scenarioExecutionNumber: 1,
                 interactionExecutionNumber,
                 repeatIndex: step.repeatIndex,
+                soakPhase: step.soakPhase,
+                soakIteration: step.soakIteration,
+                soakLoopIndex: step.soakLoopIndex,
+                trafficPlan: step.trafficPlan,
+                trafficSequence: step.trafficSequence,
+                trafficOperation: step.trafficOperation,
+                trafficSeed: step.trafficSeed,
+                trafficPacing: step.trafficPacing,
+                loopName: step.loopName,
+                loopIndex: step.loopIndex,
+                loopIteration: step.loopIteration,
+                loopStepIndex: step.loopStepIndex,
+                loopCount: step.loopCount,
+                loopElapsedMs: step.loopElapsedMs,
+                loopPhase: step.loopPhase,
             },
             response: {
                 ...expect,
@@ -496,7 +519,8 @@ function toExecutableSteps(
     config: ScenarioCliConfig,
     state: ExecutableBuildState,
 ): Array<Record<string, unknown>> {
-    const steps = toRepeatedSteps(rawSteps)
+    const expandedRawSteps = expandInlineLoopSteps(rawSteps as Array<JsonRecord>) as Array<Record<string, unknown>>;
+    const steps = toRepeatedSteps(expandedRawSteps)
         .map((step: Record<string, unknown>) => withDefaultsAndConnection(step, config as Record<string, unknown>));
 
     return steps
@@ -572,6 +596,21 @@ function firstNonNegativeInteger(...values: unknown[]): number | undefined {
     return undefined;
 }
 
+function firstPositiveNumber(...values: unknown[]): number | undefined {
+    for (const value of values) {
+        if (value === undefined || value === null || value === '') {
+            continue;
+        }
+
+        const parsed = Number(value);
+        if (Number.isFinite(parsed) && parsed > 0) {
+            return parsed;
+        }
+    }
+
+    return undefined;
+}
+
 const requestedIterations = firstPositiveInteger(
     cliOptions.iterations,
     soakConfig.iterations,
@@ -617,10 +656,11 @@ function cloneStep(step: JsonRecord): JsonRecord {
     return JSON.parse(JSON.stringify(step));
 }
 
-function resolveSoakStepList(
+function resolveStepList(
     allSteps: Array<JsonRecord>,
     configured: unknown,
     fieldName: string,
+    stepLabel = 'step',
 ): Array<JsonRecord> {
     if (!Array.isArray(configured)) {
         return [];
@@ -631,7 +671,7 @@ function resolveSoakStepList(
         return configured.map(name => {
             const step = byName.get(String(name));
             if (!step) {
-                throw new Error('Unknown soak step in ' + fieldName + ': ' + String(name));
+                throw new Error('Unknown ' + stepLabel + ' step in ' + fieldName + ': ' + String(name));
             }
 
             return cloneStep(step);
@@ -641,6 +681,14 @@ function resolveSoakStepList(
     return configured
         .filter(item => item && typeof item === 'object' && !Array.isArray(item))
         .map(item => cloneStep(item as JsonRecord));
+}
+
+function resolveSoakStepList(
+    allSteps: Array<JsonRecord>,
+    configured: unknown,
+    fieldName: string,
+): Array<JsonRecord> {
+    return resolveStepList(allSteps, configured, fieldName, 'soak');
 }
 
 function resolveSoakLoopSteps(allSteps: Array<JsonRecord>, config: JsonRecord): Array<JsonRecord> {
@@ -724,6 +772,177 @@ function resolveTrafficTemplate<T>(value: T, root: JsonRecord): T {
     return value;
 }
 
+function isInlineLoopStep(step: JsonRecord): boolean {
+    const stepType = String(step.type || '').toLowerCase();
+    return stepType === 'loop' ||
+        stepType.startsWith('loop.') ||
+        (step.loop === true && Array.isArray(step.steps));
+}
+
+function toInlineLoopSteps(allSteps: Array<JsonRecord>, step: JsonRecord): Array<JsonRecord> {
+    const loopConfig = Array.isArray(step.loop)
+        ? step.loop
+        : undefined;
+
+    return resolveStepList(
+        allSteps,
+        step.loopSteps || loopConfig || step.steps,
+        'loop.steps',
+        'loop',
+    );
+}
+
+function toInlineLoopIntervalMs(step: JsonRecord): number {
+    const request = asRecord(step.request);
+    const rateHz = firstPositiveNumber(step.rateHz, request.rateHz);
+
+    return firstNonNegativeInteger(
+        step.intervalMs,
+        request.intervalMs,
+        rateHz ? Math.max(1, Math.round(1000 / rateHz)) : undefined,
+        step.delayMs,
+        request.delayMs,
+    ) || 0;
+}
+
+function toInlineLoopMessageCount(step: JsonRecord): number | undefined {
+    const request = asRecord(step.request);
+    return firstPositiveInteger(step.messageCount, request.messageCount, step.messages, request.messages);
+}
+
+function toInlineLoopIterationCount(step: JsonRecord, loopStepCount: number, intervalMs: number): number {
+    const request = asRecord(step.request);
+    const configuredIterations = firstPositiveInteger(
+        step.count,
+        request.count,
+        step.iterations,
+        request.iterations,
+        step.runs,
+        request.runs,
+    );
+
+    if (configuredIterations) {
+        return configuredIterations;
+    }
+
+    const messageCount = toInlineLoopMessageCount(step);
+    if (messageCount) {
+        return Math.max(1, Math.ceil(messageCount / Math.max(1, loopStepCount)));
+    }
+
+    const durationMs = firstPositiveInteger(step.durationMs, request.durationMs, step.maxDurationMs, request.maxDurationMs);
+    if (durationMs && intervalMs > 0) {
+        return Math.max(1, Math.ceil(durationMs / intervalMs));
+    }
+
+    return 1;
+}
+
+function sanitizedStepName(value: string): string {
+    return value.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'loop';
+}
+
+function annotateInlineLoopStep(step: JsonRecord, root: JsonRecord): JsonRecord {
+    const loop = asRecord(root.loop);
+
+    return {
+        ...resolveTrafficTemplate(step, root),
+        loopName: loop.name,
+        loopIndex: loop.index,
+        loopIteration: loop.iteration,
+        loopStepIndex: loop.stepIndex,
+        loopCount: loop.count,
+        loopElapsedMs: loop.elapsedMs,
+        loopPhase: 'body',
+        repeatIndex: step.repeatIndex ?? loop.iteration,
+    };
+}
+
+function toInlineLoopDelayStep(loopName: string, iteration: number, iterations: number, intervalMs: number): JsonRecord {
+    return {
+        name: loopName + 'Delay',
+        type: 'set',
+        output: '__loopDelay' + sanitizedStepName(loopName) + iteration,
+        value: {
+            delayedMs: intervalMs,
+            loopName,
+            loopIteration: iteration,
+            loopCount: iterations,
+        },
+        request: {
+            delayMs: intervalMs,
+        },
+        loopName,
+        loopIteration: iteration,
+        loopCount: iterations,
+        loopPhase: 'delay',
+        repeatIndex: iteration,
+    };
+}
+
+function expandInlineLoopSteps(
+    rawSteps: Array<JsonRecord>,
+    allSteps: Array<JsonRecord> = rawSteps,
+    depth = 0,
+): Array<JsonRecord> {
+    if (depth > 20) {
+        throw new Error('Inline loop nesting exceeded 20 levels.');
+    }
+
+    return rawSteps.flatMap((step, stepIndex) => {
+        if (!isInlineLoopStep(step)) {
+            return [step];
+        }
+
+        const loopSteps = toInlineLoopSteps(allSteps, step);
+        if (loopSteps.length <= 0) {
+            throw new Error('Inline loop requires steps, loopSteps, or loop.');
+        }
+
+        const loopName = stepName(step, stepIndex);
+        const intervalMs = toInlineLoopIntervalMs(step);
+        const iterations = toInlineLoopIterationCount(step, loopSteps.length, intervalMs);
+        const messageCount = toInlineLoopMessageCount(step);
+        const expandedSteps: Array<JsonRecord> = [];
+        let loopIndex = 0;
+
+        for (let iterationIndex = 0; iterationIndex < iterations; iterationIndex++) {
+            const iteration = iterationIndex + 1;
+            const remainingMessages = messageCount === undefined
+                ? loopSteps.length
+                : Math.max(0, messageCount - (iterationIndex * loopSteps.length));
+            const iterationSteps = loopSteps.slice(0, Math.min(loopSteps.length, remainingMessages));
+
+            iterationSteps.forEach((loopStep, loopStepIndex) => {
+                loopIndex++;
+                const root = {
+                    loop: {
+                        name: loopName,
+                        index: loopIndex,
+                        iteration,
+                        stepIndex: loopStepIndex + 1,
+                        count: iterations,
+                        elapsedMs: (iteration - 1) * intervalMs,
+                    },
+                };
+
+                expandedSteps.push(...expandInlineLoopSteps([
+                    annotateInlineLoopStep(cloneStep(loopStep), root),
+                ], allSteps, depth + 1));
+            });
+
+            const hasRemainingWork = messageCount === undefined
+                ? iteration < iterations
+                : loopIndex < messageCount;
+            if (intervalMs > 0 && hasRemainingWork) {
+                expandedSteps.push(toInlineLoopDelayStep(loopName, iteration, iterations, intervalMs));
+            }
+        }
+
+        return expandedSteps;
+    });
+}
+
 function toTrafficStepList(
     allSteps: Array<JsonRecord>,
     configured: unknown,
@@ -794,7 +1013,51 @@ function annotateTrafficStep(step: JsonRecord, root: JsonRecord): JsonRecord {
     };
 }
 
-function toTrafficDelayStep(sequence: number, configuredDelayMs: number, seed: number): JsonRecord {
+type TrafficPacingConfig = {
+    rateHz?: number
+    intervalMs: number
+    jitterMs: number
+    burstSize: number
+    maxInFlight?: number
+}
+
+function toTrafficPacingConfig(planConfig: JsonRecord): TrafficPacingConfig {
+    const rateHz = firstPositiveNumber(planConfig.rateHz);
+    const intervalMs = firstNonNegativeInteger(
+        planConfig.intervalMs,
+        rateHz ? Math.max(1, Math.round(1000 / rateHz)) : undefined,
+        planConfig.delayMs,
+        delayMs,
+    ) || 0;
+
+    return {
+        ...(rateHz ? { rateHz } : {}),
+        intervalMs,
+        jitterMs: firstNonNegativeInteger(planConfig.jitterMs) || 0,
+        burstSize: firstPositiveInteger(planConfig.burstSize) || 1,
+        ...(firstPositiveInteger(planConfig.maxInFlight) ? { maxInFlight: firstPositiveInteger(planConfig.maxInFlight) } : {}),
+    };
+}
+
+function toTrafficDelayMs(
+    pacing: TrafficPacingConfig,
+    sequence: number,
+    count: number,
+    jitterRandom: () => number,
+): number {
+    if (pacing.intervalMs <= 0 || sequence >= count || sequence % pacing.burstSize !== 0) {
+        return 0;
+    }
+
+    if (pacing.jitterMs <= 0) {
+        return pacing.intervalMs;
+    }
+
+    const jitter = Math.round(((jitterRandom() * 2) - 1) * pacing.jitterMs);
+    return Math.max(0, pacing.intervalMs + jitter);
+}
+
+function toTrafficDelayStep(sequence: number, configuredDelayMs: number, seed: number, pacing: TrafficPacingConfig): JsonRecord {
     return {
         name: 'trafficDelay',
         type: 'set',
@@ -802,16 +1065,20 @@ function toTrafficDelayStep(sequence: number, configuredDelayMs: number, seed: n
         value: {
             delayedMs: configuredDelayMs,
             trafficSequence: sequence,
+            burstSize: pacing.burstSize,
+            maxInFlight: pacing.maxInFlight,
         },
         request: {
             delayMs: configuredDelayMs,
         },
         trafficPlan: {
             seed,
+            pacing,
         },
         trafficSeed: seed,
         trafficSequence: sequence,
         trafficOperation: 'delay',
+        trafficPacing: pacing,
     };
 }
 
@@ -882,10 +1149,17 @@ function toGeneratedTrafficPlan(config: ScenarioCliConfig, planConfig: JsonRecor
         planConfig.messageCount,
         planConfig.messages,
     ) || 1;
-    const configuredDelayMs = firstNonNegativeInteger(planConfig.delayMs, delayMs) || 0;
-    const setupSteps = toTrafficStepList(config.steps, planConfig.setupSteps || planConfig.setup, 'trafficPlan.setupSteps');
-    const cleanupSteps = toTrafficStepList(config.steps, planConfig.cleanupSteps || planConfig.cleanup, 'trafficPlan.cleanupSteps');
+    const pacing = toTrafficPacingConfig(planConfig);
+    const setupSteps = expandInlineLoopSteps(
+        toTrafficStepList(config.steps, planConfig.setupSteps || planConfig.setup, 'trafficPlan.setupSteps'),
+        config.steps,
+    );
+    const cleanupSteps = expandInlineLoopSteps(
+        toTrafficStepList(config.steps, planConfig.cleanupSteps || planConfig.cleanup, 'trafficPlan.cleanupSteps'),
+        config.steps,
+    );
     const operations = toTrafficOperations(config.steps, planConfig);
+    const jitterRandom = createSeededRandom(seed ^ 0x9E3779B9);
 
     if (operations.length <= 0) {
         throw new Error('Traffic plan mode requires at least one operation with steps.');
@@ -907,8 +1181,10 @@ function toGeneratedTrafficPlan(config: ScenarioCliConfig, planConfig: JsonRecor
                 operationIndex: operation.index,
                 random: Number(randomValue.toFixed(6)),
                 randomInt,
+                pacing,
             },
         };
+        const generatedDelayMs = toTrafficDelayMs(pacing, sequence, count, jitterRandom);
 
         decisions.push({
             sequence,
@@ -917,15 +1193,21 @@ function toGeneratedTrafficPlan(config: ScenarioCliConfig, planConfig: JsonRecor
             operationRandom: Number(operationRandom.toFixed(6)),
             random: Number(randomValue.toFixed(6)),
             randomInt,
+            delayMs: generatedDelayMs,
+            burstIndex: Math.ceil(sequence / pacing.burstSize),
+            burstPosition: ((sequence - 1) % pacing.burstSize) + 1,
+            pacing,
         });
 
-        const operationSteps = (operation.steps as Array<JsonRecord>)
-            .map(step => annotateTrafficStep(cloneStep(step), root));
+        const operationSteps = expandInlineLoopSteps(
+            (operation.steps as Array<JsonRecord>).map(step => annotateTrafficStep(cloneStep(step), root)),
+            config.steps,
+        );
 
-        return configuredDelayMs > 0 && sequence < count
+        return generatedDelayMs > 0
             ? [
                 ...operationSteps,
-                toTrafficDelayStep(sequence, configuredDelayMs, seed),
+                toTrafficDelayStep(sequence, generatedDelayMs, seed, pacing),
             ]
             : operationSteps;
     });
@@ -942,6 +1224,7 @@ function toGeneratedTrafficPlan(config: ScenarioCliConfig, planConfig: JsonRecor
         replay: false,
         generator: {
             ...planConfig,
+            pacing,
             operations: operations.map(operation => ({
                 name: operation.name,
                 index: operation.index,

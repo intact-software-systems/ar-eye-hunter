@@ -602,7 +602,8 @@ Main workflow:
 
 - choose one or more app-local recipes from the catalog
 - select the control run and resolve target agents
-- choose target policy, ACK timeout, start mode, and optional role pattern
+- choose target policy, ACK timeout, optional barrier synchronization, start
+  mode, and optional role pattern
 - configure recipe-specific options when shown, such as the `RTC Realtime` length in seconds
 - review the generated distributed-run manifest
 - create or stage the run
@@ -612,18 +613,25 @@ Main workflow:
 Role patterns support all agents running the same recipes, sender/receiver pairs, one sender with many receivers, and a
 three-browser matrix. Live recipes are marked because they can send real HTTP, WebSocket, or RTC traffic through
 connected browsers.
-`RTC Realtime` builds one normal browser-agent recipe named `rtc-realtime`: it connects to the current Global Context
-group, then sends game-style position payloads over `realtime` at a target 20 Hz cadence for the configured duration.
-The manifest preview shows the generated command count before the run is created.
+`RTC Realtime` builds one browser-agent recipe named `rtc-realtime`: it connects to the current Global Context group,
+then runs one `loop` command that sends game-style position payloads over `realtime` at a target 20 Hz cadence for the
+configured duration. The manifest stays compact, while the catalog row shows both manifest commands and the effective
+frame count before the run is created.
 Catalog entries expose command capability help, including provider modes, runtime surfaces, live-service requirements,
 artifact expectations, and whether the commands can run through distributed control agents. The generated manifest is
 validated with the same shared schema and distributed-run contract used by the control server.
+
+The optional barrier inserts a server-mediated synchronization point after
+stage ACKs and before recipe start. Each selected browser must report
+`barrier.ready` through a linked control command before `auto-after-ready` or
+eligible `scheduled` starts run. Use it for live RTC tests where static start
+delays are too coarse.
 
 The monitor section appears after a distributed run is selected. It shows:
 
 - command/result counts and latency summaries
 - failures first
-- per-agent progress and ACK readiness
+- per-agent progress, ACK readiness, and barrier readiness when enabled
 - per-recipe progress
 - linked control-run events for the distributed run
 - lifecycle timeline

@@ -17,6 +17,12 @@ Machine-readable schema coverage is documented in
 runner scenario schema lives in `packages/shared-test/black-box-runner/schema.ts`
 as `BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA`.
 
+Post-composite runner follow-up iterations are documented in
+`packages/shared-test/black-box-runner/docs/black-box-runner-followup-iterations.md`.
+That plan covers validation/explain mode, safer output transforms, post-run
+thresholds, trace correlation, artifact scaling, live environment preflight,
+static recipe fragments, and traffic-plan failure reduction.
+
 ## Preferred Recipe Shape
 
 Use the top-level `steps` shape for new recipes:
@@ -479,6 +485,50 @@ API, test credentials, Playwright, and optional control server are provisioned:
 npm run test:shared-black-box:matrix:live:soak
 ```
 
+## Inline Loop Steps
+
+Use an inline `type: "loop"` step when a small repeated pattern belongs inside
+an ordinary recipe. The runner expands inline loops before execution, so the
+executor still sees only normal HTTP, WS, RTC, ASSERT, SET, and PARALLEL steps.
+This keeps reports and replay artifacts deterministic while avoiding a
+provider-specific loop implementation.
+
+```json
+{
+  "name": "positionFrames",
+  "type": "loop",
+  "count": 4,
+  "rateHz": 20,
+  "steps": [
+    {
+      "name": "sendFrame{loop.index}",
+      "type": "rtc.send",
+      "request": {
+        "send": {
+          "topic": "position",
+          "payload": {
+            "frame": "{loop.index}",
+            "elapsedMs": "{loop.elapsedMs}"
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+Supported controls are `count`/`iterations`/`runs`,
+`messageCount`/`messages`, `durationMs`/`maxDurationMs`, `intervalMs`,
+`delayMs`, and `rateHz`. `rateHz` derives `intervalMs` as `1000 / rateHz`.
+Delays are inserted between loop iterations, never after the final iteration.
+
+Loop templates can use `{loop.name}`, `{loop.index}`, `{loop.iteration}`,
+`{loop.stepIndex}`, `{loop.count}`, and `{loop.elapsedMs}`. Exact placeholders
+preserve their generated type; inline placeholders are rendered as text. Prefer
+inline child steps inside the loop. Named step references are supported, but a
+top-level named template also remains a normal top-level step unless the recipe
+uses a mode such as soak or traffic plan that selects steps explicitly.
+
 ## Seeded Traffic Plans
 
 Use `execution.trafficPlan` when a recipe should generate reproducible traffic
@@ -492,6 +542,10 @@ steps. Generated recipes still use the normal provider boundary.
     "trafficPlan": {
       "seed": 1337,
       "count": 6,
+      "rateHz": 20,
+      "burstSize": 2,
+      "jitterMs": 0,
+      "maxInFlight": 2,
       "setupSteps": ["connectAlice", "connectBob"],
       "cleanupSteps": ["closeAlice", "closeBob"],
       "operations": [
@@ -515,8 +569,20 @@ Operation `steps`, `setupSteps`, and `cleanupSteps` can reference top-level
 step names or contain inline step objects. Step templates can use these
 placeholders: `{traffic.seed}`, `{traffic.sequence}`,
 `{traffic.iteration}`, `{traffic.operation}`, `{traffic.operationIndex}`,
-`{traffic.random}`, and `{traffic.randomInt}`. Exact placeholders preserve
-their generated type. Inline placeholders are rendered as text.
+`{traffic.random}`, `{traffic.randomInt}`, and pacing values under
+`{traffic.pacing.*}`. Exact placeholders preserve their generated type. Inline
+placeholders are rendered as text.
+
+Traffic pacing controls are:
+
+- `intervalMs`: fixed delay after each burst of generated operations.
+- `rateHz`: derives `intervalMs` as `1000 / rateHz`.
+- `jitterMs`: deterministic plus/minus jitter applied to pacing delays with a
+  seed-derived random stream.
+- `burstSize`: number of generated operations before a pacing delay is
+  inserted. The default is `1`.
+- `maxInFlight`: recorded as pacing intent in `expanded-plan.json`. Use
+  `type: "parallel"` when the recipe needs actual concurrent branches today.
 
 Generated operation steps are expanded before normal scenario variable
 resolution. Keep generated step templates limited to `{traffic.*}`
@@ -525,8 +591,9 @@ placeholders, or rely on connection-level defaults for values such as Rallar
 
 Artifact bundles for traffic plans include `expanded-plan.json`. That file
 contains the seed, generator summary, operation decisions, concrete expanded
-steps, and a replay recipe. To replay the exact generated plan, point another
-recipe at the artifact:
+steps, pacing decisions, and a replay recipe. Inline loops inside traffic
+operations are expanded into concrete steps before the artifact is written. To
+replay the exact generated plan, point another recipe at the artifact:
 
 ```json
 {

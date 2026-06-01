@@ -1,0 +1,77 @@
+{
+  "recipeId": "composite-evidence-recipe",
+  "name": "Composite evidence recipe",
+  "description": "Validates loop, parallel, wait, and assert command authoring without requiring live Rallar services.",
+  "continueOnFailure": false,
+  "metadata": {
+    "profile": "composite",
+    "primitives": ["loop", "parallel", "wait", "assert"],
+    "notes": [
+      "This recipe is deterministic and can run in the local workbench with the simulated provider.",
+      "Use it to verify schema authoring, nested command preview, wait matching, and assertion feedback before switching to live RTC or WS recipes."
+    ]
+  },
+  "commands": [
+    {
+      "kind": "loop",
+      "commandId": "composite-health-loop",
+      "count": 2,
+      "intervalMs": 1,
+      "maxCommands": 2,
+      "commands": [
+        {
+          "kind": "health",
+          "commandId": "loop-health",
+          "label": "Loop health"
+        }
+      ]
+    },
+    {
+      "kind": "parallel",
+      "commandId": "parallel-evidence",
+      "maxConcurrency": 2,
+      "groups": [
+        {
+          "groupId": "left-health",
+          "commands": [
+            {
+              "kind": "health",
+              "commandId": "parallel-left-health"
+            }
+          ]
+        },
+        {
+          "groupId": "right-stats",
+          "commands": [
+            {
+              "kind": "stats",
+              "commandId": "parallel-right-stats"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "wait",
+      "commandId": "wait-for-parallel-result",
+      "timeoutMs": 1000,
+      "match": {
+        "kind": "result",
+        "commandId": "parallel-evidence",
+        "payloadPath": "ok",
+        "equals": true
+      }
+    },
+    {
+      "kind": "assert",
+      "commandId": "assert-wait-succeeded",
+      "source": "lastResult.ok",
+      "operator": "equals",
+      "expected": true
+    },
+    {
+      "kind": "stats",
+      "commandId": "composite-evidence-stats"
+    }
+  ]
+}

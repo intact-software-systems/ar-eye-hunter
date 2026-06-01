@@ -320,8 +320,8 @@ function handleControlSocket(request: Request): Response {
         const received = controlService.receiveClientEnvelope(parsed.envelope);
         if (received.kind === 'register') {
             registerSocket(socket, received.runId, received.agentId);
-            sendDispatchableCommands(received.runId, received.agentId);
         }
+        sendDispatchableCommandsForRun(received.runId);
         persistControlSnapshot();
     };
 
@@ -860,6 +860,17 @@ function sendDispatchableCommands(runId: string, agentId: string): void {
     const commands = controlService.takeDispatchableCommands(runId, agentId);
     for (const command of commands) {
         sendCommand(socket, command);
+    }
+}
+
+function sendDispatchableCommandsForRun(runId: string): void {
+    const prefix = `${runId}\u0000`;
+    for (const key of agentSockets.keys()) {
+        if (!key.startsWith(prefix)) {
+            continue;
+        }
+        const agentId = key.slice(prefix.length);
+        sendDispatchableCommands(runId, agentId);
     }
 }
 

@@ -456,6 +456,9 @@ function runtimeDelayFor(command: RallarBlackBoxTestCommand): number {
         case 'ws.open':
         case 'http.request':
             return 340;
+        case 'wait':
+        case 'assert':
+            return 0;
         default:
             return 160;
     }

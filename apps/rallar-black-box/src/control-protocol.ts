@@ -1,10 +1,14 @@
-import type {
-    RallarBlackBoxTestCommand,
-    RallarBlackBoxTestCommandKind,
-    RallarBlackBoxTestEvent,
-    RallarBlackBoxTestResult,
+import {
+    RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
+    RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
+    type RallarBlackBoxTestCommand,
+    type RallarBlackBoxTestCommandKind,
+    type RallarBlackBoxTestEvent,
+    type RallarBlackBoxTestResult,
 } from '@shared-test/rallar-bb-test/types.ts';
-import type { RallarBlackBoxControlAgentIdentity } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type {
+    RallarBlackBoxControlAgentIdentity,
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
 
 export const RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION = 1;
 
@@ -90,22 +94,7 @@ export type ControlCommandValidationResult =
     | Readonly<{ ok: true }>
     | Readonly<{ ok: false; error: string }>;
 
-const COMMAND_KINDS: readonly RallarBlackBoxTestCommandKind[] = [
-    'configure',
-    'recipe.load',
-    'recipe.run',
-    'recipe.cancel',
-    'rtc.connect',
-    'rtc.send',
-    'ws.open',
-    'ws.send',
-    'ws.close',
-    'http.request',
-    'health',
-    'stats',
-    'close',
-    'reset',
-];
+const COMMAND_KINDS: readonly RallarBlackBoxTestCommandKind[] = RALLAR_BLACK_BOX_TEST_COMMAND_KINDS;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -171,6 +160,52 @@ function validateNumberField(
         : fail(`${path}.${key} must be a number.`);
 }
 
+function validateIntegerField(
+    value: Record<string, unknown>,
+    key: string,
+    path: string,
+    options: Readonly<{ minimum?: number; maximum?: number }> = {},
+): ControlCommandValidationResult {
+    if (value[key] === undefined) {
+        return { ok: true };
+    }
+    if (!Number.isInteger(value[key])) {
+        return fail(`${path}.${key} must be an integer.`);
+    }
+    if (options.minimum !== undefined && (value[key] as number) < options.minimum) {
+        return fail(`${path}.${key} must be >= ${options.minimum}.`);
+    }
+    if (options.maximum !== undefined && (value[key] as number) > options.maximum) {
+        return fail(`${path}.${key} must be <= ${options.maximum}.`);
+    }
+    return { ok: true };
+}
+
+function validateBooleanField(
+    value: Record<string, unknown>,
+    key: string,
+    path: string,
+): ControlCommandValidationResult {
+    return value[key] === undefined || typeof value[key] === 'boolean'
+        ? { ok: true }
+        : fail(`${path}.${key} must be a boolean.`);
+}
+
+function validateEnumField(
+    value: Record<string, unknown>,
+    key: string,
+    path: string,
+    allowed: readonly string[],
+): ControlCommandValidationResult {
+    if (value[key] === undefined) {
+        return { ok: true };
+    }
+
+    return typeof value[key] === 'string' && allowed.includes(value[key])
+        ? { ok: true }
+        : fail(`${path}.${key} must be one of ${allowed.join(', ')}.`);
+}
+
 function validateObjectField(
     value: Record<string, unknown>,
     key: string,
@@ -216,7 +251,7 @@ function validateBaseCommand(command: Record<string, unknown>): ControlCommandVa
     return validateObjectField(command, 'metadata', 'command');
 }
 
-function validateRecipe(value: unknown, path: string): ControlCommandValidationResult {
+function validateRecipe(value: unknown, path: string, depth = 0): ControlCommandValidationResult {
     if (!isRecord(value)) {
         return fail(`${path} must be an object.`);
     }
@@ -240,12 +275,196 @@ function validateRecipe(value: unknown, path: string): ControlCommandValidationR
         return fail(`${path}.commands must be an array.`);
     }
     for (const [index, command] of value.commands.entries()) {
-        result = validateRallarBlackBoxTestCommand(command);
+        result = validateRallarBlackBoxTestCommand(command, depth);
         if (!result.ok) {
             return fail(`${path}.commands[${index}]: ${result.error}`);
         }
     }
     return { ok: true };
+}
+
+function validateCompositeChildCommands(
+    commands: unknown,
+    path: string,
+    depth: number,
+): ControlCommandValidationResult {
+    if (depth > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth) {
+        return fail(`${path} exceeds max composite depth ${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth}.`);
+    }
+    if (!Array.isArray(commands)) {
+        return fail(`${path} must be an array.`);
+    }
+    if (commands.length === 0) {
+        return fail(`${path} requires at least one command.`);
+    }
+    for (const [index, child] of commands.entries()) {
+        const result = validateRallarBlackBoxTestCommand(child, depth + 1);
+        if (!result.ok) {
+            return fail(`${path}[${index}]: ${result.error}`);
+        }
+    }
+    return { ok: true };
+}
+
+function validateLoopCommand(
+    command: Record<string, unknown>,
+    depth: number,
+): ControlCommandValidationResult {
+    let result = validateCompositeChildCommands(command.commands, 'loop.commands', depth);
+    if (!result.ok) {
+        return result;
+    }
+    result = validateIntegerField(command, 'count', 'loop', {
+        minimum: 1,
+        maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopCount,
+    });
+    if (!result.ok) {
+        return result;
+    }
+    result = validateIntegerField(command, 'durationMs', 'loop', {
+        minimum: 1,
+        maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs,
+    });
+    if (!result.ok) {
+        return result;
+    }
+    for (const field of ['intervalMs', 'delayMs']) {
+        result = validateIntegerField(command, field, 'loop', { minimum: 0 });
+        if (!result.ok) {
+            return result;
+        }
+    }
+    result = validateIntegerField(command, 'maxCommands', 'loop', {
+        minimum: 1,
+        maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands,
+    });
+    if (!result.ok) {
+        return result;
+    }
+    return validateBooleanField(command, 'continueOnFailure', 'loop');
+}
+
+function validateParallelCommand(
+    command: Record<string, unknown>,
+    depth: number,
+): ControlCommandValidationResult {
+    if (!Array.isArray(command.groups)) {
+        return fail('parallel.groups must be an array.');
+    }
+    if (command.groups.length === 0) {
+        return fail('parallel.groups requires at least one group.');
+    }
+    let result = validateIntegerField(command, 'maxConcurrency', 'parallel', {
+        minimum: 1,
+        maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxParallelConcurrency,
+    });
+    if (!result.ok) {
+        return result;
+    }
+    for (const field of ['failFast', 'continueOnFailure']) {
+        result = validateBooleanField(command, field, 'parallel');
+        if (!result.ok) {
+            return result;
+        }
+    }
+    for (const [index, group] of command.groups.entries()) {
+        const path = `parallel.groups[${index}]`;
+        if (!isRecord(group)) {
+            return fail(`${path} must be an object.`);
+        }
+        result = validateKeys(group, ['groupId', 'label', 'commands', 'metadata'], path);
+        if (!result.ok) {
+            return result;
+        }
+        for (const field of ['groupId', 'label']) {
+            result = validateStringField(group, field, path);
+            if (!result.ok) {
+                return result;
+            }
+        }
+        result = validateObjectField(group, 'metadata', path);
+        if (!result.ok) {
+            return result;
+        }
+        result = validateCompositeChildCommands(group.commands, `${path}.commands`, depth);
+        if (!result.ok) {
+            return result;
+        }
+    }
+    return { ok: true };
+}
+
+function validateWaitCommand(command: Record<string, unknown>): ControlCommandValidationResult {
+    if (!isRecord(command.match)) {
+        return fail('wait.match is required.');
+    }
+
+    let result = validateKeys(command.match, [
+        'kind',
+        'topic',
+        'commandId',
+        'connection',
+        'transport',
+        'severity',
+        'payloadPath',
+        'equals',
+        'contains',
+        'exists',
+    ], 'wait.match');
+    if (!result.ok) {
+        return result;
+    }
+
+    result = validateEnumField(
+        command.match,
+        'kind',
+        'wait.match',
+        ['event', 'diagnostic', 'message', 'stats', 'report', 'result', 'state'],
+    );
+    if (!result.ok) {
+        return result;
+    }
+    result = validateEnumField(
+        command.match,
+        'transport',
+        'wait.match',
+        ['realtime', 'messages.rtc', 'ws', 'http'],
+    );
+    if (!result.ok) {
+        return result;
+    }
+    result = validateEnumField(
+        command.match,
+        'severity',
+        'wait.match',
+        ['debug', 'info', 'warning', 'error'],
+    );
+    if (!result.ok) {
+        return result;
+    }
+    for (const field of ['topic', 'commandId', 'connection', 'payloadPath', 'contains']) {
+        result = validateStringField(command.match, field, 'wait.match');
+        if (!result.ok) {
+            return result;
+        }
+    }
+    return validateBooleanField(command.match, 'exists', 'wait.match');
+}
+
+function validateAssertCommand(command: Record<string, unknown>): ControlCommandValidationResult {
+    let result = validateStringField(command, 'source', 'assert', true);
+    if (!result.ok) {
+        return result;
+    }
+    if (command.operator === undefined) {
+        return fail('assert.operator is required.');
+    }
+    return validateEnumField(
+        command,
+        'operator',
+        'assert',
+        ['equals', 'notEquals', 'contains', 'exists', 'gte', 'lte'],
+    );
 }
 
 function validateHttpCommand(command: Record<string, unknown>): ControlCommandValidationResult {
@@ -399,9 +618,13 @@ function parseControlAgentIdentity(value: unknown): RallarBlackBoxControlAgentId
 
 export function validateRallarBlackBoxTestCommand(
     value: unknown,
+    depth = 0,
 ): ControlCommandValidationResult {
     if (!isCommand(value)) {
         return fail('Command must be an object with a supported kind.');
+    }
+    if (depth > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth) {
+        return fail(`Command exceeds max composite depth ${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth}.`);
     }
 
     const command = value as Record<string, unknown>;
@@ -417,16 +640,51 @@ export function validateRallarBlackBoxTestCommand(
             return !result.ok ? result : validateObjectField(command, 'config', 'configure', true);
         case 'recipe.load':
             result = validateKeys(command, [...base, 'recipe'], 'recipe.load');
-            return !result.ok ? result : validateRecipe(command.recipe, 'recipe.load.recipe');
+            return !result.ok ? result : validateRecipe(command.recipe, 'recipe.load.recipe', depth);
         case 'recipe.run':
             result = validateKeys(command, [...base, 'recipe'], 'recipe.run');
             if (!result.ok || command.recipe === undefined) {
                 return result;
             }
-            return validateRecipe(command.recipe, 'recipe.run.recipe');
+            return validateRecipe(command.recipe, 'recipe.run.recipe', depth);
         case 'recipe.cancel':
             result = validateKeys(command, [...base, 'reason'], 'recipe.cancel');
             return !result.ok ? result : validateStringField(command, 'reason', 'recipe.cancel');
+        case 'loop':
+            result = validateKeys(
+                command,
+                [
+                    ...base,
+                    'commands',
+                    'count',
+                    'durationMs',
+                    'intervalMs',
+                    'delayMs',
+                    'continueOnFailure',
+                    'maxCommands',
+                ],
+                'loop',
+            );
+            return !result.ok ? result : validateLoopCommand(command, depth);
+        case 'parallel':
+            result = validateKeys(
+                command,
+                [
+                    ...base,
+                    'groups',
+                    'maxConcurrency',
+                    'failFast',
+                    'continueOnFailure',
+                ],
+                'parallel',
+            );
+            return !result.ok ? result : validateParallelCommand(command, depth);
+        case 'wait':
+            result = validateKeys(command, [...base, 'match'], 'wait');
+            return !result.ok ? result : validateWaitCommand(command);
+        case 'assert':
+            result = validateKeys(command, [...base, 'source', 'operator', 'expected'], 'assert');
+            return !result.ok ? result : validateAssertCommand(command);
         case 'rtc.connect':
             result = validateKeys(
                 command,

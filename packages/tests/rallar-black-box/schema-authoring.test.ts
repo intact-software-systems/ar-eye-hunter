@@ -73,6 +73,79 @@ describe('schema authoring helpers', () => {
         expect(manifestValidation.runtimeSurfaces).toContain('control-agent');
     });
 
+    it('derives capability hints recursively for composite recipes', () => {
+        const recipe = {
+            recipeId: 'composite-authoring-recipe',
+            commands: [
+                {
+                    kind: 'loop',
+                    commandId: 'loop-rtc',
+                    count: 2,
+                    commands: [
+                        {
+                            kind: 'rtc.send',
+                            commandId: 'send-loop-frame',
+                            connection: 'rtc',
+                        },
+                    ],
+                },
+                {
+                    kind: 'parallel',
+                    commandId: 'parallel-ws-health',
+                    groups: [
+                        {
+                            groupId: 'ws',
+                            commands: [
+                                {
+                                    kind: 'ws.send',
+                                    commandId: 'send-ws',
+                                    connection: 'apiWs',
+                                },
+                            ],
+                        },
+                        {
+                            groupId: 'evidence',
+                            commands: [
+                                {
+                                    kind: 'wait',
+                                    commandId: 'wait-result',
+                                    match: {
+                                        kind: 'result',
+                                        commandId: 'send-ws',
+                                    },
+                                },
+                                {
+                                    kind: 'assert',
+                                    commandId: 'assert-last-ok',
+                                    source: 'lastResult.ok',
+                                    operator: 'equals',
+                                    expected: true,
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        };
+
+        const validation = validateSchemaAuthoringValue('recipe', recipe);
+
+        expect(validation.ok).toBe(true);
+        expect(validation.commandKinds).toEqual([
+            'assert',
+            'loop',
+            'parallel',
+            'rtc.send',
+            'wait',
+            'ws.send',
+        ]);
+        expect(validation.liveServiceRequirements).toContain('active RTC connection');
+        expect(validation.liveServiceRequirements).toContain('open WebSocket connection');
+        expect(validation.artifactExpectations).toContain('parent loop rollup');
+        expect(validation.artifactExpectations).toContain('parent parallel rollup');
+        expect(schemaAuthoringSummary(validation)).toContain('live requirements');
+    });
+
     it('generates one example snippet for each command capability', () => {
         const snippets = commandExampleSnippets();
         expect(snippets.length).toBeGreaterThan(10);

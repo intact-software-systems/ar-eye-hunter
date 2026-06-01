@@ -1516,6 +1516,11 @@ The main remaining risk is integration, not contract design:
   server orchestration APIs, first user-facing UI, historical monitoring, and
   full-stack coverage; remaining work is mostly retention, saved filters,
   large-run browsing, and provisioned negative live fixtures
+- black-box-runner follow-up work is now tracked separately in
+  `packages/shared-test/black-box-runner/docs/black-box-runner-followup-iterations.md`
+  for runner-owned validation/explain mode, safer output transforms, post-run
+  thresholds, trace correlation, artifact scaling, live environment preflight,
+  static fragments, and traffic-plan failure reduction
 - the control server still needs retention policy, artifact search, and deeper
   durable storage decisions
 - live permission, expiry, forbidden, CORS, and server-restart cases need

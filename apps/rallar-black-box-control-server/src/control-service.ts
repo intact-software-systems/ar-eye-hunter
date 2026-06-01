@@ -25,6 +25,8 @@ import {
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 
+const DEFAULT_DISTRIBUTED_BARRIER_TIMEOUT_MS = 15_000;
+
 export type EnqueueControlCommandInput = Readonly<{
     runId: string;
     agentId: string;
@@ -60,7 +62,7 @@ export type ControlRunToken = Readonly<{
     expiresAtEpochMs: number;
 }>;
 
-export type ControlDistributedRunCommandPhase = 'stage' | 'start' | 'cancel';
+export type ControlDistributedRunCommandPhase = 'stage' | 'barrier' | 'start' | 'cancel';
 
 export type ControlDistributedRunCommandLink = Readonly<{
     phase: ControlDistributedRunCommandPhase;
@@ -79,6 +81,8 @@ export type ControlDistributedRunSnapshot = Readonly<{
     createdAtEpochMs: number;
     updatedAtEpochMs: number;
     stagedAtEpochMs?: number;
+    barrierStartedAtEpochMs?: number;
+    barrierCompletedAtEpochMs?: number;
     startedAtEpochMs?: number;
     cancelledAtEpochMs?: number;
     completedAtEpochMs?: number;
@@ -211,6 +215,8 @@ type StoredDistributedRun = {
     createdAtEpochMs: number;
     updatedAtEpochMs: number;
     stagedAtEpochMs?: number;
+    barrierStartedAtEpochMs?: number;
+    barrierCompletedAtEpochMs?: number;
     startedAtEpochMs?: number;
     cancelledAtEpochMs?: number;
     completedAtEpochMs?: number;
@@ -457,6 +463,7 @@ export class RallarBlackBoxControlService {
 
     startDistributedRun(distributedRunId: string): ControlDistributedRunSnapshot {
         const distributedRun = this.requireDistributedRun(distributedRunId);
+        this.refreshDistributedRunState(distributedRun);
         this.assertDistributedRunCanMutate(distributedRun, 'start');
         if (distributedRun.targetAgentIds.length === 0) {
             distributedRun.targetAgentIds = this.resolveDistributedTargetAgentIds(distributedRun);
@@ -492,21 +499,17 @@ export class RallarBlackBoxControlService {
             return this.snapshotDistributedRunValue(distributedRun);
         }
 
-        for (const agentId of distributedRun.targetAgentIds) {
-            for (const selection of this.recipeSelectionsForAgent(distributedRun.manifest, agentId)) {
-                this.enqueueLinkedDistributedCommand(
-                    distributedRun,
-                    'start',
-                    agentId,
-                    selection,
-                    this.startCommandForSelection(distributedRun, agentId, selection),
-                );
-            }
+        if (this.distributedRunStartPrerequisitePending(distributedRun)) {
+            return this.snapshotDistributedRunValue(distributedRun);
         }
 
-        distributedRun.state = 'running';
-        distributedRun.startedAtEpochMs ??= this.now();
-        distributedRun.updatedAtEpochMs = this.now();
+        if (this.distributedRunScheduledStartPending(distributedRun)) {
+            distributedRun.state = 'ready';
+            distributedRun.updatedAtEpochMs = this.now();
+            return this.snapshotDistributedRunValue(distributedRun);
+        }
+
+        this.queueDistributedStartCommands(distributedRun);
         return this.snapshotDistributedRunValue(distributedRun);
     }
 
@@ -566,6 +569,7 @@ export class RallarBlackBoxControlService {
     }
 
     takeDispatchableCommands(runId: string, agentId: string): readonly ControlCommandEnvelope[] {
+        this.refreshDistributedRunsForControlRun(runId);
         const run = this.runs.get(runId);
         const agent = run?.agents.get(agentId);
         if (!run || !agent?.connected) {
@@ -610,6 +614,7 @@ export class RallarBlackBoxControlService {
         agent.disconnectedAtEpochMs = this.now();
         agent.lastSeenAtEpochMs = agent.disconnectedAtEpochMs;
         this.touch(run);
+        this.refreshDistributedRunsForControlRun(runId);
     }
 
     resetRun(runId: string): ControlRunSnapshot | undefined {
@@ -735,6 +740,8 @@ export class RallarBlackBoxControlService {
                 createdAtEpochMs: distributedRunSnapshot.createdAtEpochMs,
                 updatedAtEpochMs: distributedRunSnapshot.updatedAtEpochMs,
                 stagedAtEpochMs: distributedRunSnapshot.stagedAtEpochMs,
+                barrierStartedAtEpochMs: distributedRunSnapshot.barrierStartedAtEpochMs,
+                barrierCompletedAtEpochMs: distributedRunSnapshot.barrierCompletedAtEpochMs,
                 startedAtEpochMs: distributedRunSnapshot.startedAtEpochMs,
                 cancelledAtEpochMs: distributedRunSnapshot.cancelledAtEpochMs,
                 completedAtEpochMs: distributedRunSnapshot.completedAtEpochMs,
@@ -786,6 +793,7 @@ export class RallarBlackBoxControlService {
         agent.identity = envelope.identity ?? agent.identity;
         run.heartbeats.push(envelope);
         this.touch(run);
+        this.refreshDistributedRunsForControlRun(run.runId);
     }
 
     private receiveResult(envelope: ControlResultEnvelope): void {
@@ -962,6 +970,146 @@ export class RallarBlackBoxControlService {
         return roles;
     }
 
+    private advanceDistributedRunOrchestration(distributedRun: StoredDistributedRun): void {
+        if (isDistributedRunTerminalState(distributedRun.state)) {
+            return;
+        }
+
+        if (distributedRun.state === 'waiting-for-ack') {
+            if (this.distributedRunAckTimedOut(distributedRun)) {
+                return;
+            }
+            if (this.allTargetPhaseCommandsSucceeded(distributedRun, 'stage')) {
+                if (this.distributedRunBarrierEnabled(distributedRun)) {
+                    this.queueDistributedBarrierCommands(distributedRun);
+                    distributedRun.state = 'waiting-for-barrier';
+                    distributedRun.barrierStartedAtEpochMs ??= this.now();
+                    distributedRun.updatedAtEpochMs = this.now();
+                    return;
+                }
+                this.readyOrAutoStartDistributedRun(distributedRun);
+            }
+        }
+
+        if (distributedRun.state === 'waiting-for-barrier') {
+            if (this.distributedRunBarrierTimedOut(distributedRun)) {
+                return;
+            }
+            if (this.allTargetPhaseCommandsSucceeded(distributedRun, 'barrier')) {
+                distributedRun.barrierCompletedAtEpochMs ??= this.now();
+                this.readyOrAutoStartDistributedRun(distributedRun);
+            }
+        }
+
+        if (distributedRun.state === 'ready' && this.shouldAutoStartDistributedRun(distributedRun)) {
+            this.queueDistributedStartCommands(distributedRun);
+        }
+    }
+
+    private readyOrAutoStartDistributedRun(distributedRun: StoredDistributedRun): void {
+        if (this.shouldAutoStartDistributedRun(distributedRun)) {
+            this.queueDistributedStartCommands(distributedRun);
+            return;
+        }
+
+        distributedRun.state = 'ready';
+        distributedRun.updatedAtEpochMs = this.now();
+    }
+
+    private shouldAutoStartDistributedRun(distributedRun: StoredDistributedRun): boolean {
+        if (distributedRun.manifest.startMode === 'auto-after-ready') {
+            return true;
+        }
+        return distributedRun.manifest.startMode === 'scheduled' &&
+            distributedRun.manifest.startDeadlineEpochMs !== undefined &&
+            this.now() >= distributedRun.manifest.startDeadlineEpochMs;
+    }
+
+    private distributedRunScheduledStartPending(distributedRun: StoredDistributedRun): boolean {
+        return distributedRun.manifest.startMode === 'scheduled' &&
+            distributedRun.manifest.startDeadlineEpochMs !== undefined &&
+            this.now() < distributedRun.manifest.startDeadlineEpochMs;
+    }
+
+    private distributedRunStartPrerequisitePending(distributedRun: StoredDistributedRun): boolean {
+        const hasStageLinks = distributedRun.commandLinks.some(link => link.phase === 'stage');
+        if (hasStageLinks && !this.allTargetPhaseCommandsSucceeded(distributedRun, 'stage')) {
+            return true;
+        }
+
+        if (!this.distributedRunBarrierEnabled(distributedRun) || !hasStageLinks) {
+            return false;
+        }
+
+        if (!distributedRun.commandLinks.some(link => link.phase === 'barrier')) {
+            this.queueDistributedBarrierCommands(distributedRun);
+            distributedRun.state = 'waiting-for-barrier';
+            distributedRun.barrierStartedAtEpochMs ??= this.now();
+            distributedRun.updatedAtEpochMs = this.now();
+            return true;
+        }
+
+        return !this.allTargetPhaseCommandsSucceeded(distributedRun, 'barrier');
+    }
+
+    private queueDistributedBarrierCommands(distributedRun: StoredDistributedRun): void {
+        for (const agentId of distributedRun.targetAgentIds) {
+            this.enqueueLinkedDistributedCommand(
+                distributedRun,
+                'barrier',
+                agentId,
+                undefined,
+                this.barrierCommandForAgent(distributedRun, agentId),
+            );
+        }
+    }
+
+    private queueDistributedStartCommands(distributedRun: StoredDistributedRun): void {
+        for (const agentId of distributedRun.targetAgentIds) {
+            for (const selection of this.recipeSelectionsForAgent(distributedRun.manifest, agentId)) {
+                this.enqueueLinkedDistributedCommand(
+                    distributedRun,
+                    'start',
+                    agentId,
+                    selection,
+                    this.startCommandForSelection(distributedRun, agentId, selection),
+                );
+            }
+        }
+
+        distributedRun.state = 'running';
+        distributedRun.startedAtEpochMs ??= this.now();
+        distributedRun.updatedAtEpochMs = this.now();
+    }
+
+    private allTargetPhaseCommandsSucceeded(
+        distributedRun: StoredDistributedRun,
+        phase: ControlDistributedRunCommandPhase,
+    ): boolean {
+        const run = this.runs.get(distributedRun.controlRunId);
+        if (!run || distributedRun.targetAgentIds.length === 0) {
+            return false;
+        }
+
+        return distributedRun.targetAgentIds.every(agentId => {
+            const links = distributedRun.commandLinks.filter(link =>
+                link.phase === phase && link.agentId === agentId
+            );
+            return links.length > 0 && links.every(link => run.results.get(link.commandId)?.ok === true);
+        });
+    }
+
+    private distributedRunBarrierEnabled(distributedRun: StoredDistributedRun): boolean {
+        return distributedRun.manifest.barrier?.enabled === true;
+    }
+
+    private distributedRunBarrierTimeoutMs(distributedRun: StoredDistributedRun): number {
+        const timeoutMs = distributedRun.manifest.barrier?.timeoutMs;
+        return typeof timeoutMs === 'number' && Number.isInteger(timeoutMs) && timeoutMs > 0
+            ? timeoutMs
+            : distributedRun.manifest.ackTimeoutMs ?? DEFAULT_DISTRIBUTED_BARRIER_TIMEOUT_MS;
+    }
+
     private stageCommandForSelection(
         distributedRun: StoredDistributedRun,
         agentId: string,
@@ -1019,6 +1167,34 @@ export class RallarBlackBoxControlService {
                 label: `Run ${selection.recipeId ?? 'loaded recipe'}`,
                 metadata: this.distributedCommandMetadata(distributedRun, 'start', agentId, selection),
             };
+    }
+
+    private barrierCommandForAgent(
+        distributedRun: StoredDistributedRun,
+        agentId: string,
+    ): RallarBlackBoxTestCommand {
+        const commandId = this.distributedCommandId(
+            distributedRun,
+            'barrier',
+            agentId,
+            'ready',
+        );
+        return {
+            kind: 'health',
+            commandId,
+            label: `Barrier ready ${distributedRun.distributedRunId}`,
+            metadata: {
+                ...this.distributedCommandMetadata(distributedRun, 'barrier', agentId, undefined),
+                barrier: {
+                    event: 'barrier.ready',
+                    expectedAgentIds: [...distributedRun.targetAgentIds],
+                    timeoutMs: this.distributedRunBarrierTimeoutMs(distributedRun),
+                    scheduledStartEpochMs: distributedRun.manifest.startMode === 'scheduled'
+                        ? distributedRun.manifest.startDeadlineEpochMs
+                        : undefined,
+                },
+            },
+        };
     }
 
     private enqueueLinkedDistributedCommand(
@@ -1116,6 +1292,8 @@ export class RallarBlackBoxControlService {
             createdAtEpochMs: distributedRun.createdAtEpochMs,
             updatedAtEpochMs: distributedRun.updatedAtEpochMs,
             stagedAtEpochMs: distributedRun.stagedAtEpochMs,
+            barrierStartedAtEpochMs: distributedRun.barrierStartedAtEpochMs,
+            barrierCompletedAtEpochMs: distributedRun.barrierCompletedAtEpochMs,
             startedAtEpochMs: distributedRun.startedAtEpochMs,
             cancelledAtEpochMs: distributedRun.cancelledAtEpochMs,
             completedAtEpochMs: distributedRun.completedAtEpochMs,
@@ -1137,6 +1315,7 @@ export class RallarBlackBoxControlService {
     private refreshDistributedRunState(
         distributedRun: StoredDistributedRun,
     ): RallarBlackBoxDistributedRunRollup {
+        this.advanceDistributedRunOrchestration(distributedRun);
         const evaluated = this.evaluateDistributedRun(distributedRun);
         if (evaluated.state !== distributedRun.state) {
             distributedRun.state = evaluated.state;
@@ -1174,17 +1353,23 @@ export class RallarBlackBoxControlService {
         const agent = run?.agents.get(agentId);
         const stageLinks = distributedRun.commandLinks
             .filter(link => link.phase === 'stage' && link.agentId === agentId);
+        const barrierLinks = distributedRun.commandLinks
+            .filter(link => link.phase === 'barrier' && link.agentId === agentId);
         const startLinks = distributedRun.commandLinks
             .filter(link => link.phase === 'start' && link.agentId === agentId);
         const stageResults = stageLinks
             .map(link => run?.results.get(link.commandId))
             .filter((result): result is ControlResultEnvelope => Boolean(result));
+        const barrierResults = barrierLinks
+            .map(link => run?.results.get(link.commandId))
+            .filter((result): result is ControlResultEnvelope => Boolean(result));
         const startResults = startLinks
             .map(link => run?.results.get(link.commandId))
             .filter((result): result is ControlResultEnvelope => Boolean(result));
-        const failedResult = [...stageResults, ...startResults].find(result => !result.ok);
+        const failedResult = [...stageResults, ...barrierResults, ...startResults].find(result => !result.ok);
         const roles = Array.from(this.rolesForAgent(distributedRun.manifest, agentId));
         const ackTimedOut = this.distributedRunAckTimedOut(distributedRun);
+        const barrierTimedOut = this.distributedRunBarrierTimedOut(distributedRun);
 
         if (failedResult) {
             return {
@@ -1221,6 +1406,30 @@ export class RallarBlackBoxControlService {
             };
         }
 
+        if (
+            barrierTimedOut &&
+            startLinks.length === 0 &&
+            barrierLinks.length > 0 &&
+            barrierResults.length < barrierLinks.length
+        ) {
+            return {
+                agentId,
+                clientId: agent?.identity?.clientId,
+                sessionId: agent?.identity?.sessionId,
+                roles,
+                state: 'timed-out',
+                ok: false,
+                error: {
+                    code: 'RALLAR_BB_DISTRIBUTED_BARRIER_TIMEOUT',
+                    message: `Agent ${agentId} did not report barrier.ready before barrier timeout.`,
+                    details: {
+                        barrierTimeoutMs: this.distributedRunBarrierTimeoutMs(distributedRun),
+                        barrierStartedAtEpochMs: distributedRun.barrierStartedAtEpochMs,
+                    },
+                },
+            };
+        }
+
         if (startLinks.length > 0) {
             if (startResults.length === startLinks.length) {
                 return {
@@ -1240,6 +1449,42 @@ export class RallarBlackBoxControlService {
                 sessionId: agent?.identity?.sessionId,
                 roles,
                 state: 'running',
+            };
+        }
+
+        if (barrierLinks.length > 0) {
+            if (barrierResults.length === barrierLinks.length) {
+                return {
+                    agentId,
+                    clientId: agent?.identity?.clientId,
+                    sessionId: agent?.identity?.sessionId,
+                    roles,
+                    state: 'ready',
+                    ok: true,
+                    acknowledgedAtEpochMs: this.lastEndedAt([...stageResults, ...barrierResults]),
+                };
+            }
+            if (agent && !agent.connected) {
+                return {
+                    agentId,
+                    clientId: agent.identity?.clientId,
+                    sessionId: agent.identity?.sessionId,
+                    roles,
+                    state: 'disconnected',
+                    ok: false,
+                    error: {
+                        code: 'RALLAR_BB_DISTRIBUTED_BARRIER_DISCONNECTED',
+                        message: `Agent ${agentId} disconnected while waiting at the distributed barrier.`,
+                    },
+                };
+            }
+            return {
+                agentId,
+                clientId: agent?.identity?.clientId,
+                sessionId: agent?.identity?.sessionId,
+                roles,
+                state: 'acknowledged',
+                acknowledgedAtEpochMs: this.lastEndedAt(stageResults),
             };
         }
 
@@ -1279,6 +1524,12 @@ export class RallarBlackBoxControlService {
             distributedRun.stagedAtEpochMs !== undefined &&
             distributedRun.manifest.ackTimeoutMs !== undefined &&
             this.now() > distributedRun.stagedAtEpochMs + distributedRun.manifest.ackTimeoutMs;
+    }
+
+    private distributedRunBarrierTimedOut(distributedRun: StoredDistributedRun): boolean {
+        return (distributedRun.state === 'waiting-for-barrier' || distributedRun.state === 'timed-out') &&
+            distributedRun.barrierStartedAtEpochMs !== undefined &&
+            this.now() > distributedRun.barrierStartedAtEpochMs + this.distributedRunBarrierTimeoutMs(distributedRun);
     }
 
     private distributedRecipeResult(

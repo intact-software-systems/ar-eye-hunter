@@ -125,7 +125,7 @@ export type ControlRunArtifactBundle = Readonly<{
     files: Readonly<Record<ControlRunArtifactFileName, string>>;
 }>;
 
-export type ControlDistributedRunCommandPhase = 'stage' | 'start' | 'cancel';
+export type ControlDistributedRunCommandPhase = 'stage' | 'barrier' | 'start' | 'cancel';
 
 export type ControlDistributedRunCommandLink = Readonly<{
     phase: ControlDistributedRunCommandPhase;
@@ -144,6 +144,8 @@ export type ControlDistributedRunSnapshot = Readonly<{
     createdAtEpochMs: number;
     updatedAtEpochMs: number;
     stagedAtEpochMs?: number;
+    barrierStartedAtEpochMs?: number;
+    barrierCompletedAtEpochMs?: number;
     startedAtEpochMs?: number;
     cancelledAtEpochMs?: number;
     completedAtEpochMs?: number;

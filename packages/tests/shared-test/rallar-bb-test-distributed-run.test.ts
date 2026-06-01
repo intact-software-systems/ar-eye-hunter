@@ -82,6 +82,7 @@ describe('rallar-bb-test distributed run contract', () => {
             'resolving-targets',
             'staging',
             'waiting-for-ack',
+            'waiting-for-barrier',
             'ready',
             'running',
             'passed',
@@ -123,6 +124,10 @@ describe('rallar-bb-test distributed run contract', () => {
                 agentIds: [],
             },
             ackTimeoutMs: 0,
+            barrier: {
+                enabled: true,
+                timeoutMs: 0,
+            },
         });
 
         const result = validateDistributedRunManifestContract(manifest);
@@ -134,6 +139,7 @@ describe('rallar-bb-test distributed run contract', () => {
                 '$.targetPolicy.expectedParticipantCount',
                 '$.targetPolicy.agentIds',
                 '$.ackTimeoutMs',
+                '$.barrier.timeoutMs',
             ]));
         }
     });
@@ -433,6 +439,14 @@ describe('rallar-bb-test distributed run contract', () => {
         expect(rollupDistributedRunResult({
             participants: [{ agentId: 'alice-agent', state: 'timed-out' }],
         }).state).toBe('timed-out');
+
+        expect(rollupDistributedRunResult({
+            stateHint: 'waiting-for-barrier',
+            participants: [
+                { agentId: 'alice-agent', state: 'acknowledged' },
+                { agentId: 'bob-agent', state: 'acknowledged' },
+            ],
+        }).state).toBe('waiting-for-barrier');
 
         expect(rollupDistributedRunResult({
             stateHint: 'cancelled',

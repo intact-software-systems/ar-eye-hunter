@@ -120,6 +120,46 @@ describe('rallar-black-box control client', () => {
         expect(valid.ok).toBe(true);
         expect(valid.ok ? valid.envelope.commandId : '').toBe('configure-1');
 
+        const loop = parseControlServerMessage(
+            JSON.stringify(commandEnvelope('loop-1', {
+                kind: 'loop',
+                commandId: 'loop-1',
+                count: 2,
+                commands: [{ kind: 'health', commandId: 'loop-health' }],
+            })),
+            { runId: 'run-1', agentId: 'agent-1' },
+        );
+        expect(loop.ok).toBe(true);
+
+        const wait = parseControlServerMessage(
+            JSON.stringify(commandEnvelope('wait-1', {
+                kind: 'wait',
+                commandId: 'wait-1',
+                timeoutMs: 500,
+                match: {
+                    kind: 'message',
+                    topic: 'rallar.bb.ws.message',
+                    transport: 'ws',
+                    payloadPath: 'data.topic',
+                    contains: 'chat',
+                },
+            })),
+            { runId: 'run-1', agentId: 'agent-1' },
+        );
+        expect(wait.ok).toBe(true);
+
+        const assertCommand = parseControlServerMessage(
+            JSON.stringify(commandEnvelope('assert-1', {
+                kind: 'assert',
+                commandId: 'assert-1',
+                source: 'state.messages.length',
+                operator: 'gte',
+                expected: 1,
+            })),
+            { runId: 'run-1', agentId: 'agent-1' },
+        );
+        expect(assertCommand.ok).toBe(true);
+
         const mismatchedRun = parseControlServerMessage(
             JSON.stringify({
                 ...commandEnvelope('configure-1', configureCommand()),

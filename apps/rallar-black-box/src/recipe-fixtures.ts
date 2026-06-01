@@ -39,18 +39,6 @@ export function normalizeRallarBlackBoxRtcRealtimeDurationSeconds(value: unknown
     );
 }
 
-function rtcRealtimePositionFrame(frame: number): Readonly<Record<string, number>> {
-    const elapsedSeconds = frame / RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ;
-    const radius = 12;
-    return {
-        x: Number((Math.cos(elapsedSeconds) * radius).toFixed(3)),
-        y: 0,
-        z: Number((Math.sin(elapsedSeconds) * radius).toFixed(3)),
-        headingDeg: Number(((elapsedSeconds * 90) % 360).toFixed(1)),
-        velocityMps: 4,
-    };
-}
-
 export function createRallarBlackBoxRtcRealtimeRecipe(
     options: RallarBlackBoxRtcRealtimeRecipeOptions = {},
 ): RallarBlackBoxTestRecipe {
@@ -67,9 +55,9 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
         workspaceId: group.workspaceId,
         groupId: group.groupId,
     };
-    const sendCommands: RallarBlackBoxTestCommand[] = Array.from({ length: frameCount }, (_entry, index) => ({
+    const sendCommand: RallarBlackBoxTestCommand = {
         kind: 'rtc.send',
-        commandId: `rtc-realtime-position-${String(index + 1).padStart(4, '0')}`,
+        commandId: 'rtc-realtime-position',
         connection,
         transport: 'realtime',
         applicationId: group.applicationId,
@@ -77,12 +65,11 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
         roomRef,
         timeoutMs: 3_000,
         metadata: {
-            localDelayMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
             realtime: {
                 rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
                 intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
                 durationSeconds,
-                frame: index + 1,
+                frame: '{loop.iteration}',
                 totalFrames: frameCount,
             },
         },
@@ -94,16 +81,23 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
                 topic: 'room.black-box.rtc-realtime.position',
                 typeId: 'room.black-box.rtc-realtime.position',
                 actor: '{auth.clientId}',
-                seq: index,
+                seq: '{loop.index}',
                 rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
                 intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
                 durationSeconds,
                 totalFrames: frameCount,
-                tMs: index * RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
-                position: rtcRealtimePositionFrame(index),
+                tMs: '{loop.elapsedMs}',
+                position: {
+                    frame: '{loop.iteration}',
+                    x: '{loop.index}',
+                    y: 0,
+                    z: '{loop.index}',
+                    headingDeg: '{loop.index}',
+                    velocityMps: 4,
+                },
             },
         },
-    }));
+    };
 
     return {
         recipeId: RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
@@ -138,7 +132,23 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
                     },
                 },
             },
-            ...sendCommands,
+            {
+                kind: 'loop',
+                commandId: 'rtc-realtime-position-loop',
+                count: frameCount,
+                intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+                maxCommands: frameCount,
+                continueOnFailure: false,
+                metadata: {
+                    realtime: {
+                        rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
+                        intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+                        durationSeconds,
+                        frameCount,
+                    },
+                },
+                commands: [sendCommand],
+            },
             {
                 kind: 'stats',
                 commandId: 'rtc-realtime-stats',
@@ -256,6 +266,84 @@ export const RALLAR_BLACK_BOX_RECIPE_FIXTURES: readonly RallarBlackBoxRecipeFixt
         label: 'RTC Realtime',
         description: 'Sends game-style position updates over RTC at 20 Hz for a configurable duration.',
         recipe: createRallarBlackBoxRtcRealtimeRecipe(),
+    },
+    {
+        fixtureId: 'composite-evidence',
+        label: 'Composite Evidence',
+        description: 'Runs loop, parallel, wait, and assert commands against local browser-agent evidence.',
+        recipe: {
+            recipeId: 'composite-evidence-recipe',
+            name: 'Composite evidence recipe',
+            description: 'Validates composite command authoring without requiring live Rallar services.',
+            continueOnFailure: false,
+            metadata: {
+                profile: 'composite',
+                primitives: ['loop', 'parallel', 'wait', 'assert'],
+            },
+            commands: [
+                {
+                    kind: 'loop',
+                    commandId: 'composite-health-loop',
+                    count: 2,
+                    intervalMs: 1,
+                    maxCommands: 2,
+                    commands: [
+                        {
+                            kind: 'health',
+                            commandId: 'loop-health',
+                            label: 'Loop health',
+                        },
+                    ],
+                },
+                {
+                    kind: 'parallel',
+                    commandId: 'parallel-evidence',
+                    maxConcurrency: 2,
+                    groups: [
+                        {
+                            groupId: 'left-health',
+                            commands: [
+                                {
+                                    kind: 'health',
+                                    commandId: 'parallel-left-health',
+                                },
+                            ],
+                        },
+                        {
+                            groupId: 'right-stats',
+                            commands: [
+                                {
+                                    kind: 'stats',
+                                    commandId: 'parallel-right-stats',
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    kind: 'wait',
+                    commandId: 'wait-for-parallel-result',
+                    timeoutMs: 1_000,
+                    match: {
+                        kind: 'result',
+                        commandId: 'parallel-evidence',
+                        payloadPath: 'ok',
+                        equals: true,
+                    },
+                },
+                {
+                    kind: 'assert',
+                    commandId: 'assert-wait-succeeded',
+                    source: 'lastResult.ok',
+                    operator: 'equals',
+                    expected: true,
+                },
+                {
+                    kind: 'stats',
+                    commandId: 'composite-evidence-stats',
+                },
+            ],
+        },
     },
     {
         fixtureId: 'expected-failure',

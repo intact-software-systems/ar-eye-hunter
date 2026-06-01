@@ -23,6 +23,7 @@ import type {
     RallarBlackBoxDistributedRunManifest,
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/types.ts';
+import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '../../../apps/rallar-black-box/src/recipe-fixtures.ts';
 
 type ProviderUnderTest = 'simulated' | 'browser-rallar';
 type AgentPrefix = 'A' | 'B' | 'C';
@@ -695,6 +696,21 @@ function healthRecipe(recipeId: string): RallarBlackBoxTestRecipe {
     };
 }
 
+function compositeEvidenceRecipe(recipeId: string): RallarBlackBoxTestRecipe {
+    const fixture = RALLAR_BLACK_BOX_RECIPE_FIXTURES.find(entry =>
+        entry.fixtureId === 'composite-evidence'
+    );
+    if (!fixture) {
+        return healthRecipe(recipeId);
+    }
+
+    return {
+        ...fixture.recipe,
+        recipeId,
+        name: recipeId,
+    };
+}
+
 function distributedManifest(input: Readonly<{
     distributedRunId: string;
     controlRunId: string;
@@ -989,7 +1005,7 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
             await configureAgentsForDistributedGroup(request, runId, handles, 'simulated', group, suffix);
             await waitForAgentsInGroup(request, runId, handles.map(handle => handle.agentId), group);
 
-            const recipe = healthRecipe(`ack-all-${suffix}`);
+            const recipe = compositeEvidenceRecipe(`composite-ack-all-${suffix}`);
             const manifest = distributedManifest({
                 distributedRunId: `dist-ack-${suffix}`,
                 controlRunId: runId,

@@ -1,11 +1,16 @@
 import type {
+    RallarBlackBoxDistributedBarrierPolicy,
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRoleAssignment,
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedRunRecipeSelection,
     RallarBlackBoxDistributedTargetPolicy,
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestCommandKind,
+    RallarBlackBoxTestRecipe,
+} from '@shared-test/rallar-bb-test/types.ts';
 import type {
     ControlAgentSnapshot,
     ControlDistributedRunArtifactBundle,
@@ -35,6 +40,13 @@ export type DistributedRecipeCatalogItem = Readonly<{
     prerequisites: readonly string[];
     live: boolean;
     source: 'app-local';
+}>;
+
+export type DistributedRecipeCommandPreview = Readonly<{
+    manifestCommandCount: number;
+    effectiveCommandCount: number;
+    effectiveFrameCount?: number;
+    label: string;
 }>;
 
 export type DistributedRecipeTargetStatus =
@@ -69,6 +81,7 @@ export type BuildDistributedRunManifestInput = Readonly<{
     targetPolicyMode: DistributedRecipeTargetPolicyMode;
     rolePattern: DistributedRecipeRolePattern;
     ackTimeoutMs: number;
+    barrier?: RallarBlackBoxDistributedBarrierPolicy;
     startMode: 'manual' | 'auto-after-ready' | 'scheduled';
     startDeadlineEpochMs?: number;
     expectedParticipantCount?: number;
@@ -101,8 +114,10 @@ export type DistributedRunAgentProgressRow = Readonly<{
     agentId: string;
     role?: string;
     readiness: DistributedRunProgressStatus;
+    barrier: DistributedRunProgressStatus;
     execution: DistributedRunProgressStatus;
     stageCommandCount: number;
+    barrierCommandCount: number;
     startCommandCount: number;
     completedCommandCount: number;
     failedCommandCount: number;
@@ -185,6 +200,7 @@ export type DistributedRunMonitor = Readonly<{
     commandCounts: Readonly<{
         total: number;
         stage: number;
+        barrier: number;
         start: number;
         cancel: number;
         completed: number;
@@ -301,6 +317,121 @@ export function defaultDistributedRecipeTargetIds(
         .map(row => row.agentId);
 }
 
+export function distributedRecipeCommandPreview(
+    recipe: RallarBlackBoxTestRecipe,
+): DistributedRecipeCommandPreview {
+    const manifestCommandCount = recipe.commands.length;
+    const effectiveCommandCount = recipe.commands.reduce(
+        (sum, command) => sum + effectiveCommandCountForCommand(command),
+        0,
+    );
+    const effectiveFrameCount = firstPositiveInteger(
+        asRecord(asRecord(recipe.metadata).realtime).frameCount,
+        asRecord(recipe.metadata).frameCount,
+        ...recipe.commands.map(effectiveFrameCountForCommand),
+    );
+    const labelParts = [
+        `${manifestCommandCount} manifest command${manifestCommandCount === 1 ? '' : 's'}`,
+    ];
+    if (effectiveCommandCount !== manifestCommandCount) {
+        labelParts.push(`${effectiveCommandCount} effective operation${effectiveCommandCount === 1 ? '' : 's'}`);
+    }
+    if (effectiveFrameCount !== undefined) {
+        labelParts.push(`${effectiveFrameCount} frames`);
+    }
+
+    return {
+        manifestCommandCount,
+        effectiveCommandCount,
+        effectiveFrameCount,
+        label: labelParts.join(' - '),
+    };
+}
+
+export function distributedRecipeCommandKinds(
+    recipe: RallarBlackBoxTestRecipe,
+): readonly RallarBlackBoxTestCommandKind[] {
+    return uniqueValues(recipe.commands.flatMap(commandKindsForCommand));
+}
+
+function commandKindsForCommand(command: RallarBlackBoxTestCommand): readonly RallarBlackBoxTestCommandKind[] {
+    const nested = (() => {
+        switch (command.kind) {
+            case 'loop':
+                return command.commands.flatMap(commandKindsForCommand);
+            case 'parallel':
+                return command.groups.flatMap(group => group.commands.flatMap(commandKindsForCommand));
+            case 'recipe.load':
+            case 'recipe.run':
+                return command.recipe?.commands.flatMap(commandKindsForCommand) ?? [];
+            default:
+                return [];
+        }
+    })();
+
+    return uniqueValues([command.kind, ...nested]);
+}
+
+function effectiveCommandCountForCommand(command: RallarBlackBoxTestCommand): number {
+    if (command.kind === 'loop') {
+        const childCommandCount = command.commands.reduce(
+            (sum, childCommand) => sum + effectiveCommandCountForCommand(childCommand),
+            0,
+        );
+        return childCommandCount * positiveIntegerValue(command.count, 1);
+    }
+
+    if (command.kind === 'parallel') {
+        return command.groups.reduce(
+            (sum, group) => sum + group.commands.reduce(
+                (groupSum, childCommand) => groupSum + effectiveCommandCountForCommand(childCommand),
+                0,
+            ),
+            0,
+        );
+    }
+
+    return 1;
+}
+
+function effectiveFrameCountForCommand(command: RallarBlackBoxTestCommand): number | undefined {
+    const metadata = asRecord(command.metadata);
+    const realtime = asRecord(metadata.realtime);
+    const frameCount = firstPositiveInteger(realtime.frameCount, metadata.frameCount);
+    if (frameCount !== undefined) {
+        return frameCount;
+    }
+
+    if (command.kind === 'loop') {
+        const childFrameCount = firstPositiveInteger(...command.commands.map(effectiveFrameCountForCommand));
+        return childFrameCount;
+    }
+
+    return undefined;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : {};
+}
+
+function positiveIntegerValue(value: unknown, fallback?: number): number {
+    return typeof value === 'number' && Number.isInteger(value) && value > 0
+        ? value
+        : fallback ?? 1;
+}
+
+function firstPositiveInteger(...values: readonly unknown[]): number | undefined {
+    return values.find((value): value is number =>
+        typeof value === 'number' && Number.isInteger(value) && value > 0
+    );
+}
+
+function uniqueValues<T extends string>(values: readonly T[]): readonly T[] {
+    return [...new Set(values)].sort();
+}
+
 export function buildDistributedRunManifest(
     input: BuildDistributedRunManifestInput,
 ): RallarBlackBoxDistributedRunManifest {
@@ -330,6 +461,7 @@ export function buildDistributedRunManifest(
         targetPolicy,
         roleAssignments,
         ackTimeoutMs: input.ackTimeoutMs,
+        barrier: input.barrier,
         startMode: input.startMode,
         startDeadlineEpochMs: input.startMode === 'scheduled'
             ? input.startDeadlineEpochMs
@@ -352,7 +484,7 @@ export function distributedRecipeStateTone(state: string): string {
     if (state === 'passed' || state === 'ready') {
         return 'good';
     }
-    if (state === 'running' || state === 'waiting-for-ack' || state === 'staging') {
+    if (state === 'running' || state === 'waiting-for-ack' || state === 'waiting-for-barrier' || state === 'staging') {
         return 'active';
     }
     if (state === 'failed' || state === 'timed-out') {
@@ -714,6 +846,7 @@ function distributedRunCommandCounts(
     return {
         total: links.length,
         stage: links.filter(link => link.phase === 'stage').length,
+        barrier: links.filter(link => link.phase === 'barrier').length,
         start: links.filter(link => link.phase === 'start').length,
         cancel: links.filter(link => link.phase === 'cancel').length,
         completed,
@@ -818,6 +951,20 @@ function distributedRunTimeline(input: Readonly<{
         kind: 'lifecycle',
         label: 'staged',
         tone: 'active',
+    });
+    addTimeline(items, {
+        id: 'barrier-started',
+        atEpochMs: input.distributedRun.barrierStartedAtEpochMs,
+        kind: 'lifecycle',
+        label: 'barrier started',
+        tone: 'active',
+    });
+    addTimeline(items, {
+        id: 'barrier-completed',
+        atEpochMs: input.distributedRun.barrierCompletedAtEpochMs,
+        kind: 'lifecycle',
+        label: 'barrier ready',
+        tone: 'good',
     });
     addTimeline(items, {
         id: 'started',
@@ -947,6 +1094,7 @@ function distributedRunAgentProgress(input: Readonly<{
     return [...agentIds].sort().map(agentId => {
         const links = input.distributedRun.commandLinks.filter(link => link.agentId === agentId);
         const stageLinks = links.filter(link => link.phase === 'stage');
+        const barrierLinks = links.filter(link => link.phase === 'barrier');
         const startLinks = links.filter(link => link.phase === 'start');
         const linkedResults = links
             .map(link => input.resultsByCommandId.get(link.commandId))
@@ -967,8 +1115,10 @@ function distributedRunAgentProgress(input: Readonly<{
             agentId,
             role: agentRole(input.distributedRun, agentId),
             readiness: linkProgressStatus(stageLinks, input.commands, input.resultsByCommandId, 'ready'),
+            barrier: linkProgressStatus(barrierLinks, input.commands, input.resultsByCommandId, 'ready'),
             execution: linkProgressStatus(startLinks, input.commands, input.resultsByCommandId, 'passed'),
             stageCommandCount: stageLinks.length,
+            barrierCommandCount: barrierLinks.length,
             startCommandCount: startLinks.length,
             completedCommandCount: links.filter(link =>
                 input.resultsByCommandId.has(link.commandId) ||

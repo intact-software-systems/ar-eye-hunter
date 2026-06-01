@@ -102,7 +102,7 @@ export const RALLAR_COMPANION_COVERAGE_SURFACES: readonly RallarCompanionCoverag
             'packages/tests/shared-test/rallar-provider-parity.test.ts',
             'packages/tests/shared-test/rallar-remote-browser-provider.test.ts',
         ],
-        runnerBoundary: 'Bridge commands stay narrow: configure, recipe, HTTP, WS, RTC, health, stats, close, and reset.',
+        runnerBoundary: 'Bridge commands stay narrow: configure, recipe, composite loop/parallel orchestration, wait-for-evidence, assert-evidence, HTTP, WS, RTC, health, stats, close, and reset.',
     },
     {
         surfaceId: 'black-box-network-recipes',

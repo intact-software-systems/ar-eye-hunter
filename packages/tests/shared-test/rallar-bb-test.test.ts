@@ -4,7 +4,11 @@ import {
     createRallarBlackBoxRtcProvider,
     createRallarBlackBoxTestRuntime,
     type RallarBlackBoxTestCommand,
+    type RallarBlackBoxTestAssertResultValue,
+    type RallarBlackBoxTestLoopResultValue,
+    type RallarBlackBoxTestParallelResultValue,
     type RallarBlackBoxTestRecipe,
+    type RallarBlackBoxTestWaitResultValue,
     redactRallarBlackBoxValue,
     selectRallarBlackBoxActiveCommand,
     selectRallarBlackBoxCommandHistory,
@@ -25,6 +29,10 @@ function createDeterministicRuntime() {
         now: () => now++,
         idFactory: (prefix) => `${prefix}-${sequence++}`,
     });
+}
+
+function sleepMs(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 describe('rallar-bb-test', () => {
@@ -271,6 +279,1006 @@ describe('rallar-bb-test', () => {
         expect(state.status).toBe('failed');
         expect(selectRallarBlackBoxFirstFailure(state)?.commandId).toBe('load-invalid');
         expect(result.error?.message).toBe('Recipe requires at least one command.');
+    });
+
+    it('waits against already-recorded runtime events with payload path equals and exists matches', async () => {
+        const runtime = createDeterministicRuntime();
+        runtime.recordEvent({
+            kind: 'message',
+            topic: 'rallar.browser.realtime.message',
+            connection: 'roomRtc',
+            transport: 'realtime',
+            severity: 'info',
+            payload: {
+                data: {
+                    topic: 'room.position',
+                    x: 10,
+                },
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'wait',
+            commandId: 'wait-position-now',
+            timeoutMs: 100,
+            match: {
+                kind: 'message',
+                topic: 'rallar.browser.realtime.message',
+                connection: 'roomRtc',
+                transport: 'realtime',
+                payloadPath: 'data.topic',
+                equals: 'room.position',
+                exists: true,
+            },
+        });
+        const value = result.value as RallarBlackBoxTestWaitResultValue;
+
+        expect(result.ok).toBe(true);
+        expect(value.matched).toBe(true);
+        expect(value.event?.topic).toBe('rallar.browser.realtime.message');
+        expect(value.event?.payload).toEqual({
+            data: {
+                topic: 'room.position',
+                x: 10,
+            },
+        });
+    });
+
+    it('waits for future runtime events with payload contains matches', async () => {
+        const runtime = createRallarBlackBoxTestRuntime();
+        const wait = runtime.execute({
+            kind: 'wait',
+            commandId: 'wait-position-future',
+            timeoutMs: 200,
+            match: {
+                kind: 'message',
+                topic: 'rallar.browser.realtime.message',
+                payloadPath: 'data.text',
+                contains: 'future-position',
+            },
+        });
+
+        await sleepMs(10);
+        runtime.recordEvent({
+            kind: 'message',
+            topic: 'rallar.browser.realtime.message',
+            transport: 'realtime',
+            payload: {
+                data: {
+                    text: 'hello future-position payload',
+                },
+            },
+        });
+        const result = await wait;
+        const value = result.value as RallarBlackBoxTestWaitResultValue;
+
+        expect(result.ok).toBe(true);
+        expect(value.matched).toBe(true);
+        expect(value.event?.payload).toEqual({
+            data: {
+                text: 'hello future-position payload',
+            },
+        });
+    });
+
+    it('fails wait commands when the requested evidence times out', async () => {
+        const runtime = createRallarBlackBoxTestRuntime();
+
+        const result = await runtime.execute({
+            kind: 'wait',
+            commandId: 'wait-timeout',
+            timeoutMs: 5,
+            match: {
+                kind: 'message',
+                topic: 'missing-message',
+            },
+        });
+        const value = result.value as RallarBlackBoxTestWaitResultValue;
+
+        expect(result.status).toBe('failed');
+        expect(result.error?.code).toBe('RALLAR_BLACK_BOX_WAIT_TIMEOUT');
+        expect(value.matched).toBe(false);
+        expect(value.timedOut).toBe(true);
+    });
+
+    it('cancels pending wait commands when recipe cancellation is requested', async () => {
+        const runtime = createRallarBlackBoxTestRuntime();
+        const wait = runtime.execute({
+            kind: 'wait',
+            commandId: 'wait-cancelled',
+            timeoutMs: 200,
+            match: {
+                kind: 'message',
+                topic: 'never-delivered',
+            },
+        });
+
+        await sleepMs(10);
+        await runtime.execute({
+            kind: 'recipe.cancel',
+            commandId: 'cancel-wait',
+            reason: 'operator requested stop',
+        });
+        const result = await wait;
+        const value = result.value as RallarBlackBoxTestWaitResultValue;
+
+        expect(result.status).toBe('cancelled');
+        expect(value.cancelled).toBe(true);
+        expect(value.matched).toBe(false);
+    });
+
+    it('redacts matched wait events in command results', async () => {
+        const runtime = createDeterministicRuntime();
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-wait-redaction',
+            config: {
+                redaction: {
+                    secretValues: ['event-secret'],
+                },
+            },
+        });
+        runtime.recordEvent({
+            kind: 'message',
+            topic: 'secure-message',
+            payload: {
+                data: {
+                    topic: 'secure',
+                    token: 'event-secret',
+                },
+            },
+        });
+        const result = await runtime.execute({
+            kind: 'wait',
+            commandId: 'wait-secure-message',
+            match: {
+                kind: 'message',
+                topic: 'secure-message',
+                payloadPath: 'data.topic',
+                equals: 'secure',
+            },
+        });
+        const value = result.value as RallarBlackBoxTestWaitResultValue;
+
+        expect(result.ok).toBe(true);
+        expect(value.event?.payload).toEqual({
+            data: {
+                topic: 'secure',
+                token: '<redacted>',
+            },
+        });
+    });
+
+    it('passes assert commands against runtime state message counts', async () => {
+        const runtime = createDeterministicRuntime();
+        runtime.recordEvent({
+            kind: 'message',
+            topic: 'rallar.browser.realtime.message',
+            payload: {
+                data: {
+                    topic: 'room.position',
+                },
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'assert',
+            commandId: 'assert-message-count',
+            source: 'state.messages.length',
+            operator: 'gte',
+            expected: 1,
+        });
+        const value = result.value as RallarBlackBoxTestAssertResultValue;
+
+        expect(result.ok).toBe(true);
+        expect(value).toMatchObject({
+            commandId: 'assert-message-count',
+            source: 'state.messages.length',
+            operator: 'gte',
+            expected: 1,
+            actual: 1,
+            exists: true,
+            passed: true,
+        });
+    });
+
+    it('fails assert commands with redacted actual and expected details', async () => {
+        const runtime = createDeterministicRuntime();
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-assert-redaction',
+            config: {
+                redaction: {
+                    secretValues: ['assert-secret'],
+                },
+            },
+        });
+        runtime.recordEvent({
+            kind: 'message',
+            topic: 'secure-message',
+            payload: {
+                data: {
+                    text: 'assert-secret',
+                },
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'assert',
+            commandId: 'assert-secret-message',
+            source: 'messages.0.payload.data.text',
+            operator: 'equals',
+            expected: 'different assert-secret',
+        });
+        const value = result.value as RallarBlackBoxTestAssertResultValue;
+
+        expect(result.status).toBe('failed');
+        expect(result.error?.code).toBe('RALLAR_BLACK_BOX_ASSERT_FAILED');
+        expect(value).toMatchObject({
+            actual: '<redacted>',
+            expected: '<redacted>',
+            exists: true,
+            passed: false,
+        });
+        expect(result.error?.details).toMatchObject({
+            actual: '<redacted>',
+            expected: '<redacted>',
+        });
+    });
+
+    it('asserts missing paths with the exists operator', async () => {
+        const runtime = createDeterministicRuntime();
+
+        const result = await runtime.execute({
+            kind: 'assert',
+            commandId: 'assert-missing-path',
+            source: 'config.rallar.missingToken',
+            operator: 'exists',
+            expected: false,
+        });
+        const value = result.value as RallarBlackBoxTestAssertResultValue;
+
+        expect(result.ok).toBe(true);
+        expect(value).toMatchObject({
+            exists: false,
+            passed: true,
+        });
+    });
+
+    it('fails non-exists assertions for missing paths', async () => {
+        const runtime = createDeterministicRuntime();
+
+        const result = await runtime.execute({
+            kind: 'assert',
+            commandId: 'assert-missing-equals',
+            source: 'state.messages.0.payload.data.topic',
+            operator: 'equals',
+            expected: 'room.position',
+        });
+        const value = result.value as RallarBlackBoxTestAssertResultValue;
+
+        expect(result.status).toBe('failed');
+        expect(result.error?.code).toBe('RALLAR_BLACK_BOX_ASSERT_FAILED');
+        expect(value.exists).toBe(false);
+        expect(value.passed).toBe(false);
+    });
+
+    it('asserts nested values and last command results', async () => {
+        const runtime = createDeterministicRuntime();
+
+        runtime.recordEvent({
+            kind: 'message',
+            topic: 'nested-message',
+            payload: {
+                data: {
+                    position: {
+                        x: 4,
+                    },
+                    tags: ['position', 'live'],
+                },
+            },
+        });
+        const nestedResult = await runtime.execute({
+            kind: 'assert',
+            commandId: 'assert-nested-position',
+            source: 'recentMessages.0.payload.data.position.x',
+            operator: 'lte',
+            expected: 5,
+        });
+        const lastResult = await runtime.execute({
+            kind: 'assert',
+            commandId: 'assert-last-result',
+            source: 'lastResult.value.actual',
+            operator: 'equals',
+            expected: 4,
+        });
+        const containsResult = await runtime.execute({
+            kind: 'assert',
+            commandId: 'assert-tag-contains',
+            source: 'messages.0.payload.data.tags',
+            operator: 'contains',
+            expected: 'live',
+        });
+
+        expect(nestedResult.ok).toBe(true);
+        expect(lastResult.ok).toBe(true);
+        expect(containsResult.ok).toBe(true);
+    });
+
+    it('runs parallel groups with bounded concurrency and deterministic parent ordering', async () => {
+        let activeCommands = 0;
+        let maxActiveCommands = 0;
+        const completedGroups: string[] = [];
+        const runtime = createRallarBlackBoxTestRuntime({
+            commandExecutor: async (command, context) => {
+                if (command.kind !== 'rtc.send') {
+                    return undefined;
+                }
+
+                const parallel = command.metadata?.parallel as { groupId?: string } | undefined;
+                const groupId = parallel?.groupId ?? 'unknown';
+                activeCommands += 1;
+                maxActiveCommands = Math.max(maxActiveCommands, activeCommands);
+                await sleepMs(groupId === 'left' ? 30 : groupId === 'middle' ? 5 : 10);
+                completedGroups.push(groupId);
+                activeCommands -= 1;
+                return {
+                    status: 'ok',
+                    value: {
+                        groupId,
+                        metadata: command.metadata,
+                    },
+                    nextStatus: context.state().status,
+                };
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'parallel',
+            commandId: 'parallel-room-traffic',
+            maxConcurrency: 2,
+            groups: [
+                {
+                    groupId: 'left',
+                    commands: [{ kind: 'rtc.send', commandId: 'send-shared' }],
+                },
+                {
+                    groupId: 'middle',
+                    commands: [{ kind: 'rtc.send', commandId: 'send-shared' }],
+                },
+                {
+                    groupId: 'right',
+                    commands: [{ kind: 'rtc.send', commandId: 'send-shared' }],
+                },
+            ],
+        });
+        const value = result.value as RallarBlackBoxTestParallelResultValue;
+
+        expect(result.ok).toBe(true);
+        expect(maxActiveCommands).toBe(2);
+        expect(completedGroups).toEqual(['middle', 'right', 'left']);
+        expect(value).toMatchObject({
+            commandId: 'parallel-room-traffic',
+            groupCount: 3,
+            maxConcurrency: 2,
+            passed: 3,
+            failed: 0,
+            cancelled: false,
+        });
+        expect(value.groups.map(group => group.groupId)).toEqual(['left', 'middle', 'right']);
+        expect(value.groups.map(group => group.results[0]?.commandId)).toEqual([
+            'parallel-room-traffic:g1:left:c1:send-shared',
+            'parallel-room-traffic:g2:middle:c1:send-shared',
+            'parallel-room-traffic:g3:right:c1:send-shared',
+        ]);
+        expect(value.groups[0].results[0]?.result.value).toMatchObject({
+            metadata: {
+                parallel: {
+                    commandId: 'parallel-room-traffic',
+                    groupId: 'left',
+                    groupIndex: 0,
+                    commandIndex: 0,
+                    originalCommandId: 'send-shared',
+                },
+            },
+        });
+        expect(selectRallarBlackBoxCommandHistory(runtime.state()).at(-1)?.commandId).toBe('parallel-room-traffic');
+    });
+
+    it('runs later parallel groups after failures when failFast is disabled', async () => {
+        const executedCommandIds: string[] = [];
+        const runtime = createRallarBlackBoxTestRuntime({
+            commandExecutor: (command, context) => {
+                if (command.kind !== 'rtc.send') {
+                    return undefined;
+                }
+
+                executedCommandIds.push(command.commandId ?? '');
+                if (command.commandId?.includes('fail-send')) {
+                    return {
+                        status: 'failed',
+                        error: {
+                            code: 'SEND_FAILED',
+                            message: 'Synthetic send failure.',
+                        },
+                        nextStatus: 'failed',
+                    };
+                }
+
+                return {
+                    status: 'ok',
+                    value: {
+                        sent: true,
+                    },
+                    nextStatus: context.state().status,
+                };
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'parallel',
+            commandId: 'fail-slow-parallel',
+            maxConcurrency: 1,
+            failFast: false,
+            groups: [
+                {
+                    groupId: 'left',
+                    commands: [{ kind: 'rtc.send', commandId: 'fail-send' }],
+                },
+                {
+                    groupId: 'right',
+                    commands: [{ kind: 'rtc.send', commandId: 'ok-send' }],
+                },
+            ],
+        });
+        const value = result.value as RallarBlackBoxTestParallelResultValue;
+
+        expect(result.status).toBe('failed');
+        expect(result.error?.code).toBe('RALLAR_BLACK_BOX_PARALLEL_CHILD_FAILED');
+        expect(value.failed).toBe(1);
+        expect(value.passed).toBe(1);
+        expect(value.groups.map(group => group.commandCount)).toEqual([1, 1]);
+        expect(executedCommandIds).toEqual([
+            'fail-slow-parallel:g1:left:c1:fail-send',
+            'fail-slow-parallel:g2:right:c1:ok-send',
+        ]);
+    });
+
+    it('stops scheduling later parallel groups after failure by default', async () => {
+        const executedCommandIds: string[] = [];
+        const runtime = createRallarBlackBoxTestRuntime({
+            commandExecutor: (command, context) => {
+                if (command.kind !== 'rtc.send') {
+                    return undefined;
+                }
+
+                executedCommandIds.push(command.commandId ?? '');
+                return command.commandId?.includes('fail-send')
+                    ? {
+                        status: 'failed',
+                        error: {
+                            code: 'SEND_FAILED',
+                            message: 'Synthetic send failure.',
+                        },
+                        nextStatus: 'failed',
+                    }
+                    : {
+                        status: 'ok',
+                        value: {
+                            sent: true,
+                        },
+                        nextStatus: context.state().status,
+                    };
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'parallel',
+            commandId: 'fail-fast-parallel',
+            maxConcurrency: 1,
+            groups: [
+                {
+                    groupId: 'left',
+                    commands: [{ kind: 'rtc.send', commandId: 'fail-send' }],
+                },
+                {
+                    groupId: 'right',
+                    commands: [{ kind: 'rtc.send', commandId: 'should-not-run' }],
+                },
+            ],
+        });
+        const value = result.value as RallarBlackBoxTestParallelResultValue;
+
+        expect(result.status).toBe('failed');
+        expect(value.groups.map(group => group.commandCount)).toEqual([1, 0]);
+        expect(executedCommandIds).toEqual([
+            'fail-fast-parallel:g1:left:c1:fail-send',
+        ]);
+    });
+
+    it('continues within parallel groups and reports ok when continueOnFailure is enabled', async () => {
+        const executedCommandIds: string[] = [];
+        const runtime = createRallarBlackBoxTestRuntime({
+            commandExecutor: (command, context) => {
+                if (command.kind !== 'rtc.send') {
+                    return undefined;
+                }
+
+                executedCommandIds.push(command.commandId ?? '');
+                return command.commandId?.includes('fail-send')
+                    ? {
+                        status: 'failed',
+                        error: {
+                            code: 'SEND_FAILED',
+                            message: 'Synthetic send failure.',
+                        },
+                        nextStatus: 'failed',
+                    }
+                    : {
+                        status: 'ok',
+                        value: {
+                            sent: true,
+                        },
+                        nextStatus: context.state().status,
+                    };
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'parallel',
+            commandId: 'continue-parallel',
+            maxConcurrency: 1,
+            continueOnFailure: true,
+            groups: [
+                {
+                    groupId: 'left',
+                    commands: [
+                        { kind: 'rtc.send', commandId: 'fail-send' },
+                        { kind: 'rtc.send', commandId: 'after-failure' },
+                    ],
+                },
+                {
+                    groupId: 'right',
+                    commands: [{ kind: 'rtc.send', commandId: 'right-send' }],
+                },
+            ],
+        });
+        const value = result.value as RallarBlackBoxTestParallelResultValue;
+
+        expect(result.status).toBe('ok');
+        expect(value.passed).toBe(2);
+        expect(value.failed).toBe(1);
+        expect(value.groups.map(group => group.commandCount)).toEqual([2, 1]);
+        expect(executedCommandIds).toEqual([
+            'continue-parallel:g1:left:c1:fail-send',
+            'continue-parallel:g1:left:c2:after-failure',
+            'continue-parallel:g2:right:c1:right-send',
+        ]);
+    });
+
+    it('stops parallel execution when cancellation is requested by a child command', async () => {
+        const runtime = createDeterministicRuntime();
+
+        const result = await runtime.execute({
+            kind: 'parallel',
+            commandId: 'cancel-parallel',
+            maxConcurrency: 1,
+            groups: [
+                {
+                    groupId: 'left',
+                    commands: [
+                        { kind: 'health', commandId: 'before-cancel' },
+                        { kind: 'recipe.cancel', commandId: 'request-cancel', reason: 'operator requested stop' },
+                        { kind: 'health', commandId: 'after-cancel' },
+                    ],
+                },
+                {
+                    groupId: 'right',
+                    commands: [{ kind: 'health', commandId: 'should-not-run' }],
+                },
+            ],
+        });
+        const value = result.value as RallarBlackBoxTestParallelResultValue;
+
+        expect(result.status).toBe('cancelled');
+        expect(value.cancelled).toBe(true);
+        expect(value.groups.map(group => [group.groupId, group.commandCount, group.cancelled])).toEqual([
+            ['left', 2, true],
+            ['right', 0, true],
+        ]);
+        expect(selectRallarBlackBoxCommandHistory(runtime.state()).map(command => command.commandId)).toEqual([
+            'cancel-parallel:g1:left:c1:before-cancel',
+            'cancel-parallel:g1:left:c2:request-cancel',
+            'cancel-parallel',
+        ]);
+    });
+
+    it('stops scheduling parallel groups after the parent timeout is reached', async () => {
+        const executedCommandIds: string[] = [];
+        const runtime = createRallarBlackBoxTestRuntime({
+            commandExecutor: async (command, context) => {
+                if (command.kind !== 'rtc.send') {
+                    return undefined;
+                }
+
+                executedCommandIds.push(command.commandId ?? '');
+                await sleepMs(25);
+                return {
+                    status: 'ok',
+                    value: {
+                        sent: true,
+                    },
+                    nextStatus: context.state().status,
+                };
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'parallel',
+            commandId: 'timeout-parallel',
+            maxConcurrency: 1,
+            timeoutMs: 5,
+            groups: [
+                {
+                    groupId: 'left',
+                    commands: [{ kind: 'rtc.send', commandId: 'slow-send' }],
+                },
+                {
+                    groupId: 'right',
+                    commands: [{ kind: 'rtc.send', commandId: 'should-not-run' }],
+                },
+            ],
+        });
+        const value = result.value as RallarBlackBoxTestParallelResultValue;
+
+        expect(result.status).toBe('failed');
+        expect(result.error?.code).toBe('RALLAR_BLACK_BOX_PARALLEL_TIMEOUT');
+        expect(value.groups.map(group => group.commandCount)).toEqual([1, 0]);
+        expect(executedCommandIds).toEqual([
+            'timeout-parallel:g1:left:c1:slow-send',
+        ]);
+    });
+
+    it('executes loop child commands with loop placeholders and metadata', async () => {
+        const capturedCommands: RallarBlackBoxTestCommand[] = [];
+        const runtime = createRallarBlackBoxTestRuntime({
+            now: (() => {
+                let now = 10_000;
+                return () => now += 5;
+            })(),
+            idFactory: (() => {
+                let sequence = 1;
+                return (prefix: string) => `${prefix}-${sequence++}`;
+            })(),
+            commandExecutor: (command, context) => {
+                if (command.kind !== 'rtc.send') {
+                    return undefined;
+                }
+
+                capturedCommands.push(command);
+                return {
+                    status: 'ok',
+                    value: {
+                        sent: command.send,
+                        metadata: command.metadata,
+                    },
+                    nextStatus: context.state().status,
+                };
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'loop',
+            commandId: 'position-loop',
+            count: 3,
+            commands: [
+                {
+                    kind: 'rtc.send',
+                    commandId: 'position-send',
+                    send: {
+                        data: {
+                            seq: '{loop.index}',
+                            iteration: '{loop.iteration}',
+                            label: 'frame-{loop.index}',
+                            elapsedMs: '{loop.elapsedMs}',
+                            commandIndex: '{loop.commandIndex}',
+                        },
+                    },
+                },
+            ],
+        });
+
+        const value = result.value as RallarBlackBoxTestLoopResultValue;
+        const sentPayloads = capturedCommands.map(command =>
+            ((command as Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send' }>).send as {
+                data: Record<string, unknown>;
+            }).data
+        );
+
+        expect(result.ok).toBe(true);
+        expect(value).toMatchObject({
+            commandId: 'position-loop',
+            iterations: 3,
+            childResultCount: 3,
+            passed: 3,
+            failed: 0,
+            cancelled: false,
+        });
+        expect(capturedCommands.map(command => command.commandId)).toEqual([
+            'position-loop:i1:c1:position-send',
+            'position-loop:i2:c1:position-send',
+            'position-loop:i3:c1:position-send',
+        ]);
+        expect(sentPayloads.map(payload => payload.seq)).toEqual([0, 1, 2]);
+        expect(sentPayloads.map(payload => payload.iteration)).toEqual([1, 2, 3]);
+        expect(sentPayloads.map(payload => payload.label)).toEqual(['frame-0', 'frame-1', 'frame-2']);
+        expect(sentPayloads.map(payload => payload.commandIndex)).toEqual([0, 0, 0]);
+        expect(capturedCommands[0].metadata).toMatchObject({
+            loop: {
+                commandId: 'position-loop',
+                index: 0,
+                iteration: 1,
+                commandIndex: 0,
+                originalCommandId: 'position-send',
+            },
+        });
+        expect(value.results.map(child => ({
+            commandId: child.commandId,
+            originalCommandId: child.originalCommandId,
+            commandIndex: child.commandIndex,
+            iteration: child.iteration,
+            status: child.result.status,
+        }))).toEqual([
+            {
+                commandId: 'position-loop:i1:c1:position-send',
+                originalCommandId: 'position-send',
+                commandIndex: 0,
+                iteration: 1,
+                status: 'ok',
+            },
+            {
+                commandId: 'position-loop:i2:c1:position-send',
+                originalCommandId: 'position-send',
+                commandIndex: 0,
+                iteration: 2,
+                status: 'ok',
+            },
+            {
+                commandId: 'position-loop:i3:c1:position-send',
+                originalCommandId: 'position-send',
+                commandIndex: 0,
+                iteration: 3,
+                status: 'ok',
+            },
+        ]);
+        expect(selectRallarBlackBoxCommandHistory(runtime.state()).map(command => command.commandId)).toEqual([
+            'position-loop:i1:c1:position-send',
+            'position-loop:i2:c1:position-send',
+            'position-loop:i3:c1:position-send',
+            'position-loop',
+        ]);
+    });
+
+    it('stops loop execution on child failure unless continueOnFailure is true', async () => {
+        let sendCount = 0;
+        const runtime = createRallarBlackBoxTestRuntime({
+            commandExecutor: (command, context) => {
+                if (command.kind !== 'rtc.send') {
+                    return undefined;
+                }
+
+                sendCount += 1;
+                if (sendCount === 2) {
+                    return {
+                        status: 'failed',
+                        error: {
+                            code: 'SEND_FAILED',
+                            message: 'Synthetic send failure.',
+                        },
+                        nextStatus: 'failed',
+                    };
+                }
+
+                return {
+                    status: 'ok',
+                    value: {
+                        sendCount,
+                    },
+                    nextStatus: context.state().status,
+                };
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'loop',
+            commandId: 'fail-fast-loop',
+            count: 4,
+            commands: [{ kind: 'rtc.send', commandId: 'send-once' }],
+        });
+        const value = result.value as RallarBlackBoxTestLoopResultValue;
+
+        expect(result.status).toBe('failed');
+        expect(result.error?.code).toBe('RALLAR_BLACK_BOX_LOOP_CHILD_FAILED');
+        expect(value.childResultCount).toBe(2);
+        expect(value.passed).toBe(1);
+        expect(value.failed).toBe(1);
+        expect(sendCount).toBe(2);
+    });
+
+    it('continues loop execution after child failure when continueOnFailure is enabled', async () => {
+        let sendCount = 0;
+        const runtime = createRallarBlackBoxTestRuntime({
+            commandExecutor: (command, context) => {
+                if (command.kind !== 'rtc.send') {
+                    return undefined;
+                }
+
+                sendCount += 1;
+                return sendCount === 2
+                    ? {
+                        status: 'failed',
+                        error: {
+                            code: 'SEND_FAILED',
+                            message: 'Synthetic send failure.',
+                        },
+                        nextStatus: 'failed',
+                    }
+                    : {
+                        status: 'ok',
+                        value: {
+                            sendCount,
+                        },
+                        nextStatus: context.state().status,
+                    };
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'loop',
+            commandId: 'continue-loop',
+            count: 3,
+            continueOnFailure: true,
+            commands: [{ kind: 'rtc.send', commandId: 'send-once' }],
+        });
+        const value = result.value as RallarBlackBoxTestLoopResultValue;
+
+        expect(result.status).toBe('ok');
+        expect(value.childResultCount).toBe(3);
+        expect(value.passed).toBe(2);
+        expect(value.failed).toBe(1);
+        expect(sendCount).toBe(3);
+    });
+
+    it('stops loop execution when cancellation is requested by a child command', async () => {
+        const runtime = createDeterministicRuntime();
+
+        const result = await runtime.execute({
+            kind: 'loop',
+            commandId: 'cancel-loop',
+            count: 2,
+            commands: [
+                { kind: 'health', commandId: 'before-cancel' },
+                { kind: 'recipe.cancel', commandId: 'request-cancel', reason: 'operator requested stop' },
+                { kind: 'health', commandId: 'after-cancel' },
+            ],
+        });
+        const value = result.value as RallarBlackBoxTestLoopResultValue;
+
+        expect(result.status).toBe('cancelled');
+        expect(value.cancelled).toBe(true);
+        expect(value.childResultCount).toBe(2);
+        expect(selectRallarBlackBoxCommandHistory(runtime.state()).map(command => command.commandId)).toEqual([
+            'cancel-loop:i1:c1:before-cancel',
+            'cancel-loop:i1:c2:request-cancel',
+            'cancel-loop',
+        ]);
+    });
+
+    it('waits the configured interval between loop iterations', async () => {
+        const sendCallEpochMs: number[] = [];
+        const runtime = createRallarBlackBoxTestRuntime({
+            commandExecutor: (command, context) => {
+                if (command.kind !== 'rtc.send') {
+                    return undefined;
+                }
+
+                sendCallEpochMs.push(Date.now());
+                return {
+                    status: 'ok',
+                    value: {
+                        sent: true,
+                    },
+                    nextStatus: context.state().status,
+                };
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'loop',
+            commandId: 'timed-loop',
+            count: 2,
+            intervalMs: 25,
+            commands: [{ kind: 'rtc.send', commandId: 'timed-send' }],
+        });
+
+        expect(result.ok).toBe(true);
+        expect(sendCallEpochMs.length).toBe(2);
+        expect(sendCallEpochMs[1] - sendCallEpochMs[0]).toBeGreaterThanOrEqual(20);
+    });
+
+    it('stops duration-based loops at the configured duration boundary', async () => {
+        let now = 0;
+        let sendCount = 0;
+        const runtime = createRallarBlackBoxTestRuntime({
+            now: () => now,
+            commandExecutor: (command, context) => {
+                if (command.kind !== 'rtc.send') {
+                    return undefined;
+                }
+
+                sendCount += 1;
+                now += 10;
+                return {
+                    status: 'ok',
+                    value: {
+                        sendCount,
+                    },
+                    nextStatus: context.state().status,
+                };
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'loop',
+            commandId: 'duration-loop',
+            durationMs: 25,
+            commands: [{ kind: 'rtc.send', commandId: 'duration-send' }],
+        });
+        const value = result.value as RallarBlackBoxTestLoopResultValue;
+
+        expect(result.ok).toBe(true);
+        expect(sendCount).toBe(3);
+        expect(value.iterations).toBe(3);
+        expect(value.childResultCount).toBe(3);
+    });
+
+    it('rejects loops that exceed the configured child command count limit', async () => {
+        const executedCommandIds: string[] = [];
+        const runtime = createRallarBlackBoxTestRuntime({
+            commandExecutor: (command, context) => {
+                if (command.kind !== 'rtc.send') {
+                    return undefined;
+                }
+
+                executedCommandIds.push(command.commandId ?? '');
+                return {
+                    status: 'ok',
+                    value: {
+                        sent: true,
+                    },
+                    nextStatus: context.state().status,
+                };
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'loop',
+            commandId: 'too-large-loop',
+            count: 3,
+            maxCommands: 5,
+            commands: [
+                { kind: 'rtc.send', commandId: 'send-a' },
+                { kind: 'rtc.send', commandId: 'send-b' },
+            ],
+        });
+        const value = result.value as RallarBlackBoxTestLoopResultValue;
+
+        expect(result.status).toBe('failed');
+        expect(result.error?.code).toBe('RALLAR_BLACK_BOX_LOOP_LIMIT_EXCEEDED');
+        expect(value.childResultCount).toBe(0);
+        expect(executedCommandIds).toEqual([]);
     });
 
     it('replays cached command results by commandId without duplicating history', async () => {

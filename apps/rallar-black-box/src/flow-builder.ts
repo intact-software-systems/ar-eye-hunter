@@ -636,6 +636,26 @@ function runnerStepForCommand(
                     delayMs: asRecord(command.metadata).localDelayMs,
                 },
             };
+        case 'wait':
+            return {
+                ...base,
+                type: 'wait',
+                request: {
+                    match: command.match,
+                    timeoutMs: command.timeoutMs,
+                    deadlineEpochMs: command.deadlineEpochMs,
+                },
+            };
+        case 'assert':
+            return {
+                ...base,
+                type: 'assert',
+                request: {
+                    source: command.source,
+                    operator: command.operator,
+                    expected: command.expected,
+                },
+            };
         case 'close':
         case 'reset':
         case 'stats':
@@ -643,6 +663,8 @@ function runnerStepForCommand(
         case 'recipe.load':
         case 'recipe.run':
         case 'recipe.cancel':
+        case 'loop':
+        case 'parallel':
             return {
                 ...base,
                 type: command.kind,

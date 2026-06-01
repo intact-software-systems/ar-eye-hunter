@@ -10,6 +10,11 @@ The SPA `Shared Test` tab also lists these app-local recipes next to selected sh
 2. Load `rallar-server-group-ws-setup.recipe.json` and run it.
 3. Load `rallar-server-rtc-connect-send.recipe.json` and run it.
 
+`composite-evidence.recipe.json` is different: it is a deterministic local
+authoring example for `loop`, `parallel`, `wait`, and `assert`. It can run in
+the Local Workbench with the simulated provider before you switch to live
+browser agents.
+
 The recipes use runtime placeholders resolved from the logged-in browser session:
 
 - `{auth.clientId}`

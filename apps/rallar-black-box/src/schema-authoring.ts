@@ -178,20 +178,40 @@ function commandKindsForValue(
     value: unknown,
 ): readonly RallarBlackBoxTestCommandKind[] {
     if (target === 'command') {
-        return isCommand(value) ? [value.kind] : [];
+        return isCommand(value) ? commandKindsForCommand(value) : [];
     }
     if (target === 'recipe') {
-        return isRecipe(value) ? uniqueValues(value.commands.map(command => command.kind)) : [];
+        return isRecipe(value)
+            ? uniqueValues(value.commands.flatMap(commandKindsForCommand))
+            : [];
     }
     if (target === 'distributed-run-manifest') {
         if (!isDistributedManifest(value)) {
             return [];
         }
         return uniqueValues(value.recipes.flatMap(selection =>
-            selection.recipe?.commands.map(command => command.kind) ?? []
+            selection.recipe?.commands.flatMap(commandKindsForCommand) ?? []
         ));
     }
     return [];
+}
+
+function commandKindsForCommand(command: RallarBlackBoxTestCommand): readonly RallarBlackBoxTestCommandKind[] {
+    const nested = (() => {
+        switch (command.kind) {
+            case 'loop':
+                return command.commands.flatMap(commandKindsForCommand);
+            case 'parallel':
+                return command.groups.flatMap(group => group.commands.flatMap(commandKindsForCommand));
+            case 'recipe.load':
+            case 'recipe.run':
+                return command.recipe?.commands.flatMap(commandKindsForCommand) ?? [];
+            default:
+                return [];
+        }
+    })();
+
+    return uniqueValues([command.kind, ...nested]);
 }
 
 function isCommand(value: unknown): value is RallarBlackBoxTestCommand {

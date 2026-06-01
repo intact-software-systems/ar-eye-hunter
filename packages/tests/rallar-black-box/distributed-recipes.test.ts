@@ -4,12 +4,15 @@ import {
     compareDistributedRuns,
     defaultDistributedRecipeTargetIds,
     deriveDistributedRunMonitor,
+    distributedRecipeCommandKinds,
+    distributedRecipeCommandPreview,
     distributedRecipeStateTone,
     distributedRecipeTargetRows,
     filterDistributedRuns,
     type DistributedRecipeCatalogItem,
 } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import {
+    RALLAR_BLACK_BOX_RECIPE_FIXTURES,
     RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
     createRallarBlackBoxRtcRealtimeRecipe,
@@ -19,6 +22,10 @@ import type {
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
 } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
+import {
+    createRallarBlackBoxTestRuntime,
+    selectRallarBlackBoxCommandHistory,
+} from '../../shared-test/rallar-bb-test/mod.ts';
 
 const runSnapshot: ControlRunSnapshot = {
     runId: 'run-1',
@@ -345,7 +352,7 @@ const distributedArtifactBundle: ControlDistributedRunArtifactBundle = {
 };
 
 describe('distributed recipes helpers', () => {
-    it('builds the configurable RTC realtime recipe at a 20 Hz command cadence', () => {
+    it('builds the configurable RTC realtime recipe with a compact looped 20 Hz command cadence', () => {
         const recipe = createRallarBlackBoxRtcRealtimeRecipe({
             durationSeconds: 2,
             group: {
@@ -354,40 +361,125 @@ describe('distributed recipes helpers', () => {
                 groupId: 'arena-1',
             },
         });
-        const sendCommands = recipe.commands.filter(command => command.kind === 'rtc.send');
-        const firstSend = sendCommands[0] as Extract<typeof recipe.commands[number], { kind: 'rtc.send' }>;
-        const lastSend = sendCommands[sendCommands.length - 1] as Extract<typeof recipe.commands[number], { kind: 'rtc.send' }>;
-        const firstPayload = firstSend.send as {
+        const loopCommand = recipe.commands.find(command => command.kind === 'loop') as
+            | Extract<typeof recipe.commands[number], { kind: 'loop' }>
+            | undefined;
+        const sendCommand = loopCommand?.commands[0] as
+            | Extract<typeof recipe.commands[number], { kind: 'rtc.send' }>
+            | undefined;
+        const firstPayload = sendCommand?.send as {
             roomId?: string;
             roomRef?: Record<string, unknown>;
             data?: Record<string, unknown>;
-        };
+        } | undefined;
+        const preview = distributedRecipeCommandPreview(recipe);
 
         expect(recipe.recipeId).toBe('rtc-realtime');
-        expect(recipe.commands).toHaveLength(2 + (2 * RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ));
-        expect(sendCommands).toHaveLength(40);
-        expect(firstSend.metadata?.localDelayMs).toBe(RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS);
-        expect(firstSend.roomRef).toEqual({
+        expect(recipe.commands).toHaveLength(3);
+        expect(loopCommand).toMatchObject({
+            kind: 'loop',
+            commandId: 'rtc-realtime-position-loop',
+            count: 40,
+            intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+            maxCommands: 40,
+        });
+        expect(loopCommand?.commands).toHaveLength(1);
+        expect(sendCommand?.commandId).toBe('rtc-realtime-position');
+        expect(sendCommand?.metadata).toMatchObject({
+            realtime: {
+                rateHz: 20,
+                durationSeconds: 2,
+                frame: '{loop.iteration}',
+                totalFrames: 40,
+            },
+        });
+        expect(sendCommand?.roomRef).toEqual({
             applicationId: 'game-app',
             workspaceId: 'live',
             groupId: 'arena-1',
         });
-        expect(firstPayload.roomId).toBe('arena-1');
-        expect(firstPayload.data).toMatchObject({
+        expect(firstPayload?.roomId).toBe('arena-1');
+        expect(firstPayload?.data).toMatchObject({
             topic: 'room.black-box.rtc-realtime.position',
             actor: '{auth.clientId}',
-            seq: 0,
+            seq: '{loop.index}',
             rateHz: 20,
             durationSeconds: 2,
             totalFrames: 40,
+            tMs: '{loop.elapsedMs}',
+            position: {
+                frame: '{loop.iteration}',
+                x: '{loop.index}',
+                y: 0,
+                z: '{loop.index}',
+            },
         });
-        expect(lastSend.commandId).toBe('rtc-realtime-position-0040');
         expect(recipe.metadata).toMatchObject({
             profile: 'rtc-realtime',
             rateHz: 20,
             durationSeconds: 2,
             frameCount: 40,
         });
+        expect(preview).toEqual({
+            manifestCommandCount: 3,
+            effectiveCommandCount: 42,
+            effectiveFrameCount: 40,
+            label: '3 manifest commands - 42 effective operations - 40 frames',
+        });
+    });
+
+    it('derives nested composite command kinds and preview counts for app-local fixtures', () => {
+        const fixture = RALLAR_BLACK_BOX_RECIPE_FIXTURES.find(entry =>
+            entry.fixtureId === 'composite-evidence'
+        );
+
+        expect(fixture).toBeDefined();
+        const recipe = fixture!.recipe;
+
+        expect(distributedRecipeCommandKinds(recipe)).toEqual([
+            'assert',
+            'health',
+            'loop',
+            'parallel',
+            'stats',
+            'wait',
+        ]);
+        expect(distributedRecipeCommandPreview(recipe)).toEqual({
+            manifestCommandCount: 5,
+            effectiveCommandCount: 7,
+            effectiveFrameCount: undefined,
+            label: '5 manifest commands - 7 effective operations',
+        });
+    });
+
+    it('runs the app-local composite evidence fixture in the browser-agent runtime', async () => {
+        const fixture = RALLAR_BLACK_BOX_RECIPE_FIXTURES.find(entry =>
+            entry.fixtureId === 'composite-evidence'
+        );
+        const runtime = createRallarBlackBoxTestRuntime();
+
+        for (const command of fixture!.recipe.commands) {
+            const result = await runtime.execute(command);
+            expect(result.ok, result.error?.message).toBe(true);
+        }
+
+        const history = selectRallarBlackBoxCommandHistory(runtime.state());
+
+        expect(history).toHaveLength(9);
+        expect(history.map(result => result.commandId)).toEqual(expect.arrayContaining([
+            'composite-health-loop:i1:c1:loop-health',
+            'composite-health-loop:i2:c1:loop-health',
+            'composite-health-loop',
+            'parallel-evidence:g1:left-health:c1:parallel-left-health',
+            'parallel-evidence:g2:right-stats:c1:parallel-right-stats',
+            'parallel-evidence',
+            'wait-for-parallel-result',
+            'assert-wait-succeeded',
+            'composite-evidence-stats',
+        ]));
+        expect(history.at(-1)?.commandId).toBe('composite-evidence-stats');
+        expect(runtime.state().resultCache['wait-for-parallel-result'].ok).toBe(true);
+        expect(runtime.state().resultCache['assert-wait-succeeded'].ok).toBe(true);
     });
 
     it('derives target rows from control-agent Rallar identity', () => {
@@ -482,6 +574,115 @@ describe('distributed recipes helpers', () => {
         expect(monitor.events.map(event => event.summary)).toEqual(['payload received']);
         expect(monitor.failures.map(failure => failure.code)).toContain('ASSERTION_FAILED');
         expect(monitor.timeline.map(item => item.label)).toContain('result failed');
+    });
+
+    it('shows distributed barrier commands as monitor evidence', () => {
+        const barrierRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            state: 'waiting-for-barrier',
+            barrierStartedAtEpochMs: 1_300,
+            barrierCompletedAtEpochMs: 1_420,
+            manifest: {
+                ...distributedRun.manifest,
+                barrier: {
+                    enabled: true,
+                    timeoutMs: 5_000,
+                },
+            },
+            commandLinks: [
+                ...distributedRun.commandLinks,
+                { phase: 'barrier', agentId: 'agent-a', commandId: 'barrier-a', queuedAtEpochMs: 1_300 },
+                { phase: 'barrier', agentId: 'agent-b', commandId: 'barrier-b', queuedAtEpochMs: 1_305 },
+            ],
+        };
+        const barrierControlRun: ControlRunSnapshot = {
+            ...distributedControlRun,
+            commands: [
+                ...distributedControlRun.commands,
+                {
+                    envelope: {
+                        kind: 'command',
+                        protocolVersion: 1,
+                        runId: 'run-1',
+                        agentId: 'agent-a',
+                        commandId: 'barrier-a',
+                        command: { kind: 'health', commandId: 'barrier-a' },
+                    },
+                    queuedAtEpochMs: 1_300,
+                    dispatchedAtEpochMs: 1_310,
+                    completedAtEpochMs: 1_400,
+                    dispatchCount: 1,
+                },
+                {
+                    envelope: {
+                        kind: 'command',
+                        protocolVersion: 1,
+                        runId: 'run-1',
+                        agentId: 'agent-b',
+                        commandId: 'barrier-b',
+                        command: { kind: 'health', commandId: 'barrier-b' },
+                    },
+                    queuedAtEpochMs: 1_305,
+                    dispatchedAtEpochMs: 1_315,
+                    completedAtEpochMs: 1_420,
+                    dispatchCount: 1,
+                },
+            ],
+            results: [
+                ...distributedControlRun.results,
+                {
+                    kind: 'result',
+                    protocolVersion: 1,
+                    runId: 'run-1',
+                    agentId: 'agent-a',
+                    commandId: 'barrier-a',
+                    ok: true,
+                    result: {
+                        commandId: 'barrier-a',
+                        kind: 'health',
+                        status: 'ok',
+                        ok: true,
+                        startedAtEpochMs: 1_310,
+                        endedAtEpochMs: 1_400,
+                        durationMs: 90,
+                    },
+                },
+                {
+                    kind: 'result',
+                    protocolVersion: 1,
+                    runId: 'run-1',
+                    agentId: 'agent-b',
+                    commandId: 'barrier-b',
+                    ok: true,
+                    result: {
+                        commandId: 'barrier-b',
+                        kind: 'health',
+                        status: 'ok',
+                        ok: true,
+                        startedAtEpochMs: 1_315,
+                        endedAtEpochMs: 1_420,
+                        durationMs: 105,
+                    },
+                },
+            ],
+        };
+
+        const monitor = deriveDistributedRunMonitor({
+            distributedRun: barrierRun,
+            controlRun: barrierControlRun,
+        });
+
+        expect(monitor.commandCounts.barrier).toBe(2);
+        expect(monitor.agentProgress.map(row => [row.agentId, row.barrier])).toEqual([
+            ['agent-a', 'ready'],
+            ['agent-b', 'ready'],
+        ]);
+        expect(monitor.timeline.map(item => item.label)).toEqual(expect.arrayContaining([
+            'barrier started',
+            'barrier ready',
+            'barrier queued',
+            'barrier completed',
+        ]));
     });
 
     it('filters distributed run history by group, recipe, user, status, date, and failure type', () => {

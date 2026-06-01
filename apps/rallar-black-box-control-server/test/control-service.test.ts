@@ -594,6 +594,178 @@ Deno.test('control service stages, starts, monitors, and exports distributed run
     assertEquals(restored.snapshotDistributedRun('dist-1')?.state, 'passed');
 });
 
+Deno.test('control service coordinates distributed barrier before auto start', () => {
+    let now = 1_000;
+    const service = createRallarBlackBoxControlService({
+        now: () => now++,
+    });
+    service.receiveClientEnvelope(registerEnvelopeFor('run-1', 'agent-1'));
+    service.receiveClientEnvelope(registerEnvelopeFor('run-1', 'agent-2'));
+    service.createDistributedRun(distributedManifest({
+        startMode: 'auto-after-ready',
+        barrier: {
+            enabled: true,
+            timeoutMs: 1_000,
+        },
+    }));
+
+    const staged = service.stageDistributedRun('dist-1');
+    assertEquals(staged.state, 'waiting-for-ack');
+    const agent1StageCommands = service.takeDispatchableCommands('run-1', 'agent-1');
+    const agent2StageCommands = service.takeDispatchableCommands('run-1', 'agent-2');
+
+    service.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-1', agent1StageCommands[0]));
+    service.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-2', agent2StageCommands[0]));
+
+    const waitingAtBarrier = service.snapshotDistributedRun('dist-1');
+    assert(waitingAtBarrier);
+    assertEquals(waitingAtBarrier.state, 'waiting-for-barrier');
+    assertEquals(waitingAtBarrier.commandLinks.filter(link => link.phase === 'barrier').length, 2);
+
+    const agent1BarrierCommands = service.takeDispatchableCommands('run-1', 'agent-1')
+        .filter(command => command.command.kind === 'health');
+    const agent2BarrierCommands = service.takeDispatchableCommands('run-1', 'agent-2')
+        .filter(command => command.command.kind === 'health');
+    assertEquals(agent1BarrierCommands[0].command.metadata?.barrier, {
+        event: 'barrier.ready',
+        expectedAgentIds: ['agent-1', 'agent-2'],
+        timeoutMs: 1_000,
+        scheduledStartEpochMs: undefined,
+    });
+
+    service.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-1', agent1BarrierCommands[0]));
+    assertEquals(service.snapshotDistributedRun('dist-1')?.state, 'waiting-for-barrier');
+
+    service.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-2', agent2BarrierCommands[0]));
+
+    const running = service.snapshotDistributedRun('dist-1');
+    assert(running);
+    assertEquals(running.state, 'running');
+    assertEquals(running.commandLinks.filter(link => link.phase === 'stage').length, 2);
+    assertEquals(running.commandLinks.filter(link => link.phase === 'barrier').length, 2);
+    assertEquals(running.commandLinks.filter(link => link.phase === 'start').length, 2);
+    assert(running.barrierStartedAtEpochMs !== undefined);
+    assert(running.barrierCompletedAtEpochMs !== undefined);
+});
+
+Deno.test('control service holds barrier-ready scheduled runs until start time', () => {
+    let now = 1_000;
+    const service = createRallarBlackBoxControlService({
+        now: () => now,
+    });
+    service.receiveClientEnvelope(registerEnvelopeFor('run-1', 'agent-1'));
+    service.receiveClientEnvelope(registerEnvelopeFor('run-1', 'agent-2'));
+    service.createDistributedRun(distributedManifest({
+        startMode: 'scheduled',
+        startDeadlineEpochMs: 1_050,
+        barrier: {
+            enabled: true,
+            timeoutMs: 1_000,
+        },
+    }));
+
+    service.stageDistributedRun('dist-1');
+    const agent1StageCommands = service.takeDispatchableCommands('run-1', 'agent-1');
+    const agent2StageCommands = service.takeDispatchableCommands('run-1', 'agent-2');
+    service.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-1', agent1StageCommands[0]));
+    service.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-2', agent2StageCommands[0]));
+    const agent1BarrierCommands = service.takeDispatchableCommands('run-1', 'agent-1');
+    const agent2BarrierCommands = service.takeDispatchableCommands('run-1', 'agent-2');
+    service.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-1', agent1BarrierCommands[0]));
+    service.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-2', agent2BarrierCommands[0]));
+
+    const ready = service.snapshotDistributedRun('dist-1');
+    assert(ready);
+    assertEquals(ready.state, 'ready');
+    assertEquals(ready.commandLinks.filter(link => link.phase === 'start').length, 0);
+
+    now = 1_050;
+    service.receiveClientEnvelope({
+        kind: 'heartbeat',
+        protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+        runId: 'run-1',
+        agentId: 'agent-1',
+        atEpochMs: now,
+        status: 'ready',
+    });
+
+    const running = service.snapshotDistributedRun('dist-1');
+    assert(running);
+    assertEquals(running.state, 'running');
+    assertEquals(running.commandLinks.filter(link => link.phase === 'start').length, 2);
+});
+
+Deno.test('control service reports distributed barrier timeout, disconnect, and cancellation', () => {
+    let now = 1_000;
+    const timeoutService = createRallarBlackBoxControlService({
+        now: () => now,
+    });
+    timeoutService.receiveClientEnvelope(registerEnvelopeFor('run-1', 'agent-1'));
+    timeoutService.receiveClientEnvelope(registerEnvelopeFor('run-1', 'agent-2'));
+    timeoutService.createDistributedRun(distributedManifest({
+        distributedRunId: 'dist-barrier-timeout',
+        barrier: {
+            enabled: true,
+            timeoutMs: 10,
+        },
+    }));
+    timeoutService.stageDistributedRun('dist-barrier-timeout');
+    const timeoutStage1 = timeoutService.takeDispatchableCommands('run-1', 'agent-1')[0];
+    const timeoutStage2 = timeoutService.takeDispatchableCommands('run-1', 'agent-2')[0];
+    timeoutService.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-1', timeoutStage1));
+    timeoutService.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-2', timeoutStage2));
+    const timeoutBarrier1 = timeoutService.takeDispatchableCommands('run-1', 'agent-1')[0];
+    timeoutService.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-1', timeoutBarrier1));
+    now += 11;
+
+    const timedOut = timeoutService.snapshotDistributedRun('dist-barrier-timeout');
+    assert(timedOut);
+    assertEquals(timedOut.state, 'timed-out');
+    assertEquals(timedOut.rollup.failures[0].error?.code, 'RALLAR_BB_DISTRIBUTED_BARRIER_TIMEOUT');
+
+    const disconnectService = createRallarBlackBoxControlService();
+    disconnectService.receiveClientEnvelope(registerEnvelopeFor('run-1', 'agent-1'));
+    disconnectService.receiveClientEnvelope(registerEnvelopeFor('run-1', 'agent-2'));
+    disconnectService.createDistributedRun(distributedManifest({
+        distributedRunId: 'dist-barrier-disconnect',
+        barrier: {
+            enabled: true,
+            timeoutMs: 1_000,
+        },
+    }));
+    disconnectService.stageDistributedRun('dist-barrier-disconnect');
+    const disconnectStage1 = disconnectService.takeDispatchableCommands('run-1', 'agent-1')[0];
+    const disconnectStage2 = disconnectService.takeDispatchableCommands('run-1', 'agent-2')[0];
+    disconnectService.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-1', disconnectStage1));
+    disconnectService.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-2', disconnectStage2));
+    disconnectService.markAgentDisconnected('run-1', 'agent-2');
+
+    const failed = disconnectService.snapshotDistributedRun('dist-barrier-disconnect');
+    assert(failed);
+    assertEquals(failed.state, 'failed');
+    assertEquals(failed.rollup.failures[0].error?.code, 'RALLAR_BB_DISTRIBUTED_BARRIER_DISCONNECTED');
+
+    const cancelService = createRallarBlackBoxControlService();
+    cancelService.receiveClientEnvelope(registerEnvelopeFor('run-1', 'agent-1'));
+    cancelService.receiveClientEnvelope(registerEnvelopeFor('run-1', 'agent-2'));
+    cancelService.createDistributedRun(distributedManifest({
+        distributedRunId: 'dist-barrier-cancel',
+        barrier: {
+            enabled: true,
+            timeoutMs: 1_000,
+        },
+    }));
+    cancelService.stageDistributedRun('dist-barrier-cancel');
+    const cancelStage1 = cancelService.takeDispatchableCommands('run-1', 'agent-1')[0];
+    const cancelStage2 = cancelService.takeDispatchableCommands('run-1', 'agent-2')[0];
+    cancelService.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-1', cancelStage1));
+    cancelService.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-2', cancelStage2));
+
+    const cancelled = cancelService.cancelDistributedRun('dist-barrier-cancel', 'operator cancelled at barrier');
+    assertEquals(cancelled.state, 'cancelled');
+    assertEquals(cancelled.commandLinks.filter(link => link.phase === 'cancel').length, 2);
+});
+
 Deno.test('control service cancels distributed runs and queues cancel commands', () => {
     const service = createRallarBlackBoxControlService();
     service.receiveClientEnvelope(registerEnvelopeFor('run-1', 'agent-1'));

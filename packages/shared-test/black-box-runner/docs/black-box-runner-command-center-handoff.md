@@ -85,7 +85,7 @@ The ordinary artifact bundle contains:
 | `events.jsonl` | yes | Redacted event stream for step results, WS events, RTC events, and truncation notices. |
 | `failures.json` | yes | Copyable failure bundle. |
 | `metadata.json` | yes | Command, config path, mode, summary, and run metadata. |
-| `expanded-plan.json` | no | Seeded traffic expanded plan and replay recipe. |
+| `expanded-plan.json` | no | Seeded traffic expanded plan, pacing decisions, concrete inline-loop expansion, and replay recipe. |
 | `matrix-summary.json` | no | Recipe matrix aggregate summary. |
 
 `events.jsonl` currently uses these event kinds:

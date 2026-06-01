@@ -158,6 +158,8 @@ import {
     compareDistributedRuns,
     defaultDistributedRecipeTargetIds,
     deriveDistributedRunMonitor,
+    distributedRecipeCommandKinds,
+    distributedRecipeCommandPreview,
     distributedRecipeStateTone,
     distributedRecipeTargetRows,
     filterDistributedRuns,
@@ -677,40 +679,37 @@ const APP_LOCAL_RECIPE_CATALOG: readonly AppLocalRecipeEntry[] = [
 ];
 
 const DISTRIBUTED_RECIPE_CATALOG: readonly DistributedRecipeCatalogItem[] =
-    RALLAR_BLACK_BOX_RECIPE_FIXTURES.map(fixture => ({
-        itemId: fixture.fixtureId,
-        title: fixture.label,
-        description: fixture.description,
-        recipe: fixture.recipe,
-        providerMode: fixture.recipe.commands.some(command =>
-            command.kind.startsWith('rtc') ||
-            command.kind.startsWith('ws') ||
-            command.kind === 'http.request'
-        )
-            ? 'browser-rallar'
-            : 'simulated',
-        profiles: fixture.fixtureId === RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID
-            ? ['rtc', 'realtime', 'soak']
-            : [
-                fixture.fixtureId.includes('rtc') || fixture.recipe.commands.some(command => command.kind.startsWith('rtc'))
-                    ? 'rtc'
-                    : 'general',
-                fixture.fixtureId.includes('failure') ? 'negative' : 'smoke',
-            ],
-        prerequisites: fixture.recipe.commands.some(command =>
-            command.kind.startsWith('rtc') ||
-            command.kind.startsWith('ws') ||
-            command.kind === 'http.request'
-        )
-            ? ['connected browser control agents', 'matching global group', 'live Rallar backend for real delivery']
-            : ['connected browser control agents'],
-        live: fixture.recipe.commands.some(command =>
-            command.kind.startsWith('rtc') ||
-            command.kind.startsWith('ws') ||
-            command.kind === 'http.request'
-        ),
-        source: 'app-local',
-    }));
+    RALLAR_BLACK_BOX_RECIPE_FIXTURES.map(fixture => {
+        const commandKinds = distributedRecipeCommandKinds(fixture.recipe);
+        const usesNetwork = commandKinds.some(kind =>
+            kind.startsWith('rtc') ||
+            kind.startsWith('ws') ||
+            kind === 'http.request'
+        );
+
+        return {
+            itemId: fixture.fixtureId,
+            title: fixture.label,
+            description: fixture.description,
+            recipe: fixture.recipe,
+            providerMode: usesNetwork
+                ? 'browser-rallar'
+                : 'simulated',
+            profiles: fixture.fixtureId === RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID
+                ? ['rtc', 'realtime', 'soak']
+                : [
+                    fixture.fixtureId.includes('rtc') || commandKinds.some(kind => kind.startsWith('rtc'))
+                        ? 'rtc'
+                        : 'general',
+                    fixture.fixtureId.includes('failure') ? 'negative' : 'smoke',
+                ],
+            prerequisites: usesNetwork
+                ? ['connected browser control agents', 'matching global group', 'live Rallar backend for real delivery']
+                : ['connected browser control agents'],
+            live: usesNetwork,
+            source: 'app-local' as const,
+        };
+    });
 
 function configuredDistributedRecipeCatalogItem(
     item: DistributedRecipeCatalogItem,
@@ -6161,6 +6160,8 @@ function DistributedRecipesPanel({ state, bootstrap, control, globalValues }: {
         useState<DistributedRecipeTargetPolicyMode>('selected-agents');
     const [rolePattern, setRolePattern] = useState<DistributedRecipeRolePattern>('all-agents');
     const [ackTimeoutMs, setAckTimeoutMs] = useState(15_000);
+    const [barrierEnabled, setBarrierEnabled] = useState(false);
+    const [barrierTimeoutMs, setBarrierTimeoutMs] = useState(15_000);
     const [startMode, setStartMode] =
         useState<RallarBlackBoxDistributedRunManifest['startMode']>('manual');
     const [startDelayMs, setStartDelayMs] = useState(3_000);
@@ -6239,6 +6240,12 @@ function DistributedRecipesPanel({ state, bootstrap, control, globalValues }: {
             targetPolicyMode,
             rolePattern,
             ackTimeoutMs,
+            barrier: barrierEnabled
+                ? {
+                    enabled: true,
+                    timeoutMs: barrierTimeoutMs,
+                }
+                : undefined,
             startMode: startMode ?? 'manual',
             startDeadlineEpochMs: startMode === 'scheduled'
                 ? Date.now() + Math.max(1, startDelayMs)
@@ -6249,6 +6256,8 @@ function DistributedRecipesPanel({ state, bootstrap, control, globalValues }: {
         });
     }, [
         ackTimeoutMs,
+        barrierEnabled,
+        barrierTimeoutMs,
         distributedRunId,
         groupRef,
         rolePattern,
@@ -6748,6 +6757,7 @@ function DistributedRecipesPanel({ state, bootstrap, control, globalValues }: {
                             const selected = selectedRecipeIds.includes(item.itemId);
                             const validation = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, item.recipe);
                             const authoringValidation = validateSchemaAuthoringValue('recipe', item.recipe);
+                            const commandPreview = distributedRecipeCommandPreview(item.recipe);
                             return (
                                 <article className={`distributed-recipe-row ${selected ? 'selected' : ''}`} key={item.itemId}>
                                     <label>
@@ -6758,7 +6768,7 @@ function DistributedRecipesPanel({ state, bootstrap, control, globalValues }: {
                                         />
                                         <span>
                                             <strong>{item.title}</strong>
-                                            <small>{item.recipe.recipeId} - {item.recipe.commands.length} commands</small>
+                                            <small>{item.recipe.recipeId} - {commandPreview.label}</small>
                                         </span>
                                     </label>
                                     <p>{item.description}</p>
@@ -6772,6 +6782,11 @@ function DistributedRecipesPanel({ state, bootstrap, control, globalValues }: {
                                         {item.profiles.map(entry => (
                                             <span className="pill muted" key={entry}>{entry}</span>
                                         ))}
+                                        {commandPreview.effectiveFrameCount !== undefined && (
+                                            <span className="pill active">
+                                                {commandPreview.effectiveFrameCount} effective frames
+                                            </span>
+                                        )}
                                     </div>
                                     <details>
                                         <summary>Prerequisites</summary>
@@ -6827,6 +6842,27 @@ function DistributedRecipesPanel({ state, bootstrap, control, globalValues }: {
                                 onChange={event => setAckTimeoutMs(Number.parseInt(event.target.value, 10) || 1)}
                             />
                         </label>
+                        <label className="field">
+                            <span>Barrier</span>
+                            <select
+                                value={barrierEnabled ? 'enabled' : 'disabled'}
+                                onChange={event => setBarrierEnabled(event.target.value === 'enabled')}
+                            >
+                                <option value="disabled">Disabled</option>
+                                <option value="enabled">Enabled</option>
+                            </select>
+                        </label>
+                        {barrierEnabled && (
+                            <label className="field">
+                                <span>Barrier Timeout Ms</span>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    value={barrierTimeoutMs}
+                                    onChange={event => setBarrierTimeoutMs(Number.parseInt(event.target.value, 10) || 1)}
+                                />
+                            </label>
+                        )}
                         <label className="field">
                             <span>Start Mode</span>
                             <select
@@ -7089,6 +7125,7 @@ function DistributedRunMonitorPanel({ monitor }: { monitor: DistributedRunMonito
                 <>
                     <div className="distributed-monitor-metrics">
                         <Metric label="Commands" value={`${monitor.commandCounts.completed}/${monitor.commandCounts.total}`}/>
+                        <Metric label="Barrier" value={`${monitor.commandCounts.barrier}`}/>
                         <Metric
                             label="Failed commands"
                             value={String(monitor.commandCounts.failed)}
@@ -7134,6 +7171,11 @@ function DistributedRunMonitorPanel({ monitor }: { monitor: DistributedRunMonito
                                         <span className={`pill ${distributedProgressTone(row.readiness)}`}>
                                             ack {row.readiness}
                                         </span>
+                                        {row.barrierCommandCount > 0 && (
+                                            <span className={`pill ${distributedProgressTone(row.barrier)}`}>
+                                                barrier {row.barrier}
+                                            </span>
+                                        )}
                                         <span className={`pill ${distributedProgressTone(row.execution)}`}>
                                             run {row.execution}
                                         </span>

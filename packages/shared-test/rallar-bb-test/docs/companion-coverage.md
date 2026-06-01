@@ -10,7 +10,7 @@ directly.
 | Layer | Covers | Does Not Cover |
 | --- | --- | --- |
 | `black-box-runner` | Public network observations, provider sends/waits, reports, artifacts. | Rallar facade methods such as `auth.login`, `rooms.join`, `data.open`, or `realtime.sendJson`. |
-| `rallar-bb-test` | Portable browser/control commands, visible/remote browser bridging, event normalization. | A second implementation of the Rallar browser facade. |
+| `rallar-bb-test` | Portable browser/control commands, visible/remote browser bridging, event normalization, local wait/assert evidence checks. | A second implementation of the Rallar browser facade or the full black-box-runner assertion engine. |
 | `shared-web-facade` | Direct browser facade behavior: auth, rooms, people, messages, realtime, RTC, data. | Generic recipe execution. |
 | `shared-server-facade` | Direct server facade behavior and application data/topic routing. | Browser-only UI or media behavior. |
 | `app-specific` | UI workflows, browser storage, media/device behavior, and app orchestration. | Shared runner semantics. |
@@ -35,6 +35,7 @@ Use the existing recipe vocabulary instead:
 - HTTP calls for REST API behavior.
 - WS open/send/close for WebSocket behavior.
 - RTC connect/send/wait/close for provider-backed delivery.
+- Browser-agent `wait` and `assert` commands for local runtime evidence checks.
 - ASSERT and SET for recipe-local checks and value passing.
 
 Provider adapters and browser bridges may call Rallar facade methods internally,

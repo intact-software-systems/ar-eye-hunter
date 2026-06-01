@@ -17,6 +17,7 @@ examples.
 | `rtc-rallar-memory-routing-failures.json` | Generic runner semantics | Intentionally records no-recipient, closed-target, and send-after-close failures with `failFast: false` so report diagnostics can be inspected. |
 | `rtc-rallar-memory-same-connection-soak.json` | Generic runner semantics | Keeps two deterministic `rallar-memory` RTC connections open, sends repeated bidirectional payloads, records soak metrics, and closes both connections once. |
 | `rtc-rallar-memory-seeded-traffic.json` | Generic runner semantics | Generates weighted seeded RTC traffic, records `expanded-plan.json`, and can be replayed exactly from the artifact. |
+| `rtc-rallar-memory-inline-loop-pacing.json` | Generic runner semantics | Sends deterministic RTC frame traffic through an inline `type: "loop"` at a configured realtime rate. |
 | `rtc-rallar-memory-parallel-groups.json` | Generic runner semantics | Runs bounded parallel RTC groups for concurrent direct delivery, broadcast delivery, close, and reconnect with deterministic reporting. |
 | `rtc-rallar-browser-connect.json` | Rallar integration | Connect and close two browser-backed Rallar RTC actors. Use this to validate browser harness startup, Rallar auth/configuration, room join, and provider cleanup. |
 | `rtc-rallar-browser-realtime.json` | Rallar integration | Send JSON between two browser-backed actors through Rallar realtime RTC and assert received payloads. |
@@ -191,6 +192,14 @@ The traffic example writes `expanded-plan.json` under
 `.artifacts/shared-test/rallar-memory-traffic`. Reuse that file through
 `execution.trafficPlan.replayFrom` to replay the exact generated operation
 sequence.
+
+The inline loop pacing example is also deterministic and runs without live
+services:
+
+```bash
+deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
+  -c packages/shared-test/black-box-runner/examples/rtc-rallar-memory-inline-loop-pacing.json
+```
 
 Run live-provider baselines when the Rallar API, credentials, Playwright, and
 optional control server are intentionally provisioned:

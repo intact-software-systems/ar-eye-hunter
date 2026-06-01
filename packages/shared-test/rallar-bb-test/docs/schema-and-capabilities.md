@@ -30,6 +30,9 @@ The distributed-run manifest and lifecycle contract are documented in
 Prompting guidance for using these schemas with AI recipe generation is in
 `packages/shared-test/rallar-bb-test/docs/ai-recipe-prompt-guide.md`.
 
+Composite browser-agent primitive planning is documented in
+`packages/shared-test/rallar-bb-test/docs/rallar-bb-test-composite-primitives-iterations.md`.
+
 ## Capability Metadata
 
 `RALLAR_BLACK_BOX_COMMAND_CAPABILITIES` has one entry for every
@@ -56,6 +59,7 @@ Current automated coverage validates:
 - every capability example
 - app-local SPA recipe examples
 - local recipe fixtures
+- composite fixture authoring for `loop`, `parallel`, `wait`, and `assert`
 - Manual Rallar recipe snippets
 - Flow Builder SPA recipe exports
 - Flow Builder black-box-runner scenario exports
@@ -65,7 +69,11 @@ Current automated coverage validates:
 - control command envelopes
 - distributed-run manifest examples
 - distributed-run lifecycle states, domain validation, and rollup behavior
+- distributed-run barrier synchronization, timeout, disconnect, cancellation,
+  and scheduled-start orchestration
 - group-member to control-agent matching and target-policy filtering
+- recursive schema-authoring hints for child commands inside `loop`,
+  `parallel`, `recipe.load`, and `recipe.run`
 
 ## Compatibility Rules
 
@@ -84,6 +92,41 @@ Treat schema changes as public command-center contract changes.
   explicit migration note.
 - Runner scenario schema changes should preserve the generic HTTP/WS/RTC/ASSERT
   boundary. Do not add Rallar-specific facade operations to the runner core.
+
+Composite command kinds are browser-agent orchestration primitives. `loop` and
+`parallel` may contain child commands from the same `rallar-bb-test` vocabulary,
+but they must stay transport-neutral and bounded by the exported composite
+limits. Runtime execution for `loop` is available for sequential repeated child
+commands. Runtime execution for `parallel` is available for bounded concurrent
+groups with sequential child commands inside each group.
+
+Schema-authoring views and catalog previews should inspect nested child
+commands recursively. A top-level `loop` or `parallel` can still require live
+Rallar services when a child command uses `rtc.*`, `ws.*`, or `http.request`.
+The same recursive rule applies to inline recipes under `recipe.load` and
+`recipe.run`.
+
+`wait` is a browser-agent evidence primitive. It observes current and future
+runtime events, messages, diagnostics, stats, reports, and results without
+reimplementing Rallar behavior. Match fields are intentionally simple: event
+kind, topic, command ID, connection, transport, severity, and payload-path
+`equals`, `contains`, or `exists`. Wait results include the matched event after
+the standard redaction pipeline. If neither `timeoutMs` nor `deadlineEpochMs`
+is supplied, the runtime uses a 5 second default timeout.
+
+`assert` is a small browser-agent evidence check. It reads only whitelisted
+runtime sources: `state`, `config`, `currentConfig`, `lastResult`, `events`,
+`messages`, `diagnostics`, `reports`, `recentEvents`, `recentMessages`,
+`recentDiagnostics`, `latestStats`, `stats`, `failures`, and `resultCache`.
+Supported operators are `equals`, `notEquals`, `contains`, `exists`, `gte`, and
+`lte`. It is not a JavaScript evaluator; source strings are dot paths into those
+read-only roots. Assertion values and errors pass through normal redaction.
+
+Distributed-run manifests can opt into a control-server barrier:
+`"barrier": { "enabled": true, "timeoutMs": 5000 }`. The barrier is not a new
+browser-agent command kind; the control server queues ordinary `health`
+commands linked with the distributed `barrier` phase and treats their successful
+results as `barrier.ready` evidence before auto or scheduled starts proceed.
 
 ## Ownership
 

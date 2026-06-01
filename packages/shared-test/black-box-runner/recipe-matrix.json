@@ -43,6 +43,16 @@
       "description": "Deterministic seeded traffic plan that expands weighted RTC operations into a replayable concrete plan."
     },
     {
+      "id": "memory-inline-loop-pacing",
+      "recipe": "examples/rtc-rallar-memory-inline-loop-pacing.json",
+      "category": "generic-runner-semantics",
+      "mode": "run",
+      "profiles": ["deterministic", "traffic"],
+      "expectedExitCode": 0,
+      "artifactName": "memory-inline-loop-pacing",
+      "description": "Deterministic inline loop recipe that sends RTC frames at a configured realtime rate."
+    },
+    {
       "id": "memory-parallel-groups",
       "recipe": "examples/rtc-rallar-memory-parallel-groups.json",
       "category": "generic-runner-semantics",

@@ -15,6 +15,7 @@ const integerSchema: JsonSchema = { type: 'integer' };
 const booleanSchema: JsonSchema = { type: 'boolean' };
 const recordSchema: JsonSchema = { type: 'object', additionalProperties: true };
 const integerOrPlaceholderSchema: JsonSchema = { oneOf: [integerSchema, stringSchema] };
+const numberOrPlaceholderSchema: JsonSchema = { oneOf: [numberSchema, stringSchema] };
 
 const variableValueSchema: JsonSchema = {
     anyOf: [
@@ -44,6 +45,64 @@ const stepSchema: JsonSchema = {
         value: variableValueSchema,
         variables: recordSchema,
         steps: { type: 'array', items: recordSchema },
+        loopSteps: { type: 'array', items: recordSchema },
+        loop: { oneOf: [booleanSchema, { type: 'array', items: recordSchema }] },
+        count: integerOrPlaceholderSchema,
+        iterations: integerOrPlaceholderSchema,
+        runs: integerOrPlaceholderSchema,
+        messageCount: integerOrPlaceholderSchema,
+        messages: integerOrPlaceholderSchema,
+        durationMs: integerOrPlaceholderSchema,
+        intervalMs: integerOrPlaceholderSchema,
+        delayMs: integerOrPlaceholderSchema,
+        rateHz: numberOrPlaceholderSchema,
+    },
+    additionalProperties: true,
+};
+
+const trafficPlanSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+        enabled: booleanSchema,
+        seed: integerOrPlaceholderSchema,
+        count: integerOrPlaceholderSchema,
+        iterations: integerOrPlaceholderSchema,
+        runs: integerOrPlaceholderSchema,
+        messageCount: integerOrPlaceholderSchema,
+        messages: integerOrPlaceholderSchema,
+        delayMs: integerOrPlaceholderSchema,
+        intervalMs: integerOrPlaceholderSchema,
+        rateHz: numberOrPlaceholderSchema,
+        jitterMs: integerOrPlaceholderSchema,
+        burstSize: integerOrPlaceholderSchema,
+        maxInFlight: integerOrPlaceholderSchema,
+        setupSteps: { type: 'array', items: {} },
+        setup: { type: 'array', items: {} },
+        cleanupSteps: { type: 'array', items: {} },
+        cleanup: { type: 'array', items: {} },
+        operations: { type: 'array', items: recordSchema },
+        replayFrom: stringSchema,
+        replayPath: stringSchema,
+        expandedPlan: recordSchema,
+        replay: recordSchema,
+        plan: recordSchema,
+    },
+    additionalProperties: true,
+};
+
+const executionSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+        failFast: booleanSchema,
+        dryRun: booleanSchema,
+        artifactDir: stringSchema,
+        recordDir: stringSchema,
+        iterations: integerOrPlaceholderSchema,
+        runs: integerOrPlaceholderSchema,
+        delayMs: integerOrPlaceholderSchema,
+        scale: recordSchema,
+        soak: recordSchema,
+        trafficPlan: trafficPlanSchema,
     },
     additionalProperties: true,
 };
@@ -62,8 +121,8 @@ export const BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA: JsonSchema = {
         secrets: { oneOf: [{ type: 'array', items: stringSchema }, stringSchema] },
         secretVariables: { oneOf: [{ type: 'array', items: stringSchema }, stringSchema] },
         defaults: recordSchema,
-        execution: recordSchema,
-        trafficPlan: recordSchema,
+        execution: executionSchema,
+        trafficPlan: trafficPlanSchema,
         connections: {
             type: 'object',
             additionalProperties: {

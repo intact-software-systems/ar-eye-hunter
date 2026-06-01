@@ -567,3 +567,24 @@ The integration can be considered complete when:
 - success/failure reports include generic RTC diagnostics
 - message and close events include actor/peer/room/group/overlay diagnostics
 - docs explain the boundary and usage
+
+## Related Follow-up: Browser-agent Composite Primitives
+
+The RTC provider integration above is separate from browser-agent recipe
+orchestration. `rallar-bb-test` still needs compact control primitives for
+visible and remote browser agents, especially for realtime traffic patterns.
+
+The follow-up plan lives in:
+
+```text
+packages/shared-test/rallar-bb-test/docs/rallar-bb-test-composite-primitives-iterations.md
+```
+
+That plan covers:
+
+- `loop` for repeated browser-agent commands with configurable cadence
+- `parallel` for bounded concurrent command groups
+- generic `wait` and lightweight `assert` primitives
+- optional distributed barriers for multi-browser start synchronization
+- black-box-runner pacing refinements where the existing soak/traffic/parallel
+  model can be made easier to author

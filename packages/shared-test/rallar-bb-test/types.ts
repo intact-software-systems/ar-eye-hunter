@@ -3,6 +3,10 @@ export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
     'recipe.load',
     'recipe.run',
     'recipe.cancel',
+    'loop',
+    'parallel',
+    'wait',
+    'assert',
     'rtc.connect',
     'rtc.send',
     'ws.open',
@@ -25,6 +29,14 @@ export type RallarBlackBoxTestTransport =
     | 'http';
 
 export type RallarBlackBoxTestSeverity = 'debug' | 'info' | 'warning' | 'error';
+
+export const RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS = {
+    maxDepth: 4,
+    maxExpandedCommands: 2_000,
+    maxParallelConcurrency: 8,
+    maxLoopCount: 10_000,
+    maxLoopDurationMs: 3_600_000,
+} as const;
 
 export type RallarBlackBoxTestRuntimeStatus =
     | 'idle'
@@ -98,6 +110,69 @@ export type RallarBlackBoxTestRecipeCancelCommand =
     & RallarBlackBoxTestCommandBase<'recipe.cancel'>
     & Readonly<{
     reason?: string;
+}>;
+
+export type RallarBlackBoxTestLoopCommand =
+    & RallarBlackBoxTestCommandBase<'loop'>
+    & Readonly<{
+    commands: readonly RallarBlackBoxTestCommand[];
+    count?: number;
+    durationMs?: number;
+    intervalMs?: number;
+    delayMs?: number;
+    continueOnFailure?: boolean;
+    maxCommands?: number;
+}>;
+
+export type RallarBlackBoxTestParallelGroup = Readonly<{
+    groupId?: string;
+    label?: string;
+    commands: readonly RallarBlackBoxTestCommand[];
+    metadata?: Readonly<Record<string, unknown>>;
+}>;
+
+export type RallarBlackBoxTestParallelCommand =
+    & RallarBlackBoxTestCommandBase<'parallel'>
+    & Readonly<{
+    groups: readonly RallarBlackBoxTestParallelGroup[];
+    maxConcurrency?: number;
+    failFast?: boolean;
+    continueOnFailure?: boolean;
+}>;
+
+export type RallarBlackBoxTestWaitMatch = Readonly<{
+    kind?: RallarBlackBoxTestEventKind;
+    topic?: string;
+    commandId?: string;
+    connection?: string;
+    transport?: RallarBlackBoxTestTransport;
+    severity?: RallarBlackBoxTestSeverity;
+    payloadPath?: string;
+    equals?: unknown;
+    contains?: string;
+    exists?: boolean;
+}>;
+
+export type RallarBlackBoxTestWaitCommand =
+    & RallarBlackBoxTestCommandBase<'wait'>
+    & Readonly<{
+    match: RallarBlackBoxTestWaitMatch;
+}>;
+
+export type RallarBlackBoxTestAssertOperator =
+    | 'equals'
+    | 'notEquals'
+    | 'contains'
+    | 'exists'
+    | 'gte'
+    | 'lte';
+
+export type RallarBlackBoxTestAssertCommand =
+    & RallarBlackBoxTestCommandBase<'assert'>
+    & Readonly<{
+    source: string;
+    operator: RallarBlackBoxTestAssertOperator;
+    expected?: unknown;
 }>;
 
 export type RallarBlackBoxTestRtcConnectCommand =
@@ -182,6 +257,10 @@ export type RallarBlackBoxTestCommand =
     | RallarBlackBoxTestRecipeLoadCommand
     | RallarBlackBoxTestRecipeRunCommand
     | RallarBlackBoxTestRecipeCancelCommand
+    | RallarBlackBoxTestLoopCommand
+    | RallarBlackBoxTestParallelCommand
+    | RallarBlackBoxTestWaitCommand
+    | RallarBlackBoxTestAssertCommand
     | RallarBlackBoxTestRtcConnectCommand
     | RallarBlackBoxTestRtcSendCommand
     | RallarBlackBoxTestWsOpenCommand
@@ -209,6 +288,64 @@ export type RallarBlackBoxTestResult<T = unknown> = Readonly<{
     value?: T;
     error?: RallarBlackBoxTestError;
     replayed?: boolean;
+}>;
+
+export type RallarBlackBoxTestCompositeChildResult = Readonly<{
+    commandId: string;
+    originalCommandId?: string;
+    commandIndex: number;
+    iteration?: number;
+    groupId?: string;
+    result: RallarBlackBoxTestResult;
+}>;
+
+export type RallarBlackBoxTestLoopResultValue = Readonly<{
+    commandId: string;
+    iterations: number;
+    childResultCount: number;
+    passed: number;
+    failed: number;
+    cancelled: boolean;
+    results: readonly RallarBlackBoxTestCompositeChildResult[];
+}>;
+
+export type RallarBlackBoxTestParallelGroupResult = Readonly<{
+    groupId: string;
+    commandCount: number;
+    passed: number;
+    failed: number;
+    cancelled: boolean;
+    durationMs: number;
+    results: readonly RallarBlackBoxTestCompositeChildResult[];
+}>;
+
+export type RallarBlackBoxTestParallelResultValue = Readonly<{
+    commandId: string;
+    groupCount: number;
+    maxConcurrency: number;
+    passed: number;
+    failed: number;
+    cancelled: boolean;
+    groups: readonly RallarBlackBoxTestParallelGroupResult[];
+}>;
+
+export type RallarBlackBoxTestWaitResultValue = Readonly<{
+    commandId: string;
+    matched: boolean;
+    timedOut?: boolean;
+    cancelled?: boolean;
+    match: RallarBlackBoxTestWaitMatch;
+    event?: RallarBlackBoxTestEvent;
+}>;
+
+export type RallarBlackBoxTestAssertResultValue = Readonly<{
+    commandId: string;
+    source: string;
+    operator: RallarBlackBoxTestAssertOperator;
+    expected?: unknown;
+    actual?: unknown;
+    exists: boolean;
+    passed: boolean;
 }>;
 
 export type RallarBlackBoxTestEventKind =
