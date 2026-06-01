@@ -12,6 +12,8 @@ This directory contains user-facing and AI-facing documentation for the browser 
   Prompt templates and constraints for asking an AI to use Rallar, Rallar Data, or Rallar Server.
 - [Rallar Quickstart And Recipes](./rallar-quickstart-and-recipes.md)
   Short recipes for common application tasks.
+- [Rallar Product And Implementation Evaluation](./rallar-product-and-implementation-evaluation.md)
+  Current product-level assessment of the browser facade, Rallar Data, Rallar Server, apps, tests, and next hardening work.
 - [Rallar Troubleshooting Checklist](./rallar-troubleshooting-checklist.md)
   Practical checks for auth, rooms, WS, RTC, data stores, server middleware, and tests.
 

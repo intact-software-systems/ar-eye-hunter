@@ -68,7 +68,7 @@ HTTP/WS/RTC results.
 
 ## Runner Iteration 1: Plan Validation And Explain Mode
 
-Status: proposed.
+Status: completed on 2026-06-01.
 
 Goal: Validate and explain a recipe before it performs network calls.
 
@@ -104,6 +104,25 @@ Suggested verification:
 - Add CLI tests for valid recipes, missing connections, missing step
   references, missing env vars, and traffic-plan expansion.
 - Add schema tests for strict profile validation.
+
+Results:
+
+- Added `packages/shared-test/black-box-runner/plan-preflight.ts`, a reusable machine-readable preflight helper for
+  runner recipes.
+- Added `--explain` and `--validate` CLI modes to `scenario-black-box.ts`.
+- Added optional strict profile validation through `--strict` or `--profile strict`.
+- Explain/validate now expands variables, defaults, connections, inline loops, soak, and traffic plans through the same
+  plan-building path used by normal execution, but stops before HTTP, WS, or RTC calls are made.
+- The emitted JSON reports provider/transport modes, env requirements and missing env vars, live service requirements,
+  generated operation counts, estimated artifact volume, referenced/missing connections, referenced/missing step names,
+  produced/consumed outputs, redaction sources, traffic-plan expansion metadata, operation rows, and structured issues.
+- Missing env vars are reported as preflight errors without requiring the runner to throw before JSON output can be
+  generated.
+
+Verification:
+
+- `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts -t "explains a valid recipe|validates missing env|missing traffic-plan|seeded traffic-plan expansion|strict profile"` passed.
+- `deno check packages/shared-test/black-box-runner/scenario-black-box.ts packages/shared-test/black-box-runner/plan-preflight.ts` passed.
 
 ## Runner Iteration 2: Safe Output Transform Layer
 

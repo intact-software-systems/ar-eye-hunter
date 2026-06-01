@@ -6,10 +6,14 @@ import type {
     RallarBlackBoxDistributedRunRecipeSelection,
     RallarBlackBoxDistributedTargetPolicy,
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import type {
-    RallarBlackBoxTestCommand,
-    RallarBlackBoxTestCommandKind,
-    RallarBlackBoxTestRecipe,
+import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from '@shared-test/rallar-bb-test/schema.ts';
+import {
+    RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
+    type RallarBlackBoxTestAssertCommand,
+    type RallarBlackBoxTestCommand,
+    type RallarBlackBoxTestCommandKind,
+    type RallarBlackBoxTestRecipe,
+    type RallarBlackBoxTestWaitCommand,
 } from '@shared-test/rallar-bb-test/types.ts';
 import type {
     ControlAgentSnapshot,
@@ -47,6 +51,78 @@ export type DistributedRecipeCommandPreview = Readonly<{
     effectiveCommandCount: number;
     effectiveFrameCount?: number;
     label: string;
+}>;
+
+export type DistributedRecipePreflightServiceBadge = Readonly<{
+    label: string;
+    tone: string;
+}>;
+
+export type DistributedRecipePreflightLoop = Readonly<{
+    path: string;
+    commandId?: string;
+    estimatedIterations: number;
+    childCommandCount: number;
+    effectiveCommandCount: number;
+    count?: number;
+    durationMs?: number;
+    intervalMs?: number;
+    maxCommands?: number;
+    frameCount?: number;
+}>;
+
+export type DistributedRecipePreflightParallel = Readonly<{
+    path: string;
+    commandId?: string;
+    groupCount: number;
+    maxConcurrency: number;
+    effectiveCommandCount: number;
+    groups: readonly string[];
+}>;
+
+export type DistributedRecipePreflightWait = Readonly<{
+    path: string;
+    commandId?: string;
+    matchSummary: string;
+    timeoutMs?: number;
+}>;
+
+export type DistributedRecipePreflightAssert = Readonly<{
+    path: string;
+    commandId?: string;
+    predicate: string;
+}>;
+
+export type DistributedRecipePreflightTreeRow = Readonly<{
+    path: string;
+    depth: number;
+    kind: RallarBlackBoxTestCommandKind;
+    commandId?: string;
+    label: string;
+    summary: string;
+    effectiveCommandCount: number;
+    details: readonly string[];
+    warnings: readonly string[];
+}>;
+
+export type DistributedRecipePreflightSummary = Readonly<{
+    recipeId: string;
+    manifestCommandCount: number;
+    effectiveCommandCount: number;
+    effectiveFrameCount?: number;
+    maxDepth: number;
+    commandKinds: readonly RallarBlackBoxTestCommandKind[];
+    providerModes: readonly string[];
+    runtimeSurfaces: readonly string[];
+    liveServiceRequirements: readonly string[];
+    serviceBadges: readonly DistributedRecipePreflightServiceBadge[];
+    loops: readonly DistributedRecipePreflightLoop[];
+    parallelGroups: readonly DistributedRecipePreflightParallel[];
+    waits: readonly DistributedRecipePreflightWait[];
+    asserts: readonly DistributedRecipePreflightAssert[];
+    tree: readonly DistributedRecipePreflightTreeRow[];
+    warnings: readonly string[];
+    errors: readonly string[];
 }>;
 
 export type DistributedRecipeTargetStatus =
@@ -354,6 +430,497 @@ export function distributedRecipeCommandKinds(
     return uniqueValues(recipe.commands.flatMap(commandKindsForCommand));
 }
 
+export function distributedRecipePreflight(
+    recipe: RallarBlackBoxTestRecipe,
+): DistributedRecipePreflightSummary {
+    const analyses = recipe.commands.map((command, index) =>
+        analyzeDistributedRecipeCommand(command, `$.commands[${index}]`, 0)
+    );
+    const commandKinds = uniqueValues(analyses.flatMap(analysis => analysis.commandKinds));
+    const capabilities = commandKinds
+        .map(kind => COMMAND_CAPABILITY_BY_KIND.get(kind))
+        .filter((capability): capability is CommandCapability => Boolean(capability));
+    const liveServiceRequirements = uniqueValues([
+        ...capabilities.flatMap(capability => capability.liveServiceRequirements),
+        ...analyses.flatMap(analysis => analysis.liveServiceRequirements),
+    ].filter(requirement => requirement !== COMPOSITE_CHILD_REQUIREMENTS_LABEL));
+    const warnings = uniqueValues([
+        ...analyses.flatMap(analysis => analysis.warnings),
+        ...compatibilityWarnings(commandKinds, liveServiceRequirements),
+    ]);
+    const errors = uniqueValues(analyses.flatMap(analysis => analysis.errors));
+
+    return {
+        recipeId: recipe.recipeId,
+        manifestCommandCount: recipe.commands.length,
+        effectiveCommandCount: analyses.reduce((sum, analysis) => sum + analysis.effectiveCommandCount, 0),
+        effectiveFrameCount: firstPositiveInteger(
+            asRecord(asRecord(recipe.metadata).realtime).frameCount,
+            asRecord(recipe.metadata).frameCount,
+            ...analyses.map(analysis => analysis.effectiveFrameCount),
+        ),
+        maxDepth: Math.max(0, ...analyses.map(analysis => analysis.maxDepth)),
+        commandKinds,
+        providerModes: uniqueValues(capabilities.flatMap(capability => capability.supportedProviderModes)),
+        runtimeSurfaces: uniqueValues(capabilities.flatMap(capability => capability.runtimeSurfaces)),
+        liveServiceRequirements,
+        serviceBadges: serviceBadgesForPreflight(commandKinds, liveServiceRequirements),
+        loops: analyses.flatMap(analysis => analysis.loops),
+        parallelGroups: analyses.flatMap(analysis => analysis.parallelGroups),
+        waits: analyses.flatMap(analysis => analysis.waits),
+        asserts: analyses.flatMap(analysis => analysis.asserts),
+        tree: analyses.flatMap(analysis => analysis.tree),
+        warnings,
+        errors,
+    };
+}
+
+type CommandCapability = typeof RALLAR_BLACK_BOX_COMMAND_CAPABILITIES[number];
+
+type DistributedRecipeCommandAnalysis = Readonly<{
+    effectiveCommandCount: number;
+    effectiveFrameCount?: number;
+    maxDepth: number;
+    commandKinds: readonly RallarBlackBoxTestCommandKind[];
+    liveServiceRequirements: readonly string[];
+    loops: readonly DistributedRecipePreflightLoop[];
+    parallelGroups: readonly DistributedRecipePreflightParallel[];
+    waits: readonly DistributedRecipePreflightWait[];
+    asserts: readonly DistributedRecipePreflightAssert[];
+    tree: readonly DistributedRecipePreflightTreeRow[];
+    warnings: readonly string[];
+    errors: readonly string[];
+}>;
+
+const COMMAND_CAPABILITY_BY_KIND = new Map(
+    RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map(capability => [capability.kind, capability]),
+);
+const COMPOSITE_CHILD_REQUIREMENTS_LABEL = 'same live requirements as its child commands';
+const DEFAULT_WAIT_TIMEOUT_MS = 5_000;
+
+function analyzeDistributedRecipeCommand(
+    command: RallarBlackBoxTestCommand,
+    path: string,
+    depth: number,
+): DistributedRecipeCommandAnalysis {
+    const capability = COMMAND_CAPABILITY_BY_KIND.get(command.kind);
+    const directRequirements = capability?.liveServiceRequirements.filter(requirement =>
+        requirement !== COMPOSITE_CHILD_REQUIREMENTS_LABEL
+    ) ?? [];
+    const commandWarnings: string[] = [];
+    const commandErrors: string[] = [];
+    const details: string[] = [];
+    let effectiveCommandCount = 1;
+    let childAnalyses: readonly DistributedRecipeCommandAnalysis[] = [];
+    let loops: readonly DistributedRecipePreflightLoop[] = [];
+    let parallelGroups: readonly DistributedRecipePreflightParallel[] = [];
+    let waits: readonly DistributedRecipePreflightWait[] = [];
+    let asserts: readonly DistributedRecipePreflightAssert[] = [];
+    let summary = commandSummary(command);
+
+    if (depth > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth) {
+        commandErrors.push(
+            `${path} exceeds max composite depth ${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth}.`,
+        );
+    }
+
+    if (command.kind === 'loop') {
+        childAnalyses = command.commands.map((child, index) =>
+            analyzeDistributedRecipeCommand(child, `${path}.commands[${index}]`, depth + 1)
+        );
+        const estimate = estimateLoopIterations(command);
+        const childEffectiveCommandCount = childAnalyses.reduce(
+            (sum, analysis) => sum + analysis.effectiveCommandCount,
+            0,
+        );
+        effectiveCommandCount = childEffectiveCommandCount * estimate.estimatedIterations;
+        loops = [{
+            path,
+            commandId: command.commandId,
+            estimatedIterations: estimate.estimatedIterations,
+            childCommandCount: command.commands.length,
+            effectiveCommandCount,
+            count: optionalPositiveIntegerValue(command.count),
+            durationMs: optionalPositiveIntegerValue(command.durationMs),
+            intervalMs: nonNegativeIntegerValue(command.intervalMs ?? command.delayMs),
+            maxCommands: optionalPositiveIntegerValue(command.maxCommands),
+            frameCount: effectiveFrameCountForCommand(command),
+        }];
+        summary = `loop x${estimate.estimatedIterations}`;
+        details.push(
+            `${command.commands.length} child command${command.commands.length === 1 ? '' : 's'}`,
+            `${effectiveCommandCount} effective operation${effectiveCommandCount === 1 ? '' : 's'}`,
+        );
+        if (estimate.intervalMs !== undefined) {
+            details.push(`interval ${estimate.intervalMs} ms`);
+        }
+        if (estimate.durationMs !== undefined) {
+            details.push(`duration ${estimate.durationMs} ms`);
+        }
+        if (command.commands.length === 0) {
+            commandErrors.push(`${path} has no loop child commands.`);
+        }
+        if (estimate.limitErrors.length > 0) {
+            commandErrors.push(...estimate.limitErrors.map(error => `${path}: ${error}`));
+        }
+        if (estimate.warnings.length > 0) {
+            commandWarnings.push(...estimate.warnings.map(warning => `${path}: ${warning}`));
+        }
+    } else if (command.kind === 'parallel') {
+        const groupAnalyses = command.groups.map((group, groupIndex) =>
+            group.commands.map((child, commandIndex) =>
+                analyzeDistributedRecipeCommand(
+                    child,
+                    `${path}.groups[${groupIndex}].commands[${commandIndex}]`,
+                    depth + 1,
+                )
+            )
+        );
+        childAnalyses = groupAnalyses.flat();
+        effectiveCommandCount = childAnalyses.reduce(
+            (sum, analysis) => sum + analysis.effectiveCommandCount,
+            0,
+        );
+        const maxConcurrency = optionalPositiveIntegerValue(command.maxConcurrency) ?? command.groups.length;
+        parallelGroups = [{
+            path,
+            commandId: command.commandId,
+            groupCount: command.groups.length,
+            maxConcurrency,
+            effectiveCommandCount,
+            groups: command.groups.map((group, index) =>
+                group.label ?? group.groupId ?? `group ${index + 1}`
+            ),
+        }];
+        summary = `parallel ${command.groups.length} group${command.groups.length === 1 ? '' : 's'}`;
+        details.push(
+            `max concurrency ${maxConcurrency}`,
+            `${effectiveCommandCount} effective operation${effectiveCommandCount === 1 ? '' : 's'}`,
+        );
+        if (command.groups.length === 0) {
+            commandErrors.push(`${path} has no parallel groups.`);
+        }
+        if (maxConcurrency > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxParallelConcurrency) {
+            commandErrors.push(
+                `${path}: parallel maxConcurrency ${maxConcurrency} exceeds ` +
+                `${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxParallelConcurrency}.`,
+            );
+        }
+    } else if (command.kind === 'recipe.load' || command.kind === 'recipe.run') {
+        const nestedRecipe = command.recipe;
+        if (!nestedRecipe) {
+            summary = 'run loaded recipe';
+        } else {
+            childAnalyses = nestedRecipe.commands.map((child, index) =>
+                analyzeDistributedRecipeCommand(child, `${path}.recipe.commands[${index}]`, depth + 1)
+            );
+            if (command.kind === 'recipe.run') {
+                effectiveCommandCount = childAnalyses.reduce(
+                    (sum, analysis) => sum + analysis.effectiveCommandCount,
+                    0,
+                );
+                summary = `runs ${nestedRecipe.commands.length} recipe command${nestedRecipe.commands.length === 1 ? '' : 's'}`;
+            } else {
+                summary = `loads ${nestedRecipe.commands.length} recipe command${nestedRecipe.commands.length === 1 ? '' : 's'}`;
+            }
+            details.push(nestedRecipe.recipeId);
+        }
+    } else if (command.kind === 'wait') {
+        waits = [waitPreflight(command, path)];
+        const timeoutMs = command.timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS;
+        summary = `wait up to ${timeoutMs} ms`;
+        details.push(waits[0].matchSummary);
+        commandWarnings.push(`${path}: wait can time out if matching evidence is not emitted.`);
+    } else if (command.kind === 'assert') {
+        asserts = [assertPreflight(command, path)];
+        summary = asserts[0].predicate;
+        commandWarnings.push(`${path}: assert fails the recipe when its runtime evidence does not match.`);
+    }
+
+    const childWarnings = childAnalyses.flatMap(analysis => analysis.warnings);
+    const childErrors = childAnalyses.flatMap(analysis => analysis.errors);
+    const commandKinds = uniqueValues([
+        command.kind,
+        ...childAnalyses.flatMap(analysis => analysis.commandKinds),
+    ]);
+    const liveServiceRequirements = uniqueValues([
+        ...directRequirements,
+        ...childAnalyses.flatMap(analysis => analysis.liveServiceRequirements),
+    ]);
+    const row: DistributedRecipePreflightTreeRow = {
+        path,
+        depth,
+        kind: command.kind,
+        commandId: command.commandId,
+        label: command.label ?? command.commandId ?? command.kind,
+        summary,
+        effectiveCommandCount,
+        details,
+        warnings: commandWarnings,
+    };
+
+    return {
+        effectiveCommandCount,
+        effectiveFrameCount: firstPositiveInteger(
+            effectiveFrameCountForCommand(command),
+            ...childAnalyses.map(analysis => analysis.effectiveFrameCount),
+        ),
+        maxDepth: Math.max(depth + 1, ...childAnalyses.map(analysis => analysis.maxDepth)),
+        commandKinds,
+        liveServiceRequirements,
+        loops: [
+            ...loops,
+            ...childAnalyses.flatMap(analysis => analysis.loops),
+        ],
+        parallelGroups: [
+            ...parallelGroups,
+            ...childAnalyses.flatMap(analysis => analysis.parallelGroups),
+        ],
+        waits: [
+            ...waits,
+            ...childAnalyses.flatMap(analysis => analysis.waits),
+        ],
+        asserts: [
+            ...asserts,
+            ...childAnalyses.flatMap(analysis => analysis.asserts),
+        ],
+        tree: [
+            row,
+            ...childAnalyses.flatMap(analysis => analysis.tree),
+        ],
+        warnings: uniqueValues([...commandWarnings, ...childWarnings]),
+        errors: uniqueValues([...commandErrors, ...childErrors]),
+    };
+}
+
+function estimateLoopIterations(command: Extract<RallarBlackBoxTestCommand, { kind: 'loop' }>): Readonly<{
+    estimatedIterations: number;
+    durationMs?: number;
+    intervalMs?: number;
+    warnings: readonly string[];
+    limitErrors: readonly string[];
+}> {
+    const warnings: string[] = [];
+    const limitErrors: string[] = [];
+    const count = optionalPositiveIntegerValue(command.count);
+    const durationMs = optionalPositiveIntegerValue(command.durationMs);
+    const intervalMs = nonNegativeIntegerValue(command.intervalMs ?? command.delayMs);
+    const maxCommands = optionalPositiveIntegerValue(command.maxCommands) ??
+        RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands;
+    const childCommandCount = Math.max(1, command.commands.length);
+
+    if (command.count !== undefined && count === undefined) {
+        limitErrors.push('loop count must be a positive integer.');
+    } else if ((count ?? 0) > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopCount) {
+        limitErrors.push(
+            `loop count ${count} exceeds ${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopCount}.`,
+        );
+    }
+
+    if (command.durationMs !== undefined && durationMs === undefined) {
+        limitErrors.push('loop durationMs must be a positive integer.');
+    } else if ((durationMs ?? 0) > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs) {
+        limitErrors.push(
+            `loop durationMs ${durationMs} exceeds ${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs}.`,
+        );
+    }
+
+    if ((command.intervalMs ?? command.delayMs) !== undefined && intervalMs === undefined) {
+        limitErrors.push('loop intervalMs/delayMs must be a non-negative integer.');
+    }
+
+    if (command.maxCommands !== undefined && optionalPositiveIntegerValue(command.maxCommands) === undefined) {
+        limitErrors.push('loop maxCommands must be a positive integer.');
+    }
+
+    if (count !== undefined) {
+        const plannedDirectCommands = count * childCommandCount;
+        if (durationMs === undefined && plannedDirectCommands > maxCommands) {
+            limitErrors.push(`loop schedules ${plannedDirectCommands} direct child commands but maxCommands is ${maxCommands}.`);
+        }
+        if (count > 100 && intervalMs === 0) {
+            warnings.push(`loop schedules ${count} iterations without pacing.`);
+        }
+        return {
+            estimatedIterations: count,
+            durationMs,
+            intervalMs,
+            warnings,
+            limitErrors,
+        };
+    }
+
+    if (durationMs !== undefined) {
+        const intervalEstimate = intervalMs && intervalMs > 0
+            ? Math.max(1, Math.ceil(durationMs / intervalMs))
+            : RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopCount;
+        const maxCommandEstimate = Math.max(1, Math.floor(maxCommands / childCommandCount));
+        const estimatedIterations = Math.min(
+            RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopCount,
+            intervalEstimate,
+            maxCommandEstimate,
+        );
+        warnings.push(
+            'duration-based loop estimate depends on runtime command latency and can finish earlier or later.',
+        );
+        if (!intervalMs || intervalMs === 0) {
+            warnings.push('duration-based loop has no positive pacing interval.');
+        }
+        return {
+            estimatedIterations,
+            durationMs,
+            intervalMs,
+            warnings,
+            limitErrors,
+        };
+    }
+
+    return {
+        estimatedIterations: 1,
+        intervalMs,
+        warnings,
+        limitErrors,
+    };
+}
+
+function commandSummary(command: RallarBlackBoxTestCommand): string {
+    switch (command.kind) {
+        case 'configure':
+            return 'configure runtime';
+        case 'recipe.load':
+            return 'load recipe';
+        case 'recipe.run':
+            return command.recipe ? 'run inline recipe' : 'run loaded recipe';
+        case 'recipe.cancel':
+            return 'cancel loaded recipe';
+        case 'rtc.connect':
+            return [
+                'connect RTC',
+                command.connection,
+                roomLabel(command),
+            ].filter(Boolean).join(' - ');
+        case 'rtc.send':
+            return [
+                'send RTC',
+                command.connection,
+                roomLabel(command),
+            ].filter(Boolean).join(' - ');
+        case 'ws.open':
+            return ['open WebSocket', command.connection].filter(Boolean).join(' - ');
+        case 'ws.send':
+            return ['send WebSocket', command.connection].filter(Boolean).join(' - ');
+        case 'ws.close':
+            return ['close WebSocket', command.connection].filter(Boolean).join(' - ');
+        case 'http.request':
+            return `${command.request.method ?? 'GET'} ${command.request.path ?? command.request.url ?? 'HTTP request'}`;
+        case 'health':
+            return 'agent health';
+        case 'stats':
+            return 'agent stats';
+        case 'close':
+            return 'close transports';
+        case 'reset':
+            return 'reset agent runtime';
+        default:
+            return command.kind;
+    }
+}
+
+function roomLabel(
+    command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect' | 'rtc.send' }>,
+): string | undefined {
+    const roomRef = asRecord(command.roomRef);
+    const send = command.kind === 'rtc.send' ? asRecord(command.send) : {};
+    const roomId = command.kind === 'rtc.connect' ? command.roomId : undefined;
+    return String(roomId ?? send.roomId ?? roomRef.groupId ?? roomRef.roomId ?? '') || undefined;
+}
+
+function waitPreflight(command: RallarBlackBoxTestWaitCommand, path: string): DistributedRecipePreflightWait {
+    return {
+        path,
+        commandId: command.commandId,
+        matchSummary: matchSummary(command.match),
+        timeoutMs: command.timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS,
+    };
+}
+
+function assertPreflight(command: RallarBlackBoxTestAssertCommand, path: string): DistributedRecipePreflightAssert {
+    return {
+        path,
+        commandId: command.commandId,
+        predicate: `${command.source} ${command.operator}${command.expected === undefined ? '' : ` ${shortValue(command.expected)}`}`,
+    };
+}
+
+function matchSummary(match: RallarBlackBoxTestWaitCommand['match']): string {
+    const entries = Object.entries(match).map(([key, value]) => `${key}=${shortValue(value)}`);
+    return entries.length > 0 ? entries.join(', ') : 'any runtime evidence';
+}
+
+function shortValue(value: unknown): string {
+    const rendered = typeof value === 'string'
+        ? value
+        : JSON.stringify(value);
+    if (rendered === undefined) {
+        return 'undefined';
+    }
+    return rendered.length > 72 ? `${rendered.slice(0, 69)}...` : rendered;
+}
+
+function compatibilityWarnings(
+    commandKinds: readonly RallarBlackBoxTestCommandKind[],
+    liveServiceRequirements: readonly string[],
+): readonly string[] {
+    const warnings: string[] = [];
+    const kinds = new Set(commandKinds);
+    if (liveServiceRequirements.length > 0) {
+        warnings.push('Recipe requires live runtime evidence or live services from the selected browser agents.');
+    }
+    if (kinds.has('rtc.connect') || kinds.has('rtc.send')) {
+        warnings.push('RTC recipes require real Rallar signaling, compatible group membership, and at least one peer for delivery checks.');
+    }
+    if (kinds.has('ws.open') || kinds.has('ws.send')) {
+        warnings.push('WebSocket recipes require an open or openable socket for every target agent that sends WS traffic.');
+    }
+    if (kinds.has('http.request')) {
+        warnings.push('HTTP recipes can require access tokens and reachable Rallar Server endpoints.');
+    }
+    return warnings;
+}
+
+function serviceBadgesForPreflight(
+    commandKinds: readonly RallarBlackBoxTestCommandKind[],
+    liveServiceRequirements: readonly string[],
+): readonly DistributedRecipePreflightServiceBadge[] {
+    const kinds = new Set(commandKinds);
+    const badges: DistributedRecipePreflightServiceBadge[] = [
+        { label: 'control server', tone: 'active' },
+        { label: 'browser agents', tone: 'active' },
+    ];
+    if (liveServiceRequirements.length > 0) {
+        badges.push({ label: 'runtime evidence', tone: 'warn' });
+    }
+    if (kinds.has('http.request')) {
+        badges.push({ label: 'HTTP/API', tone: 'warn' });
+    }
+    if (kinds.has('ws.open') || kinds.has('ws.send') || kinds.has('ws.close')) {
+        badges.push({ label: 'WebSocket', tone: 'warn' });
+    }
+    if (kinds.has('rtc.connect')) {
+        badges.push({ label: 'Rallar auth/signaling', tone: 'warn' });
+    }
+    if (kinds.has('rtc.send')) {
+        badges.push({ label: 'RTC peers', tone: 'warn' });
+    }
+    if (kinds.has('loop')) {
+        badges.push({ label: 'looped traffic', tone: 'active' });
+    }
+    if (kinds.has('parallel')) {
+        badges.push({ label: 'parallel groups', tone: 'active' });
+    }
+    return badges;
+}
+
 function commandKindsForCommand(command: RallarBlackBoxTestCommand): readonly RallarBlackBoxTestCommandKind[] {
     const nested = (() => {
         switch (command.kind) {
@@ -420,6 +987,18 @@ function positiveIntegerValue(value: unknown, fallback?: number): number {
     return typeof value === 'number' && Number.isInteger(value) && value > 0
         ? value
         : fallback ?? 1;
+}
+
+function optionalPositiveIntegerValue(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isInteger(value) && value > 0
+        ? value
+        : undefined;
+}
+
+function nonNegativeIntegerValue(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0
+        ? value
+        : undefined;
 }
 
 function firstPositiveInteger(...values: readonly unknown[]): number | undefined {

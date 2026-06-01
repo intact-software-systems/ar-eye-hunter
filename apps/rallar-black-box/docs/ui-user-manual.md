@@ -618,8 +618,12 @@ then runs one `loop` command that sends game-style position payloads over `realt
 configured duration. The manifest stays compact, while the catalog row shows both manifest commands and the effective
 frame count before the run is created.
 Catalog entries expose command capability help, including provider modes, runtime surfaces, live-service requirements,
-artifact expectations, and whether the commands can run through distributed control agents. The generated manifest is
-validated with the same shared schema and distributed-run contract used by the control server.
+artifact expectations, and whether the commands can run through distributed control agents. Each entry also has a
+preflight panel. Select a recipe to see top-level command count, effective operations, frame estimates, loop cadence,
+parallel group/concurrency details, wait/assert predicates, live-service badges, compatibility warnings, and a compact
+execution tree. The manifest preview repeats the selected-recipe preflight totals next to the raw JSON so the scheduled
+work is understandable before staging.
+The generated manifest is validated with the same shared schema and distributed-run contract used by the control server.
 
 The optional barrier inserts a server-mediated synchronization point after
 stage ACKs and before recipe start. Each selected browser must report

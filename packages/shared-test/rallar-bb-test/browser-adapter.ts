@@ -1,5 +1,9 @@
 import type { CreateRallarBlackBoxTestRuntimeOptions, } from './runtime.ts';
 import { createRallarBlackBoxTestRuntime } from './runtime.ts';
+import {
+    inferRallarBlackBoxDiagnosticSeverity,
+    normalizeRallarBlackBoxRuntimeDiagnostic,
+} from './diagnostics.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
@@ -41,6 +45,8 @@ export type RallarBlackBoxBrowserRallarEvent = Readonly<{
     connection?: string;
     actor?: string;
     transport?: RallarBlackBoxTestTransport;
+    severity?: 'debug' | 'info' | 'warning' | 'error';
+    atEpochMs?: number;
     roomId?: string;
     roomRef?: Readonly<Record<string, unknown>>;
     scope?: Readonly<Record<string, unknown>>;
@@ -625,6 +631,13 @@ function toRallarBrowserEventInput(
         data: event.data,
         error: event.error,
     };
+    const severity = inferRallarBlackBoxDiagnosticSeverity({
+        topic: event.topic ?? 'rallar.browser.event',
+        severity: event.severity,
+        error: event.error,
+        data: event.data,
+        payload,
+    });
 
     return {
         kind,
@@ -632,8 +645,34 @@ function toRallarBrowserEventInput(
         connection: event.connection,
         actor: event.actor,
         transport: toEventTransport(event.transport),
-        severity: event.error ? 'error' : event.kind === 'close' ? 'warning' : 'info',
-        payload,
+        severity: event.kind === 'message'
+            ? 'info'
+            : event.kind === 'close'
+                ? 'warning'
+                : severity,
+        payload: kind === 'diagnostic'
+            ? normalizeRallarBlackBoxRuntimeDiagnostic({
+                topic: event.topic ?? 'rallar.browser.event',
+                severity,
+                transport: toEventTransport(event.transport),
+                connection: event.connection,
+                actor: event.actor,
+                roomId: event.roomId,
+                laneId: event.laneId,
+                peerId: event.peerId,
+                remotePeerId: event.remotePeerId,
+                senderId: event.senderId,
+                typeId: event.typeId,
+                topicId: event.topicId,
+                contextId: event.contextId,
+                resourceId: event.resourceId,
+                atEpochMs: event.atEpochMs,
+                data: event.data,
+                error: event.error,
+                payload,
+                source: 'browser-rallar-runtime',
+            })
+            : payload,
     };
 }
 
@@ -880,7 +919,18 @@ class BrowserCommandAdapter {
             actor: connectionConfig.actor,
             transport: toRtcTransport(connectionConfig.rallar.transport),
             severity: 'info',
-            payload: diagnostics,
+            payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+                topic: 'rallar.bb.rtc.connected',
+                severity: 'info',
+                commandId: command.commandId,
+                connection: connectionConfig.connection,
+                actor: connectionConfig.actor,
+                transport: toRtcTransport(connectionConfig.rallar.transport),
+                roomId: connectionConfig.roomId,
+                data: diagnostics,
+                payload: diagnostics,
+                source: 'browser-adapter',
+            }),
         });
 
         return {
@@ -934,12 +984,23 @@ class BrowserCommandAdapter {
             connection: command.connection,
             transport: command.transport,
             severity: failure ? 'error' : 'info',
-            payload: failure
-                ? {
+            payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+                topic: failure ? 'rallar.bb.rtc.send_failed' : 'rallar.bb.rtc.send_completed',
+                severity: failure ? 'error' : 'info',
+                commandId: command.commandId,
+                connection: command.connection,
+                transport: command.transport,
+                data: diagnostics,
+                payload: failure
+                    ? {
                     diagnostics,
                     failure,
                 }
-                : diagnostics,
+                    : diagnostics,
+                message: failure?.message,
+                error: failure,
+                source: 'browser-adapter',
+            }),
         });
 
         if (failure) {
@@ -1059,10 +1120,19 @@ class BrowserCommandAdapter {
                 connection,
                 transport: 'ws',
                 severity: 'warning',
-                payload: {
+                payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+                    topic: 'rallar.bb.ws.headers_ignored',
+                    severity: 'warning',
+                    commandId: command.commandId,
+                    connection,
+                    transport: 'ws',
+                    message: 'Browser WebSocket constructors cannot set custom headers.',
+                    payload: {
                     reason: 'Browser WebSocket constructors cannot set custom headers.',
                     headers: command.headers,
                 },
+                    source: 'browser-adapter',
+                }),
             });
         }
 
@@ -1129,9 +1199,16 @@ class BrowserCommandAdapter {
                 connection,
                 transport: 'ws',
                 severity: 'error',
-                payload: {
+                payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+                    topic: 'rallar.bb.ws.error',
+                    severity: 'error',
+                    connection,
+                    transport: 'ws',
+                    payload: {
                     event,
                 },
+                    source: 'browser-adapter',
+                }),
             });
         });
     }

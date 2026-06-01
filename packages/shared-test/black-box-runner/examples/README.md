@@ -90,6 +90,20 @@ deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
   --dry-run
 ```
 
+Explain or validate a recipe before dry-run or live execution:
+
+```bash
+deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
+  -c packages/shared-test/black-box-runner/examples/rtc-rallar-browser-realtime.json \
+  --explain
+```
+
+`--explain` and `--validate` emit machine-readable JSON and stop before any
+HTTP, WS, or RTC call. The output includes expanded operation counts, live
+requirements, env and connection gaps, traffic-plan expansion metadata, output
+wiring, redaction sources, and structured issues. Add `--strict` to fail known
+step types with missing required authoring fields.
+
 Run the browser-backed live validation wrapper when a Rallar environment and
 test credentials are available:
 

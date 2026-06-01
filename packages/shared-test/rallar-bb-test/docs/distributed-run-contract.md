@@ -185,6 +185,16 @@ commands are queued. Missing stage ACKs after `ackTimeoutMs` roll up to
 to `timed-out`; disconnecting while a required agent is waiting at the barrier
 rolls up to `failed`.
 
+Distributed artifacts may contain nested `loop` and `parallel` result payloads
+inside ordinary command results. Consumers should use
+`flattenRallarBlackBoxCompositeResults(...)`,
+`toRallarBlackBoxCompositeResultTree(...)`,
+`summarizeRallarBlackBoxCompositeResults(...)`, and
+`toRallarBlackBoxCompositeDisplayResults(...)` from
+`packages/shared-test/rallar-bb-test/composite-results.ts` instead of parsing
+runtime-specific child arrays directly. The path contract is documented in
+`packages/shared-test/rallar-bb-test/docs/composite-result-contract.md`.
+
 ## JSON Schema
 
 `RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA` is exported from

@@ -214,8 +214,8 @@ bundles. It still leaves actual shell execution to explicit local tooling or the
 - `src/control-run-manager.ts`: typed control-server snapshot loading, run/agent row derivation, bulk enqueue,
   reset/delete, artifact export loading, JSONL/failure-bundle fetches, distributed-run lifecycle calls, and control URL
   normalization for the Run Manager and Distributed Recipes tabs.
-- `src/distributed-recipes.ts`: Distributed Recipes target-resolution, role-pattern, manifest-building, monitor,
-  history-filter, compare, artifact-validation, and state-tone helpers.
+- `src/distributed-recipes.ts`: Distributed Recipes target-resolution, role-pattern, manifest-building, composite
+  preflight, monitor, history-filter, compare, artifact-validation, and state-tone helpers.
 - `src/schema-authoring.ts`: browser-side schema validation and capability summaries for command JSON, recipes,
   distributed-run manifests, runner scenarios, and generated command examples.
 - `src/full-stack-qa-matrix.ts`: full-stack command-center QA ownership and evidence mapping.

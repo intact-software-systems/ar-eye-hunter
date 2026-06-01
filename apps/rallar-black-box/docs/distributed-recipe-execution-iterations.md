@@ -505,7 +505,7 @@ Verification:
 
 ## Iteration 51: Composite Recipe UX And Preflight
 
-Status: planned.
+Status: completed on 2026-06-01.
 
 Goal: Make looped, parallel, wait, and assert-based distributed recipes understandable before a user sends them to
 browser agents.
@@ -544,6 +544,24 @@ Suggested verification:
 - Add Playwright coverage that selects the `rtc-realtime` and `composite-evidence` recipes and verifies the UI shows
   loop, parallel, wait/assert, effective-operation, and live-service details.
 
+Results:
+
+- Added `distributedRecipePreflight()` in `src/distributed-recipes.ts` to derive top-level command count, effective
+  operation count, effective frame count, max depth, loop estimates, parallel group/concurrency summaries, wait/assert
+  predicates, command kinds, live-service requirements, compatibility warnings, service badges, and a compact execution
+  tree from nested recipes.
+- The `Distributed Recipes` catalog now shows preflight status and service badges per recipe, with selected rows opening
+  a preflight panel that explains looped traffic, parallel groups, wait/assert guards, live requirements, and parent/child
+  command shape without requiring raw JSON inspection.
+- The manifest preview now includes selected-recipe preflight totals and expandable per-recipe preflight panels while
+  keeping the raw manifest JSON available.
+
+Verification:
+
+- `npx vitest run packages/tests/rallar-black-box/distributed-recipes.test.ts` passed.
+- `npm --workspace rallar-black-box run typecheck` passed.
+- `npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/tabbed-navigation.spec.ts -g "shows distributed recipe composite preflight before staging"` passed.
+
 ## Iteration 52: Structured WS/RTC Runtime Diagnostics In The SPA
 
 Status: planned.
@@ -558,6 +576,9 @@ Context:
   - `Received data channel for different data channel name: rtc-data-channel vs rtc-realtime`
 - These signals are important during live distributed testing because they can explain missing messages, confusing
   routing, or unexpected RTC lane behavior.
+- Shared-test Iteration 11 now provides
+  `normalizeRallarBlackBoxRuntimeDiagnostic(...)` and bridges the known WS/RTC warning patterns into browser-agent
+  diagnostic events. This SPA iteration should consume that contract instead of inventing a separate diagnostic shape.
 
 Work:
 

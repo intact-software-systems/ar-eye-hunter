@@ -1,6 +1,12 @@
 import * as sync from './execute-black-box.ts';
 import type { ScenarioInput } from './scenario-algorithm.ts';
 import * as scenarioAlgorithms from './scenario-algorithm.ts';
+import {
+    collectBlackBoxRunnerEnvRequirements,
+    explainBlackBoxRunnerPlan,
+    resolveBlackBoxRunnerVariablesForPreflight,
+    type BlackBoxRunnerPreflightProfile,
+} from './plan-preflight.ts';
 import utils from './utils.ts';
 
 type CliOptions = {
@@ -13,6 +19,10 @@ type CliOptions = {
     iterations?: string
     durationMs?: string
     delayMs?: string
+    explain?: boolean
+    validate?: boolean
+    profile?: string
+    strict?: boolean
 }
 
 function printHelp(): void {
@@ -22,6 +32,8 @@ function printHelp(): void {
     console.log('  $ scenario-generate -c config.json');
     console.log('  $ scenario-generate -c config.json -e dry');
     console.log('  $ scenario-generate -c config.json --dry-run');
+    console.log('  $ scenario-generate -c config.json --explain');
+    console.log('  $ scenario-generate -c config.json --validate --strict');
     console.log('  $ scenario-generate -c config.json --artifact-dir .artifacts/black-box-run');
     console.log('  $ scenario-generate -c config.json --iterations 10 --artifact-dir .artifacts/black-box-scale');
     console.log('  $ scenario-generate -c config.json -n');
@@ -84,6 +96,23 @@ function parseCliOptions(args: readonly string[]): CliOptions {
             case '-n':
             case '--dry-run':
                 options.dryRun = true;
+                break;
+            case '--explain':
+                options.explain = true;
+                break;
+            case '--validate':
+                options.validate = true;
+                break;
+            case '--strict':
+                options.strict = true;
+                options.profile = 'strict';
+                break;
+            case '--profile':
+            case '--validation-profile':
+                options.profile = inlineValue ?? readOptionValue(args, i, option);
+                if (inlineValue === undefined) {
+                    i++;
+                }
                 break;
             case '--artifact-dir':
             case '--artifacts':
@@ -158,6 +187,11 @@ type TrafficPlanArtifact = {
 }
 
 const input = utils.openFile(cliOptions.config) as ScenarioCliConfig;
+const preflightMode = cliOptions.explain === true || cliOptions.validate === true;
+const preflightProfile: BlackBoxRunnerPreflightProfile =
+    cliOptions.strict === true || cliOptions.profile === 'strict'
+        ? 'strict'
+        : 'compat';
 
 const cliReplacements = utils.inputReplacesToJson(cliOptions.replace);
 
@@ -172,11 +206,19 @@ input.variables = {
     ...cliReplacements,
 };
 
-const resolvedVariables = sync.resolveBlackBoxVariables(
-    input.variables,
-    process.env,
-    input.secretVariables || input.secrets || [],
-);
+const preflightRawInput = JSON.parse(JSON.stringify(input)) as ScenarioCliConfig;
+const envRequirements = collectBlackBoxRunnerEnvRequirements(input, process.env);
+const resolvedVariables = preflightMode
+    ? resolveBlackBoxRunnerVariablesForPreflight(
+        input.variables,
+        process.env,
+        input.secretVariables || input.secrets || [],
+    )
+    : sync.resolveBlackBoxVariables(
+        input.variables,
+        process.env,
+        input.secretVariables || input.secrets || [],
+    );
 
 input.variables = resolvedVariables.variables;
 
@@ -1375,9 +1417,27 @@ function toSoakExpandedConfig(config: ScenarioCliConfig): ScenarioCliConfig {
     };
 }
 
-const trafficExpansion = toTrafficPlanExpandedConfig(input);
-const expandedInput = toSoakExpandedConfig(trafficExpansion.config);
-const scenarioJson = toExecutableInteractions(expandedInput);
+let trafficExpansion: ReturnType<typeof toTrafficPlanExpandedConfig>;
+let expandedInput: ScenarioCliConfig;
+let scenarioJson: unknown[];
+let planExpansionError: unknown;
+
+try {
+    trafficExpansion = toTrafficPlanExpandedConfig(input);
+    expandedInput = toSoakExpandedConfig(trafficExpansion.config);
+    scenarioJson = toExecutableInteractions(expandedInput);
+} catch (caught) {
+    if (!preflightMode) {
+        throw caught;
+    }
+
+    planExpansionError = caught;
+    trafficExpansion = {
+        config: input,
+    };
+    expandedInput = input;
+    scenarioJson = [];
+}
 
 function artifactPath(dir: string, name: string): string {
     return dir.replace(/\/+$/, '') + '/' + name;
@@ -1909,7 +1969,20 @@ async function executeScale(): Promise<any> {
     return aggregateReports(runs, startedAtEpochMs, Date.now());
 }
 
-if (printDryExecutableInteractions) {
+if (preflightMode) {
+    const preflight = explainBlackBoxRunnerPlan({
+        rawConfig: preflightRawInput,
+        expandedConfig: expandedInput,
+        executableInteractions: scenarioJson,
+        envRequirements,
+        trafficPlanArtifact: trafficExpansion.artifact,
+        profile: preflightProfile,
+        expansionError: planExpansionError,
+    });
+
+    console.log(JSON.stringify(sync.redactBlackBoxData(preflight, resolvedVariables.redactions), null, 2));
+    process.exit(preflight.ok ? 0 : 1);
+} else if (printDryExecutableInteractions) {
     console.log(JSON.stringify(sync.redactBlackBoxData(scenarioJson, resolvedVariables.redactions), null, 2));
 } else {
     (scaleMode ? executeScale() : executeOnce())

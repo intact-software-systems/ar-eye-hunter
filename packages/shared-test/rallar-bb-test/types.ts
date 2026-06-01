@@ -293,9 +293,14 @@ export type RallarBlackBoxTestResult<T = unknown> = Readonly<{
 export type RallarBlackBoxTestCompositeChildResult = Readonly<{
     commandId: string;
     originalCommandId?: string;
+    parentCommandId?: string;
+    path?: string;
+    sourceRecipePath?: string;
+    childIndex?: number;
     commandIndex: number;
     iteration?: number;
     groupId?: string;
+    groupIndex?: number;
     result: RallarBlackBoxTestResult;
 }>;
 

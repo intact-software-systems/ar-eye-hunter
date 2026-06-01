@@ -1,0 +1,80 @@
+{
+  "summary": {
+    "pathVersion": 1,
+    "total": 6,
+    "passed": 5,
+    "failed": 1,
+    "cancelled": 0,
+    "skipped": 0,
+    "composite": 2,
+    "leaf": 4,
+    "firstFailure": {
+      "path": "$.groups[0=left].commands[0].iterations[2].commands[0]",
+      "sourceRecipePath": "$.groups[0].commands[0].commands[0]",
+      "commandId": "composite-root:g1:left:c1:inner-loop:i2:c1:position-send",
+      "kind": "rtc.send",
+      "status": "failed",
+      "message": "Synthetic send failure."
+    }
+  },
+  "paths": [
+    "$",
+    "$.groups[0=left].commands[0]",
+    "$.groups[0=left].commands[0].iterations[1].commands[0]",
+    "$.groups[0=left].commands[0].iterations[2].commands[0]",
+    "$.groups[1=right].commands[0]",
+    "$.groups[1=right].commands[1]"
+  ],
+  "sourceRecipePaths": [
+    "$",
+    "$.groups[0].commands[0]",
+    "$.groups[0].commands[0].commands[0]",
+    "$.groups[0].commands[0].commands[0]",
+    "$.groups[1].commands[0]",
+    "$.groups[1].commands[1]"
+  ],
+  "tree": [
+    {
+      "path": "$",
+      "children": [
+        {
+          "path": "$.groups[0=left].commands[0]",
+          "children": [
+            {
+              "path": "$.groups[0=left].commands[0].iterations[1].commands[0]",
+              "children": []
+            },
+            {
+              "path": "$.groups[0=left].commands[0].iterations[2].commands[0]",
+              "children": []
+            }
+          ]
+        },
+        {
+          "path": "$.groups[1=right].commands[0]",
+          "children": []
+        },
+        {
+          "path": "$.groups[1=right].commands[1]",
+          "children": []
+        }
+      ]
+    }
+  ],
+  "redactedFailure": {
+    "path": "$.groups[0=left].commands[0].iterations[2].commands[0]",
+    "sourceRecipePath": "$.groups[0].commands[0].commands[0]",
+    "commandId": "composite-root:g1:left:c1:inner-loop:i2:c1:position-send",
+    "kind": "rtc.send",
+    "status": "failed",
+    "ok": false,
+    "error": {
+      "code": "SEND_FAILED",
+      "message": "Synthetic send failure.",
+      "details": {
+        "token": "<redacted>",
+        "body": "<redacted>"
+      }
+    }
+  }
+}

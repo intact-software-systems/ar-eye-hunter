@@ -1455,6 +1455,89 @@ test('shows shared-test recipes and imports a runner artifact bundle', async ({ 
     await expect(panel).toContainText('Replay Recipe');
 });
 
+test('shows distributed recipe composite preflight before staging', async ({ page }) => {
+    const run = {
+        runId: 'demo-run',
+        createdAtEpochMs: Date.now() - 10_000,
+        updatedAtEpochMs: Date.now() - 1_000,
+        agents: [],
+        commands: [],
+        results: [],
+        events: [],
+        stats: [],
+        reports: [],
+        heartbeats: [],
+    };
+
+    await page.route('http://localhost:5180/**', async route => {
+        const request = route.request();
+        const url = new URL(request.url());
+        if (request.method() === 'GET' && url.pathname === '/runs') {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({ runs: [run] }),
+            });
+            return;
+        }
+        if (request.method() === 'GET' && url.pathname === '/runs/demo-run') {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify(run),
+            });
+            return;
+        }
+        if (request.method() === 'GET' && url.pathname === '/distributed-runs') {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({ distributedRuns: [] }),
+            });
+            return;
+        }
+        await route.fulfill({
+            status: 404,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'not found' }),
+        });
+    });
+
+    await page.goto('/?provider=simulated&workspace=black-box-runner&tab=distributed-recipes&roomId=bb-group');
+
+    await expect(page.getByRole('tab', { name: 'Distributed Recipes' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+    );
+    const panel = page.locator('#panel-distributed-recipes');
+    await expect(panel.getByRole('heading', { name: 'Recipe Catalog' })).toBeVisible();
+    const catalog = panel.locator('.distributed-recipes-catalog');
+
+    await catalog.getByLabel('Search').fill('rtc realtime');
+    const rtcRow = catalog.locator('.distributed-recipe-row').filter({ hasText: 'RTC Realtime' });
+    await rtcRow.getByRole('checkbox').check();
+    await expect(rtcRow).toContainText('Preflight');
+    await expect(rtcRow).toContainText('Effective ops');
+    await expect(rtcRow).toContainText('102');
+    await expect(rtcRow).toContainText('Loop x100');
+    await expect(rtcRow).toContainText('Rallar auth/signaling');
+    await expect(rtcRow).toContainText('RTC peers');
+    await expect(rtcRow.getByLabel('Recipe execution tree')).toContainText('rtc-realtime-position-loop');
+
+    await catalog.getByLabel('Search').fill('composite');
+    const compositeRow = catalog.locator('.distributed-recipe-row').filter({ hasText: 'Composite Evidence' });
+    await compositeRow.getByRole('checkbox').check();
+    await expect(compositeRow).toContainText('parallel group');
+    await expect(compositeRow).toContainText('Wait/assert guard');
+    await expect(compositeRow).toContainText('Assert predicate');
+
+    const selectedPreflight = panel.getByLabel('Selected recipe preflight');
+    await expect(selectedPreflight).toContainText('Selected recipes');
+    await expect(selectedPreflight).toContainText('Effective ops');
+    await expect(selectedPreflight).toContainText('RTC Realtime preflight');
+    await expect(selectedPreflight).toContainText('Composite Evidence preflight');
+});
+
 test('restores selected tab and redacted UI drafts after a fresh load', async ({ page }) => {
     await page.goto('/?provider=simulated&tab=rallar-server');
     await page.evaluate(() => localStorage.clear());

@@ -114,6 +114,7 @@ export type BlackBoxRallarEvent = Readonly<{
     connection?: string;
     actor?: string;
     transport?: BlackBoxRallarTransport | 'ws';
+    severity?: 'debug' | 'info' | 'warning' | 'error';
     roomId?: string;
     roomRef?: BlackBoxRallarRoomRef;
     scope?: BlackBoxRallarScope;
@@ -249,6 +250,7 @@ type RuntimeState = {
     unsubscribeMessagesRtc?: () => void;
     unsubscribeWsLifecycle?: () => void;
     unsubscribeRtcLifecycle?: () => void;
+    unsubscribeConsoleDiagnostics?: () => void;
     wsMessageUnsubscribes?: Map<string, () => void>;
 };
 
@@ -263,6 +265,8 @@ const DEFAULT_LANE_ID = 'realtime';
 const DEFAULT_WORKSPACE_ID = 'default';
 
 let state: RuntimeState | undefined;
+let consoleDiagnosticConfig: BlackBoxRallarConnectionConfig | undefined;
+let restoreConsoleWarn: (() => void) | undefined;
 
 function transportOf(
     config: BlackBoxRallarConnectionConfig,
@@ -449,6 +453,9 @@ function emit(partial: Omit<BlackBoxRallarEvent, 'atEpochMs'>): void {
         ...partial,
         atEpochMs: Date.now(),
     };
+    if (typeof window === 'undefined') {
+        return;
+    }
     const handler = window.__blackBoxRallarEmit;
     if (!handler) {
         return;
@@ -479,6 +486,109 @@ function emitDiagnostic(
         laneId: laneIdOf(config),
         data,
     });
+}
+
+function installConsoleDiagnostics(
+    config: BlackBoxRallarConnectionConfig,
+): () => void {
+    consoleDiagnosticConfig = config;
+    if (!restoreConsoleWarn) {
+        restoreExistingConsoleWarnPatch();
+        const previousWarn = console.warn;
+        console.warn = (...args: unknown[]) => {
+            previousWarn(...args);
+            const activeConfig = state?.config ?? consoleDiagnosticConfig;
+            const classified = activeConfig ? classifyConsoleWarning(args) : undefined;
+            if (!activeConfig || !classified) {
+                return;
+            }
+
+            emit({
+                kind: 'diagnostic',
+                topic: classified.topic,
+                connection: activeConfig.connection,
+                actor: activeConfig.actor,
+                transport: classified.transport,
+                severity: 'warning',
+                roomId: activeConfig.roomId,
+                ...scopeDiagnostics(activeConfig),
+                data: {
+                    message: classified.message,
+                    args,
+                },
+            });
+        };
+        restoreConsoleWarn = () => {
+            console.warn = previousWarn;
+            const globalState = consoleWarnGlobalState();
+            if (globalState.__blackBoxRallarRestoreConsoleWarn === restoreConsoleWarn) {
+                globalState.__blackBoxRallarRestoreConsoleWarn = undefined;
+            }
+            restoreConsoleWarn = undefined;
+            consoleDiagnosticConfig = undefined;
+        };
+        consoleWarnGlobalState().__blackBoxRallarRestoreConsoleWarn = restoreConsoleWarn;
+    }
+
+    return () => {
+        if (consoleDiagnosticConfig === config) {
+            consoleDiagnosticConfig = state?.config;
+        }
+        if (!state && consoleDiagnosticConfig === undefined) {
+            restoreConsoleWarn?.();
+        }
+    };
+}
+
+function restoreExistingConsoleWarnPatch(): void {
+    consoleWarnGlobalState().__blackBoxRallarRestoreConsoleWarn?.();
+}
+
+function consoleWarnGlobalState(): typeof globalThis & {
+    __blackBoxRallarRestoreConsoleWarn?: () => void;
+} {
+    return globalThis as typeof globalThis & {
+        __blackBoxRallarRestoreConsoleWarn?: () => void;
+    };
+}
+
+function classifyConsoleWarning(args: readonly unknown[]): Readonly<{
+    topic: string;
+    transport: BlackBoxRallarTransport | 'ws';
+    message: string;
+}> | undefined {
+    const message = args.map(consoleWarningPart).join(' ');
+    if (message.includes('Unhandled WS message') || message.includes('No callback for typeId')) {
+        return {
+            topic: 'rallar.browser.ws.unhandled_message',
+            transport: 'ws',
+            message,
+        };
+    }
+    if (
+        message.includes('Received data channel for different data channel name') ||
+        message.includes('does not match peerId') ||
+        message.includes('No channel for peer') ||
+        message.includes('Ignoring self-connection attempt')
+    ) {
+        return {
+            topic: 'rallar.browser.rtc.data_channel_warning',
+            transport: 'realtime',
+            message,
+        };
+    }
+    return undefined;
+}
+
+function consoleWarningPart(value: unknown): string {
+    if (typeof value === 'string') {
+        return value;
+    }
+    try {
+        return JSON.stringify(value);
+    } catch (_error) {
+        return String(value);
+    }
 }
 
 function emitError(
@@ -541,6 +651,9 @@ function cleanupRuntimeSubscriptions(
     if (runtimeState?.unsubscribeWsLifecycle) {
         runtimeState.unsubscribeWsLifecycle();
         unsubscribed += 1;
+    }
+    if (runtimeState?.unsubscribeConsoleDiagnostics) {
+        runtimeState.unsubscribeConsoleDiagnostics();
     }
     if (runtimeState?.wsMessageUnsubscribes) {
         for (const unsubscribe of runtimeState.wsMessageUnsubscribes.values()) {
@@ -804,6 +917,7 @@ async function connect(
         RuntimeState,
         'unsubscribeWsLifecycle' | 'unsubscribeRtcLifecycle'
     > | undefined;
+    let unsubscribeConsoleDiagnostics: (() => void) | undefined;
 
     try {
         if (!config.rallar.apiBaseUrl) {
@@ -813,6 +927,7 @@ async function connect(
         const transport = transportOf(config);
 
         emitDiagnostic(config, 'rallar.browser.connect_started');
+        unsubscribeConsoleDiagnostics = installConsoleDiagnostics(config);
 
         phase = 'transport-config';
         emitConnectPhaseStarted(config, phase, { transport });
@@ -944,6 +1059,7 @@ async function connect(
             session,
             unsubscribeRealtime,
             unsubscribeMessagesRtc,
+            unsubscribeConsoleDiagnostics,
             ...lifecycleSubscriptions,
         };
 
@@ -969,6 +1085,8 @@ async function connect(
     } catch (error) {
         lifecycleSubscriptions?.unsubscribeRtcLifecycle?.();
         lifecycleSubscriptions?.unsubscribeWsLifecycle?.();
+        unsubscribeConsoleDiagnostics?.();
+        restoreConsoleWarn?.();
         emitError(config, 'rallar.browser.connect.phase_failed', error, {
             phase,
         });
@@ -1478,6 +1596,7 @@ async function close(): Promise<BlackBoxRallarCloseDiagnostics> {
             }
         }
         state = undefined;
+        restoreConsoleWarn?.();
         const diagnostics: BlackBoxRallarCloseDiagnostics = {
             status: 'closed',
             connection: config?.connection,

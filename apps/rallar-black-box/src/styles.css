@@ -2143,6 +2143,120 @@ h3 {
     padding-left: 18px;
 }
 
+.distributed-preflight-panel {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    margin-top: 8px;
+}
+
+.distributed-preflight-panel.compact {
+    margin: 8px 0 12px;
+}
+
+.distributed-selected-preflight {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border-bottom: 1px solid #d8dfd5;
+}
+
+.distributed-selected-preflight details {
+    padding: 8px;
+    border: 1px solid #dbe1d8;
+    border-radius: 6px;
+    background: #f8faf6;
+}
+
+.distributed-preflight-metrics {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.distributed-preflight-badges {
+    gap: 6px;
+}
+
+.distributed-preflight-issues {
+    display: grid;
+    gap: 6px;
+}
+
+.distributed-preflight-issue,
+.distributed-preflight-requirements,
+.distributed-preflight-composite,
+.distributed-preflight-tree-row {
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid #dbe1d8;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.distributed-preflight-issue.warning {
+    border-color: #c79d3a;
+    background: #fff8e8;
+    color: #6d4c05;
+}
+
+.distributed-preflight-issue.error {
+    border-color: #d58b8b;
+    background: #fff0f0;
+    color: #7d1717;
+}
+
+.distributed-preflight-composites {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.distributed-preflight-composite {
+    display: grid;
+    gap: 4px;
+}
+
+.distributed-preflight-composite strong,
+.distributed-preflight-composite span,
+.distributed-preflight-composite small,
+.distributed-preflight-tree-row strong,
+.distributed-preflight-tree-row span,
+.distributed-preflight-tree-row small {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.distributed-preflight-composite small,
+.distributed-preflight-tree-row small {
+    color: #65746d;
+    font-size: 0.74rem;
+}
+
+.distributed-preflight-requirements ul {
+    margin: 6px 0 0;
+    padding-left: 18px;
+}
+
+.distributed-preflight-tree {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+}
+
+.distributed-preflight-tree-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.2fr);
+    gap: 6px;
+    align-items: center;
+}
+
+.distributed-preflight-tree-row.muted {
+    color: #65746d;
+}
+
 .distributed-options-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3601,6 +3715,8 @@ dd {
     .distributed-action-grid,
     .distributed-run-summary,
     .distributed-artifact-summary,
+    .distributed-preflight-metrics,
+    .distributed-preflight-composites,
     .distributed-monitor-metrics,
     .distributed-monitor-grid,
     .distributed-history-filters,
@@ -3933,6 +4049,9 @@ dd {
     .distributed-run-id-row,
     .distributed-run-summary,
     .distributed-artifact-summary,
+    .distributed-preflight-metrics,
+    .distributed-preflight-composites,
+    .distributed-preflight-tree-row,
     .distributed-monitor-metrics,
     .distributed-monitor-grid,
     .distributed-history-filters,

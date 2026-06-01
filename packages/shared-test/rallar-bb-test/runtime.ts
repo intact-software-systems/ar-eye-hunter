@@ -1,5 +1,12 @@
 import { redactRallarBlackBoxValue } from './redaction.ts';
 import {
+    RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,
+    rallarBlackBoxLoopChildResultPath,
+    rallarBlackBoxLoopChildSourceRecipePath,
+    rallarBlackBoxParallelChildResultPath,
+    rallarBlackBoxParallelChildSourceRecipePath,
+} from './composite-results.ts';
+import {
     RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
     type RallarBlackBoxTestAssertCommand,
     type RallarBlackBoxTestAssertOperator,
@@ -684,6 +691,17 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 results.push({
                     commandId: childResult.commandId,
                     originalCommandId,
+                    parentCommandId: command.commandId,
+                    path: rallarBlackBoxLoopChildResultPath(
+                        RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,
+                        iterationIndex + 1,
+                        commandIndex,
+                    ),
+                    sourceRecipePath: rallarBlackBoxLoopChildSourceRecipePath(
+                        RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,
+                        commandIndex,
+                    ),
+                    childIndex: results.length,
                     commandIndex,
                     iteration: iterationIndex + 1,
                     result: childResult,
@@ -993,8 +1011,22 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             results.push({
                 commandId: childResult.commandId,
                 originalCommandId,
+                parentCommandId: command.commandId,
+                path: rallarBlackBoxParallelChildResultPath(
+                    RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,
+                    groupIndex,
+                    groupId,
+                    commandIndex,
+                ),
+                sourceRecipePath: rallarBlackBoxParallelChildSourceRecipePath(
+                    RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,
+                    groupIndex,
+                    commandIndex,
+                ),
+                childIndex: results.length,
                 commandIndex,
                 groupId,
+                groupIndex,
                 result: childResult,
             });
 

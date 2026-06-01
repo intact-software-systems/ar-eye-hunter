@@ -160,6 +160,7 @@ import {
     deriveDistributedRunMonitor,
     distributedRecipeCommandKinds,
     distributedRecipeCommandPreview,
+    distributedRecipePreflight,
     distributedRecipeStateTone,
     distributedRecipeTargetRows,
     filterDistributedRuns,
@@ -167,6 +168,7 @@ import {
     type DistributedRunMonitor,
     type DistributedRunProgressStatus,
     type DistributedRecipeCatalogItem,
+    type DistributedRecipePreflightSummary,
     type DistributedRecipeRolePattern,
     type DistributedRecipeTargetPolicyMode,
     type DistributedRecipeTargetRow,
@@ -6216,6 +6218,25 @@ function DistributedRecipesPanel({ state, bootstrap, control, globalValues }: {
         () => recipeCatalog.filter(item => selectedRecipeIds.includes(item.itemId)),
         [recipeCatalog, selectedRecipeIds],
     );
+    const selectedRecipePreflights = useMemo(
+        () => selectedRecipes.map(item => ({
+            item,
+            preflight: distributedRecipePreflight(item.recipe),
+        })),
+        [selectedRecipes],
+    );
+    const selectedPreflightEffectiveOperations = selectedRecipePreflights.reduce(
+        (sum, entry) => sum + entry.preflight.effectiveCommandCount,
+        0,
+    );
+    const selectedPreflightWarnings = selectedRecipePreflights.reduce(
+        (sum, entry) => sum + entry.preflight.warnings.length,
+        0,
+    );
+    const selectedPreflightErrors = selectedRecipePreflights.reduce(
+        (sum, entry) => sum + entry.preflight.errors.length,
+        0,
+    );
     const targetRows = useMemo(
         () => distributedRecipeTargetRows({
             run,
@@ -6758,6 +6779,7 @@ function DistributedRecipesPanel({ state, bootstrap, control, globalValues }: {
                             const validation = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, item.recipe);
                             const authoringValidation = validateSchemaAuthoringValue('recipe', item.recipe);
                             const commandPreview = distributedRecipeCommandPreview(item.recipe);
+                            const preflight = distributedRecipePreflight(item.recipe);
                             return (
                                 <article className={`distributed-recipe-row ${selected ? 'selected' : ''}`} key={item.itemId}>
                                     <label>
@@ -6779,8 +6801,14 @@ function DistributedRecipesPanel({ state, bootstrap, control, globalValues }: {
                                         <span className={`pill ${validation.ok ? 'good' : 'bad'}`}>
                                             {validation.ok ? 'schema valid' : 'schema invalid'}
                                         </span>
+                                        <span className={`pill ${preflight.errors.length > 0 ? 'bad' : preflight.warnings.length > 0 ? 'warn' : 'good'}`}>
+                                            preflight {preflight.errors.length > 0 ? 'blocked' : preflight.warnings.length > 0 ? 'warnings' : 'clear'}
+                                        </span>
                                         {item.profiles.map(entry => (
                                             <span className="pill muted" key={entry}>{entry}</span>
+                                        ))}
+                                        {preflight.serviceBadges.map(badge => (
+                                            <span className={`pill ${badge.tone}`} key={badge.label}>{badge.label}</span>
                                         ))}
                                         {commandPreview.effectiveFrameCount !== undefined && (
                                             <span className="pill active">
@@ -6799,6 +6827,10 @@ function DistributedRecipesPanel({ state, bootstrap, control, globalValues }: {
                                     <details>
                                         <summary>Capabilities</summary>
                                         <SchemaCapabilitySummary validation={authoringValidation}/>
+                                    </details>
+                                    <details open={selected}>
+                                        <summary>Preflight</summary>
+                                        <DistributedRecipePreflightPanel preflight={preflight}/>
                                     </details>
                                 </article>
                             );
@@ -6982,6 +7014,30 @@ function DistributedRecipesPanel({ state, bootstrap, control, globalValues }: {
                             {manifestValidation ? 'invalid' : 'valid'}
                         </span>
                     </div>
+                    {selectedRecipePreflights.length > 0 && (
+                        <div className="distributed-selected-preflight" aria-label="Selected recipe preflight">
+                            <div className="distributed-preflight-metrics">
+                                <Metric label="Selected recipes" value={String(selectedRecipePreflights.length)} tone="active"/>
+                                <Metric label="Effective ops" value={String(selectedPreflightEffectiveOperations)} tone="active"/>
+                                <Metric
+                                    label="Warnings"
+                                    value={String(selectedPreflightWarnings)}
+                                    tone={selectedPreflightWarnings > 0 ? 'warn' : 'good'}
+                                />
+                                <Metric
+                                    label="Errors"
+                                    value={String(selectedPreflightErrors)}
+                                    tone={selectedPreflightErrors > 0 ? 'bad' : 'good'}
+                                />
+                            </div>
+                            {selectedRecipePreflights.map(entry => (
+                                <details key={entry.item.itemId} open>
+                                    <summary>{entry.item.title} preflight</summary>
+                                    <DistributedRecipePreflightPanel preflight={entry.preflight} compact/>
+                                </details>
+                            ))}
+                        </div>
+                    )}
                     <pre className="json-block">{json(manifest)}</pre>
                     {manifestAuthoringValidation && (
                         <SchemaAuthoringPanel validation={manifestAuthoringValidation}/>
@@ -7106,6 +7162,121 @@ function DistributedRecipesPanel({ state, bootstrap, control, globalValues }: {
                 />
             </div>
         </section>
+    );
+}
+
+function DistributedRecipePreflightPanel({ preflight, compact = false }: {
+    preflight: DistributedRecipePreflightSummary;
+    compact?: boolean;
+}) {
+    const treeRows = compact ? preflight.tree.slice(0, 18) : preflight.tree;
+    return (
+        <div className={`distributed-preflight-panel ${compact ? 'compact' : ''}`}>
+            <div className="distributed-preflight-metrics">
+                <Metric label="Top-level" value={String(preflight.manifestCommandCount)}/>
+                <Metric label="Effective ops" value={String(preflight.effectiveCommandCount)} tone="active"/>
+                <Metric label="Max depth" value={String(preflight.maxDepth)}/>
+                <Metric
+                    label="Frames"
+                    value={preflight.effectiveFrameCount === undefined ? '-' : String(preflight.effectiveFrameCount)}
+                    tone={preflight.effectiveFrameCount === undefined ? 'muted' : 'active'}
+                />
+                <Metric label="Loops" value={String(preflight.loops.length)} tone={preflight.loops.length > 0 ? 'active' : 'muted'}/>
+                <Metric
+                    label="Parallel groups"
+                    value={String(preflight.parallelGroups.reduce((sum, entry) => sum + entry.groupCount, 0))}
+                    tone={preflight.parallelGroups.length > 0 ? 'active' : 'muted'}
+                />
+            </div>
+            <div className="badge-list distributed-preflight-badges">
+                {preflight.serviceBadges.map(badge => (
+                    <span className={`pill ${badge.tone}`} key={badge.label}>{badge.label}</span>
+                ))}
+                {preflight.commandKinds.map(kind => (
+                    <span className="pill muted" key={kind}>{kind}</span>
+                ))}
+            </div>
+            {(preflight.errors.length > 0 || preflight.warnings.length > 0) && (
+                <div className="distributed-preflight-issues">
+                    {preflight.errors.map(issue => (
+                        <div className="distributed-preflight-issue error" key={issue}>{issue}</div>
+                    ))}
+                    {preflight.warnings.map(issue => (
+                        <div className="distributed-preflight-issue warning" key={issue}>{issue}</div>
+                    ))}
+                </div>
+            )}
+            {(preflight.loops.length > 0 || preflight.parallelGroups.length > 0 || preflight.waits.length > 0 || preflight.asserts.length > 0) && (
+                <div className="distributed-preflight-composites">
+                    {preflight.loops.map(loop => (
+                        <div className="distributed-preflight-composite" key={`${loop.path}-loop`}>
+                            <strong>{loop.commandId ?? loop.path}</strong>
+                            <span>Loop x{loop.estimatedIterations}</span>
+                            <small>
+                                {[
+                                    `${loop.childCommandCount} child`,
+                                    `${loop.effectiveCommandCount} ops`,
+                                    loop.intervalMs === undefined ? undefined : `${loop.intervalMs} ms interval`,
+                                    loop.durationMs === undefined ? undefined : `${loop.durationMs} ms duration`,
+                                    loop.frameCount === undefined ? undefined : `${loop.frameCount} frames`,
+                                ].filter(Boolean).join(' - ')}
+                            </small>
+                        </div>
+                    ))}
+                    {preflight.parallelGroups.map(parallel => (
+                        <div className="distributed-preflight-composite" key={`${parallel.path}-parallel`}>
+                            <strong>{parallel.commandId ?? parallel.path}</strong>
+                            <span>{parallel.groupCount} parallel group{parallel.groupCount === 1 ? '' : 's'}</span>
+                            <small>
+                                concurrency {parallel.maxConcurrency} - {parallel.effectiveCommandCount} ops - {parallel.groups.join(', ')}
+                            </small>
+                        </div>
+                    ))}
+                    {preflight.waits.map(wait => (
+                        <div className="distributed-preflight-composite" key={`${wait.path}-wait`}>
+                            <strong>{wait.commandId ?? wait.path}</strong>
+                            <span>Wait/assert guard</span>
+                            <small>wait {formatDuration(wait.timeoutMs)} - {wait.matchSummary}</small>
+                        </div>
+                    ))}
+                    {preflight.asserts.map(assertion => (
+                        <div className="distributed-preflight-composite" key={`${assertion.path}-assert`}>
+                            <strong>{assertion.commandId ?? assertion.path}</strong>
+                            <span>Assert predicate</span>
+                            <small>{assertion.predicate}</small>
+                        </div>
+                    ))}
+                </div>
+            )}
+            {preflight.liveServiceRequirements.length > 0 && (
+                <div className="distributed-preflight-requirements">
+                    <strong>Live requirements</strong>
+                    <ul>
+                        {preflight.liveServiceRequirements.map(requirement => (
+                            <li key={requirement}>{requirement}</li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+            <div className="distributed-preflight-tree" aria-label="Recipe execution tree">
+                {treeRows.map(row => (
+                    <div className="distributed-preflight-tree-row" key={row.path} style={{ paddingLeft: `${row.depth * 14}px` }}>
+                        <strong>{row.label}</strong>
+                        <span className="pill muted">{row.kind}</span>
+                        <span>{row.summary}</span>
+                        <small>
+                            {row.path} - {row.effectiveCommandCount} op{row.effectiveCommandCount === 1 ? '' : 's'}
+                            {row.details.length > 0 ? ` - ${row.details.join(' - ')}` : ''}
+                        </small>
+                    </div>
+                ))}
+                {compact && preflight.tree.length > treeRows.length && (
+                    <div className="distributed-preflight-tree-row muted">
+                        <small>{preflight.tree.length - treeRows.length} more command row(s) in the raw manifest</small>
+                    </div>
+                )}
+            </div>
+        </div>
     );
 }
 

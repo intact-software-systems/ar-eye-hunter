@@ -6,6 +6,7 @@ import {
     deriveDistributedRunMonitor,
     distributedRecipeCommandKinds,
     distributedRecipeCommandPreview,
+    distributedRecipePreflight,
     distributedRecipeStateTone,
     distributedRecipeTargetRows,
     filterDistributedRuns,
@@ -450,6 +451,116 @@ describe('distributed recipes helpers', () => {
             effectiveFrameCount: undefined,
             label: '5 manifest commands - 7 effective operations',
         });
+    });
+
+    it('derives distributed recipe preflight for composite evidence recipes', () => {
+        const fixture = RALLAR_BLACK_BOX_RECIPE_FIXTURES.find(entry =>
+            entry.fixtureId === 'composite-evidence'
+        );
+        const preflight = distributedRecipePreflight(fixture!.recipe);
+
+        expect(preflight).toMatchObject({
+            recipeId: 'composite-evidence-recipe',
+            manifestCommandCount: 5,
+            effectiveCommandCount: 7,
+            maxDepth: 2,
+            errors: [],
+        });
+        expect(preflight.commandKinds).toEqual([
+            'assert',
+            'health',
+            'loop',
+            'parallel',
+            'stats',
+            'wait',
+        ]);
+        expect(preflight.loops).toEqual([expect.objectContaining({
+            commandId: 'composite-health-loop',
+            estimatedIterations: 2,
+            childCommandCount: 1,
+            effectiveCommandCount: 2,
+        })]);
+        expect(preflight.parallelGroups).toEqual([expect.objectContaining({
+            commandId: 'parallel-evidence',
+            groupCount: 2,
+            maxConcurrency: 2,
+            groups: ['left-health', 'right-stats'],
+        })]);
+        expect(preflight.waits[0]).toMatchObject({
+            commandId: 'wait-for-parallel-result',
+            timeoutMs: 1_000,
+        });
+        expect(preflight.waits[0].matchSummary).toContain('commandId=parallel-evidence');
+        expect(preflight.asserts[0]).toMatchObject({
+            commandId: 'assert-wait-succeeded',
+            predicate: 'lastResult.ok equals true',
+        });
+        expect(preflight.warnings).toEqual(expect.arrayContaining([
+            expect.stringContaining('wait can time out'),
+            expect.stringContaining('assert fails the recipe'),
+        ]));
+        expect(preflight.serviceBadges.map(badge => badge.label)).toEqual(expect.arrayContaining([
+            'control server',
+            'browser agents',
+            'runtime evidence',
+            'looped traffic',
+            'parallel groups',
+        ]));
+        expect(preflight.tree.map(row => row.label)).toEqual([
+            'composite-health-loop',
+            'Loop health',
+            'parallel-evidence',
+            'parallel-left-health',
+            'parallel-right-stats',
+            'wait-for-parallel-result',
+            'assert-wait-succeeded',
+            'composite-evidence-stats',
+        ]);
+    });
+
+    it('derives live RTC realtime preflight with frame and service warnings', () => {
+        const recipe = createRallarBlackBoxRtcRealtimeRecipe({
+            durationSeconds: 2,
+            group: {
+                applicationId: 'game-app',
+                workspaceId: 'live',
+                groupId: 'arena-1',
+            },
+        });
+        const preflight = distributedRecipePreflight(recipe);
+
+        expect(preflight).toMatchObject({
+            recipeId: 'rtc-realtime',
+            manifestCommandCount: 3,
+            effectiveCommandCount: 42,
+            effectiveFrameCount: 40,
+            errors: [],
+        });
+        expect(preflight.loops[0]).toMatchObject({
+            commandId: 'rtc-realtime-position-loop',
+            estimatedIterations: 40,
+            intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+            frameCount: 40,
+        });
+        expect(preflight.commandKinds).toEqual(['loop', 'rtc.connect', 'rtc.send', 'stats']);
+        expect(preflight.liveServiceRequirements).toEqual(expect.arrayContaining([
+            'Rallar API and signaling when provider mode is browser-rallar or rallar-browser',
+            'active RTC connection',
+        ]));
+        expect(preflight.serviceBadges.map(badge => badge.label)).toEqual(expect.arrayContaining([
+            'Rallar auth/signaling',
+            'RTC peers',
+            'looped traffic',
+        ]));
+        expect(preflight.warnings).toEqual(expect.arrayContaining([
+            expect.stringContaining('RTC recipes require real Rallar signaling'),
+        ]));
+        expect(preflight.tree.map(row => [row.kind, row.summary])).toEqual([
+            ['rtc.connect', 'connect RTC - rtcRealtime - arena-1'],
+            ['loop', 'loop x40'],
+            ['rtc.send', 'send RTC - rtcRealtime - arena-1'],
+            ['stats', 'agent stats'],
+        ]);
     });
 
     it('runs the app-local composite evidence fixture in the browser-agent runtime', async () => {

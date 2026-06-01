@@ -2,6 +2,8 @@ export * from './types.ts';
 export * from './distributed-run.ts';
 export * from './schema.ts';
 export * from './redaction.ts';
+export * from './composite-results.ts';
+export * from './diagnostics.ts';
 export * from './runtime.ts';
 export * from './selectors.ts';
 export * from './browser-adapter.ts';

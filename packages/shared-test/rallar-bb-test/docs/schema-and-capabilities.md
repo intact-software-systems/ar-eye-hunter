@@ -33,6 +33,14 @@ Prompting guidance for using these schemas with AI recipe generation is in
 Composite browser-agent primitive planning is documented in
 `packages/shared-test/rallar-bb-test/docs/rallar-bb-test-composite-primitives-iterations.md`.
 
+Composite result paths, flat summaries, trees, timelines, and redacted display
+entries are documented in
+`packages/shared-test/rallar-bb-test/docs/composite-result-contract.md`.
+
+Runtime diagnostic payloads for WS/RTC warnings and adapter recoverable
+failures are documented in
+`packages/shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md`.
+
 ## Capability Metadata
 
 `RALLAR_BLACK_BOX_COMMAND_CAPABILITIES` has one entry for every
@@ -74,6 +82,10 @@ Current automated coverage validates:
 - group-member to control-agent matching and target-policy filtering
 - recursive schema-authoring hints for child commands inside `loop`,
   `parallel`, `recipe.load`, and `recipe.run`
+- composite result flattening, source recipe paths, parent/child trees,
+  failure summaries, and redacted display entries
+- runtime diagnostic normalization, wait/assert matching, browser-adapter
+  ingestion, and known live WS/RTC console warning bridging
 
 ## Compatibility Rules
 
@@ -106,6 +118,14 @@ Rallar services when a child command uses `rtc.*`, `ws.*`, or `http.request`.
 The same recursive rule applies to inline recipes under `recipe.load` and
 `recipe.run`.
 
+`loop` and `parallel` results can be normalized with the exported helpers in
+`composite-results.ts`. Callers can turn nested composite output into a stable
+flat tree order, chronological timeline, parent/child tree, failure summary,
+and redacted display entries without knowing runtime internals. Result paths
+start at `$`; source recipe paths map back to command templates such as
+`$.groups[0].commands[0]` while runtime paths include loop iterations and
+parallel group IDs.
+
 `wait` is a browser-agent evidence primitive. It observes current and future
 runtime events, messages, diagnostics, stats, reports, and results without
 reimplementing Rallar behavior. Match fields are intentionally simple: event
@@ -113,6 +133,14 @@ kind, topic, command ID, connection, transport, severity, and payload-path
 `equals`, `contains`, or `exists`. Wait results include the matched event after
 the standard redaction pipeline. If neither `timeoutMs` nor `deadlineEpochMs`
 is supplied, the runtime uses a 5 second default timeout.
+
+WS/RTC runtime diagnostics should use
+`normalizeRallarBlackBoxRuntimeDiagnostic(...)` before they are recorded as
+`kind: "diagnostic"` evidence. Normalized payloads expose
+`diagnosticSchemaVersion`, `diagnosticTypeId`, `message`, `transport`,
+`severity`, connection/group/peer identifiers, and structured `data`/`error`
+details. `wait` can match these diagnostics by event fields and payload paths,
+and `assert` can read them through `diagnostics` or `recentDiagnostics`.
 
 `assert` is a small browser-agent evidence check. It reads only whitelisted
 runtime sources: `state`, `config`, `currentConfig`, `lastResult`, `events`,

@@ -404,6 +404,51 @@ describe('browser Rallar black-box runtime', () => {
         expect(facade.unsubscribeMessagesWs).toHaveBeenCalledTimes(1);
     });
 
+    it('bridges relevant browser console warnings into structured diagnostics', async () => {
+        const runtime = await loadRuntime();
+        const originalWarn = console.warn;
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+        await runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+            },
+        });
+
+        console.warn('Unhandled WS message: room.unknown');
+        console.warn('Received data channel for different data channel name: rtc-data-channel vs rtc-realtime');
+
+        expect(events).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                kind: 'diagnostic',
+                topic: 'rallar.browser.ws.unhandled_message',
+                transport: 'ws',
+                severity: 'warning',
+                data: expect.objectContaining({
+                    message: 'Unhandled WS message: room.unknown',
+                }),
+            }),
+            expect.objectContaining({
+                kind: 'diagnostic',
+                topic: 'rallar.browser.rtc.data_channel_warning',
+                transport: 'realtime',
+                severity: 'warning',
+                data: expect.objectContaining({
+                    message: 'Received data channel for different data channel name: rtc-data-channel vs rtc-realtime',
+                }),
+            }),
+        ]));
+
+        await runtime.close();
+        warnSpy.mockRestore();
+        expect(console.warn).toBe(originalWarn);
+    });
+
     it('emits room join failure diagnostics for permission-style failures', async () => {
         facade.rallar.rooms.join.mockRejectedValue(new Error('forbidden room'));
         const runtime = await loadRuntime();

@@ -62,6 +62,270 @@ async function runScenarioCli(args: string[], env: Record<string, string | undef
 }
 
 describe('scenario-black-box CLI', () => {
+    it('explains a valid recipe without executing network calls', async () => {
+        const workingDirectory = await writeTempConfig({
+            variables: {
+                apiBaseUrl: 'http://localhost:8080',
+            },
+            connections: {
+                api: {
+                    type: 'http',
+                    baseUrl: '{apiBaseUrl}',
+                },
+            },
+            steps: [
+                {
+                    name: 'health',
+                    type: 'http',
+                    connection: 'api',
+                    request: {
+                        method: 'GET',
+                        path: '/health',
+                    },
+                    expect: {
+                        status: 200,
+                    },
+                },
+            ],
+        });
+
+        const result = await runScenarioCli([
+            '-w',
+            workingDirectory,
+            '-c',
+            'config.json',
+            '--explain',
+        ]);
+
+        expect(result.code).toBe(0);
+        expect(result.stderr).toBe('');
+
+        const preflight = JSON.parse(result.stdout);
+
+        expect(preflight.ok).toBe(true);
+        expect(preflight.profile).toBe('compat');
+        expect(preflight.summary.generatedOperationCount).toBe(1);
+        expect(preflight.providerModes).toContain('http');
+        expect(preflight.connections).toMatchObject({
+            defined: ['api'],
+            referenced: ['api'],
+            missing: [],
+        });
+        expect(preflight.operations[0]).toMatchObject({
+            name: 'health',
+            transport: 'HTTP',
+            connection: 'api',
+            path: 'http://localhost:8080/health',
+        });
+    });
+
+    it('validates missing env vars and missing connections before execution', async () => {
+        const workingDirectory = await writeTempConfig({
+            variables: {
+                apiToken: {
+                    env: 'RALLAR_BB_REQUIRED_PREFLIGHT_TOKEN',
+                    required: true,
+                    secret: true,
+                },
+            },
+            steps: [
+                {
+                    name: 'sendWs',
+                    type: 'ws.send',
+                    connection: 'missingWs',
+                    request: {
+                        send: {
+                            token: '{apiToken}',
+                        },
+                    },
+                },
+            ],
+        });
+
+        const result = await runScenarioCli([
+            '-w',
+            workingDirectory,
+            '-c',
+            'config.json',
+            '--validate',
+        ], {
+            RALLAR_BB_REQUIRED_PREFLIGHT_TOKEN: undefined,
+        });
+
+        expect(result.code).toBe(1);
+        expect(result.stderr).toBe('');
+
+        const preflight = JSON.parse(result.stdout);
+
+        expect(preflight.ok).toBe(false);
+        expect(preflight.env.missing).toEqual([expect.objectContaining({
+            envName: 'RALLAR_BB_REQUIRED_PREFLIGHT_TOKEN',
+            variableName: 'apiToken',
+        })]);
+        expect(preflight.connections.missing).toEqual(['missingWs']);
+        expect(preflight.issues.map((issue: { code: string }) => issue.code)).toEqual(expect.arrayContaining([
+            'MISSING_ENV',
+            'MISSING_CONNECTION',
+        ]));
+        expect(result.stdout).not.toContain('<missing:RALLAR_BB_REQUIRED_PREFLIGHT_TOKEN>');
+    });
+
+    it('explains missing traffic-plan step references even when expansion fails', async () => {
+        const workingDirectory = await writeTempConfig({
+            execution: {
+                trafficPlan: {
+                    seed: 17,
+                    count: 2,
+                    setupSteps: ['connectMissing'],
+                    operations: [
+                        {
+                            name: 'set-ok',
+                            steps: ['setOk'],
+                        },
+                    ],
+                },
+            },
+            steps: [
+                {
+                    name: 'setOk',
+                    type: 'set',
+                    output: 'ok',
+                    value: true,
+                },
+            ],
+        });
+
+        const result = await runScenarioCli([
+            '-w',
+            workingDirectory,
+            '-c',
+            'config.json',
+            '--explain',
+        ]);
+
+        expect(result.code).toBe(1);
+        expect(result.stderr).toBe('');
+
+        const preflight = JSON.parse(result.stdout);
+
+        expect(preflight.ok).toBe(false);
+        expect(preflight.stepReferences.missing).toEqual([expect.objectContaining({
+            name: 'connectMissing',
+            path: 'execution.trafficPlan.setupSteps[0]',
+        })]);
+        expect(preflight.issues.map((issue: { code: string }) => issue.code)).toEqual(expect.arrayContaining([
+            'MISSING_STEP_REFERENCE',
+            'PLAN_EXPANSION_FAILED',
+        ]));
+    });
+
+    it('explains seeded traffic-plan expansion without executing the generated steps', async () => {
+        const workingDirectory = await writeTempConfig({
+            execution: {
+                trafficPlan: {
+                    seed: 20260601,
+                    count: 3,
+                    setupSteps: ['setup'],
+                    cleanupSteps: ['cleanup'],
+                    operations: [
+                        {
+                            name: 'left',
+                            weight: 1,
+                            steps: ['sendLeft'],
+                        },
+                    ],
+                },
+            },
+            steps: [
+                {
+                    name: 'setup',
+                    type: 'set',
+                    output: 'setup',
+                    value: true,
+                },
+                {
+                    name: 'sendLeft',
+                    type: 'set',
+                    output: 'sent{traffic.sequence}',
+                    value: {
+                        sequence: '{traffic.sequence}',
+                        operation: '{traffic.operation}',
+                    },
+                },
+                {
+                    name: 'cleanup',
+                    type: 'set',
+                    output: 'cleanup',
+                    value: true,
+                },
+            ],
+        });
+
+        const result = await runScenarioCli([
+            '-w',
+            workingDirectory,
+            '-c',
+            'config.json',
+            '--explain',
+        ]);
+
+        expect(result.code).toBe(0);
+        expect(result.stderr).toBe('');
+
+        const preflight = JSON.parse(result.stdout);
+
+        expect(preflight.ok).toBe(true);
+        expect(preflight.trafficPlan).toMatchObject({
+            enabled: true,
+            replay: false,
+            seed: 20260601,
+            decisionCount: 3,
+            stepCount: 5,
+        });
+        expect(preflight.summary.generatedOperationCount).toBe(5);
+        expect(preflight.operations.map((operation: { name: string }) => operation.name)).toEqual([
+            'setup',
+            'sendLeft',
+            'sendLeft',
+            'sendLeft',
+            'cleanup',
+        ]);
+    });
+
+    it('supports strict profile validation for known step types', async () => {
+        const workingDirectory = await writeTempConfig({
+            steps: [
+                {
+                    name: 'badSet',
+                    type: 'set',
+                    value: 'missing output',
+                },
+            ],
+        });
+
+        const result = await runScenarioCli([
+            '-w',
+            workingDirectory,
+            '-c',
+            'config.json',
+            '--explain',
+            '--strict',
+        ]);
+
+        expect(result.code).toBe(1);
+        expect(result.stderr).toBe('');
+
+        const preflight = JSON.parse(result.stdout);
+
+        expect(preflight.profile).toBe('strict');
+        expect(preflight.issues).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                code: 'STRICT_SET_OUTPUT',
+                severity: 'error',
+            }),
+        ]));
+    });
+
     it('runs config file with SET and ASSERT steps', async () => {
         const workingDirectory = await writeTempConfig({
             variables: {

@@ -667,7 +667,7 @@ Iterations 51-55.
 
 ## Iteration 10: Composite Result And Artifact Contract Hardening
 
-Status: planned.
+Status: completed on 2026-06-01.
 
 Goal: Make composite command output stable enough for SPA drilldowns, control
 server artifacts, and future automated analysis.
@@ -711,9 +711,30 @@ Suggested verification:
   focus using nested loop/parallel recipes.
 - Add artifact fixture tests to prevent accidental shape drift.
 
+Result:
+
+- Added `packages/shared-test/rallar-bb-test/composite-results.ts` with the
+  composite result path contract and helpers for flattening, chronological
+  timelines, parent/child trees, pass/fail summaries, first-failure focus, and
+  redacted display-safe result rows.
+- Extended composite child result payloads with optional parent/path/source
+  metadata while keeping raw child result values available for artifacts and
+  debugging.
+- Documented the path/source-path contract in
+  `packages/shared-test/rallar-bb-test/docs/composite-result-contract.md`.
+- Added a fixture-backed Vitest contract test for a nested
+  `parallel -> loop -> rtc.send` result with `wait` and `assert` siblings,
+  covering stable result paths, source recipe paths, tree shape, failure
+  summary, timeline ordering, and redaction.
+
+Verification:
+
+- `npx vitest run packages/tests/shared-test/rallar-bb-test-composite-results.test.ts`
+- `npx vitest run packages/tests/shared-test/rallar-bb-test.test.ts packages/tests/shared-test/rallar-bb-test-schema.test.ts packages/tests/shared-test/rallar-bb-test-distributed-run.test.ts`
+
 ## Iteration 11: Runtime Diagnostic Normalization For WS/RTC
 
-Status: planned.
+Status: completed on 2026-06-01.
 
 Goal: Normalize browser runtime diagnostics so `wait`, `assert`, artifacts, and
 the SPA can observe transport warnings consistently.
@@ -756,6 +777,27 @@ Suggested verification:
 - Add browser-adapter tests for WS and RTC diagnostic ingestion.
 - Add one simulated distributed recipe that intentionally produces a diagnostic
   and validates it with `wait` or `assert`.
+
+Result:
+
+- Added `packages/shared-test/rallar-bb-test/diagnostics.ts` with a normalized
+  runtime diagnostic payload contract, severity inference, redaction support,
+  and stable fields such as `diagnosticTypeId`, `message`, `transport`,
+  command/connection/group/peer IDs, `data`, and `error`.
+- Wired browser-adapter WS/RTC diagnostics through the normalized payload shape
+  while keeping existing runtime event topics and compatibility fields.
+- Normalized browser Rallar runtime bridge events so live Rallar diagnostic
+  events can be matched by ordinary `wait` and `assert` commands.
+- Added a scoped browser-console warning bridge for known live WS/RTC warning
+  patterns, including `Unhandled WS message: ...` and RTC data-channel/peer
+  routing warnings.
+- Documented the contract in
+  `packages/shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md`.
+
+Verification:
+
+- `npx vitest run packages/tests/shared-test/rallar-bb-test-diagnostics.test.ts packages/tests/shared-test/rallar-browser-runtime.test.ts`
+- `npx vitest run packages/tests/shared-test/rallar-bb-test.test.ts packages/tests/shared-test/rallar-bb-browser-adapter-auth.test.ts packages/tests/shared-test/rallar-browser-runtime.test.ts packages/tests/shared-test/rallar-bb-test-diagnostics.test.ts packages/tests/shared-test/rallar-bb-test-composite-results.test.ts packages/tests/shared-test/rallar-bb-test-schema.test.ts`
 
 ## Iteration 12: Pacing Accuracy, Backpressure, And Load Observability
 
