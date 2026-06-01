@@ -111,8 +111,9 @@ The SPA currently provides:
   frames at a target 20 Hz cadence through a compact `loop` command, optional control-server barrier synchronization
   before start, recipe preflight panels with effective operation counts, loop/parallel/wait/assert summaries,
   live-service badges, compatibility warnings, compact execution trees, plus monitor/history/compare views for linked
-  events, failures, ACK and barrier readiness, per-agent/per-recipe progress, latency summaries, artifact validation,
-  historical filters, and two-run deltas
+  events, structured WS/RTC runtime diagnostics, composite run drilldowns with nested loop/parallel/wait/assert failure
+  focus, failure-correlated warning evidence, failures, ACK and barrier readiness, per-agent/per-recipe progress,
+  latency summaries, artifact validation, historical filters, and two-run deltas
 - full-stack QA coverage ownership in `src/full-stack-qa-matrix.ts`, with skip-gated Playwright specs mapped to auth,
   groups/clients, WebSocket, REST, recipes/artifacts, RTC, control, and resilience evidence
 - reload-safe UI persistence for selected tab, selected command, Manual Rallar drafts, Event Stream filters, and Rallar

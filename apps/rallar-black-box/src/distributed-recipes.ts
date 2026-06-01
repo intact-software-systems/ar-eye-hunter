@@ -8,13 +8,26 @@ import type {
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from '@shared-test/rallar-bb-test/schema.ts';
 import {
+    flattenRallarBlackBoxCompositeResults,
+    summarizeRallarBlackBoxCompositeResults,
+    toRallarBlackBoxCompositeDisplayResults,
+} from '@shared-test/rallar-bb-test/composite-results.ts';
+import {
     RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
     type RallarBlackBoxTestAssertCommand,
+    type RallarBlackBoxTestAssertResultValue,
     type RallarBlackBoxTestCommand,
     type RallarBlackBoxTestCommandKind,
+    type RallarBlackBoxTestLoopResultValue,
+    type RallarBlackBoxTestParallelResultValue,
     type RallarBlackBoxTestRecipe,
+    type RallarBlackBoxTestResult,
+    type RallarBlackBoxTestSeverity,
+    type RallarBlackBoxTestTransport,
+    type RallarBlackBoxTestWaitResultValue,
     type RallarBlackBoxTestWaitCommand,
 } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxRuntimeDiagnosticPayload } from '@shared-test/rallar-bb-test/diagnostics.ts';
 import type {
     ControlAgentSnapshot,
     ControlDistributedRunArtifactBundle,
@@ -176,7 +189,7 @@ export type DistributedRunProgressStatus =
 export type DistributedRunTimelineItem = Readonly<{
     id: string;
     atEpochMs: number;
-    kind: 'lifecycle' | 'command' | 'result' | 'event' | 'failure' | 'artifact';
+    kind: 'lifecycle' | 'command' | 'result' | 'event' | 'diagnostic' | 'failure' | 'artifact';
     label: string;
     detail?: string;
     tone: string;
@@ -249,6 +262,48 @@ export type DistributedRunEventRow = Readonly<{
     summary: string;
 }>;
 
+export type DistributedRunRuntimeDiagnosticRow = Readonly<{
+    eventId: string;
+    atEpochMs: number;
+    severity: RallarBlackBoxTestSeverity;
+    agentId: string;
+    commandId?: string;
+    transport?: RallarBlackBoxTestTransport;
+    topic: string;
+    diagnosticTypeId: string;
+    message: string;
+    summary: string;
+    payloadSummary: string;
+    connection?: string;
+    actor?: string;
+    groupId?: string;
+    roomId?: string;
+    laneId?: string;
+    expectedLaneId?: string;
+    observedLaneId?: string;
+    accepted?: boolean;
+    peerId?: string;
+    remotePeerId?: string;
+    senderId?: string;
+    typeId?: string;
+    topicId?: string;
+    contextId?: string;
+    resourceId?: string;
+    source?: string;
+    correlatedFailureKeys: readonly string[];
+}>;
+
+export type DistributedRunRuntimeDiagnosticCounts = Readonly<{
+    total: number;
+    info: number;
+    warning: number;
+    error: number;
+    ws: number;
+    rtc: number;
+    http: number;
+    runtime: number;
+}>;
+
 export type DistributedRunLatencySummary = Readonly<{
     count: number;
     minMs?: number;
@@ -270,6 +325,78 @@ export type DistributedRunArtifactValidation = Readonly<{
     message: string;
 }>;
 
+export type DistributedRunCompositeCounts = Readonly<{
+    total: number;
+    passed: number;
+    failed: number;
+    childResults: number;
+    composite: number;
+    leaf: number;
+}>;
+
+export type DistributedRunCompositeSummary = Readonly<{
+    total: number;
+    passed: number;
+    failed: number;
+    cancelled: number;
+    skipped: number;
+    composite: number;
+    leaf: number;
+}>;
+
+export type DistributedRunCompositeRow = Readonly<{
+    path: string;
+    sourceRecipePath: string;
+    parentPath?: string;
+    parentCommandId?: string;
+    depth: number;
+    childIndex?: number;
+    commandIndex?: number;
+    iteration?: number;
+    groupId?: string;
+    groupIndex?: number;
+    originalCommandId?: string;
+    commandId: string;
+    kind: RallarBlackBoxTestResult['kind'];
+    status: RallarBlackBoxTestResult['status'];
+    ok: boolean;
+    startedAtEpochMs: number;
+    endedAtEpochMs: number;
+    durationMs: number;
+    summary: string;
+    detail?: string;
+    errorSummary?: string;
+    valueSummary?: string;
+}>;
+
+export type DistributedRunCompositeGroupSummary = Readonly<{
+    parentPath: string;
+    parentCommandId: string;
+    groupId: string;
+    groupIndex: number;
+    commandCount: number;
+    passed: number;
+    failed: number;
+    cancelled: boolean;
+    durationMs: number;
+    status: 'passed' | 'failed' | 'cancelled' | 'empty';
+}>;
+
+export type DistributedRunCompositeDrilldown = Readonly<{
+    key: string;
+    commandId: string;
+    agentId: string;
+    recipeId?: string;
+    role?: string;
+    phase?: ControlDistributedRunCommandLink['phase'];
+    commandKind?: RallarBlackBoxTestCommandKind;
+    artifactRef: string;
+    summary: DistributedRunCompositeSummary;
+    firstFailure?: DistributedRunCompositeRow;
+    groupSummaries: readonly DistributedRunCompositeGroupSummary[];
+    rows: readonly DistributedRunCompositeRow[];
+}>;
+
 export type DistributedRunMonitor = Readonly<{
     distributedRunId: string;
     state: string;
@@ -288,6 +415,8 @@ export type DistributedRunMonitor = Readonly<{
         ok: number;
         failed: number;
     }>;
+    compositeCounts: DistributedRunCompositeCounts;
+    diagnosticCounts: DistributedRunRuntimeDiagnosticCounts;
     latency: DistributedRunLatencySummary;
     artifact: DistributedRunArtifactValidation;
     timeline: readonly DistributedRunTimelineItem[];
@@ -296,6 +425,8 @@ export type DistributedRunMonitor = Readonly<{
     readiness: readonly DistributedRunReadinessRow[];
     failures: readonly DistributedRunFailureRow[];
     events: readonly DistributedRunEventRow[];
+    runtimeDiagnostics: readonly DistributedRunRuntimeDiagnosticRow[];
+    compositeDrilldowns: readonly DistributedRunCompositeDrilldown[];
 }>;
 
 export type DistributedRunHistoryFilter = Readonly<{
@@ -1087,7 +1218,19 @@ export function deriveDistributedRunMonitor(input: Readonly<{
         .filter(result => linkedCommandIds.has(result.commandId));
     const resultsByCommandId = new Map(linkedResults.map(result => [result.commandId, result]));
     const linkedEvents = distributedRunEvents(input.distributedRun, input.controlRun);
-    const failures = distributedRunFailures(input.distributedRun, linkedResults, commands);
+    const compositeDrilldowns = distributedRunCompositeDrilldowns(
+        input.distributedRun,
+        linkedResults,
+        commands,
+    );
+    const failures = [
+        ...distributedRunFailures(input.distributedRun, linkedResults, commands),
+        ...distributedRunCompositeFailures(compositeDrilldowns),
+    ].sort((left, right) => (right.atEpochMs ?? 0) - (left.atEpochMs ?? 0));
+    const runtimeDiagnostics = correlateDistributedRunRuntimeDiagnostics(
+        distributedRunRuntimeDiagnostics(input.distributedRun, input.controlRun),
+        failures,
+    );
     const commandCounts = distributedRunCommandCounts(
         input.distributedRun.commandLinks,
         commands,
@@ -1107,6 +1250,8 @@ export function deriveDistributedRunMonitor(input: Readonly<{
             ok: linkedResults.filter(result => result.ok).length,
             failed: linkedResults.filter(result => !result.ok).length,
         },
+        compositeCounts: distributedRunCompositeCounts(compositeDrilldowns),
+        diagnosticCounts: distributedRunRuntimeDiagnosticCounts(runtimeDiagnostics),
         latency: summarizeLatencies(latencies),
         artifact,
         timeline: distributedRunTimeline({
@@ -1114,6 +1259,7 @@ export function deriveDistributedRunMonitor(input: Readonly<{
             commands,
             results: linkedResults,
             events: linkedEvents,
+            runtimeDiagnostics,
             failures,
             artifact,
         }),
@@ -1135,6 +1281,8 @@ export function deriveDistributedRunMonitor(input: Readonly<{
         }),
         failures,
         events: linkedEvents,
+        runtimeDiagnostics,
+        compositeDrilldowns,
     };
 }
 
@@ -1434,6 +1582,390 @@ function distributedRunCommandCounts(
     };
 }
 
+function distributedRunCompositeDrilldowns(
+    distributedRun: ControlDistributedRunSnapshot,
+    results: readonly ControlResultSnapshot[],
+    commands: ReadonlyMap<string, ControlCommandSnapshot>,
+): readonly DistributedRunCompositeDrilldown[] {
+    const linksByCommandId = new Map(distributedRun.commandLinks.map(link => [link.commandId, link]));
+    return results.flatMap(result => {
+        const roots = distributedRunCompositeRoots(result.result);
+        if (roots.length === 0) {
+            return [];
+        }
+
+        const link = linksByCommandId.get(result.commandId);
+        const command = commands.get(result.commandId);
+        const rows = distributedRunCompositeRows(roots);
+        if (rows.length === 0) {
+            return [];
+        }
+
+        const summary = summarizeRallarBlackBoxCompositeResults(roots);
+        const failedRows = [...rows]
+            .filter(row => !row.ok)
+            .sort((left, right) =>
+                left.startedAtEpochMs - right.startedAtEpochMs ||
+                left.endedAtEpochMs - right.endedAtEpochMs ||
+                left.path.localeCompare(right.path)
+            );
+        const firstFailure = failedRows.find(row => row.depth > 0) ?? failedRows[0];
+
+        return [{
+            key: `${result.agentId}:${result.commandId}`,
+            commandId: result.commandId,
+            agentId: result.agentId,
+            recipeId: link?.recipeId ?? commandRecipeId(command),
+            role: link?.role,
+            phase: link?.phase,
+            commandKind: command?.envelope.command.kind ?? result.result?.kind,
+            artifactRef: `control-run.json#results[commandId=${result.commandId}]`,
+            summary: {
+                total: summary.total,
+                passed: summary.passed,
+                failed: summary.failed,
+                cancelled: summary.cancelled,
+                skipped: summary.skipped,
+                composite: summary.composite,
+                leaf: summary.leaf,
+            },
+            firstFailure,
+            groupSummaries: distributedRunCompositeGroupSummaries(roots),
+            rows,
+        }];
+    });
+}
+
+function distributedRunCompositeCounts(
+    drilldowns: readonly DistributedRunCompositeDrilldown[],
+): DistributedRunCompositeCounts {
+    return {
+        total: drilldowns.length,
+        passed: drilldowns.filter(drilldown => drilldown.summary.failed === 0).length,
+        failed: drilldowns.filter(drilldown => drilldown.summary.failed > 0).length,
+        childResults: drilldowns.reduce((sum, drilldown) => sum + drilldown.summary.total, 0),
+        composite: drilldowns.reduce((sum, drilldown) => sum + drilldown.summary.composite, 0),
+        leaf: drilldowns.reduce((sum, drilldown) => sum + drilldown.summary.leaf, 0),
+    };
+}
+
+function distributedRunCompositeFailures(
+    drilldowns: readonly DistributedRunCompositeDrilldown[],
+): readonly DistributedRunFailureRow[] {
+    return drilldowns.flatMap((drilldown): DistributedRunFailureRow[] => {
+        if (!drilldown.firstFailure) {
+            return [];
+        }
+        return [{
+            kind: 'command',
+            key: `${drilldown.commandId}:${drilldown.firstFailure.path}`,
+            commandId: drilldown.firstFailure.commandId,
+            agentId: drilldown.agentId,
+            recipeId: drilldown.recipeId,
+            code: drilldown.firstFailure.errorSummary ? undefined : drilldown.firstFailure.status,
+            message: drilldown.firstFailure.errorSummary ??
+                `${drilldown.firstFailure.kind} ${drilldown.firstFailure.status} at ${drilldown.firstFailure.path}.`,
+            atEpochMs: drilldown.firstFailure.endedAtEpochMs,
+        }];
+    });
+}
+
+function distributedRunCompositeRoots(
+    result: RallarBlackBoxTestResult | undefined,
+): readonly RallarBlackBoxTestResult[] {
+    if (!result) {
+        return [];
+    }
+
+    const recipeResults = recipeRunChildResults(result);
+    if (recipeResults.length > 0) {
+        return recipeResults.some(compositeMonitorRelevantResult) ? recipeResults : [];
+    }
+
+    return compositeMonitorRelevantResult(result) ? [result] : [];
+}
+
+function compositeMonitorRelevantResult(result: RallarBlackBoxTestResult): boolean {
+    if (
+        result.kind === 'loop' ||
+        result.kind === 'parallel' ||
+        result.kind === 'wait' ||
+        result.kind === 'assert'
+    ) {
+        return true;
+    }
+    return recipeRunChildResults(result).some(compositeMonitorRelevantResult);
+}
+
+function recipeRunChildResults(result: RallarBlackBoxTestResult): readonly RallarBlackBoxTestResult[] {
+    if (result.kind !== 'recipe.run') {
+        return [];
+    }
+    const value = asRecord(result.value);
+    return Array.isArray(value.results)
+        ? value.results.filter(isRallarBlackBoxTestResult)
+        : [];
+}
+
+function isRallarBlackBoxTestResult(value: unknown): value is RallarBlackBoxTestResult {
+    const candidate = asRecord(value);
+    return typeof candidate.commandId === 'string' &&
+        typeof candidate.kind === 'string' &&
+        typeof candidate.status === 'string' &&
+        typeof candidate.ok === 'boolean' &&
+        isFiniteNumber(candidate.startedAtEpochMs) &&
+        isFiniteNumber(candidate.endedAtEpochMs) &&
+        isFiniteNumber(candidate.durationMs);
+}
+
+function distributedRunCompositeRows(
+    roots: readonly RallarBlackBoxTestResult[],
+): readonly DistributedRunCompositeRow[] {
+    const entries = flattenRallarBlackBoxCompositeResults(roots);
+    const displayByPath = new Map(toRallarBlackBoxCompositeDisplayResults(roots)
+        .map(row => [row.path, row]));
+
+    return entries.map(entry => {
+        const display = displayByPath.get(entry.path);
+        const errorSummary = compositeErrorSummary(display?.error ?? entry.result.error);
+        return {
+            path: entry.path,
+            sourceRecipePath: entry.sourceRecipePath,
+            parentPath: entry.parentPath,
+            parentCommandId: entry.parentCommandId,
+            depth: entry.depth,
+            childIndex: entry.childIndex,
+            commandIndex: entry.commandIndex,
+            iteration: entry.iteration,
+            groupId: entry.groupId,
+            groupIndex: entry.groupIndex,
+            originalCommandId: entry.originalCommandId,
+            commandId: entry.commandId,
+            kind: entry.kind,
+            status: entry.status,
+            ok: entry.ok,
+            startedAtEpochMs: entry.startedAtEpochMs,
+            endedAtEpochMs: entry.endedAtEpochMs,
+            durationMs: entry.durationMs,
+            summary: compositeResultSummary(entry.result, display?.value),
+            detail: compositeResultDetail(entry.result, display?.value, errorSummary),
+            errorSummary,
+            valueSummary: compositeValueSummary(display?.value),
+        };
+    });
+}
+
+function distributedRunCompositeGroupSummaries(
+    roots: readonly RallarBlackBoxTestResult[],
+): readonly DistributedRunCompositeGroupSummary[] {
+    return flattenRallarBlackBoxCompositeResults(roots)
+        .flatMap(entry => {
+            const value = compositeParallelResultValue(entry.result.value);
+            if (!value) {
+                return [];
+            }
+            return value.groups.map((group, groupIndex) => ({
+                parentPath: entry.path,
+                parentCommandId: entry.commandId,
+                groupId: group.groupId,
+                groupIndex,
+                commandCount: group.commandCount,
+                passed: group.passed,
+                failed: group.failed,
+                cancelled: group.cancelled,
+                durationMs: group.durationMs,
+                status: compositeGroupStatus(group),
+            }));
+        });
+}
+
+function compositeResultSummary(result: RallarBlackBoxTestResult, displayValue: unknown): string {
+    if (result.kind === 'loop') {
+        const value = compositeLoopResultValue(result.value);
+        if (value) {
+            const averageCadenceMs = value.childResultCount > 0
+                ? Math.round(result.durationMs / value.childResultCount)
+                : undefined;
+            return [
+                `${value.iterations} iterations`,
+                `${value.childResultCount} children`,
+                `${value.passed} passed`,
+                `${value.failed} failed`,
+                value.cancelled ? 'cancelled' : undefined,
+                averageCadenceMs !== undefined ? `avg ${averageCadenceMs}ms/result` : undefined,
+            ].filter(Boolean).join(' - ');
+        }
+    }
+
+    if (result.kind === 'parallel') {
+        const value = compositeParallelResultValue(result.value);
+        if (value) {
+            const failedGroups = value.groups
+                .filter(group => group.failed > 0)
+                .map(group => group.groupId);
+            return [
+                `${value.groupCount} groups`,
+                `max ${value.maxConcurrency}`,
+                `${value.passed} passed`,
+                `${value.failed} failed`,
+                value.cancelled ? 'cancelled' : undefined,
+                failedGroups.length > 0 ? `failed groups ${failedGroups.join(', ')}` : undefined,
+            ].filter(Boolean).join(' - ');
+        }
+    }
+
+    if (result.kind === 'wait') {
+        const value = compositeWaitResultValue(result.value);
+        if (value) {
+            return [
+                value.matched ? 'matched' : value.timedOut ? 'timed out' : value.cancelled ? 'cancelled' : 'pending',
+                waitMatchSummary(value.match),
+            ].filter(Boolean).join(' - ');
+        }
+    }
+
+    if (result.kind === 'assert') {
+        const value = compositeAssertResultValue(result.value);
+        if (value) {
+            return [
+                value.passed ? 'passed' : 'failed',
+                `${value.source} ${value.operator}`,
+                value.expected !== undefined ? `expected ${safePayloadSummary(value.expected)}` : undefined,
+            ].filter(Boolean).join(' - ');
+        }
+    }
+
+    return compositeValueSummary(displayValue) || result.kind;
+}
+
+function compositeResultDetail(
+    result: RallarBlackBoxTestResult,
+    displayValue: unknown,
+    errorSummary: string | undefined,
+): string | undefined {
+    if (errorSummary) {
+        return errorSummary;
+    }
+
+    if (result.kind === 'assert') {
+        const value = compositeAssertResultValue(result.value);
+        if (value) {
+            return [
+                `actual ${safePayloadSummary(value.actual)}`,
+                `exists ${value.exists}`,
+            ].join(' - ');
+        }
+    }
+
+    if (result.kind === 'wait') {
+        const value = compositeWaitResultValue(result.value);
+        if (value?.event) {
+            return `event ${safePayloadSummary(value.event)}`;
+        }
+    }
+
+    if (result.kind === 'loop' || result.kind === 'parallel') {
+        return undefined;
+    }
+
+    return compositeValueSummary(displayValue);
+}
+
+function compositeValueSummary(value: unknown): string | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    const summary = safePayloadSummary(value);
+    return summary.length > 0 ? summary : undefined;
+}
+
+function compositeErrorSummary(error: unknown): string | undefined {
+    if (error === undefined) {
+        return undefined;
+    }
+    const record = asRecord(error);
+    const code = firstString(record.code);
+    const message = firstString(record.message);
+    if (code || message) {
+        return [code, message].filter(Boolean).join(': ');
+    }
+    return safePayloadSummary(error);
+}
+
+function waitMatchSummary(value: unknown): string | undefined {
+    const match = asRecord(value);
+    return [
+        firstString(match.topic),
+        firstString(match.commandId),
+        firstString(match.connection),
+        firstString(match.transport),
+        firstString(match.severity),
+        firstString(match.payloadPath),
+        match.equals !== undefined ? `equals ${safePayloadSummary(match.equals)}` : undefined,
+        firstString(match.contains) ? `contains ${firstString(match.contains)}` : undefined,
+        typeof match.exists === 'boolean' ? `exists ${match.exists}` : undefined,
+    ].filter(Boolean).join(', ') || undefined;
+}
+
+function compositeGroupStatus(
+    group: Readonly<{ commandCount: number; passed: number; failed: number; cancelled: boolean }>,
+): DistributedRunCompositeGroupSummary['status'] {
+    if (group.cancelled) {
+        return 'cancelled';
+    }
+    if (group.failed > 0) {
+        return 'failed';
+    }
+    if (group.commandCount === 0) {
+        return 'empty';
+    }
+    return 'passed';
+}
+
+function compositeLoopResultValue(value: unknown): RallarBlackBoxTestLoopResultValue | undefined {
+    const candidate = asRecord(value) as Partial<RallarBlackBoxTestLoopResultValue>;
+    return Array.isArray(candidate.results) &&
+        typeof candidate.iterations === 'number' &&
+        typeof candidate.childResultCount === 'number'
+        ? candidate as RallarBlackBoxTestLoopResultValue
+        : undefined;
+}
+
+function compositeParallelResultValue(value: unknown): RallarBlackBoxTestParallelResultValue | undefined {
+    const candidate = asRecord(value) as Partial<RallarBlackBoxTestParallelResultValue>;
+    return Array.isArray(candidate.groups) &&
+        typeof candidate.groupCount === 'number' &&
+        typeof candidate.maxConcurrency === 'number'
+        ? candidate as RallarBlackBoxTestParallelResultValue
+        : undefined;
+}
+
+function compositeWaitResultValue(value: unknown): RallarBlackBoxTestWaitResultValue | undefined {
+    const candidate = asRecord(value) as Partial<RallarBlackBoxTestWaitResultValue>;
+    return typeof candidate.matched === 'boolean' && candidate.match !== undefined
+        ? candidate as RallarBlackBoxTestWaitResultValue
+        : undefined;
+}
+
+function compositeAssertResultValue(value: unknown): RallarBlackBoxTestAssertResultValue | undefined {
+    const candidate = asRecord(value) as Partial<RallarBlackBoxTestAssertResultValue>;
+    return typeof candidate.source === 'string' &&
+        typeof candidate.operator === 'string' &&
+        typeof candidate.exists === 'boolean' &&
+        typeof candidate.passed === 'boolean'
+        ? candidate as RallarBlackBoxTestAssertResultValue
+        : undefined;
+}
+
+function commandRecipeId(command: ControlCommandSnapshot | undefined): string | undefined {
+    if (!command) {
+        return undefined;
+    }
+    return command.envelope.command.kind === 'recipe.run' || command.envelope.command.kind === 'recipe.load'
+        ? command.envelope.command.recipe?.recipeId
+        : undefined;
+}
+
 function distributedRunEvents(
     distributedRun: ControlDistributedRunSnapshot,
     controlRun: ControlRunSnapshot | undefined,
@@ -1457,6 +1989,166 @@ function distributedRunEvents(
             topic: payloadTopic(event.payload),
             summary: eventSummary(event),
         }));
+}
+
+function distributedRunRuntimeDiagnostics(
+    distributedRun: ControlDistributedRunSnapshot,
+    controlRun: ControlRunSnapshot | undefined,
+): readonly Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'>[] {
+    if (!controlRun) {
+        return [];
+    }
+    const linkedCommandIds = new Set(distributedRun.commandLinks.map(link => link.commandId));
+    return controlRun.events
+        .filter(event =>
+            (event.commandId !== undefined && linkedCommandIds.has(event.commandId)) ||
+            payloadReferencesDistributedRun(event.payload, distributedRun.distributedRunId)
+        )
+        .map((event, index) => distributedRunRuntimeDiagnostic(event, index))
+        .filter((row): row is Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'> =>
+            row !== undefined
+        )
+        .sort((left, right) => left.atEpochMs - right.atEpochMs || left.eventId.localeCompare(right.eventId));
+}
+
+function distributedRunRuntimeDiagnostic(
+    event: ControlEventSnapshot,
+    index: number,
+): Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'> | undefined {
+    const runtimeEvent = asRecord(event.payload);
+    const normalizedPayload = normalizedRuntimeDiagnosticPayload(event.payload);
+    if (!normalizedPayload && event.kind !== 'diagnostic') {
+        return undefined;
+    }
+
+    const payload = normalizedPayload ?? runtimeEvent;
+    const data = asRecord(payload.data);
+    const topic = firstString(
+        payload.topic,
+        runtimeEvent.topic,
+        payload.diagnosticTypeId,
+        payloadTopic(event.payload),
+        event.kind,
+    ) ?? 'runtime.diagnostic';
+    const diagnosticTypeId = firstString(payload.diagnosticTypeId, topic) ?? topic;
+    const transport = diagnosticTransport(firstString(payload.transport, runtimeEvent.transport));
+    if (!normalizedPayload && !looksLikeTransportDiagnostic(topic, transport, payload)) {
+        return undefined;
+    }
+
+    const severity = diagnosticSeverity(firstString(payload.severity, runtimeEvent.severity), event.kind);
+    const message = firstString(
+        payload.message,
+        runtimeEvent.message,
+        payload.reason,
+        data.message,
+        data.reason,
+        eventSummary(event),
+    ) ?? topic;
+    const payloadSummary = safePayloadSummary(payload.data ?? payload.payload ?? runtimeEvent.payload ?? event.payload);
+    const expectedLaneId = firstString(
+        payload.expectedLaneId,
+        payload.expectedLane,
+        payload.expectedChannel,
+        payload.expectedChannelLabel,
+        data.expectedLaneId,
+        data.expectedChannel,
+        data.expectedChannelLabel,
+    );
+    const observedLaneId = firstString(
+        payload.observedLaneId,
+        payload.observedLane,
+        payload.observedChannel,
+        payload.observedChannelLabel,
+        payload.actualChannel,
+        data.observedLaneId,
+        data.observedChannel,
+        data.observedChannelLabel,
+        data.actualChannel,
+    );
+
+    return {
+        eventId: event.eventId ?? `${event.agentId}-${event.commandId ?? 'diagnostic'}-${index}`,
+        atEpochMs: numberOrUndefined(payload.atEpochMs) ?? numberOrUndefined(runtimeEvent.atEpochMs) ?? event.atEpochMs,
+        severity,
+        agentId: event.agentId,
+        commandId: firstString(payload.commandId, runtimeEvent.commandId, event.commandId),
+        transport,
+        topic,
+        diagnosticTypeId,
+        message,
+        summary: diagnosticSummary({
+            message,
+            transport,
+            typeId: firstString(payload.typeId, data.typeId),
+            topicId: firstString(payload.topicId, data.topicId),
+            contextId: firstString(payload.contextId, data.contextId),
+            resourceId: firstString(payload.resourceId, data.resourceId),
+            expectedLaneId,
+            observedLaneId,
+            payloadSummary,
+        }),
+        payloadSummary,
+        connection: firstString(payload.connection, runtimeEvent.connection),
+        actor: firstString(payload.actor, runtimeEvent.actor),
+        groupId: firstString(payload.groupId, data.groupId),
+        roomId: firstString(payload.roomId, data.roomId),
+        laneId: firstString(payload.laneId, data.laneId),
+        expectedLaneId,
+        observedLaneId,
+        accepted: booleanOrUndefined(payload.accepted) ?? booleanOrUndefined(data.accepted),
+        peerId: firstString(payload.peerId, data.peerId),
+        remotePeerId: firstString(payload.remotePeerId, data.remotePeerId),
+        senderId: firstString(payload.senderId, data.senderId),
+        typeId: firstString(payload.typeId, data.typeId),
+        topicId: firstString(payload.topicId, data.topicId),
+        contextId: firstString(payload.contextId, data.contextId),
+        resourceId: firstString(payload.resourceId, data.resourceId),
+        source: firstString(payload.source, runtimeEvent.source),
+    };
+}
+
+function correlateDistributedRunRuntimeDiagnostics(
+    diagnostics: readonly Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'>[],
+    failures: readonly DistributedRunFailureRow[],
+): readonly DistributedRunRuntimeDiagnosticRow[] {
+    return diagnostics.map(diagnostic => ({
+        ...diagnostic,
+        correlatedFailureKeys: failures
+            .filter(failure => diagnosticCorrelatesWithFailure(diagnostic, failure))
+            .map(failure => failure.key),
+    }));
+}
+
+function diagnosticCorrelatesWithFailure(
+    diagnostic: Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'>,
+    failure: DistributedRunFailureRow,
+): boolean {
+    if (diagnostic.commandId && failure.commandId === diagnostic.commandId) {
+        return true;
+    }
+    if (diagnostic.commandId && failure.key === diagnostic.commandId) {
+        return true;
+    }
+    if (!diagnostic.agentId || failure.agentId !== diagnostic.agentId || failure.atEpochMs === undefined) {
+        return false;
+    }
+    return Math.abs(failure.atEpochMs - diagnostic.atEpochMs) <= 15_000;
+}
+
+function distributedRunRuntimeDiagnosticCounts(
+    diagnostics: readonly DistributedRunRuntimeDiagnosticRow[],
+): DistributedRunRuntimeDiagnosticCounts {
+    return {
+        total: diagnostics.length,
+        info: diagnostics.filter(row => row.severity === 'info' || row.severity === 'debug').length,
+        warning: diagnostics.filter(row => row.severity === 'warning').length,
+        error: diagnostics.filter(row => row.severity === 'error').length,
+        ws: diagnostics.filter(row => row.transport === 'ws').length,
+        rtc: diagnostics.filter(row => row.transport === 'realtime' || row.transport === 'messages.rtc').length,
+        http: diagnostics.filter(row => row.transport === 'http').length,
+        runtime: diagnostics.filter(row => row.transport === undefined).length,
+    };
 }
 
 function distributedRunFailures(
@@ -1513,6 +2205,7 @@ function distributedRunTimeline(input: Readonly<{
     commands: ReadonlyMap<string, ControlCommandSnapshot>;
     results: readonly ControlResultSnapshot[];
     events: readonly DistributedRunEventRow[];
+    runtimeDiagnostics: readonly DistributedRunRuntimeDiagnosticRow[];
     failures: readonly DistributedRunFailureRow[];
     artifact: DistributedRunArtifactValidation;
 }>): readonly DistributedRunTimelineItem[] {
@@ -1644,6 +2337,19 @@ function distributedRunTimeline(input: Readonly<{
             tone: 'muted',
             agentId: event.agentId,
             commandId: event.commandId,
+        });
+    });
+
+    input.runtimeDiagnostics.forEach(diagnostic => {
+        addTimeline(items, {
+            id: `diagnostic-${diagnostic.eventId}`,
+            atEpochMs: diagnostic.atEpochMs,
+            kind: 'diagnostic',
+            label: `${diagnostic.transport ?? 'runtime'} ${diagnostic.severity}`,
+            detail: diagnostic.message,
+            tone: diagnosticSeverityTone(diagnostic.severity),
+            agentId: diagnostic.agentId,
+            commandId: diagnostic.commandId,
         });
     });
 
@@ -1970,6 +2676,106 @@ function payloadReferencesDistributedRun(payload: unknown, distributedRunId: str
     }
 }
 
+function normalizedRuntimeDiagnosticPayload(
+    payload: unknown,
+): (RallarBlackBoxRuntimeDiagnosticPayload & Record<string, unknown>) | undefined {
+    const envelope = asRecord(payload);
+    const nested = asRecord(envelope.payload);
+    if (isRuntimeDiagnosticPayload(nested)) {
+        return nested as RallarBlackBoxRuntimeDiagnosticPayload & Record<string, unknown>;
+    }
+    if (isRuntimeDiagnosticPayload(envelope)) {
+        return envelope as RallarBlackBoxRuntimeDiagnosticPayload & Record<string, unknown>;
+    }
+    return undefined;
+}
+
+function isRuntimeDiagnosticPayload(value: Record<string, unknown>): boolean {
+    return value.diagnosticSchemaVersion === 1 ||
+        typeof value.diagnosticTypeId === 'string';
+}
+
+function looksLikeTransportDiagnostic(
+    topic: string,
+    transport: RallarBlackBoxTestTransport | undefined,
+    payload: Record<string, unknown>,
+): boolean {
+    const data = asRecord(payload.data);
+    const text = [
+        topic,
+        payload.diagnosticTypeId,
+        payload.message,
+        payload.reason,
+        data.message,
+        data.reason,
+    ].filter(Boolean).join(' ').toLowerCase();
+    return transport === 'ws' ||
+        transport === 'realtime' ||
+        transport === 'messages.rtc' ||
+        text.includes('websocket') ||
+        text.includes('ws ') ||
+        text.includes('unhandled ws') ||
+        text.includes('rtc') ||
+        text.includes('data channel') ||
+        text.includes('data-channel');
+}
+
+function diagnosticSeverity(
+    value: string | undefined,
+    eventKind: string,
+): RallarBlackBoxTestSeverity {
+    if (value === 'debug' || value === 'info' || value === 'warning' || value === 'error') {
+        return value;
+    }
+    return eventKind === 'diagnostic' ? 'warning' : 'info';
+}
+
+function diagnosticSeverityTone(severity: RallarBlackBoxTestSeverity): string {
+    if (severity === 'error') {
+        return 'bad';
+    }
+    if (severity === 'warning') {
+        return 'warn';
+    }
+    return 'muted';
+}
+
+function diagnosticTransport(value: string | undefined): RallarBlackBoxTestTransport | undefined {
+    if (value === 'ws' || value === 'http' || value === 'realtime' || value === 'messages.rtc') {
+        return value;
+    }
+    return undefined;
+}
+
+function diagnosticSummary(input: Readonly<{
+    message: string;
+    transport?: RallarBlackBoxTestTransport;
+    typeId?: string;
+    topicId?: string;
+    contextId?: string;
+    resourceId?: string;
+    expectedLaneId?: string;
+    observedLaneId?: string;
+    payloadSummary: string;
+}>): string {
+    const selector = [
+        input.typeId ? `type ${input.typeId}` : undefined,
+        input.topicId ? `topic ${input.topicId}` : undefined,
+        input.contextId ? `context ${input.contextId}` : undefined,
+        input.resourceId ? `resource ${input.resourceId}` : undefined,
+    ].filter(Boolean).join(' / ');
+    const lane = input.expectedLaneId || input.observedLaneId
+        ? `lane ${input.expectedLaneId ?? '-'} -> ${input.observedLaneId ?? '-'}`
+        : undefined;
+    return [
+        input.transport,
+        input.message,
+        selector,
+        lane,
+        input.payloadSummary,
+    ].filter((value): value is string => Boolean(value && value.length > 0)).join(' - ');
+}
+
 function payloadTopic(payload: unknown): string | undefined {
     if (!isRecord(payload)) {
         return undefined;
@@ -2052,6 +2858,18 @@ function durationBetween(start: number | undefined, end: number | undefined): nu
 
 function stringOrUndefined(value: unknown): string | undefined {
     return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+function firstString(...values: readonly unknown[]): string | undefined {
+    return values.find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+}
+
+function numberOrUndefined(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function booleanOrUndefined(value: unknown): boolean | undefined {
+    return typeof value === 'boolean' ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

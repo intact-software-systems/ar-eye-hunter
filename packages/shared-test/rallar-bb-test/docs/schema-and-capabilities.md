@@ -134,6 +134,19 @@ kind, topic, command ID, connection, transport, severity, and payload-path
 the standard redaction pipeline. If neither `timeoutMs` nor `deadlineEpochMs`
 is supplied, the runtime uses a 5 second default timeout.
 
+Cancellation and deadlines are part of the runtime contract. `recipe.cancel`
+requests cancellation through the active runtime abort signal, so waits, loop
+interval sleeps, browser HTTP requests, WebSocket open waits, and browser
+Rallar RTC/WS calls can stop before their ordinary timeout when supported by
+the host API. Failed, cancelled, or timed-out `recipe.run` execution invokes
+the optional runtime cleanup hook; the browser adapter uses that hook to close
+owned WebSockets, detach listeners, and close the browser Rallar runtime.
+
+Direct duplicate commands still use `commandId` replay for idempotent retries.
+Child commands inside a new `recipe.run` are executed with cache bypass, so a
+second recipe run with the same child `commandId` values does not inherit stale
+results, messages, sockets, or RTC state from a failed or cancelled prior run.
+
 WS/RTC runtime diagnostics should use
 `normalizeRallarBlackBoxRuntimeDiagnostic(...)` before they are recorded as
 `kind: "diagnostic"` evidence. Normalized payloads expose

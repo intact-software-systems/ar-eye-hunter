@@ -17,13 +17,13 @@ This document is the current ordered starting point for the next Rallar black-bo
    - Status: completed on 2026-06-01. The runner CLI now has JSON `--explain`/`--validate` preflight, strict profile checks, env/connection/step/output diagnostics, and traffic-plan expansion metadata before live calls.
 
 5. [rallar-bb-test Iteration 13: Cancellation, Deadline, And Cleanup Isolation Hardening](../packages/shared-test/rallar-bb-test/docs/rallar-bb-test-composite-primitives-iterations.md#iteration-13-cancellation-deadline-and-cleanup-isolation-hardening)
-   - Reduce flaky leftovers from timers, WS connections, RTC channels, and distributed browser runs before expanding live coverage.
+   - Status: completed on 2026-06-01. Recipe cancellation now propagates through runtime abort signals, failed/cancelled/timed-out recipe runs invoke cleanup, browser-owned WS/Rallar resources close idempotently, and recipe child commands bypass stale result-cache replay between runs.
 
 6. [Distributed Recipe Iteration 52: Structured WS/RTC Runtime Diagnostics In The SPA](../apps/rallar-black-box/docs/distributed-recipe-execution-iterations.md#iteration-52-structured-wsrtc-runtime-diagnostics-in-the-spa)
-   - Surface the normalized runtime diagnostics from rallar-bb-test in the command-center UI.
+   - Status: completed on 2026-06-01. The Distributed Recipes monitor now shows structured WS/RTC runtime diagnostics with filtering, counts, timeline entries, and command/failure correlation.
 
 7. [Distributed Recipe Iteration 53: Composite Run Monitor Drilldowns](../apps/rallar-black-box/docs/distributed-recipe-execution-iterations.md#iteration-53-composite-run-monitor-drilldowns)
-   - Build on the composite result contract so users can inspect nested loop and parallel execution without reading raw JSON.
+   - Status: completed on 2026-06-01. The Distributed Recipes monitor now shows expandable composite drilldowns, nested loop/parallel/wait/assert rows, first failed child focus, group summaries, and artifact references.
 
 8. [black-box-runner Runner Iteration 2: Safe Output Transform Layer](../packages/shared-test/black-box-runner/docs/black-box-runner-followup-iterations.md#runner-iteration-2-safe-output-transform-layer)
    - Improve recipe authoring by allowing safe derived values without turning the runner into application logic.
@@ -63,11 +63,16 @@ This document is the current ordered starting point for the next Rallar black-bo
 
 ## Current Recommendation
 
-Start with [rallar-bb-test Iteration 13](../packages/shared-test/rallar-bb-test/docs/rallar-bb-test-composite-primitives-iterations.md#iteration-13-cancellation-deadline-and-cleanup-isolation-hardening).
+Start with [black-box-runner Runner Iteration 2](../packages/shared-test/black-box-runner/docs/black-box-runner-followup-iterations.md#runner-iteration-2-safe-output-transform-layer).
 
 Iterations 10 and 11 completed the shared result and diagnostic foundations, and
 Iteration 51 applied those foundations to the SPA Distributed Recipes UX.
 Runner Iteration 1 now gives generated and human-authored black-box-runner
-recipes a preflight surface before live calls. The next useful step is cleanup
-and cancellation hardening in `rallar-bb-test` so larger distributed and live
-runs leave fewer timers, sockets, channels, or stale browser-agent state behind.
+recipes a preflight surface before live calls. Iteration 13 hardened
+cancellation, deadlines, and cleanup isolation in `rallar-bb-test`. Iteration
+52 surfaced normalized WS/RTC runtime diagnostics in the SPA monitor. Iteration
+53 made composite run monitor drilldowns readable so users can debug nested
+loop, parallel, wait, and assert results without opening raw artifacts first.
+The next useful step is Runner Iteration 2, which adds a safe output transform
+layer for generated and hand-authored recipes now that the runtime and monitor
+surfaces have better preflight and post-run evidence.

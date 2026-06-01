@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
     createRallarBlackBoxBrowserTestRuntime,
     createRallarBlackBoxRtcProvider,
@@ -1299,6 +1299,111 @@ describe('rallar-bb-test', () => {
             .toEqual(['health-1']);
     });
 
+    it('re-executes recipe children with the same IDs across separate recipe runs', async () => {
+        let sendCount = 0;
+        const runtime = createRallarBlackBoxTestRuntime({
+            commandExecutor: (command, context) => {
+                if (command.kind !== 'rtc.send') {
+                    return undefined;
+                }
+
+                sendCount += 1;
+                return sendCount === 1
+                    ? {
+                        status: 'failed',
+                        error: {
+                            code: 'SEND_FAILED_ONCE',
+                            message: 'Synthetic first-run failure.',
+                        },
+                        nextStatus: 'failed',
+                    }
+                    : {
+                        status: 'ok',
+                        value: {
+                            sendCount,
+                        },
+                        nextStatus: context.state().status,
+                    };
+            },
+        });
+        const recipe: RallarBlackBoxTestRecipe = {
+            recipeId: 'repeatable-recipe',
+            commands: [
+                {
+                    kind: 'rtc.send',
+                    commandId: 'shared-send-id',
+                    send: {
+                        text: 'same command id',
+                    },
+                },
+            ],
+        };
+
+        const first = await runtime.execute({
+            kind: 'recipe.run',
+            commandId: 'run-repeatable-1',
+            recipe,
+        });
+        const second = await runtime.execute({
+            kind: 'recipe.run',
+            commandId: 'run-repeatable-2',
+            recipe,
+        });
+
+        expect(first.status).toBe('failed');
+        expect(second.status).toBe('ok');
+        expect(sendCount).toBe(2);
+        expect(selectRallarBlackBoxCommandHistory(runtime.state()).map(result => result.commandId)).toEqual([
+            'shared-send-id',
+            'run-repeatable-1',
+            'shared-send-id',
+            'run-repeatable-2',
+        ]);
+    });
+
+    it('wakes loop interval sleeps when cancellation is requested', async () => {
+        vi.useFakeTimers();
+        try {
+            const runtime = createRallarBlackBoxTestRuntime();
+            const loop = runtime.execute({
+                kind: 'loop',
+                commandId: 'cancel-during-interval',
+                count: 2,
+                intervalMs: 60_000,
+                commands: [
+                    {
+                        kind: 'health',
+                        commandId: 'interval-health',
+                    },
+                ],
+            });
+
+            await Promise.resolve();
+            await runtime.execute({
+                kind: 'recipe.cancel',
+                commandId: 'cancel-interval',
+                reason: 'operator stopped interval loop',
+            });
+            await Promise.resolve();
+
+            const result = await loop;
+            const value = result.value as RallarBlackBoxTestLoopResultValue;
+
+            expect(result.status).toBe('cancelled');
+            expect(value.cancelled).toBe(true);
+            expect(value.childResultCount).toBe(1);
+            const commandIds = selectRallarBlackBoxCommandHistory(runtime.state()).map(command => command.commandId);
+            expect(commandIds).toEqual(expect.arrayContaining([
+                'cancel-during-interval:i1:c1:interval-health',
+                'cancel-interval',
+                'cancel-during-interval',
+            ]));
+            expect(commandIds.at(-1)).toBe('cancel-during-interval');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('keeps commands and results JSON serializable', async () => {
         const runtime = createDeterministicRuntime();
         const command: RallarBlackBoxTestCommand = {
@@ -1538,6 +1643,7 @@ describe('rallar-bb-test', () => {
                     body: '{"name":"item-1"}',
                     credentials: undefined,
                     mode: undefined,
+                    signal: expect.any(AbortSignal),
                 },
             },
         ]);
@@ -1652,6 +1758,127 @@ describe('rallar-bb-test', () => {
         });
         expect(selectRallarBlackBoxEvents(runtime.state()).some((event) =>
             event.topic === 'rallar.bb.ws.closed'
+        )).toBe(true);
+    });
+
+    it('cleans up browser WS and Rallar resources after a cancelled recipe', async () => {
+        class FakeSocket {
+            readonly url: string;
+            readonly protocol = '';
+            readyState = 0;
+            closeCount = 0;
+            private readonly listeners = new Map<string, Array<(event: unknown) => void>>();
+
+            constructor(url: string) {
+                this.url = url;
+                queueMicrotask(() => {
+                    this.readyState = 1;
+                    this.emit('open', {});
+                });
+            }
+
+            addEventListener(type: string, listener: (event: unknown) => void): void {
+                this.listeners.set(type, [
+                    ...(this.listeners.get(type) ?? []),
+                    listener,
+                ]);
+            }
+
+            removeEventListener(type: string, listener: (event: unknown) => void): void {
+                this.listeners.set(
+                    type,
+                    (this.listeners.get(type) ?? []).filter(entry => entry !== listener),
+                );
+            }
+
+            send(_data: unknown): void {
+                // Not needed for this cleanup regression.
+            }
+
+            close(code?: number, reason?: string): void {
+                this.closeCount += 1;
+                this.readyState = 3;
+                this.emit('close', {
+                    code,
+                    reason,
+                    wasClean: true,
+                });
+            }
+
+            private emit(type: string, event: unknown): void {
+                (this.listeners.get(type) ?? []).forEach(listener => listener(event));
+            }
+        }
+
+        const sockets: FakeSocket[] = [];
+        const rallarCalls: string[] = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            webSocketFactory: (url) => {
+                const socket = new FakeSocket(url);
+                sockets.push(socket);
+                return socket;
+            },
+            rallarRuntime: {
+                connect: async () => {
+                    rallarCalls.push('connect');
+                    return { connected: true };
+                },
+                send: async () => ({ sent: true }),
+                close: async () => {
+                    rallarCalls.push('close');
+                    return { closed: true };
+                },
+                health: async () => ({ connected: true }),
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'recipe.run',
+            commandId: 'run-cancel-cleanup',
+            recipe: {
+                recipeId: 'cancel-cleanup',
+                commands: [
+                    {
+                        kind: 'configure',
+                        commandId: 'configure-cleanup',
+                        config: {
+                            actor: 'alice',
+                            roomId: 'room-1',
+                        },
+                    },
+                    {
+                        kind: 'ws.open',
+                        commandId: 'open-cleanup-ws',
+                        connection: 'control',
+                        url: 'wss://control.example.test/ws',
+                    },
+                    {
+                        kind: 'rtc.connect',
+                        commandId: 'connect-cleanup-rtc',
+                        connection: 'aliceRtc',
+                    },
+                    {
+                        kind: 'recipe.cancel',
+                        commandId: 'cancel-cleanup-recipe',
+                        reason: 'cleanup isolation regression',
+                    },
+                ],
+            },
+        });
+        const health = await runtime.execute({
+            kind: 'health',
+            commandId: 'health-after-cleanup',
+        });
+
+        expect(result.status).toBe('cancelled');
+        expect(sockets).toHaveLength(1);
+        expect(sockets[0].closeCount).toBe(1);
+        expect(rallarCalls).toEqual(['connect', 'close']);
+        expect(health.value).toMatchObject({
+            webSockets: [],
+        });
+        expect(selectRallarBlackBoxEvents(runtime.state()).some(event =>
+            event.topic === 'rallar.bb.cleanup.resources_closed'
         )).toBe(true);
     });
 

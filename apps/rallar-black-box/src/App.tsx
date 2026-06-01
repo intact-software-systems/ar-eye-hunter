@@ -7281,6 +7281,48 @@ function DistributedRecipePreflightPanel({ preflight, compact = false }: {
 }
 
 function DistributedRunMonitorPanel({ monitor }: { monitor: DistributedRunMonitor | undefined }) {
+    const [diagnosticTransportFilter, setDiagnosticTransportFilter] = useState('');
+    const [diagnosticSeverityFilter, setDiagnosticSeverityFilter] = useState('');
+    const [diagnosticAgentFilter, setDiagnosticAgentFilter] = useState('');
+    const [diagnosticGroupFilter, setDiagnosticGroupFilter] = useState('');
+    const [diagnosticQuery, setDiagnosticQuery] = useState('');
+    const runtimeDiagnostics = monitor?.runtimeDiagnostics ?? [];
+    const diagnosticTransports = useMemo(
+        () => uniqueValues(runtimeDiagnostics.map(row => row.transport)),
+        [runtimeDiagnostics],
+    );
+    const diagnosticSeverities = useMemo(
+        () => uniqueValues(runtimeDiagnostics.map(row => row.severity)),
+        [runtimeDiagnostics],
+    );
+    const diagnosticAgents = useMemo(
+        () => uniqueValues(runtimeDiagnostics.map(row => row.agentId)),
+        [runtimeDiagnostics],
+    );
+    const diagnosticGroups = useMemo(
+        () => uniqueValues(runtimeDiagnostics.map(distributedDiagnosticGroupValue)),
+        [runtimeDiagnostics],
+    );
+    const filteredRuntimeDiagnostics = useMemo(
+        () => runtimeDiagnostics.filter(row => {
+            if (diagnosticTransportFilter && row.transport !== diagnosticTransportFilter) return false;
+            if (diagnosticSeverityFilter && row.severity !== diagnosticSeverityFilter) return false;
+            if (diagnosticAgentFilter && row.agentId !== diagnosticAgentFilter) return false;
+            if (diagnosticGroupFilter && distributedDiagnosticGroupValue(row) !== diagnosticGroupFilter) return false;
+            const query = diagnosticQuery.trim().toLowerCase();
+            return !query || distributedDiagnosticSearchText(row, monitor?.distributedRunId).includes(query);
+        }),
+        [
+            diagnosticAgentFilter,
+            diagnosticGroupFilter,
+            diagnosticQuery,
+            diagnosticSeverityFilter,
+            diagnosticTransportFilter,
+            monitor?.distributedRunId,
+            runtimeDiagnostics,
+        ],
+    );
+
     return (
         <section className="distributed-subpanel distributed-monitor-panel">
             <div className="section-heading">
@@ -7303,6 +7345,30 @@ function DistributedRunMonitorPanel({ monitor }: { monitor: DistributedRunMonito
                             tone={monitor.commandCounts.failed > 0 ? 'bad' : 'good'}
                         />
                         <Metric label="Results" value={`${monitor.resultCounts.ok}/${monitor.resultCounts.total}`}/>
+                        <Metric
+                            label="Composite"
+                            value={`${monitor.compositeCounts.failed}/${monitor.compositeCounts.total}`}
+                            tone={monitor.compositeCounts.failed > 0
+                                ? 'bad'
+                                : monitor.compositeCounts.total > 0
+                                ? 'good'
+                                : 'muted'}
+                        />
+                        <Metric
+                            label="Diagnostics"
+                            value={String(monitor.diagnosticCounts.total)}
+                            tone={monitor.diagnosticCounts.error > 0
+                                ? 'bad'
+                                : monitor.diagnosticCounts.warning > 0
+                                ? 'warn'
+                                : monitor.diagnosticCounts.total > 0
+                                ? 'active'
+                                : 'muted'}
+                        />
+                        <Metric
+                            label="WS / RTC"
+                            value={`${monitor.diagnosticCounts.ws}/${monitor.diagnosticCounts.rtc}`}
+                        />
                         <Metric
                             label="P50 latency"
                             value={formatDuration(monitor.latency.p50Ms)}
@@ -7388,6 +7454,152 @@ function DistributedRunMonitorPanel({ monitor }: { monitor: DistributedRunMonito
                                     </div>
                                 ))}
                                 {monitor.readiness.length === 0 && <div className="empty-state">No ACK rows</div>}
+                            </div>
+                        </section>
+                        <section className="distributed-monitor-wide" aria-label="Distributed composite drilldowns">
+                            <h3>Composite Drilldowns</h3>
+                            <div className="distributed-composite-list">
+                                {monitor.compositeDrilldowns.map(drilldown => (
+                                    <details
+                                        className={`distributed-composite-card ${drilldown.summary.failed > 0 ? 'failed' : 'passed'}`}
+                                        key={drilldown.key}
+                                        open={drilldown.summary.failed > 0}
+                                    >
+                                        <summary>
+                                            <strong>{drilldown.recipeId ?? drilldown.commandId}</strong>
+                                            <span className={`pill ${drilldown.summary.failed > 0 ? 'bad' : 'good'}`}>
+                                                {drilldown.summary.failed} failed
+                                            </span>
+                                            <span className="pill muted">{drilldown.summary.total} results</span>
+                                            <small>
+                                                {drilldown.agentId} - {drilldown.role ?? drilldown.phase ?? drilldown.commandKind ?? 'command'} - {drilldown.artifactRef}
+                                            </small>
+                                        </summary>
+                                        {drilldown.firstFailure && (
+                                            <div className="distributed-composite-focus">
+                                                <strong>First failure</strong>
+                                                <span className="pill bad">{drilldown.firstFailure.kind}</span>
+                                                <small>
+                                                    {drilldown.firstFailure.commandId} - {drilldown.firstFailure.path}
+                                                </small>
+                                                <small>
+                                                    {drilldown.firstFailure.errorSummary ?? drilldown.firstFailure.summary}
+                                                </small>
+                                            </div>
+                                        )}
+                                        {drilldown.groupSummaries.length > 0 && (
+                                            <div className="distributed-composite-groups">
+                                                {drilldown.groupSummaries.map(group => (
+                                                    <div
+                                                        className={`distributed-composite-group ${distributedCompositeStatusTone(group.status)}`}
+                                                        key={`${group.parentCommandId}-${group.groupId}`}
+                                                    >
+                                                        <strong>{group.groupId}</strong>
+                                                        <span className={`pill ${distributedCompositeStatusTone(group.status)}`}>
+                                                            {group.status}
+                                                        </span>
+                                                        <small>
+                                                            {group.passed} passed - {group.failed} failed - {formatDuration(group.durationMs)}
+                                                        </small>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                        <div className="distributed-composite-rows">
+                                            {drilldown.rows.map(row => (
+                                                <div
+                                                    className={`distributed-composite-row ${distributedCompositeStatusTone(row.status)}`}
+                                                    key={row.path}
+                                                    style={{ paddingLeft: `${8 + Math.min(row.depth, 6) * 14}px` }}
+                                                >
+                                                    <strong>{row.originalCommandId ?? row.commandId}</strong>
+                                                    <span className={`pill ${distributedCompositeStatusTone(row.status)}`}>
+                                                        {row.status}
+                                                    </span>
+                                                    <span className="pill muted">{row.kind}</span>
+                                                    <small>
+                                                        {row.path} - {row.sourceRecipePath} - {formatDuration(row.durationMs)}
+                                                    </small>
+                                                    {row.iteration !== undefined && (
+                                                        <small>iteration {row.iteration}</small>
+                                                    )}
+                                                    {row.groupId && (
+                                                        <small>group {row.groupId}</small>
+                                                    )}
+                                                    <small>{row.summary}</small>
+                                                    {row.detail && <small>{row.detail}</small>}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </details>
+                                ))}
+                                {monitor.compositeDrilldowns.length === 0 && (
+                                    <div className="empty-state">No composite result drilldowns</div>
+                                )}
+                            </div>
+                        </section>
+                        <section aria-label="Distributed runtime diagnostics">
+                            <h3>Runtime Diagnostics</h3>
+                            <div className="distributed-diagnostic-filters">
+                                <FilterSelect
+                                    label="Transport"
+                                    value={diagnosticTransportFilter}
+                                    values={diagnosticTransports}
+                                    onChange={setDiagnosticTransportFilter}
+                                />
+                                <FilterSelect
+                                    label="Severity"
+                                    value={diagnosticSeverityFilter}
+                                    values={diagnosticSeverities}
+                                    onChange={setDiagnosticSeverityFilter}
+                                />
+                                <FilterSelect
+                                    label="Agent"
+                                    value={diagnosticAgentFilter}
+                                    values={diagnosticAgents}
+                                    onChange={setDiagnosticAgentFilter}
+                                />
+                                <FilterSelect
+                                    label="Group"
+                                    value={diagnosticGroupFilter}
+                                    values={diagnosticGroups}
+                                    onChange={setDiagnosticGroupFilter}
+                                />
+                                <label className="field compact-field">
+                                    <span>Search</span>
+                                    <input
+                                        value={diagnosticQuery}
+                                        onChange={event => setDiagnosticQuery(event.target.value)}
+                                        placeholder="run, command, selector, message"
+                                    />
+                                </label>
+                            </div>
+                            <div className="distributed-monitor-list">
+                                {filteredRuntimeDiagnostics.slice(-16).reverse().map(diagnostic => (
+                                    <div
+                                        className={`distributed-monitor-row diagnostic ${distributedDiagnosticTone(diagnostic.severity)}`}
+                                        key={diagnostic.eventId}
+                                    >
+                                        <strong>{diagnostic.message}</strong>
+                                        <span className={`pill ${distributedDiagnosticTone(diagnostic.severity)}`}>
+                                            {diagnostic.severity}
+                                        </span>
+                                        <span className="pill muted">{diagnostic.transport ?? 'runtime'}</span>
+                                        <small>
+                                            {formatTime(diagnostic.atEpochMs)} - {diagnostic.agentId} - {diagnostic.commandId ?? 'no command'}
+                                        </small>
+                                        <small>
+                                            {diagnostic.groupId ?? diagnostic.roomId ?? diagnostic.contextId ?? 'no group'} - {diagnostic.diagnosticTypeId}
+                                        </small>
+                                        <small>{diagnostic.summary}</small>
+                                        {diagnostic.correlatedFailureKeys.length > 0 && (
+                                            <small>Related failure: {diagnostic.correlatedFailureKeys.join(', ')}</small>
+                                        )}
+                                    </div>
+                                ))}
+                                {filteredRuntimeDiagnostics.length === 0 && (
+                                    <div className="empty-state">No matching runtime diagnostics</div>
+                                )}
                             </div>
                         </section>
                         <section>
@@ -7552,6 +7764,72 @@ function distributedProgressTone(status: DistributedRunProgressStatus): string {
         return 'warn';
     }
     return 'muted';
+}
+
+function distributedCompositeStatusTone(status: string): string {
+    if (status === 'ok' || status === 'passed') {
+        return 'good';
+    }
+    if (status === 'failed') {
+        return 'bad';
+    }
+    if (status === 'cancelled') {
+        return 'warn';
+    }
+    if (status === 'skipped' || status === 'empty') {
+        return 'muted';
+    }
+    return 'active';
+}
+
+type DistributedRuntimeDiagnostic = DistributedRunMonitor['runtimeDiagnostics'][number];
+
+function distributedDiagnosticGroupValue(row: DistributedRuntimeDiagnostic): string | undefined {
+    return row.groupId ?? row.roomId ?? row.contextId;
+}
+
+function distributedDiagnosticTone(severity: RallarBlackBoxTestSeverity): string {
+    if (severity === 'error') {
+        return 'bad';
+    }
+    if (severity === 'warning') {
+        return 'warn';
+    }
+    return 'muted';
+}
+
+function distributedDiagnosticSearchText(
+    row: DistributedRuntimeDiagnostic,
+    distributedRunId: string | undefined,
+): string {
+    return [
+        distributedRunId,
+        row.agentId,
+        row.commandId,
+        row.transport,
+        row.severity,
+        row.topic,
+        row.diagnosticTypeId,
+        row.message,
+        row.summary,
+        row.payloadSummary,
+        row.connection,
+        row.actor,
+        row.groupId,
+        row.roomId,
+        row.laneId,
+        row.expectedLaneId,
+        row.observedLaneId,
+        row.peerId,
+        row.remotePeerId,
+        row.senderId,
+        row.typeId,
+        row.topicId,
+        row.contextId,
+        row.resourceId,
+        row.source,
+        ...row.correlatedFailureKeys,
+    ].filter(Boolean).join(' ').toLowerCase();
 }
 
 function formatSignedDuration(ms: number | undefined): string {

@@ -637,9 +637,23 @@ The monitor section appears after a distributed run is selected. It shows:
 - failures first
 - per-agent progress, ACK readiness, and barrier readiness when enabled
 - per-recipe progress
+- composite drilldowns for distributed recipe runs that contain `loop`, `parallel`, `wait`, or `assert` results
+- structured runtime diagnostics for WS and RTC warnings, with filters for transport, severity, agent, group, and search
+- failure correlation when a diagnostic matches a failed command or same-agent near-time failure
 - linked control-run events for the distributed run
 - lifecycle timeline
 - artifact validation status after `Export artifact`
+
+Use `Composite Drilldowns` when a recipe-run parent failed but the interesting evidence is nested inside a loop,
+parallel group, wait, or assert child result. The drilldown opens failed composites by default, shows the first failed
+child command, summarizes loop iterations and cadence, shows parallel group pass/fail state, displays wait match
+selectors, and surfaces failed assert expected/actual details while retaining the parent command, agent, recipe, and
+artifact reference.
+
+Use `Runtime Diagnostics` when a live distributed test looks successful at the command level but browser-agent transport
+warnings explain missing or ignored traffic. WS diagnostics show selector IDs such as type/topic/context/resource and
+sender metadata. RTC diagnostics show peer and lane metadata, including expected versus observed data-channel labels
+when the runtime reports a lane mismatch.
 
 Use `Historical Runs` to filter previous distributed runs by group, recipe, profile, user, status, date, failure type, or
 free-text query. Use `Compare Runs` to inspect recipe/profile changes, participant changes, failure deltas, timing

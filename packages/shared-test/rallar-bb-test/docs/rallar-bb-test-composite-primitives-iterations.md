@@ -851,7 +851,7 @@ Suggested verification:
 
 ## Iteration 13: Cancellation, Deadline, And Cleanup Isolation Hardening
 
-Status: planned.
+Status: completed on 2026-06-01.
 
 Goal: Ensure composite recipes stop predictably and leave no browser-agent
 resources running after cancellation, timeout, logout, or mode changes.
@@ -894,6 +894,32 @@ Suggested verification:
   cancellation.
 - Add Playwright or control-server tests that cancel a distributed composite
   run, then run a clean ACK or health recipe afterward.
+
+Results:
+
+- Added an optional runtime cleanup hook that runs after failed, cancelled, or
+  timed-out `recipe.run` execution.
+- Browser-agent cleanup now closes owned WebSocket connections, detaches socket
+  listeners, closes the browser Rallar runtime, and records
+  `rallar.bb.cleanup.resources_closed` / `rallar.bb.cleanup.completed`
+  evidence.
+- Runtime cancellation now exposes an abort signal to command executors, wakes
+  pending `wait` commands and loop interval sleeps, and propagates recipe
+  deadlines into loop, parallel, wait, HTTP, WS, and RTC child commands.
+- Browser HTTP requests, WebSocket open waits, local command delays, and
+  browser Rallar RTC/WS calls now observe cancellation or command timeout
+  where the host API supports it.
+- `recipe.run` now executes child commands with cache bypass so a second recipe
+  run with the same child `commandId` values does not inherit stale child
+  results from a cancelled or failed prior run. Direct duplicate command
+  execution still returns cached results for idempotent retries.
+- WebSocket open failure now removes the partially opened socket from the
+  adapter registry.
+
+Verification:
+
+- `npx vitest run packages/tests/shared-test/rallar-bb-test.test.ts -t "re-executes recipe children|wakes loop interval|cleans up browser WS"` passed.
+- `deno check packages/shared-test/rallar-bb-test/runtime.ts packages/shared-test/rallar-bb-test/browser-adapter.ts packages/shared-test/rallar-bb-test/types.ts` passed.
 
 ## Iteration 14: Composite Live Conformance Matrix
 

@@ -6,10 +6,6 @@ export * from './al-contracts/al-runtime.ts';
 export * from './api/api-config.ts';
 export * from './api/api-type-utils.ts';
 
-export * from './contracts/ws.ts';
-export * from './contracts/p2p.ts';
-export * from './contracts/p2p_ws.ts';
-
 export * from './queuebox/QueueBoxTypes.ts';
 export * from './queuebox/ResourceEntry.ts';
 export * from './queuebox/InMemoryQueueBox.ts';
@@ -60,14 +56,6 @@ export * from './webrtc/WsRtcSignalingTransportUsingWsQBox.ts';
 export * from './multicast/OverlayMulticastContracts.ts';
 export * from './multicast/WebRtcOverlayMulticastService.ts';
 export * from './multicast/WebRtcOverlayMulticastManager.ts';
-
-export * from './whack/engine/types.ts';
-export * from './whack/engine/rng.ts';
-export * from './whack/engine/engine.ts';
-
-export * from './tictactoe/tictactoe.ts';
-export * from './tictactoe/types.ts';
-export * from './tictactoe/tictactoe-api.ts';
 
 export * from './cache/RepositoryInterfaces.ts';
 export * from './cache/Command.ts';

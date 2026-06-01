@@ -449,6 +449,7 @@ export type RallarBlackBoxTestCommandOutcome = Readonly<{
 export type RallarBlackBoxTestCommandContext = Readonly<{
     state(): RallarBlackBoxTestState;
     config(): RallarBlackBoxTestConfig | undefined;
+    abortSignal?(): AbortSignal | undefined;
     recordEvent(event: RallarBlackBoxTestRuntimeEventInput): void;
     updateStats(commandId?: string): RallarBlackBoxTestStatsSnapshot;
 }>;
@@ -460,6 +461,24 @@ export type RallarBlackBoxTestCommandExecutor = (
     | RallarBlackBoxTestCommandOutcome
     | undefined
     | Promise<RallarBlackBoxTestCommandOutcome | undefined>;
+
+export type RallarBlackBoxTestCleanupReason =
+    | 'cancelled'
+    | 'failed'
+    | 'timed-out';
+
+export type RallarBlackBoxTestCleanupInput = Readonly<{
+    reason: RallarBlackBoxTestCleanupReason;
+    commandId?: string;
+    recipeId?: string;
+    status?: RallarBlackBoxTestResultStatus;
+    error?: RallarBlackBoxTestError;
+}>;
+
+export type RallarBlackBoxTestRuntimeCleanup = (
+    input: RallarBlackBoxTestCleanupInput,
+    context: RallarBlackBoxTestCommandContext,
+) => void | Promise<void>;
 
 export type RallarBlackBoxTestRuntime = Readonly<{
     execute(command: RallarBlackBoxTestCommand): Promise<RallarBlackBoxTestResult>;

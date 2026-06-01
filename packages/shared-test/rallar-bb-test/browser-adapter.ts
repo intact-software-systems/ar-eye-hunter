@@ -10,6 +10,7 @@ import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandContext,
     RallarBlackBoxTestCommandOutcome,
+    RallarBlackBoxTestCleanupInput,
     RallarBlackBoxTestConfig,
     RallarBlackBoxTestRuntime,
     RallarBlackBoxTestRuntimeEventInput,
@@ -166,8 +167,55 @@ function commandLocalDelayMs(command: CommandWithId): number {
     return Math.max(0, value);
 }
 
-function sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    if (ms <= 0) {
+        return Promise.resolve();
+    }
+    if (signal?.aborted) {
+        return Promise.reject(toAbortError(signal.reason));
+    }
+
+    return new Promise((resolve, reject) => {
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        const cleanup = () => {
+            if (timeout) {
+                clearTimeout(timeout);
+                timeout = undefined;
+            }
+            signal?.removeEventListener('abort', abort);
+        };
+        const abort = () => {
+            cleanup();
+            reject(toAbortError(signal?.reason));
+        };
+
+        timeout = setTimeout(() => {
+            cleanup();
+            resolve();
+        }, ms);
+        signal?.addEventListener('abort', abort, {
+            once: true,
+        });
+    });
+}
+
+function toAbortError(reason: unknown): Error {
+    if (reason instanceof Error) {
+        return reason;
+    }
+
+    const message = typeof reason === 'string' && reason.length > 0
+        ? reason
+        : 'Rallar black-box browser adapter operation was cancelled.';
+    const error = new Error(message);
+    error.name = 'RALLAR_BLACK_BOX_ABORTED';
+    return error;
+}
+
+function toTimeoutError(): Error {
+    const error = new Error('Rallar black-box command timeout reached.');
+    error.name = 'RALLAR_BLACK_BOX_TIMEOUT';
+    return error;
 }
 
 function nonEmptyStringValue(value: unknown): string | undefined {
@@ -683,6 +731,7 @@ class BrowserCommandAdapter {
     private readonly defaultWsOpenTimeoutMs: number;
     private readonly defaultHttpBodyLimit: number;
     private readonly webSockets = new Map<string, RallarBlackBoxBrowserWebSocket>();
+    private readonly webSocketDisposers = new Map<string, Array<() => void>>();
 
     constructor(options: CreateRallarBlackBoxBrowserTestRuntimeOptions) {
         this.rallarRuntime = options.rallarRuntime;
@@ -700,7 +749,7 @@ class BrowserCommandAdapter {
     ): Promise<RallarBlackBoxTestCommandOutcome | undefined> {
         const delayMs = commandLocalDelayMs(command);
         if (delayMs > 0) {
-            await sleep(delayMs);
+            await sleep(delayMs, context.abortSignal?.());
         }
 
         switch (command.kind) {
@@ -725,6 +774,26 @@ class BrowserCommandAdapter {
             default:
                 return undefined;
         }
+    }
+
+    async cleanupOwnedResources(
+        input: RallarBlackBoxTestCleanupInput,
+        context: RallarBlackBoxTestCommandContext,
+    ): Promise<void> {
+        const value = await this.closeOwnedResources({
+            rallar: true,
+            tolerant: true,
+        });
+        context.recordEvent({
+            kind: 'event',
+            topic: 'rallar.bb.cleanup.resources_closed',
+            commandId: input.commandId,
+            severity: 'info',
+            payload: {
+                ...input,
+                ...value,
+            },
+        });
     }
 
     private defaultWebSocketFactory(): RallarBlackBoxBrowserWebSocketFactory | undefined {
@@ -761,6 +830,92 @@ class BrowserCommandAdapter {
         }
 
         return this.webSocketFactory;
+    }
+
+    private commandAbortSignal(
+        command: CommandWithId,
+        context: RallarBlackBoxTestCommandContext,
+    ): { signal?: AbortSignal; cleanup(): void } {
+        const parentSignal = context.abortSignal?.();
+        const timeoutMs = command.timeoutMs !== undefined
+            ? Math.max(0, command.timeoutMs)
+            : command.deadlineEpochMs !== undefined
+                ? Math.max(0, command.deadlineEpochMs - Date.now())
+                : undefined;
+        if (!parentSignal && timeoutMs === undefined) {
+            return {
+                cleanup: () => undefined,
+            };
+        }
+
+        const controller = new AbortController();
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        const abortFromParent = () => {
+            if (!controller.signal.aborted) {
+                controller.abort(parentSignal?.reason ?? 'Rallar black-box command was cancelled.');
+            }
+        };
+        const cleanup = () => {
+            if (timeout) {
+                clearTimeout(timeout);
+                timeout = undefined;
+            }
+            parentSignal?.removeEventListener('abort', abortFromParent);
+        };
+
+        if (parentSignal?.aborted) {
+            abortFromParent();
+        } else {
+            parentSignal?.addEventListener('abort', abortFromParent, {
+                once: true,
+            });
+        }
+
+        if (timeoutMs !== undefined) {
+            timeout = setTimeout(() => {
+                if (!controller.signal.aborted) {
+                    controller.abort(toTimeoutError());
+                }
+            }, timeoutMs);
+        }
+
+        return {
+            signal: controller.signal,
+            cleanup,
+        };
+    }
+
+    private async withAbort<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+        if (!signal) {
+            return await promise;
+        }
+        if (signal.aborted) {
+            throw toAbortError(signal.reason);
+        }
+
+        return await new Promise<T>((resolve, reject) => {
+            let settled = false;
+            const cleanup = () => {
+                signal.removeEventListener('abort', abort);
+            };
+            const complete = (callback: () => void) => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                cleanup();
+                callback();
+            };
+            const abort = () => complete(() => reject(toAbortError(signal.reason)));
+
+            signal.addEventListener('abort', abort, {
+                once: true,
+            });
+            promise.then(
+                value => complete(() => resolve(value)),
+                error => complete(() => reject(error)),
+            );
+        });
     }
 
     private toRallarConnectionConfig(
@@ -910,7 +1065,16 @@ class BrowserCommandAdapter {
             }),
             context.config(),
         );
-        const diagnostics = await this.requireRallarRuntime().connect(connectionConfig);
+        const abort = this.commandAbortSignal(command, context);
+        let diagnostics: unknown;
+        try {
+            diagnostics = await this.withAbort(
+                this.requireRallarRuntime().connect(connectionConfig),
+                abort.signal,
+            );
+        } finally {
+            abort.cleanup();
+        }
         context.recordEvent({
             kind: 'diagnostic',
             topic: 'rallar.bb.rtc.connected',
@@ -975,7 +1139,16 @@ class BrowserCommandAdapter {
                     ...scopedSendFields,
                 };
         }
-        const diagnostics = await this.requireRallarRuntime().send(scopedSend);
+        const abort = this.commandAbortSignal(command, context);
+        let diagnostics: unknown;
+        try {
+            diagnostics = await this.withAbort(
+                this.requireRallarRuntime().send(scopedSend),
+                abort.signal,
+            );
+        } finally {
+            abort.cleanup();
+        }
         const failure = rtcSendFailureFromDiagnostics(diagnostics);
         context.recordEvent({
             kind: 'diagnostic',
@@ -1045,23 +1218,31 @@ class BrowserCommandAdapter {
         const headers = shouldAttachRallarAuth(resolvedCommand, config, url)
             ? withRallarAuthHeaders(resolvedRequest.headers, session)
             : resolvedRequest.headers;
-        const response = await this.requireFetch()(url, {
-            method: resolvedRequest.method,
-            headers,
-            body: resolvedRequest.body === undefined
-                ? undefined
-                : typeof resolvedRequest.body === 'string'
-                    ? resolvedRequest.body
-                    : JSON.stringify(resolvedRequest.body),
-            credentials: resolvedRequest.credentials,
-            mode: resolvedRequest.mode,
-        });
-        const responseOptions = asRecord(command.response) as HttpResponseOptions;
-        const body = await readHttpBody(
-            response,
-            responseOptions,
-            this.defaultHttpBodyLimit,
-        );
+        const abort = this.commandAbortSignal(command, context);
+        let response!: Response;
+        let body: unknown;
+        try {
+            response = await this.requireFetch()(url, {
+                method: resolvedRequest.method,
+                headers,
+                body: resolvedRequest.body === undefined
+                    ? undefined
+                    : typeof resolvedRequest.body === 'string'
+                        ? resolvedRequest.body
+                        : JSON.stringify(resolvedRequest.body),
+                credentials: resolvedRequest.credentials,
+                mode: resolvedRequest.mode,
+                signal: abort.signal,
+            });
+            const responseOptions = asRecord(command.response) as HttpResponseOptions;
+            body = await readHttpBody(
+                response,
+                responseOptions,
+                this.defaultHttpBodyLimit,
+            );
+        } finally {
+            abort.cleanup();
+        }
         const value = {
             url: response.url || url,
             status: response.status,
@@ -1139,7 +1320,14 @@ class BrowserCommandAdapter {
         const socket = this.requireWebSocketFactory()(url, command.protocols);
         this.webSockets.set(connection, socket);
         this.bridgeWebSocketEvents(socket, connection, context);
-        await this.waitForWebSocketOpen(socket, command);
+        try {
+            await this.waitForWebSocketOpen(socket, command, context.abortSignal?.());
+        } catch (error) {
+            this.closeWebSocketResource(connection, socket, undefined, undefined, {
+                detachImmediately: true,
+            });
+            throw error;
+        }
 
         const value = {
             connection,
@@ -1169,7 +1357,9 @@ class BrowserCommandAdapter {
         connection: string,
         context: RallarBlackBoxTestCommandContext,
     ): void {
-        addWebSocketListener(socket, 'message', event => {
+        this.detachWebSocketListeners(connection);
+        const disposers: Array<() => void> = [];
+        disposers.push(addWebSocketListener(socket, 'message', event => {
             context.recordEvent({
                 kind: 'message',
                 topic: 'rallar.bb.ws.message',
@@ -1180,9 +1370,10 @@ class BrowserCommandAdapter {
                     data: toWebSocketMessageData(event),
                 },
             });
-        });
-        addWebSocketListener(socket, 'close', event => {
+        }));
+        disposers.push(addWebSocketListener(socket, 'close', event => {
             this.webSockets.delete(connection);
+            this.detachWebSocketListeners(connection);
             context.recordEvent({
                 kind: 'event',
                 topic: 'rallar.bb.ws.closed',
@@ -1191,8 +1382,8 @@ class BrowserCommandAdapter {
                 severity: 'warning',
                 payload: toWebSocketClosePayload(event),
             });
-        });
-        addWebSocketListener(socket, 'error', event => {
+        }));
+        disposers.push(addWebSocketListener(socket, 'error', event => {
             context.recordEvent({
                 kind: 'diagnostic',
                 topic: 'rallar.bb.ws.error',
@@ -1210,12 +1401,30 @@ class BrowserCommandAdapter {
                     source: 'browser-adapter',
                 }),
             });
+        }));
+        this.webSocketDisposers.set(connection, disposers);
+    }
+
+    private detachWebSocketListeners(connection: string): void {
+        const disposers = this.webSocketDisposers.get(connection);
+        if (!disposers) {
+            return;
+        }
+
+        this.webSocketDisposers.delete(connection);
+        disposers.forEach(dispose => {
+            try {
+                dispose();
+            } catch (_error) {
+                // Listener cleanup is best-effort; command cleanup still closes the socket.
+            }
         });
     }
 
     private waitForWebSocketOpen(
         socket: RallarBlackBoxBrowserWebSocket,
         command: Extract<CommandWithId, { kind: 'ws.open' }>,
+        signal: AbortSignal | undefined,
     ): Promise<void> {
         if (socket.readyState === WEBSOCKET_OPEN_STATE) {
             return Promise.resolve();
@@ -1239,8 +1448,20 @@ class BrowserCommandAdapter {
                 settled = true;
                 clearTimeout(timeout);
                 cleanup.forEach(dispose => dispose());
+                signal?.removeEventListener('abort', abort);
                 callback();
             };
+            const abort = () => {
+                complete(() => reject(toAbortError(signal?.reason)));
+            };
+
+            if (signal?.aborted) {
+                abort();
+                return;
+            }
+            signal?.addEventListener('abort', abort, {
+                once: true,
+            });
 
             cleanup.push(addWebSocketListener(socket, 'open', () => {
                 complete(resolve);
@@ -1303,16 +1524,22 @@ class BrowserCommandAdapter {
             session: readOptionalBrowserSession(),
         });
         let result: unknown;
+        const abort = this.commandAbortSignal(command, context);
         try {
-            result = await sendWs(data);
+            result = await this.withAbort(sendWs(data), abort.signal);
         } catch (error) {
             if (!isRuntimeNotConnectedError(error)) {
                 throw error;
             }
-            await runtime.connect(
-                this.toRallarWebSocketConnectionConfig(command, context.config()),
+            await this.withAbort(
+                runtime.connect(
+                    this.toRallarWebSocketConnectionConfig(command, context.config()),
+                ),
+                abort.signal,
             );
-            result = await sendWs(data);
+            result = await this.withAbort(sendWs(data), abort.signal);
+        } finally {
+            abort.cleanup();
         }
 
         context.recordEvent({
@@ -1355,8 +1582,7 @@ class BrowserCommandAdapter {
             };
         }
 
-        socket.close(command.code, command.reason);
-        this.webSockets.delete(connection);
+        this.closeWebSocketResource(connection, socket, command.code, command.reason);
         return {
             status: 'ok',
             value: {
@@ -1364,6 +1590,23 @@ class BrowserCommandAdapter {
                 closed: true,
             },
         };
+    }
+
+    private closeWebSocketResource(
+        connection: string,
+        socket: RallarBlackBoxBrowserWebSocket,
+        code?: number,
+        reason?: string,
+        options: Readonly<{ detachImmediately?: boolean }> = {},
+    ): void {
+        try {
+            socket.close(code, reason);
+        } finally {
+            this.webSockets.delete(connection);
+            if (options.detachImmediately === true || socket.readyState === undefined) {
+                this.detachWebSocketListeners(connection);
+            }
+        }
     }
 
     private async health(
@@ -1388,18 +1631,14 @@ class BrowserCommandAdapter {
         command: Extract<CommandWithId, { kind: 'close' }>,
         context: RallarBlackBoxTestCommandContext,
     ): Promise<RallarBlackBoxTestCommandOutcome> {
-        const webSockets = [...this.webSockets.entries()];
-        webSockets.forEach(([_connection, socket]) => {
-            socket.close();
+        const resources = await this.closeOwnedResources({
+            rallar: true,
+            tolerant: false,
         });
-        this.webSockets.clear();
-        const rallar = this.rallarRuntime
-            ? await this.rallarRuntime.close()
-            : undefined;
         const value = {
             closed: true,
-            rallar,
-            webSocketCount: webSockets.length,
+            rallar: resources.rallar,
+            webSocketCount: resources.webSocketCount,
         };
         context.recordEvent({
             kind: 'event',
@@ -1416,22 +1655,70 @@ class BrowserCommandAdapter {
     }
 
     private async reset(): Promise<RallarBlackBoxTestCommandOutcome> {
-        const webSockets = [...this.webSockets.values()];
-        webSockets.forEach(socket => {
-            socket.close();
+        const value = await this.closeOwnedResources({
+            rallar: true,
+            tolerant: false,
         });
-        this.webSockets.clear();
-        const rallar = this.rallarRuntime
-            ? await this.rallarRuntime.close()
-            : undefined;
         return {
             status: 'ok',
             value: {
                 reset: true,
-                rallar,
-                webSocketCount: webSockets.length,
+                rallar: value.rallar,
+                webSocketCount: value.webSocketCount,
             },
             nextStatus: 'idle',
+        };
+    }
+
+    private async closeOwnedResources(options: Readonly<{
+        rallar: boolean;
+        tolerant: boolean;
+    }>): Promise<{
+        webSocketCount: number;
+        rallar?: unknown;
+        errors?: unknown[];
+    }> {
+        const errors: unknown[] = [];
+        const webSockets = [...this.webSockets.entries()];
+        webSockets.forEach(([connection, socket]) => {
+            try {
+                this.closeWebSocketResource(connection, socket, undefined, undefined, {
+                    detachImmediately: true,
+                });
+            } catch (error) {
+                errors.push({
+                    connection,
+                    error,
+                });
+            } finally {
+                this.detachWebSocketListeners(connection);
+            }
+        });
+        this.webSockets.clear();
+        this.webSocketDisposers.forEach((_disposers, connection) => {
+            this.detachWebSocketListeners(connection);
+        });
+
+        let rallar: unknown;
+        if (options.rallar && this.rallarRuntime) {
+            try {
+                rallar = await this.rallarRuntime.close();
+            } catch (error) {
+                errors.push({
+                    connection: 'rallar',
+                    error,
+                });
+            }
+        }
+
+        if (errors.length > 0 && !options.tolerant) {
+            throw new Error('Failed to close one or more browser adapter resources.');
+        }
+
+        return {
+            webSocketCount: webSockets.length,
+            rallar,
+            ...(errors.length > 0 ? { errors } : {}),
         };
     }
 }
@@ -1444,6 +1731,7 @@ export function createRallarBlackBoxBrowserTestRuntime(
         now: options.now,
         idFactory: options.idFactory,
         commandExecutor: (command, context) => adapter.execute(command, context),
+        cleanup: (input, context) => adapter.cleanupOwnedResources(input, context),
     });
 
     return Object.assign(runtime, {

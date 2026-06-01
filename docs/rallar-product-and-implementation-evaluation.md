@@ -171,6 +171,7 @@ setup than the browser quickstart suggests.
 - auth, groups/clients, WebSocket, RTC/realtime, data, media, server REST, trace, topology, diagnostics
 - manual workbench and flow builder
 - control-server run manager and distributed recipes
+- composite distributed-run monitor drilldowns for nested loop, parallel, wait, and assert evidence
 - remote browser-agent orchestration
 - full-stack QA matrix and live three-browser RTC coverage
 
@@ -310,7 +311,7 @@ Recommended product fix:
 | Server middleware | Internal beta | Durable QueueBox, state sync, auth/state services, target routing, Postgres adapters. | Add dev/in-memory adapter mode and production hardening checklist. |
 | Dynamic WS topics | Beta | Validators, handlers, proxies, fanout, NACKs, room authorization tests. | Add topic design docs and examples. |
 | App data server store | Alpha/beta | JSON stores, TTL, migration, Postgres adapter, Relic Hunter usage. | Clarify concurrency model and optionally add atomic operations. |
-| Black-box testing | Beta | SPA command center, shared schemas, runner, remote provider, distributed-run contracts, live matrix docs. | Package operator docs and keep runner boundary clear. |
+| Black-box testing | Beta | SPA command center, shared schemas, runner, remote provider, distributed-run contracts, composite monitor drilldowns, live matrix docs. | Package operator docs and keep runner boundary clear. |
 | External developer readiness | Alpha | Docs exist, examples exist, but setup and concepts are broad. | Build one polished "first real app" journey. |
 | Production operations | Alpha/beta | Timing events, traces, lifecycle callbacks, artifacts, expiry jobs. | Add deployment/runbook presets and health dashboards. |
 

@@ -2361,6 +2361,13 @@ h3 {
     max-height: 220px;
 }
 
+.distributed-diagnostic-filters {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
 .distributed-monitor-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto auto;
@@ -2378,6 +2385,16 @@ h3 {
     background: #fff0f0;
 }
 
+.distributed-monitor-row.diagnostic.warn {
+    border-color: #d8ae49;
+    background: #fff9e6;
+}
+
+.distributed-monitor-row.diagnostic.bad {
+    border-color: #d58b8b;
+    background: #fff0f0;
+}
+
 .distributed-monitor-row strong,
 .distributed-monitor-row span,
 .distributed-monitor-row small {
@@ -2391,6 +2408,116 @@ h3 {
     grid-column: 1 / -1;
     color: #65746d;
     font-size: 0.74rem;
+}
+
+.distributed-monitor-wide {
+    grid-column: 1 / -1;
+}
+
+.distributed-composite-list {
+    display: grid;
+    gap: 8px;
+    max-height: 520px;
+    overflow: auto;
+}
+
+.distributed-composite-card {
+    min-width: 0;
+    border: 1px solid #dbe1d8;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.distributed-composite-card.failed {
+    border-color: #d58b8b;
+    background: #fff7f7;
+}
+
+.distributed-composite-card > summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+    padding: 9px 10px;
+    cursor: pointer;
+}
+
+.distributed-composite-card > summary::marker {
+    color: #617069;
+}
+
+.distributed-composite-card > summary strong,
+.distributed-composite-card > summary small,
+.distributed-composite-focus strong,
+.distributed-composite-focus small,
+.distributed-composite-group strong,
+.distributed-composite-group small,
+.distributed-composite-row strong,
+.distributed-composite-row small {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.distributed-composite-card > summary small {
+    grid-column: 1 / -1;
+    color: #65746d;
+    font-size: 0.74rem;
+}
+
+.distributed-composite-focus,
+.distributed-composite-group,
+.distributed-composite-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+    margin: 0 10px 8px;
+    padding: 8px;
+    border: 1px solid #dbe1d8;
+    border-radius: 6px;
+    background: #f8faf6;
+}
+
+.distributed-composite-focus {
+    border-color: #d58b8b;
+    background: #fff0f0;
+}
+
+.distributed-composite-focus small,
+.distributed-composite-group small,
+.distributed-composite-row small {
+    grid-column: 1 / -1;
+    color: #65746d;
+    font-size: 0.74rem;
+}
+
+.distributed-composite-groups,
+.distributed-composite-rows {
+    display: grid;
+    gap: 6px;
+    padding-bottom: 2px;
+}
+
+.distributed-composite-group.bad,
+.distributed-composite-row.bad {
+    border-color: #d58b8b;
+    background: #fff0f0;
+}
+
+.distributed-composite-group.warn,
+.distributed-composite-row.warn {
+    border-color: #d8ae49;
+    background: #fff9e6;
+}
+
+.distributed-composite-group.good,
+.distributed-composite-row.good {
+    border-color: #a8c9aa;
+    background: #f3fbf3;
 }
 
 .distributed-history-filters {
@@ -3719,6 +3846,7 @@ dd {
     .distributed-preflight-composites,
     .distributed-monitor-metrics,
     .distributed-monitor-grid,
+    .distributed-diagnostic-filters,
     .distributed-history-filters,
     .distributed-compare-selectors,
     .distributed-compare-grid,
@@ -4054,6 +4182,7 @@ dd {
     .distributed-preflight-tree-row,
     .distributed-monitor-metrics,
     .distributed-monitor-grid,
+    .distributed-diagnostic-filters,
     .distributed-history-filters,
     .distributed-compare-selectors,
     .distributed-compare-grid,
@@ -4313,8 +4442,26 @@ dd {
     .run-manager-mini-row,
     .distributed-target-row,
     .distributed-run-row,
-    .distributed-monitor-row {
+    .distributed-monitor-row,
+    .distributed-composite-card > summary,
+    .distributed-composite-focus,
+    .distributed-composite-group,
+    .distributed-composite-row {
         grid-template-columns: 1fr;
+    }
+
+    .distributed-composite-card > summary strong,
+    .distributed-composite-card > summary small,
+    .distributed-composite-focus strong,
+    .distributed-composite-focus small,
+    .distributed-composite-group strong,
+    .distributed-composite-group small,
+    .distributed-composite-row strong,
+    .distributed-composite-row small {
+        overflow: visible;
+        text-overflow: clip;
+        white-space: normal;
+        overflow-wrap: anywhere;
     }
 
     .websocket-url-field {

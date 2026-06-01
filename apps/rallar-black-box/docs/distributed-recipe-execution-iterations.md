@@ -564,7 +564,7 @@ Verification:
 
 ## Iteration 52: Structured WS/RTC Runtime Diagnostics In The SPA
 
-Status: planned.
+Status: completed on 2026-06-01.
 
 Goal: Surface Rallar runtime warnings and transport diagnostics in the SPA instead of leaving them only in the browser
 developer console.
@@ -605,9 +605,27 @@ Suggested verification:
   Stream with useful fields.
 - Add a live-gated regression check once the live warning source is deterministic enough to assert without flakiness.
 
+Results:
+
+- The Distributed Recipes monitor now derives structured runtime diagnostics from linked control-run browser-agent
+  events that carry normalized `rallar-bb-test` diagnostic payloads.
+- WS diagnostics surface message/type/topic/context/resource IDs, sender, group, payload summary, severity, agent,
+  command, and source metadata.
+- RTC diagnostics surface peer/lane metadata, expected versus observed data-channel labels, accepted/ignored state,
+  group, payload summary, severity, agent, command, and source metadata.
+- The monitor now includes diagnostic counts, WS/RTC count split, a filterable `Runtime Diagnostics` section, and
+  diagnostic timeline entries.
+- Diagnostics are correlated to failures by command ID or near-time same-agent evidence, while remaining observable
+  warnings unless the recipe result itself failed.
+
+Verification:
+
+- `npx vitest run packages/tests/rallar-black-box/distributed-recipes.test.ts` passed.
+- `npm --workspace rallar-black-box run typecheck` passed.
+
 ## Iteration 53: Composite Run Monitor Drilldowns
 
-Status: planned.
+Status: completed on 2026-06-01.
 
 Goal: Make distributed run monitoring useful for composite recipes after they start running.
 
@@ -646,6 +664,24 @@ Suggested verification:
 - Add Vitest coverage for nested result summarization helpers.
 - Add Playwright coverage using a simulated distributed recipe with loop, parallel, wait, assert, and one controlled
   failure to verify drilldown rendering and failure focus.
+
+Implementation results:
+
+- Added composite drilldown derivation to `apps/rallar-black-box/src/distributed-recipes.ts` for distributed
+  `recipe.run` results whose child results contain `loop`, `parallel`, `wait`, or `assert` evidence.
+- The monitor now exposes composite counts, display-safe nested rows, first failed child focus, per-parallel-group
+  summaries, and artifact references back to `control-run.json`.
+- Composite child failures are added to the monitor failure list so diagnostics can correlate with nested command IDs
+  instead of only the parent distributed `recipe.run` command.
+- The Distributed Recipes monitor UI now includes an expandable `Composite Drilldowns` section that preserves the
+  existing high-level monitor panels while making loop cadence, parallel group state, wait matches, and failed asserts
+  visible in context.
+
+Verification:
+
+- `npx vitest run packages/tests/rallar-black-box/distributed-recipes.test.ts` passed.
+- `npm --workspace rallar-black-box run typecheck` passed.
+- `npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/tabbed-navigation.spec.ts -g "shows distributed WS and RTC runtime diagnostics"` passed.
 
 ## Iteration 54: Schema Authoring Prompt Templates In The SPA
 

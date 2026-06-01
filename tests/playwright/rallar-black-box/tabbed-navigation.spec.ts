@@ -1538,6 +1538,452 @@ test('shows distributed recipe composite preflight before staging', async ({ pag
     await expect(selectedPreflight).toContainText('Composite Evidence preflight');
 });
 
+test('shows distributed WS and RTC runtime diagnostics in the run monitor', async ({ page }) => {
+    const now = Date.now();
+    const controlRun = {
+        runId: 'demo-run',
+        createdAtEpochMs: now - 10_000,
+        updatedAtEpochMs: now - 500,
+        agents: [],
+        commands: [
+            {
+                envelope: {
+                    kind: 'command',
+                    protocolVersion: 1,
+                    runId: 'demo-run',
+                    agentId: 'agent-a',
+                    commandId: 'start-a',
+                    command: { kind: 'recipe.run', recipe: { recipeId: 'diagnostic-recipe', commands: [{ kind: 'health' }] } },
+                },
+                queuedAtEpochMs: now - 5_000,
+                dispatchedAtEpochMs: now - 4_900,
+                completedAtEpochMs: now - 4_000,
+                dispatchCount: 1,
+            },
+            {
+                envelope: {
+                    kind: 'command',
+                    protocolVersion: 1,
+                    runId: 'demo-run',
+                    agentId: 'agent-b',
+                    commandId: 'start-b',
+                    command: { kind: 'recipe.run', recipe: { recipeId: 'diagnostic-recipe', commands: [{ kind: 'health' }] } },
+                },
+                queuedAtEpochMs: now - 5_000,
+                dispatchedAtEpochMs: now - 4_900,
+                completedAtEpochMs: now - 3_900,
+                dispatchCount: 1,
+            },
+        ],
+        results: [
+            {
+                kind: 'result',
+                protocolVersion: 1,
+                runId: 'demo-run',
+                agentId: 'agent-a',
+                commandId: 'start-a',
+                ok: true,
+                result: {
+                    commandId: 'start-a',
+                    kind: 'recipe.run',
+                    status: 'ok',
+                    ok: true,
+                    startedAtEpochMs: now - 4_900,
+                    endedAtEpochMs: now - 4_000,
+                    durationMs: 900,
+                },
+            },
+            {
+                kind: 'result',
+                protocolVersion: 1,
+                runId: 'demo-run',
+                agentId: 'agent-b',
+                commandId: 'start-b',
+                ok: false,
+                error: {
+                    code: 'ASSERTION_FAILED',
+                    message: 'Receiver did not observe payload.',
+                },
+                result: {
+                    commandId: 'start-b',
+                    kind: 'recipe.run',
+                    status: 'failed',
+                    ok: false,
+                    startedAtEpochMs: now - 4_900,
+                    endedAtEpochMs: now - 3_900,
+                    durationMs: 1_000,
+                    value: {
+                        recipeId: 'diagnostic-recipe',
+                        results: [{
+                            commandId: 'root-parallel',
+                            kind: 'parallel',
+                            status: 'failed',
+                            ok: false,
+                            startedAtEpochMs: now - 4_850,
+                            endedAtEpochMs: now - 3_900,
+                            durationMs: 950,
+                            value: {
+                                commandId: 'root-parallel',
+                                groupCount: 2,
+                                maxConcurrency: 1,
+                                passed: 3,
+                                failed: 1,
+                                cancelled: false,
+                                groups: [
+                                    {
+                                        groupId: 'left',
+                                        commandCount: 1,
+                                        passed: 1,
+                                        failed: 0,
+                                        cancelled: false,
+                                        durationMs: 300,
+                                        results: [{
+                                            commandId: 'root-parallel:g1:left:c1:frame-loop',
+                                            originalCommandId: 'frame-loop',
+                                            parentCommandId: 'root-parallel',
+                                            commandIndex: 0,
+                                            groupId: 'left',
+                                            groupIndex: 0,
+                                            result: {
+                                                commandId: 'root-parallel:g1:left:c1:frame-loop',
+                                                kind: 'loop',
+                                                status: 'ok',
+                                                ok: true,
+                                                startedAtEpochMs: now - 4_820,
+                                                endedAtEpochMs: now - 4_520,
+                                                durationMs: 300,
+                                                value: {
+                                                    commandId: 'root-parallel:g1:left:c1:frame-loop',
+                                                    iterations: 2,
+                                                    childResultCount: 2,
+                                                    passed: 2,
+                                                    failed: 0,
+                                                    cancelled: false,
+                                                    results: [
+                                                        {
+                                                            commandId: 'root-parallel:g1:left:c1:frame-loop:i1:c1:position-send',
+                                                            originalCommandId: 'position-send',
+                                                            parentCommandId: 'root-parallel:g1:left:c1:frame-loop',
+                                                            commandIndex: 0,
+                                                            iteration: 1,
+                                                            result: {
+                                                                commandId: 'root-parallel:g1:left:c1:frame-loop:i1:c1:position-send',
+                                                                kind: 'rtc.send',
+                                                                status: 'ok',
+                                                                ok: true,
+                                                                startedAtEpochMs: now - 4_800,
+                                                                endedAtEpochMs: now - 4_700,
+                                                                durationMs: 100,
+                                                                value: { sent: true },
+                                                            },
+                                                        },
+                                                        {
+                                                            commandId: 'root-parallel:g1:left:c1:frame-loop:i2:c1:position-send',
+                                                            originalCommandId: 'position-send',
+                                                            parentCommandId: 'root-parallel:g1:left:c1:frame-loop',
+                                                            commandIndex: 0,
+                                                            iteration: 2,
+                                                            result: {
+                                                                commandId: 'root-parallel:g1:left:c1:frame-loop:i2:c1:position-send',
+                                                                kind: 'rtc.send',
+                                                                status: 'ok',
+                                                                ok: true,
+                                                                startedAtEpochMs: now - 4_680,
+                                                                endedAtEpochMs: now - 4_580,
+                                                                durationMs: 100,
+                                                                value: { sent: true },
+                                                            },
+                                                        },
+                                                    ],
+                                                },
+                                            },
+                                        }],
+                                    },
+                                    {
+                                        groupId: 'right',
+                                        commandCount: 2,
+                                        passed: 1,
+                                        failed: 1,
+                                        cancelled: false,
+                                        durationMs: 360,
+                                        results: [
+                                            {
+                                                commandId: 'root-parallel:g2:right:c1:wait-ready',
+                                                originalCommandId: 'wait-ready',
+                                                parentCommandId: 'root-parallel',
+                                                commandIndex: 0,
+                                                groupId: 'right',
+                                                groupIndex: 1,
+                                                result: {
+                                                    commandId: 'root-parallel:g2:right:c1:wait-ready',
+                                                    kind: 'wait',
+                                                    status: 'ok',
+                                                    ok: true,
+                                                    startedAtEpochMs: now - 4_400,
+                                                    endedAtEpochMs: now - 4_220,
+                                                    durationMs: 180,
+                                                    value: {
+                                                        commandId: 'root-parallel:g2:right:c1:wait-ready',
+                                                        matched: true,
+                                                        match: {
+                                                            topic: 'rallar.test.ready',
+                                                            payloadPath: 'state',
+                                                            equals: 'ready',
+                                                        },
+                                                        event: {
+                                                            kind: 'message',
+                                                            topic: 'rallar.test.ready',
+                                                            atEpochMs: now - 4_250,
+                                                            payload: { state: 'ready' },
+                                                        },
+                                                    },
+                                                },
+                                            },
+                                            {
+                                                commandId: 'root-parallel:g2:right:c2:assert-event-count',
+                                                originalCommandId: 'assert-event-count',
+                                                parentCommandId: 'root-parallel',
+                                                commandIndex: 1,
+                                                groupId: 'right',
+                                                groupIndex: 1,
+                                                result: {
+                                                    commandId: 'root-parallel:g2:right:c2:assert-event-count',
+                                                    kind: 'assert',
+                                                    status: 'failed',
+                                                    ok: false,
+                                                    startedAtEpochMs: now - 4_100,
+                                                    endedAtEpochMs: now - 3_950,
+                                                    durationMs: 150,
+                                                    value: {
+                                                        commandId: 'root-parallel:g2:right:c2:assert-event-count',
+                                                        source: 'events.length',
+                                                        operator: 'gte',
+                                                        expected: 99,
+                                                        actual: 1,
+                                                        exists: true,
+                                                        passed: false,
+                                                    },
+                                                    error: {
+                                                        code: 'RALLAR_BLACK_BOX_ASSERT_FAILED',
+                                                        message: 'Assert failed for events.length.',
+                                                    },
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ],
+                            },
+                            error: {
+                                code: 'RALLAR_BLACK_BOX_PARALLEL_CHILD_FAILED',
+                                message: 'Parallel failed at child command root-parallel:g2:right:c2:assert-event-count.',
+                            },
+                        }],
+                    },
+                    error: {
+                        code: 'ASSERTION_FAILED',
+                        message: 'Receiver did not observe payload.',
+                    },
+                },
+            },
+        ],
+        events: [
+            {
+                kind: 'diagnostic',
+                protocolVersion: 1,
+                runId: 'demo-run',
+                agentId: 'agent-b',
+                commandId: 'start-b',
+                eventId: 'diag-ws-unhandled',
+                atEpochMs: now - 3_950,
+                payload: {
+                    eventId: 'runtime-diag-ws',
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.ws.unhandled_message',
+                    atEpochMs: now - 3_950,
+                    commandId: 'start-b',
+                    transport: 'ws',
+                    severity: 'warning',
+                    payload: {
+                        diagnosticSchemaVersion: 1,
+                        diagnosticTypeId: 'rallar.browser.ws.unhandled_message',
+                        topic: 'rallar.browser.ws.unhandled_message',
+                        severity: 'warning',
+                        message: 'Unhandled WS message',
+                        transport: 'ws',
+                        groupId: 'bb-group',
+                        senderId: 'agent-a',
+                        typeId: 'rallar.message',
+                        topicId: 'room.payload',
+                        contextId: 'bb-group',
+                        resourceId: 'payload-1',
+                        source: 'browser-rallar-runtime',
+                    },
+                },
+            },
+            {
+                kind: 'diagnostic',
+                protocolVersion: 1,
+                runId: 'demo-run',
+                agentId: 'agent-a',
+                commandId: 'start-a',
+                eventId: 'diag-rtc-lane',
+                atEpochMs: now - 4_200,
+                payload: {
+                    eventId: 'runtime-diag-rtc',
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.rtc.data_channel_mismatch',
+                    atEpochMs: now - 4_200,
+                    commandId: 'start-a',
+                    transport: 'realtime',
+                    severity: 'warning',
+                    payload: {
+                        diagnosticSchemaVersion: 1,
+                        diagnosticTypeId: 'rallar.browser.rtc.data_channel_mismatch',
+                        topic: 'rallar.browser.rtc.data_channel_mismatch',
+                        severity: 'warning',
+                        message: 'Received data channel for different data channel name.',
+                        transport: 'realtime',
+                        groupId: 'bb-group',
+                        peerId: 'agent-b',
+                        expectedChannelLabel: 'rtc-realtime',
+                        observedChannelLabel: 'rtc-data-channel',
+                        accepted: false,
+                        source: 'browser-rallar-runtime',
+                    },
+                },
+            },
+        ],
+        stats: [],
+        reports: [],
+        heartbeats: [],
+    };
+    const distributedRun = {
+        distributedRunId: 'dist-diagnostics',
+        controlRunId: 'demo-run',
+        state: 'failed',
+        createdAtEpochMs: now - 6_000,
+        updatedAtEpochMs: now - 3_800,
+        stagedAtEpochMs: now - 5_500,
+        startedAtEpochMs: now - 5_000,
+        completedAtEpochMs: now - 3_800,
+        targetAgentIds: ['agent-a', 'agent-b'],
+        manifest: {
+            schemaVersion: 1,
+            distributedRunId: 'dist-diagnostics',
+            controlRunId: 'demo-run',
+            displayName: 'Diagnostics distributed',
+            group: {
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+                groupId: 'bb-group',
+            },
+            recipes: [{ recipeId: 'diagnostic-recipe', required: true }],
+            targetPolicy: {
+                mode: 'selected-agents',
+                agentIds: ['agent-a', 'agent-b'],
+                expectedParticipantCount: 2,
+            },
+        },
+        commandLinks: [
+            { phase: 'start', agentId: 'agent-a', commandId: 'start-a', recipeId: 'diagnostic-recipe', queuedAtEpochMs: now - 5_000 },
+            { phase: 'start', agentId: 'agent-b', commandId: 'start-b', recipeId: 'diagnostic-recipe', queuedAtEpochMs: now - 5_000 },
+        ],
+        rollup: {
+            state: 'failed',
+            ok: false,
+            summary: {
+                participants: 2,
+                requiredParticipants: 2,
+                readyParticipants: 2,
+                passedParticipants: 1,
+                failedParticipants: 1,
+                recipes: 1,
+                requiredRecipes: 1,
+                passedRecipes: 0,
+                failedRecipes: 1,
+                blockingFailures: 1,
+            },
+            failures: [{
+                kind: 'recipe',
+                key: 'diagnostic-recipe',
+                state: 'failed',
+                required: true,
+                error: {
+                    code: 'RECIPE_FAILED',
+                    message: 'Receiver did not observe payload.',
+                },
+            }],
+        },
+    };
+
+    await page.route('http://localhost:5180/**', async route => {
+        const request = route.request();
+        const url = new URL(request.url());
+        if (request.method() === 'GET' && url.pathname === '/runs') {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({ runs: [controlRun] }),
+            });
+            return;
+        }
+        if (request.method() === 'GET' && url.pathname === '/runs/demo-run') {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify(controlRun),
+            });
+            return;
+        }
+        if (request.method() === 'GET' && url.pathname === '/distributed-runs') {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({ distributedRuns: [distributedRun] }),
+            });
+            return;
+        }
+        if (request.method() === 'GET' && url.pathname === '/distributed-runs/dist-diagnostics') {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify(distributedRun),
+            });
+            return;
+        }
+        await route.fulfill({
+            status: 404,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'not found' }),
+        });
+    });
+
+    await page.goto('/?provider=simulated&workspace=black-box-runner&tab=distributed-recipes&roomId=bb-group');
+
+    const panel = page.locator('#panel-distributed-recipes');
+    await panel.locator('.distributed-run-list .distributed-run-row')
+        .filter({ hasText: 'dist-diagnostics' })
+        .first()
+        .click();
+    const diagnostics = panel.getByLabel('Distributed runtime diagnostics');
+    await expect(diagnostics).toContainText('Runtime Diagnostics');
+    await expect(diagnostics).toContainText('Unhandled WS message');
+    await expect(diagnostics).toContainText('Received data channel for different data channel name.');
+    await expect(diagnostics).toContainText('Related failure: start-b');
+    const composite = panel.getByLabel('Distributed composite drilldowns');
+    await expect(composite).toContainText('Composite Drilldowns');
+    await expect(composite).toContainText('diagnostic-recipe');
+    await expect(composite).toContainText('First failure');
+    await expect(composite).toContainText('assert-event-count');
+    await expect(composite).toContainText('expected 99');
+    await expect(composite).toContainText('right');
+    await expect(composite).toContainText('matched - rallar.test.ready');
+
+    await diagnostics.getByLabel('Transport').selectOption('ws');
+    await expect(diagnostics).toContainText('Unhandled WS message');
+    await expect(diagnostics).not.toContainText('rtc-data-channel');
+});
+
 test('restores selected tab and redacted UI drafts after a fresh load', async ({ page }) => {
     await page.goto('/?provider=simulated&tab=rallar-server');
     await page.evaluate(() => localStorage.clear());

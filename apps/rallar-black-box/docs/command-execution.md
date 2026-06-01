@@ -456,6 +456,12 @@ manual actions.
 The runtime caches completed results by `commandId`. If the same command ID is received again, the runtime can return the
 cached result instead of repeating the operation.
 
+There is one important isolation rule: child commands inside a new `recipe.run`
+are executed again even when they reuse the same child `commandId` values as a
+previous recipe run. This keeps cancelled or failed recipes from poisoning a
+later run with stale child results. Direct duplicate command execution still
+uses `commandId` replay.
+
 The control server also applies idempotency when enqueueing commands:
 
 - same `commandId` and same payload returns the existing command

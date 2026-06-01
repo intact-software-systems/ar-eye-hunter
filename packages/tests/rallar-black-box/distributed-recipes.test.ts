@@ -668,6 +668,7 @@ describe('distributed recipes helpers', () => {
             pending: 0,
         });
         expect(monitor.resultCounts).toEqual({ total: 4, ok: 3, failed: 1 });
+        expect(monitor.diagnosticCounts.total).toBe(0);
         expect(monitor.artifact.status).toBe('valid');
         expect(monitor.readiness.map(row => [row.agentId, row.status])).toEqual([
             ['agent-a', 'ready'],
@@ -685,6 +686,279 @@ describe('distributed recipes helpers', () => {
         expect(monitor.events.map(event => event.summary)).toEqual(['payload received']);
         expect(monitor.failures.map(failure => failure.code)).toContain('ASSERTION_FAILED');
         expect(monitor.timeline.map(item => item.label)).toContain('result failed');
+    });
+
+    it('derives composite drilldowns and child failure focus for distributed recipe runs', async () => {
+        const compositeRecipe = {
+            recipeId: 'composite-evidence',
+            commands: [{
+                kind: 'parallel',
+                commandId: 'root-parallel',
+                maxConcurrency: 1,
+                groups: [
+                    {
+                        groupId: 'left',
+                        commands: [{
+                            kind: 'loop',
+                            commandId: 'frame-loop',
+                            count: 2,
+                            commands: [{
+                                kind: 'rtc.send',
+                                commandId: 'position-send',
+                                send: {
+                                    frame: '{loop.iteration}',
+                                },
+                            }],
+                        }],
+                    },
+                    {
+                        groupId: 'right',
+                        commands: [
+                            {
+                                kind: 'wait',
+                                commandId: 'wait-ready',
+                                match: {
+                                    topic: 'rallar.test.ready',
+                                    payloadPath: 'state',
+                                    equals: 'ready',
+                                },
+                            },
+                            {
+                                kind: 'assert',
+                                commandId: 'assert-event-count',
+                                source: 'events.length',
+                                operator: 'gte',
+                                expected: 99,
+                            },
+                        ],
+                    },
+                ],
+            }],
+        } satisfies DistributedRecipeCatalogItem['recipe'];
+        let now = 3_000;
+        const runtime = createRallarBlackBoxTestRuntime({
+            now: () => {
+                now += 10;
+                return now;
+            },
+        });
+        runtime.recordEvent({
+            kind: 'message',
+            topic: 'rallar.test.ready',
+            payload: {
+                state: 'ready',
+            },
+        });
+        const compositeResult = await runtime.execute({
+            kind: 'recipe.run',
+            commandId: 'start-b',
+            recipe: compositeRecipe,
+        });
+        const compositeRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            manifest: {
+                ...distributedRun.manifest,
+                recipes: [{
+                    recipeId: 'composite-evidence',
+                    recipe: compositeRecipe,
+                    profile: 'composite',
+                    required: true,
+                }],
+            },
+            commandLinks: distributedRun.commandLinks.map(link => ({
+                ...link,
+                recipeId: 'composite-evidence',
+            })),
+            rollup: {
+                ...distributedRun.rollup,
+                failures: [{
+                    kind: 'recipe',
+                    key: 'composite-evidence',
+                    state: 'failed',
+                    required: true,
+                    error: {
+                        code: 'RECIPE_FAILED',
+                        message: 'Composite recipe failed.',
+                    },
+                }],
+            },
+        };
+        const controlRunWithComposite: ControlRunSnapshot = {
+            ...distributedControlRun,
+            results: distributedControlRun.results.map(result => result.commandId === 'start-b'
+                ? {
+                    ...result,
+                    ok: false,
+                    error: compositeResult.error,
+                    result: compositeResult,
+                }
+                : result),
+        };
+
+        const monitor = deriveDistributedRunMonitor({
+            distributedRun: compositeRun,
+            controlRun: controlRunWithComposite,
+        });
+        const drilldown = monitor.compositeDrilldowns[0];
+
+        expect(monitor.compositeCounts).toMatchObject({
+            total: 1,
+            failed: 1,
+            childResults: 6,
+            composite: 2,
+            leaf: 4,
+        });
+        expect(drilldown).toMatchObject({
+            agentId: 'agent-b',
+            recipeId: 'composite-evidence',
+            commandId: 'start-b',
+            artifactRef: 'control-run.json#results[commandId=start-b]',
+            summary: {
+                total: 6,
+                failed: 2,
+                composite: 2,
+                leaf: 4,
+            },
+        });
+        expect(drilldown.rows.map(row => row.kind)).toEqual(expect.arrayContaining([
+            'parallel',
+            'loop',
+            'rtc.send',
+            'wait',
+            'assert',
+        ]));
+        expect(drilldown.firstFailure).toMatchObject({
+            kind: 'assert',
+            originalCommandId: 'assert-event-count',
+            status: 'failed',
+        });
+        expect(drilldown.firstFailure?.summary).toContain('expected 99');
+        expect(drilldown.firstFailure?.errorSummary).toContain('RALLAR_BLACK_BOX_ASSERT_FAILED');
+        expect(drilldown.rows.find(row => row.kind === 'wait')?.summary).toContain('matched');
+        expect(drilldown.groupSummaries).toEqual(expect.arrayContaining([
+            expect.objectContaining({ groupId: 'left', status: 'passed' }),
+            expect.objectContaining({ groupId: 'right', status: 'failed' }),
+        ]));
+        expect(monitor.failures).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                commandId: drilldown.firstFailure?.commandId,
+                agentId: 'agent-b',
+                recipeId: 'composite-evidence',
+                message: expect.stringContaining('RALLAR_BLACK_BOX_ASSERT_FAILED'),
+            }),
+        ]));
+    });
+
+    it('extracts WS and RTC runtime diagnostics for distributed run monitor filtering and failure correlation', () => {
+        const controlRunWithDiagnostics: ControlRunSnapshot = {
+            ...distributedControlRun,
+            events: [
+                ...distributedControlRun.events,
+                {
+                    kind: 'diagnostic',
+                    protocolVersion: 1,
+                    runId: 'run-1',
+                    agentId: 'agent-b',
+                    commandId: 'start-b',
+                    eventId: 'diag-ws-unhandled',
+                    atEpochMs: 1_985,
+                    payload: {
+                        eventId: 'runtime-diag-ws',
+                        kind: 'diagnostic',
+                        topic: 'rallar.browser.ws.unhandled_message',
+                        atEpochMs: 1_985,
+                        commandId: 'start-b',
+                        transport: 'ws',
+                        severity: 'warning',
+                        payload: {
+                            diagnosticSchemaVersion: 1,
+                            diagnosticTypeId: 'rallar.browser.ws.unhandled_message',
+                            topic: 'rallar.browser.ws.unhandled_message',
+                            severity: 'warning',
+                            message: 'Unhandled WS message',
+                            transport: 'ws',
+                            groupId: 'bb-group',
+                            senderId: 'agent-a',
+                            typeId: 'rallar.message',
+                            topicId: 'room.payload',
+                            contextId: 'bb-group',
+                            resourceId: 'payload-1',
+                            data: {
+                                typeId: 'rallar.message',
+                                topicId: 'room.payload',
+                            },
+                            source: 'browser-rallar-runtime',
+                        },
+                    },
+                },
+                {
+                    kind: 'diagnostic',
+                    protocolVersion: 1,
+                    runId: 'run-1',
+                    agentId: 'agent-a',
+                    commandId: 'start-a',
+                    eventId: 'diag-rtc-lane',
+                    atEpochMs: 1_720,
+                    payload: {
+                        eventId: 'runtime-diag-rtc',
+                        kind: 'diagnostic',
+                        topic: 'rallar.browser.rtc.data_channel_mismatch',
+                        atEpochMs: 1_720,
+                        commandId: 'start-a',
+                        transport: 'realtime',
+                        severity: 'warning',
+                        payload: {
+                            diagnosticSchemaVersion: 1,
+                            diagnosticTypeId: 'rallar.browser.rtc.data_channel_mismatch',
+                            topic: 'rallar.browser.rtc.data_channel_mismatch',
+                            severity: 'warning',
+                            message: 'Received data channel for different data channel name.',
+                            transport: 'realtime',
+                            groupId: 'bb-group',
+                            peerId: 'agent-b',
+                            expectedChannelLabel: 'rtc-realtime',
+                            observedChannelLabel: 'rtc-data-channel',
+                            accepted: false,
+                            source: 'browser-rallar-runtime',
+                        },
+                    },
+                },
+            ],
+        };
+
+        const monitor = deriveDistributedRunMonitor({
+            distributedRun,
+            controlRun: controlRunWithDiagnostics,
+        });
+
+        expect(monitor.diagnosticCounts).toMatchObject({
+            total: 2,
+            warning: 2,
+            ws: 1,
+            rtc: 1,
+        });
+        expect(monitor.runtimeDiagnostics.map(row => [row.eventId, row.transport, row.groupId])).toEqual([
+            ['diag-rtc-lane', 'realtime', 'bb-group'],
+            ['diag-ws-unhandled', 'ws', 'bb-group'],
+        ]);
+        expect(monitor.runtimeDiagnostics[0]).toMatchObject({
+            diagnosticTypeId: 'rallar.browser.rtc.data_channel_mismatch',
+            expectedLaneId: 'rtc-realtime',
+            observedLaneId: 'rtc-data-channel',
+            accepted: false,
+            peerId: 'agent-b',
+        });
+        expect(monitor.runtimeDiagnostics[1]).toMatchObject({
+            message: 'Unhandled WS message',
+            typeId: 'rallar.message',
+            topicId: 'room.payload',
+            correlatedFailureKeys: expect.arrayContaining(['start-b']),
+        });
+        expect(monitor.timeline.map(item => item.kind)).toContain('diagnostic');
+        expect(monitor.timeline.map(item => item.label)).toEqual(expect.arrayContaining([
+            'realtime warning',
+            'ws warning',
+        ]));
     });
 
     it('shows distributed barrier commands as monitor evidence', () => {
