@@ -9,6 +9,10 @@ import {
 } from './distributed-run.ts';
 
 export const RALLAR_BLACK_BOX_SCHEMA_VERSION = 1;
+export const RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION = RALLAR_BLACK_BOX_SCHEMA_VERSION;
+export const RALLAR_BLACK_BOX_SUPPORTED_RECIPE_SCHEMA_VERSIONS = [
+    RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION,
+] as const;
 
 export type JsonSchema = Readonly<{
     $schema?: string;
@@ -39,6 +43,24 @@ export type JsonSchemaValidationIssue = Readonly<{
 export type JsonSchemaValidationResult =
     | Readonly<{ ok: true; errors: readonly [] }>
     | Readonly<{ ok: false; errors: readonly JsonSchemaValidationIssue[] }>;
+
+export type RallarBlackBoxRecipeCompatibilityResult =
+    | Readonly<{
+        ok: true;
+        schemaVersion: typeof RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION;
+        explicitSchemaVersion?: typeof RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION;
+        legacy: boolean;
+        warnings: readonly JsonSchemaValidationIssue[];
+        errors: readonly [];
+    }>
+    | Readonly<{
+        ok: false;
+        schemaVersion?: typeof RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION;
+        explicitSchemaVersion?: unknown;
+        legacy: boolean;
+        warnings: readonly JsonSchemaValidationIssue[];
+        errors: readonly JsonSchemaValidationIssue[];
+    }>;
 
 export type RallarBlackBoxCommandProviderMode =
     | 'simulated'
@@ -112,6 +134,7 @@ const shallowRecipeSchema: JsonSchema = {
     type: 'object',
     required: ['recipeId', 'commands'],
     properties: {
+        schemaVersion: { const: RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION },
         recipeId: stringSchema,
         name: stringSchema,
         description: stringSchema,
@@ -226,6 +249,19 @@ const parallelGroupSchema: JsonSchema = {
     additionalProperties: false,
 };
 
+const loopThresholdsSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+        minAchievedRateHz: { type: 'number', minimum: 0 },
+        maxAverageStartDriftMs: { type: 'number', minimum: 0 },
+        maxStartDriftMs: { type: 'number', minimum: 0 },
+        maxJitterMs: { type: 'number', minimum: 0 },
+        minSendSuccessRatio: { type: 'number', minimum: 0, maximum: 1 },
+        failOnBackpressure: booleanSchema,
+    },
+    additionalProperties: false,
+};
+
 const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], JsonSchema>> = {
     configure: strictCommandSchema('configure', ['config'], {
         config: configSchema,
@@ -263,6 +299,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
             minimum: 1,
             maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands,
         },
+        thresholds: loopThresholdsSchema,
     }),
     parallel: strictCommandSchema('parallel', ['groups'], {
         groups: {
@@ -430,6 +467,7 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             'delayMs',
             'continueOnFailure',
             'maxCommands',
+            'thresholds',
             'commandId',
             'label',
             'timeoutMs',
@@ -445,6 +483,10 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             commandId: 'loop-rtc-position',
             count: 3,
             intervalMs: 50,
+            thresholds: {
+                minAchievedRateHz: 10,
+                minSendSuccessRatio: 0.95,
+            },
             commands: [
                 {
                     kind: 'rtc.send',
@@ -799,6 +841,7 @@ export const RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA: JsonSchema = {
     type: 'object',
     required: ['recipeId', 'commands'],
     properties: {
+        schemaVersion: { const: RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION },
         recipeId: stringSchema,
         name: stringSchema,
         description: stringSchema,
@@ -957,6 +1000,44 @@ export function validateJsonSchema(schema: JsonSchema, value: unknown): JsonSche
 
 export function formatJsonSchemaValidationErrors(errors: readonly JsonSchemaValidationIssue[]): string {
     return errors.map(error => `${error.path}: ${error.message}`).join('\n');
+}
+
+export function validateRallarBlackBoxRecipeCompatibility(
+    value: unknown,
+): RallarBlackBoxRecipeCompatibilityResult {
+    const root = isRecord(value) ? value : {};
+    const explicitSchemaVersion = root.schemaVersion;
+    const schemaValidation = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, value);
+    const warnings: JsonSchemaValidationIssue[] = explicitSchemaVersion === undefined
+        ? [{
+            path: '$.schemaVersion',
+            message: 'No explicit schemaVersion was found; treating recipe as compatible v1.',
+        }]
+        : [];
+
+    if (!schemaValidation.ok) {
+        return {
+            ok: false,
+            schemaVersion: explicitSchemaVersion === RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION
+                ? RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION
+                : undefined,
+            explicitSchemaVersion,
+            legacy: explicitSchemaVersion === undefined,
+            warnings,
+            errors: schemaValidation.errors,
+        };
+    }
+
+    return {
+        ok: true,
+        schemaVersion: RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION,
+        explicitSchemaVersion: explicitSchemaVersion === RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION
+            ? RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION
+            : undefined,
+        legacy: explicitSchemaVersion === undefined,
+        warnings,
+        errors: [],
+    };
 }
 
 function validateNode(

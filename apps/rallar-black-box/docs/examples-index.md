@@ -56,6 +56,7 @@ does not yet load the full `recipe-matrix.json` dynamically from disk or execute
 | Quick matrix | Fast dry-run and deterministic confidence across representative recipes. | `npm run test:shared-black-box:matrix:quick` |
 | Dry matrix | Recipe shape and command generation without live services. | `npm run test:shared-black-box:matrix:dry` |
 | Deterministic matrix | In-memory RTC delivery semantics, routing failures, same-connection soak, seeded traffic, and parallel groups. | `npm run test:shared-black-box:matrix:deterministic` |
+| Composite conformance | Shared `rallar-bb-test` loop, parallel, wait/assert, cancellation, and negative delivery semantics across provider rows. | `npm run test:shared-black-box:composite-conformance` |
 | Rallar Server live | REST auth, group setup, WS open/send, negative auth, and WS/RTC parity when services are configured. | `npm run test:shared-black-box:matrix:live` |
 | Live soak | Gated browser/remote-browser same-connection RTC soak. | `npm run test:shared-black-box:matrix:live:soak` |
 | Live traffic | Gated browser/remote-browser seeded RTC traffic plans with replay artifacts. | `npm run test:shared-black-box:matrix:live:traffic` |
@@ -78,9 +79,12 @@ Shared-test runner artifacts use this file shape:
 - `events.jsonl`
 - `failures.json`
 - `metadata.json`
+- optional `artifact-index.json`
+- optional `expanded-recipe.json`
 - optional `expanded-plan.json`
+- optional `reduced-plan.json`
 - optional `matrix-summary.json`
 
 Use `parseRallarBlackBoxSharedTestArtifactBundle(...)` before rendering uploaded artifacts. The parser validates
-required files, event kinds, summaries, redaction placeholders, expanded-plan replay data, matrix summaries, and legacy
-schema compatibility.
+required files, event kinds, summaries, artifact indexes, expanded recipes, redaction placeholders,
+expanded-plan/reduced-plan replay data, matrix summaries, and legacy schema compatibility.

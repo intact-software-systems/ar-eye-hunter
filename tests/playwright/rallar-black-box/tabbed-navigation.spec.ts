@@ -1503,6 +1503,9 @@ test('shows distributed recipe composite preflight before staging', async ({ pag
         });
     });
 
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {
+        origin: 'http://127.0.0.1:5176',
+    });
     await page.goto('/?provider=simulated&workspace=black-box-runner&tab=distributed-recipes&roomId=bb-group');
 
     await expect(page.getByRole('tab', { name: 'Distributed Recipes' })).toHaveAttribute(
@@ -1510,6 +1513,52 @@ test('shows distributed recipe composite preflight before staging', async ({ pag
         'true',
     );
     const panel = page.locator('#panel-distributed-recipes');
+    const authoring = panel.getByLabel('Generate With AI');
+    await expect(authoring.getByRole('heading', { name: 'Generate With AI' })).toBeVisible();
+    await authoring.getByLabel('Prompt Template', { exact: true }).selectOption('rtc-realtime-position');
+    await expect(authoring.getByLabel('Prompt template preview')).toContainText('Template: RTC Position Stream');
+    await expect(authoring.getByLabel('Prompt variables')).toContainText('groupId');
+    await expect(authoring.getByLabel('Prompt variables')).toContainText('[REDACTED]');
+    await authoring.getByRole('button', { name: 'Copy Prompt' }).click();
+    const copiedPrompt = await page.evaluate(() => navigator.clipboard.readText());
+    expect(copiedPrompt).toContain('Template: RTC Position Stream');
+    expect(copiedPrompt).toContain('RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA');
+    expect(copiedPrompt).toContain('"sessionId": "[REDACTED]"');
+
+    const generatedManifest = {
+        schemaVersion: 1,
+        distributedRunId: 'dist-ai-authoring',
+        controlRunId: 'demo-run',
+        displayName: 'AI authoring smoke',
+        group: {
+            applicationId: 'rallar-server',
+            workspaceId: 'black-box-runner',
+            groupId: 'bb-group',
+        },
+        recipes: [{
+            recipeId: 'ai-health-recipe',
+            required: true,
+            recipe: {
+                schemaVersion: 1,
+                recipeId: 'ai-health-recipe',
+                commands: [{
+                    kind: 'health',
+                    commandId: 'ai-health',
+                }],
+            },
+        }],
+        targetPolicy: {
+            mode: 'all-online-group-members',
+            expectedParticipantCount: 1,
+        },
+        ackTimeoutMs: 30000,
+        startMode: 'manual',
+    };
+    await authoring.getByRole('textbox', { name: 'Generated JSON' }).fill(JSON.stringify(generatedManifest, null, 2));
+    const generatedValidation = authoring.getByRole('region', { name: 'Generated JSON validation' });
+    await expect(generatedValidation).toContainText('Validation status: valid');
+    await expect(generatedValidation).toContainText('ai-health-recipe');
+
     await expect(panel.getByRole('heading', { name: 'Recipe Catalog' })).toBeVisible();
     const catalog = panel.locator('.distributed-recipes-catalog');
 

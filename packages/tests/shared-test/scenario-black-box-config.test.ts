@@ -1,5 +1,6 @@
 import {spawn} from 'node:child_process';
-import {mkdtemp, readFile, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, writeFile} from 'node:fs/promises';
+import {createServer, type IncomingMessage, type Server, type ServerResponse} from 'node:http';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -61,6 +62,49 @@ async function runScenarioCli(args: string[], env: Record<string, string | undef
     });
 }
 
+async function startHeaderEchoServer(): Promise<{ baseUrl: string; close: () => Promise<void> }> {
+    const server = createServer((request: IncomingMessage, response: ServerResponse) => {
+        response.writeHead(200, {
+            'content-type': 'application/json',
+        });
+        response.end(JSON.stringify({
+            method: request.method,
+            url: request.url,
+            headers: request.headers,
+        }));
+    });
+
+    await new Promise<void>((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', () => {
+            server.off('error', reject);
+            resolve();
+        });
+    });
+
+    const address = server.address();
+    if (!address || typeof address === 'string') {
+        throw new Error('Header echo server did not expose a TCP address.');
+    }
+
+    return {
+        baseUrl: `http://127.0.0.1:${address.port}`,
+        close: () => closeServer(server),
+    };
+}
+
+function closeServer(server: Server): Promise<void> {
+    return new Promise((resolve, reject) => {
+        server.close(error => {
+            if (error) {
+                reject(error);
+                return;
+            }
+            resolve();
+        });
+    });
+}
+
 describe('scenario-black-box CLI', () => {
     it('explains a valid recipe without executing network calls', async () => {
         const workingDirectory = await writeTempConfig({
@@ -117,6 +161,277 @@ describe('scenario-black-box CLI', () => {
             connection: 'api',
             path: 'http://localhost:8080/health',
         });
+    });
+
+    it('expands static recipe fragments during explain mode', async () => {
+        const workingDirectory = await writeTempConfig({
+            variables: {
+                roomId: 'room-from-parent',
+            },
+            fragments: {
+                inlineAssert: {
+                    steps: [
+                        {
+                            name: 'assertActor',
+                            type: 'assert',
+                            actual: {
+                                actor: '{actorValue}',
+                            },
+                            expect: {
+                                body: {
+                                    actor: 'alice',
+                                },
+                            },
+                        },
+                    ],
+                },
+            },
+            steps: [
+                {
+                    include: {
+                        path: 'fragments/actor.json',
+                        variables: {
+                            actor: 'alice',
+                        },
+                        namePrefix: 'alice-',
+                    },
+                },
+                {
+                    include: 'inlineAssert',
+                },
+            ],
+        });
+        await mkdir(path.join(workingDirectory, 'fragments'));
+        await writeFile(
+            path.join(workingDirectory, 'fragments/actor.json'),
+            JSON.stringify({
+                variables: {
+                    actor: 'fragment-default',
+                },
+                steps: [
+                    {
+                        name: 'setActor',
+                        type: 'set',
+                        output: 'actorValue',
+                        value: '{actor}',
+                    },
+                    {
+                        name: 'setRoom',
+                        type: 'set',
+                        output: 'roomValue',
+                        value: '{roomId}',
+                    },
+                ],
+            }, null, 2),
+        );
+
+        const result = await runScenarioCli([
+            '-w',
+            workingDirectory,
+            '-c',
+            'config.json',
+            '--explain',
+        ]);
+
+        expect(result.code).toBe(0);
+        expect(result.stderr).toBe('');
+
+        const preflight = JSON.parse(result.stdout);
+
+        expect(preflight.ok).toBe(true);
+        expect(preflight.summary.includeCount).toBe(2);
+        expect(preflight.includes.resolved).toEqual([
+            expect.objectContaining({
+                source: 'file:fragments/actor.json',
+                stepCount: 2,
+            }),
+            expect.objectContaining({
+                source: 'fragment:inlineAssert',
+                stepCount: 1,
+            }),
+        ]);
+        expect(preflight.operations.map((operation: { name: string }) => operation.name)).toEqual([
+            'alice-setActor',
+            'alice-setRoom',
+            'assertActor',
+        ]);
+    });
+
+    it('writes expanded recipe artifacts that no longer require include files', async () => {
+        const workingDirectory = await writeTempConfig({
+            variables: {
+                roomId: 'room-from-parent',
+            },
+            steps: [
+                {
+                    include: {
+                        path: 'fragments/actor.json',
+                        variables: {
+                            actor: 'alice',
+                        },
+                        namePrefix: 'alice-',
+                    },
+                },
+                {
+                    name: 'assertRoom',
+                    type: 'assert',
+                    actual: {
+                        room: '{roomValue}',
+                    },
+                    expect: {
+                        body: {
+                            room: 'room-from-parent',
+                        },
+                    },
+                },
+            ],
+        });
+        await mkdir(path.join(workingDirectory, 'fragments'));
+        await writeFile(
+            path.join(workingDirectory, 'fragments/actor.json'),
+            JSON.stringify({
+                variables: {
+                    actor: 'fragment-default',
+                },
+                steps: [
+                    {
+                        name: 'setActor',
+                        type: 'set',
+                        output: 'actorValue',
+                        value: '{actor}',
+                    },
+                    {
+                        name: 'setRoom',
+                        type: 'set',
+                        output: 'roomValue',
+                        value: '{roomId}',
+                    },
+                ],
+            }, null, 2),
+        );
+        const artifactDir = path.join(workingDirectory, 'include-artifacts');
+
+        const result = await runScenarioCli([
+            '-w',
+            workingDirectory,
+            '-c',
+            'config.json',
+            '--artifact-dir',
+            artifactDir,
+        ]);
+
+        expect(result.code).toBe(0);
+        expect(result.stderr).toBe('');
+
+        const report = JSON.parse(result.stdout);
+        const expandedRecipe = JSON.parse(await readFile(path.join(artifactDir, 'expanded-recipe.json'), 'utf8'));
+
+        expect(report.outputs).toMatchObject({
+            actorValue: 'alice',
+            roomValue: 'room-from-parent',
+        });
+        expect(expandedRecipe.kind).toBe('black-box-runner.expanded-recipe');
+        expect(expandedRecipe.includeMetadata.includes).toEqual([
+            expect.objectContaining({
+                source: 'file:fragments/actor.json',
+                stepCount: 2,
+            }),
+        ]);
+        expect(expandedRecipe.recipe.steps.map((step: { name: string }) => step.name)).toEqual([
+            'alice-setActor',
+            'alice-setRoom',
+            'assertRoom',
+        ]);
+        expect(JSON.stringify(expandedRecipe.recipe.steps)).not.toContain('"include"');
+    });
+
+    it('reports missing, circular, and remote static includes during validation', async () => {
+        const missingDirectory = await writeTempConfig({
+            steps: [
+                {
+                    include: 'missing.json',
+                },
+            ],
+        });
+        const circularDirectory = await writeTempConfig({
+            fragments: {
+                a: {
+                    steps: [
+                        {
+                            include: 'b',
+                        },
+                    ],
+                },
+                b: {
+                    steps: [
+                        {
+                            include: 'a',
+                        },
+                    ],
+                },
+            },
+            steps: [
+                {
+                    include: 'a',
+                },
+            ],
+        });
+        const remoteDirectory = await writeTempConfig({
+            steps: [
+                {
+                    include: 'https://example.com/recipe-fragment.json',
+                },
+            ],
+        });
+
+        const missing = await runScenarioCli([
+            '-w',
+            missingDirectory,
+            '-c',
+            'config.json',
+            '--validate',
+        ]);
+        const circular = await runScenarioCli([
+            '-w',
+            circularDirectory,
+            '-c',
+            'config.json',
+            '--validate',
+        ]);
+        const remote = await runScenarioCli([
+            '-w',
+            remoteDirectory,
+            '-c',
+            'config.json',
+            '--validate',
+        ]);
+
+        expect(missing.code).toBe(1);
+        expect(circular.code).toBe(1);
+        expect(remote.code).toBe(1);
+
+        const missingPreflight = JSON.parse(missing.stdout);
+        const circularPreflight = JSON.parse(circular.stdout);
+        const remotePreflight = JSON.parse(remote.stdout);
+
+        expect(missingPreflight.issues).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                code: 'PLAN_EXPANSION_FAILED',
+                message: expect.stringContaining('Failed to load include missing.json'),
+            }),
+        ]));
+        expect(circularPreflight.issues).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                code: 'PLAN_EXPANSION_FAILED',
+                message: expect.stringContaining('Circular include detected'),
+            }),
+        ]));
+        expect(remotePreflight.issues).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                code: 'PLAN_EXPANSION_FAILED',
+                message: expect.stringContaining('Remote includes are not allowed by default'),
+            }),
+        ]));
     });
 
     it('validates missing env vars and missing connections before execution', async () => {
@@ -380,6 +695,193 @@ describe('scenario-black-box CLI', () => {
         expect(report.summary.success).toBe(3);
         expect(report.outputs.authHeader).toBe('Bearer abc-123');
         expect(report.resultsByName.assertAuthHeader[0].status).toBe('SUCCESS');
+    });
+
+    it('runs safe output transforms for SET values and extracted outputs', async () => {
+        const workingDirectory = await writeTempConfig({
+            execution: {
+                failFast: true,
+            },
+            steps: [
+                {
+                    name: 'loginResult',
+                    type: 'set',
+                    output: 'loginResult',
+                    value: {
+                        body: {
+                            access_token: 'secret token/123',
+                            token_type: 'Bearer',
+                            user: {
+                                idText: '42',
+                            },
+                            enabledText: 'true',
+                            payload: {
+                                roomId: 'room-1',
+                            },
+                            payloadJson: '["room.join",true]',
+                            fallback: 'fallback-value',
+                        },
+                    },
+                    outputs: {
+                        accessToken: {
+                            path: 'body.access_token',
+                            secret: true,
+                            redactAs: 'accessToken',
+                        },
+                        authHeader: {
+                            concat: [
+                                { path: 'body.token_type' },
+                                ' ',
+                                { path: 'body.access_token' },
+                            ],
+                            secret: true,
+                            redactAs: 'authHeader',
+                        },
+                        encodedToken: {
+                            urlEncode: { path: 'body.access_token' },
+                            secret: true,
+                            redactAs: 'encodedToken',
+                        },
+                        userId: {
+                            number: { path: 'body.user.idText' },
+                        },
+                        enabled: {
+                            boolean: { path: 'body.enabledText' },
+                        },
+                        parsedPayload: {
+                            jsonParse: { path: 'body.payloadJson' },
+                        },
+                        payloadJson: {
+                            jsonStringify: { path: 'body.payload' },
+                        },
+                        fallbackValue: {
+                            coalesce: [
+                                { path: 'body.missing' },
+                                '',
+                                { path: 'body.fallback' },
+                            ],
+                        },
+                        templatedToken: {
+                            template: 'token={result.actual.body.access_token}',
+                            secret: true,
+                            redactAs: 'templatedToken',
+                        },
+                    },
+                },
+                {
+                    name: 'deriveTraceId',
+                    type: 'set',
+                    output: 'traceId',
+                    transform: {
+                        concat: [
+                            'trace-',
+                            { uuid: true },
+                            '-',
+                            { timestamp: true },
+                        ],
+                    },
+                },
+                {
+                    name: 'assertTransforms',
+                    type: 'assert',
+                    actual: {
+                        authHeader: '{authHeader}',
+                        encodedToken: '{encodedToken}',
+                        userId: '{userId}',
+                        enabled: '{enabled}',
+                        parsedPayload: '{parsedPayload}',
+                        fallbackValue: '{fallbackValue}',
+                    },
+                    expect: {
+                        body: {
+                            authHeader: 'Bearer secret token/123',
+                            encodedToken: 'secret%20token%2F123',
+                            userId: 42,
+                            enabled: true,
+                            parsedPayload: ['room.join', true],
+                            fallbackValue: 'fallback-value',
+                        },
+                    },
+                },
+            ],
+        });
+
+        const result = await runScenarioCli([
+            '-w',
+            workingDirectory,
+            '-c',
+            'config.json',
+        ]);
+
+        expect(result.code).toBe(0);
+        expect(result.stderr).toBe('');
+        expect(result.stdout).not.toContain('secret token/123');
+
+        const report = JSON.parse(result.stdout);
+
+        expect(report.summary).toMatchObject({
+            failure: 0,
+            success: 3,
+        });
+        expect(report.outputs).toMatchObject({
+            accessToken: '<redacted:accessToken>',
+            authHeader: 'Bearer <redacted:accessToken>',
+            encodedToken: '<redacted:encodedToken>',
+            userId: 42,
+            enabled: true,
+            parsedPayload: ['room.join', true],
+            payloadJson: '{"roomId":"room-1"}',
+            fallbackValue: 'fallback-value',
+            templatedToken: 'token=<redacted:accessToken>',
+        });
+        expect(report.outputs.traceId).toMatch(/^trace-[0-9a-f-]{36}-\d+$/);
+        expect(report.resultsByName.assertTransforms[0].status).toBe('SUCCESS');
+    });
+
+    it('reports redacted transform failures with operator details', async () => {
+        const workingDirectory = await writeTempConfig({
+            variables: {
+                badJson: {
+                    env: 'BLACK_BOX_BAD_JSON',
+                    required: true,
+                    secret: true,
+                },
+            },
+            steps: [
+                {
+                    name: 'parseSecretJson',
+                    type: 'set',
+                    output: 'parsed',
+                    transform: {
+                        jsonParse: '{badJson}',
+                    },
+                },
+            ],
+        });
+
+        const result = await runScenarioCli([
+            '-w',
+            workingDirectory,
+            '-c',
+            'config.json',
+        ], {
+            BLACK_BOX_BAD_JSON: 'not-json-secret',
+        });
+
+        expect(result.code).toBe(1);
+        expect(result.stderr).toBe('');
+        expect(result.stdout).not.toContain('not-json-secret');
+
+        const report = JSON.parse(result.stdout);
+        const failure = report.resultsByName.parseSecretJson[0];
+
+        expect(report.summary.failure).toBe(1);
+        expect(failure.status).toBe('FAILURE');
+        expect(failure.result).toBe('Set transform failed.');
+        expect(failure.details.transformError.details).toMatchObject({
+            operator: 'jsonParse',
+            input: '<redacted:badJson>',
+        });
     });
 
     it('exits with code 1 when config assertion fails', async () => {
@@ -830,11 +1332,13 @@ describe('scenario-black-box CLI', () => {
         const eventsText = await readFile(path.join(artifactDir, 'events.jsonl'), 'utf8');
         const failuresText = await readFile(path.join(artifactDir, 'failures.json'), 'utf8');
         const metadataText = await readFile(path.join(artifactDir, 'metadata.json'), 'utf8');
+        const artifactIndexText = await readFile(path.join(artifactDir, 'artifact-index.json'), 'utf8');
         const artifactText = [
             reportText,
             eventsText,
             failuresText,
             metadataText,
+            artifactIndexText,
         ].join('\n');
 
         expect(artifactText).not.toContain('secret-token-123');
@@ -842,6 +1346,7 @@ describe('scenario-black-box CLI', () => {
         const report = JSON.parse(reportText);
         const failures = JSON.parse(failuresText);
         const metadata = JSON.parse(metadataText);
+        const artifactIndex = JSON.parse(artifactIndexText);
         const events = eventsText
             .trim()
             .split('\n')
@@ -853,8 +1358,401 @@ describe('scenario-black-box CLI', () => {
         expect(failures.failures[0].actual).toBe('Bearer <redacted:apiToken>');
         expect(events.some(event => event.kind === 'step-result' && event.name === 'assertSecretHeaderFails'))
             .toBe(true);
+        expect(artifactIndex.firstFailure).toMatchObject({
+            name: 'assertSecretHeaderFails',
+            kind: 'step-result',
+        });
+        expect(artifactIndex.stepResults.every((entry: { sequence?: number }) => typeof entry.sequence === 'number'))
+            .toBe(true);
         expect(metadata.summary.failure).toBe(1);
         expect(metadata.command.join(' ')).toContain('--artifact-dir');
+    });
+
+    it('writes artifact indexes and per-kind caps while preserving failures', async () => {
+        const workingDirectory = await writeTempConfig({
+            execution: {
+                failFast: false,
+                artifacts: {
+                    maxEventsByKind: {
+                        'step-result': 2,
+                    },
+                },
+            },
+            steps: [
+                {
+                    name: 'setOne',
+                    type: 'set',
+                    output: 'one',
+                    value: 'one',
+                },
+                {
+                    name: 'setTwo',
+                    type: 'set',
+                    output: 'two',
+                    value: 'two',
+                },
+                {
+                    name: 'setThree',
+                    type: 'set',
+                    output: 'three',
+                    value: 'three',
+                },
+                {
+                    name: 'assertFailureIsPreserved',
+                    type: 'assert',
+                    actual: '{three}',
+                    expect: {
+                        body: 'not-three',
+                    },
+                },
+            ],
+        });
+        const artifactDir = path.join(workingDirectory, 'indexed-artifacts');
+
+        const result = await runScenarioCli([
+            '-w',
+            workingDirectory,
+            '-c',
+            'config.json',
+            '--artifact-dir',
+            artifactDir,
+        ]);
+
+        expect(result.code).toBe(1);
+
+        const report = JSON.parse(await readFile(path.join(artifactDir, 'report.json'), 'utf8'));
+        const events = (await readFile(path.join(artifactDir, 'events.jsonl'), 'utf8'))
+            .trim()
+            .split('\n')
+            .map(line => JSON.parse(line));
+        const artifactIndex = JSON.parse(await readFile(path.join(artifactDir, 'artifact-index.json'), 'utf8'));
+        const stepEventNames = events
+            .filter(event => event.kind === 'step-result')
+            .map(event => event.name);
+
+        expect(report.artifact).toMatchObject({
+            truncated: true,
+            omittedEvents: 1,
+            maxEventsByKind: {
+                'step-result': 2,
+            },
+        });
+        expect(stepEventNames).toEqual([
+            'setOne',
+            'setTwo',
+            'assertFailureIsPreserved',
+        ]);
+        expect(events.at(-1)).toMatchObject({
+            kind: 'artifact-truncated',
+            omittedByKind: {
+                'step-result': 1,
+            },
+        });
+        expect(artifactIndex.firstFailure).toMatchObject({
+            name: 'assertFailureIsPreserved',
+        });
+        expect(artifactIndex.stepResults).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                name: 'setThree',
+                emitted: false,
+            }),
+            expect.objectContaining({
+                name: 'assertFailureIsPreserved',
+                emitted: true,
+                status: 'FAILURE',
+            }),
+        ]));
+        expect(artifactIndex.compaction.repeatedSuccessSummaries).toEqual([
+            expect.objectContaining({
+                name: 'setThree',
+                count: 1,
+            }),
+        ]);
+    });
+
+    it('injects opt-in runner correlation headers and RTC payload fields into artifacts', async () => {
+        const server = await startHeaderEchoServer();
+
+        try {
+            const workingDirectory = await writeTempConfig({
+                execution: {
+                    correlation: {
+                        runnerRunId: 'bb-correlation-run',
+                        injectHeaders: true,
+                        injectPayloads: true,
+                    },
+                },
+                connections: {
+                    api: {
+                        type: 'http',
+                        baseUrl: server.baseUrl,
+                    },
+                    aliceRtc: {
+                        type: 'rtc',
+                        provider: 'rallar-memory',
+                        actor: 'alice',
+                        peerId: 'alice',
+                        roomId: 'correlation-room',
+                        remotePeerId: 'bob',
+                    },
+                    bobRtc: {
+                        type: 'rtc',
+                        provider: 'rallar-memory',
+                        actor: 'bob',
+                        peerId: 'bob',
+                        roomId: 'correlation-room',
+                        remotePeerId: 'alice',
+                    },
+                },
+                steps: [
+                    {
+                        name: 'echoHeaders',
+                        type: 'http',
+                        connection: 'api',
+                        request: {
+                            path: '/headers',
+                        },
+                        expect: {
+                            status: 200,
+                            body: {
+                                headers: {
+                                    'x-rallar-black-box-run-id': 'bb-correlation-run',
+                                },
+                            },
+                        },
+                    },
+                    {
+                        name: 'connectAlice',
+                        type: 'rtc.connect',
+                        connection: 'aliceRtc',
+                    },
+                    {
+                        name: 'connectBob',
+                        type: 'rtc.connect',
+                        connection: 'bobRtc',
+                    },
+                    {
+                        name: 'aliceSendsToBob',
+                        type: 'rtc.send',
+                        connection: 'aliceRtc',
+                        request: {
+                            send: {
+                                topic: 'correlation.test',
+                                toPeerId: 'bob',
+                                payload: {
+                                    text: 'hello',
+                                },
+                            },
+                        },
+                        expect: {
+                            connection: 'bobRtc',
+                            withinMs: 1000,
+                            consume: true,
+                            message: {
+                                topic: 'correlation.test',
+                                toPeerId: 'bob',
+                                payload: {
+                                    text: 'hello',
+                                },
+                                blackBoxRunner: {
+                                    runnerRunId: 'bb-correlation-run',
+                                },
+                            },
+                        },
+                    },
+                    {
+                        name: 'closeAlice',
+                        type: 'rtc.close',
+                        connection: 'aliceRtc',
+                    },
+                    {
+                        name: 'closeBob',
+                        type: 'rtc.close',
+                        connection: 'bobRtc',
+                    },
+                ],
+            });
+            const artifactDir = path.join(workingDirectory, 'correlation-artifacts');
+
+            const result = await runScenarioCli([
+                '-w',
+                workingDirectory,
+                '-c',
+                'config.json',
+                '--artifact-dir',
+                artifactDir,
+            ]);
+
+            expect(result.code).toBe(0);
+            expect(result.stderr).toBe('');
+
+            const report = JSON.parse(result.stdout);
+            const eventsText = await readFile(path.join(artifactDir, 'events.jsonl'), 'utf8');
+            const metadataText = await readFile(path.join(artifactDir, 'metadata.json'), 'utf8');
+            const artifactReportText = await readFile(path.join(artifactDir, 'report.json'), 'utf8');
+            const events = eventsText
+                .trim()
+                .split('\n')
+                .map(line => JSON.parse(line));
+            const metadata = JSON.parse(metadataText);
+            const artifactReport = JSON.parse(artifactReportText);
+            const headerResult = report.resultsByName.echoHeaders[0];
+            const sendResult = report.resultsByName.aliceSendsToBob[0];
+
+            expect(report.runnerRunId).toBe('bb-correlation-run');
+            expect(report.correlation.injection).toMatchObject({
+                headers: true,
+                payloads: true,
+            });
+            expect(headerResult.runnerRunId).toBe('bb-correlation-run');
+            expect(headerResult.actual.body.headers['x-rallar-black-box-run-id']).toBe('bb-correlation-run');
+            expect(headerResult.actual.body.headers['x-rallar-black-box-step-id']).toBe(headerResult.runnerStepId);
+            expect(headerResult.correlation.injected.headers).toBe(true);
+            expect(sendResult.actual.sent.blackBoxRunner).toMatchObject({
+                runnerRunId: 'bb-correlation-run',
+                runnerStepId: sendResult.runnerStepId,
+            });
+            expect(sendResult.actual.matchedMessage.data.blackBoxRunner).toMatchObject({
+                runnerRunId: 'bb-correlation-run',
+                runnerStepId: sendResult.runnerStepId,
+            });
+            expect(sendResult.correlation.injected.payload).toBe(true);
+            expect(events).toEqual(expect.arrayContaining([
+                expect.objectContaining({
+                    kind: 'step-result',
+                    name: 'aliceSendsToBob',
+                    runnerRunId: 'bb-correlation-run',
+                    runnerStepId: sendResult.runnerStepId,
+                }),
+            ]));
+            expect(metadata.correlation.runnerRunId).toBe('bb-correlation-run');
+            expect(artifactReport.resultsByName.echoHeaders[0].runnerStepId).toBe(headerResult.runnerStepId);
+        } finally {
+            await server.close();
+        }
+    });
+
+    it('records runner correlation IDs while leaving wire data unchanged by default', async () => {
+        const server = await startHeaderEchoServer();
+
+        try {
+            const workingDirectory = await writeTempConfig({
+                execution: {
+                    correlation: {
+                        runnerRunId: 'bb-record-only',
+                        injectHeaders: false,
+                        injectPayloads: false,
+                    },
+                },
+                connections: {
+                    api: {
+                        type: 'http',
+                        baseUrl: server.baseUrl,
+                    },
+                    aliceRtc: {
+                        type: 'rtc',
+                        provider: 'rallar-memory',
+                        actor: 'alice',
+                        peerId: 'alice',
+                        roomId: 'correlation-opt-out-room',
+                        remotePeerId: 'bob',
+                    },
+                    bobRtc: {
+                        type: 'rtc',
+                        provider: 'rallar-memory',
+                        actor: 'bob',
+                        peerId: 'bob',
+                        roomId: 'correlation-opt-out-room',
+                        remotePeerId: 'alice',
+                    },
+                },
+                steps: [
+                    {
+                        name: 'echoHeaders',
+                        type: 'http',
+                        connection: 'api',
+                        request: {
+                            path: '/headers',
+                        },
+                        expect: {
+                            status: 200,
+                        },
+                    },
+                    {
+                        name: 'connectAlice',
+                        type: 'rtc.connect',
+                        connection: 'aliceRtc',
+                    },
+                    {
+                        name: 'connectBob',
+                        type: 'rtc.connect',
+                        connection: 'bobRtc',
+                    },
+                    {
+                        name: 'aliceSendsToBob',
+                        type: 'rtc.send',
+                        connection: 'aliceRtc',
+                        request: {
+                            send: {
+                                topic: 'correlation.optout',
+                                toPeerId: 'bob',
+                                payload: {
+                                    text: 'plain',
+                                },
+                            },
+                        },
+                        expect: {
+                            connection: 'bobRtc',
+                            withinMs: 1000,
+                            consume: true,
+                            message: {
+                                topic: 'correlation.optout',
+                                toPeerId: 'bob',
+                                payload: {
+                                    text: 'plain',
+                                },
+                            },
+                        },
+                    },
+                    {
+                        name: 'closeAlice',
+                        type: 'rtc.close',
+                        connection: 'aliceRtc',
+                    },
+                    {
+                        name: 'closeBob',
+                        type: 'rtc.close',
+                        connection: 'bobRtc',
+                    },
+                ],
+            });
+
+            const result = await runScenarioCli([
+                '-w',
+                workingDirectory,
+                '-c',
+                'config.json',
+            ]);
+
+            expect(result.code).toBe(0);
+            expect(result.stderr).toBe('');
+
+            const report = JSON.parse(result.stdout);
+            const headerResult = report.resultsByName.echoHeaders[0];
+            const sendResult = report.resultsByName.aliceSendsToBob[0];
+
+            expect(report.runnerRunId).toBe('bb-record-only');
+            expect(headerResult.runnerStepId).toContain('echoHeaders');
+            expect(headerResult.actual.body.headers['x-rallar-black-box-run-id']).toBeUndefined();
+            expect(headerResult.actual.body.headers['x-rallar-black-box-step-id']).toBeUndefined();
+            expect(headerResult.correlation.injected.headers).toBe(false);
+            expect(sendResult.runnerStepId).toContain('aliceSendsToBob');
+            expect(sendResult.actual.sent.blackBoxRunner).toBeUndefined();
+            expect(sendResult.actual.matchedMessage.data.blackBoxRunner).toBeUndefined();
+            expect(sendResult.correlation.injected.payload).toBe(false);
+        } finally {
+            await server.close();
+        }
     });
 
     it('runs scale iterations and writes aggregate artifacts', async () => {
@@ -925,6 +1823,149 @@ describe('scenario-black-box CLI', () => {
             .toBe(true);
     });
 
+    it('evaluates post-run assertions and writes assertion artifacts', async () => {
+        const workingDirectory = await writeTempConfig({
+            execution: {
+                thresholds: {
+                    'summary.failure': {
+                        max: 0,
+                    },
+                    'metrics.byTransport.SET': {
+                        gte: 1,
+                    },
+                    'metrics.latencyMs.stepDuration.count': {
+                        min: 2,
+                    },
+                },
+            },
+            postRunAssertions: [
+                {
+                    name: 'artifact stream is complete',
+                    path: 'artifact.truncated',
+                    equals: false,
+                },
+            ],
+            steps: [
+                {
+                    name: 'setValue',
+                    type: 'set',
+                    output: 'value',
+                    value: 'ok',
+                },
+                {
+                    name: 'assertValue',
+                    type: 'assert',
+                    actual: '{value}',
+                    expect: {
+                        body: 'ok',
+                    },
+                },
+            ],
+        });
+        const artifactDir = path.join(workingDirectory, 'post-run-artifacts');
+
+        const result = await runScenarioCli([
+            '-w',
+            workingDirectory,
+            '-c',
+            'config.json',
+            '--artifact-dir',
+            artifactDir,
+        ]);
+
+        expect(result.code).toBe(0);
+        expect(result.stderr).toBe('');
+
+        const report = JSON.parse(result.stdout);
+
+        expect(report.summary.ok).toBe(true);
+        expect(report.summary.postRunAssertions).toEqual({
+            total: 4,
+            success: 4,
+            failure: 0,
+        });
+        expect(report.postRunAssertions.results.map((entry: { status: string }) => entry.status))
+            .toEqual(['SUCCESS', 'SUCCESS', 'SUCCESS', 'SUCCESS']);
+        expect(report.metrics.byTransport.SET).toBe(1);
+        expect(report.artifact.truncated).toBe(false);
+
+        const eventsText = await readFile(path.join(artifactDir, 'events.jsonl'), 'utf8');
+        const artifactReportText = await readFile(path.join(artifactDir, 'report.json'), 'utf8');
+        const events = eventsText
+            .trim()
+            .split('\n')
+            .map(line => JSON.parse(line));
+        const artifactReport = JSON.parse(artifactReportText);
+
+        expect(artifactReport.postRunAssertions.summary.failure).toBe(0);
+        expect(events.filter(event => event.kind === 'post-run-assertion')).toHaveLength(4);
+    });
+
+    it('exits with code 1 when a post-run threshold fails without step failures', async () => {
+        const workingDirectory = await writeTempConfig({
+            execution: {
+                thresholds: {
+                    'metrics.byTransport.SET': {
+                        gte: 2,
+                    },
+                },
+            },
+            steps: [
+                {
+                    name: 'setValue',
+                    type: 'set',
+                    output: 'value',
+                    value: 'ok',
+                },
+            ],
+        });
+        const artifactDir = path.join(workingDirectory, 'post-run-failure-artifacts');
+
+        const result = await runScenarioCli([
+            '-w',
+            workingDirectory,
+            '-c',
+            'config.json',
+            '--artifact-dir',
+            artifactDir,
+        ]);
+
+        expect(result.code).toBe(1);
+        expect(result.stderr).toBe('');
+
+        const report = JSON.parse(result.stdout);
+        const failuresText = await readFile(path.join(artifactDir, 'failures.json'), 'utf8');
+        const eventsText = await readFile(path.join(artifactDir, 'events.jsonl'), 'utf8');
+        const failures = JSON.parse(failuresText);
+        const events = eventsText
+            .trim()
+            .split('\n')
+            .map(line => JSON.parse(line));
+
+        expect(report.summary.failure).toBe(0);
+        expect(report.summary.ok).toBe(false);
+        expect(report.summary.postRunAssertions).toEqual({
+            total: 1,
+            success: 0,
+            failure: 1,
+        });
+        expect(report.summary.firstPostRunAssertionFailure).toMatchObject({
+            path: 'metrics.byTransport.SET',
+            operator: 'gte',
+            expected: 2,
+            actual: 1,
+        });
+        expect(failures.failures).toEqual([]);
+        expect(failures.postRunAssertionFailures).toHaveLength(1);
+        expect(events).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                kind: 'post-run-assertion',
+                status: 'FAILURE',
+                path: 'metrics.byTransport.SET',
+            }),
+        ]));
+    });
+
     it('runs same-connection soak loops and writes bounded artifacts', async () => {
         const workingDirectory = await writeTempConfig({
             variables: {
@@ -949,6 +1990,23 @@ describe('scenario-black-box CLI', () => {
                         'closeBob',
                     ],
                 },
+                postRunAssertions: [
+                    {
+                        name: 'all soak sends succeeded',
+                        path: 'metrics.soak.sends.successRatio',
+                        gte: 1,
+                    },
+                    {
+                        name: 'no warning diagnostics',
+                        path: 'metrics.soak.diagnostics.bySeverity.warning',
+                        lte: 0,
+                    },
+                    {
+                        name: 'artifact truncation recorded',
+                        path: 'artifact.truncated',
+                        equals: true,
+                    },
+                ],
             },
             connections: {
                 aliceRtc: {
@@ -1077,8 +2135,14 @@ describe('scenario-black-box CLI', () => {
         expect(report.metrics.soak.sameConnection).toBe(true);
         expect(report.metrics.soak.iterationsObserved).toBe(3);
         expect(report.metrics.soak.sends.attempted).toBe(6);
+        expect(report.metrics.soak.sends.successRatio).toBe(1);
         expect(report.metrics.soak.cleanup.closeSuccess).toBe(2);
         expect(report.metrics.soak.reconnects).toBe(0);
+        expect(report.summary.postRunAssertions).toEqual({
+            total: 3,
+            success: 3,
+            failure: 0,
+        });
 
         const eventsText = await readFile(path.join(artifactDir, 'events.jsonl'), 'utf8');
         const events = eventsText
@@ -1275,6 +2339,9 @@ describe('scenario-black-box CLI', () => {
         expect(expandedPlan.decisions).toHaveLength(5);
         expect(expandedPlan.steps).toHaveLength(5);
         expect(expandedPlan.steps[0].name).toMatch(/^traffic/);
+        expect(expandedPlan.runnerRunId).toBe(report.runnerRunId);
+        expect(expandedPlan.correlation.runnerRunId).toBe(report.runnerRunId);
+        expect(expandedPlan.replayRecipe.execution.correlation.runnerRunId).toBe(report.runnerRunId);
         expect(report.outputs.traffic1.sequence).toBe(1);
 
         await writeFile(

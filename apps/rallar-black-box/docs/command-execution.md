@@ -133,7 +133,7 @@ recipe-matrix entry or JSON scenario
   -> HTTP, WS, RTC, ASSERT, SET step execution
   -> provider-specific adapters where needed
   -> report.json, events.jsonl, failures.json, metadata.json
-  -> optional expanded-plan.json or matrix-summary.json
+  -> optional artifact-index.json, expanded-recipe.json, expanded-plan.json, reduced-plan.json, or matrix-summary.json
 ```
 
 The SPA `Shared Test` tab consumes only the stable handoff layer:

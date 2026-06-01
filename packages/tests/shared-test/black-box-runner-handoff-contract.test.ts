@@ -86,8 +86,17 @@ describe('black-box runner command-center handoff contract', () => {
             'failures.json',
             'metadata.json',
         ]);
+        expect(BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT.optionalFiles)
+            .toContain('artifact-index.json');
+        expect(BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT.optionalFiles)
+            .toContain('expanded-recipe.json');
+        expect(BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT.optionalFiles)
+            .toContain('preflight-report.json');
         expect(BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT.optionalFiles).toContain('expanded-plan.json');
+        expect(BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT.optionalFiles).toContain('reduced-plan.json');
         expect(BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT.eventStream.eventKinds).toContain('step-result');
+        expect(BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT.eventStream.eventKinds)
+            .toContain('post-run-assertion');
         expect(BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT.eventStream.truncationEventKind)
             .toBe('artifact-truncated');
 

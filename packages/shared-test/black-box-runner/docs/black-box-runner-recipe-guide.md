@@ -114,6 +114,91 @@ deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
   --strict
 ```
 
+## Static Fragments And Includes
+
+Use `fragments` and `include` when several recipes need the same setup,
+connect, cleanup, or assertion snippets without introducing a scripting
+language.
+
+Inline fragments live at the top level:
+
+```json
+{
+  "fragments": {
+    "connectActor": {
+      "steps": [
+        {
+          "name": "connect",
+          "type": "rtc.connect",
+          "connection": "{connection}"
+        }
+      ]
+    }
+  },
+  "steps": [
+    {
+      "include": "connectActor",
+      "variables": {
+        "connection": "aliceRtc"
+      },
+      "namePrefix": "alice-"
+    }
+  ]
+}
+```
+
+File fragments are local JSON files resolved relative to the including recipe:
+
+```json
+{
+  "steps": [
+    {
+      "include": {
+        "path": "fragments/rallar-login.json",
+        "variables": {
+          "actor": "alice"
+        },
+        "namePrefix": "alice-"
+      }
+    }
+  ]
+}
+```
+
+A fragment file can be either an array of steps or an object with `steps`.
+Fragment-level `variables`, `connections`, and `defaults` are merged into the
+parent recipe, with the parent recipe taking precedence. Include variables are
+applied statically to the included snippet; unresolved placeholders remain
+available for ordinary runner variable/output resolution.
+
+Includes are expanded before `--validate`, `--explain`, and execution. Remote
+URLs, absolute paths, and paths escaping the recipe root are rejected by
+default. Circular includes fail validation with `PLAN_EXPANSION_FAILED`.
+
+When artifacts are enabled, the runner writes `expanded-recipe.json`. That file
+contains the fully expanded recipe and include metadata, so a replay or bug
+report does not need the original fragment files.
+
+## Live Environment Preflight
+
+Use the matrix preflight command before launching long browser or
+remote-browser live runs:
+
+```bash
+npm run test:shared-black-box:matrix:live:preflight
+```
+
+The command runs the matrix live-environment contract and writes
+`preflight-report.json` per selected entry. The report uses the same check
+vocabulary as matrix skip reasons: env, Rallar API base URL, `/api/config`,
+CORS origin, auth login, group create/join permission, WS ticket, WS upgrade,
+ICE config, control-server reachability, and Playwright.
+
+Normal live matrix runs also execute this preflight before recipes. Failed
+preflight checks skip the entry and record the same reasons in
+`matrix-summary.json`; `--require-gates` turns those skips into a non-zero
+matrix exit.
+
 Top-level `secrets` or `secretVariables` can also mark ordinary variables as
 redacted:
 
@@ -322,10 +407,97 @@ Common fields:
 - `type`: `set`
 - `output`: output name
 - `value` or `request.value`: value to store
+- `transform` or `request.transform`: declarative transform to evaluate and store
+- `secret`, `redact`, and `redactAs`: redact the produced output in reports and artifacts
 
 Prefer SET for simple constants or derived values that make later steps easier
-to read. More complex extraction and transformation support is tracked as later
-work in the shared-test gap analysis.
+to read.
+
+```json
+{
+  "name": "deriveAuthHeader",
+  "type": "set",
+  "output": "authHeader",
+  "secret": true,
+  "redactAs": "authHeader",
+  "transform": {
+    "concat": [
+      "Bearer ",
+      { "path": "outputs.accessToken" }
+    ]
+  }
+}
+```
+
+## Safe Transforms
+
+Transforms are declarative and bounded. They are available on SET steps through
+`transform` and on output extraction specs through `outputs.<name>`. They do not
+execute JavaScript.
+
+Stable operators:
+
+- `path`: read from the current step result, `actual`, `actual.body`, or runner context such as `variables.*`,
+  `outputs.*`, `results.*`, and `resultsByName.*`
+- `template`: render a string with placeholders
+- `concat`: concatenate string parts
+- `coalesce`: return the first non-empty value, skipping missing optional paths
+- `jsonStringify` and `jsonParse`
+- `urlEncode`
+- `number`, `string`, and `boolean`
+- `uuid`
+- `timestamp`, returning epoch milliseconds by default or ISO text with `"format": "iso"`
+
+Output extraction transforms can use result-relative paths:
+
+```json
+{
+  "request": {
+    "outputs": {
+      "accessToken": {
+        "path": "body.accessToken",
+        "secret": true
+      },
+      "authHeader": {
+        "concat": [
+          "Bearer ",
+          { "path": "body.accessToken" }
+        ],
+        "secret": true,
+        "redactAs": "authHeader"
+      },
+      "encodedTicket": {
+        "urlEncode": { "path": "body.ticket" },
+        "secret": true
+      }
+    }
+  }
+}
+```
+
+SET transforms can use previous outputs and variables:
+
+```json
+{
+  "type": "set",
+  "output": "wsUrl",
+  "secret": true,
+  "transform": {
+    "concat": [
+      { "path": "variables.rallarWsBaseUrl" },
+      "/api/ws/",
+      { "path": "outputs.sessionId" },
+      "?ticket=",
+      { "urlEncode": { "path": "outputs.wsTicket" } }
+    ]
+  }
+}
+```
+
+Transform failures mark the step as `FAILURE` and include the failed operator,
+path, message, and redacted input where available. Intentionally unsupported:
+arbitrary JavaScript, filesystem reads, network calls, loops inside transforms,
+regular expression execution, and mutation of variables or prior outputs.
 
 ## Output Extraction
 
@@ -419,6 +591,95 @@ There is no separate poll step yet. Model polling with HTTP retry for transient
 status codes or with explicit repeated steps until a recipe needs a stronger
 generic polling primitive.
 
+## Post-run Assertions And Thresholds
+
+Use post-run assertions when the whole run should fail on aggregate evidence,
+even if each individual command returned success. Assertions can live at the
+top level under `postRunAssertions`, under `execution.postRunAssertions`, or as
+path-keyed shorthand under `execution.thresholds`.
+
+```json
+{
+  "execution": {
+    "thresholds": {
+      "summary.failure": { "max": 0 },
+      "metrics.soak.sends.successRatio": { "gte": 1 },
+      "metrics.soak.latencyMs.send.p95": { "lte": 250 },
+      "metrics.soak.diagnostics.bySeverity.warning": { "lte": 0 }
+    }
+  },
+  "postRunAssertions": [
+    {
+      "name": "artifact stream was not truncated",
+      "path": "artifact.truncated",
+      "equals": false
+    }
+  ]
+}
+```
+
+Stable assertion fields:
+
+- `path`, `metric`, or `from`: dot path in the final report, for example
+  `summary.failure`, `metrics.byTransport.RTC`, `metrics.sends.successRatio`,
+  `metrics.soak.latencyMs.send.p95`, `metrics.latencyMs.send.p99`, or
+  `artifact.truncated`
+- `equals`/`eq`/`expected` and `notEquals`/`ne`
+- numeric thresholds: `gt`, `gte`, `min`, `atLeast`, `lt`, `lte`, `max`, and
+  `atMost`
+- `between`: inclusive numeric range
+- `includes`/`contains` and `notIncludes`
+- `exists`: require a path to be present or absent
+
+When any post-run assertion fails, the CLI exits with code `1` even if
+`summary.failure` is `0`. The final report contains
+`summary.postRunAssertions`, `summary.firstPostRunAssertionFailure`, and
+`postRunAssertions.results`. Artifact bundles also write post-run assertion
+events to `events.jsonl` and copy failures to `failures.json`.
+
+## Trace Correlation
+
+Every runner execution gets a `runnerRunId`, and every executed step gets a
+`runnerStepId`. These IDs are always recorded in `report.json`, step-result
+events, `failures.json`, and `metadata.json`. They are also copied into
+`expanded-plan.json` for generated traffic-plan artifacts.
+
+Wire-level injection is opt-in so exact payload recipes stay exact by default:
+
+```json
+{
+  "execution": {
+    "correlation": {
+      "runnerRunId": "bb-login-smoke-2026-06-01",
+      "injectHeaders": true,
+      "injectPayloads": true,
+      "payloadField": "blackBoxRunner"
+    }
+  }
+}
+```
+
+With `injectHeaders: true`, HTTP requests include:
+
+- `x-rallar-black-box-run-id`
+- `x-rallar-black-box-step-id`
+
+With `injectPayloads: true`, WS and RTC `send` payloads that are JSON objects
+receive a `blackBoxRunner` object with `runnerRunId` and `runnerStepId`. String
+payloads, arrays, and non-object bodies are left unchanged.
+
+Use these IDs to join a failing artifact with server logs:
+
+```bash
+grep 'bb-login-smoke-2026-06-01' rallar-server.log
+grep 'x-rallar-black-box-run-id' rallar-server.log
+grep 'bb-login-smoke-2026-06-01-run-1-scenario-1-step-3' rallar-server.log
+```
+
+The Rallar Server auth/group/WS smoke example enables HTTP correlation headers
+so API timing logs can be searched by `runnerRunId` without changing WS wire
+payloads.
+
 ## Scale Runs
 
 Use scale runs when the same recipe should execute more than once and produce
@@ -453,7 +714,9 @@ execution independent; it does not keep RTC connections open between runs.
 The aggregate report keeps flattened `resultsList` entries with `runIndex` and
 `stepResultKey`, `outputsByRun`, per-run summaries, and `metrics` for transport
 counts, action counts, status counts, run/step/connect/send/first-payload
-latency, failure counts, reconnect counts, and cleanup counts.
+latency percentiles (`p50`, `p95`, `p99`), send/wait success ratios,
+diagnostic counts by severity/topic, failure counts, reconnect counts, and
+cleanup counts.
 
 ## Same-Connection Soak Runs
 
@@ -493,10 +756,11 @@ currently derives a bounded loop count when paired with a delay; use explicit
 
 Soak reports include `summary.soak`, `metrics.soak`, and `artifactLimits`.
 Metrics include observed iterations, transport/action/status counts, send and
-wait success counts, connect/send/first-payload latency percentiles, reconnect
-observations, close events, and cleanup status. Artifact event streams honor
-`maxArtifactEvents` and append an `artifact-truncated` sentinel when events were
-omitted.
+wait success counts and ratios, diagnostic counts by severity/topic,
+connect/send/first-payload latency percentiles (`p50`, `p95`, `p99`),
+reconnect observations, close events, and cleanup status. Artifact event
+streams honor `maxArtifactEvents` and append an `artifact-truncated` sentinel
+when events were omitted.
 
 Run the deterministic memory soak locally:
 
@@ -633,6 +897,31 @@ replay the exact generated plan, point another recipe at the artifact:
 }
 ```
 
+When a seeded traffic run fails late in a large plan, generate a smaller
+offline replay candidate from the artifact bundle:
+
+```bash
+deno run -A packages/shared-test/black-box-runner/traffic-plan-reducer.ts \
+  --artifact-dir=.artifacts/shared-test/rallar-memory-traffic
+```
+
+The reducer writes `reduced-plan.json` and `reduced-plan-summary.json`. It uses
+`artifact-index.json`, `failures.json`, `report.json`, or `--first-failure` to
+locate the first failing step, keeps setup and cleanup, preserves operation
+order through the failure, and removes later generated traffic operations. To
+run the reduced candidate:
+
+```json
+{
+  "execution": {
+    "trafficPlan": {
+      "replayFrom": ".artifacts/shared-test/rallar-memory-traffic/reduced-plan.json"
+    }
+  },
+  "steps": []
+}
+```
+
 Run deterministic traffic locally:
 
 ```bash
@@ -711,7 +1000,9 @@ deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
 ```
 
 The bundle contains `report.json`, `events.jsonl`, `failures.json`, and
-`metadata.json`. See `black-box-runner-artifacts.md` and
+`metadata.json`. It may also include `artifact-index.json`,
+`expanded-recipe.json`, `preflight-report.json`, `expanded-plan.json`, and
+`matrix-summary.json`. See `black-box-runner-artifacts.md` and
 `black-box-runner-recipe-matrix.md` for the artifact contract, matrix profiles,
 live gates, and CI command shape.
 

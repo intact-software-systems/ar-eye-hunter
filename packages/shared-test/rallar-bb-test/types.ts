@@ -86,6 +86,7 @@ export type RallarBlackBoxTestConfigureCommand =
 }>;
 
 export type RallarBlackBoxTestRecipe = Readonly<{
+    schemaVersion?: 1;
     recipeId: string;
     name?: string;
     description?: string;
@@ -106,6 +107,15 @@ export type RallarBlackBoxTestRecipeRunCommand =
     recipe?: RallarBlackBoxTestRecipe;
 }>;
 
+export type RallarBlackBoxTestLoopThresholds = Readonly<{
+    minAchievedRateHz?: number;
+    maxAverageStartDriftMs?: number;
+    maxStartDriftMs?: number;
+    maxJitterMs?: number;
+    minSendSuccessRatio?: number;
+    failOnBackpressure?: boolean;
+}>;
+
 export type RallarBlackBoxTestRecipeCancelCommand =
     & RallarBlackBoxTestCommandBase<'recipe.cancel'>
     & Readonly<{
@@ -122,6 +132,7 @@ export type RallarBlackBoxTestLoopCommand =
     delayMs?: number;
     continueOnFailure?: boolean;
     maxCommands?: number;
+    thresholds?: RallarBlackBoxTestLoopThresholds;
 }>;
 
 export type RallarBlackBoxTestParallelGroup = Readonly<{
@@ -304,6 +315,85 @@ export type RallarBlackBoxTestCompositeChildResult = Readonly<{
     result: RallarBlackBoxTestResult;
 }>;
 
+export type RallarBlackBoxTestLoopPacingIteration = Readonly<{
+    iteration: number;
+    scheduledAtEpochMs: number;
+    startedAtEpochMs: number;
+    endedAtEpochMs: number;
+    durationMs: number;
+    startDriftMs: number;
+    commandCount: number;
+    passed: number;
+    failed: number;
+    cancelled: boolean;
+}>;
+
+export type RallarBlackBoxTestLoopPacingSummary = Readonly<{
+    requestedIntervalMs: number;
+    requestedRateHz?: number;
+    plannedIterations: number;
+    completedIterations: number;
+    skippedIterations: number;
+    cancelledIterations: number;
+    startedAtEpochMs: number;
+    endedAtEpochMs: number;
+    elapsedMs: number;
+    targetElapsedMs: number;
+    achievedRateHz?: number;
+    averageIterationDurationMs?: number;
+    minStartDriftMs?: number;
+    maxStartDriftMs?: number;
+    averageStartDriftMs?: number;
+    maxJitterMs?: number;
+    averageJitterMs?: number;
+    lateIterationCount: number;
+    lateThresholdMs: number;
+    iterations: readonly RallarBlackBoxTestLoopPacingIteration[];
+}>;
+
+export type RallarBlackBoxTestSendObservation = Readonly<{
+    commandId: string;
+    kind: Extract<RallarBlackBoxTestCommandKind, 'rtc.send' | 'ws.send'>;
+    transport?: RallarBlackBoxTestTransport;
+    durationMs: number;
+    ok: boolean;
+    status?: string;
+    queued?: boolean;
+    enqueued?: boolean;
+    backpressured?: boolean;
+    droppedPayloadCount?: number;
+    replacedPayloadCount?: number;
+    errorCode?: string;
+}>;
+
+export type RallarBlackBoxTestLoopSendSummary = Readonly<{
+    sendCount: number;
+    succeeded: number;
+    failed: number;
+    successRatio?: number;
+    duration?: Readonly<{
+        minMs?: number;
+        maxMs?: number;
+        averageMs?: number;
+        totalMs: number;
+    }>;
+    queuedCount: number;
+    enqueuedCount: number;
+    backpressureCount: number;
+    droppedPayloadCount: number;
+    replacedPayloadCount: number;
+    perTransportFailureCounts: Readonly<Record<string, number>>;
+    observations: readonly RallarBlackBoxTestSendObservation[];
+}>;
+
+export type RallarBlackBoxTestLoopThresholdFailure = Readonly<{
+    name: keyof RallarBlackBoxTestLoopThresholds;
+    category: 'pacing' | 'delivery' | 'backpressure';
+    threshold: number | boolean;
+    actual?: number | boolean;
+    message: string;
+}>;
+
 export type RallarBlackBoxTestLoopResultValue = Readonly<{
     commandId: string;
     iterations: number;
@@ -311,6 +401,9 @@ export type RallarBlackBoxTestLoopResultValue = Readonly<{
     passed: number;
     failed: number;
     cancelled: boolean;
+    pacing?: RallarBlackBoxTestLoopPacingSummary;
+    sends?: RallarBlackBoxTestLoopSendSummary;
+    thresholdFailures?: readonly RallarBlackBoxTestLoopThresholdFailure[];
     results: readonly RallarBlackBoxTestCompositeChildResult[];
 }>;
 
@@ -408,6 +501,13 @@ export type RallarBlackBoxTestStatsSnapshot = Readonly<{
         transport?: RallarBlackBoxTestTransport;
         peerCount?: number;
         laneHealth?: unknown;
+    }>;
+    load?: Readonly<{
+        loopCount: number;
+        latestLoopCommandId?: string;
+        latestPacing?: Omit<RallarBlackBoxTestLoopPacingSummary, 'iterations'>;
+        latestSends?: Omit<RallarBlackBoxTestLoopSendSummary, 'observations'>;
+        thresholdFailures?: readonly RallarBlackBoxTestLoopThresholdFailure[];
     }>;
 }>;
 

@@ -304,6 +304,7 @@ h3 {
 .run-manager-command-editor button,
 .run-manager-artifact-actions button,
 .distributed-toolbar button,
+.distributed-ai-controls button,
 .distributed-action-grid button,
 .distributed-run-id-row button,
 .artifact-import-controls button,
@@ -340,6 +341,7 @@ h3 {
 .run-manager-command-editor button,
 .run-manager-artifact-actions button,
 .distributed-toolbar button,
+.distributed-ai-controls button,
 .distributed-action-grid button,
 .distributed-run-id-row button,
 .artifact-import-controls button,
@@ -2030,6 +2032,137 @@ h3 {
     background: #fff7e3;
     color: #6b4b0a;
     font-weight: 700;
+}
+
+.distributed-ai-authoring-panel {
+    margin: 0 14px 12px;
+}
+
+.distributed-ai-authoring-grid {
+    display: grid;
+    gap: 12px;
+    padding: 12px;
+}
+
+.distributed-ai-controls {
+    display: grid;
+    grid-template-columns: minmax(240px, 1fr) minmax(160px, 0.45fr) repeat(4, minmax(130px, auto));
+    gap: 8px;
+    align-items: end;
+}
+
+.distributed-ai-controls .field small {
+    min-height: 2.3em;
+    color: #65746d;
+    font-size: 0.74rem;
+}
+
+.distributed-ai-guidance {
+    display: grid;
+    grid-template-columns: minmax(128px, 0.28fr) minmax(0, 1fr) minmax(128px, 0.28fr) minmax(0, 1fr);
+    gap: 6px 10px;
+    padding: 10px;
+    border: 1px solid #dbe1d8;
+    border-radius: 6px;
+    background: #f8faf6;
+    color: #46524d;
+    font-size: 0.82rem;
+}
+
+.distributed-ai-guidance strong {
+    color: #1f2a25;
+}
+
+.distributed-ai-variable-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.distributed-ai-variable-grid div {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid #dbe1d8;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.distributed-ai-variable-grid strong,
+.distributed-ai-variable-grid span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.distributed-ai-variable-grid span {
+    color: #65746d;
+    font-size: 0.76rem;
+}
+
+.distributed-ai-preview,
+.distributed-ai-validation {
+    min-width: 0;
+    border: 1px solid #dbe1d8;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.distributed-ai-preview summary {
+    padding: 9px 10px;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.distributed-ai-preview pre,
+.distributed-ai-validation pre {
+    margin: 0;
+    max-height: 300px;
+    padding: 10px;
+    overflow: auto;
+    border-top: 1px solid #dbe1d8;
+    background: #f8faf6;
+    color: #1f2a25;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    font-size: 0.76rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+}
+
+.distributed-ai-draft textarea {
+    min-height: 260px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.distributed-ai-validation {
+    display: grid;
+    gap: 8px;
+    padding: 10px;
+    background: #f8faf6;
+}
+
+.distributed-ai-validation pre {
+    max-height: 220px;
+    border: 1px solid #dbe1d8;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.distributed-ai-preflight-list {
+    display: grid;
+    gap: 8px;
+}
+
+.distributed-ai-preflight-list details {
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid #dbe1d8;
+    border-radius: 6px;
+    background: #ffffff;
 }
 
 .distributed-layout {
@@ -3793,6 +3926,9 @@ dd {
     .run-manager-artifact-actions,
     .run-manager-artifact-summary,
     .distributed-toolbar,
+    .distributed-ai-controls,
+    .distributed-ai-guidance,
+    .distributed-ai-variable-grid,
     .distributed-summary-grid,
     .distributed-layout,
     .distributed-options-grid,
@@ -3836,6 +3972,9 @@ dd {
     .artifact-view-grid,
     .coverage-owner-grid,
     .distributed-toolbar,
+    .distributed-ai-controls,
+    .distributed-ai-guidance,
+    .distributed-ai-variable-grid,
     .distributed-summary-grid,
     .distributed-layout,
     .distributed-options-grid,
@@ -4169,6 +4308,9 @@ dd {
     .run-manager-artifact-actions,
     .run-manager-artifact-summary,
     .distributed-toolbar,
+    .distributed-ai-controls,
+    .distributed-ai-guidance,
+    .distributed-ai-variable-grid,
     .distributed-summary-grid,
     .distributed-layout,
     .distributed-filter-grid,

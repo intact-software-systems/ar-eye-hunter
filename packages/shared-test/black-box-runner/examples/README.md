@@ -10,12 +10,12 @@ examples.
 | Recipe | Category | Purpose |
 | --- | --- | --- |
 | `rallar-server-register-login.json` | Rallar Server integration | Register a runtime user if possible, tolerate already-existing users, login, logout, and verify invalid-password rejection. |
-| `rallar-server-auth-group-ws-smoke.json` | Rallar Server integration | Login, create or reuse `bb-group`, join it, connect group presence, open authenticated WS, send a self-addressed AL message, close WS, disconnect presence, and logout. |
+| `rallar-server-auth-group-ws-smoke.json` | Rallar Server integration | Login, derive redacted auth/WS values with safe transforms, add runner correlation headers to HTTP calls, create or reuse `bb-group`, join it, connect group presence, open authenticated WS, send a self-addressed AL message, close WS, disconnect presence, and logout. |
 | `rallar-server-negative-auth.json` | Rallar Server integration | Verify missing bearer token, missing `x-client-id`, invalid login, and unauthenticated WS-ticket rejection. |
 | `rallar-server-ws-rtc-payload-parity.json` | Rallar Server and browser RTC integration | Send the same payload through authenticated WS and browser-backed `messages.rtc`, then assert parity from the report outputs. |
 | `rtc-rallar-memory-delivery-semantics.json` | Generic runner semantics | Use deterministic `rallar-memory` peers to assert direct delivery, room broadcast delivery, delivery metadata, and payload parity between recipients. |
 | `rtc-rallar-memory-routing-failures.json` | Generic runner semantics | Intentionally records no-recipient, closed-target, and send-after-close failures with `failFast: false` so report diagnostics can be inspected. |
-| `rtc-rallar-memory-same-connection-soak.json` | Generic runner semantics | Keeps two deterministic `rallar-memory` RTC connections open, sends repeated bidirectional payloads, records soak metrics, and closes both connections once. |
+| `rtc-rallar-memory-same-connection-soak.json` | Generic runner semantics | Keeps two deterministic `rallar-memory` RTC connections open, sends repeated bidirectional payloads, records soak metrics, enforces post-run thresholds, and closes both connections once. |
 | `rtc-rallar-memory-seeded-traffic.json` | Generic runner semantics | Generates weighted seeded RTC traffic, records `expanded-plan.json`, and can be replayed exactly from the artifact. |
 | `rtc-rallar-memory-inline-loop-pacing.json` | Generic runner semantics | Sends deterministic RTC frame traffic through an inline `type: "loop"` at a configured realtime rate. |
 | `rtc-rallar-memory-parallel-groups.json` | Generic runner semantics | Runs bounded parallel RTC groups for concurrent direct delivery, broadcast delivery, close, and reconnect with deterministic reporting. |
@@ -48,6 +48,20 @@ classification, and copyable diagnostics, not as green smoke tests.
 The runner should stay provider-neutral. If a recipe needs Rallar-specific
 configuration, keep it under provider-owned fields such as `rallar`, `browser`,
 `control`, or `signaling`.
+
+Use safe transforms for derived generic values such as auth headers, URL-encoded
+tickets, trace IDs, JSON conversion, and fallback values. Transforms are
+declarative runner plumbing, not Rallar-specific commands.
+
+Use post-run assertions for aggregate pass/fail gates such as send success
+ratio, p95 latency, diagnostic warning/error counts, and artifact truncation
+status. They are evaluated after the final report metrics are assembled and are
+written to both `report.json` and `events.jsonl`.
+
+Use `execution.correlation` when a recipe should be searchable in server logs.
+The runner always records `runnerRunId` and `runnerStepId` in artifacts.
+`injectHeaders` adds those IDs to HTTP requests, and `injectPayloads` adds them
+to object-shaped WS/RTC send payloads under `blackBoxRunner`.
 
 Scoped Rallar RTC recipes can pass `applicationId`, `workspaceId`, `scope`,
 `roomRef`, and `minSnapshotVersion` on connection config or send payloads. The
@@ -100,9 +114,21 @@ deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
 
 `--explain` and `--validate` emit machine-readable JSON and stop before any
 HTTP, WS, or RTC call. The output includes expanded operation counts, live
-requirements, env and connection gaps, traffic-plan expansion metadata, output
-wiring, redaction sources, and structured issues. Add `--strict` to fail known
-step types with missing required authoring fields.
+requirements, env and connection gaps, static include/fragments metadata,
+traffic-plan expansion metadata, output wiring, redaction sources, and
+structured issues. Add `--strict` to fail known step types with missing
+required authoring fields.
+
+Run live-environment preflight before launching a live matrix:
+
+```bash
+npm run test:shared-black-box:matrix:live:preflight
+```
+
+This writes `preflight-report.json` per selected live entry and checks the
+Rallar API, `/api/config`, configured credentials, group permissions, WS ticket
+and upgrade, ICE config, optional control server, and Playwright before browser
+recipes start.
 
 Run the browser-backed live validation wrapper when a Rallar environment and
 test credentials are available:
@@ -137,6 +163,12 @@ deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
   -c packages/shared-test/black-box-runner/examples/rtc-rallar-memory-delivery-semantics.json \
   --artifact-dir=.artifacts/shared-test/rallar-memory-delivery
 ```
+
+Artifact bundles include `artifact-index.json` for large-run browsing and
+`expanded-recipe.json` for replaying recipes after static includes/fragments
+have been resolved. Use `execution.artifacts.maxEvents` or
+`execution.artifacts.maxEventsByKind` to compact repeated success events while
+preserving failures and RTC diagnostics.
 
 Root-level convenience commands:
 
@@ -192,8 +224,9 @@ npm run test:shared-black-box:memory:soak
 
 This keeps Alice and Bob connected through the `rallar-memory` provider, sends
 five bidirectional RTC loop iterations over the same connections, writes a
-bounded artifact bundle under `.artifacts/shared-test/rallar-memory-soak`, and
-reports `summary.soak` plus `metrics.soak`.
+bounded artifact bundle plus `artifact-index.json` under
+`.artifacts/shared-test/rallar-memory-soak`, and reports `summary.soak` plus
+`metrics.soak`.
 
 Run deterministic seeded traffic and parallel group examples locally:
 
@@ -206,6 +239,17 @@ The traffic example writes `expanded-plan.json` under
 `.artifacts/shared-test/rallar-memory-traffic`. Reuse that file through
 `execution.trafficPlan.replayFrom` to replay the exact generated operation
 sequence.
+
+After a failing traffic run, create a smaller replay candidate without rerunning
+the scenario:
+
+```bash
+deno run -A packages/shared-test/black-box-runner/traffic-plan-reducer.ts \
+  --artifact-dir=.artifacts/shared-test/rallar-memory-traffic
+```
+
+This writes `reduced-plan.json` and `reduced-plan-summary.json`; replay the
+candidate with `execution.trafficPlan.replayFrom`.
 
 The inline loop pacing example is also deterministic and runs without live
 services:

@@ -685,7 +685,7 @@ Verification:
 
 ## Iteration 54: Schema Authoring Prompt Templates In The SPA
 
-Status: planned.
+Status: completed on 2026-06-01.
 
 Goal: Make it easier for humans or AI assistants to generate valid distributed recipes from the JSON Schema and existing
 capability metadata.
@@ -721,9 +721,28 @@ Suggested verification:
 - Add Playwright coverage for copying a prompt template and inserting a generated/example recipe into the authoring
   surface.
 
+Results:
+
+- Added a reusable distributed recipe authoring prompt module with six copyable templates: live group ACK, WS
+  send/receive, RTC realtime position stream, looped RTC load, parallel WS/RTC smoke, and wait/assert evidence.
+- Added copyable schema context for browser-agent recipes and distributed-run manifests, including the exact shared
+  schema constant names, top-level schema summaries, skeleton JSON, and relevant command capability metadata.
+- Added a `Generate With AI` panel to the Distributed Recipes tab. It renders the selected prompt, redacted Global
+  Context/control variables, schema context, no-provider guidance, and copy actions without coupling the SPA to an AI
+  vendor.
+- Added a generated-JSON paste surface that validates either a distributed manifest or browser-agent recipe with the
+  existing schema authoring helpers, derives distributed preflight for valid inline recipes, and renders copyable
+  validation/preflight feedback for iterative AI prompt repair.
+
+Verification:
+
+- `npx vitest run packages/tests/rallar-black-box/distributed-recipe-authoring-prompts.test.ts packages/tests/rallar-black-box/schema-authoring.test.ts` passed.
+- `npm --workspace rallar-black-box run typecheck` passed.
+- `npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/tabbed-navigation.spec.ts -g "shows distributed recipe composite preflight before staging"` passed.
+
 ## Iteration 55: Live Distributed Warning Regression Coverage
 
-Status: planned.
+Status: completed on 2026-06-01.
 
 Goal: Keep the live distributed workflow from regressing as composite recipes and diagnostics become richer.
 
@@ -760,3 +779,21 @@ Suggested verification:
 - `npm run test:e2e:rallar-black-box:full-stack:real:distributed` passes with the expanded live assertions when the
   required local or production Rallar services are configured.
 - The same command remains skip-safe when the required environment variables or services are not present.
+
+Completed notes:
+
+- Added a shared `deriveDistributedRunWarningRegressionReport(...)` helper that checks visible monitor evidence,
+  distributed artifact evidence, warning diagnostic type IDs, composite drilldown recipe IDs, and configured
+  high-severity diagnostic failures.
+- Distributed run event rows now retain a compact `payloadSummary`, so live receive payload IDs and topic evidence can
+  be visible in the SPA monitor instead of only in raw artifacts.
+- Expanded the live distributed Playwright flow to:
+  - preserve distributed-run IDs in WS, RTC, and realtime payloads so asynchronous receive events can be linked back to
+    the selected distributed run
+  - attach console warning/error artifacts
+  - run a one-second `rtc-realtime` composite recipe and verify frame rows, loop summary, received realtime payloads,
+    runtime warning diagnostics, and SPA monitor visibility
+  - fail the regression report only on configured high-severity diagnostics while retaining known harmless WS/RTC
+    warnings as evidence
+- Added unit coverage for warning regression reports, including the distinction between warning diagnostics and error
+  diagnostics.

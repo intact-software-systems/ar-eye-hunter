@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "kind": "black-box-runner.artifact-index",
+  "generatedAtEpochMs": 1779952000000,
+  "summary": {
+    "total": 2,
+    "success": 1,
+    "failure": 1
+  },
+  "counts": {
+    "total": {
+      "total": 7,
+      "byKind": {
+        "step-result": 2,
+        "rtc-diagnostic": 1,
+        "rtc-message": 1,
+        "rtc-close": 3
+      },
+      "byTransport": {
+        "RTC": 2,
+        "unknown": 5
+      },
+      "byStatus": {
+        "SUCCESS": 1,
+        "unknown": 5,
+        "FAILURE": 1
+      }
+    },
+    "emitted": {
+      "total": 4
+    },
+    "omitted": {
+      "total": 3,
+      "byKind": {
+        "rtc-close": 3
+      }
+    }
+  },
+  "firstFailure": {
+    "sequence": 4,
+    "kind": "step-result",
+    "name": "aliceWaits",
+    "status": "FAILURE",
+    "transport": "RTC",
+    "action": "wait",
+    "connection": "aliceRtc"
+  },
+  "stepResults": [
+    {
+      "sequence": 1,
+      "kind": "step-result",
+      "name": "connectAlice",
+      "status": "SUCCESS",
+      "transport": "RTC",
+      "action": "connect",
+      "connection": "aliceRtc",
+      "emitted": true
+    },
+    {
+      "sequence": 4,
+      "kind": "step-result",
+      "name": "aliceWaits",
+      "status": "FAILURE",
+      "transport": "RTC",
+      "action": "wait",
+      "connection": "aliceRtc",
+      "emitted": true
+    }
+  ],
+  "perRun": [
+    {
+      "runIndex": "unknown",
+      "total": 2,
+      "success": 1,
+      "failure": 1,
+      "emitted": 2,
+      "omitted": 0
+    }
+  ],
+  "perConnection": [
+    {
+      "connection": "aliceRtc",
+      "total": 7,
+      "emitted": 4,
+      "omitted": 3,
+      "byKind": {
+        "step-result": 2,
+        "rtc-diagnostic": 1,
+        "rtc-message": 1,
+        "rtc-close": 3
+      },
+      "byTransport": {
+        "RTC": 2,
+        "unknown": 5
+      },
+      "byStatus": {
+        "SUCCESS": 1,
+        "unknown": 5,
+        "FAILURE": 1
+      }
+    }
+  ],
+  "compaction": {
+    "compacted": true,
+    "repeatedSuccessSummaries": []
+  },
+  "truncation": {
+    "truncated": true,
+    "totalEvents": 7,
+    "emittedEvents": 4,
+    "omittedEvents": 3,
+    "omittedByKind": {
+      "rtc-close": 3
+    },
+    "maxEvents": 4,
+    "maxEventsByKind": {},
+    "preservedFailureEvents": 1,
+    "preservedDiagnosticEvents": 1
+  }
+}

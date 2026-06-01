@@ -28,6 +28,11 @@ Normalized diagnostic payloads include:
 Producers may keep additional top-level fields for compatibility, but UI and
 automation should prefer the normalized fields above.
 
+RTC send diagnostics may include a `sendObservation` field when the adapter can
+measure it. The observation can contain send duration, queued/enqueued status,
+backpressure status, dropped/replaced payload counts, and an error code. Loop
+load summaries aggregate these observations into `loop.value.sends`.
+
 ## Matching
 
 Use ordinary `wait` commands:

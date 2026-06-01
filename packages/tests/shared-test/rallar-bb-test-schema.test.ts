@@ -9,10 +9,12 @@ import {
     RALLAR_BLACK_BOX_COMMAND_CAPABILITIES,
     RALLAR_BLACK_BOX_CONTROL_COMMAND_ENVELOPE_SCHEMA,
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
+    RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION,
     RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
     RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
     formatJsonSchemaValidationErrors,
     validateJsonSchema,
+    validateRallarBlackBoxRecipeCompatibility,
 } from '../../shared-test/rallar-bb-test/schema.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
@@ -31,6 +33,15 @@ import { RUN_MANAGER_COMMAND_PRESETS } from '../../../apps/rallar-black-box/src/
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const appExamplesRoot = path.join(repoRoot, 'apps/rallar-black-box/examples');
 const runnerExamplesRoot = path.join(repoRoot, 'packages/shared-test/black-box-runner/examples');
+const rallarBbTestRoot = path.join(repoRoot, 'packages/shared-test/rallar-bb-test');
+const goldenCompatibilityCorpusPath = path.join(
+    rallarBbTestRoot,
+    'fixtures/schema/v1/golden-compatibility-corpus.json',
+);
+const schemaCompatibilityGuidePath = path.join(
+    rallarBbTestRoot,
+    'docs/schema-compatibility-guide.md',
+);
 
 function readJsonFile(filePath: string): unknown {
     return JSON.parse(readFileSync(filePath, 'utf8'));
@@ -39,6 +50,74 @@ function readJsonFile(filePath: string): unknown {
 function expectValid(schema: Parameters<typeof validateJsonSchema>[0], value: unknown): void {
     const result = validateJsonSchema(schema, value);
     expect(result.ok, result.ok ? undefined : formatJsonSchemaValidationErrors(result.errors)).toBe(true);
+}
+
+type GoldenCompatibilityCorpus = Readonly<{
+    schemaVersion: 1;
+    validRecipes: readonly RallarBlackBoxTestRecipe[];
+    validDistributedManifests: readonly unknown[];
+    invalidRecipes: readonly Readonly<{
+        caseId: string;
+        value: unknown;
+        expectedErrors: readonly string[];
+    }>[];
+    invalidDistributedManifests: readonly Readonly<{
+        caseId: string;
+        value: unknown;
+        expectedErrors: readonly string[];
+    }>[];
+}>;
+
+function readGoldenCompatibilityCorpus(): GoldenCompatibilityCorpus {
+    return readJsonFile(goldenCompatibilityCorpusPath) as GoldenCompatibilityCorpus;
+}
+
+function commandKindsInCommand(command: RallarBlackBoxTestRecipe['commands'][number]): readonly string[] {
+    if (command.kind === 'loop') {
+        return [command.kind, ...command.commands.flatMap(commandKindsInCommand)];
+    }
+    if (command.kind === 'parallel') {
+        return [
+            command.kind,
+            ...command.groups.flatMap(group => group.commands.flatMap(commandKindsInCommand)),
+        ];
+    }
+    if ((command.kind === 'recipe.load' || command.kind === 'recipe.run') && command.recipe) {
+        return [
+            command.kind,
+            ...command.recipe.commands.flatMap(commandKindsInCommand),
+        ];
+    }
+    return [command.kind];
+}
+
+function commandKindsInRecipe(recipe: RallarBlackBoxTestRecipe): readonly string[] {
+    return recipe.commands.flatMap(commandKindsInCommand);
+}
+
+function inlineRecipesInManifest(manifest: unknown): readonly RallarBlackBoxTestRecipe[] {
+    if (!manifest || typeof manifest !== 'object' || !('recipes' in manifest)) {
+        return [];
+    }
+
+    const manifestRecipes = (manifest as { recipes?: unknown }).recipes;
+    if (!Array.isArray(manifestRecipes)) {
+        return [];
+    }
+
+    return manifestRecipes.flatMap(entry => {
+        if (!entry || typeof entry !== 'object' || !('recipe' in entry)) {
+            return [];
+        }
+
+        const recipe = (entry as { recipe?: unknown }).recipe;
+        return recipe ? [recipe as RallarBlackBoxTestRecipe] : [];
+    });
+}
+
+function jsonCodeBlocks(markdown: string): readonly unknown[] {
+    return [...markdown.matchAll(/```json\n([\s\S]*?)\n```/g)]
+        .map(match => JSON.parse(match[1]));
 }
 
 describe('rallar-bb-test capability and schema contract', () => {
@@ -57,6 +136,7 @@ describe('rallar-bb-test capability and schema contract', () => {
 
     it('validates recipe fixtures, examples, flow exports, manual snippets, and run-manager presets', () => {
         const capabilityRecipe: RallarBlackBoxTestRecipe = {
+            schemaVersion: RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION,
             recipeId: 'all-capability-examples',
             commands: RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map(capability => capability.example),
         };
@@ -88,8 +168,79 @@ describe('rallar-bb-test capability and schema contract', () => {
         }
     });
 
+    it('keeps the v1 golden compatibility corpus stable', () => {
+        const corpus = readGoldenCompatibilityCorpus();
+        const inlineRecipes = corpus.validDistributedManifests.flatMap(inlineRecipesInManifest);
+
+        expect(corpus.schemaVersion).toBe(1);
+        const allRecipeCommandKinds = new Set(
+            [...corpus.validRecipes, ...inlineRecipes].flatMap(commandKindsInRecipe),
+        );
+        expect([...allRecipeCommandKinds].sort()).toEqual([...RALLAR_BLACK_BOX_TEST_COMMAND_KINDS].sort());
+
+        for (const recipe of [...corpus.validRecipes, ...inlineRecipes]) {
+            expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe);
+            const compatibility = validateRallarBlackBoxRecipeCompatibility(recipe);
+            expect(compatibility.ok, compatibility.ok ? undefined : formatJsonSchemaValidationErrors(compatibility.errors)).toBe(true);
+            if (recipe.schemaVersion === undefined) {
+                expect(compatibility.warnings.map(warning => warning.path)).toContain('$.schemaVersion');
+            } else {
+                expect(compatibility.warnings).toEqual([]);
+                expect(compatibility.schemaVersion).toBe(RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION);
+            }
+        }
+
+        for (const manifest of corpus.validDistributedManifests) {
+            expectValid(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, manifest);
+        }
+
+        for (const invalid of corpus.invalidRecipes) {
+            const result = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, invalid.value);
+            expect(result.ok, invalid.caseId).toBe(false);
+            if (!result.ok) {
+                const text = formatJsonSchemaValidationErrors(result.errors);
+                invalid.expectedErrors.forEach(expected => {
+                    expect(text, invalid.caseId).toContain(expected);
+                });
+            }
+        }
+
+        for (const invalid of corpus.invalidDistributedManifests) {
+            const result = validateJsonSchema(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, invalid.value);
+            expect(result.ok, invalid.caseId).toBe(false);
+            if (!result.ok) {
+                const text = formatJsonSchemaValidationErrors(result.errors);
+                invalid.expectedErrors.forEach(expected => {
+                    expect(text, invalid.caseId).toContain(expected);
+                });
+            }
+        }
+    });
+
+    it('keeps schema compatibility guide JSON examples validating', () => {
+        const blocks = jsonCodeBlocks(readFileSync(schemaCompatibilityGuidePath, 'utf8'));
+        expect(blocks.length).toBeGreaterThan(0);
+
+        for (const block of blocks) {
+            if (block && typeof block === 'object' && 'distributedRunId' in block) {
+                expectValid(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, block);
+                for (const recipe of inlineRecipesInManifest(block)) {
+                    const compatibility = validateRallarBlackBoxRecipeCompatibility(recipe);
+                    expect(compatibility.ok, compatibility.ok ? undefined : formatJsonSchemaValidationErrors(compatibility.errors)).toBe(true);
+                    expect(compatibility.warnings).toEqual([]);
+                }
+            } else {
+                expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, block);
+                const compatibility = validateRallarBlackBoxRecipeCompatibility(block);
+                expect(compatibility.ok, compatibility.ok ? undefined : formatJsonSchemaValidationErrors(compatibility.errors)).toBe(true);
+                expect(compatibility.warnings).toEqual([]);
+            }
+        }
+    });
+
     it('validates composite loop, parallel, wait, and assert command contracts recursively', () => {
         const compositeRecipe: RallarBlackBoxTestRecipe = {
+            schemaVersion: RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION,
             recipeId: 'composite-contract',
             commands: [
                 {
@@ -97,6 +248,14 @@ describe('rallar-bb-test capability and schema contract', () => {
                     commandId: 'loop-health',
                     count: 2,
                     intervalMs: 10,
+                    thresholds: {
+                        minAchievedRateHz: 20,
+                        maxAverageStartDriftMs: 25,
+                        maxStartDriftMs: 50,
+                        maxJitterMs: 30,
+                        minSendSuccessRatio: 0.95,
+                        failOnBackpressure: true,
+                    },
                     commands: [
                         {
                             kind: 'health',
@@ -172,6 +331,22 @@ describe('rallar-bb-test capability and schema contract', () => {
         expect(invalidConcurrency.ok).toBe(false);
         if (!invalidConcurrency.ok) {
             expect(formatJsonSchemaValidationErrors(invalidConcurrency.errors)).toContain('Expected number <=');
+        }
+
+        const invalidLoopThreshold = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+            kind: 'loop',
+            commandId: 'loop-invalid-threshold',
+            commands: [{ kind: 'health' }],
+            thresholds: {
+                minSendSuccessRatio: 1.5,
+                unknownThreshold: true,
+            },
+        });
+        expect(invalidLoopThreshold.ok).toBe(false);
+        if (!invalidLoopThreshold.ok) {
+            const text = formatJsonSchemaValidationErrors(invalidLoopThreshold.errors);
+            expect(text).toContain('Expected number <=');
+            expect(text).toContain('Unexpected property');
         }
 
         const invalidWait = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {

@@ -34,6 +34,16 @@ type Redaction = {
     value: string
 }
 
+type RunnerCorrelationConfig = {
+    runnerRunId: string
+    enabled: boolean
+    injectHeaders: boolean
+    injectPayloads: boolean
+    runIdHeader: string
+    stepIdHeader: string
+    payloadField: string
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -116,6 +126,92 @@ function normalizeRedactions(redactions: unknown): Redaction[] {
     }
 
     return [];
+}
+
+function randomUuid(): string {
+    const cryptoApi = globalThis.crypto as Crypto | undefined;
+    if (cryptoApi?.randomUUID) {
+        return cryptoApi.randomUUID();
+    }
+
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, character => {
+        const random = Math.floor(Math.random() * 16);
+        const value = character === 'x' ? random : (random & 0x3) | 0x8;
+        return value.toString(16);
+    });
+}
+
+function stringOption(...values: unknown[]): string | undefined {
+    for (const value of values) {
+        if (typeof value === 'string' && value.length > 0) {
+            return value;
+        }
+    }
+
+    return undefined;
+}
+
+function booleanOption(...values: unknown[]): boolean {
+    return values.some(value => value === true);
+}
+
+function toRunnerCorrelationConfig(options: any = {}): RunnerCorrelationConfig {
+    const rawCorrelation = isRecord(options.correlation)
+        ? options.correlation
+        : {};
+    const enabled = options.correlation !== false && rawCorrelation.enabled !== false;
+
+    return {
+        runnerRunId: stringOption(
+            rawCorrelation.runnerRunId,
+            rawCorrelation.runId,
+            options.runnerRunId,
+            options.runId,
+        ) || 'bb-run-' + randomUuid(),
+        enabled,
+        injectHeaders: enabled && booleanOption(
+            rawCorrelation.injectHeaders,
+            rawCorrelation.headerInjection,
+            rawCorrelation.headers,
+        ),
+        injectPayloads: enabled && booleanOption(
+            rawCorrelation.injectPayloads,
+            rawCorrelation.injectPayload,
+            rawCorrelation.payloadInjection,
+            rawCorrelation.payloads,
+        ),
+        runIdHeader: stringOption(
+            rawCorrelation.runIdHeader,
+            rawCorrelation.runnerRunIdHeader,
+            rawCorrelation.headers && isRecord(rawCorrelation.headers) ? rawCorrelation.headers.runId : undefined,
+            rawCorrelation.headers && isRecord(rawCorrelation.headers) ? rawCorrelation.headers.runnerRunId : undefined,
+        ) || 'x-rallar-black-box-run-id',
+        stepIdHeader: stringOption(
+            rawCorrelation.stepIdHeader,
+            rawCorrelation.runnerStepIdHeader,
+            rawCorrelation.headers && isRecord(rawCorrelation.headers) ? rawCorrelation.headers.stepId : undefined,
+            rawCorrelation.headers && isRecord(rawCorrelation.headers) ? rawCorrelation.headers.runnerStepId : undefined,
+        ) || 'x-rallar-black-box-step-id',
+        payloadField: stringOption(
+            rawCorrelation.payloadField,
+            rawCorrelation.payloadKey,
+            rawCorrelation.field,
+        ) || 'blackBoxRunner',
+    };
+}
+
+function toPublicCorrelationConfig(config: RunnerCorrelationConfig): any {
+    return {
+        runnerRunId: config.runnerRunId,
+        enabled: config.enabled,
+        injection: {
+            headers: config.injectHeaders,
+            payloads: config.injectPayloads,
+            runIdHeader: config.runIdHeader,
+            stepIdHeader: config.stepIdHeader,
+            payloadField: config.payloadField,
+        },
+    };
 }
 
 export function resolveBlackBoxVariables(
@@ -213,6 +309,7 @@ function createScenarioContext(options: any = {}): any {
         options.environment || defaultEnvironment(),
         options.secretVariables || options.secrets || [],
     );
+    const correlation = toRunnerCorrelationConfig(options);
 
     return {
         variables: resolvedVariables.variables,
@@ -233,6 +330,7 @@ function createScenarioContext(options: any = {}): any {
         },
         options,
         dryRun: options?.dryRun === true,
+        correlation,
         redactions: [
             ...resolvedVariables.redactions,
             ...normalizeRedactions(options.redactions),
@@ -249,6 +347,8 @@ function toResolverRoot(context: any): any {
         results: context.results,
         resultsList: context.resultsList,
         resultsByName: context.resultsByName,
+        runnerRunId: context.correlation?.runnerRunId,
+        correlation: toPublicCorrelationConfig(context.correlation),
     };
 }
 
@@ -323,8 +423,25 @@ function extractOutputPath(result: any, outputPath: unknown): any {
 type OutputExtraction = {
     name: string
     path?: unknown
+    transform?: unknown
     secret?: boolean
     redactAs?: string
+}
+
+type TransformEvaluationInput = {
+    context: any
+    result?: any
+    operatorPath?: string
+}
+
+class TransformEvaluationError extends Error {
+    details: any
+
+    constructor(message: string, details: any = {}) {
+        super(message)
+        this.name = 'TransformEvaluationError'
+        this.details = details
+    }
 }
 
 function outputExtractions(result: any): OutputExtraction[] {
@@ -334,6 +451,9 @@ function outputExtractions(result: any): OutputExtraction[] {
         extractions.push({
             name: result.output,
             path: result.outputPath,
+            transform: result.transform,
+            secret: result.secret === true || result.redact === true,
+            redactAs: typeof result.redactAs === 'string' ? result.redactAs : undefined,
         });
     }
 
@@ -351,6 +471,7 @@ function outputExtractions(result: any): OutputExtraction[] {
                 extractions.push({
                     name,
                     path: spec.path ?? spec.from ?? spec.outputPath,
+                    transform: spec.transform ?? directTransformSpec(spec),
                     secret: spec.secret === true || spec.redact === true,
                     redactAs: typeof spec.redactAs === 'string' ? spec.redactAs : undefined,
                 });
@@ -365,6 +486,345 @@ function outputExtractions(result: any): OutputExtraction[] {
     }
 
     return extractions;
+}
+
+function directTransformSpec(spec: Record<string, unknown>): unknown {
+    return [
+        'path',
+        'from',
+        'template',
+        'concat',
+        'coalesce',
+        'jsonStringify',
+        'jsonParse',
+        'urlEncode',
+        'number',
+        'string',
+        'boolean',
+        'uuid',
+        'timestamp',
+        'op',
+        'operator',
+    ].some(key => spec[key] !== undefined)
+        ? spec
+        : undefined;
+}
+
+function isTransformOnlySpec(spec: Record<string, unknown>): boolean {
+    const allowedKeys = new Set([
+        'path',
+        'from',
+        'outputPath',
+        'template',
+        'concat',
+        'coalesce',
+        'jsonStringify',
+        'jsonParse',
+        'urlEncode',
+        'number',
+        'string',
+        'boolean',
+        'uuid',
+        'timestamp',
+        'op',
+        'operator',
+        'type',
+        'value',
+        'input',
+        'values',
+        'format',
+        'secret',
+        'redact',
+        'redactAs',
+        'transform',
+    ]);
+    const keys = Object.keys(spec);
+    return keys.length > 0 &&
+        directTransformSpec(spec) !== undefined &&
+        keys.every(key => allowedKeys.has(key));
+}
+
+function transformError(message: string, details: any = {}): never {
+    throw new TransformEvaluationError(message, details);
+}
+
+function transformResolverRoot(context: any, result?: any): any {
+    return {
+        ...toResolverRoot(context),
+        result,
+        actual: result?.actual,
+        body: result?.actual?.body,
+    };
+}
+
+function resolveTemplateWithRoot(value: string, root: any): any {
+    const exactPlaceholderMatch = value.match(/^\{([^{}]+)}$/);
+
+    if (exactPlaceholderMatch) {
+        return resolvePath(exactPlaceholderMatch[1], root);
+    }
+
+    return value.replaceAll(/\{([^{}]+)}/g, (_match, path) => {
+        return stringifyResolvedValue(resolvePath(path, root));
+    });
+}
+
+function resolveTransformPath(path: unknown, input: TransformEvaluationInput): any {
+    if (typeof path !== 'string' || path.trim().length <= 0) {
+        return transformError('Transform path must be a non-empty string.', {
+            operator: 'path',
+            path,
+        });
+    }
+
+    const roots = [
+        input.result,
+        input.result?.actual,
+        input.result?.actual?.body,
+        transformResolverRoot(input.context, input.result),
+    ];
+
+    for (const root of roots) {
+        const resolved = tryResolvePath(path, root);
+        if (resolved.found) {
+            return resolved.value;
+        }
+    }
+
+    return transformError('Cannot resolve transform path {' + path + '}', {
+        operator: 'path',
+        path,
+    });
+}
+
+function transformOperand(spec: Record<string, unknown>, input: TransformEvaluationInput): unknown {
+    if (spec.value !== undefined) {
+        return evaluateTransformValue(spec.value, input);
+    }
+    if (spec.input !== undefined) {
+        return evaluateTransformValue(spec.input, input);
+    }
+    if (spec.from !== undefined) {
+        return resolveTransformPath(spec.from, input);
+    }
+    if (spec.path !== undefined) {
+        return resolveTransformPath(spec.path, input);
+    }
+
+    return undefined;
+}
+
+function isNonEmptyTransformValue(value: unknown): boolean {
+    if (value === undefined || value === null) {
+        return false;
+    }
+    if (typeof value === 'string') {
+        return value.length > 0;
+    }
+    if (Array.isArray(value)) {
+        return value.length > 0;
+    }
+    if (isRecord(value)) {
+        return Object.keys(value).length > 0;
+    }
+    return true;
+}
+
+function toTransformNumber(value: unknown, details: any): number {
+    const numberValue = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(numberValue)) {
+        return transformError('Transform value cannot be converted to number.', {
+            ...details,
+            input: value,
+        });
+    }
+    return numberValue;
+}
+
+function toTransformBoolean(value: unknown, details: any): boolean {
+    if (typeof value === 'boolean') {
+        return value;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value !== 0;
+    }
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) {
+            return true;
+        }
+        if (['false', '0', 'no', 'n', 'off', ''].includes(normalized)) {
+            return false;
+        }
+    }
+
+    return transformError('Transform value cannot be converted to boolean.', {
+        ...details,
+        input: value,
+    });
+}
+
+function evaluateTransformValue(value: unknown, input: TransformEvaluationInput): any {
+    if (isRecord(value) && directTransformSpec(value) !== undefined) {
+        return evaluateTransformSpec(value, input);
+    }
+    if (typeof value === 'string') {
+        return resolveTemplateWithRoot(value, transformResolverRoot(input.context, input.result));
+    }
+    if (Array.isArray(value)) {
+        return value.map(item => evaluateTransformValue(item, input));
+    }
+    if (isRecord(value)) {
+        return Object.fromEntries(
+            Object.entries(value)
+                .map(([key, nested]) => [key, evaluateTransformValue(nested, input)]),
+        );
+    }
+    return value;
+}
+
+function evaluateTransformSpec(specInput: unknown, input: TransformEvaluationInput): any {
+    const spec = isRecord(specInput)
+        ? asTransformSpec(specInput)
+        : {
+            value: specInput,
+        };
+    const operator = String(spec.op ?? spec.operator ?? spec.type ?? firstTransformOperator(spec) ?? 'value');
+    const details = {
+        operator,
+        path: input.operatorPath,
+    };
+
+    if (operator === 'path' || operator === 'from' || operator === 'outputPath') {
+        return resolveTransformPath(spec.path ?? spec.from ?? spec.outputPath, input);
+    }
+
+    if (operator === 'template') {
+        if (typeof spec.template !== 'string') {
+            return transformError('Template transform requires a string template.', details);
+        }
+        return resolveTemplateWithRoot(spec.template, transformResolverRoot(input.context, input.result));
+    }
+
+    if (operator === 'concat') {
+        const parts = Array.isArray(spec.concat)
+            ? spec.concat
+            : Array.isArray(spec.values)
+                ? spec.values
+                : [];
+        if (parts.length <= 0) {
+            return transformError('Concat transform requires a non-empty values array.', details);
+        }
+        return parts
+            .map(part => stringifyResolvedValue(evaluateTransformValue(part, input)))
+            .join('');
+    }
+
+    if (operator === 'coalesce') {
+        const values = Array.isArray(spec.coalesce)
+            ? spec.coalesce
+            : Array.isArray(spec.values)
+                ? spec.values
+                : [];
+        if (values.length <= 0) {
+            return transformError('Coalesce transform requires a non-empty values array.', details);
+        }
+        for (const value of values) {
+            try {
+                const resolved = evaluateTransformValue(value, input);
+                if (isNonEmptyTransformValue(resolved)) {
+                    return resolved;
+                }
+            } catch (_error) {
+                // Missing optional values are ignored by coalesce.
+            }
+        }
+        return transformError('Coalesce transform did not find a non-empty value.', details);
+    }
+
+    if (operator === 'jsonStringify') {
+        return JSON.stringify(evaluateTransformValue(spec.jsonStringify ?? transformOperand(spec, input), input));
+    }
+
+    if (operator === 'jsonParse') {
+        const value = evaluateTransformValue(spec.jsonParse ?? transformOperand(spec, input), input);
+        if (typeof value !== 'string') {
+            return transformError('jsonParse transform requires a string input.', {
+                ...details,
+                input: value,
+            });
+        }
+        try {
+            return JSON.parse(value);
+        } catch (error) {
+            return transformError('jsonParse transform received invalid JSON.', {
+                ...details,
+                input: value,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
+
+    if (operator === 'urlEncode') {
+        const value = evaluateTransformValue(spec.urlEncode ?? transformOperand(spec, input), input);
+        return encodeURIComponent(stringifyResolvedValue(value));
+    }
+
+    if (operator === 'number') {
+        return toTransformNumber(
+            evaluateTransformValue(spec.number ?? transformOperand(spec, input), input),
+            details,
+        );
+    }
+
+    if (operator === 'string') {
+        return stringifyResolvedValue(evaluateTransformValue(spec.string ?? transformOperand(spec, input), input));
+    }
+
+    if (operator === 'boolean') {
+        return toTransformBoolean(
+            evaluateTransformValue(spec.boolean ?? transformOperand(spec, input), input),
+            details,
+        );
+    }
+
+    if (operator === 'uuid') {
+        return randomUuid();
+    }
+
+    if (operator === 'timestamp') {
+        return spec.format === 'iso' ? new Date().toISOString() : Date.now();
+    }
+
+    if (spec.value !== undefined || spec.input !== undefined) {
+        return transformOperand(spec, input);
+    }
+
+    return transformError('Unsupported transform operator ' + operator + '.', details);
+}
+
+function asTransformSpec(spec: Record<string, unknown>): Record<string, unknown> {
+    return isRecord(spec.transform)
+        ? spec.transform
+        : spec;
+}
+
+function firstTransformOperator(spec: Record<string, unknown>): string | undefined {
+    return [
+        'path',
+        'from',
+        'template',
+        'concat',
+        'coalesce',
+        'jsonStringify',
+        'jsonParse',
+        'urlEncode',
+        'number',
+        'string',
+        'boolean',
+        'uuid',
+        'timestamp',
+    ].find(key => spec[key] !== undefined);
 }
 
 function withExtractedOutputs(result: any, context: any): any {
@@ -382,7 +842,13 @@ function withExtractedOutputs(result: any, context: any): any {
 
     extractions.forEach(extraction => {
         try {
-            const value = extractOutputPath(result, extraction.path);
+            const value = extraction.transform !== undefined
+                ? evaluateTransformSpec(extraction.transform, {
+                    context,
+                    result,
+                    operatorPath: `outputs.${extraction.name}`,
+                })
+                : extractOutputPath(result, extraction.path);
             extractedOutputs.push({
                 ...extraction,
                 value,
@@ -391,7 +857,9 @@ function withExtractedOutputs(result: any, context: any): any {
             extractionErrors.push({
                 output: extraction.name,
                 path: extraction.path,
+                transform: extraction.transform,
                 error: error instanceof Error ? error.message : String(error),
+                details: error instanceof TransformEvaluationError ? error.details : undefined,
             });
         }
     });
@@ -450,6 +918,10 @@ function resolvePlaceholders(value: any, context: any): any {
     }
 
     if (value && typeof value === 'object') {
+        if (isTransformOnlySpec(value as Record<string, unknown>)) {
+            return value;
+        }
+
         return Object.fromEntries(
             Object.entries(value)
                 .map(([key, nested]) => [key, resolvePlaceholders(nested, context)])
@@ -594,6 +1066,7 @@ function toStatus(
         name: config.interactionName,
         status: FAILURE,
         result,
+        ...toCorrelationReportFields(interaction),
         method: interaction.request.method || 'GET',
         path: interaction.request.path,
         timeoutMs: interaction.request.timeoutMs,
@@ -618,6 +1091,10 @@ function toOutputReportFields(interaction: any): any {
         output: interaction.request.output,
         outputPath: interaction.request.outputPath,
         outputs: interaction.request.outputs,
+        transform: interaction.request.transform,
+        secret: interaction.request.secret,
+        redact: interaction.request.redact,
+        redactAs: interaction.request.redactAs,
     };
 }
 
@@ -625,6 +1102,7 @@ function toSuccessStatus(config: any, actualJson: any, response: any, interactio
     return {
         name: config.interactionName,
         status: SUCCESS,
+        ...toCorrelationReportFields(interaction),
         method: interaction.request.method,
         path: interaction.request.path,
         timeoutMs: interaction.request.timeoutMs,
@@ -762,11 +1240,166 @@ function toExecutableInteraction(interaction: any): any {
         || interaction?.PARALLEL;
 }
 
+function toRunnerStepId(correlation: RunnerCorrelationConfig, request: any, interactionName: string, options: any = {}): string {
+    const runIndex = Number.parseInt(String(options.runIndex || request.runIndex || 1), 10) || 1;
+    const scenarioExecutionNumber = Number.parseInt(String(request.scenarioExecutionNumber || 1), 10) || 1;
+    const interactionExecutionNumber = Number.parseInt(String(request.interactionExecutionNumber || 0), 10) || 0;
+    const repeatIndex = Number.parseInt(String(request.repeatIndex || 1), 10) || 1;
+    const safeName = String(interactionName || 'step')
+        .replace(/[^a-zA-Z0-9_.:-]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'step';
+
+    return [
+        correlation.runnerRunId,
+        'run',
+        runIndex,
+        'scenario',
+        scenarioExecutionNumber,
+        'step',
+        interactionExecutionNumber,
+        safeName,
+        'repeat',
+        repeatIndex,
+    ].join('-');
+}
+
+function toStepCorrelation(interaction: any, config: any, context: any): any {
+    const request = interaction.request || {};
+    const correlation = context.correlation as RunnerCorrelationConfig;
+    const runIndex = Number.parseInt(String(context.options?.runIndex || request.runIndex || 1), 10) || 1;
+    const runnerStepId = stringOption(request.runnerStepId, request.correlation?.runnerStepId) ||
+        toRunnerStepId(correlation, request, config.interactionName, context.options);
+
+    return {
+        runnerRunId: correlation.runnerRunId,
+        runnerStepId,
+        runIndex,
+        scenarioExecutionNumber: request.scenarioExecutionNumber,
+        interactionExecutionNumber: request.interactionExecutionNumber,
+        repeatIndex: request.repeatIndex,
+        interactionName: config.interactionName,
+    };
+}
+
+function toCorrelationReportFields(interaction: any): any {
+    const correlation = interaction?.request?.correlation;
+    if (!correlation) {
+        return {};
+    }
+
+    return {
+        runnerRunId: correlation.runnerRunId,
+        runnerStepId: correlation.runnerStepId,
+        correlation,
+    };
+}
+
+function isSendAction(request: any): boolean {
+    return String(request?.action || 'send').toLowerCase() === 'send';
+}
+
+function mergePayloadCorrelation(value: unknown, correlation: any, payloadField: string): unknown {
+    if (!isRecord(value)) {
+        return value;
+    }
+
+    return {
+        ...value,
+        [payloadField]: {
+            ...(isRecord(value[payloadField]) ? value[payloadField] : {}),
+            runnerRunId: correlation.runnerRunId,
+            runnerStepId: correlation.runnerStepId,
+        },
+    };
+}
+
+function injectCorrelationPayload(request: any, correlation: any, payloadField: string): boolean {
+    if (request.send !== undefined) {
+        const next = mergePayloadCorrelation(request.send, correlation, payloadField);
+        if (next !== request.send) {
+            request.send = next;
+            return true;
+        }
+        return false;
+    }
+
+    if (request.message !== undefined) {
+        const next = mergePayloadCorrelation(request.message, correlation, payloadField);
+        if (next !== request.message) {
+            request.message = next;
+            return true;
+        }
+        return false;
+    }
+
+    if (request.body !== undefined) {
+        const next = mergePayloadCorrelation(request.body, correlation, payloadField);
+        if (next !== request.body) {
+            request.body = next;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function applyInteractionCorrelation(interactionWithConfig: any, interaction: any, config: any, context: any): void {
+    const request = interaction.request || {};
+    const correlationConfig = context.correlation as RunnerCorrelationConfig;
+    const correlation = toStepCorrelation(interaction, config, context);
+    const transport = interactionWithConfig.HTTP
+        ? 'HTTP'
+        : interactionWithConfig.WS
+            ? 'WS'
+            : interactionWithConfig.RTC || interactionWithConfig.WEBRTC
+                ? 'RTC'
+                : interactionWithConfig.PARALLEL
+                    ? 'PARALLEL'
+                    : interactionWithConfig.SET
+                        ? 'SET'
+                        : interactionWithConfig.ASSERT
+                            ? 'ASSERT'
+                            : 'UNKNOWN';
+
+    request.correlation = {
+        ...correlation,
+        transport,
+        injected: {
+            headers: false,
+            payload: false,
+        },
+    };
+    request.runnerRunId = correlation.runnerRunId;
+    request.runnerStepId = correlation.runnerStepId;
+
+    if (correlationConfig.injectHeaders && interactionWithConfig.HTTP) {
+        request.headers = {
+            ...(isRecord(request.headers) ? request.headers : {}),
+            [correlationConfig.runIdHeader]: correlation.runnerRunId,
+            [correlationConfig.stepIdHeader]: correlation.runnerStepId,
+        };
+        request.correlation.injected.headers = true;
+    }
+
+    if (
+        correlationConfig.injectPayloads &&
+        isSendAction(request) &&
+        (interactionWithConfig.WS || interactionWithConfig.RTC || interactionWithConfig.WEBRTC)
+    ) {
+        request.correlation.injected.payload = injectCorrelationPayload(
+            request,
+            correlation,
+            correlationConfig.payloadField,
+        );
+    }
+}
+
 function toSetSuccessStatus(config: any, interaction: any, value: any): any {
     return {
         name: config.interactionName,
         status: SUCCESS,
         transport: 'SET',
+        ...toCorrelationReportFields(interaction),
         scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
         interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
         repeatIndex: config.interaction.request.repeatIndex,
@@ -784,6 +1417,7 @@ function toSetFailureStatus(config: any, interaction: any, result: string, detai
         status: FAILURE,
         transport: 'SET',
         result,
+        ...toCorrelationReportFields(interaction),
         scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
         interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
         repeatIndex: config.interaction.request.repeatIndex,
@@ -794,9 +1428,10 @@ function toSetFailureStatus(config: any, interaction: any, result: string, detai
     };
 }
 
-async function executeSetInteraction(interaction: any, config: any): Promise<any> {
+async function executeSetInteraction(interaction: any, config: any, context: any): Promise<any> {
     const output = interaction.request.output;
-    const value = interaction.request.value !== undefined
+    const transform = interaction.request.transform ?? interaction.request.derive;
+    let value = interaction.request.value !== undefined
         ? interaction.request.value
         : interaction.response.actual;
     const delayMs = Number.parseInt(String(interaction.request.delayMs ?? 0), 10);
@@ -809,11 +1444,33 @@ async function executeSetInteraction(interaction: any, config: any): Promise<any
         );
     }
 
+    if (transform !== undefined) {
+        try {
+            value = evaluateTransformSpec(transform, {
+                context,
+                operatorPath: `set.${String(output)}`,
+            });
+        } catch (error) {
+            return toSetFailureStatus(
+                config,
+                interaction,
+                'Set transform failed.',
+                {
+                    transform,
+                    transformError: {
+                        message: error instanceof Error ? error.message : String(error),
+                        details: error instanceof TransformEvaluationError ? error.details : undefined,
+                    },
+                },
+            );
+        }
+    }
+
     if (value === undefined) {
         return toSetFailureStatus(
             config,
             interaction,
-            'Set step is missing value. Use value or request.value.',
+            'Set step is missing value. Use value, request.value, or transform.',
         );
     }
 
@@ -829,6 +1486,7 @@ function toAssertSuccessStatus(config: any, interaction: any, actual: any, detai
         name: config.interactionName,
         status: SUCCESS,
         transport: 'ASSERT',
+        ...toCorrelationReportFields(interaction),
         scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
         interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
         repeatIndex: config.interaction.request.repeatIndex,
@@ -846,6 +1504,7 @@ function toAssertFailureStatus(config: any, interaction: any, actual: any, resul
         status: FAILURE,
         transport: 'ASSERT',
         result,
+        ...toCorrelationReportFields(interaction),
         scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
         interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
         repeatIndex: config.interaction.request.repeatIndex,
@@ -1239,6 +1898,7 @@ async function executeRemoteHttpInteraction(interaction: any, config: any, conte
                 ? 'Remote request timed out after ' + interaction.request.timeoutMs + ' ms'
                 : error.message,
             status: FAILURE,
+            ...toCorrelationReportFields(interaction),
             method: interaction.request.method || 'GET',
             path: interaction.request.path,
             timeoutMs: interaction.request.timeoutMs,
@@ -1418,6 +2078,7 @@ function toWsSuccessStatus(config: any, interaction: any, details: any = {}): an
         name: config.interactionName,
         status: SUCCESS,
         transport: 'WS',
+        ...toCorrelationReportFields(interaction),
         action: interaction.request.action,
         connection: interaction.request.connection || interaction.response?.connection,
         path: interaction.request.path,
@@ -1438,6 +2099,7 @@ function toWsFailureStatus(config: any, interaction: any, result: string, detail
         status: FAILURE,
         result,
         transport: 'WS',
+        ...toCorrelationReportFields(interaction),
         action: interaction.request.action,
         connection: interaction.request.connection || interaction.response?.connection,
         path: interaction.request.path,
@@ -2320,7 +2982,12 @@ function toReport(context: any, options: any, startedAtEpochMs: number, endedAtE
     }, {});
 
     return redactBlackBoxData({
-        summary: toSummary(context.results, options, startedAtEpochMs, endedAtEpochMs),
+        summary: {
+            ...toSummary(context.results, options, startedAtEpochMs, endedAtEpochMs),
+            runnerRunId: context.correlation.runnerRunId,
+        },
+        runnerRunId: context.correlation.runnerRunId,
+        correlation: toPublicCorrelationConfig(context.correlation),
         results,
         resultsList,
         resultsByName,
@@ -2475,12 +3142,14 @@ function executeInteraction(interactionWithConfig: any, context: any): Promise<a
         interaction,
     };
 
+    applyInteractionCorrelation(interactionWithConfig, interaction, config, context);
+
     if (interactionWithConfig.ASSERT) {
         return executeAssertInteraction(interaction, config, context);
     }
 
     if (interactionWithConfig.SET) {
-        return executeSetInteraction(interaction, config);
+        return executeSetInteraction(interaction, config, context);
     }
 
     if (interactionWithConfig.PARALLEL) {
@@ -2511,6 +3180,7 @@ function executeInteraction(interactionWithConfig: any, context: any): Promise<a
                     ? 'Request timed out after ' + interaction.request.timeoutMs + ' ms'
                     : e?.message,
                 status: FAILURE,
+                ...toCorrelationReportFields(interaction),
                 method: interaction.request.method || 'GET',
                 path: interaction.request.path,
                 timeoutMs: interaction.request.timeoutMs,
@@ -2531,6 +3201,7 @@ function toParallelFailureStatus(config: any, interaction: any, result: string, 
         transport: 'PARALLEL',
         action: interaction.request.action || 'run',
         result,
+        ...toCorrelationReportFields(interaction),
         scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
         interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
         repeatIndex: config.interaction.request.repeatIndex,
@@ -2545,6 +3216,7 @@ function toParallelSuccessStatus(config: any, interaction: any, actual: any): an
         status: SUCCESS,
         transport: 'PARALLEL',
         action: interaction.request.action || 'run',
+        ...toCorrelationReportFields(interaction),
         scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
         interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
         repeatIndex: config.interaction.request.repeatIndex,

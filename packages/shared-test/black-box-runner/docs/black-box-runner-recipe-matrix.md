@@ -51,6 +51,7 @@ npm run test:shared-black-box:matrix:soak
 npm run test:shared-black-box:matrix:traffic
 npm run test:shared-black-box:matrix:parallel
 npm run test:shared-black-box:matrix:live
+npm run test:shared-black-box:matrix:live:preflight
 npm run test:shared-black-box:matrix:live:soak
 npm run test:shared-black-box:matrix:live:traffic
 npm run test:shared-black-box:matrix:live:parallel
@@ -90,16 +91,38 @@ Each executed entry gets the ordinary scenario artifact bundle:
 - `events.jsonl`
 - `failures.json`
 - `metadata.json`
+- `artifact-index.json`
+- `expanded-recipe.json`
+- `reduced-plan.json`
 
 The matrix runner also writes `matrix-summary.json` with passed, failed, and
 skipped entries. Intentional failure entries pass when the process exits with
 their configured `expectedExitCode`.
 
+Large matrix entries can use the same `execution.artifacts.maxEvents` and
+`execution.artifacts.maxEventsByKind` settings as ordinary scenarios. The
+index keeps failure pointers, event counts, per-run summaries, and compacted
+success summaries available for artifact browsing.
+
+For failing seeded traffic entries, run
+`black-box-runner/traffic-plan-reducer.ts --artifact-dir <entry-artifact-dir>`
+to create a smaller `reduced-plan.json` replay candidate and a
+`reduced-plan-summary.json` of removed operations.
+
 Skipped live entries include exact gate reasons, for example:
 
 - missing environment variable `RALLAR_ALICE_PASSWORD`
-- Rallar API unavailable at the configured `RALLAR_API_BASE_URL`
+- `/api/config` unavailable at the configured `RALLAR_API_BASE_URL`
+- configured credentials rejected by `/api/auth/login`
+- group create/join permission check failed
+- WS ticket or WebSocket upgrade check failed
+- ICE configuration unavailable
 - Playwright CLI unavailable
+
+Each selected live entry also writes `preflight-report.json` before execution.
+Use `npm run test:shared-black-box:matrix:live:preflight` to run only those
+checks. The command uses `--require-gates`, so missing provisioning returns a
+non-zero exit without starting browser or remote-browser recipes.
 
 ## Live Baselines
 

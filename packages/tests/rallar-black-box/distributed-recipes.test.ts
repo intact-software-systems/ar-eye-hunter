@@ -4,6 +4,7 @@ import {
     compareDistributedRuns,
     defaultDistributedRecipeTargetIds,
     deriveDistributedRunMonitor,
+    deriveDistributedRunWarningRegressionReport,
     distributedRecipeCommandKinds,
     distributedRecipeCommandPreview,
     distributedRecipePreflight,
@@ -684,6 +685,7 @@ describe('distributed recipes helpers', () => {
             failedCount: 1,
         });
         expect(monitor.events.map(event => event.summary)).toEqual(['payload received']);
+        expect(monitor.events[0].payloadSummary).toContain('topic=message.received');
         expect(monitor.failures.map(failure => failure.code)).toContain('ASSERTION_FAILED');
         expect(monitor.timeline.map(item => item.label)).toContain('result failed');
     });
@@ -959,6 +961,127 @@ describe('distributed recipes helpers', () => {
             'realtime warning',
             'ws warning',
         ]));
+    });
+
+    it('builds a live-warning regression report from visible monitor and artifact evidence', () => {
+        const liveMessageId = 'live-message-visible-in-monitor';
+        const controlRunWithLiveWarning: ControlRunSnapshot = {
+            ...distributedControlRun,
+            events: [
+                ...distributedControlRun.events,
+                {
+                    kind: 'event',
+                    protocolVersion: 1,
+                    runId: 'run-1',
+                    agentId: 'agent-b',
+                    eventId: 'live-message-event',
+                    atEpochMs: 2_050,
+                    payload: {
+                        kind: 'message',
+                        topic: 'room.live.warning.regression',
+                        payload: {
+                            data: {
+                                distributedRunId: 'dist-1',
+                                messageId: liveMessageId,
+                            },
+                        },
+                    },
+                },
+                {
+                    kind: 'diagnostic',
+                    protocolVersion: 1,
+                    runId: 'run-1',
+                    agentId: 'agent-b',
+                    eventId: 'live-warning-diagnostic',
+                    atEpochMs: 2_060,
+                    payload: {
+                        kind: 'diagnostic',
+                        topic: 'rallar.browser.ws.unhandled_message',
+                        severity: 'warning',
+                        payload: {
+                            diagnosticSchemaVersion: 1,
+                            diagnosticTypeId: 'rallar.browser.ws.unhandled_message',
+                            topic: 'rallar.browser.ws.unhandled_message',
+                            severity: 'warning',
+                            message: 'Unhandled WS message',
+                            transport: 'ws',
+                            groupId: 'bb-group',
+                            data: {
+                                distributedRunId: 'dist-1',
+                                messageId: liveMessageId,
+                            },
+                        },
+                    },
+                },
+            ],
+        };
+        const artifactBundle: ControlDistributedRunArtifactBundle = {
+            ...distributedArtifactBundle,
+            files: {
+                ...distributedArtifactBundle.files,
+                'control-run.json': JSON.stringify(controlRunWithLiveWarning),
+            },
+        };
+
+        const report = deriveDistributedRunWarningRegressionReport({
+            distributedRun,
+            controlRun: controlRunWithLiveWarning,
+            artifactBundle,
+            expectation: {
+                messageEvidence: [liveMessageId],
+                diagnosticTypeIds: ['rallar.browser.ws.unhandled_message'],
+                failOnDiagnosticSeverities: ['error'],
+            },
+        });
+
+        expect(report.ok, report.failures.join('\n')).toBe(true);
+        expect(report.observed.monitorMessageEvidence).toEqual([liveMessageId]);
+        expect(report.observed.artifactMessageEvidence).toEqual([liveMessageId]);
+        expect(report.observed.warningDiagnosticTypeIds).toEqual(['rallar.browser.ws.unhandled_message']);
+        expect(report.observed.highSeverityDiagnosticTypeIds).toEqual([]);
+
+        const errorReport = deriveDistributedRunWarningRegressionReport({
+            distributedRun,
+            controlRun: {
+                ...controlRunWithLiveWarning,
+                events: [
+                    ...controlRunWithLiveWarning.events,
+                    {
+                        kind: 'diagnostic',
+                        protocolVersion: 1,
+                        runId: 'run-1',
+                        agentId: 'agent-b',
+                        eventId: 'live-error-diagnostic',
+                        atEpochMs: 2_070,
+                        payload: {
+                            kind: 'diagnostic',
+                            topic: 'rallar.browser.realtime.send_failed',
+                            severity: 'error',
+                            payload: {
+                                diagnosticSchemaVersion: 1,
+                                diagnosticTypeId: 'rallar.browser.realtime.send_failed',
+                                topic: 'rallar.browser.realtime.send_failed',
+                                severity: 'error',
+                                message: 'Realtime send failed.',
+                                transport: 'realtime',
+                                data: {
+                                    distributedRunId: 'dist-1',
+                                },
+                            },
+                        },
+                    },
+                ],
+            },
+            expectation: {
+                diagnosticTypeIds: ['rallar.browser.ws.unhandled_message'],
+                failOnDiagnosticSeverities: ['error'],
+            },
+        });
+
+        expect(errorReport.ok).toBe(false);
+        expect(errorReport.failures).toContain(
+            'High-severity runtime diagnostic observed: rallar.browser.realtime.send_failed',
+        );
     });
 
     it('shows distributed barrier commands as monitor evidence', () => {

@@ -81,16 +81,21 @@ The ordinary artifact bundle contains:
 
 | File | Required | Purpose |
 | --- | --- | --- |
-| `report.json` | yes | Redacted summary, results, outputs, stores, and metrics. |
-| `events.jsonl` | yes | Redacted event stream for step results, WS events, RTC events, and truncation notices. |
-| `failures.json` | yes | Copyable failure bundle. |
-| `metadata.json` | yes | Command, config path, mode, summary, and run metadata. |
-| `expanded-plan.json` | no | Seeded traffic expanded plan, pacing decisions, concrete inline-loop expansion, and replay recipe. |
+| `report.json` | yes | Redacted summary, results, outputs, stores, metrics, and runner correlation IDs. |
+| `events.jsonl` | yes | Redacted event stream for step results, post-run assertions, WS events, RTC events, and truncation notices. |
+| `failures.json` | yes | Copyable failure bundle with step and post-run assertion correlation IDs. |
+| `metadata.json` | yes | Command, config path, mode, summary, run metadata, and runner correlation IDs. |
+| `artifact-index.json` | no | Event counts, first-failure pointer, step-result sequence numbers, per-run/per-connection summaries, truncation metadata, and compacted success summaries for large-run browsing. |
+| `expanded-recipe.json` | no | Fully expanded recipe after static includes/fragments plus include provenance for replay/debug. |
+| `preflight-report.json` | no | Live-environment provisioning checks and skip reasons before recipe execution. |
+| `expanded-plan.json` | no | Seeded traffic expanded plan, pacing decisions, concrete inline-loop expansion, replay recipe, and runner correlation metadata. |
+| `reduced-plan.json` | no | Reduced seeded traffic replay candidate with first-failure and removed-operation metadata. |
 | `matrix-summary.json` | no | Recipe matrix aggregate summary. |
 
 `events.jsonl` currently uses these event kinds:
 
 - `step-result`
+- `post-run-assertion`
 - `ws-message`
 - `ws-close`
 - `rtc-message`
@@ -98,14 +103,25 @@ The ordinary artifact bundle contains:
 - `rtc-close`
 - `artifact-truncated`
 
+`step-result` events include `runnerRunId`, `runnerStepId`, and a `correlation`
+object. The same IDs are present on matching `report.resultsList` entries and
+failure-bundle entries, so the command center can link an event row to server
+logs without timestamp guessing.
+
 The command center can map these directly into existing Event Stream, RTC
 Diagnostics, and failure-focus views. The runner redacts known secrets across
 all artifact files with placeholders shaped like `<redacted:name>`.
 
 Use `parseBlackBoxRunnerArtifactBundle(...)` from `artifact-reader.ts` before
 displaying uploaded artifact files. It validates required files, event kinds,
-summary fields, redaction placeholders, expanded-plan replay data, and
+summary fields, artifact indexes, expanded recipes, live preflight reports,
+redaction placeholders, expanded-plan/reduced-plan replay data, and
 matrix-summary counts.
+
+When `artifact-index.json` is present, command-center views should use it for
+large-run navigation before loading the full event stream. The index preserves
+failed step/post-run assertion pointers and RTC diagnostic availability even
+when repeated successful events are compacted from `events.jsonl`.
 
 ## Coverage Ownership
 

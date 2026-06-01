@@ -52,6 +52,11 @@ export type BlackBoxRunnerPlanPreflight = Readonly<{
         estimatedArtifactResultRecords: number
         estimatedArtifactEventRecords: number
         estimatedArtifactJsonBytes: number
+        postRunAssertionCount: number
+        includeCount: number
+    }>
+    includes: Readonly<{
+        resolved: readonly JsonRecord[]
     }>
     providerModes: readonly string[]
     liveServiceRequirements: readonly string[]
@@ -215,6 +220,7 @@ export function explainBlackBoxRunnerPlan(input: BlackBoxRunnerPreflightInput): 
     const stepReferences = stepReferencePreflight(rawConfig)
     const outputSummary = outputPreflight(rawConfig, expandedConfig, operations)
     const redactions = redactionPreflight(rawConfig)
+    const includes = includePreflight(expandedConfig)
     const strictIssues = profile === 'strict'
         ? strictProfileIssues(rawConfig, operations)
         : []
@@ -278,7 +284,10 @@ export function explainBlackBoxRunnerPlan(input: BlackBoxRunnerPreflightInput): 
             estimatedArtifactResultRecords: operations.length,
             estimatedArtifactEventRecords: Math.max(operations.length, operations.length * 2),
             estimatedArtifactJsonBytes,
+            postRunAssertionCount: postRunAssertionCount(rawConfig),
+            includeCount: includes.resolved.length,
         },
+        includes,
         providerModes: providerModes(rawConfig, operations),
         liveServiceRequirements: liveServiceRequirements(rawConfig, operations, input.trafficPlanArtifact),
         env: {
@@ -304,10 +313,25 @@ function schemaIssueToPreflightIssue(issue: JsonSchemaValidationIssue): BlackBox
     }
 }
 
+function isRecord(value: unknown): value is JsonRecord {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
 function asRecord(value: unknown): JsonRecord {
-    return value && typeof value === 'object' && !Array.isArray(value)
-        ? value as JsonRecord
+    return isRecord(value)
+        ? value
         : {}
+}
+
+function includePreflight(expandedConfig: JsonRecord): BlackBoxRunnerPlanPreflight['includes'] {
+    const includeMetadata = asRecord(expandedConfig.includeMetadata)
+    const includes = Array.isArray(includeMetadata.includes)
+        ? includeMetadata.includes.filter(isRecord)
+        : []
+
+    return {
+        resolved: includes,
+    }
 }
 
 function isEnvVariableDescriptor(value: unknown): value is JsonRecord {
@@ -527,6 +551,8 @@ function outputPreflight(
     const consumed = uniqueValues([
         ...placeholderRoots(rawConfig),
         ...operations.flatMap(operation => placeholderRoots(operation)),
+        ...transformConsumedRoots(rawConfig),
+        ...operations.flatMap(operation => transformConsumedRoots(operation)),
     ].filter(root =>
         !variableNames.has(root) &&
         !RESERVED_PLACEHOLDER_ROOTS.has(root)
@@ -566,6 +592,92 @@ function placeholderRoots(value: unknown): readonly string[] {
         .filter(root => root.length > 0)
 }
 
+function transformConsumedRoots(value: unknown): readonly string[] {
+    if (Array.isArray(value)) {
+        return value.flatMap(transformConsumedRoots)
+    }
+
+    if (!value || typeof value !== 'object') {
+        return []
+    }
+
+    const record = asRecord(value)
+    const roots: string[] = []
+    if (isTransformOnlySpec(record)) {
+        roots.push(...transformPathRoots(record.path, record.from, record.outputPath))
+    }
+
+    Object.values(record).forEach(nested => {
+        roots.push(...transformConsumedRoots(nested))
+    })
+
+    return roots
+}
+
+function transformPathRoots(...values: readonly unknown[]): readonly string[] {
+    return values
+        .filter((value): value is string => typeof value === 'string' && value.length > 0)
+        .flatMap(value => {
+            const segments = value.replaceAll(/\[(\d+)]/g, '.$1').split('.').filter(Boolean)
+            if (segments[0] === 'outputs' || segments[0] === 'variables') {
+                return segments[1] ? [segments[1]] : []
+            }
+            return []
+        })
+}
+
+function isTransformOnlySpec(record: JsonRecord): boolean {
+    const transformKeys = new Set([
+        'path',
+        'from',
+        'outputPath',
+        'template',
+        'concat',
+        'coalesce',
+        'jsonStringify',
+        'jsonParse',
+        'urlEncode',
+        'number',
+        'string',
+        'boolean',
+        'uuid',
+        'timestamp',
+        'op',
+        'operator',
+        'type',
+        'value',
+        'input',
+        'values',
+        'format',
+        'secret',
+        'redact',
+        'redactAs',
+        'transform',
+    ])
+    const operatorKeys = [
+        'path',
+        'from',
+        'outputPath',
+        'template',
+        'concat',
+        'coalesce',
+        'jsonStringify',
+        'jsonParse',
+        'urlEncode',
+        'number',
+        'string',
+        'boolean',
+        'uuid',
+        'timestamp',
+        'op',
+        'operator',
+    ]
+    const keys = Object.keys(record)
+    return keys.length > 0 &&
+        operatorKeys.some(key => record[key] !== undefined) &&
+        keys.every(key => transformKeys.has(key))
+}
+
 function redactionPreflight(rawConfig: JsonRecord): BlackBoxRunnerPlanPreflight['redactions'] {
     const secrets = toSecretNameSet(rawConfig.secretVariables ?? rawConfig.secrets)
     const variableSources = Object.entries(asRecord(rawConfig.variables))
@@ -590,9 +702,21 @@ function redactionPreflight(rawConfig: JsonRecord): BlackBoxRunnerPlanPreflight[
 
 function outputRedactionSources(step: JsonRecord, path: string): readonly Readonly<{ kind: 'output'; name: string; redactAs?: string }>[] {
     const sources: Array<Readonly<{ kind: 'output'; name: string; redactAs?: string }>> = []
+    const request = asRecord(step.request)
+    const directOutput = stringValue(step.output) ?? stringValue(request.output)
+    if (
+        directOutput &&
+        (step.secret === true || step.redact === true || request.secret === true || request.redact === true)
+    ) {
+        sources.push({
+            kind: 'output',
+            name: directOutput,
+            redactAs: stringValue(step.redactAs) ?? stringValue(request.redactAs) ?? `${path}.${directOutput}`,
+        })
+    }
     Object.entries({
         ...asRecord(step.outputs),
-        ...asRecord(asRecord(step.request).outputs),
+        ...asRecord(request.outputs),
     }).forEach(([name, spec]) => {
         const record = asRecord(spec)
         if (record.secret === true || record.redact === true) {
@@ -678,6 +802,57 @@ function trafficPlanPreflight(artifact: JsonRecord | undefined): BlackBoxRunnerP
     }
 }
 
+function postRunAssertionCount(rawConfig: JsonRecord): number {
+    const execution = asRecord(rawConfig.execution)
+    return postRunAssertionSourceCount(rawConfig.postRunAssertions) +
+        postRunAssertionSourceCount(execution.postRunAssertions) +
+        postRunAssertionSourceCount(execution.thresholds)
+}
+
+function postRunAssertionSourceCount(value: unknown): number {
+    if (Array.isArray(value)) {
+        return value.length
+    }
+
+    const record = asRecord(value)
+    if (Object.keys(record).length <= 0) {
+        return 0
+    }
+
+    return isPostRunAssertionSpec(record)
+        ? 1
+        : Object.keys(record).length
+}
+
+function isPostRunAssertionSpec(record: JsonRecord): boolean {
+    return record.path !== undefined ||
+        record.metric !== undefined ||
+        record.from !== undefined ||
+        record.actual !== undefined ||
+        record.operator !== undefined ||
+        record.op !== undefined ||
+        [
+            'equals',
+            'eq',
+            'expected',
+            'notEquals',
+            'ne',
+            'gte',
+            'min',
+            'atLeast',
+            'lte',
+            'max',
+            'atMost',
+            'gt',
+            'lt',
+            'between',
+            'includes',
+            'contains',
+            'notIncludes',
+            'exists',
+        ].some(key => record[key] !== undefined)
+}
+
 function strictProfileIssues(
     rawConfig: JsonRecord,
     operations: readonly BlackBoxRunnerPreflightOperation[],
@@ -709,11 +884,18 @@ function strictProfileIssues(
                     path,
                 })
             }
-            if (step.value === undefined && request.value === undefined) {
+            if (
+                step.value === undefined &&
+                request.value === undefined &&
+                step.transform === undefined &&
+                request.transform === undefined &&
+                step.derive === undefined &&
+                request.derive === undefined
+            ) {
                 issues.push({
                     severity: 'error',
                     code: 'STRICT_SET_VALUE',
-                    message: 'Strict set steps require value or request.value.',
+                    message: 'Strict set steps require value, request.value, transform, or request.transform.',
                     path,
                 })
             }

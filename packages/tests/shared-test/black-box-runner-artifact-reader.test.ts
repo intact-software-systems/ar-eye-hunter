@@ -28,7 +28,10 @@ function readBundle(version: 'v0' | 'v1'): BlackBoxRunnerArtifactBundleFiles {
         'metadata.json': readFixture(`${base}/metadata.json`),
         ...(version === 'v1'
             ? {
+                'artifact-index.json': readFixture(`${base}/artifact-index.json`),
+                'expanded-recipe.json': readFixture(`${base}/expanded-recipe.json`),
                 'expanded-plan.json': readFixture(`${base}/expanded-plan.json`),
+                'reduced-plan.json': readFixture(`${base}/reduced-plan.json`),
                 'matrix-summary.json': readFixture(`${base}/matrix-summary.json`),
             }
             : {}),
@@ -54,7 +57,26 @@ describe('black-box runner artifact reader', () => {
             name: 'aliceWaits',
             connection: 'aliceRtc',
         });
+        expect(result.value?.artifactIndex?.truncation).toMatchObject({
+            truncated: true,
+            omittedEvents: 3,
+        });
+        expect(result.value?.views.artifactIndex?.firstFailure).toMatchObject({
+            name: 'aliceWaits',
+            sequence: 4,
+        });
+        expect(result.value?.expandedRecipe?.recipe.steps).toHaveLength(2);
+        expect(result.value?.views.expandedRecipe?.includeMetadata?.includes).toEqual([
+            expect.objectContaining({
+                source: 'file:fragments/rtc-connect.json',
+                stepCount: 1,
+            }),
+        ]);
         expect(result.value?.views.replayRecipe?.steps).toHaveLength(1);
+        expect(result.value?.reducedPlan?.reduction).toMatchObject({
+            strategy: 'truncate-after-first-failure',
+        });
+        expect(result.value?.views.reducedReplayRecipe?.steps).toHaveLength(1);
         expect(result.value?.matrixSummary?.summary).toMatchObject({
             PASSED: 1,
             FAILED: 0,
@@ -102,6 +124,104 @@ describe('black-box runner artifact reader', () => {
         expect(badRedaction.errors.some(error =>
             error.message.includes('Invalid redaction placeholder')
         )).toBe(true);
+    });
+
+    it('accepts post-run assertion events and preserves failure-bundle assertion data', () => {
+        const result = parseBlackBoxRunnerArtifactBundle({
+            ...readBundle('v1'),
+            'events.jsonl': [
+                '{"kind":"step-result","name":"setValue","status":"SUCCESS","transport":"SET"}',
+                '{"kind":"post-run-assertion","name":"failure budget","status":"FAILURE","path":"summary.failure","operator":"max","expected":0,"actual":1}',
+            ].join('\n'),
+            'failures.json': JSON.stringify({
+                summary: {
+                    total: 1,
+                    success: 0,
+                    failure: 1,
+                },
+                failures: [],
+                postRunAssertionFailures: [
+                    {
+                        name: 'failure budget',
+                        status: 'FAILURE',
+                        path: 'summary.failure',
+                        operator: 'max',
+                        expected: 0,
+                        actual: 1,
+                    },
+                ],
+                postRunAssertions: {
+                    summary: {
+                        total: 1,
+                        success: 0,
+                        failure: 1,
+                    },
+                },
+                outputs: {},
+            }),
+        });
+
+        expect(result.ok).toBe(true);
+        expect(result.errors).toHaveLength(0);
+        expect(result.value?.views.postRunAssertions).toHaveLength(1);
+        expect(result.value?.failures.postRunAssertionFailures?.[0]).toMatchObject({
+            name: 'failure budget',
+            path: 'summary.failure',
+        });
+        expect(result.value?.failures.postRunAssertions?.summary).toMatchObject({
+            failure: 1,
+        });
+    });
+
+    it('accepts optional live preflight reports in artifact bundles', () => {
+        const result = parseBlackBoxRunnerArtifactBundle({
+            ...readBundle('v1'),
+            'preflight-report.json': JSON.stringify({
+                schemaVersion: 1,
+                generatedAtEpochMs: 123,
+                mode: 'live-environment',
+                ok: false,
+                summary: {
+                    total: 2,
+                    passed: 1,
+                    failed: 1,
+                    skipped: 0,
+                },
+                checks: [
+                    {
+                        id: 'rallar-api-config',
+                        kind: 'rallar-api-config',
+                        status: 'passed',
+                    },
+                    {
+                        id: 'auth-login:alice',
+                        kind: 'auth-login',
+                        status: 'failed',
+                        code: 'BAD_AUTH',
+                    },
+                ],
+                issues: [
+                    {
+                        severity: 'error',
+                        code: 'BAD_AUTH',
+                        message: 'Login failed for configured user alice.',
+                        checkId: 'auth-login:alice',
+                    },
+                ],
+                skipReasons: [
+                    'Login failed for configured user alice.',
+                ],
+            }),
+        });
+
+        expect(result.ok).toBe(true);
+        expect(result.value?.preflightReport).toMatchObject({
+            mode: 'live-environment',
+            ok: false,
+        });
+        expect(result.value?.preflightReport?.issues[0]).toMatchObject({
+            code: 'BAD_AUTH',
+        });
     });
 
     it('validates expanded-plan replay fields', () => {

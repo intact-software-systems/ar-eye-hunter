@@ -34,6 +34,9 @@ const stepSchema: JsonSchema = {
     required: ['type'],
     properties: {
         name: stringSchema,
+        include: { oneOf: [stringSchema, recordSchema] },
+        namePrefix: stringSchema,
+        nameSuffix: stringSchema,
         type: stringSchema,
         connection: stringSchema,
         output: stringSchema,
@@ -43,6 +46,11 @@ const stepSchema: JsonSchema = {
         expect: recordSchema,
         actual: recordSchema,
         value: variableValueSchema,
+        transform: recordSchema,
+        derive: recordSchema,
+        secret: booleanSchema,
+        redact: booleanSchema,
+        redactAs: stringSchema,
         variables: recordSchema,
         steps: { type: 'array', items: recordSchema },
         loopSteps: { type: 'array', items: recordSchema },
@@ -90,6 +98,18 @@ const trafficPlanSchema: JsonSchema = {
     additionalProperties: true,
 };
 
+const postRunAssertionSchema: JsonSchema = {
+    type: 'object',
+    additionalProperties: true,
+};
+
+const postRunAssertionsSchema: JsonSchema = {
+    oneOf: [
+        postRunAssertionSchema,
+        { type: 'array', items: postRunAssertionSchema },
+    ],
+};
+
 const executionSchema: JsonSchema = {
     type: 'object',
     properties: {
@@ -97,12 +117,19 @@ const executionSchema: JsonSchema = {
         dryRun: booleanSchema,
         artifactDir: stringSchema,
         recordDir: stringSchema,
+        artifact: recordSchema,
+        artifacts: recordSchema,
+        artifactLimits: recordSchema,
         iterations: integerOrPlaceholderSchema,
         runs: integerOrPlaceholderSchema,
         delayMs: integerOrPlaceholderSchema,
         scale: recordSchema,
         soak: recordSchema,
         trafficPlan: trafficPlanSchema,
+        thresholds: postRunAssertionsSchema,
+        postRunAssertions: postRunAssertionsSchema,
+        correlation: recordSchema,
+        livePreflight: recordSchema,
     },
     additionalProperties: true,
 };
@@ -117,12 +144,15 @@ export const BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA: JsonSchema = {
     required: ['steps'],
     properties: {
         variables: { type: 'object', additionalProperties: variableValueSchema },
+        fragments: recordSchema,
+        includeMetadata: recordSchema,
         replace: { type: 'object', additionalProperties: variableValueSchema },
         secrets: { oneOf: [{ type: 'array', items: stringSchema }, stringSchema] },
         secretVariables: { oneOf: [{ type: 'array', items: stringSchema }, stringSchema] },
         defaults: recordSchema,
         execution: executionSchema,
         trafficPlan: trafficPlanSchema,
+        postRunAssertions: postRunAssertionsSchema,
         connections: {
             type: 'object',
             additionalProperties: {

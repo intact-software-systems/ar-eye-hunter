@@ -260,6 +260,7 @@ export type DistributedRunEventRow = Readonly<{
     commandId?: string;
     topic?: string;
     summary: string;
+    payloadSummary: string;
 }>;
 
 export type DistributedRunRuntimeDiagnosticRow = Readonly<{
@@ -474,6 +475,35 @@ export type DistributedRunCompareSummary = Readonly<{
         leftOnly: readonly string[];
         rightOnly: readonly string[];
     }>;
+}>;
+
+export type DistributedRunWarningRegressionExpectation = Readonly<{
+    messageEvidence?: readonly string[];
+    diagnosticTypeIds?: readonly string[];
+    compositeRecipeIds?: readonly string[];
+    failOnDiagnosticSeverities?: readonly RallarBlackBoxTestSeverity[];
+}>;
+
+export type DistributedRunWarningRegressionReport = Readonly<{
+    schemaVersion: 1;
+    distributedRunId: string;
+    ok: boolean;
+    expected: Readonly<{
+        messageEvidence: readonly string[];
+        diagnosticTypeIds: readonly string[];
+        compositeRecipeIds: readonly string[];
+        failOnDiagnosticSeverities: readonly RallarBlackBoxTestSeverity[];
+    }>;
+    observed: Readonly<{
+        monitorMessageEvidence: readonly string[];
+        artifactMessageEvidence: readonly string[];
+        diagnosticTypeIds: readonly string[];
+        warningDiagnosticTypeIds: readonly string[];
+        highSeverityDiagnosticTypeIds: readonly string[];
+        compositeRecipeIds: readonly string[];
+        artifactStatus: DistributedRunArtifactValidationStatus;
+    }>;
+    failures: readonly string[];
 }>;
 
 export const DISTRIBUTED_RECIPE_ROLE_PATTERN_OPTIONS: readonly Readonly<{
@@ -1401,6 +1431,85 @@ export function compareDistributedRuns(input: Readonly<{
     };
 }
 
+export function deriveDistributedRunWarningRegressionReport(input: Readonly<{
+    distributedRun: ControlDistributedRunSnapshot;
+    controlRun?: ControlRunSnapshot;
+    artifactBundle?: ControlDistributedRunArtifactBundle;
+    expectation?: DistributedRunWarningRegressionExpectation;
+}>): DistributedRunWarningRegressionReport {
+    const monitor = deriveDistributedRunMonitor(input);
+    const expectation = input.expectation ?? {};
+    const expectedMessageEvidence = expectation.messageEvidence ?? [];
+    const expectedDiagnosticTypeIds = expectation.diagnosticTypeIds ?? [];
+    const expectedCompositeRecipeIds = expectation.compositeRecipeIds ?? [];
+    const failOnDiagnosticSeverities = expectation.failOnDiagnosticSeverities ?? ['error'];
+    const monitorEvidenceText = distributedRunMonitorEvidenceText(monitor);
+    const artifactEvidenceText = input.artifactBundle
+        ? Object.values(input.artifactBundle.files).join('\n')
+        : '';
+    const monitorMessageEvidence = expectedMessageEvidence
+        .filter(value => monitorEvidenceText.includes(value));
+    const artifactMessageEvidence = expectedMessageEvidence
+        .filter(value => artifactEvidenceText.includes(value));
+    const diagnosticTypeIds = uniqueValues(monitor.runtimeDiagnostics.map(row => row.diagnosticTypeId));
+    const warningDiagnosticTypeIds = uniqueValues(monitor.runtimeDiagnostics
+        .filter(row => row.severity === 'warning')
+        .map(row => row.diagnosticTypeId));
+    const highSeverityDiagnosticTypeIds = uniqueValues(monitor.runtimeDiagnostics
+        .filter(row => failOnDiagnosticSeverities.includes(row.severity))
+        .map(row => row.diagnosticTypeId));
+    const compositeRecipeIds = uniqueValues(monitor.compositeDrilldowns
+        .map(row => row.recipeId ?? row.commandId)
+        .filter((value): value is string => Boolean(value)));
+    const failures = [
+        ...expectedMessageEvidence
+            .filter(value => !monitorMessageEvidence.includes(value))
+            .map(value => `Monitor evidence is missing expected message payload token: ${value}`),
+        ...(
+            input.artifactBundle
+                ? expectedMessageEvidence
+                    .filter(value => !artifactMessageEvidence.includes(value))
+                    .map(value => `Artifact evidence is missing expected message payload token: ${value}`)
+                : []
+        ),
+        ...expectedDiagnosticTypeIds
+            .filter(value => !diagnosticTypeIds.includes(value))
+            .map(value => `Monitor diagnostics are missing expected diagnostic type: ${value}`),
+        ...expectedCompositeRecipeIds
+            .filter(value => !compositeRecipeIds.includes(value))
+            .map(value => `Monitor composite drilldowns are missing expected recipe: ${value}`),
+        ...highSeverityDiagnosticTypeIds
+            .map(value => `High-severity runtime diagnostic observed: ${value}`),
+        ...(
+            input.artifactBundle && monitor.artifact.status !== 'valid'
+                ? [`Distributed artifact is ${monitor.artifact.status}: ${monitor.artifact.message}`]
+                : []
+        ),
+    ];
+
+    return {
+        schemaVersion: 1,
+        distributedRunId: input.distributedRun.distributedRunId,
+        ok: failures.length === 0,
+        expected: {
+            messageEvidence: expectedMessageEvidence,
+            diagnosticTypeIds: expectedDiagnosticTypeIds,
+            compositeRecipeIds: expectedCompositeRecipeIds,
+            failOnDiagnosticSeverities,
+        },
+        observed: {
+            monitorMessageEvidence,
+            artifactMessageEvidence,
+            diagnosticTypeIds,
+            warningDiagnosticTypeIds,
+            highSeverityDiagnosticTypeIds,
+            compositeRecipeIds,
+            artifactStatus: monitor.artifact.status,
+        },
+        failures,
+    };
+}
+
 function distributedRecipeTargetRow(
     agent: ControlAgentSnapshot,
     group: RallarBlackBoxDistributedGroupRef,
@@ -1988,6 +2097,7 @@ function distributedRunEvents(
             commandId: event.commandId,
             topic: payloadTopic(event.payload),
             summary: eventSummary(event),
+            payloadSummary: distributedRunEventPayloadSummary(event.payload),
         }));
 }
 
@@ -2623,6 +2733,82 @@ function distributedRunReceivedMessageSignatures(
         .sort();
 }
 
+function distributedRunMonitorEvidenceText(monitor: DistributedRunMonitor): string {
+    return [
+        monitor.distributedRunId,
+        monitor.state,
+        ...monitor.events.flatMap(event => [
+            event.eventId,
+            event.kind,
+            event.agentId,
+            event.commandId,
+            event.topic,
+            event.summary,
+            event.payloadSummary,
+        ]),
+        ...monitor.runtimeDiagnostics.flatMap(diagnostic => [
+            diagnostic.eventId,
+            diagnostic.agentId,
+            diagnostic.commandId,
+            diagnostic.transport,
+            diagnostic.severity,
+            diagnostic.topic,
+            diagnostic.diagnosticTypeId,
+            diagnostic.message,
+            diagnostic.summary,
+            diagnostic.payloadSummary,
+            diagnostic.groupId,
+            diagnostic.roomId,
+            diagnostic.laneId,
+            diagnostic.expectedLaneId,
+            diagnostic.observedLaneId,
+            diagnostic.peerId,
+            diagnostic.remotePeerId,
+            diagnostic.senderId,
+            diagnostic.typeId,
+            diagnostic.topicId,
+            diagnostic.contextId,
+            diagnostic.resourceId,
+            diagnostic.source,
+            ...diagnostic.correlatedFailureKeys,
+        ]),
+        ...monitor.compositeDrilldowns.flatMap(drilldown => [
+            drilldown.key,
+            drilldown.commandId,
+            drilldown.agentId,
+            drilldown.recipeId,
+            drilldown.role,
+            drilldown.phase,
+            drilldown.commandKind,
+            drilldown.artifactRef,
+            ...drilldown.rows.flatMap(row => [
+                row.path,
+                row.sourceRecipePath,
+                row.commandId,
+                row.originalCommandId,
+                row.kind,
+                row.status,
+                row.summary,
+                row.detail,
+                row.errorSummary,
+                row.valueSummary,
+                row.groupId,
+            ]),
+        ]),
+        ...monitor.timeline.flatMap(item => [
+            item.id,
+            item.kind,
+            item.label,
+            item.detail,
+            item.agentId,
+            item.recipeId,
+            item.commandId,
+            item.phase,
+        ]),
+    ].filter((value): value is string => typeof value === 'string' && value.length > 0)
+        .join('\n');
+}
+
 function distributedRunDuration(run: ControlDistributedRunSnapshot): number | undefined {
     const start = run.startedAtEpochMs ?? run.stagedAtEpochMs ?? run.createdAtEpochMs;
     const end = run.completedAtEpochMs ?? run.cancelledAtEpochMs ?? run.updatedAtEpochMs;
@@ -2798,6 +2984,30 @@ function eventSummary(event: ControlEventSnapshot): string {
         }
     }
     return safePayloadSummary(payload);
+}
+
+function distributedRunEventPayloadSummary(payload: unknown): string {
+    const event = asRecord(payload);
+    const nestedPayload = asRecord(event.payload);
+    const nestedData = asRecord(nestedPayload.data ?? event.data);
+    const fields = [
+        ['kind', firstString(event.kind)],
+        ['topic', firstString(event.topic, nestedPayload.topic, nestedData.topic, payloadTopic(payload))],
+        ['transport', firstString(event.transport, nestedPayload.transport)],
+        ['messageId', firstString(event.messageId, nestedPayload.messageId, nestedData.messageId)],
+        ['distributedRunId', firstString(event.distributedRunId, nestedPayload.distributedRunId, nestedData.distributedRunId)],
+        ['groupId', firstString(event.groupId, nestedPayload.groupId, nestedData.groupId)],
+        ['roomId', firstString(event.roomId, nestedPayload.roomId, nestedData.roomId)],
+        ['typeId', firstString(event.typeId, nestedPayload.typeId, nestedData.typeId)],
+        ['topicId', firstString(event.topicId, nestedPayload.topicId, nestedData.topicId)],
+        ['contextId', firstString(event.contextId, nestedPayload.contextId, nestedData.contextId)],
+        ['resourceId', firstString(event.resourceId, nestedPayload.resourceId, nestedData.resourceId)],
+        ['status', firstString(event.status, nestedPayload.status, nestedData.status)],
+    ] as const;
+    return fields
+        .filter(entry => Boolean(entry[1]))
+        .map(([key, value]) => `${key}=${value}`)
+        .join(', ');
 }
 
 function safePayloadSummary(value: unknown): string {

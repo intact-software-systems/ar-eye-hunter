@@ -1,4 +1,7 @@
 import * as sync from './execute-black-box.ts';
+import { compareJson, COMPARISON, toConfig } from '../json-compare/CompareJson.ts';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import type { ScenarioInput } from './scenario-algorithm.ts';
 import * as scenarioAlgorithms from './scenario-algorithm.ts';
 import {
@@ -167,7 +170,10 @@ type ScenarioCliConfig = ScenarioInput & {
     variables?: JsonRecord
     execution?: JsonRecord
     steps?: Array<JsonRecord>
+    fragments?: JsonRecord
+    includeMetadata?: JsonRecord
     trafficPlan?: JsonRecord
+    postRunAssertions?: unknown
     secrets?: unknown
     secretVariables?: unknown
 }
@@ -186,13 +192,49 @@ type TrafficPlanArtifact = {
     replayRecipe: JsonRecord
 }
 
-const input = utils.openFile(cliOptions.config) as ScenarioCliConfig;
+type ArtifactEventRecord = JsonRecord & {
+    kind: string
+    sequence: number
+}
+
+type ArtifactEventSelection = {
+    allEvents: ArtifactEventRecord[]
+    emittedEvents: ArtifactEventRecord[]
+    index: JsonRecord
+}
+
 const preflightMode = cliOptions.explain === true || cliOptions.validate === true;
 const preflightProfile: BlackBoxRunnerPreflightProfile =
     cliOptions.strict === true || cliOptions.profile === 'strict'
         ? 'strict'
         : 'compat';
+const recipeRootDir = path.resolve(cliOptions.workingDirectory || '.');
+const recipeConfigPath = path.resolve(recipeRootDir, cliOptions.config);
+const rawInput = utils.openFile(cliOptions.config) as ScenarioCliConfig;
 
+type IncludeExpansionResult = {
+    config: ScenarioCliConfig
+    includes: JsonRecord[]
+}
+
+let includeExpansion: IncludeExpansionResult;
+let includeExpansionError: unknown;
+
+try {
+    includeExpansion = expandStaticRecipeIncludes(rawInput, recipeConfigPath, recipeRootDir);
+} catch (caught) {
+    if (!preflightMode) {
+        throw caught;
+    }
+
+    includeExpansionError = caught;
+    includeExpansion = {
+        config: rawInput,
+        includes: [],
+    };
+}
+
+const input = includeExpansion.config;
 const cliReplacements = utils.inputReplacesToJson(cliOptions.replace);
 
 input.replace = {
@@ -237,6 +279,295 @@ function asRecord(value: unknown): JsonRecord {
     return value && typeof value === 'object' && !Array.isArray(value)
         ? value as JsonRecord
         : {};
+}
+
+function asArray(value: unknown): unknown[] {
+    return Array.isArray(value) ? value : [];
+}
+
+function stringValue(value: unknown): string | undefined {
+    return typeof value === 'string' && value.length > 0
+        ? value
+        : undefined;
+}
+
+function errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
+function cloneJson<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value));
+}
+
+function isRemoteIncludePath(value: string): boolean {
+    return /^[a-z][a-z0-9+.-]*:/i.test(value) || value.startsWith('//');
+}
+
+function includeReference(value: unknown): { key?: string; path?: string; variables: JsonRecord; namePrefix?: string; nameSuffix?: string } {
+    if (typeof value === 'string') {
+        return {
+            key: value,
+            variables: {},
+        };
+    }
+
+    const record = asRecord(value);
+    return {
+        key: stringValue(record.fragment) ?? stringValue(record.name) ?? stringValue(record.id),
+        path: stringValue(record.path) ?? stringValue(record.file) ?? stringValue(record.recipe),
+        variables: asRecord(record.variables),
+        namePrefix: stringValue(record.namePrefix),
+        nameSuffix: stringValue(record.nameSuffix),
+    };
+}
+
+function parseIncludeFile(filePath: string): unknown {
+    const text = readFileSync(filePath, 'utf8');
+    return JSON.parse(text);
+}
+
+function resolveIncludeFilePath(includePath: string, parentFilePath: string, rootDir: string): string {
+    if (isRemoteIncludePath(includePath)) {
+        throw new Error('Remote includes are not allowed by default: ' + includePath);
+    }
+
+    if (path.isAbsolute(includePath)) {
+        throw new Error('Absolute include paths are not allowed: ' + includePath);
+    }
+
+    const resolved = path.resolve(path.dirname(parentFilePath), includePath);
+    const relative = path.relative(rootDir, resolved);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+        throw new Error('Include path escapes recipe root: ' + includePath);
+    }
+
+    return resolved;
+}
+
+function applyIncludeVariables<T>(value: T, variables: JsonRecord): T {
+    if (typeof value === 'string') {
+        const exact = value.match(/^\{([^{}]+)}$/);
+        if (exact && Object.prototype.hasOwnProperty.call(variables, exact[1])) {
+            return variables[exact[1]] as T;
+        }
+
+        return value.replaceAll(/\{([^{}]+)}/g, (match, key) => {
+            return Object.prototype.hasOwnProperty.call(variables, key)
+                ? String(variables[key])
+                : match;
+        }) as T;
+    }
+
+    if (Array.isArray(value)) {
+        return value.map(item => applyIncludeVariables(item, variables)) as T;
+    }
+
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(
+            Object.entries(value)
+                .map(([key, nested]) => [key, applyIncludeVariables(nested, variables)]),
+        ) as T;
+    }
+
+    return value;
+}
+
+function withIncludeNameAffixes(step: JsonRecord, prefix?: string, suffix?: string): JsonRecord {
+    if (!prefix && !suffix) {
+        return step;
+    }
+
+    const name = stringValue(step.name);
+    const withName = name
+        ? {
+            ...step,
+            name: `${prefix || ''}${name}${suffix || ''}`,
+        }
+        : step;
+
+    return {
+        ...withName,
+        ...(Array.isArray(withName.steps)
+            ? {
+                steps: withName.steps.map(child => asRecord(child)).map(child => withIncludeNameAffixes(child, prefix, suffix)),
+            }
+            : {}),
+        ...(Array.isArray(withName.loopSteps)
+            ? {
+                loopSteps: withName.loopSteps.map(child => asRecord(child)).map(child => withIncludeNameAffixes(child, prefix, suffix)),
+            }
+            : {}),
+        ...(Array.isArray(withName.groups)
+            ? {
+                groups: withName.groups.map(group => {
+                    const groupRecord = asRecord(group);
+                    return {
+                        ...groupRecord,
+                        steps: Array.isArray(groupRecord.steps)
+                            ? groupRecord.steps.map(child => asRecord(child)).map(child => withIncludeNameAffixes(child, prefix, suffix))
+                            : groupRecord.steps,
+                    };
+                }),
+            }
+            : {}),
+    };
+}
+
+function fragmentSteps(value: unknown): JsonRecord[] {
+    if (Array.isArray(value)) {
+        return value.filter(isJsonRecord);
+    }
+
+    const record = asRecord(value);
+    return asArray(record.steps).filter(isJsonRecord);
+}
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function expandStaticRecipeIncludes(
+    config: ScenarioCliConfig,
+    configPath: string,
+    rootDir: string,
+): IncludeExpansionResult {
+    const includes: JsonRecord[] = [];
+    const collectedVariables: JsonRecord = {};
+    const collectedConnections: JsonRecord = {};
+    const collectedDefaults: JsonRecord = {};
+    const inlineFragments = asRecord(config.fragments);
+
+    const readFragment = (
+        reference: ReturnType<typeof includeReference>,
+        parentFilePath: string,
+        stack: string[],
+    ): { value: unknown; source: string; filePath: string } => {
+        const key = reference.key;
+        if (key && Object.prototype.hasOwnProperty.call(inlineFragments, key)) {
+            const source = 'fragment:' + key;
+            if (stack.includes(source)) {
+                throw new Error('Circular include detected: ' + [...stack, source].join(' -> '));
+            }
+            return {
+                value: cloneJson(inlineFragments[key]),
+                source,
+                filePath: parentFilePath,
+            };
+        }
+
+        const includePath = reference.path ?? key;
+        if (!includePath) {
+            throw new Error('Include step must specify a fragment name or local path.');
+        }
+
+        const filePath = resolveIncludeFilePath(includePath, parentFilePath, rootDir);
+        const source = 'file:' + path.relative(rootDir, filePath);
+        if (stack.includes(source)) {
+            throw new Error('Circular include detected: ' + [...stack, source].join(' -> '));
+        }
+
+        try {
+            return {
+                value: parseIncludeFile(filePath),
+                source,
+                filePath,
+            };
+        } catch (caught) {
+            throw new Error('Failed to load include ' + includePath + ': ' + errorMessage(caught));
+        }
+    };
+
+    const expandSteps = (steps: readonly unknown[], parentFilePath: string, stack: string[]): JsonRecord[] => {
+        return steps.flatMap((step, index) => {
+            const record = asRecord(step);
+            if (!record.include) {
+                return [expandNestedStepIncludes(record, parentFilePath, stack)];
+            }
+
+            const reference = includeReference(record.include);
+            const mergedReference = {
+                ...reference,
+                variables: {
+                    ...reference.variables,
+                    ...asRecord(record.variables),
+                },
+                namePrefix: reference.namePrefix ?? stringValue(record.namePrefix),
+                nameSuffix: reference.nameSuffix ?? stringValue(record.nameSuffix),
+            };
+            const fragment = readFragment(mergedReference, parentFilePath, stack);
+            const fragmentRecord = asRecord(fragment.value);
+            Object.assign(collectedVariables, asRecord(fragmentRecord.variables));
+            Object.assign(collectedConnections, asRecord(fragmentRecord.connections));
+            Object.assign(collectedDefaults, asRecord(fragmentRecord.defaults));
+
+            const variables = {
+                ...asRecord(fragmentRecord.variables),
+                ...mergedReference.variables,
+            };
+            const expandedFragmentSteps = expandSteps(fragmentSteps(fragment.value), fragment.filePath, [...stack, fragment.source])
+                .map(fragmentStep => applyIncludeVariables(fragmentStep, variables))
+                .map(fragmentStep => withIncludeNameAffixes(fragmentStep, mergedReference.namePrefix, mergedReference.nameSuffix));
+
+            includes.push({
+                source: fragment.source,
+                path: reference.path ?? reference.key,
+                parent: path.relative(rootDir, parentFilePath),
+                stepIndex: index,
+                stepCount: expandedFragmentSteps.length,
+            });
+
+            return expandedFragmentSteps;
+        });
+    };
+
+    const expandNestedStepIncludes = (step: JsonRecord, parentFilePath: string, stack: string[]): JsonRecord => {
+        return {
+            ...step,
+            ...(Array.isArray(step.steps) ? { steps: expandSteps(step.steps, parentFilePath, stack) } : {}),
+            ...(Array.isArray(step.loopSteps) ? { loopSteps: expandSteps(step.loopSteps, parentFilePath, stack) } : {}),
+            ...(Array.isArray(step.setupSteps) ? { setupSteps: expandSteps(step.setupSteps, parentFilePath, stack) } : {}),
+            ...(Array.isArray(step.cleanupSteps) ? { cleanupSteps: expandSteps(step.cleanupSteps, parentFilePath, stack) } : {}),
+            ...(Array.isArray(step.groups)
+                ? {
+                    groups: step.groups.map(group => {
+                        const groupRecord = asRecord(group);
+                        return {
+                            ...groupRecord,
+                            ...(Array.isArray(groupRecord.steps)
+                                ? { steps: expandSteps(groupRecord.steps, parentFilePath, stack) }
+                                : {}),
+                        };
+                    }),
+                }
+                : {}),
+        };
+    };
+
+    return {
+        config: {
+            ...config,
+            variables: {
+                ...collectedVariables,
+                ...asRecord(config.variables),
+            },
+            connections: {
+                ...collectedConnections,
+                ...asRecord(config.connections),
+            },
+            defaults: {
+                ...collectedDefaults,
+                ...asRecord(config.defaults),
+            },
+            ...(Array.isArray(config.steps) ? { steps: expandSteps(config.steps, configPath, []) } : {}),
+            fragments: undefined,
+            includeMetadata: {
+                schemaVersion: 1,
+                configPath: path.relative(rootDir, configPath),
+                includes,
+            },
+        } as ScenarioCliConfig,
+        includes,
+    };
 }
 
 function joinUrl(baseUrl: unknown, path: unknown): unknown {
@@ -365,7 +696,14 @@ function toExecutableStep(
                 path: request.path || request.url,
                 input: request.input || step.input || inferredInputs,
                 output: request.output || step.output,
+                outputPath: request.outputPath || step.outputPath,
+                outputs: request.outputs || step.outputs,
                 value: step.value !== undefined ? step.value : request.value,
+                transform: request.transform || step.transform,
+                derive: request.derive || step.derive,
+                secret: request.secret ?? step.secret ?? request.redact ?? step.redact,
+                redact: request.redact ?? step.redact,
+                redactAs: request.redactAs || step.redactAs,
                 scenarioExecutionNumber: 1,
                 interactionExecutionNumber,
                 repeatIndex: step.repeatIndex,
@@ -596,6 +934,32 @@ function toExecutableInteractions(config: ScenarioCliConfig): unknown[] {
 
 const executionConfig = asRecord(input.execution);
 
+function randomRunnerRunId(): string {
+    const cryptoApi = globalThis.crypto as Crypto | undefined;
+    if (cryptoApi?.randomUUID) {
+        return 'bb-run-' + cryptoApi.randomUUID();
+    }
+
+    return 'bb-run-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+}
+
+function toExecutionCorrelationConfig(config: JsonRecord): JsonRecord {
+    const correlation = asRecord(config.correlation);
+    const runnerRunId = stringValue(correlation.runnerRunId) ??
+        stringValue(correlation.runId) ??
+        stringValue(config.runnerRunId) ??
+        stringValue(config.runId) ??
+        randomRunnerRunId();
+
+    return {
+        ...correlation,
+        runnerRunId,
+        runId: runnerRunId,
+    };
+}
+
+const correlationConfig = toExecutionCorrelationConfig(executionConfig);
+
 const failFast = executionConfig.failFast !== false;
 const printDryExecutableInteractions = cliOptions.execution?.toLowerCase().includes('dry') === true;
 const dryRun = cliOptions.dryRun === true || executionConfig.dryRun === true;
@@ -687,6 +1051,58 @@ const delayMs = firstNonNegativeInteger(
 ) || 0;
 const stopOnFailure = soakConfig.stopOnFailure === true || scaleConfig.stopOnFailure === true || executionConfig.stopOnFailure === true;
 const scaleMode = !soakMode && (maxRuns > 1 || maxDurationMs > 0);
+
+function configuredArtifactOptions(): JsonRecord {
+    return {
+        ...asRecord(executionConfig.artifactLimits),
+        ...asRecord(executionConfig.artifact),
+        ...asRecord(executionConfig.artifacts),
+    };
+}
+
+function normalizeEventKindCaps(value: unknown): Record<string, number> {
+    return Object.fromEntries(
+        Object.entries(asRecord(value))
+            .flatMap(([kind, limit]) => {
+                const parsed = firstPositiveInteger(limit);
+                return parsed ? [[kind, parsed]] : [];
+            }),
+    );
+}
+
+function configuredArtifactLimits(): JsonRecord {
+    const options = configuredArtifactOptions();
+    const maxEvents = firstPositiveInteger(
+        options.maxEvents,
+        options.maxArtifactEvents,
+        options.eventLimit,
+    );
+    const maxEventsByKind = normalizeEventKindCaps(
+        options.maxEventsByKind ||
+        options.maxEventsPerKind ||
+        options.eventKindLimits,
+    );
+
+    return {
+        ...(maxEvents ? { maxEvents } : {}),
+        ...(Object.keys(maxEventsByKind).length > 0 ? { maxEventsByKind } : {}),
+    };
+}
+
+function withConfiguredArtifactLimits(report: any): any {
+    const configured = configuredArtifactLimits();
+    if (Object.keys(configured).length <= 0) {
+        return report;
+    }
+
+    return {
+        ...report,
+        artifactLimits: {
+            ...asRecord(report.artifactLimits),
+            ...configured,
+        },
+    };
+}
 
 function stepName(step: JsonRecord, index: number): string {
     return typeof step.name === 'string' && step.name.length > 0
@@ -1420,9 +1836,13 @@ function toSoakExpandedConfig(config: ScenarioCliConfig): ScenarioCliConfig {
 let trafficExpansion: ReturnType<typeof toTrafficPlanExpandedConfig>;
 let expandedInput: ScenarioCliConfig;
 let scenarioJson: unknown[];
-let planExpansionError: unknown;
+let planExpansionError: unknown = includeExpansionError;
 
 try {
+    if (includeExpansionError !== undefined) {
+        throw includeExpansionError;
+    }
+
     trafficExpansion = toTrafficPlanExpandedConfig(input);
     expandedInput = toSoakExpandedConfig(trafficExpansion.config);
     scenarioJson = toExecutableInteractions(expandedInput);
@@ -1456,6 +1876,9 @@ function resultEvents(report: any): unknown[] {
         action: result.action,
         connection: result.connection,
         result: result.result,
+        runnerRunId: result.runnerRunId,
+        runnerStepId: result.runnerStepId,
+        correlation: result.correlation,
         runIndex: result.runIndex,
         stepResultKey: result.stepResultKey,
         scenarioExecutionNumber: result.scenarioExecutionNumber,
@@ -1465,6 +1888,26 @@ function resultEvents(report: any): unknown[] {
         endedAtEpochMs: result.endedAtEpochMs,
         durationMs: result.durationMs,
         actual: result.actual,
+    }));
+}
+
+function postRunAssertionEvents(report: any): unknown[] {
+    const results = Array.isArray(report.postRunAssertions?.results)
+        ? report.postRunAssertions.results
+        : [];
+
+    return results.map((result: any) => ({
+        kind: 'post-run-assertion',
+        name: result.name,
+        status: result.status,
+        path: result.path,
+        operator: result.operator,
+        runnerRunId: report.runnerRunId ?? report.correlation?.runnerRunId,
+        correlation: report.correlation,
+        expected: result.expected,
+        actual: result.actual,
+        result: result.result,
+        details: result.details,
     }));
 }
 
@@ -1483,6 +1926,7 @@ function keyedStoreEvents(kind: string, store: any): unknown[] {
 function artifactEvents(report: any): unknown[] {
     return [
         ...resultEvents(report),
+        ...postRunAssertionEvents(report),
         ...keyedStoreEvents('ws-message', report.wsMessages),
         ...keyedStoreEvents('ws-close', report.wsCloseEvents),
         ...keyedStoreEvents('rtc-message', report.rtcMessages),
@@ -1491,26 +1935,327 @@ function artifactEvents(report: any): unknown[] {
     ];
 }
 
-function limitedArtifactEvents(report: any): unknown[] {
-    const events = artifactEvents(report);
-    const maxEvents = firstPositiveInteger(
-        report?.artifactLimits?.maxEvents,
-        report?.summary?.soak?.maxArtifactEvents,
-    );
+function artifactEventKind(event: JsonRecord): string {
+    return stringValue(event.kind) ?? 'unknown';
+}
 
-    if (!maxEvents || events.length <= maxEvents) {
-        return events;
+function artifactEventStatus(event: JsonRecord): string {
+    return String(event.status || asRecord(event.result).status || 'unknown');
+}
+
+function artifactEventTransport(event: JsonRecord): string {
+    return String(event.transport || asRecord(event.value).transport || 'unknown');
+}
+
+function artifactEventConnection(event: JsonRecord): string | undefined {
+    return stringValue(event.connection) ?? stringValue(asRecord(event.value).connection);
+}
+
+function artifactEventRunIndex(event: JsonRecord): string {
+    const runIndex = event.runIndex ?? asRecord(event.result).runIndex;
+    return runIndex === undefined || runIndex === null
+        ? 'unknown'
+        : String(runIndex);
+}
+
+function isFailureArtifactEvent(event: JsonRecord): boolean {
+    return (event.kind === 'step-result' || event.kind === 'post-run-assertion') &&
+        artifactEventStatus(event) === 'FAILURE';
+}
+
+function isDiagnosticArtifactEvent(event: JsonRecord): boolean {
+    return event.kind === 'rtc-diagnostic';
+}
+
+function shouldPreserveArtifactEvent(event: JsonRecord): boolean {
+    return isFailureArtifactEvent(event) || isDiagnosticArtifactEvent(event);
+}
+
+function eventPointer(event: ArtifactEventRecord): JsonRecord {
+    return {
+        sequence: event.sequence,
+        kind: event.kind,
+        name: event.name,
+        status: event.status,
+        transport: event.transport,
+        action: event.action,
+        connection: event.connection,
+        runnerRunId: event.runnerRunId,
+        runnerStepId: event.runnerStepId,
+        runIndex: event.runIndex,
+        stepResultKey: event.stepResultKey,
+        scenarioExecutionNumber: event.scenarioExecutionNumber,
+        interactionExecutionNumber: event.interactionExecutionNumber,
+        repeatIndex: event.repeatIndex,
+    };
+}
+
+function eventCounts(events: readonly ArtifactEventRecord[]): JsonRecord {
+    const byKind: Record<string, number> = {};
+    const byTransport: Record<string, number> = {};
+    const byStatus: Record<string, number> = {};
+
+    events.forEach(event => {
+        incrementCount(byKind, artifactEventKind(event));
+        incrementCount(byTransport, artifactEventTransport(event));
+        incrementCount(byStatus, artifactEventStatus(event));
+    });
+
+    return {
+        total: events.length,
+        byKind,
+        byTransport,
+        byStatus,
+    };
+}
+
+function toArtifactEventRecords(report: any): ArtifactEventRecord[] {
+    return artifactEvents(report).map((event, index) => ({
+        ...asRecord(event),
+        kind: stringValue(asRecord(event).kind) ?? 'unknown',
+        sequence: index + 1,
+    }));
+}
+
+function artifactLimitConfig(report: any): { maxEvents?: number; maxEventsByKind: Record<string, number> } {
+    return {
+        maxEvents: firstPositiveInteger(
+            report?.artifactLimits?.maxEvents,
+            report?.summary?.soak?.maxArtifactEvents,
+        ),
+        maxEventsByKind: normalizeEventKindCaps(report?.artifactLimits?.maxEventsByKind),
+    };
+}
+
+function selectArtifactEvents(report: any): ArtifactEventSelection {
+    const allEvents = toArtifactEventRecords(report);
+    const limits = artifactLimitConfig(report);
+    const emittedEvents: ArtifactEventRecord[] = [];
+    const omittedEvents: ArtifactEventRecord[] = [];
+    const emittedByKind: Record<string, number> = {};
+
+    allEvents.forEach(event => {
+        const kind = artifactEventKind(event);
+        const preserve = shouldPreserveArtifactEvent(event);
+        const kindLimit = limits.maxEventsByKind[kind];
+        const kindCapAllows = preserve || kindLimit === undefined || (emittedByKind[kind] || 0) < kindLimit;
+        const globalCapAllows = preserve || limits.maxEvents === undefined || emittedEvents.length < limits.maxEvents;
+
+        if (kindCapAllows && globalCapAllows) {
+            emittedEvents.push(event);
+            incrementCount(emittedByKind, kind);
+            return;
+        }
+
+        omittedEvents.push(event);
+    });
+
+    return {
+        allEvents,
+        emittedEvents,
+        index: buildArtifactIndex(report, allEvents, emittedEvents, omittedEvents, limits),
+    };
+}
+
+function artifactEventsWithTruncation(selection: ArtifactEventSelection): unknown[] {
+    const omittedEvents = Number(asRecord(selection.index.truncation).omittedEvents || 0);
+    if (omittedEvents <= 0) {
+        return selection.emittedEvents;
     }
 
+    const truncation = asRecord(selection.index.truncation);
     return [
-        ...events.slice(0, maxEvents),
+        ...selection.emittedEvents,
         {
             kind: 'artifact-truncated',
-            totalEvents: events.length,
-            emittedEvents: maxEvents,
-            omittedEvents: events.length - maxEvents,
+            totalEvents: truncation.totalEvents,
+            emittedEvents: truncation.emittedEvents,
+            omittedEvents: truncation.omittedEvents,
+            maxEvents: truncation.maxEvents,
+            maxEventsByKind: truncation.maxEventsByKind,
+            omittedByKind: truncation.omittedByKind,
         },
     ];
+}
+
+function compactSuccessSummaries(omittedEvents: readonly ArtifactEventRecord[]): JsonRecord[] {
+    const groups = new Map<string, JsonRecord>();
+
+    omittedEvents
+        .filter(event => event.kind === 'step-result' && artifactEventStatus(event) === 'SUCCESS')
+        .forEach(event => {
+            const key = [
+                event.name,
+                artifactEventTransport(event),
+                event.action,
+                artifactEventConnection(event) || 'unknown',
+            ].join('|');
+            const existing = groups.get(key) || {
+                name: event.name,
+                transport: artifactEventTransport(event),
+                action: event.action,
+                connection: artifactEventConnection(event),
+                status: 'SUCCESS',
+                count: 0,
+                firstSequence: event.sequence,
+                lastSequence: event.sequence,
+            };
+
+            existing.count = Number(existing.count || 0) + 1;
+            existing.lastSequence = event.sequence;
+            groups.set(key, existing);
+        });
+
+    return [...groups.values()];
+}
+
+function perRunSummaries(
+    allEvents: readonly ArtifactEventRecord[],
+    emittedSequences: ReadonlySet<number>,
+): JsonRecord[] {
+    const runs = new Map<string, JsonRecord>();
+
+    allEvents
+        .filter(event => event.kind === 'step-result')
+        .forEach(event => {
+            const runIndex = artifactEventRunIndex(event);
+            const status = artifactEventStatus(event);
+            const summary = runs.get(runIndex) || {
+                runIndex,
+                total: 0,
+                success: 0,
+                failure: 0,
+                emitted: 0,
+                omitted: 0,
+            };
+
+            summary.total = Number(summary.total || 0) + 1;
+            if (status === 'SUCCESS') {
+                summary.success = Number(summary.success || 0) + 1;
+            }
+            if (status === 'FAILURE') {
+                summary.failure = Number(summary.failure || 0) + 1;
+            }
+            if (emittedSequences.has(event.sequence)) {
+                summary.emitted = Number(summary.emitted || 0) + 1;
+            } else {
+                summary.omitted = Number(summary.omitted || 0) + 1;
+            }
+
+            runs.set(runIndex, summary);
+        });
+
+    return [...runs.values()];
+}
+
+function perConnectionSummaries(
+    allEvents: readonly ArtifactEventRecord[],
+    emittedSequences: ReadonlySet<number>,
+): JsonRecord[] {
+    const connections = new Map<string, JsonRecord>();
+
+    allEvents.forEach(event => {
+        const connection = artifactEventConnection(event);
+        if (!connection) {
+            return;
+        }
+
+        const summary = connections.get(connection) || {
+            connection,
+            total: 0,
+            emitted: 0,
+            omitted: 0,
+            byKind: {},
+            byTransport: {},
+            byStatus: {},
+        };
+
+        summary.total = Number(summary.total || 0) + 1;
+        if (emittedSequences.has(event.sequence)) {
+            summary.emitted = Number(summary.emitted || 0) + 1;
+        } else {
+            summary.omitted = Number(summary.omitted || 0) + 1;
+        }
+        incrementCount(summary.byKind as Record<string, number>, artifactEventKind(event));
+        incrementCount(summary.byTransport as Record<string, number>, artifactEventTransport(event));
+        incrementCount(summary.byStatus as Record<string, number>, artifactEventStatus(event));
+
+        connections.set(connection, summary);
+    });
+
+    return [...connections.values()];
+}
+
+function buildArtifactIndex(
+    report: any,
+    allEvents: readonly ArtifactEventRecord[],
+    emittedEvents: readonly ArtifactEventRecord[],
+    omittedEvents: readonly ArtifactEventRecord[],
+    limits: { maxEvents?: number; maxEventsByKind: Record<string, number> },
+): JsonRecord {
+    const emittedSequences = new Set(emittedEvents.map(event => event.sequence));
+    const omittedByKind = eventCounts(omittedEvents).byKind;
+    const firstFailure = allEvents.find(isFailureArtifactEvent);
+    const stepResults = allEvents
+        .filter(event => event.kind === 'step-result')
+        .map(event => ({
+            ...eventPointer(event),
+            emitted: emittedSequences.has(event.sequence),
+        }));
+    const compactSummaries = compactSuccessSummaries(omittedEvents);
+
+    return {
+        schemaVersion: 1,
+        kind: 'black-box-runner.artifact-index',
+        generatedAtEpochMs: Date.now(),
+        runnerRunId: report.runnerRunId,
+        correlation: report.correlation,
+        summary: report.summary,
+        counts: {
+            total: eventCounts(allEvents),
+            emitted: eventCounts(emittedEvents),
+            omitted: eventCounts(omittedEvents),
+        },
+        firstFailure: firstFailure ? eventPointer(firstFailure) : undefined,
+        stepResults,
+        perRun: perRunSummaries(allEvents, emittedSequences),
+        perConnection: perConnectionSummaries(allEvents, emittedSequences),
+        compaction: {
+            compacted: omittedEvents.length > 0,
+            repeatedSuccessSummaries: compactSummaries,
+        },
+        truncation: {
+            truncated: omittedEvents.length > 0,
+            totalEvents: allEvents.length,
+            emittedEvents: emittedEvents.length,
+            omittedEvents: omittedEvents.length,
+            omittedByKind,
+            maxEvents: limits.maxEvents,
+            maxEventsByKind: limits.maxEventsByKind,
+            preservedFailureEvents: emittedEvents.filter(isFailureArtifactEvent).length,
+            preservedDiagnosticEvents: emittedEvents.filter(isDiagnosticArtifactEvent).length,
+        },
+    };
+}
+
+function withArtifactReport(report: any): any {
+    const selection = selectArtifactEvents(report);
+    const truncation = asRecord(selection.index.truncation);
+
+    return {
+        ...report,
+        artifact: {
+            ...asRecord(report.artifact),
+            eventCount: truncation.totalEvents,
+            maxEvents: truncation.maxEvents,
+            maxEventsByKind: truncation.maxEventsByKind,
+            emittedEvents: truncation.emittedEvents,
+            omittedEvents: truncation.omittedEvents,
+            omittedByKind: truncation.omittedByKind,
+            truncated: truncation.truncated,
+            compactedSuccessGroups: asArray(asRecord(selection.index.compaction).repeatedSuccessSummaries).length,
+        },
+    };
 }
 
 function failureBundle(report: any): unknown {
@@ -1524,6 +2269,9 @@ function failureBundle(report: any): unknown {
             connection: result.connection,
             result: result.result,
             exception: result.exception,
+            runnerRunId: result.runnerRunId,
+            runnerStepId: result.runnerStepId,
+            correlation: result.correlation,
             method: result.method,
             path: result.path,
             expected: result.expected,
@@ -1535,11 +2283,34 @@ function failureBundle(report: any): unknown {
             interactionExecutionNumber: result.interactionExecutionNumber,
             repeatIndex: result.repeatIndex,
         }));
+    const postRunAssertionFailures = (report.postRunAssertions?.results || [])
+        .filter((result: any) => result.status === 'FAILURE');
 
     return {
         summary: report.summary,
         failures,
+        postRunAssertionFailures,
+        postRunAssertions: report.postRunAssertions,
         outputs: report.outputs,
+    };
+}
+
+function withExpandedPlanCorrelation(artifact: TrafficPlanArtifact, report: any): unknown {
+    return {
+        ...artifact,
+        runnerRunId: report.runnerRunId,
+        correlation: report.correlation,
+        replayRecipe: {
+            ...artifact.replayRecipe,
+            execution: {
+                ...asRecord(artifact.replayRecipe.execution),
+                correlation: {
+                    ...asRecord(asRecord(artifact.replayRecipe.execution).correlation),
+                    runnerRunId: report.runnerRunId,
+                    runId: report.runnerRunId,
+                },
+            },
+        },
     };
 }
 
@@ -1548,26 +2319,48 @@ async function writeArtifacts(report: any, dir: string): Promise<void> {
         recursive: true,
     });
 
-    const events = limitedArtifactEvents(report);
+    const artifactReport = withArtifactReport(withConfiguredArtifactLimits(report));
+    const selection = selectArtifactEvents(artifactReport);
+    const events = artifactEventsWithTruncation(selection);
     const metadata = {
         generatedAtEpochMs: Date.now(),
         config: cliOptions.config,
         workingDirectory: cliOptions.workingDirectory || '.',
         dryRun,
         execution: printDryExecutableInteractions ? 'dry' : 'run',
-        summary: report.summary,
+        summary: artifactReport.summary,
+        runnerRunId: artifactReport.runnerRunId,
+        correlation: artifactReport.correlation,
         command: sync.redactBlackBoxData(process.argv, resolvedVariables.redactions),
     };
 
-    await Deno.writeTextFile(artifactPath(dir, 'report.json'), JSON.stringify(report, null, 2));
+    await Deno.writeTextFile(artifactPath(dir, 'report.json'), JSON.stringify(artifactReport, null, 2));
     await Deno.writeTextFile(artifactPath(dir, 'events.jsonl'), events.map(toJsonLine).join(''));
-    await Deno.writeTextFile(artifactPath(dir, 'failures.json'), JSON.stringify(failureBundle(report), null, 2));
+    await Deno.writeTextFile(artifactPath(dir, 'failures.json'), JSON.stringify(failureBundle(artifactReport), null, 2));
     await Deno.writeTextFile(artifactPath(dir, 'metadata.json'), JSON.stringify(metadata, null, 2));
+    await Deno.writeTextFile(
+        artifactPath(dir, 'expanded-recipe.json'),
+        JSON.stringify(sync.redactBlackBoxData({
+            schemaVersion: 1,
+            kind: 'black-box-runner.expanded-recipe',
+            generatedAtEpochMs: Date.now(),
+            sourceConfig: cliOptions.config,
+            includeMetadata: input.includeMetadata,
+            recipe: expandedInput,
+        }, resolvedVariables.redactions), null, 2),
+    );
+    await Deno.writeTextFile(
+        artifactPath(dir, 'artifact-index.json'),
+        JSON.stringify(sync.redactBlackBoxData(selection.index, resolvedVariables.redactions), null, 2),
+    );
 
     if (trafficExpansion.artifact) {
         await Deno.writeTextFile(
             artifactPath(dir, 'expanded-plan.json'),
-            JSON.stringify(sync.redactBlackBoxData(trafficExpansion.artifact, resolvedVariables.redactions), null, 2),
+            JSON.stringify(sync.redactBlackBoxData(
+                withExpandedPlanCorrelation(trafficExpansion.artifact, artifactReport),
+                resolvedVariables.redactions,
+            ), null, 2),
         );
     }
 }
@@ -1613,6 +2406,7 @@ function latencyMetric(values: number[]): unknown {
         avg: Number((sum / sorted.length).toFixed(2)),
         p50: percentile(50),
         p95: percentile(95),
+        p99: percentile(99),
     };
 }
 
@@ -1653,6 +2447,132 @@ function countArrayValues(store: unknown): number {
         .reduce<number>((count, values) => count + (Array.isArray(values) ? values.length : 0), 0);
 }
 
+function ratio(numerator: number, denominator: number): number {
+    return denominator > 0
+        ? Number((numerator / denominator).toFixed(4))
+        : 1;
+}
+
+function resultOutcomeMetrics(results: any[], predicate: (result: any) => boolean): unknown {
+    const matching = results.filter(predicate);
+    const succeeded = matching.filter(result => result.status === 'SUCCESS').length;
+    const failed = matching.filter(result => result.status === 'FAILURE').length;
+
+    return {
+        attempted: matching.length,
+        succeeded,
+        failed,
+        successRatio: ratio(succeeded, matching.length),
+    };
+}
+
+function flattenStoreValues(store: unknown): any[] {
+    return Object.values(asRecord(store))
+        .flatMap(values => Array.isArray(values) ? values : []);
+}
+
+function diagnosticSeverity(value: unknown): string {
+    const severity = String(asRecord(value).severity || '').toLowerCase();
+    if (severity === 'warn') {
+        return 'warning';
+    }
+    return severity || 'unknown';
+}
+
+function diagnosticTopic(value: unknown): string {
+    return String(asRecord(value).topic || 'unknown');
+}
+
+function diagnosticMetricsFromValues(values: any[]): unknown {
+    const bySeverity: Record<string, number> = {
+        debug: 0,
+        info: 0,
+        warning: 0,
+        error: 0,
+        unknown: 0,
+    };
+    const byTopic: Record<string, number> = {};
+
+    values.forEach(value => {
+        incrementCount(bySeverity, diagnosticSeverity(value));
+        incrementCount(byTopic, diagnosticTopic(value));
+    });
+
+    return {
+        total: values.length,
+        bySeverity,
+        byTopic,
+    };
+}
+
+function diagnosticMetricsFromReport(report: any): unknown {
+    return diagnosticMetricsFromValues(flattenStoreValues(report.rtcDiagnostics));
+}
+
+function countNestedArrayValues(results: any[], fieldName: string): number {
+    return results.reduce((count, result) => {
+        const actualValues = asRecord(result.actual);
+        const detailValues = asRecord(result.details);
+        const actualValue = actualValues[fieldName];
+        const detailValue = detailValues[fieldName];
+        return count +
+            (Array.isArray(actualValue) ? actualValue.length : 0) +
+            (Array.isArray(detailValue) ? detailValue.length : 0);
+    }, 0);
+}
+
+function baseMetrics(report: any): JsonRecord {
+    const results = Array.isArray(report.resultsList) ? report.resultsList : [];
+    const byTransport: Record<string, number> = {};
+    const byAction: Record<string, number> = {};
+    const byStatus: Record<string, number> = {};
+    const closeResults = results.filter((result: any) => String(result.action || '').toLowerCase() === 'close');
+
+    results.forEach((result: any) => {
+        incrementCount(byTransport, result.transport);
+        incrementCount(byAction, result.action || result.method || result.transport);
+        incrementCount(byStatus, result.status);
+    });
+
+    return {
+        byTransport,
+        byAction,
+        byStatus,
+        sends: resultOutcomeMetrics(results, result => String(result.action || '').toLowerCase() === 'send'),
+        waits: resultOutcomeMetrics(results, result => ['wait', 'expect'].includes(String(result.action || '').toLowerCase())),
+        latencyMs: {
+            stepDuration: latencyMetric(results.map((result: any) => numberFromPath(result.durationMs)).filter((value: number | undefined): value is number => value !== undefined)),
+            connect: latencyMetric(results.map((result: any) => numberFromPath(result.actual?.connectLatencyMs)).filter((value: number | undefined): value is number => value !== undefined)),
+            send: latencyMetric(results.map((result: any) => numberFromPath(result.actual?.sendLatencyMs)).filter((value: number | undefined): value is number => value !== undefined)),
+            firstPayload: latencyMetric(results.map((result: any) => numberFromPath(result.actual?.firstPayloadLatencyMs)).filter((value: number | undefined): value is number => value !== undefined)),
+        },
+        failures: {
+            total: results.filter((result: any) => result.status === 'FAILURE').length,
+            missingExpectedMessages: countNestedArrayValues(results, 'missingMessages'),
+            missingExpectedDiagnostics: countNestedArrayValues(results, 'missingDiagnostics'),
+        },
+        reconnects: countReconnects(results),
+        diagnostics: diagnosticMetricsFromReport(report),
+        cleanup: {
+            closeSteps: closeResults.length,
+            closeSuccess: closeResults.filter((result: any) => result.status === 'SUCCESS').length,
+            closeFailure: closeResults.filter((result: any) => result.status === 'FAILURE').length,
+            rtcCloseEvents: countArrayValues(report.rtcCloseEvents),
+            wsCloseEvents: countArrayValues(report.wsCloseEvents),
+        },
+    };
+}
+
+function withBaseMetrics(report: any): any {
+    return {
+        ...report,
+        metrics: {
+            ...baseMetrics(report),
+            ...asRecord(report.metrics),
+        },
+    };
+}
+
 function scaleMetrics(results: any[], runs: any[]): unknown {
     const byTransport: Record<string, number> = {};
     const byAction: Record<string, number> = {};
@@ -1669,6 +2589,8 @@ function scaleMetrics(results: any[], runs: any[]): unknown {
         byTransport,
         byAction,
         byStatus,
+        sends: resultOutcomeMetrics(results, result => String(result.action || '').toLowerCase() === 'send'),
+        waits: resultOutcomeMetrics(results, result => ['wait', 'expect'].includes(String(result.action || '').toLowerCase())),
         latencyMs: {
             runDuration: latencyMetric(runs.map(run => numberFromPath(run.summary?.durationMs)).filter((value): value is number => value !== undefined)),
             stepDuration: latencyMetric(results.map(result => numberFromPath(result.durationMs)).filter((value): value is number => value !== undefined)),
@@ -1679,8 +2601,11 @@ function scaleMetrics(results: any[], runs: any[]): unknown {
         failures: {
             total: results.filter(result => result.status === 'FAILURE').length,
             runs: runs.filter(run => (run.summary?.failure || 0) > 0).length,
+            missingExpectedMessages: countNestedArrayValues(results, 'missingMessages'),
+            missingExpectedDiagnostics: countNestedArrayValues(results, 'missingDiagnostics'),
         },
         reconnects: countReconnects(results),
+        diagnostics: diagnosticMetricsFromValues(runs.flatMap(run => flattenStoreValues(run.report?.rtcDiagnostics))),
         cleanup: {
             closeSteps: closeResults.length,
             closeSuccess: closeResults.filter(result => result.status === 'SUCCESS').length,
@@ -1704,8 +2629,6 @@ function soakMetrics(report: any): unknown {
     const byTransport: Record<string, number> = {};
     const byAction: Record<string, number> = {};
     const byStatus: Record<string, number> = {};
-    const sendResults = results.filter((result: any) => String(result.action || '').toLowerCase() === 'send');
-    const waitResults = results.filter((result: any) => ['wait', 'expect'].includes(String(result.action || '').toLowerCase()));
     const closeResults = results.filter((result: any) => String(result.action || '').toLowerCase() === 'close');
 
     results.forEach((result: any) => {
@@ -1720,16 +2643,8 @@ function soakMetrics(report: any): unknown {
         byTransport,
         byAction,
         byStatus,
-        sends: {
-            attempted: sendResults.length,
-            succeeded: sendResults.filter((result: any) => result.status === 'SUCCESS').length,
-            failed: sendResults.filter((result: any) => result.status === 'FAILURE').length,
-        },
-        waits: {
-            attempted: waitResults.length,
-            succeeded: waitResults.filter((result: any) => result.status === 'SUCCESS').length,
-            failed: waitResults.filter((result: any) => result.status === 'FAILURE').length,
-        },
+        sends: resultOutcomeMetrics(results, result => String(result.action || '').toLowerCase() === 'send'),
+        waits: resultOutcomeMetrics(results, result => ['wait', 'expect'].includes(String(result.action || '').toLowerCase())),
         latencyMs: {
             stepDuration: latencyMetric(results.map((result: any) => numberFromPath(result.durationMs)).filter((value: number | undefined): value is number => value !== undefined)),
             connect: latencyMetric(results.map((result: any) => numberFromPath(result.actual?.connectLatencyMs)).filter((value: number | undefined): value is number => value !== undefined)),
@@ -1738,8 +2653,11 @@ function soakMetrics(report: any): unknown {
         },
         failures: {
             total: results.filter((result: any) => result.status === 'FAILURE').length,
+            missingExpectedMessages: countNestedArrayValues(results, 'missingMessages'),
+            missingExpectedDiagnostics: countNestedArrayValues(results, 'missingDiagnostics'),
         },
         reconnects: countReconnects(results),
+        diagnostics: diagnosticMetricsFromReport(report),
         events: {
             wsMessages: countArrayValues(report.wsMessages),
             wsCloseEvents: countArrayValues(report.wsCloseEvents),
@@ -1823,6 +2741,488 @@ function withTrafficPlanReport(report: any): any {
     };
 }
 
+function postRunOperatorKeys(): string[] {
+    return [
+        'equals',
+        'eq',
+        'expected',
+        'notEquals',
+        'ne',
+        'gte',
+        'min',
+        'atLeast',
+        'lte',
+        'max',
+        'atMost',
+        'gt',
+        'lt',
+        'between',
+        'includes',
+        'contains',
+        'notIncludes',
+        'exists',
+    ];
+}
+
+function isPostRunAssertionSpec(value: JsonRecord): boolean {
+    return value.path !== undefined ||
+        value.metric !== undefined ||
+        value.from !== undefined ||
+        value.actual !== undefined ||
+        value.operator !== undefined ||
+        value.op !== undefined ||
+        postRunOperatorKeys().some(key => value[key] !== undefined);
+}
+
+function normalizePostRunAssertionSource(value: unknown, source: string): JsonRecord[] {
+    if (Array.isArray(value)) {
+        return value
+            .filter(item => item && typeof item === 'object' && !Array.isArray(item))
+            .map((item, index) => ({
+                source,
+                index,
+                ...(item as JsonRecord),
+            }));
+    }
+
+    const record = asRecord(value);
+    if (Object.keys(record).length <= 0) {
+        return [];
+    }
+
+    if (isPostRunAssertionSpec(record)) {
+        return [{
+            source,
+            ...record,
+        }];
+    }
+
+    return Object.entries(record).map(([name, spec]) => {
+        if (spec && typeof spec === 'object' && !Array.isArray(spec)) {
+            const specRecord = spec as JsonRecord;
+            return {
+                source,
+                name: stringValue(specRecord.name) ?? name,
+                ...specRecord,
+                path: specRecord.path ?? specRecord.metric ?? specRecord.from ?? name,
+            };
+        }
+
+        return {
+            source,
+            name,
+            path: name,
+            equals: spec,
+        };
+    });
+}
+
+function configuredPostRunAssertions(): JsonRecord[] {
+    return [
+        ...normalizePostRunAssertionSource(input.postRunAssertions, 'postRunAssertions'),
+        ...normalizePostRunAssertionSource(executionConfig.postRunAssertions, 'execution.postRunAssertions'),
+        ...normalizePostRunAssertionSource(executionConfig.thresholds, 'execution.thresholds'),
+    ];
+}
+
+function reportPathSegments(path: string): string[] {
+    const segments: string[] = [];
+    let current = '';
+
+    for (let index = 0; index < path.length; index++) {
+        const character = path[index];
+
+        if (character === '.') {
+            if (current.length > 0) {
+                segments.push(current);
+                current = '';
+            }
+            continue;
+        }
+
+        if (character === '[') {
+            if (current.length > 0) {
+                segments.push(current);
+                current = '';
+            }
+            const endIndex = path.indexOf(']', index);
+            if (endIndex < 0) {
+                current += character;
+                continue;
+            }
+            const rawSegment = path.slice(index + 1, endIndex).trim();
+            segments.push(rawSegment.replace(/^['"]|['"]$/g, ''));
+            index = endIndex;
+            continue;
+        }
+
+        current += character;
+    }
+
+    if (current.length > 0) {
+        segments.push(current);
+    }
+
+    return segments.filter(segment => segment.length > 0);
+}
+
+function resolveReportPath(report: any, path: string | undefined): { found: boolean; value?: unknown } {
+    if (!path || path.trim().length <= 0) {
+        return {
+            found: false,
+        };
+    }
+
+    const segments = reportPathSegments(path.trim());
+    const normalizedSegments = segments[0] === 'report'
+        ? segments.slice(1)
+        : segments;
+    let value = report;
+
+    for (const segment of normalizedSegments) {
+        if (value === undefined || value === null) {
+            return {
+                found: false,
+            };
+        }
+
+        value = value[segment];
+    }
+
+    return value === undefined
+        ? {
+            found: false,
+        }
+        : {
+            found: true,
+            value,
+        };
+}
+
+function firstConfiguredOperator(spec: JsonRecord): string {
+    const explicit = stringValue(spec.operator) ?? stringValue(spec.op);
+    if (explicit) {
+        return explicit;
+    }
+
+    return postRunOperatorKeys().find(key => spec[key] !== undefined) ?? 'equals';
+}
+
+function operatorExpectedValue(spec: JsonRecord, aliases: string[]): unknown {
+    for (const alias of aliases) {
+        if (spec[alias] !== undefined) {
+            return spec[alias];
+        }
+    }
+
+    if (spec.value !== undefined) {
+        return spec.value;
+    }
+
+    return spec.expected;
+}
+
+function numberComparison(operator: string, actual: unknown, expected: unknown): { pass: boolean; details?: JsonRecord } {
+    const actualNumber = Number(actual);
+    const expectedNumber = Number(expected);
+
+    if (!Number.isFinite(actualNumber) || !Number.isFinite(expectedNumber)) {
+        return {
+            pass: false,
+            details: {
+                reason: 'numeric-comparison-requires-finite-values',
+                actual,
+                expected,
+            },
+        };
+    }
+
+    if (operator === 'gt') {
+        return {
+            pass: actualNumber > expectedNumber,
+        };
+    }
+
+    if (operator === 'gte' || operator === 'min' || operator === 'atLeast') {
+        return {
+            pass: actualNumber >= expectedNumber,
+        };
+    }
+
+    if (operator === 'lt') {
+        return {
+            pass: actualNumber < expectedNumber,
+        };
+    }
+
+    return {
+        pass: actualNumber <= expectedNumber,
+    };
+}
+
+function includesValue(actual: unknown, expected: unknown, spec: JsonRecord): boolean {
+    if (typeof actual === 'string') {
+        return actual.includes(String(expected));
+    }
+
+    if (Array.isArray(actual)) {
+        return actual.some(item => compareJson(
+            expected as any,
+            item as any,
+            toConfig(
+                String(spec.comparison || COMPARISON.COMPATIBLE),
+                Array.isArray(spec.ignoreJsonKeys) ? spec.ignoreJsonKeys as string[] : [],
+                Array.isArray(spec.ignoreJsonPaths) ? spec.ignoreJsonPaths as string[] : [],
+            ),
+        ).isEqual);
+    }
+
+    if (actual && typeof actual === 'object' && typeof expected === 'string') {
+        return Object.prototype.hasOwnProperty.call(actual, expected);
+    }
+
+    return false;
+}
+
+function postRunAssertionName(spec: JsonRecord, index: number, path: string | undefined): string {
+    return stringValue(spec.name) ??
+        stringValue(spec.label) ??
+        path ??
+        'post-run-assertion-' + (index + 1);
+}
+
+function toPostRunAssertionResult(
+    spec: JsonRecord,
+    index: number,
+    report: any,
+): JsonRecord {
+    const path = stringValue(spec.path ?? spec.metric ?? spec.from);
+    const name = postRunAssertionName(spec, index, path);
+    const operator = firstConfiguredOperator(spec);
+    const resolved = spec.actual !== undefined
+        ? {
+            found: true,
+            value: spec.actual,
+        }
+        : resolveReportPath(report, path);
+    const actual = resolved.value;
+    const common = {
+        name,
+        path,
+        operator,
+        source: stringValue(spec.source),
+        index: numberFromPath(spec.index),
+        actual,
+    };
+
+    if (operator === 'exists') {
+        const expectedExists = spec.exists === undefined ? true : Boolean(spec.exists);
+        const actualExists = resolved.found;
+        const status = actualExists === expectedExists ? 'SUCCESS' : 'FAILURE';
+        return {
+            ...common,
+            status,
+            expected: expectedExists,
+            ...(status === 'FAILURE' ? {
+                result: 'Post-run assertion failed',
+                details: {
+                    reason: expectedExists ? 'path-missing' : 'path-present',
+                },
+            } : {}),
+        };
+    }
+
+    if (!resolved.found) {
+        return {
+            ...common,
+            status: 'FAILURE',
+            expected: operatorExpectedValue(spec, [operator, 'expected', 'equals', 'eq']),
+            result: 'Post-run assertion failed',
+            details: {
+                reason: 'path-missing',
+            },
+        };
+    }
+
+    if (operator === 'equals' || operator === 'eq' || operator === 'expected') {
+        const expected = operatorExpectedValue(spec, ['equals', 'eq', 'expected']);
+        const comparison = compareJson(
+            expected as any,
+            actual as any,
+            toConfig(
+                String(spec.comparison || COMPARISON.COMPATIBLE),
+                Array.isArray(spec.ignoreJsonKeys) ? spec.ignoreJsonKeys as string[] : [],
+                Array.isArray(spec.ignoreJsonPaths) ? spec.ignoreJsonPaths as string[] : [],
+            ),
+        );
+
+        return {
+            ...common,
+            expected,
+            status: comparison.isEqual ? 'SUCCESS' : 'FAILURE',
+            ...(comparison.isEqual ? {} : {
+                result: 'Post-run assertion failed',
+                details: {
+                    comparison,
+                },
+            }),
+        };
+    }
+
+    if (operator === 'notEquals' || operator === 'ne') {
+        const expected = operatorExpectedValue(spec, ['notEquals', 'ne', 'expected', 'equals', 'eq']);
+        const comparison = compareJson(
+            expected as any,
+            actual as any,
+            toConfig(String(spec.comparison || COMPARISON.COMPATIBLE)),
+        );
+
+        return {
+            ...common,
+            expected,
+            status: comparison.isEqual ? 'FAILURE' : 'SUCCESS',
+            ...(comparison.isEqual ? {
+                result: 'Post-run assertion failed',
+                details: {
+                    reason: 'values-were-equal',
+                    comparison,
+                },
+            } : {}),
+        };
+    }
+
+    if (['gt', 'gte', 'min', 'atLeast', 'lt', 'lte', 'max', 'atMost'].includes(operator)) {
+        const expected = operatorExpectedValue(spec, [operator, 'value', 'expected']);
+        const comparison = numberComparison(operator, actual, expected);
+        return {
+            ...common,
+            expected,
+            status: comparison.pass ? 'SUCCESS' : 'FAILURE',
+            ...(comparison.pass ? {} : {
+                result: 'Post-run assertion failed',
+                details: comparison.details ?? {
+                    reason: 'numeric-threshold-not-met',
+                },
+            }),
+        };
+    }
+
+    if (operator === 'between') {
+        const expected = operatorExpectedValue(spec, ['between']);
+        const range = Array.isArray(expected) ? expected : [];
+        const actualNumber = Number(actual);
+        const min = Number(range[0]);
+        const max = Number(range[1]);
+        const pass = Number.isFinite(actualNumber) &&
+            Number.isFinite(min) &&
+            Number.isFinite(max) &&
+            actualNumber >= min &&
+            actualNumber <= max;
+
+        return {
+            ...common,
+            expected,
+            status: pass ? 'SUCCESS' : 'FAILURE',
+            ...(pass ? {} : {
+                result: 'Post-run assertion failed',
+                details: {
+                    reason: 'between-threshold-not-met',
+                    min: range[0],
+                    max: range[1],
+                },
+            }),
+        };
+    }
+
+    if (operator === 'includes' || operator === 'contains' || operator === 'notIncludes') {
+        const expected = operatorExpectedValue(spec, ['includes', 'contains', 'notIncludes', 'expected', 'value']);
+        const includes = includesValue(actual, expected, spec);
+        const pass = operator === 'notIncludes' ? !includes : includes;
+
+        return {
+            ...common,
+            expected,
+            status: pass ? 'SUCCESS' : 'FAILURE',
+            ...(pass ? {} : {
+                result: 'Post-run assertion failed',
+                details: {
+                    reason: operator === 'notIncludes' ? 'value-was-included' : 'value-was-not-included',
+                },
+            }),
+        };
+    }
+
+    return {
+        ...common,
+        status: 'FAILURE',
+        expected: operatorExpectedValue(spec, [operator, 'expected', 'value']),
+        result: 'Post-run assertion failed',
+        details: {
+            reason: 'unsupported-post-run-operator',
+            supportedOperators: postRunOperatorKeys(),
+        },
+    };
+}
+
+function withPostRunAssertions(report: any, assertions: JsonRecord[]): any {
+    if (assertions.length <= 0) {
+        return report;
+    }
+
+    const results = assertions.map((assertion, index) => toPostRunAssertionResult(assertion, index, report));
+    const failures = results.filter(result => result.status === 'FAILURE');
+    const summary = {
+        total: results.length,
+        success: results.length - failures.length,
+        failure: failures.length,
+    };
+
+    return sync.redactBlackBoxData({
+        ...report,
+        summary: {
+            ...report.summary,
+            ok: Number(report.summary?.failure || 0) <= 0 && failures.length <= 0,
+            postRunAssertions: summary,
+            firstPostRunAssertionFailure: failures[0]
+                ? {
+                    name: failures[0].name,
+                    path: failures[0].path,
+                    operator: failures[0].operator,
+                    expected: failures[0].expected,
+                    actual: failures[0].actual,
+                    result: failures[0].result,
+                }
+                : undefined,
+        },
+        postRunAssertions: {
+            summary,
+            results,
+        },
+    }, resolvedVariables.redactions);
+}
+
+function withFinalReportChecks(report: any, includePostRunAssertions: boolean): any {
+    if (!includePostRunAssertions) {
+        return report;
+    }
+
+    const assertions = configuredPostRunAssertions();
+    if (assertions.length <= 0) {
+        return report;
+    }
+
+    const reportWithMetrics = withConfiguredArtifactLimits(withBaseMetrics(report));
+    const reportWithArtifact = withArtifactReport(reportWithMetrics);
+    const reportWithAssertions = withPostRunAssertions(reportWithArtifact, assertions);
+
+    return withArtifactReport(reportWithAssertions);
+}
+
+function hasReportFailures(report: any): boolean {
+    return Number(report?.summary?.failure || 0) > 0 ||
+        Number(report?.summary?.postRunAssertions?.failure || 0) > 0;
+}
+
 function annotateRunResults(report: any, runIndex: number): any[] {
     return (report.resultsList || []).map((result: any) => ({
         ...result,
@@ -1872,6 +3272,7 @@ function aggregateReports(runs: any[], startedAtEpochMs: number, endedAtEpochMs:
             failure,
             failFast,
             durationMs: endedAtEpochMs - startedAtEpochMs,
+            runnerRunId: runs.at(0)?.report?.runnerRunId,
             runs: runs.length,
             passedRuns: runs.length - failedRuns,
             failedRuns,
@@ -1906,9 +3307,13 @@ function aggregateReports(runs: any[], startedAtEpochMs: number, endedAtEpochMs:
             startedAtEpochMs: run.startedAtEpochMs,
             endedAtEpochMs: run.endedAtEpochMs,
             durationMs: run.endedAtEpochMs - run.startedAtEpochMs,
+            runnerRunId: run.report?.runnerRunId,
+            correlation: run.report?.correlation,
             summary: run.summary,
             outputs: run.report?.outputs || {},
         })),
+        runnerRunId: runs.at(0)?.report?.runnerRunId,
+        correlation: runs.at(0)?.report?.correlation,
         results,
         resultsList,
         resultsByName: toResultsByName(resultsList),
@@ -1925,14 +3330,17 @@ function aggregateReports(runs: any[], startedAtEpochMs: number, endedAtEpochMs:
     };
 }
 
-async function executeOnce(): Promise<any> {
+async function executeOnce(includePostRunAssertions = true, runIndex = 1): Promise<any> {
     const report = await sync.executeBlackBox(scenarioJson, 0, {
         failFast,
         dryRun,
         variables: input.variables || {},
         redactions: resolvedVariables.redactions,
+        correlation: correlationConfig,
+        runnerRunId: correlationConfig.runnerRunId,
+        runIndex,
     });
-    return withTrafficPlanReport(withSoakReport(report));
+    return withFinalReportChecks(withTrafficPlanReport(withSoakReport(report)), includePostRunAssertions);
 }
 
 async function executeScale(): Promise<any> {
@@ -1950,7 +3358,7 @@ async function executeScale(): Promise<any> {
 
         const runIndex = runs.length + 1;
         const runStartedAtEpochMs = Date.now();
-        const report = await executeOnce();
+        const report = await executeOnce(false, runIndex);
         const runEndedAtEpochMs = Date.now();
 
         runs.push({
@@ -1966,7 +3374,7 @@ async function executeScale(): Promise<any> {
         }
     }
 
-    return aggregateReports(runs, startedAtEpochMs, Date.now());
+    return withFinalReportChecks(aggregateReports(runs, startedAtEpochMs, Date.now()), true);
 }
 
 if (preflightMode) {
@@ -1993,7 +3401,7 @@ if (preflightMode) {
 
             console.log(JSON.stringify(report, null, 2));
 
-            if (report?.summary?.failure && report.summary.failure > 0) {
+            if (hasReportFailures(report)) {
                 process.exit(1);
             }
         })

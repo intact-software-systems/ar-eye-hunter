@@ -20,7 +20,24 @@
         "closeAlice",
         "closeBob"
       ]
-    }
+    },
+    "postRunAssertions": [
+      {
+        "name": "all soak sends succeeded",
+        "path": "metrics.soak.sends.successRatio",
+        "gte": 1
+      },
+      {
+        "name": "no warning diagnostics",
+        "path": "metrics.soak.diagnostics.bySeverity.warning",
+        "lte": 0
+      },
+      {
+        "name": "send p95 stays under one second",
+        "path": "metrics.soak.latencyMs.send.p95",
+        "lte": 1000
+      }
+    ]
   },
   "connections": {
     "aliceRtc": {

@@ -207,6 +207,11 @@ helper.
 
 ## Compatibility
 
+Distributed run manifests should include `schemaVersion: 1`. Inline
+`rallar-bb-test` recipes inside a manifest should also include
+`schemaVersion: 1`; older unversioned recipes remain legacy-compatible v1 only
+through the recipe compatibility validator.
+
 Adding optional manifest fields or new artifact policy flags is compatible.
 
 Changing lifecycle state names, target policy modes, start modes, or rollup

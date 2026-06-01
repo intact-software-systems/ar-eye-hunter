@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "kind": "black-box-runner.expanded-recipe",
+  "generatedAtEpochMs": 1779952000000,
+  "sourceConfig": "packages/shared-test/black-box-runner/examples/fixture.json",
+  "includeMetadata": {
+    "schemaVersion": 1,
+    "configPath": "packages/shared-test/black-box-runner/examples/fixture.json",
+    "includes": [
+      {
+        "source": "file:fragments/rtc-connect.json",
+        "path": "fragments/rtc-connect.json",
+        "parent": "packages/shared-test/black-box-runner/examples/fixture.json",
+        "stepIndex": 0,
+        "stepCount": 1
+      }
+    ]
+  },
+  "recipe": {
+    "schemaVersion": 1,
+    "variables": {
+      "roomId": "fixture-room"
+    },
+    "steps": [
+      {
+        "name": "connectAlice",
+        "type": "rtc.connect",
+        "connection": "aliceRtc"
+      },
+      {
+        "name": "aliceWaits",
+        "type": "rtc.wait",
+        "connection": "aliceRtc"
+      }
+    ]
+  }
+}

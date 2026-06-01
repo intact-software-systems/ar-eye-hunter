@@ -34,6 +34,12 @@
       "default": "bb-group"
     }
   },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
   "connections": {
     "api": {
       "type": "http",
@@ -84,7 +90,16 @@
       "name": "deriveAuthHeader",
       "type": "set",
       "output": "authHeader",
-      "value": "Bearer {accessToken}"
+      "secret": true,
+      "redactAs": "authHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.accessToken"
+          }
+        ]
+      }
     },
     {
       "name": "createGroup",
@@ -261,7 +276,25 @@
       "name": "deriveWebSocketUrl",
       "type": "set",
       "output": "wsUrl",
-      "value": "{rallarWsBaseUrl}/api/ws/{sessionId}?ticket={wsTicket}"
+      "secret": true,
+      "redactAs": "wsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.sessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.wsTicket"
+            }
+          }
+        ]
+      }
     },
     {
       "name": "openWebSocket",

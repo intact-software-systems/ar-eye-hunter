@@ -73,6 +73,8 @@ export type BlackBoxRunnerArtifactEvent = Readonly<{
 export type BlackBoxRunnerFailureBundle = Readonly<{
     summary: BlackBoxRunnerArtifactSummary;
     failures: readonly Record<string, unknown>[];
+    postRunAssertionFailures?: readonly Record<string, unknown>[];
+    postRunAssertions?: Record<string, unknown>;
     outputs: Record<string, unknown>;
 }>;
 
@@ -89,6 +91,43 @@ export type BlackBoxRunnerArtifactMetadata = Readonly<{
     [key: string]: unknown;
 }>;
 
+export type BlackBoxRunnerLivePreflightReport = Readonly<{
+    schemaVersion?: number;
+    generatedAtEpochMs: number;
+    mode: 'live-environment';
+    ok: boolean;
+    summary: Record<string, unknown>;
+    checks: readonly Record<string, unknown>[];
+    issues: readonly Record<string, unknown>[];
+    skipReasons: readonly string[];
+    [key: string]: unknown;
+}>;
+
+export type BlackBoxRunnerArtifactIndex = Readonly<{
+    schemaVersion?: number;
+    kind?: 'black-box-runner.artifact-index';
+    generatedAtEpochMs: number;
+    summary: BlackBoxRunnerArtifactSummary;
+    counts: Record<string, unknown>;
+    stepResults: readonly Record<string, unknown>[];
+    perRun: readonly Record<string, unknown>[];
+    perConnection: readonly Record<string, unknown>[];
+    compaction?: Record<string, unknown>;
+    truncation: Record<string, unknown>;
+    firstFailure?: Record<string, unknown>;
+    [key: string]: unknown;
+}>;
+
+export type BlackBoxRunnerExpandedRecipe = Readonly<{
+    schemaVersion?: number;
+    kind?: 'black-box-runner.expanded-recipe';
+    generatedAtEpochMs: number;
+    sourceConfig?: string;
+    includeMetadata?: Record<string, unknown>;
+    recipe: Record<string, unknown>;
+    [key: string]: unknown;
+}>;
+
 export type BlackBoxRunnerExpandedPlan = Readonly<{
     version?: number;
     schemaVersion?: number;
@@ -102,6 +141,11 @@ export type BlackBoxRunnerExpandedPlan = Readonly<{
         execution?: Record<string, unknown>;
         [key: string]: unknown;
     }>;
+}>;
+
+export type BlackBoxRunnerReducedPlan = BlackBoxRunnerExpandedPlan & Readonly<{
+    kind?: 'black-box-runner.reduced-plan';
+    reduction?: Record<string, unknown>;
 }>;
 
 export type BlackBoxRunnerMatrixRun = Readonly<{
@@ -132,11 +176,16 @@ export type BlackBoxRunnerMatrixSummary = Readonly<{
 
 export type BlackBoxRunnerArtifactViews = Readonly<{
     eventStream: readonly BlackBoxRunnerArtifactEvent[];
+    postRunAssertions: readonly BlackBoxRunnerArtifactEvent[];
     rtcDiagnostics: readonly BlackBoxRunnerArtifactEvent[];
     rtcMessages: readonly BlackBoxRunnerArtifactEvent[];
     wsMessages: readonly BlackBoxRunnerArtifactEvent[];
     failures: readonly Record<string, unknown>[];
+    artifactIndex?: BlackBoxRunnerArtifactIndex;
+    expandedRecipe?: BlackBoxRunnerExpandedRecipe;
     replayRecipe?: BlackBoxRunnerExpandedPlan['replayRecipe'];
+    reducedPlan?: BlackBoxRunnerReducedPlan;
+    reducedReplayRecipe?: BlackBoxRunnerReducedPlan['replayRecipe'];
 }>;
 
 export type BlackBoxRunnerParsedArtifactBundle = Readonly<{
@@ -145,7 +194,11 @@ export type BlackBoxRunnerParsedArtifactBundle = Readonly<{
     events: readonly BlackBoxRunnerArtifactEvent[];
     failures: BlackBoxRunnerFailureBundle;
     metadata: BlackBoxRunnerArtifactMetadata;
+    artifactIndex?: BlackBoxRunnerArtifactIndex;
+    expandedRecipe?: BlackBoxRunnerExpandedRecipe;
+    preflightReport?: BlackBoxRunnerLivePreflightReport;
     expandedPlan?: BlackBoxRunnerExpandedPlan;
+    reducedPlan?: BlackBoxRunnerReducedPlan;
     matrixSummary?: BlackBoxRunnerMatrixSummary;
     views: BlackBoxRunnerArtifactViews;
     compatibility: Readonly<{
@@ -510,6 +563,16 @@ function validateArtifactEvent(
         return;
     }
 
+    if (event.kind === 'post-run-assertion') {
+        requireString(event, 'name', 'events.jsonl', path, issues);
+        requireString(event, 'status', 'events.jsonl', path, issues);
+        requireString(event, 'operator', 'events.jsonl', path, issues);
+        if (!('actual' in event)) {
+            addError(issues, 'events.jsonl', `${path}.actual`, 'Expected post-run assertion actual value.');
+        }
+        return;
+    }
+
     if (event.kind === 'artifact-truncated') {
         requireNumber(event, 'totalEvents', 'events.jsonl', path, issues);
         requireNumber(event, 'emittedEvents', 'events.jsonl', path, issues);
@@ -535,6 +598,12 @@ export function parseBlackBoxRunnerFailures(
 
     const summary = requireSummary(record.summary, 'failures.json', '$.summary', issues);
     const failures = requireArray(record, 'failures', 'failures.json', '$', issues);
+    const postRunAssertionFailures = Array.isArray(record.postRunAssertionFailures)
+        ? record.postRunAssertionFailures.filter(isRecord)
+        : undefined;
+    const postRunAssertions = isRecord(record.postRunAssertions)
+        ? record.postRunAssertions
+        : undefined;
     const outputs = isRecord(record.outputs) ? record.outputs : {};
     if (!isRecord(record.outputs)) {
         addError(issues, 'failures.json', '$.outputs', 'Expected object field outputs.');
@@ -545,6 +614,8 @@ export function parseBlackBoxRunnerFailures(
         ? {
             summary,
             failures: failures.filter(isRecord),
+            ...(postRunAssertionFailures ? { postRunAssertionFailures } : {}),
+            ...(postRunAssertions ? { postRunAssertions } : {}),
             outputs,
         }
         : undefined;
@@ -581,38 +652,167 @@ export function parseBlackBoxRunnerMetadata(
     return toResult(value, issues);
 }
 
-export function parseBlackBoxRunnerExpandedPlan(
+export function parseBlackBoxRunnerArtifactIndex(
     text: string,
-): BlackBoxRunnerArtifactValidationResult<BlackBoxRunnerExpandedPlan> {
-    const parsed = parseJson(text, 'expanded-plan.json');
+): BlackBoxRunnerArtifactValidationResult<BlackBoxRunnerArtifactIndex> {
+    const parsed = parseJson(text, 'artifact-index.json');
     const issues = [...parsed.issues];
-    const record = requireRecord(parsed.value, 'expanded-plan.json', '$', issues);
+    const record = requireRecord(parsed.value, 'artifact-index.json', '$', issues);
     if (!record) {
         return toResult(undefined, issues);
     }
 
-    const seed = requireNumber(record, 'seed', 'expanded-plan.json', '$', issues);
-    if (typeof record.replay !== 'boolean') {
-        addError(issues, 'expanded-plan.json', '$.replay', 'Expected boolean field replay.');
+    const generatedAtEpochMs = requireNumber(record, 'generatedAtEpochMs', 'artifact-index.json', '$', issues);
+    const summary = requireSummary(record.summary, 'artifact-index.json', '$.summary', issues);
+    const counts = requireRecord(record.counts, 'artifact-index.json', '$.counts', issues);
+    const stepResults = requireArray(record, 'stepResults', 'artifact-index.json', '$', issues);
+    const perRun = requireArray(record, 'perRun', 'artifact-index.json', '$', issues);
+    const perConnection = requireArray(record, 'perConnection', 'artifact-index.json', '$', issues);
+    const truncation = requireRecord(record.truncation, 'artifact-index.json', '$.truncation', issues);
+    if (truncation) {
+        requireNumber(truncation, 'totalEvents', 'artifact-index.json', '$.truncation', issues);
+        requireNumber(truncation, 'emittedEvents', 'artifact-index.json', '$.truncation', issues);
+        requireNumber(truncation, 'omittedEvents', 'artifact-index.json', '$.truncation', issues);
+        if (typeof truncation.truncated !== 'boolean') {
+            addError(issues, 'artifact-index.json', '$.truncation.truncated', 'Expected boolean field truncated.');
+        }
     }
-    const decisions = requireArray(record, 'decisions', 'expanded-plan.json', '$', issues);
-    const steps = requireArray(record, 'steps', 'expanded-plan.json', '$', issues);
-    const replayRecipe = requireRecord(record.replayRecipe, 'expanded-plan.json', '$.replayRecipe', issues);
+    validateRedactionPlaceholders(record, 'artifact-index.json', issues);
+
+    const value = generatedAtEpochMs !== undefined &&
+            summary &&
+            counts &&
+            stepResults &&
+            perRun &&
+            perConnection &&
+            truncation
+        ? {
+            ...record,
+            generatedAtEpochMs,
+            summary,
+            counts,
+            stepResults: stepResults.filter(isRecord),
+            perRun: perRun.filter(isRecord),
+            perConnection: perConnection.filter(isRecord),
+            compaction: isRecord(record.compaction) ? record.compaction : undefined,
+            truncation,
+            firstFailure: isRecord(record.firstFailure) ? record.firstFailure : undefined,
+        } satisfies BlackBoxRunnerArtifactIndex
+        : undefined;
+
+    return toResult(value, issues);
+}
+
+export function parseBlackBoxRunnerExpandedRecipe(
+    text: string,
+): BlackBoxRunnerArtifactValidationResult<BlackBoxRunnerExpandedRecipe> {
+    const parsed = parseJson(text, 'expanded-recipe.json');
+    const issues = [...parsed.issues];
+    const record = requireRecord(parsed.value, 'expanded-recipe.json', '$', issues);
+    if (!record) {
+        return toResult(undefined, issues);
+    }
+
+    const generatedAtEpochMs = requireNumber(record, 'generatedAtEpochMs', 'expanded-recipe.json', '$', issues);
+    const recipe = requireRecord(record.recipe, 'expanded-recipe.json', '$.recipe', issues);
+    if (recipe && recipe.steps !== undefined) {
+        requireArray(recipe, 'steps', 'expanded-recipe.json', '$.recipe', issues);
+    }
+    validateRedactionPlaceholders(record, 'expanded-recipe.json', issues);
+
+    const value = generatedAtEpochMs !== undefined && recipe
+        ? {
+            ...record,
+            generatedAtEpochMs,
+            sourceConfig: stringValue(record.sourceConfig),
+            includeMetadata: isRecord(record.includeMetadata) ? record.includeMetadata : undefined,
+            recipe,
+        } satisfies BlackBoxRunnerExpandedRecipe
+        : undefined;
+
+    return toResult(value, issues);
+}
+
+export function parseBlackBoxRunnerLivePreflightReport(
+    text: string,
+): BlackBoxRunnerArtifactValidationResult<BlackBoxRunnerLivePreflightReport> {
+    const parsed = parseJson(text, 'preflight-report.json');
+    const issues = [...parsed.issues];
+    const record = requireRecord(parsed.value, 'preflight-report.json', '$', issues);
+    if (!record) {
+        return toResult(undefined, issues);
+    }
+
+    const generatedAtEpochMs = requireNumber(record, 'generatedAtEpochMs', 'preflight-report.json', '$', issues);
+    const mode = requireString(record, 'mode', 'preflight-report.json', '$', issues);
+    if (mode !== 'live-environment') {
+        addError(issues, 'preflight-report.json', '$.mode', 'Expected mode live-environment.');
+    }
+    if (typeof record.ok !== 'boolean') {
+        addError(issues, 'preflight-report.json', '$.ok', 'Expected boolean field ok.');
+    }
+    const summary = requireRecord(record.summary, 'preflight-report.json', '$.summary', issues);
+    const checks = requireArray(record, 'checks', 'preflight-report.json', '$', issues);
+    const issuesList = requireArray(record, 'issues', 'preflight-report.json', '$', issues);
+    const skipReasonsValue = requireArray(record, 'skipReasons', 'preflight-report.json', '$', issues);
+    const skipReasons = stringList(skipReasonsValue);
+    validateRedactionPlaceholders(record, 'preflight-report.json', issues);
+
+    const value = generatedAtEpochMs !== undefined &&
+            mode === 'live-environment' &&
+            typeof record.ok === 'boolean' &&
+            summary &&
+            checks &&
+            issuesList &&
+            skipReasonsValue
+        ? {
+            ...record,
+            generatedAtEpochMs,
+            mode,
+            ok: record.ok,
+            summary,
+            checks: checks.filter(isRecord),
+            issues: issuesList.filter(isRecord),
+            skipReasons,
+        } satisfies BlackBoxRunnerLivePreflightReport
+        : undefined;
+
+    return toResult(value, issues);
+}
+
+function parseBlackBoxRunnerTrafficPlanArtifact(
+    text: string,
+    file: BlackBoxRunnerArtifactFileName,
+): BlackBoxRunnerArtifactValidationResult<BlackBoxRunnerExpandedPlan> {
+    const parsed = parseJson(text, file);
+    const issues = [...parsed.issues];
+    const record = requireRecord(parsed.value, file, '$', issues);
+    if (!record) {
+        return toResult(undefined, issues);
+    }
+
+    const seed = requireNumber(record, 'seed', file, '$', issues);
+    if (typeof record.replay !== 'boolean') {
+        addError(issues, file, '$.replay', 'Expected boolean field replay.');
+    }
+    const decisions = requireArray(record, 'decisions', file, '$', issues);
+    const steps = requireArray(record, 'steps', file, '$', issues);
+    const replayRecipe = requireRecord(record.replayRecipe, file, '$.replayRecipe', issues);
     if (replayRecipe) {
-        requireArray(replayRecipe, 'steps', 'expanded-plan.json', '$.replayRecipe', issues);
+        requireArray(replayRecipe, 'steps', file, '$.replayRecipe', issues);
         const execution = asRecord(replayRecipe.execution);
         const trafficPlan = asRecord(execution.trafficPlan);
         const expandedPlan = asRecord(trafficPlan.expandedPlan);
         if (!trafficPlan.replayFrom && Object.keys(expandedPlan).length <= 0) {
             addError(
                 issues,
-                'expanded-plan.json',
+                file,
                 '$.replayRecipe.execution.trafficPlan',
                 'Expected replayFrom or expandedPlan replay data.',
             );
         }
     }
-    validateRedactionPlaceholders(record, 'expanded-plan.json', issues);
+    validateRedactionPlaceholders(record, file, issues);
 
     const replaySteps = replayRecipe ? asArray(replayRecipe.steps).filter(isRecord) : undefined;
     const value = seed !== undefined && typeof record.replay === 'boolean' && decisions && steps && replayRecipe && replaySteps
@@ -630,6 +830,31 @@ export function parseBlackBoxRunnerExpandedPlan(
         : undefined;
 
     return toResult(value, issues);
+}
+
+export function parseBlackBoxRunnerExpandedPlan(
+    text: string,
+): BlackBoxRunnerArtifactValidationResult<BlackBoxRunnerExpandedPlan> {
+    return parseBlackBoxRunnerTrafficPlanArtifact(text, 'expanded-plan.json');
+}
+
+export function parseBlackBoxRunnerReducedPlan(
+    text: string,
+): BlackBoxRunnerArtifactValidationResult<BlackBoxRunnerReducedPlan> {
+    const parsed = parseBlackBoxRunnerTrafficPlanArtifact(text, 'reduced-plan.json');
+    if (!parsed.value) {
+        return parsed as BlackBoxRunnerArtifactValidationResult<BlackBoxRunnerReducedPlan>;
+    }
+
+    const rawPlan = parsed.value as BlackBoxRunnerExpandedPlan & JsonRecord;
+
+    return toResult({
+        ...parsed.value,
+        kind: rawPlan.kind === 'black-box-runner.reduced-plan'
+            ? rawPlan.kind
+            : undefined,
+        reduction: isRecord(rawPlan.reduction) ? rawPlan.reduction : undefined,
+    } satisfies BlackBoxRunnerReducedPlan, parsed.issues);
 }
 
 export function parseBlackBoxRunnerMatrixSummary(
@@ -702,8 +927,20 @@ export function parseBlackBoxRunnerArtifactBundle(
     const metadata = files['metadata.json'] !== undefined
         ? parseBlackBoxRunnerMetadata(files['metadata.json'])
         : undefined;
+    const artifactIndex = files['artifact-index.json'] !== undefined
+        ? parseBlackBoxRunnerArtifactIndex(files['artifact-index.json'])
+        : undefined;
+    const expandedRecipe = files['expanded-recipe.json'] !== undefined
+        ? parseBlackBoxRunnerExpandedRecipe(files['expanded-recipe.json'])
+        : undefined;
+    const preflightReport = files['preflight-report.json'] !== undefined
+        ? parseBlackBoxRunnerLivePreflightReport(files['preflight-report.json'])
+        : undefined;
     const expandedPlan = files['expanded-plan.json'] !== undefined
         ? parseBlackBoxRunnerExpandedPlan(files['expanded-plan.json'])
+        : undefined;
+    const reducedPlan = files['reduced-plan.json'] !== undefined
+        ? parseBlackBoxRunnerReducedPlan(files['reduced-plan.json'])
         : undefined;
     const matrixSummary = files['matrix-summary.json'] !== undefined
         ? parseBlackBoxRunnerMatrixSummary(files['matrix-summary.json'])
@@ -714,7 +951,11 @@ export function parseBlackBoxRunnerArtifactBundle(
         events,
         failures,
         metadata,
+        artifactIndex,
+        expandedRecipe,
+        preflightReport,
         expandedPlan,
+        reducedPlan,
         matrixSummary,
     ].forEach(result => {
         if (result) {
@@ -736,11 +977,16 @@ export function parseBlackBoxRunnerArtifactBundle(
 
     const views: BlackBoxRunnerArtifactViews = {
         eventStream: events.value,
+        postRunAssertions: events.value.filter(event => event.kind === 'post-run-assertion'),
         rtcDiagnostics: events.value.filter(event => event.kind === 'rtc-diagnostic'),
         rtcMessages: events.value.filter(event => event.kind === 'rtc-message'),
         wsMessages: events.value.filter(event => event.kind === 'ws-message'),
         failures: failures.value.failures,
+        ...(artifactIndex?.value ? { artifactIndex: artifactIndex.value } : {}),
+        ...(expandedRecipe?.value ? { expandedRecipe: expandedRecipe.value } : {}),
         ...(expandedPlan?.value?.replayRecipe ? { replayRecipe: expandedPlan.value.replayRecipe } : {}),
+        ...(reducedPlan?.value ? { reducedPlan: reducedPlan.value } : {}),
+        ...(reducedPlan?.value?.replayRecipe ? { reducedReplayRecipe: reducedPlan.value.replayRecipe } : {}),
     };
 
     const value: BlackBoxRunnerParsedArtifactBundle = {
@@ -749,7 +995,11 @@ export function parseBlackBoxRunnerArtifactBundle(
         events: events.value,
         failures: failures.value,
         metadata: metadata.value,
+        ...(artifactIndex?.value ? { artifactIndex: artifactIndex.value } : {}),
+        ...(expandedRecipe?.value ? { expandedRecipe: expandedRecipe.value } : {}),
+        ...(preflightReport?.value ? { preflightReport: preflightReport.value } : {}),
         ...(expandedPlan?.value ? { expandedPlan: expandedPlan.value } : {}),
+        ...(reducedPlan?.value ? { reducedPlan: reducedPlan.value } : {}),
         ...(matrixSummary?.value ? { matrixSummary: matrixSummary.value } : {}),
         views,
         compatibility: {

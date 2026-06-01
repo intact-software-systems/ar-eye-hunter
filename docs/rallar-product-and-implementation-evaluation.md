@@ -172,12 +172,24 @@ setup than the browser quickstart suggests.
 - manual workbench and flow builder
 - control-server run manager and distributed recipes
 - composite distributed-run monitor drilldowns for nested loop, parallel, wait, and assert evidence
+- looped WS/RTC load observability with pacing drift, jitter, send/backpressure summaries, and simple loop thresholds
+- composite conformance matrix for local, browser-rallar, and remote-browser/control-server provider rows
+- live distributed warning regression coverage with linked WS/RTC/realtime receive payloads, console artifacts, realtime
+  composite drilldown checks, and high-severity diagnostic policy
 - remote browser-agent orchestration
 - full-stack QA matrix and live three-browser RTC coverage
 
 The black-box runner stays intentionally provider-neutral: HTTP, WS, RTC, ASSERT, SET, recipes, artifacts, and provider
-adapters. The docs repeatedly reinforce that it should not become a second Rallar implementation. That boundary is
-healthy.
+adapters. It now also has a safe declarative output-transform layer for derived headers, URLs, IDs, encoded values, and
+JSON conversions, plus post-run assertions for aggregate thresholds over summary, latency, delivery ratio, diagnostics,
+and artifact evidence. Runner artifacts now carry run/step correlation IDs, with opt-in HTTP header and object-payload
+injection so failures can be joined to Rallar Server logs, plus artifact indexes and per-kind event caps so long runs
+remain browsable without loading every raw event. Static recipe fragments/includes now let common setup/connect/cleanup
+snippets be reused while `expanded-recipe.json` keeps artifact replay independent of local fragment files. Live matrix
+traffic failures can now be reduced offline into `reduced-plan.json` replay candidates. Live matrix
+entries also have a provisioning preflight report for env,
+API config, auth, group permission, WS, ICE, control-server, and Playwright checks before browser runs launch. The docs
+repeatedly reinforce that it should not become a second Rallar implementation. That boundary is healthy.
 
 Maturity: high as an internal validation and operator tool. For external users, it needs positioning: "test command
 center" rather than "how you build apps."
@@ -311,7 +323,7 @@ Recommended product fix:
 | Server middleware | Internal beta | Durable QueueBox, state sync, auth/state services, target routing, Postgres adapters. | Add dev/in-memory adapter mode and production hardening checklist. |
 | Dynamic WS topics | Beta | Validators, handlers, proxies, fanout, NACKs, room authorization tests. | Add topic design docs and examples. |
 | App data server store | Alpha/beta | JSON stores, TTL, migration, Postgres adapter, Relic Hunter usage. | Clarify concurrency model and optionally add atomic operations. |
-| Black-box testing | Beta | SPA command center, shared schemas, runner, remote provider, distributed-run contracts, composite monitor drilldowns, live matrix docs. | Package operator docs and keep runner boundary clear. |
+| Black-box testing | Beta | SPA command center, shared schemas, runner, safe output transforms, post-run thresholds, trace correlation IDs, artifact indexes, live environment preflight, remote provider, distributed-run contracts, composite monitor drilldowns, live matrix docs. | Package operator docs and keep runner boundary clear. |
 | External developer readiness | Alpha | Docs exist, examples exist, but setup and concepts are broad. | Build one polished "first real app" journey. |
 | Production operations | Alpha/beta | Timing events, traces, lifecycle callbacks, artifacts, expiry jobs. | Add deployment/runbook presets and health dashboards. |
 
@@ -338,7 +350,8 @@ Recommended product fix:
 
 - Consider a dedicated `shared-postgres` adapter package if non-Postgres adapters become real.
 - Add atomic repository operations for server app data if app data becomes a recommended authoritative state store.
-- Publish a compatibility contract for black-box command schemas and Rallar facade versions.
+- Extend the `rallar-bb-test` schema compatibility contract and golden corpus
+  pattern to the public Rallar facade version docs.
 - Decide whether Rallar Server is primarily a library, a reference server, or a hosted product shape.
 
 ## Product Conclusion

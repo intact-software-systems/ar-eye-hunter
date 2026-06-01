@@ -51,8 +51,18 @@ behind `RALLAR_BLACK_BOX_DISTRIBUTED_RECIPES=1` because it sends real WS and RTC
 
 The live test creates a unique group from `VITE_RALLAR_ROOM_ID`, joins all three
 users, runs an all-agent ACK recipe resolved from that group, sends a WS payload
-from one browser and verifies the other browsers receive it, then connects RTC
-and verifies a broadcast realtime payload reaches the other browsers.
+from one browser and verifies the other browsers receive it, connects RTC and
+verifies a broadcast realtime payload reaches the other browsers, then runs a
+one-second `rtc-realtime` composite recipe. The realtime leg verifies effective
+20 Hz frame rows, loop drilldown evidence, at least one received position
+payload, and visible runtime warnings in the Distributed Recipes monitor.
+
+Each live WS, RTC, and realtime payload carries the distributed-run ID so
+asynchronous receive events can be linked back to the selected distributed run.
+The Playwright test writes warning-regression JSON attachments and captures
+browser console warnings/errors as `distributed-live-console-warnings.json`.
+Known harmless WS/RTC warnings are retained as artifacts; the regression report
+fails only on configured high-severity runtime diagnostics.
 
 The live WS recipe uses a `room.*` topic. Rallar Server treats `rallar.*` as a
 reserved system namespace for dynamic WS routing, so user-authored distributed

@@ -18,6 +18,7 @@ work is complete through Iteration 19 in
 The shared facade exists in `packages/shared-test/rallar-bb-test` and defines:
 
 - command types for `configure`, recipes, RTC, WebSocket, HTTP, health, stats, close, and reset
+- JSON schemas, command capability metadata, v1 recipe compatibility validation, and a golden schema corpus
 - runtime state, command results, events, stats snapshots, and report fragments
 - redaction helpers and UI selectors
 - result replay by stable command ID
@@ -33,7 +34,8 @@ The shared-test runner now provides the external JSON recipe layer for HTTP, WS,
   replay, and bounded parallel groups
 - gated `rallar-browser` and `rallar-remote-browser` recipes for live soak, seeded traffic, and parallel RTC patterns
 - redacted artifact bundles with `report.json`, `events.jsonl`, `failures.json`, `metadata.json`, optional
-  `expanded-plan.json`, and optional `matrix-summary.json`
+  `artifact-index.json`, optional `expanded-recipe.json`, optional `expanded-plan.json`, optional
+  `reduced-plan.json`, and optional `matrix-summary.json`
 - a browser-safe command-center handoff contract, fixture recipe catalog, artifact parser, versioned schema fixtures,
   and compatibility validation
 
@@ -110,10 +112,13 @@ The SPA currently provides:
   exporting distributed-run artifacts, including a configurable `rtc-realtime` recipe that sends game-style RTC position
   frames at a target 20 Hz cadence through a compact `loop` command, optional control-server barrier synchronization
   before start, recipe preflight panels with effective operation counts, loop/parallel/wait/assert summaries,
-  live-service badges, compatibility warnings, compact execution trees, plus monitor/history/compare views for linked
-  events, structured WS/RTC runtime diagnostics, composite run drilldowns with nested loop/parallel/wait/assert failure
-  focus, failure-correlated warning evidence, failures, ACK and barrier readiness, per-agent/per-recipe progress,
-  latency summaries, artifact validation, historical filters, and two-run deltas
+  live-service badges, compatibility warnings, compact execution trees, and a `Generate With AI` schema-authoring panel
+  with copyable distributed prompt templates, redacted Global Context variables, schema snippets, generated-JSON
+  validation, and copyable prompt-repair feedback, plus monitor/history/compare views for linked events, structured
+  WS/RTC runtime diagnostics, composite run drilldowns with nested loop/parallel/wait/assert failure focus, compact
+  payload summaries for received-message evidence, failure-correlated warning evidence, failures, ACK and barrier
+  readiness, per-agent/per-recipe progress, latency summaries, artifact validation, historical filters, and two-run
+  deltas
 - full-stack QA coverage ownership in `src/full-stack-qa-matrix.ts`, with skip-gated Playwright specs mapped to auth,
   groups/clients, WebSocket, REST, recipes/artifacts, RTC, control, and resilience evidence
 - reload-safe UI persistence for selected tab, selected command, Manual Rallar drafts, Event Stream filters, and Rallar

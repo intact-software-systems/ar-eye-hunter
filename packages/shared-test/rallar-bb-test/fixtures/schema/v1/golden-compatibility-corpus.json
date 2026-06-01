@@ -1,0 +1,445 @@
+{
+  "schemaVersion": 1,
+  "validRecipes": [
+    {
+      "schemaVersion": 1,
+      "recipeId": "golden-all-primitive-commands-v1",
+      "name": "Golden all primitive commands",
+      "description": "Covers every non-composite browser-agent command shape in one stable v1 recipe.",
+      "commands": [
+        {
+          "kind": "configure",
+          "commandId": "configure-v1",
+          "config": {
+            "runId": "golden-run-v1",
+            "agentId": "golden-agent-v1",
+            "environment": "compatibility",
+            "apiBaseUrl": "http://localhost:8080",
+            "actor": "alice",
+            "sessionId": "alice-session",
+            "roomId": "golden-room",
+            "transport": "realtime",
+            "rallar": {
+              "apiBaseUrl": "http://localhost:8080",
+              "applicationId": "rallar-server",
+              "workspaceId": "default"
+            }
+          }
+        },
+        {
+          "kind": "recipe.load",
+          "commandId": "load-health-v1",
+          "recipe": {
+            "schemaVersion": 1,
+            "recipeId": "loaded-health-v1",
+            "commands": [
+              {
+                "kind": "health",
+                "commandId": "loaded-health-command-v1"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "recipe.run",
+          "commandId": "run-inline-health-v1",
+          "recipe": {
+            "schemaVersion": 1,
+            "recipeId": "inline-health-v1",
+            "commands": [
+              {
+                "kind": "health",
+                "commandId": "inline-health-command-v1"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "recipe.cancel",
+          "commandId": "cancel-loaded-recipe-v1",
+          "reason": "golden compatibility cancellation shape"
+        },
+        {
+          "kind": "rtc.connect",
+          "commandId": "rtc-connect-v1",
+          "connection": "goldenRtc",
+          "actor": "alice",
+          "roomId": "golden-room",
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "roomRef": {
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "groupId": "golden-room"
+          },
+          "transport": "realtime",
+          "rallar": {
+            "restoreSession": true
+          },
+          "timeoutMs": 60000
+        },
+        {
+          "kind": "rtc.send",
+          "commandId": "rtc-send-v1",
+          "connection": "goldenRtc",
+          "transport": "realtime",
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "roomRef": {
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "groupId": "golden-room"
+          },
+          "send": {
+            "roomId": "golden-room",
+            "data": {
+              "topic": "room.golden.compatibility",
+              "messageId": "golden-rtc-send-v1"
+            }
+          },
+          "timeoutMs": 60000
+        },
+        {
+          "kind": "ws.open",
+          "commandId": "ws-open-v1",
+          "connection": "goldenWs",
+          "url": "{config.wsBaseUrl}/api/ws",
+          "protocols": ["rallar-json"]
+        },
+        {
+          "kind": "ws.send",
+          "commandId": "ws-send-v1",
+          "connection": "goldenWs",
+          "data": {
+            "typeId": "room.golden.compatibility",
+            "topicId": "room.golden.compatibility",
+            "contextId": "golden-room",
+            "resourceId": "golden-resource-v1",
+            "payload": {
+              "messageId": "golden-ws-send-v1"
+            }
+          }
+        },
+        {
+          "kind": "ws.close",
+          "commandId": "ws-close-v1",
+          "connection": "goldenWs",
+          "code": 1000,
+          "reason": "golden compatibility close"
+        },
+        {
+          "kind": "http.request",
+          "commandId": "http-request-v1",
+          "request": {
+            "path": "/api/config",
+            "method": "GET"
+          },
+          "response": {
+            "body": "json",
+            "maxBodyChars": 4096
+          },
+          "timeoutMs": 15000
+        },
+        {
+          "kind": "health",
+          "commandId": "health-v1"
+        },
+        {
+          "kind": "stats",
+          "commandId": "stats-v1"
+        },
+        {
+          "kind": "close",
+          "commandId": "close-v1"
+        },
+        {
+          "kind": "reset",
+          "commandId": "reset-v1"
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "recipeId": "golden-composite-wait-assert-v1",
+      "name": "Golden composite wait assert",
+      "description": "Covers nested loop/parallel composition plus wait/assert evidence checks.",
+      "commands": [
+        {
+          "kind": "loop",
+          "commandId": "golden-loop-v1",
+          "count": 2,
+          "intervalMs": 10,
+          "maxCommands": 10,
+          "thresholds": {
+            "minSendSuccessRatio": 0.9,
+            "maxStartDriftMs": 1000
+          },
+          "commands": [
+            {
+              "kind": "parallel",
+              "commandId": "golden-loop-parallel-v1",
+              "maxConcurrency": 2,
+              "groups": [
+                {
+                  "groupId": "left",
+                  "commands": [
+                    {
+                      "kind": "health",
+                      "commandId": "golden-left-health-v1"
+                    }
+                  ]
+                },
+                {
+                  "groupId": "right",
+                  "commands": [
+                    {
+                      "kind": "stats",
+                      "commandId": "golden-right-stats-v1"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "wait",
+          "commandId": "golden-wait-v1",
+          "timeoutMs": 5000,
+          "match": {
+            "kind": "message",
+            "topic": "room.golden.compatibility",
+            "payloadPath": "data.messageId",
+            "contains": "golden"
+          }
+        },
+        {
+          "kind": "assert",
+          "commandId": "golden-assert-v1",
+          "source": "events.length",
+          "operator": "gte",
+          "expected": 1
+        }
+      ],
+      "metadata": {
+        "source": "golden-compatibility-corpus"
+      }
+    },
+    {
+      "recipeId": "golden-legacy-compatible-v1",
+      "name": "Golden legacy compatible recipe",
+      "description": "Validates that pre-version recipes without schemaVersion remain compatible during v1.",
+      "commands": [
+        {
+          "kind": "health",
+          "commandId": "legacy-health-v1"
+        }
+      ]
+    }
+  ],
+  "validDistributedManifests": [
+    {
+      "schemaVersion": 1,
+      "distributedRunId": "golden-distributed-inline-v1",
+      "controlRunId": "golden-control-v1",
+      "displayName": "Golden distributed inline recipe",
+      "group": {
+        "applicationId": "rallar-server",
+        "workspaceId": "default",
+        "groupId": "golden-room"
+      },
+      "recipes": [
+        {
+          "recipeId": "golden-ai-generated-rtc-smoke-v1",
+          "role": "sender",
+          "profile": "ai-generated-example",
+          "required": true,
+          "recipe": {
+            "schemaVersion": 1,
+            "recipeId": "golden-ai-generated-rtc-smoke-v1",
+            "commands": [
+              {
+                "kind": "rtc.connect",
+                "commandId": "ai-rtc-connect-v1",
+                "connection": "distributedRtc",
+                "actor": "{auth.clientId}",
+                "roomId": "golden-room",
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "golden-room"
+                },
+                "transport": "realtime",
+                "timeoutMs": 60000
+              },
+              {
+                "kind": "rtc.send",
+                "commandId": "ai-rtc-send-v1",
+                "connection": "distributedRtc",
+                "transport": "realtime",
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "golden-room"
+                },
+                "send": {
+                  "roomId": "golden-room",
+                  "data": {
+                    "topic": "room.golden.ai",
+                    "messageId": "golden-ai-rtc-v1",
+                    "groupId": "golden-room"
+                  }
+                },
+                "timeoutMs": 60000
+              }
+            ],
+            "metadata": {
+              "source": "ai-generated-example"
+            }
+          }
+        }
+      ],
+      "targetPolicy": {
+        "mode": "role-map",
+        "roles": {
+          "sender": ["agent-alice"]
+        },
+        "expectedParticipantCount": 1
+      },
+      "ackTimeoutMs": 10000,
+      "startMode": "manual",
+      "artifactPolicy": {
+        "retainArtifacts": true,
+        "includeEventJsonl": true,
+        "includeFailureBundle": true,
+        "includeDistributedMetadata": true
+      },
+      "metadata": {
+        "source": "golden-compatibility-corpus"
+      }
+    }
+  ],
+  "invalidRecipes": [
+    {
+      "caseId": "unsupported-recipe-schema-version",
+      "expectedErrors": ["$.schemaVersion: Expected 1."],
+      "value": {
+        "schemaVersion": 2,
+        "recipeId": "invalid-v2-recipe",
+        "commands": [
+          {
+            "kind": "health"
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "missing-recipe-id",
+      "expectedErrors": ["Missing required property recipeId"],
+      "value": {
+        "schemaVersion": 1,
+        "commands": [
+          {
+            "kind": "health"
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "nested-child-missing-required-field",
+      "expectedErrors": ["Missing required property request"],
+      "value": {
+        "schemaVersion": 1,
+        "recipeId": "invalid-nested-child",
+        "commands": [
+          {
+            "kind": "loop",
+            "commandId": "invalid-loop",
+            "commands": [
+              {
+                "kind": "http.request",
+                "commandId": "invalid-http"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "invalid-wait-event-kind",
+      "expectedErrors": ["Expected one of"],
+      "value": {
+        "schemaVersion": 1,
+        "recipeId": "invalid-wait",
+        "commands": [
+          {
+            "kind": "wait",
+            "commandId": "invalid-wait-command",
+            "match": {
+              "kind": "unknown-event-kind"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "invalidDistributedManifests": [
+    {
+      "caseId": "unsupported-manifest-schema-version",
+      "expectedErrors": ["$.schemaVersion: Expected 1."],
+      "value": {
+        "schemaVersion": 2,
+        "distributedRunId": "invalid-manifest-v2",
+        "group": {
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "groupId": "golden-room"
+        },
+        "recipes": [
+          {
+            "recipeId": "health-only"
+          }
+        ],
+        "targetPolicy": {
+          "mode": "all-online-group-members"
+        }
+      }
+    },
+    {
+      "caseId": "invalid-inline-recipe",
+      "expectedErrors": ["Missing required property request"],
+      "value": {
+        "schemaVersion": 1,
+        "distributedRunId": "invalid-inline-recipe",
+        "group": {
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "groupId": "golden-room"
+        },
+        "recipes": [
+          {
+            "recipeId": "broken-inline",
+            "recipe": {
+              "schemaVersion": 1,
+              "recipeId": "broken-inline",
+              "commands": [
+                {
+                  "kind": "http.request"
+                }
+              ]
+            }
+          }
+        ],
+        "targetPolicy": {
+          "mode": "selected-agents",
+          "agentIds": ["agent-a"],
+          "expectedParticipantCount": 1
+        }
+      }
+    }
+  ]
+}

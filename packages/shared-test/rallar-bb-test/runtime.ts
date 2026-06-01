@@ -20,7 +20,11 @@ import {
     type RallarBlackBoxTestError,
     type RallarBlackBoxTestEvent,
     type RallarBlackBoxTestLoopCommand,
+    type RallarBlackBoxTestLoopPacingIteration,
+    type RallarBlackBoxTestLoopPacingSummary,
     type RallarBlackBoxTestLoopResultValue,
+    type RallarBlackBoxTestLoopSendSummary,
+    type RallarBlackBoxTestLoopThresholdFailure,
     type RallarBlackBoxTestParallelCommand,
     type RallarBlackBoxTestParallelGroup,
     type RallarBlackBoxTestParallelGroupResult,
@@ -32,9 +36,11 @@ import {
     type RallarBlackBoxTestRuntime,
     type RallarBlackBoxTestRuntimeEventInput,
     type RallarBlackBoxTestRuntimeStatus,
+    type RallarBlackBoxTestSendObservation,
     type RallarBlackBoxTestState,
     type RallarBlackBoxTestStateListener,
     type RallarBlackBoxTestStatsSnapshot,
+    type RallarBlackBoxTestTransport,
     type RallarBlackBoxTestWaitCommand,
     type RallarBlackBoxTestWaitMatch,
     type RallarBlackBoxTestWaitResultValue,
@@ -42,6 +48,7 @@ import {
 
 export type CreateRallarBlackBoxTestRuntimeOptions = Readonly<{
     now?: () => number;
+    sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
     idFactory?: (prefix: string) => string;
     commandExecutor?: RallarBlackBoxTestCommandExecutor;
     cleanup?: RallarBlackBoxTestRuntimeCleanup;
@@ -76,6 +83,16 @@ type ParallelGroupExecution = Readonly<{
     failedResult?: RallarBlackBoxTestResult;
     cancelled: boolean;
     timedOut: boolean;
+}>;
+
+type LoopResultMetrics = Readonly<{
+    intervalMs: number;
+    count: number;
+    durationMs?: number;
+    startedAtEpochMs: number;
+    endedAtEpochMs: number;
+    pacingIterations: readonly RallarBlackBoxTestLoopPacingIteration[];
+    thresholdFailures?: readonly RallarBlackBoxTestLoopThresholdFailure[];
 }>;
 
 const LOOP_PLACEHOLDER_PATTERN = /\{loop\.(index|iteration|elapsedMs|commandIndex)\}/g;
@@ -149,6 +166,49 @@ function nonNegativeIntegerValue(value: unknown): number | undefined {
     return typeof value === 'number' && Number.isInteger(value) && value >= 0
         ? value
         : undefined;
+}
+
+function finiteNumberValue(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value)
+        ? value
+        : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+    return typeof value === 'string' && value.length > 0
+        ? value
+        : undefined;
+}
+
+function transportValue(value: unknown): RallarBlackBoxTestTransport | undefined {
+    return value === 'realtime' ||
+        value === 'messages.rtc' ||
+        value === 'ws' ||
+        value === 'http'
+        ? value
+        : undefined;
+}
+
+function booleanValue(value: unknown): boolean | undefined {
+    return typeof value === 'boolean'
+        ? value
+        : undefined;
+}
+
+function firstDefined<T>(...values: readonly (T | undefined)[]): T | undefined {
+    return values.find(value => value !== undefined);
+}
+
+function roundedMetric(value: number): number {
+    return Math.round(value * 10_000) / 10_000;
+}
+
+function average(values: readonly number[]): number | undefined {
+    if (values.length === 0) {
+        return undefined;
+    }
+
+    return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -352,6 +412,7 @@ function containsAssertValue(value: unknown, expected: unknown): boolean {
 
 class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     private readonly now: () => number;
+    private readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
     private readonly idFactory: (prefix: string) => string;
     private readonly commandExecutor: RallarBlackBoxTestCommandExecutor | undefined;
     private readonly cleanup: RallarBlackBoxTestRuntimeCleanup | undefined;
@@ -366,6 +427,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
 
     constructor(options: CreateRallarBlackBoxTestRuntimeOptions = {}) {
         this.now = options.now ?? (() => Date.now());
+        this.sleep = options.sleep ?? sleep;
         this.idFactory = options.idFactory ?? defaultIdFactory();
         this.commandExecutor = options.commandExecutor;
         this.cleanup = options.cleanup;
@@ -878,20 +940,46 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 maxCommands,
             });
         }
+        const thresholdValidationError = this.validateLoopThresholds(command);
+        if (thresholdValidationError) {
+            return this.loopInvalid(
+                command,
+                thresholdValidationError.message,
+                thresholdValidationError.details,
+            );
+        }
 
         const loopStartedAtEpochMs = this.now();
         const deadlineEpochMs = this.commandDeadlineEpochMs(command);
         const results: RallarBlackBoxTestCompositeChildResult[] = [];
+        const pacingIterations: RallarBlackBoxTestLoopPacingIteration[] = [];
+        const toLoopMetrics = (
+            thresholdFailures?: readonly RallarBlackBoxTestLoopThresholdFailure[],
+        ): LoopResultMetrics => ({
+            intervalMs,
+            count,
+            durationMs,
+            startedAtEpochMs: loopStartedAtEpochMs,
+            endedAtEpochMs: this.now(),
+            pacingIterations,
+            thresholdFailures,
+        });
+        const toLoopValue = (
+            cancelled: boolean,
+            thresholdFailures?: readonly RallarBlackBoxTestLoopThresholdFailure[],
+        ) =>
+            this.toLoopResultValue(command, results, cancelled, toLoopMetrics(thresholdFailures));
+
         for (let iterationIndex = 0; iterationIndex < count; iterationIndex++) {
             if (this.cancelRequested) {
                 return {
                     status: 'cancelled',
-                    value: this.toLoopResultValue(command, results, true),
+                    value: toLoopValue(true),
                     nextStatus: 'cancelled',
                 };
             }
             if (deadlineEpochMs !== undefined && this.now() >= deadlineEpochMs) {
-                return this.loopTimedOut(command, results, deadlineEpochMs);
+                return this.loopTimedOut(command, results, deadlineEpochMs, toLoopMetrics());
             }
 
             const elapsedBeforeIterationMs = Math.max(0, this.now() - loopStartedAtEpochMs);
@@ -899,23 +987,51 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 break;
             }
 
+            const scheduledAtEpochMs = loopStartedAtEpochMs + (iterationIndex * intervalMs);
+            const iterationStartedAtEpochMs = this.now();
+            const iterationResultStartIndex = results.length;
+            let recordedIteration = false;
+            const recordIteration = (cancelled: boolean): void => {
+                if (recordedIteration) {
+                    return;
+                }
+                recordedIteration = true;
+                const iterationResults = results.slice(iterationResultStartIndex);
+                const endedAtEpochMs = this.now();
+                pacingIterations.push({
+                    iteration: iterationIndex + 1,
+                    scheduledAtEpochMs,
+                    startedAtEpochMs: iterationStartedAtEpochMs,
+                    endedAtEpochMs,
+                    durationMs: Math.max(0, endedAtEpochMs - iterationStartedAtEpochMs),
+                    startDriftMs: Math.max(0, iterationStartedAtEpochMs - scheduledAtEpochMs),
+                    commandCount: iterationResults.length,
+                    passed: iterationResults.filter(result => result.result.ok).length,
+                    failed: iterationResults.filter(result => !result.result.ok).length,
+                    cancelled,
+                });
+            };
+
             for (let commandIndex = 0; commandIndex < command.commands.length; commandIndex++) {
                 if (this.cancelRequested) {
+                    recordIteration(true);
                     return {
                         status: 'cancelled',
-                        value: this.toLoopResultValue(command, results, true),
+                        value: toLoopValue(true),
                         nextStatus: 'cancelled',
                     };
                 }
                 if (deadlineEpochMs !== undefined && this.now() >= deadlineEpochMs) {
-                    return this.loopTimedOut(command, results, deadlineEpochMs);
+                    recordIteration(false);
+                    return this.loopTimedOut(command, results, deadlineEpochMs, toLoopMetrics());
                 }
 
                 if (results.length >= maxCommands) {
+                    recordIteration(false);
                     return this.loopLimitExceeded(command, results, {
                         plannedCommandCount,
                         maxCommands,
-                    });
+                    }, toLoopMetrics());
                 }
 
                 const childTemplate = command.commands[commandIndex];
@@ -957,17 +1073,19 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 });
 
                 if (this.cancelRequested || childResult.status === 'cancelled') {
+                    recordIteration(true);
                     return {
                         status: 'cancelled',
-                        value: this.toLoopResultValue(command, results, true),
+                        value: toLoopValue(true),
                         nextStatus: 'cancelled',
                     };
                 }
 
                 if (!childResult.ok && command.continueOnFailure !== true) {
+                    recordIteration(false);
                     return {
                         status: 'failed',
-                        value: this.toLoopResultValue(command, results, false),
+                        value: toLoopValue(false),
                         error: {
                             code: 'RALLAR_BLACK_BOX_LOOP_CHILD_FAILED',
                             message: `Loop failed at child command ${childResult.commandId}.`,
@@ -977,6 +1095,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     };
                 }
             }
+
+            recordIteration(false);
 
             if (iterationIndex + 1 >= count) {
                 break;
@@ -991,26 +1111,46 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     ? intervalMs
                     : Math.max(0, Math.min(intervalMs, deadlineEpochMs - this.now()));
                 try {
-                    await sleep(deadlineDelayMs, this.cancellationController.signal);
+                    await this.sleep(deadlineDelayMs, this.cancellationController.signal);
                 } catch (error) {
                     if (isAbortError(error)) {
                         return {
                             status: 'cancelled',
-                            value: this.toLoopResultValue(command, results, true),
+                            value: toLoopValue(true),
                             nextStatus: 'cancelled',
                         };
                     }
                     throw error;
                 }
                 if (deadlineEpochMs !== undefined && this.now() >= deadlineEpochMs) {
-                    return this.loopTimedOut(command, results, deadlineEpochMs);
+                    return this.loopTimedOut(command, results, deadlineEpochMs, toLoopMetrics());
                 }
             }
         }
 
+        const value = toLoopValue(false);
+        const thresholdFailures = this.evaluateLoopThresholds(command, value);
+        if (thresholdFailures.length > 0) {
+            return {
+                status: 'failed',
+                value: {
+                    ...value,
+                    thresholdFailures,
+                },
+                error: {
+                    code: 'RALLAR_BLACK_BOX_LOOP_THRESHOLD_FAILED',
+                    message: 'Loop did not satisfy configured pacing or send thresholds.',
+                    details: {
+                        thresholdFailures,
+                    },
+                },
+                nextStatus: 'failed',
+            };
+        }
+
         return {
             status: 'ok',
-            value: this.toLoopResultValue(command, results, false),
+            value,
             nextStatus: 'completed',
         };
     }
@@ -1052,12 +1192,17 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         command: LoopCommandWithId,
         results: readonly RallarBlackBoxTestCompositeChildResult[],
         cancelled: boolean,
+        metrics?: LoopResultMetrics,
     ): RallarBlackBoxTestLoopResultValue {
         const iterations = new Set(
             results
                 .map(result => result.iteration)
                 .filter((iteration): iteration is number => iteration !== undefined),
         ).size;
+        const pacing = metrics
+            ? this.toLoopPacingSummary(metrics)
+            : undefined;
+        const sends = this.toLoopSendSummary(results);
         return {
             commandId: command.commandId,
             iterations,
@@ -1065,8 +1210,353 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             passed: results.filter(result => result.result.ok).length,
             failed: results.filter(result => !result.result.ok).length,
             cancelled,
+            pacing,
+            sends,
+            thresholdFailures: metrics?.thresholdFailures,
             results,
         };
+    }
+
+    private toLoopPacingSummary(metrics: LoopResultMetrics): RallarBlackBoxTestLoopPacingSummary {
+        const iterations = [...metrics.pacingIterations];
+        const driftValues = iterations.map(iteration => iteration.startDriftMs);
+        const jitterValues = iterations
+            .slice(1)
+            .map((iteration, index) =>
+                Math.abs(iteration.startDriftMs - iterations[index].startDriftMs)
+            );
+        const elapsedMs = Math.max(0, metrics.endedAtEpochMs - metrics.startedAtEpochMs);
+        const completedIterations = iterations.length;
+        const plannedIterations = metrics.durationMs === undefined
+            ? metrics.count
+            : completedIterations;
+        const targetElapsedMs = Math.max(0, (completedIterations - 1) * metrics.intervalMs);
+        const achievedRateHz = completedIterations > 1 && elapsedMs > 0
+            ? roundedMetric(((completedIterations - 1) * 1000) / elapsedMs)
+            : undefined;
+        const requestedRateHz = metrics.intervalMs > 0
+            ? roundedMetric(1000 / metrics.intervalMs)
+            : undefined;
+        const lateThresholdMs = Math.max(1, Math.round(Math.max(metrics.intervalMs, 1) * 0.5));
+
+        return {
+            requestedIntervalMs: metrics.intervalMs,
+            requestedRateHz,
+            plannedIterations,
+            completedIterations,
+            skippedIterations: Math.max(0, plannedIterations - completedIterations),
+            cancelledIterations: iterations.filter(iteration => iteration.cancelled).length,
+            startedAtEpochMs: metrics.startedAtEpochMs,
+            endedAtEpochMs: metrics.endedAtEpochMs,
+            elapsedMs,
+            targetElapsedMs,
+            achievedRateHz,
+            averageIterationDurationMs: average(iterations.map(iteration => iteration.durationMs)),
+            minStartDriftMs: driftValues.length > 0 ? Math.min(...driftValues) : undefined,
+            maxStartDriftMs: driftValues.length > 0 ? Math.max(...driftValues) : undefined,
+            averageStartDriftMs: average(driftValues),
+            maxJitterMs: jitterValues.length > 0 ? Math.max(...jitterValues) : undefined,
+            averageJitterMs: average(jitterValues),
+            lateIterationCount: driftValues.filter(value => value > lateThresholdMs).length,
+            lateThresholdMs,
+            iterations,
+        };
+    }
+
+    private toLoopSendSummary(
+        results: readonly RallarBlackBoxTestCompositeChildResult[],
+    ): RallarBlackBoxTestLoopSendSummary {
+        const observations = results
+            .map(result => this.toSendObservation(result.result))
+            .filter((observation): observation is RallarBlackBoxTestSendObservation => observation !== undefined);
+        const durations = observations.map(observation => observation.durationMs);
+        const succeeded = observations.filter(observation => observation.ok).length;
+        const failed = observations.length - succeeded;
+        const perTransportFailureCounts = observations.reduce<Record<string, number>>((counts, observation) => {
+            if (observation.ok) {
+                return counts;
+            }
+            const key = observation.transport ?? observation.kind;
+            counts[key] = (counts[key] ?? 0) + 1;
+            return counts;
+        }, {});
+
+        return {
+            sendCount: observations.length,
+            succeeded,
+            failed,
+            successRatio: observations.length > 0
+                ? roundedMetric(succeeded / observations.length)
+                : undefined,
+            duration: durations.length > 0
+                ? {
+                    minMs: Math.min(...durations),
+                    maxMs: Math.max(...durations),
+                    averageMs: average(durations),
+                    totalMs: durations.reduce((sum, value) => sum + value, 0),
+                }
+                : undefined,
+            queuedCount: observations.filter(observation => observation.queued).length,
+            enqueuedCount: observations.filter(observation => observation.enqueued).length,
+            backpressureCount: observations.filter(observation => observation.backpressured).length,
+            droppedPayloadCount: observations.reduce(
+                (sum, observation) => sum + (observation.droppedPayloadCount ?? 0),
+                0,
+            ),
+            replacedPayloadCount: observations.reduce(
+                (sum, observation) => sum + (observation.replacedPayloadCount ?? 0),
+                0,
+            ),
+            perTransportFailureCounts,
+            observations,
+        };
+    }
+
+    private toSendObservation(
+        result: RallarBlackBoxTestResult,
+    ): RallarBlackBoxTestSendObservation | undefined {
+        if (result.kind !== 'rtc.send' && result.kind !== 'ws.send') {
+            return undefined;
+        }
+
+        const root = asRecord(result.value);
+        const explicitObservation = asRecord(root.sendObservation);
+        const diagnostics = root.diagnostics !== undefined
+            ? asRecord(root.diagnostics)
+            : root;
+        const message = asRecord(diagnostics.message);
+        const status = firstDefined(
+            stringValue(explicitObservation.status),
+            stringValue(diagnostics.status),
+            stringValue(message.status),
+            stringValue(root.status),
+        );
+        const transport = result.kind === 'ws.send'
+            ? 'ws'
+            : transportValue(root.transport);
+        const observationTransport = firstDefined(
+            transportValue(explicitObservation.transport),
+            transportValue(root.transport),
+        );
+        const droppedPayloadCount = firstDefined(
+            finiteNumberValue(explicitObservation.droppedPayloadCount),
+            finiteNumberValue(diagnostics.droppedPayloadCount),
+            finiteNumberValue(root.droppedPayloadCount),
+            this.countRtcSendPeerStatuses(diagnostics, 'dropped'),
+        );
+        const replacedPayloadCount = firstDefined(
+            finiteNumberValue(explicitObservation.replacedPayloadCount),
+            finiteNumberValue(diagnostics.replacedPayloadCount),
+            finiteNumberValue(root.replacedPayloadCount),
+        );
+        const queued = firstDefined(
+            booleanValue(explicitObservation.queued),
+            status === 'queued' || status === 'buffered',
+        );
+        const enqueued = firstDefined(
+            booleanValue(explicitObservation.enqueued),
+            status === 'enqueued',
+        );
+        const backpressured = firstDefined(
+            booleanValue(explicitObservation.backpressured),
+            status === 'backpressure' ||
+                status === 'backpressured' ||
+                status === 'rate-limited' ||
+                status === 'buffer-full' ||
+                status === 'circuit-open',
+        );
+
+        return {
+            commandId: result.commandId,
+            kind: result.kind,
+            transport: observationTransport ?? transport,
+            durationMs: finiteNumberValue(explicitObservation.durationMs) ?? result.durationMs,
+            ok: result.ok,
+            status,
+            queued,
+            enqueued,
+            backpressured,
+            droppedPayloadCount,
+            replacedPayloadCount,
+            errorCode: result.error?.code,
+        };
+    }
+
+    private countRtcSendPeerStatuses(diagnostics: Record<string, unknown>, status: string): number | undefined {
+        if (!Array.isArray(diagnostics.results)) {
+            return undefined;
+        }
+
+        const count = diagnostics.results.filter((entry) => {
+            const result = asRecord(asRecord(entry).result);
+            return result.status === status;
+        }).length;
+        return count > 0 ? count : undefined;
+    }
+
+    private evaluateLoopThresholds(
+        command: LoopCommandWithId,
+        value: RallarBlackBoxTestLoopResultValue,
+    ): readonly RallarBlackBoxTestLoopThresholdFailure[] {
+        const thresholds = command.thresholds;
+        if (!thresholds) {
+            return [];
+        }
+
+        const failures: RallarBlackBoxTestLoopThresholdFailure[] = [];
+        const pacing = value.pacing;
+        const sends = value.sends;
+        if (
+            thresholds.minAchievedRateHz !== undefined &&
+            pacing?.achievedRateHz !== undefined &&
+            pacing.achievedRateHz < thresholds.minAchievedRateHz
+        ) {
+            failures.push({
+                name: 'minAchievedRateHz',
+                category: 'pacing',
+                threshold: thresholds.minAchievedRateHz,
+                actual: pacing.achievedRateHz,
+                message: `Loop achieved ${pacing.achievedRateHz} Hz, below the configured ${thresholds.minAchievedRateHz} Hz minimum.`,
+            });
+        }
+        if (
+            thresholds.maxAverageStartDriftMs !== undefined &&
+            pacing?.averageStartDriftMs !== undefined &&
+            pacing.averageStartDriftMs > thresholds.maxAverageStartDriftMs
+        ) {
+            failures.push({
+                name: 'maxAverageStartDriftMs',
+                category: 'pacing',
+                threshold: thresholds.maxAverageStartDriftMs,
+                actual: pacing.averageStartDriftMs,
+                message: `Average loop start drift was ${pacing.averageStartDriftMs} ms, above the configured ${thresholds.maxAverageStartDriftMs} ms maximum.`,
+            });
+        }
+        if (
+            thresholds.maxStartDriftMs !== undefined &&
+            pacing?.maxStartDriftMs !== undefined &&
+            pacing.maxStartDriftMs > thresholds.maxStartDriftMs
+        ) {
+            failures.push({
+                name: 'maxStartDriftMs',
+                category: 'pacing',
+                threshold: thresholds.maxStartDriftMs,
+                actual: pacing.maxStartDriftMs,
+                message: `Maximum loop start drift was ${pacing.maxStartDriftMs} ms, above the configured ${thresholds.maxStartDriftMs} ms maximum.`,
+            });
+        }
+        if (
+            thresholds.maxJitterMs !== undefined &&
+            pacing?.maxJitterMs !== undefined &&
+            pacing.maxJitterMs > thresholds.maxJitterMs
+        ) {
+            failures.push({
+                name: 'maxJitterMs',
+                category: 'pacing',
+                threshold: thresholds.maxJitterMs,
+                actual: pacing.maxJitterMs,
+                message: `Maximum loop jitter was ${pacing.maxJitterMs} ms, above the configured ${thresholds.maxJitterMs} ms maximum.`,
+            });
+        }
+        if (
+            thresholds.minSendSuccessRatio !== undefined &&
+            sends?.successRatio !== undefined &&
+            sends.successRatio < thresholds.minSendSuccessRatio
+        ) {
+            failures.push({
+                name: 'minSendSuccessRatio',
+                category: 'delivery',
+                threshold: thresholds.minSendSuccessRatio,
+                actual: sends.successRatio,
+                message: `Loop send success ratio was ${sends.successRatio}, below the configured ${thresholds.minSendSuccessRatio} minimum.`,
+            });
+        }
+        if (
+            thresholds.failOnBackpressure === true &&
+            sends !== undefined &&
+            (sends.backpressureCount > 0 || sends.droppedPayloadCount > 0 || sends.replacedPayloadCount > 0)
+        ) {
+            failures.push({
+                name: 'failOnBackpressure',
+                category: 'backpressure',
+                threshold: true,
+                actual: true,
+                message: 'Loop observed send backpressure, dropped payloads, or replaced payloads.',
+            });
+        }
+
+        return failures;
+    }
+
+    private validateLoopThresholds(
+        command: LoopCommandWithId,
+    ): Readonly<{ message: string; details: unknown }> | undefined {
+        if (command.thresholds === undefined) {
+            return undefined;
+        }
+        if (!command.thresholds || typeof command.thresholds !== 'object' || Array.isArray(command.thresholds)) {
+            return {
+                message: 'Loop thresholds must be an object.',
+                details: {
+                    thresholds: command.thresholds,
+                },
+            };
+        }
+
+        const thresholds = asRecord(command.thresholds);
+
+        const nonNegativeNumbers = [
+            'minAchievedRateHz',
+            'maxAverageStartDriftMs',
+            'maxStartDriftMs',
+            'maxJitterMs',
+        ];
+        for (const key of nonNegativeNumbers) {
+            const value = thresholds[key];
+            if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value < 0)) {
+                return {
+                    message: 'Loop threshold values must be non-negative finite numbers.',
+                    details: {
+                        threshold: key,
+                        value,
+                    },
+                };
+            }
+        }
+
+        const minSendSuccessRatio = thresholds.minSendSuccessRatio;
+        if (
+            minSendSuccessRatio !== undefined &&
+            (
+                typeof minSendSuccessRatio !== 'number' ||
+                !Number.isFinite(minSendSuccessRatio) ||
+                minSendSuccessRatio < 0 ||
+                minSendSuccessRatio > 1
+            )
+        ) {
+            return {
+                message: 'Loop minSendSuccessRatio threshold must be between 0 and 1.',
+                details: {
+                    threshold: 'minSendSuccessRatio',
+                    value: minSendSuccessRatio,
+                },
+            };
+        }
+
+        if (
+            thresholds.failOnBackpressure !== undefined &&
+            typeof thresholds.failOnBackpressure !== 'boolean'
+        ) {
+            return {
+                message: 'Loop failOnBackpressure threshold must be a boolean.',
+                details: {
+                    threshold: 'failOnBackpressure',
+                    value: thresholds.failOnBackpressure,
+                },
+            };
+        }
+
+        return undefined;
     }
 
     private loopInvalid(
@@ -1090,10 +1580,11 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         command: LoopCommandWithId,
         results: readonly RallarBlackBoxTestCompositeChildResult[],
         details: unknown,
+        metrics?: LoopResultMetrics,
     ): CommandOutcome {
         return {
             status: 'failed',
-            value: this.toLoopResultValue(command, results, false),
+            value: this.toLoopResultValue(command, results, false, metrics),
             error: {
                 code: 'RALLAR_BLACK_BOX_LOOP_LIMIT_EXCEEDED',
                 message: 'Loop would exceed the configured maximum child command count.',
@@ -1107,10 +1598,11 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         command: LoopCommandWithId,
         results: readonly RallarBlackBoxTestCompositeChildResult[],
         deadlineEpochMs: number,
+        metrics?: LoopResultMetrics,
     ): CommandOutcome {
         return {
             status: 'failed',
-            value: this.toLoopResultValue(command, results, false),
+            value: this.toLoopResultValue(command, results, false, metrics),
             error: {
                 code: 'RALLAR_BLACK_BOX_LOOP_TIMEOUT',
                 message: 'Loop reached its timeout before all iterations completed.',
@@ -1974,6 +2466,9 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         const events = this.currentState.events;
         const config = this.currentState.currentConfig;
         const durations = this.currentState.commandHistory.map(result => result.durationMs);
+        const loopResults = this.currentState.commandHistory.filter(result => result.kind === 'loop');
+        const latestLoopResult = loopResults.at(-1);
+        const latestLoopValue = this.loopResultValue(latestLoopResult?.value);
         const lastRallarDiagnostic = events
             .filter(event =>
                 event.topic.includes('rtc.connected') ||
@@ -2019,6 +2514,15 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     : undefined,
                 laneHealth: lastRallarPayload.laneHealth,
             },
+            load: loopResults.length > 0
+                ? {
+                    loopCount: loopResults.length,
+                    latestLoopCommandId: latestLoopResult?.commandId,
+                    latestPacing: this.toStatsPacingSummary(latestLoopValue?.pacing),
+                    latestSends: this.toStatsSendSummary(latestLoopValue?.sends),
+                    thresholdFailures: latestLoopValue?.thresholdFailures,
+                }
+                : undefined,
         };
 
         this.currentState = {
@@ -2033,6 +2537,65 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             payload: latestStats,
         });
         return latestStats;
+    }
+
+    private loopResultValue(value: unknown): RallarBlackBoxTestLoopResultValue | undefined {
+        const record = asRecord(value);
+        return typeof record.commandId === 'string' && record.pacing !== undefined
+            ? value as RallarBlackBoxTestLoopResultValue
+            : undefined;
+    }
+
+    private toStatsPacingSummary(
+        pacing: RallarBlackBoxTestLoopPacingSummary | undefined,
+    ): Omit<RallarBlackBoxTestLoopPacingSummary, 'iterations'> | undefined {
+        if (!pacing) {
+            return undefined;
+        }
+
+        return {
+            requestedIntervalMs: pacing.requestedIntervalMs,
+            requestedRateHz: pacing.requestedRateHz,
+            plannedIterations: pacing.plannedIterations,
+            completedIterations: pacing.completedIterations,
+            skippedIterations: pacing.skippedIterations,
+            cancelledIterations: pacing.cancelledIterations,
+            startedAtEpochMs: pacing.startedAtEpochMs,
+            endedAtEpochMs: pacing.endedAtEpochMs,
+            elapsedMs: pacing.elapsedMs,
+            targetElapsedMs: pacing.targetElapsedMs,
+            achievedRateHz: pacing.achievedRateHz,
+            averageIterationDurationMs: pacing.averageIterationDurationMs,
+            minStartDriftMs: pacing.minStartDriftMs,
+            maxStartDriftMs: pacing.maxStartDriftMs,
+            averageStartDriftMs: pacing.averageStartDriftMs,
+            maxJitterMs: pacing.maxJitterMs,
+            averageJitterMs: pacing.averageJitterMs,
+            lateIterationCount: pacing.lateIterationCount,
+            lateThresholdMs: pacing.lateThresholdMs,
+        };
+    }
+
+    private toStatsSendSummary(
+        sends: RallarBlackBoxTestLoopSendSummary | undefined,
+    ): Omit<RallarBlackBoxTestLoopSendSummary, 'observations'> | undefined {
+        if (!sends) {
+            return undefined;
+        }
+
+        return {
+            sendCount: sends.sendCount,
+            succeeded: sends.succeeded,
+            failed: sends.failed,
+            successRatio: sends.successRatio,
+            duration: sends.duration,
+            queuedCount: sends.queuedCount,
+            enqueuedCount: sends.enqueuedCount,
+            backpressureCount: sends.backpressureCount,
+            droppedPayloadCount: sends.droppedPayloadCount,
+            replacedPayloadCount: sends.replacedPayloadCount,
+            perTransportFailureCounts: sends.perTransportFailureCounts,
+        };
     }
 
     private toHealth(): unknown {

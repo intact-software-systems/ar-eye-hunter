@@ -70,6 +70,7 @@ export type RallarBlackBoxBrowserWebSocket = {
     readonly readyState?: number;
     readonly protocol?: string;
     readonly url?: string;
+    readonly bufferedAmount?: number;
     send(data: unknown): void;
     close(code?: number, reason?: string): void;
     addEventListener?: (type: string, listener: (event: unknown) => void) => void;
@@ -165,6 +166,70 @@ function commandLocalDelayMs(command: CommandWithId): number {
     }
 
     return Math.max(0, value);
+}
+
+function withSendObservationValue(
+    value: unknown,
+    sendObservation: Readonly<Record<string, unknown>>,
+): unknown {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? {
+            ...(value as Record<string, unknown>),
+            sendObservation,
+        }
+        : {
+            diagnostics: value,
+            sendObservation,
+        };
+}
+
+function countDataChannelStatuses(diagnostics: unknown, status: string): number | undefined {
+    const root = asRecord(diagnostics);
+    if (!Array.isArray(root.results)) {
+        return undefined;
+    }
+
+    const count = root.results.filter((entry) => {
+        const result = asRecord(asRecord(entry).result);
+        return result.status === status;
+    }).length;
+    return count > 0 ? count : undefined;
+}
+
+function rtcSendObservation(
+    command: Extract<CommandWithId, { kind: 'rtc.send' }>,
+    diagnostics: unknown,
+    durationMs: number,
+    ok: boolean,
+    errorCode?: string,
+): Readonly<Record<string, unknown>> {
+    const root = asRecord(diagnostics);
+    const message = asRecord(root.message);
+    const status = firstDefined(
+        toStringValue(root.status),
+        toStringValue(message.status),
+    );
+    return {
+        commandId: command.commandId,
+        kind: command.kind,
+        transport: command.transport,
+        durationMs,
+        ok,
+        status,
+        queued: status === 'queued' || status === 'buffered',
+        enqueued: status === 'enqueued',
+        backpressured: status === 'backpressure' ||
+            status === 'backpressured' ||
+            status === 'rate-limited' ||
+            status === 'buffer-full' ||
+            status === 'circuit-open',
+        droppedPayloadCount: countDataChannelStatuses(diagnostics, 'dropped'),
+        replacedPayloadCount: firstDefined(
+            typeof root.replacedPayloadCount === 'number' ? root.replacedPayloadCount : undefined,
+            typeof root.replacedCount === 'number' ? root.replacedCount : undefined,
+        ),
+        errorCode,
+    };
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -1141,6 +1206,7 @@ class BrowserCommandAdapter {
         }
         const abort = this.commandAbortSignal(command, context);
         let diagnostics: unknown;
+        const sendStartedAtEpochMs = Date.now();
         try {
             diagnostics = await this.withAbort(
                 this.requireRallarRuntime().send(scopedSend),
@@ -1150,6 +1216,13 @@ class BrowserCommandAdapter {
             abort.cleanup();
         }
         const failure = rtcSendFailureFromDiagnostics(diagnostics);
+        const sendObservation = rtcSendObservation(
+            command,
+            diagnostics,
+            Math.max(0, Date.now() - sendStartedAtEpochMs),
+            failure === undefined,
+            failure?.code,
+        );
         context.recordEvent({
             kind: 'diagnostic',
             topic: failure ? 'rallar.bb.rtc.send_failed' : 'rallar.bb.rtc.send_completed',
@@ -1168,8 +1241,9 @@ class BrowserCommandAdapter {
                     ? {
                     diagnostics,
                     failure,
+                    sendObservation,
                 }
-                    : diagnostics,
+                    : withSendObservationValue(diagnostics, sendObservation),
                 message: failure?.message,
                 error: failure,
                 source: 'browser-adapter',
@@ -1179,7 +1253,7 @@ class BrowserCommandAdapter {
         if (failure) {
             return {
                 status: 'failed',
-                value: diagnostics,
+                value: withSendObservationValue(diagnostics, sendObservation),
                 error: {
                     code: failure.code,
                     message: failure.message,
@@ -1191,7 +1265,7 @@ class BrowserCommandAdapter {
 
         return {
             status: 'ok',
-            value: diagnostics,
+            value: withSendObservationValue(diagnostics, sendObservation),
             nextStatus: context.state().status,
         };
     }
@@ -1499,12 +1573,27 @@ class BrowserCommandAdapter {
         }
 
         const data = toWebSocketSendData(command.data);
+        const sendStartedAtEpochMs = Date.now();
         socket.send(data);
+        const durationMs = Math.max(0, Date.now() - sendStartedAtEpochMs);
+        const bufferedAmount = typeof socket.bufferedAmount === 'number'
+            ? socket.bufferedAmount
+            : undefined;
+        const sendObservation = {
+            commandId: command.commandId,
+            kind: command.kind,
+            transport: 'ws',
+            durationMs,
+            ok: true,
+            status: bufferedAmount !== undefined && bufferedAmount > 0 ? 'queued' : 'sent',
+            queued: bufferedAmount !== undefined && bufferedAmount > 0,
+        };
         return {
             status: 'ok',
             value: {
                 connection,
                 sent: data,
+                sendObservation,
             },
         };
     }
@@ -1525,6 +1614,7 @@ class BrowserCommandAdapter {
         });
         let result: unknown;
         const abort = this.commandAbortSignal(command, context);
+        const sendStartedAtEpochMs = Date.now();
         try {
             result = await this.withAbort(sendWs(data), abort.signal);
         } catch (error) {
@@ -1541,6 +1631,15 @@ class BrowserCommandAdapter {
         } finally {
             abort.cleanup();
         }
+        const durationMs = Math.max(0, Date.now() - sendStartedAtEpochMs);
+        const sendObservation = {
+            commandId: command.commandId,
+            kind: command.kind,
+            transport: 'ws',
+            durationMs,
+            ok: true,
+            status: 'sent',
+        };
 
         context.recordEvent({
             kind: 'event',
@@ -1553,6 +1652,7 @@ class BrowserCommandAdapter {
                 connection,
                 via: 'rallar-signaling-websocket',
                 rallar: result,
+                sendObservation,
             },
         });
         return {
@@ -1562,6 +1662,7 @@ class BrowserCommandAdapter {
                 via: 'rallar-signaling-websocket',
                 sent: data,
                 rallar: result,
+                sendObservation,
             },
         };
     }
@@ -1729,6 +1830,7 @@ export function createRallarBlackBoxBrowserTestRuntime(
     const adapter = new BrowserCommandAdapter(options);
     const runtime = createRallarBlackBoxTestRuntime({
         now: options.now,
+        sleep: options.sleep,
         idFactory: options.idFactory,
         commandExecutor: (command, context) => adapter.execute(command, context),
         cleanup: (input, context) => adapter.cleanupOwnedResources(input, context),

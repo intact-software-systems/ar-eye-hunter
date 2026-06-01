@@ -122,11 +122,11 @@ Results:
 Verification:
 
 - `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts -t "explains a valid recipe|validates missing env|missing traffic-plan|seeded traffic-plan expansion|strict profile"` passed.
-- `deno check packages/shared-test/black-box-runner/scenario-black-box.ts packages/shared-test/black-box-runner/plan-preflight.ts` passed.
+- `deno check packages/shared-test/black-box-runner/scenario-black-box.ts packages/shared-test/black-box-runner/plan-preflight.ts packages/shared-test/black-box-runner/schema.ts` passed.
 
 ## Runner Iteration 2: Safe Output Transform Layer
 
-Status: proposed.
+Status: completed on 2026-06-01.
 
 Goal: Extend `set` and output extraction with useful, declarative transforms
 without turning recipes into scripts.
@@ -161,9 +161,26 @@ Suggested verification:
 - Add an Rallar Server auth/group/WS example that uses transforms instead of
   hand-built intermediate strings where practical.
 
+Results:
+
+- Added a safe transform evaluator to `execute-black-box.ts` for SET steps and successful-step output extraction.
+- Supported stable declarative operators: `path`, `template`, `concat`, `coalesce`, `jsonStringify`, `jsonParse`,
+  `urlEncode`, `number`, `string`, `boolean`, `uuid`, and `timestamp`.
+- Preserved exact placeholder behavior for normal recipe fields while leaving transform specs unresolved until the
+  runner has the current result/context.
+- Added `secret`, `redact`, and `redactAs` support for direct SET outputs, plus output-transform redaction in reports,
+  events, and artifacts through the existing redaction pipeline.
+- Transform failures now return step failures with operator/path/input details that are redacted by the report writer.
+- Updated the Rallar Server auth/group/WS smoke example to derive auth headers and WS URLs through transforms.
+
+Verification:
+
+- `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts` passed.
+- `deno check packages/shared-test/black-box-runner/scenario-black-box.ts packages/shared-test/black-box-runner/execute-black-box.ts packages/shared-test/black-box-runner/plan-preflight.ts` passed.
+
 ## Runner Iteration 3: Post-run Assertions And Thresholds
 
-Status: proposed.
+Status: completed on 2026-06-01.
 
 Goal: Let soak, traffic, parallel, and scale recipes fail on aggregate evidence,
 not only individual step expectations.
@@ -197,9 +214,37 @@ Suggested verification:
 - Add deterministic memory tests for passing/failing post-run thresholds.
 - Add one live-gated threshold recipe with loose timings to avoid CI flakes.
 
+Results:
+
+- Added top-level `postRunAssertions`, `execution.postRunAssertions`, and
+  path-keyed `execution.thresholds` support in the runner CLI.
+- Assertions evaluate against the final report after single, soak, traffic-plan,
+  or scale aggregation and can read `summary.*`, `metrics.*`, and
+  `artifact.*` paths.
+- Supported stable operators: `equals`/`eq`/`expected`, `notEquals`/`ne`,
+  `gt`, `gte`/`min`/`atLeast`, `lt`, `lte`/`max`/`atMost`, `between`,
+  `includes`/`contains`, `notIncludes`, and `exists`.
+- Post-run assertion results are written to `report.json`, emitted as
+  `post-run-assertion` events in `events.jsonl`, copied into `failures.json`,
+  and included in CLI exit-code decisions.
+- Added aggregate metrics needed for threshold paths, including send/wait
+  success ratios, p50/p95/p99 latency percentiles, missing expected
+  message/diagnostic counts, diagnostics by severity/topic, and artifact
+  truncation status.
+- Updated the deterministic same-connection memory soak example to enforce
+  loose post-run thresholds.
+
+Verification:
+
+- `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts -t "post-run|same-connection soak"` passed.
+- `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts` passed.
+- `deno check packages/shared-test/black-box-runner/scenario-black-box.ts packages/shared-test/black-box-runner/plan-preflight.ts` passed.
+- `deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts -c packages/shared-test/black-box-runner/examples/rtc-rallar-memory-same-connection-soak.json --explain` passed.
+- `deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts -c packages/shared-test/black-box-runner/examples/rtc-rallar-memory-same-connection-soak.json` passed.
+
 ## Runner Iteration 4: Trace Correlation And Server-log Join Keys
 
-Status: proposed.
+Status: completed on 2026-06-01.
 
 Goal: Make runner artifacts easy to correlate with Rallar Server HTTP timing,
 app-inbox timing, WS, and RTC logs.
@@ -228,9 +273,35 @@ Suggested verification:
   artifact output.
 - Add a documented example that aligns HTTP timing logs with runner artifacts.
 
+Results:
+
+- Added stable `runnerRunId` and per-step `runnerStepId` fields to runner
+  reports, step results, step-result events, failure bundles, metadata, and
+  traffic-plan expanded artifacts.
+- Added `execution.correlation` support with opt-in HTTP header injection via
+  `injectHeaders` and opt-in WS/RTC object-payload injection via
+  `injectPayloads`.
+- HTTP injection writes `x-rallar-black-box-run-id` and
+  `x-rallar-black-box-step-id` by default, with configurable header names.
+- WS/RTC payload injection writes a `blackBoxRunner` object by default and
+  leaves strings, arrays, and non-object payloads unchanged.
+- The Rallar Server auth/group/WS smoke example now enables HTTP correlation
+  headers so API timing logs can be joined to runner artifacts without changing
+  WS payloads.
+- The artifact handoff contract and reader now accept post-run assertion events
+  and expose assertion events/failures alongside the correlated event stream.
+
+Verification:
+
+- `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts -t "correlation"` passed.
+- `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts` passed.
+- `npx vitest run packages/tests/shared-test/black-box-runner-artifact-reader.test.ts packages/tests/shared-test/black-box-runner-handoff-contract.test.ts` passed.
+- `deno check packages/shared-test/black-box-runner/scenario-black-box.ts packages/shared-test/black-box-runner/execute-black-box.ts packages/shared-test/black-box-runner/rtc-provider.ts packages/shared-test/black-box-runner/plan-preflight.ts packages/shared-test/black-box-runner/schema.ts` passed.
+- `deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts -c packages/shared-test/black-box-runner/examples/rallar-server-auth-group-ws-smoke.json --explain` passed.
+
 ## Runner Iteration 5: Large-run Artifact Indexing And Compaction
 
-Status: proposed.
+Status: completed on 2026-06-01.
 
 Goal: Keep long soak, traffic, and scale runs usable when artifacts become
 large.
@@ -263,9 +334,39 @@ Suggested verification:
 - Add a large deterministic traffic test with a small cap that verifies failure
   preservation.
 
+Results:
+
+- Added `artifact-index.json` to current runner artifact bundles while keeping
+  plain `events.jsonl`, `report.json`, `failures.json`, and `metadata.json` as
+  the local-debugging defaults.
+- The index records total/emitted/omitted event counts by kind, transport, and
+  status, first-failure pointers, step-result sequence numbers with
+  emitted/omitted flags, per-run summaries, per-connection summaries,
+  truncation metadata, and compact summaries for omitted repeated success
+  events.
+- Added configurable event caps through `execution.artifacts`,
+  `execution.artifact`, or `execution.artifactLimits`, including global
+  `maxEvents` and per-kind `maxEventsByKind`.
+- Failure step results, failed post-run assertions, and RTC diagnostics are
+  preserved in `events.jsonl` even when success events are compacted.
+- Updated artifact reader support, schema fixtures, handoff docs, artifact
+  docs, matrix docs, and SPA examples docs for indexed/compacted bundles.
+- Deferred compressed artifacts; plain JSON/JSONL remains the default until the
+  command-center import flow needs compressed bundle support.
+
+Verification:
+
+- `npx vitest run packages/tests/shared-test/black-box-runner-artifact-reader.test.ts packages/tests/shared-test/black-box-runner-handoff-contract.test.ts` passed.
+- `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts -t "artifact indexes|bounded artifacts|redacted report"` passed.
+- `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts` passed when allowed to bind a local
+  `127.0.0.1` HTTP server for existing correlation tests.
+- `deno check packages/shared-test/black-box-runner/scenario-black-box.ts packages/shared-test/black-box-runner/execute-black-box.ts packages/shared-test/black-box-runner/plan-preflight.ts packages/shared-test/black-box-runner/schema.ts` passed.
+- `npm --workspace @ar-eye-hunter/shared-test run check:ts` passed.
+- `git diff --check` passed.
+
 ## Runner Iteration 6: Live Environment Preflight Contract
 
-Status: proposed.
+Status: completed on 2026-06-01.
 
 Goal: Fail fast when live Rallar services are not provisioned for a matrix run.
 
@@ -297,9 +398,32 @@ Suggested verification:
   WS upgrade, and successful local API.
 - Add docs for local and production preflight commands.
 
+Results:
+
+- Added `live-preflight.ts` with a shared live provisioning report contract and
+  stable check vocabulary for env, Rallar API base URL, `/api/config`, CORS,
+  auth, group permission, WS ticket, WS upgrade, ICE config, control server,
+  and Playwright.
+- Added matrix `--preflight-only` / `--live-preflight` mode plus
+  `npm run test:shared-black-box:matrix:live:preflight`.
+- Matrix live entries now run live preflight before recipe execution, write
+  `preflight-report.json`, and copy failed provisioning checks into skip
+  reasons instead of launching misleading RTC/browser runs.
+- Added artifact-reader and handoff-contract support for optional
+  `preflight-report.json`.
+
+Verification:
+
+- `npx vitest run packages/tests/shared-test/black-box-runner-live-preflight.test.ts packages/tests/shared-test/black-box-runner-artifact-reader.test.ts packages/tests/shared-test/black-box-runner-handoff-contract.test.ts packages/tests/shared-test/recipe-matrix.test.ts` passed.
+- `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts -t "explains a valid recipe|validates missing env|strict profile"` passed.
+- `npm --workspace @ar-eye-hunter/shared-test run check:ts` passed.
+- `npm --workspace @ar-eye-hunter/shared-test run check:deno` passed.
+- `deno check packages/shared-test/black-box-runner/artifact-reader.ts packages/shared-test/black-box-runner/handoff-contract.ts packages/shared-test/black-box-runner/schema.ts packages/shared-test/black-box-runner/live-preflight.ts packages/shared-test/black-box-runner/recipe-matrix.mts` passed.
+- `deno run -A packages/shared-test/black-box-runner/recipe-matrix.mts --profile=live --id=browser-connect-live --preflight-only --artifact-dir=/private/tmp/rallar-live-preflight-smoke` passed with a skipped entry and a written `preflight-report.json` for missing live credentials.
+
 ## Runner Iteration 7: Static Recipe Fragments And Includes
 
-Status: proposed.
+Status: completed on 2026-06-01.
 
 Goal: Reduce duplication in common Rallar Server setup and cleanup recipes
 without adding a programming language.
@@ -324,9 +448,35 @@ Suggested verification:
 - Add include expansion tests, circular include detection, missing include
   errors, and artifact replay tests.
 
+Results:
+
+- Added static top-level `fragments` and step-level `include` support for
+  inline fragments and local JSON fragment files.
+- Include snippets can receive static `variables`, `namePrefix`, and
+  `nameSuffix`. Fragment-level `variables`, `connections`, and `defaults` are
+  merged into the parent recipe before normal runner variable resolution.
+- Includes are resolved before `--validate`, `--explain`, and execution. Missing
+  includes, circular includes, remote URLs, absolute paths, and paths escaping
+  the recipe root fail preflight with `PLAN_EXPANSION_FAILED`.
+- Artifact bundles now include optional `expanded-recipe.json`, which records
+  the expanded recipe and include provenance so replay/debug does not need the
+  original fragment files.
+- Updated artifact reader, handoff contract, schema fixture coverage, recipe
+  guide, artifact docs, SPA import docs, and recommended iteration order.
+
+Verification:
+
+- `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts -t "static recipe fragments|expanded recipe|static includes"` passed.
+- `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts` passed when allowed to bind a local
+  `127.0.0.1` HTTP server for existing correlation tests.
+- `npx vitest run packages/tests/shared-test/black-box-runner-artifact-reader.test.ts packages/tests/shared-test/black-box-runner-handoff-contract.test.ts` passed.
+- `deno check packages/shared-test/black-box-runner/scenario-black-box.ts packages/shared-test/black-box-runner/execute-black-box.ts packages/shared-test/black-box-runner/plan-preflight.ts packages/shared-test/black-box-runner/schema.ts` passed.
+- `npm --workspace @ar-eye-hunter/shared-test run check:ts` passed.
+- `git diff --check` passed.
+
 ## Runner Iteration 8: Traffic-plan Failure Reduction
 
-Status: proposed.
+Status: completed on 2026-06-01.
 
 Goal: Make seeded traffic failures easier to reduce and replay.
 
@@ -352,6 +502,34 @@ Suggested verification:
 
 - Add reducer tests using deterministic expanded-plan fixtures.
 - Add docs showing how to replay the reduced plan.
+
+Results:
+
+- Added `black-box-runner/traffic-plan-reducer.ts` as an offline reducer for
+  failing seeded traffic artifacts.
+- The reducer reads `expanded-plan.json` plus first-failure evidence from
+  `artifact-index.json`, `failures.json`, `report.json`, or an explicit
+  `--first-failure` argument.
+- The first reduction strategy is `truncate-after-first-failure`: keep setup,
+  cleanup, operation order, and all generated traffic through the first failing
+  step, then remove later generated operations.
+- The reducer writes replay-compatible `reduced-plan.json` and
+  `reduced-plan-summary.json` files without rerunning the scenario.
+- Added `reduced-plan.json` to the artifact handoff contract and artifact
+  reader views so command-center consumers can import reduced replay
+  candidates alongside ordinary expanded plans.
+- Updated recipe, artifact, matrix, examples, SPA import, and product
+  evaluation docs with the reduced-plan workflow.
+
+Verification:
+
+- `npx vitest run packages/tests/shared-test/black-box-runner-traffic-plan-reducer.test.ts packages/tests/shared-test/black-box-runner-artifact-reader.test.ts packages/tests/shared-test/black-box-runner-handoff-contract.test.ts` passed.
+- `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts -t "traffic plan"` passed.
+- `deno check packages/shared-test/black-box-runner/artifact-reader.ts packages/shared-test/black-box-runner/traffic-plan-reducer.ts` passed.
+- `npm --workspace @ar-eye-hunter/shared-test run check:ts` passed.
+- `npm --workspace @ar-eye-hunter/shared-test run check:deno` passed.
+- `deno run -A packages/shared-test/black-box-runner/traffic-plan-reducer.ts --expanded-plan packages/shared-test/black-box-runner/fixtures/schema/v1/artifact-bundle/expanded-plan.json --first-failure aliceTrafficToBob --out /tmp/rallar-reduced-plan-smoke.json --summary-out /tmp/rallar-reduced-plan-summary-smoke.json` passed.
+- `git diff --check` passed.
 
 ## Deferred For Now
 

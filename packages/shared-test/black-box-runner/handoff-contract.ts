@@ -24,6 +24,7 @@ export type BlackBoxRunnerRecipeRequirement = Readonly<{
     env?: readonly string[];
     httpServices?: readonly BlackBoxRunnerHttpServiceRequirement[];
     playwright?: boolean;
+    livePreflight?: Readonly<Record<string, unknown>>;
 }>;
 
 export type BlackBoxRunnerRecipeMatrixEntry = Readonly<{
@@ -95,7 +96,11 @@ export type BlackBoxRunnerArtifactFileName =
     | 'events.jsonl'
     | 'failures.json'
     | 'metadata.json'
+    | 'artifact-index.json'
+    | 'expanded-recipe.json'
+    | 'preflight-report.json'
     | 'expanded-plan.json'
+    | 'reduced-plan.json'
     | 'matrix-summary.json';
 
 export type BlackBoxRunnerArtifactBundleContract = Readonly<{
@@ -149,7 +154,11 @@ export const BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT: BlackBoxRunnerArtifactBu
         'metadata.json',
     ],
     optionalFiles: [
+        'artifact-index.json',
+        'expanded-recipe.json',
+        'preflight-report.json',
         'expanded-plan.json',
+        'reduced-plan.json',
         'matrix-summary.json',
     ],
     eventStream: {
@@ -157,6 +166,7 @@ export const BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT: BlackBoxRunnerArtifactBu
         format: 'jsonl',
         eventKinds: [
             'step-result',
+            'post-run-assertion',
             'ws-message',
             'ws-close',
             'rtc-message',
@@ -173,7 +183,11 @@ export const BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT: BlackBoxRunnerArtifactBu
             'events.jsonl',
             'failures.json',
             'metadata.json',
+            'artifact-index.json',
+            'expanded-recipe.json',
+            'preflight-report.json',
             'expanded-plan.json',
+            'reduced-plan.json',
             'matrix-summary.json',
         ],
     },

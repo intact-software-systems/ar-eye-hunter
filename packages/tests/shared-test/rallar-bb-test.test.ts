@@ -1208,6 +1208,145 @@ describe('rallar-bb-test', () => {
         expect(sendCallEpochMs[1] - sendCallEpochMs[0]).toBeGreaterThanOrEqual(20);
     });
 
+    it('records deterministic loop pacing, send, and stats summaries', async () => {
+        let now = 1_000;
+        let sendCount = 0;
+        const runtime = createRallarBlackBoxTestRuntime({
+            now: () => now,
+            sleep: async ms => {
+                now += ms;
+            },
+            commandExecutor: (command, context) => {
+                if (command.kind !== 'rtc.send') {
+                    return undefined;
+                }
+
+                sendCount += 1;
+                const durationMs = sendCount === 2 ? 15 : 5;
+                now += durationMs;
+                return {
+                    status: 'ok',
+                    value: {
+                        sendObservation: {
+                            commandId: command.commandId,
+                            kind: command.kind,
+                            transport: 'realtime',
+                            durationMs,
+                            ok: true,
+                            status: sendCount === 2 ? 'rate-limited' : 'sent',
+                            backpressured: sendCount === 2,
+                        },
+                    },
+                    nextStatus: context.state().status,
+                };
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'loop',
+            commandId: 'paced-loop',
+            count: 3,
+            intervalMs: 10,
+            commands: [{ kind: 'rtc.send', commandId: 'paced-send', transport: 'realtime' }],
+        });
+        const value = result.value as RallarBlackBoxTestLoopResultValue;
+        const statsResult = await runtime.execute({ kind: 'stats', commandId: 'paced-stats' });
+        const stats = statsResult.value as ReturnType<typeof selectRallarBlackBoxLatestStats>;
+
+        expect(result.ok).toBe(true);
+        expect(value.pacing).toMatchObject({
+            requestedIntervalMs: 10,
+            requestedRateHz: 100,
+            completedIterations: 3,
+            targetElapsedMs: 20,
+            elapsedMs: 45,
+            maxStartDriftMs: 20,
+            averageStartDriftMs: 8,
+            maxJitterMs: 15,
+            averageJitterMs: 10,
+            lateIterationCount: 1,
+        });
+        expect(value.pacing?.iterations.map(iteration => iteration.startDriftMs)).toEqual([0, 5, 20]);
+        expect(value.sends).toMatchObject({
+            sendCount: 3,
+            succeeded: 3,
+            failed: 0,
+            successRatio: 1,
+            backpressureCount: 1,
+            duration: {
+                minMs: 5,
+                maxMs: 15,
+                averageMs: 8,
+                totalMs: 25,
+            },
+        });
+        expect(stats?.load?.latestLoopCommandId).toBe('paced-loop');
+        expect(stats?.load?.latestPacing).toMatchObject({
+            completedIterations: 3,
+            maxStartDriftMs: 20,
+        });
+        expect('iterations' in (stats?.load?.latestPacing ?? {})).toBe(false);
+        expect(stats?.load?.latestSends).toMatchObject({
+            sendCount: 3,
+            backpressureCount: 1,
+        });
+        expect('observations' in (stats?.load?.latestSends ?? {})).toBe(false);
+    });
+
+    it('fails loops when configured pacing or backpressure thresholds are missed', async () => {
+        let now = 2_000;
+        const runtime = createRallarBlackBoxTestRuntime({
+            now: () => now,
+            sleep: async ms => {
+                now += ms;
+            },
+            commandExecutor: (command, context) => {
+                if (command.kind !== 'rtc.send') {
+                    return undefined;
+                }
+
+                now += 15;
+                return {
+                    status: 'ok',
+                    value: {
+                        sendObservation: {
+                            commandId: command.commandId,
+                            kind: command.kind,
+                            transport: 'realtime',
+                            durationMs: 15,
+                            ok: true,
+                            status: 'rate-limited',
+                            backpressured: true,
+                        },
+                    },
+                    nextStatus: context.state().status,
+                };
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'loop',
+            commandId: 'threshold-loop',
+            count: 2,
+            intervalMs: 10,
+            thresholds: {
+                minAchievedRateHz: 50,
+                failOnBackpressure: true,
+            },
+            commands: [{ kind: 'rtc.send', commandId: 'threshold-send', transport: 'realtime' }],
+        });
+        const value = result.value as RallarBlackBoxTestLoopResultValue;
+
+        expect(result.status).toBe('failed');
+        expect(result.error?.code).toBe('RALLAR_BLACK_BOX_LOOP_THRESHOLD_FAILED');
+        expect(value.failed).toBe(0);
+        expect(value.thresholdFailures?.map(failure => failure.category)).toEqual([
+            'pacing',
+            'backpressure',
+        ]);
+        expect(value.sends?.backpressureCount).toBe(2);
+    });
+
     it('stops duration-based loops at the configured duration boundary', async () => {
         let now = 0;
         let sendCount = 0;
@@ -1672,6 +1811,7 @@ describe('rallar-bb-test', () => {
             readonly url: string;
             readonly protocol = '';
             readyState = 0;
+            bufferedAmount = 0;
             readonly sent: unknown[] = [];
             private readonly listeners = new Map<string, Array<(event: unknown) => void>>();
 
@@ -1699,6 +1839,7 @@ describe('rallar-bb-test', () => {
 
             send(data: unknown): void {
                 this.sent.push(data);
+                this.bufferedAmount = 42;
                 this.emit('message', {
                     data,
                 });
@@ -1752,6 +1893,14 @@ describe('rallar-bb-test', () => {
         expect(openResult.ok).toBe(true);
         expect(sendResult.ok).toBe(true);
         expect(closeResult.ok).toBe(true);
+        expect(sendResult.value).toMatchObject({
+            sendObservation: {
+                kind: 'ws.send',
+                transport: 'ws',
+                status: 'queued',
+                queued: true,
+            },
+        });
         expect(sockets[0].sent).toEqual(['{"text":"hello"}']);
         expect(selectRallarBlackBoxMessages(runtime.state())[0].payload).toEqual({
             data: '{"text":"hello"}',

@@ -801,7 +801,7 @@ Verification:
 
 ## Iteration 12: Pacing Accuracy, Backpressure, And Load Observability
 
-Status: planned.
+Status: completed on 2026-06-01.
 
 Goal: Make looped realtime recipes trustworthy for small-scale and larger-scale
 traffic tests.
@@ -848,6 +848,37 @@ Suggested verification:
   enough information.
 - Add a small live-gated smoke that verifies a short `rtc-realtime` run reports
   pacing stats without requiring strict timing on CI.
+
+Results:
+
+- Added optional `loop.thresholds` with transport-neutral checks for achieved
+  rate, average/max start drift, max jitter, send success ratio, and observed
+  backpressure.
+- Added loop result `pacing` summaries with requested interval/rate, actual
+  iteration timestamps, elapsed time, start drift, jitter, skipped iterations,
+  and cancelled iteration counts.
+- Added loop result `sends` summaries with send counts, success ratio, send
+  duration statistics, queued/enqueued/backpressure counts,
+  dropped/replaced-payload counts, per-transport failure counts, and raw
+  observations.
+- Added browser-adapter send observations for RTC sends, browser WebSocket
+  sends, and Rallar-signaling WebSocket sends when the adapter can expose
+  status, duration, or queue evidence.
+- Added `stats.load` output with the latest loop pacing/send summaries without
+  raw per-iteration or per-send observation lists, so SPA and artifacts can
+  render load state without parsing child results.
+- Added an injected runtime sleep hook for deterministic loop cadence tests.
+
+Verification:
+
+- `npx vitest run packages/tests/shared-test/rallar-bb-test.test.ts packages/tests/shared-test/rallar-bb-test-diagnostics.test.ts packages/tests/shared-test/rallar-bb-test-composite-results.test.ts` passed.
+- `npm --workspace @ar-eye-hunter/shared-test run check:ts` passed.
+- `npx tsx -e "..."` schema threshold validation passed when run outside the
+  sandbox because `tsx` needs to create an IPC pipe.
+- `npx vitest run packages/tests/shared-test/rallar-bb-test.test.ts packages/tests/shared-test/rallar-bb-test-schema.test.ts packages/tests/shared-test/rallar-bb-test-diagnostics.test.ts`
+  passed for the runtime and diagnostics files, but the schema test file was
+  blocked by an existing Vite/OXC tsconfig resolution error while importing the
+  control-server Swagger route.
 
 ## Iteration 13: Cancellation, Deadline, And Cleanup Isolation Hardening
 
@@ -923,7 +954,7 @@ Verification:
 
 ## Iteration 14: Composite Live Conformance Matrix
 
-Status: planned.
+Status: completed on 2026-06-01.
 
 Goal: Prove the composite command contract behaves consistently across local,
 browser, remote-browser, and live Rallar execution paths.
@@ -964,9 +995,32 @@ Suggested verification:
 - Add gated live matrix commands and documentation for local or production
   server setups.
 
+Results:
+
+- Added `composite-conformance.ts` with five representative conformance cases:
+  looped RTC send, parallel WS/RTC groups, wait/assert evidence,
+  cancellation during loop, and no-peer negative delivery.
+- Added provider rows for deterministic in-memory runtime, browser-rallar, and
+  remote-browser/control-server execution with explicit live requirements and
+  provider capability differences.
+- Added compact conformance reports that compare expected status, command
+  kinds, composite kinds, event topics, and failure codes with observed
+  command history, diagnostics, redacted failures, and composite summaries.
+- Added deterministic local conformance tests plus a browser-adapter loop
+  conformance test with fake Rallar runtime evidence.
+- Added `npm run test:shared-black-box:composite-conformance` as the local
+  deterministic entrypoint.
+- Documented the matrix in
+  `packages/shared-test/rallar-bb-test/docs/composite-conformance-matrix.md`.
+
+Verification:
+
+- `npx vitest run packages/tests/shared-test/rallar-bb-test-composite-conformance.test.ts` passed.
+- `npm --workspace @ar-eye-hunter/shared-test run check:ts` passed.
+
 ## Iteration 15: Schema Versioning And Golden Recipe Compatibility
 
-Status: planned.
+Status: completed on 2026-06-01.
 
 Goal: Protect the JSON command contract as more tools and AI-generated recipes
 start depending on it.
@@ -991,6 +1045,34 @@ Work:
 - Decide whether `rallar-bb-test` recipe schema needs an explicit version field
   or whether package/schema versioning is sufficient for now.
 - Add a small compatibility guide for AI prompt authors and external tools.
+
+Completed:
+
+- Added optional explicit `schemaVersion: 1` support to
+  `RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA`, inline `recipe.load`/`recipe.run`
+  schemas, and `RallarBlackBoxTestRecipe`.
+- Added `validateRallarBlackBoxRecipeCompatibility(...)` so tools can treat
+  missing recipe `schemaVersion` as legacy-compatible v1 while surfacing a
+  warning to authors.
+- Added the v1 golden compatibility corpus at
+  `packages/shared-test/rallar-bb-test/fixtures/schema/v1/golden-compatibility-corpus.json`
+  with valid primitive, composite, wait/assert, distributed inline, and
+  AI-generated examples plus invalid migration guard cases.
+- Added schema compatibility tests that validate the golden corpus, reject
+  unsupported explicit versions, and keep compatibility-guide JSON examples
+  schema-valid.
+- Added `schema-compatibility-guide.md` with external tool rules, validation
+  flow, golden corpus location, and an upgrade note template.
+- Updated schema/capability and AI prompt docs to recommend explicit v1
+  versioning for generated recipes and distributed manifests.
+
+Verification:
+
+- `npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts` passed.
+- `npm --workspace @ar-eye-hunter/shared-test run check:ts` passed.
+- `npm --workspace rallar-black-box run typecheck` passed.
+- `npm run check:rallar-black-box-control` passed.
+- `git diff --check` passed.
 
 Exit criteria:
 

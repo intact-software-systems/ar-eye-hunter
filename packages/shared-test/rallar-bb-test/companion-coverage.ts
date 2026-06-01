@@ -99,6 +99,7 @@ export const RALLAR_COMPANION_COVERAGE_SURFACES: readonly RallarCompanionCoverag
         intent: 'Visible or remote browser control through portable commands and event/result normalization.',
         testFiles: [
             'packages/tests/shared-test/rallar-bb-test.test.ts',
+            'packages/tests/shared-test/rallar-bb-test-composite-conformance.test.ts',
             'packages/tests/shared-test/rallar-provider-parity.test.ts',
             'packages/tests/shared-test/rallar-remote-browser-provider.test.ts',
         ],

@@ -18,6 +18,15 @@ manifest with inline `rallar-bb-test` recipes. A future bridge can make
 black-box-runner scenarios a first-class distributed recipe type, but that is
 not the primary manifest shape today.
 
+The `apps/rallar-black-box` Distributed Recipes tab now includes a
+`Generate With AI` panel that renders these schema-aware prompt patterns with
+redacted Global Context variables, copyable schema context, generated-JSON
+validation, distributed recipe preflight, and copyable feedback for prompt
+repair.
+
+Schema compatibility rules for generated recipes live in
+`packages/shared-test/rallar-bb-test/docs/schema-compatibility-guide.md`.
+
 ## Prompt Rules
 
 Give the AI the schema, a short goal, and hard constraints.
@@ -25,7 +34,8 @@ Give the AI the schema, a short goal, and hard constraints.
 Useful constraints:
 
 - Output JSON only. No Markdown.
-- Use `schemaVersion: 1`.
+- Use `schemaVersion: 1` on distributed manifests and every inline
+  `rallar-bb-test` recipe.
 - Use stable, descriptive `distributedRunId`, `recipeId`, and `commandId`
   values.
 - Use `browser-rallar` assumptions only when the target is live browsers.
@@ -193,6 +203,9 @@ Constraints:
 - Use loop placeholders {loop.index}, {loop.iteration}, and {loop.elapsedMs}.
 - Put rateHz, intervalMs, frameCount, and durationSeconds in metadata, not as
   unknown top-level loop fields.
+- Optional loop thresholds may use minAchievedRateHz, maxStartDriftMs,
+  maxAverageStartDriftMs, maxJitterMs, minSendSuccessRatio, and
+  failOnBackpressure.
 - Include roomRef on RTC commands.
 - Use timeoutMs 60000 for rtc.connect and rtc.send.
 - Do not include credentials or access tokens.

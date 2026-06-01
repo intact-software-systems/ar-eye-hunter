@@ -30,6 +30,9 @@ The distributed-run manifest and lifecycle contract are documented in
 Prompting guidance for using these schemas with AI recipe generation is in
 `packages/shared-test/rallar-bb-test/docs/ai-recipe-prompt-guide.md`.
 
+Schema compatibility guidance for AI prompt authors and external tools is in
+`packages/shared-test/rallar-bb-test/docs/schema-compatibility-guide.md`.
+
 Composite browser-agent primitive planning is documented in
 `packages/shared-test/rallar-bb-test/docs/rallar-bb-test-composite-primitives-iterations.md`.
 
@@ -61,6 +64,9 @@ distributed recipe preflight checks.
 
 Use `validateJsonSchema(schema, value)` for lightweight browser-safe validation.
 Use `formatJsonSchemaValidationErrors(errors)` for operator-facing errors.
+Use `validateRallarBlackBoxRecipeCompatibility(value)` when a tool needs the
+v1 compatibility decision plus warnings for legacy recipes that omit
+`schemaVersion`.
 
 Current automated coverage validates:
 
@@ -86,11 +92,24 @@ Current automated coverage validates:
   failure summaries, and redacted display entries
 - runtime diagnostic normalization, wait/assert matching, browser-adapter
   ingestion, and known live WS/RTC console warning bridging
+- composite conformance recipes, provider rows, live requirements, and compact
+  report artifacts
+- the v1 golden compatibility corpus for valid recipes, invalid recipes,
+  distributed manifests with inline recipes, and representative AI-generated
+  examples
+- JSON examples in the schema compatibility guide
 
 ## Compatibility Rules
 
 Treat schema changes as public command-center contract changes.
 
+- New `rallar-bb-test` recipes should include `schemaVersion: 1`.
+- Recipes without `schemaVersion` remain legacy-compatible v1 recipes for now;
+  compatibility validation returns a warning so authoring tools can guide users
+  toward explicit versioning.
+- Unsupported explicit recipe schema versions are invalid.
+- Distributed run manifests should include `schemaVersion: 1`, and inline
+  recipes inside manifests should also include `schemaVersion: 1`.
 - Adding optional fields to an existing command is compatible.
 - Tightening a field type is a breaking change unless all shipped recipes and
   examples already satisfy it.
@@ -125,6 +144,26 @@ and redacted display entries without knowing runtime internals. Result paths
 start at `$`; source recipe paths map back to command templates such as
 `$.groups[0].commands[0]` while runtime paths include loop iterations and
 parallel group IDs.
+
+Loop results also include load-oriented observability. `value.pacing` records
+requested interval/rate, actual iteration timestamps, elapsed time, drift,
+jitter, skipped iterations, and cancelled iterations. `value.sends` records
+send counts, success ratio, duration statistics, queued/enqueued/backpressure
+counts, dropped/replaced payload counts, per-transport failure counts, and raw
+send observations when the adapter can expose them. `loop.thresholds` can fail
+the parent command with `RALLAR_BLACK_BOX_LOOP_THRESHOLD_FAILED` when achieved
+rate, drift, jitter, send success ratio, or backpressure evidence misses the
+configured limits. The `stats` command mirrors the latest loop under
+`stats.load` without raw iteration or send observation arrays for SPA and
+artifact summaries.
+
+Composite conformance coverage lives in `composite-conformance.ts`. It defines
+the representative `loop`, `parallel`, `wait`, `assert`, cancellation, and
+negative delivery recipes plus provider rows for deterministic local,
+browser-rallar, and remote-browser/control-server execution. The companion
+report shape compares expected recipe behavior with observed command results,
+diagnostics, redacted failures, provider capability differences, and compact
+composite summaries.
 
 `wait` is a browser-agent evidence primitive. It observes current and future
 runtime events, messages, diagnostics, stats, reports, and results without

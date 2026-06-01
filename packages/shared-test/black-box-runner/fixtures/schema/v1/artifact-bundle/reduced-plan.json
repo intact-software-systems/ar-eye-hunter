@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "schemaVersion": 1,
+  "kind": "black-box-runner.reduced-plan",
+  "seed": 42,
+  "replay": true,
+  "generator": {
+    "count": 1,
+    "reducedFrom": {
+      "seed": 42,
+      "stepCount": 2,
+      "decisionCount": 1
+    },
+    "reductionStrategy": "truncate-after-first-failure"
+  },
+  "decisions": [
+    {
+      "sequence": 1,
+      "operation": "alice-to-bob",
+      "operationIndex": 1,
+      "random": 0.123456,
+      "randomInt": 123456
+    }
+  ],
+  "steps": [
+    {
+      "name": "aliceTrafficToBob",
+      "type": "rtc.send",
+      "connection": "aliceRtc"
+    }
+  ],
+  "reduction": {
+    "schemaVersion": 1,
+    "strategy": "truncate-after-first-failure",
+    "firstFailure": {
+      "name": "aliceTrafficToBob",
+      "stepIndex": 0,
+      "stepName": "aliceTrafficToBob",
+      "trafficSequence": 1
+    },
+    "original": {
+      "seed": 42,
+      "replay": false,
+      "stepCount": 2,
+      "decisionCount": 1
+    },
+    "reduced": {
+      "stepCount": 1,
+      "decisionCount": 1
+    },
+    "removed": {
+      "stepCount": 1,
+      "decisionCount": 0,
+      "operations": []
+    }
+  },
+  "replayRecipe": {
+    "execution": {
+      "trafficPlan": {
+        "expandedPlan": {
+          "version": 1,
+          "seed": 42,
+          "steps": [
+            {
+              "name": "aliceTrafficToBob",
+              "type": "rtc.send",
+              "connection": "aliceRtc"
+            }
+          ]
+        }
+      }
+    },
+    "steps": [
+      {
+        "name": "aliceTrafficToBob",
+        "type": "rtc.send",
+        "connection": "aliceRtc"
+      }
+    ]
+  }
+}

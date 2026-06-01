@@ -51,12 +51,26 @@ function toOutputReportFields(interaction: any): any {
     };
 }
 
+function toCorrelationReportFields(interaction: any): any {
+    const correlation = interaction?.request?.correlation;
+    if (!correlation) {
+        return {};
+    }
+
+    return {
+        runnerRunId: correlation.runnerRunId,
+        runnerStepId: correlation.runnerStepId,
+        correlation,
+    };
+}
+
 export function toRtcFailureStatus(config: any, interaction: any, result: string, details: any = {}): any {
     return {
         name: config.interactionName,
         status: FAILURE,
         result,
         transport: 'RTC',
+        ...toCorrelationReportFields(interaction),
         ...toRtcReportFields(interaction),
         scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
         interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
@@ -97,6 +111,7 @@ export function toRtcSuccessStatus(config: any, interaction: any, details: any =
         name: config.interactionName,
         status: SUCCESS,
         transport: 'RTC',
+        ...toCorrelationReportFields(interaction),
         ...toRtcReportFields(interaction),
         scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
         interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,

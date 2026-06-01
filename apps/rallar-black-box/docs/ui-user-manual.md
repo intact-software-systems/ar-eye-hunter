@@ -610,6 +610,13 @@ Main workflow:
 - start or cancel it
 - export the distributed-run artifact bundle
 
+`Generate With AI` is the schema-aware authoring surface for assisted recipe writing. Choose a prompt template for live
+group ACK, WS send/receive, RTC position streaming, looped RTC load, parallel WS/RTC smoke, or wait/assert evidence.
+Copy the prompt or schema context into any AI assistant, then paste the generated JSON back into the panel. The SPA
+validates it as either a distributed manifest or browser-agent recipe, redacts secret-like Global Context values in the
+prompt variables, shows schema errors and distributed preflight warnings/errors, and provides copyable feedback for the
+next prompt iteration.
+
 Role patterns support all agents running the same recipes, sender/receiver pairs, one sender with many receivers, and a
 three-browser matrix. Live recipes are marked because they can send real HTTP, WebSocket, or RTC traffic through
 connected browsers.
@@ -640,7 +647,7 @@ The monitor section appears after a distributed run is selected. It shows:
 - composite drilldowns for distributed recipe runs that contain `loop`, `parallel`, `wait`, or `assert` results
 - structured runtime diagnostics for WS and RTC warnings, with filters for transport, severity, agent, group, and search
 - failure correlation when a diagnostic matches a failed command or same-agent near-time failure
-- linked control-run events for the distributed run
+- linked control-run events for the distributed run, including compact payload summaries for received-message evidence
 - lifecycle timeline
 - artifact validation status after `Export artifact`
 
@@ -654,6 +661,8 @@ Use `Runtime Diagnostics` when a live distributed test looks successful at the c
 warnings explain missing or ignored traffic. WS diagnostics show selector IDs such as type/topic/context/resource and
 sender metadata. RTC diagnostics show peer and lane metadata, including expected versus observed data-channel labels
 when the runtime reports a lane mismatch.
+Live warning-regression coverage keeps known harmless WS/RTC browser warnings visible in the monitor and Playwright
+artifacts, while high-severity runtime diagnostics remain fail-fast evidence.
 
 Use `Historical Runs` to filter previous distributed runs by group, recipe, profile, user, status, date, failure type, or
 free-text query. Use `Compare Runs` to inspect recipe/profile changes, participant changes, failure deltas, timing
@@ -849,11 +858,14 @@ The artifact import panel accepts runner artifact bundle files:
 - `events.jsonl`
 - `failures.json`
 - `metadata.json`
+- optional `artifact-index.json`
+- optional `expanded-recipe.json`
 - optional `expanded-plan.json`
+- optional `reduced-plan.json`
 - optional `matrix-summary.json`
 
 Imported bundles are validated before display. Valid artifacts are projected into imported summary, event stream, RTC
-diagnostics, failure-focus, and replay-recipe views.
+diagnostics, failure-focus, expanded-recipe data, reduced-plan data, and replay-recipe views.
 
 ## Stats
 

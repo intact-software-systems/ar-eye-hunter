@@ -58,6 +58,20 @@ ID, original command ID, loop iteration, parallel group ID, group index, command
 index, and the raw result. Display entries omit the raw result object and expose
 only redacted `value` and `error` fields.
 
+Loop parent result values may also include:
+
+- `pacing`: requested interval/rate, actual iteration timestamps, elapsed time,
+  drift, jitter, skipped iterations, and cancelled iterations.
+- `sends`: send counts, success ratio, duration statistics, queued/enqueued/
+  backpressure counts, dropped/replaced payload counts, per-transport failure
+  counts, and adapter send observations.
+- `thresholdFailures`: transport-neutral pacing, delivery, or backpressure
+  failures when `loop.thresholds` marks the parent command failed.
+
+These fields are additive to the composite result contract. Helpers should keep
+flattening children from `value.results`; UI and artifact views can read the
+parent `pacing`, `sends`, and `thresholdFailures` fields for load summaries.
+
 ## Artifact Fixtures
 
 The fixture

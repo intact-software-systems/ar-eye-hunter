@@ -171,6 +171,10 @@ The simulated distributed coverage runs with the full-stack gate. The live WS an
 requires `RALLAR_BLACK_BOX_DISTRIBUTED_RECIPES=1`. Local API-v1 fixture runs use `alice/secret`, `bob/secret`, and
 `charlie/secret` by default; override them with `VITE_RALLAR_AGENT_A/B/C_USERNAME` and
 `VITE_RALLAR_AGENT_A/B/C_PASSWORD`, or restored-session variables, for provisioned environments.
+The live distributed slice also runs a short `rtc-realtime` composite recipe,
+asserts visible frame/drilldown evidence, links received WS/RTC/realtime
+payloads back to distributed-run monitor rows, and attaches console warning
+artifacts while failing only on configured high-severity diagnostics.
 Live distributed WS recipes use `room.*` topics because Rallar Server reserves
 `rallar.*` for system traffic and will reject those topics before dynamic fanout.
 For the exhaustive sender/receiver matrix, run:
@@ -195,9 +199,19 @@ Run deterministic runner coverage for same-connection soak, seeded traffic, and 
 npm run test:shared-black-box:matrix:deterministic
 ```
 
-Those commands execute through `packages/shared-test/black-box-runner`. The SPA `Shared Test` tab renders the
-browser-safe fixture catalog, app-local examples, copyable runner commands, coverage ownership, and imported artifact
-bundles. It still leaves actual shell execution to explicit local tooling or the control server.
+Run deterministic `rallar-bb-test` composite conformance coverage for loop,
+parallel, wait/assert, cancellation, and negative delivery cases:
+
+```sh
+npm run test:shared-black-box:composite-conformance
+```
+
+The matrix commands execute through `packages/shared-test/black-box-runner`.
+The composite conformance command executes the shared `rallar-bb-test` runtime
+contract directly. The SPA `Shared Test` tab renders the browser-safe fixture
+catalog, app-local examples, copyable runner commands, coverage ownership, and
+imported artifact bundles. It still leaves actual shell execution to explicit
+local tooling or the control server.
 
 ## Main Source Files
 
@@ -216,6 +230,8 @@ bundles. It still leaves actual shell execution to explicit local tooling or the
   normalization for the Run Manager and Distributed Recipes tabs.
 - `src/distributed-recipes.ts`: Distributed Recipes target-resolution, role-pattern, manifest-building, composite
   preflight, composite monitor drilldowns, history-filter, compare, artifact-validation, and state-tone helpers.
+- `src/distributed-recipe-authoring-prompts.ts`: schema-aware Distributed Recipes prompt templates, schema context
+  snippets, prompt-variable redaction, and validation-feedback rendering for assisted recipe authoring.
 - `src/schema-authoring.ts`: browser-side schema validation and capability summaries for command JSON, recipes,
   distributed-run manifests, runner scenarios, and generated command examples.
 - `src/full-stack-qa-matrix.ts`: full-stack command-center QA ownership and evidence mapping.
