@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import { Temporal } from '@js-temporal/polyfill';
 import '../setup-browser-indexeddb.ts';
 
 import { describe, expect, it } from 'vitest';

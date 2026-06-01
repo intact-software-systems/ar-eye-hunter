@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { assertEquals } from 'https://deno.land';
 
 Deno.test('QBox: duration is exceeded', () => {

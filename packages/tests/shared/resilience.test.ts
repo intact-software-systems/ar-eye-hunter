@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
     CircuitBreaker,
