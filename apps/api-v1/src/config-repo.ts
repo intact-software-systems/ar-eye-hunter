@@ -1,15 +1,19 @@
 import { parse } from 'jsr:@std/yaml';
 import { ApiConfig } from '@shared/api/api-config.ts';
 
+type RuntimeConfigEnv = Readonly<{
+    get(name: string): string | undefined;
+}>;
+
 async function loadJsonFile(fileName: string) {
-    return await import (
+    return await import(
         fileName,
         {
-            with: { type: 'json' }
+            with: { type: 'json' },
         }
         )
-        .then(a => a.default)
-        .catch(e => {
+        .then((a) => a.default)
+        .catch((e) => {
             console.error(e);
             return {};
         });
@@ -50,13 +54,45 @@ async function loadConfig(env: string): Promise<object> {
 
 const env = Deno.env.get('ENVIRONMENT') || 'dev';
 
-export const configuration: ApiConfig = await loadConfig(env) as ApiConfig;
+export const configuration: ApiConfig = applyRuntimeConfigOverrides(
+    await loadConfig(env) as ApiConfig,
+);
 
+export function applyRuntimeConfigOverrides(
+    config: ApiConfig,
+    env: RuntimeConfigEnv = Deno.env,
+): ApiConfig {
+    const apiBaseUrl = firstNonEmpty(
+        env.get('RALLAR_API_BASE_URL'),
+        env.get('API_BASE_URL'),
+    );
+    const wsBaseUrl = firstNonEmpty(
+        env.get('RALLAR_WS_BASE_URL'),
+        apiBaseUrl ? toWsBaseUrl(apiBaseUrl) : undefined,
+    );
 
-export type LoginClientData = {
-    readonly clientId: string,
-    readonly username: string,
-    readonly password: string
+    return {
+        ...config,
+        ...(apiBaseUrl ? { apiBaseUrl } : {}),
+        ...(wsBaseUrl ? { wsBaseUrl } : {}),
+    };
 }
 
-export const authorisedClients: LoginClientData[] = await loadJsonFile('../resources/authorised-clients.json');
+function firstNonEmpty(
+    ...values: readonly (string | undefined)[]
+): string | undefined {
+    for (const value of values) {
+        const trimmed = value?.trim();
+        if (trimmed) {
+            return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+        }
+    }
+
+    return undefined;
+}
+
+function toWsBaseUrl(apiBaseUrl: string): string {
+    const url = new URL(apiBaseUrl);
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    return url.toString().replace(/\/$/, '');
+}

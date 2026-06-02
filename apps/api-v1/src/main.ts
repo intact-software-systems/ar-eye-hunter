@@ -6,33 +6,39 @@ import { requireApiAuthSession, toAuthErrorResponse } from './services/request-a
 import { createRallarServer } from './create-rallar-server.ts';
 import { createStateApiResilienceMiddleware } from './services/state-api-resilience-middleware.ts';
 import { createHttpTimingMiddleware } from './services/http-timing-middleware.ts';
+import { logDatabaseBackendConfig, logPGliteSchemaInitConfig } from './db/database-config.ts';
+import { logDatabasePubSubConfig } from './db/database-pubsub-config.ts';
 
 const app: Hono = new Hono();
 const corsOrigins = readCorsOrigins();
 
+logDatabaseBackendConfig();
+logPGliteSchemaInitConfig();
+logDatabasePubSubConfig();
+
 app.use(
-  '/api/*',
-  cors(
-    {
-      origin: (origin) => resolveCorsOrigin(origin, corsOrigins),
-      allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowHeaders: ['Content-Type', 'Authorization', 'x-client-id'],
-      exposeHeaders: ['Content-Length', 'Server-Timing', 'x-request-id'],
-      maxAge: 600, // Cache the preflight for 10 minutes
-      credentials: true,
-    },
-  ),
+    '/api/*',
+    cors(
+        {
+            origin: (origin) => resolveCorsOrigin(origin, corsOrigins),
+            allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+            allowHeaders: ['Content-Type', 'Authorization', 'x-client-id'],
+            exposeHeaders: ['Content-Length', 'Server-Timing', 'x-request-id'],
+            maxAge: 600, // Cache the preflight for 10 minutes
+            credentials: true,
+        },
+    ),
 );
 
 app.use('/api/*', createHttpTimingMiddleware());
 
 app.use('/api/state/*', async (c, next) => {
-  try {
-    await requireApiAuthSession(c.req);
-    await next();
-  } catch (error) {
-    return toAuthErrorResponse(c, error);
-  }
+    try {
+        await requireApiAuthSession(c.req);
+        await next();
+    } catch (error) {
+        return toAuthErrorResponse(c, error);
+    }
 });
 
 app.use('/api/state/*', createStateApiResilienceMiddleware());
@@ -40,32 +46,47 @@ app.use('/api/state/*', createStateApiResilienceMiddleware());
 const rallar = createRallarServer();
 
 rallar.system
-  .useDefaultMiddlewareTopics()
-  .useWebSocketLifecycle();
+    .useDefaultMiddlewareTopics()
+    .useWebSocketLifecycle();
 rallar.ws.mount(app);
 rallar.rest.mount(app);
 rallar.start();
 
-Deno.serve({ port: 8080 }, app.fetch);
-console.log('Server started on port 8080. http://localhost:8080/api/docs');
+const port = readServerPort();
+Deno.serve({ port }, app.fetch);
+console.log(`Server started on port ${port}. http://localhost:${port}/api/docs`);
 
 function readCorsOrigins(): readonly string[] {
-  const raw = Deno.env.get('CORS_ORIGINS') ??
-    'http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176';
+    const raw = Deno.env.get('CORS_ORIGINS') ??
+        'http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176';
 
-  return raw
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter((origin) => origin.length > 0);
+    return raw
+        .split(',')
+        .map((origin) => origin.trim())
+        .filter((origin) => origin.length > 0);
+}
+
+function readServerPort(): number {
+    const raw = Deno.env.get('PORT')?.trim();
+    if (!raw) {
+        return 8080;
+    }
+
+    const port = Number(raw);
+    if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+        throw new Error(`PORT must be an integer from 1 to 65535. Received: ${raw}`);
+    }
+
+    return port;
 }
 
 function resolveCorsOrigin(
-  origin: string,
-  allowedOrigins: readonly string[],
+    origin: string,
+    allowedOrigins: readonly string[],
 ): string | undefined {
-  if (allowedOrigins.includes('*')) {
-    return origin || undefined;
-  }
+    if (allowedOrigins.includes('*')) {
+        return origin || undefined;
+    }
 
-  return allowedOrigins.includes(origin) ? origin : undefined;
+    return allowedOrigins.includes(origin) ? origin : undefined;
 }

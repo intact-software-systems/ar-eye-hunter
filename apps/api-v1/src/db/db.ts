@@ -1,31 +1,56 @@
+import { PGlite } from '@electric-sql/pglite';
+import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import type { Sql } from 'postgres';
 import postgres from 'postgres';
+import {
+    type ApiV1DatabaseBackendConfig,
+    readApiV1DatabaseBackendConfig,
+    requirePostgresDatabaseUrl,
+    resolvePGliteDataDir,
+} from './database-config.ts';
+import { bootstrapApiV1InMemorySchemaIfNeeded } from './in-memory-schema-bootstrap.ts';
+import { createPGliteSqlClient, type PGliteSql } from './pglite-sql-adapter.ts';
 
-let sqlInstance: Sql | undefined;
+export type ApiV1Sql = Sql | PSqlSql;
 
-export function getSql(): Sql {
+let sqlInstance: ApiV1Sql | undefined;
+
+export function getSql(): ApiV1Sql {
     if (sqlInstance) {
         return sqlInstance;
     }
 
-    sqlInstance = postgres(
-        readPostgresConnectionUrl(),
-        {
-            max: 5, // pool size
-            idle_timeout: 20,
-        },
-    );
-
+    sqlInstance = createApiV1SqlClient(readApiV1DatabaseBackendConfig());
     return sqlInstance;
 }
 
-export function readPostgresConnectionUrl(): string {
-    const databaseUrl = Deno.env.get('DATABASE_URL');
-    if (!databaseUrl) {
-        throw new Error('DATABASE_URL missing');
+export function createApiV1SqlClient(config: ApiV1DatabaseBackendConfig): ApiV1Sql {
+    if (config.sqlBackend === 'postgres') {
+        return postgres(
+            readPostgresConnectionUrl(config),
+            {
+                max: 5, // pool size
+                idle_timeout: 20,
+            },
+        );
     }
 
-    return toPostgresJsConnectionUrl(databaseUrl);
+    return createApiV1PGliteSqlClient(config);
+}
+
+export function createApiV1PGliteSqlClient(
+    config: ApiV1DatabaseBackendConfig,
+): PGliteSql {
+    const pglite = new PGlite(resolvePGliteDataDir(config));
+    return createPGliteSqlClient(pglite, {
+        ready: bootstrapApiV1InMemorySchemaIfNeeded(pglite, config),
+    });
+}
+
+export function readPostgresConnectionUrl(
+    config: ApiV1DatabaseBackendConfig = readApiV1DatabaseBackendConfig(),
+): string {
+    return toPostgresJsConnectionUrl(requirePostgresDatabaseUrl(config));
 }
 
 export function toPostgresJsConnectionUrl(databaseUrl: string): string {

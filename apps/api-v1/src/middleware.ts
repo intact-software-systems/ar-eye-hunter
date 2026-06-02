@@ -27,7 +27,6 @@ import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppG
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { createWsStateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
-import { createPostgresQueuePubSubBridge } from './db/postgres-queue-pubsub-bridge.ts';
 import { myPublisherId, myServerId } from './runtime/runtime-identity.ts';
 import { toResilienceDto } from './middleware-resilience.ts';
 import {
@@ -43,10 +42,9 @@ import {
 import {
     initPresenceExpiryReconciliation,
 } from '@shared-server/rallar-system/services/presence-expiry-reconciliation-service.ts';
-import {
-    getApiAppInboxServiceOptions,
-    getApiTimingSink,
-} from './services/timing-service.ts';
+import { getApiAppInboxServiceOptions, getApiTimingSink } from './services/timing-service.ts';
+import { readApiV1DatabasePubSubConfig } from './db/database-pubsub-config.ts';
+import { createApiV1QueuePubSubBridge, shouldInstallQueuePubSubBridge, } from './db/api-v1-queue-pubsub-bridge.ts';
 
 export type Middleware = RallarMiddlewareRuntime;
 
@@ -78,6 +76,7 @@ function initialise(): Middleware {
     const groupsRepository = createGroupStateRepository(sql);
     const timing = getApiTimingSink();
     const appInboxOptions = getApiAppInboxServiceOptions();
+    const pubSubConfig = readApiV1DatabasePubSubConfig();
     const groupSnapshotReadThroughCache = createGroupStateSnapshotReadThroughCache({
         groupsRepository,
     });
@@ -149,17 +148,17 @@ function initialise(): Middleware {
         groupsRepository,
     });
 
-    installQueueBoxPubSubBridge({
-        wsQBoxServerService: runtime.wsQBoxServerService,
-        bridge: createPostgresQueuePubSubBridge(myPublisherId),
-        channel: dbWsChannelId,
-        publisherId: myPublisherId,
-    });
+    if (shouldInstallQueuePubSubBridge(pubSubConfig)) {
+        installQueueBoxPubSubBridge({
+            wsQBoxServerService: runtime.wsQBoxServerService,
+            bridge: createApiV1QueuePubSubBridge(pubSubConfig, myPublisherId),
+            channel: dbWsChannelId,
+            publisherId: myPublisherId,
+        });
+    }
 
     initPresenceExpiryReconciliation(runtime)
-        .catch((e) =>
-            console.error('Failed to initialise presence expiry reconciliation:', e)
-        );
+        .catch((e) => console.error('Failed to initialise presence expiry reconciliation:', e));
 
     return runtime;
 }

@@ -1,21 +1,29 @@
-import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test';
+import { defineConfig, devices, type PlaywrightTestConfig, } from '@playwright/test';
+import {
+    createFullStackApiV1WebServer,
+    readFullStackApiBaseUrl,
+    readFullStackApiServerMode,
+} from './playwright-full-stack-api-server.ts';
 
 const fullStackEnabled = process.env.RALLAR_BLACK_BOX_FULL_STACK === '1' ||
     process.env.RALLAR_BLACK_BOX_FULL_STACK === 'true';
+const fullStackApiBaseUrl = readFullStackApiBaseUrl();
+const fullStackApiServerMode = fullStackEnabled
+    ? readFullStackApiServerMode()
+    : 'postgres';
 
 const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
     ...(fullStackEnabled
         ? [
-            {
-                command: 'cd ../.. && CORS_ORIGINS=http://localhost:5176,http://127.0.0.1:5176 deno run --env-file=apps/api-v1/.env.local --env-file=apps/api-v1/.env --env-file=.env --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts',
-                url: 'http://localhost:8080/api/config',
-                reuseExistingServer: true,
-                timeout: 90_000,
-            },
+            createFullStackApiV1WebServer({
+                mode: fullStackApiServerMode,
+                apiBaseUrl: fullStackApiBaseUrl,
+            }),
         ]
         : []),
     {
-        command: 'cd ../.. && npm --workspace rallar-black-box run dev -- --port 5176',
+        command:
+            'cd ../.. && npm --workspace rallar-black-box run dev -- --port 5176',
         url: 'http://localhost:5176',
         reuseExistingServer: true,
         timeout: 60_000,

@@ -10,6 +10,7 @@
     "@shared-graph/": "../../packages/shared-graph/",
     "@shared/": "../../packages/shared/",
     "@js-temporal/polyfill": "npm:@js-temporal/polyfill@^0.5.1",
+    "@electric-sql/pglite": "npm:@electric-sql/pglite@0.4.1",
     "prisma": "npm:prisma@^7.8.0",
     "postgres": "npm:postgres@^3.4.9",
     "graphology": "npm:graphology@0.26.0"
@@ -17,6 +18,7 @@
   "tasks": {
     "dev": "deno run --watch --allow-net --allow-env --allow-read src/main.ts",
     "start": "deno run --allow-net --allow-env --allow-read src/main.ts",
+    "start:memory": "RALLAR_SQL_BACKEND=pglite-memory RALLAR_PGLITE_DATA_DIR=memory:// RALLAR_PGLITE_SCHEMA_INIT=auto RALLAR_DB_PUBSUB=local RALLAR_ICE_MODE=local RALLAR_LOGIN_USER_RATE_LIMIT=100 deno run --allow-net --allow-env --allow-read src/main.ts",
     "check": "deno check src/main.ts",
     "fmt": "deno fmt",
     "lint": "deno lint",

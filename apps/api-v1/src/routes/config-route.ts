@@ -16,8 +16,14 @@ import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/Resilience.ts
 
 const AUTH_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const WS_AUTH_TICKET_TTL_MS = 30_000;
-const LOGIN_IP_RATE_LIMIT = new RateLimiterPolicy(60_000, 30);
-const LOGIN_USER_RATE_LIMIT = new RateLimiterPolicy(60_000, 5);
+const LOGIN_IP_RATE_LIMIT = new RateLimiterPolicy(
+    60_000,
+    readPositiveIntegerEnv('RALLAR_LOGIN_IP_RATE_LIMIT', 30),
+);
+const LOGIN_USER_RATE_LIMIT = new RateLimiterPolicy(
+    60_000,
+    readPositiveIntegerEnv('RALLAR_LOGIN_USER_RATE_LIMIT', 5),
+);
 const REGISTER_IP_RATE_LIMIT = new RateLimiterPolicy(60_000, 20);
 const REGISTER_USER_RATE_LIMIT = new RateLimiterPolicy(60_000, 5);
 const WS_TICKET_RATE_LIMIT = new RateLimiterPolicy(60_000, 30);
@@ -232,4 +238,18 @@ function toAuthRouteErrorResponse(
     }
 
     return toAuthErrorResponse(c, error);
+}
+
+function readPositiveIntegerEnv(name: string, fallback: number): number {
+    const raw = Deno.env.get(name)?.trim();
+    if (!raw) {
+        return fallback;
+    }
+
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < 1) {
+        throw new Error(`${name} must be a positive integer`);
+    }
+
+    return value;
 }

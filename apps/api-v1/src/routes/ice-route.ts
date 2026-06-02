@@ -8,6 +8,9 @@ import { LoanedValue } from '@shared/cache/LoanedValue.ts';
 
 const ICE_RATE_LIMIT = new RateLimiterPolicy(60_000, 20);
 const CACHE_MS = 300_000;
+const ICE_MODES = ['metered', 'local'] as const;
+
+export type IceMode = typeof ICE_MODES[number];
 
 class MeteredIceFetchError extends Error {
     public constructor(
@@ -68,6 +71,10 @@ async function readIceConfig(): Promise<Response> {
 }
 
 async function readFreshIceConfig(): Promise<IceConfig> {
+    if (readIceMode() === 'local') {
+        return createLocalIceConfig();
+    }
+
     let res: Response;
     try {
         res = await metered.getIceCandidates();
@@ -85,6 +92,34 @@ async function readFreshIceConfig(): Promise<IceConfig> {
     const expiresAtEpochMs = Date.now() + CACHE_MS;
 
     return { iceServers, expiresAtEpochMs };
+}
+
+export function readIceMode(
+    env: Readonly<{ get(name: string): string | undefined }> = Deno.env,
+): IceMode {
+    const raw = env.get('RALLAR_ICE_MODE')?.trim().toLowerCase();
+    if (!raw) {
+        return 'metered';
+    }
+
+    if (isIceMode(raw)) {
+        return raw;
+    }
+
+    throw new Error(`RALLAR_ICE_MODE must be one of ${ICE_MODES.join(', ')}`);
+}
+
+export function createLocalIceConfig(
+    nowEpochMs = Date.now(),
+): IceConfig {
+    return {
+        iceServers: [],
+        expiresAtEpochMs: nowEpochMs + CACHE_MS,
+    };
+}
+
+function isIceMode(value: string): value is IceMode {
+    return ICE_MODES.includes(value as IceMode);
 }
 
 function toIceRouteErrorResponse(
