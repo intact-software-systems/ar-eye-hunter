@@ -125,6 +125,33 @@ jobs:
         run: |
           echo "Deno Deploy auto-deploys from GitHub main branch"
 
+  deploy-in-memory-api:
+    name: Deploy In-Memory API (Deno Deploy)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Cache Deno + npm
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/deno
+            ~/.npm
+          key: ${{ runner.os }}-deno-${{ hashFiles('apps/api-v1/deno.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-deno-
+
+      - name: Trigger Deno Deploy
+        run: |
+          echo "Deno Deploy auto-deploys from GitHub main branch"
+
   deploy-relic-api:
     name: Deploy Relic API (Deno Deploy)
     runs-on: ubuntu-latest
