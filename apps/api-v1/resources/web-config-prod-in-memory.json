@@ -1,0 +1,7 @@
+{
+  "apiBaseUrl": "https://rallar-server-in-memory.intact-software-systems.deno.net",
+  "wsBaseUrl": "wss://rallar-server-in-memory.intact-software-systems.deno.net",
+  "endpoints": {
+    "createWs": "/api/ws/:id"
+  }
+}

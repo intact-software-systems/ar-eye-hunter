@@ -33,20 +33,14 @@ export async function loadOpenApiYaml() {
     return await loadYamlFile('../resources/api-v1-openapi.yaml');
 }
 
-async function loadConfigDev(): Promise<object> {
-    return await loadJsonFile('../resources/web-config-dev.json');
-}
-
-async function loadConfigProd(): Promise<object> {
-    return await loadJsonFile('../resources/web-config-prod.json');
-}
-
 async function loadConfig(env: string): Promise<object> {
     switch (env) {
         case 'dev':
-            return await loadConfigDev();
+            return await loadJsonFile('../resources/web-config-dev.json');
         case 'prod':
-            return await loadConfigProd();
+            return await loadJsonFile('../resources/web-config-prod.json');
+        case 'prod-in-memory':
+            return await loadJsonFile('../resources/web-config-prod-in-memory.json');
         default:
             throw new Error(`Unknown environment: ${env}`);
     }
