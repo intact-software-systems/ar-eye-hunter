@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test": "node --eval \"process.exit(0)\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "worker:headless": "tsx scripts/headless-worker.ts"
   },
   "dependencies": {
     "@js-temporal/polyfill": "^0.5.1",

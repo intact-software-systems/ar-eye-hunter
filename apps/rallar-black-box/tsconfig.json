@@ -33,6 +33,7 @@
     "src/**/*.ts",
     "src/**/*.tsx",
     "src/**/*.d.ts",
+    "scripts/**/*.ts",
     "../../packages/shared-test/rallar-bb-test/**/*.ts",
     "../../types/**/*.d.ts"
   ]
