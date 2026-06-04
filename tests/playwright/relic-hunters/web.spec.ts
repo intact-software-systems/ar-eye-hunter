@@ -913,8 +913,8 @@ test.describe('Relic Hunters web app', () => {
 
         expect(requests).toContain('GET /api/config');
         expect(requests).toContain('POST /api/auth/ws-ticket');
-        expect(requests).toContain('GET /api/state/apps/ar-eye-hunter/workspaces/default/clients');
-        expect(requests).toContain('GET /api/state/apps/ar-eye-hunter/workspaces/default/groups');
+        expect(requests).toContain('GET /api/state/apps/rallar-server/workspaces/default/clients');
+        expect(requests).toContain('GET /api/state/apps/rallar-server/workspaces/default/groups');
 
         const wsUrls = await page.evaluate(() =>
             (window as unknown as { __rallarWsUrls?: string[] }).__rallarWsUrls ?? []
@@ -1361,7 +1361,7 @@ function clientSnapshot(): MockClientSnapshot {
     const now = Date.now();
     return {
         principal: {
-            applicationId: 'ar-eye-hunter',
+            applicationId: 'rallar-server',
             workspaceId: 'default',
             principalId: session.clientId,
             username: session.username,
@@ -1376,7 +1376,7 @@ function clientSnapshot(): MockClientSnapshot {
         },
         instances: [
             {
-                applicationId: 'ar-eye-hunter',
+                applicationId: 'rallar-server',
                 workspaceId: 'default',
                 principalId: session.clientId,
                 clientInstanceId: session.clientId,
@@ -1389,7 +1389,7 @@ function clientSnapshot(): MockClientSnapshot {
         ],
         activeSessions: [
             {
-                applicationId: 'ar-eye-hunter',
+                applicationId: 'rallar-server',
                 workspaceId: 'default',
                 principalId: session.clientId,
                 clientInstanceId: session.clientId,
@@ -1415,7 +1415,7 @@ function groupSnapshot(
     const now = Date.now();
     return {
         group: {
-            applicationId: 'ar-eye-hunter',
+            applicationId: 'rallar-server',
             workspaceId: 'default',
             groupId: 'room-1',
             slug: 'relic-hunters-expedition',
@@ -1432,7 +1432,7 @@ function groupSnapshot(
         },
         members: [
             {
-                applicationId: 'ar-eye-hunter',
+                applicationId: 'rallar-server',
                 workspaceId: 'default',
                 groupId: 'room-1',
                 principalId: session.clientId,
@@ -1445,7 +1445,7 @@ function groupSnapshot(
         activeSessions: options.onlineMemberCount > 0
             ? [
                 {
-                    applicationId: 'ar-eye-hunter',
+                    applicationId: 'rallar-server',
                     workspaceId: 'default',
                     groupId: 'room-1',
                     sessionId: session.sessionId,

@@ -39,7 +39,7 @@ import {
     ALOutboundSupersedenceTrackingPlan,
 } from '../alm/ALOutboundMessageRuntime.ts';
 import { CircuitBreaker, RateLimiter, toCircuitBreaker, toRateLimiter, } from '../resilience/Resilience.ts';
-import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import { isSameGroupRef, toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 
 export type WebRtcOverlayMulticastManagerOptions = Readonly<{
     qosProvider?: ALQosInputProvider;
@@ -344,8 +344,22 @@ export class WebRtcOverlayMulticastManager {
     }
 
     private resolveOverlayId(msg: ALMessage): OverlayId | undefined {
-        if (msg.forwarding?.overlayId) {
-            return msg.forwarding.overlayId;
+        const targetGroupRef = this.resolveTargetGroupRef(msg);
+        const explicitOverlayId = msg.forwarding?.overlayId;
+
+        if (explicitOverlayId && this.hasOverlay(explicitOverlayId)) {
+            return explicitOverlayId;
+        }
+
+        if (targetGroupRef) {
+            const scopedOverlayId = toScopedOverlayId(targetGroupRef);
+            if (this.hasOverlay(scopedOverlayId)) {
+                return scopedOverlayId;
+            }
+        }
+
+        if (explicitOverlayId) {
+            return explicitOverlayId;
         }
 
         if (msg.targets?.mode === 'multicast') {
@@ -357,6 +371,11 @@ export class WebRtcOverlayMulticastManager {
         }
 
         return undefined;
+    }
+
+    private hasOverlay(overlayId: OverlayId): boolean {
+        return (this.overlayCache.read(overlayId) ?? this.overlayCache.peek(overlayId)) !==
+            undefined;
     }
 
     private createDirectDispatchPlan(

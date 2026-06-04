@@ -93,8 +93,8 @@ for some Rallar Black Box runs.
 | Script                                                                            | Variables set by script                                                                                                                                                                         |
 | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cd apps/api-v1 && deno task start:memory`                                        | `RALLAR_SQL_BACKEND=pglite-memory`, `RALLAR_PGLITE_DATA_DIR=memory://`, `RALLAR_PGLITE_SCHEMA_INIT=auto`, `RALLAR_DB_PUBSUB=local`, `RALLAR_ICE_MODE=local`, `RALLAR_LOGIN_USER_RATE_LIMIT=100` |
-| `npm run dev:rallar-black-box:api-v1` and `npm run start:rallar-black-box:api-v1` | `CORS_ORIGINS=http://localhost:5176,http://127.0.0.1:5176`, plus app and root env files.                                                                                                        |
-| `npm run start:rallar-black-box:api-v1:memory`                                    | Same CORS origin plus API-v1 memory-mode variables.                                                                                                                                             |
+| `npm run dev:rallar:api` and `npm run start:rallar:api`                           | `CORS_ORIGINS=http://localhost:5176,http://127.0.0.1:5176`, plus app and root env files. The older `dev:rallar-black-box:api-v1` and `start:rallar-black-box:api-v1` aliases still work.       |
+| `npm run start:rallar:api:memory`                                                 | Same CORS origin plus API-v1 memory-mode variables. The older `start:rallar-black-box:api-v1:memory` alias still works.                                                                         |
 
 ## apps/ar-eye-hunter-v1
 

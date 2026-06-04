@@ -25,6 +25,7 @@ Deno.test('createRallarServer wires system topics, lifecycle, routes, and start'
     AppTopics.groupStateSnapshot,
     AppTopics.groupStateEvent,
     AppTopics.graphs,
+    AppTopics.overlayTopology,
     AppTopics.chat,
     AppTopics.rtt,
     AppTopics.rtcSignaling,
@@ -35,6 +36,7 @@ Deno.test('createRallarServer wires system topics, lifecycle, routes, and start'
     AppTopics.groupStateSnapshot,
     AppTopics.groupStateEvent,
     AppTopics.graphs,
+    AppTopics.overlayTopology,
   ]);
   assert.deepEqual([...runtime.anyInboxCallbackIds], [
     'dynamic-ws-topic-router',

@@ -10,7 +10,7 @@ Goal: quickly verify the UI, runtime state, events, stats, and report output.
 
 Steps:
 
-1. Start the SPA with `npm run dev:rallar-black-box`.
+1. Start the SPA with `npm run dev:rallar`.
 2. Open `http://localhost:5176/`.
 3. Let the default local recipe run.
 4. Inspect the command queue and completed commands.
@@ -242,7 +242,7 @@ Goal: exercise the remote command loop.
 Start the control server:
 
 ```sh
-npm run dev:rallar-black-box-control
+npm run dev:rallar:control
 ```
 
 Start the SPA and open it as an agent:
@@ -322,7 +322,7 @@ Goal: ensure the SPA still boots, registers with the control server, receives a 
 Run:
 
 ```sh
-npm run test:e2e:rallar-black-box
+npm run test:rallar
 ```
 
 The Playwright smoke starts the SPA and control server, opens the SPA in control-agent mode, enqueues a `stats` command,
@@ -341,7 +341,7 @@ VITE_RALLAR_ROOM_ID=room-to-join \
 VITE_RALLAR_USERNAME=alice \
 VITE_RALLAR_PASSWORD=secret \
 VITE_RALLAR_LOGOUT_ON_CLOSE=true \
-npm run test:e2e:rallar-black-box
+npm run test:rallar
 ```
 
 Optional `VITE_RALLAR_REAL_PEER_IDS` can provide comma-separated peer IDs for direct or multicast realtime sends. Without
@@ -361,7 +361,7 @@ VITE_RALLAR_USERNAME=alice \
 VITE_RALLAR_PASSWORD=secret \
 VITE_RALLAR_TYPE_ID=manual.type \
 VITE_RALLAR_TOPIC_ID=manual.topic \
-npm run test:e2e:rallar-black-box
+npm run test:rallar
 ```
 
 For separate agent credentials, use `VITE_RALLAR_AGENT_A_USERNAME`, `VITE_RALLAR_AGENT_A_PASSWORD`,
@@ -396,7 +396,7 @@ VITE_RALLAR_AGENT_B_USERNAME=bob \
 VITE_RALLAR_AGENT_B_PASSWORD=secret \
 VITE_RALLAR_AGENT_C_USERNAME=charlie \
 VITE_RALLAR_AGENT_C_PASSWORD=secret \
-npm run test:e2e:rallar-black-box:full-stack:real:live-rtc-3
+npm run test:rallar:full-stack:postgres:live-rtc-3
 ```
 
 Good signal:
@@ -413,7 +413,7 @@ Good signal:
 For exhaustive live coverage, use:
 
 ```sh
-npm run test:e2e:rallar-black-box:full-stack:real:live-rtc-3:all
+npm run test:rallar:full-stack:postgres:live-rtc-3:all
 ```
 
 That variant covers every sender/receiver direct pair, every sender multicast, and every sender broadcast for the three
@@ -437,7 +437,7 @@ backend. With `provider=browser-rallar`, the same recipe uses the real browser R
 Start the control server:
 
 ```sh
-npm run dev:rallar-black-box-control
+npm run dev:rallar:control
 ```
 
 Start the SPA with real-provider defaults:
@@ -448,7 +448,7 @@ VITE_RALLAR_API_BASE_URL=https://api.example.test \
 VITE_RALLAR_ROOM_ID=room-to-join \
 VITE_RALLAR_USERNAME=alice \
 VITE_RALLAR_PASSWORD=secret \
-npm run dev:rallar-black-box -- --host 127.0.0.1 --port 5176
+npm run dev:rallar -- --host 127.0.0.1 --port 5176
 ```
 
 Open it as a remote provider agent:

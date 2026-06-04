@@ -8,13 +8,13 @@ server runs with PGlite memory persistence.
 Full-stack smoke against API-v1 memory mode:
 
 ```sh
-npm run test:e2e:rallar-black-box:full-stack:memory
+npm run test:rallar:full-stack:memory
 ```
 
 Three-browser RTC baseline against API-v1 memory mode:
 
 ```sh
-npm run test:e2e:rallar-black-box:full-stack:memory:live-rtc-3
+npm run test:rallar:full-stack:memory:live-rtc-3
 ```
 
 Both scripts set:
@@ -90,10 +90,10 @@ Verified on 2026-06-01 with:
 
 ```sh
 VITE_RALLAR_API_BASE_URL=http://localhost:18080 \
-npm run test:e2e:rallar-black-box:full-stack:memory -- --project chromium
+npm run test:rallar:full-stack:memory -- --project chromium
 
 VITE_RALLAR_API_BASE_URL=http://localhost:18080 \
-npm run test:e2e:rallar-black-box:full-stack:memory:live-rtc-3 -- --project chromium
+npm run test:rallar:full-stack:memory:live-rtc-3 -- --project chromium
 ```
 
 The smoke command passed 7 memory-mode full-stack tests. The RTC command passed
@@ -130,7 +130,7 @@ To use another API port:
 
 ```sh
 VITE_RALLAR_API_BASE_URL=http://localhost:18080 \
-npm run test:e2e:rallar-black-box:full-stack:memory
+npm run test:rallar:full-stack:memory
 ```
 
 The Playwright config derives the API server `PORT` from
@@ -140,5 +140,5 @@ For the exhaustive RTC scenario matrix:
 
 ```sh
 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 \
-npm run test:e2e:rallar-black-box:full-stack:memory:live-rtc-3
+npm run test:rallar:full-stack:memory:live-rtc-3
 ```

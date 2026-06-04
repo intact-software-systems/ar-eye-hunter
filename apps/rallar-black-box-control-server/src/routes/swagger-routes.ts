@@ -825,7 +825,10 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                     },
                 },
             },
-            DistributedRunManifest: RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
+            DistributedRunManifest: openApiJsonSchema(
+                RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
+                '#/components/schemas/DistributedRunManifest',
+            ),
             ControlDistributedRunSnapshot: {
                 type: 'object',
                 required: [
@@ -1213,10 +1216,56 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                     },
                 },
             },
-            RallarBlackBoxTestCommand: RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
+            RallarBlackBoxTestCommand: openApiJsonSchema(
+                RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
+                '#/components/schemas/RallarBlackBoxTestCommand',
+            ),
         },
     },
 };
+
+function openApiJsonSchema(schema: JsonRecord, selfRef: string): JsonRecord {
+    return cloneJsonSchema(schema, selfRef, []) as JsonRecord;
+}
+
+function cloneJsonSchema(
+    value: unknown,
+    selfRef: string,
+    ancestors: readonly unknown[],
+): unknown {
+    if (!value || typeof value !== 'object') {
+        return value;
+    }
+
+    if (ancestors.includes(value)) {
+        if (
+            value === RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA ||
+            value === RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA.oneOf
+        ) {
+            return { $ref: '#/components/schemas/RallarBlackBoxTestCommand' };
+        }
+        if (
+            value === RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA ||
+            value === RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA.oneOf
+        ) {
+            return { $ref: '#/components/schemas/DistributedRunManifest' };
+        }
+        return { $ref: selfRef };
+    }
+
+    const nextAncestors = [...ancestors, value];
+    if (Array.isArray(value)) {
+        return value.map(item => cloneJsonSchema(item, selfRef, nextAncestors));
+    }
+
+    const record = value as JsonRecord;
+    return Object.fromEntries(
+        Object.entries(record).map(([key, child]) => [
+            key,
+            cloneJsonSchema(child, selfRef, nextAncestors),
+        ]),
+    );
+}
 
 function serverUrl(request: Request): string {
     const url = new URL(request.url);

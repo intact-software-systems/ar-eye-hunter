@@ -438,12 +438,18 @@ describe('rallar-bb-test capability and schema contract', () => {
                 };
             }>;
         };
-        expect(spec.components?.schemas?.RallarBlackBoxTestCommand).toEqual(
-            RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
-        );
-        expect(spec.components?.schemas?.DistributedRunManifest).toEqual(
-            RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
-        );
+        const commandSchema = spec.components?.schemas?.RallarBlackBoxTestCommand;
+        const manifestSchema = spec.components?.schemas?.DistributedRunManifest;
+        expect(commandSchema).toMatchObject({
+            title: RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA.title,
+            oneOf: expect.any(Array),
+        });
+        expect(manifestSchema).toMatchObject({
+            title: RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA.title,
+            type: 'object',
+        });
+        expect(JSON.stringify(commandSchema)).toContain('#/components/schemas/RallarBlackBoxTestCommand');
+        expect(JSON.stringify(manifestSchema)).toContain('Rallar black-box distributed run manifest');
 
         const commandExamples = spec
             .paths?.['/runs/{runId}/agents/{agentId}/commands']

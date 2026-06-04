@@ -2,6 +2,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupMemberStatus, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import type { WsServerResolvedRecipient } from '@shared/services/WsQueueBoxServerService.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
@@ -205,6 +206,17 @@ function parseStateSyncPayload(message: ALMessage):
                     groupId: event.groupId,
                 };
             }
+            case AppTopics.overlayTopology: {
+                const snapshot = JSON.parse(message.payload.resource);
+                if (!isOverlayTopologySnapshot(snapshot)) {
+                    return { kind: 'invalid' };
+                }
+                return {
+                    kind: 'group-event',
+                    scope: snapshot.groupRef,
+                    groupId: snapshot.groupRef.groupId,
+                };
+            }
             default:
                 return undefined;
         }
@@ -231,7 +243,23 @@ function isStateSyncTopic(typeId: string): boolean {
     return typeId === AppTopics.clientStateSnapshot ||
         typeId === AppTopics.clientStateEvent ||
         typeId === AppTopics.groupStateSnapshot ||
-        typeId === AppTopics.groupStateEvent;
+        typeId === AppTopics.groupStateEvent ||
+        typeId === AppTopics.overlayTopology;
+}
+
+function isOverlayTopologySnapshot(
+    value: unknown,
+): value is RallarOverlayTopologySnapshot {
+    if (!isRecord(value) || !isRecord(value.groupRef)) {
+        return false;
+    }
+
+    const groupRef = value.groupRef;
+    return typeof groupRef.groupId === 'string' &&
+        hasStateSyncScope(groupRef) &&
+        typeof value.overlayId === 'string' &&
+        typeof value.topology === 'string' &&
+        isRecord(value.nextHopsBySessionId);
 }
 
 function isClientSnapshot(value: unknown): value is ClientSnapshot {

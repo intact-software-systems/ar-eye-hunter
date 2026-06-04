@@ -268,7 +268,7 @@ Enable local file-backed snapshot persistence for the control server:
 
 ```sh
 RALLAR_BLACK_BOX_STORAGE_DIR=.artifacts/rallar-black-box-control \
-  npm run start:rallar-black-box:control-server
+  npm run start:rallar:control
 ```
 
 Persisted snapshots are restored as disconnected runs on startup. Agents need to reconnect before queued commands can be
@@ -277,7 +277,7 @@ dispatched again.
 Limit retained local runs and apply cleanup explicitly:
 
 ```sh
-RALLAR_BLACK_BOX_RETENTION_MAX_RUNS=20 npm run start:rallar-black-box:control-server
+RALLAR_BLACK_BOX_RETENTION_MAX_RUNS=20 npm run start:rallar:control
 curl -X POST http://localhost:5180/retention/cleanup
 ```
 

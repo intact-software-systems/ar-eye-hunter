@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ClientInfo } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -209,6 +210,44 @@ describe('WebRtcGroupManager', () => {
         expect(rtcQBox.knownPeerIds()).toEqual([]);
         expect(rtcQBox.peerIdsWithNoReconnectableLanes()).toEqual([]);
     });
+
+    it('uses overlay next hops as desired RTC peers when topology is available', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const overlayCache = new LatestRepository<string, OverlayInfo>();
+        const rtcQBox = createRtcQBoxHarness('self');
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+            overlayCache,
+        );
+        const group = createGroupSnapshot('group-1', 1, [
+            'self',
+            'peer-a',
+            'peer-b',
+            'peer-c',
+        ]);
+        const overlayId = toScopedOverlayId(group.group);
+
+        clientCache.set('peer-a', createClientInfo('peer-a', true));
+        clientCache.set('peer-b', createClientInfo('peer-b', true));
+        clientCache.set('peer-c', createClientInfo('peer-c', true));
+        overlayCache.set(overlayId, createOverlayInfo(group, ['peer-a']));
+
+        await manager.acceptGroupUpdate(group);
+
+        expect(rtcQBox.ensurePeerConnectionStarted).toHaveBeenCalledTimes(1);
+        expect(rtcQBox.ensurePeerConnectionStarted).toHaveBeenCalledWith('peer-a');
+        expect(manager.state().desiredPeerIds).toEqual(['peer-a']);
+
+        overlayCache.set(overlayId, createOverlayInfo(group, ['peer-b'], 2));
+        await manager.notifyOverlayTopologyChanged();
+
+        expect(rtcQBox.ensurePeerConnectionStarted).toHaveBeenCalledWith('peer-b');
+        expect(rtcQBox.disconnectPeer).toHaveBeenCalledWith('peer-a');
+        expect(manager.state().desiredPeerIds).toEqual(['peer-b']);
+    });
 });
 
 function createRtcQBoxHarness(
@@ -329,5 +368,23 @@ function createGroupSnapshot(
         })),
         memberCount: memberSessionIds.length,
         onlineMemberCount: memberSessionIds.length,
+    };
+}
+
+function createOverlayInfo(
+    group: GroupSnapshot,
+    nextHopSessionIds: readonly string[],
+    overlayVersion = 1,
+): OverlayInfo {
+    return {
+        overlayId: toScopedOverlayId(group.group),
+        groupRef: group.group,
+        topology: 'tree',
+        name: group.group.displayName,
+        createdByClientId: group.group.created.byPrincipalId,
+        createdAtEpochMs: group.group.created.atEpochMs,
+        nextHopSessionIds,
+        overlayVersion,
+        updatedAtEpochMs: overlayVersion,
     };
 }

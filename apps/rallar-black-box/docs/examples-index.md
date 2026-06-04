@@ -61,8 +61,8 @@ does not yet load the full `recipe-matrix.json` dynamically from disk or execute
 | Live soak | Gated browser/remote-browser same-connection RTC soak. | `npm run test:shared-black-box:matrix:live:soak` |
 | Live traffic | Gated browser/remote-browser seeded RTC traffic plans with replay artifacts. | `npm run test:shared-black-box:matrix:live:traffic` |
 | Live parallel | Gated browser/remote-browser bounded parallel RTC groups. | `npm run test:shared-black-box:matrix:live:parallel` |
-| SPA live three-browser RTC | Gated command-center baseline for realtime/messages direct, multicast, broadcast, NACK/min-snapshot probing, stale-send failure, and control artifacts. | `npm run test:e2e:rallar-black-box:full-stack:real:live-rtc-3` |
-| SPA live three-browser all scenarios | Exhaustive command-center matrix for all direct pairs, every sender multicast/broadcast, REST group readback, WS open/send/close, stale reconnect, and artifact validation. | `npm run test:e2e:rallar-black-box:full-stack:real:live-rtc-3:all` |
+| SPA live three-browser RTC | Gated command-center baseline for realtime/messages direct, multicast, broadcast, NACK/min-snapshot probing, stale-send failure, and control artifacts. | `npm run test:rallar:full-stack:postgres:live-rtc-3` |
+| SPA live three-browser all scenarios | Exhaustive command-center matrix for all direct pairs, every sender multicast/broadcast, REST group readback, WS open/send/close, stale reconnect, and artifact validation. | `npm run test:rallar:full-stack:postgres:live-rtc-3:all` |
 
 Live commands are skip-safe by default. Use the strict live matrix only in a provisioned environment where missing
 services or credentials should fail the run:

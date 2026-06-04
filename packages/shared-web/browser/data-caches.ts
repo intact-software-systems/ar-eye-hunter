@@ -1,6 +1,8 @@
 import { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, ClientInfo } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { isGroupActive, isSessionInGroup, readGroupId, } from '@shared/api/group-client-views.ts';
+import { type RallarOverlayTopologySnapshot, toOverlayInfoForSession, } from '@shared/api/overlay-topology.ts';
 import type { ClientSnapshot as ClientStateSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID, type StateScope, } from '@shared/api/state-types.ts';
@@ -113,15 +115,35 @@ export function initialise(
                             const isUpdated = graphsRepository.setGraph(graph);
 
                             if (isUpdated) {
-                                const neighbors = graph.predicted.groupGraph.neighbors(
+                                const neighbors = graph.predicted.groupGraph.hasNode(
                                     myOwnClientData.sessionId,
-                                );
+                                )
+                                    ? graph.predicted.groupGraph.neighbors(
+                                        myOwnClientData.sessionId,
+                                    )
+                                    : [];
 
                                 overlaysRepository.updateNextHopSessionIds(
-                                    graph.groupRef.groupId,
+                                    toScopedOverlayId(graph.groupRef),
                                     neighbors,
                                 );
                             }
+                            break;
+                        }
+                        case AppTopics.overlayTopology: {
+                            const topology = JSON.parse(
+                                data.payload.resource,
+                            ) as RallarOverlayTopologySnapshot;
+
+                            overlaysRepository.setOverlayById(
+                                topology.overlayId,
+                                toOverlayInfoForSession(
+                                    topology,
+                                    myOwnClientData.sessionId,
+                                ),
+                            );
+                            await overlaysRepository.waitForOverlayChangesIdle();
+                            await webRtcGroupManager.notifyOverlayTopologyChanged();
                             break;
                         }
                         default: {
@@ -252,8 +274,10 @@ async function handleGroupSnapshotUpdate(
     mySessionId: string,
 ): Promise<void> {
     const groupId = readGroupId(snapshot);
+    const overlayId = toScopedOverlayId(snapshot.group);
 
     if (!isGroupActive(snapshot)) {
+        overlaysRepository.removeOverlayById(overlayId);
         overlaysRepository.removeOverlayById(groupId);
 
         if (webRtcGroupManager.has(snapshot.group)) {

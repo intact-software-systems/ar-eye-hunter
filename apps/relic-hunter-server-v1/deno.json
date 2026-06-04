@@ -11,6 +11,7 @@
     "@shared-graph/": "../../packages/shared-graph/",
     "@shared/": "../../packages/shared/",
     "@js-temporal/polyfill": "npm:@js-temporal/polyfill@^0.5.1",
+    "@electric-sql/pglite": "npm:@electric-sql/pglite@0.4.1",
     "postgres": "npm:postgres@^3.4.9",
     "graphology": "npm:graphology@0.26.0"
   },

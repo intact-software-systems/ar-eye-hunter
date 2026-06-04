@@ -40,6 +40,11 @@ export interface DequeueResourceEntryRepository {
 export interface EnqueueResourceEntryController {
     enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry>;
 
+    enqueueOrUpdate(
+        resourceEntry: ResourceEntry,
+        updateExisting: (existing: ResourceEntry) => ResourceEntry | undefined,
+    ): Promise<EnqueueOrUpdateResult>;
+
     enqueueIf(
         resourceEntry: ResourceEntry,
         enqueueIt: (existing: ResourceEntry) => boolean,
@@ -49,6 +54,14 @@ export interface EnqueueResourceEntryController {
 
     cleanup(): void;
 }
+
+export type EnqueueOrUpdateAction = 'inserted' | 'updated' | 'unchanged';
+
+export type EnqueueOrUpdateResult = Readonly<{
+    action: EnqueueOrUpdateAction;
+    entry: ResourceEntry;
+    previous?: ResourceEntry;
+}>;
 
 export interface EnqueueBoxResourceEntryRepository
     extends EnqueueResourceEntryController {

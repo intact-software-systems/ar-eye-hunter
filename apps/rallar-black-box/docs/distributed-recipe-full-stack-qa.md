@@ -6,7 +6,7 @@ This runbook describes the Playwright coverage for distributed recipe execution 
 ## Quick Command
 
 ```bash
-npm run test:e2e:rallar-black-box:full-stack:real:distributed
+npm run test:rallar:full-stack:postgres:distributed
 ```
 
 That command runs `tests/playwright/rallar-black-box/full-stack-distributed-recipes.spec.ts`.

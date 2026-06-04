@@ -1,10 +1,11 @@
 import { OverlayInfo } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     type AnyGroupPresence,
     readGroupCreatedAtEpochMs,
     readGroupCreatedByPrincipalId,
     readGroupDisplayName,
-    readGroupId,
     readGroupMemberSessionIds,
     readGroupUpdatedAtEpochMs,
     readGroupVersion,
@@ -132,6 +133,13 @@ export function updateNextHopSessionIds(
     return overlay;
 }
 
+export function findOverlayByGroupRef(
+    groupRef: GroupRef,
+    manager?: RepositoryManager,
+): OverlayInfo | undefined {
+    return findOverlayById(toScopedOverlayId(groupRef), manager);
+}
+
 export function removeOverlayById(
     overlayId: string,
     manager?: RepositoryManager,
@@ -196,7 +204,9 @@ function toOverlayRepositoryChange(
 function toStarOverlay(group: AnyGroupPresence): OverlayInfo {
     return {
         name: readGroupDisplayName(group),
-        overlayId: readGroupId(group),
+        overlayId: toScopedOverlayId(group.group),
+        groupRef: group.group,
+        topology: 'star',
         createdByClientId: readGroupCreatedByPrincipalId(group),
         createdAtEpochMs: readGroupCreatedAtEpochMs(group),
         nextHopSessionIds: readGroupMemberSessionIds(group),

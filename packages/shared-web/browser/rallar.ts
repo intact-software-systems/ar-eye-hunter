@@ -4,6 +4,7 @@ import {
     newALBroadcastMessage,
     newALMulticastMessage,
     newALRoute,
+    newALUnicastMessage,
     toALGroupTargetKey,
 } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundEnqueueResult, ALOutboundEnqueueStatus, } from '@shared/alm/ALOutboundMessageRuntime.ts';
@@ -16,6 +17,7 @@ import {
     type RegisterResponse,
     AppTopics,
 } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { clearSession, isLoggedIn, readSession, writeSession, } from '@shared/api/auth.ts';
 import type {
     ClientEvent,
@@ -117,6 +119,11 @@ const RALLAR_WS_ANY_MESSAGE_CALLBACK_ID = 'rallar:ws:any-message';
 const RALLAR_REALTIME_LIFECYCLE_CALLBACK_ID = 'rallar:realtime:lifecycle';
 const RALLAR_RTC_STATUS_CALLBACK_ID = 'rallar:rtc:status';
 const RALLAR_WS_STATUS_CALLBACK_ID = 'rallar:ws:status';
+const RALLAR_CALL_SIGNAL_TOPIC_ID = 'app.rallar.calls';
+const RALLAR_CALL_INVITE_TYPE_ID = 'app.rallar.calls.invite.v1';
+const RALLAR_CALL_ACCEPT_TYPE_ID = 'app.rallar.calls.accept.v1';
+const RALLAR_CALL_DECLINE_TYPE_ID = 'app.rallar.calls.decline.v1';
+const RALLAR_CALL_CANCEL_TYPE_ID = 'app.rallar.calls.cancel.v1';
 const DEFAULT_RALLAR_REALTIME_LANE_ID = 'realtime';
 const DEFAULT_RALLAR_REALTIME_OPEN_TIMEOUT_MS = 5_000;
 const DEFAULT_RALLAR_WAIT_FOR_OPEN_TIMEOUT_MS = 5_000;
@@ -395,6 +402,52 @@ export type RallarRtcRoomLaneWaitStatus =
     | 'aborted'
     | 'failed';
 
+export type RallarRtcRoomMode = 'off' | 'lazy' | 'warm' | 'eager';
+
+export type RallarRoomTransportState =
+    | 'off'
+    | 'idle'
+    | 'connecting'
+    | 'partial'
+    | 'open'
+    | 'degraded'
+    | 'failed';
+
+export type RallarRoomTransportStatus = Readonly<{
+    roomRef?: GroupRef;
+    roomId?: string;
+    ws: RallarWsStatus;
+    rtc: Readonly<{
+        desired: boolean;
+        mode: RallarRtcRoomMode;
+        state: RallarRoomTransportState;
+        desiredPeerIds: readonly string[];
+        knownPeerIds: readonly string[];
+        activePeerIds: readonly string[];
+        readyPeerIds: readonly string[];
+        failedPeerIds: readonly string[];
+        laneId: string;
+        lastChangedAtEpochMs?: number;
+        reason?: string;
+    }>;
+}>;
+
+export type RallarRtcRoomTransportOptions =
+    & RallarWaitForOpenOptions
+    & Readonly<{
+    laneId?: string;
+    mode?: RallarRtcRoomMode;
+    minReadyPeers?: number;
+    connect?: boolean;
+}>;
+
+export type RallarTypedMessageSendStrategy =
+    | 'ws'
+    | 'rtc'
+    | 'realtime'
+    | 'ws-then-rtc'
+    | 'rtc-with-ws-fallback';
+
 export type RallarMessageTransport = 'rtc' | 'ws' | 'replay';
 
 export type RallarMessage<T = unknown> = Readonly<{
@@ -508,7 +561,18 @@ export type RallarTypedWsSendOptions<T> = Omit<
     'topicId' | 'typeId' | 'payload'
 >;
 
+export type RallarTypedMessageSendOptions<T> =
+    & Partial<RallarTypedRtcSendOptions<T>>
+    & Partial<RallarTypedWsSendOptions<T>>
+    & Readonly<{
+    strategy?: RallarTypedMessageSendStrategy;
+}>;
+
 export type RallarTypedMessageChannel<T> = Readonly<{
+    send(
+        payload: T,
+        options?: RallarTypedMessageSendOptions<T>,
+    ): Promise<RallarMessageSendResult>;
     sendRtc(
         payload: T,
         options?: RallarTypedRtcSendOptions<T>,
@@ -525,6 +589,69 @@ export type RallarRemoteStream = Readonly<{
     peerId: string;
     stream: MediaStream;
     event: RTCTrackEvent;
+}>;
+
+export type RallarMediaSourceKind = 'microphone' | 'camera' | 'screen';
+
+export type RallarMediaSourceState = 'open' | 'ended' | 'failed';
+
+export type RallarMediaSourceStatus = Readonly<{
+    kind: RallarMediaSourceKind;
+    state: RallarMediaSourceState;
+    streamId?: string;
+    trackIds: readonly string[];
+    audioTrackIds: readonly string[];
+    videoTrackIds: readonly string[];
+    enabledTrackIds: readonly string[];
+    endedTrackIds: readonly string[];
+    error?: string;
+}>;
+
+export type RallarMediaSourceHandle = Readonly<{
+    kind: RallarMediaSourceKind;
+    stream: MediaStream;
+    status(): RallarMediaSourceStatus;
+    attach(): Promise<RallarMediaSourceStatus>;
+    setEnabled(enabled: boolean): Promise<RallarMediaSourceStatus>;
+    stop(): Promise<RallarMediaSourceStatus>;
+}>;
+
+export type RallarMediaSourceAttachOptions = Readonly<{
+    attach?: boolean;
+}>;
+
+export type RallarMicrophoneSourceStartOptions =
+    & RallarMediaSourceAttachOptions
+    & Readonly<{
+    stream?: MediaStream;
+    audio?: boolean | MediaTrackConstraints;
+}>;
+
+export type RallarCameraSourceStartOptions =
+    & RallarMediaSourceAttachOptions
+    & Readonly<{
+    stream?: MediaStream;
+    video?: boolean | MediaTrackConstraints;
+}>;
+
+export type RallarScreenSourceStartOptions =
+    & RallarMediaSourceAttachOptions
+    & Readonly<{
+    stream?: MediaStream;
+    video?: boolean | MediaTrackConstraints;
+    audio?: boolean | MediaTrackConstraints;
+}>;
+
+export type RallarMediaSourceController<TOptions> = Readonly<{
+    start(options?: TOptions): Promise<RallarMediaSourceHandle>;
+    status(): RallarMediaSourceStatus | undefined;
+    stop(): Promise<RallarMediaSourceStatus | undefined>;
+}>;
+
+export type RallarMediaSourcesFacade = Readonly<{
+    microphone: RallarMediaSourceController<RallarMicrophoneSourceStartOptions>;
+    camera: RallarMediaSourceController<RallarCameraSourceStartOptions>;
+    screen: RallarMediaSourceController<RallarScreenSourceStartOptions>;
 }>;
 
 export type RallarRealtimeSendOptions =
@@ -568,6 +695,51 @@ export type RallarRealtimeJsonLane<T> = Readonly<{
         options?: RallarRealtimeJsonLaneSendOptions<T>,
     ): Promise<readonly RallarRealtimeSendResult[]>;
     on(handler: RallarRealtimeHandler<T>): RallarUnsubscribe;
+}>;
+
+export type RallarTargetMembership = 'fixed' | 'live';
+
+export type RallarTargetSelector = Readonly<{
+    peerId?: string;
+    peerIds?: readonly string[];
+    roomId?: string;
+    roomRef?: GroupRef;
+    membership?: RallarTargetMembership;
+}>;
+
+export type RallarTargetedChannelDefinition =
+    & RallarTargetSelector
+    & Readonly<{
+    laneId?: string;
+    openTimeoutMs?: number;
+}>;
+
+export type RallarTargetedChannelSendOptions<T> =
+    & RallarRealtimeJsonLaneSendOptions<T>
+    & RallarTargetSelector;
+
+export type RallarTargetedSendStatus =
+    | 'sent'
+    | 'partial'
+    | 'no-targets'
+    | 'failed';
+
+export type RallarTargetedSendResult = Readonly<{
+    transport: 'rtc';
+    status: RallarTargetedSendStatus;
+    laneId: string;
+    peerIds: readonly string[];
+    results: readonly RallarRealtimeSendResult[];
+    reason?: string;
+}>;
+
+export type RallarTargetedChannel<T> = Readonly<{
+    send(
+        data: T,
+        options?: RallarTargetedChannelSendOptions<T>,
+    ): Promise<RallarTargetedSendResult>;
+    on(handler: RallarRealtimeHandler<T>): RallarUnsubscribe;
+    peerIds(options?: RallarTargetSelector): readonly string[];
 }>;
 
 export type RallarRealtimeMessage<T> = Readonly<{
@@ -634,7 +806,11 @@ export type RallarRtcPeerConnectionStatus = Readonly<{
     state?: string;
     connectionState?: string;
     iceConnectionState?: string;
+    iceGatheringState?: string;
     signalingState?: string;
+    hasLocalDescription: boolean;
+    hasRemoteDescription: boolean;
+    canTrickleIceCandidates?: boolean | null;
     reconnectAttempts: number;
     reconnecting: boolean;
     disconnectPending: boolean;
@@ -671,6 +847,78 @@ export type RallarRtcStatus = Readonly<{
     peerIdsWithNoReconnectableLanes: readonly string[];
     readyPeerIds: readonly string[];
     peers: readonly RallarRtcPeerStatus[];
+}>;
+
+export type RallarRtcDiagnosticsOptions = Readonly<{
+    peerIds?: readonly string[];
+    laneIds?: readonly string[];
+}>;
+
+export type RallarRtcCandidateDiagnostics = Readonly<{
+    id?: string;
+    candidateType?: string;
+    protocol?: string;
+    address?: string;
+    ip?: string;
+    port?: number;
+    relayProtocol?: string;
+    networkType?: string;
+    url?: string;
+}>;
+
+export type RallarRtcCandidatePairDiagnostics = Readonly<{
+    id?: string;
+    state?: string;
+    nominated?: boolean;
+    selected?: boolean;
+    currentRoundTripTime?: number;
+    availableOutgoingBitrate?: number;
+    bytesSent?: number;
+    bytesReceived?: number;
+    local?: RallarRtcCandidateDiagnostics;
+    remote?: RallarRtcCandidateDiagnostics;
+    usesRelay: boolean;
+}>;
+
+export type RallarRtcPeerDiagnostics = Readonly<{
+    peerId: string;
+    connection: RallarRtcPeerConnectionStatus;
+    lanes: readonly RallarRtcLaneStatus[];
+    selectedCandidatePair?: RallarRtcCandidatePairDiagnostics;
+    usesRelay: boolean;
+    statsAvailable: boolean;
+    statsError?: string;
+}>;
+
+export type RallarRtcDiagnostics = Readonly<{
+    sessionId?: string;
+    generatedAtEpochMs: number;
+    peerCount: number;
+    connectedPeerCount: number;
+    relayPeerCount: number;
+    peers: readonly RallarRtcPeerDiagnostics[];
+}>;
+
+export type RallarRtcRecoveryStatus =
+    | 'started'
+    | 'restarted'
+    | 'no-peer'
+    | 'not-connected'
+    | 'unsupported'
+    | 'failed';
+
+export type RallarRtcRecoveryResult = Readonly<{
+    peerId: string;
+    action: 'restart-ice' | 'reconnect';
+    status: RallarRtcRecoveryStatus;
+    rtcStatus: RallarRtcStatus;
+    reason?: string;
+}>;
+
+export type RallarRtcReconnectOptions =
+    & RallarWaitForOpenOptions
+    & Readonly<{
+    laneId?: string;
 }>;
 
 export type RallarWsReadyState =
@@ -749,6 +997,166 @@ export type RallarRtcRoomLaneWaitResult = Readonly<{
     rtcStatus: RallarRtcStatus;
     ready: readonly RallarRtcWaitForOpenResult[];
     notReady: readonly RallarRtcWaitForOpenResult[];
+}>;
+
+export type RallarCallMediaInput = Readonly<{
+    stream?: MediaStream;
+    audio?: boolean;
+    video?: boolean;
+}>;
+
+export type RallarCallDataInput = Readonly<{
+    lanes?: readonly string[];
+    openTimeoutMs?: number;
+}>;
+
+export type RallarCallStartInput =
+    & RallarTargetSelector
+    & Readonly<{
+    callId?: string;
+    media?: RallarCallMediaInput;
+    data?: RallarCallDataInput;
+}>;
+
+export type RallarCallParticipantState =
+    | 'idle'
+    | 'connecting'
+    | 'partial'
+    | 'open'
+    | 'failed'
+    | 'ended';
+
+export type RallarCallState =
+    | 'empty'
+    | 'connecting'
+    | 'partial'
+    | 'open'
+    | 'failed'
+    | 'ended';
+
+export type RallarCallParticipantStatus = Readonly<{
+    peerId: string;
+    state: RallarCallParticipantState;
+    lanes: readonly RallarRtcLaneStatus[];
+    readyLaneIds: readonly string[];
+    failedLaneIds: readonly string[];
+    reason?: string;
+}>;
+
+export type RallarCallStatus = Readonly<{
+    callId: string;
+    state: RallarCallState;
+    peerIds: readonly string[];
+    laneIds: readonly string[];
+    participants: readonly RallarCallParticipantStatus[];
+    startedAtEpochMs: number;
+    endedAtEpochMs?: number;
+    media: Readonly<{
+        localStreamId?: string;
+        audioEnabled?: boolean;
+        videoEnabled?: boolean;
+        sources: readonly RallarMediaSourceStatus[];
+    }>;
+}>;
+
+export type RallarCallWaitOptions = RallarWaitForOpenOptions;
+
+export type RallarCallEndOptions = Readonly<{
+    stopLocalMedia?: boolean;
+    disconnectPeers?: boolean;
+}>;
+
+export type RallarCallSignalKind =
+    | 'invite'
+    | 'accepted'
+    | 'declined'
+    | 'cancelled';
+
+export type RallarCallSignalPayload = Readonly<{
+    kind: RallarCallSignalKind;
+    callId: string;
+    fromPeerId: string;
+    toPeerIds: readonly string[];
+    roomRef?: GroupRef;
+    membership?: RallarTargetMembership;
+    data?: Readonly<{
+        laneIds: readonly string[];
+    }>;
+    media?: Readonly<{
+        audio?: boolean;
+        video?: boolean;
+        screen?: boolean;
+    }>;
+    message?: string;
+    reason?: string;
+    occurredAtEpochMs: number;
+}>;
+
+export type RallarCallInviteInput =
+    & RallarCallStartInput
+    & Readonly<{
+    message?: string;
+}>;
+
+export type RallarCallSignalSend = Readonly<{
+    peerId: string;
+    result: RallarMessageSendResult;
+}>;
+
+export type RallarCallInviteResult = Readonly<{
+    callId: string;
+    peerIds: readonly string[];
+    signals: readonly RallarCallSignalSend[];
+}>;
+
+export type RallarCallSignalEvent = Readonly<{
+    kind: RallarCallSignalKind;
+    callId: string;
+    fromPeerId: string;
+    toPeerIds: readonly string[];
+    roomRef?: GroupRef;
+    membership?: RallarTargetMembership;
+    dataLaneIds: readonly string[];
+    media: Readonly<{
+        audio?: boolean;
+        video?: boolean;
+        screen?: boolean;
+    }>;
+    message?: string;
+    reason?: string;
+    payload: RallarCallSignalPayload;
+    raw: RallarMessage<RallarCallSignalPayload>;
+}>;
+
+export type RallarIncomingCallInvite = RallarCallSignalEvent & Readonly<{
+    kind: 'invite';
+    accept(
+        input?: Partial<RallarCallStartInput>,
+    ): Promise<RallarCallHandle>;
+    decline(reason?: string): Promise<readonly RallarCallSignalSend[]>;
+}>;
+
+export type RallarCallSignalListener = (
+    event: RallarCallSignalEvent,
+) => void | Promise<void>;
+
+export type RallarCallInviteListener = (
+    invite: RallarIncomingCallInvite,
+) => void | Promise<void>;
+
+export type RallarCallHandle = Readonly<{
+    id: string;
+    status(): RallarCallStatus;
+    wait(options?: RallarCallWaitOptions): Promise<RallarCallStatus>;
+    channel<T>(
+        definition?: Partial<RallarTargetedChannelDefinition>,
+    ): RallarTargetedChannel<T>;
+    setLocalStream(stream: MediaStream): Promise<void>;
+    setAudioEnabled(enabled: boolean): Promise<void>;
+    setVideoEnabled(enabled: boolean): Promise<void>;
+    stopLocal(kind: 'audio' | 'video' | 'all'): Promise<void>;
+    sources: RallarMediaSourcesFacade;
+    end(options?: RallarCallEndOptions): Promise<RallarCallStatus>;
 }>;
 
 export type RallarFacade = Readonly<{
@@ -857,8 +1265,31 @@ export type RallarFacade = Readonly<{
             definition: RallarTypedMessageChannelDefinition,
         ): RallarTypedMessageChannel<T>;
     }>;
+    channels: Readonly<{
+        targeted<T>(
+            definition: RallarTargetedChannelDefinition,
+        ): RallarTargetedChannel<T>;
+        room<T>(
+            definition: Omit<
+                RallarTargetedChannelDefinition,
+                'peerId' | 'peerIds'
+            >,
+        ): RallarTargetedChannel<T>;
+    }>;
     rtc: Readonly<{
         status(options?: RallarRtcStatusOptions): RallarRtcStatus;
+        roomStatus(
+            room: string | GroupRef,
+            options?: RallarRtcRoomTransportOptions,
+        ): RallarRoomTransportStatus;
+        openRoom(
+            room: string | GroupRef,
+            options?: RallarRtcRoomTransportOptions,
+        ): Promise<RallarRoomTransportStatus>;
+        waitForRoom(
+            room: string | GroupRef,
+            options?: RallarRtcRoomTransportOptions,
+        ): Promise<RallarRoomTransportStatus>;
         onStatus(
             listener: RallarRtcStatusListener,
             options?: RallarRtcStatusSubscriptionOptions,
@@ -889,6 +1320,20 @@ export type RallarFacade = Readonly<{
         activePeerIds(): readonly string[];
         peerIdsWithNoReconnectableLanes(): readonly string[];
         readyPeerIds(laneId?: string): readonly string[];
+        diagnostics(
+            options?: RallarRtcDiagnosticsOptions,
+        ): Promise<RallarRtcDiagnostics>;
+        restartIce(peerId: string): Promise<RallarRtcRecoveryResult>;
+        reconnectPeer(
+            peerId: string,
+            options?: RallarRtcReconnectOptions,
+        ): Promise<RallarRtcRecoveryResult>;
+    }>;
+    calls: Readonly<{
+        start(input: RallarCallStartInput): Promise<RallarCallHandle>;
+        invite(input: RallarCallInviteInput): Promise<RallarCallInviteResult>;
+        onInvite(listener: RallarCallInviteListener): RallarUnsubscribe;
+        onSignal(listener: RallarCallSignalListener): RallarUnsubscribe;
     }>;
     ws: Readonly<{
         status(): RallarWsStatus;
@@ -927,6 +1372,9 @@ export type RallarFacade = Readonly<{
         ): readonly RallarRealtimeLaneHealth[];
     }>;
     media: Readonly<{
+        microphone: RallarMediaSourceController<RallarMicrophoneSourceStartOptions>;
+        camera: RallarMediaSourceController<RallarCameraSourceStartOptions>;
+        screen: RallarMediaSourceController<RallarScreenSourceStartOptions>;
         setLocalStream(stream: MediaStream): Promise<void>;
         setAudioEnabled(enabled: boolean): Promise<void>;
         setVideoEnabled(enabled: boolean): Promise<void>;
@@ -960,6 +1408,13 @@ type RallarWsLifecycleSubscription = Readonly<{
     listener: RallarWsLifecycleListener;
     options: RallarWsStatusSubscriptionOptions;
 }>;
+
+type RallarMediaSourceRuntime = {
+    kind: RallarMediaSourceKind;
+    stream: MediaStream;
+    state: RallarMediaSourceState;
+    error?: string;
+};
 
 class BrowserRallarFacade implements RallarFacade {
     private connectState: RallarConnectStatus = 'idle';
@@ -1011,6 +1466,10 @@ class BrowserRallarFacade implements RallarFacade {
         (remote: RallarRemoteStream) => void | Promise<void>
     >();
     private remoteStreamCallbackRegistered = false;
+    private readonly localMediaSources = new Map<
+        RallarMediaSourceKind,
+        RallarMediaSourceRuntime
+    >();
     readonly data = createRallarDataFacade({
         resolveScopeKey: (scope) => this.resolveDataScopeKey(scope),
     });
@@ -1457,10 +1916,23 @@ class BrowserRallarFacade implements RallarFacade {
                         ack: input.ack ?? 'none',
                         ownership: input.ownership ?? 'shared',
                         nextHopPeerIds: input.nextHopPeerIds,
-                        overlayId: input.overlayId ?? roomId,
+                        overlayId: input.overlayId ?? toScopedOverlayId(roomRef),
                         fanoutLimit: input.fanoutLimit,
                     },
                 );
+
+                if (this.resolveRoomPeerIds(roomRef).length === 0) {
+                    return toRallarMessageSendResult(
+                        'rtc',
+                        msg,
+                        {
+                            status: 'no-route',
+                            message: msg,
+                            entries: [],
+                            reason: 'No RTC peers are desired for this room.',
+                        },
+                    );
+                }
 
                 const enqueueResult = await ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent(msg);
                 wakeQBoxEngineIfQueued(ctx.middleware.qboxEngine, enqueueResult);
@@ -1549,10 +2021,41 @@ class BrowserRallarFacade implements RallarFacade {
         ): RallarTypedMessageChannel<T> => this.createMessageChannel<T>(definition),
     };
 
+    readonly channels = {
+        targeted: <T>(
+            definition: RallarTargetedChannelDefinition,
+        ): RallarTargetedChannel<T> => this.createTargetedChannel<T>(definition),
+        room: <T>(
+            definition: Omit<
+                RallarTargetedChannelDefinition,
+                'peerId' | 'peerIds'
+            >,
+        ): RallarTargetedChannel<T> =>
+            this.createTargetedChannel<T>({
+                ...definition,
+                membership: definition.membership ?? 'live',
+            }),
+    };
+
     readonly rtc = {
         status: (
             options: RallarRtcStatusOptions = {},
         ): RallarRtcStatus => this.toRtcStatus(options),
+        roomStatus: (
+            room: string | GroupRef,
+            options: RallarRtcRoomTransportOptions = {},
+        ): RallarRoomTransportStatus =>
+            this.toRoomTransportStatus(room, options),
+        openRoom: async (
+            room: string | GroupRef,
+            options: RallarRtcRoomTransportOptions = {},
+        ): Promise<RallarRoomTransportStatus> =>
+            await this.openRtcRoom(room, options),
+        waitForRoom: async (
+            room: string | GroupRef,
+            options: RallarRtcRoomTransportOptions = {},
+        ): Promise<RallarRoomTransportStatus> =>
+            await this.waitForRtcRoom(room, options),
         onStatus: (
             listener: RallarRtcStatusListener,
             options: RallarRtcStatusSubscriptionOptions = {},
@@ -1642,6 +2145,34 @@ class BrowserRallarFacade implements RallarFacade {
                 laneId ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
             ) ?? [];
         },
+        diagnostics: async (
+            options: RallarRtcDiagnosticsOptions = {},
+        ): Promise<RallarRtcDiagnostics> =>
+            await this.toRtcDiagnostics(options),
+        restartIce: async (
+            peerId: string,
+        ): Promise<RallarRtcRecoveryResult> =>
+            await this.restartRtcIce(peerId),
+        reconnectPeer: async (
+            peerId: string,
+            options: RallarRtcReconnectOptions = {},
+        ): Promise<RallarRtcRecoveryResult> =>
+            await this.reconnectRtcPeer(peerId, options),
+    };
+
+    readonly calls = {
+        start: async (
+            input: RallarCallStartInput,
+        ): Promise<RallarCallHandle> => await this.startCall(input),
+        invite: async (
+            input: RallarCallInviteInput,
+        ): Promise<RallarCallInviteResult> => await this.inviteCall(input),
+        onInvite: (
+            listener: RallarCallInviteListener,
+        ): RallarUnsubscribe => this.onCallInvite(listener),
+        onSignal: (
+            listener: RallarCallSignalListener,
+        ): RallarUnsubscribe => this.onCallSignal(listener),
     };
 
     readonly ws = {
@@ -1804,6 +2335,9 @@ class BrowserRallarFacade implements RallarFacade {
     };
 
     readonly media = {
+        microphone: this.createMediaSourceController('microphone'),
+        camera: this.createMediaSourceController('camera'),
+        screen: this.createMediaSourceController('screen'),
         setLocalStream: async (stream: MediaStream): Promise<void> => {
             const ctx = await this.connect();
             await ctx.middleware.rtcRxStreamer.setLocalMediaStream(stream);
@@ -1818,6 +2352,7 @@ class BrowserRallarFacade implements RallarFacade {
         },
         stopLocal: async (kind: 'audio' | 'video' | 'all'): Promise<void> => {
             const ctx = await this.connect();
+            this.stopLocalMediaSourcesForKind(kind, false);
             ctx.middleware.rtcRxStreamer.stopLocalMedia(kind);
         },
         setPolicy: async (policy: QRtcMediaPolicy): Promise<void> => {
@@ -1962,6 +2497,7 @@ class BrowserRallarFacade implements RallarFacade {
                 ctx.middleware.webRtcConnectionService.disconnectPeer(peerId);
             }
             this.unregisterRemoteStreamCallback();
+            this.stopLocalMediaSourcesForKind('all', false);
             ctx.middleware.rtcRxStreamer.stopLocalMedia('all');
             ctx.middleware.heartbeat?.stop();
             ctx.middleware.qboxEngine.stop();
@@ -2024,6 +2560,15 @@ class BrowserRallarFacade implements RallarFacade {
         };
 
         return {
+            send: async (
+                payload,
+                options: RallarTypedMessageSendOptions<T> = {},
+            ) =>
+                await this.sendTypedMessageWithStrategy(
+                    channelDefinition,
+                    payload,
+                    options,
+                ),
             sendRtc: async (
                 payload,
                 options: RallarTypedRtcSendOptions<T> = {},
@@ -2061,6 +2606,71 @@ class BrowserRallarFacade implements RallarFacade {
         };
     }
 
+    private async sendTypedMessageWithStrategy<T>(
+        channelDefinition: RallarTypedMessageChannelDefinition,
+        payload: T,
+        options: RallarTypedMessageSendOptions<T>,
+    ): Promise<RallarMessageSendResult> {
+        const { strategy = 'rtc-with-ws-fallback', ...sendOptions } = options;
+        const rtcOptions = sendOptions as RallarTypedRtcSendOptions<T>;
+        const wsOptions = sendOptions as RallarTypedWsSendOptions<T>;
+
+        switch (strategy) {
+            case 'ws':
+                return await this.messages.ws.send<T>({
+                    ...wsOptions,
+                    topicId: channelDefinition.topicId,
+                    typeId: channelDefinition.typeId,
+                    payload,
+                });
+            case 'rtc':
+            case 'realtime':
+                return await this.messages.rtc.send<T>({
+                    ...rtcOptions,
+                    topicId: channelDefinition.topicId,
+                    typeId: channelDefinition.typeId,
+                    payload,
+                });
+            case 'ws-then-rtc': {
+                const wsResult = await this.messages.ws.send<T>({
+                    ...wsOptions,
+                    topicId: channelDefinition.topicId,
+                    typeId: channelDefinition.typeId,
+                    payload,
+                });
+                if (isSuccessfulRallarMessageSendStatus(wsResult.status)) {
+                    return wsResult;
+                }
+
+                return await this.messages.rtc.send<T>({
+                    ...rtcOptions,
+                    topicId: channelDefinition.topicId,
+                    typeId: channelDefinition.typeId,
+                    payload,
+                });
+            }
+            case 'rtc-with-ws-fallback':
+            default: {
+                const rtcResult = await this.messages.rtc.send<T>({
+                    ...rtcOptions,
+                    topicId: channelDefinition.topicId,
+                    typeId: channelDefinition.typeId,
+                    payload,
+                });
+                if (isSuccessfulRallarMessageSendStatus(rtcResult.status)) {
+                    return rtcResult;
+                }
+
+                return await this.messages.ws.send<T>({
+                    ...wsOptions,
+                    topicId: channelDefinition.topicId,
+                    typeId: channelDefinition.typeId,
+                    payload,
+                });
+            }
+        }
+    }
+
     private createRealtimeJsonLane<T>(
         defaults: RallarRealtimeJsonLaneDefaults,
     ): RallarRealtimeJsonLane<T> {
@@ -2077,6 +2687,832 @@ class BrowserRallarFacade implements RallarFacade {
                     data,
                 }),
             on: (handler) => this.realtime.onJson<T>(laneId, handler),
+        };
+    }
+
+    private createTargetedChannel<T>(
+        definition: RallarTargetedChannelDefinition,
+    ): RallarTargetedChannel<T> {
+        const fixedPeerIds = definition.membership === 'live'
+            ? undefined
+            : this.resolveTargetPeerIds(definition);
+        const defaultLaneId = this.resolveRealtimeLaneId(definition.laneId);
+        const resolvePeerIds = (
+            options: RallarTargetSelector = {},
+        ): readonly string[] => {
+            if (fixedPeerIds && !hasTargetSelectorOverride(options)) {
+                return fixedPeerIds;
+            }
+
+            return this.resolveTargetPeerIds({
+                ...definition,
+                ...options,
+            });
+        };
+
+        return {
+            send: async (
+                data,
+                options: RallarTargetedChannelSendOptions<T> = {},
+            ) => {
+                const laneId = this.resolveRealtimeLaneId(
+                    options.laneId ?? definition.laneId,
+                );
+                const peerIds = resolvePeerIds(options);
+                if (peerIds.length === 0) {
+                    return {
+                        transport: 'rtc',
+                        status: 'no-targets',
+                        laneId,
+                        peerIds,
+                        results: [],
+                        reason: 'No target RTC peers resolved.',
+                    };
+                }
+
+                const results = await this.realtime.sendJson<T>({
+                    ...definition,
+                    ...options,
+                    laneId,
+                    peerIds,
+                    data,
+                });
+
+                return {
+                    transport: 'rtc',
+                    status: toTargetedSendStatus(peerIds, results),
+                    laneId,
+                    peerIds,
+                    results,
+                };
+            },
+            on: (handler) => this.realtime.onJson<T>(defaultLaneId, handler),
+            peerIds: resolvePeerIds,
+        };
+    }
+
+    private createMediaSourceController<TOptions>(
+        kind: RallarMediaSourceKind,
+    ): RallarMediaSourceController<TOptions> {
+        return {
+            start: async (options?: TOptions): Promise<RallarMediaSourceHandle> =>
+                await this.startMediaSource(
+                    kind,
+                    (options ?? {}) as
+                        | RallarMicrophoneSourceStartOptions
+                        | RallarCameraSourceStartOptions
+                        | RallarScreenSourceStartOptions,
+                ),
+            status: (): RallarMediaSourceStatus | undefined =>
+                this.readMediaSourceStatus(kind),
+            stop: async (): Promise<RallarMediaSourceStatus | undefined> =>
+                await this.stopMediaSource(kind),
+        };
+    }
+
+    private async startMediaSource(
+        kind: RallarMediaSourceKind,
+        options:
+            | RallarMicrophoneSourceStartOptions
+            | RallarCameraSourceStartOptions
+            | RallarScreenSourceStartOptions = {},
+    ): Promise<RallarMediaSourceHandle> {
+        await this.stopMediaSource(kind, false);
+
+        let runtime: RallarMediaSourceRuntime;
+        try {
+            const stream = options.stream ??
+                await this.captureMediaSource(kind, options);
+            runtime = {
+                kind,
+                stream,
+                state: 'open',
+            };
+            this.localMediaSources.set(kind, runtime);
+            this.registerMediaSourceEndedCallbacks(runtime);
+        } catch (error) {
+            runtime = {
+                kind,
+                stream: toEmptyMediaStream(),
+                state: 'failed',
+                error: toErrorMessage(error),
+            };
+            this.localMediaSources.set(kind, runtime);
+            throw error;
+        }
+
+        const handle = this.toMediaSourceHandle(kind);
+        if (options.attach ?? true) {
+            await handle.attach();
+        }
+        return handle;
+    }
+
+    private async captureMediaSource(
+        kind: RallarMediaSourceKind,
+        options:
+            | RallarMicrophoneSourceStartOptions
+            | RallarCameraSourceStartOptions
+            | RallarScreenSourceStartOptions,
+    ): Promise<MediaStream> {
+        const mediaDevices = globalThis.navigator?.mediaDevices;
+        if (!mediaDevices) {
+            throw new Error('Browser media devices are not available.');
+        }
+
+        if (kind === 'microphone') {
+            return await mediaDevices.getUserMedia({
+                audio: (options as RallarMicrophoneSourceStartOptions).audio ??
+                    true,
+                video: false,
+            });
+        }
+
+        if (kind === 'camera') {
+            return await mediaDevices.getUserMedia({
+                audio: false,
+                video: (options as RallarCameraSourceStartOptions).video ?? true,
+            });
+        }
+
+        const screenOptions = options as RallarScreenSourceStartOptions;
+        const getDisplayMedia = mediaDevices.getDisplayMedia?.bind(mediaDevices);
+        if (!getDisplayMedia) {
+            throw new Error('Browser screen capture is not available.');
+        }
+
+        return await getDisplayMedia({
+            audio: screenOptions.audio ?? false,
+            video: screenOptions.video ?? true,
+        });
+    }
+
+    private toMediaSourceHandle(
+        kind: RallarMediaSourceKind,
+    ): RallarMediaSourceHandle {
+        const runtime = this.requireMediaSource(kind);
+        return {
+            kind,
+            stream: runtime.stream,
+            status: (): RallarMediaSourceStatus =>
+                this.readMediaSourceStatus(kind) ?? toMediaSourceStatus(runtime),
+            attach: async (): Promise<RallarMediaSourceStatus> => {
+                await this.attachLocalMediaSources();
+                return this.readMediaSourceStatus(kind) ??
+                    toMediaSourceStatus(runtime);
+            },
+            setEnabled: async (
+                enabled: boolean,
+            ): Promise<RallarMediaSourceStatus> => {
+                for (const track of readMediaSourceTracks(kind, runtime.stream)) {
+                    track.enabled = enabled;
+                }
+                await this.attachLocalMediaSources();
+                return this.readMediaSourceStatus(kind) ??
+                    toMediaSourceStatus(runtime);
+            },
+            stop: async (): Promise<RallarMediaSourceStatus> =>
+                await this.stopMediaSource(kind) ??
+                    toMediaSourceStatus({
+                        ...runtime,
+                        state: 'ended',
+                    }),
+        };
+    }
+
+    private requireMediaSource(
+        kind: RallarMediaSourceKind,
+    ): RallarMediaSourceRuntime {
+        const runtime = this.localMediaSources.get(kind);
+        if (!runtime) {
+            throw new Error(`Rallar media source is not started: ${kind}.`);
+        }
+
+        return runtime;
+    }
+
+    private readMediaSourceStatus(
+        kind: RallarMediaSourceKind,
+    ): RallarMediaSourceStatus | undefined {
+        const runtime = this.localMediaSources.get(kind);
+        return runtime ? toMediaSourceStatus(runtime) : undefined;
+    }
+
+    private readMediaSourceStatuses(): readonly RallarMediaSourceStatus[] {
+        return Array.from(this.localMediaSources.values())
+            .map(toMediaSourceStatus);
+    }
+
+    private async stopMediaSource(
+        kind: RallarMediaSourceKind,
+        attach: boolean = true,
+    ): Promise<RallarMediaSourceStatus | undefined> {
+        const runtime = this.localMediaSources.get(kind);
+        if (!runtime) {
+            return undefined;
+        }
+
+        this.localMediaSources.delete(kind);
+        for (const track of readMediaStreamTracks(runtime.stream)) {
+            track.stop();
+        }
+        runtime.state = 'ended';
+
+        if (attach) {
+            await this.attachLocalMediaSources();
+        }
+
+        return toMediaSourceStatus(runtime);
+    }
+
+    private stopLocalMediaSourcesForKind(
+        kind: 'audio' | 'video' | 'all',
+        attach: boolean,
+    ): void {
+        const sourceKinds = kind === 'all'
+            ? ['microphone', 'camera', 'screen'] as const
+            : kind === 'audio'
+                ? ['microphone'] as const
+                : ['camera', 'screen'] as const;
+
+        for (const sourceKind of sourceKinds) {
+            const runtime = this.localMediaSources.get(sourceKind);
+            if (!runtime) {
+                continue;
+            }
+
+            this.localMediaSources.delete(sourceKind);
+            for (const track of readMediaSourceTracks(sourceKind, runtime.stream)) {
+                track.stop();
+            }
+            runtime.state = 'ended';
+        }
+
+        if (attach) {
+            this.attachLocalMediaSources()
+                .catch((error) =>
+                    console.error('Error attaching Rallar local media sources', error)
+                );
+        }
+    }
+
+    private async attachLocalMediaSources(): Promise<void> {
+        const ctx = await this.connect();
+        const runtimes = Array.from(this.localMediaSources.values())
+            .filter((runtime) => runtime.state === 'open');
+        const tracks = runtimes.flatMap((runtime) =>
+            readMediaStreamTracks(runtime.stream)
+                .filter((track) => track.readyState !== 'ended')
+        );
+
+        if (tracks.length === 0) {
+            ctx.middleware.rtcRxStreamer.stopLocalMedia('all');
+            return;
+        }
+
+        const stream = toComposedMediaStream(runtimes, tracks);
+        await ctx.middleware.rtcRxStreamer.setLocalMediaStream(stream);
+        ctx.middleware.rtcRxStreamer.setLocalAudioEnabled(
+            tracks.some((track) => track.kind === 'audio' && track.enabled),
+        );
+        ctx.middleware.rtcRxStreamer.setLocalVideoEnabled(
+            tracks.some((track) => track.kind === 'video' && track.enabled),
+        );
+    }
+
+    private registerMediaSourceEndedCallbacks(
+        runtime: RallarMediaSourceRuntime,
+    ): void {
+        for (const track of readMediaStreamTracks(runtime.stream)) {
+            track.addEventListener?.('ended', () => {
+                if (this.localMediaSources.get(runtime.kind) !== runtime) {
+                    return;
+                }
+
+                if (readMediaStreamTracks(runtime.stream).some((candidate) =>
+                    candidate.readyState !== 'ended'
+                )) {
+                    return;
+                }
+
+                runtime.state = 'ended';
+                this.localMediaSources.delete(runtime.kind);
+                this.attachLocalMediaSources()
+                    .catch((error) =>
+                        console.error(
+                            'Error attaching Rallar local media sources',
+                            error,
+                        )
+                    );
+            }, { once: true });
+        }
+    }
+
+    private async inviteCall(
+        input: RallarCallInviteInput,
+    ): Promise<RallarCallInviteResult> {
+        await this.connect();
+
+        const callId = input.callId ?? crypto.randomUUID();
+        const peerIds = this.resolveTargetPeerIds(input);
+        const payload = this.toCallSignalPayload(
+            'invite',
+            callId,
+            peerIds,
+            input,
+        );
+        const signals = await this.sendCallSignalToPeers(peerIds, payload);
+
+        return {
+            callId,
+            peerIds,
+            signals,
+        };
+    }
+
+    private onCallSignal(
+        listener: RallarCallSignalListener,
+    ): RallarUnsubscribe {
+        return this.messages.ws.onMessage<RallarCallSignalPayload>(
+            {
+                topicId: RALLAR_CALL_SIGNAL_TOPIC_ID,
+            },
+            async (message) => {
+                const event = this.toCallSignalEvent(message);
+                if (event) {
+                    await listener(event);
+                }
+            },
+        );
+    }
+
+    private onCallInvite(
+        listener: RallarCallInviteListener,
+    ): RallarUnsubscribe {
+        return this.messages.ws.onMessage<RallarCallSignalPayload>(
+            {
+                topicId: RALLAR_CALL_SIGNAL_TOPIC_ID,
+                typeId: RALLAR_CALL_INVITE_TYPE_ID,
+            },
+            async (message) => {
+                const event = this.toIncomingCallInvite(message);
+                if (event) {
+                    await listener(event);
+                }
+            },
+        );
+    }
+
+    private toIncomingCallInvite(
+        message: RallarMessage<RallarCallSignalPayload>,
+    ): RallarIncomingCallInvite | undefined {
+        const event = this.toCallSignalEvent(message);
+        if (!event || event.kind !== 'invite') {
+            return undefined;
+        }
+
+        return {
+            ...event,
+            kind: 'invite',
+            accept: async (
+                input: Partial<RallarCallStartInput> = {},
+            ): Promise<RallarCallHandle> => {
+                await this.sendCallSignalToPeers(
+                    [event.fromPeerId],
+                    this.toCallSignalPayload(
+                        'accepted',
+                        event.callId,
+                        [event.fromPeerId],
+                        {
+                            ...input,
+                            callId: event.callId,
+                            peerId: event.fromPeerId,
+                            data: input.data ??
+                                (event.dataLaneIds.length > 0
+                                    ? { lanes: event.dataLaneIds }
+                                    : undefined),
+                            roomRef: input.roomRef ?? event.roomRef,
+                            membership: input.membership ?? event.membership,
+                        },
+                    ),
+                );
+
+                return await this.startCall({
+                    ...input,
+                    callId: event.callId,
+                    peerId: event.fromPeerId,
+                    data: input.data ??
+                        (event.dataLaneIds.length > 0
+                            ? { lanes: event.dataLaneIds }
+                            : undefined),
+                });
+            },
+            decline: async (
+                reason?: string,
+            ): Promise<readonly RallarCallSignalSend[]> =>
+                await this.sendCallSignalToPeers(
+                    [event.fromPeerId],
+                    this.toCallSignalPayload(
+                        'declined',
+                        event.callId,
+                        [event.fromPeerId],
+                        {
+                            peerId: event.fromPeerId,
+                            callId: event.callId,
+                            data: event.dataLaneIds.length > 0
+                                ? { lanes: event.dataLaneIds }
+                                : undefined,
+                            roomRef: event.roomRef,
+                            membership: event.membership,
+                        },
+                        reason,
+                    ),
+                ),
+        };
+    }
+
+    private toCallSignalEvent(
+        message: RallarMessage<RallarCallSignalPayload>,
+    ): RallarCallSignalEvent | undefined {
+        if (!isRallarCallSignalPayload(message.payload)) {
+            return undefined;
+        }
+
+        const payload = message.payload;
+        if (!this.isCallSignalForCurrentSession(payload)) {
+            return undefined;
+        }
+
+        return {
+            kind: payload.kind,
+            callId: payload.callId,
+            fromPeerId: payload.fromPeerId,
+            toPeerIds: payload.toPeerIds,
+            roomRef: payload.roomRef,
+            membership: payload.membership,
+            dataLaneIds: payload.data?.laneIds ?? [],
+            media: payload.media ?? {},
+            message: payload.message,
+            reason: payload.reason,
+            payload,
+            raw: message,
+        };
+    }
+
+    private isCallSignalForCurrentSession(
+        payload: RallarCallSignalPayload,
+    ): boolean {
+        const sessionId = readSession()?.sessionId;
+        if (!sessionId || payload.fromPeerId === sessionId) {
+            return false;
+        }
+
+        return payload.toPeerIds.length === 0 ||
+            payload.toPeerIds.includes(sessionId);
+    }
+
+    private toCallSignalPayload(
+        kind: RallarCallSignalKind,
+        callId: string,
+        toPeerIds: readonly string[],
+        input: Partial<RallarCallInviteInput>,
+        reason?: string,
+    ): RallarCallSignalPayload {
+        const session = this.requireSession();
+        return {
+            kind,
+            callId,
+            fromPeerId: session.sessionId,
+            toPeerIds: [...new Set(toPeerIds)],
+            roomRef: input.roomRef ??
+                (input.roomId ? this.resolveRoomRef(input.roomId) : undefined),
+            membership: input.membership,
+            data: {
+                laneIds: input.data?.lanes
+                    ? [...new Set(input.data.lanes)]
+                    : [],
+            },
+            media: {
+                audio: input.media?.audio,
+                video: input.media?.video,
+                screen: this.readMediaSourceStatus('screen')?.state === 'open',
+            },
+            message: input.message,
+            reason,
+            occurredAtEpochMs: Date.now(),
+        };
+    }
+
+    private async sendCallSignalToPeers(
+        peerIds: readonly string[],
+        payload: RallarCallSignalPayload,
+    ): Promise<readonly RallarCallSignalSend[]> {
+        const uniquePeerIds = [...new Set(peerIds)]
+            .filter((peerId) => peerId !== this.requireSession().sessionId);
+        return await Promise.all(
+            uniquePeerIds.map(async (peerId) => ({
+                peerId,
+                result: await this.sendWsUnicastMessage(
+                    peerId,
+                    payload,
+                    toCallSignalTypeId(payload.kind),
+                    {
+                        topicId: RALLAR_CALL_SIGNAL_TOPIC_ID,
+                        contextId: payload.callId,
+                    },
+                ),
+            })),
+        );
+    }
+
+    private async sendWsUnicastMessage<T>(
+        peerId: string,
+        payload: T,
+        typeId: string,
+        options: Readonly<{
+            topicId: string;
+            contextId: string;
+            resourceId?: string;
+        }>,
+    ): Promise<RallarMessageSendResult> {
+        const ctx = await this.connect();
+        const session = this.requireSession();
+        const msg = newALUnicastMessage(
+            session.sessionId,
+            newALRoute(
+                options.topicId,
+                options.contextId,
+                options.resourceId ?? crypto.randomUUID(),
+            ),
+            peerId,
+            typeId,
+            payload,
+        );
+
+        const enqueueResult = await ctx.middleware.webSocketQueueBox
+            .enqueueOutboxIfAbsent(msg);
+        wakeQBoxEngineIfQueued(ctx.middleware.qboxEngine, enqueueResult);
+
+        return toRallarMessageSendResult('ws', msg, enqueueResult);
+    }
+
+    private async startCall(
+        input: RallarCallStartInput,
+    ): Promise<RallarCallHandle> {
+        await this.connect();
+
+        const callId = input.callId ?? crypto.randomUUID();
+        const startedAtEpochMs = Date.now();
+        const laneIds = this.resolveCallLaneIds(input);
+        const fixedPeerIds = input.membership === 'live'
+            ? undefined
+            : this.resolveTargetPeerIds(input);
+        const mediaState: {
+            localStreamId?: string;
+            audioEnabled?: boolean;
+            videoEnabled?: boolean;
+        } = {
+            localStreamId: input.media?.stream?.id,
+            audioEnabled: input.media?.audio,
+            videoEnabled: input.media?.video,
+        };
+        let endedAtEpochMs: number | undefined;
+
+        const resolvePeerIds = (
+            options: RallarTargetSelector = {},
+        ): readonly string[] => {
+            if (fixedPeerIds && !hasTargetSelectorOverride(options)) {
+                return fixedPeerIds;
+            }
+
+            return this.resolveTargetPeerIds({
+                ...input,
+                ...options,
+            });
+        };
+        const status = (): RallarCallStatus =>
+            this.toCallStatus({
+                callId,
+                laneIds,
+                peerIds: resolvePeerIds(),
+                startedAtEpochMs,
+                endedAtEpochMs,
+                media: mediaState,
+            });
+        const wait = async (
+            options: RallarCallWaitOptions = {},
+        ): Promise<RallarCallStatus> => {
+            if (endedAtEpochMs !== undefined) {
+                return status();
+            }
+
+            const ctx = await this.connect();
+            const peerIds = resolvePeerIds();
+            if (laneIds.length === 0) {
+                this.startPeerConnections(ctx, peerIds);
+                return status();
+            }
+
+            await Promise.all(
+                peerIds.flatMap((peerId) =>
+                    laneIds.map((laneId) =>
+                        this.waitForRtcLaneOpen(
+                            peerId,
+                            laneId,
+                            {
+                                ...options,
+                                connect: true,
+                            },
+                        )
+                    )
+                ),
+            );
+            return status();
+        };
+        const handle: RallarCallHandle = {
+            id: callId,
+            status,
+            wait,
+            channel: <T>(
+                definition: Partial<RallarTargetedChannelDefinition> = {},
+            ) => {
+                const membership = definition.membership ?? input.membership ??
+                    'fixed';
+                const target = membership === 'live' &&
+                        (input.roomId !== undefined || input.roomRef !== undefined) &&
+                        !hasTargetSelectorOverride(definition)
+                    ? {
+                        roomId: input.roomId,
+                        roomRef: input.roomRef,
+                        membership,
+                    }
+                    : {
+                        peerIds: resolvePeerIds(definition),
+                        membership,
+                    };
+
+                return this.createTargetedChannel<T>({
+                    ...definition,
+                    ...target,
+                    laneId: definition.laneId ?? laneIds[0],
+                });
+            },
+            setLocalStream: async (stream: MediaStream): Promise<void> => {
+                await this.media.setLocalStream(stream);
+                mediaState.localStreamId = stream.id;
+            },
+            setAudioEnabled: async (enabled: boolean): Promise<void> => {
+                await this.media.setAudioEnabled(enabled);
+                mediaState.audioEnabled = enabled;
+            },
+            setVideoEnabled: async (enabled: boolean): Promise<void> => {
+                await this.media.setVideoEnabled(enabled);
+                mediaState.videoEnabled = enabled;
+            },
+            stopLocal: async (kind: 'audio' | 'video' | 'all'): Promise<void> => {
+                await this.media.stopLocal(kind);
+                if (kind === 'audio' || kind === 'all') {
+                    mediaState.audioEnabled = false;
+                }
+                if (kind === 'video' || kind === 'all') {
+                    mediaState.videoEnabled = false;
+                }
+                if (kind === 'all') {
+                    mediaState.localStreamId = undefined;
+                }
+            },
+            sources: {
+                microphone: this.media.microphone,
+                camera: this.media.camera,
+                screen: this.media.screen,
+            },
+            end: async (
+                options: RallarCallEndOptions = {},
+            ): Promise<RallarCallStatus> => {
+                if (endedAtEpochMs === undefined) {
+                    endedAtEpochMs = Date.now();
+                }
+
+                const ctx = this.readMiddleware();
+                if (options.disconnectPeers ?? false) {
+                    for (const peerId of resolvePeerIds()) {
+                        ctx?.middleware.webRtcConnectionService.disconnectPeer(
+                            peerId,
+                        );
+                    }
+                }
+
+                if (options.stopLocalMedia ?? true) {
+                    await this.media.stopLocal('all');
+                    mediaState.localStreamId = undefined;
+                    mediaState.audioEnabled = false;
+                    mediaState.videoEnabled = false;
+                }
+
+                return status();
+            },
+        };
+
+        if (input.media?.stream) {
+            await handle.setLocalStream(input.media.stream);
+        }
+        if (input.media?.audio !== undefined) {
+            await handle.setAudioEnabled(input.media.audio);
+        }
+        if (input.media?.video !== undefined) {
+            await handle.setVideoEnabled(input.media.video);
+        }
+
+        await wait({
+            timeoutMs: input.data?.openTimeoutMs,
+        });
+
+        return handle;
+    }
+
+    private startPeerConnections(
+        ctx: ApiMiddleware,
+        peerIds: readonly string[],
+    ): void {
+        for (const peerId of peerIds) {
+            ctx.middleware.webRtcConnectionService.ensurePeerConnectionStarted(
+                peerId,
+            );
+        }
+    }
+
+    private toCallStatus(input: Readonly<{
+        callId: string;
+        laneIds: readonly string[];
+        peerIds: readonly string[];
+        startedAtEpochMs: number;
+            endedAtEpochMs?: number;
+            media: Readonly<{
+                localStreamId?: string;
+                audioEnabled?: boolean;
+                videoEnabled?: boolean;
+            }>;
+    }>): RallarCallStatus {
+        const participants = input.peerIds.map((peerId) =>
+            this.toCallParticipantStatus(
+                peerId,
+                input.laneIds,
+                input.endedAtEpochMs !== undefined,
+            )
+        );
+
+        return {
+            callId: input.callId,
+            state: toCallState(participants, input.endedAtEpochMs),
+            peerIds: input.peerIds,
+            laneIds: input.laneIds,
+            participants,
+            startedAtEpochMs: input.startedAtEpochMs,
+            endedAtEpochMs: input.endedAtEpochMs,
+            media: {
+                ...input.media,
+                sources: this.readMediaSourceStatuses(),
+            },
+        };
+    }
+
+    private toCallParticipantStatus(
+        peerId: string,
+        laneIds: readonly string[],
+        ended: boolean,
+    ): RallarCallParticipantStatus {
+        const rtcStatus = this.toRtcStatus({
+            laneId: laneIds[0] ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
+        });
+        const peer = rtcStatus.peers.find((candidate) =>
+            candidate.peerId === peerId
+        );
+        const lanes = laneIds.length === 0
+            ? peer?.lanes ?? []
+            : laneIds.map((laneId) =>
+                peer?.lanes.find((lane) => lane.laneId === laneId) ??
+                    toMissingRtcLaneStatus(peerId, laneId)
+            );
+        const readyLaneIds = lanes
+            .filter((lane) => lane.isOpen)
+            .map((lane) => lane.laneId);
+        const failedLaneIds = lanes
+            .filter((lane) => !lane.isOpen && !lane.isReconnectable)
+            .map((lane) => lane.laneId);
+
+        return {
+            peerId,
+            state: toCallParticipantState({
+                ended,
+                peer,
+                laneCount: laneIds.length,
+                readyLaneCount: readyLaneIds.length,
+                failedLaneCount: failedLaneIds.length,
+            }),
+            lanes,
+            readyLaneIds,
+            failedLaneIds,
+            reason: toCallParticipantReason(peer, laneIds.length, failedLaneIds),
         };
     }
 
@@ -2151,6 +3587,216 @@ class BrowserRallarFacade implements RallarFacade {
             readyLaneIds: lanes
                 .filter((lane) => lane.isOpen)
                 .map((lane) => lane.laneId),
+        };
+    }
+
+    private async toRtcDiagnostics(
+        options: RallarRtcDiagnosticsOptions = {},
+    ): Promise<RallarRtcDiagnostics> {
+        const ctx = this.readMiddleware();
+        const sessionId = ctx?.session.sessionId ?? readSession()?.sessionId;
+        if (!ctx) {
+            return {
+                sessionId,
+                generatedAtEpochMs: Date.now(),
+                peerCount: 0,
+                connectedPeerCount: 0,
+                relayPeerCount: 0,
+                peers: [],
+            };
+        }
+
+        const service = ctx.middleware.webRtcConnectionService;
+        const peerIds = options.peerIds ?? service.knownPeerIds();
+        const activePeerIds = new Set(service.activePeerIds());
+        const noReconnectableLanePeerIds = new Set(
+            service.peerIdsWithNoReconnectableLanes(),
+        );
+        const readyPeerIds = new Set(
+            service.readyPeerIdsForLane(
+                options.laneIds?.[0] ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
+            ),
+        );
+        const peers = await Promise.all(
+            [...new Set(peerIds)].map(async (peerId) => {
+                const peer = service.readPeer(peerId);
+                const status = this.toRtcPeerStatus(
+                    peerId,
+                    peer,
+                    activePeerIds,
+                    noReconnectableLanePeerIds,
+                    readyPeerIds,
+                );
+                return await this.toRtcPeerDiagnostics(
+                    status,
+                    peer,
+                    options,
+                );
+            }),
+        );
+
+        return {
+            sessionId,
+            generatedAtEpochMs: Date.now(),
+            peerCount: peers.length,
+            connectedPeerCount: peers.filter((peer) =>
+                peer.connection.connectionState === 'connected'
+            ).length,
+            relayPeerCount: peers.filter((peer) => peer.usesRelay).length,
+            peers,
+        };
+    }
+
+    private async toRtcPeerDiagnostics(
+        status: RallarRtcPeerStatus,
+        peer: QRtcPeerDto | undefined,
+        options: RallarRtcDiagnosticsOptions,
+    ): Promise<RallarRtcPeerDiagnostics> {
+        const laneIds = options.laneIds
+            ? new Set(options.laneIds)
+            : undefined;
+        const lanes = laneIds
+            ? status.lanes.filter((lane) => laneIds.has(lane.laneId))
+            : status.lanes;
+
+        try {
+            const selectedCandidatePair = await readSelectedCandidatePairDiagnostics(
+                peer?.connection.status.pc,
+            );
+            return {
+                peerId: status.peerId,
+                connection: status.connection,
+                lanes,
+                selectedCandidatePair,
+                usesRelay: selectedCandidatePair?.usesRelay ?? false,
+                statsAvailable: selectedCandidatePair !== undefined,
+            };
+        } catch (error) {
+            return {
+                peerId: status.peerId,
+                connection: status.connection,
+                lanes,
+                usesRelay: false,
+                statsAvailable: false,
+                statsError: toErrorMessage(error),
+            };
+        }
+    }
+
+    private async restartRtcIce(
+        peerId: string,
+    ): Promise<RallarRtcRecoveryResult> {
+        const ctx = this.readMiddleware();
+        if (!ctx) {
+            return this.toRtcRecoveryResult(
+                peerId,
+                'restart-ice',
+                'not-connected',
+                'Rallar is not connected.',
+            );
+        }
+
+        const peer = ctx.middleware.webRtcConnectionService.readPeer(peerId);
+        if (!peer) {
+            return this.toRtcRecoveryResult(
+                peerId,
+                'restart-ice',
+                'no-peer',
+                `RTC peer ${peerId} is not known.`,
+            );
+        }
+
+        const pc = peer.connection.status.pc;
+        if (!pc || typeof pc.restartIce !== 'function') {
+            return this.toRtcRecoveryResult(
+                peerId,
+                'restart-ice',
+                'unsupported',
+                `RTC peer ${peerId} does not expose restartIce().`,
+            );
+        }
+
+        try {
+            pc.restartIce();
+            return this.toRtcRecoveryResult(peerId, 'restart-ice', 'restarted');
+        } catch (error) {
+            return this.toRtcRecoveryResult(
+                peerId,
+                'restart-ice',
+                'failed',
+                toErrorMessage(error),
+            );
+        }
+    }
+
+    private async reconnectRtcPeer(
+        peerId: string,
+        options: RallarRtcReconnectOptions = {},
+    ): Promise<RallarRtcRecoveryResult> {
+        const ctx = this.readMiddleware();
+        if (!ctx) {
+            return this.toRtcRecoveryResult(
+                peerId,
+                'reconnect',
+                'not-connected',
+                'Rallar is not connected.',
+            );
+        }
+
+        try {
+            ctx.middleware.webRtcConnectionService.disconnectPeer(peerId);
+            const laneId = options.laneId;
+            if (laneId) {
+                const result = await this.waitForRtcLaneOpen(
+                    peerId,
+                    laneId,
+                    {
+                        ...options,
+                        connect: true,
+                    },
+                );
+                return this.toRtcRecoveryResult(
+                    peerId,
+                    'reconnect',
+                    result.status === 'open' ? 'started' : 'failed',
+                    result.reason,
+                );
+            }
+
+            const started = ctx.middleware.webRtcConnectionService
+                .ensurePeerConnectionStarted(peerId);
+            if (started.left) {
+                return this.toRtcRecoveryResult(
+                    peerId,
+                    'reconnect',
+                    started.left.kind === 'self' ? 'failed' : 'failed',
+                    started.left.kind,
+                );
+            }
+
+            return this.toRtcRecoveryResult(peerId, 'reconnect', 'started');
+        } catch (error) {
+            return this.toRtcRecoveryResult(
+                peerId,
+                'reconnect',
+                'failed',
+                toErrorMessage(error),
+            );
+        }
+    }
+
+    private toRtcRecoveryResult(
+        peerId: string,
+        action: RallarRtcRecoveryResult['action'],
+        status: RallarRtcRecoveryStatus,
+        reason?: string,
+    ): RallarRtcRecoveryResult {
+        return {
+            peerId,
+            action,
+            status,
+            rtcStatus: this.toRtcStatus(),
+            reason,
         };
     }
 
@@ -2352,6 +3998,114 @@ class BrowserRallarFacade implements RallarFacade {
         const notReady = results.filter((result) => result.status !== 'open');
 
         return this.toRtcRoomLaneWaitResult(roomId, laneId, ready, notReady);
+    }
+
+    private async openRtcRoom(
+        room: string | GroupRef,
+        options: RallarRtcRoomTransportOptions = {},
+    ): Promise<RallarRoomTransportStatus> {
+        const mode = options.mode ?? 'lazy';
+        if (mode === 'off' || mode === 'lazy') {
+            return this.toRoomTransportStatus(room, {
+                ...options,
+                mode,
+            });
+        }
+
+        const laneId = options.laneId ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID;
+        const readiness = await this.waitForRtcRoomLaneOpen(
+            room,
+            laneId,
+            {
+                ...options,
+                connect: true,
+            },
+        );
+
+        return this.toRoomTransportStatus(room, {
+            ...options,
+            mode,
+            laneId,
+        }, readiness);
+    }
+
+    private async waitForRtcRoom(
+        room: string | GroupRef,
+        options: RallarRtcRoomTransportOptions = {},
+    ): Promise<RallarRoomTransportStatus> {
+        const laneId = options.laneId ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID;
+        const readiness = await this.waitForRtcRoomLaneOpen(
+            room,
+            laneId,
+            {
+                ...options,
+                connect: options.connect ?? true,
+            },
+        );
+
+        return this.toRoomTransportStatus(room, {
+            ...options,
+            laneId,
+        }, readiness);
+    }
+
+    private toRoomTransportStatus(
+        room: string | GroupRef,
+        options: RallarRtcRoomTransportOptions = {},
+        readiness?: RallarRtcRoomLaneWaitResult,
+    ): RallarRoomTransportStatus {
+        const laneId = options.laneId ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID;
+        const mode = options.mode ?? 'lazy';
+        const roomRef = this.resolveRoomRef(room);
+        const roomId = this.toRoomId(room);
+        const desiredPeerIds = this.resolveRoomPeerIds(roomRef ?? room);
+        const desiredPeerIdSet = new Set(desiredPeerIds);
+        const rtcStatus = this.toRtcStatus({ laneId });
+        const knownPeerIds = rtcStatus.knownPeerIds.filter((peerId) =>
+            desiredPeerIdSet.has(peerId)
+        );
+        const activePeerIds = rtcStatus.activePeerIds.filter((peerId) =>
+            desiredPeerIdSet.has(peerId)
+        );
+        const readyPeerIds = rtcStatus.readyPeerIds.filter((peerId) =>
+            desiredPeerIdSet.has(peerId)
+        );
+        const failedPeerIds = rtcStatus.peerIdsWithNoReconnectableLanes.filter(
+            (peerId) => desiredPeerIdSet.has(peerId),
+        );
+        const minReadyPeers = Math.max(
+            0,
+            options.minReadyPeers ?? desiredPeerIds.length,
+        );
+        const state = toRoomTransportState({
+            mode,
+            desiredPeerCount: desiredPeerIds.length,
+            knownPeerCount: knownPeerIds.length,
+            activePeerCount: activePeerIds.length,
+            readyPeerCount: readyPeerIds.length,
+            failedPeerCount: failedPeerIds.length,
+            minReadyPeers,
+            waitStatus: readiness?.status,
+        });
+
+        return {
+            roomRef,
+            roomId,
+            ws: this.toWsStatus(),
+            rtc: {
+                desired: mode !== 'off',
+                mode,
+                state,
+                desiredPeerIds,
+                knownPeerIds,
+                activePeerIds,
+                readyPeerIds,
+                failedPeerIds,
+                laneId,
+                lastChangedAtEpochMs: Date.now(),
+                reason: toRoomTransportReason(state, readiness),
+            },
+        };
     }
 
     private async waitForRtcLaneOpenWithConnect(
@@ -3722,6 +5476,37 @@ class BrowserRallarFacade implements RallarFacade {
         return [...new Set(peerIds)];
     }
 
+    private resolveTargetPeerIds(
+        input: RallarTargetSelector = {},
+    ): readonly string[] {
+        const session = readSession();
+        const explicitPeerIds = input.peerIds ??
+            (input.peerId ? [input.peerId] : undefined);
+        if (explicitPeerIds) {
+            return [...new Set(explicitPeerIds)]
+                .filter((peerId) => peerId !== session?.sessionId);
+        }
+
+        const room = input.roomRef ??
+            input.roomId ??
+            this.resolveDefaultRoom() ??
+            this.resolveCurrentRoomRef();
+        return room ? this.resolveRoomPeerIds(room) : [];
+    }
+
+    private resolveCallLaneIds(
+        input: RallarCallStartInput,
+    ): readonly string[] {
+        if (!input.data) {
+            return input.media ? [] : [DEFAULT_RTC_DATA_CHANNEL_LANE_ID];
+        }
+
+        const lanes = input.data.lanes?.length
+            ? input.data.lanes
+            : [DEFAULT_RTC_DATA_CHANNEL_LANE_ID];
+        return [...new Set(lanes.filter((laneId) => laneId.length > 0))];
+    }
+
     private resolveRealtimePeerIds(
         input: RallarRealtimeSendOptions,
     ): readonly string[] {
@@ -4077,7 +5862,13 @@ function toRtcConnectionStatus(
         state: status?.state ? String(status.state) : undefined,
         connectionState: pc?.connectionState,
         iceConnectionState: pc?.iceConnectionState,
+        iceGatheringState: pc?.iceGatheringState,
         signalingState: pc?.signalingState,
+        hasLocalDescription: pc?.localDescription !== null &&
+            pc?.localDescription !== undefined,
+        hasRemoteDescription: pc?.remoteDescription !== null &&
+            pc?.remoteDescription !== undefined,
+        canTrickleIceCandidates: pc?.canTrickleIceCandidates,
         reconnectAttempts: status?.reconnectAttempts ?? 0,
         reconnecting: status?.reconnectTimer !== undefined,
         disconnectPending: status?.disconnectTimer !== undefined,
@@ -4247,6 +6038,88 @@ function toRtcRoomLaneWaitStatus(
     return 'not-ready';
 }
 
+function toRoomTransportState(
+    input: Readonly<{
+        mode: RallarRtcRoomMode;
+        desiredPeerCount: number;
+        knownPeerCount: number;
+        activePeerCount: number;
+        readyPeerCount: number;
+        failedPeerCount: number;
+        minReadyPeers: number;
+        waitStatus?: RallarRtcRoomLaneWaitStatus;
+    }>,
+): RallarRoomTransportState {
+    if (input.mode === 'off') {
+        return 'off';
+    }
+
+    if (input.desiredPeerCount === 0) {
+        return 'open';
+    }
+
+    if (input.readyPeerCount === input.desiredPeerCount) {
+        return 'open';
+    }
+
+    if (
+        input.minReadyPeers > 0 &&
+        input.readyPeerCount >= input.minReadyPeers
+    ) {
+        return 'partial';
+    }
+
+    if (
+        input.waitStatus === 'failed' ||
+        input.waitStatus === 'timeout' ||
+        input.failedPeerCount >= input.desiredPeerCount
+    ) {
+        return input.readyPeerCount > 0 ? 'degraded' : 'failed';
+    }
+
+    if (input.failedPeerCount > 0 && input.readyPeerCount > 0) {
+        return 'degraded';
+    }
+
+    if (input.knownPeerCount > 0 || input.activePeerCount > 0) {
+        return 'connecting';
+    }
+
+    return 'idle';
+}
+
+function toRoomTransportReason(
+    state: RallarRoomTransportState,
+    readiness?: RallarRtcRoomLaneWaitResult,
+): string | undefined {
+    if (readiness?.status === 'empty') {
+        return 'Room has no RTC peer targets.';
+    }
+
+    if (
+        readiness?.status === 'timeout' ||
+        readiness?.status === 'failed' ||
+        readiness?.status === 'aborted' ||
+        readiness?.status === 'not-connected'
+    ) {
+        return `Room RTC wait ended with ${readiness.status}.`;
+    }
+
+    if (state === 'idle') {
+        return 'Room RTC has not started connecting yet.';
+    }
+
+    if (state === 'partial') {
+        return 'Room RTC is partially ready.';
+    }
+
+    if (state === 'degraded') {
+        return 'Room RTC is degraded.';
+    }
+
+    return undefined;
+}
+
 function toPeerLaneOpenReason(
     result: WebRtcPeerLaneOpenResult,
 ): string | undefined {
@@ -4258,6 +6131,363 @@ function toPeerLaneOpenReason(
     return cause !== undefined
         ? toErrorMessage(cause)
         : result.error.message;
+}
+
+function hasTargetSelectorOverride(
+    input: RallarTargetSelector,
+): boolean {
+    return input.peerId !== undefined ||
+        input.peerIds !== undefined ||
+        input.roomId !== undefined ||
+        input.roomRef !== undefined ||
+        input.membership !== undefined;
+}
+
+function toTargetedSendStatus(
+    peerIds: readonly string[],
+    results: readonly RallarRealtimeSendResult[],
+): RallarTargetedSendStatus {
+    if (peerIds.length === 0) {
+        return 'no-targets';
+    }
+
+    const sentCount = results.filter((result) =>
+        isAcceptedRealtimeSendStatus(result.result.status)
+    ).length;
+    if (sentCount === peerIds.length) {
+        return 'sent';
+    }
+
+    return sentCount > 0 ? 'partial' : 'failed';
+}
+
+function isAcceptedRealtimeSendStatus(
+    status: RtcDataChannelSendResult['status'],
+): boolean {
+    return status === 'sent' || status === 'queued' || status === 'replaced';
+}
+
+function toMissingRtcLaneStatus(
+    peerId: string,
+    laneId: string,
+): RallarRtcLaneStatus {
+    return {
+        peerId,
+        laneId,
+        isOpen: false,
+        isReconnectable: false,
+    };
+}
+
+function toCallParticipantState(
+    input: Readonly<{
+        ended: boolean;
+        peer?: RallarRtcPeerStatus;
+        laneCount: number;
+        readyLaneCount: number;
+        failedLaneCount: number;
+    }>,
+): RallarCallParticipantState {
+    if (input.ended) {
+        return 'ended';
+    }
+
+    if (!input.peer) {
+        return 'idle';
+    }
+
+    if (input.laneCount === 0) {
+        return input.peer.hasNoReconnectableLanes
+            ? 'failed'
+            : input.peer.isActive
+                ? 'open'
+                : 'connecting';
+    }
+
+    if (input.readyLaneCount === input.laneCount) {
+        return 'open';
+    }
+
+    if (input.readyLaneCount > 0) {
+        return 'partial';
+    }
+
+    if (input.failedLaneCount === input.laneCount) {
+        return 'failed';
+    }
+
+    return input.peer.isActive ? 'connecting' : 'idle';
+}
+
+function toCallState(
+    participants: readonly RallarCallParticipantStatus[],
+    endedAtEpochMs?: number,
+): RallarCallState {
+    if (endedAtEpochMs !== undefined) {
+        return 'ended';
+    }
+
+    if (participants.length === 0) {
+        return 'empty';
+    }
+
+    if (participants.every((participant) => participant.state === 'open')) {
+        return 'open';
+    }
+
+    if (
+        participants.some((participant) =>
+            participant.state === 'open' || participant.state === 'partial'
+        )
+    ) {
+        return 'partial';
+    }
+
+    if (participants.every((participant) => participant.state === 'failed')) {
+        return 'failed';
+    }
+
+    return 'connecting';
+}
+
+function toCallParticipantReason(
+    peer: RallarRtcPeerStatus | undefined,
+    laneCount: number,
+    failedLaneIds: readonly string[],
+): string | undefined {
+    if (!peer) {
+        return 'RTC peer has not been opened yet.';
+    }
+
+    if (failedLaneIds.length > 0) {
+        return `RTC lanes failed or are unavailable: ${failedLaneIds.join(', ')}.`;
+    }
+
+    if (laneCount > 0 && peer.readyLaneIds.length === 0) {
+        return 'RTC data lanes are not open yet.';
+    }
+
+    return undefined;
+}
+
+async function readSelectedCandidatePairDiagnostics(
+    pc: RTCPeerConnection | undefined,
+): Promise<RallarRtcCandidatePairDiagnostics | undefined> {
+    if (!pc || typeof pc.getStats !== 'function') {
+        return undefined;
+    }
+
+    const report = await pc.getStats();
+    const stats = toStatsArray(report);
+    const byId = new Map(stats.map((stat) => [String(stat.id), stat]));
+    const selectedPair = stats.find((stat) =>
+        stat.type === 'candidate-pair' &&
+        (stat.selected === true || stat.nominated === true ||
+            stat.state === 'succeeded')
+    );
+    if (!selectedPair) {
+        return undefined;
+    }
+
+    const local = selectedPair.localCandidateId
+        ? toCandidateDiagnostics(byId.get(String(selectedPair.localCandidateId)))
+        : undefined;
+    const remote = selectedPair.remoteCandidateId
+        ? toCandidateDiagnostics(byId.get(String(selectedPair.remoteCandidateId)))
+        : undefined;
+
+    return {
+        id: toOptionalString(selectedPair.id),
+        state: toOptionalString(selectedPair.state),
+        nominated: toOptionalBoolean(selectedPair.nominated),
+        selected: toOptionalBoolean(selectedPair.selected),
+        currentRoundTripTime: toOptionalNumber(
+            selectedPair.currentRoundTripTime,
+        ),
+        availableOutgoingBitrate: toOptionalNumber(
+            selectedPair.availableOutgoingBitrate,
+        ),
+        bytesSent: toOptionalNumber(selectedPair.bytesSent),
+        bytesReceived: toOptionalNumber(selectedPair.bytesReceived),
+        local,
+        remote,
+        usesRelay: local?.candidateType === 'relay' ||
+            remote?.candidateType === 'relay',
+    };
+}
+
+function toStatsArray(report: RTCStatsReport): Array<Record<string, unknown>> {
+    const values: Array<Record<string, unknown>> = [];
+    report.forEach((stat) => {
+        if (typeof stat === 'object' && stat !== null) {
+            values.push(stat as Record<string, unknown>);
+        }
+    });
+    return values;
+}
+
+function toCandidateDiagnostics(
+    stat: Record<string, unknown> | undefined,
+): RallarRtcCandidateDiagnostics | undefined {
+    if (!stat) {
+        return undefined;
+    }
+
+    return {
+        id: toOptionalString(stat.id),
+        candidateType: toOptionalString(stat.candidateType),
+        protocol: toOptionalString(stat.protocol),
+        address: toOptionalString(stat.address),
+        ip: toOptionalString(stat.ip),
+        port: toOptionalNumber(stat.port),
+        relayProtocol: toOptionalString(stat.relayProtocol),
+        networkType: toOptionalString(stat.networkType),
+        url: toOptionalString(stat.url),
+    };
+}
+
+function toOptionalString(value: unknown): string | undefined {
+    return typeof value === 'string' ? value : undefined;
+}
+
+function toOptionalNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value)
+        ? value
+        : undefined;
+}
+
+function toOptionalBoolean(value: unknown): boolean | undefined {
+    return typeof value === 'boolean' ? value : undefined;
+}
+
+function toCallSignalTypeId(kind: RallarCallSignalKind): string {
+    switch (kind) {
+        case 'invite':
+            return RALLAR_CALL_INVITE_TYPE_ID;
+        case 'accepted':
+            return RALLAR_CALL_ACCEPT_TYPE_ID;
+        case 'declined':
+            return RALLAR_CALL_DECLINE_TYPE_ID;
+        case 'cancelled':
+            return RALLAR_CALL_CANCEL_TYPE_ID;
+    }
+}
+
+function isRallarCallSignalPayload(
+    value: unknown,
+): value is RallarCallSignalPayload {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+
+    const candidate = value as Partial<RallarCallSignalPayload>;
+    return (
+        candidate.kind === 'invite' ||
+        candidate.kind === 'accepted' ||
+        candidate.kind === 'declined' ||
+        candidate.kind === 'cancelled'
+    ) &&
+        typeof candidate.callId === 'string' &&
+        typeof candidate.fromPeerId === 'string' &&
+        Array.isArray(candidate.toPeerIds) &&
+        candidate.toPeerIds.every((peerId) => typeof peerId === 'string') &&
+        typeof candidate.occurredAtEpochMs === 'number';
+}
+
+function readMediaStreamTracks(stream: MediaStream): MediaStreamTrack[] {
+    return typeof stream.getTracks === 'function'
+        ? stream.getTracks()
+        : [];
+}
+
+function readMediaSourceTracks(
+    kind: RallarMediaSourceKind,
+    stream: MediaStream,
+): MediaStreamTrack[] {
+    const tracks = readMediaStreamTracks(stream);
+    if (kind === 'microphone') {
+        return tracks.filter((track) => track.kind === 'audio');
+    }
+
+    if (kind === 'camera') {
+        return tracks.filter((track) => track.kind === 'video');
+    }
+
+    return tracks;
+}
+
+function toMediaSourceStatus(
+    runtime: RallarMediaSourceRuntime,
+): RallarMediaSourceStatus {
+    const tracks = readMediaStreamTracks(runtime.stream);
+    const endedTrackIds = tracks
+        .filter((track) => track.readyState === 'ended')
+        .map((track) => track.id);
+    const state = runtime.state === 'open' &&
+            tracks.length > 0 &&
+            endedTrackIds.length === tracks.length
+        ? 'ended'
+        : runtime.state;
+
+    return {
+        kind: runtime.kind,
+        state,
+        streamId: runtime.stream.id,
+        trackIds: tracks.map((track) => track.id),
+        audioTrackIds: tracks
+            .filter((track) => track.kind === 'audio')
+            .map((track) => track.id),
+        videoTrackIds: tracks
+            .filter((track) => track.kind === 'video')
+            .map((track) => track.id),
+        enabledTrackIds: tracks
+            .filter((track) => track.enabled)
+            .map((track) => track.id),
+        endedTrackIds,
+        error: runtime.error,
+    };
+}
+
+function toComposedMediaStream(
+    runtimes: readonly RallarMediaSourceRuntime[],
+    tracks: readonly MediaStreamTrack[],
+): MediaStream {
+    if (runtimes.length === 1) {
+        const only = runtimes[0];
+        if (only && readMediaStreamTracks(only.stream).length === tracks.length) {
+            return only.stream;
+        }
+    }
+
+    if (typeof globalThis.MediaStream === 'function') {
+        return new MediaStream([...tracks]);
+    }
+
+    return toMediaStreamLike(
+        `rallar-local-media:${tracks.map((track) => track.id).join(',')}`,
+        tracks,
+    );
+}
+
+function toEmptyMediaStream(): MediaStream {
+    if (typeof globalThis.MediaStream === 'function') {
+        return new MediaStream();
+    }
+
+    return toMediaStreamLike('rallar-empty-media', []);
+}
+
+function toMediaStreamLike(
+    id: string,
+    tracks: readonly MediaStreamTrack[],
+): MediaStream {
+    return {
+        id,
+        active: tracks.some((track) => track.readyState !== 'ended'),
+        getTracks: () => [...tracks],
+        getAudioTracks: () => tracks.filter((track) => track.kind === 'audio'),
+        getVideoTracks: () => tracks.filter((track) => track.kind === 'video'),
+    } as MediaStream;
 }
 
 export function createRallarFacade(): RallarFacade {
@@ -4563,6 +6793,16 @@ function toRallarMessageSendResult(
         entries: result.entries,
         reason: result.reason,
     };
+}
+
+function isSuccessfulRallarMessageSendStatus(
+    status: RallarMessageSendStatus,
+): boolean {
+    return status === 'enqueued' ||
+        status === 'sent-immediate' ||
+        status === 'duplicate' ||
+        status === 'superseded' ||
+        status === 'skipped';
 }
 
 function wakeQBoxEngineIfQueued(

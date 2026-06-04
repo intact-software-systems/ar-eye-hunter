@@ -1,10 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { AppTopics, type ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import {
+    DEFAULT_STATE_APPLICATION_ID,
+    DEFAULT_STATE_WORKSPACE_ID,
+} from '@shared/api/state-types.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
+import { findOverlayById } from '@shared/repository/overlays-repository.ts';
 import * as dataCaches from '@shared-web/browser/data-caches.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 
@@ -23,27 +30,27 @@ describe('browser data caches state scope filtering', () => {
         const sameScopeClient = createClientSnapshot(
             'alice',
             'session-a',
-            'ar-eye-hunter',
-            'default',
+            DEFAULT_STATE_APPLICATION_ID,
+            DEFAULT_STATE_WORKSPACE_ID,
             1,
         );
         const otherWorkspaceClient = createClientSnapshot(
             'bob',
             'session-b',
-            'ar-eye-hunter',
+            DEFAULT_STATE_APPLICATION_ID,
             'workspace-b',
             1,
         );
         const sameScopeGroup = createGroupSnapshot(
             'room-a',
-            'ar-eye-hunter',
-            'default',
+            DEFAULT_STATE_APPLICATION_ID,
+            DEFAULT_STATE_WORKSPACE_ID,
             ['session-a'],
             1,
         );
         const otherWorkspaceGroup = createGroupSnapshot(
             'room-b',
-            'ar-eye-hunter',
+            DEFAULT_STATE_APPLICATION_ID,
             'workspace-b',
             ['session-b'],
             1,
@@ -223,6 +230,77 @@ describe('browser data caches state scope filtering', () => {
         unsubscribe();
     });
 
+    it('applies overlay topology websocket snapshots to the local overlay cache', async () => {
+        const manager = createWebRtcGroupManager();
+        const clientData: ClientInfo = {
+            clientId: 'alice',
+            sessionId: 'session-a',
+            isOnline: true,
+        };
+        let onInboxMessage:
+            | ((message: unknown) => Promise<void>)
+            | undefined;
+        const webSocketQueueBox = {
+            onAllInboxMessagesDo: vi.fn((callback: {
+                onMessage: (message: unknown) => Promise<void>;
+            }) => {
+                onInboxMessage = callback.onMessage;
+                return webSocketQueueBox;
+            }),
+        };
+        const groupSnapshot = createGroupSnapshot(
+            'room-a',
+            DEFAULT_STATE_APPLICATION_ID,
+            DEFAULT_STATE_WORKSPACE_ID,
+            ['session-a', 'session-b'],
+            2,
+        );
+        const topology: RallarOverlayTopologySnapshot = {
+            overlayId: toScopedOverlayId(groupSnapshot.group),
+            groupRef: groupSnapshot.group,
+            name: 'room-a',
+            topology: 'tree',
+            activeSessionIds: ['session-a', 'session-b'],
+            nextHopsBySessionId: {
+                'session-a': ['session-b'],
+                'session-b': ['session-a'],
+            },
+            degreeLimit: 5,
+            version: 1,
+            createdByClientId: 'server',
+            createdAtEpochMs: 1,
+            updatedAtEpochMs: 2,
+        };
+
+        dataCaches.initialise(
+            webSocketQueueBox as never,
+            manager,
+            clientData,
+        );
+
+        await onInboxMessage?.(
+            newALBroadcastMessage(
+                'server-1',
+                newALEventRoute(AppTopics.overlayTopology, 'room-a', 'topology-1'),
+                'room',
+                AppTopics.overlayTopology,
+                topology,
+                {
+                    groupRef: groupSnapshot.group,
+                },
+            ),
+        );
+
+        expect(findOverlayById(topology.overlayId)).toMatchObject({
+            overlayId: topology.overlayId,
+            groupRef: groupSnapshot.group,
+            topology: 'tree',
+            nextHopSessionIds: ['session-b'],
+            overlayVersion: 1,
+        });
+        expect(manager.notifyOverlayTopologyChanged).toHaveBeenCalledOnce();
+    });
+
     it('uses snapshot hydration as convergence after state event details are missed', async () => {
         const manager = createWebRtcGroupManager();
         const clientData: ClientInfo = {
@@ -246,14 +324,14 @@ describe('browser data caches state scope filtering', () => {
         const clientSnapshot = createClientSnapshot(
             'alice',
             'session-a',
-            'ar-eye-hunter',
-            'default',
+            DEFAULT_STATE_APPLICATION_ID,
+            DEFAULT_STATE_WORKSPACE_ID,
             2,
         );
         const groupSnapshot = createGroupSnapshot(
             'room-a',
-            'ar-eye-hunter',
-            'default',
+            DEFAULT_STATE_APPLICATION_ID,
+            DEFAULT_STATE_WORKSPACE_ID,
             ['session-a'],
             2,
         );
@@ -320,6 +398,7 @@ describe('browser data caches state scope filtering', () => {
 function createWebRtcGroupManager() {
     return {
         notifyClientPresenceChanged: vi.fn(async () => undefined),
+        notifyOverlayTopologyChanged: vi.fn(async () => undefined),
         acceptGroupUpdate: vi.fn(async () => undefined),
         delete: vi.fn(async () => undefined),
         has: vi.fn(() => false),

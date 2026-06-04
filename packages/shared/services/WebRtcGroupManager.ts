@@ -1,14 +1,14 @@
 import { WebRtcConnectionService } from './WebRtcConnectionService.ts';
 import { WebRtcGroupService, } from './WebRtcGroupService.ts';
 import { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
-import { GroupId, PeerId } from '../api/api-config.ts';
+import { GroupId, OverlayInfo, PeerId } from '../api/api-config.ts';
 import type { GroupRef } from '../api/group-types.ts';
 import {
     type AnyClientPresence,
     type AnyGroupPresence,
     readActiveClientSessionIds,
 } from '../api/group-client-views.ts';
-import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
+import { toScopedOverlayId, toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 
 export type WebRtcGroupManagerState = {
     readonly groupIds: readonly GroupId[];
@@ -28,6 +28,7 @@ export class WebRtcGroupManager {
         public readonly rtcQBox: WebRtcConnectionService,
         public readonly groupCache: ReadableKeyedValues<string, AnyGroupPresence>,
         public readonly clientCache: ReadableKeyedValues<string, AnyClientPresence>,
+        public readonly overlayCache?: ReadableKeyedValues<string, OverlayInfo>,
     ) {
     }
 
@@ -90,7 +91,7 @@ export class WebRtcGroupManager {
         const owners = new Map<PeerId, GroupId[]>();
 
         for (const group of this.groupsByKey.values()) {
-            for (const peerId of group.targetPeerIds()) {
+            for (const peerId of this.targetPeerIdsForGroup(group)) {
                 let groupIds = owners.get(peerId);
                 if (!groupIds) {
                     groupIds = [];
@@ -223,6 +224,10 @@ export class WebRtcGroupManager {
         return this.reconcileAllGroups();
     }
 
+    notifyOverlayTopologyChanged(): Promise<void> {
+        return this.reconcileAllGroups();
+    }
+
     private onlinePeerIds(): Set<PeerId> {
         const onlinePeerIds = new Set<PeerId>();
 
@@ -239,5 +244,28 @@ export class WebRtcGroupManager {
         }
 
         return onlinePeerIds;
+    }
+
+    private targetPeerIdsForGroup(group: WebRtcGroupService): readonly PeerId[] {
+        const overlay = this.readOverlayForGroup(group.groupRef);
+        if (overlay) {
+            return overlay.nextHopSessionIds.filter(
+                (peerId) => peerId !== this.rtcQBox.input.sessionId,
+            );
+        }
+
+        return group.targetPeerIds();
+    }
+
+    private readOverlayForGroup(groupRef: GroupRef): OverlayInfo | undefined {
+        if (!this.overlayCache) {
+            return undefined;
+        }
+
+        const scopedOverlayId = toScopedOverlayId(groupRef);
+        return this.overlayCache.read(scopedOverlayId) ??
+            this.overlayCache.peek(scopedOverlayId) ??
+            this.overlayCache.read(groupRef.groupId) ??
+            this.overlayCache.peek(groupRef.groupId);
     }
 }

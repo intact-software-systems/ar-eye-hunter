@@ -64,13 +64,13 @@ If `DATABASE_URL` is present in the environment, PGlite mode reports it as
 Run the API-backed `apps/rallar-black-box` smoke suite against memory mode:
 
 ```sh
-npm run test:e2e:rallar-black-box:full-stack:memory
+npm run test:rallar:full-stack:memory
 ```
 
 Run the gated three-browser RTC baseline against memory mode:
 
 ```sh
-npm run test:e2e:rallar-black-box:full-stack:memory:live-rtc-3
+npm run test:rallar:full-stack:memory:live-rtc-3
 ```
 
 These scripts start API-v1 with PGlite memory persistence, automatic schema

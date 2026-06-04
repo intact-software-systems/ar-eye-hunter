@@ -20,6 +20,7 @@ import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMulticastManager.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
+import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { pairKey } from '@shared/repository/rtt-repository.ts';
 
@@ -214,6 +215,7 @@ export async function initialiseMiddleware(
         webRtcConnectionService,
         groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
         clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
+        overlaysRepository.readableOverlayCache(),
     );
 
     cache.initialise(webSocketQueueBox, webRtcGroupManager, clientData);

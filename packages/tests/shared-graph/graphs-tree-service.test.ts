@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MessageType, ReconfigAlgo } from '@shared-graph/algo-props.ts';
 import { VertexState } from '@shared-graph/graph/graph-props.ts';
-import { computeReconfig, pickSourceForRebuild, updateGroupTree, } from '@shared-graph/graphs-tree-service.ts';
+import {
+    computeReconfig,
+    pickSourceForCreate,
+    pickSourceForRebuild,
+    updateGroupTree,
+} from '@shared-graph/graphs-tree-service.ts';
 import { createGraph, createGroupSnapshot } from './helpers.ts';
 
 const mockState = vi.hoisted(() => ({
@@ -209,5 +214,30 @@ describe('shared-graph tree service orchestration', () => {
         expect(result.right).toBeUndefined();
         expect(pickSourceForRebuild(tree, new Set(['peer-a', 'peer-b']))).toBe('peer-a');
         expect(pickSourceForRebuild(tree, new Set(['missing']))).toBeUndefined();
+    });
+
+    it('picks the best average-located source for sparse create graphs', () => {
+        const graph = createGraph(
+            [
+                ['peer-a', VertexState.MEMBER, 5],
+                ['peer-b', VertexState.MEMBER, 5],
+                ['peer-c', VertexState.MEMBER, 5],
+                ['peer-d', VertexState.MEMBER, 5],
+                ['peer-e', VertexState.MEMBER, 5],
+            ],
+            [
+                ['peer-a', 'peer-b', 1],
+                ['peer-b', 'peer-c', 10],
+                ['peer-c', 'peer-d', 10],
+                ['peer-d', 'peer-e', 10],
+            ],
+        );
+
+        expect(
+            pickSourceForCreate(
+                graph,
+                new Set(['peer-a', 'peer-b', 'peer-c', 'peer-d', 'peer-e']),
+            ),
+        ).toBe('peer-a');
     });
 });

@@ -34,8 +34,5 @@
     "**/*.test.ts",
     "**/*.d.ts",
     "../../types/**/*.d.ts"
-  ],
-  "exclude": [
-    "**/dummy.test.ts"
   ]
 }

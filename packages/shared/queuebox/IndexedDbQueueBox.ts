@@ -278,6 +278,74 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         });
     }
 
+    async enqueueOrUpdate(
+        resourceEntry: ResourceEntry,
+        updateExisting: (existing: ResourceEntry) => ResourceEntry | undefined,
+    ) {
+        const db = await this.openDb();
+
+        return await new Promise<{
+            action: 'inserted' | 'updated' | 'unchanged';
+            entry: ResourceEntry;
+            previous?: ResourceEntry;
+        }>((resolve, reject) => {
+            const tx = db.transaction(this.storeName, 'readwrite');
+            const store = tx.objectStore(this.storeName);
+            const keyString = toKeyAsString(resourceEntry.key);
+            let result: {
+                action: 'inserted' | 'updated' | 'unchanged';
+                entry: ResourceEntry;
+                previous?: ResourceEntry;
+            } = {
+                action: 'inserted',
+                entry: resourceEntry,
+            };
+
+            tx.oncomplete = () => resolve(result);
+            tx.onabort = () => reject(tx.error ?? new Error('IndexedDB enqueueOrUpdate aborted'));
+            tx.onerror = () => reject(tx.error ?? new Error('IndexedDB enqueueOrUpdate failed'));
+
+            const getRequest = store.get(keyString);
+            getRequest.onerror = () => reject(getRequest.error ?? new Error('IndexedDB get failed during enqueueOrUpdate'));
+            getRequest.onsuccess = () => {
+                const stored = getRequest.result as StoredResourceEntry | undefined;
+                if (!stored || this.isExpiredStoredEntry(stored)) {
+                    const writeRequest = store.put(this.toStoredEntry(resourceEntry));
+                    writeRequest.onerror = () => reject(writeRequest.error ?? new Error('IndexedDB write failed during enqueueOrUpdate'));
+                    return;
+                }
+
+                const previous = this.toResourceEntry(stored);
+                let updated: ResourceEntry | undefined;
+                try {
+                    updated = updateExisting(previous);
+                } catch (error) {
+                    reject(error);
+                    tx.abort();
+                    return;
+                }
+
+                if (!updated) {
+                    console.log('Entry already exists: ', resourceEntry.key);
+                    result = {
+                        action: 'unchanged',
+                        entry: previous,
+                        previous,
+                    };
+                    return;
+                }
+
+                result = {
+                    action: 'updated',
+                    entry: updated,
+                    previous,
+                };
+                const writeRequest = store.put(this.toStoredEntry(updated));
+                writeRequest.onerror = () => reject(writeRequest.error ?? new Error('IndexedDB update failed during enqueueOrUpdate'));
+            };
+        });
+    }
+
     async releaseEntries(
         resources: ResourceEntry[],
         entityStatus: EntityStatus,
@@ -303,22 +371,30 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                     exponentialBackoffSteps
                         ? this.toBackoff(exponentialBackoffSteps, resource.dequeueAudit.attempts)
                         : undefined;
+                const keyString = toKeyAsString(resource.key);
+                const getRequest = store.get(keyString);
+                getRequest.onerror = () => reject(getRequest.error ?? new Error('IndexedDB get failed during releaseEntries'));
+                getRequest.onsuccess = () => {
+                    const stored = getRequest.result as StoredResourceEntry | undefined;
+                    const current = stored && !this.isExpiredStoredEntry(stored)
+                        ? this.toResourceEntry(stored)
+                        : resource;
+                    const updated: ResourceEntry = {
+                        ...current,
+                        status: entityStatus,
+                        dequeueAudit: {
+                            startTs: resource.dequeueAudit.startTs,
+                            endTs: Temporal.Now.instant(),
+                            nextTs: backoff ? Temporal.Now.instant().add(backoff) : undefined,
+                            attempts: resource.dequeueAudit.attempts,
+                        },
+                    };
 
-                const updated: ResourceEntry = {
-                    ...resource,
-                    status: entityStatus,
-                    dequeueAudit: {
-                        startTs: resource.dequeueAudit.startTs,
-                        endTs: Temporal.Now.instant(),
-                        nextTs: backoff ? Temporal.Now.instant().add(backoff) : undefined,
-                        attempts: resource.dequeueAudit.attempts,
-                    },
+                    released.set(updated.key, updated);
+
+                    const putRequest = store.put(this.toStoredEntry(updated));
+                    putRequest.onerror = () => reject(putRequest.error ?? new Error('IndexedDB put failed during releaseEntries'));
                 };
-
-                released.set(updated.key, updated);
-
-                const putRequest = store.put(this.toStoredEntry(updated));
-                putRequest.onerror = () => reject(putRequest.error ?? new Error('IndexedDB put failed during releaseEntries'));
             }
         });
     }

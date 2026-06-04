@@ -3,7 +3,8 @@ import { readGroupMemberSessionIds } from '@shared/api/group-client-views.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { DynamicMeshAlgo } from './mesh/group-dynamics-mesh-types.ts';
 import { DEFAULT_GRAPH_PROP, MessageType, ReconfigAlgo } from './algo-props.ts';
-import { TreeGraph, VertexId, WeightedGraph } from './graph-props.ts';
+import type { DynamicTreeAlgo } from './remove/remove-dynamics-types.ts';
+import { type EdgeProp, type GraphProp, TreeGraph, VertexId, type VertexProp, WeightedGraph, } from './graph-props.ts';
 import { InsertToMeshComputedDto, InsertToMeshInputDto, } from './mesh/insert-mesh-algs.ts';
 import { CoreSelectionAlgo, findWCNodes, } from './graph/steiner-core-algorithms.ts';
 import { removeVertexFromTree } from './remove/remove-dynamics-facade.ts';
@@ -13,6 +14,8 @@ import { generateSizeOfSteinerSet } from './graph/graph-size-algorithms.ts';
 import { PruneGraphAlgo } from './graph/prune-graph.ts';
 import { kMDDLOTTCTree } from './mesh/k-mddl-ottc.ts';
 import { diameterDistance } from './graph/graph-algs.ts';
+import { type GroupTopologyValidationResult, validateGroupTopology, } from './group-topology-validation.ts';
+import { UndirectedGraph } from 'graphology';
 
 export type GlobalMeshArgs = {
     meshParamK: number;
@@ -41,12 +44,129 @@ export type UpdateGroupMeshInputDto = {
     deps: ProcessGroupUpdateMeshDeps;
 };
 
+export type CreateGroupMeshInputDto = {
+    group: GroupSnapshot;
+    globalGraph: WeightedGraph;
+    globalArgs: GlobalMeshArgs;
+    deps: ProcessGroupUpdateMeshDeps;
+    maxDegree?: number;
+    orderMemberSessionIds?: (
+        memberSessionIds: readonly VertexId[],
+        globalGraph: WeightedGraph,
+    ) => readonly VertexId[];
+};
+
+export type CreateGroupMeshComputedDto = {
+    input: CreateGroupMeshInputDto;
+    elapsedMs: number;
+    success: boolean;
+    mesh: WeightedGraph;
+    validation: GroupTopologyValidationResult;
+    failedAtMemberId?: VertexId;
+    reason?: string;
+};
+
 export type ProcessGroupUpdateMeshResult = {
     input: UpdateGroupMeshInputDto;
     elapsedMs: number;
     reconfigured: boolean;
     mesh: WeightedGraph;
+    removeAttemptedAlgo?: DynamicTreeAlgo;
+    removeUsedFallback?: boolean;
+    reconfigReason?: string;
 };
+
+export function createGroupMesh(
+    input: CreateGroupMeshInputDto,
+): CreateGroupMeshComputedDto {
+    const started = performance.now();
+    const memberSessionIds = uniqueSessionIds(readGroupMemberSessionIds(input.group));
+    const orderedMembers = input.orderMemberSessionIds?.(
+        memberSessionIds,
+        input.globalGraph,
+    ) ?? memberSessionIds;
+    let mesh = createEmptyGroupGraphLike(input.globalGraph);
+
+    if (orderedMembers.length === 0) {
+        const validation = validateGroupTopology({
+            graph: mesh,
+            activeSessionIds: new Set(memberSessionIds),
+            maxDegree: input.maxDegree,
+        });
+
+        return {
+            input,
+            elapsedMs: performance.now() - started,
+            success: validation.valid,
+            mesh,
+            validation,
+        };
+    }
+
+    for (const memberId of orderedMembers) {
+        if (!input.globalGraph.hasNode(memberId)) {
+            const validation = validateGroupTopology({
+                graph: mesh,
+                activeSessionIds: new Set(memberSessionIds),
+                maxDegree: input.maxDegree,
+            });
+
+            return {
+                input,
+                elapsedMs: performance.now() - started,
+                success: false,
+                mesh,
+                validation,
+                failedAtMemberId: memberId,
+                reason: `Missing member ${memberId} in global graph`,
+            };
+        }
+
+        try {
+            const result = input.deps.insertMeshAlgorithmTimed({
+                globalGraph: input.globalGraph,
+                groupGraph: mesh,
+                actionVertexId: memberId,
+                numberOfMembers: mesh.nodes().length + 1,
+                k: input.globalArgs.meshParamK,
+                algo: input.globalArgs.insertAlgo,
+            });
+
+            mesh = result.groupGraph;
+        } catch (error) {
+            const validation = validateGroupTopology({
+                graph: mesh,
+                activeSessionIds: new Set(memberSessionIds),
+                maxDegree: input.maxDegree,
+            });
+
+            return {
+                input,
+                elapsedMs: performance.now() - started,
+                success: false,
+                mesh,
+                validation,
+                failedAtMemberId: memberId,
+                reason: error instanceof Error ? error.message : 'Mesh rebuild failed',
+            };
+        }
+    }
+
+    const validation = validateGroupTopology({
+        graph: mesh,
+        activeSessionIds: new Set(memberSessionIds),
+        maxDegree: input.maxDegree,
+    });
+
+    return {
+        input,
+        elapsedMs: performance.now() - started,
+        success: validation.valid,
+        mesh,
+        validation,
+        reason: validation.valid ? undefined : 'Mesh validation failed',
+    };
+}
 
 export function updateGroupMesh(
     input: UpdateGroupMeshInputDto,
@@ -55,6 +175,8 @@ export function updateGroupMesh(
     const memberSessionIds = readGroupMemberSessionIds(input.group);
 
     let updatedMesh: WeightedGraph;
+    let removeAttemptedAlgo: DynamicTreeAlgo | undefined;
+    let removeUsedFallback: boolean | undefined;
 
     switch (input.type) {
         case MessageType.TO_SERVER_ENTER: {
@@ -75,11 +197,12 @@ export function updateGroupMesh(
         }
 
         case MessageType.TO_SERVER_LEAVE: {
+            const treeAlgo = meshRemoveAlgoToTreeAlgo(input.globalArgs.removeAlgo);
             const result = removeVertexFromTree({
                 globalGraph: input.globalGraph,
                 groupGraph: input.groupGraph,
                 actionVertexId: input.fromNode,
-                treeAlgo: 'REMOVE_TRY_REPLACE_PRUNE_MC',
+                treeAlgo,
                 steinerCandidates: new Set(input.globalGraph.nodes() as string[]),
                 coreSelectionAlgo: CoreSelectionAlgo.CENTER_SELECTION,
                 selectSteinerCandidate: (ctx, adjacent) => {
@@ -97,6 +220,8 @@ export function updateGroupMesh(
             });
 
             updatedMesh = result.graph;
+            removeAttemptedAlgo = result.attemptedAlgo;
+            removeUsedFallback = result.usedFallback;
             break;
         }
 
@@ -104,13 +229,19 @@ export function updateGroupMesh(
             throw new Error(`Unsupported message type: ${input.type}`);
     }
 
-    const reconfigured = doReconfigMesh(input);
+    const reconfigured = doReconfigMesh({
+        ...input,
+        groupGraph: updatedMesh,
+    });
 
     return {
         input: input,
         elapsedMs: performance.now() - started,
         reconfigured: reconfigured.right !== undefined,
         mesh: reconfigured.right !== undefined ? reconfigured.right : updatedMesh,
+        removeAttemptedAlgo,
+        removeUsedFallback,
+        reconfigReason: reconfigured.right !== undefined ? undefined : 'not-needed-or-failed',
     };
 }
 
@@ -125,7 +256,7 @@ export function doReconfigMesh(
 
     switch (input.globalArgs.reconfigAlgo) {
         case ReconfigAlgo.TEST_OPTIMAL_PAIR_WISE: {
-            const meshDiameter = diameterDistance(input.globalGraph);
+            const meshDiameter = diameterDistance(input.groupGraph);
 
             if (meshDiameter <= input.globalArgs.diameterBound) {
                 return Either.ofLeft(false);
@@ -189,4 +320,35 @@ export function doReconfigMesh(
         default:
             return Either.ofLeft(false);
     }
+}
+
+export function meshRemoveAlgoToTreeAlgo(algo: DynamicMeshAlgo): DynamicTreeAlgo {
+    switch (algo) {
+        case DynamicMeshAlgo.K_REMOVE_MDDL:
+            return 'REMOVE_MINIMUM_DIAMETER_EDGE';
+        case DynamicMeshAlgo.K_REMOVE_MC:
+            return 'REMOVE_MINIMUM_COST_EDGE';
+        case DynamicMeshAlgo.K_REMOVE_TRY_REPLACE_MDDL_NAIVE:
+            return 'REMOVE_TRY_REPLACE_MDDL_NAIVE';
+        case DynamicMeshAlgo.K_REMOVE_TRY_REPLACE_PRUNE_MDDL:
+            return 'REMOVE_TRY_REPLACE_PRUNE_MDDL';
+        case DynamicMeshAlgo.K_REMOVE_TRY_REPLACE_PRUNE_MC:
+            return 'REMOVE_TRY_REPLACE_PRUNE_MC';
+        case DynamicMeshAlgo.K_REMOVE_TRY_REPLACE_MC_NAIVE:
+            return 'REMOVE_TRY_REPLACE_PRUNE_MC';
+        case DynamicMeshAlgo.NO_DYNAMIC_MESH_ALGO:
+            return 'NO_DYNAMIC_TREE_ALGO';
+        default:
+            throw new Error(`Unsupported mesh remove algorithm: ${algo}`);
+    }
+}
+
+function uniqueSessionIds(sessionIds: readonly VertexId[]): readonly VertexId[] {
+    return [...new Set(sessionIds)];
+}
+
+function createEmptyGroupGraphLike(inputGraph: WeightedGraph): WeightedGraph {
+    const graph = new UndirectedGraph<VertexProp, EdgeProp, GraphProp>();
+    graph.replaceAttributes(inputGraph.getAttributes());
+    return graph;
 }

@@ -514,6 +514,28 @@ runtime.qboxEngine.start();
 
 Use these only if you are composing your own engine instead of calling `createRallarMiddleware`.
 
+### Built-In System Topics
+
+`initRallarSystemWsTopics(wsQBoxServerService, options?)` installs the built-in
+state-sync, graph, RTT, overlay topology, chat, and RTC signaling topics.
+
+`options.rtcTopologyAppInbox` can route group-snapshot and RTT-triggered
+overlay recomputes through the durable app inbox with one coalesced work row per
+scoped overlay. Provide `inboxQueueReader` and optionally `wake`, `topicId`,
+`senderId`, and `findGroupSnapshotByRef`. In production,
+`findGroupSnapshotByRef` should read through `GroupStateSnapshotReadThroughCache`
+or another durable group snapshot source. When this option is omitted,
+group-snapshot topology publication remains immediate and RTT-triggered topology
+recomputes use the local in-process debounce timer.
+
+`options.rtcTopologyRuntimeState` can provide a runtime-state repository for
+multi-worker topology continuity. Rallar stores published topology snapshots in
+`rtc-topology:snapshots` and latest accepted RTT measurements in
+`rtc-rtt:latest`. When combined with `rtcTopologyAppInbox`, a worker can
+continue overlay versioning from the previous durable snapshot and compute with
+durable RTT inputs even if another worker accepted the triggering RTT message.
+`rttTtlMs` can override the durable RTT retention window.
+
 ### Target Resolver
 
 `createWsServerTargetResolver(webSocketServer, options?)` creates the default target resolver.

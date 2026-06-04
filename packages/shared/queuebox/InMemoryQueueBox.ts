@@ -91,6 +91,40 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         return prev;
     }
 
+    async enqueueOrUpdate(
+        resourceEntry: ResourceEntry,
+        updateExisting: (existing: ResourceEntry) => ResourceEntry | undefined,
+    ) {
+        const key = toKeyAsString(resourceEntry.key);
+        const previous = this.data.get(key);
+
+        if (!previous || isExpiredResourceEntry(previous)) {
+            this.data.set(key, resourceEntry);
+            return {
+                action: 'inserted' as const,
+                entry: resourceEntry,
+                previous: undefined,
+            };
+        }
+
+        const updated = updateExisting(previous);
+        if (!updated) {
+            console.log('Entry already exists: ', resourceEntry.key);
+            return {
+                action: 'unchanged' as const,
+                entry: previous,
+                previous,
+            };
+        }
+
+        this.data.set(key, updated);
+        return {
+            action: 'updated' as const,
+            entry: updated,
+            previous,
+        };
+    }
+
     async enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry> {
         const prev = this.data.get(toKeyAsString(resourceEntry.key));
 
@@ -113,6 +147,10 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             resources
                 .map(
                     (resource): [Key, ResourceEntry] => {
+                        const current = this.data.get(toKeyAsString(resource.key));
+                        const base = current && !isExpiredResourceEntry(current)
+                            ? current
+                            : resource;
                         resource.dequeueAudit = {
                             startTs: resource.dequeueAudit.startTs,
                             endTs: Temporal.Now.instant(),
@@ -124,9 +162,15 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                         };
                         resource.status = entityStatus;
 
-                        this.data.set(toKeyAsString(resource.key), resource);
+                        const updated = {
+                            ...base,
+                            status: resource.status,
+                            dequeueAudit: resource.dequeueAudit,
+                        };
 
-                        return [resource.key, resource];
+                        this.data.set(toKeyAsString(resource.key), updated);
+
+                        return [updated.key, updated];
                     }
                 )
         );

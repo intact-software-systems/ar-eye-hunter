@@ -163,26 +163,26 @@ apps/rallar-black-box/playwright.full-stack.config.ts
 Run it with:
 
 ```sh
-npm run test:e2e:rallar-black-box:full-stack
+npm run test:rallar:full-stack
 ```
 
 Use the convenience root scripts for real-data runs:
 
 ```sh
-npm run test:e2e:rallar-black-box:full-stack:real
-npm run test:e2e:rallar-black-box:full-stack:real:manual
-npm run test:e2e:rallar-black-box:full-stack:real:rest
-npm run test:e2e:rallar-black-box:full-stack:real:control
-npm run test:e2e:rallar-black-box:full-stack:real:live-rtc-3
-npm run test:e2e:rallar-black-box:full-stack:real:live-rtc-3:all
+npm run test:rallar:full-stack:postgres
+npm run test:rallar:full-stack:postgres:manual
+npm run test:rallar:full-stack:postgres:rest
+npm run test:rallar:full-stack:postgres:control
+npm run test:rallar:full-stack:postgres:live-rtc-3
+npm run test:rallar:full-stack:postgres:live-rtc-3:all
 ```
 
 Use the memory-mode scripts when the goal is API-v1 middleware/browser
 validation without Postgres:
 
 ```sh
-npm run test:e2e:rallar-black-box:full-stack:memory
-npm run test:e2e:rallar-black-box:full-stack:memory:live-rtc-3
+npm run test:rallar:full-stack:memory
+npm run test:rallar:full-stack:memory:live-rtc-3
 ```
 
 The memory RTC script provides the static API-v1 fixture users `alice/secret`,
@@ -196,13 +196,13 @@ running on the expected port, Playwright reuses it.
 To run the backend servers separately before test execution:
 
 ```sh
-npm run dev:rallar-black-box:servers
+npm run dev:rallar:servers
 ```
 
 To run API, control server, and the SPA together for manual UI testing:
 
 ```sh
-npm run dev:rallar-black-box:all
+npm run dev:rallar:all
 ```
 
 The full-stack config uses `http://localhost:5176` as the SPA origin because
@@ -475,7 +475,7 @@ ready. The spec is intentionally stricter than simulated UI tests:
 1. Start or let Playwright start `apps/api-v1`, the control server, and the SPA.
 2. Provide three users or three restored sessions.
 3. Set `RALLAR_BLACK_BOX_FULL_STACK=1` and `RALLAR_BLACK_BOX_LIVE_RTC_MATRIX=1`.
-4. Run `npm run test:e2e:rallar-black-box:full-stack:real:live-rtc-3`.
+4. Run `npm run test:rallar:full-stack:postgres:live-rtc-3`.
 5. Confirm the run creates a unique group from `VITE_RALLAR_ROOM_ID` plus a
    suffix.
 6. Confirm all three agents join the group before RTC connect.
@@ -495,7 +495,7 @@ The exhaustive variant is the one to run when live servers are already running
 and you want broad coverage instead of a smoke baseline:
 
 ```sh
-npm run test:e2e:rallar-black-box:full-stack:real:live-rtc-3:all
+npm run test:rallar:full-stack:postgres:live-rtc-3:all
 ```
 
 It runs 24 RTC delivery scenarios: six direct pairs, three multicasts, and three

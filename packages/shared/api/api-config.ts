@@ -1,3 +1,5 @@
+import { GroupRef } from '@shared/api/group-types.ts';
+
 export type ApiConfig = {
     readonly apiBaseUrl: string;
     readonly wsBaseUrl: string;
@@ -30,6 +32,7 @@ export enum AppTopics {
     groupStateSnapshot = 'group-state.snapshot',
     groupStateEvent = 'group-state.event',
     graphs = 'graphs',
+    overlayTopology = 'overlay.topology',
     rtt = 'rtt',
 }
 
@@ -86,10 +89,12 @@ export type WebSocketTicketResponse = {
 
 export type GroupId = string;
 
-export type OverlayId = GroupId;
+export type OverlayId = string;
 
 export type OverlayInfo = {
     readonly overlayId: OverlayId;
+    readonly groupRef?: GroupRef;
+    readonly topology?: 'star' | 'tree' | 'mesh';
     readonly name: string;
     readonly createdByClientId: string;
     readonly createdAtEpochMs: number;

@@ -1,6 +1,6 @@
 # Rallar RTC Tree And Mesh Topology Plan
 
-Date: 2026-06-03
+Date: 2026-06-04
 
 ## Summary
 
@@ -19,25 +19,22 @@ these core services and converts the result into compact RTC next-hop overlays.
 
 ## Current Repo Alignment
 
-- `graphs-tree-service.ts` currently provides dynamic tree enter/leave updates
-  through `updateGroupTree(...)` and reconfiguration through `computeReconfig`.
-  It does not yet expose a standalone create/rebuild API.
-- `graphs-mesh-service.ts` currently provides dynamic mesh enter/leave updates
-  through `updateGroupMesh(...)` and reconfiguration through `doReconfigMesh`.
-  Before Rallar depends on it, reconfiguration needs the fixes listed below.
-- Current graph degree limits come from graph attributes and per-node
-  `degreeLimit` values, so Rallar must build room-local graphs with member
-  degree limit `5` baked into the graph and nodes.
-- `AppTopics` currently includes `graphs` and `rtt`; `overlay.topology` is a
-  proposed system topic for routing overlays.
-- `OverlayInfo` currently stores `nextHopSessionIds`, but `OverlayId` is still
-  a raw `GroupId`. This plan requires scoped overlay keys derived from
-  `GroupRef`.
-- `WebRtcGroupManager` currently reconciles desired RTC peers from joined group
-  membership. This plan requires it to reconcile from overlay next hops so group
-  growth does not create full-mesh RTC connections.
-- Existing graph snapshots can stay useful for diagnostics, but browser routing
-  should not depend on deserializing full graphology snapshots.
+- `graphs-tree-service.ts` now exposes `createGroupTree(...)` and
+  `updateGroupTree(...)`, with strict member-only, degree-limited behavior for
+  Rallar topology creation.
+- `graphs-mesh-service.ts` now exposes `createGroupMesh(...)` and
+  `updateGroupMesh(...)`, validates member-only output, honors remove behavior,
+  and evaluates reconfiguration against the updated mesh.
+- Rallar builds room-local weighted graphs for active room sessions only, with
+  member degree limit `5` baked into graph attributes and nodes.
+- `AppTopics.overlayTopology` exists as the compact routing-overlay topic, while
+  `AppTopics.graphs` remains diagnostic or legacy graph data.
+- `OverlayId` is a scoped string derived from `GroupRef`, and browser overlay
+  lookup applies snapshots by scoped group identity.
+- `WebRtcGroupManager` reconciles desired RTC peers from overlay next hops, with
+  star fallback before the first server topology snapshot.
+- RTT measurements are stored in the RTT repository, used as graph weights, and
+  now trigger debounced, coalesced topology rebuilds for affected cached groups.
 
 ## Key Changes
 
@@ -99,6 +96,10 @@ Add graph validation helpers used by both services:
 - Existing `graphs` snapshots remain diagnostic or legacy data, not the primary
   browser routing input.
 - Use scoped overlay keys derived from `GroupRef`, not raw `groupId`.
+- Group snapshot and membership changes publish immediately when the next-hop
+  map changes.
+- RTT-triggered rebuilds are queued per scoped overlay and published after the
+  debounce window only if the recomputed next-hop map changed.
 
 ## Test Plan
 
@@ -136,19 +137,30 @@ Browser/runtime tests:
 Start with the smallest topology slice that can be tested without changing the
 entire product API:
 
-1. Add shared-graph create/rebuild APIs and validation helpers for member-only,
-   degree-limited tree and mesh graphs.
-2. Fix `graphs-mesh-service.ts` reconfiguration so it evaluates and
+1. [x] Add shared-graph create/rebuild APIs and validation helpers for
+   member-only, degree-limited tree and mesh graphs.
+2. [x] Fix `graphs-mesh-service.ts` reconfiguration so it evaluates and
    reconfigures the updated group mesh, honors remove behavior, and reports
    failure metadata.
-3. Add the server-side Rallar topology service with star/tree/mesh size
+3. [x] Add the server-side Rallar topology service with star/tree/mesh size
    selection and scoped per-group state.
-4. Add compact `overlay.topology` snapshots and publish only changed next-hop
-   maps.
-5. Update browser overlay application and `WebRtcGroupManager` so desired RTC
-   peers follow overlay next hops with star fallback.
-6. Add integration coverage for group growth, group shrinkage, RTT-triggered
-   rebuild, and no full-mesh connection growth.
+4. [x] Add compact `overlay.topology` snapshots and publish only changed
+   next-hop maps.
+5. [x] Update browser overlay application and `WebRtcGroupManager` so desired
+   RTC peers follow overlay next hops with star fallback.
+6. [x] Add integration coverage for group growth, group shrinkage,
+   RTT-triggered rebuild, RTT debounce/coalescing, app-inbox RTT recompute
+   ownership, and no full-mesh connection growth.
+
+## Remaining Follow-Up
+
+- Group-snapshot and RTT-triggered recomputes now have an opt-in app-inbox
+  ownership path using a fixed key per scoped overlay. Multi-worker topology
+  continuity is supported when `rtcTopologyRuntimeState` is configured: previous
+  overlay snapshots are stored in `rtc-topology:snapshots`, and latest accepted
+  RTT inputs are stored in `rtc-rtt:latest`.
+- Large audio/video groups still need an SFU/relay architecture; this plan's
+  tree and mesh overlays are for RTC data-channel routing and multicast.
 
 ## Assumptions
 

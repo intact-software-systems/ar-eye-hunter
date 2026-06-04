@@ -66,13 +66,13 @@ configured.
 Run the visible SPA:
 
 ```sh
-npm run dev:rallar-black-box
+npm run dev:rallar
 ```
 
 Run the local control server in a second terminal:
 
 ```sh
-npm run dev:rallar-black-box-control
+npm run dev:rallar:control
 ```
 
 Open the SPA in local workbench mode:
@@ -160,32 +160,32 @@ http://localhost:5176/?mode=control&controlUrl=ws%3A%2F%2Flocalhost%3A5180%2Fcon
 Run the browser-agent smoke test:
 
 ```sh
-npm run test:e2e:rallar-black-box
+npm run test:rallar
 ```
 
 Start only the backend pieces used by real-data testing:
 
 ```sh
-npm run dev:rallar-black-box:servers
+npm run dev:rallar:servers
 ```
 
 Start the API, control server, and SPA together for manual UI work:
 
 ```sh
-npm run dev:rallar-black-box:all
+npm run dev:rallar:all
 ```
 
 Run the gated full-stack automation slice in skip-safe mode:
 
 ```sh
-npm run test:e2e:rallar-black-box:full-stack
+npm run test:rallar:full-stack
 ```
 
 Run the real-data full-stack suite. Playwright starts missing services and
 reuses already-running services:
 
 ```sh
-npm run test:e2e:rallar-black-box:full-stack:real
+npm run test:rallar:full-stack:postgres
 ```
 
 The full-stack suite is skipped unless the required local services and
@@ -199,7 +199,7 @@ Run the same API-backed smoke coverage without Postgres by using API-v1 memory
 mode:
 
 ```sh
-npm run test:e2e:rallar-black-box:full-stack:memory
+npm run test:rallar:full-stack:memory
 ```
 
 That script starts API-v1 with PGlite memory persistence, automatic schema
@@ -211,7 +211,7 @@ Run the provisioned live three-browser RTC matrix when you have three users or
 restored sessions:
 
 ```sh
-npm run test:e2e:rallar-black-box:full-stack:real:live-rtc-3
+npm run test:rallar:full-stack:postgres:live-rtc-3
 ```
 
 That command is gated by `RALLAR_BLACK_BOX_LIVE_RTC_MATRIX=1` and covers real
@@ -221,14 +221,14 @@ and control artifact export across `realtime` and `messages.rtc`.
 For the same three-browser baseline against API-v1 memory mode, run:
 
 ```sh
-npm run test:e2e:rallar-black-box:full-stack:memory:live-rtc-3
+npm run test:rallar:full-stack:memory:live-rtc-3
 ```
 
 Run the distributed recipe full-stack slice when you want to validate the
 control-server distributed-run workflow:
 
 ```sh
-npm run test:e2e:rallar-black-box:full-stack:real:distributed
+npm run test:rallar:full-stack:postgres:distributed
 ```
 
 The simulated distributed coverage runs with the full-stack gate. The live WS
@@ -246,7 +246,7 @@ traffic and will reject those topics before dynamic fanout. For the exhaustive
 sender/receiver matrix, run:
 
 ```sh
-npm run test:e2e:rallar-black-box:full-stack:real:live-rtc-3:all
+npm run test:rallar:full-stack:postgres:live-rtc-3:all
 ```
 
 The `:all` variant also sets `RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1` and runs

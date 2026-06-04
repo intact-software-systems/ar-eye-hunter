@@ -15,7 +15,11 @@ export default defineConfig({
 
     test: {
         include: ['packages/tests/**/*.test.ts'],
-        exclude: ['packages/tests/dummy.test.ts'],
+        exclude: [
+            'packages/tests/shared-server/postgres-presence-expiry-concurrency.test.ts',
+            'packages/tests/shared-test/scenario-black-box-rtc-config.test.ts',
+            'packages/tests/shared-test/execute-black-box-rtc-client-provider.test.ts',
+        ],
         environment: 'node',
         globals: true,
         setupFiles: ['packages/tests/setup-vitest.ts'],

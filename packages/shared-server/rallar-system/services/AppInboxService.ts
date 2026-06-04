@@ -13,12 +13,7 @@ import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/
 import {
     ResourceInboxResultsRepository
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import {
-    type RallarTimingDetails,
-    recordRallarTiming,
-    type RallarTimingSink,
-    timeRallarAsync,
-} from './timing.ts';
+import { type RallarTimingDetails, type RallarTimingSink, recordRallarTiming, timeRallarAsync, } from './timing.ts';
 
 export const SIMPLER_GROUP_STATE_APP_INBOX_TOPIC = 'app-inbox.group-state';
 export const SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC = 'app-inbox.client-state';
@@ -40,6 +35,7 @@ export enum AppInboxType {
     GROUP_PRESENCE_DISCONNECT = 'GROUP_PRESENCE_DISCONNECT',
     GROUP_PRESENCE_DISCONNECT_BY_SESSION_ID = 'GROUP_PRESENCE_DISCONNECT_BY_SESSION_ID',
     GROUP_EXPIRED_PRESENCE_SESSIONS = 'GROUP_EXPIRED_PRESENCE_SESSIONS',
+    RTC_TOPOLOGY_RECOMPUTE = 'RTC_TOPOLOGY_RECOMPUTE',
 }
 
 export { NonRetryableException };

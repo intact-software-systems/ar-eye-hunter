@@ -1,17 +1,19 @@
 import {
     assertEquals,
     assertStringIncludes,
-} from 'https://deno.land/std@0.224.0/assert/mod.ts'
-import {fromFileUrl} from 'https://deno.land/std@0.224.0/path/mod.ts'
+} from '@std/assert'
+import {fromFileUrl} from '@std/path'
 
 const scenarioCliPath = fromFileUrl(
     new URL('../../shared-test/black-box-runner/scenario-black-box.ts', import.meta.url),
 )
+const tempConfigDirectories = new Set<string>()
 
 async function writeTempConfig(config: unknown): Promise<string> {
     const dir = await Deno.makeTempDir({
         prefix: 'scenario-black-box-rtc-',
     })
+    tempConfigDirectories.add(dir)
 
     await Deno.writeTextFile(
         `${dir}/config.json`,
@@ -37,13 +39,31 @@ async function runScenarioCli(args: string[]): Promise<{
         stderr: 'piped',
     })
 
-    const output = await command.output()
+    try {
+        const output = await command.output()
 
-    return {
-        code: output.code,
-        stdout: new TextDecoder().decode(output.stdout),
-        stderr: new TextDecoder().decode(output.stderr),
+        return {
+            code: output.code,
+            stdout: new TextDecoder().decode(output.stdout),
+            stderr: new TextDecoder().decode(output.stderr),
+        }
     }
+    finally {
+        await cleanupScenarioWorkingDirectory(args)
+    }
+}
+
+async function cleanupScenarioWorkingDirectory(args: string[]): Promise<void> {
+    const workingDirectoryFlagIndex = args.indexOf('-w')
+    const workingDirectory = workingDirectoryFlagIndex >= 0
+        ? args[workingDirectoryFlagIndex + 1]
+        : undefined
+
+    if (!workingDirectory || !tempConfigDirectories.delete(workingDirectory)) {
+        return
+    }
+
+    await Deno.remove(workingDirectory, { recursive: true }).catch(() => undefined)
 }
 
 Deno.test('scenario-black-box CLI dry mode normalizes rtc.connect and rtc.send steps', async () => {

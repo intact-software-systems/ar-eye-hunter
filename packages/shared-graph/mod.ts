@@ -1,6 +1,7 @@
 export * from './graph/graph-props.ts';
 export * from './algo-props.ts';
 export * from './shared-graph-types.ts';
+export * from './group-topology-validation.ts';
 export * from './group-graphs-create-service.ts';
 export * from './vivaldi-service.ts';
 export * from './graphs-tree-service.ts';

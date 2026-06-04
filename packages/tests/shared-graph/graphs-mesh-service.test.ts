@@ -157,21 +157,25 @@ describe('shared-graph mesh service orchestration', () => {
             ],
         );
 
+        const removedMesh = createGraph(
+            [
+                ['peer-a', VertexState.MEMBER, 4],
+                ['peer-b', VertexState.MEMBER, 4],
+                ['peer-d', VertexState.MEMBER, 4],
+                ['peer-e', VertexState.MEMBER, 4],
+            ],
+            [
+                ['peer-a', 'peer-b', 3],
+                ['peer-b', 'peer-d', 3],
+                ['peer-d', 'peer-e', 3],
+            ],
+        );
+
         mockState.removeVertexFromTree.mockReturnValue({
-            graph: createGraph(
-                [
-                    ['peer-a', VertexState.MEMBER, 4],
-                    ['peer-b', VertexState.MEMBER, 4],
-                    ['peer-d', VertexState.MEMBER, 4],
-                    ['peer-e', VertexState.MEMBER, 4],
-                ],
-                [
-                    ['peer-a', 'peer-b', 3],
-                    ['peer-b', 'peer-d', 3],
-                    ['peer-d', 'peer-e', 3],
-                ],
-            ),
+            graph: removedMesh,
             changed: true,
+            attemptedAlgo: 'REMOVE_MINIMUM_DIAMETER_EDGE',
+            usedFallback: false,
         });
         mockState.diameterDistance.mockReturnValue(100);
         mockState.compGraph.mockReturnValue({
@@ -208,13 +212,16 @@ describe('shared-graph mesh service orchestration', () => {
         expect(mockState.removeVertexFromTree).toHaveBeenCalledWith(
             expect.objectContaining({
                 actionVertexId: 'peer-c',
-                treeAlgo: 'REMOVE_TRY_REPLACE_PRUNE_MC',
+                treeAlgo: 'REMOVE_MINIMUM_DIAMETER_EDGE',
             }),
         );
+        expect(mockState.diameterDistance).toHaveBeenCalledWith(removedMesh);
         expect(mockState.compGraph).toHaveBeenCalledOnce();
         expect(mockState.kMDDLOTTCTree).toHaveBeenCalledWith(completeGraph, 2, 'peer-a');
         expect(result.reconfigured).toBe(true);
         expect(result.mesh).toBe(rebuiltMesh);
+        expect(result.removeAttemptedAlgo).toBe('REMOVE_MINIMUM_DIAMETER_EDGE');
+        expect(result.removeUsedFallback).toBe(false);
     });
 
     it('returns a left value when mesh reconfig cannot select a source node', () => {

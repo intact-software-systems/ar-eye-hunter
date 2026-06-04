@@ -6,7 +6,6 @@
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "node --eval \"process.exit(0)\"",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }

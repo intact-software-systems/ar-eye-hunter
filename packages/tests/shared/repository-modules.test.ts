@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { OverlayInfo, RttMeasurementInfo, } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { readClientVersion, readGroupVersion } from '@shared/api/group-client-views.ts';
@@ -266,11 +267,14 @@ describe('repository modules', () => {
             'peer-a',
             'peer-b',
         ]);
+        const overlayId = toScopedOverlayId(group.group);
 
         createAndSetStarOverlays([group]);
 
-        expect(findOverlayById('group-1')).toEqual({
-            overlayId: 'group-1',
+        expect(findOverlayById(overlayId)).toEqual({
+            overlayId,
+            groupRef: group.group,
+            topology: 'star',
             name: 'Alpha',
             createdByClientId: 'owner',
             createdAtEpochMs: 1,
@@ -280,23 +284,23 @@ describe('repository modules', () => {
         });
 
         const staleOverlay = {
-            ...(findOverlayById('group-1') as OverlayInfo),
+            ...(findOverlayById(overlayId) as OverlayInfo),
             nextHopSessionIds: ['peer-z'],
             overlayVersion: 1,
         };
 
-        setOverlayById('group-1', staleOverlay);
-        expect(findOverlayById('group-1')?.nextHopSessionIds).toEqual([
+        setOverlayById(overlayId, staleOverlay);
+        expect(findOverlayById(overlayId)?.nextHopSessionIds).toEqual([
             'self',
             'peer-a',
             'peer-b',
         ]);
 
-        expect(updateNextHopSessionIds('group-1', ['peer-c'])).toMatchObject({
-            overlayId: 'group-1',
+        expect(updateNextHopSessionIds(overlayId, ['peer-c'])).toMatchObject({
+            overlayId,
             nextHopSessionIds: ['self', 'peer-a', 'peer-b'],
         });
-        expect(findOverlayById('group-1')?.nextHopSessionIds).toEqual(['peer-c']);
+        expect(findOverlayById(overlayId)?.nextHopSessionIds).toEqual(['peer-c']);
         expect(getAllOverlays()).toHaveLength(1);
     });
 

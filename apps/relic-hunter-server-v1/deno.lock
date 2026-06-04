@@ -4,6 +4,7 @@
     "jsr:@hono/hono@*": "4.11.9",
     "jsr:@std/dotenv@*": "0.225.6",
     "jsr:@std/yaml@*": "1.0.12",
+    "npm:@electric-sql/pglite@0.4.1": "0.4.1",
     "npm:@js-temporal/polyfill@~0.5.1": "0.5.1",
     "npm:graphology@0.26.0": "0.26.0_graphology-types@0.24.8",
     "npm:postgres@^3.4.9": "3.4.9"
@@ -20,6 +21,9 @@
     }
   },
   "npm": {
+    "@electric-sql/pglite@0.4.1": {
+      "integrity": "sha512-mZ9NzzUSYPOCnxHH1oAHPRzoMFJHY472raDKwXl/+6oPbpdJ7g8LsCN4FSaIIfkiCKHhb3iF/Zqo3NYxaIhU7Q=="
+    },
     "@js-temporal/polyfill@0.5.1": {
       "integrity": "sha512-hloP58zRVCRSpgDxmqCWJNlizAlUgJFqG2ypq79DCvyv9tHjRYMDOcPFjzfl/A1/YxDvRCZz8wvZvmapQnKwFQ==",
       "dependencies": [
@@ -48,6 +52,7 @@
   },
   "workspace": {
     "dependencies": [
+      "npm:@electric-sql/pglite@0.4.1",
       "npm:@js-temporal/polyfill@~0.5.1",
       "npm:graphology@0.26.0",
       "npm:postgres@^3.4.9"

@@ -188,6 +188,41 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         );
     }
 
+    async enqueueOrUpdate(
+        resourceEntry: ResourceEntry,
+        updateExisting: (existing: ResourceEntry) => ResourceEntry | undefined,
+    ) {
+        return await this.repo.begin(
+            async (txRepo: ResourceInboxRepository) => {
+                const previous = await txRepo.findAnyByKey(resourceEntry.key);
+                if (!previous || isExpiredResourceEntry(previous)) {
+                    await txRepo.replace(resourceEntry);
+                    return {
+                        action: 'inserted' as const,
+                        entry: resourceEntry,
+                        previous: undefined,
+                    };
+                }
+
+                const updated = updateExisting(previous);
+                if (!updated) {
+                    return {
+                        action: 'unchanged' as const,
+                        entry: previous,
+                        previous,
+                    };
+                }
+
+                await txRepo.replace(updated);
+                return {
+                    action: 'updated' as const,
+                    entry: updated,
+                    previous,
+                };
+            }
+        );
+    }
+
     async enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry> {
         return await this.repo.begin(
             async (txRepo: ResourceInboxRepository) => {

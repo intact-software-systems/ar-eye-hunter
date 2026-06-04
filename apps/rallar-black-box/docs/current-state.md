@@ -361,12 +361,12 @@ npx vitest run packages/tests/shared-test/black-box-runner-artifact-reader.test.
 npm run check:shared-test
 npm run test:shared-black-box:matrix:quick
 npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/tabbed-navigation.spec.ts
-npm run test:e2e:rallar-black-box -- tests/playwright/rallar-black-box/tabbed-navigation.spec.ts
+npm run test:rallar -- tests/playwright/rallar-black-box/tabbed-navigation.spec.ts
 npm run test -- packages/tests/shared-test/rallar-provider-parity.test.ts
-npm run test:e2e:rallar-black-box
-RALLAR_BLACK_BOX_FULL_STACK=1 npm run test:e2e:rallar-black-box:full-stack
-npm run test:e2e:rallar-black-box:full-stack:real:live-rtc-3
-npm run test:e2e:rallar-black-box:full-stack:real:live-rtc-3:all
+npm run test:rallar
+npm run test:rallar:full-stack
+npm run test:rallar:full-stack:postgres:live-rtc-3
+npm run test:rallar:full-stack:postgres:live-rtc-3:all
 ```
 
 The full-stack suite has also been verified against a manually running `apps/api-v1` at `http://localhost:8080` with

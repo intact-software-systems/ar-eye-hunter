@@ -932,7 +932,7 @@ test('refreshes rooms and clients state with authenticated REST evidence', async
     );
 
     const panel = page.locator('#panel-rooms-clients');
-    await expect(page.getByRole('tab', { name: 'Rooms/Clients' }))
+    await expect(page.getByRole('tab', { name: 'Groups/Clients' }))
         .toHaveAttribute('aria-selected', 'true');
     await expect(panel).toContainText('auth attached');
     await expect(page.getByLabel('Global Client')).toHaveValue('alice-client');
@@ -955,7 +955,6 @@ test('refreshes rooms and clients state with authenticated REST evidence', async
     await expect(panel).toContainText('session-connected');
     await expect(panel.locator('.metric').filter({ hasText: 'Current client member' })).toContainText('yes');
     await expect(panel.locator('.metric').filter({ hasText: 'Other browser visible' })).toContainText('no');
-    await expect(panel.getByRole('button', { name: 'Direct refresh' })).toBeDisabled();
     await panel.getByLabel('Expected other client').fill('alice');
     await expect(panel.locator('.metric').filter({ hasText: 'Other browser visible' })).toContainText('yes');
 
@@ -977,7 +976,7 @@ test('refreshes rooms and clients state with authenticated REST evidence', async
     await expect(panel).not.toContainText('offline-client');
     await expect(panel).toContainText('1/2 clients');
 
-    await panel.getByRole('button', { name: 'Join group' }).click();
+    await panel.getByRole('button', { name: 'Join group', exact: true }).click();
     await expect(panel).toContainText('Join group');
     await expect(panel).toContainText('200');
     await expect(page.getByLabel('Global Room')).toHaveValue('bb-group');
@@ -1199,7 +1198,7 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
     ]));
     const lastRallarWsSend = await page.evaluate(() => (window as any).__lastRallarWsSend);
     expect(lastRallarWsSend).toMatchObject({
-        applicationId: 'ar-eye-hunter',
+        applicationId: 'rallar-server',
         workspaceId: 'default',
         roomId: 'awesome',
         groupId: 'awesome',

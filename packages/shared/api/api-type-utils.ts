@@ -26,6 +26,10 @@ export function toWebRtcGroupKey(groupRef: GroupRef): string {
     ]);
 }
 
+export function toScopedOverlayId(groupRef: GroupRef): string {
+    return toWebRtcGroupKey(groupRef);
+}
+
 export function toGroupRefFromScope(
     groupId: string,
     scope?: StateScope,
