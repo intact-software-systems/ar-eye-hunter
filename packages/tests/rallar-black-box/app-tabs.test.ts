@@ -26,14 +26,18 @@ describe('rallar-black-box app tabs', () => {
         expect(appTabFromValue('realtime')).toBe('rtc-realtime');
         expect(appTabFromValue('rtc')).toBe('rtc-diagnostics');
         expect(appTabFromValue('data')).toBe('rallar-data');
+        expect(appTabFromValue('crdt')).toBe('crdt-health');
+        expect(appTabFromValue('crdt-health')).toBe('crdt-health');
         expect(appTabFromValue('media')).toBe('media');
         expect(appTabFromValue('trace')).toBe('rallar-trace');
         expect(appTabFromValue('server')).toBe('rallar-server');
-        expect(appTabFromValue('flow')).toBe('flow-builder');
-        expect(appTabFromValue('runs')).toBe('run-manager');
+        expect(appTabFromValue('flow')).toBe('builder');
+        expect(appTabFromValue('runs')).toBe('runs');
         expect(appTabFromValue('distributed')).toBe('distributed-recipes');
-        expect(appTabFromValue('catalog')).toBe('shared-test');
+        expect(appTabFromValue('catalog')).toBe('recipes');
+        expect(appTabFromValue('recipes')).toBe('recipes');
         expect(appTabFromValue('artifacts')).toBe('shared-test');
+        expect(appTabFromValue('advanced')).toBe('advanced');
     });
 
     it('parses workspace mode values and aliases', () => {
@@ -52,18 +56,24 @@ describe('rallar-black-box app tabs', () => {
 
     it('maps tabs to their workspace modes', () => {
         expect(APP_TABS.find(tab => tab.id === 'rooms-clients')?.label).toBe('Groups/Clients');
+        expect(APP_TABS.find(tab => tab.id === 'crdt-health')?.label).toBe('CRDT');
         expect(appModeForTab('quick-test')).toBe('rallar');
         expect(appModeForTab('manual-rallar')).toBe('black-box-runner');
         expect(appModeForTab('rtc-realtime')).toBe('rallar');
         expect(appModeForTab('rallar-data')).toBe('rallar');
+        expect(appModeForTab('crdt-health')).toBe('rallar');
         expect(appModeForTab('media')).toBe('rallar');
         expect(appModeForTab('rallar-trace')).toBe('rallar');
         expect(appModeForTab('rallar-server')).toBe('rallar');
+        expect(appModeForTab('recipes')).toBe('black-box-runner');
+        expect(appModeForTab('runs')).toBe('black-box-runner');
+        expect(appModeForTab('builder')).toBe('black-box-runner');
+        expect(appModeForTab('advanced')).toBe('black-box-runner');
         expect(appModeForTab('shared-test')).toBe('black-box-runner');
         expect(appModeForTab('run-manager')).toBe('black-box-runner');
         expect(appModeForTab('distributed-recipes')).toBe('black-box-runner');
         expect(defaultAppTabForMode('rallar')).toBe('quick-test');
-        expect(defaultAppTabForMode('black-box-runner')).toBe('shared-test');
+        expect(defaultAppTabForMode('black-box-runner')).toBe('recipes');
         expect(appTabInMode('websocket', 'rallar')).toBe(true);
         expect(appTabInMode('websocket', 'black-box-runner')).toBe(false);
         expect(appTabInMode('event-stream', 'rallar')).toBe(true);
@@ -77,19 +87,24 @@ describe('rallar-black-box app tabs', () => {
             'topology',
             'rtc-diagnostics',
             'rallar-data',
+            'crdt-health',
             'media',
             'rallar-server',
             'rallar-trace',
             'event-stream',
         ]);
         expect(appTabsForMode('black-box-runner').map(tab => tab.id)).toEqual([
+            'recipes',
+            'runs',
+            'builder',
+            'advanced',
+            'event-stream',
             'shared-test',
             'manual-rallar',
             'local-workbench',
             'flow-builder',
             'run-manager',
             'distributed-recipes',
-            'event-stream',
         ]);
     });
 
@@ -101,7 +116,8 @@ describe('rallar-black-box app tabs', () => {
         expect(nextAppTab('websocket', 1)).toBe('rtc-realtime');
         expect(nextAppTab('rtc-realtime', 1)).toBe('topology');
         expect(nextAppTab('rtc-diagnostics', 1)).toBe('rallar-data');
-        expect(nextAppTab('rallar-data', 1)).toBe('media');
+        expect(nextAppTab('rallar-data', 1)).toBe('crdt-health');
+        expect(nextAppTab('crdt-health', 1)).toBe('media');
         expect(nextAppTab('media', 1)).toBe('rallar-server');
         expect(nextAppTab('rallar-server', 1)).toBe('rallar-trace');
         expect(nextAppTab('rallar-trace', 1)).toBe('event-stream');
@@ -110,14 +126,19 @@ describe('rallar-black-box app tabs', () => {
     });
 
     it('walks black-box-runner tab order in both keyboard directions', () => {
+        expect(nextAppTab('recipes', 1)).toBe('runs');
+        expect(nextAppTab('runs', 1)).toBe('builder');
+        expect(nextAppTab('builder', 1)).toBe('advanced');
+        expect(nextAppTab('advanced', 1)).toBe('event-stream');
+        expect(nextAppTab('event-stream', 1, 'black-box-runner')).toBe('shared-test');
         expect(nextAppTab('shared-test', 1)).toBe('manual-rallar');
         expect(nextAppTab('manual-rallar', 1)).toBe('local-workbench');
         expect(nextAppTab('manual-rallar', -1)).toBe('shared-test');
         expect(nextAppTab('local-workbench', 1)).toBe('flow-builder');
         expect(nextAppTab('flow-builder', 1)).toBe('run-manager');
         expect(nextAppTab('run-manager', 1)).toBe('distributed-recipes');
-        expect(nextAppTab('distributed-recipes', 1)).toBe('event-stream');
-        expect(nextAppTab('event-stream', 1, 'black-box-runner')).toBe('shared-test');
+        expect(nextAppTab('distributed-recipes', 1)).toBe('recipes');
         expect(nextAppTab('shared-test', -1)).toBe('event-stream');
+        expect(nextAppTab('recipes', -1)).toBe('distributed-recipes');
     });
 });

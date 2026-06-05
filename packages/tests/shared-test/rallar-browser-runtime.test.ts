@@ -42,6 +42,9 @@ const facade = vi.hoisted(() => {
                     send: vi.fn(),
                 },
             },
+            crdt: {
+                open: vi.fn(),
+            },
             disconnect: vi.fn(),
             status: vi.fn(),
             isConnected: vi.fn(),
@@ -68,7 +71,20 @@ type Runtime = Readonly<{
     }): Promise<unknown>;
     send(input: unknown): Promise<unknown>;
     sendWs(input: unknown): Promise<unknown>;
+    crdt: {
+        open(input: unknown): Promise<unknown>;
+        apply(input: unknown): Promise<unknown>;
+        read(input: unknown): Promise<unknown>;
+        sync(input: unknown): Promise<unknown>;
+        health(input: unknown): Promise<unknown>;
+        wait(input: unknown): Promise<unknown>;
+        undo(input: unknown): Promise<unknown>;
+        redo(input: unknown): Promise<unknown>;
+        close(input: unknown): Promise<unknown>;
+        destroy(input: unknown): Promise<unknown>;
+    };
     close(): Promise<unknown>;
+    health(): Promise<unknown>;
 }>;
 
 type TestWindow = Readonly<{
@@ -97,6 +113,7 @@ function resetFacade(): void {
     facade.rallar.realtime.sendJson.mockResolvedValue([]);
     facade.rallar.messages.rtc.send.mockResolvedValue({});
     facade.rallar.messages.ws.send.mockResolvedValue({});
+    facade.rallar.crdt.open.mockReset();
     facade.rallar.disconnect.mockResolvedValue(undefined);
     facade.rallar.status.mockReturnValue({ connected: true });
     facade.rallar.isConnected.mockReturnValue(true);
@@ -123,6 +140,66 @@ function topics(): readonly string[] {
     return events.map(event =>
         String((event as { topic?: unknown }).topic ?? '')
     );
+}
+
+function createFakeCrdtDocument(refId: string) {
+    let value: unknown = {
+        title: 'initial',
+    };
+    const update = (updateId: string, nextValue: unknown) => {
+        value = nextValue;
+        return {
+            updateId,
+        };
+    };
+
+    return {
+        ref: {
+            documentId: refId,
+            documentType: 'checklist',
+        },
+        read: vi.fn(() => value),
+        subscribe: vi.fn(() => vi.fn()),
+        applyLocal: vi.fn(async batch => update('update-apply-1', {
+            applied: batch,
+        })),
+        sequenceInsert: vi.fn(),
+        sequenceMove: vi.fn(),
+        sequenceDelete: vi.fn(),
+        counterAdd: vi.fn(),
+        counterIncrement: vi.fn(),
+        counterDecrement: vi.fn(),
+        numberMin: vi.fn(),
+        numberMax: vi.fn(),
+        operationGroupUpdateIds: vi.fn(() => []),
+        undoOperationGroup: vi.fn(async input => update('update-undo-1', {
+            undone: input,
+        })),
+        redoOperationGroup: vi.fn(async input => update('update-redo-1', {
+            redone: input,
+        })),
+        pendingUpdates: vi.fn(() => []),
+        failedPendingUpdates: vi.fn(() => []),
+        dependencyBlockedUpdates: vi.fn(() => []),
+        snapshot: vi.fn(() => ({ value })),
+        flush: vi.fn(async () => undefined),
+        sync: vi.fn(async options => ({
+            status: 'synced',
+            transport: options?.transport ?? 'local-only',
+            sentUpdateCount: 0,
+            receivedUpdateCount: 0,
+            pendingUpdateCount: 0,
+        })),
+        close: vi.fn(async () => undefined),
+        destroy: vi.fn(async () => undefined),
+        health: vi.fn(() => ({
+            status: 'clean',
+            pendingUpdateCount: 0,
+            failedPendingUpdateCount: 0,
+            dependencyBlockedUpdateCount: 0,
+            transportStrategy: 'local-only',
+        })),
+    };
 }
 
 describe('browser Rallar black-box runtime', () => {
@@ -287,6 +364,166 @@ describe('browser Rallar black-box runtime', () => {
                 text: 'hello scoped room',
             },
         }));
+    });
+
+    it('opens and manages CRDT document handles through the browser facade', async () => {
+        const runtime = await loadRuntime();
+        const firstDocument = createFakeCrdtDocument('doc-1');
+        const secondDocument = createFakeCrdtDocument('doc-2');
+        facade.rallar.crdt.open
+            .mockResolvedValueOnce(firstDocument)
+            .mockResolvedValueOnce(secondDocument);
+
+        const open = await runtime.crdt.open({
+            handle: 'doc',
+            name: 'checklist',
+            transport: 'local-only',
+            initialValue: {
+                title: 'initial',
+            },
+        });
+        const apply = await runtime.crdt.apply({
+            handle: 'doc',
+            batch: {
+                kind: 'batch',
+                operations: [
+                    {
+                        kind: 'register.set',
+                        path: ['title'],
+                        value: 'changed',
+                        policy: 'lww',
+                    },
+                ],
+            },
+        });
+        const read = await runtime.crdt.read({ handle: 'doc' });
+        const sync = await runtime.crdt.sync({
+            handle: 'doc',
+            transport: 'local-only',
+            reason: 'unit-test',
+        });
+        const health = await runtime.crdt.health({ handle: 'doc' });
+        const wait = await runtime.crdt.wait({
+            handle: 'doc',
+            timeoutMs: 1_000,
+            intervalMs: 10,
+            stableForMs: 0,
+            sync: false,
+            conditions: [
+                {
+                    source: 'value',
+                    path: 'applied.operations.0.kind',
+                    operator: 'equals',
+                    expected: 'register.set',
+                },
+                {
+                    source: 'health',
+                    path: 'pendingUpdateCount',
+                    operator: 'equals',
+                    expected: 0,
+                },
+            ],
+        });
+        const undo = await runtime.crdt.undo({
+            handle: 'doc',
+            targetOperationGroupId: 'group-1',
+            operations: [
+                {
+                    kind: 'register.set',
+                    path: ['title'],
+                    value: 'initial',
+                    policy: 'lww',
+                },
+            ],
+        });
+        const redo = await runtime.crdt.redo({
+            handle: 'doc',
+            targetOperationGroupId: 'group-1',
+            operations: [
+                {
+                    kind: 'register.set',
+                    path: ['title'],
+                    value: 'changed',
+                    policy: 'lww',
+                },
+            ],
+        });
+        const close = await runtime.crdt.close({ handle: 'doc' });
+
+        await runtime.crdt.open({
+            handle: 'destroy-doc',
+            name: 'checklist-destroy',
+            transport: 'local-only',
+        });
+        const destroy = await runtime.crdt.destroy({ handle: 'destroy-doc' });
+        const runtimeHealth = await runtime.health();
+
+        expect(facade.rallar.crdt.open).toHaveBeenCalledWith('checklist', expect.objectContaining({
+            transport: 'local-only',
+            initialValue: {
+                title: 'initial',
+            },
+        }));
+        expect(open).toMatchObject({ status: 'opened', handle: 'doc' });
+        expect(apply).toMatchObject({ status: 'applied', updateId: 'update-apply-1' });
+        expect(read).toMatchObject({ status: 'read', handle: 'doc' });
+        expect(sync).toMatchObject({ status: 'synced', result: { status: 'synced' } });
+        expect(health).toMatchObject({ status: 'health', handle: 'doc' });
+        expect(wait).toMatchObject({ status: 'wait_matched', handle: 'doc', attempts: 1 });
+        expect(undo).toMatchObject({ status: 'undone', updateId: 'update-undo-1' });
+        expect(redo).toMatchObject({ status: 'redone', updateId: 'update-redo-1' });
+        expect(close).toMatchObject({ status: 'closed', handle: 'doc' });
+        expect(destroy).toMatchObject({ status: 'destroyed', handle: 'destroy-doc' });
+        expect(firstDocument.close).toHaveBeenCalledTimes(1);
+        expect(secondDocument.destroy).toHaveBeenCalledTimes(1);
+        expect(runtimeHealth).toMatchObject({
+            crdt: {
+                handles: [],
+            },
+        });
+        expect(topics()).toEqual(expect.arrayContaining([
+            'rallar.browser.crdt.opened',
+            'rallar.browser.crdt.applied',
+            'rallar.browser.crdt.read',
+            'rallar.browser.crdt.synced',
+            'rallar.browser.crdt.health',
+            'rallar.browser.crdt.waiting',
+            'rallar.browser.crdt.wait_matched',
+            'rallar.browser.crdt.undone',
+            'rallar.browser.crdt.redone',
+            'rallar.browser.crdt.closed',
+            'rallar.browser.crdt.destroyed',
+        ]));
+    });
+
+    it('times out CRDT waits with diagnostics', async () => {
+        const runtime = await loadRuntime();
+        facade.rallar.crdt.open.mockResolvedValueOnce(createFakeCrdtDocument('wait-timeout'));
+
+        await runtime.crdt.open({
+            handle: 'doc',
+            name: 'wait-timeout',
+            transport: 'local-only',
+        });
+
+        await expect(runtime.crdt.wait({
+            handle: 'doc',
+            timeoutMs: 5,
+            intervalMs: 1,
+            conditions: [
+                {
+                    source: 'value',
+                    path: 'title',
+                    operator: 'equals',
+                    expected: 'never',
+                },
+            ],
+        })).rejects.toThrow('Timed out waiting for CRDT conditions');
+
+        expect(topics()).toEqual(expect.arrayContaining([
+            'rallar.browser.crdt.waiting',
+            'rallar.browser.crdt.wait_failed',
+        ]));
     });
 
     it('subscribes to app WebSocket messages before sending and emits received payloads', async () => {

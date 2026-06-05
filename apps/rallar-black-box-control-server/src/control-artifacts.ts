@@ -58,16 +58,40 @@ function commandAction(command: ControlQueuedCommandSnapshot | undefined): strin
 }
 
 function commandConnection(command: ControlQueuedCommandSnapshot | undefined): unknown {
+    if (command?.envelope.command.kind.startsWith('crdt.') && 'handle' in command.envelope.command) {
+        return command.envelope.command.handle;
+    }
     return command?.envelope.command && 'connection' in command.envelope.command
         ? command.envelope.command.connection
         : undefined;
 }
 
 function commandTransport(command: ControlQueuedCommandSnapshot | undefined): string {
+    if (command?.envelope.command.kind.startsWith('crdt.')) {
+        return 'CRDT';
+    }
     const transport = command?.envelope.command && 'transport' in command.envelope.command
         ? command.envelope.command.transport
         : undefined;
     return typeof transport === 'string' && transport.length > 0 ? transport : 'control';
+}
+
+function eventTopic(event: ControlEventEnvelope): string | undefined {
+    const payload = event.payload;
+    return payload && typeof payload === 'object' && 'topic' in payload &&
+            typeof payload.topic === 'string'
+        ? payload.topic
+        : undefined;
+}
+
+function artifactEventKind(
+    event: ControlEventEnvelope,
+    command: ControlQueuedCommandSnapshot | undefined,
+): string {
+    if (command?.envelope.command.kind.startsWith('crdt.') || eventTopic(event)?.includes('.crdt.')) {
+        return 'crdt-diagnostic';
+    }
+    return 'rtc-diagnostic';
 }
 
 function redact<T>(value: T): T {
@@ -129,13 +153,18 @@ function artifactEventFromResult(row: Record<string, unknown>): Record<string, u
     });
 }
 
-function artifactEventFromControlEvent(event: ControlEventEnvelope): Record<string, unknown> {
+function artifactEventFromControlEvent(
+    event: ControlEventEnvelope,
+    command: ControlQueuedCommandSnapshot | undefined,
+): Record<string, unknown> {
     return redact({
-        kind: 'rtc-diagnostic',
+        kind: artifactEventKind(event, command),
         name: event.eventId ?? event.commandId ?? event.kind,
         status: event.kind,
+        transport: commandTransport(command),
+        action: commandAction(command),
         agentId: event.agentId,
-        connection: event.commandId ?? event.agentId,
+        connection: commandConnection(command) ?? event.commandId ?? event.agentId,
         commandId: event.commandId,
         atEpochMs: event.atEpochMs,
         value: event.payload,
@@ -148,9 +177,13 @@ function jsonl(values: readonly unknown[]): string {
 
 export function controlRunEventsJsonl(run: ControlRunSnapshot): string {
     const rows = resultRows(run);
+    const commands = commandById(run);
     return jsonl([
         ...rows.map(artifactEventFromResult),
-        ...run.events.map(artifactEventFromControlEvent),
+        ...run.events.map(event => artifactEventFromControlEvent(
+            event,
+            event.commandId ? commands.get(event.commandId) : undefined,
+        )),
     ]);
 }
 

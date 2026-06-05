@@ -1,4 +1,7 @@
-import type { RallarBlackBoxTestRecipe } from './types.ts';
+import type {
+    RallarBlackBoxTestCrdtTransport,
+    RallarBlackBoxTestRecipe,
+} from './types.ts';
 
 export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES = [
     'draft',
@@ -63,7 +66,19 @@ export type RallarBlackBoxControlAgentIdentity = Readonly<{
     providerMode?: string;
     browserLabel?: string;
     sessionLabel?: string;
+    capabilities?: RallarBlackBoxControlAgentCapabilities;
     updatedAtEpochMs?: number;
+}>;
+
+export type RallarBlackBoxControlAgentCapabilities = Readonly<{
+    crdt?: RallarBlackBoxControlAgentCrdtCapability;
+}>;
+
+export type RallarBlackBoxControlAgentCrdtCapability = Readonly<{
+    supported: boolean;
+    transports?: readonly RallarBlackBoxTestCrdtTransport[];
+    runtimeSurface?: string;
+    apiBaseUrlConfigured?: boolean;
 }>;
 
 export type RallarBlackBoxGroupMemberCandidate = Readonly<{

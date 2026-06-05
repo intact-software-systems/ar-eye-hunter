@@ -9,11 +9,13 @@ export type RtcProvider = {
     send: (interaction: any, config: any, context: any) => Promise<any>
     wait: (interaction: any, config: any, context: any) => Promise<any>
     close: (interaction: any, config: any, context: any) => Promise<any>
+    command?: (interaction: any, config: any, context: any) => Promise<any>
 }
 
 export type RtcClient = {
     connect: () => Promise<void>
     send: (message: any, interaction?: any, config?: any, context?: any) => Promise<any>
+    command?: (action: string, request: any, interaction?: any, config?: any, context?: any) => Promise<any>
     close: (interaction?: any, config?: any, context?: any) => Promise<void>
     onMessage?: (handler: (message: any) => void) => void
     onClose?: (handler: (event: any) => void) => void

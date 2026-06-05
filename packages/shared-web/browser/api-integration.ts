@@ -36,6 +36,10 @@ import type {
     StateEventCursor,
     StateEventPage,
 } from '@shared/api/state-event-types.ts';
+import type {
+    RallarCrdtCatchUpRequestEnvelope,
+    RallarCrdtCatchUpResponseEnvelope,
+} from '@shared/crdt/mod.ts';
 
 export type ApiRequestOptions = Readonly<{
     signal?: AbortSignal;
@@ -197,12 +201,38 @@ export async function readIceCandidates(
     );
 }
 
+export async function catchUpRallarCrdtDocument(
+    request: RallarCrdtCatchUpRequestEnvelope,
+    options?: ApiRequestOptions,
+): Promise<RallarCrdtCatchUpResponseEnvelope> {
+    const response = await executeHttpRequest<
+        RallarCrdtCatchUpRequestEnvelope,
+        ApiResultEnvelope<RallarCrdtCatchUpResponseEnvelope>
+    >(readApiBaseUrl(), '/api/crdt/catch-up', 'POST', request, options);
+
+    if (!response.ok) {
+        throw new Error(response.error);
+    }
+
+    return response.result;
+}
+
 export function defaultStateScope(): StateScope {
     return {
         applicationId: DEFAULT_STATE_APPLICATION_ID,
         workspaceId: DEFAULT_STATE_WORKSPACE_ID,
     };
 }
+
+type ApiResultEnvelope<T> =
+    | Readonly<{
+          ok: true;
+          result: T;
+      }>
+    | Readonly<{
+          ok: false;
+          error: string;
+      }>;
 
 export async function listStateClients(
     scope: StateScope = defaultStateScope(),

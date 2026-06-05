@@ -53,6 +53,156 @@
       "description": "Deterministic inline loop recipe that sends RTC frames at a configured realtime rate."
     },
     {
+      "id": "crdt-diagnostics",
+      "recipe": "examples/rallar-crdt-diagnostics.json",
+      "category": "rallar-crdt",
+      "mode": "run",
+      "profiles": ["quick", "deterministic"],
+      "expectedExitCode": 0,
+      "artifactName": "crdt-diagnostics",
+      "description": "Deterministic CRDT envelope, duplicate-delivery, dependency-repair, and debug-replay diagnostic recipe."
+    },
+    {
+      "id": "crdt-corruption-recovery",
+      "recipe": "examples/rallar-crdt-corruption-recovery.json",
+      "category": "rallar-crdt",
+      "mode": "run",
+      "profiles": ["quick", "deterministic"],
+      "expectedExitCode": 0,
+      "artifactName": "crdt-corruption-recovery",
+      "description": "Deterministic CRDT corrupt snapshot quarantine, debug integrity, and backup-restore diagnostic recipe."
+    },
+    {
+      "id": "crdt-browser-ws-convergence-live",
+      "recipe": "examples/rallar-crdt-browser-ws-convergence.json",
+      "category": "rallar-crdt",
+      "mode": "run",
+      "profiles": ["browser-live", "live", "live-crdt"],
+      "expectedExitCode": 0,
+      "artifactName": "crdt-browser-ws-convergence-live",
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ALICE_USERNAME",
+          "RALLAR_ALICE_PASSWORD",
+          "RALLAR_BOB_USERNAME",
+          "RALLAR_BOB_PASSWORD"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          }
+        ],
+        "playwright": true
+      },
+      "description": "Live browser-backed CRDT convergence using WS durable transport."
+    },
+    {
+      "id": "crdt-browser-rtc-with-ws-fallback-live",
+      "recipe": "examples/rallar-crdt-browser-rtc-with-ws-fallback.json",
+      "category": "rallar-crdt",
+      "mode": "run",
+      "profiles": ["browser-live", "live", "live-crdt"],
+      "expectedExitCode": 0,
+      "artifactName": "crdt-browser-rtc-with-ws-fallback-live",
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ALICE_USERNAME",
+          "RALLAR_ALICE_PASSWORD",
+          "RALLAR_BOB_USERNAME",
+          "RALLAR_BOB_PASSWORD"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          }
+        ],
+        "playwright": true
+      },
+      "description": "Live browser-backed CRDT using rtc-with-ws-fallback transport selection."
+    },
+    {
+      "id": "crdt-browser-durable-late-join-catchup-live",
+      "recipe": "examples/rallar-crdt-browser-durable-late-join-catchup.json",
+      "category": "rallar-crdt",
+      "mode": "run",
+      "profiles": ["browser-live", "live", "live-crdt"],
+      "expectedExitCode": 0,
+      "artifactName": "crdt-browser-durable-late-join-catchup-live",
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ALICE_USERNAME",
+          "RALLAR_ALICE_PASSWORD",
+          "RALLAR_BOB_USERNAME",
+          "RALLAR_BOB_PASSWORD"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          }
+        ],
+        "playwright": true
+      },
+      "description": "Live browser-backed CRDT late-join catch-up using durable HTTP catch-up."
+    },
+    {
+      "id": "crdt-browser-local-persistence-reopen-live",
+      "recipe": "examples/rallar-crdt-browser-local-persistence-reopen.json",
+      "category": "rallar-crdt",
+      "mode": "run",
+      "profiles": ["browser-live", "live", "live-crdt"],
+      "expectedExitCode": 0,
+      "artifactName": "crdt-browser-local-persistence-reopen-live",
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ALICE_USERNAME",
+          "RALLAR_ALICE_PASSWORD"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          }
+        ],
+        "playwright": true
+      },
+      "description": "Live browser-backed local-only CRDT persistence, close, reopen, read, and destroy."
+    },
+    {
+      "id": "crdt-admin-http-integrity-live",
+      "recipe": "examples/rallar-crdt-admin-http-integrity.json",
+      "category": "rallar-crdt",
+      "mode": "run",
+      "profiles": ["live", "live-crdt"],
+      "expectedExitCode": 0,
+      "artifactName": "crdt-admin-http-integrity-live",
+      "requires": {
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ADMIN_ACCESS_TOKEN",
+          "RALLAR_CRDT_DOCUMENT_KEY"
+        ],
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://localhost:8080"
+          }
+        ]
+      },
+      "description": "Live CRDT admin HTTP integrity coverage through normal http.request steps."
+    },
+    {
       "id": "memory-parallel-groups",
       "recipe": "examples/rtc-rallar-memory-parallel-groups.json",
       "category": "generic-runner-semantics",

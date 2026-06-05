@@ -14,6 +14,12 @@ Rallar facade, Rallar browser data stores, and Rallar server middleware.
   and constraints for asking an AI to use Rallar, Rallar Data, or Rallar Server.
 - [Rallar Quickstart And Recipes](./rallar-quickstart-and-recipes.md) Short
   recipes for common application tasks.
+- [Rallar CRDT Guide](./rallar-crdt-guide.md) Explicit collaborative document
+  API, WS/RTC transport choices, durable append behavior, diagnostics, and
+  current limitations.
+- [Rallar CRDT Production Hardening Runbook](./rallar-crdt-production-hardening-runbook.md)
+  Operational controls, feature flags, admin inspection, backup/restore,
+  corruption recovery, metrics, and domain follow-ups for CRDT deployments.
 - [Rallar Product And Implementation Evaluation](./rallar-product-and-implementation-evaluation.md)
   Current product-level assessment of the browser facade, Rallar Data, Rallar
   Server, apps, tests, and next hardening work.

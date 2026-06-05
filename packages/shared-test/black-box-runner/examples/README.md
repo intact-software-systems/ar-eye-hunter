@@ -32,6 +32,11 @@ examples.
 | `rtc-rallar-browser-readiness-diagnostics.json` | Rallar integration | Wait for provider readiness diagnostics and health after browser-backed RTC connect. |
 | `rtc-rallar-browser-timeout-diagnostics.json` | Rallar integration | Intentionally waits for a missing diagnostic to demonstrate timeout failure diagnostics. |
 | `rtc-rallar-two-peer-chat.json` | Signaling-only integration | Uses the default `rallar` provider. This opens WebSocket signaling and exercises runner expectations, but it does not prove a real WebRTC data path. |
+| `rallar-crdt-browser-ws-convergence.json` | Rallar CRDT integration | Opens the same CRDT document in two browser actors, applies concurrent WS-backed updates, waits for value/health convergence, reads outputs, and asserts both materialized values. |
+| `rallar-crdt-browser-rtc-with-ws-fallback.json` | Rallar CRDT integration | Exercises user-selectable `rtc-with-ws-fallback` CRDT transport with a sequence insert, wait-based convergence, and health assertions. |
+| `rallar-crdt-browser-durable-late-join-catchup.json` | Rallar CRDT integration | Writes before a second browser actor joins, then waits for durable HTTP catch-up and asserts the late-join value. |
+| `rallar-crdt-browser-local-persistence-reopen.json` | Rallar CRDT integration | Covers local-only CRDT persistence, close, reopen, wait/read, assert, and destroy from a browser-backed provider session. |
+| `rallar-crdt-admin-http-integrity.json` | Rallar CRDT admin integration | Uses normal `http.request` steps for CRDT admin document list and integrity endpoints. |
 
 ## Provider Choice
 
@@ -48,6 +53,11 @@ classification, and copyable diagnostics, not as green smoke tests.
 The runner should stay provider-neutral. If a recipe needs Rallar-specific
 configuration, keep it under provider-owned fields such as `rallar`, `browser`,
 `control`, or `signaling`.
+
+CRDT recipes use generic `crdt.*` step types only with browser-capable
+providers. The runner forwards those steps to the provider; the CRDT engine
+remains in the browser Rallar facade and `rallar-bb-test` command surface.
+CRDT admin workflows should continue to use ordinary HTTP steps.
 
 Use safe transforms for derived generic values such as auth headers, URL-encoded
 tickets, trace IDs, JSON conversion, and fallback values. Transforms are

@@ -8,6 +8,7 @@ import {
     type ControlCommandEnvelope,
     type ControlEventEnvelope,
     type ControlResultEnvelope,
+    parseControlClientMessage,
     parseControlServerMessage,
 } from '../../../apps/rallar-black-box/src/control-protocol.ts';
 
@@ -234,6 +235,75 @@ describe('rallar-black-box control client', () => {
             expect(client.currentSnapshot()).toMatchObject({
                 state: 'registered',
                 receivedCount: 1,
+            });
+        } finally {
+            client.dispose();
+        }
+    });
+
+    it('reports CRDT runtime capability in register identity when configured for browser Rallar', async () => {
+        const socket = new FakeControlSocket();
+        const runtime = createRallarBlackBoxTestRuntime();
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-crdt-agent',
+            config: {
+                runId: 'run-1',
+                agentId: 'agent-1',
+                apiBaseUrl: 'http://localhost:8080',
+                actor: 'alice',
+                defaults: {
+                    applicationId: 'rallar-server',
+                    workspaceId: 'default',
+                    groupId: 'bb-group',
+                    providerMode: 'browser-rallar',
+                },
+            },
+        });
+        const client = new RallarBlackBoxControlClient({
+            runtime,
+            heartbeatIntervalMs: 60_000,
+            webSocketFactory: () => socket,
+        });
+
+        try {
+            client.connect({
+                url: 'ws://control.example.test',
+                runId: 'run-1',
+                agentId: 'agent-1',
+            });
+            socket.open();
+
+            const register = envelopes(socket)[0];
+            expect(register).toMatchObject({
+                kind: 'register',
+                identity: {
+                    capabilities: {
+                        crdt: {
+                            supported: true,
+                            apiBaseUrlConfigured: true,
+                        },
+                    },
+                },
+            });
+            expect(
+                register.kind === 'register'
+                    ? register.identity?.capabilities?.crdt?.transports
+                    : [],
+            ).toContain('rtc-with-ws-fallback');
+
+            const parsed = parseControlClientMessage(JSON.stringify(register));
+            expect(parsed.ok).toBe(true);
+            expect(parsed.ok ? parsed.envelope : undefined).toMatchObject({
+                kind: 'register',
+                identity: {
+                    capabilities: {
+                        crdt: {
+                            supported: true,
+                            transports: expect.arrayContaining(['local-only', 'ws', 'rtc']),
+                        },
+                    },
+                },
             });
         } finally {
             client.dispose();

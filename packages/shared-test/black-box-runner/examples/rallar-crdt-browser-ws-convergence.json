@@ -1,0 +1,344 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "https://api.example.com"
+    },
+    "roomId": {
+      "env": "RALLAR_BB_GROUP_ID",
+      "default": "crdt-room-1"
+    },
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    }
+  },
+  "connections": {
+    "aliceRtc": {
+      "type": "rtc",
+      "provider": "rallar-browser",
+      "actor": "alice",
+      "roomId": "{roomId}",
+      "rallar": {
+        "apiBaseUrl": "{rallarApiBaseUrl}",
+        "username": "{aliceUsername}",
+        "password": "{alicePassword}",
+        "applicationId": "rallar-server",
+        "workspaceId": "default",
+        "transport": "realtime",
+        "timeoutMs": 15000
+      }
+    },
+    "bobRtc": {
+      "type": "rtc",
+      "provider": "rallar-browser",
+      "actor": "bob",
+      "roomId": "{roomId}",
+      "rallar": {
+        "apiBaseUrl": "{rallarApiBaseUrl}",
+        "username": "{bobUsername}",
+        "password": "{bobPassword}",
+        "applicationId": "rallar-server",
+        "workspaceId": "default",
+        "transport": "realtime",
+        "timeoutMs": 15000
+      }
+    }
+  },
+  "steps": [
+    {
+      "name": "connectAlice",
+      "type": "rtc.connect",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "connectBob",
+      "type": "rtc.connect",
+      "connection": "bobRtc"
+    },
+    {
+      "name": "aliceOpenCrdt",
+      "type": "crdt.open",
+      "connection": "aliceRtc",
+      "request": {
+        "handle": "checklist",
+        "name": "black-box-checklist",
+        "documentType": "checklist",
+        "documentId": "{roomId}",
+        "scope": {
+          "kind": "room"
+        },
+        "roomRef": {
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "groupId": "{roomId}"
+        },
+        "transport": "ws",
+        "persist": true,
+        "tabSync": true,
+        "durableCatchUp": "http",
+        "initialValue": {
+          "items": []
+        }
+      }
+    },
+    {
+      "name": "bobOpenCrdt",
+      "type": "crdt.open",
+      "connection": "bobRtc",
+      "request": {
+        "handle": "checklist",
+        "name": "black-box-checklist",
+        "documentType": "checklist",
+        "documentId": "{roomId}",
+        "scope": {
+          "kind": "room"
+        },
+        "roomRef": {
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "groupId": "{roomId}"
+        },
+        "transport": "ws",
+        "persist": true,
+        "tabSync": true,
+        "durableCatchUp": "http"
+      }
+    },
+    {
+      "name": "aliceAppliesTitle",
+      "type": "crdt.apply",
+      "connection": "aliceRtc",
+      "request": {
+        "handle": "checklist",
+        "batch": {
+          "kind": "batch",
+          "operationGroupId": "alice-title",
+          "operations": [
+            {
+              "kind": "register.set",
+              "path": ["title"],
+              "value": "WS convergence",
+              "policy": "lww"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "bobAppliesCounter",
+      "type": "crdt.apply",
+      "connection": "bobRtc",
+      "request": {
+        "handle": "checklist",
+        "batch": {
+          "kind": "batch",
+          "operationGroupId": "bob-count",
+          "operations": [
+            {
+              "kind": "counter.add",
+              "path": ["count"],
+              "delta": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "aliceSync",
+      "type": "crdt.sync",
+      "connection": "aliceRtc",
+      "request": {
+        "handle": "checklist",
+        "transport": "ws",
+        "reason": "black-box-ws-convergence"
+      }
+    },
+    {
+      "name": "bobSync",
+      "type": "crdt.sync",
+      "connection": "bobRtc",
+      "request": {
+        "handle": "checklist",
+        "transport": "ws",
+        "reason": "black-box-ws-convergence"
+      }
+    },
+    {
+      "name": "aliceWaitConverged",
+      "type": "crdt.wait",
+      "connection": "aliceRtc",
+      "request": {
+        "handle": "checklist",
+        "timeoutMs": 10000,
+        "intervalMs": 250,
+        "stableForMs": 500,
+        "sync": {
+          "reason": "black-box-ws-convergence-wait",
+          "transport": "ws"
+        },
+        "conditions": [
+          {
+            "source": "value",
+            "path": "title",
+            "operator": "equals",
+            "expected": "WS convergence"
+          },
+          {
+            "source": "value",
+            "path": "count",
+            "operator": "equals",
+            "expected": 1
+          },
+          {
+            "source": "health",
+            "path": "pendingUpdateCount",
+            "operator": "equals",
+            "expected": 0
+          },
+          {
+            "source": "health",
+            "path": "dependencyBlockedUpdateCount",
+            "operator": "equals",
+            "expected": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "bobWaitConverged",
+      "type": "crdt.wait",
+      "connection": "bobRtc",
+      "request": {
+        "handle": "checklist",
+        "timeoutMs": 10000,
+        "intervalMs": 250,
+        "stableForMs": 500,
+        "sync": {
+          "reason": "black-box-ws-convergence-wait",
+          "transport": "ws"
+        },
+        "conditions": [
+          {
+            "source": "value",
+            "path": "title",
+            "operator": "equals",
+            "expected": "WS convergence"
+          },
+          {
+            "source": "value",
+            "path": "count",
+            "operator": "equals",
+            "expected": 1
+          },
+          {
+            "source": "health",
+            "path": "pendingUpdateCount",
+            "operator": "equals",
+            "expected": 0
+          },
+          {
+            "source": "health",
+            "path": "dependencyBlockedUpdateCount",
+            "operator": "equals",
+            "expected": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "aliceRead",
+      "type": "crdt.read",
+      "connection": "aliceRtc",
+      "outputs": {
+        "aliceCrdtTitle": "result.value.title",
+        "aliceCrdtCount": "result.value.count",
+        "aliceCrdtPending": "result.pendingUpdateCount",
+        "aliceCrdtBlocked": "result.dependencyBlockedUpdateCount"
+      },
+      "request": {
+        "handle": "checklist"
+      }
+    },
+    {
+      "name": "bobRead",
+      "type": "crdt.read",
+      "connection": "bobRtc",
+      "outputs": {
+        "bobCrdtTitle": "result.value.title",
+        "bobCrdtCount": "result.value.count",
+        "bobCrdtPending": "result.pendingUpdateCount",
+        "bobCrdtBlocked": "result.dependencyBlockedUpdateCount"
+      },
+      "request": {
+        "handle": "checklist"
+      }
+    },
+    {
+      "name": "assertWsConvergence",
+      "type": "assert",
+      "actual": {
+        "aliceTitle": "{aliceCrdtTitle}",
+        "bobTitle": "{bobCrdtTitle}",
+        "aliceCount": "{aliceCrdtCount}",
+        "bobCount": "{bobCrdtCount}",
+        "alicePending": "{aliceCrdtPending}",
+        "bobPending": "{bobCrdtPending}",
+        "aliceBlocked": "{aliceCrdtBlocked}",
+        "bobBlocked": "{bobCrdtBlocked}"
+      },
+      "expect": {
+        "body": {
+          "aliceTitle": "WS convergence",
+          "bobTitle": "WS convergence",
+          "aliceCount": 1,
+          "bobCount": 1,
+          "alicePending": 0,
+          "bobPending": 0,
+          "aliceBlocked": 0,
+          "bobBlocked": 0
+        }
+      }
+    },
+    {
+      "name": "closeAliceCrdt",
+      "type": "crdt.close",
+      "connection": "aliceRtc",
+      "request": {
+        "handle": "checklist"
+      }
+    },
+    {
+      "name": "closeBobCrdt",
+      "type": "crdt.close",
+      "connection": "bobRtc",
+      "request": {
+        "handle": "checklist"
+      }
+    },
+    {
+      "name": "closeAlice",
+      "type": "rtc.close",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "closeBob",
+      "type": "rtc.close",
+      "connection": "bobRtc"
+    }
+  ]
+}

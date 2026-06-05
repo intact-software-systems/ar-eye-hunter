@@ -1217,7 +1217,7 @@ function toHttpInteractionStatus(config: any, interaction: any, response: any, a
 
 function toInteractionName(interactionWithConfig: any): string {
     return Object.keys(interactionWithConfig)
-        .filter(key => !['HTTP', 'MQ', 'WS', 'RTC', 'WEBRTC', 'ASSERT', 'SET', 'PARALLEL'].includes(key))[0];
+        .filter(key => !['HTTP', 'MQ', 'WS', 'RTC', 'WEBRTC', 'CRDT', 'ASSERT', 'SET', 'PARALLEL'].includes(key))[0];
 }
 
 function toInteractionConfig(interactionWithConfig: any): any {
@@ -1235,6 +1235,7 @@ function toExecutableInteraction(interaction: any): any {
         || interaction?.WS
         || interaction?.RTC
         || interaction?.WEBRTC
+        || interaction?.CRDT
         || interaction?.ASSERT
         || interaction?.SET
         || interaction?.PARALLEL;
@@ -1351,15 +1352,17 @@ function applyInteractionCorrelation(interactionWithConfig: any, interaction: an
         ? 'HTTP'
         : interactionWithConfig.WS
             ? 'WS'
-            : interactionWithConfig.RTC || interactionWithConfig.WEBRTC
-                ? 'RTC'
-                : interactionWithConfig.PARALLEL
-                    ? 'PARALLEL'
-                    : interactionWithConfig.SET
-                        ? 'SET'
-                        : interactionWithConfig.ASSERT
-                            ? 'ASSERT'
-                            : 'UNKNOWN';
+            : interactionWithConfig.CRDT
+                ? 'CRDT'
+                : interactionWithConfig.RTC || interactionWithConfig.WEBRTC
+                    ? 'RTC'
+                    : interactionWithConfig.PARALLEL
+                        ? 'PARALLEL'
+                        : interactionWithConfig.SET
+                            ? 'SET'
+                            : interactionWithConfig.ASSERT
+                                ? 'ASSERT'
+                                : 'UNKNOWN';
 
     request.correlation = {
         ...correlation,
@@ -3126,6 +3129,100 @@ function executeRtcInteraction(interaction: any, config: any, context: any): Pro
     ));
 }
 
+function toCrdtReportFields(interaction: any): any {
+    return {
+        provider: interaction.request.provider,
+        action: interaction.request.action,
+        connection: interaction.request.connection,
+        handle: interaction.request.handle,
+        documentName: interaction.request.name,
+        applicationId: interaction.request.applicationId,
+        workspaceId: interaction.request.workspaceId,
+        documentId: interaction.request.documentId,
+        documentType: interaction.request.documentType,
+        scope: interaction.request.scope,
+        roomRef: interaction.request.roomRef,
+        transportStrategy: interaction.request.transport,
+        durableCatchUp: interaction.request.durableCatchUp,
+    };
+}
+
+function toCrdtSuccessStatus(config: any, interaction: any, details: any = {}): any {
+    return {
+        name: config.interactionName,
+        status: SUCCESS,
+        transport: 'CRDT',
+        ...toCorrelationReportFields(interaction),
+        ...toCrdtReportFields(interaction),
+        scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
+        interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
+        repeatIndex: config.interaction.request.repeatIndex,
+        expected: interaction.response,
+        actual: {
+            ...toCrdtReportFields(interaction),
+            ...details,
+        },
+        ...config,
+    };
+}
+
+function toCrdtFailureStatus(config: any, interaction: any, result: string, details: any = {}): any {
+    return {
+        name: config.interactionName,
+        status: FAILURE,
+        result,
+        transport: 'CRDT',
+        ...toCorrelationReportFields(interaction),
+        ...toCrdtReportFields(interaction),
+        scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
+        interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
+        repeatIndex: config.interaction.request.repeatIndex,
+        expected: interaction.response,
+        actual: {
+            ...toCrdtReportFields(interaction),
+            ...details,
+        },
+        ...config,
+    };
+}
+
+function toDryRunCrdtDetails(interaction: any, action: string): any {
+    return {
+        dryRun: true,
+        action,
+        provider: interaction.request.provider,
+        connection: interaction.request.connection,
+        handle: interaction.request.handle,
+        batch: interaction.request.batch,
+        transportStrategy: interaction.request.transport,
+    };
+}
+
+function executeCrdtInteraction(interaction: any, config: any, context: any): Promise<any> {
+    const action = interaction.request.action || 'open';
+    const providerName = interaction.request.provider || 'rallar-browser';
+    const provider = context.rtcProviders?.[providerName] || createMissingRtcProvider(providerName);
+
+    if (isDryRunExecution(interaction, config, context)) {
+        return Promise.resolve(toCrdtSuccessStatus(config, interaction, toDryRunCrdtDetails(interaction, action)));
+    }
+
+    if (!provider.command) {
+        return Promise.resolve(toCrdtFailureStatus(
+            config,
+            interaction,
+            'CRDT provider command support is not configured: ' + providerName,
+            {
+                provider: providerName,
+                supportedProviders: Object.keys(context.rtcProviders || {})
+                    .filter(name => Boolean(context.rtcProviders?.[name]?.command)),
+            },
+        ));
+    }
+
+    return provider.command(interaction, config, context);
+}
+
 function executeInteraction(interactionWithConfig: any, context: any): Promise<any> {
     const interaction = toExecutableInteraction(interactionWithConfig);
 
@@ -3158,6 +3255,10 @@ function executeInteraction(interactionWithConfig: any, context: any): Promise<a
 
     if (interactionWithConfig.WS) {
         return executeWsInteraction(interaction, config, context);
+    }
+
+    if (interactionWithConfig.CRDT) {
+        return executeCrdtInteraction(interaction, config, context);
     }
 
     if (interactionWithConfig.RTC || interactionWithConfig.WEBRTC) {

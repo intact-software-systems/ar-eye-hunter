@@ -1,0 +1,248 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "https://api.example.com"
+    },
+    "roomId": {
+      "env": "RALLAR_BB_GROUP_ID",
+      "default": "crdt-room-catchup"
+    },
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    }
+  },
+  "connections": {
+    "aliceRtc": {
+      "type": "rtc",
+      "provider": "rallar-browser",
+      "actor": "alice",
+      "roomId": "{roomId}",
+      "rallar": {
+        "apiBaseUrl": "{rallarApiBaseUrl}",
+        "username": "{aliceUsername}",
+        "password": "{alicePassword}",
+        "applicationId": "rallar-server",
+        "workspaceId": "default",
+        "transport": "realtime",
+        "timeoutMs": 15000
+      }
+    },
+    "bobRtc": {
+      "type": "rtc",
+      "provider": "rallar-browser",
+      "actor": "bob",
+      "roomId": "{roomId}",
+      "rallar": {
+        "apiBaseUrl": "{rallarApiBaseUrl}",
+        "username": "{bobUsername}",
+        "password": "{bobPassword}",
+        "applicationId": "rallar-server",
+        "workspaceId": "default",
+        "transport": "realtime",
+        "timeoutMs": 15000
+      }
+    }
+  },
+  "steps": [
+    {
+      "name": "connectAlice",
+      "type": "rtc.connect",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "aliceOpenDurable",
+      "type": "crdt.open",
+      "connection": "aliceRtc",
+      "request": {
+        "handle": "lateJoin",
+        "name": "black-box-late-join",
+        "documentType": "notes",
+        "documentId": "{roomId}",
+        "scope": {
+          "kind": "room"
+        },
+        "roomRef": {
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "groupId": "{roomId}"
+        },
+        "transport": "ws",
+        "persist": true,
+        "durableCatchUp": "http"
+      }
+    },
+    {
+      "name": "aliceWritesBeforeBobJoins",
+      "type": "crdt.apply",
+      "connection": "aliceRtc",
+      "request": {
+        "handle": "lateJoin",
+        "batch": {
+          "kind": "batch",
+          "operationGroupId": "alice-before-join",
+          "operations": [
+            {
+              "kind": "map.set",
+              "path": ["notes"],
+              "key": "intro",
+              "value": "created before bob joins"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "aliceSyncDurable",
+      "type": "crdt.sync",
+      "connection": "aliceRtc",
+      "request": {
+        "handle": "lateJoin",
+        "transport": "ws",
+        "reason": "black-box-before-late-join"
+      }
+    },
+    {
+      "name": "connectBobLate",
+      "type": "rtc.connect",
+      "connection": "bobRtc"
+    },
+    {
+      "name": "bobOpenDurable",
+      "type": "crdt.open",
+      "connection": "bobRtc",
+      "request": {
+        "handle": "lateJoin",
+        "name": "black-box-late-join",
+        "documentType": "notes",
+        "documentId": "{roomId}",
+        "scope": {
+          "kind": "room"
+        },
+        "roomRef": {
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "groupId": "{roomId}"
+        },
+        "transport": "ws",
+        "persist": true,
+        "durableCatchUp": "http"
+      }
+    },
+    {
+      "name": "bobSyncLateJoin",
+      "type": "crdt.sync",
+      "connection": "bobRtc",
+      "request": {
+        "handle": "lateJoin",
+        "transport": "ws",
+        "reason": "black-box-late-join"
+      }
+    },
+    {
+      "name": "bobWaitLateJoinCatchUp",
+      "type": "crdt.wait",
+      "connection": "bobRtc",
+      "request": {
+        "handle": "lateJoin",
+        "timeoutMs": 10000,
+        "intervalMs": 250,
+        "stableForMs": 500,
+        "sync": {
+          "reason": "black-box-late-join-wait",
+          "transport": "ws"
+        },
+        "conditions": [
+          {
+            "source": "value",
+            "path": "notes.intro",
+            "operator": "equals",
+            "expected": "created before bob joins"
+          },
+          {
+            "source": "health",
+            "path": "pendingUpdateCount",
+            "operator": "equals",
+            "expected": 0
+          },
+          {
+            "source": "health",
+            "path": "dependencyBlockedUpdateCount",
+            "operator": "equals",
+            "expected": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "bobReadLateJoin",
+      "type": "crdt.read",
+      "connection": "bobRtc",
+      "outputs": {
+        "lateJoinIntro": "result.value.notes.intro",
+        "lateJoinPending": "result.pendingUpdateCount",
+        "lateJoinBlocked": "result.dependencyBlockedUpdateCount"
+      },
+      "request": {
+        "handle": "lateJoin"
+      }
+    },
+    {
+      "name": "assertLateJoinCatchUp",
+      "type": "assert",
+      "actual": {
+        "intro": "{lateJoinIntro}",
+        "pending": "{lateJoinPending}",
+        "blocked": "{lateJoinBlocked}"
+      },
+      "expect": {
+        "body": {
+          "intro": "created before bob joins",
+          "pending": 0,
+          "blocked": 0
+        }
+      }
+    },
+    {
+      "name": "closeAliceCrdt",
+      "type": "crdt.close",
+      "connection": "aliceRtc",
+      "request": {
+        "handle": "lateJoin"
+      }
+    },
+    {
+      "name": "closeBobCrdt",
+      "type": "crdt.close",
+      "connection": "bobRtc",
+      "request": {
+        "handle": "lateJoin"
+      }
+    },
+    {
+      "name": "closeAlice",
+      "type": "rtc.close",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "closeBob",
+      "type": "rtc.close",
+      "connection": "bobRtc"
+    }
+  ]
+}

@@ -57,6 +57,7 @@
     "test:rallar:full-stack:postgres:distributed": "RALLAR_BLACK_BOX_FULL_STACK=1 RALLAR_BLACK_BOX_DISTRIBUTED_RECIPES=1 VITE_RALLAR_API_BASE_URL=http://localhost:8080 playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts tests/playwright/rallar-black-box/full-stack-distributed-recipes.spec.ts",
     "test:rallar:full-stack:postgres:live-rtc-3": "RALLAR_BLACK_BOX_FULL_STACK=1 RALLAR_BLACK_BOX_LIVE_RTC_MATRIX=1 VITE_RALLAR_API_BASE_URL=http://localhost:8080 playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts",
     "test:rallar:full-stack:postgres:live-rtc-3:all": "RALLAR_BLACK_BOX_FULL_STACK=1 RALLAR_BLACK_BOX_LIVE_RTC_MATRIX=1 RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 VITE_RALLAR_API_BASE_URL=http://localhost:8080 playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts",
+    "test:rallar:exhaustive:postgres": "RALLAR_BLACK_BOX_FULL_STACK=1 RALLAR_LOGIN_USER_RATE_LIMIT=100 VITE_RALLAR_API_BASE_URL=http://localhost:8080 playwright test --config apps/rallar-black-box/playwright.exhaustive.config.ts",
     "test:integration": "npm run db:test:up && npm run test:optional:postgres && npm run test:rallar:full-stack:postgres",
     "test:integration:postgres": "npm run db:test:up && npm run test:optional:postgres",
     "test:integration:rallar": "npm run test:integration:rallar:postgres",
@@ -118,6 +119,7 @@
     "test:e2e:rallar-black-box:full-stack:real:distributed": "npm run test:rallar:full-stack:postgres:distributed",
     "test:e2e:rallar-black-box:full-stack:real:live-rtc-3": "npm run test:rallar:full-stack:postgres:live-rtc-3",
     "test:e2e:rallar-black-box:full-stack:real:live-rtc-3:all": "npm run test:rallar:full-stack:postgres:live-rtc-3:all",
+    "test:e2e:rallar-black-box:exhaustive:real": "npm run test:rallar:exhaustive:postgres",
     "test:integration:rallar:real": "npm run test:integration:rallar:postgres",
     "test:integration:rallar:real:live": "npm run test:integration:rallar:live"
   },

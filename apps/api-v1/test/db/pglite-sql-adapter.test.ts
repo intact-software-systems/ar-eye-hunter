@@ -1,11 +1,20 @@
 import assert from 'node:assert/strict';
 import { Temporal } from '@js-temporal/polyfill';
 import { PSqlAppDataRepository } from '@shared-server/postgres/app-data/PSqlAppDataRepository.ts';
+import { PSqlCrdtLogRepository } from '@shared-server/postgres/crdt/PSqlCrdtLogRepository.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import {
     ResourceInboxResultsRepository
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import {
+    RALLAR_CRDT_OPERATION_VERSION,
+    RALLAR_CRDT_PROTOCOL_VERSION,
+    type RallarCrdtDocumentRef,
+    type RallarCrdtOperationBatch,
+    type RallarCrdtSnapshotEnvelope,
+    type RallarCrdtUpdateEnvelope,
+} from '@shared/crdt/mod.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { createApiV1SqlClient } from '../../src/db/db.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
@@ -225,6 +234,175 @@ Deno.test('PSqlAppDataRepository runs against PGlite SQL adapter', async () => {
     });
 });
 
+Deno.test('PSqlCrdtLogRepository runs against PGlite SQL adapter', async () => {
+    await withPGliteSql(async (sql) => {
+        const repository = new PSqlCrdtLogRepository(sql, {
+            now: () => 2_000,
+            serverId: 'server-a',
+        });
+        const first = createCrdtUpdate('update-1');
+        const second = createCrdtUpdate('update-2');
+
+        const accepted = await repository.append(toCrdtAppendInput(first));
+        const duplicate = await repository.append(toCrdtAppendInput(first));
+        await repository.append(toCrdtAppendInput(second));
+
+        assert.equal(accepted.status, 'accepted');
+        assert.equal(accepted.status === 'accepted' && accepted.append.appendSequence, 1);
+        assert.equal(duplicate.status, 'duplicate');
+        assert.equal(
+            duplicate.status === 'duplicate' && duplicate.append.appendSequence,
+            1,
+        );
+
+        const page = await repository.listAfter({
+            document: CRDT_DOCUMENT_REF,
+            limit: 1,
+        });
+        const nextPage = await repository.listAfter({
+            document: CRDT_DOCUMENT_REF,
+            afterCursor: page.nextCursor,
+            limit: 10,
+        });
+
+        assert.deepEqual(page.records.map((record) => record.update.updateId), [
+            'update-1',
+        ]);
+        assert.equal(page.nextCursor, 'seq:1');
+        assert.equal(page.hasMore, true);
+        assert.deepEqual(nextPage.records.map((record) => record.update.updateId), [
+            'update-2',
+        ]);
+
+        const snapshot: RallarCrdtSnapshotEnvelope = {
+            protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
+            document: CRDT_DOCUMENT_REF,
+            snapshotId: 'snapshot-1',
+            schemaVersion: 1,
+            createdAtEpochMs: 2_500,
+            maxLamport: 2,
+            includedUpdateIds: ['update-1', 'update-2'],
+            value: {
+                title: 'Title update-2',
+            },
+            metadata: {
+                updateCount: 2,
+            },
+        };
+        await repository.writeSnapshot({
+            snapshot,
+            appendSequence: 2,
+        });
+        assert.deepEqual(await repository.readSnapshot(CRDT_DOCUMENT_REF), snapshot);
+
+        const list = await repository.listDocuments({
+            documentType: 'checklist',
+        });
+        const debugBundle = await repository.exportDebugBundle(CRDT_DOCUMENT_REF, {
+            reason: 'pglite-test',
+        });
+        const backup = await repository.exportBackupBundle(CRDT_DOCUMENT_REF);
+        const integrity = await repository.verifyIntegrity(CRDT_DOCUMENT_REF);
+
+        assert.equal(list.documents.length, 1);
+        assert.equal(debugBundle.integrity.updateCount, 2);
+        assert.equal(backup?.integrity.updateCount, 2);
+        assert.equal(integrity.valid, true);
+
+        await withPGliteSql(async (restoreSql) => {
+            const restoreRepository = new PSqlCrdtLogRepository(restoreSql, {
+                now: () => 4_000,
+                serverId: 'restore-server',
+            });
+            const restored = await restoreRepository.restoreBackupBundle(backup!);
+
+            assert.equal(restored.restoredUpdateCount, 2);
+            assert.equal(restored.firstAppendSequence, 1);
+            assert.equal(restored.lastAppendSequence, 2);
+            assert.equal(
+                (await restoreRepository.verifyIntegrity(CRDT_DOCUMENT_REF)).valid,
+                true,
+            );
+        });
+
+        await repository.rebuildProjection(CRDT_DOCUMENT_REF, 'checklist-summary');
+        assert.deepEqual(
+            (await repository.readDocumentMetadata(CRDT_DOCUMENT_REF))?.projectionIds,
+            ['checklist-summary'],
+        );
+
+        await repository.updateDocumentLifecycle({
+            document: CRDT_DOCUMENT_REF,
+            lifecycle: 'archived',
+            changedAtEpochMs: 3_000,
+        });
+        const rejected = await repository.append(
+            toCrdtAppendInput(createCrdtUpdate('update-3')),
+        );
+
+        assert.equal(rejected.status, 'rejected');
+        assert.equal(rejected.status === 'rejected' && rejected.code, 'document-archived');
+    });
+
+    await withPGliteSql(async (sql) => {
+        const disabledRepository = new PSqlCrdtLogRepository(sql, {
+            now: () => 5_000,
+            policies: [
+                {
+                    documentType: 'checklist',
+                    rollout: 'disabled',
+                    flags: {
+                        killSwitchReason: 'maintenance',
+                    },
+                },
+            ],
+        });
+        const disabled = await disabledRepository.append(
+            toCrdtAppendInput(createCrdtUpdate('disabled-1')),
+        );
+
+        assert.equal(disabled.status, 'rejected');
+        assert.equal(disabled.status === 'rejected' && disabled.code, 'feature-disabled');
+    });
+
+    await withPGliteSql(async (sql) => {
+        const repository = new PSqlCrdtLogRepository(sql, {
+            now: () => 6_000,
+        });
+        await repository.updateDocumentLifecycle({
+            document: CRDT_DOCUMENT_REF,
+            lifecycle: 'active',
+            quota: {
+                maxUpdatesPerMinutePerActor: 1,
+            },
+        });
+
+        assert.equal(
+            (await repository.append(toCrdtAppendInput(createCrdtUpdate('rate-1'))))
+                .status,
+            'accepted',
+        );
+        const rateLimited = await repository.append(
+            toCrdtAppendInput(createCrdtUpdate('rate-2')),
+        );
+        assert.equal(rateLimited.status, 'rejected');
+        assert.equal(rateLimited.status === 'rejected' && rateLimited.code, 'rate-limited');
+
+        await repository.updateDocumentLifecycle({
+            document: CRDT_DOCUMENT_REF,
+            lifecycle: 'quarantined',
+        });
+        const quarantined = await repository.append(
+            toCrdtAppendInput(createCrdtUpdate('rate-3')),
+        );
+        assert.equal(quarantined.status, 'rejected');
+        assert.equal(
+            quarantined.status === 'rejected' && quarantined.code,
+            'document-quarantined',
+        );
+    });
+});
+
 async function withPGliteSql(
     fn: (sql: PGliteSql) => Promise<void>,
 ): Promise<void> {
@@ -234,6 +412,61 @@ async function withPGliteSql(
     } finally {
         await sql.close();
     }
+}
+
+const CRDT_ROOM_REF = {
+    applicationId: 'rallar-test',
+    workspaceId: 'main',
+    groupId: 'room-1',
+};
+
+const CRDT_DOCUMENT_REF: RallarCrdtDocumentRef = {
+    applicationId: 'rallar-test',
+    workspaceId: 'main',
+    scope: 'room',
+    documentType: 'checklist',
+    documentId: 'room-1',
+    roomRef: CRDT_ROOM_REF,
+};
+
+function toCrdtAppendInput(update: RallarCrdtUpdateEnvelope) {
+    return {
+        update,
+        trusted: {
+            authorizationScope: 'room' as const,
+            principalId: 'principal-a',
+            sessionId: 'session-a',
+        },
+    };
+}
+
+function createCrdtUpdate(updateId: string): RallarCrdtUpdateEnvelope {
+    return {
+        protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
+        document: CRDT_DOCUMENT_REF,
+        updateId,
+        replicaId: 'replica-a',
+        lamport: Number(updateId.split('-').at(-1) ?? 1),
+        parents: [],
+        schemaVersion: 1,
+        operationVersion: RALLAR_CRDT_OPERATION_VERSION,
+        createdAtEpochMs: 1_000,
+        payload: createCrdtBatch(`Title ${updateId}`),
+    };
+}
+
+function createCrdtBatch(title: string): RallarCrdtOperationBatch {
+    return {
+        kind: 'batch',
+        operations: [
+            {
+                kind: 'register.set',
+                path: ['title'],
+                policy: 'lww',
+                value: title,
+            },
+        ],
+    };
 }
 
 function createResourceEntry(

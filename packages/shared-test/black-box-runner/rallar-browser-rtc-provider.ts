@@ -10,6 +10,7 @@ import {
 } from './rallar-rtc-provider.ts';
 import {
     createRtcProviderFromClientFactory,
+    toRtcConnectionName,
     toRtcExpectedConnectionName,
     type RtcClient,
     type RtcProvider,
@@ -67,6 +68,10 @@ type RallarBrowserCleanupOptions = {
     reason?: string
     closeContext?: boolean
     diagnostic?: RallarBrowserDiagnosticEmitter
+}
+
+type RallarBrowserSessionOptions = {
+    connectRuntime?: boolean
 }
 
 export type RallarBrowserDependencies = {
@@ -589,6 +594,14 @@ function assertBrowserSendSucceeded(response: any): void {
     }
 }
 
+function isLocalOnlyCrdtOpen(action: string, request: any): boolean {
+    return action === 'open' && String(firstDefined(
+        request?.transport,
+        request?.rallar?.crdtTransport,
+        'local-only',
+    )) === 'local-only';
+}
+
 function isRecord(value: any): boolean {
     return value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -836,6 +849,7 @@ async function createBrowserSession(
     dispatcher: RallarRtcClientEventDispatcher,
     context: any,
     options: RallarBrowserRtcProviderOptions,
+    sessionOptions: RallarBrowserSessionOptions = {},
 ): Promise<RallarRtcRuntimeSession> {
     const state = toProviderState(context);
     const existingSession = state.sessions.get(args.connection);
@@ -944,25 +958,41 @@ async function createBrowserSession(
             { timeout: timeoutMs },
         );
 
-        setupPhase = 'runtime-connect';
-        const runtimeConfig = toBrowserRuntimeConfig(args);
-        const connectDiagnostics = await page.evaluate(
-            async (input: BlackBoxRallarConnectionConfig) => {
-                return await (window as any).__blackBoxRallar.connect(input);
-            },
-            runtimeConfig,
-        );
-        session.connectDiagnostics = connectDiagnostics;
+        if (sessionOptions.connectRuntime !== false) {
+            setupPhase = 'runtime-connect';
+            const runtimeConfig = toBrowserRuntimeConfig(args);
+            const connectDiagnostics = await page.evaluate(
+                async (input: BlackBoxRallarConnectionConfig) => {
+                    return await (window as any).__blackBoxRallar.connect(input);
+                },
+                runtimeConfig,
+            );
+            session.connectDiagnostics = connectDiagnostics;
 
-        dispatchProviderDiagnostic(
-            'rallar.browser.provider.connected',
-            args,
-            dispatcher,
-            {
-                harnessUrl,
-                connectDiagnostics,
-            },
-        );
+            dispatchProviderDiagnostic(
+                'rallar.browser.provider.connected',
+                args,
+                dispatcher,
+                {
+                    harnessUrl,
+                    connectDiagnostics,
+                },
+            );
+        } else {
+            session.connectDiagnostics = {
+                status: 'local-only',
+                connection: args.connection,
+            };
+            dispatchProviderDiagnostic(
+                'rallar.browser.provider.local_crdt_session_ready',
+                args,
+                dispatcher,
+                {
+                    harnessUrl,
+                    connectDiagnostics: session.connectDiagnostics,
+                },
+            );
+        }
     } catch (e) {
         if (setupPhase === 'page-load') {
             diagnostic('rallar.browser.provider.page_load_failed', {
@@ -1057,6 +1087,52 @@ async function createBrowserSession(
             }
         },
 
+        command: async (action: string, request: any) => {
+            let response: any;
+
+            try {
+                response = await page.evaluate(
+                    async (input: { action: string; request: any }) => {
+                        const crdt = (window as any).__blackBoxRallar?.crdt;
+                        const command = crdt?.[input.action];
+                        if (typeof command !== 'function') {
+                            throw new Error('Browser Rallar runtime does not support CRDT action: ' + input.action);
+                        }
+                        return await command(input.request);
+                    },
+                    { action, request },
+                );
+                dispatchProviderDiagnostic(
+                    'rallar.browser.provider.crdt_command_completed',
+                    args,
+                    dispatcher,
+                    {
+                        action,
+                        request,
+                        response,
+                    },
+                );
+                return response;
+            } catch (error) {
+                const failedCommandDiagnostics = {
+                    action,
+                    request,
+                    response,
+                    error: serializeError(error),
+                };
+                dispatchProviderDiagnostic(
+                    'rallar.browser.provider.crdt_command_failed',
+                    args,
+                    dispatcher,
+                    failedCommandDiagnostics,
+                );
+                if (error && typeof error === 'object') {
+                    (error as any).diagnostics = failedCommandDiagnostics;
+                }
+                throw error;
+            }
+        },
+
         close: async () => {
             try {
                 if (!session.closed) {
@@ -1085,11 +1161,86 @@ async function createBrowserSession(
 export function createRallarBrowserRtcProvider(
     options: RallarBrowserRtcProviderOptions = {},
 ): RtcProvider {
-    return createRtcProviderFromClientFactory({
+    const provider = createRtcProviderFromClientFactory({
         createClient: (request, _config, context) => {
             return createRallarBrowserRtcClient(request, context || {}, options);
         },
     });
+
+    return {
+        ...provider,
+        command: async (interaction, config, context): Promise<any> => {
+            const connectionName = toRtcConnectionName(interaction.request);
+            context.rtcConnections = context.rtcConnections || {};
+            let connection = context.rtcConnections?.[connectionName];
+            let client = connection?.client as RtcClient | undefined;
+            const action = String(interaction.request.action || 'open');
+
+            if (!client?.command) {
+                if (isLocalOnlyCrdtOpen(action, interaction.request)) {
+                    const connectStartedAtEpochMs = Date.now();
+                    client = createRallarBrowserRtcClient(
+                        {
+                            ...interaction.request,
+                            connection: connectionName,
+                            provider: interaction.request.provider || 'rallar-browser',
+                        },
+                        context || {},
+                        options,
+                    );
+                    connection = {
+                        client,
+                        provider: interaction.request.provider,
+                        actor: interaction.request.actor,
+                        roomId: interaction.request.roomId,
+                        request: interaction.request,
+                        connectStartedAtEpochMs,
+                        connectedAtEpochMs: connectStartedAtEpochMs,
+                        connectLatencyMs: 0,
+                        diagnostics: {
+                            localOnlyCrdt: true,
+                        },
+                    };
+                    context.rtcConnections[connectionName] = connection;
+                } else {
+                    return toCrdtProviderFailureStatus(config, interaction, 'CRDT connection is not open', {
+                        connection: connectionName,
+                        action,
+                    });
+                }
+            }
+            const command = client.command;
+            if (!command) {
+                return toCrdtProviderFailureStatus(config, interaction, 'CRDT connection is not open', {
+                    connection: connectionName,
+                    action,
+                });
+            }
+
+            try {
+                const startedAtEpochMs = Date.now();
+                const result = await command(action, interaction.request, interaction, config, context);
+                const endedAtEpochMs = Date.now();
+                connection.lastCrdtCommandResult = result;
+                connection.lastCrdtCommandAction = action;
+                connection.lastCrdtCommandLatencyMs = endedAtEpochMs - startedAtEpochMs;
+                return toCrdtProviderSuccessStatus(config, interaction, {
+                    connection: connectionName,
+                    action,
+                    result,
+                    startedAtEpochMs,
+                    endedAtEpochMs,
+                    latencyMs: endedAtEpochMs - startedAtEpochMs,
+                });
+            } catch (error) {
+                return toCrdtProviderFailureStatus(config, interaction, 'CRDT browser command failed', {
+                    connection: connectionName,
+                    action,
+                    error: serializeError(error),
+                });
+            }
+        },
+    };
 }
 
 function createRallarBrowserRtcClient(
@@ -1102,6 +1253,7 @@ function createRallarBrowserRtcClient(
     let runtimeSession: RallarRtcRuntimeSession | undefined;
     let connectDiagnostics: any;
     let lastSendDiagnostics: any;
+    let lastCrdtCommandDiagnostics: any;
 
     return {
         connect: async () => {
@@ -1131,6 +1283,39 @@ function createRallarBrowserRtcClient(
             return lastSendDiagnostics;
         },
 
+        command: async (action: string, commandRequest: any) => {
+            if (!runtimeSession && isLocalOnlyCrdtOpen(action, commandRequest)) {
+                runtimeSession = await createBrowserSession(
+                    args,
+                    dispatcher,
+                    context,
+                    options,
+                    { connectRuntime: false },
+                );
+                connectDiagnostics = (runtimeSession as any).connectDiagnostics;
+            }
+
+            if (!runtimeSession?.command) {
+                throw new Error(
+                    'Rallar browser RTC client is not connected for CRDT command: ' +
+                    args.connection,
+                );
+            }
+
+            lastCrdtCommandDiagnostics = await runtimeSession.command(action, {
+                ...commandRequest,
+                connection: commandRequest.connection ?? args.connection,
+                actor: commandRequest.actor ?? args.request.actor,
+                roomId: commandRequest.roomId ?? args.roomId,
+                roomRef: commandRequest.roomRef ?? args.request.roomRef,
+                rallar: {
+                    ...(args.request.rallar || {}),
+                    ...(commandRequest.rallar || {}),
+                },
+            });
+            return lastCrdtCommandDiagnostics;
+        },
+
         close: async () => {
             if (!runtimeSession) {
                 return;
@@ -1153,7 +1338,63 @@ function createRallarBrowserRtcClient(
                 ...toRallarScopeDiagnostics(args.request, args.roomId),
                 connect: connectDiagnostics,
                 lastSend: lastSendDiagnostics,
+                lastCrdtCommand: lastCrdtCommandDiagnostics,
             };
         },
+    };
+}
+
+function toCrdtProviderReportFields(interaction: any): any {
+    return {
+        provider: interaction.request.provider,
+        action: interaction.request.action,
+        connection: interaction.request.connection,
+        handle: interaction.request.handle,
+        documentName: interaction.request.name,
+        applicationId: interaction.request.applicationId,
+        workspaceId: interaction.request.workspaceId,
+        documentId: interaction.request.documentId,
+        documentType: interaction.request.documentType,
+        scope: interaction.request.scope,
+        roomRef: interaction.request.roomRef,
+        transportStrategy: interaction.request.transport,
+        durableCatchUp: interaction.request.durableCatchUp,
+    };
+}
+
+function toCrdtProviderSuccessStatus(config: any, interaction: any, details: any = {}): any {
+    return {
+        name: config.interactionName,
+        status: 'SUCCESS',
+        transport: 'CRDT',
+        ...toCrdtProviderReportFields(interaction),
+        scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
+        interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
+        repeatIndex: config.interaction.request.repeatIndex,
+        expected: interaction.response,
+        actual: {
+            ...toCrdtProviderReportFields(interaction),
+            ...details,
+        },
+        ...config,
+    };
+}
+
+function toCrdtProviderFailureStatus(config: any, interaction: any, result: string, details: any = {}): any {
+    return {
+        name: config.interactionName,
+        status: 'FAILURE',
+        result,
+        transport: 'CRDT',
+        ...toCrdtProviderReportFields(interaction),
+        scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
+        interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
+        repeatIndex: config.interaction.request.repeatIndex,
+        expected: interaction.response,
+        actual: {
+            ...toCrdtProviderReportFields(interaction),
+            ...details,
+        },
+        ...config,
     };
 }

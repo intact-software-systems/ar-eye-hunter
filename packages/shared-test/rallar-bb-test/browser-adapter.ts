@@ -32,13 +32,30 @@ export type RallarBlackBoxBrowserRallarConnectionConfig = Readonly<{
     rallar: Readonly<Record<string, unknown>>;
 }>;
 
+export type RallarBlackBoxBrowserRallarCrdtRuntime = Readonly<{
+    open(input: unknown): Promise<unknown>;
+    apply(input: unknown): Promise<unknown>;
+    read(input: unknown): Promise<unknown>;
+    sync(input: unknown): Promise<unknown>;
+    health(input: unknown): Promise<unknown>;
+    wait(input: unknown): Promise<unknown>;
+    undo(input: unknown): Promise<unknown>;
+    redo(input: unknown): Promise<unknown>;
+    close(input: unknown): Promise<unknown>;
+    destroy(input: unknown): Promise<unknown>;
+}>;
+
 export type RallarBlackBoxBrowserRallarRuntime = Readonly<{
     connect(config: RallarBlackBoxBrowserRallarConnectionConfig): Promise<unknown>;
     send(input: unknown): Promise<unknown>;
     sendWs?(input: unknown): Promise<unknown>;
+    crdt?: RallarBlackBoxBrowserRallarCrdtRuntime;
     close(): Promise<unknown>;
     health(): Promise<unknown>;
 }>;
+
+type RallarBlackBoxBrowserRallarCrdtMethod =
+    keyof RallarBlackBoxBrowserRallarCrdtRuntime;
 
 export type RallarBlackBoxBrowserRallarEvent = Readonly<{
     kind?: 'diagnostic' | 'message' | 'close';
@@ -830,6 +847,26 @@ class BrowserCommandAdapter {
                 return this.closeWebSocket(command);
             case 'http.request':
                 return await this.httpRequest(command, context);
+            case 'crdt.open':
+                return await this.executeCrdt(command, context, 'open', 'rallar.bb.crdt.opened');
+            case 'crdt.apply':
+                return await this.executeCrdt(command, context, 'apply', 'rallar.bb.crdt.applied');
+            case 'crdt.read':
+                return await this.executeCrdt(command, context, 'read', 'rallar.bb.crdt.read');
+            case 'crdt.sync':
+                return await this.executeCrdt(command, context, 'sync', 'rallar.bb.crdt.synced');
+            case 'crdt.health':
+                return await this.executeCrdt(command, context, 'health', 'rallar.bb.crdt.health');
+            case 'crdt.wait':
+                return await this.executeCrdt(command, context, 'wait', 'rallar.bb.crdt.wait_matched');
+            case 'crdt.undo':
+                return await this.executeCrdt(command, context, 'undo', 'rallar.bb.crdt.undone');
+            case 'crdt.redo':
+                return await this.executeCrdt(command, context, 'redo', 'rallar.bb.crdt.redone');
+            case 'crdt.close':
+                return await this.executeCrdt(command, context, 'close', 'rallar.bb.crdt.closed');
+            case 'crdt.destroy':
+                return await this.executeCrdt(command, context, 'destroy', 'rallar.bb.crdt.destroyed');
             case 'health':
                 return await this.health(command, context);
             case 'close':
@@ -879,6 +916,43 @@ class BrowserCommandAdapter {
         }
 
         return this.rallarRuntime;
+    }
+
+    private requireRallarCrdtRuntime(
+        command: CommandWithId,
+        context: RallarBlackBoxTestCommandContext,
+    ): RallarBlackBoxBrowserRallarCrdtRuntime {
+        const crdt = this.rallarRuntime?.crdt;
+        if (crdt) {
+            return crdt;
+        }
+
+        const message = 'Browser Rallar runtime does not support CRDT commands.';
+        const payload = normalizeRallarBlackBoxRuntimeDiagnostic({
+            topic: 'rallar.bb.crdt.failed',
+            severity: 'error',
+            commandId: command.commandId,
+            message,
+            data: {
+                kind: command.kind,
+                handle: asRecord(command).handle,
+                reason: 'unsupported-runtime',
+            },
+            payload: {
+                kind: command.kind,
+                handle: asRecord(command).handle,
+                reason: 'unsupported-runtime',
+            },
+            source: 'browser-adapter',
+        });
+        context.recordEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.bb.crdt.failed',
+            commandId: command.commandId,
+            severity: 'error',
+            payload,
+        });
+        throw new Error(message);
     }
 
     private requireFetch(): typeof fetch {
@@ -1116,6 +1190,145 @@ class BrowserCommandAdapter {
             ...(roomId ? { roomId } : {}),
             ...(roomRef ? { roomRef } : {}),
             rallar,
+        };
+    }
+
+    private toCrdtRuntimeInput(
+        command: CommandWithId,
+        context: RallarBlackBoxTestCommandContext,
+    ): Record<string, unknown> {
+        const resolved = replaceCommandPlaceholders(command, {
+            config: context.config(),
+            session: readOptionalBrowserSession(),
+        }) as Record<string, unknown>;
+
+        if (command.kind === 'crdt.open' && resolved.handle === undefined) {
+            const configuredRallar = asRecord(context.config()?.rallar);
+            return {
+                ...resolved,
+                handle: command.commandId,
+                apiBaseUrl: resolved.apiBaseUrl ?? context.config()?.apiBaseUrl ?? configuredRallar.apiBaseUrl,
+                actor: resolved.actor ?? context.config()?.actor,
+                sessionId: resolved.sessionId ?? context.config()?.sessionId ?? configuredRallar.sessionId,
+                roomId: resolved.roomId ?? context.config()?.roomId,
+                rallar: {
+                    ...configuredRallar,
+                    ...asRecord(resolved.rallar),
+                },
+            };
+        }
+
+        if (command.kind === 'crdt.open') {
+            const configuredRallar = asRecord(context.config()?.rallar);
+            return {
+                ...resolved,
+                apiBaseUrl: resolved.apiBaseUrl ?? context.config()?.apiBaseUrl ?? configuredRallar.apiBaseUrl,
+                actor: resolved.actor ?? context.config()?.actor,
+                sessionId: resolved.sessionId ?? context.config()?.sessionId ?? configuredRallar.sessionId,
+                roomId: resolved.roomId ?? context.config()?.roomId,
+                rallar: {
+                    ...configuredRallar,
+                    ...asRecord(resolved.rallar),
+                },
+            };
+        }
+
+        return resolved;
+    }
+
+    private async executeCrdt(
+        command: CommandWithId,
+        context: RallarBlackBoxTestCommandContext,
+        method: RallarBlackBoxBrowserRallarCrdtMethod,
+        successTopic: string,
+    ): Promise<RallarBlackBoxTestCommandOutcome> {
+        const crdt = this.requireRallarCrdtRuntime(command, context);
+        const input = this.toCrdtRuntimeInput(command, context);
+        const abort = this.commandAbortSignal(command, context);
+        let value: unknown;
+        if (method === 'wait') {
+            context.recordEvent({
+                kind: 'diagnostic',
+                topic: 'rallar.bb.crdt.waiting',
+                commandId: command.commandId,
+                severity: 'info',
+                payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+                    topic: 'rallar.bb.crdt.waiting',
+                    severity: 'info',
+                    commandId: command.commandId,
+                    data: {
+                        method,
+                        kind: command.kind,
+                        handle: input.handle,
+                        conditions: input.conditions,
+                        timeoutMs: input.timeoutMs,
+                        intervalMs: input.intervalMs,
+                        stableForMs: input.stableForMs,
+                    },
+                    payload: {
+                        method,
+                        kind: command.kind,
+                        handle: input.handle,
+                        conditions: input.conditions,
+                        timeoutMs: input.timeoutMs,
+                        intervalMs: input.intervalMs,
+                        stableForMs: input.stableForMs,
+                    },
+                    source: 'browser-adapter',
+                }),
+            });
+        }
+        try {
+            value = await this.withAbort(crdt[method](input), abort.signal);
+        } catch (error) {
+            context.recordEvent({
+                kind: 'diagnostic',
+                topic: 'rallar.bb.crdt.failed',
+                commandId: command.commandId,
+                severity: 'error',
+                payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+                    topic: 'rallar.bb.crdt.failed',
+                    severity: 'error',
+                    commandId: command.commandId,
+                    message: error instanceof Error ? error.message : String(error),
+                    data: {
+                        method,
+                        kind: command.kind,
+                        handle: input.handle,
+                    },
+                    payload: {
+                        method,
+                        kind: command.kind,
+                        handle: input.handle,
+                    },
+                    error,
+                    source: 'browser-adapter',
+                }),
+            });
+            throw error;
+        } finally {
+            abort.cleanup();
+        }
+
+        context.recordEvent({
+            kind: 'diagnostic',
+            topic: successTopic,
+            commandId: command.commandId,
+            severity: 'info',
+            payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+                topic: successTopic,
+                severity: 'info',
+                commandId: command.commandId,
+                data: value,
+                payload: value,
+                source: 'browser-adapter',
+            }),
+        });
+
+        return {
+            status: 'ok',
+            value,
+            nextStatus: context.state().status,
         };
     }
 

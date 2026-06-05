@@ -665,6 +665,16 @@ function runnerStepForCommand(
         case 'recipe.cancel':
         case 'loop':
         case 'parallel':
+        case 'crdt.open':
+        case 'crdt.apply':
+        case 'crdt.read':
+        case 'crdt.sync':
+        case 'crdt.health':
+        case 'crdt.wait':
+        case 'crdt.undo':
+        case 'crdt.redo':
+        case 'crdt.close':
+        case 'crdt.destroy':
             return {
                 ...base,
                 type: command.kind,

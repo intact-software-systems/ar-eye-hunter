@@ -385,6 +385,77 @@ describe('rallar-bb-test capability and schema contract', () => {
         }
     });
 
+    it('validates CRDT wait and kind-specific operation payloads', () => {
+        expectValid(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+            kind: 'crdt.wait',
+            commandId: 'wait-crdt-schema',
+            handle: 'doc',
+            timeoutMs: 1_000,
+            intervalMs: 50,
+            stableForMs: 100,
+            sync: {
+                reason: 'schema-test',
+                transport: 'ws',
+            },
+            conditions: [
+                {
+                    source: 'value',
+                    path: 'title',
+                    operator: 'equals',
+                    expected: 'Ready',
+                },
+                {
+                    source: 'health',
+                    path: 'pendingUpdateCount',
+                    operator: 'equals',
+                    expected: 0,
+                },
+            ],
+        });
+
+        const missingRegisterPolicy = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+            kind: 'crdt.apply',
+            commandId: 'invalid-register',
+            handle: 'doc',
+            batch: {
+                kind: 'batch',
+                operations: [
+                    {
+                        kind: 'register.set',
+                        path: ['title'],
+                        value: 'Ready',
+                    },
+                ],
+            },
+        });
+        expect(missingRegisterPolicy.ok).toBe(false);
+        if (!missingRegisterPolicy.ok) {
+            expect(formatJsonSchemaValidationErrors(missingRegisterPolicy.errors)).toContain(
+                'Missing required property policy',
+            );
+        }
+
+        const wrongNumericValue = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+            kind: 'crdt.apply',
+            commandId: 'invalid-number',
+            handle: 'doc',
+            batch: {
+                kind: 'batch',
+                operations: [
+                    {
+                        kind: 'number.max',
+                        path: ['score'],
+                        value: '10',
+                    },
+                ],
+            },
+        });
+        expect(wrongNumericValue.ok).toBe(false);
+        if (!wrongNumericValue.ok) {
+            expect(formatJsonSchemaValidationErrors(wrongNumericValue.errors)).toContain('Expected number');
+        }
+    });
+
     it('validates control envelopes, distributed manifests, and OpenAPI command examples', () => {
         expectValid(RALLAR_BLACK_BOX_CONTROL_COMMAND_ENVELOPE_SCHEMA, {
             kind: 'command',

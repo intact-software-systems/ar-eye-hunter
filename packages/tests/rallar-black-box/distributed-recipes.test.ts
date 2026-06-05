@@ -613,6 +613,67 @@ describe('distributed recipes helpers', () => {
         expect(defaultDistributedRecipeTargetIds(rows)).toEqual(['agent-a']);
     });
 
+    it('requires reported CRDT capability when selected recipes use CRDT commands', () => {
+        const rows = distributedRecipeTargetRows({
+            run: {
+                ...runSnapshot,
+                agents: runSnapshot.agents.map(agent =>
+                    agent.agentId === 'agent-a'
+                        ? {
+                            ...agent,
+                            identity: {
+                                ...(agent.identity ?? {}),
+                                capabilities: {
+                                    crdt: {
+                                        supported: true,
+                                        transports: [
+                                            'local-only',
+                                            'ws',
+                                            'rtc',
+                                            'ws-then-rtc',
+                                            'rtc-with-ws-fallback',
+                                        ],
+                                    },
+                                },
+                            },
+                        }
+                        : agent
+                ),
+            },
+            group: {
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+                groupId: 'bb-group',
+            },
+            requiredCommandKinds: ['crdt.open', 'crdt.wait'],
+            nowEpochMs: 2_500,
+        });
+
+        expect(rows.map(row => [row.agentId, row.status, row.targetable])).toEqual([
+            ['agent-a', 'matched', true],
+            ['agent-b', 'offline', false],
+            ['agent-c', 'different-group', false],
+        ]);
+        expect(defaultDistributedRecipeTargetIds(rows)).toEqual(['agent-a']);
+
+        const missingRows = distributedRecipeTargetRows({
+            run: runSnapshot,
+            group: {
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+                groupId: 'bb-group',
+            },
+            requiredCommandKinds: ['crdt.open'],
+            nowEpochMs: 2_500,
+        });
+
+        expect(missingRows[0]).toMatchObject({
+            agentId: 'agent-a',
+            status: 'missing-crdt-runtime',
+            targetable: false,
+        });
+    });
+
     it('builds role-map distributed manifests for sender receiver patterns', () => {
         const manifest = buildDistributedRunManifest({
             distributedRunId: 'dist-1',

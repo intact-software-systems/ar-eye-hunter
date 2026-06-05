@@ -13,6 +13,16 @@ export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
     'ws.send',
     'ws.close',
     'http.request',
+    'crdt.open',
+    'crdt.apply',
+    'crdt.read',
+    'crdt.sync',
+    'crdt.health',
+    'crdt.wait',
+    'crdt.undo',
+    'crdt.redo',
+    'crdt.close',
+    'crdt.destroy',
     'health',
     'stats',
     'close',
@@ -27,6 +37,13 @@ export type RallarBlackBoxTestTransport =
     | 'messages.rtc'
     | 'ws'
     | 'http';
+
+export type RallarBlackBoxTestCrdtTransport =
+    | 'local-only'
+    | 'ws'
+    | 'rtc'
+    | 'ws-then-rtc'
+    | 'rtc-with-ws-fallback';
 
 export type RallarBlackBoxTestSeverity = 'debug' | 'info' | 'warning' | 'error';
 
@@ -257,6 +274,111 @@ export type RallarBlackBoxTestHttpRequestCommand =
     }>;
 }>;
 
+export type RallarBlackBoxTestCrdtOpenCommand =
+    & RallarBlackBoxTestCommandBase<'crdt.open'>
+    & Readonly<{
+    handle?: string;
+    name: string;
+    applicationId?: string;
+    workspaceId?: string;
+    documentId?: string;
+    documentType?: string;
+    scope?: Readonly<Record<string, unknown>>;
+    roomRef?: Readonly<Record<string, unknown>>;
+    principalId?: string;
+    customScope?: string;
+    transport?: RallarBlackBoxTestCrdtTransport;
+    persist?: boolean;
+    tabSync?: boolean;
+    initialValue?: unknown;
+    policies?: readonly Readonly<Record<string, unknown>>[];
+    validation?: Readonly<Record<string, unknown>>;
+    encryption?: Readonly<Record<string, unknown>>;
+    durableCatchUp?: false | 'http';
+}>;
+
+export type RallarBlackBoxTestCrdtApplyCommand =
+    & RallarBlackBoxTestCommandBase<'crdt.apply'>
+    & Readonly<{
+    handle: string;
+    batch: Readonly<Record<string, unknown>>;
+}>;
+
+export type RallarBlackBoxTestCrdtReadCommand =
+    & RallarBlackBoxTestCommandBase<'crdt.read'>
+    & Readonly<{
+    handle: string;
+}>;
+
+export type RallarBlackBoxTestCrdtSyncCommand =
+    & RallarBlackBoxTestCommandBase<'crdt.sync'>
+    & Readonly<{
+    handle: string;
+    reason?: string;
+    transport?: RallarBlackBoxTestCrdtTransport;
+}>;
+
+export type RallarBlackBoxTestCrdtHealthCommand =
+    & RallarBlackBoxTestCommandBase<'crdt.health'>
+    & Readonly<{
+    handle: string;
+}>;
+
+export type RallarBlackBoxTestCrdtWaitConditionSource = 'value' | 'health';
+
+export type RallarBlackBoxTestCrdtWaitOperator =
+    | 'equals'
+    | 'notEquals'
+    | 'contains'
+    | 'exists'
+    | 'gte'
+    | 'lte';
+
+export type RallarBlackBoxTestCrdtWaitCondition = Readonly<{
+    source: RallarBlackBoxTestCrdtWaitConditionSource;
+    path?: string;
+    operator: RallarBlackBoxTestCrdtWaitOperator;
+    expected?: unknown;
+}>;
+
+export type RallarBlackBoxTestCrdtWaitCommand =
+    & RallarBlackBoxTestCommandBase<'crdt.wait'>
+    & Readonly<{
+    handle: string;
+    intervalMs?: number;
+    stableForMs?: number;
+    sync?: false | Readonly<{
+        reason?: string;
+        transport?: RallarBlackBoxTestCrdtTransport;
+    }>;
+    conditions: readonly RallarBlackBoxTestCrdtWaitCondition[];
+}>;
+
+export type RallarBlackBoxTestCrdtUndoRedoCommand =
+    & RallarBlackBoxTestCommandBase<'crdt.undo' | 'crdt.redo'>
+    & Readonly<{
+    handle: string;
+    targetOperationGroupId: string;
+    operations: readonly Readonly<Record<string, unknown>>[];
+    operationGroupId?: string;
+}>;
+
+export type RallarBlackBoxTestCrdtCloseDestroyCommand =
+    & RallarBlackBoxTestCommandBase<'crdt.close' | 'crdt.destroy'>
+    & Readonly<{
+    handle: string;
+}>;
+
+export type RallarBlackBoxTestCrdtCommand =
+    | RallarBlackBoxTestCrdtOpenCommand
+    | RallarBlackBoxTestCrdtApplyCommand
+    | RallarBlackBoxTestCrdtReadCommand
+    | RallarBlackBoxTestCrdtSyncCommand
+    | RallarBlackBoxTestCrdtHealthCommand
+    | RallarBlackBoxTestCrdtWaitCommand
+    | RallarBlackBoxTestCrdtUndoRedoCommand
+    | RallarBlackBoxTestCrdtCloseDestroyCommand;
+
 export type RallarBlackBoxTestSimpleCommand =
     | RallarBlackBoxTestCommandBase<'health'>
     | RallarBlackBoxTestCommandBase<'stats'>
@@ -278,6 +400,7 @@ export type RallarBlackBoxTestCommand =
     | RallarBlackBoxTestWsSendCommand
     | RallarBlackBoxTestWsCloseCommand
     | RallarBlackBoxTestHttpRequestCommand
+    | RallarBlackBoxTestCrdtCommand
     | RallarBlackBoxTestSimpleCommand;
 
 export type RallarBlackBoxTestResultStatus = 'ok' | 'failed' | 'cancelled' | 'skipped';

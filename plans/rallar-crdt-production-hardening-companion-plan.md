@@ -1,13 +1,18 @@
 # Rallar CRDT Production Hardening Companion Plan
 
-Date: 2026-06-03
+Date: 2026-06-04
 
-Status: Companion planning document for advanced and production-hardening CRDT
-work after the V1 product and implementation plan.
+Status: Implemented companion plan for CRDT production-hardening controls, with
+remaining production rollout and product follow-ups called out explicitly.
 
 Related plan:
 
 - `plans/rallar-crdt-product-and-implementation-plan.md`
+
+Follow-up plans:
+
+- `plans/rallar-crdt-sequence-text-follow-up-plan.md`
+- `plans/rallar-crdt-document-encryption-follow-up-plan.md`
 
 ## Purpose
 
@@ -18,7 +23,8 @@ ready for networked collaborative documents.
 The main CRDT plan owns the V1 implementation path: explicit `rallar.crdt`,
 Rallar-owned operation core, browser facade, message transport bridge, and
 durable server append log. This companion plan owns the hardening layer around
-that path.
+that path and now records which controls are implemented versus still deferred
+as production rollout or product follow-up work.
 
 ## Current Code And Docs Checked
 
@@ -27,20 +33,40 @@ Primary local references:
 - `plans/rallar-crdt-product-and-implementation-plan.md`
 - `iterations/rallar-crdt-iteration-plan.md`
 - `playground/RALLAR_CRDT.md`
+- `docs/crdt-implementation-progress.md`
+- `docs/rallar-crdt-guide.md`
 - `docs/rallar-api-reference.md`
 - `docs/rallar-quickstart-and-recipes.md`
 - `docs/rallar-ai-skill.md`
+- `packages/shared/crdt`
+- `packages/shared/crdt/crdt-durable-log.ts`
 - `packages/shared-web/browser/rallar.ts`
 - `packages/shared-web/browser/rallar-data.ts`
+- `packages/shared-web/browser/rallar-crdt.ts`
+- `packages/shared-web/browser/rallar-crdt-local-store.ts`
+- `packages/shared-web/browser/rallar-crdt-tab-sync.ts`
+- `packages/shared-web/browser/rallar-crdt-transport.ts`
 - `packages/shared/al-contracts/al-contract.ts`
 - `packages/shared/al-contracts/al-policy.ts`
 - `packages/shared/webrtc/QRtcDataChannel.ts`
 - `packages/shared-server/rallar-facade/RallarServer.ts`
 - `packages/shared-server/rallar-facade/ws-topic-router.ts`
+- `packages/shared-server/crdt/RallarCrdtServer.ts`
+- `packages/shared-server/crdt/InMemoryRallarCrdtLogRepository.ts`
+- `packages/shared-server/postgres/crdt/PSqlCrdtLogRepository.ts`
 - `packages/shared-server/app-data/RallarServerAppData.ts`
 - `packages/shared-server/postgres/app-data/PSqlAppDataRepository.ts`
+- `apps/api-v1/prisma/migrations/20260604170000_crdt_log/migration.sql`
+- `apps/api-v1/src/create-rallar-server.ts`
 - `apps/api-v1/src/db/in-memory-schema.sql`
+- `packages/shared-graph/crdt/graph-crdt.ts`
 - `packages/shared-graph/shared-graph-types.ts`
+- `packages/shared-test/black-box-runner/examples/rallar-crdt-diagnostics.json`
+- `packages/tests/shared/crdt-contracts.test.ts`
+- `packages/tests/shared-web/rallar-crdt.test.ts`
+- `packages/tests/shared-server/rallar-crdt-server-topic.test.ts`
+- `packages/tests/shared-server/rallar-crdt-log-repository.test.ts`
+- `packages/tests/shared-graph/graph-crdt.test.ts`
 
 Repo facts this plan relies on:
 
@@ -50,7 +76,122 @@ Repo facts this plan relies on:
 - Dynamic server topics can validate and authorize routed WS messages.
 - `rallar.realtime` is suitable for ephemeral low-latency state, not durable
   CRDT source-of-truth updates.
-- Production durable CRDT sync requires storage beyond `app_data_store`.
+- Rallar CRDT now has explicit shared contracts, a deterministic JSON
+  operation engine, ordered-list sequence operations, actor-owned undo/redo
+  operation groups, browser persistence, same-origin tab sync, WS/RTC room live
+  transport, principal durable-append fanout, a server topic bridge, and
+  dedicated durable CRDT storage through `crdt_documents`, `crdt_updates`, and
+  `crdt_snapshots`.
+- Production hardening controls now exist for feature policies, WS/RTC/durable
+  append kill switches, quotas/rate limits, admin inspection, corruption
+  quarantine, metrics sink events, audit sink events, backup/restore bundles,
+  integrity verification, projection rebuild hooks, non-destructive compaction,
+  redacted debug export, erasure workflow helpers, Black Box health/admin UI,
+  and operational runbooks.
+- Remaining production rollout work is deployment-specific wiring and policy:
+  metrics backend integration, audit-store retention/review flows, scheduled
+  jobs, automated retention/redaction enforcement, rich-text CRDTs, destructive
+  tombstone garbage collection, and encrypted-document key custody/rotation
+  automation.
+
+## Current Implemented State And Limits
+
+Implemented CRDT state in the repo:
+
+- `rallar.crdt` is explicit and opt-in; `rallar.data.open(...)` remains a
+  latest-value browser store.
+- Browser documents support `open`, `read`, `subscribe`, `applyLocal`,
+  `snapshot`, `flush`, `sync`, `close`, `destroy`, `health`, pending updates,
+  failed pending updates, and dependency-blocked updates.
+- Shared CRDT operations cover JSON map operations, OR-set operations, LWW
+  registers, multi-value registers, and ordered-list sequence insert, delete,
+  and move operations.
+- Browser documents expose ordered-list helpers plus actor-owned undo/redo
+  helpers for operation groups.
+- Local CRDT artifacts are stored through internal `rallar.data` stores with
+  `sync: false`.
+- Same-origin CRDT tab sync uses a CRDT-specific `BroadcastChannel` keyed by the
+  document key.
+- Room-scoped documents support user-selected `local-only`, `ws`, `rtc`,
+  `ws-then-rtc`, and `rtc-with-ws-fallback` strategies.
+- The server bridge installs CRDT WS topics, validates envelopes and operation
+  paths, authorizes room messages, appends before durable fanout when a log
+  repository is configured, and sends append responses.
+- Principal-scoped documents can use durable-append-backed fanout when the
+  server bridge is configured with a durable log and a principal session
+  resolver. Peer RTC catch-up is not principal durability.
+- Dedicated CRDT durable-log contracts, in-memory repository, Postgres
+  repository, Prisma migration, and API-v1 in-memory schema updates exist.
+- Product docs, API reference entries, troubleshooting guidance, a black-box
+  diagnostic recipe, and graph CRDT spike tests exist.
+
+Current implemented hardening state in the repo:
+
+- Shared hardening contracts live in `packages/shared/crdt/crdt-hardening.ts`
+  and are exported through `packages/shared/crdt/mod.ts`.
+- Browser documents accept `policies` and `metrics` through
+  `rallar.crdt.open(...)`; policies gate local apply, network send, WS, RTC,
+  durable append, and peer catch-up decisions.
+- Browser hydration detects corrupt local snapshots and update artifacts,
+  excludes invalid artifacts from replay, and reports
+  `corruptLocalArtifactCount` through `health()`.
+- The CRDT WS topic bridge applies the same policy decisions before accepting
+  update and sync envelopes.
+- The in-memory and Postgres CRDT log repositories enforce durable append
+  policy, lifecycle, max update count, update byte limits, and per-actor update
+  rate limits.
+- The CRDT log repositories expose admin operations for document listing, debug
+  bundle export, backup bundle export/restore, integrity verification,
+  projection rebuild hooks, non-destructive snapshot compaction, and lifecycle
+  updates including archive, quarantine, and destroy.
+- API-v1 exposes CRDT admin routes for listing, integrity, redacted debug
+  export, backup export, projection rebuild, compaction, lifecycle, and erasure
+  workflows.
+- Rallar Black Box exposes an operator CRDT Health tab for document inspection
+  and admin actions.
+- Shared hardening exports audit sinks/events, retention/stale-snapshot summary
+  helpers, redacted debug bundles, erasure audit helpers, and encryption
+  validation/helpers.
+- Shared tests, browser tests, server tests, PGlite tests, graph CRDT tests,
+  black-box recipe-matrix tests, and docs cover the implemented hardening
+  controls.
+
+Current limitations that remain after the implemented hardening work:
+
+- Principal live fanout requires durable append acceptance and an explicit
+  principal session resolver. It is not peer based and does not use RTC for
+  durability.
+- Ordered-list sequence CRDTs are implemented. Rich text, cursor-preserving text
+  editing, and document-wide collaborative undo remain follow-up product work.
+- Actor-owned undo/redo operation groups are implemented for "undo my change".
+  Document-wide collaborative undo is out of scope for V1.
+- Document-level encryption supports AES-GCM encrypted update payloads and
+  snapshot bodies, authorized client decrypt before merge, durable
+  backup/restore of ciphertext, and redacted diagnostics that omit ciphertext.
+  Key custody, rotation automation, revocation UX, and access-loss recovery
+  remain deployment/product follow-up work.
+- Non-destructive snapshot compaction and redacted exports exist. Destructive
+  tombstone garbage collection and automated retention erasure remain
+  deployment/product follow-ups.
+- Erasure is represented as an audited admin workflow, not as normal CRDT
+  delete. Deployment-specific audit storage and retention-review automation
+  still need to be connected.
+- The CRDT health UI is operator tooling in Rallar Black Box, not an end-user
+  product surface.
+- Graph CRDT support is a spike for authored graph state and deterministic
+  graphology derivation, not a productized graph collaboration surface.
+- Repository-level admin APIs are implemented, but operator-facing UI,
+  deployment-specific admin routes, audit review flows, and scheduled
+  production jobs are not productized.
+- Feature policies, kill switches, rate limits, quotas, metrics events,
+  backup/restore bundles, integrity checks, and corruption quarantine are
+  implemented library/server controls. Production metrics backend wiring, SLO
+  dashboards, alerting, retention jobs, and automated quarantine policies remain
+  deployment work.
+- App/custom-scope CRDT live support is limited; room scope is the primary live
+  collaboration path.
+- Raw binary/blob payloads remain out of CRDT update scope and should be stored
+  externally as references.
 
 ## Consistency Guarantees
 
@@ -65,19 +206,27 @@ V1 local-only guarantees:
 
 Topic-bridge guarantees:
 
+- user-selected live propagation over WS, RTC, or a combined/fallback strategy
+  for room-scoped documents
 - best-effort or at-least-once transport according to the selected Rallar
-  message lane
+  message lane and strategy
 - no global total order before durable server append
 - duplicate delivery is tolerated through update ID dedupe
 - RTC delivery only accelerates live peers and is not a durability boundary
 
-Durable server guarantees:
+Durable server/log guarantees already present in V1:
 
 - monotonic append sequence per document
 - idempotent duplicate append handling
 - server-authoritative append metadata
+- append responses that allow browser pending updates to clear after accepted or
+  duplicate durable append
+
+Durable serving guarantees this hardening plan must preserve and productize:
+
 - late join and reconnect through snapshot plus update-page catch-up
 - eventual convergence for authorized replicas that can reach the durable log
+  and catch-up path
 
 Non-guarantees:
 
@@ -130,7 +279,7 @@ CRDT should be gateable by:
 - durable append log
 - RTC acceleration
 - peer catch-up
-- experimental document types such as graph or sequence/text
+- experimental document types such as graph or rich text
 
 Required controls:
 
@@ -244,7 +393,7 @@ Track metrics for:
 - catch-up page count
 - snapshot size and age
 - update-log growth
-- compaction/redaction job duration once implemented
+- non-destructive compaction/redaction job duration
 - RTC acceleration success/fallback rate
 
 Initial production SLO candidates:
@@ -300,13 +449,19 @@ Hardening work should cover:
 - payload redaction in logs and diagnostics
 - document type declarations for sensitive fields
 - retention policies for append logs and snapshots
-- audit events for append, reject, archive, destroy, and export
-- optional document-level encryption later
+- audit events for append, reject, export, backup, restore, archive, quarantine,
+  destroy, rebuild, compact, erase, and redact
+- optional encrypted-document key rotation/revocation automation later
 - secure debug exports with explicit operator authorization
 
 CRDT delete must be documented as a document edit, not an erasure guarantee.
 
 ## Operational Roadmap
+
+Implementation status: Phases A-E are implemented in the current branch for
+library/server controls and documented in
+`docs/crdt-implementation-progress.md`. The phase structure remains here as the
+reviewable plan and acceptance record.
 
 ### Phase A: Hardening Contracts
 
@@ -349,9 +504,11 @@ Goal: support controlled production rollout.
 Work:
 
 - Add feature flags and kill switches.
-- Add admin list/inspect/archive/quarantine APIs.
+- Add admin list/inspect/archive/quarantine/destroy/compact/erase APIs.
 - Add metrics for append, sync, replay, pending, dependency, and rejection
   behavior.
+- Add audit events for append, reject, export, backup, restore, archive,
+  quarantine, destroy, rebuild, compact, erase, and redact workflows.
 - Add rate limit and quota enforcement.
 
 Acceptance:
@@ -369,6 +526,8 @@ Work:
 - Add restore tests preserving document IDs and append sequence.
 - Add catch-up pagination/digest tests for large logs.
 - Add scheduled projection rebuild/integrity checks.
+- Add non-destructive snapshot compaction and retention/stale-snapshot summary
+  helpers.
 
 Acceptance:
 
@@ -383,19 +542,23 @@ Goal: cover specialized document families.
 Work:
 
 - Add AR/spatial metadata conventions if AR annotations become a CRDT use case.
-- Add sequence/text CRDT plan if ordered text or rich lists become a product
-  requirement.
-- Add document-level encryption plan if sensitive collaborative documents become
-  in scope.
+- Add ordered-list sequence CRDTs for rich-list shells, kanban columns, and
+  paragraph ordering.
+- Add actor-owned undo/redo operation-group helpers.
+- Add document-level encryption for encrypted update payloads, encrypted
+  snapshot bodies, keyring-based client decrypt, backup/restore, and redacted
+  diagnostics if sensitive collaborative documents become in scope.
 
 Acceptance:
 
 - Domain-specific documents do not smuggle derived or authoritative state into
   CRDT source-of-truth data.
+- Rich text and encrypted-document key operations remain explicit follow-up
+  plans, not hidden behavior in the JSON CRDT engine.
 
 ## Test Plan
 
-Add tests for:
+Implemented and retained tests cover:
 
 - consistency guarantee examples for local-only, topic bridge, and durable log
 - retryable vs permanent failure handling
@@ -415,8 +578,11 @@ Add tests for:
 ## Assumptions
 
 - The main CRDT plan remains the source of truth for V1 implementation order.
-- Production-ready collaboration requires the durable append log and catch-up.
-- Hardening work should be incremental, but feature flags, typed errors,
-  metrics, and corruption recovery are required before broad production rollout.
-- Encryption, sequence/text CRDTs, and AR/spatial CRDT schemas are conditional
-  follow-up plans unless product scope makes them necessary.
+- Production-ready collaboration requires the durable append log, catch-up
+  serving path, and the hardening controls in this plan.
+- Hardening work has been implemented incrementally, but broad production
+  rollout still requires deployment wiring for metrics, audit, admin access,
+  retention, scheduled integrity checks, and operator workflows.
+- Encrypted-document key operations, rich-text CRDTs, and AR/spatial product
+  schemas are conditional follow-up plans unless product scope makes them
+  necessary.

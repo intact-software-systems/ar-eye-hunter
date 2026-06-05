@@ -1,6 +1,8 @@
 export * from './rallar-facade/RallarServer.ts';
 export * from './rallar-facade/RallarServerApplication.ts';
 export * from './rallar-facade/ws-topic-router.ts';
+export * from './crdt/RallarCrdtServer.ts';
+export * from './crdt/InMemoryRallarCrdtLogRepository.ts';
 export * from './app-data/AppDataRepository.ts';
 export * from './app-data/RallarServerAppData.ts';
 export * from './rallar-system/middleware/RallarMiddleware.ts';
@@ -34,6 +36,7 @@ export * from './postgres/al-runtime/createPSqlALRuntimeStores.ts';
 export * from './postgres/al-runtime/PSqlInboundAdmissionBackend.ts';
 export * from './postgres/al-runtime/PSqlOutboundAdmissionBackend.ts';
 export * from './postgres/app-data/PSqlAppDataRepository.ts';
+export * from './postgres/crdt/PSqlCrdtLogRepository.ts';
 export * from './postgres/queuebox/PSqlQueueBox.ts';
 export * from './postgres/queuebox/PSqlResultsQueueBox.ts';
 export * from './postgres/rallar-system/createStateRepositories.ts';

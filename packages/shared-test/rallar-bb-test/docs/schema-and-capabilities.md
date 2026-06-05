@@ -124,6 +124,13 @@ Treat schema changes as public command-center contract changes.
 - Runner scenario schema changes should preserve the generic HTTP/WS/RTC/ASSERT
   boundary. Do not add Rallar-specific facade operations to the runner core.
 
+CRDT command kinds are browser-agent commands, not runner-core operations.
+`crdt.open`, `crdt.apply`, `crdt.read`, `crdt.sync`, `crdt.health`,
+`crdt.wait`, `crdt.undo`, `crdt.redo`, `crdt.close`, and `crdt.destroy` delegate to the
+browser Rallar CRDT facade through the optional runtime `crdt` surface. Runner
+scenarios may reference these as `crdt.*` steps only when the selected provider
+can forward them to a browser agent.
+
 Composite command kinds are browser-agent orchestration primitives. `loop` and
 `parallel` may contain child commands from the same `rallar-bb-test` vocabulary,
 but they must stay transport-neutral and bounded by the exported composite

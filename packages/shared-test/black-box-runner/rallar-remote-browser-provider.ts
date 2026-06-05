@@ -406,6 +406,160 @@ function toHealthCommand(commandId: string, interaction: any): RallarBlackBoxTes
     };
 }
 
+function toCrdtCommand(commandId: string, interaction: any): RallarBlackBoxTestCommand {
+    const request = interaction.request;
+    const action = String(request.action || 'open');
+    const metadata = {
+        ...(request.parity ? { parity: request.parity } : {}),
+        connection: toRtcConnectionName(request),
+        blackBoxRunner: request,
+    };
+
+    if (action === 'open') {
+        return {
+            kind: 'crdt.open',
+            commandId,
+            handle: request.handle,
+            name: request.name,
+            applicationId: request.applicationId,
+            workspaceId: request.workspaceId,
+            documentId: request.documentId,
+            documentType: request.documentType,
+            scope: request.scope,
+            roomRef: request.roomRef,
+            principalId: request.principalId,
+            customScope: request.customScope,
+            transport: request.transport,
+            persist: request.persist,
+            tabSync: request.tabSync,
+            initialValue: request.initialValue,
+            policies: request.policies,
+            validation: request.validation,
+            encryption: request.encryption,
+            durableCatchUp: request.durableCatchUp,
+            timeoutMs: request.timeoutMs,
+            metadata,
+        } as RallarBlackBoxTestCommand;
+    }
+
+    if (action === 'apply') {
+        return {
+            kind: 'crdt.apply',
+            commandId,
+            handle: request.handle,
+            batch: request.batch,
+            timeoutMs: request.timeoutMs,
+            metadata,
+        } as RallarBlackBoxTestCommand;
+    }
+
+    if (action === 'sync') {
+        return {
+            kind: 'crdt.sync',
+            commandId,
+            handle: request.handle,
+            reason: request.reason,
+            transport: request.transport,
+            timeoutMs: request.timeoutMs,
+            metadata,
+        } as RallarBlackBoxTestCommand;
+    }
+
+    if (action === 'wait') {
+        return {
+            kind: 'crdt.wait',
+            commandId,
+            handle: request.handle,
+            intervalMs: request.intervalMs,
+            stableForMs: request.stableForMs,
+            sync: request.sync,
+            conditions: request.conditions,
+            timeoutMs: request.timeoutMs,
+            metadata,
+        } as RallarBlackBoxTestCommand;
+    }
+
+    if (action === 'undo' || action === 'redo') {
+        return {
+            kind: action === 'undo' ? 'crdt.undo' : 'crdt.redo',
+            commandId,
+            handle: request.handle,
+            targetOperationGroupId: request.targetOperationGroupId,
+            operations: request.operations,
+            operationGroupId: request.operationGroupId,
+            timeoutMs: request.timeoutMs,
+            metadata,
+        } as RallarBlackBoxTestCommand;
+    }
+
+    if (action === 'read' || action === 'health' || action === 'close' || action === 'destroy') {
+        return {
+            kind: `crdt.${action}`,
+            commandId,
+            handle: request.handle,
+            timeoutMs: request.timeoutMs,
+            metadata,
+        } as RallarBlackBoxTestCommand;
+    }
+
+    throw new Error('Unsupported CRDT action: ' + action);
+}
+
+function toCrdtProviderReportFields(interaction: any): any {
+    return {
+        provider: interaction.request.provider,
+        action: interaction.request.action,
+        connection: interaction.request.connection,
+        handle: interaction.request.handle,
+        documentName: interaction.request.name,
+        applicationId: interaction.request.applicationId,
+        workspaceId: interaction.request.workspaceId,
+        documentId: interaction.request.documentId,
+        documentType: interaction.request.documentType,
+        scope: interaction.request.scope,
+        roomRef: interaction.request.roomRef,
+        transportStrategy: interaction.request.transport,
+        durableCatchUp: interaction.request.durableCatchUp,
+    };
+}
+
+function toCrdtProviderSuccessStatus(config: any, interaction: any, details: any = {}): any {
+    return {
+        name: config.interactionName,
+        status: 'SUCCESS',
+        transport: 'CRDT',
+        ...toCrdtProviderReportFields(interaction),
+        scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
+        interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
+        repeatIndex: config.interaction.request.repeatIndex,
+        expected: interaction.response,
+        actual: {
+            ...toCrdtProviderReportFields(interaction),
+            ...details,
+        },
+        ...config,
+    };
+}
+
+function toCrdtProviderFailureStatus(config: any, interaction: any, result: string, details: any = {}): any {
+    return {
+        name: config.interactionName,
+        status: 'FAILURE',
+        result,
+        transport: 'CRDT',
+        ...toCrdtProviderReportFields(interaction),
+        scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
+        interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
+        repeatIndex: config.interaction.request.repeatIndex,
+        expected: interaction.response,
+        actual: {
+            ...toCrdtProviderReportFields(interaction),
+            ...details,
+        },
+        ...config,
+    };
+}
+
 async function readJson(response: Response): Promise<any> {
     return await response.json().catch(() => ({}));
 }
@@ -1026,6 +1180,44 @@ export function createRallarRemoteBrowserRtcProvider(
                 return toRtcSuccessStatus(config, interaction, details);
             } catch (error) {
                 return toFailureFromError(config, interaction, 'Remote RTC send failed', error);
+            }
+        },
+
+        command: async (interaction, config, context): Promise<any> => {
+            const remote = toRemoteConfig(interaction.request, config, context, options);
+            const action = String(interaction.request.action || 'open');
+            const commandId = commandIdFor(`crdt-${action}`, interaction);
+
+            try {
+                const command = toCrdtCommand(commandId, interaction);
+                const startedAtEpochMs = Date.now();
+                const result = await executeRemoteCommand(remote, fetchFn, context, command);
+                const endedAtEpochMs = Date.now();
+                if (!result.ok) {
+                    return toCrdtProviderFailureStatus(config, interaction, 'Remote CRDT command failed', {
+                        remote,
+                        commandId,
+                        result,
+                        startedAtEpochMs,
+                        endedAtEpochMs,
+                        latencyMs: endedAtEpochMs - startedAtEpochMs,
+                    });
+                }
+
+                return toCrdtProviderSuccessStatus(config, interaction, {
+                    remote,
+                    commandId,
+                    result: resultDetails(result),
+                    startedAtEpochMs,
+                    endedAtEpochMs,
+                    latencyMs: endedAtEpochMs - startedAtEpochMs,
+                });
+            } catch (error) {
+                return toCrdtProviderFailureStatus(config, interaction, 'Remote CRDT command failed', {
+                    remote,
+                    commandId,
+                    error: error instanceof Error ? error.message : String(error),
+                });
             }
         },
 

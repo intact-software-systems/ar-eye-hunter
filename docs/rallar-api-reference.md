@@ -30,12 +30,12 @@ rallar.configure({ apiBaseUrl: 'http://localhost:8080' });
 
 ```ts
 rallar.setDefaults({
-  applicationId: 'game',
-  workspaceId: 'default',
-  room: { roomId: 'lobby' },
-  realtime: { laneId: 'realtime', openTimeoutMs: 1000 },
-  rtc: { waitTimeoutMs: 1000, connectOnWait: true },
-  operations: { timeoutMs: 5000, maxAttempts: 3 },
+    applicationId: 'game',
+    workspaceId: 'default',
+    room: { roomId: 'lobby' },
+    realtime: { laneId: 'realtime', openTimeoutMs: 1000 },
+    rtc: { waitTimeoutMs: 1000, connectOnWait: true },
+    operations: { timeoutMs: 5000, maxAttempts: 3 },
 });
 ```
 
@@ -51,10 +51,10 @@ rallar.setDefaults({
 await rallar.auth.login({ username: 'alice', password: 'secret' });
 
 const started = await rallar.start({
-  restoreSession: true,
-  connect: true,
-  refreshRooms: true,
-  refreshPeople: true,
+    restoreSession: true,
+    connect: true,
+    refreshRooms: true,
+    refreshPeople: true,
 });
 ```
 
@@ -96,9 +96,9 @@ scope.unsubscribe();
 
 ```ts
 await rallar.auth.registerAndLogin({
-  username: 'alice',
-  password: 'secret',
-  displayName: 'Alice',
+    username: 'alice',
+    password: 'secret',
+    displayName: 'Alice',
 });
 ```
 
@@ -130,16 +130,16 @@ await rallar.auth.registerAndLogin({
 
 ```ts
 const room = await rallar.rooms.create({
-  displayName: 'Lobby',
-  scope: { applicationId: 'game', workspaceId: 'default' },
+    displayName: 'Lobby',
+    scope: { applicationId: 'game', workspaceId: 'default' },
 });
 
 await rallar.rooms.join(room.group.groupId);
 
 rallar.rooms.onEvent((event) => {
-  if (event.eventType === 'member-joined') {
-    console.log('Room membership changed');
-  }
+    if (event.eventType === 'member-joined') {
+        console.log('Room membership changed');
+    }
 });
 ```
 
@@ -161,9 +161,9 @@ rallar.rooms.onEvent((event) => {
 
 ```ts
 rallar.people.onChange((state) => {
-  for (const person of state.people) {
-    console.log(person.principalId, person.isOnline);
-  }
+    for (const person of state.people) {
+        console.log(person.principalId, person.isOnline);
+    }
 });
 ```
 
@@ -183,14 +183,14 @@ Selectors can be a `typeId` string or `{ topicId, typeId }`.
 
 ```ts
 rallar.messages.ws.onMessage('chat.message', (message) => {
-  console.log(message.payload);
+    console.log(message.payload);
 });
 
 await rallar.messages.ws.send({
-  typeId: 'chat.message',
-  payload: { text: 'hello' },
-  scope: 'room',
-  roomRef: room.group,
+    typeId: 'chat.message',
+    payload: { text: 'hello' },
+    scope: 'room',
+    roomRef: room.group,
 });
 ```
 
@@ -200,8 +200,8 @@ Typed channels reduce boilerplate when one payload type has one topic/type pair:
 type ChatMessage = { text: string };
 
 const chat = rallar.messages.channel<ChatMessage>({
-  topicId: 'chat',
-  typeId: 'message',
+    topicId: 'chat',
+    typeId: 'message',
 });
 
 chat.onWs((payload) => console.log(payload.text));
@@ -226,12 +226,15 @@ await chat.sendWs({ text: 'hello' }, { scope: 'room', roomRef: room.group });
 
 ```ts
 const readiness = await rallar.rtc.waitForRoomLane('lobby', 'realtime', {
-  connect: true,
-  timeoutMs: 1000,
+    connect: true,
+    timeoutMs: 1000,
 });
 
 if (readiness.status === 'open' || readiness.status === 'partial') {
-  console.log('Ready peers', readiness.ready.map((entry) => entry.peerId));
+    console.log(
+        'Ready peers',
+        readiness.ready.map((entry) => entry.peerId),
+    );
 }
 ```
 
@@ -248,7 +251,7 @@ if (readiness.status === 'open' || readiness.status === 'partial') {
 ```ts
 const result = await rallar.ws.waitForOpen({ timeoutMs: 1000 });
 if (result.status !== 'open') {
-  throw new Error(`WS not ready: ${result.status}`);
+    throw new Error(`WS not ready: ${result.status}`);
 }
 ```
 
@@ -270,18 +273,18 @@ The `realtime` facade sends directly over RTC data channels. It is for low-laten
 
 ```ts
 const lane = rallar.realtime.json<{ x: number; y: number }>({
-  laneId: 'realtime',
-  roomId: 'lobby',
-  openTimeoutMs: 1000,
+    laneId: 'realtime',
+    roomId: 'lobby',
+    openTimeoutMs: 1000,
 });
 
 lane.on((message) => {
-  updateRemotePlayer(message.peerId, message.data);
+    updateRemotePlayer(message.peerId, message.data);
 });
 
 await rallar.rtc.waitForRoomLane('lobby', 'realtime', {
-  connect: true,
-  timeoutMs: 1000,
+    connect: true,
+    timeoutMs: 1000,
 });
 
 await lane.send({ x: 10, y: 5 });
@@ -303,13 +306,142 @@ await lane.send({ x: 10, y: 5 });
 
 ```ts
 const stream = await navigator.mediaDevices.getUserMedia({
-  audio: true,
-  video: true,
+    audio: true,
+    video: true,
 });
 
 await rallar.media.setLocalStream(stream);
-rallar.media.onRemoteStream(({ peerId, stream }) => attachVideo(peerId, stream));
+rallar.media.onRemoteStream(({ peerId, stream }) =>
+    attachVideo(peerId, stream),
+);
 ```
+
+## Rallar CRDT
+
+`rallar.crdt` opens explicit collaborative CRDT documents. It does not change
+`rallar.data` latest-value semantics.
+
+```ts
+const doc = await rallar.crdt.open('room-checklist', {
+    documentType: 'checklist',
+    documentId: room.group.groupId,
+    scope: {
+        kind: 'room',
+        roomRef: room.group,
+    },
+    transport: 'ws',
+});
+
+await doc.applyLocal({
+    kind: 'batch',
+    operations: [
+        {
+            kind: 'map.set',
+            path: [],
+            key: 'title',
+            value: 'North entrance',
+        },
+    ],
+});
+```
+
+### Document API
+
+- `read()` returns the merged value.
+- `subscribe(listener)` receives merged snapshots.
+- `applyLocal(batch)` applies and persists a local operation batch.
+- `pendingUpdates()` returns locally produced updates not yet durably accepted.
+- `failedPendingUpdates()` returns permanent or exhausted pending failures.
+- `dependencyBlockedUpdates()` returns updates waiting for missing parents or
+  observed IDs.
+- `sequenceInsert(input, options?)`, `sequenceMove(input, options?)`, and
+  `sequenceDelete(input, options?)` mutate ordered-list paths with stable
+  element and position IDs.
+- `counterAdd(input, options?)`, `counterIncrement(path, options?)`, and
+  `counterDecrement(path, options?)` mutate CRDT counter paths.
+- `numberMin(input, options?)` and `numberMax(input, options?)` merge finite
+  numeric values with deterministic min/max semantics.
+- `operationGroupUpdateIds(operationGroupId)` returns locally known updates for
+  an actor-owned operation group.
+- `undoOperationGroup(input)` and `redoOperationGroup(input)` add compensating
+  CRDT operations for the caller's operation group. V1 supports "undo my
+  change", not document-wide collaborative undo.
+- `snapshot()` exports a compact snapshot envelope.
+- `flush()` persists the current snapshot.
+- `sync(options?)` retries pending live sends and requests catch-up.
+- `health()` reports pending counts, live transport counters, last server append
+  sequence, last durable ACK time, and corrupt local artifact count.
+
+### Hardening Options
+
+`open(..., { policies, metrics, encryption, validation })` can attach CRDT production
+controls:
+
+- `policies`: shared rollout/feature policies for local apply, WS, RTC,
+  durable append, peer catch-up, read-only mode, and kill switches.
+- `metrics`: a `RallarCrdtMetricsSink` for local apply, replay, sync,
+  pending, dependency, append, and rejection metrics.
+- `encryption`: a `RallarCrdtEncryptionKeyring`. When present, browser
+  persistence, live transport, and durable append carry AES-GCM encrypted update
+  payloads and snapshot bodies; authorized clients decrypt before merge.
+- `validation`: optional CRDT validation options, including strict path
+  ownership schemas for production documents. Strict path kinds include
+  `register`, `map`, `orset`, `sequence`, `counter`, and `number`.
+
+### Transport
+
+Room documents support `local-only`, `ws`, `rtc`, `ws-then-rtc`, and
+`rtc-with-ws-fallback`. App and principal documents use the `app.crdt` WS topic;
+RTC remains room-scoped.
+
+WS is the safest default. RTC can accelerate active peers but does not replace
+the durable server append log. Pending updates clear only after a durable append
+response accepts or dedupes the update. `sync()` requests durable WS catch-up
+when the selected strategy includes WS, then keeps peer catch-up as a
+development/live-repair fallback. Deployments can also wire
+`readDurableCatchUp` or per-document `durableCatchUp` to use the HTTP helper
+`catchUpRallarCrdtDocument(...)`.
+
+### Server
+
+API-v1 installs `room.crdt` topics through the Rallar server dynamic WS topic
+router. The server validates envelopes, authorizes room messages, appends
+accepted updates to `crdt_updates`, sends append responses, and fans out
+accepted updates.
+
+Principal documents can fan out live only when the server CRDT bridge is
+configured with a durable log and principal session resolver. The durable append
+log remains the source of truth.
+
+Authenticated durable catch-up is available over HTTP:
+
+- `POST /api/crdt/catch-up`
+
+The request returns an optional compact snapshot plus an append-log page.
+
+CRDT log repositories expose admin/hardening methods for listing documents,
+debug bundle export, backup bundle export/restore, integrity verification,
+projection rebuild, non-destructive compaction, archive, destroy, and
+quarantine lifecycle.
+
+Shared hardening helpers include
+`evaluateRallarCrdtDestructiveCompactionSafety(...)` for explicit
+destructive-GC gates and encryption keyring helpers for descriptor, rotate, and
+revoke workflows. These helpers do not make RTC a durability boundary and do
+not replace deployment-specific key custody.
+
+API-v1 admin routes:
+
+- `POST /api/crdt/admin/documents/list`
+- `POST /api/crdt/admin/documents/integrity`
+- `POST /api/crdt/admin/documents/debug-export`
+- `POST /api/crdt/admin/documents/backup-export`
+- `POST /api/crdt/admin/documents/rebuild-projection`
+- `POST /api/crdt/admin/documents/compact`
+- `POST /api/crdt/admin/documents/lifecycle`
+- `POST /api/crdt/admin/documents/erase`
+
+See [Rallar CRDT Guide](./rallar-crdt-guide.md) for the full product boundary.
 
 ## Rallar Data
 
@@ -319,8 +451,8 @@ Import through `rallar.data`, or directly:
 
 ```ts
 import {
-  createRallarDataFacade,
-  defineRallarDataStore,
+    createRallarDataFacade,
+    defineRallarDataStore,
 } from '@shared-web/browser/rallar-data.ts';
 ```
 
@@ -350,8 +482,8 @@ import {
 type Settings = { volume: number };
 
 const settingsDef = rallar.data.define<Settings>('settings', {
-  scope: 'principal',
-  durability: 'write-through',
+    scope: 'principal',
+    durability: 'write-through',
 });
 
 const settings = await rallar.data.open(settingsDef);
@@ -410,18 +542,18 @@ Lifecycle methods:
 
 ```ts
 const drafts = await rallar.data.open<{ body: string }>('drafts', {
-  scope: 'session',
-  durability: 'write-behind',
-  hydrate: 'lazy',
-  ttlMs: 24 * 60 * 60 * 1000,
+    scope: 'session',
+    durability: 'write-behind',
+    hydrate: 'lazy',
+    ttlMs: 24 * 60 * 60 * 1000,
 });
 
 drafts.onChange((event) => {
-  console.log(event.key, event.value);
+    console.log(event.key, event.value);
 });
 
 await drafts.updateOrCreate('room:lobby', (current) => ({
-  body: current?.body ?? '',
+    body: current?.body ?? '',
 }));
 
 await drafts.whenIdle();
@@ -470,37 +602,37 @@ Optional:
 
 ```ts
 const runtime = createRallarMiddleware({
-  inbox: queueBox,
-  outbox: queueBox,
-  webSocketServer,
-  wsRuntimeName: 'api-v1',
-  findGroupSnapshotByRef: (ref) => groupSnapshotCache.findByRef(ref),
-  inboundStores,
-  outboundStores,
-  createAppGroupInboxService: ({ inboxQueueReader, wsQBoxServerService }) =>
-    new AppGroupInboxService(
-      inboxQueueReader,
-      resourceInboxRepository,
-      resourceInboxResultsRepository,
-      groupStateService,
-      createWsStateSyncPublisher(wsQBoxServerService, { serverId }),
-      serverId,
-    ),
-  createAppClientInboxService: ({ inboxQueueReader, wsQBoxServerService }) =>
-    new AppClientInboxService(
-      inboxQueueReader,
-      resourceInboxRepository,
-      resourceInboxResultsRepository,
-      clientStateService,
-      createWsStateSyncPublisher(wsQBoxServerService, { serverId }),
-      serverId,
-    ),
-  resilience: {
-    inbox: resilienceInbox,
-    outbox: resilienceOutbox,
-  },
-  clientsRepository,
-  groupsRepository,
+    inbox: queueBox,
+    outbox: queueBox,
+    webSocketServer,
+    wsRuntimeName: 'api-v1',
+    findGroupSnapshotByRef: (ref) => groupSnapshotCache.findByRef(ref),
+    inboundStores,
+    outboundStores,
+    createAppGroupInboxService: ({ inboxQueueReader, wsQBoxServerService }) =>
+        new AppGroupInboxService(
+            inboxQueueReader,
+            resourceInboxRepository,
+            resourceInboxResultsRepository,
+            groupStateService,
+            createWsStateSyncPublisher(wsQBoxServerService, { serverId }),
+            serverId,
+        ),
+    createAppClientInboxService: ({ inboxQueueReader, wsQBoxServerService }) =>
+        new AppClientInboxService(
+            inboxQueueReader,
+            resourceInboxRepository,
+            resourceInboxResultsRepository,
+            clientStateService,
+            createWsStateSyncPublisher(wsQBoxServerService, { serverId }),
+            serverId,
+        ),
+    resilience: {
+        inbox: resilienceInbox,
+        outbox: resilienceOutbox,
+    },
+    clientsRepository,
+    groupsRepository,
 });
 
 runtime.qboxEngine.start();
@@ -554,16 +686,14 @@ Most applications should use `createRallarServerApplication(...)` or `createRall
 
 ```ts
 const rallarServer = createRallarServerApplication({
-  runtime,
-  routes: {
-    ws: (app) => installWsRoutes(app),
-    rest: [installAuthRoutes, installStateRoutes],
-  },
+    runtime,
+    routes: {
+        ws: (app) => installWsRoutes(app),
+        rest: [installAuthRoutes, installStateRoutes],
+    },
 });
 
-rallarServer.system
-  .useDefaultMiddlewareTopics()
-  .useWebSocketLifecycle();
+rallarServer.system.useDefaultMiddlewareTopics().useWebSocketLifecycle();
 
 rallarServer.ws.mount(app);
 rallarServer.rest.mount(app);

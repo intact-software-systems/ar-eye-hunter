@@ -1,0 +1,208 @@
+# Rallar CRDT Guide
+
+Rallar CRDT is the explicit collaborative document surface for Rallar. Use it
+when multiple replicas can edit the same application document independently and
+the application can accept deterministic merge semantics.
+
+Use `rallar.crdt`, not `rallar.data`, for mergeable collaboration. `rallar.data`
+remains a local latest-value store.
+
+## When To Use It
+
+Use CRDT documents for:
+
+- shared checklists, notes, annotations, lightweight boards, and authored room
+  state
+- collaborative counters, min/max operational values, and authored graph state
+- offline-tolerant edits that can be retried later
+- conflicts that should be preserved or resolved by application UI
+
+Do not use CRDT documents for:
+
+- auth, membership, billing, quota, inventory, or other authoritative server
+  commands
+- presence expiry, RTC topology, or computed graph overlays
+- arbitrary JSON Patch merging, OT streams, or Yjs/Automerge binary updates
+- raw binary/blob payloads
+- privacy erasure; CRDT delete is a document edit, not log redaction
+
+## Browser API
+
+```ts
+const doc = await rallar.crdt.open('room-checklist', {
+    documentType: 'checklist',
+    documentId: room.group.groupId,
+    scope: {
+        kind: 'room',
+        roomRef: room.group,
+    },
+    transport: 'ws-then-rtc',
+});
+
+await doc.applyLocal({
+    kind: 'batch',
+    operations: [
+        {
+            kind: 'orset.add',
+            path: ['items'],
+            elementId: crypto.randomUUID(),
+            value: {
+                text: 'Inspect north entrance',
+                done: false,
+            },
+        },
+    ],
+});
+```
+
+`applyLocal(...)` returns an update envelope. The local document reads the edit
+immediately. The update remains pending until the server durable append path
+accepts it, or until the document stays local-only.
+
+## Transport Choice
+
+Room-scoped documents support user-selected live transport strategies:
+
+- `local-only`: no network send
+- `ws`: server-routed room fanout
+- `rtc`: peer-to-peer room fanout when peers are already connected
+- `ws-then-rtc`: send over WS and RTC
+- `rtc-with-ws-fallback`: try RTC first, then WS if RTC is unavailable
+
+WS is the safest default. RTC can reduce live latency, but it is not a
+durability boundary. Late join, reconnect with no peer online, and pending
+clearance require the durable server append log.
+
+## Server Path
+
+`installRallarCrdtWsTopics(...)` installs CRDT topics over the existing Rallar
+server WS topic router:
+
+- `room.crdt` for room documents
+- `app.crdt` is defined so unsupported principal/custom live fanout is rejected
+- `rallar.crdt.update.v1`
+- `rallar.crdt.sync-request.v1`
+- `rallar.crdt.sync-response.v1`
+- `rallar.crdt.append-response.v1`
+- `rallar.crdt.catch-up-request.v1`
+- `rallar.crdt.catch-up-response.v1`
+
+The bridge validates document refs, operation paths, payload shape, payload
+size, room target `groupRef`, and document type/version policy. Room messages
+also go through the existing room authorizer.
+
+When configured with `PSqlCrdtLogRepository`, the bridge appends first, sends an
+append response to the sender, and only fans out accepted updates. Rejected
+updates are acknowledged as rejected and are not fanned out. Durable catch-up
+requests are answered from snapshots plus append-log pages rather than peer
+state.
+
+## Durable Log
+
+The durable log stores:
+
+- `crdt_documents`
+- `crdt_updates`
+- `crdt_snapshots`
+
+Append behavior:
+
+- append sequence is monotonic per document
+- `(documentKey, updateId)` is unique
+- duplicate appends with the same canonical hash are idempotent
+- duplicate appends with a different hash are rejected
+- archived or destroyed documents reject writes
+- snapshots are compact catch-up artifacts, not the source of truth
+- new snapshots include a CRDT-state sidecar for safe replay equivalence
+- encrypted logs require a client/key-authorized supplied compact snapshot for
+  compaction
+- destructive compaction must pass
+  `evaluateRallarCrdtDestructiveCompactionSafety(...)` before old updates or
+  tombstones are removed
+
+Catch-up uses snapshot plus update pages by append sequence/cursor over WS and
+`POST /api/crdt/catch-up`.
+
+## Diagnostics
+
+Use `doc.health()` to inspect:
+
+- pending, failed pending, and dependency-blocked counts
+- seen update count
+- last server append sequence and ACK time
+- selected transport strategy
+- live sent, received, duplicate, rejected, blocked, retried, sync request, and
+  sync response counters
+- corrupt local artifact count when persisted snapshots or updates are
+  quarantined during hydration
+
+## Production Hardening
+
+CRDT hardening controls now include:
+
+- shared rollout and feature policies for local, WS, RTC, durable append, and
+  durable/peer catch-up behavior
+- opt-in strict path ownership validation for registers, maps, OR-sets,
+  ordered sequences, counters, and numeric min/max paths
+- repository admin listing, debug bundle export, backup bundle export/restore,
+  integrity verification, projection rebuild hooks, non-destructive compaction,
+  archive, destroy, and quarantine lifecycle
+- append rejection taxonomy for validation, authorization, quota, feature,
+  rate-limit, lifecycle, and storage failures
+- metrics sink events for append latency and append rejections
+- repository audit sink events for append, reject, export, backup, restore,
+  archive, quarantine, destroy, rebuild, and compact
+- local corruption quarantine during browser hydration
+- ordered-list sequence operations, actor-owned undo/redo operation groups,
+  numeric CRDT operations, graph CRDT authoring helpers, AR/spatial metadata
+  validation helpers, retention summaries, redacted debug exports, erasure audit
+  helpers, document-level encryption helpers, encryption key lifecycle helpers,
+  and destructive-compaction safety evaluation
+
+See
+[Rallar CRDT Production Hardening Runbook](./rallar-crdt-production-hardening-runbook.md)
+for operational guidance.
+
+## Current Limits
+
+Implemented now:
+
+- JSON operation batches
+- map operations
+- OR-set operations
+- LWW and multi-value registers
+- local IndexedDB persistence through internal `rallar.data` stores
+- same-origin tab sync
+- room WS/RTC live sync
+- principal durable-append fanout when the server bridge is configured with a
+  durable log and principal session resolver
+- server topic validation/authorization/fanout
+- durable append log contracts and Postgres/PGlite repository
+- durable WS and HTTP catch-up from snapshot plus append-log pages
+- browser pending clearance from durable append responses
+- feature flags and kill switches for WS/RTC/durable append paths
+- app/principal WS live routing, with RTC remaining room-scoped
+- ordered-list sequence insert/move/delete helpers
+- counter add/increment/decrement helpers and numeric min/max operations
+- graph CRDT authoring helpers for nodes, edges, and node/edge properties
+- actor-owned undo/redo helpers
+- admin debug/backup/integrity/rebuild/compact/archive/quarantine/destroy APIs
+- Black Box CRDT Health tab for operator inspection
+- backup restore preserving append sequences
+- local corruption quarantine during hydration
+- AES-GCM encrypted update payloads and snapshot bodies for authorized clients
+  opened with an encryption keyring
+- encryption keyring descriptors plus pure rotate/revoke helper functions
+- deterministic FNV hashes are checksums, with SHA-256 helpers available for
+  stronger deployment diagnostics
+
+Still experimental or pending:
+
+- rich-text CRDTs and richer sequence editing beyond ordered lists
+- deployment-specific key custody, rotation automation, revocation UX, and
+  access-loss recovery for encrypted CRDT documents
+- destructive tombstone garbage collection and automated retention erasure
+  execution; the safety evaluator exists, but repositories still default to
+  non-destructive compaction
+- product-facing CRDT health UI; current CRDT health UI is operator-only in
+  Rallar Black Box

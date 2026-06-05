@@ -1,6 +1,6 @@
 # Rallar CRDT Product And Implementation Plan
 
-Date: 2026-06-03
+Date: 2026-06-04
 
 Status: Implementation-ready V1 plan for an explicit Rallar CRDT product
 surface.
@@ -69,7 +69,11 @@ V1 commits to:
 - A small Rallar-owned CRDT engine in `packages/shared/crdt`.
 - Operation-first public mutation API through `applyLocal(...)`.
 - Generic JSON map/register/OR-set operations plus a checklist example.
-- Room and principal scopes as the first guaranteed end-to-end scopes.
+- Room documents as the first live WS/RTC collaboration scope, with principal
+  documents guaranteed for local-first and durable server catch-up once the CRDT
+  log exists.
+- User-selectable live transport strategies for room CRDT documents: `ws`,
+  `rtc`, `ws-then-rtc`, and `rtc-with-ws-fallback`.
 - Browser facade in `packages/shared-web/browser`, exposed on `RallarFacade` as
   `rallar.crdt`.
 - Internal CRDT local artifacts stored through `rallar.data` with `sync: false`.
@@ -83,8 +87,9 @@ V1 explicitly excludes:
 
 - Making `rallar.data.open(...)` CRDT-aware.
 - Draft-style `change(...)` as the primary public API.
-- Collaborative undo/redo.
-- Sequence/text CRDTs for ordered rich-text-like documents.
+- Document-wide collaborative undo/redo.
+- Rich-text CRDTs for character/mark-level editing. Ordered-list sequence CRDTs
+  are now implemented separately.
 - Destructive compaction of updates or tombstones.
 - Raw binary/blob payloads inside CRDT updates.
 - Server authority for auth, membership, billing, quota, inventory, or other
@@ -94,9 +99,9 @@ V1 explicitly excludes:
 
 Rallar CRDT is for application-owned collaborative documents:
 
-> Rallar CRDT lets room or principal-scoped documents accept independent edits
-> from multiple replicas, merge them deterministically, and synchronize them
-> through Rallar transports.
+> Rallar CRDT lets room documents and principal-owned documents accept
+> independent edits from multiple replicas, merge them deterministically, and
+> synchronize them through Rallar transports appropriate to each scope.
 
 Product language:
 
@@ -121,26 +126,26 @@ Do not add CRDT behavior to:
 Recommended browser API shape:
 
 ```ts
-const doc = await rallar.crdt.open<SharedChecklist>("room-checklist", {
-  documentId: roomRef.groupId,
-  documentType: "checklist",
-  scope: { kind: "room", roomRef },
-  transport: "ws-then-rtc",
-  persist: true,
+const doc = await rallar.crdt.open<SharedChecklist>('room-checklist', {
+    documentId: roomRef.groupId,
+    documentType: 'checklist',
+    scope: { kind: 'room', roomRef },
+    transport: 'ws-then-rtc',
+    persist: true,
 });
 
 const unsubscribe = doc.subscribe((snapshot) => {
-  render(snapshot.value);
+    render(snapshot.value);
 });
 
 await doc.applyLocal({
-  kind: "orset.add",
-  path: ["items"],
-  elementId: crypto.randomUUID(),
-  value: {
-    text: "Inspect north entrance",
-    done: false,
-  },
+    kind: 'orset.add',
+    path: ['items'],
+    elementId: crypto.randomUUID(),
+    value: {
+        text: 'Inspect north entrance',
+        done: false,
+    },
 });
 ```
 
@@ -148,11 +153,11 @@ Recommended server API later:
 
 ```ts
 rallar.crdt.defineDocument({
-  documentType: "checklist",
-  scope: "room",
-  authorizeRead: isRoomMember,
-  authorizeWrite: canEditRoomDocument,
-  maxUpdateBytes: 16 * 1024,
+    documentType: 'checklist',
+    scope: 'room',
+    authorizeRead: isRoomMember,
+    authorizeWrite: canEditRoomDocument,
+    maxUpdateBytes: 16 * 1024,
 });
 ```
 
@@ -176,73 +181,77 @@ packages/shared/crdt/mod.ts
 Core document reference:
 
 ```ts
-export type RallarCrdtDocumentScope = "app" | "principal" | "room" | "custom";
+export type RallarCrdtDocumentScope = 'app' | 'principal' | 'room' | 'custom';
 
 export type RallarCrdtDocumentRef = Readonly<{
-  applicationId: string;
-  workspaceId?: string;
-  scope: RallarCrdtDocumentScope;
-  documentType: string;
-  documentId: string;
-  roomRef?: GroupRef;
-  principalId?: string;
-  customScope?: string;
+    applicationId: string;
+    workspaceId?: string;
+    scope: RallarCrdtDocumentScope;
+    documentType: string;
+    documentId: string;
+    roomRef?: GroupRef;
+    principalId?: string;
+    customScope?: string;
 }>;
 ```
 
-Room and principal scopes are supported end-to-end first. App and custom scopes
-may exist in shared contracts, but server support is deferred unless explicitly
-implemented.
+Room documents are the first live transport scope because current browser WS
+send options are room/world/all and server dynamic topic scopes are
+app/room/world. Principal documents are still first-class local and durable-log
+documents. Principal live fanout is supported only when the server bridge has a
+durable log and principal session resolver; durable append remains the source of
+truth. App and custom scopes may exist in shared contracts, but full server
+support is deferred unless explicitly implemented.
 
 Core update envelope:
 
 ```ts
 export type RallarCrdtUpdateEnvelope<TPayload = RallarCrdtOperationBatch> =
-  Readonly<{
-    protocolVersion: 1;
-    document: RallarCrdtDocumentRef;
-    updateId: string;
-    replicaId: string;
-    actorId?: string;
-    sessionId?: string;
-    lamport: number;
-    parents: readonly string[];
-    schemaVersion: number;
-    operationVersion: number;
-    createdAtEpochMs: number;
-    payload: TPayload;
-    hash?: string;
-  }>;
+    Readonly<{
+        protocolVersion: 1;
+        document: RallarCrdtDocumentRef;
+        updateId: string;
+        replicaId: string;
+        actorId?: string;
+        sessionId?: string;
+        lamport: number;
+        parents: readonly string[];
+        schemaVersion: number;
+        operationVersion: number;
+        createdAtEpochMs: number;
+        payload: TPayload;
+        hash?: string;
+    }>;
 ```
 
 Core snapshot envelope:
 
 ```ts
 export type RallarCrdtSnapshotEnvelope<TValue = unknown> = Readonly<{
-  protocolVersion: 1;
-  document: RallarCrdtDocumentRef;
-  snapshotId: string;
-  schemaVersion: number;
-  createdAtEpochMs: number;
-  maxLamport: number;
-  includedUpdateIds: readonly string[];
-  updateClock?: RallarCrdtClockSummary;
-  value: TValue;
-  metadata: RallarCrdtSnapshotMetadata;
-  hash?: string;
+    protocolVersion: 1;
+    document: RallarCrdtDocumentRef;
+    snapshotId: string;
+    schemaVersion: number;
+    createdAtEpochMs: number;
+    maxLamport: number;
+    includedUpdateIds: readonly string[];
+    updateClock?: RallarCrdtClockSummary;
+    value: TValue;
+    metadata: RallarCrdtSnapshotMetadata;
+    hash?: string;
 }>;
 ```
 
 Default topics and type IDs:
 
 ```ts
-export const RALLAR_CRDT_ROOM_TOPIC_ID = "room.crdt";
-export const RALLAR_CRDT_APP_TOPIC_ID = "app.crdt";
+export const RALLAR_CRDT_ROOM_TOPIC_ID = 'room.crdt';
+export const RALLAR_CRDT_APP_TOPIC_ID = 'app.crdt';
 
-export const RALLAR_CRDT_UPDATE_TYPE_ID = "rallar.crdt.update.v1";
-export const RALLAR_CRDT_SYNC_REQUEST_TYPE_ID = "rallar.crdt.sync-request.v1";
-export const RALLAR_CRDT_SYNC_RESPONSE_TYPE_ID = "rallar.crdt.sync-response.v1";
-export const RALLAR_CRDT_SNAPSHOT_TYPE_ID = "rallar.crdt.snapshot.v1";
+export const RALLAR_CRDT_UPDATE_TYPE_ID = 'rallar.crdt.update.v1';
+export const RALLAR_CRDT_SYNC_REQUEST_TYPE_ID = 'rallar.crdt.sync-request.v1';
+export const RALLAR_CRDT_SYNC_RESPONSE_TYPE_ID = 'rallar.crdt.sync-response.v1';
+export const RALLAR_CRDT_SNAPSHOT_TYPE_ID = 'rallar.crdt.snapshot.v1';
 ```
 
 Topic IDs use `room.*` and `app.*` because server topic IDs beginning with
@@ -255,16 +264,16 @@ V1 operation payloads are explicit JSON operations:
 
 ```ts
 export type RallarCrdtOperationBatch = Readonly<{
-  kind: "batch";
-  operations: readonly RallarCrdtOperation[];
+    kind: 'batch';
+    operations: readonly RallarCrdtOperation[];
 }>;
 
 export type RallarCrdtOperation =
-  | RallarCrdtOrSetAddOperation
-  | RallarCrdtOrSetRemoveOperation
-  | RallarCrdtRegisterSetOperation
-  | RallarCrdtMapSetOperation
-  | RallarCrdtMapDeleteOperation;
+    | RallarCrdtOrSetAddOperation
+    | RallarCrdtOrSetRemoveOperation
+    | RallarCrdtRegisterSetOperation
+    | RallarCrdtMapSetOperation
+    | RallarCrdtMapDeleteOperation;
 
 export type RallarCrdtPath = readonly string[];
 ```
@@ -333,10 +342,12 @@ V1 supports:
 - dependency-pending queue for updates that reference unseen parents or observed
   add/update IDs
 - snapshot import/export
+- ordered-list sequence insert/delete/move operations
 
-V1 does not support sequence/text CRDTs. Ordered lists, kanban columns,
-outlines, report paragraphs, and text annotations require a later sequence CRDT
-instead of fragile array overwrite semantics.
+V1 supports ordered lists, kanban columns, outlines, and paragraph ordering
+through sequence operations. It does not support rich-text character/mark
+editing; text annotations that need editor semantics require a later rich-text
+CRDT instead of fragile array overwrite semantics.
 
 Engine requirements:
 
@@ -354,14 +365,14 @@ Recommended internal engine API:
 
 ```ts
 export type RallarCrdtDocument<TValue, TPayload> = Readonly<{
-  ref: RallarCrdtDocumentRef;
-  read(): TValue;
-  apply(update: RallarCrdtUpdateEnvelope<TPayload>): RallarCrdtApplyResult;
-  applyLocal(payload: TPayload): RallarCrdtUpdateEnvelope<TPayload>;
-  snapshot(): RallarCrdtSnapshotEnvelope<TValue>;
-  importSnapshot(snapshot: RallarCrdtSnapshotEnvelope<TValue>): void;
-  seenUpdateIds(): ReadonlySet<string>;
-  dependencyState(): RallarCrdtDependencyState;
+    ref: RallarCrdtDocumentRef;
+    read(): TValue;
+    apply(update: RallarCrdtUpdateEnvelope<TPayload>): RallarCrdtApplyResult;
+    applyLocal(payload: TPayload): RallarCrdtUpdateEnvelope<TPayload>;
+    snapshot(): RallarCrdtSnapshotEnvelope<TValue>;
+    importSnapshot(snapshot: RallarCrdtSnapshotEnvelope<TValue>): void;
+    seenUpdateIds(): ReadonlySet<string>;
+    dependencyState(): RallarCrdtDependencyState;
 }>;
 ```
 
@@ -404,8 +415,10 @@ crdt:metadata
 Browser document API:
 
 ```ts
-export type RallarCrdtDocument<TValue, TPayload = RallarCrdtOperationBatch> =
-  Readonly<{
+export type RallarCrdtDocument<
+    TValue,
+    TPayload = RallarCrdtOperationBatch,
+> = Readonly<{
     ref: RallarCrdtDocumentRef;
     read(): TValue;
     subscribe(listener: RallarCrdtSnapshotListener<TValue>): RallarUnsubscribe;
@@ -419,7 +432,7 @@ export type RallarCrdtDocument<TValue, TPayload = RallarCrdtOperationBatch> =
     close(): Promise<void>;
     destroy(): Promise<void>;
     health(): RallarCrdtDocumentHealth;
-  }>;
+}>;
 ```
 
 Document health should include:
@@ -469,23 +482,35 @@ Browser transport strategies:
 
 ```ts
 export type RallarCrdtTransportStrategy =
-  | "local-only"
-  | "ws"
-  | "rtc"
-  | "ws-then-rtc"
-  | "rtc-with-ws-fallback";
+    | 'local-only'
+    | 'ws'
+    | 'rtc'
+    | 'ws-then-rtc'
+    | 'rtc-with-ws-fallback';
 ```
 
 Transport guidance:
 
 - `local-only`: useful for first slice and offline tests.
-- `ws`: default for app/room documents that need server-routed fanout.
+- `ws`: default for room documents that need server-routed fanout.
 - `rtc`: useful only when active peers are available and late-join durability is
   handled separately.
 - `ws-then-rtc`: send to WS for server path, use RTC to accelerate live peers.
 - `rtc-with-ws-fallback`: useful for small rooms when server fanout is
   expensive, but pending still clears only after durable append once the server
   log exists.
+
+The application chooses the live transport strategy when opening a CRDT
+document. Rallar CRDT must support both WS and RTC live propagation for
+room-scoped documents, plus combined/fallback strategies. These strategies are
+delivery choices, not durability levels:
+
+- WS gives server-routed live distribution and is the safest default.
+- RTC gives low-latency peer propagation when room peers are currently active.
+- Combined strategies can use WS for the server path and RTC to accelerate live
+  peers.
+- Late join, reconnect with no peer online, and production pending-queue
+  clearance still require the durable server append log.
 
 Avoid using `rallar.realtime` for authoritative CRDT updates in V1. Use it for
 ephemeral awareness state such as cursors, selections, typing state, hover, drag
@@ -510,9 +535,11 @@ There are two server layers.
 
 Use existing dynamic WS topics early:
 
-- define `room.crdt` and `app.crdt`
+- define `room.crdt` first, and use `app.crdt` only for app-wide/admin documents
+  where the existing app/world topic semantics are appropriate
 - validate CRDT update envelopes and document refs
-- authorize room-scoped and principal-scoped updates
+- authorize room-scoped live messages; principal-scoped fanout requires durable
+  append acceptance plus explicit principal session resolution
 - derive trusted actor/principal/session from authenticated message context
 - enforce max payload size
 - fan out accepted updates
@@ -528,18 +555,18 @@ Suggested contracts:
 
 ```ts
 export type RallarCrdtUpdateLogRepository = Readonly<{
-  append(input: RallarCrdtAppendUpdateInput): Promise<RallarCrdtAppendResult>;
-  appendBatch(
-    input: RallarCrdtAppendBatchInput,
-  ): Promise<RallarCrdtAppendBatchResult>;
-  listAfter(input: RallarCrdtListUpdatesInput): Promise<RallarCrdtUpdatePage>;
-  readSnapshot(
-    ref: RallarCrdtDocumentRef,
-  ): Promise<RallarCrdtSnapshotEnvelope | undefined>;
-  writeSnapshot(input: RallarCrdtWriteSnapshotInput): Promise<void>;
-  updateDocumentLifecycle(
-    input: RallarCrdtLifecycleInput,
-  ): Promise<RallarCrdtDocumentMetadata>;
+    append(input: RallarCrdtAppendUpdateInput): Promise<RallarCrdtAppendResult>;
+    appendBatch(
+        input: RallarCrdtAppendBatchInput,
+    ): Promise<RallarCrdtAppendBatchResult>;
+    listAfter(input: RallarCrdtListUpdatesInput): Promise<RallarCrdtUpdatePage>;
+    readSnapshot(
+        ref: RallarCrdtDocumentRef,
+    ): Promise<RallarCrdtSnapshotEnvelope | undefined>;
+    writeSnapshot(input: RallarCrdtWriteSnapshotInput): Promise<void>;
+    updateDocumentLifecycle(
+        input: RallarCrdtLifecycleInput,
+    ): Promise<RallarCrdtDocumentMetadata>;
 }>;
 ```
 
@@ -624,7 +651,10 @@ Append-only logs retain old values and tombstones. Document type definitions
 must declare whether sensitive payloads are allowed. Redaction/deletion requires
 a separate policy; CRDT delete does not erase historical log entries.
 
-Document-level encryption is deferred, but contracts should leave room for it.
+Document-level encryption now supports encrypted update payloads and encrypted
+snapshot bodies for clients opened with a CRDT encryption keyring. Policies must
+declare whether sensitive payloads require encryption and which metadata remains
+server-visible.
 
 ## Graph CRDT Boundary
 
@@ -653,10 +683,10 @@ Work:
 
 - Add docs note: CRDT is explicit and not `rallar.data`.
 - Add or preserve tests proving `rallar.data` remains latest-value:
-  - `set` replaces whole values
-  - tab sync applies `set/delete/clear`
-  - incompatible open options still throw
-  - `compareAndSet` is not a distributed lock
+    - `set` replaces whole values
+    - tab sync applies `set/delete/clear`
+    - incompatible open options still throw
+    - `compareAndSet` is not a distributed lock
 
 Acceptance:
 
@@ -770,9 +800,10 @@ Goal: synchronize browser documents over existing Rallar WS/RTC messages.
 
 Work:
 
-- Use `room.crdt` and `app.crdt` topics.
+- Use `room.crdt` for room live sync and `app.crdt` only for app-wide/admin
+  documents that match existing app/world topic semantics.
 - Use CRDT type IDs.
-- Support WS and RTC app-message lanes.
+- Support user-selected WS and RTC app-message lanes.
 - Add transport strategy and fallback handling.
 - Add update batching without changing update identity.
 - Add diagnostics for sent, received, duplicate, merged, rejected, failed,
@@ -780,8 +811,9 @@ Work:
 
 Acceptance:
 
-- Two browsers converge over mocked WS.
-- Two browsers converge over mocked RTC.
+- Two browsers converge over mocked WS when `transport: "ws"` is selected.
+- Two browsers converge over mocked RTC when `transport: "rtc"` is selected.
+- Combined/fallback strategies use the configured WS/RTC order.
 - Duplicate AL deliveries do not duplicate CRDT updates.
 - Closed RTC lanes fall back to WS where configured.
 - Dependency-blocked updates trigger sync repair.
@@ -810,14 +842,16 @@ Work:
 
 - Add server CRDT topic helper over `RallarServer.ws.defineTopic`.
 - Validate envelope, operation paths, document ref, and payload size.
-- Authorize room and principal scoped updates.
+- Authorize room-scoped live updates and reject principal live fanout unless
+  durable append and trusted principal session resolution are configured.
 - Stamp trusted actor/session/principal metadata in diagnostics.
 - Fan out accepted updates.
 
 Acceptance:
 
 - Invalid CRDT updates are rejected.
-- Unauthorized room/principal updates are rejected.
+- Unauthorized room updates are rejected, and principal live fanout is rejected
+  unless it is durable-append backed.
 - Oversized updates and raw blobs are rejected.
 - Accepted updates are fanned out without requiring durable CRDT tables yet.
 
@@ -837,7 +871,8 @@ Work:
 Acceptance:
 
 - Browser sync has a stable server target.
-- Contract supports room and principal scopes end-to-end.
+- Contract supports room and principal scopes through durable append/read and
+  catch-up.
 - Contract leaves explicit extension points for app/custom scopes.
 
 ### Phase 10: Server Durable Log Implementation
@@ -960,22 +995,65 @@ packages/shared-graph/crdt/shared-graph-document.ts
 ## Deferred Decisions
 
 - Draft-style `change(...)` helper.
-- Sequence/text CRDT support.
-- Collaborative undo/redo.
+- Rich-text CRDT support beyond ordered-list sequence operations.
+- Document-wide collaborative undo/redo beyond actor-owned operation groups.
 - Destructive server-authorized compaction and garbage collection.
-- Document-level encryption.
+- Key custody, rotation automation, revocation UX, and access-loss recovery for
+  encrypted CRDT documents.
 - App/custom scope server support.
 - Peer catch-up as a supported fallback.
 - Optional package extraction from `packages/shared-web`.
 - Graph CRDT productization.
+
+## Test Plan
+
+Required coverage:
+
+- `rallar.data` latest-value behavior remains unchanged.
+- Shared CRDT validators reject invalid document refs, protocol versions,
+  operation versions, operation paths, oversized payloads, and unsupported raw
+  blob payloads.
+- CRDT engine convergence holds across reordered, duplicated, dropped, and
+  replayed updates.
+- OR-set add/remove, LWW tie-breaks, multi-value conflicts, atomic batches, and
+  missing dependency repair are deterministic.
+- Browser local stores persist pending, failed pending, dependency-blocked,
+  seen, metadata, and snapshot artifacts without using Rallar Data tab sync.
+- Same-origin CRDT tab sync converges with separate per-tab replica IDs.
+- WS/RTC room live sync dedupes duplicate AL deliveries and reports fallback,
+  rejection, dependency, and retry diagnostics.
+- User-selected `ws`, `rtc`, `ws-then-rtc`, and `rtc-with-ws-fallback`
+  strategies use the configured live path.
+- Principal documents sync through local persistence and durable append/read.
+  Principal live fanout happens only after append acceptance when the server
+  bridge has a principal session resolver.
+- Durable server append, idempotency, append cursor catch-up, lifecycle state,
+  retention/redaction policy, and Postgres/in-memory schema migrations are
+  covered.
+- Debug export of snapshot plus update pages reproduces document state.
+
+## Assumptions
+
+- The first useful slice is local/browser-only and is allowed to ship before the
+  durable server log.
+- Networked CRDT collaboration is not production-ready until durable append,
+  trusted server metadata, snapshots, and catch-up exist.
+- Current Rallar message APIs provide room/app/world topic semantics, not a
+  principal live routing scope.
+- `rallar.realtime` remains ephemeral and is not used for authoritative CRDT
+  updates.
+- CRDT delete is not privacy erasure.
+- Graph CRDT productization, rich text, encrypted-document key operations,
+  destructive compaction/garbage collection, and custom-scope server support
+  need follow-up plans or explicit V1 expansion.
 
 ## Recommendation
 
 Proceed with the first useful slice, keeping the initial product promise narrow:
 
 > Local-first collaborative JSON documents for Rallar apps, with explicit CRDT
-> semantics, deterministic operation merge, room/principal scope support, and
-> later Rallar transport/server catch-up.
+> semantics, deterministic operation merge, room live sync, principal durable
+> documents, and later Rallar transport/server catch-up.
 
 Treat local-only and topic-bridge phases as useful but not production-ready for
 networked collaboration. Production-ready collaboration requires the durable

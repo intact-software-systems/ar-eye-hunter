@@ -1,0 +1,244 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "https://api.example.com"
+    },
+    "roomId": {
+      "env": "RALLAR_BB_GROUP_ID",
+      "default": "crdt-room-rtc"
+    },
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    }
+  },
+  "connections": {
+    "aliceRtc": {
+      "type": "rtc",
+      "provider": "rallar-browser",
+      "actor": "alice",
+      "roomId": "{roomId}",
+      "rallar": {
+        "apiBaseUrl": "{rallarApiBaseUrl}",
+        "username": "{aliceUsername}",
+        "password": "{alicePassword}",
+        "applicationId": "rallar-server",
+        "workspaceId": "default",
+        "transport": "realtime",
+        "timeoutMs": 15000
+      }
+    },
+    "bobRtc": {
+      "type": "rtc",
+      "provider": "rallar-browser",
+      "actor": "bob",
+      "roomId": "{roomId}",
+      "rallar": {
+        "apiBaseUrl": "{rallarApiBaseUrl}",
+        "username": "{bobUsername}",
+        "password": "{bobPassword}",
+        "applicationId": "rallar-server",
+        "workspaceId": "default",
+        "transport": "realtime",
+        "timeoutMs": 15000
+      }
+    }
+  },
+  "steps": [
+    {
+      "name": "connectAlice",
+      "type": "rtc.connect",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "connectBob",
+      "type": "rtc.connect",
+      "connection": "bobRtc"
+    },
+    {
+      "name": "aliceOpenRtcFallback",
+      "type": "crdt.open",
+      "connection": "aliceRtc",
+      "request": {
+        "handle": "board",
+        "name": "black-box-board",
+        "documentType": "kanban",
+        "documentId": "{roomId}",
+        "scope": {
+          "kind": "room"
+        },
+        "roomRef": {
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "groupId": "{roomId}"
+        },
+        "transport": "rtc-with-ws-fallback",
+        "persist": true,
+        "durableCatchUp": "http",
+        "initialValue": {
+          "cards": []
+        }
+      }
+    },
+    {
+      "name": "bobOpenRtcFallback",
+      "type": "crdt.open",
+      "connection": "bobRtc",
+      "request": {
+        "handle": "board",
+        "name": "black-box-board",
+        "documentType": "kanban",
+        "documentId": "{roomId}",
+        "scope": {
+          "kind": "room"
+        },
+        "roomRef": {
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "groupId": "{roomId}"
+        },
+        "transport": "rtc-with-ws-fallback",
+        "persist": true,
+        "durableCatchUp": "http"
+      }
+    },
+    {
+      "name": "aliceInsertsCard",
+      "type": "crdt.apply",
+      "connection": "aliceRtc",
+      "request": {
+        "handle": "board",
+        "batch": {
+          "kind": "batch",
+          "operationGroupId": "card-insert-1",
+          "operations": [
+            {
+              "kind": "sequence.insert",
+              "path": ["cards"],
+              "elementId": "card-1",
+              "positionId": "alice:0001",
+              "value": {
+                "title": "RTC fallback card"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "bobSyncRtcFallback",
+      "type": "crdt.sync",
+      "connection": "bobRtc",
+      "request": {
+        "handle": "board",
+        "transport": "rtc-with-ws-fallback",
+        "reason": "black-box-rtc-fallback"
+      }
+    },
+    {
+      "name": "bobWaitRtcFallback",
+      "type": "crdt.wait",
+      "connection": "bobRtc",
+      "request": {
+        "handle": "board",
+        "timeoutMs": 10000,
+        "intervalMs": 250,
+        "stableForMs": 500,
+        "sync": {
+          "reason": "black-box-rtc-fallback-wait",
+          "transport": "rtc-with-ws-fallback"
+        },
+        "conditions": [
+          {
+            "source": "value",
+            "path": "cards.0.title",
+            "operator": "equals",
+            "expected": "RTC fallback card"
+          },
+          {
+            "source": "health",
+            "path": "pendingUpdateCount",
+            "operator": "equals",
+            "expected": 0
+          },
+          {
+            "source": "health",
+            "path": "dependencyBlockedUpdateCount",
+            "operator": "equals",
+            "expected": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "bobHealthRtcFallback",
+      "type": "crdt.health",
+      "connection": "bobRtc",
+      "outputs": {
+        "rtcFallbackPending": "result.pendingUpdateCount",
+        "rtcFallbackBlocked": "result.dependencyBlockedUpdateCount",
+        "rtcFallbackTransport": "result.health.transportStrategy"
+      },
+      "request": {
+        "handle": "board"
+      }
+    },
+    {
+      "name": "assertRtcFallbackHealth",
+      "type": "assert",
+      "actual": {
+        "pending": "{rtcFallbackPending}",
+        "blocked": "{rtcFallbackBlocked}",
+        "transport": "{rtcFallbackTransport}"
+      },
+      "expect": {
+        "body": {
+          "pending": 0,
+          "blocked": 0,
+          "transport": "rtc-with-ws-fallback"
+        }
+      }
+    },
+    {
+      "name": "closeAliceCrdt",
+      "type": "crdt.close",
+      "connection": "aliceRtc",
+      "request": {
+        "handle": "board"
+      }
+    },
+    {
+      "name": "closeBobCrdt",
+      "type": "crdt.close",
+      "connection": "bobRtc",
+      "request": {
+        "handle": "board"
+      }
+    },
+    {
+      "name": "closeAlice",
+      "type": "rtc.close",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "closeBob",
+      "type": "rtc.close",
+      "connection": "bobRtc"
+    }
+  ]
+}

@@ -44,6 +44,14 @@ Deno.test('control OpenAPI spec describes the current server and control endpoin
     assert(spec.paths?.['/runs/{runId}/failure-bundle']);
     assert(spec.paths?.['/runs/{runId}/agents/{agentId}/commands']);
     assert(spec.paths?.['/control']);
+    const schemas = (spec as { components?: { schemas?: Record<string, any> } }).components?.schemas;
+    const crdtCapability = schemas?.ControlAgentIdentity?.properties?.capabilities
+        ?.properties?.crdt;
+    assertEquals(crdtCapability?.required, ['supported']);
+    assert(
+        crdtCapability?.properties?.transports?.items?.enum?.includes('rtc-with-ws-fallback'),
+        'ControlAgentIdentity should document CRDT transport capability metadata.',
+    );
 });
 
 Deno.test('swagger route serves OpenAPI JSON', async () => {

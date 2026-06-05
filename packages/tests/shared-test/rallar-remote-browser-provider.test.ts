@@ -831,4 +831,90 @@ describe('rallar remote browser RTC provider', () => {
         expect(report.resultsByName.closeRemoteWs[0].status).toBe('SUCCESS');
         expect(report.wsCloseEvents.controlWs[0].code).toBe(1000);
     });
+
+    it('forwards CRDT wait commands through the control server', async () => {
+        const server = new FakeRemoteControlServer();
+
+        const report = await executeBlackBox(
+            [
+                {
+                    CRDT: {
+                        request: {
+                            action: 'wait',
+                            connection: 'aliceRtc',
+                            provider: 'rallar-remote-browser',
+                            handle: 'checklist',
+                            timeoutMs: 1_000,
+                            intervalMs: 50,
+                            stableForMs: 100,
+                            sync: {
+                                reason: 'remote-wait-test',
+                                transport: 'ws',
+                            },
+                            conditions: [
+                                {
+                                    source: 'value',
+                                    path: 'title',
+                                    operator: 'equals',
+                                    expected: 'Ready',
+                                },
+                                {
+                                    source: 'health',
+                                    path: 'pendingUpdateCount',
+                                    operator: 'equals',
+                                    expected: 0,
+                                },
+                            ],
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 1,
+                        },
+                        response: {},
+                    },
+                    waitRemoteCrdt: {},
+                },
+            ],
+            0,
+            {
+                rallarRemoteBrowser: {
+                    controlBaseUrl: 'http://control.example.test',
+                    runId: 'run-remote-crdt-wait',
+                    agentId: 'agent-remote',
+                    timeoutMs: 500,
+                    pollIntervalMs: 1,
+                    fetch: server.fetch,
+                },
+                rtcProviders: {
+                    'rallar-remote-browser': createRallarRemoteBrowserRtcProvider({
+                        fetch: server.fetch,
+                    }),
+                },
+            },
+        );
+
+        expect(report.summary.failure).toBe(0);
+        expect(server.commands[0]).toMatchObject({
+            kind: 'crdt.wait',
+            handle: 'checklist',
+            intervalMs: 50,
+            stableForMs: 100,
+            sync: {
+                reason: 'remote-wait-test',
+                transport: 'ws',
+            },
+            conditions: [
+                {
+                    source: 'value',
+                    path: 'title',
+                    operator: 'equals',
+                    expected: 'Ready',
+                },
+                {
+                    source: 'health',
+                    path: 'pendingUpdateCount',
+                    operator: 'equals',
+                    expected: 0,
+                },
+            ],
+        });
+    });
 });

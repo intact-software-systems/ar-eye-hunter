@@ -25,6 +25,9 @@ Deno.test('in-memory schema applies idempotently and creates expected tables/ind
             tables.rows.map((row) => row.table_name),
             [
                 'app_data_store',
+                'crdt_documents',
+                'crdt_snapshots',
+                'crdt_updates',
                 'resource_inbox',
                 'resource_inbox_results',
                 'runtime_state_store',
@@ -45,6 +48,15 @@ Deno.test('in-memory schema applies idempotently and creates expected tables/ind
             'app_data_store_namespace_expire_at_ix',
             'app_data_store_pk',
             'app_data_store_store_ix',
+            'crdt_documents_lifecycle_ix',
+            'crdt_documents_lookup_ix',
+            'crdt_documents_pk',
+            'crdt_snapshots_document_append_ix',
+            'crdt_snapshots_pk',
+            'crdt_updates_document_sequence_ix',
+            'crdt_updates_pk',
+            'crdt_updates_update_id_ix',
+            'crdt_updates_update_id_uq',
             'resource_inbox_expire_ts_ix',
             'resource_inbox_ix',
             'resource_inbox_results_expire_ts_ix',
@@ -111,6 +123,7 @@ Deno.test('in-memory schema supports repository-shaped SQL smoke operations', as
         await smokeResourceInboxResults(db);
         await smokeRuntimeStateStore(db);
         await smokeAppDataStore(db);
+        await smokeCrdtLog(db);
     } finally {
         await db.close();
     }
@@ -429,9 +442,115 @@ async function smokeAppDataStore(db: PGlite): Promise<void> {
     assert.deepEqual(await countRows(db, 'app_data_store'), 0);
 }
 
+async function smokeCrdtLog(db: PGlite): Promise<void> {
+    const documentRef = {
+        applicationId: 'rallar-test',
+        workspaceId: 'main',
+        scope: 'room',
+        documentType: 'checklist',
+        documentId: 'room-1',
+        roomRef: {
+            applicationId: 'rallar-test',
+            workspaceId: 'main',
+            groupId: 'room-1',
+        },
+    };
+    const documentKey = 'crdt:room:checklist:room-1';
+    const update = {
+        protocolVersion: 1,
+        document: documentRef,
+        updateId: 'update-1',
+        replicaId: 'replica-a',
+        lamport: 1,
+        parents: [],
+        schemaVersion: 1,
+        operationVersion: 1,
+        createdAtEpochMs: 1_000,
+        payload: {
+            kind: 'batch',
+            operations: [],
+        },
+    };
+    const snapshot = {
+        protocolVersion: 1,
+        document: documentRef,
+        snapshotId: 'snapshot-1',
+        schemaVersion: 1,
+        createdAtEpochMs: 2_000,
+        maxLamport: 1,
+        includedUpdateIds: ['update-1'],
+        value: {},
+        metadata: {
+            updateCount: 1,
+        },
+    };
+
+    await db.query(
+        `insert into crdt_documents (document_key,
+                                     application_id,
+                                     workspace_id,
+                                     document_scope,
+                                     document_type,
+                                     document_id,
+                                     document_ref)
+         values ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+            documentKey,
+            documentRef.applicationId,
+            documentRef.workspaceId,
+            documentRef.scope,
+            documentRef.documentType,
+            documentRef.documentId,
+            JSON.stringify(documentRef),
+        ],
+    );
+    await db.query(
+        `insert into crdt_updates (document_key,
+                                   append_sequence,
+                                   update_id,
+                                   update_envelope,
+                                   accepted_update_hash,
+                                   authorization_scope)
+         values ($1, $2, $3, $4, $5, $6)`,
+        [
+            documentKey,
+            1,
+            update.updateId,
+            JSON.stringify(update),
+            'crdt-test-hash',
+            'room',
+        ],
+    );
+    await db.query(
+        `insert into crdt_snapshots (document_key,
+                                     snapshot_id,
+                                     append_sequence,
+                                     snapshot_envelope)
+         values ($1, $2, $3, $4)`,
+        [
+            documentKey,
+            snapshot.snapshotId,
+            1,
+            JSON.stringify(snapshot),
+        ],
+    );
+
+    assert.deepEqual(await countRows(db, 'crdt_documents'), 1);
+    assert.deepEqual(await countRows(db, 'crdt_updates'), 1);
+    assert.deepEqual(await countRows(db, 'crdt_snapshots'), 1);
+
+    await db.query('delete from crdt_documents where document_key = $1', [documentKey]);
+    assert.deepEqual(await countRows(db, 'crdt_documents'), 0);
+    assert.deepEqual(await countRows(db, 'crdt_updates'), 0);
+    assert.deepEqual(await countRows(db, 'crdt_snapshots'), 0);
+}
+
 async function countRows(db: PGlite, tableName: string): Promise<number> {
     const allowedTableNames = new Set([
         'app_data_store',
+        'crdt_documents',
+        'crdt_snapshots',
+        'crdt_updates',
         'resource_inbox',
         'resource_inbox_results',
         'runtime_state_store',

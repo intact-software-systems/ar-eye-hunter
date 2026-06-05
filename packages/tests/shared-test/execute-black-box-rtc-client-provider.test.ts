@@ -2524,6 +2524,139 @@ Deno.test('createRallarBrowserRtcProvider bridges browser runtime events into RT
     assertEquals(providerCloseEvent?.closedBy, 'rallar-browser-provider')
 })
 
+Deno.test('createRallarBrowserRtcProvider opens local-only CRDT without RTC connect', async () => {
+    const evaluateInputs: any[] = []
+    let contextCloseCount = 0
+
+    const page = {
+        async exposeFunction(_name: string, _handler: (event: any) => void | Promise<void>) {
+            // no-op
+        },
+
+        on(_type: string, _handler: (event?: any) => void) {
+            // no-op
+        },
+
+        async goto(_url: string, _options: any) {
+            // no-op
+        },
+
+        async waitForFunction(_fn: () => boolean, _arg: unknown, _options: any) {
+            // no-op
+        },
+
+        async evaluate(_fn: (...args: any[]) => unknown, input?: any) {
+            evaluateInputs.push(input)
+            if (input?.action === 'open') {
+                return {
+                    status: 'opened',
+                    handle: input.request.handle,
+                    value: {
+                        title: 'local-only',
+                    },
+                    pendingUpdateCount: 0,
+                    dependencyBlockedUpdateCount: 0,
+                }
+            }
+            if (input?.action === 'destroy') {
+                return {
+                    status: 'destroyed',
+                    handle: input.request.handle,
+                }
+            }
+            return {
+                status: 'closed',
+            }
+        },
+    }
+
+    const provider = createRallarBrowserRtcProvider({
+        harnessUrl: 'http://black-box-harness.local/rallar-browser-harness.html',
+        dependencies: {
+            chromium: {
+                launch: async () => ({
+                    async newContext() {
+                        return {
+                            async newPage() {
+                                return page
+                            },
+
+                            async close() {
+                                contextCloseCount += 1
+                            },
+                        }
+                    },
+
+                    async close() {
+                        // no-op
+                    },
+                }),
+            },
+        },
+    })
+
+    const report = await executeBlackBox(
+        [
+            {
+                CRDT: {
+                    request: {
+                        action: 'open',
+                        connection: 'localCrdt',
+                        provider: 'rallar-browser',
+                        handle: 'localDoc',
+                        name: 'localDoc',
+                        transport: 'local-only',
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 1,
+                    },
+                    response: {},
+                },
+                openLocalOnlyCrdt: {},
+            },
+            {
+                CRDT: {
+                    request: {
+                        action: 'destroy',
+                        connection: 'localCrdt',
+                        provider: 'rallar-browser',
+                        handle: 'localDoc',
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 2,
+                    },
+                    response: {},
+                },
+                destroyLocalOnlyCrdt: {},
+            },
+            {
+                RTC: {
+                    request: {
+                        action: 'close',
+                        connection: 'localCrdt',
+                        provider: 'rallar-browser',
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 3,
+                    },
+                    response: {},
+                },
+                closeLocalOnlyHarness: {},
+            },
+        ],
+        0,
+        {
+            rtcProviders: {
+                'rallar-browser': provider,
+            },
+        },
+    )
+
+    assertEquals(report.summary.failure, 0)
+    assertEquals(report.resultsByName.openLocalOnlyCrdt[0].status, 'SUCCESS')
+    assertEquals(report.resultsByName.destroyLocalOnlyCrdt[0].status, 'SUCCESS')
+    assertEquals(evaluateInputs.some(input => input?.connection === 'localCrdt'), false)
+    assertEquals(evaluateInputs.some(input => input?.action === 'open'), true)
+    assertEquals(contextCloseCount, 1)
+})
+
 Deno.test('createRallarBrowserRtcProvider auto-closes browser resources at run end', async () => {
     let browserCloseCount = 0
     let contextCloseCount = 0

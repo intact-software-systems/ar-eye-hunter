@@ -303,6 +303,14 @@ h3 {
 .run-manager-preset-grid button,
 .run-manager-command-editor button,
 .run-manager-artifact-actions button,
+.runner-readiness-panel button,
+.runner-recipes-toolbar button,
+.runner-recipe-card-actions button,
+.runner-recipe-actions-primary button,
+.runner-quick-launch-strip button,
+.runner-secondary-actions button,
+.runner-inline-editor button,
+.runner-advanced-switch button,
 .distributed-toolbar button,
 .distributed-ai-controls button,
 .distributed-action-grid button,
@@ -340,6 +348,14 @@ h3 {
 .run-manager-preset-grid button,
 .run-manager-command-editor button,
 .run-manager-artifact-actions button,
+.runner-readiness-panel button,
+.runner-recipes-toolbar button,
+.runner-recipe-card-actions button,
+.runner-recipe-actions-primary button,
+.runner-quick-launch-strip button,
+.runner-secondary-actions button,
+.runner-inline-editor button,
+.runner-advanced-switch button,
 .distributed-toolbar button,
 .distributed-ai-controls button,
 .distributed-action-grid button,
@@ -751,6 +767,7 @@ h3 {
 .websocket-command-center-panel,
 .rtc-realtime-panel,
 .rallar-data-panel,
+.crdt-health-panel,
 .media-console-panel,
 .received-inbox-panel,
 .rtc-diagnostics-panel,
@@ -765,6 +782,9 @@ h3 {
 .rallar-server-panel,
 .rallar-trace-panel,
 .flow-builder-panel,
+.runner-recipes-panel,
+.runner-runs-panel,
+.runner-advanced-panel,
 .run-manager-panel,
 .distributed-recipes-panel,
 .shared-test-catalog-panel,
@@ -815,6 +835,10 @@ h3 {
 .rallar-trace-tab-grid .rallar-trace-panel,
 .server-tab-grid .rallar-server-panel,
 .flow-builder-tab-grid .flow-builder-panel,
+.recipes-tab-grid .runner-recipes-panel,
+.runs-tab-grid .runner-runs-panel,
+.builder-tab-grid .flow-builder-panel,
+.advanced-tab-grid .runner-advanced-panel,
 .run-manager-tab-grid .run-manager-panel,
 .distributed-recipes-tab-grid .distributed-recipes-panel,
 .quick-test-tab-grid .quick-rallar-test-panel,
@@ -823,6 +847,7 @@ h3 {
 .websocket-tab-grid .websocket-command-center-panel,
 .rtc-realtime-tab-grid .rtc-realtime-panel,
 .rallar-data-tab-grid .rallar-data-panel,
+.crdt-health-tab-grid .crdt-health-panel,
 .media-tab-grid .media-console-panel,
 .shared-test-tab-grid .shared-test-stack {
     grid-column: 1 / -1;
@@ -1181,6 +1206,102 @@ h3 {
 
 .rallar-data-result-panel .mini-json {
     margin: 10px 0 0;
+}
+
+.crdt-editor-panel,
+.crdt-editor-workbench,
+.crdt-editor-diagnostics section,
+.crdt-board-column {
+    min-width: 0;
+    border: 1px solid #d8dfd5;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.crdt-editor-panel {
+    display: grid;
+    gap: 12px;
+    margin: 12px 0 16px;
+    padding: 12px;
+}
+
+.crdt-editor-controls {
+    grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) minmax(180px, 0.75fr) repeat(2, minmax(130px, 0.4fr));
+}
+
+.crdt-editor-workbench {
+    display: grid;
+    gap: 12px;
+    padding: 12px;
+}
+
+.crdt-editor-workbench .form-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(120px, 1fr));
+    gap: 10px;
+}
+
+.crdt-editor-diagnostics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
+    gap: 12px;
+}
+
+.crdt-editor-diagnostics section {
+    padding: 12px;
+}
+
+.crdt-board-preview {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 10px;
+}
+
+.crdt-board-column {
+    display: grid;
+    align-content: start;
+    gap: 8px;
+    min-height: 150px;
+    padding: 10px;
+    background: #f8faf6;
+}
+
+.crdt-board-column h4 {
+    margin: 0;
+    color: #26332e;
+    font-size: 0.88rem;
+}
+
+.crdt-card {
+    display: grid;
+    width: 100%;
+    min-height: 62px;
+    justify-items: start;
+    gap: 5px;
+    padding: 9px;
+    border: 1px solid #cbd6d0;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #26332e;
+    text-align: left;
+}
+
+.crdt-card.selected {
+    border-color: #0c6f7b;
+    background: #eaf8f9;
+}
+
+.crdt-card strong,
+.crdt-card span {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.segmented-row button.selected {
+    border-color: #0c6f7b;
+    background: #eaf8f9;
+    color: #0c6f7b;
+    font-weight: 800;
 }
 
 .media-summary-grid {
@@ -1834,6 +1955,514 @@ h3 {
 .flow-builder-preview .json-block {
     max-height: 520px;
     margin: 12px;
+}
+
+.runner-readiness-panel {
+    display: grid;
+    gap: 12px;
+    margin: 12px 14px;
+    padding: 12px;
+    border: 1px solid #d4ddd7;
+    border-radius: 6px;
+    background: #fbfcfa;
+}
+
+.runner-readiness-panel .section-heading,
+.runner-recipe-detail .section-heading,
+.runner-inline-editor .section-heading,
+.runner-runs-subpanel .section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.runner-readiness-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.runner-readiness-check {
+    display: grid;
+    align-content: start;
+    min-width: 0;
+    min-height: 112px;
+    gap: 6px;
+    padding: 10px;
+    border: 1px solid #d7e0da;
+    border-left-width: 4px;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.runner-readiness-check.good {
+    border-left-color: #226a44;
+}
+
+.runner-readiness-check.active {
+    border-left-color: #0c6f7b;
+}
+
+.runner-readiness-check.warn {
+    border-left-color: #96610d;
+}
+
+.runner-readiness-check.bad {
+    border-left-color: #a83232;
+}
+
+.runner-readiness-check div {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.runner-readiness-check strong,
+.runner-readiness-check p,
+.runner-readiness-check small {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.runner-readiness-check p {
+    color: #25332d;
+    font-size: 0.86rem;
+    font-weight: 800;
+    line-height: 1.25;
+}
+
+.runner-readiness-inline-action {
+    align-self: end;
+    min-height: 32px;
+    padding: 6px 9px;
+    border-color: #0c6f7b;
+    background: #0c6f7b;
+    color: #ffffff;
+    font-size: 0.78rem;
+}
+
+.runner-readiness-check small,
+.runner-readiness-summary,
+.runner-disabled-reasons {
+    color: #64736c;
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.runner-readiness-summary {
+    padding: 8px 10px;
+    border: 1px solid #dce5df;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.runner-agent-setup {
+    display: grid;
+    gap: 12px;
+    margin: 0 14px 12px;
+    padding: 12px;
+    border: 1px solid #d4ddd7;
+    border-radius: 6px;
+    background: #f7faf8;
+}
+
+.runner-agent-setup .section-heading {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.runner-agent-setup .section-heading div {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+.runner-agent-setup .section-heading p {
+    margin: 0;
+    color: #64736c;
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
+.runner-agent-grid {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) minmax(180px, 0.7fr) minmax(110px, 0.35fr) minmax(180px, 0.55fr);
+    gap: 10px;
+    align-items: end;
+}
+
+.runner-agent-restore {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 54px;
+    padding: 10px 12px;
+    border: 1px solid #d7e0da;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #2f3d36;
+    font-size: 0.84rem;
+    font-weight: 900;
+}
+
+.runner-agent-restore input {
+    width: 18px;
+    height: 18px;
+    accent-color: #0c6f7b;
+}
+
+.runner-agent-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.runner-agent-actions button:first-child {
+    border-color: #0c6f7b;
+    background: #0c6f7b;
+    color: #ffffff;
+}
+
+.runner-agent-preview {
+    display: grid;
+    gap: 3px;
+    padding: 8px 10px;
+    border: 1px solid #d7e0da;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.runner-agent-preview strong,
+.runner-agent-preview span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.runner-agent-preview strong {
+    color: #2f3d36;
+    font-size: 0.78rem;
+}
+
+.runner-agent-preview span {
+    color: #64736c;
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.runner-agent-meta {
+    margin: 0;
+}
+
+.runner-agent-list {
+    display: grid;
+    gap: 8px;
+}
+
+.runner-agent-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 9px 10px;
+    border: 1px solid #d7e0da;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.runner-agent-row span:first-child {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+}
+
+.runner-agent-row strong,
+.runner-agent-row small,
+.runner-agent-meta dd {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.runner-agent-row small {
+    color: #64736c;
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.runner-agent-offline-note {
+    color: #64736c;
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.runner-recipes-toolbar {
+    display: grid;
+    grid-template-columns: minmax(260px, 1.4fr) minmax(150px, 0.55fr) minmax(150px, 0.55fr) minmax(220px, 0.9fr) minmax(150px, 0.55fr);
+    gap: 10px;
+    padding: 0 14px 12px;
+}
+
+.runner-quick-launch-strip {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) auto;
+    gap: 8px 14px;
+    align-items: center;
+    margin: 0 14px 12px;
+    padding: 12px;
+    border: 1px solid #cbd8d2;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.runner-quick-launch-strip div:first-child {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+}
+
+.runner-quick-launch-strip span,
+.runner-quick-launch-strip strong,
+.runner-quick-launch-strip small {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.runner-quick-launch-strip span,
+.runner-quick-launch-strip small {
+    color: #64736c;
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.runner-quick-launch-strip strong {
+    color: #24332d;
+}
+
+.runner-quick-launch-reason {
+    grid-column: 1 / -1;
+    padding-top: 2px;
+}
+
+.runner-recipes-summary-grid,
+.runner-result-grid,
+.runner-runs-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
+    padding: 0 14px 12px;
+}
+
+.runner-recipes-layout {
+    display: grid;
+    grid-template-columns: minmax(360px, 0.85fr) minmax(460px, 1.15fr);
+    gap: 12px;
+    align-items: start;
+    padding: 0 14px 14px;
+}
+
+.runner-recipe-list,
+.runner-recipe-detail,
+.runner-runs-subpanel,
+.runner-inline-editor,
+.runner-advanced-content > .panel,
+.runner-advanced-content > .shared-test-stack {
+    min-width: 0;
+}
+
+.runner-recipe-list {
+    display: grid;
+    max-height: min(78vh, 920px);
+    gap: 10px;
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.runner-recipe-card,
+.runner-recipe-detail,
+.runner-runs-subpanel,
+.runner-inline-editor {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid #d5ded8;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.runner-recipe-card.selected {
+    border-color: #0c6f7b;
+    background: #f3fbfb;
+}
+
+.runner-recipe-select {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    width: 100%;
+    min-height: 48px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #26332d;
+    text-align: left;
+}
+
+.runner-recipe-select strong,
+.runner-recipe-select small,
+.runner-recipe-card p,
+.runner-recipe-meta dd,
+.runner-launch-result span,
+.runner-failure-focus span,
+.runner-failure-focus small {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.runner-recipe-select strong,
+.runner-recipe-select small {
+    display: block;
+}
+
+.runner-recipe-select small,
+.runner-recipe-card p,
+.runner-failure-focus small {
+    color: #64736c;
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.runner-recipe-card p {
+    margin: 0;
+    line-height: 1.35;
+}
+
+.runner-recipe-card-actions,
+.runner-recipe-actions-primary,
+.runner-secondary-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.runner-recipe-actions-primary button:first-child,
+.runner-recipe-card-actions button:first-child {
+    border-color: #0c6f7b;
+    background: #0c6f7b;
+    color: #ffffff;
+}
+
+.runner-disabled-reasons {
+    display: grid;
+    gap: 4px;
+    padding: 8px 10px;
+    border: 1px solid #ead9b8;
+    border-radius: 6px;
+    background: #fffaf0;
+}
+
+.runner-recipe-meta,
+.runner-requirements,
+.runner-preflight,
+.runner-launch-result,
+.runner-failure-focus,
+.runner-distributed-summary,
+.runner-artifact-summary {
+    margin: 0;
+}
+
+.runner-requirements {
+    display: grid;
+    gap: 8px;
+}
+
+.runner-requirements ul {
+    margin: 0;
+    padding-left: 18px;
+    color: #4c5c55;
+    font-size: 0.84rem;
+}
+
+.runner-preflight {
+    border: 1px solid #d7e0da;
+    border-radius: 6px;
+    background: #fbfcfa;
+}
+
+.runner-preflight summary {
+    padding: 9px 10px;
+    color: #26332d;
+    font-weight: 900;
+}
+
+.runner-launch-result,
+.runner-failure-focus {
+    display: grid;
+    gap: 5px;
+    padding: 10px;
+    border: 1px solid #d7e0da;
+    border-left-width: 4px;
+    border-radius: 6px;
+    background: #fbfcfa;
+}
+
+.runner-launch-result.good {
+    border-left-color: #226a44;
+}
+
+.runner-launch-result.active {
+    border-left-color: #0c6f7b;
+}
+
+.runner-launch-result.bad,
+.runner-failure-focus {
+    border-left-color: #a83232;
+}
+
+.runner-inline-editor .json-block {
+    max-height: 460px;
+    margin: 0;
+}
+
+.runner-runs-layout {
+    display: grid;
+    grid-template-columns: minmax(320px, 0.8fr) repeat(2, minmax(320px, 1fr));
+    gap: 12px;
+    padding: 0 14px 14px;
+}
+
+.runner-advanced-switch {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 14px;
+    border-bottom: 1px solid #dbe1d8;
+}
+
+.runner-advanced-switch button.selected {
+    border-color: #0c6f7b;
+    background: #eaf8f9;
+    color: #0c6f7b;
+}
+
+.runner-advanced-content {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(280px, 1fr));
+    gap: 14px;
+    padding: 14px;
+}
+
+.runner-advanced-content > .distributed-recipes-panel,
+.runner-advanced-content > .run-manager-panel,
+.runner-advanced-content > .manual-rallar-panel,
+.runner-advanced-content > .shared-test-stack {
+    grid-column: 1 / -1;
 }
 
 .run-manager-toolbar {
@@ -3925,6 +4554,14 @@ dd {
     .run-manager-telemetry-grid,
     .run-manager-artifact-actions,
     .run-manager-artifact-summary,
+    .runner-readiness-grid,
+    .runner-recipes-toolbar,
+    .runner-recipes-summary-grid,
+    .runner-recipes-layout,
+    .runner-result-grid,
+    .runner-runs-summary-grid,
+    .runner-runs-layout,
+    .runner-advanced-content,
     .distributed-toolbar,
     .distributed-ai-controls,
     .distributed-ai-guidance,
@@ -4066,6 +4703,10 @@ dd {
     .shared-test-detail-panel,
     .artifact-summary-panel,
     .artifact-replay-panel {
+        grid-column: 1 / -1;
+    }
+
+    .runner-recipe-detail {
         grid-column: 1 / -1;
     }
 }
@@ -4381,10 +5022,68 @@ dd {
     .rtc-latency-grid,
     .rtc-membership-list,
     .topology-summary-grid,
+    .runner-recipes-toolbar,
+    .runner-agent-grid,
+    .runner-agent-meta,
+    .runner-recipes-layout,
+    .runner-runs-layout,
+    .runner-advanced-content,
     .workbench-actions,
     .control-actions,
     .control-stats {
         grid-template-columns: 1fr;
+    }
+
+    .runner-readiness-grid,
+    .runner-recipes-summary-grid,
+    .runner-result-grid,
+    .runner-runs-summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .runner-readiness-panel {
+        gap: 8px;
+        margin: 10px;
+        padding: 8px;
+    }
+
+    .runner-agent-setup {
+        margin: 0 10px 10px;
+        padding: 10px;
+    }
+
+    .runner-agent-actions,
+    .runner-agent-row {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .runner-readiness-check {
+        min-height: 72px;
+        padding: 8px;
+    }
+
+    .runner-readiness-check p {
+        font-size: 0.78rem;
+    }
+
+    .runner-readiness-check small {
+        display: none;
+    }
+
+    .runner-quick-launch-strip {
+        grid-template-columns: 1fr;
+        margin: 0 10px 10px;
+        padding: 10px;
+    }
+
+    .runner-quick-launch-strip .runner-recipe-actions-primary {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .runner-recipe-detail {
+        order: -1;
     }
 
     .rest-path-field {

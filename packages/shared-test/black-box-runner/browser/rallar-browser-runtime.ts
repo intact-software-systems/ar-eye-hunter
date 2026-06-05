@@ -2,9 +2,19 @@ import type { AuthSession, LoginResponse } from '@shared/api/api-config.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
 import {
     rallar,
+    type RallarCrdtDocument,
+    type RallarCrdtOpenOptions,
     type RallarRealtimeLaneHealth,
     type RallarRealtimeSendResult,
 } from '@shared-web/browser/rallar.ts';
+import { catchUpRallarCrdtDocument } from '@shared-web/browser/api-integration.ts';
+import type {
+    RallarCrdtOperation,
+    RallarCrdtOperationBatch,
+    RallarCrdtSyncOptions,
+    RallarCrdtTransportStrategy,
+    RallarCrdtUpdateEnvelope,
+} from '@shared/crdt/mod.ts';
 
 export type BlackBoxRallarTransport = 'realtime' | 'messages.rtc';
 
@@ -229,6 +239,124 @@ export type BlackBoxRallarHealthDiagnostics = Readonly<{
     workspaceId?: string;
     session?: AuthSession;
     health: readonly RallarRealtimeLaneHealth[];
+    crdt?: BlackBoxRallarCrdtRuntimeSummary;
+}>;
+
+export type BlackBoxRallarCrdtOpenInput = Readonly<{
+    handle?: string;
+    name: string;
+    applicationId?: string;
+    workspaceId?: string;
+    documentId?: string;
+    documentType?: string;
+    scope?: Readonly<Record<string, unknown>>;
+    roomRef?: BlackBoxRallarRoomRef;
+    principalId?: string;
+    customScope?: string;
+    transport?: RallarCrdtTransportStrategy;
+    persist?: boolean;
+    tabSync?: boolean;
+    initialValue?: unknown;
+    policies?: readonly Readonly<Record<string, unknown>>[];
+    validation?: Readonly<Record<string, unknown>>;
+    encryption?: Readonly<Record<string, unknown>>;
+    durableCatchUp?: false | 'http';
+    apiBaseUrl?: string;
+    actor?: string;
+    sessionId?: string;
+    username?: string;
+    password?: string;
+    displayName?: string;
+    register?: boolean | 'if-needed';
+    timeoutMs?: number;
+    roomId?: string;
+    rallar?: Readonly<Record<string, unknown>>;
+}>;
+
+export type BlackBoxRallarCrdtHandleInput = Readonly<{
+    handle: string;
+    timeoutMs?: number;
+}>;
+
+export type BlackBoxRallarCrdtApplyInput = BlackBoxRallarCrdtHandleInput & Readonly<{
+    batch: RallarCrdtOperationBatch;
+}>;
+
+export type BlackBoxRallarCrdtSyncInput = BlackBoxRallarCrdtHandleInput & Readonly<{
+    reason?: string;
+    transport?: RallarCrdtTransportStrategy;
+}>;
+
+export type BlackBoxRallarCrdtWaitOperator =
+    | 'equals'
+    | 'notEquals'
+    | 'contains'
+    | 'exists'
+    | 'gte'
+    | 'lte';
+
+export type BlackBoxRallarCrdtWaitCondition = Readonly<{
+    source: 'value' | 'health';
+    path?: string;
+    operator: BlackBoxRallarCrdtWaitOperator;
+    expected?: unknown;
+}>;
+
+export type BlackBoxRallarCrdtWaitInput = BlackBoxRallarCrdtHandleInput & Readonly<{
+    intervalMs?: number;
+    stableForMs?: number;
+    sync?: false | Readonly<{
+        reason?: string;
+        transport?: RallarCrdtTransportStrategy;
+    }>;
+    conditions: readonly BlackBoxRallarCrdtWaitCondition[];
+}>;
+
+export type BlackBoxRallarCrdtUndoRedoInput = BlackBoxRallarCrdtHandleInput & Readonly<{
+    targetOperationGroupId: string;
+    operations: readonly RallarCrdtOperation[];
+    operationGroupId?: string;
+}>;
+
+export type BlackBoxRallarCrdtRuntimeSummary = Readonly<{
+    handles: readonly string[];
+    documents: readonly Readonly<{
+        handle: string;
+        ref: unknown;
+        health: unknown;
+    }>[];
+}>;
+
+export type BlackBoxRallarCrdtCommandDiagnostics = Readonly<{
+    status: 'opened' | 'applied' | 'read' | 'synced' | 'health' | 'wait_matched' | 'undone' | 'redone' | 'closed' | 'destroyed';
+    handle: string;
+    ref?: unknown;
+    transportStrategy?: RallarCrdtTransportStrategy;
+    updateId?: string;
+    value?: unknown;
+    result?: unknown;
+    health?: unknown;
+    pendingUpdateCount?: number;
+    failedPendingUpdateCount?: number;
+    dependencyBlockedUpdateCount?: number;
+    attempts?: number;
+    waitedMs?: number;
+    stableForMs?: number;
+    conditions?: readonly BlackBoxRallarCrdtWaitCondition[];
+    lastSyncResult?: unknown;
+}>;
+
+export type BlackBoxRallarCrdtRuntime = Readonly<{
+    open(input: BlackBoxRallarCrdtOpenInput | unknown): Promise<BlackBoxRallarCrdtCommandDiagnostics>;
+    apply(input: BlackBoxRallarCrdtApplyInput | unknown): Promise<BlackBoxRallarCrdtCommandDiagnostics>;
+    read(input: BlackBoxRallarCrdtHandleInput | unknown): Promise<BlackBoxRallarCrdtCommandDiagnostics>;
+    sync(input: BlackBoxRallarCrdtSyncInput | unknown): Promise<BlackBoxRallarCrdtCommandDiagnostics>;
+    health(input: BlackBoxRallarCrdtHandleInput | unknown): Promise<BlackBoxRallarCrdtCommandDiagnostics>;
+    wait(input: BlackBoxRallarCrdtWaitInput | unknown): Promise<BlackBoxRallarCrdtCommandDiagnostics>;
+    undo(input: BlackBoxRallarCrdtUndoRedoInput | unknown): Promise<BlackBoxRallarCrdtCommandDiagnostics>;
+    redo(input: BlackBoxRallarCrdtUndoRedoInput | unknown): Promise<BlackBoxRallarCrdtCommandDiagnostics>;
+    close(input: BlackBoxRallarCrdtHandleInput | unknown): Promise<BlackBoxRallarCrdtCommandDiagnostics>;
+    destroy(input: BlackBoxRallarCrdtHandleInput | unknown): Promise<BlackBoxRallarCrdtCommandDiagnostics>;
 }>;
 
 export type BlackBoxRallarRuntime = Readonly<{
@@ -237,6 +365,7 @@ export type BlackBoxRallarRuntime = Readonly<{
     ): Promise<BlackBoxRallarConnectDiagnostics>;
     send(input: BlackBoxRallarSendInput | unknown): Promise<BlackBoxRallarSendDiagnostics>;
     sendWs(input: unknown): Promise<BlackBoxRallarWsSendDiagnostics>;
+    crdt: BlackBoxRallarCrdtRuntime;
     close(): Promise<BlackBoxRallarCloseDiagnostics>;
     health(): Promise<BlackBoxRallarHealthDiagnostics>;
 }>;
@@ -267,6 +396,7 @@ const DEFAULT_WORKSPACE_ID = 'default';
 let state: RuntimeState | undefined;
 let consoleDiagnosticConfig: BlackBoxRallarConnectionConfig | undefined;
 let restoreConsoleWarn: (() => void) | undefined;
+const crdtDocuments = new Map<string, RallarCrdtDocument<unknown, RallarCrdtOperationBatch>>();
 
 function transportOf(
     config: BlackBoxRallarConnectionConfig,
@@ -293,6 +423,14 @@ function topicIdOf(config: BlackBoxRallarConnectionConfig): string | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+    return isRecord(value) ? value : {};
+}
+
+function optionalRecord(value: unknown): Record<string, unknown> | undefined {
+    return isRecord(value) ? value : undefined;
 }
 
 function stringValue(value: unknown): string | undefined {
@@ -432,6 +570,528 @@ function toRallarDefaults(config: BlackBoxRallarConnectionConfig): Record<string
                 : {}),
         },
     };
+}
+
+function crdtHandle(input: unknown): string {
+    const record = asRecord(input);
+    const handle = stringValue(record.handle) ??
+        stringValue(record.commandId) ??
+        stringValue(record.name);
+    if (!handle) {
+        throw new Error('CRDT command requires handle.');
+    }
+
+    return handle;
+}
+
+function crdtRoomRef(input: BlackBoxRallarCrdtOpenInput): BlackBoxRallarRoomRef | undefined {
+    const explicit = input.roomRef ?? optionalRecord(input.rallar?.roomRef) as BlackBoxRallarRoomRef | undefined;
+    if (explicit?.applicationId && explicit.groupId) {
+        return {
+            applicationId: String(explicit.applicationId),
+            ...(explicit.workspaceId !== undefined ? { workspaceId: String(explicit.workspaceId) } : {}),
+            groupId: String(explicit.groupId),
+        };
+    }
+
+    const roomId = input.roomId ?? stringValue(input.rallar?.roomId);
+    const applicationId = input.applicationId ??
+        stringValue(input.rallar?.applicationId) ??
+        stringValue(optionalRecord(input.scope)?.applicationId);
+    if (!roomId || !applicationId) {
+        return undefined;
+    }
+
+    const workspaceId = input.workspaceId ??
+        stringValue(input.rallar?.workspaceId) ??
+        stringValue(optionalRecord(input.scope)?.workspaceId);
+
+    return {
+        applicationId,
+        ...(workspaceId !== undefined ? { workspaceId } : {}),
+        groupId: roomId,
+    };
+}
+
+function normalizeCrdtOpenInput(input: BlackBoxRallarCrdtOpenInput | unknown): BlackBoxRallarCrdtOpenInput {
+    const record = asRecord(input);
+    const rallarConfig = asRecord(record.rallar);
+    const scope = optionalRecord(record.scope) ?? optionalRecord(rallarConfig.scope);
+    const roomRef = optionalRecord(record.roomRef) ?? optionalRecord(rallarConfig.roomRef);
+    const name = stringValue(record.name);
+    if (!name) {
+        throw new Error('crdt.open requires name.');
+    }
+
+    return {
+        handle: stringValue(record.handle) ?? stringValue(record.commandId) ?? name,
+        name,
+        applicationId: stringValue(record.applicationId) ?? stringValue(rallarConfig.applicationId),
+        workspaceId: stringValue(record.workspaceId) ?? stringValue(rallarConfig.workspaceId),
+        documentId: stringValue(record.documentId),
+        documentType: stringValue(record.documentType),
+        scope,
+        roomRef: roomRef as BlackBoxRallarRoomRef | undefined,
+        principalId: stringValue(record.principalId),
+        customScope: stringValue(record.customScope),
+        transport: toCrdtTransport(record.transport) ?? toCrdtTransport(rallarConfig.crdtTransport),
+        persist: typeof record.persist === 'boolean' ? record.persist : undefined,
+        tabSync: typeof record.tabSync === 'boolean' ? record.tabSync : undefined,
+        initialValue: record.initialValue,
+        policies: Array.isArray(record.policies) ? record.policies as readonly Readonly<Record<string, unknown>>[] : undefined,
+        validation: optionalRecord(record.validation),
+        encryption: optionalRecord(record.encryption),
+        durableCatchUp: record.durableCatchUp === 'http'
+            ? 'http'
+            : record.durableCatchUp === false
+                ? false
+                : undefined,
+        apiBaseUrl: stringValue(record.apiBaseUrl) ?? stringValue(rallarConfig.apiBaseUrl),
+        actor: stringValue(record.actor),
+        sessionId: stringValue(record.sessionId) ?? stringValue(rallarConfig.sessionId),
+        username: stringValue(record.username) ?? stringValue(rallarConfig.username),
+        password: stringValue(record.password) ?? stringValue(rallarConfig.password),
+        displayName: stringValue(record.displayName) ?? stringValue(rallarConfig.displayName),
+        register: record.register === true || record.register === 'if-needed'
+            ? record.register
+            : rallarConfig.register === true || rallarConfig.register === 'if-needed'
+                ? rallarConfig.register
+                : undefined,
+        timeoutMs: typeof record.timeoutMs === 'number'
+            ? record.timeoutMs
+            : typeof rallarConfig.timeoutMs === 'number'
+                ? rallarConfig.timeoutMs
+                : undefined,
+        roomId: stringValue(record.roomId) ?? stringValue(rallarConfig.roomId),
+        rallar: rallarConfig,
+    };
+}
+
+function toCrdtTransport(value: unknown): RallarCrdtTransportStrategy | undefined {
+    return value === 'local-only' ||
+            value === 'ws' ||
+            value === 'rtc' ||
+            value === 'ws-then-rtc' ||
+            value === 'rtc-with-ws-fallback'
+        ? value
+        : undefined;
+}
+
+function toCrdtOpenScope(
+    input: BlackBoxRallarCrdtOpenInput,
+): RallarCrdtOpenOptions['scope'] {
+    const scope = optionalRecord(input.scope);
+    const kind = stringValue(scope?.kind);
+    const roomRef = crdtRoomRef(input);
+    if (kind === 'app') {
+        return { kind: 'app' };
+    }
+    if (kind === 'principal') {
+        const principalId = stringValue(scope?.principalId) ?? input.principalId;
+        if (principalId) {
+            return { kind: 'principal', principalId };
+        }
+    }
+    if (kind === 'custom') {
+        const customScope = stringValue(scope?.customScope) ?? input.customScope;
+        if (customScope) {
+            return { kind: 'custom', customScope };
+        }
+    }
+    if (kind === 'room' && roomRef) {
+        return { kind: 'room', roomRef };
+    }
+    if (input.principalId) {
+        return { kind: 'principal', principalId: input.principalId };
+    }
+    if (input.customScope) {
+        return { kind: 'custom', customScope: input.customScope };
+    }
+    if (roomRef) {
+        return { kind: 'room', roomRef };
+    }
+
+    return undefined;
+}
+
+function toCrdtConnectionConfig(input: BlackBoxRallarCrdtOpenInput): BlackBoxRallarConnectionConfig {
+    const roomRef = crdtRoomRef(input);
+    const applicationId = input.applicationId ??
+        stringValue(input.rallar?.applicationId) ??
+        roomRef?.applicationId;
+    const workspaceId = input.workspaceId ??
+        stringValue(input.rallar?.workspaceId) ??
+        roomRef?.workspaceId ??
+        DEFAULT_WORKSPACE_ID;
+    const scope = applicationId
+        ? {
+            applicationId,
+            workspaceId,
+        }
+        : undefined;
+
+    return {
+        connection: input.handle ?? input.name,
+        actor: input.actor,
+        roomId: input.roomId ?? roomRef?.groupId,
+        ...(roomRef ? { roomRef } : {}),
+        rallar: {
+            ...asRecord(input.rallar),
+            apiBaseUrl: input.apiBaseUrl ?? stringValue(input.rallar?.apiBaseUrl) ?? '',
+            ...(input.username ? { username: input.username } : {}),
+            ...(input.password ? { password: input.password } : {}),
+            ...(input.displayName ? { displayName: input.displayName } : {}),
+            ...(input.register !== undefined ? { register: input.register } : {}),
+            ...(applicationId ? { applicationId } : {}),
+            ...(workspaceId ? { workspaceId } : {}),
+            ...(scope ? { scope } : {}),
+            ...(roomRef ? { roomRef } : {}),
+            ...(input.sessionId ? { expectedSessionId: input.sessionId } : {}),
+            ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+            transport: 'realtime',
+        },
+    };
+}
+
+function toCrdtOpenOptions(
+    input: BlackBoxRallarCrdtOpenInput,
+): RallarCrdtOpenOptions<unknown, RallarCrdtOperationBatch> {
+    return {
+        ...(input.applicationId ? { applicationId: input.applicationId } : {}),
+        ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+        ...(input.documentId ? { documentId: input.documentId } : {}),
+        ...(input.documentType ? { documentType: input.documentType } : {}),
+        ...(toCrdtOpenScope(input) ? { scope: toCrdtOpenScope(input) } : {}),
+        ...(input.transport ? { transport: input.transport } : {}),
+        ...(input.persist !== undefined ? { persist: input.persist } : {}),
+        ...(input.tabSync !== undefined ? { tabSync: input.tabSync } : {}),
+        ...(input.initialValue !== undefined ? { initialValue: input.initialValue } : {}),
+        ...(input.policies ? { policies: input.policies as any } : {}),
+        ...(input.validation ? { validation: input.validation as any } : {}),
+        ...(input.encryption ? { encryption: input.encryption as any } : {}),
+        ...(input.actor ? { actorId: input.actor } : {}),
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+        ...(input.durableCatchUp === 'http'
+            ? { durableCatchUp: catchUpRallarCrdtDocument }
+            : {}),
+    };
+}
+
+async function ensureCrdtLiveConnection(
+    input: BlackBoxRallarCrdtOpenInput,
+): Promise<BlackBoxRallarConnectionConfig | undefined> {
+    if ((input.transport ?? 'local-only') === 'local-only') {
+        return undefined;
+    }
+    if (!input.apiBaseUrl) {
+        if (rallar.isConnected()) {
+            return state?.config;
+        }
+        throw new Error('crdt.open requires apiBaseUrl or an existing Rallar connection for live transports.');
+    }
+
+    const config = toCrdtConnectionConfig(input);
+    emitDiagnostic(config, 'rallar.browser.crdt.configure_started', {
+        transportStrategy: input.transport,
+    });
+    rallar.configure({ apiBaseUrl: input.apiBaseUrl });
+    rallar.setDefaults(toRallarDefaults(config) as any);
+    emitDiagnostic(config, 'rallar.browser.crdt.configure_completed', {
+        defaults: toRallarDefaults(config),
+    });
+
+    if (!rallar.isConnected()) {
+        const session = await loginOrRestore(config);
+        await rallar.connect({
+            timeoutMs: input.timeoutMs,
+        });
+        if (config.roomId) {
+            await rallar.rooms.join(config.roomId, {
+                timeoutMs: input.timeoutMs,
+                scope: scopeOf(config),
+            });
+        }
+        emitDiagnostic(config, 'rallar.browser.crdt.connected', {
+            session: toSessionDiagnostic(session),
+            transportStrategy: input.transport,
+        });
+    }
+
+    return config;
+}
+
+function requireCrdtDocument(handle: string): RallarCrdtDocument<unknown, RallarCrdtOperationBatch> {
+    const document = crdtDocuments.get(handle);
+    if (!document) {
+        throw new Error('CRDT document handle is not open: ' + handle);
+    }
+
+    return document;
+}
+
+function delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, Math.max(0, ms)));
+}
+
+function optionalNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value)
+        ? value
+        : undefined;
+}
+
+function normalizeCrdtWaitCondition(value: unknown): BlackBoxRallarCrdtWaitCondition {
+    const record = asRecord(value);
+    const source = record.source === 'value' || record.source === 'health'
+        ? record.source
+        : undefined;
+    const operator = isCrdtWaitOperator(record.operator)
+        ? record.operator
+        : undefined;
+    if (!source || !operator) {
+        throw new Error('crdt.wait conditions require source and supported operator.');
+    }
+
+    return {
+        source,
+        ...(stringValue(record.path) ? { path: stringValue(record.path) } : {}),
+        operator,
+        ...(record.expected !== undefined ? { expected: record.expected } : {}),
+    };
+}
+
+function normalizeCrdtWaitInput(input: BlackBoxRallarCrdtWaitInput | unknown): BlackBoxRallarCrdtWaitInput {
+    const record = asRecord(input);
+    const handle = crdtHandle(record);
+    const conditions = Array.isArray(record.conditions)
+        ? record.conditions.map(normalizeCrdtWaitCondition)
+        : [];
+    if (conditions.length === 0) {
+        throw new Error('crdt.wait requires at least one condition.');
+    }
+
+    const syncRecord = record.sync === false
+        ? false
+        : optionalRecord(record.sync);
+
+    return {
+        handle,
+        ...(optionalNumber(record.timeoutMs) !== undefined
+            ? { timeoutMs: Math.max(0, optionalNumber(record.timeoutMs) as number) }
+            : {}),
+        ...(optionalNumber(record.intervalMs) !== undefined
+            ? { intervalMs: Math.max(0, optionalNumber(record.intervalMs) as number) }
+            : {}),
+        ...(optionalNumber(record.stableForMs) !== undefined
+            ? { stableForMs: Math.max(0, optionalNumber(record.stableForMs) as number) }
+            : {}),
+        ...(syncRecord !== undefined
+            ? {
+                sync: syncRecord === false
+                    ? false
+                    : {
+                        ...(stringValue(syncRecord.reason) ? { reason: stringValue(syncRecord.reason) } : {}),
+                        ...(toCrdtTransport(syncRecord.transport) ? { transport: toCrdtTransport(syncRecord.transport) } : {}),
+                    },
+            }
+            : {}),
+        conditions,
+    };
+}
+
+function isCrdtWaitOperator(value: unknown): value is BlackBoxRallarCrdtWaitOperator {
+    return value === 'equals' ||
+        value === 'notEquals' ||
+        value === 'contains' ||
+        value === 'exists' ||
+        value === 'gte' ||
+        value === 'lte';
+}
+
+function normalizeCrdtWaitPath(path: string): string {
+    if (path.startsWith('$.')) {
+        return path.slice('$.'.length);
+    }
+    return path;
+}
+
+function lookupCrdtWaitPath(root: unknown, path: string | undefined): Readonly<{
+    exists: boolean;
+    value?: unknown;
+}> {
+    if (!path || path.trim().length === 0) {
+        return {
+            exists: root !== undefined,
+            value: root,
+        };
+    }
+
+    let current = root;
+    const segments = normalizeCrdtWaitPath(path)
+        .split('.')
+        .filter(segment => segment.length > 0);
+    for (const segment of segments) {
+        if ((Array.isArray(current) || typeof current === 'string') && segment === 'length') {
+            current = current.length;
+            continue;
+        }
+
+        if (Array.isArray(current)) {
+            const index = Number(segment);
+            if (!Number.isInteger(index) || index < 0 || index >= current.length) {
+                return { exists: false };
+            }
+            current = current[index];
+            continue;
+        }
+
+        if (!current || typeof current !== 'object') {
+            return { exists: false };
+        }
+
+        const record = current as Record<string, unknown>;
+        if (!Object.prototype.hasOwnProperty.call(record, segment)) {
+            return { exists: false };
+        }
+        current = record[segment];
+    }
+
+    return {
+        exists: true,
+        value: current,
+    };
+}
+
+function sameCrdtWaitValue(left: unknown, right: unknown): boolean {
+    try {
+        return JSON.stringify(left) === JSON.stringify(right);
+    } catch (_error) {
+        return Object.is(left, right);
+    }
+}
+
+function containsCrdtWaitValue(value: unknown, expected: unknown): boolean {
+    if (Array.isArray(value)) {
+        return value.some(entry => sameCrdtWaitValue(entry, expected));
+    }
+    if (typeof value === 'string') {
+        return value.includes(String(expected));
+    }
+    if (value && typeof value === 'object') {
+        if (typeof expected === 'string') {
+            try {
+                return JSON.stringify(value).includes(expected);
+            } catch (_error) {
+                return String(value).includes(expected);
+            }
+        }
+        return Object.values(value as Record<string, unknown>)
+            .some(entry => sameCrdtWaitValue(entry, expected));
+    }
+
+    return String(value).includes(String(expected));
+}
+
+function crdtWaitConditionMatches(
+    condition: BlackBoxRallarCrdtWaitCondition,
+    value: unknown,
+    health: unknown,
+): boolean {
+    const source = condition.source === 'value' ? value : health;
+    const lookup = lookupCrdtWaitPath(source, condition.path);
+
+    switch (condition.operator) {
+        case 'equals':
+            return lookup.exists && sameCrdtWaitValue(lookup.value, condition.expected);
+        case 'notEquals':
+            return !lookup.exists || !sameCrdtWaitValue(lookup.value, condition.expected);
+        case 'contains':
+            return lookup.exists && containsCrdtWaitValue(lookup.value, condition.expected);
+        case 'exists':
+            return condition.expected === undefined
+                ? lookup.exists
+                : lookup.exists === Boolean(condition.expected);
+        case 'gte':
+            return lookup.exists &&
+                typeof lookup.value === 'number' &&
+                typeof condition.expected === 'number' &&
+                lookup.value >= condition.expected;
+        case 'lte':
+            return lookup.exists &&
+                typeof lookup.value === 'number' &&
+                typeof condition.expected === 'number' &&
+                lookup.value <= condition.expected;
+    }
+}
+
+function crdtRuntimeSummary(): BlackBoxRallarCrdtRuntimeSummary {
+    return {
+        handles: [...crdtDocuments.keys()],
+        documents: [...crdtDocuments.entries()].map(([handle, document]) => ({
+            handle,
+            ref: document.ref,
+            health: document.health(),
+        })),
+    };
+}
+
+function toCrdtDiagnostics(
+    status: BlackBoxRallarCrdtCommandDiagnostics['status'],
+    handle: string,
+    document: RallarCrdtDocument<unknown, RallarCrdtOperationBatch> | undefined,
+    options: Readonly<{
+        update?: RallarCrdtUpdateEnvelope<RallarCrdtOperationBatch>;
+        result?: unknown;
+        value?: unknown;
+        transportStrategy?: RallarCrdtTransportStrategy;
+        attempts?: number;
+        waitedMs?: number;
+        stableForMs?: number;
+        conditions?: readonly BlackBoxRallarCrdtWaitCondition[];
+        lastSyncResult?: unknown;
+    }> = {},
+): BlackBoxRallarCrdtCommandDiagnostics {
+    const health = document?.health();
+    const value = options.value !== undefined
+        ? options.value
+        : document && status !== 'closed' && status !== 'destroyed'
+            ? document.read()
+            : undefined;
+
+    return {
+        status,
+        handle,
+        ...(document ? { ref: document.ref } : {}),
+        ...(options.transportStrategy ? { transportStrategy: options.transportStrategy } : {}),
+        ...(options.update ? { updateId: options.update.updateId } : {}),
+        ...(value !== undefined ? { value } : {}),
+        ...(options.result !== undefined ? { result: options.result } : {}),
+        ...(health !== undefined ? { health } : {}),
+        ...(document ? { pendingUpdateCount: document.pendingUpdates().length } : {}),
+        ...(document ? { failedPendingUpdateCount: document.failedPendingUpdates().length } : {}),
+        ...(document ? { dependencyBlockedUpdateCount: document.dependencyBlockedUpdates().length } : {}),
+        ...(options.attempts !== undefined ? { attempts: options.attempts } : {}),
+        ...(options.waitedMs !== undefined ? { waitedMs: options.waitedMs } : {}),
+        ...(options.stableForMs !== undefined ? { stableForMs: options.stableForMs } : {}),
+        ...(options.conditions ? { conditions: options.conditions } : {}),
+        ...(options.lastSyncResult !== undefined ? { lastSyncResult: options.lastSyncResult } : {}),
+    };
+}
+
+function emitCrdtDiagnostic(
+    topic: string,
+    handle: string,
+    data: unknown,
+    config?: BlackBoxRallarConnectionConfig,
+): void {
+    emit({
+        kind: 'diagnostic',
+        topic,
+        connection: config?.connection ?? handle,
+        actor: config?.actor,
+        roomId: config?.roomId,
+        ...(config ? scopeDiagnostics(config) : {}),
+        data,
+    });
 }
 
 function messageSelectorOf(config: BlackBoxRallarConnectionConfig): string | {
@@ -1518,6 +2178,288 @@ function ensureWsMessageSubscription(
     });
 }
 
+async function crdtOpen(
+    rawInput: BlackBoxRallarCrdtOpenInput | unknown,
+): Promise<BlackBoxRallarCrdtCommandDiagnostics> {
+    const input = normalizeCrdtOpenInput(rawInput);
+    const handle = crdtHandle(input);
+    if (crdtDocuments.has(handle)) {
+        throw new Error('CRDT document handle is already open: ' + handle);
+    }
+
+    let config: BlackBoxRallarConnectionConfig | undefined;
+    try {
+        config = await ensureCrdtLiveConnection(input);
+        const document = await rallar.crdt.open(
+            input.name,
+            toCrdtOpenOptions(input),
+        );
+        crdtDocuments.set(handle, document);
+        const diagnostics = toCrdtDiagnostics('opened', handle, document, {
+            transportStrategy: input.transport,
+        });
+        emitCrdtDiagnostic('rallar.browser.crdt.opened', handle, diagnostics, config);
+        return diagnostics;
+    } catch (error) {
+        emitError(config, 'rallar.browser.crdt.open_failed', error, {
+            handle,
+            transportStrategy: input.transport,
+        });
+        throw error;
+    }
+}
+
+async function crdtApply(
+    input: BlackBoxRallarCrdtApplyInput | unknown,
+): Promise<BlackBoxRallarCrdtCommandDiagnostics> {
+    const record = asRecord(input);
+    const handle = crdtHandle(record);
+    const document = requireCrdtDocument(handle);
+    const batch = record.batch as RallarCrdtOperationBatch | undefined;
+    if (!batch) {
+        throw new Error('crdt.apply requires batch.');
+    }
+
+    try {
+        const update = await document.applyLocal(batch);
+        const diagnostics = toCrdtDiagnostics('applied', handle, document, {
+            update,
+        });
+        emitCrdtDiagnostic('rallar.browser.crdt.applied', handle, diagnostics);
+        return diagnostics;
+    } catch (error) {
+        emitError(undefined, 'rallar.browser.crdt.apply_failed', error, { handle });
+        throw error;
+    }
+}
+
+async function crdtRead(
+    input: BlackBoxRallarCrdtHandleInput | unknown,
+): Promise<BlackBoxRallarCrdtCommandDiagnostics> {
+    const handle = crdtHandle(input);
+    const document = requireCrdtDocument(handle);
+    const diagnostics = toCrdtDiagnostics('read', handle, document, {
+        value: document.read(),
+    });
+    emitCrdtDiagnostic('rallar.browser.crdt.read', handle, diagnostics);
+    return diagnostics;
+}
+
+async function crdtSync(
+    input: BlackBoxRallarCrdtSyncInput | unknown,
+): Promise<BlackBoxRallarCrdtCommandDiagnostics> {
+    const record = asRecord(input);
+    const handle = crdtHandle(record);
+    const document = requireCrdtDocument(handle);
+    const options: RallarCrdtSyncOptions = {
+        ...(stringValue(record.reason) ? { reason: stringValue(record.reason) } : {}),
+        ...(toCrdtTransport(record.transport) ? { transport: toCrdtTransport(record.transport) } : {}),
+    };
+
+    try {
+        const result = await document.sync(options);
+        const diagnostics = toCrdtDiagnostics('synced', handle, document, {
+            result,
+            transportStrategy: toCrdtTransport(record.transport),
+        });
+        emitCrdtDiagnostic('rallar.browser.crdt.synced', handle, diagnostics);
+        return diagnostics;
+    } catch (error) {
+        emitError(undefined, 'rallar.browser.crdt.sync_failed', error, { handle });
+        throw error;
+    }
+}
+
+async function crdtHealth(
+    input: BlackBoxRallarCrdtHandleInput | unknown,
+): Promise<BlackBoxRallarCrdtCommandDiagnostics> {
+    const handle = crdtHandle(input);
+    const document = requireCrdtDocument(handle);
+    const diagnostics = toCrdtDiagnostics('health', handle, document);
+    emitCrdtDiagnostic('rallar.browser.crdt.health', handle, diagnostics);
+    return diagnostics;
+}
+
+async function crdtWait(
+    rawInput: BlackBoxRallarCrdtWaitInput | unknown,
+): Promise<BlackBoxRallarCrdtCommandDiagnostics> {
+    const input = normalizeCrdtWaitInput(rawInput);
+    const document = requireCrdtDocument(input.handle);
+    const timeoutMs = input.timeoutMs ?? 10_000;
+    const intervalMs = input.intervalMs ?? 250;
+    const stableForMs = input.stableForMs ?? 0;
+    const startEpochMs = Date.now();
+    const deadlineEpochMs = startEpochMs + timeoutMs;
+    const syncOptions: RallarCrdtSyncOptions | undefined = input.sync && typeof input.sync === 'object'
+        ? {
+            ...(input.sync.reason ? { reason: input.sync.reason } : {}),
+            ...(input.sync.transport ? { transport: input.sync.transport } : {}),
+        }
+        : undefined;
+    let attempts = 0;
+    let stableSinceEpochMs: number | undefined;
+    let lastSyncResult: unknown;
+    let lastValue: unknown;
+    let lastHealth: unknown;
+
+    emitCrdtDiagnostic('rallar.browser.crdt.waiting', input.handle, {
+        status: 'waiting',
+        handle: input.handle,
+        ref: document.ref,
+        timeoutMs,
+        intervalMs,
+        stableForMs,
+        conditions: input.conditions,
+        sync: input.sync,
+    });
+
+    try {
+        while (true) {
+            attempts += 1;
+            if (syncOptions) {
+                lastSyncResult = await document.sync(syncOptions);
+            }
+
+            lastValue = document.read();
+            lastHealth = document.health();
+            const now = Date.now();
+            const matched = input.conditions.every(condition =>
+                crdtWaitConditionMatches(condition, lastValue, lastHealth)
+            );
+
+            if (matched) {
+                stableSinceEpochMs ??= now;
+                if (stableForMs <= 0 || now - stableSinceEpochMs >= stableForMs) {
+                    const diagnostics = toCrdtDiagnostics('wait_matched', input.handle, document, {
+                        value: lastValue,
+                        result: {
+                            matched: true,
+                            matchedAtEpochMs: now,
+                        },
+                        attempts,
+                        waitedMs: now - startEpochMs,
+                        stableForMs,
+                        conditions: input.conditions,
+                        lastSyncResult,
+                    });
+                    emitCrdtDiagnostic('rallar.browser.crdt.wait_matched', input.handle, diagnostics);
+                    return diagnostics;
+                }
+            } else {
+                stableSinceEpochMs = undefined;
+            }
+
+            if (now >= deadlineEpochMs) {
+                throw new Error('Timed out waiting for CRDT conditions on handle: ' + input.handle);
+            }
+
+            await delay(Math.min(intervalMs, Math.max(0, deadlineEpochMs - now)));
+        }
+    } catch (error) {
+        emitError(undefined, 'rallar.browser.crdt.wait_failed', error, {
+            handle: input.handle,
+            attempts,
+            waitedMs: Date.now() - startEpochMs,
+            stableForMs,
+            conditions: input.conditions,
+            lastValue,
+            lastHealth,
+            lastSyncResult,
+        });
+        throw error;
+    }
+}
+
+async function crdtUndo(
+    input: BlackBoxRallarCrdtUndoRedoInput | unknown,
+): Promise<BlackBoxRallarCrdtCommandDiagnostics> {
+    const record = asRecord(input);
+    const handle = crdtHandle(record);
+    const document = requireCrdtDocument(handle);
+    const targetOperationGroupId = stringValue(record.targetOperationGroupId);
+    const operations = Array.isArray(record.operations)
+        ? record.operations as readonly RallarCrdtOperation[]
+        : undefined;
+    if (!targetOperationGroupId || !operations) {
+        throw new Error('crdt.undo requires targetOperationGroupId and operations.');
+    }
+
+    try {
+        const update = await document.undoOperationGroup({
+            targetOperationGroupId,
+            operations,
+            ...(stringValue(record.operationGroupId)
+                ? { operationGroupId: stringValue(record.operationGroupId) }
+                : {}),
+        });
+        const diagnostics = toCrdtDiagnostics('undone', handle, document, {
+            update,
+        });
+        emitCrdtDiagnostic('rallar.browser.crdt.undone', handle, diagnostics);
+        return diagnostics;
+    } catch (error) {
+        emitError(undefined, 'rallar.browser.crdt.undo_failed', error, { handle });
+        throw error;
+    }
+}
+
+async function crdtRedo(
+    input: BlackBoxRallarCrdtUndoRedoInput | unknown,
+): Promise<BlackBoxRallarCrdtCommandDiagnostics> {
+    const record = asRecord(input);
+    const handle = crdtHandle(record);
+    const document = requireCrdtDocument(handle);
+    const targetOperationGroupId = stringValue(record.targetOperationGroupId);
+    const operations = Array.isArray(record.operations)
+        ? record.operations as readonly RallarCrdtOperation[]
+        : undefined;
+    if (!targetOperationGroupId || !operations) {
+        throw new Error('crdt.redo requires targetOperationGroupId and operations.');
+    }
+
+    try {
+        const update = await document.redoOperationGroup({
+            targetOperationGroupId,
+            operations,
+            ...(stringValue(record.operationGroupId)
+                ? { operationGroupId: stringValue(record.operationGroupId) }
+                : {}),
+        });
+        const diagnostics = toCrdtDiagnostics('redone', handle, document, {
+            update,
+        });
+        emitCrdtDiagnostic('rallar.browser.crdt.redone', handle, diagnostics);
+        return diagnostics;
+    } catch (error) {
+        emitError(undefined, 'rallar.browser.crdt.redo_failed', error, { handle });
+        throw error;
+    }
+}
+
+async function crdtClose(
+    input: BlackBoxRallarCrdtHandleInput | unknown,
+): Promise<BlackBoxRallarCrdtCommandDiagnostics> {
+    const handle = crdtHandle(input);
+    const document = requireCrdtDocument(handle);
+    const diagnostics = toCrdtDiagnostics('closed', handle, document);
+    await document.close();
+    crdtDocuments.delete(handle);
+    emitCrdtDiagnostic('rallar.browser.crdt.closed', handle, diagnostics);
+    return diagnostics;
+}
+
+async function crdtDestroy(
+    input: BlackBoxRallarCrdtHandleInput | unknown,
+): Promise<BlackBoxRallarCrdtCommandDiagnostics> {
+    const handle = crdtHandle(input);
+    const document = requireCrdtDocument(handle);
+    const diagnostics = toCrdtDiagnostics('destroyed', handle, document);
+    await document.destroy();
+    crdtDocuments.delete(handle);
+    emitCrdtDiagnostic('rallar.browser.crdt.destroyed', handle, diagnostics);
+    return diagnostics;
+}
+
 async function close(): Promise<BlackBoxRallarCloseDiagnostics> {
     const runtimeState = state;
     const config = runtimeState?.config;
@@ -1541,6 +2483,25 @@ async function close(): Promise<BlackBoxRallarCloseDiagnostics> {
         } catch (error) {
             cleanupErrors.push(serializeError(error));
             emitError(config, 'rallar.browser.cleanup.unsubscribe_failed', error);
+        }
+
+        for (const [handle, document] of [...crdtDocuments.entries()]) {
+            try {
+                await document.close();
+                crdtDocuments.delete(handle);
+                emitCrdtDiagnostic('rallar.browser.crdt.closed', handle, {
+                    status: 'closed',
+                    handle,
+                    ref: document.ref,
+                    reason: 'runtime-close',
+                }, config);
+            } catch (error) {
+                cleanupErrors.push(serializeError(error));
+                emitError(config, 'rallar.browser.crdt.close_failed', error, {
+                    handle,
+                    reason: 'runtime-close',
+                });
+            }
         }
 
         if (config?.roomId && config.rallar.leaveRoomOnClose !== false) {
@@ -1658,6 +2619,7 @@ async function health(): Promise<BlackBoxRallarHealthDiagnostics> {
         ...(config ? scopeDiagnostics(config) : {}),
         session: rallar.session(),
         health: config ? readHealth(config) : [],
+        crdt: crdtRuntimeSummary(),
     };
 }
 
@@ -1665,6 +2627,18 @@ window.__blackBoxRallar = {
     connect,
     send,
     sendWs,
+    crdt: {
+        open: crdtOpen,
+        apply: crdtApply,
+        read: crdtRead,
+        sync: crdtSync,
+        health: crdtHealth,
+        wait: crdtWait,
+        undo: crdtUndo,
+        redo: crdtRedo,
+        close: crdtClose,
+        destroy: crdtDestroy,
+    },
     close,
     health,
 };

@@ -165,6 +165,30 @@ function firstString(...values: readonly unknown[]): string | undefined {
     return undefined;
 }
 
+const CONTROL_AGENT_CRDT_TRANSPORTS = [
+    'local-only',
+    'ws',
+    'rtc',
+    'ws-then-rtc',
+    'rtc-with-ws-fallback',
+] as const;
+
+function hasCrdtRuntimeHints(config: RallarBlackBoxTestState['currentConfig']): boolean {
+    const rallar = asRecord(config?.rallar);
+    return Boolean(
+        rallar.crdt === true ||
+            typeof rallar.crdtTransport === 'string' ||
+            rallar.crdtRuntime === true,
+    );
+}
+
+function isCrdtCapableProvider(providerMode: string | undefined): boolean {
+    return providerMode === 'browser-rallar' ||
+        providerMode === 'rallar-browser' ||
+        providerMode === 'rallar-remote-browser' ||
+        providerMode === 'mixed';
+}
+
 function toControlAgentIdentity(
     state: RallarBlackBoxTestState,
     agentId: string,
@@ -184,6 +208,9 @@ function toControlAgentIdentity(
     const browser = asRecord(config.browser);
     const principalId = firstString(rallar.principalId, rallar.clientId, config.actor);
     const sessionId = firstString(rallar.sessionId, config.sessionId);
+    const providerMode = firstString(control.providerMode, defaults.providerMode, rallar.providerMode);
+    const apiBaseUrl = firstString(config.apiBaseUrl, rallar.apiBaseUrl, defaults.apiBaseUrl);
+    const crdtSupported = isCrdtCapableProvider(providerMode) || hasCrdtRuntimeHints(config);
     const identity: RallarBlackBoxControlAgentIdentity = {
         principalId,
         clientId: firstString(rallar.clientId, principalId),
@@ -193,13 +220,21 @@ function toControlAgentIdentity(
         applicationId: firstString(defaults.applicationId, rallar.applicationId, rallarScope.applicationId),
         workspaceId: firstString(defaults.workspaceId, rallar.workspaceId, rallarScope.workspaceId),
         groupId: firstString(defaults.groupId, rallar.groupId, config.roomId),
-        providerMode: firstString(control.providerMode, defaults.providerMode, rallar.providerMode),
+        providerMode,
         browserLabel: firstString(browser.label, browser.name, globalThis.navigator?.userAgent),
         sessionLabel: firstString(
             browser.sessionLabel,
             sessionId && principalId ? `${principalId}:${sessionId}` : undefined,
             agentId,
         ),
+        capabilities: {
+            crdt: {
+                supported: crdtSupported,
+                transports: crdtSupported ? CONTROL_AGENT_CRDT_TRANSPORTS : [],
+                runtimeSurface: providerMode,
+                apiBaseUrlConfigured: Boolean(apiBaseUrl),
+            },
+        },
         updatedAtEpochMs: Date.now(),
     };
 

@@ -1693,6 +1693,188 @@ describe('rallar-bb-test', () => {
         });
     });
 
+    it('delegates CRDT commands to the browser Rallar runtime adapter', async () => {
+        const calls: Array<{ name: string; value?: unknown }> = [];
+        const crdt = Object.fromEntries(
+            ['open', 'apply', 'read', 'sync', 'health', 'wait', 'undo', 'redo', 'close', 'destroy']
+                .map(name => [
+                    name,
+                    async (input: unknown) => {
+                        calls.push({ name, value: input });
+                        return {
+                            status: name,
+                            handle: (input as { handle?: string }).handle,
+                            health: {
+                                pendingUpdateCount: 0,
+                            },
+                        };
+                    },
+                ]),
+        ) as Record<string, (input: unknown) => Promise<unknown>>;
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                connect: async () => ({ connected: true }),
+                send: async () => ({ sent: true }),
+                close: async () => ({ closed: true }),
+                health: async () => ({ connected: true }),
+                crdt: crdt as any,
+            },
+        });
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-crdt',
+            config: {
+                apiBaseUrl: 'https://api.example.test',
+                actor: 'alice',
+                roomId: 'room-1',
+                rallar: {
+                    applicationId: 'rallar-server',
+                    workspaceId: 'default',
+                },
+            },
+        });
+        await runtime.execute({
+            kind: 'crdt.open',
+            commandId: 'open-crdt',
+            handle: 'doc',
+            name: 'checklist',
+            transport: 'ws',
+            durableCatchUp: 'http',
+        });
+        await runtime.execute({
+            kind: 'crdt.apply',
+            commandId: 'apply-crdt',
+            handle: 'doc',
+            batch: {
+                kind: 'batch',
+                operations: [
+                    {
+                        kind: 'counter.add',
+                        path: ['count'],
+                        delta: 1,
+                    },
+                ],
+            },
+        });
+        await runtime.execute({ kind: 'crdt.read', commandId: 'read-crdt', handle: 'doc' });
+        await runtime.execute({ kind: 'crdt.sync', commandId: 'sync-crdt', handle: 'doc', transport: 'ws' });
+        await runtime.execute({ kind: 'crdt.health', commandId: 'health-crdt', handle: 'doc' });
+        await runtime.execute({
+            kind: 'crdt.wait',
+            commandId: 'wait-crdt',
+            handle: 'doc',
+            timeoutMs: 1_000,
+            intervalMs: 50,
+            sync: {
+                reason: 'unit-test',
+                transport: 'ws',
+            },
+            conditions: [
+                {
+                    source: 'value',
+                    path: 'title',
+                    operator: 'equals',
+                    expected: 'Ready',
+                },
+                {
+                    source: 'health',
+                    path: 'pendingUpdateCount',
+                    operator: 'equals',
+                    expected: 0,
+                },
+            ],
+        });
+        await runtime.execute({
+            kind: 'crdt.undo',
+            commandId: 'undo-crdt',
+            handle: 'doc',
+            targetOperationGroupId: 'group-1',
+            operations: [
+                {
+                    kind: 'counter.add',
+                    path: ['count'],
+                    delta: -1,
+                },
+            ],
+        });
+        await runtime.execute({
+            kind: 'crdt.redo',
+            commandId: 'redo-crdt',
+            handle: 'doc',
+            targetOperationGroupId: 'group-1',
+            operations: [
+                {
+                    kind: 'counter.add',
+                    path: ['count'],
+                    delta: 1,
+                },
+            ],
+        });
+        await runtime.execute({ kind: 'crdt.close', commandId: 'close-crdt', handle: 'doc' });
+        await runtime.execute({ kind: 'crdt.destroy', commandId: 'destroy-crdt', handle: 'doc' });
+
+        expect(calls.map(call => call.name)).toEqual([
+            'open',
+            'apply',
+            'read',
+            'sync',
+            'health',
+            'wait',
+            'undo',
+            'redo',
+            'close',
+            'destroy',
+        ]);
+        expect(calls[0].value).toMatchObject({
+            handle: 'doc',
+            name: 'checklist',
+            apiBaseUrl: 'https://api.example.test',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+            },
+        });
+        expect(selectRallarBlackBoxDiagnostics(runtime.state()).map(event => event.topic)).toEqual(expect.arrayContaining([
+            'rallar.bb.crdt.opened',
+            'rallar.bb.crdt.applied',
+            'rallar.bb.crdt.read',
+            'rallar.bb.crdt.synced',
+            'rallar.bb.crdt.health',
+            'rallar.bb.crdt.waiting',
+            'rallar.bb.crdt.wait_matched',
+            'rallar.bb.crdt.undone',
+            'rallar.bb.crdt.redone',
+            'rallar.bb.crdt.closed',
+            'rallar.bb.crdt.destroyed',
+        ]));
+    });
+
+    it('reports unsupported CRDT browser runtimes clearly', async () => {
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                connect: async () => ({ connected: true }),
+                send: async () => ({ sent: true }),
+                close: async () => ({ closed: true }),
+                health: async () => ({ connected: true }),
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'crdt.read',
+            commandId: 'read-crdt-unsupported',
+            handle: 'missing',
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toContain('does not support CRDT commands');
+        expect(selectRallarBlackBoxDiagnostics(runtime.state()).map(event => event.topic)).toContain(
+            'rallar.bb.crdt.failed',
+        );
+    });
+
     it('honors local browser command delays before live adapter execution', async () => {
         const sendCallEpochMs: number[] = [];
         const runtime = createRallarBlackBoxBrowserTestRuntime({

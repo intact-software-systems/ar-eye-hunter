@@ -10,6 +10,8 @@ export * as dataCaches from './browser/data-caches.ts';
 export * from './browser/heartbeat.ts';
 export * from './browser/middleware.ts';
 export * as qboxEngine from './browser/qbox-engine.ts';
+export * from './browser/rallar-crdt.ts';
+export * from './browser/rallar-crdt-transport.ts';
 export * from './browser/rallar.ts';
 export * from './browser/rtc-engine.ts';
 export * from './browser/rtc-message-router.ts';

@@ -1,0 +1,177 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "https://api.example.com"
+    },
+    "roomId": {
+      "env": "RALLAR_BB_GROUP_ID",
+      "default": "crdt-room-local"
+    },
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    }
+  },
+  "connections": {
+    "aliceRtc": {
+      "type": "rtc",
+      "provider": "rallar-browser",
+      "actor": "alice",
+      "roomId": "{roomId}",
+      "rallar": {
+        "apiBaseUrl": "{rallarApiBaseUrl}",
+        "username": "{aliceUsername}",
+        "password": "{alicePassword}",
+        "applicationId": "rallar-server",
+        "workspaceId": "default",
+        "transport": "realtime",
+        "timeoutMs": 15000
+      }
+    }
+  },
+  "steps": [
+    {
+      "name": "connectAlice",
+      "type": "rtc.connect",
+      "connection": "aliceRtc"
+    },
+    {
+      "name": "openLocalPersistent",
+      "type": "crdt.open",
+      "connection": "aliceRtc",
+      "request": {
+        "handle": "localDoc",
+        "name": "black-box-local-persistent",
+        "documentType": "local-note",
+        "documentId": "{roomId}",
+        "transport": "local-only",
+        "persist": true,
+        "tabSync": true,
+        "initialValue": {
+          "title": "local"
+        }
+      }
+    },
+    {
+      "name": "applyLocalPersistent",
+      "type": "crdt.apply",
+      "connection": "aliceRtc",
+      "request": {
+        "handle": "localDoc",
+        "batch": {
+          "kind": "batch",
+          "operationGroupId": "local-title",
+          "operations": [
+            {
+              "kind": "register.set",
+              "path": ["title"],
+              "value": "local persisted",
+              "policy": "lww"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "closeLocalPersistent",
+      "type": "crdt.close",
+      "connection": "aliceRtc",
+      "request": {
+        "handle": "localDoc"
+      }
+    },
+    {
+      "name": "reopenLocalPersistent",
+      "type": "crdt.open",
+      "connection": "aliceRtc",
+      "request": {
+        "handle": "localDoc",
+        "name": "black-box-local-persistent",
+        "documentType": "local-note",
+        "documentId": "{roomId}",
+        "transport": "local-only",
+        "persist": true,
+        "tabSync": true
+      }
+    },
+    {
+      "name": "waitReopenedLocalPersistent",
+      "type": "crdt.wait",
+      "connection": "aliceRtc",
+      "request": {
+        "handle": "localDoc",
+        "timeoutMs": 5000,
+        "intervalMs": 100,
+        "sync": false,
+        "conditions": [
+          {
+            "source": "value",
+            "path": "title",
+            "operator": "equals",
+            "expected": "local persisted"
+          },
+          {
+            "source": "health",
+            "path": "pendingUpdateCount",
+            "operator": "equals",
+            "expected": 0
+          },
+          {
+            "source": "health",
+            "path": "dependencyBlockedUpdateCount",
+            "operator": "equals",
+            "expected": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "readReopenedLocalPersistent",
+      "type": "crdt.read",
+      "connection": "aliceRtc",
+      "outputs": {
+        "localPersistentTitle": "result.value.title",
+        "localPersistentPending": "result.pendingUpdateCount",
+        "localPersistentBlocked": "result.dependencyBlockedUpdateCount"
+      },
+      "request": {
+        "handle": "localDoc"
+      }
+    },
+    {
+      "name": "assertLocalPersistence",
+      "type": "assert",
+      "actual": {
+        "title": "{localPersistentTitle}",
+        "pending": "{localPersistentPending}",
+        "blocked": "{localPersistentBlocked}"
+      },
+      "expect": {
+        "body": {
+          "title": "local persisted",
+          "pending": 0,
+          "blocked": 0
+        }
+      }
+    },
+    {
+      "name": "destroyLocalPersistent",
+      "type": "crdt.destroy",
+      "connection": "aliceRtc",
+      "request": {
+        "handle": "localDoc"
+      }
+    },
+    {
+      "name": "closeAlice",
+      "type": "rtc.close",
+      "connection": "aliceRtc"
+    }
+  ]
+}

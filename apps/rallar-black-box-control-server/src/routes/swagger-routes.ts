@@ -999,6 +999,35 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                     providerMode: { type: 'string' },
                     browserLabel: { type: 'string' },
                     sessionLabel: { type: 'string' },
+                    capabilities: {
+                        type: 'object',
+                        properties: {
+                            crdt: {
+                                type: 'object',
+                                required: ['supported'],
+                                properties: {
+                                    supported: { type: 'boolean' },
+                                    transports: {
+                                        type: 'array',
+                                        items: {
+                                            type: 'string',
+                                            enum: [
+                                                'local-only',
+                                                'ws',
+                                                'rtc',
+                                                'ws-then-rtc',
+                                                'rtc-with-ws-fallback',
+                                            ],
+                                        },
+                                    },
+                                    runtimeSurface: { type: 'string' },
+                                    apiBaseUrlConfigured: { type: 'boolean' },
+                                },
+                                additionalProperties: false,
+                            },
+                        },
+                        additionalProperties: false,
+                    },
                     updatedAtEpochMs: { type: 'integer' },
                 },
                 additionalProperties: false,

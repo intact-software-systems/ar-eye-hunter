@@ -92,12 +92,30 @@ import {
     type RallarDataFacade,
     type RallarDataScope,
 } from '@shared-web/browser/rallar-data.ts';
+import {
+    createRallarCrdtFacade,
+    type RallarCrdtFacade,
+} from '@shared-web/browser/rallar-crdt.ts';
+import type { RallarCrdtMessageTransport } from '@shared-web/browser/rallar-crdt-transport.ts';
 import { isSameGroupRef, toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 
 export {
     createRallarDataFacade,
     defineRallarDataStore,
 } from '@shared-web/browser/rallar-data.ts';
+
+export {
+    createRallarCrdtFacade,
+} from '@shared-web/browser/rallar-crdt.ts';
+
+export type {
+    RallarCrdtDocument,
+    RallarCrdtFacade,
+    RallarCrdtFacadeDefaults,
+    RallarCrdtOpenOptions,
+    RallarCrdtOpenScope,
+    RallarCrdtSnapshotListener,
+} from '@shared-web/browser/rallar-crdt.ts';
 
 export type {
     RallarDataChangeEvent,
@@ -1172,6 +1190,7 @@ export type RallarFacade = Readonly<{
     subscriptions(): RallarSubscriptionScope;
     flow<K, V>(policies?: RallarFlowPolicies<V>): RallarFlow<K, V>;
     data: RallarDataFacade;
+    crdt: RallarCrdtFacade;
     auth: Readonly<{
         login(
             request: LoginRequest,
@@ -1472,6 +1491,11 @@ class BrowserRallarFacade implements RallarFacade {
     >();
     readonly data = createRallarDataFacade({
         resolveScopeKey: (scope) => this.resolveDataScopeKey(scope),
+    });
+    readonly crdt = createRallarCrdtFacade({
+        data: this.data,
+        readDefaults: () => this.configuredDefaults,
+        readTransport: () => this.toCrdtMessageTransport(),
     });
 
     configure(config: RallarApiClientConfig): void {
@@ -2544,6 +2568,49 @@ class BrowserRallarFacade implements RallarFacade {
 
     flow<K, V>(policies: RallarFlowPolicies<V> = {}): RallarFlow<K, V> {
         return CommandsOrchestrator.withPolicies<K, V>(policies);
+    }
+
+    private toCrdtMessageTransport(): RallarCrdtMessageTransport {
+        return {
+            ws: {
+                send: async (input) => {
+                    const result = await this.messages.ws.send(input as never);
+                    return {
+                        transport: 'ws',
+                        status: result.status,
+                        reason: result.reason,
+                    };
+                },
+                onMessage: (selector, handler) =>
+                    this.messages.ws.onMessage(selector, async (message) => {
+                        await handler({
+                            payload: message.payload as never,
+                            topicId: message.topicId,
+                            typeId: message.typeId,
+                            transport: 'ws',
+                        });
+                    }),
+            },
+            rtc: {
+                send: async (input) => {
+                    const result = await this.messages.rtc.send(input as never);
+                    return {
+                        transport: 'rtc',
+                        status: result.status,
+                        reason: result.reason,
+                    };
+                },
+                onMessage: (selector, handler) =>
+                    this.messages.rtc.onMessage(selector, async (message) => {
+                        await handler({
+                            payload: message.payload as never,
+                            topicId: message.topicId,
+                            typeId: message.typeId,
+                            transport: 'rtc',
+                        });
+                    }),
+            },
+        };
     }
 
     private createMessageChannel<T>(

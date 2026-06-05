@@ -13,6 +13,11 @@ const DEFAULT_KEY_SUBSTRINGS = [
     'api-key',
     'access_token',
     'refresh_token',
+    'keyring',
+    'privatekey',
+    'ciphertext',
+    'encrypted',
+    'encryption',
 ];
 
 function normalizeKey(value: string): string {

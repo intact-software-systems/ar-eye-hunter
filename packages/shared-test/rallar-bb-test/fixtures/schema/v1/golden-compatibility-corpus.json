@@ -141,6 +141,131 @@
           "timeoutMs": 15000
         },
         {
+          "kind": "crdt.open",
+          "commandId": "crdt-open-v1",
+          "handle": "goldenCrdt",
+          "name": "golden-checklist",
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "documentType": "checklist",
+          "documentId": "golden-room",
+          "scope": {
+            "kind": "room"
+          },
+          "roomRef": {
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "groupId": "golden-room"
+          },
+          "transport": "ws",
+          "persist": true,
+          "tabSync": true,
+          "durableCatchUp": "http",
+          "initialValue": {
+            "items": []
+          }
+        },
+        {
+          "kind": "crdt.apply",
+          "commandId": "crdt-apply-v1",
+          "handle": "goldenCrdt",
+          "batch": {
+            "kind": "batch",
+            "operationGroupId": "golden-title-group",
+            "operations": [
+              {
+                "kind": "register.set",
+                "path": ["title"],
+                "value": "Golden",
+                "policy": "lww"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "crdt.read",
+          "commandId": "crdt-read-v1",
+          "handle": "goldenCrdt"
+        },
+        {
+          "kind": "crdt.sync",
+          "commandId": "crdt-sync-v1",
+          "handle": "goldenCrdt",
+          "reason": "golden-compatibility",
+          "transport": "ws"
+        },
+        {
+          "kind": "crdt.health",
+          "commandId": "crdt-health-v1",
+          "handle": "goldenCrdt"
+        },
+        {
+          "kind": "crdt.wait",
+          "commandId": "crdt-wait-v1",
+          "handle": "goldenCrdt",
+          "timeoutMs": 10000,
+          "intervalMs": 250,
+          "stableForMs": 500,
+          "sync": {
+            "reason": "golden-compatibility-wait",
+            "transport": "ws"
+          },
+          "conditions": [
+            {
+              "source": "value",
+              "path": "title",
+              "operator": "equals",
+              "expected": "Golden"
+            },
+            {
+              "source": "health",
+              "path": "pendingUpdateCount",
+              "operator": "equals",
+              "expected": 0
+            }
+          ]
+        },
+        {
+          "kind": "crdt.undo",
+          "commandId": "crdt-undo-v1",
+          "handle": "goldenCrdt",
+          "targetOperationGroupId": "golden-title-group",
+          "operationGroupId": "golden-title-undo",
+          "operations": [
+            {
+              "kind": "register.set",
+              "path": ["title"],
+              "value": "Untitled",
+              "policy": "lww"
+            }
+          ]
+        },
+        {
+          "kind": "crdt.redo",
+          "commandId": "crdt-redo-v1",
+          "handle": "goldenCrdt",
+          "targetOperationGroupId": "golden-title-group",
+          "operationGroupId": "golden-title-redo",
+          "operations": [
+            {
+              "kind": "register.set",
+              "path": ["title"],
+              "value": "Golden",
+              "policy": "lww"
+            }
+          ]
+        },
+        {
+          "kind": "crdt.close",
+          "commandId": "crdt-close-v1",
+          "handle": "goldenCrdt"
+        },
+        {
+          "kind": "crdt.destroy",
+          "commandId": "crdt-destroy-v1",
+          "handle": "goldenCrdt"
+        },
+        {
           "kind": "health",
           "commandId": "health-v1"
         },

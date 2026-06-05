@@ -11,6 +11,7 @@ export * from './graph/create-graph.ts';
 export * from './graph/graph-algs.ts';
 export * from './graph/graph-size-algorithms.ts';
 export * from './graph/prune-graph.ts';
+export * from './crdt/graph-crdt.ts';
 export {
     CoreSelectionAlgo,
     findkBestLocatedNodesNotInSetsMedian,

@@ -1,0 +1,54 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "https://api.example.com"
+    },
+    "adminAccessToken": {
+      "env": "RALLAR_ADMIN_ACCESS_TOKEN",
+      "default": "admin-token",
+      "secret": true
+    },
+    "documentKey": {
+      "env": "RALLAR_CRDT_DOCUMENT_KEY",
+      "default": "crdt:v1:rallar-server:default:room:notes:crdt-room-1"
+    }
+  },
+  "connections": {
+    "rallarApi": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "authorization": "Bearer {adminAccessToken}",
+        "content-type": "application/json"
+      }
+    }
+  },
+  "steps": [
+    {
+      "name": "listCrdtDocuments",
+      "type": "http.request",
+      "connection": "rallarApi",
+      "request": {
+        "path": "/api/crdt/admin/documents/list",
+        "method": "POST",
+        "body": {
+          "limit": 10
+        }
+      }
+    },
+    {
+      "name": "checkCrdtIntegrity",
+      "type": "http.request",
+      "connection": "rallarApi",
+      "request": {
+        "path": "/api/crdt/admin/documents/integrity",
+        "method": "POST",
+        "body": {
+          "documentKey": "{documentKey}",
+          "reason": "black-box-crdt-integrity"
+        }
+      }
+    }
+  ]
+}

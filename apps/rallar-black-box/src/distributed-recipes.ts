@@ -17,6 +17,7 @@ import {
     type RallarBlackBoxTestAssertCommand,
     type RallarBlackBoxTestAssertResultValue,
     type RallarBlackBoxTestCommand,
+    type RallarBlackBoxTestCrdtTransport,
     type RallarBlackBoxTestCommandKind,
     type RallarBlackBoxTestLoopResultValue,
     type RallarBlackBoxTestParallelResultValue,
@@ -143,7 +144,9 @@ export type DistributedRecipeTargetStatus =
     | 'stale'
     | 'offline'
     | 'different-group'
-    | 'missing-identity';
+    | 'missing-identity'
+    | 'missing-crdt-runtime'
+    | 'missing-crdt-transport';
 
 export type DistributedRecipeTargetRow = Readonly<{
     agentId: string;
@@ -156,6 +159,8 @@ export type DistributedRecipeTargetRow = Readonly<{
     groupId?: string;
     applicationId?: string;
     workspaceId?: string;
+    crdtSupported?: boolean;
+    crdtTransports?: readonly string[];
     lastHeartbeatAtEpochMs?: number;
     lastSeenAtEpochMs?: number;
 }>;
@@ -536,14 +541,18 @@ export const DISTRIBUTED_RECIPE_ROLE_PATTERN_OPTIONS: readonly Readonly<{
 export function distributedRecipeTargetRows(input: Readonly<{
     run: ControlRunSnapshot | undefined;
     group: RallarBlackBoxDistributedGroupRef;
+    requiredCommandKinds?: readonly RallarBlackBoxTestCommandKind[];
     nowEpochMs?: number;
     staleAfterMs?: number;
 }>): readonly DistributedRecipeTargetRow[] {
     const nowEpochMs = input.nowEpochMs ?? Date.now();
     const staleAfterMs = input.staleAfterMs ?? 30_000;
+    const requiredCrdtTransports = crdtTransportsForCommandKinds(input.requiredCommandKinds ?? []);
     return [...(input.run?.agents ?? [])]
         .sort((left, right) => left.agentId.localeCompare(right.agentId))
-        .map(agent => distributedRecipeTargetRow(agent, input.group, nowEpochMs, staleAfterMs));
+        .map(agent =>
+            distributedRecipeTargetRow(agent, input.group, nowEpochMs, staleAfterMs, requiredCrdtTransports)
+        );
 }
 
 export function defaultDistributedRecipeTargetIds(
@@ -1046,6 +1055,9 @@ function compatibilityWarnings(
     if (kinds.has('http.request')) {
         warnings.push('HTTP recipes can require access tokens and reachable Rallar Server endpoints.');
     }
+    if (hasCrdtCommandKind(commandKinds)) {
+        warnings.push('CRDT recipes require browser agents with the Rallar CRDT runtime and requested CRDT transport support.');
+    }
     return warnings;
 }
 
@@ -1073,6 +1085,9 @@ function serviceBadgesForPreflight(
     if (kinds.has('rtc.send')) {
         badges.push({ label: 'RTC peers', tone: 'warn' });
     }
+    if (hasCrdtCommandKind(commandKinds)) {
+        badges.push({ label: 'CRDT', tone: 'warn' });
+    }
     if (kinds.has('loop')) {
         badges.push({ label: 'looped traffic', tone: 'active' });
     }
@@ -1080,6 +1095,18 @@ function serviceBadgesForPreflight(
         badges.push({ label: 'parallel groups', tone: 'active' });
     }
     return badges;
+}
+
+function hasCrdtCommandKind(commandKinds: readonly RallarBlackBoxTestCommandKind[]): boolean {
+    return commandKinds.some(kind => kind.startsWith('crdt.'));
+}
+
+function crdtTransportsForCommandKinds(
+    commandKinds: readonly RallarBlackBoxTestCommandKind[],
+): readonly RallarBlackBoxTestCrdtTransport[] {
+    return hasCrdtCommandKind(commandKinds)
+        ? ['local-only', 'ws', 'rtc', 'ws-then-rtc', 'rtc-with-ws-fallback']
+        : [];
 }
 
 function commandKindsForCommand(command: RallarBlackBoxTestCommand): readonly RallarBlackBoxTestCommandKind[] {
@@ -1515,8 +1542,11 @@ function distributedRecipeTargetRow(
     group: RallarBlackBoxDistributedGroupRef,
     nowEpochMs: number,
     staleAfterMs: number,
+    requiredCrdtTransports: readonly RallarBlackBoxTestCrdtTransport[],
 ): DistributedRecipeTargetRow {
     const identity = agent.identity;
+    const crdt = identity?.capabilities?.crdt;
+    const crdtTransports = crdt?.transports ?? [];
     const lastActiveAtEpochMs = agent.lastHeartbeatAtEpochMs ?? agent.lastSeenAtEpochMs ?? identity?.updatedAtEpochMs;
     const stale = typeof lastActiveAtEpochMs === 'number' && nowEpochMs - lastActiveAtEpochMs > staleAfterMs;
     const base = {
@@ -1527,6 +1557,8 @@ function distributedRecipeTargetRow(
         groupId: identity?.groupId,
         applicationId: identity?.applicationId,
         workspaceId: identity?.workspaceId,
+        crdtSupported: crdt?.supported,
+        crdtTransports,
         lastHeartbeatAtEpochMs: agent.lastHeartbeatAtEpochMs,
         lastSeenAtEpochMs: agent.lastSeenAtEpochMs,
     };
@@ -1568,6 +1600,26 @@ function distributedRecipeTargetRow(
             status: 'stale',
             targetable: false,
             reason: 'Agent matches the group but the last heartbeat is stale.',
+        };
+    }
+
+    if (requiredCrdtTransports.length > 0 && !crdt?.supported) {
+        return {
+            ...base,
+            status: 'missing-crdt-runtime',
+            targetable: false,
+            reason: 'Agent matches the group but has not reported a CRDT runtime.',
+        };
+    }
+
+    const missingCrdtTransport = requiredCrdtTransports
+        .find(transport => !crdtTransports.includes(transport));
+    if (missingCrdtTransport) {
+        return {
+            ...base,
+            status: 'missing-crdt-transport',
+            targetable: false,
+            reason: `Agent CRDT runtime does not report ${missingCrdtTransport} transport support.`,
         };
     }
 

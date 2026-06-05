@@ -678,9 +678,11 @@ function toExecutableStep(
                 ? 'PARALLEL'
                 : stepType.startsWith('ws')
                     ? 'WS'
-                    : stepType.startsWith('rtc') || stepType.startsWith('webrtc')
-                        ? 'RTC'
-                        : 'HTTP';
+                    : stepType.startsWith('crdt')
+                        ? 'CRDT'
+                        : stepType.startsWith('rtc') || stepType.startsWith('webrtc')
+                            ? 'RTC'
+                            : 'HTTP';
 
     const action = stepType.includes('.')
         ? stepType.split('.')[1]

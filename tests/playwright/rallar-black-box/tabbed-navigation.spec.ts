@@ -45,7 +45,7 @@ test('opens a tab from the URL and updates tab state in the address bar', async 
 
     await modeSwitch.getByRole('button', { name: /Rallar black-box-runner/ }).click();
     await expect(page).toHaveURL(/workspace=black-box-runner/);
-    await expect(page.getByRole('tab', { name: 'Shared Test' })).toHaveAttribute(
+    await expect(page.getByRole('tab', { name: 'Recipes', exact: true })).toHaveAttribute(
         'aria-selected',
         'true',
     );
@@ -89,10 +89,129 @@ test('opens Quick Test as the default Rallar workspace screen', async ({ page })
     );
     await panel.getByRole('button', { name: 'Open runner mode' }).click();
     await expect(page.getByLabel('Runner mode boundary')).toContainText('Runner Workspace');
-    await expect(page.getByRole('tab', { name: 'Shared Test' })).toHaveAttribute(
+    await expect(page.getByRole('tab', { name: 'Recipes', exact: true })).toHaveAttribute(
         'aria-selected',
         'true',
     );
+});
+
+test('opens runner mode on Recipes and runs a local recipe from the launcher', async ({ page }) => {
+    await page.goto('/?provider=simulated&workspace=black-box-runner&roomId=bb-group&runId=ui-recipes-empty-run');
+
+    await expect(page.getByRole('tab', { name: 'Recipes', exact: true })).toHaveAttribute(
+        'aria-selected',
+        'true',
+    );
+    const panel = page.locator('#panel-recipes');
+    await expect(panel).toBeVisible();
+    await expect(panel.getByLabel('Runner Readiness')).toContainText('Runner Readiness');
+    await expect(panel.getByLabel('Recipe catalog')).toContainText('Composite Evidence');
+    await expect(panel.locator('.runner-inline-editor')).toHaveCount(0);
+    await expect(panel.locator('.runner-recipe-detail')).toContainText('Composite Evidence');
+    await panel.getByLabel('Search Recipes').fill('composite');
+    await panel.getByRole('button', { name: /Composite Evidence/ }).first().click();
+    await expect(panel.locator('.runner-recipe-detail')).toContainText('Composite Evidence');
+
+    const localRunButton = panel.getByRole('button', { name: 'Run in this browser' }).first();
+    const distributedRunButton = panel.getByRole('button', { name: 'Run on connected agents' }).first();
+    await expect(localRunButton).toBeEnabled();
+    await expect(distributedRunButton).toBeDisabled();
+    await expect(panel).toContainText(
+        /Distributed: (Control run missing|No agents connected|Control server offline)/,
+    );
+
+    const agentSetup = panel.getByLabel('Connect Agents');
+    await expect(agentSetup).toContainText('No agents connected');
+    await agentSetup.getByLabel('Run ID').fill('ui-agent-run');
+    await agentSetup.getByLabel('Agent Prefix').fill('ui-agent');
+    await agentSetup.getByLabel('Agent Tabs').fill('1');
+    await expect(agentSetup.getByLabel('Agent IDs')).toContainText(/ui-agent-/);
+    const popupPromise = page.waitForEvent('popup');
+    await agentSetup.getByRole('button', { name: 'Open agent tabs' }).click();
+    const agentPage = await popupPromise;
+    const agentUrl = new URL(agentPage.url());
+    expect(agentUrl.searchParams.get('mode')).toBe('control');
+    expect(agentUrl.searchParams.get('autoConnect')).toBe('1');
+    expect(agentUrl.searchParams.get('runId')).toBe('ui-agent-run');
+    expect(agentUrl.searchParams.get('agentId')).toMatch(/^ui-agent-/);
+    expect(agentUrl.searchParams.get('roomId')).toBe('bb-group');
+    await agentPage.close();
+    await expect(agentSetup).toContainText('Requested 1 agent tab');
+
+    await panel.getByRole('button', { name: 'Open in editor' }).first().click();
+    await expect(panel.locator('.runner-inline-editor')).toContainText('Recipe JSON');
+
+    await localRunButton.click();
+    await expect(panel.locator('.runner-launch-result')).toContainText(
+        /finished|completed|passed/i,
+        { timeout: 15_000 },
+    );
+    await expect(panel.getByLabel('Artifact summary')).toContainText('local replay');
+    await expect(panel.locator('.runner-result-grid')).toContainText('Commands');
+
+    await panel.getByRole('button', { name: 'Open Runs' }).click();
+    await expect(page.getByRole('tab', { name: 'Runs' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+    );
+    await expect(page.locator('#panel-runs')).toContainText('Recent commands');
+
+    await page.getByRole('tab', { name: 'Recipes', exact: true }).click();
+    await page.locator('#panel-recipes').getByRole('button', { name: 'Open Advanced' }).click();
+    await expect(page.getByRole('tab', { name: 'Advanced' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+    );
+    const advancedPanel = page.locator('#panel-advanced');
+    await expect(advancedPanel.getByRole('button', { name: 'Local Workbench' })).toBeVisible();
+    await expect(advancedPanel.getByRole('button', { name: 'Distributed Recipes' })).toBeVisible();
+});
+
+test('explains runner readiness failures before live recipe launch', async ({ page }) => {
+    await page.addInitScript(() => {
+        localStorage.setItem('auth.session', JSON.stringify({
+            clientId: 'readiness-client',
+            accessToken: 'readiness-secret-token',
+            username: 'alice',
+            sessionId: 'readiness-session',
+            expiresAtEpochMs: Date.now() + 60_000,
+        }));
+    });
+    await page.route('http://localhost:8080/api/config', async route => {
+        await route.fulfill({
+            status: 503,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'offline for readiness test' }),
+        });
+    });
+    await page.route('http://127.0.0.1:5180/**', async route => {
+        await route.fulfill({
+            status: 503,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'control offline for readiness test' }),
+        });
+    });
+    await page.route('http://localhost:5180/**', async route => {
+        await route.fulfill({
+            status: 503,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'control offline for readiness test' }),
+        });
+    });
+
+    await page.goto(
+        '/?provider=browser-rallar&workspace=black-box-runner&roomId=bb-group&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080',
+    );
+
+    const panel = page.locator('#panel-recipes');
+    const readiness = panel.getByLabel('Runner Readiness');
+    await expect(readiness).toContainText('API is offline');
+    await expect(readiness).toContainText('Control server offline');
+    await expect(panel.getByRole('button', { name: 'Run in this browser' }).first())
+        .toBeDisabled();
+    await expect(panel.getByRole('button', { name: 'Run on connected agents' }).first())
+        .toBeDisabled();
+    await expect(panel.locator('.runner-quick-launch-reason')).toContainText('Local: API is offline');
 });
 
 test('does not poll control runs while direct Rallar tabs are active', async ({ page }) => {

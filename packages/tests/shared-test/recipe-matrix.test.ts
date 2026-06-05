@@ -129,4 +129,36 @@ describe('black-box runner recipe matrix', () => {
             expect(entry.requires?.env).toContain('RALLAR_BOB_USERNAME');
         }
     });
+
+    it('includes a dedicated live-crdt profile for CRDT validation rows', () => {
+        const { entries } = readMatrix();
+        const crdtLiveEntries = entries.filter(entry => entry.profiles.includes('live-crdt'));
+
+        expect(crdtLiveEntries.map(entry => entry.id).sort()).toEqual([
+            'crdt-admin-http-integrity-live',
+            'crdt-browser-durable-late-join-catchup-live',
+            'crdt-browser-local-persistence-reopen-live',
+            'crdt-browser-rtc-with-ws-fallback-live',
+            'crdt-browser-ws-convergence-live',
+        ]);
+
+        crdtLiveEntries.forEach(entry => {
+            expect(entry.category).toBe('rallar-crdt');
+            expect(entry.mode).toBe('run');
+            expect(entry.expectedExitCode).toBe(0);
+            expect(entry.profiles).toContain('live');
+            expect(entry.requires?.env).toContain('RALLAR_API_BASE_URL');
+        });
+
+        crdtLiveEntries
+            .filter(entry => entry.id !== 'crdt-admin-http-integrity-live')
+            .forEach(entry => {
+                expect(entry.requires?.playwright).toBe(true);
+                expect(entry.requires?.env).toContain('RALLAR_ALICE_USERNAME');
+            });
+
+        const adminEntry = crdtLiveEntries.find(entry => entry.id === 'crdt-admin-http-integrity-live');
+        expect(adminEntry?.requires?.env).toContain('RALLAR_ADMIN_ACCESS_TOKEN');
+        expect(adminEntry?.requires?.env).toContain('RALLAR_CRDT_DOCUMENT_KEY');
+    });
 });

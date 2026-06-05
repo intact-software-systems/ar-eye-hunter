@@ -76,6 +76,33 @@ Use this checklist when Rallar behavior is surprising in a browser or server int
 - `compareAndSet` is not used as a cross-process transactional lock.
 - `schemaVersion` changes include a `migrate` function when old data exists.
 
+## Rallar CRDT
+
+- The app is using `rallar.crdt`, not `rallar.data`, for mergeable documents.
+- Room documents include a full `roomRef` with application, workspace, and
+  group ID.
+- The selected transport is one of `local-only`, `ws`, `rtc`, `ws-then-rtc`, or
+  `rtc-with-ws-fallback`.
+- Pending updates are expected to remain pending until a durable append response
+  accepts or dedupes them.
+- `doc.health()` is checked for failed pending, dependency-blocked, live
+  rejected, corrupt local artifact count, last server append sequence, and last
+  server ACK time.
+- Feature policies are checked when WS/RTC sends are skipped with statuses such
+  as `rtc-disabled`, `ws-disabled`, `network-disabled`, or
+  `rollout-disabled`.
+- Repository admin exports pass `verifyIntegrity(...)` before backup restore or
+  projection rebuild.
+- Quarantined documents reject writes until an operator changes lifecycle state.
+- Server `room.crdt` topics are installed and room authorization can resolve the
+  current group snapshot.
+- API-v1 has the `crdt_documents`, `crdt_updates`, and `crdt_snapshots` tables
+  from the latest migration or in-memory schema.
+- Raw blobs are stored outside CRDT updates; operation values contain JSON
+  metadata or attachment references only.
+- Principal live fanout is not expected to work; principal documents need the
+  durable append/catch-up path.
+
 ## Server Middleware
 
 - `createRallarMiddleware(...)` receives durable queuebox repositories in production.
