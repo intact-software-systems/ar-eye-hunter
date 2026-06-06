@@ -5,6 +5,10 @@ import { cors } from 'jsr:@hono/hono/cors';
 import { createRallarServer } from '../../api-v1/src/create-rallar-server.ts';
 import { requireApiAuthSession, toAuthErrorResponse, } from '../../api-v1/src/services/request-auth-service.ts';
 import { installRelicHunterGame } from './relic-game-service.ts';
+import {
+    createRelicExpeditionInitialStateFactory,
+    readRelicAiExpeditionEnv,
+} from './relic-expedition-ai.ts';
 import { isRelicCommand, type RelicCommand } from '@relic-hunters/mod.ts';
 import { configuration } from './config-repo.ts';
 
@@ -18,7 +22,21 @@ const rallar = createRallarServer({
         defaultFanout: 'live-only',
     },
 });
-const relicGame = await installRelicHunterGame(rallar);
+const relicAiExpeditionEnv = readRelicAiExpeditionEnv(Deno.env);
+const relicGame = await installRelicHunterGame(rallar, {
+    createInitialState: createRelicExpeditionInitialStateFactory({
+        rallar,
+        mode: relicAiExpeditionEnv.mode,
+        timeoutMs: relicAiExpeditionEnv.timeoutMs,
+        ollamaBaseUrl: relicAiExpeditionEnv.ollamaBaseUrl,
+        ollamaModel: relicAiExpeditionEnv.ollamaModel,
+        onFallback: (event) => {
+            console.warn(
+                `[relic-ai] expedition generation fell back for ${event.gameId}: ${event.error}`,
+            );
+        },
+    }),
+});
 const corsOrigins = readCorsOrigins();
 
 app.use(

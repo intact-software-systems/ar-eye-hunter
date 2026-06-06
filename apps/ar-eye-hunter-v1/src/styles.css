@@ -87,7 +87,9 @@ label {
     position: absolute;
     inset: 0;
     display: grid;
-    place-items: center;
+    align-items: end;
+    justify-items: center;
+    padding: 0 18px 104px;
     pointer-events: none;
 }
 
@@ -175,12 +177,13 @@ label {
 .status-strip {
     display: flex;
     gap: 8px;
+    flex-wrap: wrap;
     border-radius: 8px;
     padding: 8px;
 }
 
 .status-pill {
-    min-width: 82px;
+    min-width: 78px;
     display: grid;
     gap: 2px;
     padding: 6px 8px;
@@ -285,6 +288,22 @@ label {
     background: rgba(0, 194, 168, 0.08);
 }
 
+.director-panel--event {
+    border-color: rgba(255, 200, 87, 0.32);
+    background: rgba(255, 200, 87, 0.08);
+}
+
+.event-kind {
+    justify-self: end;
+    max-width: 112px;
+    overflow: hidden;
+    color: #ffc857;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
 .director-panel div {
     display: grid;
     gap: 2px;
@@ -379,11 +398,36 @@ label {
 }
 
 .crosshair span {
-    width: 18px;
-    height: 18px;
-    border: 2px solid rgba(247, 241, 222, 0.72);
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(255, 200, 87, 0.78);
     border-radius: 50%;
-    box-shadow: 0 0 0 1px rgba(9, 10, 8, 0.8);
+    box-shadow:
+        0 0 0 1px rgba(9, 10, 8, 0.8),
+        0 0 18px rgba(0, 194, 168, 0.45);
+}
+
+.crosshair span::before,
+.crosshair span::after {
+    position: absolute;
+    width: 2px;
+    height: 34px;
+    content: "";
+    background: linear-gradient(
+        to bottom,
+        transparent 0 30%,
+        rgba(247, 241, 222, 0.62) 30% 42%,
+        transparent 42% 58%,
+        rgba(247, 241, 222, 0.62) 58% 70%,
+        transparent 70% 100%
+    );
+}
+
+.crosshair span::after {
+    transform: rotate(90deg);
 }
 
 @media (max-width: 760px) {

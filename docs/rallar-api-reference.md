@@ -292,14 +292,18 @@ await lane.send({ x: 10, y: 5 });
 
 ### Rallar Motion
 
-Rallar Motion is an engine-agnostic helper module for smoothing remote entity
-motion carried over `rallar.realtime`. Import it from
-`@shared/rallar-motion/mod.ts` or `@shared/mod.ts`.
+Rallar Motion is an engine-agnostic toolkit for smoothing remote entity motion
+carried over `rallar.realtime`. Import named helpers from
+`@shared/rallar-motion/mod.ts` or `@shared/mod.ts`, or use the additive
+`RallarMotion` facade for discoverability.
 
 `createRallarMotionBuffer(options?)` stores receiver-observed pose samples per
 entity. Sampling uses `nowEpochMs - interpolationDelayMs`, interpolates between
 bracketing samples, briefly dead reckons from optional velocity, then holds the
-latest observed pose after `maxExtrapolationMs`.
+latest observed pose after `maxExtrapolationMs`. `readInterpolationDelayMs` can
+provide a dynamic jitter-buffer delay without recreating the buffer. Set
+`interpolationMode: 'hermite'` to use velocity-aware Hermite interpolation, or
+leave it unset for the V1 linear behavior.
 
 Samples use `observedAtEpochMs` as the local receiver clock. Sender
 `sentAtEpochMs` values can be stored in metadata for diagnostics, but they
@@ -308,14 +312,36 @@ should not drive interpolation unless the app has explicit clock sync.
 Metadata is copied from the newest contributing sample. Rallar Motion does not
 merge, validate, or synthesize metadata. Rotation support is tuple-based Euler
 interpolation/integration in caller-defined units; quaternion interpolation is
-not part of V1.
+not part of V2. Angle wrapping is opt-in through
+`rotationWrap: { period }`, for example `Math.PI * 2` for radians or `360` for
+degrees.
+
+Every estimate includes `confidence`: interpolated poses are `1`,
+extrapolated poses decay linearly to `0` across `maxExtrapolationMs`, expired
+held poses are `0`, and pre-first-sample holds are `1`. Optional discontinuity
+handling detects teleports/snaps from distance, rotation, or speed thresholds
+and holds the source pose until the target timestamp instead of interpolating
+through space.
+
+The toolkit also exports pure helpers for adaptive interpolation delay,
+correction blending, kinematics estimation, sender-side cadence/threshold
+gating, sequence diagnostics, vector rounding, and quantization. Quantization
+ranges and precision are always caller-owned; Rallar Motion does not assume a
+world scale.
 
 ```ts
-import { createRallarMotionBuffer } from '@shared/rallar-motion/mod.ts';
+import {
+    RallarMotion,
+    createRallarMotionAdaptiveDelay,
+} from '@shared/rallar-motion/mod.ts';
 
-const motion = createRallarMotionBuffer({
-    interpolationDelayMs: 100,
+const adaptiveDelay = createRallarMotionAdaptiveDelay();
+
+const motion = RallarMotion.createBuffer({
+    readInterpolationDelayMs: adaptiveDelay.currentDelayMs,
     maxExtrapolationMs: 150,
+    interpolationMode: 'hermite',
+    discontinuity: { enabled: true, maxPositionDelta: 8 },
 });
 
 rallar.realtime.onJson<{ position: [number, number, number]; seq: number }>(
@@ -327,6 +353,7 @@ rallar.realtime.onJson<{ position: [number, number, number]; seq: number }>(
             position: message.data.position,
             seq: message.data.seq,
         });
+        adaptiveDelay.pushObservedAt(message.receivedAtEpochMs);
     },
 );
 

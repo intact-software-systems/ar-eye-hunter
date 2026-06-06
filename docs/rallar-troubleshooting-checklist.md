@@ -65,6 +65,11 @@ Use this checklist when Rallar behavior is surprising in a browser or server int
 - Drive `RallarMotionBuffer` with receiver-local `observedAtEpochMs`; do not interpolate from sender `sentAtEpochMs` unless the app has clock sync.
 - If remote avatars trail too far behind, lower `interpolationDelayMs`; if they snap during jitter, raise it slightly.
 - Keep `maxExtrapolationMs` short so lost motion packets hold the latest observed pose instead of drifting.
+- Use `readInterpolationDelayMs` with `createRallarMotionAdaptiveDelay()` when packet spacing varies by room or device.
+- Enable discontinuity handling for respawns, teleports, dashes, or AR relocalization so the buffer snaps instead of interpolating through space.
+- Use correction blending for small visual corrections, but set snap thresholds for large authoritative jumps.
+- Use `createRallarMotionSendGate()` when pose traffic should respect cadence, movement thresholds, idle cadence, and force-send freshness.
+- Treat quantization ranges and precision as app-specific; choose them from the game world scale instead of using them as generic compression.
 
 ## WS/RTC Message Selectors
 

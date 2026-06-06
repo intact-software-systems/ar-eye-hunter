@@ -3,6 +3,7 @@ import {
     RELIC_PROTOCOL_VERSION,
     RELIC_TOPICS,
     RELIC_TYPES,
+    createRelicGame,
     type RelicCommand,
     type RelicGameState,
 } from '@relic-hunters/mod.ts';
@@ -146,6 +147,48 @@ describe('Relic Hunter server game service', () => {
 
         expect(fake.store.get('room-1')?.players[0]?.playerId).toBe('alice-session');
         expect(fake.published).toHaveLength(1);
+    });
+
+    it('uses the centralized async initializer for ensure, reset, and missing command state', async () => {
+        const fake = createFakeRallar();
+        const calls: string[] = [];
+        const service = await installRelicHunterGame(fake.rallar, {
+            createInitialState: async (gameId, reason) => {
+                calls.push(`${reason}:${gameId}`);
+                return {
+                    ...createRelicGame(gameId, gameId, 100 + calls.length),
+                    setup: {
+                        schemaVersion: 1,
+                        source: 'procedural',
+                        seed: `${reason}-${calls.length}`,
+                        blueprintId: `${reason}-blueprint`,
+                    },
+                };
+            },
+        });
+
+        const ensured = await service.ensureSnapshot('room-1');
+        expect(ensured.setup).toMatchObject({
+            source: 'procedural',
+            seed: 'ensure-1',
+        });
+
+        const joined = await service.applyCommand(joinCommand('room-2'), 'alice-session');
+        expect(joined.setup).toMatchObject({
+            source: 'procedural',
+            seed: 'command-2',
+        });
+
+        const reset = await service.reset('room-1');
+        expect(reset.setup).toMatchObject({
+            source: 'procedural',
+            seed: 'reset-3',
+        });
+        expect(calls).toEqual([
+            'ensure:room-1',
+            'command:room-2',
+            'reset:room-1',
+        ]);
     });
 });
 

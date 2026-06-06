@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     RELIC_PROTOCOL_VERSION,
     applyRelicCommand,
+    createProceduralRelicExpeditionBlueprint,
     createRelicGame,
+    createRelicGameFromBlueprint,
     toPublicRelicSnapshot,
     type RelicGameState,
     type RelicPublicSnapshot,
@@ -288,6 +290,26 @@ describe('Relic Hunters browser app', () => {
         const moveTarget = targetRoomButton('hallway');
         expect(moveTarget?.getAttribute('aria-pressed')).toBe('true');
         expect(container.textContent).toContain('Step into an adjacent room');
+    });
+
+    it('renders generated expedition snapshots through existing map and move controls', async () => {
+        const snapshot = generatedSnapshotWithPlayers();
+        writeSession(session());
+        rallarMock.roomState = roomState(1);
+        stubSnapshotFetch(snapshot);
+
+        await renderApp();
+        await waitFor(() => sceneMoveButton() !== undefined);
+
+        expect(container.textContent).toContain('Test Keep Gatehouse');
+        expect(container.textContent).toContain('Test Keep Long Gallery');
+
+        await act(async () => {
+            sceneMoveButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+
+        expect(targetRoomButton('hallway')?.textContent).toContain('Test Keep Long Gallery');
+        expect(targetRoomButton('hallway')?.getAttribute('aria-pressed')).toBe('true');
     });
 
     it('lets scene clue prompts prime the normal turn-based search action', async () => {
@@ -638,6 +660,45 @@ function snapshotWithPlayers(
             now: () => 4,
         }).state;
     }
+
+    return toPublicRelicSnapshot(state);
+}
+
+function generatedSnapshotWithPlayers(): RelicPublicSnapshot {
+    let state: RelicGameState = createRelicGameFromBlueprint(
+        'room-1',
+        'room-1',
+        createProceduralRelicExpeditionBlueprint({
+            seed: 'browser-generated',
+            theme: 'Test Keep',
+        }),
+        1,
+        {
+            source: 'procedural',
+            seed: 'browser-generated',
+            theme: 'Test Keep',
+            blueprintId: 'browser-generated',
+        },
+    );
+    state = applyRelicCommand(state, {
+        protocolVersion: RELIC_PROTOCOL_VERSION,
+        kind: 'join-expedition',
+        gameId: 'room-1',
+        username: 'Alice',
+        characterId: 'kael-ironstride',
+    }, {
+        senderId: 'alice-session',
+        now: () => 2,
+    }).state;
+    state = applyRelicCommand(state, {
+        protocolVersion: RELIC_PROTOCOL_VERSION,
+        kind: 'start-expedition',
+        gameId: 'room-1',
+        username: 'Alice',
+    }, {
+        senderId: 'alice-session',
+        now: () => 3,
+    }).state;
 
     return toPublicRelicSnapshot(state);
 }

@@ -10,12 +10,19 @@ import {
     type RelicRoomInvestigationEffect,
     type RelicRoomInvestigation,
     type RelicRoom,
+    type RelicExpeditionSetupMetadata,
 } from './model.ts';
 import {
     defaultRelicCharacterId,
     findRelicCharacter,
     type RelicCharacter,
 } from './characters.ts';
+import {
+    assertRelicExpeditionBlueprint,
+    relicsFromRelicExpeditionBlueprint,
+    roomsFromRelicExpeditionBlueprint,
+    type RelicExpeditionBlueprint,
+} from './expedition-blueprint.ts';
 import { RELIC_PROTOCOL_VERSION } from './protocol.ts';
 
 export type RelicApplyCommandOptions = Readonly<{
@@ -49,11 +56,87 @@ export const RELIC_MVP_MAP: readonly RelicRoom[] = [
     room('exit', 'Exit', 'exit', 0, 6, ['monster']),
 ];
 
+export const RELIC_MVP_RELICS = [
+    // Treasure Chamber — three prizes of descending value
+    { id: 'golden-idol',   name: 'Golden Idol',      value: 5, roomId: 'treasure' },
+    { id: 'jade-dragon',   name: 'Jade Dragon',       value: 3, roomId: 'treasure' },
+    { id: 'pearl-netsuke', name: 'Pearl Netsuke',     value: 2, roomId: 'treasure' },
+    // Shrine — two sacred artefacts
+    { id: 'oracle-stone',  name: 'Oracle Stone',      value: 4, roomId: 'shrine' },
+    { id: 'moonstone',     name: 'Moonstone Pendant', value: 3, roomId: 'shrine' },
+    // Storage — hidden cache, second piece buried deeper
+    { id: 'sun-disk',      name: 'Sun Disk',          value: 6, roomId: 'storage' },
+    { id: 'bronze-mirror', name: 'Bronze Mirror',     value: 3, roomId: 'storage' },
+    // Monster Lair — great risk, two rewards
+    { id: 'cursed-mask',   name: 'Cursed Mask',       value: 8, roomId: 'monster' },
+    { id: 'bone-seal',     name: 'Bone Seal',         value: 4, roomId: 'monster' },
+    // Trap Room — two relics worth braving the spikes
+    { id: 'serpent-crown', name: 'Serpent Crown',     value: 7, roomId: 'trap' },
+    { id: 'rusted-tanto',  name: 'Rusted Tantō',      value: 3, roomId: 'trap' },
+    // Hallway — scattered find for sharp-eyed hunters
+    { id: 'copper-coin',   name: 'Copper Coin',       value: 2, roomId: 'hallway' },
+] as const;
+
 export function createRelicGame(
     gameId: string,
     roomId: string,
     now: number = Date.now(),
 ): RelicGameState {
+    return createRelicGameState({
+        gameId,
+        roomId,
+        now,
+        map: RELIC_MVP_MAP,
+        relics: RELIC_MVP_RELICS,
+        setup: {
+            schemaVersion: 1,
+            source: 'default',
+            seed: 'relic-static-v1',
+            theme: 'Castle of Yamashiro',
+            blueprintId: 'relic-static-v1',
+        },
+    });
+}
+
+export function createRelicGameFromBlueprint(
+    gameId: string,
+    roomId: string,
+    blueprint: RelicExpeditionBlueprint,
+    now: number = Date.now(),
+    setup?: Partial<RelicExpeditionSetupMetadata>,
+): RelicGameState {
+    assertRelicExpeditionBlueprint(blueprint);
+    return createRelicGameState({
+        gameId,
+        roomId,
+        now,
+        map: roomsFromRelicExpeditionBlueprint(blueprint),
+        relics: relicsFromRelicExpeditionBlueprint(blueprint),
+        setup: {
+            schemaVersion: 1,
+            source: setup?.source ?? blueprint.source ?? 'procedural',
+            seed: setup?.seed ?? blueprint.seed,
+            theme: setup?.theme ?? blueprint.theme,
+            blueprintId: setup?.blueprintId,
+        },
+    });
+}
+
+function createRelicGameState({
+                                  gameId,
+                                  roomId,
+                                  now,
+                                  map,
+                                  relics,
+                                  setup,
+                              }: Readonly<{
+    gameId: string;
+    roomId: string;
+    now: number;
+    map: readonly RelicRoom[];
+    relics: readonly RelicGameState['relics'][number][];
+    setup?: RelicExpeditionSetupMetadata;
+}>): RelicGameState {
     return {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         gameId,
@@ -66,27 +149,8 @@ export function createRelicGame(
         adminPlayerId: undefined,
         roundTimeLimitMs: 60_000,
         roundStartedAtEpochMs: undefined,
-        map: RELIC_MVP_MAP,
-        relics: [
-            // Treasure Chamber — three prizes of descending value
-            { id: 'golden-idol',   name: 'Golden Idol',      value: 5, roomId: 'treasure' },
-            { id: 'jade-dragon',   name: 'Jade Dragon',       value: 3, roomId: 'treasure' },
-            { id: 'pearl-netsuke', name: 'Pearl Netsuke',     value: 2, roomId: 'treasure' },
-            // Shrine — two sacred artefacts
-            { id: 'oracle-stone',  name: 'Oracle Stone',      value: 4, roomId: 'shrine' },
-            { id: 'moonstone',     name: 'Moonstone Pendant', value: 3, roomId: 'shrine' },
-            // Storage — hidden cache, second piece buried deeper
-            { id: 'sun-disk',      name: 'Sun Disk',          value: 6, roomId: 'storage' },
-            { id: 'bronze-mirror', name: 'Bronze Mirror',     value: 3, roomId: 'storage' },
-            // Monster Lair — great risk, two rewards
-            { id: 'cursed-mask',   name: 'Cursed Mask',       value: 8, roomId: 'monster' },
-            { id: 'bone-seal',     name: 'Bone Seal',         value: 4, roomId: 'monster' },
-            // Trap Room — two relics worth braving the spikes
-            { id: 'serpent-crown', name: 'Serpent Crown',     value: 7, roomId: 'trap' },
-            { id: 'rusted-tanto',  name: 'Rusted Tantō',      value: 3, roomId: 'trap' },
-            // Hallway — scattered find for sharp-eyed hunters
-            { id: 'copper-coin',   name: 'Copper Coin',       value: 2, roomId: 'hallway' },
-        ],
+        map,
+        relics,
         roomInvestigations: [],
         players: [],
         pendingActions: [],
@@ -97,6 +161,7 @@ export function createRelicGame(
             }),
         ],
         winnerIds: [],
+        setup,
     };
 }
 

@@ -202,6 +202,104 @@ for (const [peerId, estimate] of estimates) {
 }
 ```
 
+### Adaptive Delay
+
+Use adaptive delay when packet spacing jitters. Keep the timestamps
+receiver-local.
+
+```ts
+import {
+    createRallarMotionAdaptiveDelay,
+    createRallarMotionBuffer,
+} from '@shared/rallar-motion/mod.ts';
+
+const delay = createRallarMotionAdaptiveDelay({
+    minDelayMs: 60,
+    maxDelayMs: 220,
+});
+
+const motion = createRallarMotionBuffer({
+    readInterpolationDelayMs: delay.currentDelayMs,
+    maxExtrapolationMs: 150,
+});
+
+rallar.realtime.onJson<PoseUpdate>('motion', (message) => {
+    delay.pushObservedAt(message.receivedAtEpochMs);
+    motion.push({
+        entityId: message.peerId,
+        observedAtEpochMs: message.receivedAtEpochMs,
+        position: message.data.position,
+        velocity: message.data.velocity,
+        seq: message.data.seq,
+    });
+});
+```
+
+### Thresholded Pose Sending
+
+Use the send gate when pose traffic should be capped by cadence and by
+meaningful movement.
+
+```ts
+import { createRallarMotionSendGate } from '@shared/rallar-motion/mod.ts';
+
+const poseGate = createRallarMotionSendGate({
+    cadenceMs: 50,
+    idleCadenceMs: 500,
+    forceSendAfterMs: 2_000,
+    minPositionDelta: 0.02,
+    minRotationDelta: 0.01,
+});
+
+const decision = poseGate.check(nextPose, Date.now());
+if (decision.shouldSend) {
+    poseGate.recordSent(nextPose, Date.now());
+    await motionLane.send(nextPose, { key: `pose:${sessionId}` });
+}
+```
+
+### Correction Blending
+
+Use correction blending in a render loop when a remote estimate moves a small
+distance away from the rendered object. Large jumps should snap.
+
+```ts
+import { createRallarMotionCorrectionBlender } from '@shared/rallar-motion/mod.ts';
+
+const corrections = createRallarMotionCorrectionBlender({
+    blendDurationMs: 100,
+    snapPositionDelta: 4,
+    rotationWrap: { period: Math.PI * 2 },
+});
+
+corrections.correct({
+    current: renderedPose,
+    target: estimate,
+    nowEpochMs: performance.now(),
+});
+
+const blended = corrections.sample(performance.now());
+if (blended) {
+    renderRemotePeer(peerId, blended.position, blended.rotation);
+}
+```
+
+### Teleport-Safe Interpolation
+
+Enable discontinuity handling for games with respawns, portals, dashes, or
+anchor relocalization.
+
+```ts
+const motion = createRallarMotionBuffer({
+    interpolationDelayMs: 100,
+    discontinuity: {
+        enabled: true,
+        maxPositionDelta: 8,
+        maxSpeed: 40,
+    },
+});
+```
+
 ## Wait For WebSocket
 
 ```ts

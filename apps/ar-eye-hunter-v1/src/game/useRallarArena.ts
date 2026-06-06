@@ -5,31 +5,51 @@ import {
     type RallarDirectorStatus,
     type RallarRoomSummary,
 } from '@shared-web/browser/rallar.ts';
+import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
 import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/middleware.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
+import { transitionRallarAiResultLifecycle } from '@shared/rallar-ai/mod.ts';
 import { shouldSendRallarMotionSample } from '@shared/rallar-motion/mod.ts';
 
 import {
+    GAME_AI_LANE_ID,
+    GAME_AI_TOPIC_ID,
+    GAME_COMBAT_LANE_ID,
     GAME_DIRECTOR_HEARTBEAT_TYPE_ID,
     GAME_DIRECTOR_INTENT_TYPE_ID,
     GAME_DIRECTOR_OUTPUT_TYPE_ID,
     GAME_DIRECTOR_SNAPSHOT_TYPE_ID,
     GAME_DIRECTOR_SYNC_REQUEST_TYPE_ID,
     GAME_DIRECTOR_TOPIC_ID,
-    GAME_LANE_ID,
+    GAME_FX_LANE_ID,
     GAME_MOTION_LANE_ID,
     GAME_PROTOCOL,
     GAME_ROOM_NAME,
+    type AiDirectorProposal,
+    type AiDirectorProposalValue,
+    type ArenaEvent,
+    type ArenaSnapshot,
     type GameRealtimeMessage,
     type PlayerPose,
     type PlayerShot,
     type RemotePlayer,
     type RemoteShot,
+    type RtcLaneStatus,
+    type ShotAccepted,
 } from './types.ts';
 import { colorForId } from './color.ts';
+import {
+    createAiDirectorMockProvider,
+    createAiDirectorRequest,
+    materializeAiArenaEvent,
+    validateAiDirectorProposalValue,
+    type AiDirectorContext,
+} from './aiDirector.ts';
+import { arenaRevisionKey, hydrateArenaSnapshot } from './simulation.ts';
 
 type ConnectionState = 'signed-out' | 'connecting' | 'connected' | 'error';
+type AiStatus = 'idle' | 'generating' | 'accepted' | 'error' | 'unavailable';
 
 const GAME_DATA_CHANNEL_LANES: readonly RtcDataChannelLaneConfig[] = [
     DEFAULT_REALTIME_DATA_CHANNEL_LANE,
@@ -48,6 +68,51 @@ const GAME_DATA_CHANNEL_LANES: readonly RtcDataChannelLaneConfig[] = [
             maxQueueItems: 8,
         },
     },
+    {
+        id: GAME_COMBAT_LANE_ID,
+        label: 'rtc-combat',
+        init: {
+            ordered: false,
+            maxRetransmits: 1,
+        },
+        binaryType: 'arraybuffer',
+        flowControl: {
+            highWatermarkBytes: 16 * 1024,
+            lowWatermarkBytes: 4 * 1024,
+            overflow: 'drop-old',
+            maxQueueItems: 32,
+        },
+    },
+    {
+        id: GAME_FX_LANE_ID,
+        label: 'rtc-fx',
+        init: {
+            ordered: false,
+            maxRetransmits: 0,
+        },
+        binaryType: 'arraybuffer',
+        flowControl: {
+            highWatermarkBytes: 8 * 1024,
+            lowWatermarkBytes: 2 * 1024,
+            overflow: 'drop-old',
+            maxQueueItems: 24,
+        },
+    },
+    {
+        id: GAME_AI_LANE_ID,
+        label: 'rtc-ai-events',
+        init: {
+            ordered: true,
+            maxRetransmits: 2,
+        },
+        binaryType: 'arraybuffer',
+        flowControl: {
+            highWatermarkBytes: 16 * 1024,
+            lowWatermarkBytes: 4 * 1024,
+            overflow: 'drop-old',
+            maxQueueItems: 16,
+        },
+    },
 ];
 
 export type ArenaConnection = Readonly<{
@@ -57,6 +122,12 @@ export type ArenaConnection = Readonly<{
     roomId?: string;
     rooms: readonly RallarRoomSummary[];
     directorStatus: RallarDirectorStatus;
+    rtcLanes: readonly RtcLaneStatus[];
+    aiStatus: AiStatus;
+    aiError?: string;
+    activeEvent?: ArenaEvent;
+    arenaSnapshot?: ArenaSnapshot;
+    remoteEvents: readonly ArenaEvent[];
     remotePlayers: ReadonlyMap<string, RemotePlayer>;
     remoteShots: readonly RemoteShot[];
     login(username: string, password: string): Promise<void>;
@@ -67,7 +138,11 @@ export type ArenaConnection = Readonly<{
     joinRoom(roomId: string): Promise<void>;
     appointSelfAsDirector(): Promise<void>;
     sendPose(pose: Omit<PlayerPose, 'sessionId' | 'username' | 'color'>): void;
-    sendShot(shot: Omit<PlayerShot, 'sessionId' | 'username' | 'color'>): void;
+    sendShot(
+        shot: Omit<PlayerShot, 'sessionId' | 'username' | 'color'>,
+        accepted: ShotAccepted,
+    ): void;
+    publishArenaSnapshot(snapshot: ArenaSnapshot): void;
 }>;
 
 export function useRallarArena(): ArenaConnection {
@@ -83,6 +158,12 @@ export function useRallarArena(): ArenaConnection {
     const [directorStatus, setDirectorStatus] = useState<RallarDirectorStatus>(
         () => rallar.director.status(),
     );
+    const [rtcLanes, setRtcLanes] = useState<readonly RtcLaneStatus[]>([]);
+    const [aiStatus, setAiStatus] = useState<AiStatus>('idle');
+    const [aiError, setAiError] = useState<string | undefined>();
+    const [arenaSnapshot, setArenaSnapshot] = useState<ArenaSnapshot | undefined>();
+    const [remoteEvents, setRemoteEvents] = useState<readonly ArenaEvent[]>([]);
+    const [activeEvent, setActiveEvent] = useState<ArenaEvent | undefined>();
     const [remotePlayers, setRemotePlayers] = useState<
         ReadonlyMap<string, RemotePlayer>
     >(new Map());
@@ -95,6 +176,7 @@ export function useRallarArena(): ArenaConnection {
         RallarDirectorRelayHandle<GameRealtimeMessage, GameRealtimeMessage, GameRealtimeMessage> | undefined
     >(undefined);
     const remotePlayersRef = useRef<ReadonlyMap<string, RemotePlayer>>(remotePlayers);
+    const arenaSnapshotRef = useRef<ArenaSnapshot | undefined>(arenaSnapshot);
     const poseSendBudget = useRef(0);
 
     useEffect(() => {
@@ -112,6 +194,10 @@ export function useRallarArena(): ArenaConnection {
     useEffect(() => {
         remotePlayersRef.current = remotePlayers;
     }, [remotePlayers]);
+
+    useEffect(() => {
+        arenaSnapshotRef.current = arenaSnapshot;
+    }, [arenaSnapshot]);
 
     const acceptDirectorOutput = useCallback((
         message: GameRealtimeMessage,
@@ -160,6 +246,39 @@ export function useRallarArena(): ArenaConnection {
             return;
         }
 
+        if (message.kind === 'director-shot-accepted') {
+            const accepted = message.accepted;
+            if (accepted.shot.sessionId === currentSessionId) {
+                return;
+            }
+            setRemoteShots((previous) => [
+                ...previous.slice(-32),
+                {
+                    id: `${accepted.shot.sessionId}:${accepted.shot.seq}:${accepted.revision}`,
+                    shot: accepted.shot,
+                    accepted,
+                    receivedAtEpochMs: Date.now(),
+                },
+            ]);
+            return;
+        }
+
+        if (message.kind === 'arena-event') {
+            setRemoteEvents((previous) => [
+                ...previous.filter((event) => event.id !== message.event.id).slice(-12),
+                message.event,
+            ]);
+            setActiveEvent(message.event);
+            return;
+        }
+
+        if (message.kind === 'director-arena-snapshot') {
+            setArenaSnapshot(message.snapshot);
+            setActiveEvent(message.snapshot.activeEvent);
+            setRemoteEvents(message.snapshot.events);
+            return;
+        }
+
         if (message.kind === 'director-state-snapshot') {
             setRemotePlayers(new Map(
                 message.players
@@ -180,10 +299,6 @@ export function useRallarArena(): ArenaConnection {
         message: GameRealtimeMessage,
     ) => {
         if (message.protocol !== GAME_PROTOCOL) {
-            return;
-        }
-
-        if (directorStatusRef.current.appointment) {
             return;
         }
 
@@ -221,25 +336,57 @@ export function useRallarArena(): ArenaConnection {
             return;
         }
 
-        if (message.kind !== 'player-shot') {
-            return;
-        }
-
         const currentSessionId = sessionRef.current?.sessionId;
 
-        const shot = message.shot;
-        if (shot.sessionId === currentSessionId || shot.sessionId !== peerId) {
+        if (message.kind === 'player-shot') {
+            const shot = message.shot;
+            if (shot.sessionId === currentSessionId || shot.sessionId !== peerId) {
+                return;
+            }
+
+            setRemoteShots((previous) => [
+                ...previous.slice(-24),
+                {
+                    id: `${shot.sessionId}:${shot.seq}`,
+                    shot,
+                    receivedAtEpochMs: Date.now(),
+                },
+            ]);
             return;
         }
 
-        setRemoteShots((previous) => [
-            ...previous.slice(-24),
-            {
-                id: `${shot.sessionId}:${shot.seq}`,
-                shot,
-                receivedAtEpochMs: Date.now(),
-            },
-        ]);
+        if (message.kind === 'director-shot-accepted') {
+            const accepted = message.accepted;
+            if (accepted.shot.sessionId === currentSessionId) {
+                return;
+            }
+
+            setRemoteShots((previous) => [
+                ...previous.slice(-32),
+                {
+                    id: `${accepted.shot.sessionId}:${accepted.shot.seq}:${accepted.revision}`,
+                    shot: accepted.shot,
+                    accepted,
+                    receivedAtEpochMs: Date.now(),
+                },
+            ]);
+            return;
+        }
+
+        if (message.kind === 'arena-event') {
+            setRemoteEvents((previous) => [
+                ...previous.filter((event) => event.id !== message.event.id).slice(-12),
+                message.event,
+            ]);
+            setActiveEvent(message.event);
+            return;
+        }
+
+        if (message.kind === 'director-arena-snapshot') {
+            setArenaSnapshot(message.snapshot);
+            setActiveEvent(message.snapshot.activeEvent);
+            setRemoteEvents(message.snapshot.events);
+        }
     }, []);
 
     const connect = useCallback(async () => {
@@ -288,7 +435,15 @@ export function useRallarArena(): ArenaConnection {
             )
             .add(
                 rallar.realtime.onJson<GameRealtimeMessage>(
-                    GAME_LANE_ID,
+                    GAME_COMBAT_LANE_ID,
+                    (message) => {
+                        acceptRealtimeMessage(message.peerId, message.data);
+                    },
+                ),
+            )
+            .add(
+                rallar.realtime.onJson<GameRealtimeMessage>(
+                    GAME_AI_LANE_ID,
                     (message) => {
                         acceptRealtimeMessage(message.peerId, message.data);
                     },
@@ -332,6 +487,60 @@ export function useRallarArena(): ArenaConnection {
     }, [acceptMotionMessage, acceptRealtimeMessage, connectionState]);
 
     useEffect(() => {
+        if (connectionState !== 'connected' || !roomId) {
+            setRtcLanes([]);
+            return;
+        }
+
+        let cancelled = false;
+        const laneIds = [
+            GAME_MOTION_LANE_ID,
+            GAME_COMBAT_LANE_ID,
+            GAME_FX_LANE_ID,
+            GAME_AI_LANE_ID,
+        ] as const;
+
+        const refresh = async () => {
+            const next: RtcLaneStatus[] = [];
+            for (const laneId of laneIds) {
+                try {
+                    const readiness = await rallar.rtc.waitForRoomLane(roomId, laneId, {
+                        connect: true,
+                        timeoutMs: 650,
+                    });
+                    next.push({
+                        laneId,
+                        status: readiness.status === 'open' || readiness.status === 'partial'
+                            ? readiness.status
+                            : readiness.ready.length > 0
+                            ? 'partial'
+                            : 'closed',
+                        readyPeers: readiness.ready.length,
+                        notReadyPeers: readiness.notReady.length,
+                    });
+                } catch {
+                    next.push({
+                        laneId,
+                        status: 'unavailable',
+                        readyPeers: 0,
+                        notReadyPeers: 0,
+                    });
+                }
+            }
+            if (!cancelled) {
+                setRtcLanes(next);
+            }
+        };
+
+        void refresh();
+        const interval = window.setInterval(() => void refresh(), 2_500);
+        return () => {
+            cancelled = true;
+            window.clearInterval(interval);
+        };
+    }, [connectionState, roomId]);
+
+    useEffect(() => {
         directorRelayRef.current?.stop();
         directorRelayRef.current = undefined;
 
@@ -345,7 +554,7 @@ export function useRallarArena(): ArenaConnection {
             GameRealtimeMessage
         >({
             roomId,
-            laneId: GAME_LANE_ID,
+            laneId: GAME_COMBAT_LANE_ID,
             topicId: GAME_DIRECTOR_TOPIC_ID,
             intentTypeId: GAME_DIRECTOR_INTENT_TYPE_ID,
             outputTypeId: GAME_DIRECTOR_OUTPUT_TYPE_ID,
@@ -356,11 +565,16 @@ export function useRallarArena(): ArenaConnection {
             snapshotIntervalMs: 2_000,
             readSnapshot: () => ({
                 protocol: GAME_PROTOCOL,
-                kind: 'director-state-snapshot',
-                players: [...remotePlayersRef.current.values()].map((remote) =>
-                    remote.pose
-                ),
-                sentAtEpochMs: Date.now(),
+                kind: 'director-arena-snapshot',
+                snapshot: arenaSnapshotRef.current ?? {
+                    protocol: GAME_PROTOCOL,
+                    roomId,
+                    revision: 0,
+                    seed: 0,
+                    targets: [],
+                    events: [],
+                    sentAtEpochMs: Date.now(),
+                },
             }),
             onIntent: (message) => {
                 const data = message.data;
@@ -389,6 +603,13 @@ export function useRallarArena(): ArenaConnection {
                         shot: data.shot,
                     };
                 }
+
+                if (data.kind === 'director-shot-accepted') {
+                    if (data.accepted.shot.sessionId !== message.senderId) {
+                        return;
+                    }
+                    return data;
+                }
             },
             onOutput: (message) => {
                 acceptDirectorOutput(message.data);
@@ -409,6 +630,120 @@ export function useRallarArena(): ArenaConnection {
             }
         };
     }, [acceptDirectorOutput, connectionState, roomId]);
+
+    useEffect(() => {
+        if (
+            connectionState !== 'connected' ||
+            !roomId ||
+            !directorStatus.isDirector ||
+            !directorStatus.isFresh
+        ) {
+            setAiStatus((current) => current === 'generating' ? 'idle' : current);
+            return;
+        }
+
+        let cancelled = false;
+        const provider = createAiDirectorMockProvider();
+        const ai = createRallarBrowserAi({
+            rallar,
+            provider,
+            policy: {
+                mode: 'browser-only',
+                staleResultMode: 'reject',
+                timeoutMs: 3_000,
+            },
+            readCurrentStateRevision: () => {
+                const snapshot = arenaSnapshotRef.current;
+                return snapshot
+                    ? arenaRevisionKey(hydrateArenaSnapshot(snapshot))
+                    : undefined;
+            },
+        });
+
+        const generate = async () => {
+            const snapshot = arenaSnapshotRef.current;
+            if (!snapshot || cancelled) {
+                setAiStatus('unavailable');
+                return;
+            }
+
+            const state = hydrateArenaSnapshot(snapshot);
+            setAiStatus('generating');
+            setAiError(undefined);
+            try {
+                const draft = await ai.generateJson<AiDirectorProposalValue, AiDirectorContext>(
+                    createAiDirectorRequest(state, roomId),
+                );
+                const validation = validateAiDirectorProposalValue(draft.value, snapshot);
+                if (!validation.ok) {
+                    setAiStatus('error');
+                    setAiError(validation.reason);
+                    return;
+                }
+                const proposed = transitionRallarAiResultLifecycle({
+                    ...draft,
+                    value: validation.value,
+                }, 'proposed');
+                const accepted = transitionRallarAiResultLifecycle(proposed, 'accepted');
+                const proposal: AiDirectorProposal = {
+                    generationId: accepted.generationId,
+                    dedupeKey: accepted.dedupeKey ?? accepted.generationId,
+                    baseStateRevision: accepted.baseStateRevision ?? arenaRevisionKey(state),
+                    value: accepted.value,
+                    accepted: true,
+                    sentAtEpochMs: Date.now(),
+                };
+                const event = materializeAiArenaEvent(
+                    proposal,
+                    snapshot.revision + 1,
+                    Date.now(),
+                );
+
+                await ai.broadcastJson({
+                    result: accepted,
+                    transport: 'realtime',
+                    laneId: GAME_AI_LANE_ID,
+                    roomId,
+                    topicId: GAME_AI_TOPIC_ID,
+                });
+                await rallar.data.open<AiDirectorProposal>('ar-eye-hunter-ai-replay', {
+                    scope: 'session',
+                    durability: 'write-behind',
+                    schemaVersion: 1,
+                }).then((store) => store.set(proposal.dedupeKey, proposal));
+
+                setRemoteEvents((previous) => [
+                    ...previous.filter((item) => item.id !== event.id).slice(-12),
+                    event,
+                ]);
+                setActiveEvent(event);
+                setAiStatus('accepted');
+                void directorRelayRef.current?.sendOutput({
+                    protocol: GAME_PROTOCOL,
+                    kind: 'arena-event',
+                    event,
+                });
+            } catch (err) {
+                if (!cancelled) {
+                    setAiStatus('error');
+                    setAiError(toErrorMessage(err));
+                }
+            }
+        };
+
+        const initial = window.setTimeout(() => void generate(), 4_500);
+        const interval = window.setInterval(() => void generate(), 10_500);
+        return () => {
+            cancelled = true;
+            window.clearTimeout(initial);
+            window.clearInterval(interval);
+        };
+    }, [
+        connectionState,
+        directorStatus.isDirector,
+        directorStatus.isFresh,
+        roomId,
+    ]);
 
     const refreshRooms = useCallback(async () => {
         const state = await rallar.rooms.refresh();
@@ -455,6 +790,9 @@ export function useRallarArena(): ArenaConnection {
         setSession(undefined);
         setRoomId(undefined);
         setRooms([]);
+        setArenaSnapshot(undefined);
+        setRemoteEvents([]);
+        setActiveEvent(undefined);
         setRemotePlayers(new Map());
         setRemoteShots([]);
         setConnectionState('signed-out');
@@ -484,6 +822,23 @@ export function useRallarArena(): ArenaConnection {
         setDirectorStatus(status);
     }, []);
 
+    useEffect(() => {
+        if (connectionState !== 'connected' || !roomId) {
+            return;
+        }
+        const current = directorStatusRef.current;
+        if (current.appointment) {
+            return;
+        }
+        const timer = window.setTimeout(() => {
+            const latest = directorStatusRef.current;
+            if (!latest.appointment && roomIdRef.current) {
+                void appointSelfAsDirector();
+            }
+        }, 750);
+        return () => window.clearTimeout(timer);
+    }, [appointSelfAsDirector, connectionState, roomId]);
+
     const sendPose = useCallback((
         pose: Omit<PlayerPose, 'sessionId' | 'username' | 'color'>,
     ) => {
@@ -505,29 +860,6 @@ export function useRallarArena(): ArenaConnection {
             username: currentSession.username,
             color: colorForId(currentSession.sessionId),
         };
-        const currentDirector = directorStatusRef.current;
-        if (currentDirector.appointment) {
-            if (!currentDirector.isFresh) {
-                return;
-            }
-
-            if (currentDirector.isDirector) {
-                void directorRelayRef.current?.sendOutput({
-                    protocol: GAME_PROTOCOL,
-                    kind: 'director-player-state',
-                    pose: fullPose,
-                });
-                return;
-            }
-
-            void directorRelayRef.current?.sendIntent({
-                protocol: GAME_PROTOCOL,
-                kind: 'player-pose-intent',
-                pose: fullPose,
-            });
-            return;
-        }
-
         void rallar.realtime.sendJson<GameRealtimeMessage>({
             laneId: GAME_MOTION_LANE_ID,
             roomId: currentRoomId,
@@ -544,6 +876,7 @@ export function useRallarArena(): ArenaConnection {
 
     const sendShot = useCallback((
         shot: Omit<PlayerShot, 'sessionId' | 'username' | 'color'>,
+        accepted: ShotAccepted,
     ) => {
         const currentSession = sessionRef.current;
         const currentRoomId = roomIdRef.current;
@@ -557,6 +890,10 @@ export function useRallarArena(): ArenaConnection {
             username: currentSession.username,
             color: colorForId(currentSession.sessionId),
         };
+        const fullAccepted: ShotAccepted = {
+            ...accepted,
+            shot: fullShot,
+        };
         const currentDirector = directorStatusRef.current;
         if (currentDirector.appointment) {
             if (!currentDirector.isFresh) {
@@ -566,30 +903,49 @@ export function useRallarArena(): ArenaConnection {
             if (currentDirector.isDirector) {
                 void directorRelayRef.current?.sendOutput({
                     protocol: GAME_PROTOCOL,
-                    kind: 'director-shot-event',
-                    shot: fullShot,
+                    kind: 'director-shot-accepted',
+                    accepted: fullAccepted,
                 });
                 return;
             }
 
             void directorRelayRef.current?.sendIntent({
                 protocol: GAME_PROTOCOL,
-                kind: 'player-shot-intent',
-                shot: fullShot,
+                kind: 'director-shot-accepted',
+                accepted: fullAccepted,
             });
             return;
         }
 
         void rallar.realtime.sendJson<GameRealtimeMessage>({
-            laneId: GAME_LANE_ID,
+            laneId: GAME_COMBAT_LANE_ID,
             roomId: currentRoomId,
             data: {
                 protocol: GAME_PROTOCOL,
-                kind: 'player-shot',
-                shot: fullShot,
+                kind: 'director-shot-accepted',
+                accepted: fullAccepted,
             },
             maxAgeMs: 1000,
             openTimeoutMs: 1500,
+        });
+    }, []);
+
+    const publishArenaSnapshot = useCallback((snapshot: ArenaSnapshot) => {
+        setArenaSnapshot((previous) =>
+            !previous || snapshot.revision >= previous.revision ? snapshot : previous
+        );
+        arenaSnapshotRef.current = snapshot;
+
+        const currentRoomId = roomIdRef.current;
+        const currentDirector = directorStatusRef.current;
+        if (!currentRoomId || !currentDirector.isDirector || !currentDirector.isFresh) {
+            return;
+        }
+
+        void directorRelayRef.current?.sendSnapshot({
+            protocol: GAME_PROTOCOL,
+            kind: 'director-arena-snapshot',
+            snapshot,
         });
     }, []);
 
@@ -600,6 +956,12 @@ export function useRallarArena(): ArenaConnection {
         roomId,
         rooms,
         directorStatus,
+        rtcLanes,
+        aiStatus,
+        aiError,
+        activeEvent,
+        arenaSnapshot,
+        remoteEvents,
         remotePlayers,
         remoteShots,
         login,
@@ -611,6 +973,7 @@ export function useRallarArena(): ArenaConnection {
         appointSelfAsDirector,
         sendPose,
         sendShot,
+        publishArenaSnapshot,
     }), [
         session,
         connectionState,
@@ -618,6 +981,12 @@ export function useRallarArena(): ArenaConnection {
         roomId,
         rooms,
         directorStatus,
+        rtcLanes,
+        aiStatus,
+        aiError,
+        activeEvent,
+        arenaSnapshot,
+        remoteEvents,
         remotePlayers,
         remoteShots,
         login,
@@ -629,6 +998,7 @@ export function useRallarArena(): ArenaConnection {
         appointSelfAsDirector,
         sendPose,
         sendShot,
+        publishArenaSnapshot,
     ]);
 }
 

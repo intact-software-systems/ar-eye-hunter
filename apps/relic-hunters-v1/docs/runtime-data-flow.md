@@ -13,6 +13,14 @@ Last reviewed: 2026-05-19.
 - `src/game/api.ts` performs authenticated REST calls to the relic server.
 - `apps/relic-hunter-server-v1/src/relic-game-service.ts` persists game state,
   serializes commands per game id, and publishes snapshots through Rallar WS.
+- `apps/relic-hunter-server-v1/src/relic-expedition-ai.ts` optionally creates
+  initial game state from a server-side RallarAI expedition blueprint before
+  gameplay begins. Disabled mode preserves the current static map; mock and
+  Ollama modes validate generated JSON and fall back to procedural setup on
+  failure.
+- `packages/relic-hunters/src/expedition-blueprint.ts` owns blueprint schema,
+  procedural setup, and domain validation for generated maze/castle/reward
+  data.
 - `packages/relic-hunters/src/rules.ts` is the canonical command and round
   resolution logic.
 
@@ -49,6 +57,23 @@ reset -> REST reset endpoint -> persisted new game -> WS snapshot publish -> RES
 
 The server still defines the Rallar WS command topic for compatibility/future
 experiments, but the SPA does not send gameplay commands over that topic.
+
+## Expedition Setup Path
+
+Initial expedition setup is server-owned and happens before a `RelicGameState`
+is persisted. The Relic server centralizes missing-state creation for room
+hydration, reset, and command-created games:
+
+```text
+off -> create static game -> persisted state -> normal public snapshot
+mock/ollama -> RallarAI blueprint request -> schema validation -> Relic domain validation -> game state
+mock/ollama failure -> procedural blueprint -> Relic domain validation -> game state
+```
+
+Generated setup changes only the initial `map`, `relics`, and safe setup
+metadata. The browser still receives normal public snapshots and still submits
+gameplay commands through REST. The existing browser AI Companion remains an
+advisory planning aid and does not drive authoritative setup.
 
 ## Timed-Out Round Recovery
 

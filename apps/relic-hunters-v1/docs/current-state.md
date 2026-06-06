@@ -26,6 +26,13 @@ server in `apps/relic-hunter-server-v1`, and the shared game model/rules in
 - `src/game/relic-hunters-runtime.ts` wraps Rallar/auth/room APIs, relic REST
   calls, WS snapshot fanout, and RTC snapshot repair. React consumes it through
   `src/game/useRelicHunters.ts`.
+- `packages/relic-hunters/src/expedition-blueprint.ts` owns the server-side
+  expedition blueprint contract, JSON schema, procedural fallback generator, and
+  domain validation for optional maze/castle/reward variation.
+- `apps/relic-hunter-server-v1/src/relic-expedition-ai.ts` owns the optional
+  server-side RallarAI setup path. It is disabled by default, can use mock or
+  Ollama providers, and falls back to validated procedural setup if generation
+  fails.
 - `src/game/RelicScene.tsx` is still a large Babylon scene runtime, but the
   React effect now calls a `createRelicSceneRuntime` boundary for Babylon setup.
   The same file still owns most sync/effect helpers, local movement, prompts,
@@ -114,6 +121,7 @@ Current targeted validation:
 npm --workspace relic-hunters-v1 run test
 npm --workspace relic-hunters-v1 run typecheck
 npm --workspace relic-hunters-v1 run build
+npx vitest run packages/tests/relic-hunters/relic-expedition-blueprint.test.ts packages/tests/relic-hunters/relic-expedition-ai.test.ts packages/tests/relic-hunters/relic-server-service.test.ts
 npx vitest run packages/tests/relic-hunters/relic-web-app.browser.test.ts packages/tests/shared-web/rallar-ai.test.ts
 cd apps/relic-hunter-server-v1 && deno task check
 npx playwright test tests/playwright/relic-hunters/web.spec.ts --grep "large-screen side menus|core lobby layouts|Rallar browser bootstrap"

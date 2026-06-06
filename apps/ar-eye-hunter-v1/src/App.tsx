@@ -5,7 +5,8 @@ import { type FormEvent, useMemo, useState } from 'react';
 
 import { BabylonArena } from './game/BabylonArena.tsx';
 import { colorForId } from './game/color.ts';
-import { GAME_ROOM_NAME } from './game/types.ts';
+import { createInitialCombatState } from './game/simulation.ts';
+import { GAME_ROOM_NAME, type RtcLaneStatus } from './game/types.ts';
 import { useRallarArena } from './game/useRallarArena.ts';
 
 type AuthMode = 'login' | 'register';
@@ -16,7 +17,7 @@ export default function App() {
     const [username, setUsername] = useState('');
     const [displayName, setDisplayName] = useState('');
     const [password, setPassword] = useState('');
-    const [localScore, setLocalScore] = useState(0);
+    const [localCombat, setLocalCombat] = useState(createInitialCombatState);
 
     const localColor = useMemo(
         () => colorForId(arena.session?.sessionId ?? 'local'),
@@ -43,12 +44,16 @@ export default function App() {
             <BabylonArena
                 localUsername={arena.session?.username ?? 'hunter'}
                 localColor={localColor}
+                roomId={arena.roomId}
                 roomReady={arena.connectionState === 'connected' && Boolean(arena.roomId)}
                 remotePlayers={arena.remotePlayers}
                 remoteShots={arena.remoteShots}
+                remoteEvents={arena.remoteEvents}
+                arenaSnapshot={arena.arenaSnapshot}
                 onLocalPose={arena.sendPose}
                 onLocalShot={arena.sendShot}
-                onScoreChange={setLocalScore}
+                onLocalCombatChange={setLocalCombat}
+                onArenaSnapshot={arena.publishArenaSnapshot}
             />
 
             <section className="hud hud--top">
@@ -62,14 +67,27 @@ export default function App() {
 
                 <div className="status-strip">
                     <StatusPill label="Rallar" value={arena.connectionState}/>
-                    <StatusPill label="Score" value={String(localScore)}/>
+                    <StatusPill label="Score" value={String(localCombat.score)}/>
+                    <StatusPill label="Combo" value={`x${localCombat.combo}`}/>
+                    <StatusPill
+                        label="Overdrive"
+                        value={`${Math.round(localCombat.overdrive)}%`}
+                    />
                     <StatusPill
                         label="Peers"
                         value={String(arena.remotePlayers.size)}
                     />
                     <StatusPill
+                        label="RTC"
+                        value={rtcLabel(arena.rtcLanes)}
+                    />
+                    <StatusPill
                         label="Director"
                         value={directorLabel(arena.directorStatus)}
+                    />
+                    <StatusPill
+                        label="AI"
+                        value={arena.aiStatus}
                     />
                 </div>
             </section>
@@ -171,6 +189,16 @@ export default function App() {
                                 </button>
                             </div>
 
+                            <div className="director-panel director-panel--event">
+                                <div>
+                                    <span>Chaos</span>
+                                    <strong>{arena.activeEvent?.headline ?? 'arming'}</strong>
+                                </div>
+                                <span className="event-kind">
+                                    {arena.activeEvent?.kind ?? arena.aiStatus}
+                                </span>
+                            </div>
+
                             <div className="room-list">
                                 {arenaRooms.length === 0 && (
                                     <p className="muted">
@@ -204,10 +232,20 @@ export default function App() {
                     <div className="control-grid">
                         <span>WASD</span>
                         <span>Move</span>
+                        <span>Shift</span>
+                        <span>Sprint</span>
+                        <span>E</span>
+                        <span>Dash</span>
+                        <span>C/Ctrl</span>
+                        <span>Slide</span>
+                        <span>Space</span>
+                        <span>Jump</span>
                         <span>Mouse</span>
                         <span>Look</span>
                         <span>Click</span>
                         <span>Fire</span>
+                        <span>Right click</span>
+                        <span>Scan</span>
                     </div>
                 </div>
             </section>
@@ -249,6 +287,15 @@ function directorLabel(status: Readonly<{
         return status.state === 'fresh' ? 'you' : `you ${status.state}`;
     }
     return status.state;
+}
+
+function rtcLabel(lanes: readonly RtcLaneStatus[]): string {
+    if (lanes.length === 0) {
+        return 'solo';
+    }
+    const open = lanes.filter((lane) => lane.status === 'open').length;
+    const partial = lanes.filter((lane) => lane.status === 'partial').length;
+    return partial > 0 ? `${open}/${lanes.length}+` : `${open}/${lanes.length}`;
 }
 
 function shortId(id: string): string {

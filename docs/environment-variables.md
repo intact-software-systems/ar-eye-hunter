@@ -147,11 +147,15 @@ repositories are used.
 
 ### Relic Server Variables
 
-| Variable       | Required | Default                                                             | Usage                                                                                                                                           |
-| -------------- | -------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`         | No       | `8090`                                                              | HTTP listen port. Parsed with `Number(...)`; no range validation is applied here.                                                               |
-| `CORS_ORIGINS` | No       | `http://localhost:5173,http://localhost:5174,http://localhost:5175` | Allowed browser origins for `/api/*`. Use `*` to reflect any request origin.                                                                    |
-| `ENVIRONMENT`  | No       | `dev`                                                               | Selects `resources/web-config-dev.json` or `resources/web-config-prod.json` for the Relic server config. Supported values are `dev` and `prod`. |
+| Variable                                | Required | Default                                                             | Usage                                                                                                                                           |
+| --------------------------------------- | -------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                                  | No       | `8090`                                                              | HTTP listen port. Parsed with `Number(...)`; no range validation is applied here.                                                               |
+| `CORS_ORIGINS`                          | No       | `http://localhost:5173,http://localhost:5174,http://localhost:5175` | Allowed browser origins for `/api/*`. Use `*` to reflect any request origin.                                                                    |
+| `ENVIRONMENT`                           | No       | `dev`                                                               | Selects `resources/web-config-dev.json` or `resources/web-config-prod.json` for the Relic server config. Supported values are `dev` and `prod`. |
+| `RELIC_AI_EXPEDITION_MODE`              | No       | `off`                                                               | Optional server-side expedition setup generation. Supported values: `off`, `mock`, and `ollama`.                                                |
+| `RELIC_AI_EXPEDITION_TIMEOUT_MS`        | No       | `15000`                                                             | Timeout for server-side expedition blueprint generation before procedural fallback. Must be a positive integer.                                  |
+| `RELIC_AI_EXPEDITION_OLLAMA_BASE_URL`   | No       | `http://127.0.0.1:11434`                                            | Private Ollama sidecar base URL used only when `RELIC_AI_EXPEDITION_MODE=ollama`.                                                               |
+| `RELIC_AI_EXPEDITION_OLLAMA_MODEL`      | No       | `llama-test`                                                        | Ollama model ID used only when `RELIC_AI_EXPEDITION_MODE=ollama`.                                                                               |
 
 ### Inherited API-v1 Variables
 

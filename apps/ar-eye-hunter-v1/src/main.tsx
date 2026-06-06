@@ -8,6 +8,7 @@ import '@shared-web/mod.ts';
 
 import { rallar } from '@shared-web/browser/rallar.ts';
 import App from './App.tsx';
+import { GAME_COMBAT_LANE_ID } from './game/types.ts';
 import './styles.css';
 
 (globalThis as any).Temporal = (globalThis as any).Temporal ?? Temporal;
@@ -22,6 +23,18 @@ if (url === undefined) {
 
 rallar.configure({
     apiBaseUrl: url,
+});
+rallar.setDefaults({
+    applicationId: 'ar-eye-hunter',
+    workspaceId: 'default',
+    realtime: {
+        laneId: GAME_COMBAT_LANE_ID,
+        openTimeoutMs: 1000,
+    },
+    rtc: {
+        waitTimeoutMs: 1000,
+        connectOnWait: true,
+    },
 });
 
 const root = document.getElementById('root');

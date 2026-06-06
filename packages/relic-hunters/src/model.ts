@@ -14,6 +14,20 @@ export type RelicActionKind = 'move' | 'search' | 'steal' | 'escape';
 
 export type RelicGamePhase = 'lobby' | 'planning' | 'review' | 'finished';
 
+export type RelicExpeditionSetupSource =
+    | 'default'
+    | 'procedural'
+    | 'rallar-ai'
+    | 'mock';
+
+export type RelicExpeditionSetupMetadata = Readonly<{
+    schemaVersion: 1;
+    source: RelicExpeditionSetupSource;
+    seed?: string;
+    theme?: string;
+    blueprintId?: string;
+}>;
+
 export type RelicCharacterId =
     | 'kael-ironstride'
     | 'nyra-vale'
@@ -180,6 +194,7 @@ export type RelicGameState = Readonly<{
     pendingActions: readonly RelicPendingAction[];
     events: readonly RelicEvent[];
     winnerIds: readonly string[];
+    setup?: RelicExpeditionSetupMetadata;
 }>;
 
 export type RelicPublicSnapshot = Readonly<{
@@ -200,6 +215,7 @@ export type RelicPublicSnapshot = Readonly<{
     submittedPlayerIds: readonly string[];
     events: readonly RelicEvent[];
     winnerIds: readonly string[];
+    setup?: RelicExpeditionSetupMetadata;
 }>;
 
 export type RelicCommand =
@@ -271,6 +287,7 @@ export function toPublicRelicSnapshot(state: RelicGameState): RelicPublicSnapsho
         submittedPlayerIds: state.pendingActions.map((action) => action.playerId),
         events: state.events.slice(-16),
         winnerIds: state.winnerIds,
+        setup: state.setup,
     };
 }
 

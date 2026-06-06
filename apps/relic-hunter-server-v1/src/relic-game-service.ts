@@ -14,8 +14,13 @@ import {
 } from '@relic-hunters/mod.ts';
 import type { RallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
 import type { Middleware } from '../../api-v1/src/middleware.ts';
+import type { RelicInitialStateFactory, RelicInitialStateReason } from './relic-expedition-ai.ts';
 
 type RelicRallarServer = RallarServerApplication<Middleware, Hono>;
+
+export type RelicHunterGameServiceOptions = Readonly<{
+  createInitialState?: RelicInitialStateFactory;
+}>;
 
 export type RelicHunterGameService = Readonly<{
   readSnapshot(gameId: string): Promise<RelicPublicSnapshot | undefined>;
@@ -26,6 +31,7 @@ export type RelicHunterGameService = Readonly<{
 
 export async function installRelicHunterGame(
   rallar: RelicRallarServer,
+  options: RelicHunterGameServiceOptions = {},
 ): Promise<RelicHunterGameService> {
   const games = await rallar.data.open<RelicGameState>(
     'relic-hunter-games',
@@ -43,6 +49,16 @@ export async function installRelicHunterGame(
     const next: Promise<T> = prev.then(work);
     gameQueues.set(gameId, next.catch(() => {}));
     return next;
+  }
+
+  async function createInitialState(
+    gameId: string,
+    reason: RelicInitialStateReason,
+  ): Promise<RelicGameState> {
+    if (options.createInitialState) {
+      return await options.createInitialState(gameId, reason);
+    }
+    return createRelicGame(gameId, gameId);
   }
 
   async function publishSnapshot(state: RelicGameState): Promise<void> {
@@ -78,7 +94,8 @@ export async function installRelicHunterGame(
     senderId: string,
   ): Promise<RelicPublicSnapshot> {
     return enqueueForGame(command.gameId, async () => {
-      const previous = await games.get(command.gameId);
+      const previous = await games.get(command.gameId) ??
+        await createInitialState(command.gameId, 'command');
       const result = applyRelicCommand(previous, command, { senderId });
       await games.set(command.gameId, result.state);
       await publishSnapshot(result.state);
@@ -118,18 +135,24 @@ export async function installRelicHunterGame(
       return game ? toPublicRelicSnapshot(game) : undefined;
     },
     ensureSnapshot: async (gameId) => {
-      const game = await games.setIfAbsent(
-        gameId,
-        () => createRelicGame(gameId, gameId),
-      );
-      return toPublicRelicSnapshot(game);
+      return enqueueForGame(gameId, async () => {
+        const existing = await games.get(gameId);
+        if (existing) {
+          return toPublicRelicSnapshot(existing);
+        }
+        const state = await createInitialState(gameId, 'ensure');
+        await games.set(gameId, state);
+        return toPublicRelicSnapshot(state);
+      });
     },
     applyCommand,
     reset: async (gameId) => {
-      const state = createRelicGame(gameId, gameId);
-      await games.set(gameId, state);
-      await publishSnapshot(state);
-      return toPublicRelicSnapshot(state);
+      return enqueueForGame(gameId, async () => {
+        const state = await createInitialState(gameId, 'reset');
+        await games.set(gameId, state);
+        await publishSnapshot(state);
+        return toPublicRelicSnapshot(state);
+      });
     },
   };
 }
