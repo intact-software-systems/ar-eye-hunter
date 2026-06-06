@@ -178,6 +178,28 @@ snapshot acceptance policy as WS and REST. This keeps clients visually aligned
 when WS fanout or room hydration lags, without allowing an older or less
 complete peer snapshot to replace a richer local one.
 
+## Browser AI Planning Companion
+
+The browser AI companion is a client-side planning aid, not a command path. It
+builds a compact context from the accepted public snapshot, view-model action
+options, warnings, known investigations, recent public events, and the scene
+objective recommendation. It does not pass the raw snapshot to the provider,
+and it redacts unfound relic ids, names, exact hidden locations, and values into
+UI-level signals such as `relicSignal`.
+
+Generation is explicit: a player presses Ask while they are in `planning`, are
+active, and have not submitted. Requests use the existing RallarAI browser
+facade with a browser-only policy, a stable `baseStateRevision`, stale-result
+rejection, and a deterministic mock provider in development/tests. Production
+builds stay unavailable unless an app-supplied browser provider is injected.
+
+Accepted local suggestions become RallarAI `proposed` envelopes and are
+broadcast over Rallar WS on `room.relic.ai.planning` /
+`relic.ai.planning-proposal.v1`. Peers keep recent compatible proposals as
+read-only party notes. Only the local browser can prime its own suggestion into
+the existing draft controls, and the normal Submit Plan REST command remains
+the only authoritative gameplay submission.
+
 ## Known Data-Flow Gaps
 
 - The two-browser propagation spec is gated, but the real local full-stack run

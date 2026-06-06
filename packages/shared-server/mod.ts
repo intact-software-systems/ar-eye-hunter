@@ -1,6 +1,7 @@
 export * from './rallar-facade/RallarServer.ts';
 export * from './rallar-facade/RallarServerApplication.ts';
 export * from './rallar-facade/ws-topic-router.ts';
+export * from './rallar-ai/mod.ts';
 export * from './crdt/RallarCrdtServer.ts';
 export * from './crdt/InMemoryRallarCrdtLogRepository.ts';
 export * from './app-data/AppDataRepository.ts';

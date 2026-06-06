@@ -583,6 +583,108 @@ function validateRtcCommand(command: Record<string, unknown>): ControlCommandVal
     return validateObjectField(command, 'rallar', 'rtc');
 }
 
+function validateDirectorRoomFields(
+    command: Record<string, unknown>,
+    path: string,
+): ControlCommandValidationResult {
+    for (const field of ['roomId', 'applicationId', 'workspaceId']) {
+        const result = validateStringField(command, field, path);
+        if (!result.ok) {
+            return result;
+        }
+    }
+    for (const field of ['scope', 'roomRef']) {
+        const result = validateObjectField(command, field, path);
+        if (!result.ok) {
+            return result;
+        }
+    }
+    return { ok: true };
+}
+
+function validateDirectorRelayStartCommand(
+    command: Record<string, unknown>,
+): ControlCommandValidationResult {
+    let result = validateDirectorRoomFields(command, 'director.relay.start');
+    if (!result.ok) {
+        return result;
+    }
+
+    for (const field of [
+        'handle',
+        'laneId',
+        'topicId',
+        'intentTypeId',
+        'outputTypeId',
+        'heartbeatTypeId',
+        'snapshotTypeId',
+        'syncRequestTypeId',
+    ]) {
+        result = validateStringField(
+            command,
+            field,
+            'director.relay.start',
+            field === 'handle' || field === 'intentTypeId' || field === 'outputTypeId',
+        );
+        if (!result.ok) {
+            return result;
+        }
+    }
+
+    for (const field of ['heartbeatIntervalMs', 'snapshotIntervalMs']) {
+        result = validateIntegerField(command, field, 'director.relay.start', {
+            minimum: 0,
+        });
+        if (!result.ok) {
+            return result;
+        }
+    }
+    return { ok: true };
+}
+
+function validateDirectorCommand(command: Record<string, unknown>): ControlCommandValidationResult {
+    switch (command.kind) {
+        case 'director.appoint': {
+            const roomFields = validateDirectorRoomFields(command, 'director.appoint');
+            if (!roomFields.ok) {
+                return roomFields;
+            }
+            return validateIntegerField(command, 'heartbeatTtlMs', 'director.appoint', {
+                minimum: 1,
+            });
+        }
+        case 'director.resign':
+            return validateDirectorRoomFields(command, 'director.resign');
+        case 'director.status': {
+            let result = validateDirectorRoomFields(command, 'director.status');
+            if (!result.ok) {
+                return result;
+            }
+            result = validateBooleanField(command, 'refresh', 'director.status');
+            if (!result.ok) {
+                return result;
+            }
+            return validateNumberField(command, 'now', 'director.status');
+        }
+        case 'director.relay.start':
+            return validateDirectorRelayStartCommand(command);
+        case 'director.intent': {
+            const handle = validateStringField(command, 'handle', 'director.intent', true);
+            if (!handle.ok) {
+                return handle;
+            }
+            return Object.prototype.hasOwnProperty.call(command, 'intent')
+                ? { ok: true }
+                : fail('director.intent.intent is required.');
+        }
+        case 'director.sync.request':
+        case 'director.relay.stop':
+            return validateStringField(command, 'handle', String(command.kind), true);
+        default:
+            return fail('Director command kind is not supported.');
+    }
+}
+
 function optionalString(value: unknown): string | undefined {
     return typeof value === 'string' && value.trim().length > 0
         ? value
@@ -770,6 +872,69 @@ export function validateRallarBlackBoxTestCommand(
         case 'http.request':
             result = validateKeys(command, [...base, 'request', 'response'], 'http.request');
             return !result.ok ? result : validateHttpCommand(command);
+        case 'director.appoint':
+            result = validateKeys(command, [
+                ...base,
+                'roomId',
+                'applicationId',
+                'workspaceId',
+                'scope',
+                'roomRef',
+                'heartbeatTtlMs',
+            ], 'director.appoint');
+            return !result.ok ? result : validateDirectorCommand(command);
+        case 'director.resign':
+            result = validateKeys(command, [
+                ...base,
+                'roomId',
+                'applicationId',
+                'workspaceId',
+                'scope',
+                'roomRef',
+            ], 'director.resign');
+            return !result.ok ? result : validateDirectorCommand(command);
+        case 'director.status':
+            result = validateKeys(command, [
+                ...base,
+                'roomId',
+                'applicationId',
+                'workspaceId',
+                'scope',
+                'roomRef',
+                'refresh',
+                'now',
+            ], 'director.status');
+            return !result.ok ? result : validateDirectorCommand(command);
+        case 'director.relay.start':
+            result = validateKeys(command, [
+                ...base,
+                'handle',
+                'roomId',
+                'applicationId',
+                'workspaceId',
+                'scope',
+                'roomRef',
+                'laneId',
+                'topicId',
+                'intentTypeId',
+                'outputTypeId',
+                'heartbeatTypeId',
+                'snapshotTypeId',
+                'syncRequestTypeId',
+                'heartbeatIntervalMs',
+                'snapshotIntervalMs',
+                'snapshot',
+            ], 'director.relay.start');
+            return !result.ok ? result : validateDirectorCommand(command);
+        case 'director.intent':
+            result = validateKeys(command, [...base, 'handle', 'intent'], 'director.intent');
+            return !result.ok ? result : validateDirectorCommand(command);
+        case 'director.sync.request':
+            result = validateKeys(command, [...base, 'handle', 'payload'], 'director.sync.request');
+            return !result.ok ? result : validateDirectorCommand(command);
+        case 'director.relay.stop':
+            result = validateKeys(command, [...base, 'handle'], 'director.relay.stop');
+            return !result.ok ? result : validateDirectorCommand(command);
         case 'health':
         case 'stats':
         case 'close':

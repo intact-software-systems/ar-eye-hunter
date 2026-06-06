@@ -32,6 +32,17 @@ import {
     readGroupId,
     readGroupVersion,
 } from '@shared/api/group-client-views.ts';
+import {
+    createRallarGroupDirectorAppointment,
+    DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS,
+    isRallarGroupDirectorForSession,
+    isRallarGroupDirectorSessionActive,
+    mergeRallarGroupDirectorMetadata,
+    readRallarGroupDirectorFreshness,
+    readRallarGroupDirectorFromSnapshot,
+    type RallarGroupDirectorAppointment,
+    type RallarGroupDirectorFreshness,
+} from '@shared/api/group-director.ts';
 import type {
     ApplicationId,
     GroupJoinMode,
@@ -138,6 +149,8 @@ const RALLAR_REALTIME_LIFECYCLE_CALLBACK_ID = 'rallar:realtime:lifecycle';
 const RALLAR_RTC_STATUS_CALLBACK_ID = 'rallar:rtc:status';
 const RALLAR_WS_STATUS_CALLBACK_ID = 'rallar:ws:status';
 const RALLAR_CALL_SIGNAL_TOPIC_ID = 'app.rallar.calls';
+const RALLAR_DIRECTOR_DEFAULT_TOPIC_ID = 'app.rallar.director';
+const RALLAR_DIRECTOR_RELAY_PROTOCOL = 'rallar.director.relay.v1';
 const RALLAR_CALL_INVITE_TYPE_ID = 'app.rallar.calls.invite.v1';
 const RALLAR_CALL_ACCEPT_TYPE_ID = 'app.rallar.calls.accept.v1';
 const RALLAR_CALL_DECLINE_TYPE_ID = 'app.rallar.calls.decline.v1';
@@ -1127,6 +1140,118 @@ export type RallarCallInviteResult = Readonly<{
     signals: readonly RallarCallSignalSend[];
 }>;
 
+export type RallarDirectorRole = 'none' | 'director' | 'client';
+
+export type RallarDirectorState =
+    | 'none'
+    | 'fresh'
+    | 'stale'
+    | 'inactive';
+
+export type RallarDirectorStatus = Readonly<{
+    roomRef?: GroupRef;
+    roomId?: string;
+    role: RallarDirectorRole;
+    state: RallarDirectorState;
+    appointment?: RallarGroupDirectorAppointment;
+    isDirector: boolean;
+    isFresh: boolean;
+    active: boolean;
+    freshness: RallarGroupDirectorFreshness;
+    lastHeartbeatAtEpochMs?: number;
+    nowEpochMs: number;
+}>;
+
+export type RallarDirectorAppointOptions =
+    & RallarScopedOperationOptions
+    & Readonly<{
+    heartbeatTtlMs?: number;
+}>;
+
+export type RallarDirectorResignOptions = RallarScopedOperationOptions;
+
+export type RallarDirectorStatusOptions = Readonly<{
+    now?: number;
+}>;
+
+export type RallarDirectorStatusListener = (
+    status: RallarDirectorStatus,
+) => void | Promise<void>;
+
+export type RallarDirectorRelayEnvelope<T = unknown> = Readonly<{
+    protocol: typeof RALLAR_DIRECTOR_RELAY_PROTOCOL;
+    topicId: string;
+    typeId: string;
+    roomId: string;
+    epoch: number;
+    sentAtEpochMs: number;
+    payload: T;
+}>;
+
+export type RallarDirectorRelayMessage<T> = Readonly<{
+    transport: 'rtc' | 'ws';
+    senderId: string;
+    data: T;
+    envelope: RallarDirectorRelayEnvelope<T>;
+    receivedAtEpochMs: number;
+}>;
+
+export type RallarDirectorRelaySendStatus =
+    | 'sent'
+    | 'partial'
+    | 'no-director'
+    | 'not-director'
+    | 'stale-director'
+    | 'failed';
+
+export type RallarDirectorRelaySendResult = Readonly<{
+    status: RallarDirectorRelaySendStatus;
+    rtc?: RallarTargetedSendResult | RallarMessageSendResult;
+    ws?: RallarMessageSendResult;
+    reason?: string;
+}>;
+
+export type RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot = TOutput> =
+    Readonly<{
+    roomId?: string;
+    roomRef?: GroupRef;
+    laneId?: string;
+    topicId?: string;
+    intentTypeId: string;
+    outputTypeId: string;
+    heartbeatTypeId?: string;
+    snapshotTypeId?: string;
+    syncRequestTypeId?: string;
+    heartbeatIntervalMs?: number;
+    snapshotIntervalMs?: number;
+    readSnapshot?: () => TSnapshot | undefined | Promise<TSnapshot | undefined>;
+    onIntent?: (
+        message: RallarDirectorRelayMessage<TIntent>,
+        relay: RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot>,
+    ) => void | TOutput | readonly TOutput[] | Promise<void | TOutput | readonly TOutput[]>;
+    onOutput?: (
+        message: RallarDirectorRelayMessage<TOutput>,
+    ) => void | Promise<void>;
+    onSnapshot?: (
+        message: RallarDirectorRelayMessage<TSnapshot>,
+    ) => void | Promise<void>;
+    onSyncRequest?: (
+        message: RallarDirectorRelayMessage<unknown>,
+        relay: RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot>,
+    ) => void | Promise<void>;
+}>;
+
+export type RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot = TOutput> =
+    Readonly<{
+    status(): RallarDirectorStatus;
+    sendIntent(intent: TIntent): Promise<RallarDirectorRelaySendResult>;
+    sendOutput(output: TOutput): Promise<RallarDirectorRelaySendResult>;
+    sendHeartbeat(): Promise<RallarDirectorRelaySendResult>;
+    sendSnapshot(snapshot?: TSnapshot): Promise<RallarDirectorRelaySendResult>;
+    requestSync(payload?: unknown): Promise<RallarDirectorRelaySendResult>;
+    stop(): void;
+}>;
+
 export type RallarCallSignalEvent = Readonly<{
     kind: RallarCallSignalKind;
     callId: string;
@@ -1232,6 +1357,11 @@ export type RallarFacade = Readonly<{
         leave(
             input?: string | RallarLeaveRoomOptions,
         ): Promise<GroupSnapshot | undefined>;
+        updateMetadata(
+            room: string | GroupRef,
+            patch: Readonly<Record<string, unknown>>,
+            options?: RallarScopedOperationOptions,
+        ): Promise<GroupSnapshot>;
         current(): GroupSnapshot | undefined;
         onChange(
             listener: RallarStateListener<RallarRoomState>,
@@ -1270,6 +1400,24 @@ export type RallarFacade = Readonly<{
             listener: RallarPeopleEventListener,
             options?: RallarPeopleEventOptions,
         ): RallarUnsubscribe;
+    }>;
+    director: Readonly<{
+        appoint(
+            room?: string | GroupRef,
+            options?: RallarDirectorAppointOptions,
+        ): Promise<RallarDirectorStatus>;
+        resign(
+            room?: string | GroupRef,
+            options?: RallarDirectorResignOptions,
+        ): Promise<RallarDirectorStatus>;
+        status(
+            room?: string | GroupRef,
+            options?: RallarDirectorStatusOptions,
+        ): RallarDirectorStatus;
+        onStatus(listener: RallarDirectorStatusListener): RallarUnsubscribe;
+        createRelay<TIntent, TOutput, TSnapshot = TOutput>(
+            config: RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot>,
+        ): RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot>;
     }>;
     messages: Readonly<{
         rtc: RallarMessageLane<
@@ -1450,6 +1598,16 @@ class BrowserRallarFacade implements RallarFacade {
     >();
     private readonly peopleStateListeners = new Set<
         RallarStateListener<RallarPeopleState>
+    >();
+    private readonly directorStatusListeners =
+        new Set<RallarDirectorStatusListener>();
+    private readonly directorHeartbeatByRoom = new Map<
+        string,
+        Readonly<{
+            sessionId: string;
+            epoch: number;
+            atEpochMs: number;
+        }>
     >();
     private readonly roomEventSubscriptions =
         new Set<RallarRoomEventSubscription>();
@@ -1785,6 +1943,35 @@ class BrowserRallarFacade implements RallarFacade {
             await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
             return snapshot;
         },
+        updateMetadata: async (
+            room: string | GroupRef,
+            patch: Readonly<Record<string, unknown>>,
+            options: RallarScopedOperationOptions = {},
+        ): Promise<GroupSnapshot> => {
+            const operationOptions = this.resolveOperationOptions(options);
+            const ctx = await this.connect(operationOptions);
+            const session = this.requireSession();
+            const roomRef = this.resolveRoomRef(room);
+            const roomId = this.toRoomId(room);
+            const operationScope = options.scope ??
+                (roomRef ? toStateScope(roomRef) : this.resolveOperationScope());
+
+            if (!roomId) {
+                throw new Error('Cannot update room metadata: room is required.');
+            }
+
+            const snapshot = await apiWorkflows.updateStateGroupMetadata(
+                roomId,
+                patch,
+                session.clientId,
+                session.sessionId,
+                operationScope,
+                toRallarWorkflowPolicies(operationOptions),
+            );
+
+            await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
+            return snapshot;
+        },
         current: (): GroupSnapshot | undefined => this.toRoomState().currentRoom,
         onChange: (
             listener: RallarStateListener<RallarRoomState>,
@@ -1890,6 +2077,91 @@ class BrowserRallarFacade implements RallarFacade {
         ): RallarUnsubscribe => {
             return this.onPeopleEvent(listener, options);
         },
+    };
+
+    readonly director = {
+        appoint: async (
+            room?: string | GroupRef,
+            options: RallarDirectorAppointOptions = {},
+        ): Promise<RallarDirectorStatus> => {
+            const target = room ?? this.resolveDefaultRoom() ??
+                this.resolveCurrentRoomRef();
+            const snapshot = this.findGroupSnapshotForDirector(target);
+            const roomRef = this.resolveDirectorRoomRef(target, snapshot);
+            const roomId = this.toRoomId(roomRef ?? target);
+            if (!roomRef || !roomId) {
+                throw new Error('Cannot appoint director: no room selected.');
+            }
+
+            const session = this.requireSession();
+            const previous = readRallarGroupDirectorFromSnapshot(snapshot);
+            const appointment = createRallarGroupDirectorAppointment({
+                session,
+                previous,
+                heartbeatTtlMs: options.heartbeatTtlMs,
+            });
+            const metadata = mergeRallarGroupDirectorMetadata(
+                snapshot?.group.metadata,
+                appointment,
+            );
+            const updated = await this.rooms.updateMetadata(
+                roomRef,
+                metadata,
+                options,
+            );
+            this.recordDirectorHeartbeat(roomRef, appointment);
+            this.emitDirectorStatuses();
+            return this.toDirectorStatus(updated.group);
+        },
+        resign: async (
+            room?: string | GroupRef,
+            options: RallarDirectorResignOptions = {},
+        ): Promise<RallarDirectorStatus> => {
+            const target = room ?? this.resolveDefaultRoom() ??
+                this.resolveCurrentRoomRef();
+            const snapshot = this.findGroupSnapshotForDirector(target);
+            const roomRef = this.resolveDirectorRoomRef(target, snapshot);
+            const roomId = this.toRoomId(roomRef ?? target);
+            if (!roomRef || !roomId) {
+                throw new Error('Cannot resign director: no room selected.');
+            }
+
+            const session = this.requireSession();
+            const appointment = readRallarGroupDirectorFromSnapshot(snapshot);
+            if (!isRallarGroupDirectorForSession(appointment, session)) {
+                return this.toDirectorStatus(roomRef);
+            }
+
+            const metadata = mergeRallarGroupDirectorMetadata(
+                snapshot?.group.metadata,
+                undefined,
+            );
+            const updated = await this.rooms.updateMetadata(
+                roomRef,
+                metadata,
+                options,
+            );
+            this.directorHeartbeatByRoom.delete(this.toDirectorRoomKey(roomRef));
+            this.emitDirectorStatuses();
+            return this.toDirectorStatus(updated.group);
+        },
+        status: (
+            room?: string | GroupRef,
+            options: RallarDirectorStatusOptions = {},
+        ): RallarDirectorStatus => this.toDirectorStatus(room, options),
+        onStatus: (
+            listener: RallarDirectorStatusListener,
+        ): RallarUnsubscribe => {
+            this.directorStatusListeners.add(listener);
+            notifyListener(listener, this.toDirectorStatus());
+            return () => {
+                this.directorStatusListeners.delete(listener);
+            };
+        },
+        createRelay: <TIntent, TOutput, TSnapshot = TOutput>(
+            config: RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot>,
+        ): RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot> =>
+            this.createDirectorRelay<TIntent, TOutput, TSnapshot>(config),
     };
 
     readonly messages = {
@@ -2568,6 +2840,521 @@ class BrowserRallarFacade implements RallarFacade {
 
     flow<K, V>(policies: RallarFlowPolicies<V> = {}): RallarFlow<K, V> {
         return CommandsOrchestrator.withPolicies<K, V>(policies);
+    }
+
+    private toDirectorStatus(
+        room?: string | GroupRef,
+        options: RallarDirectorStatusOptions = {},
+    ): RallarDirectorStatus {
+        const target = room ?? this.resolveDefaultRoom() ??
+            this.resolveCurrentRoomRef();
+        const snapshot = this.findGroupSnapshotForDirector(target);
+        const roomRef = this.resolveDirectorRoomRef(target, snapshot);
+        const appointment = readRallarGroupDirectorFromSnapshot(snapshot);
+        const session = readSession();
+        const heartbeat = roomRef
+            ? this.directorHeartbeatByRoom.get(this.toDirectorRoomKey(roomRef))
+            : undefined;
+        const matchingHeartbeat = heartbeat &&
+                appointment &&
+                heartbeat.sessionId === appointment.sessionId &&
+                heartbeat.epoch === appointment.epoch
+            ? heartbeat
+            : undefined;
+        const now = options.now ?? Date.now();
+        const active = isRallarGroupDirectorSessionActive(snapshot, appointment);
+        const freshness = active
+            ? readRallarGroupDirectorFreshness(
+                appointment,
+                matchingHeartbeat?.atEpochMs,
+                now,
+            )
+            : appointment
+                ? 'stale'
+                : 'none';
+        const isDirector = isRallarGroupDirectorForSession(appointment, session);
+
+        return {
+            roomRef,
+            roomId: roomRef?.groupId ?? this.toRoomId(target),
+            role: appointment ? (isDirector ? 'director' : 'client') : 'none',
+            state: !appointment
+                ? 'none'
+                : !active
+                    ? 'inactive'
+                    : freshness,
+            appointment,
+            isDirector,
+            isFresh: freshness === 'fresh' && active,
+            active,
+            freshness,
+            lastHeartbeatAtEpochMs: matchingHeartbeat?.atEpochMs,
+            nowEpochMs: now,
+        };
+    }
+
+    private emitDirectorStatuses(): void {
+        if (this.directorStatusListeners.size === 0) {
+            return;
+        }
+
+        const status = this.toDirectorStatus();
+        for (const listener of this.directorStatusListeners) {
+            notifyListener(listener, status);
+        }
+    }
+
+    private findGroupSnapshotForDirector(
+        room?: string | GroupRef,
+    ): GroupSnapshot | undefined {
+        if (!room) {
+            return this.toRoomState().currentRoom;
+        }
+
+        return this.findGroupSnapshot(room);
+    }
+
+    private resolveDirectorRoomRef(
+        room: string | GroupRef | undefined,
+        snapshot?: GroupSnapshot,
+    ): GroupRef | undefined {
+        if (typeof room === 'object') {
+            return room;
+        }
+
+        return snapshot?.group ?? this.resolveRoomRef(room);
+    }
+
+    private toDirectorRoomKey(roomRef: GroupRef): string {
+        return JSON.stringify([
+            roomRef.applicationId,
+            roomRef.workspaceId ?? '',
+            roomRef.groupId,
+        ]);
+    }
+
+    private recordDirectorHeartbeat(
+        roomRef: GroupRef,
+        appointment: RallarGroupDirectorAppointment,
+        atEpochMs: number = Date.now(),
+    ): void {
+        this.directorHeartbeatByRoom.set(this.toDirectorRoomKey(roomRef), {
+            sessionId: appointment.sessionId,
+            epoch: appointment.epoch,
+            atEpochMs,
+        });
+    }
+
+    private createDirectorRelay<TIntent, TOutput, TSnapshot = TOutput>(
+        config: RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot>,
+    ): RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot> {
+        const laneId = config.laneId ?? DEFAULT_RALLAR_REALTIME_LANE_ID;
+        const topicId = config.topicId ?? RALLAR_DIRECTOR_DEFAULT_TOPIC_ID;
+        const heartbeatTypeId = config.heartbeatTypeId ??
+            `${topicId}.heartbeat`;
+        const snapshotTypeId = config.snapshotTypeId ?? `${topicId}.snapshot`;
+        const syncRequestTypeId = config.syncRequestTypeId ??
+            `${topicId}.sync-request`;
+        const roomTarget = config.roomRef ?? config.roomId;
+        const subscriptions = createRallarSubscriptionScope();
+        const timers: ReturnType<typeof setInterval>[] = [];
+        let stopped = false;
+
+        const status = (): RallarDirectorStatus =>
+            this.toDirectorStatus(roomTarget);
+
+        const relay = {
+            status,
+            sendIntent: async (
+                intent: TIntent,
+            ): Promise<RallarDirectorRelaySendResult> =>
+                await this.sendDirectorIntent(
+                    status(),
+                    laneId,
+                    topicId,
+                    config.intentTypeId,
+                    intent,
+                ),
+            sendOutput: async (
+                output: TOutput,
+            ): Promise<RallarDirectorRelaySendResult> =>
+                await this.sendDirectorRoomEnvelope(
+                    status(),
+                    topicId,
+                    config.outputTypeId,
+                    output,
+                ),
+            sendHeartbeat: async (): Promise<RallarDirectorRelaySendResult> => {
+                const current = status();
+                if (current.roomRef && current.appointment && current.isDirector) {
+                    this.recordDirectorHeartbeat(
+                        current.roomRef,
+                        current.appointment,
+                    );
+                    this.emitDirectorStatuses();
+                }
+                return await this.sendDirectorRoomEnvelope(
+                    current,
+                    topicId,
+                    heartbeatTypeId,
+                    {
+                        sessionId: current.appointment?.sessionId,
+                        epoch: current.appointment?.epoch,
+                    },
+                );
+            },
+            sendSnapshot: async (
+                snapshot?: TSnapshot,
+            ): Promise<RallarDirectorRelaySendResult> => {
+                const resolvedSnapshot = snapshot ??
+                    await config.readSnapshot?.();
+                if (resolvedSnapshot === undefined) {
+                    return {
+                        status: 'failed',
+                        reason: 'No director snapshot is available.',
+                    };
+                }
+
+                return await this.sendDirectorRoomEnvelope(
+                    status(),
+                    topicId,
+                    snapshotTypeId,
+                    resolvedSnapshot,
+                );
+            },
+            requestSync: async (
+                payload?: unknown,
+            ): Promise<RallarDirectorRelaySendResult> =>
+                await this.sendDirectorIntent(
+                    status(),
+                    laneId,
+                    topicId,
+                    syncRequestTypeId,
+                    payload ?? {},
+                ),
+            stop: (): void => {
+                if (stopped) {
+                    return;
+                }
+                stopped = true;
+                subscriptions.unsubscribe();
+                for (const timer of timers) {
+                    clearInterval(timer);
+                }
+            },
+        } satisfies RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot>;
+
+        const handleEnvelope = async <T>(
+            transport: 'rtc' | 'ws',
+            senderId: string,
+            envelope: RallarDirectorRelayEnvelope<T>,
+        ): Promise<void> => {
+            if (stopped || !this.isCurrentDirectorEnvelope(status(), envelope, senderId)) {
+                return;
+            }
+
+            const message: RallarDirectorRelayMessage<T> = {
+                transport,
+                senderId,
+                data: envelope.payload,
+                envelope,
+                receivedAtEpochMs: Date.now(),
+            };
+
+            if (envelope.typeId === heartbeatTypeId) {
+                const current = status();
+                if (senderId !== current.appointment?.sessionId) {
+                    return;
+                }
+                if (current.roomRef && current.appointment) {
+                    this.recordDirectorHeartbeat(
+                        current.roomRef,
+                        current.appointment,
+                        message.receivedAtEpochMs,
+                    );
+                    this.emitDirectorStatuses();
+                }
+                return;
+            }
+
+            if (envelope.typeId === config.outputTypeId) {
+                const current = status();
+                if (!current.isFresh || senderId !== current.appointment?.sessionId) {
+                    return;
+                }
+                await config.onOutput?.(
+                    message as unknown as RallarDirectorRelayMessage<TOutput>,
+                );
+                return;
+            }
+
+            if (envelope.typeId === snapshotTypeId) {
+                const current = status();
+                if (!current.isFresh || senderId !== current.appointment?.sessionId) {
+                    return;
+                }
+                await config.onSnapshot?.(
+                    message as unknown as RallarDirectorRelayMessage<TSnapshot>,
+                );
+                return;
+            }
+
+            if (!status().isDirector) {
+                return;
+            }
+
+            if (envelope.typeId === config.intentTypeId) {
+                const output = await config.onIntent?.(
+                    message as unknown as RallarDirectorRelayMessage<TIntent>,
+                    relay,
+                );
+                const outputs = Array.isArray(output) ? output : output ? [output] : [];
+                for (const item of outputs) {
+                    await relay.sendOutput(item as TOutput);
+                }
+                return;
+            }
+
+            if (envelope.typeId === syncRequestTypeId) {
+                await config.onSyncRequest?.(message, relay);
+                if (config.readSnapshot) {
+                    await relay.sendSnapshot();
+                }
+            }
+        };
+
+        subscriptions
+            .add(this.realtime.onJson<RallarDirectorRelayEnvelope>(
+                laneId,
+                async (message) => {
+                    if (!isRallarDirectorRelayEnvelope(message.data, topicId)) {
+                        return;
+                    }
+                    await handleEnvelope('rtc', message.peerId, message.data);
+                },
+            ))
+            .add(this.messages.ws.onMessage<RallarDirectorRelayEnvelope>(
+                { topicId },
+                async (message) => {
+                    if (!isRallarDirectorRelayEnvelope(message.payload, topicId)) {
+                        return;
+                    }
+                    await handleEnvelope('ws', message.senderId, message.payload);
+                },
+            ))
+            .add(this.messages.rtc.onMessage<RallarDirectorRelayEnvelope>(
+                { topicId, typeId: config.outputTypeId },
+                async (message) => {
+                    if (!isRallarDirectorRelayEnvelope(message.payload, topicId)) {
+                        return;
+                    }
+                    await handleEnvelope('rtc', message.senderId, message.payload);
+                },
+            ))
+            .add(this.messages.rtc.onMessage<RallarDirectorRelayEnvelope>(
+                { topicId, typeId: heartbeatTypeId },
+                async (message) => {
+                    if (!isRallarDirectorRelayEnvelope(message.payload, topicId)) {
+                        return;
+                    }
+                    await handleEnvelope('rtc', message.senderId, message.payload);
+                },
+            ))
+            .add(this.messages.rtc.onMessage<RallarDirectorRelayEnvelope>(
+                { topicId, typeId: snapshotTypeId },
+                async (message) => {
+                    if (!isRallarDirectorRelayEnvelope(message.payload, topicId)) {
+                        return;
+                    }
+                    await handleEnvelope('rtc', message.senderId, message.payload);
+                },
+            ));
+
+        const heartbeatIntervalMs = config.heartbeatIntervalMs ??
+            Math.max(
+                500,
+                Math.min(
+                    2_000,
+                    (status().appointment?.heartbeatTtlMs ??
+                        DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS) / 2,
+                ),
+            );
+        timers.push(setInterval(() => {
+            if (status().isDirector) {
+                void relay.sendHeartbeat();
+            }
+        }, heartbeatIntervalMs));
+
+        if (config.readSnapshot) {
+            timers.push(setInterval(() => {
+                if (status().isDirector) {
+                    void relay.sendSnapshot();
+                }
+            }, config.snapshotIntervalMs ?? 2_000));
+        }
+
+        return relay;
+    }
+
+    private async sendDirectorIntent<T>(
+        status: RallarDirectorStatus,
+        laneId: string,
+        topicId: string,
+        typeId: string,
+        payload: T,
+    ): Promise<RallarDirectorRelaySendResult> {
+        if (!status.appointment || !status.roomId) {
+            return {
+                status: 'no-director',
+                reason: 'No director is appointed for this room.',
+            };
+        }
+
+        if (!status.isFresh) {
+            return {
+                status: 'stale-director',
+                reason: 'The appointed director is stale or inactive.',
+            };
+        }
+
+        if (status.isDirector) {
+            return {
+                status: 'not-director',
+                reason: 'The local session is the director.',
+            };
+        }
+
+        const envelope = this.createDirectorEnvelope(
+            status,
+            topicId,
+            typeId,
+            payload,
+        );
+        const rtc = await this.channels.targeted<RallarDirectorRelayEnvelope<T>>({
+            peerId: status.appointment.sessionId,
+            laneId,
+        }).send(envelope);
+
+        if (rtc.status === 'sent') {
+            return { status: 'sent', rtc };
+        }
+
+        const ws = await this.sendWsUnicastMessage(
+            status.appointment.sessionId,
+            envelope,
+            typeId,
+            {
+                topicId,
+                contextId: status.roomId,
+            },
+        );
+
+        return {
+            status: isSuccessfulRallarMessageSendStatus(ws.status)
+                ? 'sent'
+                : 'failed',
+            rtc,
+            ws,
+            reason: isSuccessfulRallarMessageSendStatus(ws.status)
+                ? undefined
+                : ws.reason,
+        };
+    }
+
+    private async sendDirectorRoomEnvelope<T>(
+        status: RallarDirectorStatus,
+        topicId: string,
+        typeId: string,
+        payload: T,
+    ): Promise<RallarDirectorRelaySendResult> {
+        if (!status.appointment || !status.roomRef || !status.roomId) {
+            return {
+                status: 'no-director',
+                reason: 'No director is appointed for this room.',
+            };
+        }
+
+        if (!status.isDirector) {
+            return {
+                status: 'not-director',
+                reason: 'Only the appointed local director can send director output.',
+            };
+        }
+
+        const envelope = this.createDirectorEnvelope(
+            status,
+            topicId,
+            typeId,
+            payload,
+        );
+        const rtc = await this.messages.rtc.send<RallarDirectorRelayEnvelope<T>>({
+            roomRef: status.roomRef,
+            topicId,
+            typeId,
+            payload: envelope,
+            reliability: 'best-effort',
+            ack: 'none',
+            ttlMs: 5_000,
+        });
+
+        if (isSuccessfulRallarMessageSendStatus(rtc.status)) {
+            return { status: 'sent', rtc };
+        }
+
+        const ws = await this.messages.ws.send<RallarDirectorRelayEnvelope<T>>({
+            roomRef: status.roomRef,
+            topicId,
+            typeId,
+            payload: envelope,
+            reliability: 'best-effort',
+            ack: 'none',
+            ttlMs: 5_000,
+        });
+
+        return {
+            status: isSuccessfulRallarMessageSendStatus(ws.status)
+                ? 'sent'
+                : 'failed',
+            rtc,
+            ws,
+            reason: isSuccessfulRallarMessageSendStatus(ws.status)
+                ? undefined
+                : ws.reason ?? rtc.reason,
+        };
+    }
+
+    private createDirectorEnvelope<T>(
+        status: RallarDirectorStatus,
+        topicId: string,
+        typeId: string,
+        payload: T,
+    ): RallarDirectorRelayEnvelope<T> {
+        if (!status.appointment || !status.roomId) {
+            throw new Error('Cannot create director envelope without appointment.');
+        }
+
+        return {
+            protocol: RALLAR_DIRECTOR_RELAY_PROTOCOL,
+            topicId,
+            typeId,
+            roomId: status.roomId,
+            epoch: status.appointment.epoch,
+            sentAtEpochMs: Date.now(),
+            payload,
+        };
+    }
+
+    private isCurrentDirectorEnvelope(
+        status: RallarDirectorStatus,
+        envelope: RallarDirectorRelayEnvelope,
+        _senderId: string,
+    ): boolean {
+        return Boolean(
+            status.appointment &&
+                status.roomId &&
+                envelope.roomId === status.roomId &&
+                envelope.epoch === status.appointment.epoch,
+        );
     }
 
     private toCrdtMessageTransport(): RallarCrdtMessageTransport {
@@ -4388,6 +5175,7 @@ class BrowserRallarFacade implements RallarFacade {
         for (const listener of this.peopleStateListeners) {
             notifyListener(listener, peopleState);
         }
+        this.emitDirectorStatuses();
     }
 
     private registerRtcStatusCallbacks(
@@ -6870,6 +7658,24 @@ function isSuccessfulRallarMessageSendStatus(
         status === 'duplicate' ||
         status === 'superseded' ||
         status === 'skipped';
+}
+
+function isRallarDirectorRelayEnvelope(
+    value: unknown,
+    topicId: string,
+): value is RallarDirectorRelayEnvelope {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return false;
+    }
+
+    const envelope = value as Partial<RallarDirectorRelayEnvelope>;
+    return envelope.protocol === RALLAR_DIRECTOR_RELAY_PROTOCOL &&
+        envelope.topicId === topicId &&
+        typeof envelope.typeId === 'string' &&
+        typeof envelope.roomId === 'string' &&
+        typeof envelope.epoch === 'number' &&
+        typeof envelope.sentAtEpochMs === 'number' &&
+        'payload' in envelope;
 }
 
 function wakeQBoxEngineIfQueued(

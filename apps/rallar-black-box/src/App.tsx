@@ -147,8 +147,11 @@ import {
     appTabsForMode,
     defaultAppTabForMode,
     nextAppTab,
+    runnerAdvancedSurfaceForTab,
+    visibleAppTabForTab,
     type AppModeId,
     type AppTabId,
+    type RunnerAdvancedSurfaceId,
 } from './app-tabs.ts';
 import {
     FLOW_BUILDER_TEMPLATES,
@@ -1266,7 +1269,43 @@ function eventFilterFromValue(value: string): EventFilter {
 type AppNavigationState = Readonly<{
     mode: AppModeId;
     tab: AppTabId;
+    advancedSurface?: RunnerAdvancedSurfaceId;
 }>;
+
+function advancedSurfaceFromValue(value: string | null | undefined): RunnerAdvancedSurfaceId | undefined {
+    switch (value) {
+        case 'manual':
+        case 'workbench':
+        case 'run-manager':
+        case 'distributed':
+        case 'shared-test':
+            return value;
+        default:
+            return undefined;
+    }
+}
+
+function normalizeAppNavigation(input: Readonly<{
+    mode?: AppModeId;
+    tab: AppTabId;
+    advancedSurface?: RunnerAdvancedSurfaceId;
+}>): AppNavigationState {
+    const visibleTab = visibleAppTabForTab(input.tab);
+    const mode =
+        input.mode && appTabInMode(visibleTab, input.mode)
+            ? input.mode
+            : appModeForTab(visibleTab);
+    const advancedSurface =
+        visibleTab === 'advanced'
+            ? input.advancedSurface ?? runnerAdvancedSurfaceForTab(input.tab)
+            : undefined;
+
+    return {
+        mode,
+        tab: visibleTab,
+        ...(advancedSurface ? { advancedSurface } : {}),
+    };
+}
 
 function readInitialAppNavigation(): AppNavigationState {
     if (typeof window === 'undefined') {
@@ -1284,32 +1323,36 @@ function readInitialAppNavigation(): AppNavigationState {
     const explicitTab = params.get('tab');
     if (explicitTab) {
         const tab = appTabFromValue(explicitTab);
-        const mode =
-            explicitMode && appTabInMode(tab, explicitMode)
-                ? explicitMode
-                : appModeForTab(tab);
-        writeStoredAppMode(browserUiStorage(), mode);
-        writeStoredAppTab(browserUiStorage(), tab);
-        return {
-            mode,
+        const navigation = normalizeAppNavigation({
+            mode: explicitMode,
             tab,
-        };
+            advancedSurface: advancedSurfaceFromValue(
+                params.get('advancedSurface') ?? params.get('advanced'),
+            ),
+        });
+        writeStoredAppMode(browserUiStorage(), navigation.mode);
+        writeStoredAppTab(browserUiStorage(), navigation.tab);
+        return navigation;
     }
 
     const storedMode = readStoredAppMode(browserUiStorage());
     const mode = explicitMode ?? storedMode ?? DEFAULT_APP_MODE_ID;
     const storedTab = readStoredAppTab(browserUiStorage());
-    const tab =
+    const requestedTab =
         storedTab && appTabInMode(storedTab, mode)
             ? storedTab
             : defaultAppTabForMode(mode);
-
-    writeStoredAppMode(browserUiStorage(), mode);
-    writeStoredAppTab(browserUiStorage(), tab);
-    return {
+    const navigation = normalizeAppNavigation({
         mode,
-        tab,
-    };
+        tab: requestedTab,
+        advancedSurface: advancedSurfaceFromValue(
+            params.get('advancedSurface') ?? params.get('advanced'),
+        ),
+    });
+
+    writeStoredAppMode(browserUiStorage(), navigation.mode);
+    writeStoredAppTab(browserUiStorage(), navigation.tab);
+    return navigation;
 }
 
 function writeAppNavigationToUrl(navigation: AppNavigationState): void {
@@ -1322,6 +1365,12 @@ function writeAppNavigationToUrl(navigation: AppNavigationState): void {
     const url = new URL(window.location.href);
     url.searchParams.set('workspace', navigation.mode);
     url.searchParams.set('tab', navigation.tab);
+    if (navigation.advancedSurface) {
+        url.searchParams.set('advancedSurface', navigation.advancedSurface);
+    } else {
+        url.searchParams.delete('advancedSurface');
+        url.searchParams.delete('advanced');
+    }
     window.history.replaceState(null, '', url);
 }
 
@@ -4137,7 +4186,7 @@ function Header({
     authBusy: boolean;
     onLogout(): void;
 }) {
-    const [mobileExpanded, setMobileExpanded] = useState(false);
+    const [detailsExpanded, setDetailsExpanded] = useState(false);
     const config = selectRallarBlackBoxCurrentConfig(state);
     const stats = selectRallarBlackBoxLatestStats(state);
     const activeCommand = selectRallarBlackBoxActiveCommand(state);
@@ -4172,7 +4221,7 @@ function Header({
 
     return (
         <header
-            className={`run-header ${mobileExpanded ? 'expanded' : 'collapsed'}`}
+            className={`run-header ${detailsExpanded ? 'expanded' : 'collapsed'}`}
         >
             <div className="run-title">
                 <p className="eyebrow">Rallar Kit</p>
@@ -4180,23 +4229,17 @@ function Header({
                 <button
                     type="button"
                     className="header-toggle"
-                    aria-expanded={mobileExpanded}
+                    aria-expanded={detailsExpanded}
                     aria-controls="run-header-details run-header-actions"
-                    onClick={() => setMobileExpanded((current) => !current)}
+                    onClick={() => setDetailsExpanded((current) => !current)}
                 >
-                    {mobileExpanded ? 'Hide status' : 'Show status'}
+                    {detailsExpanded ? 'Hide details' : 'Show details'}
                 </button>
             </div>
             <div
-                className="header-grid"
-                id="run-header-details"
+                className="header-grid header-grid--summary"
                 aria-label="Run state"
             >
-                <Metric
-                    label="Agent"
-                    value={config?.agentId ?? bootstrap.agentId ?? 'unassigned'}
-                />
-                <Metric label="Protocol" value="1" />
                 <Metric
                     label="Provider"
                     value={providerMode}
@@ -4206,11 +4249,6 @@ function Header({
                     label="Control"
                     value={control.state}
                     tone={statusTone(control.state)}
-                />
-                <Metric
-                    label="Runtime"
-                    value={state.status}
-                    tone={statusTone(state.status)}
                 />
                 <Metric
                     label="Rallar"
@@ -4223,6 +4261,64 @@ function Header({
                               ? 'warn'
                               : 'muted'
                     }
+                />
+                <Metric label="Room" value={effectiveRoom} />
+                <Metric
+                    label="Failure"
+                    value={firstFailure?.commandId ?? 'none'}
+                    tone={firstFailure ? 'bad' : 'good'}
+                />
+            </div>
+            <div
+                className="header-actions"
+                id="run-header-actions"
+                hidden={!detailsExpanded}
+            >
+                <span className={`pill ${bootstrapping ? 'active' : 'good'}`}>
+                    {bootstrapping ? 'running' : 'ready'}
+                </span>
+                <span className="last-action">
+                    {lastAction ?? 'Waiting for runtime events'}
+                </span>
+                {mode === 'black-box-runner' && (
+                    <button
+                    type="button"
+                    onClick={() =>
+                        void rallarBlackBoxRuntimeStore.runSample()
+                        }
+                        disabled={
+                            bootstrapping || providerMode === 'browser-rallar'
+                        }
+                    >
+                        Replay Sample
+                    </button>
+                )}
+                {authSession && (
+                    <button
+                        type="button"
+                        className="header-logout-button"
+                        onClick={onLogout}
+                        disabled={authBusy}
+                    >
+                    {authBusy ? 'Signing out' : 'Logout'}
+                    </button>
+                )}
+            </div>
+            <div
+                className="header-grid header-grid--details"
+                id="run-header-details"
+                aria-label="Run details"
+                hidden={!detailsExpanded}
+            >
+                <Metric
+                    label="Agent"
+                    value={config?.agentId ?? bootstrap.agentId ?? 'unassigned'}
+                />
+                <Metric label="Protocol" value="1" />
+                <Metric
+                    label="Runtime"
+                    value={state.status}
+                    tone={statusTone(state.status)}
                 />
                 <Metric
                     label="Signal WS"
@@ -4240,7 +4336,6 @@ function Header({
                         config?.environment ?? bootstrap.environment ?? 'local'
                     }
                 />
-                <Metric label="Room" value={effectiveRoom} />
                 <Metric label="User" value={effectiveUser} />
                 <Metric label="Session" value={effectiveSession} />
                 <Metric
@@ -4248,42 +4343,6 @@ function Header({
                     value={activeCommand?.commandId ?? 'none'}
                     tone={activeCommand ? 'active' : 'muted'}
                 />
-                <Metric
-                    label="Failure"
-                    value={firstFailure?.commandId ?? 'none'}
-                    tone={firstFailure ? 'bad' : 'good'}
-                />
-            </div>
-            <div className="header-actions" id="run-header-actions">
-                <span className={`pill ${bootstrapping ? 'active' : 'good'}`}>
-                    {bootstrapping ? 'running' : 'ready'}
-                </span>
-                <span className="last-action">
-                    {lastAction ?? 'Waiting for runtime events'}
-                </span>
-                {mode === 'black-box-runner' && (
-                    <button
-                        type="button"
-                        onClick={() =>
-                            void rallarBlackBoxRuntimeStore.runSample()
-                        }
-                        disabled={
-                            bootstrapping || providerMode === 'browser-rallar'
-                        }
-                    >
-                        Replay Sample
-                    </button>
-                )}
-                {authSession && (
-                    <button
-                        type="button"
-                        className="header-logout-button"
-                        onClick={onLogout}
-                        disabled={authBusy}
-                    >
-                        {authBusy ? 'Signing out' : 'Logout'}
-                    </button>
-                )}
             </div>
         </header>
     );
@@ -4558,6 +4617,7 @@ function RallarBrowserTraceBar({
     const warningCount = rallarEvents.filter(
         (event) => event.severity === 'warning',
     ).length;
+    const hasWarningOrError = errorCount > 0 || warningCount > 0;
     const tone =
         latestEvent?.severity === 'error'
             ? 'bad'
@@ -4578,7 +4638,14 @@ function RallarBrowserTraceBar({
             new Map(rallarEvents.map((event, index) => [event.eventId, index])),
         [rallarEvents],
     );
-    const [expanded, setExpanded] = useState(true);
+    const manualToggleRef = useRef(false);
+    const [expanded, setExpanded] = useState(false);
+
+    useEffect(() => {
+        if (!manualToggleRef.current) {
+            setExpanded(hasWarningOrError);
+        }
+    }, [hasWarningOrError]);
 
     return (
         <section
@@ -4591,13 +4658,20 @@ function RallarBrowserTraceBar({
                 <span className={`pill ${tone}`}>
                     {latestEvent?.severity ?? (latestEvent ? 'info' : 'idle')}
                 </span>
+                <span className="trace-compact-summary">
+                    {status.signalingLabel} / {status.rtcLabel} /{' '}
+                    {rallarEvents.length} events
+                </span>
                 <button
                     type="button"
                     className="collapsible-toggle"
                     aria-expanded={expanded}
                     aria-controls="rallar-browser-trace-content"
                     aria-label={`${expanded ? 'Hide' : 'Show'} Rallar Browser Trace`}
-                    onClick={() => setExpanded((current) => !current)}
+                    onClick={() => {
+                        manualToggleRef.current = true;
+                        setExpanded((current) => !current);
+                    }}
                 >
                     {expanded ? 'Hide' : 'Show'}
                 </button>
@@ -4674,11 +4748,15 @@ function DirectRallarBoundaryPanel({
     bootstrap,
     globalValues,
     authSession,
+    onOpenAuth,
+    onOpenRunnerMode,
 }: {
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
     globalValues: CommandCenterGlobalValues;
     authSession?: AuthSession;
+    onOpenAuth(): void;
+    onOpenRunnerMode(): void;
 }) {
     const [busy, setBusy] = useState(false);
     const [result, setResult] = useState<
@@ -4760,11 +4838,6 @@ function DirectRallarBoundaryPanel({
                 className="direct-rallar-content"
                 hidden={!expanded}
             >
-                <p className="direct-rallar-copy">
-                    Rallar mode actions call the browser Rallar facade directly
-                    and emit `rallar.direct.*` events. They do not execute
-                    black-box-runner recipe commands.
-                </p>
                 <div className="direct-rallar-grid">
                     <Metric
                         label="Provider"
@@ -4803,24 +4876,40 @@ function DirectRallarBoundaryPanel({
                         type="button"
                         disabled={!canRun}
                         onClick={() => void runStatusCheck()}
+                        className={canRun ? 'primary-action' : 'blocked-action'}
                     >
                         {busy
                             ? 'Checking Direct Rallar'
                             : 'Check Direct Rallar'}
                     </button>
+                    {!realBackendReady && (
+                        <button
+                            type="button"
+                            className="secondary-action"
+                            onClick={onOpenRunnerMode}
+                        >
+                            Open runner mode
+                        </button>
+                    )}
+                    {realBackendReady && !authSession && (
+                        <button
+                            type="button"
+                            className="secondary-action"
+                            onClick={onOpenAuth}
+                        >
+                            Open Auth
+                        </button>
+                    )}
                 </div>
                 {!realBackendReady && (
                     <div className="command-center-status" role="status">
-                        Direct Rallar operations require
-                        `provider=browser-rallar`. Simulated data remains
-                        available in the black-box-runner workspace and local
-                        workbench.
+                        Simulated provider cannot run direct facade actions.
+                        Use runner mode for local recipes and artifacts.
                     </div>
                 )}
                 {realBackendReady && !authSession && (
                     <div className="command-center-status" role="status">
-                        Direct Rallar operations require a logged-in browser
-                        session.
+                        Direct facade actions need a logged-in browser session.
                     </div>
                 )}
                 {resultError && (
@@ -4860,11 +4949,6 @@ function RunnerModeBoundaryPanel({
                 <h2>Runner Workspace</h2>
                 <span className="pill active">recipes and artifacts</span>
             </div>
-            <p className="direct-rallar-copy">
-                This workspace uses black-box-runner recipes, control-server
-                runs, flow exports, and imported evidence. It does not call
-                browser Rallar facade methods directly.
-            </p>
             <div className="direct-rallar-grid">
                 <Metric label="Control" value={control.state} />
                 <Metric label="Mode" value="black-box-runner" />
@@ -4885,6 +4969,7 @@ function QuickRallarTestPanel({
     globalValues,
     browserStatus,
     onGlobalValueChange,
+    onOpenAuth,
     onOpenRunnerMode,
 }: {
     state: RallarBlackBoxTestState;
@@ -4896,6 +4981,7 @@ function QuickRallarTestPanel({
         key: K,
         value: CommandCenterGlobalValues[K],
     ): void;
+    onOpenAuth(): void;
     onOpenRunnerMode(): void;
 }) {
     const [values, setValues] = useState<QuickRallarValues>(() => ({
@@ -5436,6 +5522,67 @@ function QuickRallarTestPanel({
         );
     };
 
+    const setupComplete =
+        realBackendReady && Boolean(authSession) && Boolean(activeGroupId);
+    const subscribed = Boolean(subscription);
+    const sendComplete =
+        lastResult?.kind === 'ws.send' && lastResult.status === 'completed';
+    const verifyComplete =
+        receivedMessages.length > 0 || waitStatus === 'message observed';
+    const workflowSteps: readonly Readonly<{
+        id: string;
+        label: string;
+        detail: string;
+        state: 'done' | 'current' | 'blocked' | 'pending';
+    }>[] = [
+        {
+            id: 'setup',
+            label: 'Setup',
+            detail: !realBackendReady
+                ? 'real backend required'
+                : !authSession
+                  ? 'login required'
+                  : activeGroupId
+                    ? activeGroupId
+                    : 'group required',
+            state: setupComplete ? 'done' : 'current',
+        },
+        {
+            id: 'subscribe',
+            label: 'Subscribe',
+            detail: subscription ? subscription.label : activeTypeId || 'type required',
+            state: subscribed
+                ? 'done'
+                : setupComplete && activeTypeId
+                  ? 'current'
+                  : 'blocked',
+        },
+        {
+            id: 'send',
+            label: 'Send',
+            detail: payloadResult.ok ? activeTopicId || activeTypeId || '-' : 'payload invalid',
+            state: sendComplete
+                ? 'done'
+                : setupComplete && payloadResult.ok
+                  ? 'current'
+                  : setupComplete
+                    ? 'blocked'
+                    : 'pending',
+        },
+        {
+            id: 'verify',
+            label: 'Verify',
+            detail: verifyComplete
+                ? `${receivedMessages.length} received`
+                : waitStatus,
+            state: verifyComplete
+                ? 'done'
+                : sendComplete || subscribed
+                  ? 'current'
+                  : 'pending',
+        },
+    ];
+
     return (
         <section
             className="panel quick-rallar-test-panel"
@@ -5452,6 +5599,18 @@ function QuickRallarTestPanel({
                           ? 'ready'
                           : 'real backend required'}
                 </span>
+            </div>
+            <div className="quick-workflow-strip" aria-label="Quick Test workflow">
+                {workflowSteps.map((step, index) => (
+                    <div
+                        className={`quick-workflow-step ${step.state}`}
+                        key={step.id}
+                    >
+                        <span>{index + 1}</span>
+                        <strong>{step.label}</strong>
+                        <small>{step.detail}</small>
+                    </div>
+                ))}
             </div>
             <CollapsiblePanelSection
                 title="Quick Test Info"
@@ -5613,65 +5772,112 @@ function QuickRallarTestPanel({
                     </label>
                 </div>
             </CollapsiblePanelSection>
-            <div className="quick-rallar-action-grid">
-                <button
-                    type="button"
-                    disabled={!canUseDirectRallar || !activeGroupId}
-                    onClick={() => void createGroup()}
-                >
-                    Create and join group
-                </button>
-                <button
-                    type="button"
-                    disabled={!canUseDirectRallar || !activeGroupId}
-                    onClick={() => void joinGroup()}
-                >
-                    Join group
-                </button>
-                <button
-                    type="button"
-                    disabled={
-                        !canUseDirectRallar || !activeGroupId || !activeTypeId
-                    }
-                    onClick={() => void subscribeWs()}
-                >
-                    Subscribe WS
-                </button>
-                <button
-                    type="button"
-                    disabled={!subscription}
-                    onClick={unsubscribeWs}
-                >
-                    Unsubscribe WS
-                </button>
-                <button
-                    type="button"
-                    disabled={
-                        !canUseDirectRallar ||
-                        !activeGroupId ||
-                        !activeTypeId ||
-                        !payloadResult.ok
-                    }
-                    onClick={() => void sendWs()}
-                >
-                    Send WS JSON
-                </button>
-                <button
-                    type="button"
-                    disabled={!subscription || Boolean(busyAction)}
-                    onClick={() => void waitForReceive()}
-                >
-                    Wait for receive
-                </button>
-                <button type="button" onClick={copyDiagnostics}>
-                    Copy diagnostics
-                </button>
-                <button type="button" onClick={copyRunnerRecipe}>
-                    Copy runner recipe
-                </button>
-                <button type="button" onClick={onOpenRunnerMode}>
-                    Open runner mode
-                </button>
+            <div className="quick-action-groups">
+                <div className="quick-action-group primary" aria-label="Primary Quick Test actions">
+                    {!realBackendReady && (
+                        <button
+                            type="button"
+                            className="primary-action"
+                            onClick={onOpenRunnerMode}
+                        >
+                            Open runner mode
+                        </button>
+                    )}
+                    {realBackendReady && !authSession && (
+                        <button
+                            type="button"
+                            className="primary-action"
+                            onClick={onOpenAuth}
+                        >
+                            Open Auth
+                        </button>
+                    )}
+                    {canUseDirectRallar && !subscribed && (
+                        <button
+                            type="button"
+                            className="primary-action"
+                            disabled={!activeGroupId}
+                            onClick={() => void createGroup()}
+                        >
+                            Create and join group
+                        </button>
+                    )}
+                    {canUseDirectRallar && !subscribed && (
+                        <button
+                            type="button"
+                            className="primary-action"
+                            disabled={!activeGroupId || !activeTypeId}
+                            onClick={() => void subscribeWs()}
+                        >
+                            Subscribe WS
+                        </button>
+                    )}
+                    {canUseDirectRallar && (
+                        <button
+                            type="button"
+                            className="primary-action"
+                            disabled={
+                                !setupComplete ||
+                                !activeTypeId ||
+                                !payloadResult.ok
+                            }
+                            onClick={() => void sendWs()}
+                        >
+                            Send WS JSON
+                        </button>
+                    )}
+                    {subscribed && (
+                        <button
+                            type="button"
+                            className="primary-action"
+                            disabled={Boolean(busyAction)}
+                            onClick={() => void waitForReceive()}
+                        >
+                            Wait for receive
+                        </button>
+                    )}
+                </div>
+                <div className="quick-action-group secondary" aria-label="Secondary Quick Test actions">
+                    <button
+                        type="button"
+                        className="secondary-action"
+                        disabled={!canUseDirectRallar || !activeGroupId}
+                        onClick={() => void joinGroup()}
+                    >
+                        Join group
+                    </button>
+                    <button
+                        type="button"
+                        className="secondary-action"
+                        disabled={!subscription}
+                        onClick={unsubscribeWs}
+                    >
+                        Unsubscribe WS
+                    </button>
+                    <button
+                        type="button"
+                        className="secondary-action"
+                        onClick={copyDiagnostics}
+                    >
+                        Copy diagnostics
+                    </button>
+                    <button
+                        type="button"
+                        className="secondary-action"
+                        onClick={copyRunnerRecipe}
+                    >
+                        Copy runner recipe
+                    </button>
+                    {realBackendReady && (
+                        <button
+                            type="button"
+                            className="secondary-action"
+                            onClick={onOpenRunnerMode}
+                        >
+                            Open runner mode
+                        </button>
+                    )}
+                </div>
             </div>
             <CollapsiblePanelSection
                 title="Quick Test Payload"
@@ -7201,8 +7407,10 @@ function RunnerAdvancedPanel({
     lastError,
     selectedCommandId,
     queueRows,
+    initialSurface = 'workbench',
     onSelectCommand,
     onGlobalValueChange,
+    onSurfaceChange,
 }: {
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
@@ -7216,19 +7424,24 @@ function RunnerAdvancedPanel({
     lastError?: string;
     selectedCommandId?: string;
     queueRows: readonly CommandQueueRow[];
+    initialSurface?: RunnerAdvancedSurfaceId;
     onSelectCommand(commandId: string | undefined): void;
     onGlobalValueChange<K extends keyof CommandCenterGlobalValues>(
         key: K,
         value: CommandCenterGlobalValues[K],
     ): void;
+    onSurfaceChange(surface: RunnerAdvancedSurfaceId): void;
 }) {
-    const [surface, setSurface] = useState<
-        | 'manual'
-        | 'workbench'
-        | 'run-manager'
-        | 'distributed'
-        | 'shared-test'
-    >('workbench');
+    const [surface, setSurface] = useState<RunnerAdvancedSurfaceId>(initialSurface);
+
+    useEffect(() => {
+        setSurface(initialSurface);
+    }, [initialSurface]);
+
+    const selectSurface = (nextSurface: RunnerAdvancedSurfaceId): void => {
+        setSurface(nextSurface);
+        onSurfaceChange(nextSurface);
+    };
 
     return (
         <section className="panel runner-advanced-panel">
@@ -7248,74 +7461,95 @@ function RunnerAdvancedPanel({
                         type="button"
                         key={id}
                         className={surface === id ? 'selected' : ''}
-                        onClick={() => setSurface(id as typeof surface)}
+                        onClick={() => selectSurface(id as RunnerAdvancedSurfaceId)}
                     >
                         {label}
                     </button>
                 ))}
             </div>
             <div className="runner-advanced-content">
-                {surface === 'workbench' && (
-                    <>
-                        <WorkbenchPanel
-                            busy={busy}
-                            runState={runState}
-                            loadedFixtureId={loadedFixtureId}
-                            lastError={lastError}
-                        />
-                        <ControlPanel state={state} control={control} />
-                        <BootstrapPanel bootstrap={bootstrap} />
-                        <ConfigurationPanel state={state} />
-                        <CommandQueuePanel
-                            rows={queueRows}
-                            selectedCommandId={selectedCommandId}
-                            onSelect={onSelectCommand}
-                        />
-                        <ReportPanel
-                            state={state}
-                            authSession={authSession}
-                        />
-                    </>
-                )}
+                <div
+                    id="panel-local-workbench"
+                    className="workspace-grid tab-workspace workbench-tab-grid"
+                    hidden={surface !== 'workbench'}
+                >
+                    <WorkbenchPanel
+                        busy={busy}
+                        runState={runState}
+                        loadedFixtureId={loadedFixtureId}
+                        lastError={lastError}
+                    />
+                    <ControlPanel state={state} control={control} />
+                    <BootstrapPanel bootstrap={bootstrap} />
+                    <ConfigurationPanel state={state} />
+                    <CommandQueuePanel
+                        rows={queueRows}
+                        selectedCommandId={selectedCommandId}
+                        onSelect={onSelectCommand}
+                    />
+                    <ReportPanel
+                        state={state}
+                        authSession={authSession}
+                    />
+                </div>
                 {surface === 'distributed' && (
-                    <DistributedRecipesPanel
-                        state={state}
-                        bootstrap={bootstrap}
-                        control={control}
-                        globalValues={globalValues}
-                    />
-                )}
-                {surface === 'run-manager' && (
-                    <RunManagerPanel
-                        state={state}
-                        bootstrap={bootstrap}
-                        control={control}
-                    />
-                )}
-                {surface === 'manual' && (
-                    <>
-                        <ManualRallarWorkbenchPanel
+                    <div
+                        id="panel-distributed-recipes"
+                        className="workspace-grid tab-workspace distributed-recipes-tab-grid"
+                    >
+                        <DistributedRecipesPanel
                             state={state}
                             bootstrap={bootstrap}
-                            authSession={authSession}
+                            control={control}
                             globalValues={globalValues}
-                            globalValuesEdited={globalValuesEdited}
-                            busy={busy}
-                            onSelectCommand={onSelectCommand}
-                            onGlobalValueChange={onGlobalValueChange}
                         />
-                        <ReceivedDataInboxPanel
-                            state={state}
-                            onSelectCommand={onSelectCommand}
-                        />
-                        <CommandHistoryPanel
-                            history={selectRallarBlackBoxCommandHistory(state)}
-                            selectedCommandId={selectedCommandId}
-                            onSelect={onSelectCommand}
-                        />
-                    </>
+                    </div>
                 )}
-                {surface === 'shared-test' && <SharedTestPanel />}
+                {surface === 'run-manager' && (
+                    <div
+                        id="panel-run-manager"
+                        className="workspace-grid tab-workspace run-manager-tab-grid"
+                    >
+                        <RunManagerPanel
+                            state={state}
+                            bootstrap={bootstrap}
+                            control={control}
+                        />
+                    </div>
+                )}
+                <div
+                    id="panel-manual-rallar"
+                    className="workspace-grid tab-workspace manual-tab-grid"
+                    hidden={surface !== 'manual'}
+                >
+                    <ManualRallarWorkbenchPanel
+                        state={state}
+                        bootstrap={bootstrap}
+                        authSession={authSession}
+                        globalValues={globalValues}
+                        globalValuesEdited={globalValuesEdited}
+                        busy={busy}
+                        onSelectCommand={onSelectCommand}
+                        onGlobalValueChange={onGlobalValueChange}
+                    />
+                    <ReceivedDataInboxPanel
+                        state={state}
+                        onSelectCommand={onSelectCommand}
+                    />
+                    <CommandHistoryPanel
+                        history={selectRallarBlackBoxCommandHistory(state)}
+                        selectedCommandId={selectedCommandId}
+                        onSelect={onSelectCommand}
+                    />
+                </div>
+                {surface === 'shared-test' && (
+                    <div
+                        id="panel-shared-test"
+                        className="workspace-grid tab-workspace shared-test-tab-grid"
+                    >
+                        <SharedTestPanel />
+                    </div>
+                )}
             </div>
         </section>
     );
@@ -22992,7 +23226,11 @@ export default function App() {
     const [navigation, setNavigation] = useState<AppNavigationState>(() =>
         readInitialAppNavigation(),
     );
-    const { mode: activeMode, tab: activeTab } = navigation;
+    const {
+        mode: activeMode,
+        tab: activeTab,
+        advancedSurface: activeAdvancedSurface,
+    } = navigation;
     const [authSession, setAuthSession] = useState<AuthSession | undefined>(
         () => readCurrentAuthSession(),
     );
@@ -23134,22 +23372,32 @@ export default function App() {
         setNavigation(nextNavigation);
         writeAppNavigationToUrl(nextNavigation);
     };
-    const selectTab = (tab: AppTabId): void => {
-        const mode = appTabInMode(tab, activeMode)
+    const selectTab = (
+        tab: AppTabId,
+        advancedSurface?: RunnerAdvancedSurfaceId,
+    ): void => {
+        const visibleTab = visibleAppTabForTab(tab);
+        const mode = appTabInMode(visibleTab, activeMode)
             ? activeMode
-            : appModeForTab(tab);
-        selectNavigation({
-            mode,
-            tab,
-        });
+            : appModeForTab(visibleTab);
+        selectNavigation(
+            normalizeAppNavigation({
+                mode,
+                tab,
+                advancedSurface,
+            }),
+        );
     };
     const selectMode = (mode: AppModeId): void => {
-        selectNavigation({
-            mode,
-            tab: appTabInMode(activeTab, mode)
-                ? activeTab
-                : defaultAppTabForMode(mode),
-        });
+        selectNavigation(
+            normalizeAppNavigation({
+                mode,
+                tab: appTabInMode(activeTab, mode)
+                    ? activeTab
+                    : defaultAppTabForMode(mode),
+                advancedSurface: activeAdvancedSurface,
+            }),
+        );
     };
     const updateGlobalValue = <K extends keyof CommandCenterGlobalValues>(
         key: K,
@@ -23228,24 +23476,6 @@ export default function App() {
                 onReset={resetGlobalValues}
             />
             <AppModeSwitch activeMode={activeMode} onSelect={selectMode} />
-            <RallarBrowserTraceBar
-                mode={activeMode}
-                state={state}
-                status={browserStatus}
-                onOpenTrace={() => selectTab('rallar-trace')}
-                onOpenEvents={() => selectTab('event-stream')}
-            />
-            {activeMode === 'rallar' && (
-                <DirectRallarBoundaryPanel
-                    state={state}
-                    bootstrap={bootstrap}
-                    globalValues={globalValues}
-                    authSession={authSession}
-                />
-            )}
-            {activeMode === 'black-box-runner' && (
-                <RunnerModeBoundaryPanel control={control} />
-            )}
             <AppTabs
                 activeMode={activeMode}
                 activeTab={activeTab}
@@ -23300,13 +23530,18 @@ export default function App() {
                 >
                     {activeMode === 'black-box-runner' &&
                         activeTab === 'builder' && (
-                        <FlowBuilderPanel
-                            state={state}
-                            authSession={authSession}
-                            globalValues={globalValues}
-                            busy={busy}
-                            onSelectCommand={setSelectedCommandId}
-                        />
+                        <div
+                            id="panel-flow-builder"
+                            className="workspace-grid tab-workspace flow-builder-tab-grid"
+                        >
+                            <FlowBuilderPanel
+                                state={state}
+                                authSession={authSession}
+                                globalValues={globalValues}
+                                busy={busy}
+                                onSelectCommand={setSelectedCommandId}
+                            />
+                        </div>
                     )}
                 </section>
                 <section
@@ -23316,25 +23551,29 @@ export default function App() {
                     aria-labelledby="tab-advanced"
                     hidden={activeTab !== 'advanced'}
                 >
-                    {activeMode === 'black-box-runner' &&
-                        activeTab === 'advanced' && (
-                            <RunnerAdvancedPanel
-                                state={state}
-                                bootstrap={bootstrap}
-                                control={control}
-                                authSession={authSession}
-                                globalValues={globalValues}
-                                globalValuesEdited={globalValuesEdited}
-                                busy={busy}
-                                runState={runState}
-                                loadedFixtureId={loadedFixtureId}
-                                lastError={lastError}
-                                selectedCommandId={selectedCommandId}
-                                queueRows={queueRows}
-                                onSelectCommand={setSelectedCommandId}
-                                onGlobalValueChange={updateGlobalValue}
-                            />
-                        )}
+                    <RunnerAdvancedPanel
+                        state={state}
+                        bootstrap={bootstrap}
+                        control={control}
+                        authSession={authSession}
+                        globalValues={globalValues}
+                        globalValuesEdited={globalValuesEdited}
+                        busy={busy}
+                        runState={runState}
+                        loadedFixtureId={loadedFixtureId}
+                        lastError={lastError}
+                        selectedCommandId={selectedCommandId}
+                        queueRows={queueRows}
+                        initialSurface={activeAdvancedSurface}
+                        onSelectCommand={setSelectedCommandId}
+                        onGlobalValueChange={updateGlobalValue}
+                        onSurfaceChange={(surface) =>
+                            selectNavigation({
+                                mode: 'black-box-runner',
+                                tab: 'advanced',
+                                advancedSurface: surface,
+                            })}
+                    />
                 </section>
                 <section
                     id="panel-quick-test"
@@ -23350,6 +23589,7 @@ export default function App() {
                         globalValues={globalValues}
                         browserStatus={browserStatus}
                         onGlobalValueChange={updateGlobalValue}
+                        onOpenAuth={() => selectTab('auth')}
                         onOpenRunnerMode={() => selectMode('black-box-runner')}
                     />
                 </section>
@@ -23370,7 +23610,7 @@ export default function App() {
                     />
                 </section>
                 <section
-                    id="panel-manual-rallar"
+                    id="legacy-panel-manual-rallar"
                     className="workspace-grid tab-workspace manual-tab-grid"
                     role="tabpanel"
                     aria-labelledby="tab-manual-rallar"
@@ -23516,7 +23756,7 @@ export default function App() {
                     />
                 </section>
                 <section
-                    id="panel-local-workbench"
+                    id="legacy-panel-local-workbench"
                     className="workspace-grid tab-workspace workbench-tab-grid"
                     role="tabpanel"
                     aria-labelledby="tab-local-workbench"
@@ -23539,7 +23779,7 @@ export default function App() {
                     <ReportPanel state={state} authSession={authSession} />
                 </section>
                 <section
-                    id="panel-run-manager"
+                    id="legacy-panel-run-manager"
                     className="workspace-grid tab-workspace run-manager-tab-grid"
                     role="tabpanel"
                     aria-labelledby="tab-run-manager"
@@ -23555,7 +23795,7 @@ export default function App() {
                         )}
                 </section>
                 <section
-                    id="panel-distributed-recipes"
+                    id="legacy-panel-distributed-recipes"
                     className="workspace-grid tab-workspace distributed-recipes-tab-grid"
                     role="tabpanel"
                     aria-labelledby="tab-distributed-recipes"
@@ -23623,7 +23863,7 @@ export default function App() {
                     />
                 </section>
                 <section
-                    id="panel-flow-builder"
+                    id="legacy-panel-flow-builder"
                     className="workspace-grid tab-workspace flow-builder-tab-grid"
                     role="tabpanel"
                     aria-labelledby="tab-flow-builder"
@@ -23638,7 +23878,7 @@ export default function App() {
                     />
                 </section>
                 <section
-                    id="panel-shared-test"
+                    id="legacy-panel-shared-test"
                     className="workspace-grid tab-workspace shared-test-tab-grid"
                     role="tabpanel"
                     aria-labelledby="tab-shared-test"
@@ -23646,6 +23886,28 @@ export default function App() {
                 >
                     <SharedTestPanel />
                 </section>
+            </div>
+            <div className="diagnostic-drawer" aria-label="Workspace diagnostics">
+                {activeMode === 'rallar' && (
+                    <DirectRallarBoundaryPanel
+                        state={state}
+                        bootstrap={bootstrap}
+                        globalValues={globalValues}
+                        authSession={authSession}
+                        onOpenAuth={() => selectTab('auth')}
+                        onOpenRunnerMode={() => selectMode('black-box-runner')}
+                    />
+                )}
+                {activeMode === 'black-box-runner' && (
+                    <RunnerModeBoundaryPanel control={control} />
+                )}
+                <RallarBrowserTraceBar
+                    mode={activeMode}
+                    state={state}
+                    status={browserStatus}
+                    onOpenTrace={() => selectTab('rallar-trace')}
+                    onOpenEvents={() => selectTab('event-stream')}
+                />
             </div>
         </main>
     );

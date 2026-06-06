@@ -266,6 +266,64 @@
           "handle": "goldenCrdt"
         },
         {
+          "kind": "director.appoint",
+          "commandId": "director-appoint-v1",
+          "roomId": "golden-room",
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "heartbeatTtlMs": 1200
+        },
+        {
+          "kind": "director.status",
+          "commandId": "director-status-v1",
+          "roomId": "golden-room",
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "refresh": true
+        },
+        {
+          "kind": "director.relay.start",
+          "commandId": "director-relay-start-v1",
+          "handle": "goldenDirector",
+          "roomId": "golden-room",
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "topicId": "app.golden.director",
+          "intentTypeId": "app.golden.director.intent",
+          "outputTypeId": "app.golden.director.output",
+          "heartbeatIntervalMs": 300,
+          "snapshotIntervalMs": 500
+        },
+        {
+          "kind": "director.intent",
+          "commandId": "director-intent-v1",
+          "handle": "goldenDirector",
+          "intent": {
+            "intentId": "golden-intent-v1",
+            "action": "move"
+          }
+        },
+        {
+          "kind": "director.sync.request",
+          "commandId": "director-sync-request-v1",
+          "handle": "goldenDirector",
+          "payload": {
+            "reason": "golden-compatibility"
+          }
+        },
+        {
+          "kind": "director.relay.stop",
+          "commandId": "director-relay-stop-v1",
+          "handle": "goldenDirector"
+        },
+        {
+          "kind": "director.resign",
+          "commandId": "director-resign-v1",
+          "roomId": "golden-room",
+          "applicationId": "rallar-server",
+          "workspaceId": "default"
+        },
+        {
           "kind": "health",
           "commandId": "health-v1"
         },

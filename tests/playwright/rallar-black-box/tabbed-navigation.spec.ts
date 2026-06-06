@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -7,6 +8,42 @@ const ARTIFACT_FIXTURE_DIR = path.join(
     REPO_ROOT,
     'packages/shared-test/black-box-runner/fixtures/schema/v1/artifact-bundle',
 );
+
+type RunnerSurfaceTab =
+    | 'manual-rallar'
+    | 'local-workbench'
+    | 'run-manager'
+    | 'distributed-recipes'
+    | 'shared-test'
+    | 'flow-builder';
+
+const RUNNER_SURFACE_TARGETS: Readonly<Record<
+    RunnerSurfaceTab,
+    Readonly<{ visibleTab: string; surfaceButton?: string }>
+>> = {
+    'manual-rallar': { visibleTab: 'Advanced', surfaceButton: 'Manual Rallar' },
+    'local-workbench': { visibleTab: 'Advanced', surfaceButton: 'Local Workbench' },
+    'run-manager': { visibleTab: 'Advanced', surfaceButton: 'Run Manager' },
+    'distributed-recipes': { visibleTab: 'Advanced', surfaceButton: 'Distributed Recipes' },
+    'shared-test': { visibleTab: 'Advanced', surfaceButton: 'Shared Test' },
+    'flow-builder': { visibleTab: 'Builder' },
+};
+
+async function openRunnerSurface(page: Page, tab: RunnerSurfaceTab): Promise<void> {
+    const target = RUNNER_SURFACE_TARGETS[tab];
+    await page.getByLabel('Rallar workspace mode')
+        .getByRole('button', { name: /Rallar black-box-runner/ })
+        .click();
+    await page.getByRole('tab', { name: target.visibleTab, exact: true }).click();
+    await expect(page.getByRole('tab', { name: target.visibleTab, exact: true }))
+        .toHaveAttribute('aria-selected', 'true');
+    if (target.surfaceButton) {
+        await page.locator('#panel-advanced')
+            .getByRole('button', { name: target.surfaceButton, exact: true })
+            .click();
+    }
+    await expect(page.locator(`#panel-${tab}`)).toBeVisible();
+}
 
 test('opens a tab from the URL and updates tab state in the address bar', async ({ page }) => {
     await page.goto('/?provider=simulated&tab=rtc-diagnostics');
@@ -24,6 +61,8 @@ test('opens a tab from the URL and updates tab state in the address bar', async 
     await expect(page.getByRole('tab', { name: 'Local Workbench' })).toHaveCount(0);
     const trace = page.locator('[aria-label="Rallar browser trace"]');
     await expect(trace).toContainText('Rallar mode');
+    await expect(page.locator('.rallar-trace-summary')).toBeHidden();
+    await trace.getByRole('button', { name: 'Show Rallar Browser Trace' }).click();
     await expect(trace).toContainText('Source: Live Rallar events');
     await expect(trace).toContainText('No Rallar browser events');
     await expect(trace).toContainText('Signal WS: not observed');
@@ -31,7 +70,7 @@ test('opens a tab from the URL and updates tab state in the address bar', async 
     const directPanel = page.getByLabel('Direct Rallar operation boundary');
     await expect(directPanel).toContainText('Direct Rallar Operations');
     await expect(directPanel).toContainText('real backend required');
-    await expect(directPanel).toContainText('provider=browser-rallar');
+    await expect(directPanel).toContainText('Simulated provider cannot run direct facade actions');
     await expect(page.getByRole('button', { name: 'Replay Sample' })).toHaveCount(0);
 
     await trace.getByRole('button', { name: 'Event Stream' }).click();
@@ -52,6 +91,7 @@ test('opens a tab from the URL and updates tab state in the address bar', async 
     await expect(directPanel).toHaveCount(0);
     await expect(trace).toContainText('black-box-runner mode');
     await expect(trace).toContainText('Source: Runner/control events');
+    await page.getByRole('button', { name: 'Show details' }).click();
     await expect(page.getByRole('button', { name: 'Replay Sample' })).toBeVisible();
 });
 
@@ -71,9 +111,10 @@ test('opens Quick Test as the default Rallar workspace screen', async ({ page })
     await expect(panel.getByLabel('Quick Test route')).toContainText('Group bb-group');
     await expect(panel.getByLabel('Quick Test route')).toContainText('room.manual.message / room.manual.message');
     await expect(panel.getByLabel('Payload JSON')).toHaveValue(/hello from quick Rallar test/);
-    await expect(panel.getByRole('button', { name: 'Create and join group' })).toBeDisabled();
-    await expect(panel.getByRole('button', { name: 'Subscribe WS', exact: true })).toBeDisabled();
-    await expect(panel.getByRole('button', { name: 'Send WS JSON' })).toBeDisabled();
+    await expect(panel.getByRole('button', { name: 'Open runner mode' })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Create and join group' })).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Subscribe WS', exact: true })).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Send WS JSON' })).toHaveCount(0);
     await expect(panel).toContainText('Quick Test requires provider=browser-rallar.');
 
     await page.getByLabel('Rallar workspace mode')
@@ -654,7 +695,7 @@ test('keeps manual form and event filters mounted across tab changes', async ({ 
     await expect(eventPanel.getByLabel('Window')).toHaveValue('100');
     await expect(eventPanel.locator('.focus-panel')).toContainText('manual-health-1');
 
-    await page.getByRole('tab', { name: 'Local Workbench' }).click();
+    await openRunnerSurface(page, 'local-workbench');
     const localWorkbenchPanel = page.locator('#panel-local-workbench');
     const fixtureSelect = localWorkbenchPanel.getByLabel('Fixture');
     await fixtureSelect.selectOption('provider-parity');
@@ -680,7 +721,7 @@ test('keeps manual form and event filters mounted across tab changes', async ({ 
     await page.getByLabel('Rallar workspace mode')
         .getByRole('button', { name: /Rallar black-box-runner/ })
         .click();
-    await page.getByRole('tab', { name: 'Manual Rallar' }).click();
+    await openRunnerSurface(page, 'manual-rallar');
 
     await expect(groupInput).toHaveValue('tab-persist-room');
 
@@ -692,7 +733,7 @@ test('keeps manual form and event filters mounted across tab changes', async ({ 
     await page.getByLabel('Rallar workspace mode')
         .getByRole('button', { name: /Rallar black-box-runner/ })
         .click();
-    await page.getByRole('tab', { name: 'Local Workbench' }).click();
+    await openRunnerSurface(page, 'local-workbench');
     await expect(fixtureSelect).toHaveValue('provider-parity');
 });
 
@@ -1057,7 +1098,8 @@ test('refreshes rooms and clients state with authenticated REST evidence', async
     await expect(page.getByLabel('Global Client')).toHaveValue('alice-client');
     await expect(page.getByLabel('Global Session')).toHaveValue('alice-session');
     await page.getByLabel('Global Room').fill('bb-group');
-    const runState = page.getByLabel('Run state');
+    await page.getByRole('button', { name: 'Show details' }).click();
+    const runState = page.locator('.run-header');
     await expect(runState.locator('.metric').filter({ hasText: 'Room' })).toContainText('bb-group');
     await expect(runState.locator('.metric').filter({ hasText: 'User' })).toContainText('alice');
     await expect(runState.locator('.metric').filter({ hasText: 'Session' })).toContainText('alice-session');
@@ -1122,7 +1164,8 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
         '/?provider=browser-rallar&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&roomId=awesome&tab=manual-rallar',
     );
     await page.waitForFunction(() => typeof (window as any).__blackBoxRallarEmit === 'function');
-    await expect(page.getByLabel('Run state').locator('.metric').filter({ hasText: 'Runtime' }))
+    await page.getByRole('button', { name: 'Show details' }).click();
+    await expect(page.locator('.run-header').locator('.metric').filter({ hasText: 'Runtime' }))
         .toContainText('configured');
     await page.evaluate(async () => {
         const emit = (window as any).__blackBoxRallarEmit as (event: any) => void | Promise<void>;
@@ -1184,7 +1227,7 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
     await expect(trace).toContainText('Group: awesome');
     await expect(trace).toContainText('Peers: ready 1 / active 1 / known 1');
 
-    const runState = page.getByLabel('Run state');
+    const runState = page.locator('.run-header');
     await expect(runState.locator('.metric').filter({ hasText: 'Signal WS' })).toContainText('open');
     await expect(runState.locator('.metric').filter({ hasText: 'RTC' })).toContainText('ready');
     await expect(runState.locator('.metric').filter({ hasText: 'Room' })).toContainText('awesome');
@@ -1485,7 +1528,7 @@ test('runs the RTC delivery matrix with scoped addressing and NACK diagnostics',
     await page.getByLabel('Rallar workspace mode')
         .getByRole('button', { name: /Rallar black-box-runner/ })
         .click();
-    await page.getByRole('tab', { name: 'Manual Rallar' }).click();
+    await openRunnerSurface(page, 'manual-rallar');
     await panel.getByRole('button', { name: 'NACK Probe' }).click();
     await page.getByLabel('Rallar workspace mode')
         .getByRole('button', { name: /Rallar Direct live/ })
@@ -1499,7 +1542,7 @@ test('builds and runs a command-center flow', async ({ page }) => {
     await page.goto('/?provider=simulated&tab=flow-builder');
 
     const panel = page.locator('#panel-flow-builder');
-    await expect(page.getByRole('tab', { name: 'Flow Builder' }))
+    await expect(page.getByRole('tab', { name: 'Builder' }))
         .toHaveAttribute('aria-selected', 'true');
     await expect(panel).toContainText('Auth, REST, WS, RTC smoke');
     await panel.getByLabel('Variables JSON').fill(JSON.stringify({
@@ -1542,7 +1585,7 @@ test('builds and runs a command-center flow', async ({ page }) => {
 test('shows shared-test recipes and imports a runner artifact bundle', async ({ page }) => {
     await page.goto('/?provider=simulated&tab=shared-test');
 
-    await expect(page.getByRole('tab', { name: 'Shared Test' })).toHaveAttribute(
+    await expect(page.getByRole('tab', { name: 'Advanced' })).toHaveAttribute(
         'aria-selected',
         'true',
     );
@@ -1626,7 +1669,7 @@ test('shows distributed recipe composite preflight before staging', async ({ pag
     });
     await page.goto('/?provider=simulated&workspace=black-box-runner&tab=distributed-recipes&roomId=bb-group');
 
-    await expect(page.getByRole('tab', { name: 'Distributed Recipes' })).toHaveAttribute(
+    await expect(page.getByRole('tab', { name: 'Advanced' })).toHaveAttribute(
         'aria-selected',
         'true',
     );
@@ -2171,7 +2214,7 @@ test('restores selected tab and redacted UI drafts after a fresh load', async ({
     await page.getByLabel('Rallar workspace mode')
         .getByRole('button', { name: /Rallar black-box-runner/ })
         .click();
-    await page.getByRole('tab', { name: 'Manual Rallar' }).click();
+    await openRunnerSurface(page, 'manual-rallar');
     const manualPanel = page.locator('#panel-manual-rallar');
     await manualPanel.getByLabel('Group').fill('persisted-ui-room');
     await manualPanel.getByLabel('Payload JSON').fill(JSON.stringify({
@@ -2191,7 +2234,7 @@ test('restores selected tab and redacted UI drafts after a fresh load', async ({
     await expect(page.locator('#panel-event-stream').getByRole('button', { name: 'message' }))
         .toHaveClass(/selected/);
 
-    await page.getByRole('tab', { name: 'Manual Rallar' }).click();
+    await openRunnerSurface(page, 'manual-rallar');
     await expect(manualPanel.getByLabel('Group')).toHaveValue('persisted-ui-room');
     await expect(manualPanel.getByLabel('Payload JSON')).toHaveValue(/<redacted>/);
 

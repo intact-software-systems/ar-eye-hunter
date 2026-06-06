@@ -35,6 +35,10 @@ The intended playable loop is:
 - The lobby separates room presence from expedition readiness: online room
   members are counted separately from joined expedition hunters, and the Keeper
   is labelled in the joined roster.
+- During planning, the AI Companion panel can produce a browser-local planning
+  suggestion on explicit request. It can prime the normal draft controls, but it
+  does not submit plans or change authoritative state. Shared AI proposals from
+  other browsers appear as read-only party notes.
 - `GameHudLayout` gives the SPA stable regions:
   - top: connection, room, round, score, progress, and language/status controls
   - side: auth, room actions, lobby controls, or round planning
@@ -69,6 +73,9 @@ The intended playable loop is:
   `Submit Plan`; themed copy should stay in supporting text.
 - After a plan is locked, the locked-plan card remains visible and the action
   picker can still be used for inspection, but submission stays disabled.
+- The AI Companion is disabled once the local hunter has locked a plan, is down,
+  has escaped, or the snapshot is outside planning. Stale suggestions remain
+  visible as stale until the player asks again on the current turn.
 - During review, planning input is disabled and a round review panel replaces
   the plan submission controls. The scene remains visible so each browser can
   play the same reveal cues before a player continues to the next turn or
@@ -104,6 +111,11 @@ The view model currently exposes:
 - current objective text
 - low-health, round-limit, search-danger, and noise warnings
 - relic and escape progress
+
+The AI Companion context is derived from the same public gameplay state and
+view-model surfaces. It includes legal options, room-level relic signals,
+warnings, objectives, visible investigations, and recent public events; it does
+not expose raw hidden relic definitions to the provider.
 
 Turn results now converge in the bottom HUD. The current-turn summary explains
 whether the local player should choose a plan, is waiting with a locked plan, is

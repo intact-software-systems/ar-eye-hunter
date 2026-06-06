@@ -675,6 +675,13 @@ function runnerStepForCommand(
         case 'crdt.redo':
         case 'crdt.close':
         case 'crdt.destroy':
+        case 'director.appoint':
+        case 'director.resign':
+        case 'director.status':
+        case 'director.relay.start':
+        case 'director.intent':
+        case 'director.sync.request':
+        case 'director.relay.stop':
             return {
                 ...base,
                 type: command.kind,

@@ -45,17 +45,30 @@ export type RallarBlackBoxBrowserRallarCrdtRuntime = Readonly<{
     destroy(input: unknown): Promise<unknown>;
 }>;
 
+export type RallarBlackBoxBrowserRallarDirectorRuntime = Readonly<{
+    appoint(input: unknown): Promise<unknown>;
+    resign(input: unknown): Promise<unknown>;
+    status(input: unknown): Promise<unknown>;
+    relayStart(input: unknown): Promise<unknown>;
+    intent(input: unknown): Promise<unknown>;
+    syncRequest(input: unknown): Promise<unknown>;
+    relayStop(input: unknown): Promise<unknown>;
+}>;
+
 export type RallarBlackBoxBrowserRallarRuntime = Readonly<{
     connect(config: RallarBlackBoxBrowserRallarConnectionConfig): Promise<unknown>;
     send(input: unknown): Promise<unknown>;
     sendWs?(input: unknown): Promise<unknown>;
     crdt?: RallarBlackBoxBrowserRallarCrdtRuntime;
+    director?: RallarBlackBoxBrowserRallarDirectorRuntime;
     close(): Promise<unknown>;
     health(): Promise<unknown>;
 }>;
 
 type RallarBlackBoxBrowserRallarCrdtMethod =
     keyof RallarBlackBoxBrowserRallarCrdtRuntime;
+type RallarBlackBoxBrowserRallarDirectorMethod =
+    keyof RallarBlackBoxBrowserRallarDirectorRuntime;
 
 export type RallarBlackBoxBrowserRallarEvent = Readonly<{
     kind?: 'diagnostic' | 'message' | 'close';
@@ -867,6 +880,20 @@ class BrowserCommandAdapter {
                 return await this.executeCrdt(command, context, 'close', 'rallar.bb.crdt.closed');
             case 'crdt.destroy':
                 return await this.executeCrdt(command, context, 'destroy', 'rallar.bb.crdt.destroyed');
+            case 'director.appoint':
+                return await this.executeDirector(command, context, 'appoint', 'rallar.bb.director.appointed');
+            case 'director.resign':
+                return await this.executeDirector(command, context, 'resign', 'rallar.bb.director.resigned');
+            case 'director.status':
+                return await this.executeDirector(command, context, 'status', 'rallar.bb.director.status');
+            case 'director.relay.start':
+                return await this.executeDirector(command, context, 'relayStart', 'rallar.bb.director.relay_started');
+            case 'director.intent':
+                return await this.executeDirector(command, context, 'intent', 'rallar.bb.director.intent_sent');
+            case 'director.sync.request':
+                return await this.executeDirector(command, context, 'syncRequest', 'rallar.bb.director.sync_requested');
+            case 'director.relay.stop':
+                return await this.executeDirector(command, context, 'relayStop', 'rallar.bb.director.relay_stopped');
             case 'health':
                 return await this.health(command, context);
             case 'close':
@@ -948,6 +975,43 @@ class BrowserCommandAdapter {
         context.recordEvent({
             kind: 'diagnostic',
             topic: 'rallar.bb.crdt.failed',
+            commandId: command.commandId,
+            severity: 'error',
+            payload,
+        });
+        throw new Error(message);
+    }
+
+    private requireRallarDirectorRuntime(
+        command: CommandWithId,
+        context: RallarBlackBoxTestCommandContext,
+    ): RallarBlackBoxBrowserRallarDirectorRuntime {
+        const director = this.rallarRuntime?.director;
+        if (director) {
+            return director;
+        }
+
+        const message = 'Browser Rallar runtime does not support director commands.';
+        const payload = normalizeRallarBlackBoxRuntimeDiagnostic({
+            topic: 'rallar.bb.director.failed',
+            severity: 'error',
+            commandId: command.commandId,
+            message,
+            data: {
+                kind: command.kind,
+                handle: asRecord(command).handle,
+                reason: 'unsupported-runtime',
+            },
+            payload: {
+                kind: command.kind,
+                handle: asRecord(command).handle,
+                reason: 'unsupported-runtime',
+            },
+            source: 'browser-adapter',
+        });
+        context.recordEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.bb.director.failed',
             commandId: command.commandId,
             severity: 'error',
             payload,
@@ -1236,6 +1300,39 @@ class BrowserCommandAdapter {
         return resolved;
     }
 
+    private toDirectorRuntimeInput(
+        command: CommandWithId,
+        context: RallarBlackBoxTestCommandContext,
+    ): Record<string, unknown> {
+        const resolved = replaceCommandPlaceholders(command, {
+            config: context.config(),
+            session: readOptionalBrowserSession(),
+        }) as Record<string, unknown>;
+        const config = context.config();
+        const configuredRallar = asRecord(config?.rallar);
+        const defaults = asRecord(config?.defaults);
+        const roomId = resolved.roomId ?? config?.roomId ?? defaults.groupId;
+        const applicationId = resolved.applicationId ??
+            configuredRallar.applicationId ??
+            defaults.applicationId;
+        const workspaceId = resolved.workspaceId ??
+            configuredRallar.workspaceId ??
+            defaults.workspaceId;
+
+        return {
+            ...resolved,
+            ...(roomId !== undefined ? { roomId } : {}),
+            ...(applicationId !== undefined ? { applicationId } : {}),
+            ...(workspaceId !== undefined ? { workspaceId } : {}),
+            actor: resolved.actor ?? config?.actor,
+            sessionId: resolved.sessionId ?? config?.sessionId ?? configuredRallar.sessionId,
+            rallar: {
+                ...configuredRallar,
+                ...asRecord(resolved.rallar),
+            },
+        };
+    }
+
     private async executeCrdt(
         command: CommandWithId,
         context: RallarBlackBoxTestCommandContext,
@@ -1288,6 +1385,70 @@ class BrowserCommandAdapter {
                 severity: 'error',
                 payload: normalizeRallarBlackBoxRuntimeDiagnostic({
                     topic: 'rallar.bb.crdt.failed',
+                    severity: 'error',
+                    commandId: command.commandId,
+                    message: error instanceof Error ? error.message : String(error),
+                    data: {
+                        method,
+                        kind: command.kind,
+                        handle: input.handle,
+                    },
+                    payload: {
+                        method,
+                        kind: command.kind,
+                        handle: input.handle,
+                    },
+                    error,
+                    source: 'browser-adapter',
+                }),
+            });
+            throw error;
+        } finally {
+            abort.cleanup();
+        }
+
+        context.recordEvent({
+            kind: 'diagnostic',
+            topic: successTopic,
+            commandId: command.commandId,
+            severity: 'info',
+            payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+                topic: successTopic,
+                severity: 'info',
+                commandId: command.commandId,
+                data: value,
+                payload: value,
+                source: 'browser-adapter',
+            }),
+        });
+
+        return {
+            status: 'ok',
+            value,
+            nextStatus: context.state().status,
+        };
+    }
+
+    private async executeDirector(
+        command: CommandWithId,
+        context: RallarBlackBoxTestCommandContext,
+        method: RallarBlackBoxBrowserRallarDirectorMethod,
+        successTopic: string,
+    ): Promise<RallarBlackBoxTestCommandOutcome> {
+        const director = this.requireRallarDirectorRuntime(command, context);
+        const input = this.toDirectorRuntimeInput(command, context);
+        const abort = this.commandAbortSignal(command, context);
+        let value: unknown;
+        try {
+            value = await this.withAbort(director[method](input), abort.signal);
+        } catch (error) {
+            context.recordEvent({
+                kind: 'diagnostic',
+                topic: 'rallar.bb.director.failed',
+                commandId: command.commandId,
+                severity: 'error',
+                payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+                    topic: 'rallar.bb.director.failed',
                     severity: 'error',
                     commandId: command.commandId,
                     message: error instanceof Error ? error.message : String(error),

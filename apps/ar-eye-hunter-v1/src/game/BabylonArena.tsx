@@ -12,8 +12,13 @@ import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { Ray } from '@babylonjs/core/Culling/ray.js';
 import { Scene } from '@babylonjs/core/scene.js';
 import '@babylonjs/core/Collisions/collisionCoordinator';
+import {
+    createRallarMotionBuffer,
+    estimateRallarMotionVelocity,
+    type RallarMotionBuffer,
+} from '@shared/rallar-motion/mod.ts';
 
-import type { PlayerPose, PlayerShot, RemotePlayer, RemoteShot } from './types.ts';
+import type { PlayerPose, PlayerShot, RemotePlayer, RemoteShot, Vec3Tuple } from './types.ts';
 
 type BabylonArenaProps = Readonly<{
     localUsername: string;
@@ -39,8 +44,16 @@ type ArenaRuntime = Readonly<{
     scene: Scene;
     camera: FreeCamera;
     avatars: Map<string, RemoteAvatar>;
+    motionBuffer: RallarMotionBuffer<PlayerPose>;
+    motionSampleKeys: Map<string, string>;
     eyeTargets: Mesh[];
     remoteShotIds: Set<string>;
+}>;
+
+type LocalPoseHistory = Readonly<{
+    observedAtEpochMs: number;
+    position: Vec3Tuple;
+    rotation: Vec3Tuple;
 }>;
 
 const ARENA_SIZE = 42;
@@ -67,6 +80,7 @@ export function BabylonArena({
     const scoreRef = useRef(0);
     const poseSeqRef = useRef(0);
     const shotSeqRef = useRef(0);
+    const localPoseRef = useRef<LocalPoseHistory | undefined>(undefined);
 
     useEffect(() => {
         remotePlayersRef.current = remotePlayers;
@@ -122,6 +136,8 @@ export function BabylonArena({
             scene,
             camera,
             avatars: new Map(),
+            motionBuffer: createRallarMotionBuffer<PlayerPose>(),
+            motionSampleKeys: new Map(),
             eyeTargets,
             remoteShotIds: new Set(),
         };
@@ -142,7 +158,7 @@ export function BabylonArena({
         scene.onBeforeRenderObservable.add(() => {
             syncRemoteAvatars(runtime, remotePlayersRef.current);
             syncRemoteShots(runtime, remoteShotsRef.current);
-            publishLocalPose(runtime.camera, poseSeqRef, scoreRef.current, callbacksRef);
+            publishLocalPose(runtime.camera, poseSeqRef, scoreRef.current, callbacksRef, localPoseRef);
         });
 
         engine.runRenderLoop(() => scene.render());
@@ -372,22 +388,51 @@ function publishLocalPose(
         onLocalShot: BabylonArenaProps['onLocalShot'];
         onScoreChange: BabylonArenaProps['onScoreChange'];
     }>,
+    localPoseRef: MutableRefObject<LocalPoseHistory | undefined>,
 ): void {
+    const now = Date.now();
+    const position: Vec3Tuple = [
+        round3(camera.position.x),
+        round3(camera.position.y),
+        round3(camera.position.z),
+    ];
+    const rotation: Vec3Tuple = [
+        round3(camera.rotation.x),
+        round3(camera.rotation.y),
+        round3(camera.rotation.z),
+    ];
+    const current: LocalPoseHistory = {
+        observedAtEpochMs: now,
+        position,
+        rotation,
+    };
+    const previous = localPoseRef.current;
+    const velocity = previous
+        ? estimateRallarMotionVelocity(previous, current)
+        : undefined;
+    const angularVelocity = previous
+        ? estimateRallarMotionVelocity(
+            {
+                observedAtEpochMs: previous.observedAtEpochMs,
+                position: previous.rotation,
+            },
+            {
+                observedAtEpochMs: current.observedAtEpochMs,
+                position: current.rotation,
+            },
+        )
+        : undefined;
+
+    localPoseRef.current = current;
     poseSeqRef.current += 1;
     callbacksRef.current.onLocalPose({
-        position: [
-            round3(camera.position.x),
-            round3(camera.position.y),
-            round3(camera.position.z),
-        ],
-        rotation: [
-            round3(camera.rotation.x),
-            round3(camera.rotation.y),
-            round3(camera.rotation.z),
-        ],
+        position,
+        rotation,
+        velocity,
+        angularVelocity,
         score,
         seq: poseSeqRef.current,
-        sentAtEpochMs: Date.now(),
+        sentAtEpochMs: now,
     });
 }
 
@@ -395,13 +440,20 @@ function syncRemoteAvatars(
     runtime: ArenaRuntime,
     remotePlayers: ReadonlyMap<string, RemotePlayer>,
 ): void {
+    syncRemoteMotionSamples(runtime, remotePlayers);
+    const estimates = runtime.motionBuffer.sampleAll(Date.now());
+
     for (const [sessionId, remote] of remotePlayers) {
-        const avatar = getOrCreateAvatar(runtime.scene, runtime.avatars, sessionId, remote.pose);
-        const target = Vector3.FromArray([...remote.pose.position]);
-        avatar.root.position = Vector3.Lerp(avatar.root.position, target, 0.32);
-        avatar.root.rotation.y = remote.pose.rotation[1];
-        avatar.material.diffuseColor = Color3.FromHexString(remote.pose.color);
-        updateLabel(avatar.labelTexture, remote.pose.username, remote.pose.score, remote.pose.color);
+        const estimate = estimates.get(sessionId);
+        const pose = estimate?.metadata ?? remote.pose;
+        const avatar = getOrCreateAvatar(runtime.scene, runtime.avatars, sessionId, pose);
+        const position = estimate?.position ?? remote.pose.position;
+        const rotation = estimate?.rotation ?? remote.pose.rotation;
+
+        avatar.root.position = Vector3.FromArray([...position]);
+        avatar.root.rotation.y = rotation[1];
+        avatar.material.diffuseColor = Color3.FromHexString(pose.color);
+        updateLabel(avatar.labelTexture, pose.username, pose.score, pose.color);
     }
 
     for (const [sessionId, avatar] of runtime.avatars) {
@@ -410,8 +462,36 @@ function syncRemoteAvatars(
         }
         avatar.root.dispose();
         avatar.labelTexture.dispose();
+        runtime.motionBuffer.remove(sessionId);
+        runtime.motionSampleKeys.delete(sessionId);
         runtime.avatars.delete(sessionId);
     }
+}
+
+function syncRemoteMotionSamples(
+    runtime: ArenaRuntime,
+    remotePlayers: ReadonlyMap<string, RemotePlayer>,
+): void {
+    for (const [sessionId, remote] of remotePlayers) {
+        const sampleKey = `${remote.pose.seq}:${remote.lastSeenEpochMs}`;
+        if (runtime.motionSampleKeys.get(sessionId) === sampleKey) {
+            continue;
+        }
+
+        runtime.motionBuffer.push({
+            entityId: sessionId,
+            observedAtEpochMs: remote.lastSeenEpochMs,
+            position: remote.pose.position,
+            rotation: remote.pose.rotation,
+            velocity: remote.pose.velocity,
+            angularVelocity: remote.pose.angularVelocity,
+            seq: remote.pose.seq,
+            metadata: remote.pose,
+        });
+        runtime.motionSampleKeys.set(sessionId, sampleKey);
+    }
+
+    runtime.motionBuffer.prune(Date.now());
 }
 
 function syncRemoteShots(runtime: ArenaRuntime, remoteShots: readonly RemoteShot[]): void {

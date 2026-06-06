@@ -26,6 +26,7 @@ const facade = vi.hoisted(() => {
             rooms: {
                 join: vi.fn(),
                 leave: vi.fn(),
+                refresh: vi.fn(),
             },
             realtime: {
                 onJson: vi.fn(),
@@ -44,6 +45,12 @@ const facade = vi.hoisted(() => {
             },
             crdt: {
                 open: vi.fn(),
+            },
+            director: {
+                appoint: vi.fn(),
+                resign: vi.fn(),
+                status: vi.fn(),
+                createRelay: vi.fn(),
             },
             disconnect: vi.fn(),
             status: vi.fn(),
@@ -70,9 +77,18 @@ type Runtime = Readonly<{
         rallar: Record<string, unknown>;
     }): Promise<unknown>;
     send(input: unknown): Promise<unknown>;
-    sendWs(input: unknown): Promise<unknown>;
-    crdt: {
-        open(input: unknown): Promise<unknown>;
+        sendWs(input: unknown): Promise<unknown>;
+        director: {
+            appoint(input: unknown): Promise<unknown>;
+            resign(input: unknown): Promise<unknown>;
+            status(input: unknown): Promise<unknown>;
+            relayStart(input: unknown): Promise<unknown>;
+            intent(input: unknown): Promise<unknown>;
+            syncRequest(input: unknown): Promise<unknown>;
+            relayStop(input: unknown): Promise<unknown>;
+        };
+        crdt: {
+            open(input: unknown): Promise<unknown>;
         apply(input: unknown): Promise<unknown>;
         read(input: unknown): Promise<unknown>;
         sync(input: unknown): Promise<unknown>;
@@ -106,6 +122,7 @@ function resetFacade(): void {
     facade.rallar.connect.mockResolvedValue(undefined);
     facade.rallar.rooms.join.mockResolvedValue({});
     facade.rallar.rooms.leave.mockResolvedValue({});
+    facade.rallar.rooms.refresh.mockResolvedValue({});
     facade.rallar.realtime.onJson.mockReturnValue(facade.unsubscribeRealtime);
     facade.rallar.messages.rtc.onMessage.mockReturnValue(facade.unsubscribeMessagesRtc);
     facade.rallar.messages.ws.onMessage.mockReturnValue(facade.unsubscribeMessagesWs);
@@ -114,6 +131,10 @@ function resetFacade(): void {
     facade.rallar.messages.rtc.send.mockResolvedValue({});
     facade.rallar.messages.ws.send.mockResolvedValue({});
     facade.rallar.crdt.open.mockReset();
+    facade.rallar.director.appoint.mockReset();
+    facade.rallar.director.resign.mockReset();
+    facade.rallar.director.status.mockReset();
+    facade.rallar.director.createRelay.mockReset();
     facade.rallar.disconnect.mockResolvedValue(undefined);
     facade.rallar.status.mockReturnValue({ connected: true });
     facade.rallar.isConnected.mockReturnValue(true);
@@ -493,6 +514,210 @@ describe('browser Rallar black-box runtime', () => {
             'rallar.browser.crdt.redone',
             'rallar.browser.crdt.closed',
             'rallar.browser.crdt.destroyed',
+        ]));
+    });
+
+    it('appoints a director and manages deterministic director relay handles', async () => {
+        const runtime = await loadRuntime();
+        const roomRef = {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-a',
+            groupId: 'room-1',
+        };
+        const directorStatus = {
+            roomRef,
+            roomId: 'room-1',
+            role: 'director',
+            state: 'fresh',
+            isDirector: true,
+            isFresh: true,
+            active: true,
+            freshness: 'fresh',
+            nowEpochMs: 1_000,
+            appointment: {
+                version: 1,
+                mode: 'appointed-spa',
+                sessionId: 'session-1',
+                principalId: 'client-1',
+                epoch: 1,
+                appointedAtEpochMs: 1_000,
+                heartbeatTtlMs: 1_200,
+            },
+        };
+        let relayConfig: Record<string, any> | undefined;
+        const relay = {
+            status: vi.fn(() => directorStatus),
+            sendIntent: vi.fn(async intent => ({
+                status: 'sent',
+                intent,
+            })),
+            sendOutput: vi.fn(async output => ({
+                status: 'sent',
+                output,
+            })),
+            sendHeartbeat: vi.fn(async () => ({ status: 'sent' })),
+            sendSnapshot: vi.fn(async () => ({ status: 'sent' })),
+            requestSync: vi.fn(async payload => ({
+                status: 'sent',
+                payload,
+            })),
+            stop: vi.fn(),
+        };
+        facade.rallar.director.appoint.mockResolvedValue(directorStatus);
+        facade.rallar.director.resign.mockResolvedValue({
+            ...directorStatus,
+            role: 'none',
+            state: 'none',
+            isDirector: false,
+            isFresh: false,
+            appointment: undefined,
+        });
+        facade.rallar.director.status.mockReturnValue(directorStatus);
+        facade.rallar.director.createRelay.mockImplementation((config) => {
+            relayConfig = config;
+            return relay;
+        });
+
+        await runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            roomRef,
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                applicationId: 'app-1',
+                workspaceId: 'workspace-a',
+                roomRef,
+            },
+        });
+
+        const appoint = await runtime.director.appoint({
+            roomId: 'room-1',
+            roomRef,
+            heartbeatTtlMs: 1_200,
+        });
+        const status = await runtime.director.status({
+            roomId: 'room-1',
+            roomRef,
+            refresh: true,
+        });
+        const start = await runtime.director.relayStart({
+            handle: 'relay-1',
+            roomId: 'room-1',
+            roomRef,
+            topicId: 'app.test.director',
+            intentTypeId: 'app.test.director.intent',
+            outputTypeId: 'app.test.director.output',
+            heartbeatIntervalMs: 300,
+            snapshotIntervalMs: 500,
+        });
+        expect(relayConfig).toMatchObject({
+            roomId: 'room-1',
+            roomRef,
+            topicId: 'app.test.director',
+            intentTypeId: 'app.test.director.intent',
+            outputTypeId: 'app.test.director.output',
+            heartbeatIntervalMs: 300,
+            snapshotIntervalMs: 500,
+        });
+
+        const output = await relayConfig?.onIntent({
+            senderId: 'session-b',
+            data: {
+                intentId: 'intent-b-1',
+                action: 'move',
+            },
+            envelope: {
+                epoch: 1,
+            },
+            receivedAtEpochMs: 1_100,
+        }, relay);
+        await relayConfig?.onOutput({
+            senderId: 'session-1',
+            data: output,
+            envelope: {
+                epoch: 1,
+            },
+            receivedAtEpochMs: 1_150,
+        });
+        await relayConfig?.onSnapshot({
+            senderId: 'session-1',
+            data: relayConfig?.readSnapshot(),
+            envelope: {
+                epoch: 1,
+            },
+            receivedAtEpochMs: 1_200,
+        });
+        await relayConfig?.onSyncRequest({
+            senderId: 'session-b',
+            data: {
+                reason: 'unit-test',
+            },
+            envelope: {
+                epoch: 1,
+            },
+            receivedAtEpochMs: 1_250,
+        }, relay);
+
+        const intent = await runtime.director.intent({
+            handle: 'relay-1',
+            intent: {
+                intentId: 'intent-c-1',
+            },
+        });
+        const sync = await runtime.director.syncRequest({
+            handle: 'relay-1',
+            payload: {
+                reason: 'late-join',
+            },
+        });
+        const stop = await runtime.director.relayStop({
+            handle: 'relay-1',
+        });
+        const health = await runtime.health();
+
+        expect(facade.rallar.director.appoint).toHaveBeenCalledWith(roomRef, expect.objectContaining({
+            heartbeatTtlMs: 1_200,
+        }));
+        expect(facade.rallar.rooms.refresh).toHaveBeenCalled();
+        expect(appoint).toMatchObject({ status: 'appointed', role: 'director' });
+        expect(status).toMatchObject({ status: 'status', state: 'fresh' });
+        expect(start).toMatchObject({ status: 'relay_started', handle: 'relay-1' });
+        expect(output).toMatchObject({
+            kind: 'black-box-director-output',
+            intentId: 'intent-b-1',
+            senderId: 'session-b',
+            directorSessionId: 'session-1',
+            epoch: 1,
+        });
+        expect(intent).toMatchObject({ status: 'intent_sent', sendResult: { status: 'sent' } });
+        expect(sync).toMatchObject({ status: 'sync_requested', sendResult: { status: 'sent' } });
+        expect(stop).toMatchObject({
+            status: 'relay_stopped',
+            acceptedIntentCount: 1,
+            outputCount: 2,
+            snapshotCount: 1,
+            syncRequestCount: 1,
+        });
+        expect(relay.stop).toHaveBeenCalledTimes(1);
+        expect(health).toMatchObject({
+            director: {
+                handles: [],
+            },
+        });
+        expect(topics()).toEqual(expect.arrayContaining([
+            'rallar.browser.director.appointed',
+            'rallar.browser.director.status',
+            'rallar.browser.director.relay_started',
+            'rallar.browser.director.intent_received',
+            'rallar.browser.director.output_received',
+            'rallar.browser.director.snapshot_received',
+            'rallar.browser.director.sync_request_received',
+            'rallar.browser.director.intent_sent',
+            'rallar.browser.director.sync_requested',
+            'rallar.browser.director.relay_stopped',
         ]));
     });
 

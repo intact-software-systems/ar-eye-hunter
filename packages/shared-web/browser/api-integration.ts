@@ -30,6 +30,7 @@ import {
     type HeartbeatClientSessionRequest,
     type HeartbeatGroupPresenceSessionRequest,
     type StateScope,
+    type UpdateGroupRequest,
     type UpsertGroupMemberRequest,
 } from '@shared/api/state-types.ts';
 import type {
@@ -351,6 +352,21 @@ export async function createStateGroup(
         readApiBaseUrl(),
         `${toStateScopePath(scope)}/groups`,
         'POST',
+        request,
+        options,
+    );
+}
+
+export async function updateStateGroup(
+    groupId: string,
+    request: UpdateGroupRequest,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<GroupStateSnapshot> {
+    return await executeHttpRequest<UpdateGroupRequest, GroupStateSnapshot>(
+        readApiBaseUrl(),
+        `${toStateScopePath(scope)}/groups/${encodeURIComponent(groupId)}`,
+        'PUT',
         request,
         options,
     );

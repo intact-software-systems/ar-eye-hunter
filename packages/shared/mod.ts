@@ -5,9 +5,13 @@ export * from './al-contracts/al-runtime.ts';
 
 export * from './api/api-config.ts';
 export * from './api/api-type-utils.ts';
+export * from './api/group-director.ts';
 export * from './api/overlay-topology.ts';
 
 export * from './crdt/mod.ts';
+
+export * from './rallar-ai/mod.ts';
+export * from './rallar-motion/mod.ts';
 
 export * from './queuebox/QueueBoxTypes.ts';
 export * from './queuebox/ResourceEntry.ts';

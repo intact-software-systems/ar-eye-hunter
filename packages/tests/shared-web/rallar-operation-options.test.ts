@@ -139,6 +139,16 @@ const mocks = vi.hoisted(() => {
                 _policies?: unknown,
             ) => Promise.reject(new Error('leave not mocked')),
         ),
+        updateStateGroupMetadata: vi.fn(
+            (
+                _roomId?: unknown,
+                _patch?: unknown,
+                _principalId?: unknown,
+                _sessionId?: unknown,
+                _scope?: unknown,
+                _policies?: unknown,
+            ) => Promise.reject(new Error('metadata update not mocked')),
+        ),
         loginToApi: vi.fn((_request?: unknown, _options?: unknown) =>
             Promise.resolve(session)
         ),
@@ -206,6 +216,7 @@ vi.mock('@shared-web/browser/api-workflows.ts', () => ({
     joinStateGroup: mocks.joinStateGroup,
     leaveStateGroup: mocks.leaveStateGroup,
     refreshStateSnapshots: mocks.refreshStateSnapshots,
+    updateStateGroupMetadata: mocks.updateStateGroupMetadata,
 }));
 
 vi.mock('@shared-web/browser/data-caches.ts', () => ({
@@ -252,6 +263,9 @@ describe('Rallar operation options', () => {
         mocks.createAndJoinStateGroup.mockRejectedValue(new Error('create not mocked'));
         mocks.joinStateGroup.mockRejectedValue(new Error('join not mocked'));
         mocks.leaveStateGroup.mockRejectedValue(new Error('leave not mocked'));
+        mocks.updateStateGroupMetadata.mockRejectedValue(
+            new Error('metadata update not mocked'),
+        );
         mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes
             .mockReturnValue([]);
         mocks.webRtcConnectionService.knownPeerIds.mockReturnValue([]);
@@ -4037,6 +4051,140 @@ describe('Rallar operation options', () => {
             );
     });
 
+    it('appoints the current SPA session as room director', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        const snapshot = createDirectorGroupSnapshot();
+        mockGroupSnapshot(snapshot);
+        mocks.updateStateGroupMetadata.mockImplementation(
+            async (_roomId: string, patch: Record<string, unknown>) => {
+                const updated = {
+                    ...snapshot,
+                    group: {
+                        ...snapshot.group,
+                        metadata: {
+                            ...snapshot.group.metadata,
+                            ...patch,
+                        },
+                    },
+                };
+                mockGroupSnapshot(updated);
+                return updated;
+            },
+        );
+
+        const status = await createRallarFacade().director.appoint('room-1', {
+            heartbeatTtlMs: 1_000,
+        });
+
+        expect(mocks.updateStateGroupMetadata).toHaveBeenCalledWith(
+            'room-1',
+            expect.objectContaining({
+                rallarDirector: expect.objectContaining({
+                    mode: 'appointed-spa',
+                    sessionId: 'session-1',
+                    principalId: 'principal-1',
+                    epoch: 1,
+                    heartbeatTtlMs: 1_000,
+                }),
+            }),
+            'principal-1',
+            'session-1',
+            expect.objectContaining({
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+            }),
+            expect.any(Object),
+        );
+        expect(status).toMatchObject({
+            role: 'director',
+            state: 'fresh',
+            isDirector: true,
+            isFresh: true,
+            active: true,
+        });
+    });
+
+    it('sends director intents with WS unicast fallback when RTC is not ready', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        mockGroupSnapshot(createDirectorGroupSnapshot({
+            sessionId: 'director-session',
+            principalId: 'director-principal',
+            epoch: 2,
+            appointedAtEpochMs: Date.now(),
+            heartbeatTtlMs: 5_000,
+        }));
+        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValue({
+            status: 'timeout',
+            peerId: 'director-session',
+            laneId: 'director',
+            error: new Error('not ready'),
+        });
+        const facade = createRallarFacade();
+        const relay = facade.director.createRelay<{ move: string }, { ok: true }>({
+            roomId: 'room-1',
+            laneId: 'director',
+            topicId: 'game.director',
+            intentTypeId: 'game.intent',
+            outputTypeId: 'game.output',
+        });
+
+        const result = await relay.sendIntent({ move: 'left' });
+        relay.stop();
+
+        expect(result.status).toBe('sent');
+        expect(result.rtc).toMatchObject({
+            status: 'failed',
+            peerIds: ['director-session'],
+        });
+        expect(mocks.ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent)
+            .toHaveBeenCalledWith(
+                expect.objectContaining({
+                    targets: {
+                        mode: 'unicast',
+                        toPeerId: 'director-session',
+                    },
+                    payload: expect.objectContaining({
+                        typeId: 'game.intent',
+                        resource: expect.stringContaining('"move":"left"'),
+                    }),
+                }),
+            );
+    });
+
+    it('blocks director intents when the appointment is stale', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(10_000);
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        mockGroupSnapshot(createDirectorGroupSnapshot({
+            sessionId: 'director-session',
+            principalId: 'director-principal',
+            epoch: 2,
+            appointedAtEpochMs: 1,
+            heartbeatTtlMs: 5,
+        }));
+        const relay = createRallarFacade().director.createRelay<{ move: string }, { ok: true }>({
+            roomId: 'room-1',
+            laneId: 'director',
+            topicId: 'game.director',
+            intentTypeId: 'game.intent',
+            outputTypeId: 'game.output',
+        });
+
+        const result = await relay.sendIntent({ move: 'left' });
+        relay.stop();
+
+        expect(result).toMatchObject({
+            status: 'stale-director',
+        });
+        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen).not.toHaveBeenCalled();
+    });
+
     it('starts a targeted data call and reports per-participant readiness', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
@@ -5177,6 +5325,85 @@ function createGroupSnapshot(
         })),
         memberCount: sessionIds.length,
         onlineMemberCount: sessionIds.length,
+    };
+}
+
+function createDirectorGroupSnapshot(
+    appointment?: Readonly<{
+        sessionId: string;
+        principalId: string;
+        epoch: number;
+        appointedAtEpochMs: number;
+        heartbeatTtlMs: number;
+    }>,
+): GroupSnapshot {
+    const snapshot = createGroupSnapshot('room-1', ['session-1']);
+    const activeSessions = [
+        {
+            ...snapshot.activeSessions[0],
+            principalId: 'principal-1',
+            sessionId: 'session-1',
+        },
+    ];
+    const members = [
+        {
+            ...snapshot.members[0],
+            principalId: 'principal-1',
+            role: 'owner' as const,
+        },
+    ];
+
+    if (appointment) {
+        activeSessions.push({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId: 'room-1',
+            principalId: appointment.principalId,
+            sessionId: appointment.sessionId,
+            connectedAtEpochMs: 1,
+            lastHeartbeatAtEpochMs: 1,
+            expiresAtEpochMs: 60_000,
+        });
+        members.push({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId: 'room-1',
+            principalId: appointment.principalId,
+            role: 'member',
+            status: 'active',
+            joined: {
+                atEpochMs: 1,
+                byPrincipalId: 'principal-1',
+            },
+            updated: {
+                atEpochMs: 1,
+                byPrincipalId: 'principal-1',
+            },
+        });
+    }
+
+    return {
+        ...snapshot,
+        group: {
+            ...snapshot.group,
+            created: {
+                ...snapshot.group.created,
+                byPrincipalId: 'principal-1',
+            },
+            metadata: appointment
+                ? {
+                    rallarDirector: {
+                        version: 1,
+                        mode: 'appointed-spa',
+                        ...appointment,
+                    },
+                }
+                : {},
+        },
+        members,
+        activeSessions,
+        memberCount: members.length,
+        onlineMemberCount: activeSessions.length,
     };
 }
 

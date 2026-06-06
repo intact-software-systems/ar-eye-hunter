@@ -23,6 +23,13 @@ export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
     'crdt.redo',
     'crdt.close',
     'crdt.destroy',
+    'director.appoint',
+    'director.resign',
+    'director.status',
+    'director.relay.start',
+    'director.intent',
+    'director.sync.request',
+    'director.relay.stop',
     'health',
     'stats',
     'close',
@@ -379,6 +386,79 @@ export type RallarBlackBoxTestCrdtCommand =
     | RallarBlackBoxTestCrdtUndoRedoCommand
     | RallarBlackBoxTestCrdtCloseDestroyCommand;
 
+export type RallarBlackBoxTestDirectorRoomFields = Readonly<{
+    roomId?: string;
+    applicationId?: string;
+    workspaceId?: string;
+    scope?: Readonly<Record<string, unknown>>;
+    roomRef?: Readonly<Record<string, unknown>>;
+}>;
+
+export type RallarBlackBoxTestDirectorAppointCommand =
+    & RallarBlackBoxTestCommandBase<'director.appoint'>
+    & RallarBlackBoxTestDirectorRoomFields
+    & Readonly<{
+    heartbeatTtlMs?: number;
+}>;
+
+export type RallarBlackBoxTestDirectorResignCommand =
+    & RallarBlackBoxTestCommandBase<'director.resign'>
+    & RallarBlackBoxTestDirectorRoomFields;
+
+export type RallarBlackBoxTestDirectorStatusCommand =
+    & RallarBlackBoxTestCommandBase<'director.status'>
+    & RallarBlackBoxTestDirectorRoomFields
+    & Readonly<{
+    refresh?: boolean;
+    now?: number;
+}>;
+
+export type RallarBlackBoxTestDirectorRelayStartCommand =
+    & RallarBlackBoxTestCommandBase<'director.relay.start'>
+    & RallarBlackBoxTestDirectorRoomFields
+    & Readonly<{
+    handle: string;
+    laneId?: string;
+    topicId?: string;
+    intentTypeId: string;
+    outputTypeId: string;
+    heartbeatTypeId?: string;
+    snapshotTypeId?: string;
+    syncRequestTypeId?: string;
+    heartbeatIntervalMs?: number;
+    snapshotIntervalMs?: number;
+    snapshot?: unknown;
+}>;
+
+export type RallarBlackBoxTestDirectorIntentCommand =
+    & RallarBlackBoxTestCommandBase<'director.intent'>
+    & Readonly<{
+    handle: string;
+    intent: unknown;
+}>;
+
+export type RallarBlackBoxTestDirectorSyncRequestCommand =
+    & RallarBlackBoxTestCommandBase<'director.sync.request'>
+    & Readonly<{
+    handle: string;
+    payload?: unknown;
+}>;
+
+export type RallarBlackBoxTestDirectorRelayStopCommand =
+    & RallarBlackBoxTestCommandBase<'director.relay.stop'>
+    & Readonly<{
+    handle: string;
+}>;
+
+export type RallarBlackBoxTestDirectorCommand =
+    | RallarBlackBoxTestDirectorAppointCommand
+    | RallarBlackBoxTestDirectorResignCommand
+    | RallarBlackBoxTestDirectorStatusCommand
+    | RallarBlackBoxTestDirectorRelayStartCommand
+    | RallarBlackBoxTestDirectorIntentCommand
+    | RallarBlackBoxTestDirectorSyncRequestCommand
+    | RallarBlackBoxTestDirectorRelayStopCommand;
+
 export type RallarBlackBoxTestSimpleCommand =
     | RallarBlackBoxTestCommandBase<'health'>
     | RallarBlackBoxTestCommandBase<'stats'>
@@ -401,6 +481,7 @@ export type RallarBlackBoxTestCommand =
     | RallarBlackBoxTestWsCloseCommand
     | RallarBlackBoxTestHttpRequestCommand
     | RallarBlackBoxTestCrdtCommand
+    | RallarBlackBoxTestDirectorCommand
     | RallarBlackBoxTestSimpleCommand;
 
 export type RallarBlackBoxTestResultStatus = 'ok' | 'failed' | 'cancelled' | 'skipped';

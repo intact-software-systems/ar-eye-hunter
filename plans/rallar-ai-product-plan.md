@@ -2,7 +2,11 @@
 
 Date: 2026-06-03
 
-Status: Planning document for an opt-in RallarAI product layer.
+Last updated: 2026-06-06
+
+Status: Plan and implementation tracking document for an opt-in RallarAI product layer.
+
+Implementation progress is tracked in `docs/rallar-ai-implementation-progress.md`.
 
 ## Purpose
 
@@ -55,6 +59,12 @@ V1 should include:
 - Optional gated live tests for Ollama server-side.
 - Optional gated live tests for WebLLM browser-side.
 
+Initial V1 implementation now exists for shared contracts, the browser facade,
+the server facade, browser WebLLM provider packaging, recipes, live-gated
+evaluation helpers, and app-level generated-event approval/dedupe coverage.
+Real WebLLM live evaluation remains blocked until an application supplies a
+browser model runtime.
+
 V1 should exclude:
 
 - A mandatory real AI provider.
@@ -69,7 +79,7 @@ V1 should exclude:
 
 The existing Rallar shape fits this as a thin opt-in layer:
 
-- Browser Rallar already exposes data, WebSocket, WebRTC, RTC, and realtime-oriented surfaces that RallarAI can use after generation.
+- Browser Rallar already exposes data, CRDT documents, WebSocket, WebRTC, RTC, and realtime-oriented surfaces that RallarAI can use after generation.
 - Rallar Server already has route mounting, WebSocket topics, publishing, and data access patterns that can host the server-side facade.
 - Rallar Black Box already uses deterministic testing with live-gated optional checks. RallarAI should mirror that model instead of requiring live AI in normal CI.
 
@@ -81,11 +91,13 @@ This plan is anchored to the current repo structure and docs:
 
 - Browser facade source: `packages/shared-web/browser/rallar.ts`.
 - Browser data source: `packages/shared-web/browser/rallar-data.ts`.
+- Browser CRDT source: `packages/shared-web/browser/rallar-crdt.ts`.
 - Server application facade: `packages/shared-server/rallar-facade/RallarServerApplication.ts`.
 - Server core facade: `packages/shared-server/rallar-facade/RallarServer.ts`.
 - Server topic router: `packages/shared-server/rallar-facade/ws-topic-router.ts`.
 - Server middleware source: `packages/shared-server/rallar-system/middleware/RallarMiddleware.ts`.
-- Public docs: `docs/rallar-api-reference.md`, `docs/rallar-quickstart-and-recipes.md`, and `docs/rallar-ai-skill.md`.
+- Server CRDT source: `packages/shared-server/crdt/RallarCrdtServer.ts`.
+- Public docs: `docs/rallar-api-reference.md`, `docs/rallar-quickstart-and-recipes.md`, `docs/rallar-ai-skill.md`, and `docs/rallar-crdt-guide.md`.
 - Path aliases: `@shared/`, `@shared-web/`, and `@shared-server/` are already configured in `deno.json` and `tsconfig.json`.
 
 RallarAI should therefore extend the existing package homes instead of introducing separate package roots:
@@ -93,6 +105,8 @@ RallarAI should therefore extend the existing package homes instead of introduci
 - Shared contracts: `packages/shared/rallar-ai/**`.
 - Browser facade and browser providers: `packages/shared-web/browser/**`.
 - Server facade and server providers: `packages/shared-server/rallar-ai/**`.
+
+RallarAI V1 should not directly mutate CRDT documents as a default behavior. When AI-generated CRDT operations are added later, they should be generated as proposals that use the current `rallar.crdt` API and respect the durable append, validation, hardening, and transport guidance in the CRDT docs.
 
 ## Package Layout
 
@@ -108,6 +122,11 @@ packages/shared/rallar-ai/rallar-ai-provider-capabilities.ts
 packages/shared/rallar-ai/rallar-ai-schema-registry.ts
 packages/shared/rallar-ai/rallar-ai-generation-policy.ts
 packages/shared/rallar-ai/rallar-ai-diagnostics.ts
+packages/shared/rallar-ai/rallar-ai-authorization.ts
+packages/shared/rallar-ai/rallar-ai-transport-policy.ts
+packages/shared/rallar-ai/rallar-ai-result-lifecycle.ts
+packages/shared/rallar-ai/rallar-ai-provider-governance.ts
+packages/shared/rallar-ai/rallar-ai-evaluation.ts
 packages/shared/rallar-ai/mod.ts
 
 packages/shared-web/browser/rallar-ai.ts
@@ -134,12 +153,14 @@ The shared contract should describe generated JSON as an envelope, not just a ra
 export type RallarAiJsonSource = "browser" | "server" | "mock";
 
 export interface RallarAiJsonRequest<TContext = unknown> {
+  requestId?: string;
   schemaId: string;
   schemaVersion: string;
   schema: unknown;
   prompt: string;
   context?: TContext;
   baseStateRevision?: string;
+  dedupeKey?: string;
   maxOutputTokens?: number;
   temperature?: number;
   timeoutMs?: number;
@@ -148,7 +169,10 @@ export interface RallarAiJsonRequest<TContext = unknown> {
 
 export interface RallarAiJsonResult<TValue = unknown> {
   protocolVersion: 1;
+  requestId?: string;
   generationId: string;
+  dedupeKey?: string;
+  supersedesGenerationId?: string;
   source: RallarAiJsonSource;
   providerId: string;
   modelId?: string;
@@ -512,63 +536,68 @@ This is especially attractive when cheating is not the main concern and the goal
 
 Phase 1: Shared contracts and deterministic providers.
 
-- Create `packages/shared/rallar-ai/**`.
-- Add shared types, envelope builder, validation helpers, hashing helpers, and mock provider.
-- Add fake sidecar HTTP provider test support.
-- Add provider capability types.
-- Add schema registry helper.
-- Add generation policy helper.
-- Add diagnostic event types.
-- Add CI tests for contracts and validation.
+- [x] Create `packages/shared/rallar-ai/**`.
+- [x] Add shared types, envelope builder, validation helpers, hashing helpers, and mock provider.
+- [x] Add fake sidecar HTTP provider test support.
+- [x] Add provider capability types.
+- [x] Add schema registry helper.
+- [x] Add generation policy helper.
+- [x] Add diagnostic event types.
+- [x] Add authorization, transport policy, lifecycle, and provider governance helpers.
+- [x] Add CI tests for contracts and validation.
 
 Phase 2: Browser facade.
 
-- Create `packages/shared-web/browser/rallar-ai.ts`.
-- Add `createRallarBrowserAi`.
-- Add generate, broadcast, and persist helpers.
-- Add browser policy handling.
-- Add timeout, cancellation, and stale-result handling.
-- Add browser diagnostics.
-- Add browser tests with mock provider.
-- Document capability detection and unsupported-browser fallback.
+- [x] Create `packages/shared-web/browser/rallar-ai.ts`.
+- [x] Add `createRallarBrowserAi`.
+- [x] Add generate, broadcast, and persist helpers.
+- [x] Add browser policy handling.
+- [x] Add timeout, cancellation, and stale-result handling.
+- [x] Add browser diagnostics.
+- [x] Add browser tests with mock provider.
+- [x] Document capability detection and unsupported-browser fallback.
 
 Phase 3: Server facade.
 
-- Create `packages/shared-server/rallar-ai/RallarAiServer.ts`.
-- Add `createRallarServerAi`.
-- Add REST route mounting.
-- Add WebSocket topic helper.
-- Add quotas, request size limits, and concurrency limits.
-- Add redaction hooks.
-- Add server diagnostics.
-- Add fake sidecar adapter tests for success, invalid output, timeout, and provider errors.
+- [x] Create `packages/shared-server/rallar-ai/RallarAiServer.ts`.
+- [x] Add `createRallarServerAi`.
+- [x] Add REST route mounting.
+- [x] Add WebSocket topic helper.
+- [x] Add quotas, request size limits, and concurrency limits.
+- [x] Add redaction hooks.
+- [x] Add server diagnostics.
+- [x] Add mocked provider tests for success, malformed request handling, quotas, REST, WS, persistence, and Ollama adapter behavior.
 
 Phase 4: Optional live providers.
 
-- Add Ollama server provider behind `RALLAR_AI_LIVE_OLLAMA=1`.
-- Add WebLLM browser provider behind `RALLAR_AI_LIVE_WEBLLM=1`.
-- Keep live tests out of normal CI.
-- Document local setup for both providers.
+- [x] Add Ollama server provider behind explicit import and base URL allowlist configuration.
+- [x] Add optional live Ollama smoke test behind `RALLAR_AI_LIVE_OLLAMA=1`.
+- [x] Add WebLLM browser provider behind explicit import.
+- [x] Document blocker for real live WebLLM smoke tests behind `RALLAR_AI_LIVE_WEBLLM=1`; they require an application-supplied browser model runtime.
+- [x] Keep live tests out of normal CI.
+- [x] Document local setup for both providers in developer-facing docs.
 
 Phase 5: Recipes and product examples.
 
-- Add a game event generation recipe.
-- Add browser-only and server-side example flows.
-- Add browser-first and server-first fallback examples.
-- Add black-box tests around generated event broadcast and consumption.
-- Document when to choose browser AI, server AI, or both.
+- [x] Add a game event generation recipe.
+- [x] Add browser-only and server-side example flows.
+- [x] Add browser-first and server-first fallback examples.
+- [x] Add app-level/browser-facade tests around generated event broadcast, approval, dedupe, and consumption.
+- [x] Document when to choose browser AI, server AI, or both.
 
 Phase 6: V1.5 and V2 expansion.
 
-- Add streaming/progress events where provider support exists.
-- Add model lifecycle helpers for browser cache/loading/unload state and server sidecar health.
-- Add versioned prompt template helpers.
-- Add optional result signing or provenance verification for server-generated envelopes.
-- Add replay/debug tooling for stored generation requests and envelopes.
-- Add pluggable content/safety hooks.
-- Add multi-peer or host/server arbitration patterns for generated game events.
+- [x] Document deferral for streaming/progress events where provider support exists.
+- [x] Document deferral for model lifecycle helpers for browser cache/loading/unload state and server sidecar health.
+- [x] Document deferral for versioned prompt template helpers.
+- [x] Document deferral for optional result signing or provenance verification for server-generated envelopes.
+- [x] Add replay/debug tooling for stored generation requests and envelopes.
+- [x] Document deferral for pluggable content/safety hooks.
+- [x] Document deferral for multi-peer or host/server arbitration patterns for generated game events.
 
 ## Acceptance Criteria
+
+Implemented and verified:
 
 - Rallar core imports no RallarAI code by default.
 - Rallar Server imports no RallarAI code by default.
@@ -582,15 +611,21 @@ Phase 6: V1.5 and V2 expansion.
 - Server-side quotas and request size limits exist.
 - Diagnostics exist and omit prompt/context by default.
 - Normal CI passes with only mock and fake providers.
-- Live Ollama and WebLLM tests are opt-in through environment gates.
 - The plan supports browser-only, server-only, and hybrid deployments.
+
+Blocked or deferred acceptance work:
+
+- Real live WebLLM tests require an application-supplied browser model runtime.
+- Framework-specific REST examples require an adopter-selected server framework.
+- Browser cache UI, result signing, provenance verification, prompt-template
+  product work, and richer arbitration remain deferred product extensions.
 
 ## Open Implementation Questions
 
-- Which schema validator should become the shared default if the repository does not already have one established?
-- Should prompt hashing include normalized context, or only the prompt string and schema metadata?
-- Should result persistence be part of RallarAI V1 helpers or documented as an app-level pattern first?
-- Should WebRTC broadcast use the highest-level `realtime` abstraction by default, with direct `messages.rtc` as an advanced option?
+- Should the lightweight shared schema validator remain the V1 default, or should a full JSON Schema implementation be introduced later?
+- Should prompt hashing continue to include normalized context, prompt string, and schema metadata, or should privacy-sensitive applications be able to disable context hashing?
+- Should result persistence remain part of RallarAI V1 helpers, or should production apps be encouraged to wrap it in domain-specific stores?
+- Should WebRTC broadcast keep the highest-level `realtime` abstraction as the default, with direct `messages.rtc` as an advanced option?
 - What model IDs should be documented for local Ollama and WebLLM smoke tests once the project chooses a minimum hardware target?
 - Should stale-result checks be implemented as a shared helper only, or should browser/server facades enforce them by default?
 - Should server quotas be configured through Rallar Server defaults, RallarAI defaults, or both?

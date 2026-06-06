@@ -161,6 +161,24 @@ describe('rallar-black-box control client', () => {
         );
         expect(assertCommand.ok).toBe(true);
 
+        const directorCommand = parseControlServerMessage(
+            JSON.stringify(commandEnvelope('director-relay-1', {
+                kind: 'director.relay.start',
+                commandId: 'director-relay-1',
+                handle: 'relay-1',
+                roomId: 'room-1',
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+                topicId: 'app.test.director',
+                intentTypeId: 'app.test.director.intent',
+                outputTypeId: 'app.test.director.output',
+                heartbeatIntervalMs: 300,
+                snapshotIntervalMs: 500,
+            })),
+            { runId: 'run-1', agentId: 'agent-1' },
+        );
+        expect(directorCommand.ok).toBe(true);
+
         const mismatchedRun = parseControlServerMessage(
             JSON.stringify({
                 ...commandEnvelope('configure-1', configureCommand()),

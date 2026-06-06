@@ -1852,6 +1852,127 @@ describe('rallar-bb-test', () => {
         ]));
     });
 
+    it('delegates director commands to the browser Rallar runtime adapter', async () => {
+        const calls: Array<{ name: string; value?: unknown }> = [];
+        const director = Object.fromEntries(
+            ['appoint', 'resign', 'status', 'relayStart', 'intent', 'syncRequest', 'relayStop']
+                .map(name => [
+                    name,
+                    async (input: unknown) => {
+                        calls.push({ name, value: input });
+                        return {
+                            status: name,
+                            handle: (input as { handle?: string }).handle,
+                            role: name === 'appoint' || name === 'relayStart' ? 'director' : 'client',
+                            state: 'fresh',
+                        };
+                    },
+                ]),
+        ) as Record<string, (input: unknown) => Promise<unknown>>;
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                connect: async () => ({ connected: true }),
+                send: async () => ({ sent: true }),
+                close: async () => ({ closed: true }),
+                health: async () => ({ connected: true }),
+                director: director as any,
+            },
+        });
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-director',
+            config: {
+                apiBaseUrl: 'https://api.example.test',
+                actor: 'alice',
+                roomId: 'room-1',
+                rallar: {
+                    applicationId: 'rallar-server',
+                    workspaceId: 'default',
+                },
+                defaults: {
+                    groupId: 'room-1',
+                },
+            },
+        });
+        await runtime.execute({
+            kind: 'director.appoint',
+            commandId: 'appoint-director',
+            heartbeatTtlMs: 1_200,
+        });
+        await runtime.execute({
+            kind: 'director.status',
+            commandId: 'status-director',
+            refresh: true,
+        });
+        await runtime.execute({
+            kind: 'director.relay.start',
+            commandId: 'start-director',
+            handle: 'relay-1',
+            topicId: 'app.test.director',
+            intentTypeId: 'app.test.director.intent',
+            outputTypeId: 'app.test.director.output',
+            heartbeatIntervalMs: 300,
+            snapshotIntervalMs: 500,
+        });
+        await runtime.execute({
+            kind: 'director.intent',
+            commandId: 'intent-director',
+            handle: 'relay-1',
+            intent: {
+                intentId: 'intent-1',
+            },
+        });
+        await runtime.execute({
+            kind: 'director.sync.request',
+            commandId: 'sync-director',
+            handle: 'relay-1',
+            payload: {
+                reason: 'unit-test',
+            },
+        });
+        await runtime.execute({
+            kind: 'director.relay.stop',
+            commandId: 'stop-director',
+            handle: 'relay-1',
+        });
+        await runtime.execute({
+            kind: 'director.resign',
+            commandId: 'resign-director',
+        });
+
+        expect(calls.map(call => call.name)).toEqual([
+            'appoint',
+            'status',
+            'relayStart',
+            'intent',
+            'syncRequest',
+            'relayStop',
+            'resign',
+        ]);
+        expect(calls[0].value).toMatchObject({
+            roomId: 'room-1',
+            applicationId: 'rallar-server',
+            workspaceId: 'default',
+            heartbeatTtlMs: 1_200,
+        });
+        expect(calls[2].value).toMatchObject({
+            handle: 'relay-1',
+            topicId: 'app.test.director',
+            intentTypeId: 'app.test.director.intent',
+            outputTypeId: 'app.test.director.output',
+        });
+        expect(selectRallarBlackBoxDiagnostics(runtime.state()).map(event => event.topic)).toEqual(expect.arrayContaining([
+            'rallar.bb.director.appointed',
+            'rallar.bb.director.status',
+            'rallar.bb.director.relay_started',
+            'rallar.bb.director.intent_sent',
+            'rallar.bb.director.sync_requested',
+            'rallar.bb.director.relay_stopped',
+            'rallar.bb.director.resigned',
+        ]));
+    });
+
     it('reports unsupported CRDT browser runtimes clearly', async () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
@@ -1872,6 +1993,29 @@ describe('rallar-bb-test', () => {
         expect(result.error?.message).toContain('does not support CRDT commands');
         expect(selectRallarBlackBoxDiagnostics(runtime.state()).map(event => event.topic)).toContain(
             'rallar.bb.crdt.failed',
+        );
+    });
+
+    it('reports unsupported director browser runtimes clearly', async () => {
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                connect: async () => ({ connected: true }),
+                send: async () => ({ sent: true }),
+                close: async () => ({ closed: true }),
+                health: async () => ({ connected: true }),
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'director.status',
+            commandId: 'director-status-unsupported',
+            roomId: 'room-1',
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toContain('does not support director commands');
+        expect(selectRallarBlackBoxDiagnostics(runtime.state()).map(event => event.topic)).toContain(
+            'rallar.bb.director.failed',
         );
     });
 

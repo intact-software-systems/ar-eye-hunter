@@ -3,6 +3,10 @@ import type { ClientSnapshot as ClientStateSnapshot } from '@shared/api/client-t
 import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import {
+    Command,
+    type CommandOptions,
+} from '@shared/cache/Command.ts';
+import {
     CommandsOrchestrator,
     type CommandsOrchestratorPolicies,
     type OrchestratorResults,
@@ -12,10 +16,12 @@ import {
     createStateGroup,
     defaultStateScope,
     disconnectStateGroupPresenceSession,
+    findStateGroup,
     heartbeatStateClientSession,
     heartbeatStateGroupPresenceSession,
     listStateClients,
     listStateGroups,
+    updateStateGroup,
     upsertStateGroupMember,
 } from '@shared-web/browser/api-integration.ts';
 
@@ -56,6 +62,8 @@ type StateSnapshotsKey = 'clients' | 'groups';
 
 type GroupWorkflowKey =
     | 'created'
+    | 'read'
+    | 'updated'
     | 'member'
     | 'joined'
     | 'disconnected'
@@ -147,6 +155,47 @@ export async function createAndJoinStateGroup(
         .run();
 
     return requireWorkflowResult(results, 'joined');
+}
+
+export async function updateStateGroupMetadata(
+    groupId: string,
+    patch: Readonly<Record<string, unknown>>,
+    principalId: string,
+    sessionId: string,
+    scope: StateScope = defaultStateScope(),
+    policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue> = {},
+): Promise<GroupStateSnapshot> {
+    const requestId = toWorkflowRequestId(
+        'group-metadata-update',
+        groupId,
+        sessionId,
+    );
+    const commandOptions = (policies.command ?? {}) as CommandOptions<
+        GroupStateSnapshot
+    >;
+    const current = await new Command<GroupStateSnapshot>(
+        (signal) => findStateGroup(groupId, scope, { signal }),
+        commandOptions,
+    ).run();
+
+    return await new Command<GroupStateSnapshot>(
+        (signal) =>
+            updateStateGroup(
+                groupId,
+                {
+                    metadata: {
+                        ...current.group.metadata,
+                        ...patch,
+                    },
+                    actorPrincipalId: principalId,
+                    actorSessionId: sessionId,
+                    requestId,
+                },
+                scope,
+                { signal },
+            ),
+        commandOptions,
+    ).run();
 }
 
 export async function joinStateGroup(

@@ -1102,6 +1102,111 @@ label {
     line-height: 1.28;
 }
 
+.relic-ai-panel {
+    border-color: rgba(125, 211, 252, 0.26);
+    background: rgba(22, 47, 52, 0.88);
+}
+
+.relic-ai-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+}
+
+.relic-ai-header strong,
+.relic-ai-card strong {
+    line-height: 1.18;
+}
+
+.relic-ai-ask {
+    min-width: 72px;
+    min-height: 36px;
+}
+
+.relic-ai-empty,
+.relic-ai-error {
+    line-height: 1.32;
+}
+
+.relic-ai-error {
+    color: #fecaca;
+}
+
+.relic-ai-card {
+    display: grid;
+    gap: 7px;
+    border: 1px solid rgba(255, 249, 233, 0.14);
+    border-radius: 7px;
+    padding: 9px;
+    background: rgba(35, 57, 55, 0.72);
+}
+
+.relic-ai-card.local {
+    border-color: rgba(250, 204, 91, 0.34);
+    box-shadow: inset 3px 0 0 rgba(250, 204, 91, 0.72);
+}
+
+.relic-ai-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: #baf5e7;
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.relic-ai-card-head em {
+    color: #f1d89f;
+    font-style: normal;
+}
+
+.relic-ai-action {
+    justify-self: start;
+    border: 1px solid rgba(125, 211, 252, 0.32);
+    border-radius: 999px;
+    padding: 3px 8px;
+    background: rgba(28, 76, 82, 0.72);
+    color: #d8fbff;
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.relic-ai-card small {
+    color: #f2ead8;
+    line-height: 1.34;
+}
+
+.relic-ai-risks {
+    display: grid;
+    gap: 4px;
+}
+
+.relic-ai-risks span {
+    border-left: 2px solid rgba(250, 204, 91, 0.58);
+    padding-left: 7px;
+    color: #f1d89f;
+    font-size: 0.72rem;
+    line-height: 1.3;
+}
+
+.relic-ai-prime {
+    justify-self: start;
+    border-color: rgba(250, 204, 91, 0.56);
+    background: rgba(99, 80, 37, 0.72);
+    color: #fff9e9;
+    font-weight: 800;
+}
+
+.relic-ai-party-notes {
+    display: grid;
+    gap: 7px;
+    padding-top: 3px;
+}
+
 .occupant-list {
     display: grid;
     gap: 7px;

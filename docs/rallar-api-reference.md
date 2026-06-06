@@ -290,6 +290,49 @@ await rallar.rtc.waitForRoomLane('lobby', 'realtime', {
 await lane.send({ x: 10, y: 5 });
 ```
 
+### Rallar Motion
+
+Rallar Motion is an engine-agnostic helper module for smoothing remote entity
+motion carried over `rallar.realtime`. Import it from
+`@shared/rallar-motion/mod.ts` or `@shared/mod.ts`.
+
+`createRallarMotionBuffer(options?)` stores receiver-observed pose samples per
+entity. Sampling uses `nowEpochMs - interpolationDelayMs`, interpolates between
+bracketing samples, briefly dead reckons from optional velocity, then holds the
+latest observed pose after `maxExtrapolationMs`.
+
+Samples use `observedAtEpochMs` as the local receiver clock. Sender
+`sentAtEpochMs` values can be stored in metadata for diagnostics, but they
+should not drive interpolation unless the app has explicit clock sync.
+
+Metadata is copied from the newest contributing sample. Rallar Motion does not
+merge, validate, or synthesize metadata. Rotation support is tuple-based Euler
+interpolation/integration in caller-defined units; quaternion interpolation is
+not part of V1.
+
+```ts
+import { createRallarMotionBuffer } from '@shared/rallar-motion/mod.ts';
+
+const motion = createRallarMotionBuffer({
+    interpolationDelayMs: 100,
+    maxExtrapolationMs: 150,
+});
+
+rallar.realtime.onJson<{ position: [number, number, number]; seq: number }>(
+    'motion',
+    (message) => {
+        motion.push({
+            entityId: message.peerId,
+            observedAtEpochMs: message.receivedAtEpochMs,
+            position: message.data.position,
+            seq: message.data.seq,
+        });
+    },
+);
+
+const estimate = motion.sample('peer-1', Date.now());
+```
+
 ### Media
 
 `media.setLocalStream(stream)` attaches local media to RTC peer connections.

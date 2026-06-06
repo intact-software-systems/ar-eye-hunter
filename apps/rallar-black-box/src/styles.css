@@ -153,7 +153,7 @@ button:disabled {
 
 .run-header {
     display: grid;
-    grid-template-columns: minmax(220px, 1.1fr) minmax(420px, 2.2fr) minmax(260px, 0.9fr);
+    grid-template-columns: minmax(220px, 0.95fr) minmax(420px, 2.4fr) minmax(160px, 0.45fr);
     gap: 16px;
     align-items: stretch;
     padding: 18px;
@@ -173,6 +173,21 @@ button:disabled {
 .header-toggle,
 .global-context-toggle {
     display: none;
+}
+
+.header-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: flex-start;
+    min-height: 34px;
+    padding: 6px 10px;
+    border: 1px solid #bdc8c0;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #30403a;
+    font-weight: 800;
+    white-space: nowrap;
 }
 
 .eyebrow {
@@ -212,6 +227,14 @@ h3 {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 8px;
+}
+
+.header-grid--summary {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.header-grid--details {
+    grid-column: 1 / -1;
 }
 
 .metric {
@@ -287,6 +310,7 @@ h3 {
 
 .header-actions button,
 .segmented button,
+.quick-action-group button,
 .workbench-actions button,
 .manual-command button,
 .manual-action-grid button,
@@ -332,6 +356,7 @@ h3 {
 }
 
 .header-actions button,
+.quick-action-group button,
 .workbench-actions button,
 .manual-command button,
 .manual-action-grid button,
@@ -370,6 +395,30 @@ h3 {
     min-height: 38px;
     padding: 8px 12px;
     font-weight: 700;
+}
+
+.primary-action {
+    border-color: #0c6f7b !important;
+    background: #0c6f7b !important;
+    color: #ffffff !important;
+}
+
+.secondary-action {
+    border-color: #b9c6bf !important;
+    background: #ffffff !important;
+    color: #25332d !important;
+}
+
+.blocked-action {
+    border-color: #d6c7a8 !important;
+    background: #fff9ed !important;
+    color: #80550b !important;
+}
+
+.quiet-action {
+    border-color: transparent !important;
+    background: transparent !important;
+    color: #40514a !important;
 }
 
 .global-context-bar {
@@ -516,6 +565,16 @@ h3 {
     font-size: 0.96rem;
 }
 
+.trace-compact-summary {
+    min-width: 0;
+    overflow: hidden;
+    color: #5f6c66;
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .rallar-trace-heading button {
     min-height: 34px;
     padding: 6px 10px;
@@ -628,7 +687,13 @@ h3 {
 }
 
 .direct-rallar-boundary-panel {
-    margin-top: 14px;
+    margin-top: 0;
+}
+
+.diagnostic-drawer {
+    display: grid;
+    gap: 10px;
+    margin-top: 16px;
 }
 
 .direct-rallar-copy {
@@ -942,6 +1007,113 @@ h3 {
     grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 8px;
     padding: 12px 14px;
+}
+
+.quick-workflow-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px 14px 0;
+}
+
+.quick-workflow-step {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 2px 8px;
+    align-items: center;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid #d4ddd7;
+    border-radius: 6px;
+    background: #fbfcfa;
+}
+
+.quick-workflow-step span {
+    display: inline-grid;
+    width: 24px;
+    height: 24px;
+    place-items: center;
+    border: 1px solid #bdc8c0;
+    border-radius: 50%;
+    background: #ffffff;
+    color: #40514a;
+    font-size: 0.78rem;
+    font-weight: 900;
+}
+
+.quick-workflow-step strong,
+.quick-workflow-step small {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.quick-workflow-step strong {
+    color: #20352e;
+    font-size: 0.86rem;
+}
+
+.quick-workflow-step small {
+    grid-column: 2;
+    color: #65736d;
+    font-size: 0.76rem;
+    font-weight: 800;
+}
+
+.quick-workflow-step.done {
+    border-color: #b9d7c5;
+    background: #f0faf4;
+}
+
+.quick-workflow-step.done span {
+    border-color: #226a44;
+    background: #226a44;
+    color: #ffffff;
+}
+
+.quick-workflow-step.current {
+    border-color: #0c6f7b;
+    background: #eaf8f9;
+}
+
+.quick-workflow-step.current span {
+    border-color: #0c6f7b;
+    background: #0c6f7b;
+    color: #ffffff;
+}
+
+.quick-workflow-step.blocked {
+    border-color: #d8c49d;
+    background: #fff9ed;
+}
+
+.quick-workflow-step.pending {
+    opacity: 0.78;
+}
+
+.quick-action-groups {
+    display: grid;
+    gap: 8px;
+    padding: 0 14px 12px;
+}
+
+.quick-action-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.quick-action-group.primary button {
+    min-height: 42px;
+    padding-inline: 14px;
+    font-weight: 900;
+}
+
+.quick-action-group.secondary button {
+    min-height: 34px;
+    padding: 7px 10px;
+    font-size: 0.84rem;
 }
 
 .command-center-live-grid {
@@ -4787,7 +4959,7 @@ dd {
         white-space: nowrap;
     }
 
-    .run-header.collapsed .header-grid,
+    .run-header.collapsed .header-grid--details,
     .run-header.collapsed .header-actions {
         display: none;
     }
@@ -4976,7 +5148,9 @@ dd {
     .rallar-trace-content,
     .auth-command-grid,
     .quick-rallar-summary-grid,
+    .quick-workflow-strip,
     .quick-rallar-context-grid,
+    .quick-action-groups,
     .quick-rallar-action-grid,
     .quick-rallar-route-grid,
     .quick-rallar-payload-grid,
@@ -5152,7 +5326,8 @@ dd {
     .websocket-event-row small,
     .rallar-trace-event strong,
     .rallar-trace-event small,
-    .rallar-trace-event em {
+    .rallar-trace-event em,
+    .trace-compact-summary {
         overflow: visible;
         text-overflow: clip;
         white-space: normal;

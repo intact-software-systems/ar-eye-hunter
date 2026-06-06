@@ -15,6 +15,7 @@ import {
     leaveStateGroup,
     refreshStateHeartbeat,
     refreshStateSnapshots,
+    updateStateGroupMetadata,
 } from '@shared-web/browser/api-workflows.ts';
 
 type FetchCall = Readonly<{
@@ -272,6 +273,59 @@ describe('state API workflows', () => {
             slug: 'rallar',
             displayName: 'Rallar',
             createdByPrincipalId: 'principal-1',
+        });
+    });
+
+    it('updates group metadata by reading and merging current metadata', async () => {
+        const base = groupSnapshot('group-1');
+        const existing = {
+            ...base,
+            group: {
+                ...base.group,
+                metadata: {
+                    keep: true,
+                    rallarDirector: { old: true },
+                },
+            },
+        };
+        const updated = {
+            ...existing,
+            group: {
+                ...existing.group,
+                metadata: {
+                    keep: true,
+                    rallarDirector: { next: true },
+                },
+            },
+        };
+        stubFetch(({ url, method }) => {
+            if (method === 'GET' && url.endsWith('/groups/group-1')) {
+                return jsonResponse(existing);
+            }
+
+            if (method === 'PUT' && url.endsWith('/groups/group-1')) {
+                return jsonResponse(updated);
+            }
+
+            return notFoundResponse();
+        });
+
+        const result = await updateStateGroupMetadata(
+            'group-1',
+            { rallarDirector: { next: true } },
+            'principal-1',
+            'session-1',
+        );
+
+        expect(result).toEqual(updated);
+        expect(fetchCalls.map((call) => call.method)).toEqual(['GET', 'PUT']);
+        expect(fetchCalls[1].body).toMatchObject({
+            actorPrincipalId: 'principal-1',
+            actorSessionId: 'session-1',
+            metadata: {
+                keep: true,
+                rallarDirector: { next: true },
+            },
         });
     });
 

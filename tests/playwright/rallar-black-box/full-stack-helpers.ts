@@ -338,12 +338,19 @@ export async function openTab(
     await modeSwitch.getByRole('button', { name: modeName }).click();
   }
 
-  const label = TAB_LABELS[tab];
+  const legacyTarget = LEGACY_RUNNER_TAB_TARGETS[tab];
+  const visibleTab = legacyTarget?.tab ?? tab;
+  const label = TAB_LABELS[visibleTab];
   await page.getByRole('tab', { name: label, exact: true }).click();
   await expect(page.getByRole('tab', { name: label, exact: true })).toHaveAttribute(
     'aria-selected',
     'true',
   );
+  if (legacyTarget?.surfaceLabel) {
+    await page.locator('#panel-advanced')
+      .getByRole('button', { name: legacyTarget.surfaceLabel, exact: true })
+      .click();
+  }
   await expect(page.locator(`#panel-${tab}`)).toBeVisible();
 }
 
@@ -461,8 +468,11 @@ export async function openBrowserControlAgent(
   await page.goto(`${FULL_STACK_SPA_ORIGIN}/?${query.toString()}`);
   await expect(page.getByRole('heading', { name: 'Rallar Server Login' })).toBeVisible();
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('tab', { name: 'Local Workbench' })).toBeVisible({ timeout: 30_000 });
-  await page.getByRole('tab', { name: 'Local Workbench' }).click();
+  await expect(page.getByRole('tab', { name: 'Advanced' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+    { timeout: 30_000 },
+  );
   await expect(page.locator('#panel-local-workbench .control-panel'))
     .toContainText('registered', { timeout: 30_000 });
 
@@ -577,6 +587,18 @@ const TAB_LABELS: Readonly<Record<ExhaustiveTabId, string>> = {
   runs: 'Runs',
   builder: 'Builder',
   advanced: 'Advanced',
+};
+
+const LEGACY_RUNNER_TAB_TARGETS: Partial<Readonly<Record<
+  ExhaustiveTabId,
+  Readonly<{ tab: ExhaustiveTabId; surfaceLabel?: string }>
+>>> = {
+  'manual-rallar': { tab: 'advanced', surfaceLabel: 'Manual Rallar' },
+  'local-workbench': { tab: 'advanced', surfaceLabel: 'Local Workbench' },
+  'run-manager': { tab: 'advanced', surfaceLabel: 'Run Manager' },
+  'distributed-recipes': { tab: 'advanced', surfaceLabel: 'Distributed Recipes' },
+  'shared-test': { tab: 'advanced', surfaceLabel: 'Shared Test' },
+  'flow-builder': { tab: 'builder' },
 };
 
 async function clickVisibleButton(page: Page, name: string): Promise<void> {

@@ -60,7 +60,7 @@ describe('rallar-black-box Rallar mode boundary', () => {
     it('does not execute black-box runtime commands from direct Rallar panels', () => {
         const source = appSource();
         const directPanels = [
-            sourceBetween(source, 'function QuickRallarTestPanel', 'function WorkbenchPanel'),
+            sourceBetween(source, 'function QuickRallarTestPanel', 'function RunnerReadinessPanel'),
             sourceBetween(source, 'function RtcDiagnosticsPanel', 'function TopologyGraphPanel'),
             sourceBetween(source, 'function WebSocketCommandCenterPanel', 'function RtcRealtimePanel'),
             sourceBetween(source, 'function RtcRealtimePanel', 'function RallarDataPanel'),
@@ -110,7 +110,9 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(rtcRealtimePanel).toContain("'rallar.direct.rtc_realtime.phase'");
         expect(rtcRealtimePanel).toContain('isFacadeJoinedToActiveGroup');
         expect(rtcRealtimePanel).toContain("status: 'skipped'");
-        expect(rtcRealtimePanel).toContain("useState<'best-effort' | 'at-least-once'>('best-effort')");
+        expect(rtcRealtimePanel).toMatch(
+            /useState<\s*'best-effort' \| 'at-least-once'\s*>\('best-effort'\)/,
+        );
     });
 
     it('surfaces action feedback and live subscription state in direct command panels', () => {

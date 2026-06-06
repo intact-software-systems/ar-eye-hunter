@@ -2,19 +2,25 @@
 
 Date: 2026-06-03
 
-Status: Companion planning document for the main RallarAI implementation plan.
+Last updated: 2026-06-06
+
+Status: Post-V1 companion plan and guardrail backlog for the main RallarAI implementation plan.
 
 Related plan: `plans/rallar-ai-product-plan.md`
+
+Implementation progress is tracked in `docs/rallar-ai-implementation-progress.md`.
 
 Current repo anchors:
 
 - Browser Rallar facade: `packages/shared-web/browser/rallar.ts`.
 - Browser Rallar Data facade: `packages/shared-web/browser/rallar-data.ts`.
+- Browser Rallar CRDT facade: `packages/shared-web/browser/rallar-crdt.ts`.
 - Server application facade: `packages/shared-server/rallar-facade/RallarServerApplication.ts`.
 - Server core facade: `packages/shared-server/rallar-facade/RallarServer.ts`.
 - Server topic router: `packages/shared-server/rallar-facade/ws-topic-router.ts`.
 - Server middleware: `packages/shared-server/rallar-system/middleware/RallarMiddleware.ts`.
-- Rallar guidance docs: `docs/rallar-api-reference.md`, `docs/rallar-quickstart-and-recipes.md`, and `docs/rallar-ai-skill.md`.
+- Server CRDT facade: `packages/shared-server/crdt/RallarCrdtServer.ts`.
+- Rallar guidance docs: `docs/rallar-api-reference.md`, `docs/rallar-quickstart-and-recipes.md`, `docs/rallar-ai-skill.md`, and `docs/rallar-crdt-guide.md`.
 
 ## Purpose
 
@@ -24,7 +30,7 @@ The goal is to avoid retrofitting hard problems later: authorization, transport 
 
 ## Scope
 
-This plan should influence V1 design where the hooks are cheap to add now. Most full product work here can ship after the initial RallarAI contracts and facades exist.
+The low-cost V1 hooks in this plan now exist in the shared, browser, and server RallarAI modules. This plan should remain as a follow-up backlog for hardening the feature before public adoption and for adding product polish after the initial package/API surface is stable.
 
 In scope:
 
@@ -48,10 +54,53 @@ Out of scope:
 - Replacing application domain validation.
 - Treating AI output as authoritative state by default.
 
+## Current Implementation Review
+
+Review date: 2026-06-06.
+
+This plan is still relevant, but its role has changed. It is no longer a blocker list for creating the initial RallarAI surface. The current code already implements the V1 guardrail hooks that were cheap and important to add early:
+
+- Shared contracts under `packages/shared/rallar-ai/**` for requests, results, providers, diagnostics, transport policy, authorization, lifecycle, governance metadata, schema registry, hashing, validation, and deterministic evaluation.
+- Browser facade in `packages/shared-web/browser/rallar-ai.ts` for opt-in generation, stale-result rejection, safe diagnostics, realtime/RTC/WS broadcast, persistence, provider-target enforcement, and failure diagnostics.
+- Server facade in `packages/shared-server/rallar-ai/RallarAiServer.ts` for opt-in generation, REST route mounting, WS topic handling, publish/persist helpers, authorization, quotas, size limits, redaction, provider-target enforcement, typed errors, Ollama adapter, fake sidecar adapter, and safe diagnostics.
+- Recipes in `docs/rallar-ai-recipes.md` for browser-only generation, server-side Ollama generation, fallback policy, capability detection, host approval, dedupe, CRDT proposal boundaries, and live provider expectations.
+- Progress tracking in `docs/rallar-ai-implementation-progress.md` with the latest focused and broader verification history.
+
+Review findings:
+
+- The core product boundary still fits the repo: RallarAI is opt-in, extends the existing `packages/shared`, `packages/shared-web`, and `packages/shared-server` homes, and is not imported by Rallar core by default.
+- The browser/server split is now enforced by provider capabilities in both facades, which keeps browser-only and server-only deployment choices honest.
+- Adoption evidence now exists for app-level approval and dedupe, governance documentation, live-gated evaluation, and replay/debug examples.
+- WebLLM now has an explicit browser provider entry point that type-checks without importing a heavy model runtime by default.
+- Docker Compose guidance now exists as a deployment template. Framework-specific REST examples remain deferred until an adopter chooses a concrete framework.
+
+## Priority Backlog
+
+P1 adoption hardening:
+
+- [x] Add an app-level or black-box scenario where generated JSON is broadcast as a proposal, accepted once, deduplicated, and applied to game/domain state.
+- [x] Add model/provider governance documentation that explains how applications should record provider metadata, model/license notes, production allow/disallow flags, and deployment review decisions.
+- [x] Add a deterministic evaluation report assertion or recipe that shows provider metadata, model metadata, validation status, and domain-quality failures in a form teams can compare.
+- [x] Add lifecycle transition examples that show `draft -> proposed -> accepted/rejected/expired/superseded`.
+
+P2 provider and deployment polish:
+
+- [x] Implement the explicit WebLLM provider module and type-check the dynamic import example.
+- [x] Add optional live-provider evaluation harnesses behind `RALLAR_AI_LIVE_OLLAMA=1` and `RALLAR_AI_LIVE_WEBLLM=1`.
+- [x] Add a Docker Compose example for Rallar Server plus a private Ollama sidecar.
+- [x] Documented blocker until adopter choice: add framework-specific REST mounting examples if real adopters use Express, Hono, Fastify, or Deno HTTP directly.
+
+P3 product extensions:
+
+- [x] Add replay/debug tooling for stored AI envelopes and lifecycle transitions.
+- [x] Documented deferral until a browser runtime product exists: explore browser model cache lifecycle UI as an application-level helper.
+- [x] Documented deferral until a concrete trust model exists: explore signed accepted results or provenance verification.
+- [x] Explore AI-generated CRDT operation proposals only as accepted app/domain operations, never as direct model-to-CRDT mutation.
+
 ## Product Decisions
 
 - RallarAI should treat generated JSON as proposed data until the application accepts it.
-- Authorization must be checked before server-side generation and before server-side broadcast/persist helpers run.
+- Server-side generation, broadcast, and persist helpers must expose an authorization hook and invoke it when configured. Production deployments should configure this hook before mounting public REST or WebSocket helpers.
 - Browser-side generation can remain peer/local, but helpers should still expose hooks for room policy and host approval.
 - Every generated result should be idempotent and deduplicatable.
 - RallarAI should define transport semantics explicitly instead of assuming all transports behave the same.
@@ -92,7 +141,7 @@ export type RallarAiAuthorize = (
 ) => Promise<boolean> | boolean;
 ```
 
-Server-side authorization should be mandatory when route or WebSocket helpers are mounted. Browser-side authorization can be advisory, because a local peer can always run local code, but the helper should still make intended policy visible.
+Server-side authorization should be configured when route or WebSocket helpers are mounted. Browser-side authorization can be advisory, because a local peer can always run local code, but the helper should still make intended policy visible.
 
 This should align with the current server topic router instead of bypassing it. `RallarServerWsTopicDefinition` already supports `authorize`, `maxPayloadBytes`, scoped topics, and fanout. RallarAI server helpers should reuse those hooks where possible and add AI-specific authorization context around them.
 
@@ -291,7 +340,7 @@ packages/shared-server/rallar-ai/providers/fake-sidecar-http.ts
 
 These ideas should not block V1, but they are good product directions:
 
-- AI-generated CRDT operations after the Rallar CRDT plan matures.
+- AI-generated CRDT operation proposals using the current `rallar.crdt` API.
 - AI-assisted conflict resolution.
 - AI-generated room setup.
 - NPC actions, quests, scenarios, hints, and tutorial prompts.
@@ -304,72 +353,78 @@ These ideas should not block V1, but they are good product directions:
 
 Phase 1: Shared follow-up contracts.
 
-- Add result lifecycle types.
-- Add transport policy types.
-- Add idempotency fields to the shared envelope plan.
-- Add provider governance metadata types.
-- Add authorization hook types.
-- Place shared follow-up contracts under `packages/shared/rallar-ai/**`.
+- [x] Add result lifecycle types.
+- [x] Add transport policy types.
+- [x] Add idempotency fields to the shared envelope plan.
+- [x] Add provider governance metadata types.
+- [x] Add authorization hook types.
+- [x] Place shared follow-up contracts under `packages/shared/rallar-ai/**`.
 
 Phase 2: Server guardrails.
 
-- Add authorization hooks to server REST and WebSocket helpers.
-- Reuse existing `server.ws.defineTopic` `authorize`, `maxPayloadBytes`, scoped topic, and fanout behavior where possible.
-- Add provider base URL allowlist support.
-- Add request and schema hardening tests.
-- Add typed provider error mapping.
-- Add quota and concurrency diagnostics.
+- [x] Add authorization hooks to server REST, WebSocket, broadcast, and persist helpers.
+- [x] Reuse existing `server.ws.defineTopic` `authorize`, `maxPayloadBytes`, scoped topic, and fanout behavior where possible.
+- [x] Add provider base URL allowlist support.
+- [x] Add request and schema hardening tests.
+- [x] Add typed provider error mapping.
+- [x] Add quota and concurrency diagnostics.
 
 Phase 3: Browser and transport recipes.
 
-- Add documented transport policy recipes.
-- Add deduplication helper examples.
-- Add host approval example.
-- Add browser provider dynamic import example.
+- [x] Add shared transport policy vocabulary and helper behavior.
+- [x] Add documented transport policy recipes.
+- [x] Add deduplication helper examples.
+- [x] Add host approval example.
+- [x] Add browser provider dynamic import example.
+- [x] Enforce provider target capabilities in the browser facade.
+- [x] Emit safe browser generation failure diagnostics.
 
 Phase 4: Governance and evaluation.
 
-- Add provider metadata reporting.
-- Add model/provider governance documentation.
-- Add deterministic evaluation harness.
-- Add optional live evaluation harness behind environment gates.
+- [x] Add provider metadata helpers.
+- [x] Add model/provider governance documentation.
+- [x] Add deterministic evaluation harness.
+- [x] Include provider metadata and validation status in deterministic evaluation output.
+- [x] Add optional live evaluation harness behind environment gates.
 
 Phase 5: Debugging and product polish.
 
-- Add replay/debug recipe for stored envelopes.
-- Add lifecycle transition examples.
-- Add Docker Compose example for Rallar Server plus Ollama.
-- Add guidance for future CRDT integration.
+- [x] Add replay/debug recipe for stored envelopes.
+- [x] Add lifecycle transition examples.
+- [x] Add Docker Compose example for Rallar Server plus Ollama.
+- [x] Add guidance for Rallar CRDT integration that respects durable append, validation, hardening policies, and transport boundaries.
 
 ## Testing Plan
 
 Shared tests:
 
-- Idempotency helpers produce stable keys.
-- Lifecycle transition helpers reject invalid transitions.
-- Transport policy objects validate expected values.
-- Provider governance metadata validates required fields.
+- [x] Idempotency helpers produce stable keys.
+- [x] Lifecycle transition helpers reject invalid transitions.
+- [x] Transport policy objects validate expected values.
+- [x] Provider governance metadata validates required fields.
 
 Server tests:
 
-- Unauthorized generation requests are rejected.
-- Unauthorized broadcast and persist actions are rejected.
-- Oversized schema, prompt, and context payloads are rejected.
-- Provider base URL allowlist blocks unexpected sidecar targets.
-- Sidecar errors are mapped to typed RallarAI errors.
+- [x] Unauthorized generation requests are rejected through the shared authorization hook when configured.
+- [x] Unauthorized broadcast and persist actions are rejected through the shared authorization hook when configured.
+- [x] Oversized schema, prompt, and context payloads are rejected.
+- [x] Provider base URL allowlist blocks unexpected sidecar targets.
+- [x] Sidecar errors are mapped to typed RallarAI errors in a dedicated fake-sidecar server facade test.
 
 Browser tests:
 
-- Browser package does not import heavy providers by default.
-- Dynamic provider import examples remain type-checkable.
-- Host approval recipe applies accepted results once.
-- Deduplication recipe ignores repeated accepted envelopes.
+- [x] Browser package does not import heavy providers by default.
+- [x] Browser facade rejects server-only policy and server-target providers.
+- [x] Browser generation failure diagnostics omit prompt/context.
+- [x] Dynamic provider import examples remain type-checkable after the WebLLM adapter exists.
+- [x] App-level host approval recipe applies accepted results once.
+- [x] App-level deduplication recipe ignores repeated accepted envelopes.
 
 Evaluation tests:
 
-- Mock provider evaluation runs in normal CI.
-- Live provider evaluation only runs behind explicit environment gates.
-- Evaluation output includes provider metadata and validation status.
+- [x] Mock provider evaluation runs in normal CI.
+- [x] Evaluation output includes provider metadata and validation status.
+- [x] Live provider evaluation only runs behind explicit environment gates.
 
 ## Acceptance Criteria
 
@@ -381,17 +436,26 @@ Evaluation tests:
 - Result lifecycle states are documented and have helper types.
 - Security hardening has deterministic tests for malformed and oversized inputs.
 - Provider governance metadata can describe model, adapter, target, and production suitability.
-- Evaluation harness can run deterministically without live AI.
 - Browser provider packaging avoids importing heavy AI runtimes unless explicitly requested.
+
+Blocked or deferred work:
+
+- Framework-specific REST mounting examples are blocked until a real adopter
+  selects Express, Hono, Fastify, Deno HTTP, or another target.
+- Real WebLLM live evaluation is blocked in normal repository tests because it
+  requires a browser model runtime supplied by an application. The provider
+  adapter, dynamic import path, and `RALLAR_AI_LIVE_WEBLLM` gate are documented.
+- Browser model cache UI, result signing, and provenance verification are
+  deferred product extensions that require a concrete application runtime and
+  production trust model.
 
 ## Open Questions
 
-- Should authorization reuse existing Rallar room/group permission primitives, or should RallarAI define its own minimal hook only?
+- Should authorization reuse existing Rallar room/group permission primitives directly, or should RallarAI continue with its minimal hook and let apps bridge to room/group policy?
 - Should result lifecycle be purely an app-level helper, or should RallarAI provide a small proposal store?
 - Should server-side accepted results be signed in V1.5, or only tagged with provider metadata?
 - Should `dedupeKey` be required for broadcast helpers, or optional for app-specific workflows?
-- Should Docker Compose examples live under examples, docs, or plans until implementation begins?
 
 ## Recommendation
 
-Treat this companion plan as the guardrail backlog for RallarAI. Add the low-cost shared types and hooks early, especially authorization, transport policy, idempotency, lifecycle states, and provider governance metadata. Defer heavier product work such as replay viewers, CRDT operations, and model cache UI until the main RallarAI modules are stable.
+Treat this companion plan as implemented for the current package/API slice. The remaining useful work is product adoption work: choose real app frameworks for REST mounting examples, supply a browser WebLLM runtime for live evaluation, and define a production trust model before adding signing or provenance verification. Heavier product work such as model cache UI and replay viewers should stay deferred until real applications validate the current facades.

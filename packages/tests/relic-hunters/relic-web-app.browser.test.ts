@@ -20,8 +20,26 @@ const rallarMock = vi.hoisted(() => ({
     connectCalls: 0,
     refreshCalls: 0,
     wsMessageHandler: undefined as
-        | ((message: { payload: unknown }) => void)
+        | ((message: {
+            payload: unknown;
+            senderId?: string;
+            roomId?: string;
+            receivedAtEpochMs?: number;
+        }) => void)
         | undefined,
+    wsAiMessageHandler: undefined as
+        | ((message: {
+            payload: unknown;
+            senderId: string;
+            roomId?: string;
+            receivedAtEpochMs: number;
+        }) => void)
+        | undefined,
+    wsSend: vi.fn(async () => ({
+        transport: 'ws',
+        status: 'queued',
+        entries: [],
+    })),
 }));
 
 const soundMock = vi.hoisted(() => ({
@@ -74,17 +92,41 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
         },
         messages: {
             ws: {
-                onMessage: (_selector: unknown, handler: (message: { payload: unknown }) => void) => {
+                onMessage: (
+                    selector: { topicId?: string } | string,
+                    handler: (message: {
+                        payload: unknown;
+                        senderId: string;
+                        roomId?: string;
+                        receivedAtEpochMs: number;
+                    }) => void,
+                ) => {
+                    const topicId = typeof selector === 'string' ? selector : selector.topicId;
+                    if (topicId === 'room.relic.ai.planning') {
+                        rallarMock.wsAiMessageHandler = handler;
+                        return () => {
+                            rallarMock.wsAiMessageHandler = undefined;
+                        };
+                    }
                     rallarMock.wsMessageHandler = handler;
                     return () => {
                         rallarMock.wsMessageHandler = undefined;
                     };
                 },
+                send: rallarMock.wsSend,
             },
             rtc: {
                 onMessage: () => () => undefined,
                 send: vi.fn(async () => ({ status: 'no-route' })),
             },
+        },
+        data: {
+            open: vi.fn(async () => ({
+                set: vi.fn(async () => undefined),
+            })),
+        },
+        realtime: {
+            sendJson: vi.fn(async () => []),
         },
     },
 }));
@@ -159,6 +201,8 @@ describe('Relic Hunters browser app', () => {
         rallarMock.connectCalls = 0;
         rallarMock.refreshCalls = 0;
         rallarMock.wsMessageHandler = undefined;
+        rallarMock.wsAiMessageHandler = undefined;
+        rallarMock.wsSend.mockClear();
         container = document.createElement('div');
         document.body.appendChild(container);
     });
@@ -264,6 +308,106 @@ describe('Relic Hunters browser app', () => {
         });
 
         expect(container.textContent).toContain('Look for relics in this room');
+    });
+
+    it('asks the browser AI companion for a legal planning suggestion', async () => {
+        const snapshot = snapshotWithPlayers(1, 'planning');
+        writeSession(session());
+        rallarMock.roomState = roomState(1);
+        stubSnapshotFetch(snapshot);
+
+        await renderApp();
+        await waitFor(() => aiAskButton() !== undefined);
+        await act(async () => {
+            aiAskButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+
+        await waitFor(() => container.textContent?.includes('Suggestion ready') === true);
+        expect(container.textContent).toContain('Move toward Storage');
+        expect(rallarMock.wsSend).toHaveBeenCalledWith(
+            expect.objectContaining({
+                topicId: 'room.relic.ai.planning',
+                typeId: 'relic.ai.planning-proposal.v1',
+                roomId: 'room-1',
+            }),
+        );
+    });
+
+    it('primes the normal draft from a local browser AI suggestion', async () => {
+        const snapshot = snapshotWithPlayers(1, 'planning');
+        writeSession(session());
+        rallarMock.roomState = roomState(1);
+        stubSnapshotFetch(snapshot);
+
+        await renderApp();
+        await waitFor(() => aiAskButton() !== undefined);
+        await act(async () => {
+            aiAskButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        await waitFor(() => aiPrimeButton() !== undefined);
+        await act(async () => {
+            aiPrimeButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+
+        expect(targetRoomButton('storage')?.getAttribute('aria-pressed')).toBe('true');
+        expect(container.textContent).toContain('Step into an adjacent room');
+    });
+
+    it('keeps Submit Plan on the REST command path after AI priming', async () => {
+        const snapshot = snapshotWithPlayers(1, 'planning');
+        writeSession(session());
+        rallarMock.roomState = roomState(1);
+        const fetchMock = stubSnapshotFetchSequence(snapshot, snapshot);
+
+        await renderApp();
+        await waitFor(() => aiAskButton() !== undefined);
+        await act(async () => {
+            aiAskButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        await waitFor(() => aiPrimeButton() !== undefined);
+        await act(async () => {
+            aiPrimeButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        await act(async () => {
+            submitPlanButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+
+        expect(fetchMock.mock.calls.some(([url, init]) =>
+            String(url).includes('/commands') &&
+            String(init?.body).includes('"kind":"submit-action"') &&
+            String(init?.body).includes('"targetRoomId":"storage"')
+        )).toBe(true);
+    });
+
+    it('renders received room AI proposals as read-only party notes', async () => {
+        const snapshot = snapshotWithPlayers(2, 'planning');
+        writeSession(session());
+        rallarMock.roomState = roomState(2);
+        stubSnapshotFetch(snapshot);
+
+        await renderApp();
+        await waitFor(() => aiAskButton() !== undefined);
+        await act(async () => {
+            aiAskButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        await waitFor(() => rallarMock.wsSend.mock.calls.length > 0);
+        const sent = rallarMock.wsSend.mock.calls[0]?.[0] as { payload: Record<string, unknown> };
+        await act(async () => {
+            rallarMock.wsAiMessageHandler?.({
+                payload: {
+                    ...sent.payload,
+                    generationId: 'remote-generation-1',
+                    dedupeKey: 'remote-dedupe-1',
+                },
+                senderId: 'bob-session',
+                roomId: 'room-1',
+                receivedAtEpochMs: Date.now(),
+            });
+        });
+
+        await waitFor(() => container.textContent?.includes('Party Notes') === true);
+        expect(container.textContent).toContain('Bob');
+        expect(container.querySelectorAll('.relic-ai-prime')).toHaveLength(1);
     });
 
     it('shows an explicit locked-plan waiting state after the local plan is submitted', async () => {
@@ -382,6 +526,20 @@ describe('Relic Hunters browser app', () => {
     function targetRoomButton(roomId: string): HTMLButtonElement | undefined {
         return container.querySelector<HTMLButtonElement>(`[data-target-room-id="${roomId}"]`) ??
             undefined;
+    }
+
+    function aiAskButton(): HTMLButtonElement | undefined {
+        return Array.from(container.querySelectorAll<HTMLButtonElement>('#hud-ai button'))
+            .find((button) => button.textContent === 'Ask');
+    }
+
+    function aiPrimeButton(): HTMLButtonElement | undefined {
+        return container.querySelector<HTMLButtonElement>('.relic-ai-prime') ?? undefined;
+    }
+
+    function submitPlanButton(): HTMLButtonElement | undefined {
+        return Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+            .find((button) => button.textContent?.includes('Submit Plan'));
     }
 });
 

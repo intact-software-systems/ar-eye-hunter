@@ -67,6 +67,10 @@ export default function App() {
                         label="Peers"
                         value={String(arena.remotePlayers.size)}
                     />
+                    <StatusPill
+                        label="Director"
+                        value={directorLabel(arena.directorStatus)}
+                    />
                 </div>
             </section>
 
@@ -152,6 +156,21 @@ export default function App() {
                                 </button>
                             </div>
 
+                            <div className="director-panel">
+                                <div>
+                                    <span>Director</span>
+                                    <strong>{directorLabel(arena.directorStatus)}</strong>
+                                </div>
+                                <button
+                                    type="button"
+                                    className="primary"
+                                    disabled={!arena.roomId || arena.directorStatus.isDirector}
+                                    onClick={arena.appointSelfAsDirector}
+                                >
+                                    Appoint this SPA
+                                </button>
+                            </div>
+
                             <div className="room-list">
                                 {arenaRooms.length === 0 && (
                                     <p className="muted">
@@ -216,6 +235,20 @@ function StatusPill({ label, value }: Readonly<{ label: string; value: string }>
             <strong>{value}</strong>
         </div>
     );
+}
+
+function directorLabel(status: Readonly<{
+    role: string;
+    state: string;
+    isDirector: boolean;
+}>): string {
+    if (status.state === 'none') {
+        return 'peer mode';
+    }
+    if (status.isDirector) {
+        return status.state === 'fresh' ? 'you' : `you ${status.state}`;
+    }
+    return status.state;
 }
 
 function shortId(id: string): string {

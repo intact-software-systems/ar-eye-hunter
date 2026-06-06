@@ -43,6 +43,14 @@ async function resolveBrowserRallarRuntime(): Promise<RallarBlackBoxBrowserRalla
     return runtime;
 }
 
+async function resolveBrowserRallarDirectorRuntime(): Promise<NonNullable<RallarBlackBoxBrowserRallarRuntime['director']>> {
+    const runtime = await resolveBrowserRallarRuntime();
+    if (!runtime.director) {
+        throw new Error('browser-rallar provider did not expose director runtime commands.');
+    }
+    return runtime.director;
+}
+
 export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRuntime {
     return {
         async connect(config) {
@@ -53,6 +61,29 @@ export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRunt
         },
         async sendWs(input) {
             return await (await resolveBrowserRallarRuntime()).sendWs?.(input);
+        },
+        director: {
+            async appoint(input) {
+                return await (await resolveBrowserRallarDirectorRuntime()).appoint(input);
+            },
+            async resign(input) {
+                return await (await resolveBrowserRallarDirectorRuntime()).resign(input);
+            },
+            async status(input) {
+                return await (await resolveBrowserRallarDirectorRuntime()).status(input);
+            },
+            async relayStart(input) {
+                return await (await resolveBrowserRallarDirectorRuntime()).relayStart(input);
+            },
+            async intent(input) {
+                return await (await resolveBrowserRallarDirectorRuntime()).intent(input);
+            },
+            async syncRequest(input) {
+                return await (await resolveBrowserRallarDirectorRuntime()).syncRequest(input);
+            },
+            async relayStop(input) {
+                return await (await resolveBrowserRallarDirectorRuntime()).relayStop(input);
+            },
         },
         async close() {
             return await (await resolveBrowserRallarRuntime()).close();

@@ -42,11 +42,17 @@ test.describe('exhaustive Quick Test and WebSocket command center', () => {
 
       const quickA = pageA.getByLabel('Rallar Quick Test');
       const quickB = pageB.getByLabel('Rallar Quick Test');
+      await expect(quickA.getByLabel('Quick Test workflow')).toContainText('Setup');
+      await expect(quickA.getByLabel('Quick Test workflow')).toContainText('Subscribe');
+      await expect(quickA.getByLabel('Quick Test workflow')).toContainText('Send');
+      await expect(quickA.getByLabel('Quick Test workflow')).toContainText('Verify');
       await quickA.getByRole('textbox', { name: 'Group' }).fill(groupId);
       await quickA.getByLabel('Timeout', { exact: true }).fill('60000');
       await quickB.getByLabel('Timeout', { exact: true }).fill('60000');
       await quickA.getByRole('button', { name: 'Create and join group' }).click();
       await expect(quickA).toContainText(/completed|joined|created/i, { timeout: 75_000 });
+      await expect(quickA.locator('.quick-workflow-step.done').filter({ hasText: 'Setup' }))
+        .toBeVisible();
 
       await quickB.getByRole('textbox', { name: 'Group' }).fill(groupId);
       await quickB.getByRole('button', { name: 'Join group', exact: true }).click();
@@ -55,6 +61,8 @@ test.describe('exhaustive Quick Test and WebSocket command center', () => {
       await expect(quickB.getByLabel('Quick Test received messages')).toContainText('Listening', {
         timeout: 30_000,
       });
+      await expect(quickB.locator('.quick-workflow-step.done').filter({ hasText: 'Subscribe' }))
+        .toBeVisible();
 
       for (const seq of [1, 2]) {
         const payload = {
@@ -65,6 +73,8 @@ test.describe('exhaustive Quick Test and WebSocket command center', () => {
         };
         await quickA.getByLabel('Payload JSON').fill(JSON.stringify(payload, null, 2));
         await quickA.getByRole('button', { name: 'Send WS JSON' }).click();
+        await expect(quickA.locator('.quick-workflow-step.done').filter({ hasText: 'Send' }))
+          .toBeVisible();
         await expect(quickB.getByLabel('Quick Test received messages')).toContainText(
           `quick-test-${seq}`,
           { timeout: 45_000 },
@@ -72,6 +82,8 @@ test.describe('exhaustive Quick Test and WebSocket command center', () => {
       }
 
       await quickB.getByRole('button', { name: 'Wait for receive' }).click();
+      await expect(quickB.locator('.quick-workflow-step.done').filter({ hasText: 'Verify' }))
+        .toBeVisible();
       await quickA.getByRole('button', { name: 'Copy runner recipe' }).click();
       await quickB.getByRole('button', { name: 'Copy diagnostics' }).click();
       await expectNoSecrets(pageA.locator('body'), [config.userA.password]);

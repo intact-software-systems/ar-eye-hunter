@@ -12,6 +12,12 @@ Rallar facade, Rallar browser data stores, and Rallar server middleware.
   for AI agents implementing or reviewing Rallar usage.
 - [Rallar AI Prompting Guide](./rallar-ai-prompting-guide.md) Prompt templates
   and constraints for asking an AI to use Rallar, Rallar Data, or Rallar Server.
+- [RallarAI Recipes](./rallar-ai-recipes.md) Opt-in schema-guided JSON
+  generation flows for browser, server, fallback, host approval, CRDT proposals,
+  and local live-provider setup.
+- [RallarAI Governance And Evaluation](./rallar-ai-governance-and-evaluation.md)
+  Provider/model governance metadata, production review guidance, and live-gated
+  evaluation practices.
 - [Rallar Quickstart And Recipes](./rallar-quickstart-and-recipes.md) Short
   recipes for common application tasks.
 - [Rallar CRDT Guide](./rallar-crdt-guide.md) Explicit collaborative document

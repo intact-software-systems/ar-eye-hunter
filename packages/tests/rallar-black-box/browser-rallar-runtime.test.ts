@@ -37,6 +37,36 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     calls.push('sendWs');
                     return { wsSent: true };
                 },
+                director: {
+                    appoint: async () => {
+                        calls.push('director.appoint');
+                        return { status: 'appointed' };
+                    },
+                    resign: async () => {
+                        calls.push('director.resign');
+                        return { status: 'resigned' };
+                    },
+                    status: async () => {
+                        calls.push('director.status');
+                        return { status: 'status' };
+                    },
+                    relayStart: async () => {
+                        calls.push('director.relayStart');
+                        return { status: 'relay_started' };
+                    },
+                    intent: async () => {
+                        calls.push('director.intent');
+                        return { status: 'intent_sent' };
+                    },
+                    syncRequest: async () => {
+                        calls.push('director.syncRequest');
+                        return { status: 'sync_requested' };
+                    },
+                    relayStop: async () => {
+                        calls.push('director.relayStop');
+                        return { status: 'relay_stopped' };
+                    },
+                },
                 close: async () => {
                     calls.push('close');
                     return { closed: true };
@@ -52,11 +82,35 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             await runtime.connect({ connection: 'aliceRtc', rallar: {} });
             await runtime.send({ data: { text: 'hello' } });
             await runtime.sendWs({ typeId: 'room.manual.message', payload: { text: 'hello ws' } });
+            await runtime.director?.appoint({ roomId: 'room-1' });
+            await runtime.director?.status({ roomId: 'room-1' });
+            await runtime.director?.relayStart({
+                handle: 'relay-1',
+                intentTypeId: 'intent',
+                outputTypeId: 'output',
+            });
+            await runtime.director?.intent({ handle: 'relay-1', intent: { intentId: 'intent-1' } });
+            await runtime.director?.syncRequest({ handle: 'relay-1' });
+            await runtime.director?.relayStop({ handle: 'relay-1' });
+            await runtime.director?.resign({ roomId: 'room-1' });
             await runtime.health();
             await runtime.close();
         });
 
-        expect(calls).toEqual(['connect', 'send', 'sendWs', 'health', 'close']);
+        expect(calls).toEqual([
+            'connect',
+            'send',
+            'sendWs',
+            'director.appoint',
+            'director.status',
+            'director.relayStart',
+            'director.intent',
+            'director.syncRequest',
+            'director.relayStop',
+            'director.resign',
+            'health',
+            'close',
+        ]);
     });
 
     it('bridges browser Rallar events into the shared runtime', async () => {

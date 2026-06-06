@@ -45,6 +45,34 @@ export type AppTabId = (typeof APP_TABS)[number]['id'];
 
 export const DEFAULT_APP_TAB_ID: AppTabId = 'quick-test';
 
+export type RunnerAdvancedSurfaceId =
+    | 'manual'
+    | 'workbench'
+    | 'run-manager'
+    | 'distributed'
+    | 'shared-test';
+
+const LEGACY_RUNNER_ADVANCED_TAB_TARGETS: Partial<
+    Readonly<Record<AppTabId, RunnerAdvancedSurfaceId>>
+> = {
+    'manual-rallar': 'manual',
+    'local-workbench': 'workbench',
+    'run-manager': 'run-manager',
+    'distributed-recipes': 'distributed',
+    'shared-test': 'shared-test',
+};
+
+const LEGACY_RUNNER_VISIBLE_TAB_TARGETS: Partial<
+    Readonly<Record<AppTabId, AppTabId>>
+> = {
+    'manual-rallar': 'advanced',
+    'local-workbench': 'advanced',
+    'run-manager': 'advanced',
+    'distributed-recipes': 'advanced',
+    'shared-test': 'advanced',
+    'flow-builder': 'builder',
+};
+
 const RALLAR_MODE_TAB_IDS = [
     'quick-test',
     'auth',
@@ -65,14 +93,8 @@ const BLACK_BOX_RUNNER_MODE_TAB_IDS = [
     'recipes',
     'runs',
     'builder',
-    'advanced',
     'event-stream',
-    'shared-test',
-    'manual-rallar',
-    'local-workbench',
-    'flow-builder',
-    'run-manager',
-    'distributed-recipes',
+    'advanced',
 ] as const satisfies readonly AppTabId[];
 
 const MODE_TAB_IDS: Readonly<Record<AppModeId, readonly AppTabId[]>> = {
@@ -220,6 +242,14 @@ export function appTabsForMode(
 
 export function appTabInMode(tab: AppTabId, mode: AppModeId): boolean {
     return MODE_TAB_IDS[mode].includes(tab);
+}
+
+export function visibleAppTabForTab(tab: AppTabId): AppTabId {
+    return LEGACY_RUNNER_VISIBLE_TAB_TARGETS[tab] ?? tab;
+}
+
+export function runnerAdvancedSurfaceForTab(tab: AppTabId): RunnerAdvancedSurfaceId | undefined {
+    return LEGACY_RUNNER_ADVANCED_TAB_TARGETS[tab];
 }
 
 export function appModeForTab(tab: AppTabId): AppModeId {

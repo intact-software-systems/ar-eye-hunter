@@ -148,6 +148,60 @@ if (readiness.status === 'open' || readiness.status === 'partial') {
 }
 ```
 
+## Rallar Motion Smoothing
+
+Use a dedicated RTC lane for high-rate pose traffic, and configure it before
+`connect()` or `start()`.
+
+```ts
+import { createRallarMotionBuffer } from '@shared/rallar-motion/mod.ts';
+import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/middleware.ts';
+import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
+
+type PoseUpdate = {
+    position: readonly [number, number, number];
+    velocity?: readonly [number, number, number];
+    seq: number;
+};
+
+const motionLane = {
+    id: 'motion',
+    label: 'rtc-motion',
+    init: { ordered: false, maxRetransmits: 0 },
+    flowControl: {
+        overflow: 'replace-by-key',
+        maxQueueItems: 8,
+    },
+} satisfies RtcDataChannelLaneConfig;
+
+await rallar.start({
+    connect: true,
+    refreshRooms: true,
+    dataChannelLanes: [DEFAULT_REALTIME_DATA_CHANNEL_LANE, motionLane],
+});
+
+const motion = createRallarMotionBuffer({
+    interpolationDelayMs: 100,
+    maxExtrapolationMs: 150,
+});
+
+rallar.realtime.onJson<PoseUpdate>('motion', (message) => {
+    motion.push({
+        entityId: message.peerId,
+        observedAtEpochMs: message.receivedAtEpochMs,
+        position: message.data.position,
+        velocity: message.data.velocity,
+        seq: message.data.seq,
+        metadata: message.data,
+    });
+});
+
+const estimates = motion.sampleAll(Date.now());
+for (const [peerId, estimate] of estimates) {
+    renderRemotePeer(peerId, estimate.position);
+}
+```
+
 ## Wait For WebSocket
 
 ```ts

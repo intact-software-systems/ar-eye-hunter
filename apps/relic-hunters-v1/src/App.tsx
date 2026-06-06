@@ -22,6 +22,14 @@ import {
     type ActionDraft,
 } from './game/game-view-model.ts';
 import {
+    useRelicPlanningAi,
+    type UseRelicPlanningAiResult,
+} from './game/ai/useRelicPlanningAi.ts';
+import type {
+    RelicPlanningAiProposal,
+    RelicPlanningAiSuggestion,
+} from './game/ai/relic-planning-ai.ts';
+import {
     deriveCurrentTurnSummaryModel,
     isPersonalEvent,
     isTurnResultEvent,
@@ -29,6 +37,7 @@ import {
     turnTimelineCategory,
 } from './game/turn-summary.ts';
 import type { RelicRuntimeDiagnostics } from './game/relic-hunters-runtime.ts';
+import { deriveSceneObjective } from './game/scene/objectives.ts';
 import { UI, type Lang } from './game/lang.ts';
 import { useRelicHunters } from './game/useRelicHunters.ts';
 import { colorForId } from './game/color.ts';
@@ -116,6 +125,22 @@ export default function App() {
         }),
         [draft, game.session?.sessionId, game.snapshot, lang, revealedEvents],
     );
+    const sceneObjective = useMemo(
+        () => deriveSceneObjective({
+            snapshot: game.snapshot,
+            localPlayerId: game.session?.sessionId,
+            primedAction: scenePrimedAction,
+        }),
+        [game.session?.sessionId, game.snapshot, scenePrimedAction],
+    );
+    const planningAi = useRelicPlanningAi({
+        snapshot: game.snapshot,
+        localPlayerId: game.session?.sessionId,
+        draft,
+        lang,
+        viewModel,
+        sceneObjective,
+    });
     const currentPlayer = viewModel.currentPlayer;
     const currentRoom = viewModel.currentRoom;
     const sceneVisible = game.snapshot?.phase === 'planning' ||
@@ -623,6 +648,7 @@ export default function App() {
                                 : []),
                             ...(game.roomId && game.snapshot
                                 ? [
+                                    { id: 'hud-ai', label: 'AI' },
                                     { id: 'hud-map', label: 'Map' },
                                     { id: 'hud-intel', label: 'Intel' },
                                 ]
@@ -971,6 +997,16 @@ export default function App() {
                                     </div>
                                 )}
                             </section>
+                        )}
+
+                        {game.snapshot && game.session && showPlanningControls && (
+                            <RelicAiCompanionPanel
+                                state={planningAi}
+                                snapshot={game.snapshot}
+                                localPlayerId={game.session.sessionId}
+                                onAsk={planningAi.ask}
+                                onPrime={primeSceneAction}
+                            />
                         )}
 
                         {showReviewControls && game.snapshot && (
@@ -1899,6 +1935,210 @@ function PartyChangePrompt({
             </div>
         </div>
     );
+}
+
+function RelicAiCompanionPanel({
+    state,
+    snapshot,
+    localPlayerId,
+    onAsk,
+    onPrime,
+}: Readonly<{
+    state: UseRelicPlanningAiResult;
+    snapshot: RelicPublicSnapshot;
+    localPlayerId?: string;
+    onAsk(): Promise<void>;
+    onPrime(action: RelicActionInput): void;
+}>) {
+    const localSuggestion = state.localProposal?.result.value;
+    const remoteProposals = state.proposals.filter((proposal) => !proposal.local);
+    const canPrime = state.status === 'ready' && !!localSuggestion?.action;
+
+    return (
+        <div id="hud-ai" className={`panel stack relic-ai-panel relic-ai-${state.status}`}>
+            <div className="relic-ai-header">
+                <div>
+                    <span className="panel-label">AI Companion</span>
+                    <strong>{relicAiStatusTitle(state.status)}</strong>
+                </div>
+                <button
+                    type="button"
+                    className="primary relic-ai-ask"
+                    disabled={!state.canGenerate}
+                    onClick={() => void onAsk()}
+                >
+                    {state.status === 'generating' ? 'Thinking' : 'Ask'}
+                </button>
+            </div>
+
+            {state.error && (
+                <small className="relic-ai-error">{state.error}</small>
+            )}
+
+            {localSuggestion ? (
+                <RelicAiSuggestionCard
+                    proposal={state.localProposal}
+                    suggestion={localSuggestion}
+                    snapshot={snapshot}
+                    localPlayerId={localPlayerId}
+                    showPrime={canPrime}
+                    onPrime={onPrime}
+                />
+            ) : (
+                <small className="relic-ai-empty">{relicAiStatusDetail(state.status)}</small>
+            )}
+
+            {remoteProposals.length > 0 && (
+                <div className="relic-ai-party-notes">
+                    <span className="panel-label">Party Notes</span>
+                    {remoteProposals.map((proposal) => (
+                        <RelicAiSuggestionCard
+                            key={proposal.result.generationId}
+                            proposal={proposal}
+                            suggestion={proposal.result.value}
+                            snapshot={snapshot}
+                            localPlayerId={localPlayerId}
+                            showPrime={false}
+                            onPrime={onPrime}
+                        />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function RelicAiSuggestionCard({
+    proposal,
+    suggestion,
+    snapshot,
+    localPlayerId,
+    showPrime,
+    onPrime,
+}: Readonly<{
+    proposal?: RelicPlanningAiProposal;
+    suggestion: RelicPlanningAiSuggestion;
+    snapshot: RelicPublicSnapshot;
+    localPlayerId?: string;
+    showPrime: boolean;
+    onPrime(action: RelicActionInput): void;
+}>) {
+    const action = suggestion.action ? toRelicActionInput(suggestion.action) : undefined;
+    return (
+        <div className={`relic-ai-card${proposal?.local ? ' local' : ''}`}>
+            <div className="relic-ai-card-head">
+                <span>{proposalSenderLabel(proposal, snapshot, localPlayerId)}</span>
+                <em>{suggestion.confidence}</em>
+            </div>
+            <strong>{suggestion.headline}</strong>
+            {action && (
+                <span className="relic-ai-action">
+                    {relicAiActionLabel(action, snapshot)}
+                </span>
+            )}
+            <small>{suggestion.rationale}</small>
+            {suggestion.risks.length > 0 && (
+                <div className="relic-ai-risks">
+                    {suggestion.risks.map((risk) => (
+                        <span key={risk}>{risk}</span>
+                    ))}
+                </div>
+            )}
+            {showPrime && action && (
+                <button
+                    type="button"
+                    className="secondary relic-ai-prime"
+                    onClick={() => onPrime(action)}
+                >
+                    Prime
+                </button>
+            )}
+        </div>
+    );
+}
+
+function relicAiStatusTitle(status: UseRelicPlanningAiResult['status']): string {
+    switch (status) {
+        case 'disabled':
+            return 'Quiet';
+        case 'generating':
+            return 'Reading the board';
+        case 'ready':
+            return 'Suggestion ready';
+        case 'stale':
+            return 'Turn changed';
+        case 'error':
+            return 'Needs another try';
+        case 'unavailable':
+            return 'Unavailable';
+        case 'idle':
+        default:
+            return 'Planning lens';
+    }
+}
+
+function relicAiStatusDetail(status: UseRelicPlanningAiResult['status']): string {
+    switch (status) {
+        case 'disabled':
+            return 'Companion notes appear while you can still choose a plan.';
+        case 'generating':
+            return 'Checking legal choices.';
+        case 'stale':
+            return 'Ask again after the current snapshot settles.';
+        case 'error':
+            return 'The last suggestion could not be used.';
+        case 'unavailable':
+            return 'No browser provider is configured.';
+        case 'ready':
+        case 'idle':
+        default:
+            return 'Ask for a legal suggestion for this turn.';
+    }
+}
+
+function proposalSenderLabel(
+    proposal: RelicPlanningAiProposal | undefined,
+    snapshot: RelicPublicSnapshot,
+    localPlayerId: string | undefined,
+): string {
+    if (!proposal || proposal.local || proposal.senderId === localPlayerId) {
+        return 'You';
+    }
+    const player = snapshot.players.find((candidate) =>
+        candidate.playerId === proposal.senderId
+    );
+    return player?.username ?? (proposal.senderId ? shortId(proposal.senderId) : 'Hunter');
+}
+
+function relicAiActionLabel(
+    action: RelicActionInput,
+    snapshot: RelicPublicSnapshot,
+): string {
+    if (action.kind === 'move') {
+        return `Move to ${roomName(snapshot, action.targetRoomId ?? '')}`;
+    }
+    if (action.kind === 'steal') {
+        const target = snapshot.players.find((player) =>
+            player.playerId === action.targetPlayerId
+        );
+        return `Steal from ${target?.username ?? 'hunter'}`;
+    }
+    if (action.kind === 'escape') {
+        return 'Escape';
+    }
+    return 'Search';
+}
+
+function toRelicActionInput(
+    action: RelicPlanningAiSuggestion['action'],
+): RelicActionInput {
+    if (action?.kind === 'move') {
+        return { kind: 'move', targetRoomId: action.targetRoomId };
+    }
+    if (action?.kind === 'steal') {
+        return { kind: 'steal', targetPlayerId: action.targetPlayerId };
+    }
+    return { kind: action?.kind ?? 'search' };
 }
 
 function RoomIntel({

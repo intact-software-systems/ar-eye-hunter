@@ -19,6 +19,10 @@ server in `apps/relic-hunter-server-v1`, and the shared game model/rules in
 - `src/game/game-view-model.ts` centralizes the client-facing gameplay view
   model: current player, current room, legal targets, objective text, warnings,
   turn status, and action blockers.
+- `src/game/ai/` owns the browser AI planning companion: redacted context
+  building, stable RallarAI request keys, deterministic mock generation,
+  proposal validation, WS proposal sharing, and the React hook consumed by the
+  side-panel companion UI.
 - `src/game/relic-hunters-runtime.ts` wraps Rallar/auth/room APIs, relic REST
   calls, WS snapshot fanout, and RTC snapshot repair. React consumes it through
   `src/game/useRelicHunters.ts`.
@@ -110,6 +114,7 @@ Current targeted validation:
 npm --workspace relic-hunters-v1 run test
 npm --workspace relic-hunters-v1 run typecheck
 npm --workspace relic-hunters-v1 run build
+npx vitest run packages/tests/relic-hunters/relic-web-app.browser.test.ts packages/tests/shared-web/rallar-ai.test.ts
 cd apps/relic-hunter-server-v1 && deno task check
 npx playwright test tests/playwright/relic-hunters/web.spec.ts --grep "large-screen side menus|core lobby layouts|Rallar browser bootstrap"
 RELIC_SCENE_BASELINE_WRITE=1 npx playwright test tests/playwright/relic-hunters/web.spec.ts --grep "scene upgrade baselines"

@@ -293,6 +293,18 @@ variables in the shell or through the parent script/process.
 These are not owned by a single app, but they affect app test runs or local
 infrastructure.
 
+### RallarAI Live Evaluation
+
+Normal CI uses deterministic mock providers. These variables opt into live
+provider checks for local or scheduled runs.
+
+| Variable                    | Required | Default                   | Usage                                                                                 |
+| --------------------------- | -------- | ------------------------- | ------------------------------------------------------------------------------------- |
+| `RALLAR_AI_LIVE_OLLAMA`     | No       | Disabled                  | `1`, `true`, `yes`, or `on` enables the live Ollama evaluation harness.               |
+| `RALLAR_AI_OLLAMA_BASE_URL` | No       | `http://127.0.0.1:11434`  | Ollama sidecar base URL for live evaluation. Keep private to the server/test network. |
+| `RALLAR_AI_OLLAMA_MODEL`    | No       | `llama-test` in the test  | Ollama model ID used by the live evaluation harness.                                  |
+| `RALLAR_AI_LIVE_WEBLLM`     | No       | Disabled                  | Reserved gate for browser-run WebLLM live evaluation supplied by an application.      |
+
 ### Playwright
 
 | Variable | Required | Default | Usage                                                                                                                                           |

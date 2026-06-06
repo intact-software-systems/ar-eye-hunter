@@ -58,6 +58,14 @@ Use this checklist when Rallar behavior is surprising in a browser or server int
 - Check each `RallarRealtimeSendResult.result` for per-peer send outcome.
 - Add lifecycle logging for `lane-open`, `lane-close`, and `lane-error`.
 
+## Rallar Motion
+
+- Use a dedicated motion lane for high-rate pose updates instead of sharing the lane used by shots, commands, or director relay traffic.
+- Configure custom data-channel lanes before the first `connect()` or `start()` call.
+- Drive `RallarMotionBuffer` with receiver-local `observedAtEpochMs`; do not interpolate from sender `sentAtEpochMs` unless the app has clock sync.
+- If remote avatars trail too far behind, lower `interpolationDelayMs`; if they snap during jitter, raise it slightly.
+- Keep `maxExtrapolationMs` short so lost motion packets hold the latest observed pose instead of drifting.
+
 ## WS/RTC Message Selectors
 
 - `topicId` and `typeId` match on both sender and receiver.
