@@ -4,7 +4,8 @@ info:
   version: 1.1.0
   description: |
     HTTP and websocket endpoints for configuration, authentication, runtime state,
-    ICE lookup, graph snapshots, and embedded Swagger docs.
+    ICE lookup, graph snapshots, CRDT catch-up/admin operations, and embedded
+    Swagger docs.
 
     The legacy flat `/api/client`, `/api/read/*`, and `/api/groups*` endpoints are
     no longer part of the active API surface. The authoritative client and group
@@ -21,6 +22,7 @@ tags:
   - name: Client State
   - name: Group State
   - name: Graph
+  - name: CRDT
   - name: Docs
 
 paths:
@@ -798,6 +800,250 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/crdt/catch-up:
+    post:
+      tags: [ CRDT ]
+      summary: Catch up a CRDT document from the server log
+      description: |
+        Returns the latest server snapshot unless `includeSnapshot` is false,
+        plus a page of accepted updates after `afterSequence` or `afterCursor`.
+        This route is authenticated but does not require CRDT admin privileges.
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RallarCrdtCatchUpRequest'
+      responses:
+        '200':
+          description: Catch-up result wrapped by the CRDT route envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RallarCrdtCatchUpApiResponse'
+        '400':
+          description: Invalid CRDT request or repository failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrdtRouteErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/crdt/admin/documents/list:
+    post:
+      tags: [ CRDT ]
+      summary: List CRDT documents
+      description: Requires a CRDT admin auth session.
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RallarCrdtListDocumentsRequest'
+      responses:
+        '200':
+          description: Document admin page wrapped by the CRDT route envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RallarCrdtDocumentAdminPageApiResponse'
+        '400':
+          $ref: '#/components/responses/CrdtRouteError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/crdt/admin/documents/integrity:
+    post:
+      tags: [ CRDT ]
+      summary: Verify CRDT document integrity
+      description: Requires a CRDT admin auth session.
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RallarCrdtDocumentRequest'
+      responses:
+        '200':
+          description: Integrity report wrapped by the CRDT route envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RallarCrdtIntegrityReportApiResponse'
+        '400':
+          $ref: '#/components/responses/CrdtRouteError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/crdt/admin/documents/debug-export:
+    post:
+      tags: [ CRDT ]
+      summary: Export a redacted CRDT debug bundle
+      description: Requires a CRDT admin auth session.
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RallarCrdtDebugExportRequest'
+      responses:
+        '200':
+          description: Debug bundle wrapped by the CRDT route envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RallarCrdtDebugBundleApiResponse'
+        '400':
+          $ref: '#/components/responses/CrdtRouteError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/crdt/admin/documents/backup-export:
+    post:
+      tags: [ CRDT ]
+      summary: Export a CRDT backup bundle
+      description: Requires a CRDT admin auth session.
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RallarCrdtDocumentRequest'
+      responses:
+        '200':
+          description: Backup bundle, or null when no document exists, wrapped by the CRDT route envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RallarCrdtBackupBundleApiResponse'
+        '400':
+          $ref: '#/components/responses/CrdtRouteError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/crdt/admin/documents/rebuild-projection:
+    post:
+      tags: [ CRDT ]
+      summary: Rebuild a CRDT projection
+      description: Requires a CRDT admin auth session.
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RallarCrdtRebuildProjectionRequest'
+      responses:
+        '200':
+          description: Rebuild integrity report wrapped by the CRDT route envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RallarCrdtIntegrityReportApiResponse'
+        '400':
+          $ref: '#/components/responses/CrdtRouteError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/crdt/admin/documents/compact:
+    post:
+      tags: [ CRDT ]
+      summary: Compact a CRDT document snapshot
+      description: |
+        Exports a backup, creates or accepts a compacted snapshot, and writes it
+        at the current append sequence. Requires a CRDT admin auth session.
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RallarCrdtCompactRequest'
+      responses:
+        '200':
+          description: Compaction result wrapped by the CRDT route envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RallarCrdtCompactApiResponse'
+        '400':
+          $ref: '#/components/responses/CrdtRouteError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/crdt/admin/documents/lifecycle:
+    post:
+      tags: [ CRDT ]
+      summary: Update CRDT document lifecycle
+      description: Requires a CRDT admin auth session.
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RallarCrdtLifecycleRequest'
+      responses:
+        '200':
+          description: Updated document metadata wrapped by the CRDT route envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RallarCrdtDocumentMetadataApiResponse'
+        '400':
+          $ref: '#/components/responses/CrdtRouteError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/crdt/admin/documents/erase:
+    post:
+      tags: [ CRDT ]
+      summary: Erase or redact a CRDT document
+      description: Requires a CRDT admin auth session.
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RallarCrdtEraseRequest'
+      responses:
+        '200':
+          description: Erasure workflow result wrapped by the CRDT route envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RallarCrdtEraseApiResponse'
+        '400':
+          $ref: '#/components/responses/CrdtRouteError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+
   /api/openapi.json:
     get:
       tags: [ Docs ]
@@ -989,6 +1235,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+    CrdtRouteError:
+      description: CRDT route returned an application-level error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CrdtRouteErrorResponse'
 
   schemas:
     ErrorResponse:
@@ -2021,3 +2273,905 @@ components:
         version:
           type: integer
           format: int64
+
+    CrdtRouteErrorResponse:
+      type: object
+      required: [ ok, error ]
+      properties:
+        ok:
+          type: boolean
+          const: false
+        error:
+          type: string
+
+    RallarCrdtDocumentRef:
+      type: object
+      required: [ applicationId, scope, documentType, documentId ]
+      properties:
+        applicationId:
+          type: string
+        workspaceId:
+          type: string
+        scope:
+          type: string
+          enum: [ app, principal, room, custom ]
+        documentType:
+          type: string
+        documentId:
+          type: string
+        roomRef:
+          type: object
+          additionalProperties: true
+        principalId:
+          type: string
+        customScope:
+          type: string
+
+    RallarCrdtJsonValue:
+      description: JSON value carried by CRDT operations and snapshots.
+      oneOf:
+        - type: string
+        - type: number
+        - type: boolean
+        - type: array
+          items:
+            $ref: '#/components/schemas/RallarCrdtJsonValue'
+        - type: object
+          additionalProperties:
+            $ref: '#/components/schemas/RallarCrdtJsonValue'
+        - type: 'null'
+
+    RallarCrdtClockSummary:
+      type: object
+      required: [ maxLamport, replicaClocks ]
+      properties:
+        maxLamport:
+          type: integer
+          format: int64
+        replicaClocks:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+
+    RallarCrdtCausalFrontier:
+      type: object
+      required: [ frontierUpdateIds ]
+      properties:
+        frontierUpdateIds:
+          type: array
+          items:
+            type: string
+        replicaClocks:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+
+    RallarCrdtOperationBatch:
+      type: object
+      required: [ kind, operations ]
+      properties:
+        kind:
+          type: string
+          const: batch
+        operations:
+          type: array
+          items:
+            type: object
+            required: [ kind, path ]
+            properties:
+              kind:
+                type: string
+                enum:
+                  - orset.add
+                  - orset.remove
+                  - register.set
+                  - map.set
+                  - map.delete
+                  - sequence.insert
+                  - sequence.delete
+                  - sequence.move
+                  - counter.add
+                  - number.min
+                  - number.max
+              path:
+                type: array
+                items:
+                  type: string
+            additionalProperties: true
+        operationGroupId:
+          type: string
+        undo:
+          type: object
+          additionalProperties: true
+        redo:
+          type: object
+          additionalProperties: true
+        encryption:
+          type: object
+          additionalProperties: true
+
+    RallarCrdtUpdateEnvelope:
+      type: object
+      required:
+        - protocolVersion
+        - document
+        - updateId
+        - replicaId
+        - lamport
+        - parents
+        - schemaVersion
+        - operationVersion
+        - createdAtEpochMs
+        - payload
+      properties:
+        protocolVersion:
+          type: integer
+          const: 1
+        document:
+          $ref: '#/components/schemas/RallarCrdtDocumentRef'
+        updateId:
+          type: string
+        replicaId:
+          type: string
+        actorId:
+          type: string
+        sessionId:
+          type: string
+        lamport:
+          type: integer
+          format: int64
+        parents:
+          type: array
+          items:
+            type: string
+        schemaVersion:
+          type: integer
+          format: int64
+        operationVersion:
+          type: integer
+          const: 1
+        createdAtEpochMs:
+          type: integer
+          format: int64
+        causalFrontier:
+          $ref: '#/components/schemas/RallarCrdtCausalFrontier'
+        payload:
+          $ref: '#/components/schemas/RallarCrdtOperationBatch'
+        hash:
+          type: string
+
+    RallarCrdtSnapshotMetadata:
+      type: object
+      required: [ updateCount ]
+      properties:
+        createdByReplicaId:
+          type: string
+        updateCount:
+          type: integer
+          format: int64
+        tombstoneCount:
+          type: integer
+          format: int64
+        conflictCount:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        crdtState:
+          type: object
+          additionalProperties: true
+        sequenceState:
+          type: object
+          additionalProperties: true
+        unsafeLegacyCollectionCompaction:
+          type: boolean
+
+    RallarCrdtSnapshotEnvelope:
+      type: object
+      required:
+        - protocolVersion
+        - document
+        - snapshotId
+        - schemaVersion
+        - createdAtEpochMs
+        - maxLamport
+        - includedUpdateIds
+        - value
+        - metadata
+      properties:
+        protocolVersion:
+          type: integer
+          const: 1
+        document:
+          $ref: '#/components/schemas/RallarCrdtDocumentRef'
+        snapshotId:
+          type: string
+        schemaVersion:
+          type: integer
+          format: int64
+        createdAtEpochMs:
+          type: integer
+          format: int64
+        maxLamport:
+          type: integer
+          format: int64
+        includedUpdateIds:
+          type: array
+          items:
+            type: string
+        updateClock:
+          $ref: '#/components/schemas/RallarCrdtClockSummary'
+        value:
+          $ref: '#/components/schemas/RallarCrdtJsonValue'
+        metadata:
+          $ref: '#/components/schemas/RallarCrdtSnapshotMetadata'
+        hash:
+          type: string
+
+    RallarCrdtTrustedAppendMetadata:
+      type: object
+      required: [ appendSequence, acceptedAtEpochMs, authorizationScope, acceptedUpdateHash ]
+      properties:
+        appendSequence:
+          type: integer
+          format: int64
+        acceptedAtEpochMs:
+          type: integer
+          format: int64
+        actorId:
+          type: string
+        principalId:
+          type: string
+        sessionId:
+          type: string
+        serverId:
+          type: string
+        authorizationScope:
+          type: string
+          enum: [ room, principal, app, custom ]
+        acceptedUpdateHash:
+          type: string
+
+    RallarCrdtDurableUpdateRecord:
+      type: object
+      required: [ document, documentKey, update, append ]
+      properties:
+        document:
+          $ref: '#/components/schemas/RallarCrdtDocumentRef'
+        documentKey:
+          type: string
+        update:
+          $ref: '#/components/schemas/RallarCrdtUpdateEnvelope'
+        append:
+          $ref: '#/components/schemas/RallarCrdtTrustedAppendMetadata'
+
+    RallarCrdtUpdatePage:
+      type: object
+      required: [ document, records, hasMore ]
+      properties:
+        document:
+          $ref: '#/components/schemas/RallarCrdtDocumentRef'
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/RallarCrdtDurableUpdateRecord'
+        firstSequence:
+          type: integer
+          format: int64
+        lastSequence:
+          type: integer
+          format: int64
+        nextCursor:
+          type: string
+        hasMore:
+          type: boolean
+
+    RallarCrdtCatchUpRequest:
+      type: object
+      required: [ document ]
+      properties:
+        protocolVersion:
+          type: integer
+          const: 1
+        requestId:
+          type: string
+        document:
+          $ref: '#/components/schemas/RallarCrdtDocumentRef'
+        replicaId:
+          type: string
+        createdAtEpochMs:
+          type: integer
+          format: int64
+        afterSequence:
+          type: integer
+          format: int64
+        afterCursor:
+          type: string
+        maxUpdateCount:
+          type: integer
+          minimum: 0
+        includeSnapshot:
+          type: boolean
+
+    RallarCrdtCatchUpResponse:
+      type: object
+      required: [ protocolVersion, requestId, document, createdAtEpochMs, page ]
+      properties:
+        protocolVersion:
+          type: integer
+          const: 1
+        requestId:
+          type: string
+        document:
+          $ref: '#/components/schemas/RallarCrdtDocumentRef'
+        createdAtEpochMs:
+          type: integer
+          format: int64
+        snapshot:
+          $ref: '#/components/schemas/RallarCrdtSnapshotEnvelope'
+        page:
+          $ref: '#/components/schemas/RallarCrdtUpdatePage'
+
+    RallarCrdtCatchUpApiResponse:
+      type: object
+      required: [ ok, result ]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        result:
+          $ref: '#/components/schemas/RallarCrdtCatchUpResponse'
+
+    RallarCrdtRetentionPolicy:
+      type: object
+      required: [ mode ]
+      properties:
+        mode:
+          type: string
+          enum: [ retain, redact-after, delete-after ]
+        ttlMs:
+          type: integer
+          format: int64
+        sensitivePayloads:
+          type: boolean
+        reason:
+          type: string
+
+    RallarCrdtQuotaPolicy:
+      type: object
+      properties:
+        maxUpdateBytes:
+          type: integer
+          format: int64
+        maxDocumentBytes:
+          type: integer
+          format: int64
+        maxUpdateCount:
+          type: integer
+          format: int64
+        maxPendingUpdatesPerReplica:
+          type: integer
+          format: int64
+        maxUpdatesPerMinutePerActor:
+          type: integer
+          format: int64
+
+    RallarCrdtDocumentMetadata:
+      type: object
+      required:
+        - document
+        - documentKey
+        - lifecycle
+        - createdAtEpochMs
+        - updatedAtEpochMs
+        - lastAppendSequence
+        - updateCount
+        - snapshotCount
+      properties:
+        document:
+          $ref: '#/components/schemas/RallarCrdtDocumentRef'
+        documentKey:
+          type: string
+        lifecycle:
+          type: string
+          enum: [ active, archived, destroyed, quarantined ]
+        createdAtEpochMs:
+          type: integer
+          format: int64
+        updatedAtEpochMs:
+          type: integer
+          format: int64
+        archivedAtEpochMs:
+          type: integer
+          format: int64
+        destroyedAtEpochMs:
+          type: integer
+          format: int64
+        lastAppendSequence:
+          type: integer
+          format: int64
+        updateCount:
+          type: integer
+          format: int64
+        snapshotCount:
+          type: integer
+          format: int64
+        retention:
+          $ref: '#/components/schemas/RallarCrdtRetentionPolicy'
+        quota:
+          $ref: '#/components/schemas/RallarCrdtQuotaPolicy'
+        projectionIds:
+          type: array
+          items:
+            type: string
+
+    RallarCrdtDocumentHealth:
+      type: object
+      required:
+        - replicaId
+        - pendingUpdateCount
+        - failedPendingUpdateCount
+        - dependencyBlockedUpdateCount
+        - seenUpdateCount
+      properties:
+        replicaId:
+          type: string
+        pendingUpdateCount:
+          type: integer
+          format: int64
+        failedPendingUpdateCount:
+          type: integer
+          format: int64
+        dependencyBlockedUpdateCount:
+          type: integer
+          format: int64
+        seenUpdateCount:
+          type: integer
+          format: int64
+      additionalProperties: true
+
+    RallarCrdtAdminDocumentStatus:
+      type: object
+      required:
+        - document
+        - documentKey
+        - lifecycle
+        - rollout
+        - updateCount
+        - snapshotCount
+        - lastAppendSequence
+        - updatedAtEpochMs
+      properties:
+        document:
+          $ref: '#/components/schemas/RallarCrdtDocumentRef'
+        documentKey:
+          type: string
+        lifecycle:
+          type: string
+          enum: [ active, archived, destroyed, quarantined ]
+        rollout:
+          type: string
+          enum: [ disabled, experimental-local, experimental-live, durable-beta, production ]
+        updateCount:
+          type: integer
+          format: int64
+        snapshotCount:
+          type: integer
+          format: int64
+        lastAppendSequence:
+          type: integer
+          format: int64
+        updatedAtEpochMs:
+          type: integer
+          format: int64
+        health:
+          $ref: '#/components/schemas/RallarCrdtDocumentHealth'
+        retention:
+          $ref: '#/components/schemas/RallarCrdtRetentionPolicy'
+        quota:
+          $ref: '#/components/schemas/RallarCrdtQuotaPolicy'
+        quarantineReason:
+          type: string
+
+    RallarCrdtListDocumentsRequest:
+      type: object
+      properties:
+        applicationId:
+          type: string
+        workspaceId:
+          type: string
+        scope:
+          type: string
+          enum: [ app, principal, room, custom ]
+        documentType:
+          type: string
+        lifecycle:
+          type: string
+          enum: [ active, archived, destroyed, quarantined ]
+        limit:
+          type: integer
+          minimum: 1
+        cursor:
+          type: string
+
+    RallarCrdtDocumentAdminPage:
+      type: object
+      required: [ documents, hasMore ]
+      properties:
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/RallarCrdtAdminDocumentStatus'
+        nextCursor:
+          type: string
+        hasMore:
+          type: boolean
+
+    RallarCrdtDocumentAdminPageApiResponse:
+      type: object
+      required: [ ok, result ]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        result:
+          $ref: '#/components/schemas/RallarCrdtDocumentAdminPage'
+
+    RallarCrdtDocumentRequest:
+      type: object
+      required: [ document ]
+      properties:
+        document:
+          $ref: '#/components/schemas/RallarCrdtDocumentRef'
+
+    RallarCrdtValidationIssue:
+      type: object
+      required: [ path, code, message ]
+      properties:
+        path:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+
+    RallarCrdtIntegrityReport:
+      type: object
+      required: [ valid, issues, documentKey, checkedUpdateCount, sequenceGaps ]
+      properties:
+        valid:
+          type: boolean
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/RallarCrdtValidationIssue'
+        documentKey:
+          type: string
+        checkedUpdateCount:
+          type: integer
+          format: int64
+        sequenceGaps:
+          type: array
+          items:
+            type: integer
+            format: int64
+        bundleHash:
+          type: string
+
+    RallarCrdtIntegrityReportApiResponse:
+      type: object
+      required: [ ok, result ]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        result:
+          $ref: '#/components/schemas/RallarCrdtIntegrityReport'
+
+    RallarCrdtDebugBundleRedaction:
+      type: object
+      required: [ payloadsRedacted ]
+      properties:
+        payloadsRedacted:
+          type: boolean
+        sensitiveFields:
+          type: array
+          items:
+            type: string
+        reason:
+          type: string
+
+    RallarCrdtBundleIntegrity:
+      type: object
+      required: [ bundleHash, documentRefHash, updateHashes, updateCount, sequenceGaps ]
+      properties:
+        bundleHash:
+          type: string
+        documentRefHash:
+          type: string
+        snapshotHash:
+          type: string
+        updateHashes:
+          type: object
+          additionalProperties:
+            type: string
+        firstAppendSequence:
+          type: integer
+          format: int64
+        lastAppendSequence:
+          type: integer
+          format: int64
+        updateCount:
+          type: integer
+          format: int64
+        sequenceGaps:
+          type: array
+          items:
+            type: integer
+            format: int64
+
+    RallarCrdtDebugBundle:
+      type: object
+      required:
+        - format
+        - exportedAtEpochMs
+        - reason
+        - document
+        - documentKey
+        - records
+        - redaction
+        - integrity
+      properties:
+        format:
+          type: string
+          const: rallar.crdt.debug-bundle.v1
+        exportedAtEpochMs:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        document:
+          $ref: '#/components/schemas/RallarCrdtDocumentRef'
+        documentKey:
+          type: string
+        metadata:
+          $ref: '#/components/schemas/RallarCrdtDocumentMetadata'
+        snapshot:
+          $ref: '#/components/schemas/RallarCrdtSnapshotEnvelope'
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/RallarCrdtDurableUpdateRecord'
+        health:
+          $ref: '#/components/schemas/RallarCrdtDocumentHealth'
+        redaction:
+          $ref: '#/components/schemas/RallarCrdtDebugBundleRedaction'
+        integrity:
+          $ref: '#/components/schemas/RallarCrdtBundleIntegrity'
+
+    RallarCrdtDebugExportRequest:
+      allOf:
+        - $ref: '#/components/schemas/RallarCrdtDocumentRequest'
+        - type: object
+          properties:
+            reason:
+              type: string
+            redactPayloads:
+              type: boolean
+
+    RallarCrdtDebugBundleApiResponse:
+      type: object
+      required: [ ok, result ]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        result:
+          $ref: '#/components/schemas/RallarCrdtDebugBundle'
+
+    RallarCrdtBackupBundle:
+      type: object
+      required:
+        - format
+        - exportedAtEpochMs
+        - document
+        - documentKey
+        - metadata
+        - records
+        - integrity
+      properties:
+        format:
+          type: string
+          const: rallar.crdt.backup-bundle.v1
+        exportedAtEpochMs:
+          type: integer
+          format: int64
+        document:
+          $ref: '#/components/schemas/RallarCrdtDocumentRef'
+        documentKey:
+          type: string
+        metadata:
+          $ref: '#/components/schemas/RallarCrdtDocumentMetadata'
+        snapshot:
+          $ref: '#/components/schemas/RallarCrdtSnapshotEnvelope'
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/RallarCrdtDurableUpdateRecord'
+        integrity:
+          $ref: '#/components/schemas/RallarCrdtBundleIntegrity'
+
+    RallarCrdtBackupBundleApiResponse:
+      type: object
+      required: [ ok, result ]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        result:
+          oneOf:
+            - $ref: '#/components/schemas/RallarCrdtBackupBundle'
+            - type: 'null'
+
+    RallarCrdtRebuildProjectionRequest:
+      allOf:
+        - $ref: '#/components/schemas/RallarCrdtDocumentRequest'
+        - type: object
+          properties:
+            projectionId:
+              type: string
+
+    RallarCrdtCompactRequest:
+      allOf:
+        - $ref: '#/components/schemas/RallarCrdtDocumentRequest'
+        - type: object
+          properties:
+            reason:
+              type: string
+            snapshot:
+              $ref: '#/components/schemas/RallarCrdtSnapshotEnvelope'
+
+    RallarCrdtCompactResult:
+      type: object
+      required: [ document, documentKey, appendSequence, snapshot ]
+      properties:
+        document:
+          $ref: '#/components/schemas/RallarCrdtDocumentRef'
+        documentKey:
+          type: string
+        appendSequence:
+          type: integer
+          format: int64
+        snapshot:
+          $ref: '#/components/schemas/RallarCrdtSnapshotEnvelope'
+
+    RallarCrdtCompactApiResponse:
+      type: object
+      required: [ ok, result ]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        result:
+          $ref: '#/components/schemas/RallarCrdtCompactResult'
+
+    RallarCrdtLifecycleRequest:
+      type: object
+      required: [ document, lifecycle ]
+      properties:
+        document:
+          $ref: '#/components/schemas/RallarCrdtDocumentRef'
+        lifecycle:
+          type: string
+          enum: [ active, archived, destroyed, quarantined ]
+        changedAtEpochMs:
+          type: integer
+          format: int64
+        retention:
+          $ref: '#/components/schemas/RallarCrdtRetentionPolicy'
+        quota:
+          $ref: '#/components/schemas/RallarCrdtQuotaPolicy'
+        projectionIds:
+          type: array
+          items:
+            type: string
+
+    RallarCrdtDocumentMetadataApiResponse:
+      type: object
+      required: [ ok, result ]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        result:
+          $ref: '#/components/schemas/RallarCrdtDocumentMetadata'
+
+    RallarCrdtAuditEvent:
+      type: object
+      required: [ kind, atEpochMs ]
+      properties:
+        kind:
+          type: string
+          enum:
+            - append
+            - reject
+            - export
+            - backup
+            - restore
+            - archive
+            - quarantine
+            - destroy
+            - erase
+            - redact
+            - rebuild
+            - compact
+        atEpochMs:
+          type: integer
+          format: int64
+        documentKey:
+          type: string
+        actorId:
+          type: string
+        principalId:
+          type: string
+        reason:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+
+    RallarCrdtEraseRequest:
+      type: object
+      required: [ document ]
+      properties:
+        document:
+          $ref: '#/components/schemas/RallarCrdtDocumentRef'
+        requestedBy:
+          type: string
+        reason:
+          type: string
+        mode:
+          type: string
+          enum: [ destroy-document, redact-payloads ]
+
+    RallarCrdtErasureRequest:
+      type: object
+      required: [ document, requestedAtEpochMs, requestedBy, reason, mode ]
+      properties:
+        document:
+          $ref: '#/components/schemas/RallarCrdtDocumentRef'
+        requestedAtEpochMs:
+          type: integer
+          format: int64
+        requestedBy:
+          type: string
+        reason:
+          type: string
+        mode:
+          type: string
+          enum: [ destroy-document, redact-payloads ]
+
+    RallarCrdtEraseResult:
+      type: object
+      required: [ request, auditEvent ]
+      properties:
+        request:
+          $ref: '#/components/schemas/RallarCrdtErasureRequest'
+        auditEvent:
+          $ref: '#/components/schemas/RallarCrdtAuditEvent'
+        metadata:
+          $ref: '#/components/schemas/RallarCrdtDocumentMetadata'
+        redactedBundle:
+          $ref: '#/components/schemas/RallarCrdtDebugBundle'
+
+    RallarCrdtEraseApiResponse:
+      type: object
+      required: [ ok, result ]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        result:
+          $ref: '#/components/schemas/RallarCrdtEraseResult'

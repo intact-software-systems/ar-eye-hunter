@@ -1,0 +1,570 @@
+openapi: 3.1.0
+info:
+  title: Relic Hunter Server API
+  version: 0.1.0
+  description: |
+    Relic Hunters HTTP endpoints owned by `apps/relic-hunter-server-v1`.
+    Shared Rallar APIs are documented by the API-v1 OpenAPI document.
+
+servers:
+  - url: http://localhost:8090
+
+tags:
+  - name: Relic Hunters
+  - name: Docs
+
+paths:
+  /api/relic/games/{gameId}:
+    get:
+      tags: [ Relic Hunters ]
+      summary: Read or create a Relic Hunters game snapshot
+      description: |
+        Ensures an authoritative Relic Hunters game exists for the requested
+        game id and returns the public snapshot. When Relic AI expedition
+        generation is enabled, initial map/relic setup may be generated before
+        the snapshot is persisted.
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Public Relic Hunters game snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelicPublicSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/relic/games/{gameId}/commands:
+    post:
+      tags: [ Relic Hunters ]
+      summary: Apply an authoritative Relic Hunters command
+      description: |
+        Applies a gameplay command to the server-owned game state and returns
+        the resulting public snapshot. The server derives `gameId` from the path
+        and `username` from the authenticated session, overriding those fields if
+        they are present in the request body.
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RelicCommandRequest'
+      responses:
+        '200':
+          description: Public Relic Hunters game snapshot after applying the command.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelicPublicSnapshot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/relic/games/{gameId}/reset:
+    post:
+      tags: [ Relic Hunters ]
+      summary: Reset a Relic Hunters game
+      description: |
+        Recreates the authoritative game state for the requested id and returns
+        the new public snapshot. When Relic AI expedition generation is enabled,
+        reset can generate a fresh expedition setup.
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Public Relic Hunters game snapshot after reset.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelicPublicSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/relic/openapi.json:
+    get:
+      tags: [ Docs ]
+      summary: Read the Relic Hunters OpenAPI specification JSON
+      responses:
+        '200':
+          description: Relic Hunters OpenAPI document rendered as JSON.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/relic/docs:
+    get:
+      tags: [ Docs ]
+      summary: Read Relic Hunters Swagger UI
+      responses:
+        '200':
+          description: Relic Hunters Swagger UI HTML shell.
+          content:
+            text/html:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: Access token returned from `/api/auth/login`.
+    clientIdHeader:
+      type: apiKey
+      in: header
+      name: x-client-id
+      description: Client identifier returned from `/api/auth/login`.
+
+  parameters:
+    GameId:
+      name: gameId
+      in: path
+      required: true
+      description: Relic Hunters game identifier.
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Request is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Missing or invalid authentication credentials.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [ error ]
+      properties:
+        error:
+          type: string
+
+    RelicExpeditionSetupMetadata:
+      type: object
+      required: [ schemaVersion, source ]
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        source:
+          type: string
+          enum: [ default, procedural, rallar-ai, mock ]
+        seed:
+          type: string
+        theme:
+          type: string
+        blueprintId:
+          type: string
+
+    RelicRoom:
+      type: object
+      required: [ id, name, kind, x, z, neighbors ]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [ entrance, hallway, storage, shrine, trap, treasure, monster, exit ]
+        x:
+          type: number
+        z:
+          type: number
+        neighbors:
+          type: array
+          items:
+            type: string
+        collapsed:
+          type: boolean
+        unstable:
+          type: boolean
+
+    RelicDefinition:
+      type: object
+      required: [ id, name, value, roomId ]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        value:
+          type: integer
+          format: int64
+        roomId:
+          type: string
+        foundBy:
+          type: string
+        carriedBy:
+          type: string
+        escapedBy:
+          type: string
+
+    RelicRoomInvestigation:
+      type: object
+      required:
+        - roomId
+        - searchedByPlayerId
+        - searchedByUsername
+        - searchedAtRound
+        - searchedAtEpochMs
+        - result
+        - summary
+        - hint
+        - effect
+      properties:
+        roomId:
+          type: string
+        searchedByPlayerId:
+          type: string
+        searchedByUsername:
+          type: string
+        searchedAtRound:
+          type: integer
+          format: int64
+        searchedAtEpochMs:
+          type: integer
+          format: int64
+        result:
+          type: string
+          enum: [ empty, relic-found ]
+        summary:
+          type: string
+        hint:
+          type: string
+        effect:
+          type: string
+          enum:
+            - ordinary-search
+            - map-fragment
+            - rune-reading
+            - safe-path
+            - treasure-trail
+            - monster-trace
+            - exit-route
+        danger:
+          type: string
+        revealedRoomId:
+          type: string
+        relicId:
+          type: string
+
+    RelicPlayer:
+      type: object
+      required: [ playerId, username, characterId, roomId, health, escaped, defeated, score, relicIds ]
+      properties:
+        playerId:
+          type: string
+        username:
+          type: string
+        characterId:
+          $ref: '#/components/schemas/RelicCharacterId'
+        roomId:
+          type: string
+        health:
+          type: integer
+          format: int64
+        escaped:
+          type: boolean
+        defeated:
+          type: boolean
+        score:
+          type: integer
+          format: int64
+        relicIds:
+          type: array
+          items:
+            type: string
+
+    RelicAnimationCue:
+      type: object
+      required: [ type ]
+      properties:
+        type:
+          type: string
+          enum:
+            - camera_move
+            - search_altar
+            - relic_reveal
+            - steal_attempt
+            - escape_run
+            - noise_pulse
+            - damage_shake
+            - room_collapse
+            - heart_relic_victory
+        roomId:
+          type: string
+        playerId:
+          type: string
+        targetPlayerId:
+          type: string
+        relicId:
+          type: string
+        durationMs:
+          type: integer
+          format: int64
+        intensity:
+          type: string
+          enum: [ low, medium, high ]
+
+    RelicEvent:
+      type: object
+      required: [ id, round, type, message, createdAtEpochMs ]
+      properties:
+        id:
+          type: string
+        round:
+          type: integer
+          format: int64
+        type:
+          type: string
+          enum:
+            - game_waiting
+            - player_joined
+            - round_started
+            - action_submitted
+            - action_revealed
+            - player_moved
+            - player_searched
+            - relic_found
+            - steal_succeeded
+            - steal_failed
+            - escape_failed
+            - player_escaped
+            - noise_pulse
+            - player_damaged
+            - room_unstable
+            - room_collapsed
+            - game_finished
+        message:
+          type: string
+        animationCue:
+          $ref: '#/components/schemas/RelicAnimationCue'
+        tone:
+          type: string
+          enum: [ neutral, success, danger, mystery ]
+        createdAtEpochMs:
+          type: integer
+          format: int64
+
+    RelicPublicSnapshot:
+      type: object
+      required:
+        - protocolVersion
+        - gameId
+        - roomId
+        - phase
+        - round
+        - maxRounds
+        - updatedAtEpochMs
+        - roundTimeLimitMs
+        - map
+        - relics
+        - roomInvestigations
+        - players
+        - submittedPlayerIds
+        - events
+        - winnerIds
+      properties:
+        protocolVersion:
+          type: integer
+          const: 1
+        gameId:
+          type: string
+        roomId:
+          type: string
+        phase:
+          type: string
+          enum: [ lobby, planning, review, finished ]
+        round:
+          type: integer
+          format: int64
+        maxRounds:
+          type: integer
+          format: int64
+        updatedAtEpochMs:
+          type: integer
+          format: int64
+        adminPlayerId:
+          type: string
+        roundTimeLimitMs:
+          type: integer
+          format: int64
+        roundStartedAtEpochMs:
+          type: integer
+          format: int64
+        map:
+          type: array
+          items:
+            $ref: '#/components/schemas/RelicRoom'
+        relics:
+          type: array
+          items:
+            $ref: '#/components/schemas/RelicDefinition'
+        roomInvestigations:
+          type: array
+          items:
+            $ref: '#/components/schemas/RelicRoomInvestigation'
+        players:
+          type: array
+          items:
+            $ref: '#/components/schemas/RelicPlayer'
+        submittedPlayerIds:
+          type: array
+          items:
+            type: string
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/RelicEvent'
+        winnerIds:
+          type: array
+          items:
+            type: string
+        setup:
+          $ref: '#/components/schemas/RelicExpeditionSetupMetadata'
+
+    RelicCharacterId:
+      type: string
+      enum:
+        - kael-ironstride
+        - nyra-vale
+        - oryn-starcoil
+        - vessa-thornlock
+        - tarek-ashmantle
+        - sable-moonhook
+        - bronn-flintward
+        - ilyra-dawnshard
+        - marek-gloomglass
+        - zaya-stormvein
+
+    RelicActionInput:
+      type: object
+      required: [ kind ]
+      properties:
+        kind:
+          type: string
+          enum: [ move, search, steal, escape ]
+        targetRoomId:
+          type: string
+        targetPlayerId:
+          type: string
+
+    RelicCommandRequest:
+      description: |
+        Client command body for `/api/relic/games/{gameId}/commands`.
+        The server derives `gameId` and `username`; clients normally send only
+        `protocolVersion`, `kind`, and the command-specific fields.
+      oneOf:
+        - $ref: '#/components/schemas/RelicJoinExpeditionCommandRequest'
+        - $ref: '#/components/schemas/RelicStartExpeditionCommandRequest'
+        - $ref: '#/components/schemas/RelicSubmitActionCommandRequest'
+        - $ref: '#/components/schemas/RelicForceResolveRoundCommandRequest'
+        - $ref: '#/components/schemas/RelicContinueReviewCommandRequest'
+        - $ref: '#/components/schemas/RelicSetRoundLimitCommandRequest'
+
+    RelicCommandRequestBase:
+      type: object
+      required: [ protocolVersion, kind ]
+      properties:
+        protocolVersion:
+          type: integer
+          const: 1
+        kind:
+          type: string
+        gameId:
+          type: string
+          description: Optional client-sent value; overwritten by the server path parameter.
+        username:
+          type: string
+          description: Optional client-sent value; overwritten by the authenticated session.
+
+    RelicJoinExpeditionCommandRequest:
+      allOf:
+        - $ref: '#/components/schemas/RelicCommandRequestBase'
+        - type: object
+          required: [ kind ]
+          properties:
+            kind:
+              type: string
+              const: join-expedition
+            characterId:
+              $ref: '#/components/schemas/RelicCharacterId'
+
+    RelicStartExpeditionCommandRequest:
+      allOf:
+        - $ref: '#/components/schemas/RelicCommandRequestBase'
+        - type: object
+          required: [ kind ]
+          properties:
+            kind:
+              type: string
+              const: start-expedition
+
+    RelicSubmitActionCommandRequest:
+      allOf:
+        - $ref: '#/components/schemas/RelicCommandRequestBase'
+        - type: object
+          required: [ kind, action ]
+          properties:
+            kind:
+              type: string
+              const: submit-action
+            action:
+              $ref: '#/components/schemas/RelicActionInput'
+
+    RelicForceResolveRoundCommandRequest:
+      allOf:
+        - $ref: '#/components/schemas/RelicCommandRequestBase'
+        - type: object
+          required: [ kind ]
+          properties:
+            kind:
+              type: string
+              const: force-resolve-round
+
+    RelicContinueReviewCommandRequest:
+      allOf:
+        - $ref: '#/components/schemas/RelicCommandRequestBase'
+        - type: object
+          required: [ kind ]
+          properties:
+            kind:
+              type: string
+              const: continue-review
+
+    RelicSetRoundLimitCommandRequest:
+      allOf:
+        - $ref: '#/components/schemas/RelicCommandRequestBase'
+        - type: object
+          required: [ kind, timeLimitMs ]
+          properties:
+            kind:
+              type: string
+              const: set-round-limit
+            timeLimitMs:
+              type: integer
+              enum: [ 60000, 180000, 300000 ]

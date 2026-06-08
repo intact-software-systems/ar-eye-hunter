@@ -9,6 +9,7 @@ import {
     createRelicExpeditionInitialStateFactory,
     readRelicAiExpeditionEnv,
 } from './relic-expedition-ai.ts';
+import { initRelicSwaggerRoutes } from './relic-swagger-routes.ts';
 import { isRelicCommand, type RelicCommand } from '@relic-hunters/mod.ts';
 import { configuration } from './config-repo.ts';
 
@@ -54,6 +55,8 @@ app.use(
 app.get('/api/config', (c) =>
     c.json(configuration)
 );
+
+initRelicSwaggerRoutes(app);
 
 app.use('/api/relic/*', async (c, next) => {
     try {
