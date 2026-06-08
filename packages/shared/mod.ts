@@ -11,6 +11,7 @@ export * from './api/overlay-topology.ts';
 export * from './crdt/mod.ts';
 
 export * from './rallar-ai/mod.ts';
+export * from './rallar-game/mod.ts';
 export * from './rallar-motion/mod.ts';
 
 export * from './queuebox/QueueBoxTypes.ts';

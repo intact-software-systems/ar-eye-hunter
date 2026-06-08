@@ -99,6 +99,11 @@ export function useRelicHunters(): RelicHuntersConnection {
             roomId,
             roomReady: !!roomId,
             rtcReady: prev.middlewareConnected && !!roomId,
+            authorityReady: prev.middlewareConnected && !!roomId &&
+                !!runtimeRef.current?.authorityStatus()?.started,
+            authorityPhase: runtimeRef.current?.authorityStatus()?.phase,
+            authorityPeerAssistReadyPeers:
+                runtimeRef.current?.authorityStatus()?.peerAssist.readyPeerIds.length ?? 0,
         }));
     }, [roomId]);
 
@@ -108,6 +113,11 @@ export function useRelicHunters(): RelicHuntersConnection {
             ...prev,
             snapshotReady: !!snapshot,
             rtcReady: prev.middlewareConnected && !!roomIdRef.current,
+            authorityReady: prev.middlewareConnected && !!roomIdRef.current &&
+                !!runtimeRef.current?.authorityStatus()?.started,
+            authorityPhase: runtimeRef.current?.authorityStatus()?.phase,
+            authorityPeerAssistReadyPeers:
+                runtimeRef.current?.authorityStatus()?.peerAssist.readyPeerIds.length ?? 0,
         }));
     }, [snapshot]);
 
@@ -185,6 +195,9 @@ export function useRelicHunters(): RelicHuntersConnection {
             wsListenerReady: false,
             roomListenerReady: false,
             rtcReady: false,
+            authorityReady: false,
+            authorityPhase: undefined,
+            authorityPeerAssistReadyPeers: 0,
         }));
     }, []);
 
@@ -302,6 +315,9 @@ export function useRelicHunters(): RelicHuntersConnection {
             wsListenerReady: false,
             roomListenerReady: false,
             rtcReady: false,
+            authorityReady: false,
+            authorityPhase: undefined,
+            authorityPeerAssistReadyPeers: 0,
             lastError: undefined,
         });
 
@@ -343,6 +359,12 @@ export function useRelicHunters(): RelicHuntersConnection {
                 wsListenerReady: hydration.snapshotListenerReady,
                 rtcReady: !!hydration.roomState.currentRoomId,
                 roomListenerReady: hydration.roomListenerReady,
+                authorityReady: hydration.authorityListenerReady &&
+                    !!hydration.roomState.currentRoomId &&
+                    !!runtime.authorityStatus()?.started,
+                authorityPhase: runtime.authorityStatus()?.phase,
+                authorityPeerAssistReadyPeers:
+                    runtime.authorityStatus()?.peerAssist.readyPeerIds.length ?? 0,
                 roomId: hydration.roomState.currentRoomId,
                 lastHydratedAtEpochMs: Date.now(),
                 lastError: hydration.degradedError,
@@ -361,6 +383,9 @@ export function useRelicHunters(): RelicHuntersConnection {
                 wsListenerReady: false,
                 roomListenerReady: false,
                 rtcReady: false,
+                authorityReady: false,
+                authorityPhase: undefined,
+                authorityPeerAssistReadyPeers: 0,
                 lastError: message,
             });
         }
@@ -536,6 +561,10 @@ export function useRelicHunters(): RelicHuntersConnection {
                 roomReady: true,
                 snapshotReady: snapshotAccepted,
                 rtcReady: true,
+                authorityReady: !!runtime.authorityStatus()?.started,
+                authorityPhase: runtime.authorityStatus()?.phase,
+                authorityPeerAssistReadyPeers:
+                    runtime.authorityStatus()?.peerAssist.readyPeerIds.length ?? 0,
                 roomId: result.roomId,
                 lastHydratedAtEpochMs: Date.now(),
                 lastError: snapshotAccepted ? undefined : 'No current relic snapshot accepted for room.',

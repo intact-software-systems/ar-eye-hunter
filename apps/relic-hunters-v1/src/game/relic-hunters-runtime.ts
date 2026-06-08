@@ -15,8 +15,13 @@ import {
     type RelicPublicSnapshot,
     type RelicServerEvent,
 } from '@relic-hunters/mod.ts';
+import type { RallarGameAuthorityClientStatus } from '@shared/rallar-game/mod.ts';
 import { fetchRelicSnapshot, resetRelicGame, sendRelicCommand } from './api.ts';
 import type { RelicSnapshotRejectionReason, RelicSnapshotSource } from './relic-snapshot-ordering.ts';
+import {
+    createRelicAuthorityClientBridge,
+    type RelicAuthorityClientBridge,
+} from './rallar-game-authority-adapter.ts';
 
 export const RELIC_ROOM_NAME = 'Relic Hunters Expedition';
 export const RELIC_COMMAND_TRANSPORT = 'rest' as const;
@@ -52,6 +57,9 @@ export type RelicRuntimeDiagnostics = Readonly<{
     wsListenerReady: boolean;
     roomListenerReady: boolean;
     rtcReady: boolean;
+    authorityReady: boolean;
+    authorityPhase?: RallarGameAuthorityClientStatus['phase'];
+    authorityPeerAssistReadyPeers: number;
     roomId?: string;
     commandInFlight?: string;
     ignoredSnapshotCount: number;
@@ -84,6 +92,7 @@ export type RelicRuntimeHydration = Readonly<{
     snapshotListenerReady: boolean;
     rtcSnapshotListenerReady: boolean;
     roomListenerReady: boolean;
+    authorityListenerReady: boolean;
     degradedError?: string;
 }>;
 
@@ -112,6 +121,8 @@ export type RelicHuntersRuntimeDeps = Readonly<{
     onRoomsChange(handler: (state: RallarRoomState) => void): () => void;
     onSnapshotMessage(handler: (event: RelicServerEvent) => void): () => void;
     onRtcSnapshotMessage(handler: (event: RelicServerEvent) => void): () => void;
+    onAuthoritySnapshotMessage(handler: (event: RelicServerEvent) => void): () => void;
+    authorityStatus(): RallarGameAuthorityClientStatus | undefined;
     publishRtcSnapshot(snapshot: RelicPublicSnapshot): Promise<boolean>;
     createRoom(displayName: string): Promise<{ group: { groupId: string } }>;
     joinRoom(roomId: string): Promise<{ group: { groupId: string } }>;
@@ -159,6 +170,7 @@ export class RelicHuntersRuntime {
         subscriptions
             .add(this.deps.onSnapshotMessage(onSnapshot))
             .add(this.deps.onRtcSnapshotMessage(onRtcSnapshot))
+            .add(this.deps.onAuthoritySnapshotMessage(onRtcSnapshot))
             .add(this.deps.onRoomsChange(onRoomsChange));
 
         let roomState = started.roomState ?? await this.deps.refreshRooms();
@@ -185,6 +197,7 @@ export class RelicHuntersRuntime {
                 snapshotListenerReady: true,
                 rtcSnapshotListenerReady: true,
                 roomListenerReady: true,
+                authorityListenerReady: true,
             };
         }
 
@@ -198,6 +211,7 @@ export class RelicHuntersRuntime {
                 snapshotListenerReady: true,
                 rtcSnapshotListenerReady: true,
                 roomListenerReady: true,
+                authorityListenerReady: true,
             };
         } catch (error) {
             return {
@@ -207,6 +221,7 @@ export class RelicHuntersRuntime {
                 snapshotListenerReady: true,
                 rtcSnapshotListenerReady: true,
                 roomListenerReady: true,
+                authorityListenerReady: true,
                 degradedError: toErrorMessage(error),
             };
         }
@@ -255,6 +270,10 @@ export class RelicHuntersRuntime {
         return await this.deps.publishRtcSnapshot(snapshot);
     }
 
+    authorityStatus(): RallarGameAuthorityClientStatus | undefined {
+        return this.deps.authorityStatus();
+    }
+
     private async hydrateRoom(roomId: string): Promise<RelicRoomHydration> {
         const snapshot = await this.deps.fetchSnapshot(roomId);
         const roomState = await this.deps.refreshRooms();
@@ -281,6 +300,9 @@ export function initialRelicDiagnostics(
         wsListenerReady: false,
         roomListenerReady: false,
         rtcReady: false,
+        authorityReady: false,
+        authorityPhase: undefined,
+        authorityPeerAssistReadyPeers: 0,
         roomId: undefined,
         commandInFlight: undefined,
         ignoredSnapshotCount: 0,
@@ -294,6 +316,7 @@ export function initialRelicDiagnostics(
 }
 
 function browserRelicRuntimeDeps(): RelicHuntersRuntimeDeps {
+    const authority = createRelicAuthorityClientBridge(rallar);
     return {
         restoreSession: () => rallar.auth.restore(),
         restoreRoomId: () => localStorage.getItem(RELIC_CURRENT_ROOM_STORAGE_KEY) || undefined,
@@ -327,28 +350,10 @@ function browserRelicRuntimeDeps(): RelicHuntersRuntimeDeps {
                 },
                 (message) => handler(message.payload),
             ),
+        onAuthoritySnapshotMessage: (handler) => authority.start(handler),
+        authorityStatus: () => authority.status(),
         publishRtcSnapshot: async (snapshot) => {
-            const nextHopPeerIds = [...new Set(rallar.rtc.readyPeerIds())];
-            if (nextHopPeerIds.length === 0) {
-                return false;
-            }
-
-            const result = await rallar.messages.rtc.send<RelicServerEvent>({
-                roomId: snapshot.roomId,
-                topicId: RELIC_TOPICS.snapshot,
-                typeId: RELIC_TYPES.snapshot,
-                payload: {
-                    protocolVersion: snapshot.protocolVersion,
-                    gameId: snapshot.gameId,
-                    snapshot,
-                },
-                nextHopPeerIds,
-                ttlHops: 1,
-                ttlMs: 5_000,
-                reliability: 'at-least-once',
-            });
-
-            return result.status !== 'no-route' && result.status !== 'skipped';
+            return authority.publishSnapshotRepair(snapshot);
         },
         createRoom: (displayName) => rallar.rooms.create({ displayName }),
         joinRoom: (roomId) => rallar.rooms.join(roomId),

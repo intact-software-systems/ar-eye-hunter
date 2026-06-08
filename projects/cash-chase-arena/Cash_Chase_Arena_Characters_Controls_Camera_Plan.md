@@ -1,4 +1,4 @@
-# Cash Chase Arena - Characters, Controls, and Camera Plan
+# Cash Chase Arena (CCA) - Characters, Controls, and Camera Plan
 Prepared: June 8, 2026
 
 ## Purpose
@@ -13,9 +13,15 @@ Read alongside:
 ## Locked Decisions
 
 - Playable runners are cosmetic-only for MVP.
+- Character development is split into gameplay, visual, and animation tracks.
+- The gameplay character is a fixed simulation capsule, not a mesh-driven body.
+- The visual character is renderer-owned and follows simulation state.
+- Character animation follows simulation state and must not drive authoritative movement.
 - The character style is neon athletes: sporty chase gear, readable silhouettes, bright accents, and original-IP arena identity.
 - Character customization starts as modular outfit pieces.
 - All characters share identical gameplay stats in MVP.
+- The first character vertical slice uses simple R3F capsules before polished humanoid assets.
+- Later shipped character assets use GLB or glTF 2.0 with one shared scale and one shared rig.
 - The first control target is keyboard and mouse.
 - The movement model is parkour chase, not slow stealth and not full trick movement.
 - The first move set is sprint, evasive dash, and vault.
@@ -23,6 +29,8 @@ Read alongside:
 - The primary camera is third-person chase.
 - The camera behavior is soft follow with mouse orbit.
 - Danger camera behavior uses threat assist when a Sentinel is close or actively chasing.
+- Rallar Motion is used for remote entity presentation smoothing once director snapshots exist.
+- Rallar Motion does not own camera behavior, movement rules, collision, scoring, or match authority.
 
 ## Character Plan
 
@@ -42,6 +50,36 @@ Characters must not affect gameplay stats in MVP. Every runner uses the same:
 - Sentinel detection rules
 
 This keeps the first multiplayer version fair, testable, and easier to tune. Character identity is visual and social, not mechanical.
+
+The gameplay character should be represented by a fixed capsule and serializable simulation fields:
+
+```text
+playerId
+position
+velocity
+facingYaw
+movementState
+stamina
+dashCooldown
+activeVault
+cosmeticLoadoutId
+```
+
+`packages/cash-chase-core` must never import Three.js, GLB data, animation clips, skeletons, materials, or renderer asset metadata. It owns the capsule, movement state, and cosmetic loadout ID only.
+
+### Visual Character Model
+
+The visual character is a renderer-owned presentation of the gameplay capsule. It should make players feel distinct without changing competitive rules.
+
+Recommended visual progression:
+
+1. Neon capsule runners with color accents.
+2. Simple modular mannequin with headgear, torso, legs, accent color, and trail FX.
+3. One shared humanoid rig with basic animation clips.
+4. Six to eight curated complete presets.
+5. Later mix-and-match customization after readability, UI, and asset budget are proven.
+
+The renderer may offset meshes, add trails, blend animations, and show effects, but the collision capsule remains fixed. The debug overlay should be able to show the gameplay capsule and visual mesh together so scale drift is obvious during playtests.
 
 ### Visual Direction
 
@@ -70,6 +108,63 @@ trailFx
 ```
 
 Start with 6-8 complete presets built from those parts. Full mix-and-match can come after the first playable slice if the UI and asset budget allow it.
+
+Rallar AI can help propose preset names, accent colorways, trail FX labels, and modular outfit combinations after the base cosmetic schema exists. Those proposals are visual-content drafts only; CCA must validate that every accepted preset keeps shared gameplay stats and original-IP constraints.
+
+Persist the selected cosmetic loadout ID and local cosmetic UI preferences through Rallar Data after the first vertical slice. Rallar Data should store the player's latest selection, not the authoritative match character state. The match snapshot still carries the accepted `cosmeticLoadoutId` used by other clients.
+
+### Animation Plan
+
+Animation is presentation only. The simulation moves the capsule; animation clips respond to `movementState`, speed, `facingYaw`, `activeVault`, and player state.
+
+Use in-place animation clips for:
+
+```text
+idle
+jog
+sprint
+dash
+vault_start
+vault_over
+vault_land
+interact
+caught
+cash_out
+spectator_idle
+```
+
+Do not use root motion for authoritative movement in MVP. If an imported animation contains root motion, strip or ignore it at runtime and keep the visual root following the simulation pose. Animation timing must not affect dash distance, vault clearance, interact eligibility, caught state, or cash-out behavior.
+
+Remote player animation should read Rallar Motion render estimates and snapshot metadata. It should not read raw network packets directly.
+
+### 3D Asset Pipeline
+
+The final character asset pipeline should target GLB or glTF 2.0. Do not ship FBX, OBJ, or Blender-native files as runtime assets.
+
+Runtime-ready character asset rules:
+
+- one shared world scale
+- one shared forward axis
+- one shared humanoid rig for all runner presets
+- stable bone, mesh, material, and attachment names
+- consistent origin at the gameplay capsule base or agreed character root
+- reusable materials and texture atlases where possible
+- low texture budgets until gameplay readability is proven
+- modular parts authored to the same attachment points
+- no mesh-driven collision
+- no cosmetic part may change gameplay capsule size
+- no runtime code should compensate for avoidable scale, pivot, or orientation mistakes in source assets
+
+Recommended source-to-runtime flow:
+
+1. Author or edit source assets in Blender or another DCC tool.
+2. Normalize transforms, pivots, scale, and orientation.
+3. Export GLB or glTF 2.0.
+4. Optimize with glTF Transform for prune, dedupe, texture packaging, and optional mesh compression.
+5. Validate in the CCA R3F scene against the gameplay capsule, camera distance, and HUD.
+6. Add the asset only after desktop browser performance and readability are acceptable.
+
+MVP should not wait for this pipeline. The first playable slice should use procedural capsule/mannequin visuals and reserve GLB work for the visual identity pass.
 
 ### Fairness Constraints
 
@@ -247,6 +342,11 @@ CharacterPreset
 CosmeticPartId
 AccentColorId
 TrailFxId
+GameplayCapsule
+VisualCharacterPreset
+CharacterAnimationState
+CharacterAssetManifest
+CharacterAttachmentPoint
 PlayerControlInput
 MoveIntent
 MovementActionFlags
@@ -255,6 +355,8 @@ CameraMode
 DashState
 VaultAttempt
 VaultResult
+CashChaseMotionSampleMetadata
+CashChaseMotionDiscontinuityReason
 ```
 
 `PlayerControlInput` should be serializable and suitable for Rallar realtime input messages:
@@ -286,19 +388,60 @@ activeVault
 cosmeticLoadout
 ```
 
-The renderer may maintain camera smoothing locally, but it must not send renderer objects or non-serializable camera state across Rallar.
+The renderer may maintain camera smoothing locally, but it must not send renderer objects or non-serializable camera state across Rallar. Camera smoothing is separate from Rallar Motion: the camera follows the locally rendered player pose, while Rallar Motion smooths network-observed entity poses.
+
+## Rallar Motion Placement
+
+Use Rallar Motion for received snapshot presentation, not for input interpretation or simulation.
+
+`DirectorSnapshot` should be converted into per-entity motion samples for:
+
+- other runners
+- Sentinels
+- pickups or cash tokens if they move
+- moving gates, platforms, or mission props
+- the local runner only when reconciling prediction against director truth
+
+Suggested sample metadata:
+
+```text
+snapshotSeq
+directorTick
+sentAtEpochMs
+movementState
+playerState
+activeVault
+cosmeticLoadoutId
+entityKind
+```
+
+Use `observedAtEpochMs` from the local receiver clock when pushing samples into Rallar Motion. Keep `sentAtEpochMs` as metadata for diagnostics unless CCA later adds explicit clock synchronization.
+
+Discontinuities should snap or hold rather than interpolate through impossible space for:
+
+- dash correction beyond the normal blend threshold
+- respawn
+- caught state
+- cash-out exit
+- spectator handoff
+- late-join sync snapshot
+- director recovery snapshot
+
+Local prediction correction should use a correction blender. Small director disagreements blend over a short window; large disagreements snap and emit a debug event. The simulation remains authoritative either way.
 
 ## Implementation Placement
 
 `packages/cash-chase-core` owns:
 
 - input type definitions
+- fixed gameplay capsule definition
 - movement state machine
 - stamina rules
 - dash legality
 - vault legality
 - cosmetic schema
-- gameplay stat invariants
+- cosmetic loadout IDs and gameplay stat invariants
+- Rallar Data validation for local cosmetic loadout selection persistence
 - tests
 
 `apps/cash-chase-arena` owns:
@@ -306,10 +449,14 @@ The renderer may maintain camera smoothing locally, but it must not send rendere
 - keyboard/mouse event capture
 - pointer lock or pointer drag behavior
 - React Three Fiber camera rig
+- `CashChaseMotionPresenter` that owns Rallar Motion buffers for render poses
 - camera smoothing
 - camera obstruction handling
 - threat-assist presentation
 - character mesh composition
+- character asset loading and GLB/glTF validation
+- animation clip mapping and blending
+- debug display of gameplay capsule versus visual mesh
 - cosmetic selection UI
 - HUD hints and binding display
 
@@ -320,6 +467,7 @@ The renderer may maintain camera smoothing locally, but it must not send rendere
 - stale input handling
 - director-side input validation before simulation
 - snapshot publication
+- accepted snapshot delivery into the motion presenter
 
 ## Iteration Placement
 
@@ -327,23 +475,32 @@ The renderer may maintain camera smoothing locally, but it must not send rendere
 
 Define types and defaults:
 
+- gameplay capsule
 - cosmetic loadout
 - character preset
+- visual character preset
+- character animation state
 - player control input
 - camera intent
 - movement action flags
 
 Add unit tests proving cosmetics do not change gameplay stats.
 
+Persist selected loadout and local cosmetic UI preferences through Rallar Data only after the basic runtime can already render local and remote capsules.
+
 ### Iteration 1
 
-Use simple R3F capsules for neon athlete runners.
+Build the character vertical slice with simple R3F capsules for neon athlete runners.
 
 Implement:
 
+- fixed gameplay capsule rendered in debug mode
+- three simple visual silhouettes
+- six accent colors
 - WASD camera-relative input
 - mouse orbit
 - third-person soft-follow camera
+- Rallar Motion buffers for remote capsule interpolation
 - sprint
 - dash
 - jump input as a placeholder, with vault eligibility stubbed if no arena obstacles exist yet
@@ -358,8 +515,31 @@ Add playable chase movement:
 - vault validation
 - Sentinel threat camera cues
 - cash-out and terminal interaction with `E`
+- dash trail and vault placeholder animation driven by simulation state
 
-### Iteration 3+
+### Iteration 3
+
+Add the first visual character production layer:
+
+- simple modular mannequin
+- headgear, torso, legs, accent color, and trail FX slots
+- six to eight curated presets
+- in-place animation states for idle, jog, sprint, dash, vault, interact, caught, cash-out, and spectator
+- Rallar AI-assisted preset names and colorway drafts, validated as cosmetic-only data
+
+### Iteration 4+
+
+Move toward shippable assets:
+
+- one shared humanoid rig
+- GLB or glTF 2.0 character export
+- glTF Transform optimization
+- stable asset manifest
+- attachment-point validation
+- browser performance checks
+- optional mix-and-match customization
+
+### Later Tuning
 
 Tune:
 
@@ -367,6 +547,8 @@ Tune:
 - threat assist
 - outfit modularity
 - animation transitions
+- GLB asset budgets
+- LOD strategy if repeated characters become expensive
 - gamepad support
 - optional touch controls
 
@@ -377,6 +559,9 @@ Tune:
 Cover:
 
 - all cosmetic presets resolve to identical gameplay stats
+- cosmetic loadout IDs map to visual data without changing simulation constants
+- persisted loadout selection validates against known presets before use
+- gameplay capsule dimensions are invariant across presets
 - movement input normalization
 - camera yaw to world move vector conversion
 - sprint stamina drain and recovery
@@ -384,11 +569,17 @@ Cover:
 - vault eligibility by distance, angle, speed, and destination clearance
 - interact eligibility by distance and match phase
 - stale and duplicate input sequence rejection
+- snapshot-to-motion-sample conversion
+- duplicate and stale motion sample rejection by sequence
+- discontinuity classification for dash, respawn, cash-out, spectator, and recovery transitions
+- animation state mapping from movement/player state
+- character asset manifest validation for required slots and attachment names
 
 ### Browser Tests
 
 Cover:
 
+- debug overlay can show gameplay capsule versus visual mesh
 - keyboard movement changes local input intent
 - mouse orbit changes camera intent
 - pointer lock or pointer capture is released on menu open
@@ -397,13 +588,20 @@ Cover:
 - `Space` triggers jump/vault intent
 - `E` triggers interact intent
 - HUD and menu states gate camera input
+- remote capsule render pose continues briefly during one or two missed snapshots and then settles to a held pose
+- local prediction correction blends small errors and snaps large errors
+- cosmetic preset changes update visual identity without changing movement or collision
 
 ### Visual QA
 
 Cover:
 
+- gameplay capsule and visual mesh stay aligned at idle, sprint, dash, vault, caught, and cash-out states
 - character silhouettes remain readable at camera distance
+- Rallar Motion smoothing improves remote motion without adding visible rubber-banding
 - modular outfit parts do not obscure gameplay state
+- animation does not visually imply a larger interact or collision range
+- GLB/glTF assets keep consistent scale, orientation, pivots, and material budgets
 - camera does not clip through common obstacles
 - threat assist does not hijack control
 - sprint and dash effects are readable but not disorienting
@@ -423,4 +621,7 @@ Cover:
 - first-person mode
 - top-down tactical mode
 - cinematic camera takeover during chase
-
+- root-motion-driven authoritative movement
+- mesh-derived collision
+- character-specific rigs in MVP
+- asset-heavy GLB character pipeline before the capsule/mannequin vertical slice works

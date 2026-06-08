@@ -14,6 +14,7 @@ export * from './browser/rallar-crdt.ts';
 export * from './browser/rallar-crdt-transport.ts';
 export * from './browser/rallar.ts';
 export * from './browser/rallar-ai.ts';
+export * from './game/mod.ts';
 export * from './browser/rtc-engine.ts';
 export * from './browser/rtc-message-router.ts';
 export * as wsEngine from './browser/ws-engine.ts';

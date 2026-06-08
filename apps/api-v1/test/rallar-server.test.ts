@@ -2,16 +2,17 @@ import assert from 'node:assert/strict';
 import { Hono } from 'jsr:@hono/hono';
 import { AppTopics } from '@shared/api/api-config.ts';
 import {
-    RALLAR_CRDT_OPERATION_VERSION,
-    RALLAR_CRDT_PROTOCOL_VERSION,
     hashRallarCrdtUpdateEnvelope,
     InMemoryRallarCrdtAuditSink,
+    RALLAR_CRDT_OPERATION_VERSION,
+    RALLAR_CRDT_PROTOCOL_VERSION,
     rallarCrdtBatch,
     type RallarCrdtDocumentRef,
     type RallarCrdtUpdateEnvelope,
 } from '@shared/crdt/mod.ts';
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { InMemoryRallarCrdtLogRepository } from '@shared-server/crdt/InMemoryRallarCrdtLogRepository.ts';
+import { installRallarGameAuthorityServer } from '@shared-server/game/mod.ts';
 import type { Middleware } from '../src/middleware.ts';
 import { createRallarServer } from '../src/create-rallar-server.ts';
 import { init as initCrdtAdminRoutes } from '../src/routes/crdt-admin-routes.ts';
@@ -43,6 +44,7 @@ Deno.test(
             AppTopics.rtt,
             AppTopics.rtcSignaling,
         ]);
+        assert.equal(runtime.inboxTopics.some(isAuthorityTopic), false);
         assert.deepEqual(runtime.outboxTopics, [
             AppTopics.clientStateSnapshot,
             AppTopics.clientStateEvent,
@@ -51,6 +53,7 @@ Deno.test(
             AppTopics.graphs,
             AppTopics.overlayTopology,
         ]);
+        assert.equal(runtime.outboxTopics.some(isAuthorityTopic), false);
         assert.deepEqual(
             [...runtime.anyInboxCallbackIds],
             ['dynamic-ws-topic-router'],
@@ -66,6 +69,67 @@ Deno.test(
 
         assert.equal((await app.request('/api/ws/session-1')).status, 426);
         assert.equal((await app.request('/api/docs')).status, 200);
+    },
+);
+
+Deno.test(
+    'createRallarServer exposes Rallar Game Authority as an explicit room-scoped WS extension',
+    () => {
+        const runtime = createFakeMiddleware();
+        const rallar = createRallarServer({
+            middleware: runtime.middleware,
+        });
+
+        const authority = installRallarGameAuthorityServer<
+            { action: string },
+            { tick: number },
+            { kind: string }
+        >({
+            rallar,
+            protocol: 'test-game.authority.v1',
+            topicId: 'room.test-game.authority',
+            authority: {
+                kind: 'server',
+                id: 'api-v1-test-authority',
+                epoch: 1,
+            },
+            handleCommand: () => ({ status: 'accepted' }),
+            readSnapshot: () => ({ tick: 0 }),
+        });
+
+        assert.deepEqual(authority.authority(), {
+            kind: 'server',
+            id: 'api-v1-test-authority',
+            epoch: 1,
+        });
+        assert.equal(authority.status().topicId, 'room.test-game.authority');
+        assert.equal(runtime.inboxTopics.some(isAuthorityTopic), false);
+        assert.equal(runtime.outboxTopics.some(isAuthorityTopic), false);
+    },
+);
+
+Deno.test(
+    'createRallarServer rejects unsupported game authority topic namespaces',
+    () => {
+        const runtime = createFakeMiddleware();
+        const rallar = createRallarServer({
+            middleware: runtime.middleware,
+        });
+
+        assert.throws(
+            () =>
+                installRallarGameAuthorityServer<
+                    { action: string },
+                    { tick: number },
+                    { kind: string }
+                >({
+                    rallar,
+                    protocol: 'test-game.authority.v1',
+                    topicId: 'game.test-game.authority',
+                    handleCommand: () => ({ status: 'accepted' }),
+                }),
+            /Rallar user WS topic must start with app\. or room\./,
+        );
     },
 );
 
@@ -194,7 +258,8 @@ function createFakeMiddleware(): FakeRuntime {
             websocketCallbackIds.add(id);
             return this;
         },
-        addConnection(): void {},
+        addConnection(): void {
+        },
     };
 
     const wsQBoxServerService = {
@@ -280,6 +345,10 @@ function createCrdtUpdate(updateId: string): RallarCrdtUpdateEnvelope {
         ...updateWithoutHash,
         hash: hashRallarCrdtUpdateEnvelope(updateWithoutHash),
     };
+}
+
+function isAuthorityTopic(topicId: string): boolean {
+    return topicId.includes('authority');
 }
 
 async function postJson(app: Hono, path: string, body: unknown): Promise<any> {

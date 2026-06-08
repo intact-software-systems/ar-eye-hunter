@@ -8,12 +8,14 @@ describe('RelicHuntersRuntime', () => {
     it('starts, installs scoped listeners, and fetches the current snapshot', async () => {
         const unsubscribeSnapshot = vi.fn();
         const unsubscribeRtcSnapshot = vi.fn();
+        const unsubscribeAuthoritySnapshot = vi.fn();
         const unsubscribeRooms = vi.fn();
         const subscriptions = subscriptionScope();
         const deps = runtimeDeps({
             subscriptions: vi.fn(() => subscriptions),
             onSnapshotMessage: vi.fn(() => unsubscribeSnapshot),
             onRtcSnapshotMessage: vi.fn(() => unsubscribeRtcSnapshot),
+            onAuthoritySnapshotMessage: vi.fn(() => unsubscribeAuthoritySnapshot),
             onRoomsChange: vi.fn(() => unsubscribeRooms),
         });
         const runtime = new RelicHuntersRuntime(deps);
@@ -24,15 +26,17 @@ describe('RelicHuntersRuntime', () => {
         expect(deps.subscriptions).toHaveBeenCalledTimes(1);
         expect(deps.onSnapshotMessage).toHaveBeenCalledTimes(1);
         expect(deps.onRtcSnapshotMessage).toHaveBeenCalledTimes(1);
+        expect(deps.onAuthoritySnapshotMessage).toHaveBeenCalledTimes(1);
         expect(deps.onRoomsChange).toHaveBeenCalledTimes(1);
         expect(deps.refreshRooms).not.toHaveBeenCalled();
-        expect(subscriptions.add).toHaveBeenCalledTimes(3);
+        expect(subscriptions.add).toHaveBeenCalledTimes(4);
         expect(deps.fetchSnapshot).toHaveBeenCalledWith('room-1');
         expect(hydration).toMatchObject({
             session: session(),
             roomState: roomState(),
             snapshotListenerReady: true,
             rtcSnapshotListenerReady: true,
+            authorityListenerReady: true,
             roomListenerReady: true,
         });
 
@@ -40,6 +44,7 @@ describe('RelicHuntersRuntime', () => {
         expect(subscriptions.unsubscribe).toHaveBeenCalledTimes(1);
         expect(unsubscribeSnapshot).toHaveBeenCalledTimes(1);
         expect(unsubscribeRtcSnapshot).toHaveBeenCalledTimes(1);
+        expect(unsubscribeAuthoritySnapshot).toHaveBeenCalledTimes(1);
         expect(unsubscribeRooms).toHaveBeenCalledTimes(1);
     });
 
@@ -57,6 +62,7 @@ describe('RelicHuntersRuntime', () => {
         expect(hydration?.snapshot).toBeUndefined();
         expect(hydration?.snapshotListenerReady).toBe(true);
         expect(hydration?.rtcSnapshotListenerReady).toBe(true);
+        expect(hydration?.authorityListenerReady).toBe(true);
         expect(hydration?.roomListenerReady).toBe(true);
     });
 
@@ -116,6 +122,7 @@ describe('RelicHuntersRuntime', () => {
         expect(deps.subscriptions).not.toHaveBeenCalled();
         expect(deps.onSnapshotMessage).not.toHaveBeenCalled();
         expect(deps.onRtcSnapshotMessage).not.toHaveBeenCalled();
+        expect(deps.onAuthoritySnapshotMessage).not.toHaveBeenCalled();
         expect(deps.onRoomsChange).not.toHaveBeenCalled();
     });
 
@@ -174,6 +181,28 @@ function runtimeDeps(
         onRoomsChange: vi.fn(() => () => undefined),
         onSnapshotMessage: vi.fn(() => () => undefined),
         onRtcSnapshotMessage: vi.fn(() => () => undefined),
+        onAuthoritySnapshotMessage: vi.fn(() => () => undefined),
+        authorityStatus: vi.fn(() => ({
+            phase: 'ready',
+            protocol: 'relic-hunters.authority.v1',
+            topicId: 'relic-hunters.authority',
+            roomId: 'room-1',
+            localPeerId: 'alice-session',
+            authority: {
+                kind: 'server',
+                id: 'relic-hunter-server-v1',
+                epoch: RELIC_PROTOCOL_VERSION,
+            },
+            started: true,
+            stopped: false,
+            pendingCommandCount: 0,
+            peerAssist: {
+                enabled: true,
+                snapshotRepairEnabled: true,
+                readyPeerIds: [],
+            },
+            updatedAtEpochMs: 1_700_000_000_000,
+        })),
         publishRtcSnapshot: vi.fn(async () => true),
         createRoom: vi.fn(async () => ({ group: { groupId: 'room-1' } })),
         joinRoom: vi.fn(async () => ({ group: { groupId: 'room-1' } })),

@@ -1,0 +1,122 @@
+import { describe, expect, it } from 'vitest';
+import { deriveRallarGameDiagnostics } from '@shared-web/game/mod.ts';
+import type { RallarGameMatchStatus } from '@shared-web/game/mod.ts';
+
+describe('Rallar Game diagnostics', () => {
+    it('aggregates match, election, readiness, capability, and RTC status', () => {
+        const status: RallarGameMatchStatus = {
+            phase: 'active',
+            protocol: 'test.game.v1',
+            topicId: 'test.game',
+            roomId: 'room-1',
+            localPeerId: 'peer-a',
+            directorPeerId: 'peer-b',
+            directorEpoch: 2,
+            directorIsFresh: true,
+            recovery: { status: 'idle' },
+            started: true,
+            stopped: false,
+            updatedAtEpochMs: 1_000,
+        };
+
+        expect(
+            deriveRallarGameDiagnostics({
+                status,
+                nowEpochMs: 2_000,
+                election: {
+                    host: {
+                        peerId: 'peer-b',
+                        score: 10,
+                        eligible: true,
+                        reason: 'fresh-capability',
+                    },
+                    backup: {
+                        peerId: 'peer-a',
+                        score: 9,
+                        eligible: true,
+                        reason: 'fresh-capability',
+                    },
+                    candidates: [],
+                    nowEpochMs: 2_000,
+                    capabilityTtlMs: 10_000,
+                },
+                peerReadiness: {
+                    status: 'partial',
+                    roomId: 'room-1',
+                    laneIds: ['game-input'],
+                    readyPeerIds: ['peer-b'],
+                    notReadyPeerIds: ['peer-c'],
+                    lanes: [],
+                },
+                rtcStatus: {
+                    sessionId: 'peer-a',
+                    laneId: 'game-input',
+                    knownPeerIds: ['peer-b', 'peer-c'],
+                    activePeerIds: ['peer-b'],
+                    peerIdsWithNoReconnectableLanes: [],
+                    readyPeerIds: ['peer-b'],
+                    peers: [],
+                },
+                capabilities: [
+                    { peerId: 'peer-a', reportedAtEpochMs: 1_000 },
+                    { peerId: 'peer-b', reportedAtEpochMs: 1_000 },
+                ],
+                realtimeHealth: [
+                    {
+                        peerId: 'peer-b',
+                        laneId: 'game-input',
+                    },
+                ],
+            }),
+        ).toMatchObject({
+            generatedAtEpochMs: 2_000,
+            phase: 'active',
+            roomId: 'room-1',
+            localPeerId: 'peer-a',
+            directorPeerId: 'peer-b',
+            directorEpoch: 2,
+            directorIsFresh: true,
+            hostPeerId: 'peer-b',
+            backupPeerId: 'peer-a',
+            knownPeerIds: ['peer-b', 'peer-c'],
+            readyPeerIds: ['peer-b'],
+            notReadyPeerIds: ['peer-c'],
+            capabilityCount: 2,
+            rtcPeerCount: 2,
+            issues: ['partial-lane-readiness'],
+        });
+    });
+
+    it('reports missing room, local peer, and director recovery issues', () => {
+        const diagnostics = deriveRallarGameDiagnostics({
+            status: {
+                phase: 'recovering',
+                protocol: 'test.game.v1',
+                topicId: 'test.game',
+                directorIsFresh: false,
+                recovery: {
+                    status: 'recovering',
+                    reason: 'No fresh director.',
+                    sinceEpochMs: 1_000,
+                },
+                started: true,
+                stopped: false,
+                updatedAtEpochMs: 1_000,
+            },
+            nowEpochMs: 2_000,
+            election: {
+                candidates: [],
+                nowEpochMs: 2_000,
+                capabilityTtlMs: 10_000,
+            },
+        });
+
+        expect(diagnostics.issues).toEqual([
+            'no-director',
+            'no-electable-host',
+            'no-local-peer',
+            'no-room',
+            'recovering',
+        ]);
+    });
+});
