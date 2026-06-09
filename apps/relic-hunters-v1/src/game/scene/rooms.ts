@@ -41,6 +41,7 @@ import {
     applySheen,
     createCastleSurfaceTextures,
 } from './textures.ts';
+import { RELIC_NEON_THEME, relicNeonAccentForRoom } from './neonTheme.ts';
 import type { CardinalDirection, ClueHotspot } from './types.ts';
 
 export type CastleMaterials = Readonly<{
@@ -56,6 +57,14 @@ export type CastleMaterials = Readonly<{
     shoji: PBRMaterial;
     foliage: PBRMaterial;
     water: PBRMaterial;
+    holoGlass: PBRMaterial;
+    neonCyan: PBRMaterial;
+    neonMagenta: PBRMaterial;
+    neonViolet: PBRMaterial;
+    neonGreen: PBRMaterial;
+    neonAmber: PBRMaterial;
+    neonWhite: PBRMaterial;
+    shadowPanel: PBRMaterial;
     clothBlue: PBRMaterial;
     clothCoral: PBRMaterial;
     torch: PBRMaterial;
@@ -73,24 +82,34 @@ export type RoomRuntime = Readonly<{
 export function createCastleMaterials(scene: Scene): CastleMaterials {
     const { stoneNormal, woodNormal, metalNormal } = createCastleSurfaceTextures(scene);
 
-    const wall      = castleMaterial(scene, 'castle-wall-stone',    '#8c9890', 0.012, 0.02, 0.88);
-    const ceiling   = castleMaterial(scene, 'castle-ceiling-stone', '#7f8b84', 0.010, 0.02, 0.90);
-    const plaster   = castleMaterial(scene, 'castle-plaster',       '#d8d3bf', 0.030, 0.00, 0.92);
-    const wood      = castleMaterial(scene, 'castle-oak',           '#4b2a18', 0.016, 0.00, 0.74);
-    const roofTile  = castleMaterial(scene, 'castle-roof-tile',     '#29313a', 0.012, 0.04, 0.72);
-    const lacquer   = castleMaterial(scene, 'castle-lacquer',       '#982617', 0.060, 0.00, 0.42);
-    const trim      = castleMaterial(scene, 'castle-trim',          '#c6973d', 0.08,  0.22, 0.46);
-    const metal     = castleMaterial(scene, 'castle-iron',          '#9aa7ae', 0.014, 0.85, 0.38);
-    const gold      = castleMaterial(scene, 'castle-gold',          '#f1c453', 0.20,  0.92, 0.14);
-    const shoji     = castleMaterial(scene, 'castle-shoji-paper',   '#f6e8ca', 0.22,  0.00, 0.96);
-    const foliage   = castleMaterial(scene, 'castle-foliage',       '#e58aa6', 0.045, 0.00, 0.88);
-    const water     = castleMaterial(scene, 'castle-water',         '#5cb8c8', 0.10,  0.02, 0.35);
-    const clothBlue = castleMaterial(scene, 'castle-blue-cloth',    '#3db7d6', 0.06,  0.00, 0.90);
-    const clothCoral= castleMaterial(scene, 'castle-coral-cloth',   '#f9736b', 0.055, 0.00, 0.90);
-    const torch     = castleMaterial(scene, 'castle-torch-flame',   '#ffbf5c', 1.85,  0,    1.0);
-    const crack     = castleMaterial(scene, 'castle-crack-shadow',  '#2f2d28', 0.003, 0,    1.0);
-    const rubble    = castleMaterial(scene, 'castle-rubble',        '#756b5d', 0.010, 0.04, 0.82);
-    const portal    = castleMaterial(scene, 'castle-portal-light',  '#8ee7f5', 0.58,  0.12, 0.35);
+    const wall      = castleMaterial(scene, 'neon-wall-graphite',      RELIC_NEON_THEME.graphiteLift, 0.32, 0.08, 0.36);
+    const ceiling   = castleMaterial(scene, 'neon-ceiling-panel',      RELIC_NEON_THEME.graphite, 0.34, 0.10, 0.34);
+    const plaster   = castleMaterial(scene, 'neon-hologlass-panel',    RELIC_NEON_THEME.glass, 0.54, 0.00, 0.26);
+    const wood      = castleMaterial(scene, 'neon-carbon-rail',        RELIC_NEON_THEME.graphiteLight, 0.26, 0.28, 0.28);
+    const roofTile  = castleMaterial(scene, 'neon-ceiling-rail',       '#a9d9ea', 0.28, 0.26, 0.26);
+    const lacquer   = castleMaterial(scene, 'neon-magenta-trim',       RELIC_NEON_THEME.magenta, 0.92, 0.08, 0.26);
+    const trim      = castleMaterial(scene, 'neon-cyan-trim',          RELIC_NEON_THEME.cyan, 0.95, 0.12, 0.22);
+    const metal     = castleMaterial(scene, 'neon-brushed-metal',      '#b7c9d6', 0.10, 0.82, 0.22);
+    const gold      = castleMaterial(scene, 'neon-amber-conduit',      RELIC_NEON_THEME.amber, 0.82, 0.72, 0.16);
+    const shoji     = castleMaterial(scene, 'neon-white-panel',        RELIC_NEON_THEME.white, 0.28, 0.00, 0.74);
+    const foliage   = castleMaterial(scene, 'neon-green-accent',       RELIC_NEON_THEME.green, 0.74, 0.00, 0.44);
+    const water     = castleMaterial(scene, 'neon-blue-reflection',    RELIC_NEON_THEME.cyanSoft, 0.70, 0.02, 0.20);
+    const holoGlass = castleMaterial(scene, 'neon-hologlass',          RELIC_NEON_THEME.glass, 0.82, 0.00, 0.16);
+    const neonCyan  = castleMaterial(scene, 'neon-cyan',               RELIC_NEON_THEME.cyan, 1.35, 0.04, 0.18);
+    const neonMagenta = castleMaterial(scene, 'neon-magenta',          RELIC_NEON_THEME.magenta, 1.28, 0.04, 0.18);
+    const neonViolet = castleMaterial(scene, 'neon-violet',            RELIC_NEON_THEME.violet, 1.18, 0.06, 0.20);
+    const neonGreen = castleMaterial(scene, 'neon-green',              RELIC_NEON_THEME.green, 1.15, 0.04, 0.18);
+    const neonAmber = castleMaterial(scene, 'neon-amber',              RELIC_NEON_THEME.amber, 1.08, 0.08, 0.16);
+    const neonWhite = castleMaterial(scene, 'neon-white',              RELIC_NEON_THEME.white, 0.92, 0.02, 0.24);
+    const shadowPanel = castleMaterial(scene, 'neon-shadow-panel',     RELIC_NEON_THEME.shadow, 0.34, 0.08, 0.36);
+    const clothBlue = castleMaterial(scene, 'neon-blue-cloth',         RELIC_NEON_THEME.cyan, 0.82, 0.00, 0.58);
+    const clothCoral= castleMaterial(scene, 'neon-coral-cloth',        RELIC_NEON_THEME.coral, 0.82, 0.00, 0.58);
+    const torch     = castleMaterial(scene, 'neon-energy-flare',       RELIC_NEON_THEME.amber, 2.10, 0,    0.55);
+    const crack     = castleMaterial(scene, 'neon-warning-cut',        '#ff2d55', 0.55, 0,    0.80);
+    const rubble    = castleMaterial(scene, 'neon-carbon-block',       '#a8bfd4', 0.18, 0.10, 0.44);
+    const portal    = castleMaterial(scene, 'neon-portal-light',       RELIC_NEON_THEME.cyanSoft, 1.10, 0.12, 0.18);
+    holoGlass.alpha = 0.62;
+    holoGlass.backFaceCulling = false;
 
     // Stone surfaces — brick-course bump adds mortar joints and per-stone dome
     applyNormalMap(wall,    stoneNormal, 4, 3);
@@ -134,6 +153,14 @@ export function createCastleMaterials(scene: Scene): CastleMaterials {
         shoji,
         foliage,
         water,
+        holoGlass,
+        neonCyan,
+        neonMagenta,
+        neonViolet,
+        neonGreen,
+        neonAmber,
+        neonWhite,
+        shadowPanel,
         clothBlue,
         clothCoral,
         torch,
@@ -148,32 +175,13 @@ export function applyRoomMaterial(
     room: RelicRoom,
     selected: boolean,
 ): void {
-    const base = room.collapsed
-        ? '#514a3f'
-        : room.unstable
-        ? '#df7a45'
-        : selected
-        ? '#f3c969'
-        : room.kind === 'exit'
-        ? '#7dd3fc'
-        : room.kind === 'treasure'
-        ? '#b7e66e'
-        : room.kind === 'shrine'
-        ? '#b9a7f4'
-        : room.kind === 'monster'
-        ? '#b86f7f'
-        : room.kind === 'trap'
-        ? '#f19a64'
-        : room.kind === 'storage'
-        ? '#c69b5f'
-        : '#93b7aa';
-    material.albedoColor = Color3.FromHexString(base);
-    material.emissiveColor = room.collapsed ? new Color3(0.035, 0.028, 0.018)
-        : room.unstable ? new Color3(0.2, 0.07, 0.025)
-        : selected ? new Color3(0.18, 0.12, 0.035)
-        : new Color3(0.035, 0.035, 0.026);
-    material.metallic = 0;
-    material.roughness = 0.9;
+    const accent = relicNeonAccentForRoom(room);
+    material.albedoColor = Color3.FromHexString(selected ? accent.secondary : accent.base);
+    material.emissiveColor = Color3.FromHexString(accent.emissive).scale(
+        room.collapsed ? 0.24 : selected ? 0.58 : room.unstable ? 0.46 : 0.28,
+    );
+    material.metallic = 0.10;
+    material.roughness = 0.38;
 }
 
 export function createIntroCastleScene(
@@ -305,6 +313,86 @@ export function createIntroCastleScene(
     return meshes;
 }
 
+export function createNeonMapBase(
+    runtime: RoomRuntime,
+    rooms: readonly RelicRoom[],
+): readonly Mesh[] {
+    if (rooms.length === 0) {
+        return [];
+    }
+
+    const xs = rooms.map((room) => roomWorldPosition(room).x);
+    const zs = rooms.map((room) => roomWorldPosition(room).z);
+    const minX = Math.min(...xs) - ROOM_SIZE * 0.92;
+    const maxX = Math.max(...xs) + ROOM_SIZE * 0.92;
+    const minZ = Math.min(...zs) - ROOM_SIZE * 0.92;
+    const maxZ = Math.max(...zs) + ROOM_SIZE * 0.92;
+    const width = Math.max(ROOM_SIZE * 1.8, maxX - minX);
+    const depth = Math.max(ROOM_SIZE * 1.8, maxZ - minZ);
+    const centerX = (minX + maxX) / 2;
+    const centerZ = (minZ + maxZ) / 2;
+    const meshes: Mesh[] = [];
+    const add = (mesh: Mesh, material: PBRMaterial) => {
+        mesh.material = material;
+        meshes.push(mesh);
+        return mesh;
+    };
+
+    const base = add(MeshBuilder.CreateBox(
+        'neon-map-base-foundation',
+        { width, height: 0.16, depth },
+        runtime.scene,
+    ), runtime.castleMaterials.shadowPanel);
+    base.position.set(centerX, FLOOR_Y - 0.22, centerZ);
+    base.metadata = { neonMapBase: true };
+
+    const glass = add(MeshBuilder.CreateBox(
+        'neon-map-base-glow-plane',
+        { width: width * 0.985, height: 0.035, depth: depth * 0.985 },
+        runtime.scene,
+    ), runtime.castleMaterials.holoGlass);
+    glass.position.set(centerX, FLOOR_Y - 0.11, centerZ);
+    glass.visibility = 0.86;
+    glass.metadata = { neonMapBase: true };
+
+    const luminousDeck = add(MeshBuilder.CreateBox(
+        'neon-map-base-luminous-deck',
+        { width: width * 1.035, height: 0.026, depth: depth * 1.035 },
+        runtime.scene,
+    ), runtime.castleMaterials.plaster);
+    luminousDeck.position.set(centerX, FLOOR_Y - 0.032, centerZ);
+    luminousDeck.visibility = 0.96;
+    luminousDeck.metadata = { neonMapBase: true };
+
+    const gridCountX = Math.max(2, Math.ceil(width / WORLD_SCALE));
+    const gridCountZ = Math.max(2, Math.ceil(depth / WORLD_SCALE));
+    for (let index = 0; index <= gridCountX; index += 1) {
+        const x = minX + (width * index) / gridCountX;
+        const line = add(MeshBuilder.CreateBox(
+            `neon-map-grid-x-${index}`,
+            { width: 0.035, height: 0.04, depth },
+            runtime.scene,
+        ), index % 2 === 0 ? runtime.castleMaterials.neonCyan : runtime.castleMaterials.neonViolet);
+        line.position.set(x, FLOOR_Y - 0.06, centerZ);
+        line.visibility = 0.74;
+        line.metadata = { neonMapBase: true };
+    }
+
+    for (let index = 0; index <= gridCountZ; index += 1) {
+        const z = minZ + (depth * index) / gridCountZ;
+        const line = add(MeshBuilder.CreateBox(
+            `neon-map-grid-z-${index}`,
+            { width, height: 0.04, depth: 0.035 },
+            runtime.scene,
+        ), index % 2 === 0 ? runtime.castleMaterials.neonMagenta : runtime.castleMaterials.neonCyan);
+        line.position.set(centerX, FLOOR_Y - 0.055, z);
+        line.visibility = 0.70;
+        line.metadata = { neonMapBase: true };
+    }
+
+    return meshes;
+}
+
 export function createCastleCorridor(
     runtime: RoomRuntime,
     from: RelicRoom,
@@ -325,7 +413,7 @@ export function createCastleCorridor(
     }
 
     const meshes: Mesh[] = [];
-    const corridorWidth = 1.18;
+    const corridorWidth = 2.05;
     const add = (mesh: Mesh, material: PBRMaterial) => {
         mesh.position.addInPlace(center);
         mesh.material = material;
@@ -341,7 +429,7 @@ export function createCastleCorridor(
             depth: horizontal ? corridorWidth : span + WALL_THICKNESS,
         },
         runtime.scene,
-    ), runtime.castleMaterials.wall);
+    ), runtime.castleMaterials.shadowPanel);
     floor.position.y = FLOOR_Y;
 
     const ceiling = add(MeshBuilder.CreateBox(
@@ -352,8 +440,9 @@ export function createCastleCorridor(
             depth: horizontal ? corridorWidth : span + WALL_THICKNESS,
         },
         runtime.scene,
-    ), runtime.castleMaterials.ceiling);
+    ), runtime.castleMaterials.holoGlass);
     ceiling.position.y = CEILING_Y;
+    ceiling.visibility = 0.78;
 
     for (const side of [-1, 1]) {
         const wall = add(MeshBuilder.CreateBox(
@@ -364,12 +453,29 @@ export function createCastleCorridor(
                 depth: horizontal ? WALL_THICKNESS : span + WALL_THICKNESS,
             },
             runtime.scene,
-        ), runtime.castleMaterials.wall);
+        ), runtime.castleMaterials.holoGlass);
         wall.position.y = WALL_HEIGHT / 2;
+        wall.visibility = 0.72;
         if (horizontal) {
             wall.position.z += side * (corridorWidth / 2 + WALL_THICKNESS / 2);
         } else {
             wall.position.x += side * (corridorWidth / 2 + WALL_THICKNESS / 2);
+        }
+
+        const rail = add(MeshBuilder.CreateBox(
+            `corridor-neon-rail-${from.id}-${to.id}-${side}`,
+            {
+                width: horizontal ? span + WALL_THICKNESS : 0.075,
+                height: 0.075,
+                depth: horizontal ? 0.075 : span + WALL_THICKNESS,
+            },
+            runtime.scene,
+        ), side < 0 ? runtime.castleMaterials.neonCyan : runtime.castleMaterials.neonMagenta);
+        rail.position.y = FLOOR_Y + 0.14;
+        if (horizontal) {
+            rail.position.z += side * (corridorWidth / 2 - 0.12);
+        } else {
+            rail.position.x += side * (corridorWidth / 2 - 0.12);
         }
     }
 
@@ -384,7 +490,7 @@ export function createCastleCorridor(
                 depth: horizontal ? corridorWidth + 0.28 : 0.16,
             },
             runtime.scene,
-        ), runtime.castleMaterials.wood);
+        ), index % 2 === 0 ? runtime.castleMaterials.neonViolet : runtime.castleMaterials.neonCyan);
         beam.position.y = CEILING_Y - 0.12;
         if (horizontal) {
             beam.position.x += offset;
@@ -417,6 +523,7 @@ export function createRoomProps(
     const doorDirections = roomDoorDirections(room, rooms);
     const kit = createRoomCastleKit(runtime.scene, add, materials, room.id);
     buildStoneBase(kit);
+    addNeonRoomEnvelope(runtime, add, room, materials, doorDirections);
     for (const direction of ['north', 'south', 'east', 'west'] as const) {
         buildCastleWall(kit, direction, doorDirections.has(direction));
     }
@@ -432,6 +539,187 @@ export function createRoomProps(
     addRubblePile(add, room, materials);
 
     return finalizeRoomProps(props, root, room.id);
+}
+
+function addNeonRoomEnvelope(
+    runtime: RoomRuntime,
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
+    room: RelicRoom,
+    materials: CastleMaterials,
+    doorDirections: ReadonlySet<CardinalDirection>,
+): void {
+    const accent = relicNeonAccentForRoom(room);
+    const accentMaterial = room.kind === 'monster' ? materials.neonMagenta
+        : room.kind === 'trap' ? materials.neonAmber
+        : room.kind === 'treasure' ? materials.neonGreen
+        : room.kind === 'shrine' ? materials.neonViolet
+        : room.kind === 'exit' ? materials.neonGreen
+        : materials.neonCyan;
+    const secondaryMaterial = room.kind === 'monster' || room.kind === 'shrine'
+        ? materials.neonViolet
+        : room.kind === 'trap'
+        ? materials.neonMagenta
+        : materials.neonAmber;
+
+    const floorPanel = add(MeshBuilder.CreateBox(
+        `neon-room-floor-panel-${room.id}`,
+        { width: ROOM_SIZE - 0.44, height: 0.035, depth: ROOM_SIZE - 0.44 },
+        runtime.scene,
+    ), materials.holoGlass);
+    floorPanel.position.set(0, 0.17, 0);
+    floorPanel.visibility = room.collapsed ? 0.56 : 0.86;
+
+    for (const offset of [-2.4, -1.2, 0, 1.2, 2.4]) {
+        const lineX = add(MeshBuilder.CreateBox(
+            `neon-room-grid-x-${room.id}-${offset}`,
+            { width: 0.035, height: 0.045, depth: ROOM_SIZE - 1.1 },
+            runtime.scene,
+        ), Math.abs(offset) < 0.01 ? accentMaterial : materials.neonCyan);
+        lineX.position.set(offset, 0.22, 0);
+        lineX.visibility = 0.72;
+
+        const lineZ = add(MeshBuilder.CreateBox(
+            `neon-room-grid-z-${room.id}-${offset}`,
+            { width: ROOM_SIZE - 1.1, height: 0.045, depth: 0.035 },
+            runtime.scene,
+        ), Math.abs(offset) < 0.01 ? secondaryMaterial : materials.neonMagenta);
+        lineZ.position.set(0, 0.225, offset);
+        lineZ.visibility = 0.54;
+    }
+
+    for (const side of [-1, 1]) {
+        const skirtNs = add(MeshBuilder.CreateBox(
+            `neon-room-skirt-ns-${room.id}-${side}`,
+            { width: ROOM_SIZE + 0.64, height: 0.58, depth: 0.16 },
+            runtime.scene,
+        ), materials.shadowPanel);
+        skirtNs.position.set(0, -0.22, side * (ROOM_SIZE / 2 + 0.18));
+
+        const skirtEw = add(MeshBuilder.CreateBox(
+            `neon-room-skirt-ew-${room.id}-${side}`,
+            { width: 0.16, height: 0.58, depth: ROOM_SIZE + 0.64 },
+            runtime.scene,
+        ), materials.shadowPanel);
+        skirtEw.position.set(side * (ROOM_SIZE / 2 + 0.18), -0.22, 0);
+
+        const railNs = add(MeshBuilder.CreateBox(
+            `neon-room-edge-ns-${room.id}-${side}`,
+            { width: ROOM_SIZE + 0.28, height: 0.065, depth: 0.065 },
+            runtime.scene,
+        ), side < 0 ? accentMaterial : secondaryMaterial);
+        railNs.position.set(0, 0.32, side * (ROOM_SIZE / 2 - 0.28));
+
+        const railEw = add(MeshBuilder.CreateBox(
+            `neon-room-edge-ew-${room.id}-${side}`,
+            { width: 0.065, height: 0.065, depth: ROOM_SIZE + 0.28 },
+            runtime.scene,
+        ), side < 0 ? secondaryMaterial : accentMaterial);
+        railEw.position.set(side * (ROOM_SIZE / 2 - 0.28), 0.32, 0);
+    }
+
+    for (const direction of ['north', 'south', 'east', 'west'] as const) {
+        addHologlassWall(add, runtime.scene, room.id, direction, doorDirections.has(direction), materials);
+        if (doorDirections.has(direction)) {
+            addNeonDoorFrame(add, runtime.scene, room.id, direction, accentMaterial, secondaryMaterial);
+        }
+    }
+
+    const halo = add(MeshBuilder.CreateTorus(
+        `neon-room-kind-halo-${room.id}`,
+        { diameter: room.kind === 'exit' ? 4.7 : 4.1, thickness: 0.052, tessellation: 54 },
+        runtime.scene,
+    ), accentMaterial);
+    halo.position.set(0, 0.27, 0);
+    halo.rotation.x = Math.PI / 2;
+    halo.visibility = room.unstable ? 0.92 : 0.68;
+
+    const accentPlate = add(MeshBuilder.CreateBox(
+        `neon-room-accent-plate-${room.id}`,
+        { width: 1.15, height: 0.05, depth: 0.32 },
+        runtime.scene,
+    ), accentMaterial);
+    accentPlate.position.set(0, 0.34, -ROOM_SIZE / 2 + 0.72);
+    accentPlate.visibility = accent.emissive === RELIC_NEON_THEME.coral ? 0.94 : 0.76;
+}
+
+function addHologlassWall(
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
+    scene: Scene,
+    roomId: string,
+    direction: CardinalDirection,
+    hasDoor: boolean,
+    materials: CastleMaterials,
+): void {
+    const northSouth = direction === 'north' || direction === 'south';
+    const sign = direction === 'north' || direction === 'west' ? -1 : 1;
+    const wallPosition = sign * (ROOM_SIZE / 2 - 0.08);
+    const panelSpan = hasDoor ? (ROOM_SIZE - DOOR_WIDTH) / 2 - 0.18 : ROOM_SIZE - 0.5;
+    const panelOffsets = hasDoor
+        ? [-1, 1].map((side) => side * (DOOR_WIDTH / 2 + panelSpan / 2 + 0.08))
+        : [0];
+
+    for (const offset of panelOffsets) {
+        const panel = add(MeshBuilder.CreateBox(
+            `neon-hologlass-wall-${roomId}-${direction}-${offset}`,
+            {
+                width: northSouth ? panelSpan : 0.055,
+                height: 2.05,
+                depth: northSouth ? 0.055 : panelSpan,
+            },
+            scene,
+        ), materials.holoGlass);
+        panel.position.set(
+            northSouth ? offset : wallPosition,
+            1.36,
+            northSouth ? wallPosition : offset,
+        );
+        panel.visibility = 0.74;
+    }
+}
+
+function addNeonDoorFrame(
+    add: (mesh: Mesh, material?: PBRMaterial) => Mesh,
+    scene: Scene,
+    roomId: string,
+    direction: CardinalDirection,
+    primary: PBRMaterial,
+    secondary: PBRMaterial,
+): void {
+    const northSouth = direction === 'north' || direction === 'south';
+    const sign = direction === 'north' || direction === 'west' ? -1 : 1;
+    const wallPosition = sign * (ROOM_SIZE / 2 - 0.18);
+    const sideOffsets = [-DOOR_WIDTH / 2, DOOR_WIDTH / 2];
+    for (const sideOffset of sideOffsets) {
+        const upright = add(MeshBuilder.CreateBox(
+            `neon-door-upright-${roomId}-${direction}-${sideOffset}`,
+            {
+                width: northSouth ? 0.08 : 0.10,
+                height: 2.15,
+                depth: northSouth ? 0.10 : 0.08,
+            },
+            scene,
+        ), primary);
+        upright.position.set(
+            northSouth ? sideOffset : wallPosition,
+            1.28,
+            northSouth ? wallPosition : sideOffset,
+        );
+    }
+
+    const lintel = add(MeshBuilder.CreateBox(
+        `neon-door-lintel-${roomId}-${direction}`,
+        {
+            width: northSouth ? DOOR_WIDTH + 0.18 : 0.10,
+            height: 0.10,
+            depth: northSouth ? 0.10 : DOOR_WIDTH + 0.18,
+        },
+        scene,
+    ), secondary);
+    lintel.position.set(
+        northSouth ? 0 : wallPosition,
+        2.37,
+        northSouth ? wallPosition : 0,
+    );
 }
 
 export function createRoomLights(runtime: RoomRuntime, room: RelicRoom): readonly PointLight[] {
@@ -462,45 +750,32 @@ export function createRoomLights(runtime: RoomRuntime, room: RelicRoom): readonl
         return light;
     };
 
-    const torchColor = room.kind === 'monster'
-        ? Color3.FromHexString('#ff6060')
-        : room.kind === 'trap'
-        ? Color3.FromHexString('#ff8c3a')
-        : Color3.FromHexString('#ffbf5c');
-    const mystery = room.kind === 'exit'
-        ? Color3.FromHexString('#8ee7f5')
-        : room.kind === 'shrine'
-        ? Color3.FromHexString('#b9a7f4')
-        : room.kind === 'treasure'
-        ? Color3.FromHexString('#f1c453')
-        : room.kind === 'monster'
-        ? Color3.FromHexString('#ff8080')
-        : room.kind === 'trap'
-        ? Color3.FromHexString('#f19a64')
-        : Color3.FromHexString('#ffd08a');
+    const accent = relicNeonAccentForRoom(room);
+    const tubeColor = Color3.FromHexString(accent.emissive);
+    const centerColor = Color3.FromHexString(accent.secondary);
     const torchZ = room.kind === 'exit' ? ROOM_SIZE / 2 - 0.28 : -ROOM_SIZE / 2 + 0.28;
-    const torchIntensity = room.kind === 'monster' ? 1.10 : room.kind === 'trap' ? 0.98 : 0.88;
+    const torchIntensity = room.kind === 'monster' ? 1.45 : room.kind === 'trap' ? 1.32 : 1.18;
     for (const x of [-1.35, 1.35]) {
         addLight(
-            `room-torch-light-${room.id}-${x}`,
+            `room-neon-tube-light-${room.id}-${x}`,
             new Vector3(x, 1.8, torchZ),
-            torchColor,
+            tubeColor,
             torchIntensity,
-            9.5,
+            11.5,
         );
     }
 
-    const centerIntensity = room.kind === 'shrine' ? 0.78
-        : room.kind === 'treasure' ? 0.70
-        : room.kind === 'exit' ? 0.65
-        : room.kind === 'hallway' ? 0.32
-        : 0.52;
+    const centerIntensity = room.kind === 'shrine' ? 1.05
+        : room.kind === 'treasure' ? 0.98
+        : room.kind === 'exit' ? 1.12
+        : room.kind === 'hallway' ? 0.74
+        : 0.86;
     addLight(
-        `room-clue-light-${room.id}`,
+        `room-neon-core-light-${room.id}`,
         new Vector3(0, 1.25, 0),
-        mystery,
+        centerColor,
         centerIntensity,
-        7.5,
+        9.0,
     );
 
     return lights;
@@ -1978,18 +2253,18 @@ export function createJapaneseLobbyScene(scene: Scene): readonly Mesh[] {
         return mesh;
     };
 
-    const matDarkWood    = jpMaterial(scene, 'dark-wood',    '#1c0d05', 0.018, 0,    0.60);
-    const matRedLacquer  = jpMaterial(scene, 'red-lacquer',  '#8b1800', 0.06,  0,    0.42);
-    const matStone       = jpMaterial(scene, 'stone',        '#6b7882', 0.010, 0.02, 0.92);
-    const matGold        = jpMaterial(scene, 'gold',         '#c8941a', 0.14,  0.72, 0.28);
+    const matDarkWood    = jpMaterial(scene, 'dark-wood',    '#765039', 0.020, 0,    0.62);
+    const matRedLacquer  = jpMaterial(scene, 'red-lacquer',  '#b8402f', 0.07,  0,    0.42);
+    const matStone       = jpMaterial(scene, 'stone',        '#9aa69b', 0.012, 0.02, 0.90);
+    const matGold        = jpMaterial(scene, 'gold',         '#e3b44b', 0.16,  0.72, 0.28);
     const matShoji       = jpMaterial(scene, 'shoji',        '#f5e8cc', 0.36,  0,    0.96);
     const matLanternRed  = jpMaterial(scene, 'lantern-red',  '#ff4010', 0.88,  0,    0.92);
     const matLanternAmb  = jpMaterial(scene, 'lantern-amb',  '#ffb030', 0.72,  0,    0.90);
-    const matCrimson     = jpMaterial(scene, 'crimson',      '#8a0000', 0.05,  0,    0.82);
-    const matNavy        = jpMaterial(scene, 'navy',         '#0a1a3a', 0.03,  0,    0.82);
-    const matWhiteWall   = jpMaterial(scene, 'white-wall',   '#e2d4b8', 0.04,  0,    0.90);
-    const matDarkCeiling = jpMaterial(scene, 'dark-ceil',    '#110803', 0.008, 0,    0.88);
-    const matAltarWood   = jpMaterial(scene, 'altar-wood',   '#28160a', 0.04,  0,    0.50);
+    const matCrimson     = jpMaterial(scene, 'crimson',      '#c95142', 0.055, 0,    0.82);
+    const matNavy        = jpMaterial(scene, 'navy',         '#416b82', 0.035, 0,    0.80);
+    const matWhiteWall   = jpMaterial(scene, 'white-wall',   '#f2ead4', 0.05,  0,    0.90);
+    const matDarkCeiling = jpMaterial(scene, 'dark-ceil',    '#806046', 0.012, 0,    0.84);
+    const matAltarWood   = jpMaterial(scene, 'altar-wood',   '#8a6541', 0.045, 0,    0.52);
 
     // Surface enhancements for the lobby
     const { stoneNormal, woodNormal, metalNormal } = createCastleSurfaceTextures(scene);

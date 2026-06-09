@@ -216,6 +216,7 @@ export function isTurnResultEvent(event: RelicEvent): boolean {
         case 'player_moved':
         case 'player_searched':
         case 'relic_found':
+        case 'relic_picked_up':
         case 'steal_succeeded':
         case 'steal_failed':
         case 'escape_failed':

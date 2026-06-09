@@ -79,6 +79,33 @@ describe('Relic expedition AI factory', () => {
         }));
     });
 
+    it('falls back when generated output is playable but visually out of fit', async () => {
+        const fallback = vi.fn();
+        const factory = createRelicExpeditionInitialStateFactory({
+            rallar: fakeRallar(),
+            mode: 'mock',
+            now: () => 6,
+            mockBlueprint: createProceduralRelicExpeditionBlueprint({
+                seed: 'visually-bad',
+                theme: 'Moonlit Keep',
+                source: 'mock',
+            }),
+            onFallback: fallback,
+        });
+
+        const state = await factory('room-1', 'reset');
+
+        expect(state.setup).toMatchObject({
+            source: 'procedural',
+            seed: 'room-1:reset:6',
+        });
+        expect(fallback).toHaveBeenCalledWith(expect.objectContaining({
+            gameId: 'room-1',
+            mode: 'mock',
+            reason: 'reset',
+        }));
+    });
+
     it('falls back to procedural setup when a provider times out', async () => {
         const provider = createAbortAwareProvider();
         const factory = createRelicExpeditionInitialStateFactory({

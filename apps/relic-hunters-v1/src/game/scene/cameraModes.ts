@@ -1,6 +1,17 @@
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import type { RelicPublicSnapshot, RelicRoom } from '@relic-hunters/mod.ts';
 import { WORLD_SCALE } from './constants.ts';
+import {
+    AVATAR_CAMERA_FOLLOW_HOLD_MS,
+    AVATAR_CAMERA_ZOOM_OUT_MS,
+    ROOM_FLYOVER_DURATION_MS,
+} from './motionTuning.ts';
+
+export {
+    AVATAR_CAMERA_FOLLOW_HOLD_MS,
+    AVATAR_CAMERA_ZOOM_OUT_MS,
+    ROOM_FLYOVER_DURATION_MS,
+};
 
 export type RelicCameraMode = 'lobby' | 'tactical' | 'roam' | 'inspection' | 'event-focus' | 'flyover';
 
@@ -10,9 +21,6 @@ export type RelicCameraPose = Readonly<{
     fov: number;
 }>;
 
-export const AVATAR_CAMERA_FOLLOW_HOLD_MS = 1800;
-export const AVATAR_CAMERA_ZOOM_OUT_MS = 4200;
-export const ROOM_FLYOVER_DURATION_MS = 7600;
 const ROOM_FLYOVER_RETURN_START = 0.72;
 
 export type AvatarCameraReturnState = Readonly<{

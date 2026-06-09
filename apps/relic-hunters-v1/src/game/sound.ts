@@ -93,6 +93,7 @@ export function playRelicEventSound(event: RelicEvent): void {
             playActionSound('search');
             break;
         case 'relic_found':
+        case 'relic_picked_up':
             playTone(ctx, 659, 0.12, 'sine', 0.05);
             playTone(ctx, 988, 0.16, 'triangle', 0.04, 0.08);
             playTone(ctx, 1318, 0.18, 'sine', 0.035, 0.15);

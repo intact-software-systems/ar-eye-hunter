@@ -153,6 +153,10 @@ describe('Relic Hunters game rules', () => {
 
     it('maps resolved turn events to scene animation cues', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
+        state = {
+            ...state,
+            relics: state.relics.filter((relic) => relic.roomId !== 'entrance'),
+        };
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
             now: () => 2,
@@ -190,6 +194,151 @@ describe('Relic Hunters game rules', () => {
         expect(cueByEventType.get('player_searched')).toBe('search_altar');
         expect(cueByEventType.get('player_moved')).toBe('camera_move');
         expect(cueByEventType.get('noise_pulse')).toBe('noise_pulse');
+        expect(result.state.events.find((event) => event.type === 'player_moved')?.animationCue)
+            .toMatchObject({
+                fromRoomId: 'entrance',
+                roomId: 'hallway',
+            });
+    });
+
+    it('lets an active hunter instantly pick up a visible same-room relic', () => {
+        let state = createRelicGame('room-1', 'room-1', 1);
+        state = applyRelicCommand(state, join('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 2,
+        }).state;
+        state = applyRelicCommand(state, start('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 3,
+        }).state;
+
+        const result = applyRelicCommand(state, pickup('alice', 'Alice', 'visitor-badge'), {
+            senderId: 'alice',
+            now: () => 4,
+        });
+        const alice = result.state.players.find((player) => player.playerId === 'alice');
+
+        expect(result.resolvedRound).toBe(false);
+        expect(result.state.phase).toBe('planning');
+        expect(alice?.relicIds).toContain('visitor-badge');
+        expect(alice?.score).toBeGreaterThan(0);
+        expect(result.state.relics.find((relic) => relic.id === 'visitor-badge')).toMatchObject({
+            foundBy: 'alice',
+            carriedBy: 'alice',
+        });
+        expect(result.state.events.at(-1)).toMatchObject({
+            type: 'relic_picked_up',
+            animationCue: {
+                type: 'relic_pickup',
+                playerId: 'alice',
+                roomId: 'entrance',
+                relicId: 'visitor-badge',
+            },
+        });
+    });
+
+    it('rejects instant pickup when the relic is unavailable or in another room', () => {
+        let state = createRelicGame('room-1', 'room-1', 1);
+        state = applyRelicCommand(state, join('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 2,
+        }).state;
+        state = applyRelicCommand(state, start('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 3,
+        }).state;
+
+        expect(() =>
+            applyRelicCommand(state, pickup('alice', 'Alice', 'sun-disk'), {
+                senderId: 'alice',
+                now: () => 4,
+            })
+        ).toThrow('Relic is not in this hunter\'s room.');
+
+        state = applyRelicCommand(state, pickup('alice', 'Alice', 'visitor-badge'), {
+            senderId: 'alice',
+            now: () => 5,
+        }).state;
+
+        expect(() =>
+            applyRelicCommand(state, pickup('alice', 'Alice', 'visitor-badge'), {
+                senderId: 'alice',
+                now: () => 6,
+            })
+        ).toThrow('Relic has already been claimed.');
+    });
+
+    it('rejects instant pickup during review', () => {
+        let state = createRelicGame('room-1', 'room-1', 1);
+        state = applyRelicCommand(state, join('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 2,
+        }).state;
+        state = applyRelicCommand(state, start('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 3,
+        }).state;
+        state = applyRelicCommand(
+            state,
+            submit('alice', 'Alice', { kind: 'move', targetRoomId: 'hallway' }),
+            {
+                senderId: 'alice',
+                now: () => 4,
+            },
+        ).state;
+
+        expect(state.phase).toBe('review');
+        expect(() =>
+            applyRelicCommand(state, pickup('alice', 'Alice', 'copper-coin'), {
+                senderId: 'alice',
+                now: () => 5,
+            })
+        ).toThrow('Review the revealed actions before planning the next turn.');
+    });
+
+    it('allows only the expedition administrator to continue review', () => {
+        let state = createRelicGame('room-1', 'room-1', 1);
+        state = applyRelicCommand(state, join('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 2,
+        }).state;
+        state = applyRelicCommand(state, join('bob', 'Bob'), {
+            senderId: 'bob',
+            now: () => 3,
+        }).state;
+        state = applyRelicCommand(state, start('alice', 'Alice'), {
+            senderId: 'alice',
+            now: () => 4,
+        }).state;
+        state = applyRelicCommand(
+            state,
+            submit('alice', 'Alice', { kind: 'search' }),
+            {
+                senderId: 'alice',
+                now: () => 5,
+            },
+        ).state;
+        state = applyRelicCommand(
+            state,
+            submit('bob', 'Bob', { kind: 'move', targetRoomId: 'hallway' }),
+            {
+                senderId: 'bob',
+                now: () => 6,
+            },
+        ).state;
+
+        expect(() =>
+            applyRelicCommand(state, {
+                protocolVersion: RELIC_PROTOCOL_VERSION,
+                kind: 'continue-review',
+                gameId: 'room-1',
+                username: 'Bob',
+            }, {
+                senderId: 'bob',
+                now: () => 7,
+            })
+        ).toThrow('Only the administrator can continue the review.');
+        expect(continueReview(state, 8).phase).toBe('planning');
     });
 
     it('lets a hunter update their locked plan before the round resolves', () => {
@@ -303,6 +452,10 @@ describe('Relic Hunters game rules', () => {
 
     it('marks empty room searches as durable room investigations', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
+        state = {
+            ...state,
+            relics: state.relics.filter((relic) => relic.roomId !== 'entrance'),
+        };
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
             now: () => 2,
@@ -500,6 +653,17 @@ function forceResolve(playerId: string, username: string): RelicCommand {
         kind: 'force-resolve-round',
         gameId: 'room-1',
         username,
+    };
+}
+
+function pickup(playerId: string, username: string, relicId: string): RelicCommand {
+    void playerId;
+    return {
+        protocolVersion: RELIC_PROTOCOL_VERSION,
+        kind: 'pickup-relic',
+        gameId: 'room-1',
+        username,
+        relicId,
     };
 }
 

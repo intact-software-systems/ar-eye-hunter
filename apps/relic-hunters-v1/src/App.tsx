@@ -14,7 +14,8 @@ import type {
 import { RELIC_CHARACTERS, findRelicCharacter } from '@relic-hunters/mod.ts';
 import { IntroScene } from './game/IntroScene.tsx';
 import { OpeningRelicScene } from './game/OpeningRelicScene.tsx';
-import { RelicScene } from './game/RelicScene.tsx';
+import { RelicScene as LegacyRelicScene } from './game/RelicScene.tsx';
+import { RelicSceneNext } from './game/RelicSceneNext.tsx';
 import { GameHudLayout } from './game/hud/GameHudLayout.tsx';
 import {
     deriveRelicGameViewModel,
@@ -38,6 +39,11 @@ import {
 } from './game/turn-summary.ts';
 import type { RelicRuntimeDiagnostics } from './game/relic-hunters-runtime.ts';
 import { deriveSceneObjective } from './game/scene/objectives.ts';
+import {
+    calculateFacilityBounds,
+    projectFacilityMapPoint,
+    shouldShowFacilityMapLabel,
+} from './game/scene/relicSceneNextModel.ts';
 import { UI, type Lang } from './game/lang.ts';
 import { useRelicHunters } from './game/useRelicHunters.ts';
 import { colorForId } from './game/color.ts';
@@ -54,6 +60,11 @@ type AuthMode = 'login' | 'register';
 const IS_DEV = Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV);
 const INTRO_ENABLED = false;
 const ONBOARDING_ENABLED = false;
+const RELIC_SCENE_RUNTIME = ((import.meta as {
+    env?: { VITE_RELIC_SCENE_RUNTIME?: string };
+}).env?.VITE_RELIC_SCENE_RUNTIME === 'legacy')
+    ? LegacyRelicScene
+    : RelicSceneNext;
 
 export default function App() {
     const [introComplete, setIntroComplete] = useState(!INTRO_ENABLED);
@@ -100,6 +111,8 @@ export default function App() {
     const revealQueueRef = useRef<RelicEvent[]>([]);
     const revealTimerRef = useRef<number | null>(null);
     const revealNextRef = useRef<() => void>(null!);
+    const reviewContinueInFlightKeyRef = useRef<string | undefined>(undefined);
+    const reviewContinueSentKeyRef = useRef<string | undefined>(undefined);
 
     useEffect(() => {
         if (!IS_DEV) {
@@ -143,7 +156,8 @@ export default function App() {
     });
     const currentPlayer = viewModel.currentPlayer;
     const currentRoom = viewModel.currentRoom;
-    const sceneVisible = game.snapshot?.phase === 'planning' ||
+    const sceneVisible = game.snapshot?.phase === 'lobby' ||
+        game.snapshot?.phase === 'planning' ||
         game.snapshot?.phase === 'review' ||
         game.snapshot?.phase === 'finished';
     const sceneInputEnabled = game.snapshot?.phase === 'planning' ||
@@ -195,6 +209,9 @@ export default function App() {
         !currentPlayer.defeated;
     const showReviewControls = game.snapshot?.phase === 'review' &&
         !!currentPlayer;
+    const reviewPlaybackKey = game.snapshot?.phase === 'review'
+        ? `${game.snapshot.gameId}:${game.snapshot.round}:${game.snapshot.updatedAtEpochMs}`
+        : undefined;
     const canForceResolveRound = showPlanningControls &&
         viewModel.turnStatus.waitingPlayerCount > 0 &&
         timeRemainingMs !== null &&
@@ -544,8 +561,30 @@ export default function App() {
     };
 
     const continueReview = async () => {
+        if (!game.snapshot || game.snapshot.phase !== 'review' || !isAdmin || !reviewPlaybackKey) {
+            return;
+        }
+        if (
+            reviewContinueInFlightKeyRef.current === reviewPlaybackKey ||
+            reviewContinueSentKeyRef.current === reviewPlaybackKey
+        ) {
+            return;
+        }
+        reviewContinueInFlightKeyRef.current = reviewPlaybackKey;
         playUiSound('start');
-        await game.continueReview();
+        try {
+            await game.continueReview();
+            reviewContinueSentKeyRef.current = reviewPlaybackKey;
+        } finally {
+            if (reviewContinueInFlightKeyRef.current === reviewPlaybackKey) {
+                reviewContinueInFlightKeyRef.current = undefined;
+            }
+        }
+    };
+
+    const pickupRelic = async (relicId: string) => {
+        playUiSound('select');
+        await game.pickupRelic(relicId);
     };
 
     const resetExpedition = async () => {
@@ -608,7 +647,7 @@ export default function App() {
             scene={(
                 sceneVisible
                     ? (
-                        <RelicScene
+                        <RELIC_SCENE_RUNTIME
                             snapshot={game.snapshot}
                             localPlayerId={game.session?.sessionId}
                             selectedRoomId={selectedRoomId}
@@ -616,8 +655,11 @@ export default function App() {
                             focusRoomId={eventFocusRoomId}
                             rtcReady={game.diagnostics.rtcReady}
                             inputEnabled={sceneInputEnabled}
+                            reviewDirector={isAdmin}
                             onSelectRoom={setSelectedRoomId}
                             onPrimeAction={primeSceneAction}
+                            onPickupRelic={pickupRelic}
+                            onReviewPlaybackComplete={continueReview}
                         />
                     )
                     : <OpeningRelicScene/>
@@ -1014,18 +1056,22 @@ export default function App() {
                                 <span className="panel-label">Round {game.snapshot.round} Review</span>
                                 <div className="action-brief">
                                     <strong>Watch the revealed plans</strong>
-                                    <span>Each hunter's move is now being replayed in the scene and timeline.</span>
-                                    <small>Continue only after the party has seen the results.</small>
+                                    <span>The neon facility is replaying every plan in the scene.</span>
+                                    <small>{isAdmin
+                                        ? 'Playback advances automatically, or the director can skip.'
+                                        : 'The director will advance after everyone has seen enough.'}</small>
                                 </div>
-                                <button
-                                    type="button"
-                                    className="primary action-submit-button"
-                                    onClick={continueReview}
-                                >
-                                    {willReviewEndGame(game.snapshot)
-                                        ? 'Continue to finale'
-                                        : 'Continue to next turn'}
-                                </button>
+                                {isAdmin && (
+                                    <button
+                                        type="button"
+                                        className="primary action-submit-button"
+                                        onClick={continueReview}
+                                    >
+                                        {willReviewEndGame(game.snapshot)
+                                            ? 'Skip to finale'
+                                            : 'Skip review'}
+                                    </button>
+                                )}
                             </section>
                         )}
                     </div>
@@ -2564,6 +2610,12 @@ function CastleMap({
                     const hasOtherHunters = occupants.some((player) =>
                         player.playerId !== localPlayerId
                     );
+                    const labelVisible = shouldShowFacilityMapLabel({
+                        room,
+                        selectedRoomId,
+                        localRoomId: localRoom?.id,
+                        exitRoomId: snapshot.map.find((candidate) => candidate.kind === 'exit')?.id,
+                    });
                     return (
                         <button
                             type="button"
@@ -2578,6 +2630,7 @@ function CastleMap({
                                 clueTargetRoomIds.has(room.id) ? 'clue-target' : '',
                                 room.unstable ? 'unstable' : '',
                                 room.collapsed ? 'collapsed' : '',
+                                labelVisible ? 'label-visible' : '',
                             ].filter(Boolean).join(' ')}
                             style={{
                                 left: `${point.x}%`,
@@ -3085,6 +3138,7 @@ function turnDiffSymbol(type: RelicEventType): string {
         case 'player_moved': return '→';
         case 'player_searched': return '?';
         case 'relic_found': return '◆';
+        case 'relic_picked_up': return '◆';
         case 'steal_succeeded': return '^';
         case 'steal_failed': return 'x';
         case 'escape_failed': return 'x';
@@ -3253,6 +3307,8 @@ function chronicleHeadline(
             return 'The ruin yields its secrets slowly.';
         case 'relic_found':
             return 'Treasure breaks the silence.';
+        case 'relic_picked_up':
+            return 'Asset Recovery loses another argument.';
         case 'steal_succeeded':
             return 'Trust is the first casualty.';
         case 'steal_failed':
@@ -3296,6 +3352,11 @@ const NARRATOR_LINES: Partial<Record<RelicEventType, readonly string[]>> = {
         'The ancient stirs. Something answers.',
         'Fortune paid in danger.',
         'Gold gleams where none expected.',
+    ],
+    relic_picked_up: [
+        'A relic changes hands. The paperwork screams quietly.',
+        'Asset Management updates its panic forecast.',
+        'Someone has stolen company property from destiny.',
     ],
     steal_succeeded: ["Trust collapses in the dark.", "One hunter's prize becomes another's."],
     steal_failed: ['Greed grasps and finds only air.', 'Some things are not so easily taken.'],
@@ -3458,27 +3519,14 @@ function castleMapExitPath(
 }
 
 function castleMapBounds(map: RelicPublicSnapshot['map']): CastleMapBounds {
-    const xs = map.map((room) => room.x);
-    const zs = map.map((room) => room.z);
-    return {
-        minX: Math.min(...xs),
-        maxX: Math.max(...xs),
-        minZ: Math.min(...zs),
-        maxZ: Math.max(...zs),
-    };
+    return calculateFacilityBounds(map);
 }
 
 function castleMapPoint(
     room: RelicPublicSnapshot['map'][number],
     bounds: CastleMapBounds,
 ): Readonly<{ x: number; y: number }> {
-    const padding = 12;
-    const width = Math.max(1, bounds.maxX - bounds.minX);
-    const depth = Math.max(1, bounds.maxZ - bounds.minZ);
-    return {
-        x: padding + ((room.x - bounds.minX) / width) * (100 - padding * 2),
-        y: padding + ((room.z - bounds.minZ) / depth) * (100 - padding * 2),
-    };
+    return projectFacilityMapPoint(room, bounds);
 }
 
 function castleMapPlayerOffset(index: number): Readonly<{ x: number; y: number }> {

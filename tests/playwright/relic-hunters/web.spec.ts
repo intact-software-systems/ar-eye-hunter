@@ -69,7 +69,7 @@ test.describe('Relic Hunters web app', () => {
                 mode: 'room',
                 viewport: { width: 1280, height: 720 },
                 snapshot: relicSnapshotWithPlayers(1, 'lobby'),
-                expectedLightingPreset: 'day',
+                expectedLightingPreset: 'neon-dystopia',
                 wait: async (page) => {
                     await expect(page.getByText('Keeper: Alice')).toBeVisible();
                     await expect(page.getByRole('button', { name: /^Start$/ })).toBeVisible();
@@ -80,8 +80,8 @@ test.describe('Relic Hunters web app', () => {
                 mode: 'room',
                 viewport: { width: 1280, height: 720 },
                 snapshot: relicSnapshotWithPlayers(1, 'planning', { includeStorage: true }),
-                expectedCameraMode: 'tactical',
-                expectedLightingPreset: 'day',
+                expectedCameraMode: 'avatar',
+                expectedLightingPreset: 'neon-dystopia',
                 wait: async (page) => {
                     await expect(page.getByLabel('Current turn summary')).toContainText('Choose one plan');
                     await expect(page.getByRole('button', { name: 'Submit Plan' })).toBeVisible();
@@ -92,8 +92,8 @@ test.describe('Relic Hunters web app', () => {
                 mode: 'room',
                 viewport: { width: 390, height: 844 },
                 snapshot: relicSnapshotWithPlayers(1, 'planning', { includeStorage: true }),
-                expectedCameraMode: 'tactical',
-                expectedLightingPreset: 'day',
+                expectedCameraMode: 'avatar',
+                expectedLightingPreset: 'neon-dystopia',
                 wait: async (page) => {
                     await expect(page.getByLabel('Current turn summary')).toContainText('Choose one plan');
                     await expect(page.getByRole('button', { name: 'Submit Plan' })).toBeVisible();
@@ -107,8 +107,8 @@ test.describe('Relic Hunters web app', () => {
                     submittedPlayerIds: ['alice-session'],
                 }),
                 onlineMemberCount: 2,
-                expectedCameraMode: 'tactical',
-                expectedLightingPreset: 'day',
+                expectedCameraMode: 'avatar',
+                expectedLightingPreset: 'neon-dystopia',
                 wait: async (page) => {
                     await expect(page.getByLabel('Current turn summary')).toContainText('Plan Locked');
                     await expect(page.getByLabel('Round plan')).toContainText('1 hunter still choosing');
@@ -132,8 +132,8 @@ test.describe('Relic Hunters web app', () => {
                     submittedPlayerIds: ['alice-session', 'cara-session'],
                 }),
                 onlineMemberCount: 4,
-                expectedCameraMode: 'tactical',
-                expectedLightingPreset: 'day',
+                expectedCameraMode: 'avatar',
+                expectedLightingPreset: 'neon-dystopia',
                 wait: async (page) => {
                     await expect(page.getByLabel('Current turn summary')).toContainText('Plan Locked');
                     await expect(page.getByLabel('Castle room map')).toContainText('Shrine');
@@ -151,8 +151,8 @@ test.describe('Relic Hunters web app', () => {
                     playerRoomId: 'storage',
                 }),
                 commandSnapshot: resolvedStorageSearchSnapshot(),
-                expectedCameraMode: 'tactical',
-                expectedLightingPreset: 'lantern',
+                expectedCameraMode: 'avatar',
+                expectedLightingPreset: 'neon-dystopia',
                 wait: async (page) => {
                     await expect(page.getByLabel('Current turn summary')).toContainText(
                         'Choose one plan',
@@ -171,7 +171,7 @@ test.describe('Relic Hunters web app', () => {
                 mode: 'room',
                 viewport: { width: 1280, height: 720 },
                 snapshot: finishedRelicSnapshot(),
-                expectedLightingPreset: 'sunset',
+                expectedLightingPreset: 'neon-dystopia',
                 wait: async (page) => {
                     await expect(page.getByText('The Heart Relic has chosen')).toBeVisible();
                     await expect(page.getByText('Final score: 5')).toBeVisible();
@@ -551,9 +551,10 @@ test.describe('Relic Hunters web app', () => {
         ]);
     });
 
-    test('renders a nonblank Babylon scene and tolerates pointer look', async ({ page }) => {
+    test('renders the neon dystopian canvas and switches camera modes', async ({ page }) => {
         test.setTimeout(60_000);
         const room = groupSnapshot({ onlineMemberCount: 1 });
+        await page.emulateMedia({ reducedMotion: 'reduce' });
         await installBrowserDoubles(page);
         await mockBackend(page, {
             rooms: [room],
@@ -571,20 +572,40 @@ test.describe('Relic Hunters web app', () => {
         const canvas = page.locator('canvas.relic-scene');
         await expect(canvas).toBeVisible();
         await expect.poll(() => sceneHasVisiblePixels(page)).toBe(true);
-        await expect(page.getByRole('group', { name: 'Camera controls' })).toBeVisible();
+        await expect.poll(() => canvas.evaluate((node) =>
+            (node as HTMLCanvasElement).dataset.sceneRuntime
+        )).toBe('next');
+        await expect.poll(() => canvas.evaluate((node) =>
+            (node as HTMLCanvasElement).dataset.sceneVisualTheme
+        )).toBe('neon-dystopian');
+        await expect.poll(async () => (await sceneCanvasMetrics(page)).activeRoomLightCount)
+            .toBeGreaterThan(0);
+        await expect.poll(async () => (await sceneCanvasMetrics(page)).meshCount)
+            .toBeGreaterThan(60);
+        await expect.poll(async () => (await sceneCanvasMetrics(page)).materialCount)
+            .toBeGreaterThan(8);
+        await expect.poll(async () => (await sceneCanvasMetrics(page)).lightingPreset)
+            .toBe('neon-dystopia');
+        await expect.poll(async () => (await sceneCanvasMetrics(page)).cameraMode)
+            .toBe('avatar');
+        await expect.poll(() => canvas.evaluate((node) =>
+            (node as HTMLCanvasElement).dataset.rallarMotionLane
+        )).toBe('realtime');
 
-        await page.getByRole('button', { name: 'Avatar' }).click();
-        await expect.poll(() => canvas.evaluate((node) =>
-            (node as HTMLCanvasElement).dataset.cameraControl
-        )).toBe('avatar');
-        await page.getByRole('button', { name: 'Tactical overview' }).click();
-        await expect.poll(() => canvas.evaluate((node) =>
-            (node as HTMLCanvasElement).dataset.cameraControl
-        )).toBe('tactical');
+        await page.getByRole('button', { name: 'First-person view' }).click();
+        await expect.poll(async () => (await sceneCanvasMetrics(page)).cameraMode)
+            .toBe('first-person');
+        await page.getByRole('button', { name: 'Overview view' }).click();
+        await expect.poll(async () => (await sceneCanvasMetrics(page)).cameraMode)
+            .toBe('overview');
         await page.getByRole('button', { name: 'Fly over rooms' }).click();
-        await expect.poll(() => canvas.evaluate((node) =>
-            (node as HTMLCanvasElement).dataset.cameraControl
-        )).toBe('flyover');
+        await expect.poll(async () => (await sceneCanvasMetrics(page)).cameraMode)
+            .toBe('flyover');
+        await expect.poll(async () => (await sceneCanvasMetrics(page)).cameraMode, { timeout: 4_000 })
+            .toBe('overview');
+        await page.getByRole('button', { name: 'Avatar view' }).click();
+        await expect.poll(async () => (await sceneCanvasMetrics(page)).cameraMode)
+            .toBe('avatar');
 
         const box = await canvas.boundingBox();
         expect(box).not.toBeNull();
@@ -593,6 +614,9 @@ test.describe('Relic Hunters web app', () => {
             await page.mouse.down();
             await page.mouse.move(box.x + box.width / 2 + 48, box.y + box.height / 2 + 24);
             await page.mouse.up();
+            await page.keyboard.down('Shift');
+            await page.keyboard.press('KeyW');
+            await page.keyboard.up('Shift');
         }
 
         await expect(page.getByRole('button', { name: 'Atmosphere' }).first()).toBeVisible();
@@ -925,6 +949,7 @@ test.describe('Relic Hunters web app', () => {
 
 async function installBrowserDoubles(page: Page): Promise<void> {
     await page.addInitScript(() => {
+        window.localStorage.removeItem('relic.sceneNext.cameraMode');
         class FakeWebSocket extends EventTarget {
             static readonly CONNECTING = 0;
             static readonly OPEN = 1;

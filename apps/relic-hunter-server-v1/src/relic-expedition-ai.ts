@@ -6,8 +6,11 @@ import {
     RELIC_EXPEDITION_BLUEPRINT_SCHEMA,
     RELIC_EXPEDITION_BLUEPRINT_SCHEMA_ID,
     RELIC_EXPEDITION_BLUEPRINT_SCHEMA_VERSION,
+    RELIC_EXPEDITION_VISUAL_LIMITS,
+    RELIC_EXPEDITION_VISUAL_THEMES,
     RELIC_ROOM_KINDS,
     validateRelicExpeditionBlueprint,
+    validateRelicExpeditionVisualFit,
     type RelicExpeditionBlueprint,
     type RelicGameState,
 } from '@relic-hunters/mod.ts';
@@ -136,6 +139,10 @@ export function createRelicExpeditionInitialStateFactory(
             if (!validation.ok) {
                 throw new Error(`Generated blueprint failed Relic validation: ${validation.errors.join('; ')}`);
             }
+            const visualFit = validateRelicExpeditionVisualFit(result.value);
+            if (!visualFit.ok) {
+                throw new Error(`Generated blueprint failed Relic visual fit: ${visualFit.errors.join('; ')}`);
+            }
             return createRelicGameFromBlueprint(
                 gameId,
                 gameId,
@@ -192,10 +199,12 @@ export function createRelicExpeditionAiRequest({
         schema: RELIC_EXPEDITION_BLUEPRINT_SCHEMA,
         prompt: [
             'Generate a Relic Hunters expedition blueprint as JSON only.',
-            'Create a playable Japanese castle maze with varied room names and reward placement.',
+            'Create a playable, fresh, sunlit Japanese castle adventure with varied room names and reward placement.',
+            'Use a bright tactical footprint that fits the browser UI and camera; avoid gloomy, haunted, ruined, or oversized castle layouts.',
             'Keep canonical room ids entrance and exit exactly as written.',
             'Use only the allowed room kinds and make every neighbor relationship symmetric.',
             'Every room must be reachable from entrance, and exit must be reachable.',
+            'Use one of the allowed visual themes exactly, integer coordinates, compact room names, and short readable room edges.',
             'Do not include collapsed or unstable rooms at setup time.',
         ].join(' '),
         context: {
@@ -204,7 +213,9 @@ export function createRelicExpeditionAiRequest({
             seed,
             canonicalIds: ['entrance', 'exit'],
             allowedRoomKinds: RELIC_ROOM_KINDS,
+            allowedVisualThemes: RELIC_EXPEDITION_VISUAL_THEMES,
             limits: RELIC_EXPEDITION_BLUEPRINT_LIMITS,
+            visualLimits: RELIC_EXPEDITION_VISUAL_LIMITS,
         },
         baseStateRevision: `relic-expedition-setup:${gameId}:${reason}`,
         dedupeKey: `relic-expedition:${gameId}:${reason}:${seed}`,

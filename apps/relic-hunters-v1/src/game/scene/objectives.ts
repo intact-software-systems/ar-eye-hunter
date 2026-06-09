@@ -193,7 +193,7 @@ export function deriveSceneObjective({
         });
     }
 
-    const hiddenRelic = !investigated && roomHasHiddenRelic(snapshot, room.id);
+    const hiddenRelic = !investigated && shouldSearchRoom(room) && roomHasHiddenRelic(snapshot, room.id);
     const clue = roomClueHotspot(room);
     if (!investigated && (hiddenRelic || shouldSearchRoom(room))) {
         return objective({

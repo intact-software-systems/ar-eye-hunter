@@ -309,6 +309,7 @@ components:
             - camera_move
             - search_altar
             - relic_reveal
+            - relic_pickup
             - steal_attempt
             - escape_run
             - noise_pulse
@@ -316,6 +317,8 @@ components:
             - room_collapse
             - heart_relic_victory
         roomId:
+          type: string
+        fromRoomId:
           type: string
         playerId:
           type: string
@@ -350,6 +353,7 @@ components:
             - player_moved
             - player_searched
             - relic_found
+            - relic_picked_up
             - steal_succeeded
             - steal_failed
             - escape_failed
@@ -483,6 +487,7 @@ components:
         - $ref: '#/components/schemas/RelicStartExpeditionCommandRequest'
         - $ref: '#/components/schemas/RelicSubmitActionCommandRequest'
         - $ref: '#/components/schemas/RelicForceResolveRoundCommandRequest'
+        - $ref: '#/components/schemas/RelicPickupCommandRequest'
         - $ref: '#/components/schemas/RelicContinueReviewCommandRequest'
         - $ref: '#/components/schemas/RelicSetRoundLimitCommandRequest'
 
@@ -555,6 +560,18 @@ components:
             kind:
               type: string
               const: continue-review
+
+    RelicPickupCommandRequest:
+      allOf:
+        - $ref: '#/components/schemas/RelicCommandRequestBase'
+        - type: object
+          required: [ kind, relicId ]
+          properties:
+            kind:
+              type: string
+              const: pickup-relic
+            relicId:
+              type: string
 
     RelicSetRoundLimitCommandRequest:
       allOf:

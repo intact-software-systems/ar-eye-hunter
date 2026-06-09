@@ -34,14 +34,14 @@ export function createCastleExteriorScene(scene: Scene): readonly Mesh[] {
     const meshes: Mesh[] = [];
     const add = (m: Mesh, material: PBRMaterial) => { m.material = material; meshes.push(m); return m; };
 
-    const matStone   = mat(scene, 'ext-stone',   '#3a4044', 0.008, 0.02, 0.95);
-    const matWhite   = mat(scene, 'ext-white',   '#e4d8c0', 0.04,  0,    0.92);
-    const matDkWood  = mat(scene, 'ext-dkwood',  '#160902', 0.015, 0,    0.64);
-    const matDkRoof  = mat(scene, 'ext-dkroof',  '#181008', 0.010, 0,    0.86);
-    const matRed     = mat(scene, 'ext-red',     '#6e0e00', 0.065, 0,    0.44);
-    const matGold    = mat(scene, 'ext-gold',    '#c08c12', 0.18,  0.8,  0.24);
-    const matGrass   = mat(scene, 'ext-grass',   '#152610', 0.012, 0,    0.98);
-    const matPlaza   = mat(scene, 'ext-plaza',   '#2c3032', 0.01,  0.04, 0.96);
+    const matStone   = mat(scene, 'ext-stone',   '#8f9b91', 0.012, 0.02, 0.92);
+    const matWhite   = mat(scene, 'ext-white',   '#f2ead4', 0.05,  0,    0.90);
+    const matDkWood  = mat(scene, 'ext-dkwood',  '#745039', 0.020, 0,    0.62);
+    const matDkRoof  = mat(scene, 'ext-dkroof',  '#5a7280', 0.014, 0,    0.80);
+    const matRed     = mat(scene, 'ext-red',     '#b8402f', 0.075, 0,    0.44);
+    const matGold    = mat(scene, 'ext-gold',    '#e3b44b', 0.20,  0.8,  0.24);
+    const matGrass   = mat(scene, 'ext-grass',   '#6fa867', 0.020, 0,    0.92);
+    const matPlaza   = mat(scene, 'ext-plaza',   '#b9b8a9', 0.012, 0.04, 0.92);
     const matLantern = mat(scene, 'ext-lantern', '#ffaa38', 0.94,  0,    0.90);
 
     // Ground / courtyard

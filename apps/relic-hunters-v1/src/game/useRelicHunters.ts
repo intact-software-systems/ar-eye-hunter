@@ -42,6 +42,7 @@ export type RelicHuntersConnection = Readonly<{
     startExpedition(): Promise<void>;
     submitAction(action: RelicActionInput): Promise<void>;
     forceResolveRound(): Promise<void>;
+    pickupRelic(relicId: string): Promise<void>;
     continueReview(): Promise<void>;
     setRoundLimit(timeLimitMs: number): Promise<void>;
     resetExpedition(): Promise<void>;
@@ -619,6 +620,17 @@ export function useRelicHunters(): RelicHuntersConnection {
             });
         } catch (err) {
             const message = toErrorMessage(err);
+            if (
+                input.kind === 'continue-review' &&
+                message.includes('There is no review to continue') &&
+                snapshotRef.current?.phase !== 'review'
+            ) {
+                setPhase('ready', {
+                    snapshotReady: !!snapshotRef.current,
+                    lastError: undefined,
+                });
+                return;
+            }
             setError(message);
             setPhase('degraded', { lastError: message });
         } finally {
@@ -649,7 +661,14 @@ export function useRelicHunters(): RelicHuntersConnection {
         await sendCommand({ kind: 'force-resolve-round' });
     }, [sendCommand]);
 
+    const pickupRelic = useCallback(async (relicId: string) => {
+        await sendCommand({ kind: 'pickup-relic', relicId });
+    }, [sendCommand]);
+
     const continueReview = useCallback(async () => {
+        if (snapshotRef.current?.phase !== 'review') {
+            return;
+        }
         await sendCommand({ kind: 'continue-review' });
     }, [sendCommand]);
 
@@ -700,6 +719,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         startExpedition,
         submitAction,
         forceResolveRound,
+        pickupRelic,
         continueReview,
         setRoundLimit,
         resetExpedition,
@@ -721,6 +741,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         startExpedition,
         submitAction,
         forceResolveRound,
+        pickupRelic,
         continueReview,
         setRoundLimit,
         resetExpedition,
@@ -734,11 +755,14 @@ function isRelicServerEvent(value: unknown): value is RelicServerEvent {
 }
 
 function commandInFlightKey(input: RelicCommandDraft): string {
-    if (input.kind !== 'submit-action') {
-        return input.kind;
+    if (input.kind === 'submit-action') {
+        return `${input.kind}:${JSON.stringify(input.action)}`;
+    }
+    if (input.kind === 'pickup-relic') {
+        return `${input.kind}:${input.relicId}`;
     }
 
-    return `${input.kind}:${JSON.stringify(input.action)}`;
+    return input.kind;
 }
 
 function summarizeRuntimeSnapshot(

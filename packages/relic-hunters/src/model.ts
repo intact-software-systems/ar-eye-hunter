@@ -62,6 +62,7 @@ export type RelicEventType =
     | 'player_moved'
     | 'player_searched'
     | 'relic_found'
+    | 'relic_picked_up'
     | 'steal_succeeded'
     | 'steal_failed'
     | 'escape_failed'
@@ -76,6 +77,7 @@ export type RelicAnimationCueType =
     | 'camera_move'
     | 'search_altar'
     | 'relic_reveal'
+    | 'relic_pickup'
     | 'steal_attempt'
     | 'escape_run'
     | 'noise_pulse'
@@ -86,6 +88,7 @@ export type RelicAnimationCueType =
 export type RelicAnimationCue = Readonly<{
     type: RelicAnimationCueType;
     roomId?: string;
+    fromRoomId?: string;
     playerId?: string;
     targetPlayerId?: string;
     relicId?: string;
@@ -247,6 +250,13 @@ export type RelicCommand =
     }>
     | Readonly<{
         protocolVersion: typeof RELIC_PROTOCOL_VERSION;
+        kind: 'pickup-relic';
+        gameId: string;
+        username: string;
+        relicId: string;
+    }>
+    | Readonly<{
+        protocolVersion: typeof RELIC_PROTOCOL_VERSION;
         kind: 'continue-review';
         gameId: string;
         username: string;
@@ -285,7 +295,7 @@ export function toPublicRelicSnapshot(state: RelicGameState): RelicPublicSnapsho
         roomInvestigations: maybeLegacy.roomInvestigations ?? [],
         players: state.players,
         submittedPlayerIds: state.pendingActions.map((action) => action.playerId),
-        events: state.events.slice(-16),
+        events: state.events.slice(-48),
         winnerIds: state.winnerIds,
         setup: state.setup,
     };
@@ -315,6 +325,10 @@ export function isRelicCommand(value: unknown): value is RelicCommand {
 
     if (value.kind === 'force-resolve-round') {
         return true;
+    }
+
+    if (value.kind === 'pickup-relic') {
+        return typeof value.relicId === 'string' && value.relicId.length > 0;
     }
 
     if (value.kind === 'continue-review') {

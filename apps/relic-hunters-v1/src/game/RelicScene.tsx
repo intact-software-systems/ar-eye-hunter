@@ -2,9 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import '@babylonjs/core/Culling/ray.js';
 import '@babylonjs/core/Rendering/geometryBufferRendererSceneComponent.js';
 import { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera.js';
-import {
-    SSAO2RenderingPipeline
-} from '@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/ssao2RenderingPipeline.js';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { Engine } from '@babylonjs/core/Engines/engine.js';
@@ -16,7 +13,6 @@ import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTextur
 import {
     DefaultRenderingPipeline
 } from '@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline.js';
-import { ColorCurves } from '@babylonjs/core/Materials/colorCurves.js';
 import { ImageProcessingConfiguration } from '@babylonjs/core/Materials/imageProcessingConfiguration.js';
 import { CubeTexture } from '@babylonjs/core/Materials/Textures/cubeTexture.js';
 import { GlowLayer } from '@babylonjs/core/Layers/glowLayer.js';
@@ -64,16 +60,26 @@ import {
 import { CURRENT_RELIC_ASSET_PIPELINE } from './scene/assetPipeline.ts';
 import { selectActiveEffectRoomIds } from './scene/sceneCost.ts';
 import { DOOR_WIDTH, FLOOR_Y, PLAYER_EYE_Y, ROOM_SIZE, } from './scene/constants.ts';
+import {
+    REMOTE_SNAPSHOT_POSITION_LERP_MS,
+    ROOM_ROAM_INSPECTION_SPEED_MULTIPLIER,
+    ROOM_ROAM_SPRINT_SPEED,
+    ROOM_ROAM_WALK_SPEED,
+} from './scene/motionTuning.ts';
 import { applyPointerLook, isRoamKey, yawToForward } from './scene/controls.ts';
 import { resolveRoomRoam, roomCollisionBoxes } from './scene/collision.ts';
 import { setRuntimePrompt, shouldExitInspection, startInspection, updateScenePrompt, } from './scene/interaction.ts';
 import {
     broadcastLocalPosition,
-    isRemotePositionFreshForPlayer,
-    type RemotePosEntry,
+    createRelicMotionState,
+    isRelicMotionEstimateFreshForPlayer,
+    RELIC_MOTION_LANE_ID,
+    type RelicMotionPhase,
+    type RelicMotionRuntimeState,
     subscribeRelicScenePositionUpdates,
 } from './scene/networking.ts';
 import { sceneMoveActionForPickedRoom } from './scene/movement.ts';
+import { RELIC_NEON_THEME } from './scene/neonTheme.ts';
 import { deriveSceneObjective, roomHasResolvedClue, } from './scene/objectives.ts';
 import { chooseLookRoom, directionBetweenRooms, roomClueHotspot, } from './scene/prompts.ts';
 import { startCappedRenderLoop } from './scene/renderLoop.ts';
@@ -84,6 +90,7 @@ import {
     createCastleMaterials,
     createFlameTexture,
     createJapaneseLobbyScene,
+    createNeonMapBase,
     createRoomAtmosphereParticles,
     createRoomLights,
     createRoomProps,
@@ -124,8 +131,11 @@ type RelicSceneProps = Readonly<{
     focusRoomId?: string;
     rtcReady?: boolean;
     inputEnabled?: boolean;
+    reviewDirector?: boolean;
     onSelectRoom(roomId: string): void;
     onPrimeAction?(action: RelicActionInput): void;
+    onPickupRelic?(relicId: string): void;
+    onReviewPlaybackComplete?(): void;
 }>;
 
 type SceneRuntime = Readonly<{
@@ -198,8 +208,8 @@ type SceneRuntime = Readonly<{
     doorPromptMarkerMaterial: StandardMaterial;
     escapeMarker: Mesh;
     escapeMarkerMaterial: StandardMaterial;
-    remotePositions: Map<string, RemotePosEntry>;
-    lastPosBroadcastMs: { value: number };
+    motion: RelicMotionRuntimeState;
+    motionPhase: { value: RelicMotionPhase };
 }>;
 
 type RelicSceneLighting = Readonly<{
@@ -507,7 +517,15 @@ export function RelicScene({
             delete canvas.dataset.sceneEffectMeshCount;
             delete canvas.dataset.sceneDrawCalls;
             delete canvas.dataset.sceneFps;
+            delete canvas.dataset.sceneVisualTheme;
             delete canvas.dataset.cameraControl;
+            delete canvas.dataset.rallarMotionLane;
+            delete canvas.dataset.rallarMotionReadyPeers;
+            delete canvas.dataset.rallarMotionLaneReady;
+            delete canvas.dataset.rallarMotionSampleAgeMs;
+            delete canvas.dataset.rallarMotionEstimateMode;
+            delete canvas.dataset.rallarMotionConfidence;
+            delete canvas.dataset.rallarMotionLastSendStatus;
             runtime.scene.dispose();
             runtime.engine.dispose();
             runtimeRef.current = undefined;
@@ -833,6 +851,7 @@ function createRelicSceneRuntime({
     installSkybox(scene);
     scene.environmentIntensity = initialLighting.environmentIntensity;
     canvas.dataset.lightingPreset = initialLighting.id;
+    canvas.dataset.sceneVisualTheme = 'bright-neon-cyber-dojo';
     canvas.dataset.cameraControl = DEFAULT_CAMERA_CONTROL;
 
     const flameTexture = createFlameTexture(scene);
@@ -920,8 +939,8 @@ function createRelicSceneRuntime({
         doorPromptMarkerMaterial,
         escapeMarker,
         escapeMarkerMaterial,
-        remotePositions: new Map(),
-        lastPosBroadcastMs: { value: 0 },
+        motion: createRelicMotionState(),
+        motionPhase: { value: 'idle' },
     };
 }
 
@@ -932,53 +951,34 @@ function createRelicPostProcess(
     const pipeline = new DefaultRenderingPipeline('relic-pipeline', true, scene, [camera]);
 
     pipeline.bloomEnabled = true;
-    pipeline.bloomThreshold = 0.72;
-    pipeline.bloomWeight = 0.22;
-    pipeline.bloomKernel = 24;
+    pipeline.bloomThreshold = 0.42;
+    pipeline.bloomWeight = 0.46;
+    pipeline.bloomKernel = 40;
     pipeline.bloomScale = 0.66;
 
     pipeline.sharpenEnabled = true;
-    pipeline.sharpen.edgeAmount = 0.64;
-    pipeline.sharpen.colorAmount = 0.18;
+    pipeline.sharpen.edgeAmount = 0.38;
+    pipeline.sharpen.colorAmount = 0.12;
 
     pipeline.imageProcessingEnabled = true;
-    pipeline.imageProcessing.contrast = 1.16;
-    pipeline.imageProcessing.exposure = 1.14;
+    pipeline.imageProcessing.contrast = 1.0;
+    pipeline.imageProcessing.exposure = 1.46;
     pipeline.imageProcessing.toneMappingEnabled = true;
     pipeline.imageProcessing.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
 
-    const curves = new ColorCurves();
-    curves.globalSaturation = 18;
-    curves.highlightsHue = 35;
-    curves.highlightsDensity = 22;
-    curves.shadowsHue = 215;
-    curves.shadowsDensity = 16;
-    pipeline.imageProcessing.colorCurvesEnabled = true;
-    pipeline.imageProcessing.colorCurves = curves;
-
-    pipeline.imageProcessing.vignetteEnabled = true;
-    pipeline.imageProcessing.vignetteWeight = 0.92;
-    pipeline.imageProcessing.vignetteStretch = 0.55;
+    pipeline.imageProcessing.colorCurvesEnabled = false;
+    pipeline.imageProcessing.vignetteEnabled = false;
+    pipeline.imageProcessing.vignetteWeight = 0.03;
+    pipeline.imageProcessing.vignetteStretch = 0.42;
     pipeline.imageProcessing.vignetteCameraFov = camera.fov;
-    pipeline.imageProcessing.vignetteColor = new Color4(0.04, 0.02, 0.07, 0);
+    pipeline.imageProcessing.vignetteColor = new Color4(0.15, 0.28, 0.34, 0);
 
-    pipeline.grainEnabled = true;
-    pipeline.grain.intensity = 1.25;
+    pipeline.grainEnabled = false;
+    pipeline.grain.intensity = 0.02;
     pipeline.grain.animated = true;
 
-    try {
-        const ssao = new SSAO2RenderingPipeline('relic-ssao', scene, { ssaoRatio: 0.75, blurRatio: 0.25 }, [camera]);
-        ssao.radius = 1.25;
-        ssao.totalStrength = 0.55;
-        ssao.base = 0.04;
-        ssao.maxZ = 40;
-        ssao.samples = 8;
-    } catch {
-        // SSAO2 is not available in every browser context.
-    }
-
     const glowLayer = new GlowLayer('relic-glow', scene);
-    glowLayer.intensity = 0.72;
+    glowLayer.intensity = 1.18;
 
     return pipeline;
 }
@@ -1022,17 +1022,16 @@ function installShadowRegistration(scene: Scene, shadows: ShadowGenerator): void
 function installSkybox(scene: Scene): void {
     const envTexture = buildSkyEnvironmentTexture(scene);
     scene.environmentTexture = envTexture;
-    scene.environmentIntensity = 0.58;
+    scene.environmentIntensity = 0.78;
 
     const skybox = MeshBuilder.CreateBox('relic-skybox', { size: 750 }, scene);
     const skyMat = new StandardMaterial('relic-skybox-mat', scene);
     skyMat.backFaceCulling = false;
     skyMat.disableLighting = true;
-    const skyboxTex = envTexture.clone();
-    skyboxTex.coordinatesMode = 5; // Texture.SKYBOX_MODE
-    skyMat.reflectionTexture = skyboxTex;
-    skyMat.diffuseColor = new Color3(0, 0, 0);
-    skyMat.specularColor = new Color3(0, 0, 0);
+    const skyColor = Color3.FromHexString('#dff9ff');
+    skyMat.diffuseColor = skyColor;
+    skyMat.emissiveColor = skyColor.scale(1.05);
+    skyMat.specularColor = Color3.FromHexString('#f8fdff').scale(0.08);
     skybox.material = skyMat;
     skybox.infiniteDistance = true;
     skybox.isPickable = false;
@@ -1310,6 +1309,8 @@ function syncLinks(runtime: SceneRuntime, rooms: readonly RelicRoom[]): void {
         return;
     }
 
+    runtime.links.push(...createNeonMapBase(runtime, rooms));
+
     for (const room of rooms) {
         for (const neighborId of room.neighbors) {
             if (room.id > neighborId) {
@@ -1419,11 +1420,6 @@ function syncPlayers(
         } else {
             const room = snapshot.map.find((candidate) => candidate.id === player.roomId);
             if (room) {
-                const remote = runtime.remotePositions.get(player.playerId);
-                if (remote?.roomId && remote.roomId !== player.roomId) {
-                    runtime.remotePositions.delete(player.playerId);
-                }
-
                 const world = roomWorldPosition(room);
                 const offset = toPlayerOffset(index);
                 const target = new Vector3(world.x + offset.x, 0.65, world.z + offset.z);
@@ -1455,24 +1451,26 @@ function createPlayerAvatar(
     const pid = player.playerId;
     const isBulwark = character.silhouette === 'bulwark';
 
-    // Three-tier PBR materials: cloth (soft), armour plate (semi-metal), gold trim (mirror)
-    const primary   = materialFromHex(runtime.scene, `av-pri-${pid}`, character.colors.primary,   0.02, 0.04, 0.62);
-    const secondary = materialFromHex(runtime.scene, `av-sec-${pid}`, character.colors.secondary, 0.01, 0.62, 0.28);
-    const accent    = materialFromHex(runtime.scene, `av-acc-${pid}`, character.colors.accent,    0.10, 0.92, 0.12);
-    const blade     = materialFromHex(runtime.scene, `av-bld-${pid}`, '#a8b8bc',                  0.00, 0.88, 0.22);
+    // Neon samurai PBR materials: lit carbon base, emissive armor plates, and glowing tools.
+    const primary   = materialFromHex(runtime.scene, `av-pri-${pid}`, '#d5f7ff', 0.30, 0.20, 0.34);
+    const secondary = materialFromHex(runtime.scene, `av-sec-${pid}`, character.colors.secondary, 0.38, 0.64, 0.22);
+    const accent    = materialFromHex(runtime.scene, `av-acc-${pid}`, character.colors.accent, 1.18, 0.34, 0.16);
+    const blade     = materialFromHex(runtime.scene, `av-bld-${pid}`, RELIC_NEON_THEME.cyanSoft, 0.82, 0.88, 0.16);
+    const skin      = materialFromHex(runtime.scene, `av-skin-${pid}`, '#e8c8a8', 0.08, 0.00, 0.54);
+    const visor     = materialFromHex(runtime.scene, `av-visor-${pid}`, RELIC_NEON_THEME.cyan, 1.35, 0.08, 0.18);
 
     // === ROOT: readable low-poly hunter body ===
     const root = MeshBuilder.CreateCylinder(`av-body-${pid}`, {
-        height: 0.66,
-        diameterTop:    isBulwark ? 0.54 : 0.46,
-        diameterBottom: isBulwark ? 0.80 : 0.70,
+        height: 0.78,
+        diameterTop:    isBulwark ? 0.52 : 0.44,
+        diameterBottom: isBulwark ? 0.70 : 0.60,
         tessellation: 10,
     }, runtime.scene);
     root.material = primary;
     root.metadata = { playerId: pid };
 
     const parts: Mesh[] = [root];
-    const mats: PBRMaterial[] = [primary, secondary, accent, blade];
+    const mats: PBRMaterial[] = [primary, secondary, accent, blade, skin, visor];
 
     const addPart = (mesh: Mesh, material: PBRMaterial) => {
         mesh.parent = root;
@@ -1485,86 +1483,94 @@ function createPlayerAvatar(
     // Hakama fold accent band
     addPart(MeshBuilder.CreateCylinder(`av-band-${pid}`, {
         height: 0.08, diameterTop: isBulwark ? 0.60 : 0.52, diameterBottom: isBulwark ? 0.60 : 0.52, tessellation: 10,
-    }, runtime.scene), accent).position.y = 0.16;
+    }, runtime.scene), accent).position.y = 0.20;
 
     const floorMark = addPart(MeshBuilder.CreateCylinder(`av-floor-mark-${pid}`, {
         height: 0.018, diameter: isBulwark ? 0.88 : 0.78, tessellation: 28,
     }, runtime.scene), accent);
-    floorMark.position.y = -0.57;
+    floorMark.position.y = -0.66;
     floorMark.scaling.z = 0.68;
+
+    const motionTrail = addPart(MeshBuilder.CreateBox(`av-neon-trail-${pid}`, {
+        width: isBulwark ? 0.62 : 0.52,
+        height: 0.022,
+        depth: 0.86,
+    }, runtime.scene), visor);
+    motionTrail.position.set(0, -0.64, -0.38);
+    motionTrail.visibility = 0.56;
 
     // === LEGS ===
     for (const [side, xOff] of [[-1, -0.10], [1, 0.10]] as [number, number][]) {
         // Suneate (shin guard)
         addPart(MeshBuilder.CreateCylinder(`av-shin-${side}-${pid}`, {
-            height: 0.35, diameterTop: 0.17, diameterBottom: 0.14, tessellation: 7,
-        }, runtime.scene), secondary).position.set(xOff, -0.32, 0.01);
+            height: 0.45, diameterTop: 0.15, diameterBottom: 0.13, tessellation: 7,
+        }, runtime.scene), secondary).position.set(xOff, -0.40, 0.01);
 
         // Tabi boot
         const boot = addPart(MeshBuilder.CreateBox(`av-boot-${side}-${pid}`, {
-            width: 0.19, height: 0.12, depth: 0.27,
+            width: 0.18, height: 0.12, depth: 0.31,
         }, runtime.scene), primary);
-        boot.position.set(xOff, -0.53, 0.05);
+        boot.position.set(xOff, -0.64, 0.06);
     }
 
     // === TORSO ===
     // Koshi-obi (hip sash)
     addPart(MeshBuilder.CreateCylinder(`av-waist-${pid}`, {
         height: 0.14, diameterTop: isBulwark ? 0.64 : 0.54, diameterBottom: isBulwark ? 0.66 : 0.56, tessellation: 10,
-    }, runtime.scene), accent).position.y = 0.42;
+    }, runtime.scene), accent).position.y = 0.48;
 
     // Dō (chest armour plate)
     const chest = addPart(MeshBuilder.CreateBox(`av-chest-${pid}`, {
-        width: isBulwark ? 0.60 : 0.50, height: 0.52, depth: 0.35,
+        width: isBulwark ? 0.66 : 0.54, height: 0.62, depth: 0.36,
     }, runtime.scene), secondary);
-    chest.position.y = 0.78;
+    chest.position.y = 0.88;
 
     // Lamellar rows on chest (two horizontal accent strips)
     addPart(MeshBuilder.CreateBox(`av-chest-rim1-${pid}`, {
-        width: isBulwark ? 0.62 : 0.54, height: 0.065, depth: 0.36,
-    }, runtime.scene), accent).position.y = 0.86;
+        width: isBulwark ? 0.68 : 0.58, height: 0.065, depth: 0.37,
+    }, runtime.scene), accent).position.y = 0.99;
     addPart(MeshBuilder.CreateBox(`av-chest-rim2-${pid}`, {
-        width: isBulwark ? 0.62 : 0.54, height: 0.06, depth: 0.36,
-    }, runtime.scene), accent).position.y = 0.62;
+        width: isBulwark ? 0.66 : 0.56, height: 0.06, depth: 0.37,
+    }, runtime.scene), accent).position.y = 0.74;
 
     const backBanner = addPart(MeshBuilder.CreateBox(`av-back-banner-${pid}`, {
-        width: 0.16, height: 0.66, depth: 0.045,
+        width: 0.14, height: 0.76, depth: 0.045,
     }, runtime.scene), accent);
-    backBanner.position.set(0, 0.82, -0.23);
+    backBanner.position.set(0, 0.92, -0.24);
 
     // Neck cylinder
     addPart(MeshBuilder.CreateCylinder(`av-neck-${pid}`, {
         height: 0.16, diameter: 0.20, tessellation: 8,
-    }, runtime.scene), primary).position.y = 1.10;
+    }, runtime.scene), primary).position.y = 1.23;
 
     // === ARMS (left and right) ===
     for (const [side, sign] of [[-1, -1], [1, 1]] as [number, number][]) {
         // Ō-sode (large shoulder board)
         const sode = addPart(MeshBuilder.CreateBox(`av-sode-${side}-${pid}`, {
-            width: 0.14, height: 0.44, depth: 0.36,
+            width: 0.14, height: 0.48, depth: 0.38,
         }, runtime.scene), secondary);
-        sode.position.set(sign * 0.42, 0.84, -0.02);
+        sode.position.set(sign * 0.46, 0.94, -0.02);
         sode.rotation.z = sign * 0.28;
 
         // Sode lamellar accent
         const sodeRim = addPart(MeshBuilder.CreateBox(`av-sode-rim-${side}-${pid}`, {
-            width: 0.15, height: 0.065, depth: 0.36,
+            width: 0.15, height: 0.065, depth: 0.38,
         }, runtime.scene), accent);
-        sodeRim.position.set(sign * 0.42, 0.71, -0.02);
+        sodeRim.position.set(sign * 0.46, 0.79, -0.02);
         sodeRim.rotation.z = sign * 0.28;
 
         // Upper arm
         const uArm = addPart(MeshBuilder.CreateCylinder(`av-uarm-${side}-${pid}`, {
-            height: 0.30, diameterTop: 0.13, diameterBottom: 0.16, tessellation: 7,
+            height: 0.36, diameterTop: 0.12, diameterBottom: 0.15, tessellation: 7,
         }, runtime.scene), primary);
-        uArm.position.set(sign * 0.39, 0.62, 0.01);
+        uArm.position.set(sign * 0.44, 0.69, 0.01);
         uArm.rotation.z = sign * 0.75;
 
         // Lower arm / kote (armoured gauntlet)
         const lArm = addPart(MeshBuilder.CreateCylinder(`av-larm-${side}-${pid}`, {
-            height: 0.28, diameterTop: 0.11, diameterBottom: 0.13, tessellation: 7,
+            height: 0.34, diameterTop: 0.10, diameterBottom: 0.12, tessellation: 7,
         }, runtime.scene), secondary);
-        lArm.position.set(sign * 0.51, 0.43, 0.04);
+        lArm.position.set(sign * 0.56, 0.46, 0.04);
         lArm.rotation.z = sign * 0.94;
         lArm.rotation.x = 0.12;
     }
@@ -1574,26 +1580,26 @@ function createPlayerAvatar(
     const kabuto = addPart(MeshBuilder.CreateSphere(`av-kabuto-${pid}`, {
         diameter: 0.48, segments: 12,
     }, runtime.scene), accent);
-    kabuto.position.y = 1.32;
-    kabuto.scaling.set(1.0, 0.72, 1.0);
+    kabuto.position.y = 1.50;
+    kabuto.scaling.set(0.92, 0.74, 0.96);
 
     // Hachi brow ridge
     addPart(MeshBuilder.CreateBox(`av-hachi-${pid}`, {
-        width: 0.50, height: 0.08, depth: 0.42,
-    }, runtime.scene), secondary).position.y = 1.22;
+        width: 0.46, height: 0.07, depth: 0.40,
+    }, runtime.scene), secondary).position.y = 1.39;
 
     // Shikoro — inner neckguard disc
     const shikoro = addPart(MeshBuilder.CreateDisc(`av-shikoro-${pid}`, {
         radius: 0.34, tessellation: 20,
     }, runtime.scene), secondary);
-    shikoro.position.y = 1.14;
+    shikoro.position.y = 1.30;
     shikoro.rotation.x = Math.PI / 2;
 
     // Shikoro outer accent ring
     const shikoroRing = addPart(MeshBuilder.CreateDisc(`av-shikoro-ring-${pid}`, {
         radius: 0.38, tessellation: 20,
     }, runtime.scene), accent);
-    shikoroRing.position.y = 1.10;
+    shikoroRing.position.y = 1.26;
     shikoroRing.rotation.x = Math.PI / 2;
 
     // Fukigaeshi — ear flap plates (left and right)
@@ -1601,28 +1607,49 @@ function createPlayerAvatar(
         const fuki = addPart(MeshBuilder.CreateBox(`av-fuki-${side}-${pid}`, {
             width: 0.075, height: 0.20, depth: 0.17,
         }, runtime.scene), secondary);
-        fuki.position.set(sign * 0.26, 1.27, -0.01);
+        fuki.position.set(sign * 0.25, 1.44, -0.01);
         fuki.rotation.z = sign * 0.55;
     }
 
+    const face = addPart(MeshBuilder.CreateBox(`av-face-${pid}`, {
+        width: 0.30, height: 0.20, depth: 0.12,
+    }, runtime.scene), skin);
+    face.position.set(0, 1.36, 0.15);
+
+    addPart(MeshBuilder.CreateBox(`av-eye-shadow-${pid}`, {
+        width: 0.26, height: 0.035, depth: 0.04,
+    }, runtime.scene), visor).position.set(0, 1.42, 0.22);
+
+    addPart(MeshBuilder.CreateBox(`av-visor-line-${pid}`, {
+        width: 0.34, height: 0.032, depth: 0.055,
+    }, runtime.scene), visor).position.set(0, 1.44, 0.245);
+
     // Menpo — lower face mask
     const menpo = addPart(MeshBuilder.CreateBox(`av-menpo-${pid}`, {
-        width: 0.34, height: 0.22, depth: 0.20,
+        width: 0.32, height: 0.18, depth: 0.18,
     }, runtime.scene), secondary);
-    menpo.position.set(0, 1.16, 0.12);
+    menpo.position.set(0, 1.27, 0.15);
 
     // Menpo nose bridge
     const noseBridge = addPart(MeshBuilder.CreateBox(`av-nose-${pid}`, {
-        width: 0.065, height: 0.11, depth: 0.11,
+        width: 0.055, height: 0.11, depth: 0.10,
     }, runtime.scene), accent);
-    noseBridge.position.set(0, 1.23, 0.22);
+    noseBridge.position.set(0, 1.36, 0.24);
 
     // Maedate (front crest — tall dramatic plate)
     const crest = addPart(MeshBuilder.CreateBox(`av-crest-${pid}`, {
-        width: 0.075, height: 0.38, depth: 0.06,
+        width: 0.07, height: 0.42, depth: 0.055,
     }, runtime.scene), accent);
-    crest.position.set(0, 1.55, 0.17);
+    crest.position.set(0, 1.75, 0.17);
     crest.rotation.x = -0.22;
+
+    const halo = addPart(MeshBuilder.CreateTorus(`av-helmet-halo-${pid}`, {
+        diameter: 0.62,
+        thickness: 0.028,
+        tessellation: 32,
+    }, runtime.scene), visor);
+    halo.position.set(0, 1.57, -0.01);
+    halo.rotation.x = Math.PI / 2;
 
     // === KATANA at hip (daisho carry) ===
     const saya = addPart(MeshBuilder.CreateBox(`av-saya-${pid}`, {
@@ -1675,11 +1702,11 @@ function addSignatureProp(
                 { height: 0.085, diameter: 0.68, tessellation: 7 },
                 runtime.scene,
             ));
-            shield.position.set(-0.50, 0.25, 0.13);
+            shield.position.set(-0.56, 0.34, 0.13);
             shield.rotation.z = Math.PI / 2;
             // Shield boss (centre umbo)
             add(MeshBuilder.CreateSphere(`avatar-shield-boss-${playerId}`, { diameter: 0.16, segments: 8 }, runtime.scene))
-                .position.set(-0.56, 0.25, 0.13);
+                .position.set(-0.62, 0.34, 0.13);
             break;
         }
         case 'scout':
@@ -1690,11 +1717,11 @@ function addSignatureProp(
                 { diameter: 0.28, segments: 10 },
                 runtime.scene,
             ));
-            lantern.position.set(0.48, 0.16, 0.28);
+            lantern.position.set(0.56, 0.26, 0.28);
             lantern.scaling.set(1, 1.3, 1);
             // Lantern cord
             add(MeshBuilder.CreateCylinder(`avatar-lantern-cord-${playerId}`, { height: 0.18, diameter: 0.025, tessellation: 4 }, runtime.scene))
-                .position.set(0.48, 0.36, 0.28);
+                .position.set(0.56, 0.46, 0.28);
             break;
         }
         case 'scholar':
@@ -1705,11 +1732,11 @@ function addSignatureProp(
                 { diameter: 0.68, thickness: 0.04, tessellation: 28 },
                 runtime.scene,
             ));
-            halo.position.set(0, 1.68, 0);
+            halo.position.set(0, 1.92, 0);
             halo.rotation.x = Math.PI / 2;
             // Inner halo ring (smaller, different accent)
             add(MeshBuilder.CreateTorus(`avatar-halo-inner-${playerId}`, { diameter: 0.44, thickness: 0.025, tessellation: 20 }, runtime.scene))
-                .position.set(0, 1.73, 0);
+                .position.set(0, 1.97, 0);
             (parts[parts.length - 1]).rotation.x = Math.PI / 2;
             break;
         }
@@ -1717,14 +1744,14 @@ function addSignatureProp(
             // Long polearm / tool carried at side
             const tool = add(MeshBuilder.CreateBox(
                 `avatar-tool-${playerId}`,
-                { width: 0.07, height: 0.88, depth: 0.085 },
+                { width: 0.07, height: 1.02, depth: 0.085 },
                 runtime.scene,
             ));
-            tool.position.set(0.52, 0.14, 0);
+            tool.position.set(0.58, 0.28, 0);
             tool.rotation.z = 0.28;
             // Tool head
             add(MeshBuilder.CreateBox(`avatar-tool-head-${playerId}`, { width: 0.20, height: 0.15, depth: 0.12 }, runtime.scene), bladeMaterial)
-                .position.set(0.68, 0.66, 0);
+                .position.set(0.78, 0.82, 0);
             break;
         }
         case 'duelist':
@@ -1732,14 +1759,14 @@ function addSignatureProp(
             // Second drawn blade held in right hand (nito style)
             const drawn = add(MeshBuilder.CreateBox(
                 `avatar-drawn-${playerId}`,
-                { width: 0.055, height: 0.92, depth: 0.07 },
+                { width: 0.055, height: 1.02, depth: 0.07 },
                 runtime.scene,
             ), bladeMaterial);
-            drawn.position.set(0.50, 0.30, 0.06);
+            drawn.position.set(0.56, 0.40, 0.06);
             drawn.rotation.z = -0.38;
             // Tsuba on drawn blade
             add(MeshBuilder.CreateCylinder(`avatar-drawn-tsuba-${playerId}`, { height: 0.026, diameter: 0.13, tessellation: 8 }, runtime.scene))
-                .position.set(0.34, 0.72, 0.06);
+                .position.set(0.38, 0.86, 0.06);
             (parts[parts.length - 1]).rotation.x = Math.PI / 2;
             break;
         }
@@ -1751,7 +1778,7 @@ function addSignatureProp(
                     { width: 0.052, height: 0.48, depth: 0.06 },
                     runtime.scene,
                 ), bladeMaterial);
-                knife.position.set(side * 0.46, 0.20, 0.12);
+                knife.position.set(side * 0.52, 0.32, 0.12);
                 knife.rotation.z = side * 0.52;
             }
             break;
@@ -1872,6 +1899,8 @@ function disposeAvatar(runtime: SceneRuntime, playerId: string): void {
     runtime.avatarPresentations.delete(playerId);
     runtime.playerLabels.delete(playerId);
     runtime.playerLabelTextures.delete(playerId);
+    runtime.motion.buffer.remove(playerId);
+    runtime.motion.kinematics.remove(playerId);
 }
 
 function syncRelics(runtime: SceneRuntime, snapshot: RelicPublicSnapshot): void {
@@ -1973,8 +2002,38 @@ function updateRuntime(runtime: SceneRuntime): void {
     updateAvatarCompulsionState(runtime);
     updateDynamicPostProcess(runtime);
     if (runtime.inputEnabled.value) {
-        broadcastLocalPosition(runtime);
+        runtime.motionPhase.value = deriveRelicMotionPhase(runtime);
+        void broadcastLocalPosition(runtime);
     }
+    updateMotionDiagnosticsDataset(runtime);
+}
+
+function deriveRelicMotionPhase(runtime: SceneRuntime): RelicMotionPhase {
+    if (runtime.inspection.value) {
+        return 'inspect';
+    }
+    const moving = [...runtime.pressedKeys].some((key) => isRoamKey(key) && key !== 'shift');
+    if (!moving) {
+        return 'idle';
+    }
+    return runtime.pressedKeys.has('shift')
+        ? 'sprint'
+        : 'walk';
+}
+
+function updateMotionDiagnosticsDataset(runtime: SceneRuntime): void {
+    const diagnostics = runtime.motion.diagnostics;
+    runtime.canvas.dataset.rallarMotionLane = RELIC_MOTION_LANE_ID;
+    runtime.canvas.dataset.rallarMotionReadyPeers = String(diagnostics.readyPeerCount);
+    runtime.canvas.dataset.rallarMotionLaneReady = diagnostics.laneReady ? 'true' : 'false';
+    runtime.canvas.dataset.rallarMotionEstimateMode = diagnostics.lastEstimateMode ?? 'none';
+    runtime.canvas.dataset.rallarMotionConfidence = diagnostics.lastConfidence === undefined
+        ? '0'
+        : diagnostics.lastConfidence.toFixed(2);
+    runtime.canvas.dataset.rallarMotionSampleAgeMs = diagnostics.lastSampleAgeMs === undefined
+        ? 'none'
+        : String(Math.round(diagnostics.lastSampleAgeMs));
+    runtime.canvas.dataset.rallarMotionLastSendStatus = diagnostics.lastSendStatus ?? 'idle';
 }
 
 function updateSceneVisibility(runtime: SceneRuntime): void {
@@ -2037,9 +2096,9 @@ function updatePlayerPositions(runtime: SceneRuntime): void {
     const localPlayerId = runtime.localPlayerId.value;
     const localPlayer = snapshot?.players.find((p) => p.playerId === localPlayerId);
     const dt = runtime.engine.getDeltaTime();
-    const factor = Math.min(1, dt / 85);
-    const rtcFactor = Math.min(1, dt / 32);
+    const factor = Math.min(1, dt / REMOTE_SNAPSHOT_POSITION_LERP_MS);
     const now = performance.now();
+    const nowEpochMs = Date.now();
 
     for (const [playerId, mesh] of runtime.players.entries()) {
         const player = snapshot?.players.find((candidate) => candidate.playerId === playerId);
@@ -2058,15 +2117,34 @@ function updatePlayerPositions(runtime: SceneRuntime): void {
                 mesh.rotation.y = runtime.cameraYaw.value;
             }
         } else {
-            const remote = player.escaped || player.defeated || snapshot.phase === 'lobby'
+            let motionEstimate = player.escaped || player.defeated || snapshot.phase === 'lobby'
                 ? undefined
-                : runtime.remotePositions.get(playerId);
-            if (isRemotePositionFreshForPlayer(remote, player.roomId, now)) {
-                // Live WebRTC position — lerp quickly toward it
-                mesh.position.x += (remote.x - mesh.position.x) * rtcFactor;
-                mesh.position.y += (0.65 - mesh.position.y) * rtcFactor;
-                mesh.position.z += (remote.z - mesh.position.z) * rtcFactor;
-                mesh.rotation.y = remote.yaw;
+                : runtime.motion.buffer.sample(playerId, nowEpochMs);
+            const motionEstimateRoomId = motionEstimate?.metadata?.roomId;
+            if (!isRelicMotionEstimateFreshForPlayer(motionEstimate, player.roomId, nowEpochMs)) {
+                if (motionEstimateRoomId && motionEstimateRoomId !== player.roomId) {
+                    runtime.motion.buffer.remove(playerId);
+                    runtime.motion.kinematics.remove(playerId);
+                }
+                motionEstimate = undefined;
+            }
+
+            if (motionEstimate) {
+                const liveFactor = motionEstimate.mode === 'interpolated'
+                    ? 1
+                    : Math.max(0.42, Math.min(0.82, motionEstimate.confidence));
+                mesh.position.x += (motionEstimate.position[0] - mesh.position.x) * liveFactor;
+                mesh.position.y += (motionEstimate.position[1] - mesh.position.y) * liveFactor;
+                mesh.position.z += (motionEstimate.position[2] - mesh.position.z) * liveFactor;
+                if (motionEstimate.rotation) {
+                    mesh.rotation.y = motionEstimate.rotation[1];
+                }
+                runtime.motion.diagnostics.lastEstimateMode = motionEstimate.mode;
+                runtime.motion.diagnostics.lastConfidence = motionEstimate.confidence;
+                runtime.motion.diagnostics.lastSampleAgeMs = Math.max(
+                    0,
+                    nowEpochMs - motionEstimate.observedAtEpochMs,
+                );
             } else {
                 // Fallback: lerp to snapshot-derived room centre target
                 const target = runtime.playerTargets.get(playerId);
@@ -2385,8 +2463,8 @@ function updateLocalRoomRoam(
 
     if (movement.lengthSquared() > 0) {
         movement.normalize();
-        const speed = (hasPressed(runtime, 'shift') ? 4.1 : 2.45) *
-            (runtime.inspection.value ? 0.34 : 1);
+        const speed = (hasPressed(runtime, 'shift') ? ROOM_ROAM_SPRINT_SPEED : ROOM_ROAM_WALK_SPEED) *
+            (runtime.inspection.value ? ROOM_ROAM_INSPECTION_SPEED_MULTIPLIER : 1);
         const next = runtime.roamOffset.add(movement.scale(speed * deltaSeconds));
         runtime.roamOffset.copyFrom(resolveRoomRoam(
             runtime.roomBlockers,
@@ -2733,44 +2811,49 @@ function applyAvatarMaterialPresentation(
     presentation: RelicAvatarPresentation,
     now: number,
 ): void {
-    const [primary, secondary, accent, blade] = materials;
+    const [primary, secondary, accent, blade, skin, visor] = materials;
     if (!primary || !secondary || !accent || !blade) return;
 
     const pulse = 0.5 + Math.sin(now / 520) * 0.5;
     const slowPulse = 0.5 + Math.sin(now / 1800) * 0.5;
-    let roleColor = Color3.Black();
-    let primaryGlow = 0.035;
-    let secondaryGlow = 0.025;
-    let accentGlow = 0.28;
+    let roleColor = Color3.FromHexString(RELIC_NEON_THEME.cyanSoft).scale(0.16);
+    let primaryGlow = 0.22;
+    let secondaryGlow = 0.18;
+    let accentGlow = 0.74;
+    let bladeGlow = 0.68;
 
     switch (presentation.emissiveRole) {
         case 'action':
-            roleColor = new Color3(0.22 + pulse * 0.26, 0.14 + pulse * 0.16, 0.02);
-            primaryGlow = 0.08;
-            secondaryGlow = 0.06;
-            accentGlow = 0.46 + pulse * 0.16;
+            roleColor = new Color3(0.28 + pulse * 0.36, 0.18 + pulse * 0.22, 0.05);
+            primaryGlow = 0.30;
+            secondaryGlow = 0.26;
+            accentGlow = 1.04 + pulse * 0.22;
+            bladeGlow = 0.98;
             break;
         case 'locked':
-            roleColor = new Color3(0.04 + slowPulse * 0.03, 0.08 + slowPulse * 0.04, 0.30 + slowPulse * 0.12);
-            primaryGlow = 0.05;
-            secondaryGlow = 0.04;
-            accentGlow = 0.34 + slowPulse * 0.10;
+            roleColor = new Color3(0.08 + slowPulse * 0.06, 0.14 + slowPulse * 0.08, 0.36 + slowPulse * 0.18);
+            primaryGlow = 0.26;
+            secondaryGlow = 0.22;
+            accentGlow = 0.82 + slowPulse * 0.14;
+            bladeGlow = 0.72;
             break;
         case 'escaped':
-            roleColor = new Color3(0.05, 0.30 + slowPulse * 0.08, 0.18 + slowPulse * 0.08);
-            primaryGlow = 0.05;
-            secondaryGlow = 0.06;
-            accentGlow = 0.42;
+            roleColor = new Color3(0.07, 0.36 + slowPulse * 0.12, 0.22 + slowPulse * 0.10);
+            primaryGlow = 0.28;
+            secondaryGlow = 0.28;
+            accentGlow = 0.92;
+            bladeGlow = 0.82;
             break;
         case 'defeated':
-            roleColor = new Color3(0.16, 0.025, 0.02);
-            primaryGlow = 0.015;
-            secondaryGlow = 0.012;
-            accentGlow = 0.10;
+            roleColor = new Color3(0.18, 0.04, 0.035);
+            primaryGlow = 0.10;
+            secondaryGlow = 0.08;
+            accentGlow = 0.32;
+            bladeGlow = 0.20;
             break;
         case 'idle':
         default:
-            roleColor = Color3.Black();
+            roleColor = Color3.FromHexString(RELIC_NEON_THEME.cyanSoft).scale(0.18);
             break;
     }
 
@@ -2791,9 +2874,25 @@ function applyAvatarMaterialPresentation(
     );
     blade.emissiveColor = Color3.Lerp(
         blade.emissiveColor,
-        blade.albedoColor.scale(presentation.emissiveRole === 'defeated' ? 0.03 : 0.12),
+        blade.albedoColor.scale(bladeGlow),
         0.08,
     );
+    if (skin) {
+        skin.emissiveColor = Color3.Lerp(
+            skin.emissiveColor,
+            skin.albedoColor.scale(presentation.emissiveRole === 'defeated' ? 0.015 : 0.035),
+            0.06,
+        );
+    }
+    if (visor) {
+        visor.emissiveColor = Color3.Lerp(
+            visor.emissiveColor,
+            Color3.FromHexString(RELIC_NEON_THEME.cyan).scale(
+                presentation.emissiveRole === 'defeated' ? 0.34 : 1.22 + pulse * 0.18,
+            ),
+            0.10,
+        );
+    }
 }
 
 function updateDynamicPostProcess(runtime: SceneRuntime): void {
@@ -2819,14 +2918,14 @@ function updateDynamicPostProcess(runtime: SceneRuntime): void {
                 : room.kind === 'treasure' ? -0.02
                     : 0;
     const roomVignette = !room ? 0
-        : room.kind === 'monster' ? 0.16
-            : room.kind === 'trap' ? 0.08
-                : room.kind === 'exit' ? -0.08
+        : room.kind === 'monster' ? 0.03
+            : room.kind === 'trap' ? 0.02
+                : room.kind === 'exit' ? -0.07
                     : 0;
 
-    const tExp = clamp(preset.postProcess.exposure + roomExposure, 1.08, 1.28);
-    const tContrast = clamp(preset.postProcess.contrast + roomContrast, 1.06, 1.30);
-    const tVignette = clamp(preset.postProcess.vignetteWeight + roomVignette, 0.45, 1.12);
+    const tExp = clamp(preset.postProcess.exposure + roomExposure, 1.32, 1.56);
+    const tContrast = clamp(preset.postProcess.contrast + roomContrast, 0.98, 1.08);
+    const tVignette = clamp(preset.postProcess.vignetteWeight + roomVignette, 0, 0.08);
 
     const lerpSpeed = Math.min(1, runtime.engine.getDeltaTime() / 550);
     const ip = runtime.pipeline.imageProcessing;
@@ -3014,6 +3113,7 @@ function spawnCueEffect(runtime: SceneRuntime, cue: RelicAnimationCue): void {
             spawnGlow(runtime, center.add(new Vector3(0, 0.72, 0)), '#f8e08e', durationMs);
             break;
         case 'relic_reveal':
+        case 'relic_pickup':
             spawnPulse(runtime, center, '#a3e635', durationMs, cue.intensity);
             spawnGlow(runtime, center.add(new Vector3(0, 0.9, 0)), '#f2c14e', durationMs);
             spawnRelicFireworks(runtime, center, durationMs);
@@ -3411,11 +3511,10 @@ function buildSkyEnvironmentTexture(scene: Scene): CubeTexture {
         return canvas.toDataURL('image/png');
     }
 
-    // Sky palette: midnight blue zenith fading to warm amber horizon
-    const zenith  = '#07091c';
-    const sky     = '#0d1028';
-    const horizon = '#2e1a0a';
-    const ground  = '#130e06';
+    const zenith  = '#bfe9ff';
+    const sky     = '#dff6ff';
+    const horizon = '#ffe3ad';
+    const ground  = '#d7ecd0';
 
     const faces = [
         makeFace(sky, horizon), // +X

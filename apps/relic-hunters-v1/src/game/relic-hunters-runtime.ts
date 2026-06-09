@@ -43,6 +43,7 @@ export type RelicCommandDraft =
     | Readonly<{ kind: 'start-expedition' }>
     | Readonly<{ kind: 'submit-action'; action: RelicActionInput }>
     | Readonly<{ kind: 'force-resolve-round' }>
+    | Readonly<{ kind: 'pickup-relic'; relicId: string }>
     | Readonly<{ kind: 'continue-review' }>
     | Readonly<{ kind: 'set-round-limit'; timeLimitMs: number }>;
 

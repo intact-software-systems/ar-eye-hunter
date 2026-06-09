@@ -57,6 +57,9 @@ export const RELIC_MVP_MAP: readonly RelicRoom[] = [
 ];
 
 export const RELIC_MVP_RELICS = [
+    // Entrance and Exit — visible neon freebies so every room has something worth touching.
+    { id: 'visitor-badge', name: 'Visitor Badge of Questionable Consent', value: 1, roomId: 'entrance' },
+    { id: 'gift-shop-receipt', name: 'Gift Shop Exit Receipt', value: 2, roomId: 'exit' },
     // Treasure Chamber — three prizes of descending value
     { id: 'golden-idol',   name: 'Golden Idol',      value: 5, roomId: 'treasure' },
     { id: 'jade-dragon',   name: 'Jade Dragon',       value: 3, roomId: 'treasure' },
@@ -250,6 +253,9 @@ export function applyRelicCommand(
         if (joined.state.phase !== 'review') {
             throw new Error('There is no review to continue.');
         }
+        if (joined.state.adminPlayerId && joined.state.adminPlayerId !== options.senderId) {
+            throw new Error('Only the administrator can continue the review.');
+        }
 
         return {
             state: advanceReviewedRound(joined.state, now),
@@ -274,6 +280,13 @@ export function applyRelicCommand(
         return {
             state: resolveRound(forceRoundResolutionState(joined.state, active, now), now),
             resolvedRound: true,
+        };
+    }
+
+    if (command.kind === 'pickup-relic') {
+        return {
+            state: pickUpRelic(joined.state, joined.player, command.relicId, now),
+            resolvedRound: false,
         };
     }
 
@@ -465,6 +478,7 @@ function resolveMove(
                 animationCue: {
                     type: 'camera_move',
                     playerId: player.playerId,
+                    fromRoomId: player.roomId,
                     roomId: targetRoomId,
                     durationMs: 750,
                     intensity: 'medium',
@@ -567,6 +581,69 @@ function resolveSearch(
             relicIds: [...player.relicIds, relic.id],
         },
     );
+}
+
+function pickUpRelic(
+    state: RelicGameState,
+    player: RelicPlayer,
+    relicId: string,
+    now: number,
+): RelicGameState {
+    if (state.phase !== 'planning') {
+        throw new Error('Relics can only be picked up during planning.');
+    }
+
+    const relic = state.relics.find((candidate) => candidate.id === relicId);
+    if (!relic) {
+        throw new Error('Relic does not exist.');
+    }
+    if (relic.roomId !== player.roomId) {
+        throw new Error('Relic is not in this hunter\'s room.');
+    }
+    if (relic.carriedBy || relic.escapedBy) {
+        throw new Error('Relic has already been claimed.');
+    }
+
+    const relics = state.relics.map((candidate) =>
+        candidate.id === relic.id
+            ? {
+                ...candidate,
+                foundBy: candidate.foundBy ?? player.playerId,
+                carriedBy: player.playerId,
+            }
+            : candidate
+    );
+    const playerRelicIds = player.relicIds.includes(relic.id)
+        ? player.relicIds
+        : [...player.relicIds, relic.id];
+    const pickedState = updatePlayer(
+        withEvent(
+            {
+                ...state,
+                relics,
+            },
+            `${player.username} picked up the ${relic.name}. Asset Recovery has filed a polite panic.`,
+            now,
+            {
+                type: 'relic_picked_up',
+                animationCue: {
+                    type: 'relic_pickup',
+                    playerId: player.playerId,
+                    roomId: player.roomId,
+                    relicId: relic.id,
+                    durationMs: 760,
+                    intensity: 'high',
+                },
+                tone: 'success',
+            },
+        ),
+        {
+            ...player,
+            relicIds: playerRelicIds,
+        },
+    );
+
+    return touch(pickedState, now);
 }
 
 function emptySearchMessage(state: RelicGameState, player: RelicPlayer): string {

@@ -14,7 +14,7 @@ describe('lighting presets', () => {
         expect(RELIC_ROOM_LIGHTING_PRESETS.shrine).toBe('lantern');
         expect(RELIC_ROOM_LIGHTING_PRESETS.trap).toBe('lantern');
         expect(RELIC_ROOM_LIGHTING_PRESETS.treasure).toBe('lantern');
-        expect(RELIC_ROOM_LIGHTING_PRESETS.monster).toBe('night');
+        expect(RELIC_ROOM_LIGHTING_PRESETS.monster).toBe('lantern');
         expect(RELIC_ROOM_LIGHTING_PRESETS.exit).toBe('sunset');
     });
 
@@ -31,19 +31,24 @@ describe('lighting presets', () => {
         expect(selectRelicLightingPreset({
             snapshot: snapshot('planning'),
             currentRoom: room('monster', 'monster'),
-        }).id).toBe('night');
+        }).id).toBe('lantern');
         expect(selectRelicLightingPreset({
             snapshot: snapshot('finished'),
             currentRoom: room('storage', 'storage'),
         }).id).toBe('sunset');
     });
 
-    it('keeps every preset readable with modest fog, bounded vignette, and contact shadows', () => {
+    it('keeps every preset bright with modest fog, almost no vignette, and light contact shadows', () => {
         for (const preset of Object.values(RELIC_LIGHTING_PRESETS)) {
-            expect(preset.fogDensity).toBeLessThanOrEqual(0.006);
-            expect(preset.postProcess.exposure).toBeGreaterThanOrEqual(1.1);
-            expect(preset.postProcess.vignetteWeight).toBeLessThanOrEqual(1.1);
-            expect(preset.shadowDarkness).toBeLessThanOrEqual(0.34);
+            expect(preset.fogDensity).toBeLessThanOrEqual(0.0013);
+            expect(preset.environmentIntensity).toBeGreaterThanOrEqual(1.12);
+            expect(preset.sunIntensity).toBeGreaterThanOrEqual(2.64);
+            expect(preset.hemiIntensity).toBeGreaterThanOrEqual(1.34);
+            expect(preset.postProcess.exposure).toBeGreaterThanOrEqual(1.40);
+            expect(preset.postProcess.contrast).toBeLessThanOrEqual(1.01);
+            expect(preset.postProcess.vignetteWeight).toBeLessThanOrEqual(0.04);
+            expect(preset.postProcess.grainIntensity).toBeLessThanOrEqual(0.02);
+            expect(preset.shadowDarkness).toBeLessThanOrEqual(0.07);
             expect(preset.shadowBlurKernel).toBeLessThanOrEqual(4);
         }
     });

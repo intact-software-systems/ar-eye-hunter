@@ -9,6 +9,7 @@ import {
     deriveRelicCameraMode,
     planRoomFlyoverCameraPose,
     planTacticalCameraPose,
+    ROOM_FLYOVER_DURATION_MS,
     tacticalFocusRooms,
 } from '../src/game/scene/cameraModes.ts';
 
@@ -23,6 +24,12 @@ const rooms: readonly RelicRoom[] = [
 ];
 
 describe('camera modes', () => {
+    it('uses faster fresh-adventure camera pacing constants', () => {
+        expect(AVATAR_CAMERA_FOLLOW_HOLD_MS).toBe(1100);
+        expect(AVATAR_CAMERA_ZOOM_OUT_MS).toBe(2600);
+        expect(ROOM_FLYOVER_DURATION_MS).toBe(4800);
+    });
+
     it('uses tactical mode for idle planning instead of roam', () => {
         expect(deriveRelicCameraMode({
             snapshot: snapshot('planning'),

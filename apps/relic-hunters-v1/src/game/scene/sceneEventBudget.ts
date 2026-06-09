@@ -39,6 +39,7 @@ function eventCuePriority(event: RelicEvent): number {
 
     switch (cue.type) {
         case 'relic_reveal':
+        case 'relic_pickup':
         case 'heart_relic_victory':
         case 'room_collapse':
         case 'damage_shake':

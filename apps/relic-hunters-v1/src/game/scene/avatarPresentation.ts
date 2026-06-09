@@ -1,6 +1,10 @@
 import type { RelicPublicSnapshot } from '@relic-hunters/mod.ts';
+import {
+    AVATAR_ARRIVAL_SETTLE_MS,
+    AVATAR_MOVING_STEP_CYCLE_MS,
+} from './motionTuning.ts';
 
-export const AVATAR_ARRIVAL_SETTLE_MS = 620;
+export { AVATAR_ARRIVAL_SETTLE_MS };
 
 export type RelicAvatarStatus =
     | 'lobby'
@@ -139,12 +143,12 @@ export function avatarPoseOffsets({
 }> {
     switch (presentation.status) {
         case 'moving': {
-            const step = Math.sin(nowMs / 105);
+            const step = Math.sin(nowMs / AVATAR_MOVING_STEP_CYCLE_MS);
             return {
-                yOffset: 0.045 + Math.abs(step) * 0.045,
-                pitch: -0.10,
-                roll: step * 0.075,
-                scaleY: 1.02,
+                yOffset: 0.055 + Math.abs(step) * 0.06,
+                pitch: -0.16,
+                roll: step * 0.105,
+                scaleY: 1.035,
             };
         }
         case 'arriving': {
