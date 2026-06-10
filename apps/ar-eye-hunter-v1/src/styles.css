@@ -2,8 +2,21 @@
     color-scheme: dark;
     font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif;
-    background: #090a08;
-    color: #f7f1de;
+    --matrix-bg: #020805;
+    --matrix-bg-2: #06110f;
+    --matrix-panel: rgba(2, 13, 13, 0.78);
+    --matrix-panel-strong: rgba(2, 16, 17, 0.92);
+    --matrix-border: rgba(73, 255, 134, 0.24);
+    --matrix-border-strong: rgba(0, 229, 255, 0.58);
+    --matrix-text: #effff7;
+    --matrix-muted: rgba(207, 255, 234, 0.68);
+    --matrix-acid: #49ff86;
+    --matrix-cyan: #00e5ff;
+    --matrix-magenta: #ff3df2;
+    --matrix-amber: #ffe66d;
+    --matrix-danger: #ff4d7d;
+    background: var(--matrix-bg);
+    color: var(--matrix-text);
     font-synthesis: none;
     text-rendering: optimizeLegibility;
 }
@@ -27,15 +40,16 @@ input {
 }
 
 button {
-    border: 1px solid rgba(247, 241, 222, 0.2);
+    border: 1px solid rgba(73, 255, 134, 0.24);
     border-radius: 6px;
-    color: #f7f1de;
-    background: rgba(20, 22, 18, 0.88);
+    color: var(--matrix-text);
+    background: rgba(2, 16, 17, 0.88);
     cursor: pointer;
 }
 
 button:hover {
-    border-color: rgba(255, 200, 87, 0.75);
+    border-color: rgba(0, 229, 255, 0.72);
+    box-shadow: 0 0 18px rgba(0, 229, 255, 0.16);
 }
 
 button:disabled {
@@ -45,30 +59,51 @@ button:disabled {
 
 input {
     width: 100%;
-    border: 1px solid rgba(247, 241, 222, 0.22);
+    border: 1px solid rgba(73, 255, 134, 0.24);
     border-radius: 6px;
     padding: 10px 11px;
-    color: #f7f1de;
-    background: rgba(6, 7, 6, 0.82);
+    color: var(--matrix-text);
+    background: rgba(1, 8, 8, 0.82);
     outline: none;
 }
 
 input:focus {
-    border-color: #00c2a8;
+    border-color: var(--matrix-cyan);
 }
 
 label {
     display: grid;
     gap: 6px;
     font-size: 12px;
-    color: rgba(247, 241, 222, 0.72);
+    color: var(--matrix-muted);
 }
 
 .app-root {
     position: relative;
     width: 100%;
     height: 100%;
-    background: #090a08;
+    background:
+        radial-gradient(circle at 18% 12%, rgba(73, 255, 134, 0.08), transparent 28%),
+        radial-gradient(circle at 86% 20%, rgba(255, 61, 242, 0.07), transparent 26%),
+        var(--matrix-bg);
+}
+
+.app-root::before {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    content: "";
+    opacity: 0.12;
+    background:
+        repeating-linear-gradient(
+            to bottom,
+            rgba(239, 255, 247, 0.07) 0,
+            rgba(239, 255, 247, 0.07) 1px,
+            transparent 1px,
+            transparent 5px
+        );
+    mix-blend-mode: screen;
 }
 
 .arena-shell {
@@ -95,11 +130,12 @@ label {
 
 .arena-blocker__panel {
     max-width: 360px;
-    border: 1px solid rgba(255, 200, 87, 0.55);
+    border: 1px solid rgba(0, 229, 255, 0.55);
     border-radius: 8px;
     padding: 14px 16px;
-    color: #ffe8a5;
-    background: rgba(9, 10, 8, 0.82);
+    color: var(--matrix-text);
+    background: rgba(1, 8, 8, 0.86);
+    box-shadow: 0 0 32px rgba(0, 229, 255, 0.12);
 }
 
 .hud {
@@ -122,8 +158,10 @@ label {
     top: 112px;
     left: 18px;
     width: min(330px, calc(100vw - 36px));
+    max-height: min(70vh, 640px);
     display: grid;
     gap: 10px;
+    overflow: auto;
 }
 
 .hud--bottom {
@@ -140,9 +178,15 @@ label {
 .status-strip,
 .panel,
 .peer-chip {
-    border: 1px solid rgba(247, 241, 222, 0.16);
-    background: rgba(9, 10, 8, 0.72);
+    border: 1px solid var(--matrix-border);
+    background:
+        linear-gradient(135deg, rgba(0, 229, 255, 0.06), transparent 32%),
+        var(--matrix-panel);
     backdrop-filter: blur(12px);
+    box-shadow:
+        0 0 0 1px rgba(1, 8, 8, 0.6),
+        0 18px 44px rgba(0, 0, 0, 0.3),
+        0 0 28px rgba(73, 255, 134, 0.08);
 }
 
 .brand {
@@ -156,9 +200,17 @@ label {
 .brand__mark {
     width: 32px;
     height: 32px;
-    border: 3px solid #ffc857;
+    border: 3px solid var(--matrix-acid);
     border-radius: 50%;
-    background: radial-gradient(circle at center, #090a08 0 22%, #00c2a8 23% 42%, transparent 43%);
+    background: radial-gradient(
+        circle at center,
+        var(--matrix-bg) 0 22%,
+        var(--matrix-cyan) 23% 42%,
+        transparent 43%
+    );
+    box-shadow:
+        0 0 18px rgba(73, 255, 134, 0.42),
+        inset 0 0 12px rgba(0, 229, 255, 0.26);
 }
 
 .brand h1 {
@@ -170,7 +222,7 @@ label {
 
 .brand p {
     margin: 4px 0 0;
-    color: rgba(247, 241, 222, 0.68);
+    color: var(--matrix-muted);
     font-size: 12px;
 }
 
@@ -188,11 +240,12 @@ label {
     gap: 2px;
     padding: 6px 8px;
     border-radius: 5px;
-    background: rgba(247, 241, 222, 0.06);
+    border: 1px solid rgba(0, 229, 255, 0.14);
+    background: rgba(0, 229, 255, 0.06);
 }
 
 .status-pill span {
-    color: rgba(247, 241, 222, 0.58);
+    color: var(--matrix-muted);
     font-size: 11px;
 }
 
@@ -220,7 +273,7 @@ label {
     gap: 4px;
     padding: 4px;
     border-radius: 7px;
-    background: rgba(247, 241, 222, 0.07);
+    background: rgba(73, 255, 134, 0.06);
 }
 
 .segmented button {
@@ -230,16 +283,19 @@ label {
 }
 
 .segmented button.active {
-    background: rgba(255, 200, 87, 0.2);
-    border-color: rgba(255, 200, 87, 0.35);
+    color: var(--matrix-bg);
+    background: linear-gradient(135deg, var(--matrix-acid), var(--matrix-cyan));
+    border-color: rgba(73, 255, 134, 0.5);
+    font-weight: 700;
 }
 
 .primary {
     padding: 10px 12px;
-    color: #08100d;
-    border-color: #00c2a8;
-    background: #00c2a8;
+    color: #00120e;
+    border-color: var(--matrix-acid);
+    background: linear-gradient(135deg, var(--matrix-acid), var(--matrix-cyan));
     font-weight: 700;
+    box-shadow: 0 0 20px rgba(73, 255, 134, 0.22);
 }
 
 .profile-row {
@@ -254,7 +310,7 @@ label {
 }
 
 .profile-row span:not(.avatar-dot) {
-    color: rgba(247, 241, 222, 0.6);
+    color: var(--matrix-muted);
     font-size: 12px;
 }
 
@@ -282,22 +338,22 @@ label {
     grid-template-columns: 1fr auto;
     align-items: center;
     gap: 8px;
-    border: 1px solid rgba(0, 194, 168, 0.26);
+    border: 1px solid rgba(0, 229, 255, 0.28);
     border-radius: 7px;
     padding: 8px;
-    background: rgba(0, 194, 168, 0.08);
+    background: rgba(0, 229, 255, 0.08);
 }
 
 .director-panel--event {
-    border-color: rgba(255, 200, 87, 0.32);
-    background: rgba(255, 200, 87, 0.08);
+    border-color: rgba(255, 230, 109, 0.34);
+    background: rgba(255, 230, 109, 0.08);
 }
 
 .event-kind {
     justify-self: end;
     max-width: 112px;
     overflow: hidden;
-    color: #ffc857;
+    color: var(--matrix-amber);
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 11px;
@@ -311,7 +367,7 @@ label {
 }
 
 .director-panel span {
-    color: rgba(247, 241, 222, 0.58);
+    color: var(--matrix-muted);
     font-size: 11px;
 }
 
@@ -343,35 +399,36 @@ label {
 }
 
 .room-row.active {
-    border-color: #00c2a8;
-    background: rgba(0, 194, 168, 0.16);
+    border-color: var(--matrix-cyan);
+    background: rgba(0, 229, 255, 0.14);
+    box-shadow: inset 3px 0 0 var(--matrix-acid);
 }
 
 .room-row small {
-    color: rgba(247, 241, 222, 0.58);
+    color: var(--matrix-muted);
 }
 
 .muted {
     margin: 0;
-    color: rgba(247, 241, 222, 0.6);
+    color: var(--matrix-muted);
     font-size: 13px;
 }
 
 .error-panel {
-    border-color: rgba(255, 77, 109, 0.56);
-    color: #ffbac7;
+    border-color: rgba(255, 77, 125, 0.56);
+    color: #ffd6df;
 }
 
 .control-grid {
     display: grid;
     grid-template-columns: auto 1fr;
     gap: 5px 12px;
-    color: rgba(247, 241, 222, 0.68);
+    color: var(--matrix-muted);
     font-size: 12px;
 }
 
 .control-grid span:nth-child(odd) {
-    color: #ffc857;
+    color: var(--matrix-amber);
     font-weight: 700;
 }
 
@@ -384,7 +441,7 @@ label {
 }
 
 .peer-chip span:last-child {
-    color: #ffc857;
+    color: var(--matrix-acid);
     font-weight: 700;
 }
 
@@ -403,11 +460,12 @@ label {
     place-items: center;
     width: 20px;
     height: 20px;
-    border: 2px solid rgba(255, 200, 87, 0.78);
+    border: 2px solid rgba(73, 255, 134, 0.82);
     border-radius: 50%;
     box-shadow:
-        0 0 0 1px rgba(9, 10, 8, 0.8),
-        0 0 18px rgba(0, 194, 168, 0.45);
+        0 0 0 1px rgba(1, 8, 8, 0.9),
+        0 0 18px rgba(0, 229, 255, 0.5),
+        inset 0 0 10px rgba(73, 255, 134, 0.22);
 }
 
 .crosshair span::before,
@@ -419,9 +477,9 @@ label {
     background: linear-gradient(
         to bottom,
         transparent 0 30%,
-        rgba(247, 241, 222, 0.62) 30% 42%,
+        rgba(239, 255, 247, 0.7) 30% 42%,
         transparent 42% 58%,
-        rgba(247, 241, 222, 0.62) 58% 70%,
+        rgba(239, 255, 247, 0.7) 58% 70%,
         transparent 70% 100%
     );
 }
