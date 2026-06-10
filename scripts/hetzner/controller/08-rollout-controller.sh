@@ -8,6 +8,8 @@ fi
 
 RALLAR_REPO_REF="${RALLAR_REPO_REF:-main}"
 RALLAR_CHECKOUT_DIR="${RALLAR_CHECKOUT_DIR:-/opt/rallar/ar-eye-hunter}"
+RALLAR_BLACKBOX_HOST="${RALLAR_BLACKBOX_HOST:-blackbox.rallar.intactss.com}"
+RALLAR_API_CORS_ORIGINS="${RALLAR_API_CORS_ORIGINS:-https://${RALLAR_BLACKBOX_HOST},https://ar-eye-hunter.pages.dev,https://relic-hunters-v1.intact-software-systems.workers.dev}"
 RALLAR_INCLUDE_CADDY="${RALLAR_INCLUDE_CADDY:-0}"
 RALLAR_INSTALL_PLAYWRIGHT="${RALLAR_INSTALL_PLAYWRIGHT:-0}"
 
@@ -43,6 +45,36 @@ wait_for_url() {
 
   echo "Timed out waiting for ${label}." >&2
   return 1
+}
+
+update_api_cors_origins() {
+  local env_file="/etc/rallar/api-v1.env"
+  local tmp_file
+
+  if [[ ! -f "${env_file}" ]]; then
+    echo "Missing ${env_file}. Run 02-deploy-controller.sh first." >&2
+    exit 1
+  fi
+
+  tmp_file="$(mktemp)"
+  awk -v value="CORS_ORIGINS=${RALLAR_API_CORS_ORIGINS}" '
+    BEGIN { replaced = 0 }
+    /^CORS_ORIGINS=/ {
+      if (!replaced) {
+        print value
+        replaced = 1
+      }
+      next
+    }
+    { print }
+    END {
+      if (!replaced) {
+        print value
+      }
+    }
+  ' "${env_file}" >"${tmp_file}"
+  install -m 0600 -o root -g root "${tmp_file}" "${env_file}"
+  rm -f "${tmp_file}"
 }
 
 require_command git
@@ -131,6 +163,9 @@ rsync -a --delete \
   "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box/dist/" \
   /var/www/rallar-black-box/
 chown -R caddy:caddy /var/www/rallar-black-box
+
+echo "==> Updating API CORS origins"
+update_api_cors_origins
 
 echo "==> Starting services"
 systemctl daemon-reload

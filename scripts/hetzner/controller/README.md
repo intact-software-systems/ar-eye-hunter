@@ -127,8 +127,9 @@ It performs:
 5. Build the rallar-black-box SPA.
 6. Stop rallar-api-v1.service and rallar-black-box-control.service.
 7. Publish static SPA files to /var/www/rallar-black-box.
-8. Start API/control services, reload Caddy, and run local health checks.
-9. Print service status and recent logs.
+8. Refresh `CORS_ORIGINS` in `/etc/rallar/api-v1.env`.
+9. Start API/control services, reload Caddy, and run local health checks.
+10. Print service status and recent logs.
 ```
 
 The script uses `git pull --ff-only`; it does not force-reset the checkout. If
@@ -141,6 +142,12 @@ Override the branch/ref:
 
 ```sh
 RALLAR_REPO_REF=my-branch ./08-rollout-controller.sh
+```
+
+Override the API CORS origins written during rollout:
+
+```sh
+RALLAR_API_CORS_ORIGINS=https://app.example.test,https://admin.example.test ./08-rollout-controller.sh
 ```
 
 Override the checkout path:
@@ -315,6 +322,7 @@ RALLAR_CHECKOUT_DIR=/opt/rallar/ar-eye-hunter
 RALLAR_API_HOST=api.rallar.intactss.com
 RALLAR_CONTROL_HOST=control.rallar.intactss.com
 RALLAR_BLACKBOX_HOST=blackbox.rallar.intactss.com
+RALLAR_API_CORS_ORIGINS=https://blackbox.rallar.intactss.com,https://ar-eye-hunter.pages.dev,https://relic-hunters-v1.intact-software-systems.workers.dev
 ```
 
 Override any default by prefixing the deploy command:

@@ -12,6 +12,7 @@ RALLAR_CHECKOUT_DIR="${RALLAR_CHECKOUT_DIR:-/opt/rallar/ar-eye-hunter}"
 RALLAR_API_HOST="${RALLAR_API_HOST:-api.rallar.intactss.com}"
 RALLAR_CONTROL_HOST="${RALLAR_CONTROL_HOST:-control.rallar.intactss.com}"
 RALLAR_BLACKBOX_HOST="${RALLAR_BLACKBOX_HOST:-blackbox.rallar.intactss.com}"
+RALLAR_API_CORS_ORIGINS="${RALLAR_API_CORS_ORIGINS:-https://${RALLAR_BLACKBOX_HOST},https://ar-eye-hunter.pages.dev,https://relic-hunters-v1.intact-software-systems.workers.dev}"
 RALLAR_RETENTION_MAX_RUNS="${RALLAR_RETENTION_MAX_RUNS:-50}"
 RALLAR_INSTALL_PLAYWRIGHT="${RALLAR_INSTALL_PLAYWRIGHT:-1}"
 RALLAR_ACME_EMAIL="${RALLAR_ACME_EMAIL:-}"
@@ -74,7 +75,7 @@ install -d -m 0755 -o rallar -g rallar /var/lib/rallar-deno
 
 cat >/etc/rallar/api-v1.env <<EOF
 PORT=8080
-CORS_ORIGINS=https://${RALLAR_BLACKBOX_HOST}
+CORS_ORIGINS=${RALLAR_API_CORS_ORIGINS}
 RALLAR_API_BASE_URL=https://${RALLAR_API_HOST}
 RALLAR_WS_BASE_URL=wss://${RALLAR_API_HOST}
 RALLAR_SQL_BACKEND=pglite-memory
