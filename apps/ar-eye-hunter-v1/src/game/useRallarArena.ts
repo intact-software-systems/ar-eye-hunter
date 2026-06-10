@@ -6,7 +6,11 @@ import {
 } from '@shared-web/browser/rallar.ts';
 import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { transitionRallarAiResultLifecycle } from '@shared/rallar-ai/mod.ts';
+import {
+    createRallarAiFunnyRoomName,
+    createRallarAiRoomNameSeed,
+    transitionRallarAiResultLifecycle,
+} from '@shared/rallar-ai/mod.ts';
 import { shouldSendRallarMotionSample } from '@shared/rallar-motion/mod.ts';
 
 import {
@@ -740,12 +744,18 @@ export function useRallarArena(): ArenaConnection {
     }, []);
 
     const createArenaRoom = useCallback(async () => {
+        const displayName = createRallarAiFunnyRoomName({
+            baseName: GAME_ROOM_NAME,
+            theme: 'ar-eye-hunter',
+            seed: createRallarAiRoomNameSeed('ar-eye-hunter'),
+            existingNames: rooms.map((room) => room.name),
+        });
         const snapshot = await rallar.rooms.create({
-            displayName: GAME_ROOM_NAME,
+            displayName,
         });
         setRoomId(snapshot.group.groupId);
         await refreshRooms();
-    }, [refreshRooms]);
+    }, [refreshRooms, rooms]);
 
     const joinRoom = useCallback(async (nextRoomId: string) => {
         const snapshot = await rallar.rooms.join(nextRoomId);

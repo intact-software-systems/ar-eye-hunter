@@ -5,7 +5,9 @@ import {
     canonicalRallarAiJson,
     createRallarAiAcceptedResultTracker,
     createRallarAiFakeSidecarProvider,
+    createRallarAiFunnyRoomName,
     createRallarAiMockProvider,
+    createRallarAiRoomNameSeed,
     createRallarAiSchemaRegistry,
     defineRallarAiProviderGovernanceMetadata,
     defineRallarAiTransportPolicy,
@@ -107,6 +109,56 @@ describe('RallarAI shared contracts', () => {
         });
         expect(result.schemaHash).toMatch(/^rallar-ai-fnv1a32:/);
         expect(result.promptHash).toMatch(/^rallar-ai-fnv1a32:/);
+    });
+
+    it('creates deterministic funny room names for game groups', () => {
+        const first = createRallarAiFunnyRoomName({
+            baseName: 'AR Eye Hunter Arena',
+            theme: 'ar-eye-hunter',
+            seed: 'arena-seed-1',
+        });
+        const same = createRallarAiFunnyRoomName({
+            baseName: 'AR Eye Hunter Arena',
+            theme: 'ar-eye-hunter',
+            seed: 'arena-seed-1',
+        });
+        const different = createRallarAiFunnyRoomName({
+            baseName: 'AR Eye Hunter Arena',
+            theme: 'ar-eye-hunter',
+            seed: 'arena-seed-2',
+        });
+
+        expect(first).toBe(same);
+        expect(first).not.toBe(different);
+        expect(first).toContain('AR Eye Hunter Arena');
+        expect(first).toMatch(/^AR Eye Hunter Arena: [A-Za-z]+ [A-Za-z]+ #[0-9A-F]{6}$/);
+        expect(first.length).toBeLessThanOrEqual(72);
+    });
+
+    it('avoids funny room name collisions and keeps fallback names compact', () => {
+        const existingNames: string[] = [];
+
+        for (let index = 0; index < 70; index += 1) {
+            const name = createRallarAiFunnyRoomName({
+                baseName: 'Relic Hunters Expedition',
+                theme: 'relic-hunters',
+                seed: 'crowded-expedition',
+                existingNames,
+            });
+
+            expect(existingNames.map((existing) => existing.toLowerCase()))
+                .not.toContain(name.toLowerCase());
+            expect(name).toContain('Relic Hunters Expedition');
+            expect(name).toMatch(/^Relic Hunters Expedition: .+ #[0-9A-F]{6}/);
+            expect(name.length).toBeLessThanOrEqual(72);
+            existingNames.push(name);
+        }
+
+        expect(new Set(existingNames).size).toBe(existingNames.length);
+    });
+
+    it('creates room name seeds with the requested prefix', () => {
+        expect(createRallarAiRoomNameSeed('test-room')).toMatch(/^test-room:/);
     });
 
     it('selects providers by generation policy', () => {

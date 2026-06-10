@@ -2,8 +2,12 @@ import {
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
     RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
 } from '@shared-test/rallar-bb-test/schema.ts';
+import { createControlResponseHeaders } from '../cors.ts';
 
 type JsonRecord = Record<string, unknown>;
+type SwaggerRouteOptions = Readonly<{
+    corsOrigins?: readonly string[];
+}>;
 
 const CONTROL_OPENAPI_SPEC: JsonRecord = {
     openapi: '3.1.0',
@@ -1350,6 +1354,7 @@ function swaggerHtml(request: Request): string {
 export function handleSwaggerRoute(
     request: Request,
     url = new URL(request.url),
+    options: SwaggerRouteOptions = {},
 ): Response | undefined {
     const isRead = request.method === 'GET' || request.method === 'HEAD';
     if (!isRead) {
@@ -1360,7 +1365,7 @@ export function handleSwaggerRoute(
         url.pathname === '/api/openapi.json' ||
         url.pathname === '/openapi.json'
     ) {
-        return jsonResponse(controlOpenApiSpec(request));
+        return jsonResponse(controlOpenApiSpec(request), 200, request, options);
     }
 
     if (
@@ -1368,47 +1373,64 @@ export function handleSwaggerRoute(
         url.pathname === '/swagger-ui' ||
         url.pathname === '/docs'
     ) {
-        return htmlResponse(swaggerHtml(request));
+        return htmlResponse(swaggerHtml(request), 200, request, options);
     }
 
     return undefined;
 }
 
-export function swaggerFallbackResponse(): Response {
+export function swaggerFallbackResponse(
+    request?: Request,
+    options: SwaggerRouteOptions = {},
+): Response {
     return new Response(null, {
         status: 302,
-        headers: responseHeaders(undefined, {
-            Location: '/swagger-ui',
+        headers: responseHeaders(request, {
+            extra: {
+                Location: '/swagger-ui',
+            },
+            corsOrigins: options.corsOrigins,
         }),
     });
 }
 
-function jsonResponse(value: unknown, status = 200): Response {
+function jsonResponse(
+    value: unknown,
+    status = 200,
+    request?: Request,
+    options: SwaggerRouteOptions = {},
+): Response {
     return new Response(JSON.stringify(value, null, 2), {
         status,
-        headers: responseHeaders('application/json'),
+        headers: responseHeaders(request, {
+            contentType: 'application/json',
+            corsOrigins: options.corsOrigins,
+        }),
     });
 }
 
-function htmlResponse(value: string, status = 200): Response {
+function htmlResponse(
+    value: string,
+    status = 200,
+    request?: Request,
+    options: SwaggerRouteOptions = {},
+): Response {
     return new Response(value, {
         status,
-        headers: responseHeaders('text/html; charset=utf-8'),
+        headers: responseHeaders(request, {
+            contentType: 'text/html; charset=utf-8',
+            corsOrigins: options.corsOrigins,
+        }),
     });
 }
 
 function responseHeaders(
-    contentType?: string,
-    extra: Readonly<Record<string, string>> = {},
+    request: Request | undefined,
+    options: Readonly<{
+        contentType?: string;
+        extra?: Readonly<Record<string, string>>;
+        corsOrigins?: readonly string[];
+    }> = {},
 ): Headers {
-    const headers = new Headers({
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Rallar-Run-Token',
-        ...extra,
-    });
-    if (contentType) {
-        headers.set('Content-Type', contentType);
-    }
-    return headers;
+    return createControlResponseHeaders(request, options);
 }

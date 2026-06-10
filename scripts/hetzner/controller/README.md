@@ -71,6 +71,23 @@ Roll out the latest version from Git using a controlled stop/update/start flow:
 ./08-rollout-controller.sh
 ```
 
+Start headless browser workers on the controller VM:
+
+```sh
+RALLAR_BLACK_BOX_AGENT_COUNT=2 \
+RALLAR_BLACK_BOX_USERNAME=<user> \
+RALLAR_BLACK_BOX_PASSWORD=<password> \
+./09-start-headless-workers.sh
+```
+
+Stop, restart, or inspect headless browser workers:
+
+```sh
+./10-stop-headless-workers.sh
+./11-restart-headless-workers.sh
+./12-status-headless-workers.sh
+```
+
 By default, the stop/start/restart scripts manage only:
 
 ```text
@@ -137,6 +154,155 @@ Install Playwright Chromium/dependencies during rollout if needed:
 ```sh
 RALLAR_INSTALL_PLAYWRIGHT=1 ./08-rollout-controller.sh
 ```
+
+## Headless Browser Workers
+
+`09-start-headless-workers.sh` creates or updates:
+
+```text
+/etc/rallar/headless-worker.env
+/etc/systemd/system/rallar-black-box-headless-worker.service
+```
+
+The service runs:
+
+```sh
+npm --workspace rallar-black-box run worker:headless
+```
+
+It starts one Node/Playwright worker process. That worker opens
+`RALLAR_BLACK_BOX_AGENT_COUNT` Chromium contexts and keeps them connected until
+the service is stopped.
+
+Default public endpoints:
+
+```text
+RALLAR_BLACK_BOX_SPA_URL=https://blackbox.rallar.intactss.com
+RALLAR_BLACK_BOX_CONTROL_URL=wss://control.rallar.intactss.com/control
+RALLAR_API_BASE_URL=https://api.rallar.intactss.com
+RALLAR_BLACK_BOX_ROOM_ID=hetzner-headless-room
+RALLAR_BLACK_BOX_AGENT_PREFIX=controller
+RALLAR_BLACK_BOX_AGENT_COUNT=1
+```
+
+Start two browser agents:
+
+```sh
+RALLAR_BLACK_BOX_RUN_ID=manual-$(date -u +%Y%m%dT%H%M%SZ) \
+RALLAR_BLACK_BOX_ROOM_ID=manual-room \
+RALLAR_BLACK_BOX_AGENT_PREFIX=controller \
+RALLAR_BLACK_BOX_AGENT_COUNT=2 \
+RALLAR_BLACK_BOX_USERNAME=<user> \
+RALLAR_BLACK_BOX_PASSWORD=<password> \
+RALLAR_INSTALL_PLAYWRIGHT=1 \
+./09-start-headless-workers.sh
+```
+
+If `RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN=1` is enabled on the control server,
+also pass:
+
+```sh
+RALLAR_BLACK_BOX_CONTROL_TOKEN=<run-or-agent-token>
+```
+
+Useful options:
+
+```text
+RALLAR_INSTALL_PLAYWRIGHT=1
+  Install Chromium Linux dependencies as root and the Chromium browser cache as
+  the rallar user before starting.
+
+RALLAR_NPM_CI=1
+  Run npm ci before starting.
+
+RALLAR_WAIT_FOR_HEADLESS_WORKERS=0
+  Start the service without waiting for control-server registration.
+
+RALLAR_HEADLESS_READY_TIMEOUT_SECONDS=120
+  Increase the registration wait timeout.
+
+RALLAR_WRITE_HEADLESS_ENV=0
+  Reuse the existing /etc/rallar/headless-worker.env instead of rewriting it.
+```
+
+Stop browsers:
+
+```sh
+./10-stop-headless-workers.sh
+```
+
+Restart using the existing env file:
+
+```sh
+./11-restart-headless-workers.sh
+```
+
+Inspect status, memory, connected agents, and recent logs:
+
+```sh
+./12-status-headless-workers.sh
+```
+
+Suppress recent logs:
+
+```sh
+RALLAR_HEADLESS_LOG_LINES=0 ./12-status-headless-workers.sh
+```
+
+The headless browser service is separate from the controller API/control
+services. Stopping `rallar-black-box-headless-worker.service` closes browser
+contexts but does not stop API-v1, the control server, or Caddy.
+
+## GitHub Action: Headless Browsers
+
+The workflow `.github/workflows/hetzner-headless-browsers.yml` exposes a manual
+`workflow_dispatch` action named `Manage Hetzner Headless Browsers`.
+
+Supported actions:
+
+```text
+start
+stop
+restart
+status
+```
+
+For `start`, configure:
+
+```text
+agent_count
+run_id
+room_id
+agent_prefix
+spa_url
+control_url
+api_base_url
+install_playwright
+npm_ci
+wait_for_agents
+ready_timeout_seconds
+```
+
+Required GitHub secrets:
+
+```text
+HETZNER_HOST
+HETZNER_USER
+HETZNER_SSH_PRIVATE_KEY
+HETZNER_KNOWN_HOSTS
+RALLAR_BLACK_BOX_USERNAME
+RALLAR_BLACK_BOX_PASSWORD
+```
+
+Optional GitHub secret when run tokens are enabled:
+
+```text
+RALLAR_BLACK_BOX_CONTROL_TOKEN
+```
+
+Use `action=start` with the desired `agent_count` to launch browsers. Use
+`action=stop` to stop them. Use `action=status` to inspect the current service
+and connected agents.
 
 ## Defaults
 

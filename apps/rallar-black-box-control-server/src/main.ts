@@ -31,6 +31,11 @@ import {
     validateJsonSchema,
 } from '@shared-test/rallar-bb-test/schema.ts';
 import { handleSwaggerRoute, swaggerFallbackResponse } from './routes/swagger-routes.ts';
+import {
+    applyControlCorsHeaders,
+    corsOriginsFromAllowedOrigins,
+    createControlResponseHeaders,
+} from './cors.ts';
 
 const DEFAULT_PORT = 5180;
 const OPEN_STATE = 1;
@@ -64,10 +69,18 @@ const agentSockets = new Map<string, WebSocket>();
 const socketAgents = new WeakMap<WebSocket, { runId: string; agentId: string }>();
 
 const port = Number(Deno.env.get('PORT') ?? DEFAULT_PORT);
+const corsOrigins = corsOriginsFromAllowedOrigins(security.allowedOrigins);
 
 await restorePersistedSnapshot();
 
 Deno.serve({ port }, async (request) => {
+    return applyControlCorsHeaders(request, await handleRequest(request), corsOrigins);
+});
+
+console.log(`Rallar black-box control server listening on http://localhost:${port}`);
+console.log(`Agent WebSocket endpoint: ws://localhost:${port}/control`);
+
+async function handleRequest(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const isRead = request.method === 'GET' || request.method === 'HEAD';
     const policyRejection = rejectByRequestPolicy(request, url);
@@ -79,7 +92,7 @@ Deno.serve({ port }, async (request) => {
         return emptyResponse(204);
     }
 
-    const swaggerResponse = handleSwaggerRoute(request, url);
+    const swaggerResponse = handleSwaggerRoute(request, url, { corsOrigins });
     if (swaggerResponse) {
         return swaggerResponse;
     }
@@ -283,11 +296,8 @@ Deno.serve({ port }, async (request) => {
         return await issueRunToken(request, runId, agentId);
     }
 
-    return isRead ? swaggerFallbackResponse() : jsonResponse({ error: 'Not found.' }, 404);
-});
-
-console.log(`Rallar black-box control server listening on http://localhost:${port}`);
-console.log(`Agent WebSocket endpoint: ws://localhost:${port}/control`);
+    return isRead ? swaggerFallbackResponse(request, { corsOrigins }) : jsonResponse({ error: 'Not found.' }, 404);
+}
 
 function handleControlSocket(request: Request): Response {
     if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
@@ -997,13 +1007,8 @@ function emptyResponse(status: number): Response {
 }
 
 function responseHeaders(contentType?: string): Headers {
-    const headers = new Headers({
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Rallar-Run-Token',
+    return createControlResponseHeaders(undefined, {
+        contentType,
+        corsOrigins,
     });
-    if (contentType) {
-        headers.set('Content-Type', contentType);
-    }
-    return headers;
 }

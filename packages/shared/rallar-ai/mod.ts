@@ -12,6 +12,7 @@ export * from './rallar-ai-authorization.ts';
 export * from './rallar-ai-provider-governance.ts';
 export * from './rallar-ai-proposals.ts';
 export * from './rallar-ai-replay.ts';
+export * from './rallar-ai-room-names.ts';
 export * from './rallar-ai-mock-provider.ts';
 export * from './rallar-ai-fake-sidecar-provider.ts';
 export * from './rallar-ai-evaluation.ts';

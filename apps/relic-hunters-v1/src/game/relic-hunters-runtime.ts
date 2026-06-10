@@ -6,6 +6,10 @@ import {
 } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import {
+    createRallarAiFunnyRoomName,
+    createRallarAiRoomNameSeed,
+} from '@shared/rallar-ai/mod.ts';
+import {
     RELIC_PROTOCOL_VERSION,
     RELIC_TOPICS,
     RELIC_TYPES,
@@ -236,8 +240,14 @@ export class RelicHuntersRuntime {
         return this.deps.fetchSnapshot(roomId);
     }
 
-    async createRoom(): Promise<RelicRoomHydration> {
-        const created = await this.deps.createRoom(RELIC_ROOM_NAME);
+    async createRoom(existingNames: readonly string[] = []): Promise<RelicRoomHydration> {
+        const displayName = createRallarAiFunnyRoomName({
+            baseName: RELIC_ROOM_NAME,
+            theme: 'relic-hunters',
+            seed: createRallarAiRoomNameSeed('relic-hunters'),
+            existingNames,
+        });
+        const created = await this.deps.createRoom(displayName);
         return this.hydrateRoom(created.group.groupId);
     }
 

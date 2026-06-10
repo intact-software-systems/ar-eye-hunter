@@ -66,6 +66,20 @@ Deno.test('swagger route serves OpenAPI JSON', async () => {
     assertEquals(body.servers[0].url, 'http://localhost:5180');
 });
 
+Deno.test('swagger route applies configured CORS origins', () => {
+    const request = new Request('http://localhost:5180/api/openapi.json', {
+        headers: {
+            origin: 'http://localhost:5176',
+        },
+    });
+    const response = handleSwaggerRoute(request, undefined, {
+        corsOrigins: ['http://localhost:5176'],
+    });
+    assert(response);
+    assertEquals(response.headers.get('access-control-allow-origin'), 'http://localhost:5176');
+    assertEquals(response.headers.get('vary'), 'Origin');
+});
+
 Deno.test('swagger route serves Swagger UI HTML', async () => {
     const request = new Request('http://localhost:5180/swagger-ui');
     const response = handleSwaggerRoute(request);

@@ -40,17 +40,23 @@ const relicGame = await installRelicHunterGame(rallar, {
 });
 const corsOrigins = readCorsOrigins();
 
-app.use(
-    '/api/*',
-    cors({
-        origin: (origin) => resolveCorsOrigin(origin, corsOrigins),
-        allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-        allowHeaders: ['Content-Type', 'Authorization', 'x-client-id'],
-        exposeHeaders: ['Content-Length'],
-        maxAge: 600,
-        credentials: true,
-    }),
-);
+const apiCors = cors({
+    origin: (origin) => resolveCorsOrigin(origin, corsOrigins),
+    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization', 'x-client-id'],
+    exposeHeaders: ['Content-Length'],
+    maxAge: 600,
+    credentials: true,
+});
+
+app.use('/api/*', async (c, next) => {
+    if (isWebSocketUpgradeRequest(c.req.path, c.req.header('upgrade'))) {
+        await next();
+        return;
+    }
+
+    return await apiCors(c, next);
+});
 
 app.get('/api/config', (c) =>
     c.json(configuration)
@@ -124,6 +130,10 @@ function resolveCorsOrigin(
     }
 
     return allowedOrigins.includes(origin) ? origin : undefined;
+}
+
+function isWebSocketUpgradeRequest(path: string, upgrade?: string): boolean {
+    return path.startsWith('/api/ws/') && upgrade?.trim().toLowerCase() === 'websocket';
 }
 
 function loadEnvironment(): void {

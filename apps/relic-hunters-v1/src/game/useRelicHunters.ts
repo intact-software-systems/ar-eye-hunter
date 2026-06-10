@@ -578,8 +578,8 @@ export function useRelicHunters(): RelicHuntersConnection {
     }, [acceptSnapshotCandidate, clearSnapshot, setPhase]);
 
     const createRoom = useCallback(async () => {
-        await hydrateRoom(() => runtime.createRoom());
-    }, [hydrateRoom, runtime]);
+        await hydrateRoom(() => runtime.createRoom(rooms.map((room) => room.name)));
+    }, [hydrateRoom, rooms, runtime]);
 
     const joinRoom = useCallback(async (nextRoomId: string) => {
         await hydrateRoom(() => runtime.joinRoom(nextRoomId));

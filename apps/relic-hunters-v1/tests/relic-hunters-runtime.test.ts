@@ -134,7 +134,10 @@ describe('RelicHuntersRuntime', () => {
 
         const hydration = await runtime.createRoom();
 
-        expect(deps.createRoom).toHaveBeenCalledWith('Relic Hunters Expedition');
+        expect(deps.createRoom).toHaveBeenCalledWith(
+            expect.stringMatching(/^Relic Hunters Expedition: .+ #[0-9A-F]{6}/),
+        );
+        expect(deps.createRoom).not.toHaveBeenCalledWith('Relic Hunters Expedition');
         expect(deps.fetchSnapshot).toHaveBeenCalledWith('created-room');
         expect(deps.refreshRooms).toHaveBeenCalledTimes(1);
         expect(hydration).toMatchObject({
