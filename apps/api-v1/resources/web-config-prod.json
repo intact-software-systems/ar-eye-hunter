@@ -1,6 +1,6 @@
 {
-  "apiBaseUrl": "https://rallar-server.intact-software-systems.deno.net",
-  "wsBaseUrl": "wss://rallar-server.intact-software-systems.deno.net",
+  "apiBaseUrl": "https://api.rallar.intactss.com",
+  "wsBaseUrl": "wss://api.rallar.intactss.com",
   "endpoints": {
     "createWs": "/api/ws/:id"
   }
