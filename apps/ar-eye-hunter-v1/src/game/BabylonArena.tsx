@@ -116,6 +116,8 @@ type ArenaRuntime = {
     recoil: number;
     hitStopUntilEpochMs: number;
     transientEffects: TransientEffect[];
+    createdEffectCount: number;
+    pointerDownCount: number;
 };
 
 type MutableInputState = {
@@ -278,6 +280,8 @@ export function BabylonArena({
             recoil: 0,
             hitStopUntilEpochMs: 0,
             transientEffects: [],
+            createdEffectCount: 0,
+            pointerDownCount: 0,
         };
         runtimeRef.current = runtime;
         syncTargetAvatars(runtime, now);
@@ -316,6 +320,7 @@ export function BabylonArena({
             }
         };
         const onPointerDown = (event: PointerEvent) => {
+            runtime.pointerDownCount += 1;
             if (event.button === 0) {
                 fireLocalShot({
                     runtime,
@@ -1656,6 +1661,7 @@ function addTransientEffect(runtime: ArenaRuntime, effect: TransientEffect): voi
         }
     }
     runtime.transientEffects.push(effect);
+    runtime.createdEffectCount += 1;
 }
 
 function updateTransientEffects(runtime: ArenaRuntime): void {
@@ -1746,9 +1752,10 @@ function writeArenaDiagnostics(canvas: HTMLCanvasElement, runtime: ArenaRuntime)
     canvas.dataset.arenaRuntimeReady = 'true';
     canvas.dataset.arenaVisualTheme = 'neon-matrix';
     canvas.dataset.arenaMeshCount = String(runtime.scene.meshes.length);
-    canvas.dataset.arenaEffectCount = String(runtime.transientEffects.length);
+    canvas.dataset.arenaEffectCount = String(runtime.createdEffectCount);
     canvas.dataset.arenaActiveEffectCount = String(runtime.transientEffects.length);
     canvas.dataset.arenaTargetCount = String(runtime.targets.size);
+    canvas.dataset.arenaPointerDownCount = String(runtime.pointerDownCount);
 }
 
 function hashString(value: string): number {
