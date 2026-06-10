@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
     ClientInstance,
     ClientPrincipal,
@@ -16,6 +16,10 @@ import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('ClientStateSnapshotReadThroughCache', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
     it('hydrates a cold client snapshot cache from durable state', async () => {
         configureTestCacheRepositories();
 
@@ -96,6 +100,40 @@ describe('ClientStateSnapshotReadThroughCache', () => {
         expect(readThroughCache.findByRef(workspaceA.principal)).toEqual(workspaceA);
         expect(readThroughCache.findByRef(workspaceB.principal)).toEqual(workspaceB);
     });
+
+    it('refreshes a warm snapshot when its embedded session has expired', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(0);
+        configureTestCacheRepositories();
+
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const clientRepository = new ClientStateRepository(runtimeRepository);
+        const snapshot = createClientSnapshot(
+            'alice',
+            'app-1',
+            'workspace-a',
+            3,
+            1_000,
+        );
+        const readThroughCache = createClientStateSnapshotReadThroughCache({
+            clientsRepository: clientRepository,
+        });
+        await putClientSnapshot(clientRepository, snapshot);
+        await expect(readThroughCache.findOrLoadByRef(snapshot.principal))
+            .resolves.toEqual(snapshot);
+
+        vi.setSystemTime(1_001);
+
+        await expect(readThroughCache.findOrLoadByRef(snapshot.principal))
+            .resolves.toMatchObject({
+                activeSessions: [],
+                activeSessionCount: 0,
+                isOnline: false,
+            });
+        expect(
+            findClientStateSnapshotByPrincipalId('alice')?.activeSessions,
+        ).toEqual([]);
+    });
 });
 
 async function putClientSnapshot(
@@ -112,6 +150,7 @@ function createClientSnapshot(
     applicationId: string,
     workspaceId: string,
     snapshotVersion: number,
+    expiresAtEpochMs = 4_000_000_000_000,
 ): ClientSnapshot {
     const principal: ClientPrincipal = {
         applicationId,
@@ -159,7 +198,7 @@ function createClientSnapshot(
         authenticatedAtEpochMs: 1,
         connectedAtEpochMs: 1,
         lastHeartbeatAtEpochMs: snapshotVersion,
-        expiresAtEpochMs: 4_000_000_000_000,
+        expiresAtEpochMs,
     };
 
     return {

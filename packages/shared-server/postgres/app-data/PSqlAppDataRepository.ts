@@ -1,7 +1,11 @@
 import type {
+    AppDataConditionalDeleteResult,
+    AppDataConditionalInsertResult,
+    AppDataConditionalRepositoryLike,
+    AppDataConditionalWriteResult,
     AppDataEntry,
-    AppDataRepositoryLike,
     AppDataUpsertInput,
+    AppDataUpsertIfRevisionInput,
 } from '../../app-data/AppDataRepository.ts';
 import type { PSqlSql } from '../PostgresSqlClient.ts';
 
@@ -16,7 +20,7 @@ type AppDataRow = Readonly<{
     revision: number | string;
 }>;
 
-export class PSqlAppDataRepository implements AppDataRepositoryLike {
+export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
     constructor(private readonly sql: PSqlSql) {}
 
     async findEntry(
@@ -109,6 +113,96 @@ export class PSqlAppDataRepository implements AppDataRepositoryLike {
         `;
     }
 
+    async insertIfAbsent<V = unknown>(
+        input: AppDataUpsertInput<V>,
+    ): Promise<AppDataConditionalInsertResult<V>> {
+        const rows = await this.sql<AppDataRow[]>`
+            insert into app_data_store (app_namespace,
+                                        store_name,
+                                        data_key,
+                                        data_value,
+                                        schema_version,
+                                        expire_at_ts,
+                                        updated_ts,
+                                        revision)
+            values (${input.namespace},
+                    ${input.storeName},
+                    ${input.key},
+                    ${serializeAppDataValue(input.value)},
+                    ${input.schemaVersion},
+                    ${toPgDate(input.expireAtTimestamp)},
+                    now(),
+                    0)
+            on conflict (app_namespace, store_name, data_key)
+                do nothing
+            returning app_namespace,
+                      store_name,
+                      data_key,
+                      data_value,
+                      schema_version,
+                      expire_at_ts,
+                      updated_ts,
+                      revision
+        `;
+
+        if (rows[0]) {
+            return {
+                status: 'inserted',
+                entry: toEntry(rows[0]) as AppDataEntry<V>,
+            };
+        }
+
+        return {
+            status: 'exists',
+            current: await this.findEntry(
+                input.namespace,
+                input.storeName,
+                input.key,
+            ) as AppDataEntry<V> | undefined,
+        };
+    }
+
+    async upsertIfRevision<V = unknown>(
+        input: AppDataUpsertIfRevisionInput<V>,
+    ): Promise<AppDataConditionalWriteResult<V>> {
+        const rows = await this.sql<AppDataRow[]>`
+            update app_data_store
+            set data_value     = ${serializeAppDataValue(input.value)},
+                schema_version = ${input.schemaVersion},
+                expire_at_ts   = ${toPgDate(input.expireAtTimestamp)},
+                updated_ts     = now(),
+                revision       = app_data_store.revision + 1
+            where app_namespace = ${input.namespace}
+              and store_name = ${input.storeName}
+              and data_key = ${input.key}
+              and revision = ${input.expectedRevision}
+            returning app_namespace,
+                      store_name,
+                      data_key,
+                      data_value,
+                      schema_version,
+                      expire_at_ts,
+                      updated_ts,
+                      revision
+        `;
+
+        if (rows[0]) {
+            return {
+                status: 'written',
+                entry: toEntry(rows[0]) as AppDataEntry<V>,
+            };
+        }
+
+        return {
+            status: 'conflict',
+            current: await this.findEntry(
+                input.namespace,
+                input.storeName,
+                input.key,
+            ) as AppDataEntry<V> | undefined,
+        };
+    }
+
     async deleteByKey(namespace: string, storeName: string, key: string): Promise<boolean> {
         const rows = await this.sql<{ data_key: string }[]>`
             delete
@@ -120,6 +214,42 @@ export class PSqlAppDataRepository implements AppDataRepositoryLike {
         `;
 
         return rows.length > 0;
+    }
+
+    async deleteIfRevision(
+        namespace: string,
+        storeName: string,
+        key: string,
+        expectedRevision: number,
+    ): Promise<AppDataConditionalDeleteResult> {
+        const rows = await this.sql<AppDataRow[]>`
+            delete
+            from app_data_store
+            where app_namespace = ${namespace}
+              and store_name = ${storeName}
+              and data_key = ${key}
+              and revision = ${expectedRevision}
+            returning app_namespace,
+                      store_name,
+                      data_key,
+                      data_value,
+                      schema_version,
+                      expire_at_ts,
+                      updated_ts,
+                      revision
+        `;
+
+        if (rows[0]) {
+            return {
+                status: 'deleted',
+                entry: toEntry(rows[0]),
+            };
+        }
+
+        return {
+            status: 'conflict',
+            current: await this.findEntry(namespace, storeName, key),
+        };
     }
 
     async deleteExpired(namespace: string, storeName?: string): Promise<number> {

@@ -1,10 +1,8 @@
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { RepositoryToken } from '@shared/cache/RepositoryToken.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import type {
-    AppDataEntry,
-    AppDataRepositoryLike,
-} from './AppDataRepository.ts';
+import type { AppDataConditionalRepositoryLike, AppDataEntry, AppDataRepositoryLike, } from './AppDataRepository.ts';
+import { isAppDataConditionalRepository } from './AppDataRepository.ts';
 
 export type RallarServerAppDataMigrationContext = Readonly<{
     key: string;
@@ -18,11 +16,15 @@ export type RallarServerAppDataMigration<V> = (
     context: RallarServerAppDataMigrationContext,
 ) => V | Promise<V>;
 
+export type RallarServerAppDataReadConsistency = 'fresh' | 'cache-first';
+
 export type RallarServerAppDataStoreOptions<V = unknown> = Readonly<{
     namespace?: string;
     keyPrefix?: string;
     ttlMs?: number;
     schemaVersion?: number;
+    readConsistency?: RallarServerAppDataReadConsistency;
+    maxConflictRetries?: number;
     migrate?: RallarServerAppDataMigration<V>;
     expireAtFor?: (value: V) => number;
 }>;
@@ -40,6 +42,8 @@ type NormalizedAppDataStoreOptions<V> = Readonly<{
     namespace: string;
     keyPrefix: string;
     schemaVersion: number;
+    readConsistency: RallarServerAppDataReadConsistency;
+    maxConflictRetries: number;
     ttlMs?: number;
     migrate?: RallarServerAppDataMigration<V>;
     expireAtFor?: (value: V) => number;
@@ -57,13 +61,43 @@ type PreparedAppDataStore<V> = Readonly<{
     optionsKey: string;
 }>;
 
+type OptimisticAttemptResult<T> =
+    | Readonly<{
+    done: true;
+    value: T;
+}>
+    | Readonly<{
+    done: false;
+}>;
+
 const DEFAULT_NAMESPACE = 'app';
+const DEFAULT_MAX_CONFLICT_RETRIES = 5;
+
+export class RallarServerAppDataConflictError extends Error {
+    constructor(
+        readonly operation: string,
+        readonly key: string,
+        readonly maxAttempts: number,
+    ) {
+        super(
+            `Rallar server app data ${operation} conflicted for key ${key} after ${maxAttempts} attempts.`,
+        );
+        this.name = 'RallarServerAppDataConflictError';
+    }
+}
+
+export function isRallarServerAppDataConflictError(
+    error: unknown,
+): error is RallarServerAppDataConflictError {
+    return error instanceof RallarServerAppDataConflictError;
+}
 
 export class RallarServerAppDataFacade {
     constructor(
         private readonly manager: RepositoryManager,
         private readonly repository?: AppDataRepositoryLike,
-    ) {}
+    ) {
+    }
 
     define<V>(
         name: string,
@@ -139,7 +173,8 @@ export class RallarServerAppDataStore<V> {
         private readonly options: NormalizedAppDataStoreOptions<V>,
         public readonly optionsKey: string,
         public readonly repositoryId: string,
-    ) {}
+    ) {
+    }
 
     get namespace(): string {
         return this.options.namespace;
@@ -180,11 +215,18 @@ export class RallarServerAppDataStore<V> {
     }
 
     async get(key: string): Promise<V | undefined> {
-        const cached = this.read(key);
-        if (cached !== undefined) {
-            return cached;
+        assertDataKey(key);
+        if (this.options.readConsistency === 'cache-first') {
+            const cached = this.read(key);
+            if (cached !== undefined) {
+                return cached;
+            }
         }
 
+        return await this.getFresh(key);
+    }
+
+    private async getFresh(key: string): Promise<V | undefined> {
         const storageKey = this.toStorageKey(key);
         const entry = await this.repository.findEntry(
             this.options.namespace,
@@ -193,6 +235,7 @@ export class RallarServerAppDataStore<V> {
         );
 
         if (!entry) {
+            this.cache.delete(key);
             return undefined;
         }
 
@@ -255,18 +298,11 @@ export class RallarServerAppDataStore<V> {
 
     async set(key: string, value: V): Promise<void> {
         assertDataKey(key);
-        const expireAtTimestamp = this.toExpireAtTimestamp(value);
-        await this.repository.upsert({
-            namespace: this.options.namespace,
-            storeName: this.name,
-            key: this.toStorageKey(key),
-            value,
-            schemaVersion: this.options.schemaVersion,
-            expireAtTimestamp,
-        });
+        const input = this.toUpsertInput(key, value);
+        await this.repository.upsert(input);
         this.cache.set(key, {
             value,
-            expireAtTimestamp,
+            expireAtTimestamp: input.expireAtTimestamp,
         });
     }
 
@@ -274,12 +310,83 @@ export class RallarServerAppDataStore<V> {
         key: string,
         updater: (current: V | undefined) => V,
     ): Promise<V> {
+        const conditional = this.conditionalRepository();
+        if (conditional) {
+            return await this.withOptimisticRetry<V>('updateOrCreate', key, async () => {
+                const currentEntry = await this.findLiveEntry(key);
+                const current = currentEntry
+                    ? (await this.toValue(this.toPublicKey(currentEntry.key), currentEntry)).value
+                    : undefined;
+                const next = updater(current);
+                const input = this.toUpsertInput(key, next);
+
+                if (!currentEntry) {
+                    const result = await conditional.insertIfAbsent(input);
+                    if (result.status === 'inserted') {
+                        return {
+                            done: true,
+                            value: await this.cacheWrittenEntry(result.entry, next),
+                        };
+                    }
+
+                    await this.cacheConflictEntry(result.current);
+                    return { done: false };
+                }
+
+                const result = await conditional.upsertIfRevision({
+                    ...input,
+                    expectedRevision: currentEntry.revision,
+                });
+                if (result.status === 'written') {
+                    return {
+                        done: true,
+                        value: await this.cacheWrittenEntry(result.entry, next),
+                    };
+                }
+
+                await this.cacheConflictEntry(result.current);
+                return { done: false };
+            });
+        }
+
         const next = updater(await this.get(key));
         await this.set(key, next);
         return next;
     }
 
     async update(key: string, updater: (current: V) => V): Promise<V | undefined> {
+        const conditional = this.conditionalRepository();
+        if (conditional) {
+            return await this.withOptimisticRetry<V | undefined>('update', key, async () => {
+                const currentEntry = await this.findLiveEntry(key);
+                if (!currentEntry) {
+                    return {
+                        done: true,
+                        value: undefined,
+                    };
+                }
+
+                const current = (await this.toValue(
+                    this.toPublicKey(currentEntry.key),
+                    currentEntry,
+                )).value;
+                const next = updater(current);
+                const result = await conditional.upsertIfRevision({
+                    ...this.toUpsertInput(key, next),
+                    expectedRevision: currentEntry.revision,
+                });
+                if (result.status === 'written') {
+                    return {
+                        done: true,
+                        value: await this.cacheWrittenEntry(result.entry, next),
+                    };
+                }
+
+                await this.cacheConflictEntry(result.current);
+                return { done: false };
+            });
+        }
+
         const current = await this.get(key);
         if (current === undefined) {
             return undefined;
@@ -291,6 +398,40 @@ export class RallarServerAppDataStore<V> {
     }
 
     async setIfAbsent(key: string, creator: () => V): Promise<V> {
+        const conditional = this.conditionalRepository();
+        if (conditional) {
+            return await this.withOptimisticRetry<V>('setIfAbsent', key, async () => {
+                const currentEntry = await this.findLiveEntry(key);
+                if (currentEntry) {
+                    return {
+                        done: true,
+                        value: await this.cacheLiveEntry(currentEntry) as V,
+                    };
+                }
+
+                const created = creator();
+                const result = await conditional.insertIfAbsent(
+                    this.toUpsertInput(key, created),
+                );
+                if (result.status === 'inserted') {
+                    return {
+                        done: true,
+                        value: await this.cacheWrittenEntry(result.entry, created),
+                    };
+                }
+
+                if (result.current && !isExpired(result.current.expireAtTimestamp)) {
+                    return {
+                        done: true,
+                        value: await this.cacheLiveEntry(result.current) as V,
+                    };
+                }
+
+                await this.cacheConflictEntry(result.current);
+                return { done: false };
+            });
+        }
+
         const current = await this.get(key);
         if (current !== undefined) {
             return current;
@@ -306,8 +447,64 @@ export class RallarServerAppDataStore<V> {
         expected: V | undefined,
         update: V,
     ): Promise<boolean> {
+        const conditional = this.conditionalRepository();
+        if (conditional) {
+            return await this.withOptimisticRetry<boolean>('compareAndSet', key, async () => {
+                const currentEntry = await this.findLiveEntry(key);
+                if (!currentEntry) {
+                    if (expected !== undefined) {
+                        return {
+                            done: true,
+                            value: false,
+                        };
+                    }
+
+                    const result = await conditional.insertIfAbsent(
+                        this.toUpsertInput(key, update),
+                    );
+                    if (result.status === 'inserted') {
+                        await this.cacheWrittenEntry(result.entry, update);
+                        return {
+                            done: true,
+                            value: true,
+                        };
+                    }
+
+                    await this.cacheConflictEntry(result.current);
+                    return { done: false };
+                }
+
+                const current = (await this.toValue(
+                    this.toPublicKey(currentEntry.key),
+                    currentEntry,
+                )).value;
+                if (!appDataValuesEqual(current, expected)) {
+                    await this.cacheLiveEntry(currentEntry);
+                    return {
+                        done: true,
+                        value: false,
+                    };
+                }
+
+                const result = await conditional.upsertIfRevision({
+                    ...this.toUpsertInput(key, update),
+                    expectedRevision: currentEntry.revision,
+                });
+                if (result.status === 'written') {
+                    await this.cacheWrittenEntry(result.entry, update);
+                    return {
+                        done: true,
+                        value: true,
+                    };
+                }
+
+                await this.cacheConflictEntry(result.current);
+                return { done: false };
+            });
+        }
+
         const current = await this.get(key);
-        if (!Object.is(current, expected)) {
+        if (!appDataValuesEqual(current, expected)) {
             return false;
         }
 
@@ -316,6 +513,47 @@ export class RallarServerAppDataStore<V> {
     }
 
     async getAndSet(key: string, update: V): Promise<V | undefined> {
+        const conditional = this.conditionalRepository();
+        if (conditional) {
+            return await this.withOptimisticRetry<V | undefined>('getAndSet', key, async () => {
+                const currentEntry = await this.findLiveEntry(key);
+                if (!currentEntry) {
+                    const result = await conditional.insertIfAbsent(
+                        this.toUpsertInput(key, update),
+                    );
+                    if (result.status === 'inserted') {
+                        await this.cacheWrittenEntry(result.entry, update);
+                        return {
+                            done: true,
+                            value: undefined,
+                        };
+                    }
+
+                    await this.cacheConflictEntry(result.current);
+                    return { done: false };
+                }
+
+                const current = (await this.toValue(
+                    this.toPublicKey(currentEntry.key),
+                    currentEntry,
+                )).value;
+                const result = await conditional.upsertIfRevision({
+                    ...this.toUpsertInput(key, update),
+                    expectedRevision: currentEntry.revision,
+                });
+                if (result.status === 'written') {
+                    await this.cacheWrittenEntry(result.entry, update);
+                    return {
+                        done: true,
+                        value: current,
+                    };
+                }
+
+                await this.cacheConflictEntry(result.current);
+                return { done: false };
+            });
+        }
+
         const current = await this.get(key);
         await this.set(key, update);
         return current;
@@ -341,13 +579,106 @@ export class RallarServerAppDataStore<V> {
         return await this.repository.deleteExpired(this.options.namespace, this.name);
     }
 
+    private conditionalRepository(): AppDataConditionalRepositoryLike | undefined {
+        return isAppDataConditionalRepository(this.repository)
+            ? this.repository
+            : undefined;
+    }
+
+    private async withOptimisticRetry<T>(
+        operation: string,
+        key: string,
+        attempt: () => Promise<OptimisticAttemptResult<T>>,
+    ): Promise<T> {
+        const maxAttempts = this.options.maxConflictRetries + 1;
+        for (let attemptIndex = 0; attemptIndex < maxAttempts; attemptIndex += 1) {
+            const result = await attempt();
+            if (result.done) {
+                return result.value;
+            }
+        }
+
+        throw new RallarServerAppDataConflictError(operation, key, maxAttempts);
+    }
+
+    private async findLiveEntry(key: string): Promise<AppDataEntry | undefined> {
+        const storageKey = this.toStorageKey(key);
+        const entry = await this.repository.findEntry(
+            this.options.namespace,
+            this.name,
+            storageKey,
+        );
+        if (!entry) {
+            this.cache.delete(key);
+            return undefined;
+        }
+
+        if (!isExpired(entry.expireAtTimestamp)) {
+            return entry;
+        }
+
+        await this.deleteExpiredEntry(entry);
+        this.cache.delete(key);
+        return undefined;
+    }
+
+    private async deleteExpiredEntry(entry: AppDataEntry): Promise<void> {
+        const conditional = this.conditionalRepository();
+        if (conditional) {
+            const result = await conditional.deleteIfRevision(
+                entry.namespace,
+                entry.storeName,
+                entry.key,
+                entry.revision,
+            );
+            if (result.status === 'conflict') {
+                await this.cacheConflictEntry(result.current);
+            }
+            return;
+        }
+
+        await this.repository.deleteByKey(
+            this.options.namespace,
+            this.name,
+            entry.key,
+        );
+    }
+
+    private async cacheConflictEntry(entry: AppDataEntry | undefined): Promise<void> {
+        if (!entry) {
+            return;
+        }
+
+        const publicKey = this.toPublicKey(entry.key);
+        if (isExpired(entry.expireAtTimestamp)) {
+            this.cache.delete(publicKey);
+            return;
+        }
+
+        await this.cacheLiveEntry(entry);
+    }
+
+    private async cacheWrittenEntry(
+        entry: AppDataEntry,
+        fallbackValue: V,
+    ): Promise<V> {
+        return await this.cacheLiveEntry(entry) ?? fallbackValue;
+    }
+
+    private toUpsertInput(key: string, value: V) {
+        return {
+            namespace: this.options.namespace,
+            storeName: this.name,
+            key: this.toStorageKey(key),
+            value,
+            schemaVersion: this.options.schemaVersion,
+            expireAtTimestamp: this.toExpireAtTimestamp(value),
+        };
+    }
+
     private async cacheLiveEntry(entry: AppDataEntry): Promise<V | undefined> {
         if (isExpired(entry.expireAtTimestamp)) {
-            await this.repository.deleteByKey(
-                this.options.namespace,
-                this.name,
-                entry.key,
-            );
+            await this.deleteExpiredEntry(entry);
             this.cache.delete(this.toPublicKey(entry.key));
             return undefined;
         }
@@ -355,14 +686,14 @@ export class RallarServerAppDataStore<V> {
         const publicKey = this.toPublicKey(entry.key);
         const migrated = await this.toValue(publicKey, entry);
         if (migrated.schemaVersion !== entry.schemaVersion) {
-            await this.repository.upsert({
-                namespace: this.options.namespace,
-                storeName: this.name,
-                key: entry.key,
-                value: migrated.value,
-                schemaVersion: migrated.schemaVersion,
-                expireAtTimestamp: entry.expireAtTimestamp,
-            });
+            const migratedEntry = await this.persistMigratedEntry(
+                entry,
+                migrated.value,
+                migrated.schemaVersion,
+            );
+            if (migratedEntry) {
+                return await this.cacheLiveEntry(migratedEntry);
+            }
         }
 
         this.cache.set(publicKey, {
@@ -370,6 +701,41 @@ export class RallarServerAppDataStore<V> {
             expireAtTimestamp: entry.expireAtTimestamp,
         });
         return migrated.value;
+    }
+
+    private async persistMigratedEntry(
+        entry: AppDataEntry,
+        value: V,
+        schemaVersion: number,
+    ): Promise<AppDataEntry | undefined> {
+        const conditional = this.conditionalRepository();
+        if (conditional) {
+            const result = await conditional.upsertIfRevision({
+                namespace: this.options.namespace,
+                storeName: this.name,
+                key: entry.key,
+                value,
+                schemaVersion,
+                expireAtTimestamp: entry.expireAtTimestamp,
+                expectedRevision: entry.revision,
+            });
+            if (result.status === 'written') {
+                return result.entry;
+            }
+
+            await this.cacheConflictEntry(result.current);
+            return result.current;
+        }
+
+        await this.repository.upsert({
+            namespace: this.options.namespace,
+            storeName: this.name,
+            key: entry.key,
+            value,
+            schemaVersion,
+            expireAtTimestamp: entry.expireAtTimestamp,
+        });
+        return undefined;
     }
 
     private async toValue(
@@ -447,6 +813,8 @@ function prepareAppDataStore<V>(
         namespace: normalized.namespace,
         keyPrefix: normalized.keyPrefix,
         schemaVersion: normalized.schemaVersion,
+        readConsistency: normalized.readConsistency,
+        maxConflictRetries: normalized.maxConflictRetries,
         ttlMs: normalized.ttlMs,
         hasMigrate: normalized.migrate !== undefined,
         hasExpireAtFor: normalized.expireAtFor !== undefined,
@@ -477,6 +845,27 @@ function normalizeOptions<V>(
         throw new Error('Rallar server app data ttlMs must be a non-negative finite number.');
     }
 
+    const readConsistency = options.readConsistency ?? 'fresh';
+    if (
+        readConsistency !== 'fresh' &&
+        readConsistency !== 'cache-first'
+    ) {
+        throw new Error(
+            'Rallar server app data readConsistency must be "fresh" or "cache-first".',
+        );
+    }
+
+    const maxConflictRetries =
+        options.maxConflictRetries ?? DEFAULT_MAX_CONFLICT_RETRIES;
+    if (
+        !Number.isInteger(maxConflictRetries) ||
+        maxConflictRetries < 0
+    ) {
+        throw new Error(
+            'Rallar server app data maxConflictRetries must be a non-negative integer.',
+        );
+    }
+
     const namespace = options.namespace ?? DEFAULT_NAMESPACE;
     assertNamespace(namespace);
 
@@ -484,6 +873,8 @@ function normalizeOptions<V>(
         namespace,
         keyPrefix: options.keyPrefix ?? '',
         schemaVersion,
+        readConsistency,
+        maxConflictRetries,
         ttlMs: options.ttlMs,
         migrate: options.migrate,
         expireAtFor: options.expireAtFor,
@@ -538,4 +929,16 @@ function assertNamespace(namespace: string): void {
 
 function isExpired(expireAtTimestamp: number): boolean {
     return !Number.isFinite(expireAtTimestamp) || expireAtTimestamp <= Date.now();
+}
+
+function appDataValuesEqual(left: unknown, right: unknown): boolean {
+    if (Object.is(left, right)) {
+        return true;
+    }
+
+    try {
+        return JSON.stringify(left) === JSON.stringify(right);
+    } catch {
+        return false;
+    }
 }

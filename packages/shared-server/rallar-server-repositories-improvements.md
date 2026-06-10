@@ -613,25 +613,40 @@ Resolved risk:
 
 ## 5. Server App-Data Cache Has No Cross-Process Invalidation
 
-Current behavior:
+Status: atomic mutations and fresh reads implemented; pubsub invalidation deferred.
 
 - `RallarServerAppDataStore` persists to `app_data_store`.
 - Each opened store keeps an in-process `Map` cache.
-- Writes update only the local store cache.
-- `compareAndSet` is a read-then-write check in process code, not a Postgres revision compare.
+- `read(...)`, `readEntries(...)`, and `keys()` remain memory-only helpers.
+- `get(...)` now defaults to `readConsistency: 'fresh'`, so server callers read through the repository before returning
+  a value. `readConsistency: 'cache-first'` remains available for compatibility when callers intentionally prefer the
+  local cache.
+- `AppDataConditionalRepositoryLike` adds `insertIfAbsent`, `upsertIfRevision`, and `deleteIfRevision` as optional
+  repository capabilities.
+- `PSqlAppDataRepository` implements those operations with the `revision` column as an optimistic concurrency guard.
+- `compareAndSet`, `setIfAbsent`, `update`, `updateOrCreate`, and `getAndSet` use conditional repository operations
+  with bounded retry when available. `set(...)` remains last-write-wins by design.
 
-Risk:
+Resolved risk:
 
-- Multiple API processes can serve stale app-data reads from their own caches.
-- Concurrent `compareAndSet`, `setIfAbsent`, or `updateOrCreate` calls can lose updates.
-- The `revision` column is incremented but not used as an optimistic concurrency guard.
+- Server app-data `get(...)` no longer silently prefers a stale process-local value by default.
+- Concurrent conditional mutations no longer overwrite a newer revision when the repository supports the conditional
+  contract.
+- The Postgres `revision` column is now used for compare/update/delete guards.
 
-Recommended hardening:
+Known boundary:
 
-- Document app-data cache consistency as local-read-through only until stronger semantics exist.
-- Add revision-based conditional update APIs in `AppDataRepositoryLike`.
-- Add Postgres LISTEN/NOTIFY or another invalidation mechanism for app-data writes.
-- Add concurrent update tests against a real Postgres database.
+- No LISTEN/NOTIFY app-data invalidation bus was added. Cross-process freshness comes from fresh reads and conditional
+  writes, not push invalidation of every opened store cache.
+- Custom repositories that only implement `AppDataRepositoryLike` retain the previous best-effort read-modify-write
+  behavior until they opt into `AppDataConditionalRepositoryLike`.
+
+Verification:
+
+- `packages/tests/shared-server/rallar-server-app-data.test.ts` covers fresh reads, explicit cache-first reads,
+  compare-and-set conflict rejection, insert-if-absent winner stability, and retry after a simulated revision conflict.
+- `packages/tests/shared-server/postgres-app-data-concurrency.test.ts` is an opt-in Postgres integration proof gated by
+  `RALLAR_POSTGRES_INTEGRATION=1` and `DATABASE_URL`.
 
 ## 6. `runtime_state_store` Is A Flexible JSON Store With Limited Domain Indexing
 
@@ -680,23 +695,39 @@ Recommended hardening:
 
 ## 8. Snapshot Cache TTL Can Conflict With Durable Presence Semantics
 
-Current behavior:
+Status: durable reads, cache refresh, and routing guards implemented.
 
 - Server and browser shared state snapshot repositories are TTL-based process caches.
 - Durable sessions have their own `expiresAtEpochMs`.
 - Snapshot active sessions are computed from durable state at snapshot creation time.
+- `ClientStateRepository.readSnapshot(...)` and `GroupStateRepository.readSnapshot(...)` already exclude logically
+  expired sessions.
+- Server read-through snapshot caches now treat embedded expired sessions as stale even when the snapshot version is new
+  enough.
+- Room authorization, middleware room fanout, and state-sync recipient routing now filter or reject expired sessions even
+  if their WebSocket connection remains open.
 
-Risk:
+Resolved risk:
 
-- A snapshot can remain cached while one of its embedded sessions has expired in durable state.
-- The cache has no independent reconciliation job that recomputes snapshots when embedded session rows expire.
-- Room target resolution can use a cached snapshot whose active session list is stale.
+- Warm server caches no longer extend presence beyond `expiresAtEpochMs`.
+- Room authorization cannot pass solely because an expired session is still listed in a cached snapshot.
+- State-sync and room fanout cannot deliver to expired cached sessions solely because the socket is still open.
 
-Recommended hardening:
+Known boundary:
 
-- Bound snapshot cache TTL to the shortest embedded session expiry.
-- Recompute snapshots on heartbeat expiry or before room routing.
-- Add tests where a group presence session expires without a disconnect event and then room routing is attempted.
+- Browser-side process caches still use TTLs for local UX state; server routing is the authority for delivery and
+  authorization.
+- Periodic presence-expiry reconciliation remains useful for publishing updated snapshots/events, but routing correctness
+  no longer depends on waiting for that timer.
+
+Verification:
+
+- `packages/tests/shared-server/client-state-snapshot-read-through-cache.test.ts` proves client read-through refreshes a
+  warm snapshot after embedded session expiry.
+- `packages/tests/shared-server/ws-topic-room-authorizer.test.ts` proves group read-through refreshes and rejects an
+  expired room session.
+- `packages/tests/shared-server/rallar-middleware.test.ts` proves expired cached sessions are not routed even when their
+  sockets are open.
 
 ## 9. Built-In State Sync Uses Snapshot Broadcasts More Than Event Replay
 

@@ -2,9 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import type {
+    AppDataConditionalDeleteResult,
+    AppDataConditionalInsertResult,
+    AppDataConditionalRepositoryLike,
+    AppDataConditionalWriteResult,
     AppDataEntry,
-    AppDataRepositoryLike,
     AppDataUpsertInput,
+    AppDataUpsertIfRevisionInput,
 } from '@shared-server/app-data/AppDataRepository.ts';
 import { createRallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
 import { RallarServerDataFacade } from '@shared-server/rallar-facade/RallarServer.ts';
@@ -192,16 +196,170 @@ describe('Rallar server app data stores', () => {
             },
         });
     });
+
+    it('keeps read as memory-only but refreshes get from the repository by default', async () => {
+        const repository = new FakeAppDataRepository();
+        const left = await new RallarServerDataFacade(
+            new RepositoryManager(),
+            repository,
+        ).open<Todo>('todos');
+        const right = await new RallarServerDataFacade(
+            new RepositoryManager(),
+            repository,
+        ).open<Todo>('todos');
+
+        await left.set('1', {
+            title: 'Initial',
+            done: false,
+        });
+        expect(await right.get('1')).toEqual({
+            title: 'Initial',
+            done: false,
+        });
+
+        await left.set('1', {
+            title: 'Updated elsewhere',
+            done: true,
+        });
+
+        expect(right.read('1')).toEqual({
+            title: 'Initial',
+            done: false,
+        });
+        expect(await right.get('1')).toEqual({
+            title: 'Updated elsewhere',
+            done: true,
+        });
+    });
+
+    it('allows cache-first server reads as an explicit compatibility mode', async () => {
+        const repository = new FakeAppDataRepository();
+        const left = await new RallarServerDataFacade(
+            new RepositoryManager(),
+            repository,
+        ).open<Todo>('todos');
+        const right = await new RallarServerDataFacade(
+            new RepositoryManager(),
+            repository,
+        ).open<Todo>('todos', {
+            readConsistency: 'cache-first',
+        });
+
+        await left.set('1', {
+            title: 'Initial',
+            done: false,
+        });
+        expect(await right.get('1')).toEqual({
+            title: 'Initial',
+            done: false,
+        });
+        await left.set('1', {
+            title: 'Updated elsewhere',
+            done: true,
+        });
+
+        expect(await right.get('1')).toEqual({
+            title: 'Initial',
+            done: false,
+        });
+    });
+
+    it('does not let compareAndSet overwrite a newer repository revision', async () => {
+        const repository = new FakeAppDataRepository();
+        const left = await new RallarServerDataFacade(
+            new RepositoryManager(),
+            repository,
+        ).open<Todo>('todos');
+        const right = await new RallarServerDataFacade(
+            new RepositoryManager(),
+            repository,
+        ).open<Todo>('todos');
+
+        await left.set('1', {
+            title: 'Initial',
+            done: false,
+        });
+        const expected = await left.get('1');
+        await right.set('1', {
+            title: 'Updated elsewhere',
+            done: true,
+        });
+
+        await expect(left.compareAndSet('1', expected, {
+            title: 'Stale update',
+            done: true,
+        })).resolves.toBe(false);
+        expect(await left.get('1')).toEqual({
+            title: 'Updated elsewhere',
+            done: true,
+        });
+    });
+
+    it('uses insert-if-absent so concurrent creators observe one winner', async () => {
+        const repository = new FakeAppDataRepository();
+        const left = await new RallarServerDataFacade(
+            new RepositoryManager(),
+            repository,
+        ).open<Todo>('todos');
+        const right = await new RallarServerDataFacade(
+            new RepositoryManager(),
+            repository,
+        ).open<Todo>('todos');
+
+        const [leftValue, rightValue] = await Promise.all([
+            left.setIfAbsent('1', () => ({
+                title: 'Left',
+                done: false,
+            })),
+            right.setIfAbsent('1', () => ({
+                title: 'Right',
+                done: false,
+            })),
+        ]);
+
+        expect(leftValue).toEqual(rightValue);
+        expect(await left.get('1')).toEqual(leftValue);
+    });
+
+    it('retries updateOrCreate after a revision conflict', async () => {
+        const repository = new FakeAppDataRepository();
+        const counters = await new RallarServerDataFacade(
+            new RepositoryManager(),
+            repository,
+        ).open<{ count: number }>('counters');
+
+        await counters.set('count', { count: 0 });
+        repository.conflictNextUpsertWith({
+            namespace: 'app',
+            storeName: 'counters',
+            key: 'count',
+            value: { count: 1 },
+            schemaVersion: 1,
+            expireAtTimestamp: Date.now() + 60_000,
+        });
+
+        await expect(
+            counters.updateOrCreate('count', (current) => ({
+                count: (current?.count ?? 0) + 1,
+            })),
+        ).resolves.toEqual({ count: 2 });
+        expect(await counters.get('count')).toEqual({ count: 2 });
+    });
 });
 
-class FakeAppDataRepository implements AppDataRepositoryLike {
+class FakeAppDataRepository implements AppDataConditionalRepositoryLike {
     private readonly data = new Map<string, AppDataEntry>();
+    private nextUpsertConflict?: AppDataUpsertInput;
 
     seed(entry: AppDataEntry): void {
         this.data.set(
             this.toCompositeKey(entry.namespace, entry.storeName, entry.key),
             entry,
         );
+    }
+
+    conflictNextUpsertWith(input: AppDataUpsertInput): void {
+        this.nextUpsertConflict = input;
     }
 
     async findEntry(
@@ -227,22 +385,63 @@ class FakeAppDataRepository implements AppDataRepositoryLike {
     }
 
     async upsert(input: AppDataUpsertInput): Promise<void> {
+        this.writeInput(input);
+    }
+
+    async insertIfAbsent<V = unknown>(
+        input: AppDataUpsertInput<V>,
+    ): Promise<AppDataConditionalInsertResult<V>> {
         const compositeKey = this.toCompositeKey(
             input.namespace,
             input.storeName,
             input.key,
         );
         const current = this.data.get(compositeKey);
-        this.data.set(compositeKey, {
-            namespace: input.namespace,
-            storeName: input.storeName,
-            key: input.key,
-            value: input.value,
-            schemaVersion: input.schemaVersion,
-            expireAtTimestamp: input.expireAtTimestamp,
-            updatedTimestamp: new Date().toISOString(),
-            revision: current ? current.revision + 1 : 0,
-        });
+        if (current) {
+            return {
+                status: 'exists',
+                current: current as AppDataEntry<V>,
+            };
+        }
+
+        const entry = this.writeInput(input, 0);
+        return {
+            status: 'inserted',
+            entry: entry as AppDataEntry<V>,
+        };
+    }
+
+    async upsertIfRevision<V = unknown>(
+        input: AppDataUpsertIfRevisionInput<V>,
+    ): Promise<AppDataConditionalWriteResult<V>> {
+        if (this.nextUpsertConflict) {
+            const conflictInput = this.nextUpsertConflict;
+            this.nextUpsertConflict = undefined;
+            const current = this.writeInput(conflictInput);
+            return {
+                status: 'conflict',
+                current: current as AppDataEntry<V>,
+            };
+        }
+
+        const compositeKey = this.toCompositeKey(
+            input.namespace,
+            input.storeName,
+            input.key,
+        );
+        const current = this.data.get(compositeKey);
+        if (!current || current.revision !== input.expectedRevision) {
+            return {
+                status: 'conflict',
+                current: current as AppDataEntry<V> | undefined,
+            };
+        }
+
+        const entry = this.writeInput(input, current.revision + 1);
+        return {
+            status: 'written',
+            entry: entry as AppDataEntry<V>,
+        };
     }
 
     async deleteByKey(
@@ -251,6 +450,28 @@ class FakeAppDataRepository implements AppDataRepositoryLike {
         key: string,
     ): Promise<boolean> {
         return this.data.delete(this.toCompositeKey(namespace, storeName, key));
+    }
+
+    async deleteIfRevision(
+        namespace: string,
+        storeName: string,
+        key: string,
+        expectedRevision: number,
+    ): Promise<AppDataConditionalDeleteResult> {
+        const compositeKey = this.toCompositeKey(namespace, storeName, key);
+        const current = this.data.get(compositeKey);
+        if (!current || current.revision !== expectedRevision) {
+            return {
+                status: 'conflict',
+                current,
+            };
+        }
+
+        this.data.delete(compositeKey);
+        return {
+            status: 'deleted',
+            entry: current,
+        };
     }
 
     async deleteExpired(namespace: string, storeName?: string): Promise<number> {
@@ -271,5 +492,26 @@ class FakeAppDataRepository implements AppDataRepositoryLike {
 
     private toCompositeKey(namespace: string, storeName: string, key: string): string {
         return `${namespace}:${storeName}:${key}`;
+    }
+
+    private writeInput(input: AppDataUpsertInput, revision?: number): AppDataEntry {
+        const compositeKey = this.toCompositeKey(
+            input.namespace,
+            input.storeName,
+            input.key,
+        );
+        const current = this.data.get(compositeKey);
+        const entry = {
+            namespace: input.namespace,
+            storeName: input.storeName,
+            key: input.key,
+            value: input.value,
+            schemaVersion: input.schemaVersion,
+            expireAtTimestamp: input.expireAtTimestamp,
+            updatedTimestamp: new Date().toISOString(),
+            revision: revision ?? (current ? current.revision + 1 : 0),
+        };
+        this.data.set(compositeKey, entry);
+        return entry;
     }
 }

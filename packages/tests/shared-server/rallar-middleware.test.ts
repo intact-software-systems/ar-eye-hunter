@@ -473,6 +473,59 @@ describe('createWsServerTargetResolver state sync routing', () => {
 
         expect(resolver.resolveBroadcastRecipients?.('all', message)).toEqual([]);
     });
+
+    it('does not route expired cached sessions even when sockets are still open', () => {
+        configureTestCacheRepositories();
+
+        const webSocketServer = new JsonWebSocketServer();
+        addOpenConnection(webSocketServer, 'session-a');
+        const expiredAt = 1_000;
+        const now = 1_001;
+        const client = createClientSnapshot(
+            'alice',
+            'session-a',
+            'app-1',
+            'workspace-a',
+            1,
+            expiredAt,
+        );
+        const group = createGroupSnapshot(
+            'room-a',
+            'app-1',
+            'workspace-a',
+            [{ principalId: 'alice', sessionId: 'session-a', status: 'active' }],
+            1,
+            expiredAt,
+        );
+        clientStateSnapshotsRepository.setClientStateSnapshots([client]);
+        const stateSyncMessage = newALBroadcastMessage(
+            'server-1',
+            newALEventRoute(
+                AppTopics.groupStateSnapshot,
+                group.group.groupId,
+                group.group.groupId,
+            ),
+            'all',
+            AppTopics.groupStateSnapshot,
+            group,
+        );
+        const roomMessage = newALBroadcastMessage(
+            'session-a',
+            newALEventRoute('room.chat', 'room-a', 'msg-1'),
+            'room',
+            'chat.message.v1',
+            { text: 'expired session' },
+        );
+        const resolver = createWsServerTargetResolver(webSocketServer, {
+            findGroupSnapshotById: () => group,
+            now: () => now,
+        });
+
+        expect(resolver.resolveBroadcastRecipients?.('all', stateSyncMessage))
+            .toEqual([]);
+        expect(resolver.resolveBroadcastRecipients?.('room', roomMessage))
+            .toEqual([]);
+    });
 });
 
 function createResilience(): ResilienceDto {
@@ -529,6 +582,7 @@ function createClientSnapshot(
     applicationId: string,
     workspaceId: string,
     snapshotVersion: number,
+    expiresAtEpochMs = 4_000_000_000_000,
 ): ClientSnapshot {
     return {
         principal: {
@@ -563,7 +617,7 @@ function createClientSnapshot(
                 authenticatedAtEpochMs: 1,
                 connectedAtEpochMs: 1,
                 lastHeartbeatAtEpochMs: snapshotVersion,
-                expiresAtEpochMs: 60_000,
+                expiresAtEpochMs,
             },
         ],
         isOnline: true,
@@ -584,6 +638,7 @@ function createGroupSnapshot(
         }
     >,
     snapshotVersion: number,
+    expiresAtEpochMs = 4_000_000_000_000,
 ): GroupSnapshot {
     const activeMembers = members.filter((member) => member.status === 'active');
     return {
@@ -629,7 +684,7 @@ function createGroupSnapshot(
             principalId: member.principalId,
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: snapshotVersion,
-            expiresAtEpochMs: 60_000,
+            expiresAtEpochMs,
         })),
         memberCount: activeMembers.length,
         onlineMemberCount: activeMembers.length,

@@ -8,6 +8,7 @@ import {
 import { ObservableLoanedRepository } from '@shared/cache/ObservableLoanedRepository.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import type { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
+import { isGroupSnapshotPresenceFresh, type RallarSnapshotPresenceClock, } from '../snapshot-presence.ts';
 
 const DEFAULT_TTL_MS = 60_000;
 
@@ -15,6 +16,7 @@ export type GroupStateSnapshotReadThroughCacheOptions = Readonly<{
     groupsRepository: Pick<GroupStateRepository, 'readSnapshot'>;
     manager?: RepositoryManager;
     ttlMs?: number;
+    now?: RallarSnapshotPresenceClock;
 }>;
 
 export type FindOrLoadGroupStateSnapshotOptions = Readonly<{
@@ -59,8 +61,13 @@ export class GroupStateSnapshotReadThroughCache {
     }
 
     public findByRef(ref: GroupRef): GroupSnapshot | undefined {
-        return findGroupStateSnapshotByRef(ref, this.options.manager) ??
-            this.snapshots.read(toGroupStateSnapshotRepositoryKey(ref));
+        const latest = findGroupStateSnapshotByRef(ref, this.options.manager);
+        if (this.isPresenceFresh(latest)) {
+            return latest;
+        }
+
+        const loaned = this.snapshots.read(toGroupStateSnapshotRepositoryKey(ref));
+        return this.isPresenceFresh(loaned) ? loaned : undefined;
     }
 
     public async findOrLoadByRef(
@@ -69,12 +76,12 @@ export class GroupStateSnapshotReadThroughCache {
     ): Promise<GroupSnapshot | undefined> {
         const key = toGroupStateSnapshotRepositoryKey(ref);
         const latest = findGroupStateSnapshotByRef(ref, this.options.manager);
-        if (this.isNewEnough(latest, options.minSnapshotVersion)) {
+        if (this.isUsable(latest, options.minSnapshotVersion)) {
             return latest;
         }
 
         const loaned = this.snapshots.read(key);
-        if (this.isNewEnough(loaned, options.minSnapshotVersion)) {
+        if (this.isUsable(loaned, options.minSnapshotVersion)) {
             setGroupStateSnapshot(loaned, this.options.manager);
             return loaned;
         }
@@ -110,15 +117,27 @@ export class GroupStateSnapshotReadThroughCache {
         }
     }
 
-    private isNewEnough(
+    private isUsable(
         snapshot: GroupSnapshot | undefined,
         minSnapshotVersion: number | undefined,
     ): snapshot is GroupSnapshot {
         return snapshot !== undefined &&
+            this.isPresenceFresh(snapshot) &&
             (
                 minSnapshotVersion === undefined ||
                 readGroupVersion(snapshot) >= minSnapshotVersion
             );
+    }
+
+    private isPresenceFresh(
+        snapshot: GroupSnapshot | undefined,
+    ): snapshot is GroupSnapshot {
+        return snapshot !== undefined &&
+            isGroupSnapshotPresenceFresh(snapshot, this.now());
+    }
+
+    private now(): number {
+        return this.options.now?.() ?? Date.now();
     }
 }
 

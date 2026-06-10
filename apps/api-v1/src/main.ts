@@ -16,19 +16,25 @@ logDatabaseBackendConfig();
 logPGliteSchemaInitConfig();
 logDatabasePubSubConfig();
 
-app.use(
-    '/api/*',
-    cors(
-        {
-            origin: (origin) => resolveCorsOrigin(origin, corsOrigins),
-            allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-            allowHeaders: ['Content-Type', 'Authorization', 'x-client-id'],
-            exposeHeaders: ['Content-Length', 'Server-Timing', 'x-request-id'],
-            maxAge: 600, // Cache the preflight for 10 minutes
-            credentials: true,
-        },
-    ),
+const apiCors = cors(
+    {
+        origin: (origin) => resolveCorsOrigin(origin, corsOrigins),
+        allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        allowHeaders: ['Content-Type', 'Authorization', 'x-client-id'],
+        exposeHeaders: ['Content-Length', 'Server-Timing', 'x-request-id'],
+        maxAge: 600, // Cache the preflight for 10 minutes
+        credentials: true,
+    },
 );
+
+app.use('/api/*', async (c, next) => {
+    if (isWebSocketUpgradeRequest(c.req.path, c.req.header('upgrade'))) {
+        await next();
+        return;
+    }
+
+    return await apiCors(c, next);
+});
 
 app.use('/api/*', createHttpTimingMiddleware());
 
@@ -89,4 +95,8 @@ function resolveCorsOrigin(
     }
 
     return allowedOrigins.includes(origin) ? origin : undefined;
+}
+
+function isWebSocketUpgradeRequest(path: string, upgrade?: string): boolean {
+    return path.startsWith('/api/ws/') && upgrade?.trim().toLowerCase() === 'websocket';
 }

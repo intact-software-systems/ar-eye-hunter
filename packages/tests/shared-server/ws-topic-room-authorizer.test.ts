@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
     newALBroadcastMessage,
     newALEventRoute,
@@ -16,6 +16,10 @@ import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('createGroupRoomWsAuthorizer', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
     it('authorizes room messages with a scoped group snapshot resolver when same group id exists in multiple workspaces', async () => {
         const workspaceA = createGroupSnapshot(
             'shared-room',
@@ -263,6 +267,60 @@ describe('createGroupRoomWsAuthorizer', () => {
             findGroupStateSnapshotByRef(currentGroup.group)?.group.snapshotVersion,
         ).toBe(4);
     });
+
+    it('refreshes and rejects a warm snapshot when its embedded session has expired', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(0);
+        configureTestCacheRepositories();
+
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const groupRepository = new GroupStateRepository(runtimeRepository);
+        const group = createGroupSnapshot(
+            'shared-room',
+            'app-1',
+            'workspace-b',
+            ['session-b'],
+            3,
+            1_000,
+        );
+        const readThroughCache = createGroupStateSnapshotReadThroughCache({
+            groupsRepository: groupRepository,
+        });
+        await groupRepository.putGroup(group.group);
+        await groupRepository.putMember(group.members[0]!);
+        await groupRepository.putPresenceSession(group.activeSessions[0]!);
+        await expect(readThroughCache.findOrLoadByRef(group.group)).resolves.toEqual(
+            group,
+        );
+
+        vi.setSystemTime(1_001);
+
+        const authorizer = createGroupRoomWsAuthorizer({
+            findGroupSnapshotByRef: async (ref, input) =>
+                await readThroughCache.findOrLoadByRef(ref, {
+                    minSnapshotVersion: input.minSnapshotVersion,
+                }),
+        });
+        const message = newALBroadcastMessage(
+            'session-b',
+            newALEventRoute('room.chat', 'shared-room', 'msg-1'),
+            'room',
+            'chat.message.v1',
+            { text: 'expired session' },
+            {
+                groupRef: group.group,
+            },
+        );
+
+        await expect(Promise.resolve(authorizer({
+            message,
+            roomId: 'shared-room',
+            senderId: 'session-b',
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+        }))).resolves.toBe(false);
+        expect(findGroupStateSnapshotByRef(group.group)?.activeSessions).toEqual([]);
+    });
 });
 
 function createGroupSnapshot(
@@ -271,6 +329,7 @@ function createGroupSnapshot(
     workspaceId: string,
     sessionIds: readonly string[],
     snapshotVersion: number,
+    expiresAtEpochMs = 4_000_000_000_000,
 ): GroupSnapshot {
     return {
         group: {
@@ -315,7 +374,7 @@ function createGroupSnapshot(
             principalId: sessionId,
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: snapshotVersion,
-            expiresAtEpochMs: 4_000_000_000_000,
+            expiresAtEpochMs,
         })),
         memberCount: sessionIds.length,
         onlineMemberCount: sessionIds.length,

@@ -100,7 +100,7 @@ The reusable facade is `packages/shared-server/rallar-facade/RallarServer.ts`.
 | Group events | `GroupStateRepository` | `runtime_state_store` namespace `group-state:events` | No event cache in browser high-level facade | Appended on mutations. Broadcast over WS as `group-state.event`, but browser `data-caches.ts` currently ignores event payloads. |
 | WS inbox/outbox entries | `PSqlQueueBox` over `ResourceInboxRepository` | `resource_inbox` | No logical cache; queue engine locks rows | Same table is used for both inbound and outbound queue entries. `ri_type_id` separates `WS_INBOX` and `WS_OUTBOX`. |
 | AL runtime bookkeeping | `createPSqlALRuntimeStores` | `runtime_state_store` under server WS runtime namespaces | Runtime-store objects in process | Used for admission, dedup, ordering, supersedence, sent tracking, pending acks, repair attempts. |
-| Server app data | `RallarServer.data.open(...)` / `RallarServerAppDataStore` | `app_data_store` | Per-process `Map` inside each opened store | Supports namespace, store name, key prefix, schema version, migration callback, TTL, and `expireAtFor`. |
+| Server app data | `RallarServer.data.open(...)` / `RallarServerAppDataStore` | `app_data_store` | Per-process `Map` inside each opened store | Supports namespace, store name, key prefix, schema version, migration callback, TTL, `expireAtFor`, fresh/cache-first reads, and conditional mutation retries when the repository supports them. |
 | Generic facade repositories | `RallarServerDataFacade.register/set/lookup/...` | In-memory only unless the registered object persists itself | `RepositoryManager` | This is process-local registry state, not durable data by itself. |
 | Graph snapshots | shared graph repositories and graph services | Process-local cache | Graph cache | Graph HTTP routes read computed graph data; RTT updates can recompute and cache graphs. |
 | RTT measurements | `rtt-repository` | Process-local cache | RTT cache | Updated from WS `rtt` messages; used by Vivaldi/graph services. |
@@ -163,7 +163,11 @@ Columns used by the adapter:
 - `updated_ts`
 - `revision`
 
-`RallarServerAppDataStore` keeps a per-process memory cache. Reads prefer cache, then Postgres. Writes persist first, then update the cache. There is no automatic WS synchronization for app data.
+`RallarServerAppDataStore` keeps a per-process memory cache. `read(...)` and `keys()` are memory-only. `get(...)`
+defaults to fresh repository read-through, with `readConsistency: 'cache-first'` available for callers that explicitly
+prefer the local cache. Writes persist first, then update the cache. `PSqlAppDataRepository` uses the `revision` column
+for conditional insert/update/delete operations, so read-modify-write helpers can retry conflicts without overwriting a
+newer row. There is no automatic WS synchronization or app-data pubsub invalidation.
 
 ## REST HTTP Data Flow
 
@@ -307,7 +311,8 @@ Server caches:
 - Shared client/group snapshot repositories are process-local observable latest repositories. They are updated when state sync publishes local mutations and when system topics accept state snapshot messages.
 - The group snapshot cache is used for room authorization and room-target recipient resolution.
 - Graph, overlay, Vivaldi, and RTT repositories are process-local.
-- Server app-data stores have per-process `Map` caches.
+- Server app-data stores have per-process `Map` caches, but default `get(...)` reads through durable storage and
+  conditional mutation helpers use repository revisions when available.
 - HTTP rate limiters are process-local.
 
 Browser caches:

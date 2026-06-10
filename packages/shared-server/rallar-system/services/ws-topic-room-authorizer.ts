@@ -1,8 +1,12 @@
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { isGroupActive, isSessionInGroup, readGroupVersion, } from '@shared/api/group-client-views.ts';
+import { isGroupActive, readGroupVersion, } from '@shared/api/group-client-views.ts';
 import type { RallarServerWsRoomAuthorizer } from '../../rallar-facade/ws-topic-router.ts';
 import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
+import {
+    isSessionInLiveGroupSnapshot,
+    type RallarSnapshotPresenceClock,
+} from '../snapshot-presence.ts';
 
 type MaybePromise<T> = T | Promise<T>;
 
@@ -17,6 +21,7 @@ export type CreateGroupRoomWsAuthorizerOptions = Readonly<{
     resolveGroupRef?: (
         input: Parameters<RallarServerWsRoomAuthorizer>[0],
     ) => MaybePromise<GroupRef | undefined>;
+    now?: RallarSnapshotPresenceClock;
 }>;
 
 export function createGroupRoomWsAuthorizer(
@@ -66,6 +71,11 @@ export function createGroupRoomWsAuthorizer(
             };
         }
 
-        return isGroupActive(snapshot) && isSessionInGroup(snapshot, input.senderId);
+        return isGroupActive(snapshot) &&
+            isSessionInLiveGroupSnapshot(
+                snapshot,
+                input.senderId,
+                options.now?.() ?? Date.now(),
+            );
     };
 }

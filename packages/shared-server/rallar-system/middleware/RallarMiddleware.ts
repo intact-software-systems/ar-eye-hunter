@@ -19,6 +19,7 @@ import type { AppClientInboxService } from '../services/AppClientInboxService.ts
 import type { AppGroupInboxService } from '../services/AppGroupInboxService.ts';
 import { resolveStateSyncRecipients } from '../state-sync-routing.ts';
 import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
+import { isGroupSnapshotSessionLive, type RallarSnapshotPresenceClock, } from '../snapshot-presence.ts';
 
 export type RallarMiddlewareRuntime = Readonly<{
     qboxEngine: InboxOutboxEngine;
@@ -41,6 +42,7 @@ export type RallarGroupSnapshotResolverOptions = Readonly<{
         groupId: string,
         message: ALMessage,
     ) => GroupRef | undefined;
+    now?: RallarSnapshotPresenceClock;
 }>;
 
 export type CreateRallarMiddlewareOptions = Readonly<{
@@ -52,6 +54,7 @@ export type CreateRallarMiddlewareOptions = Readonly<{
     findGroupSnapshotByRef?: RallarGroupSnapshotResolverOptions['findGroupSnapshotByRef'];
     findGroupSnapshotById?: RallarGroupSnapshotResolverOptions['findGroupSnapshotById'];
     resolveGroupRef?: RallarGroupSnapshotResolverOptions['resolveGroupRef'];
+    now?: RallarSnapshotPresenceClock;
     inboundStores?: ALInboundRuntimeStores;
     outboundStores?: ALOutboundRuntimeStores;
     createAppGroupInboxService: (
@@ -90,6 +93,7 @@ export function createRallarMiddleware(
             findGroupSnapshotByRef: options.findGroupSnapshotByRef,
             findGroupSnapshotById: options.findGroupSnapshotById,
             resolveGroupRef: options.resolveGroupRef,
+            now: options.now,
         });
 
     const wsQBoxServerService = new WsQueueBoxServerService(
@@ -245,7 +249,12 @@ export function createWsServerTargetResolver(
 
         return snapshot.activeSessions
             .filter(
-                (session) => webSocketServer.connections.get(session.sessionId)?.isOpen,
+                (session) =>
+                    isGroupSnapshotSessionLive(
+                        session,
+                        options.now?.() ?? Date.now(),
+                    ) &&
+                    webSocketServer.connections.get(session.sessionId)?.isOpen,
             )
             .map((session) => ({
                 peerId: session.sessionId,
@@ -263,6 +272,7 @@ export function createWsServerTargetResolver(
                 findGroupSnapshotByRef: (ref) =>
                     options.findGroupSnapshotByRef?.(ref, message),
                 findGroupSnapshotById: options.findGroupSnapshotById,
+                now: options.now,
             },
         );
         if (stateSyncRecipients) {

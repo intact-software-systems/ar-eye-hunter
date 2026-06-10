@@ -1,7 +1,4 @@
-import type {
-    ClientPrincipalRef,
-    ClientSnapshot,
-} from '@shared/api/client-types.ts';
+import type { ClientPrincipalRef, ClientSnapshot, } from '@shared/api/client-types.ts';
 import { readClientVersion } from '@shared/api/group-client-views.ts';
 import {
     findClientStateSnapshotByPrincipalId,
@@ -10,6 +7,7 @@ import {
 import { ObservableLoanedRepository } from '@shared/cache/ObservableLoanedRepository.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import type { ClientStateRepository } from '../repositories/ClientStateRepository.ts';
+import { isClientSnapshotPresenceFresh, type RallarSnapshotPresenceClock, } from '../snapshot-presence.ts';
 
 const DEFAULT_TTL_MS = 60_000;
 
@@ -17,6 +15,7 @@ export type ClientStateSnapshotReadThroughCacheOptions = Readonly<{
     clientsRepository: Pick<ClientStateRepository, 'readSnapshot'>;
     manager?: RepositoryManager;
     ttlMs?: number;
+    now?: RallarSnapshotPresenceClock;
 }>;
 
 export type FindOrLoadClientStateSnapshotOptions = Readonly<{
@@ -69,11 +68,16 @@ export class ClientStateSnapshotReadThroughCache {
             ref.principalId,
             this.options.manager,
         );
-        if (latest && isSameClientPrincipalRef(latest.principal, ref)) {
+        if (
+            latest &&
+            isSameClientPrincipalRef(latest.principal, ref) &&
+            this.isPresenceFresh(latest)
+        ) {
             return latest;
         }
 
-        return this.snapshots.read(toClientStateSnapshotRepositoryKey(ref));
+        const loaned = this.snapshots.read(toClientStateSnapshotRepositoryKey(ref));
+        return this.isPresenceFresh(loaned) ? loaned : undefined;
     }
 
     public readLoadedSnapshots(): ClientSnapshot[] {
@@ -92,13 +96,13 @@ export class ClientStateSnapshotReadThroughCache {
         if (
             latest &&
             isSameClientPrincipalRef(latest.principal, ref) &&
-            this.isNewEnough(latest, options.minSnapshotVersion)
+            this.isUsable(latest, options.minSnapshotVersion)
         ) {
             return latest;
         }
 
         const loaned = this.snapshots.read(key);
-        if (this.isNewEnough(loaned, options.minSnapshotVersion)) {
+        if (this.isUsable(loaned, options.minSnapshotVersion)) {
             setClientStateSnapshotByPrincipalId(
                 loaned.principal.principalId,
                 loaned,
@@ -110,7 +114,7 @@ export class ClientStateSnapshotReadThroughCache {
         return await this.loadByRef(
             ref,
             (latest !== undefined && isSameClientPrincipalRef(latest.principal, ref)) ||
-                loaned !== undefined,
+            loaned !== undefined,
         );
     }
 
@@ -144,15 +148,27 @@ export class ClientStateSnapshotReadThroughCache {
         }
     }
 
-    private isNewEnough(
+    private isUsable(
         snapshot: ClientSnapshot | undefined,
         minSnapshotVersion: number | undefined,
     ): snapshot is ClientSnapshot {
         return snapshot !== undefined &&
+            this.isPresenceFresh(snapshot) &&
             (
                 minSnapshotVersion === undefined ||
                 readClientVersion(snapshot) >= minSnapshotVersion
             );
+    }
+
+    private isPresenceFresh(
+        snapshot: ClientSnapshot | undefined,
+    ): snapshot is ClientSnapshot {
+        return snapshot !== undefined &&
+            isClientSnapshotPresenceFresh(snapshot, this.now());
+    }
+
+    private now(): number {
+        return this.options.now?.() ?? Date.now();
     }
 }
 

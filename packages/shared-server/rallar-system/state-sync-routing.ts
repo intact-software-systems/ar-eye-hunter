@@ -7,6 +7,11 @@ import type { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/J
 import type { WsServerResolvedRecipient } from '@shared/services/WsQueueBoxServerService.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
+import {
+    isClientSnapshotSessionLive,
+    isGroupSnapshotSessionLive,
+    type RallarSnapshotPresenceClock,
+} from './snapshot-presence.ts';
 
 type StateSyncScope = Readonly<{
     applicationId: string;
@@ -17,6 +22,7 @@ export type StateSyncRoutingOptions = Readonly<{
     findGroupSnapshotByRef?: (ref: GroupRef) => GroupSnapshot | undefined;
     findGroupSnapshotById?: (groupId: string) => GroupSnapshot | undefined;
     readClientSnapshots?: () => readonly ClientSnapshot[];
+    now?: RallarSnapshotPresenceClock;
 }>;
 
 export function resolveStateSyncRecipients(
@@ -87,7 +93,9 @@ function resolveScopeRecipients(
     return dedupRecipients(
         snapshots
             .filter((snapshot) => sameScope(snapshot.principal, scope))
-            .flatMap((snapshot) => toOpenClientSessionRecipients(webSocketServer, snapshot)),
+            .flatMap((snapshot) =>
+                toOpenClientSessionRecipients(webSocketServer, snapshot, options)
+            ),
     );
 }
 
@@ -96,6 +104,7 @@ function resolveGroupRecipients(
     snapshot: GroupSnapshot,
     options: StateSyncRoutingOptions,
 ): readonly WsServerResolvedRecipient[] {
+    const now = options.now?.() ?? Date.now();
     const clientSnapshots = options.readClientSnapshots?.() ??
         clientStateSnapshotsRepository.getAllClientStateSnapshots();
     const scopedClientSnapshots = clientSnapshots
@@ -107,7 +116,11 @@ function resolveGroupRecipients(
     );
     const scopedSessionIds = new Set(
         scopedClientSnapshots.flatMap((clientSnapshot) =>
-            clientSnapshot.activeSessions.map((session) => session.sessionId)
+            clientSnapshot.activeSessions
+                .filter((session) =>
+                    isClientSnapshotSessionLive(session, now)
+                )
+                .map((session) => session.sessionId)
         ),
     );
     const clientRecipients = scopedClientSnapshots
@@ -115,12 +128,13 @@ function resolveGroupRecipients(
             memberPrincipalIds.has(clientSnapshot.principal.principalId)
         )
         .flatMap((clientSnapshot) =>
-            toOpenClientSessionRecipients(webSocketServer, clientSnapshot)
+            toOpenClientSessionRecipients(webSocketServer, clientSnapshot, options)
         );
     const presenceRecipients = snapshot.activeSessions
         .filter((session) =>
             memberPrincipalIds.has(session.principalId) &&
             scopedSessionIds.has(session.sessionId) &&
+            isGroupSnapshotSessionLive(session, now) &&
             webSocketServer.connections.get(session.sessionId)?.isOpen
         )
         .map((session) => ({
@@ -134,9 +148,14 @@ function resolveGroupRecipients(
 function toOpenClientSessionRecipients(
     webSocketServer: JsonWebSocketServer,
     snapshot: ClientSnapshot,
+    options: StateSyncRoutingOptions = {},
 ): readonly WsServerResolvedRecipient[] {
+    const now = options.now?.() ?? Date.now();
     return snapshot.activeSessions
-        .filter((session) => webSocketServer.connections.get(session.sessionId)?.isOpen)
+        .filter((session) =>
+            isClientSnapshotSessionLive(session, now) &&
+            webSocketServer.connections.get(session.sessionId)?.isOpen
+        )
         .map((session) => ({
             peerId: snapshot.principal.principalId,
             connectionId: session.sessionId,
