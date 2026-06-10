@@ -342,13 +342,14 @@ export function BabylonArena({
         const onContextMenu = (event: MouseEvent) => {
             event.preventDefault();
         };
+        const pointerOptions = { capture: true } as const;
 
         window.addEventListener('keydown', onKeyDown);
         window.addEventListener('keyup', onKeyUp);
         window.addEventListener('pointermove', onPointerMove);
-        canvas.addEventListener('pointerdown', onPointerDown);
-        canvas.addEventListener('pointerup', onPointerUp);
-        canvas.addEventListener('contextmenu', onContextMenu);
+        canvas.addEventListener('pointerdown', onPointerDown, pointerOptions);
+        canvas.addEventListener('pointerup', onPointerUp, pointerOptions);
+        canvas.addEventListener('contextmenu', onContextMenu, pointerOptions);
 
         scene.onBeforeRenderObservable.add(() => {
             runFrame({
@@ -374,9 +375,9 @@ export function BabylonArena({
             window.removeEventListener('keydown', onKeyDown);
             window.removeEventListener('keyup', onKeyUp);
             window.removeEventListener('pointermove', onPointerMove);
-            canvas.removeEventListener('pointerdown', onPointerDown);
-            canvas.removeEventListener('pointerup', onPointerUp);
-            canvas.removeEventListener('contextmenu', onContextMenu);
+            canvas.removeEventListener('pointerdown', onPointerDown, pointerOptions);
+            canvas.removeEventListener('pointerup', onPointerUp, pointerOptions);
+            canvas.removeEventListener('contextmenu', onContextMenu, pointerOptions);
             scene.dispose();
             engine.dispose();
             delete canvas.dataset.arenaRuntimeReady;
