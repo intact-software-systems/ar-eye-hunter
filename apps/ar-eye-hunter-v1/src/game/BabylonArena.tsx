@@ -1425,7 +1425,6 @@ function createTracer(
         ],
     }, scene);
     tracer.color = Color3.FromHexString(hit ? MATRIX_THEME.amber : color);
-    tracer.enableEdgesRendering();
 
     const packetMaterial = createMatrixMaterial(
         scene,
