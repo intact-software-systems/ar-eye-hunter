@@ -26,8 +26,28 @@ export function toWebRtcGroupKey(groupRef: GroupRef): string {
     ]);
 }
 
-export function toScopedOverlayId(groupRef: GroupRef): string {
+export function toScopedGroupKey(groupRef: GroupRef): string {
     return toWebRtcGroupKey(groupRef);
+}
+
+export function toScopedRoomKey(groupRef: GroupRef): string {
+    return toScopedGroupKey(groupRef);
+}
+
+export function toScopedOverlayId(groupRef: GroupRef): string {
+    return toScopedGroupKey(groupRef);
+}
+
+export function toScopedOverlayKey(groupRef: GroupRef): string {
+    return toScopedOverlayId(groupRef);
+}
+
+export function isOverlayForGroupRef(
+    overlay: Readonly<{ groupRef?: GroupRef }>,
+    groupRef: GroupRef,
+): boolean {
+    return overlay.groupRef === undefined ||
+        isSameGroupRef(overlay.groupRef, groupRef);
 }
 
 export function toGroupRefFromScope(

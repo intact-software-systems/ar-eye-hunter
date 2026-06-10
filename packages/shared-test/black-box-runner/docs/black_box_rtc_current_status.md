@@ -34,19 +34,22 @@ The current default `rallar` provider is **not yet full real WebRTC**. It is Web
 | --- | --- | --- |
 | `rallar-stub` | Implemented | Simple fake provider for smoke tests and runner validation. |
 | `rallar-memory` | Implemented | Deterministic multi-peer runtime for direct, broadcast, reconnect, close, and routing tests. |
-| `rallar` | Implemented as signaling-only | Uses global WebSocket for signaling, requires `signalingUrl`, waits for open by default. |
+| `rallar-signaling` | Implemented as signaling-only | Uses global WebSocket for signaling, requires `signalingUrl`, waits for open by default. |
+| `rallar` | Compatibility alias | Same implementation as `rallar-signaling`; prefer the explicit provider name in new recipes. |
 | `rallar-browser` | Browser-backed Rallar provider | Uses Playwright plus the browser Rallar facade. Provider registration, `rtc.connect`, `rtc.close`, event bridging, realtime sends, `messages.rtc` sends, cleanup, diagnostics, and operational docs are implemented at provider-test level. |
 | Real Rallar RTC adapter | In progress | Should wrap the existing Rallar RTC implementation instead of reimplementing RTC in the black-box runner. |
 
-## Current `rallar` Meaning
+## Current `rallar-signaling` Meaning
 
-The CLI provider named `rallar` currently maps to:
+The CLI provider named `rallar-signaling` currently maps to:
 
 ```ts
 createRallarWebRtcWebSocketSignalingProvider()
 ```
 
-A successful `rallar` connect means:
+The legacy provider name `rallar` is still registered as a compatibility alias.
+
+A successful `rallar-signaling` connect means:
 
 ```text
 WebSocket signaling transport opened successfully.

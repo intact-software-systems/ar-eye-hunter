@@ -23,6 +23,7 @@ import { createClientStateService } from '@shared-server/rallar-system/services/
 import {
     AppClientInboxService,
     type ClientPrincipalUpsertAppInboxPayload,
+    type ClientSessionConnectAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import {
     AppGroupInboxService,
@@ -77,7 +78,7 @@ describe('state sync publish failure characterization', () => {
             1,
         );
         expect(enqueueOutboxIfAbsent).toHaveBeenCalledTimes(1);
-        expect(enqueueOutboxIfAbsent.mock.calls[0]?.[0].payload.typeId).toBe(
+        expect(firstEnqueuedMessage(enqueueOutboxIfAbsent).payload.typeId).toBe(
             AppTopics.groupStateSnapshot,
         );
         expect(entry.status).toBe(EntityStatus.RETRY);
@@ -118,7 +119,46 @@ describe('state sync publish failure characterization', () => {
             findClientStateSnapshotByPrincipalId('alice')?.principal.snapshotVersion,
         ).toBe(1);
         expect(enqueueOutboxIfAbsent).toHaveBeenCalledTimes(1);
-        expect(enqueueOutboxIfAbsent.mock.calls[0]?.[0].payload.typeId).toBe(
+        expect(firstEnqueuedMessage(enqueueOutboxIfAbsent).payload.typeId).toBe(
+            AppTopics.clientStateSnapshot,
+        );
+        expect(entry.status).toBe(EntityStatus.RETRY);
+        expect(entry.dequeueAudit.attempts).toBe(1);
+        expect(await results.findByKey(entry.key)).toBeUndefined();
+    });
+
+    it('app inbox retries an active client session connect when snapshot enqueue returns no-route without throwing', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const enqueueOutboxIfAbsent = vi.fn(async (message: ALMessage) => ({
+            status: 'no-route',
+            message,
+            entries: [],
+            reason: 'test resolver returned no recipients',
+        }));
+        const { appInbox, reader, queue, results } = createClientAppInbox(
+            runtimeRepository,
+            createPublisher(enqueueOutboxIfAbsent),
+            2_500,
+        );
+
+        const entry = await processConnectClientSession(
+            appInbox,
+            reader,
+            queue,
+            'alice',
+            'session-alice',
+        );
+
+        const principalRef = {
+            ...SCOPE,
+            principalId: 'alice',
+        };
+        const durableSnapshot = await new ClientStateRepository(runtimeRepository)
+            .readSnapshot(principalRef);
+        expect(durableSnapshot?.activeSessions.map(session => session.sessionId))
+            .toEqual(['session-alice']);
+        expect(enqueueOutboxIfAbsent).toHaveBeenCalledTimes(1);
+        expect(firstEnqueuedMessage(enqueueOutboxIfAbsent).payload.typeId).toBe(
             AppTopics.clientStateSnapshot,
         );
         expect(entry.status).toBe(EntityStatus.RETRY);
@@ -183,6 +223,11 @@ class TestResourceInbox extends InMemoryQueueBox {
 
 class TestResourceInboxResults {
     private readonly data = new Map<string, ResourceEntry>();
+
+    async replace(entry: ResourceEntry): Promise<ResourceEntry> {
+        this.data.set(toKeyAsString(entry.key), entry);
+        return entry;
+    }
 
     async writeIfAbsentOrReplaceExpired(
         entry: ResourceEntry,
@@ -352,6 +397,52 @@ async function processUpsertClientPrincipal(
     return entry;
 }
 
+async function processConnectClientSession(
+    appInbox: AppClientInboxService,
+    reader: InboxQueueReader,
+    queue: InMemoryQueueBox,
+    principalId: string,
+    sessionId: string,
+): Promise<ResourceEntry> {
+    const requestId = `connect-client-${sessionId}`;
+    const clientInstanceId = `${principalId}-browser`;
+    appInbox.processEntryNoWaiting<ClientSessionConnectAppInboxPayload>({
+        type: AppInboxType.CLIENT_SESSION_CONNECT,
+        resourceId: requestId,
+        contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${principalId}`,
+        senderId: principalId,
+        data: {
+            scope: SCOPE,
+            principalId,
+            clientInstanceId,
+            sessionId,
+            request: {
+                presenceState: 'online',
+                transport: 'ws',
+                actorPrincipalId: principalId,
+                actorSessionId: sessionId,
+                connectedAtEpochMs: 2_500,
+                lastHeartbeatAtEpochMs: 2_500,
+                expiresAtEpochMs: Date.now() + 60_000,
+                requestId,
+            },
+        },
+    });
+
+    await waitForQueueEntry(queue);
+    await reader.dequeueInbox(
+        InboxQueueReader.INBOX_DEQUEUE_TYPES,
+        createResilience(),
+    );
+
+    const entry = readOnlyEntry(queue);
+    if (!entry) {
+        throw new Error('Expected app inbox entry to remain in queue');
+    }
+
+    return entry;
+}
+
 function createResilience(): ResilienceDto {
     const duration = Temporal.Duration.from({ seconds: 10 });
     return ResilienceDto.toResilienceDto(
@@ -372,6 +463,21 @@ function createPublisher(
             serverId: 'test-server',
         },
     );
+}
+
+function firstEnqueuedMessage(
+    enqueueOutboxIfAbsent: Readonly<{
+        mock: Readonly<{
+            calls: readonly (readonly unknown[])[];
+        }>;
+    }>,
+): ALMessage {
+    const message = enqueueOutboxIfAbsent.mock.calls[0]?.[0];
+    if (message === undefined) {
+        throw new Error('Expected at least one enqueued message');
+    }
+
+    return message as ALMessage;
 }
 
 async function waitForQueueEntry(queue: InMemoryQueueBox): Promise<void> {

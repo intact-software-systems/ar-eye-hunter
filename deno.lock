@@ -3387,6 +3387,7 @@
             "npm:@types/react@19",
             "npm:@vitejs/plugin-react@5",
             "npm:graphology@0.26",
+            "npm:playwright@^1.32.0",
             "npm:react-dom@19",
             "npm:react@19",
             "npm:sigma@^3.0.3",

@@ -300,6 +300,76 @@ describe('WebRtc overlay services', () => {
         expect(await reserveRtcOutbox(queue)).toHaveLength(0);
     });
 
+    it('rejects a legacy bare overlay fallback when its groupRef belongs to another workspace', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const queue = new InMemoryQueueBox(new Map());
+        const channel = {
+            send: vi.fn(async () => Promise.resolve()),
+        };
+        const connectionService = createConnectionService(['peer-b'], {
+            'peer-b': {
+                channel,
+            },
+        });
+        const workspaceA = createOverlayContext(
+            ['self', 'peer-a'],
+            ['peer-a'],
+            {
+                groupId: 'shared-room',
+                workspaceId: 'workspace-a',
+            },
+        );
+        const workspaceB = createOverlayContext(
+            ['self', 'peer-b'],
+            ['peer-b'],
+            {
+                groupId: 'shared-room',
+                workspaceId: 'workspace-b',
+            },
+        );
+        const manager = new WebRtcOverlayMulticastManager(
+            queue,
+            connectionService as never,
+            createReadableCache({
+                'workspace-a-room': workspaceA.room,
+                'workspace-b-room': workspaceB.room,
+            }),
+            createReadableCache({
+                'shared-room': {
+                    ...workspaceA.overlay,
+                    groupRef: workspaceA.room.group,
+                },
+            }),
+            (overlayId) =>
+                new WebRtcOverlayMulticastService(
+                    overlayId,
+                    connectionService as never,
+                ),
+        );
+        const msg = newALMulticastMessage(
+            'self',
+            {
+                topicId: 'chat',
+                resourceId: 'msg-cross-workspace-overlay',
+                contextId: 'shared-room',
+            },
+            workspaceB.room.group,
+            'chat.message.v1',
+            {
+                text: 'must not leak',
+            },
+        );
+
+        await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
+            status: 'no-route',
+            entries: [],
+        });
+        expect(channel.send).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith(
+            expect.stringContaining('does not match scoped target'),
+        );
+    });
+
     it('returns no entries for volatile immediate sends even when channel send succeeds', async () => {
         const queue = new InMemoryQueueBox(new Map());
         const channel = {

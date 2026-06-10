@@ -8,7 +8,11 @@ import {
     type AnyGroupPresence,
     readActiveClientSessionIds,
 } from '../api/group-client-views.ts';
-import { toScopedOverlayId, toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
+import {
+    isOverlayForGroupRef,
+    toScopedOverlayId,
+    toWebRtcGroupKey,
+} from '@shared/api/api-type-utils.ts';
 
 export type WebRtcGroupManagerState = {
     readonly groupIds: readonly GroupId[];
@@ -263,9 +267,16 @@ export class WebRtcGroupManager {
         }
 
         const scopedOverlayId = toScopedOverlayId(groupRef);
-        return this.overlayCache.read(scopedOverlayId) ??
-            this.overlayCache.peek(scopedOverlayId) ??
-            this.overlayCache.read(groupRef.groupId) ??
+        const scoped = this.overlayCache.read(scopedOverlayId) ??
+            this.overlayCache.peek(scopedOverlayId);
+        if (scoped) {
+            return scoped;
+        }
+
+        const legacy = this.overlayCache.read(groupRef.groupId) ??
             this.overlayCache.peek(groupRef.groupId);
+        return legacy && isOverlayForGroupRef(legacy, groupRef)
+            ? legacy
+            : undefined;
     }
 }

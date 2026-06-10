@@ -2,6 +2,7 @@ import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
+import type { ALOutboundEnqueueResult } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
@@ -34,9 +35,14 @@ export function createWsStateSyncPublisher(
                 snapshot.principal.principalId,
                 snapshot.principal.principalId,
                 snapshot,
+                {
+                    requireLiveRoute: hasActiveClientSessions(snapshot),
+                },
             );
         },
         publishClientEvent: async (event, senderId) => {
+            const snapshot = clientStateSnapshotsRepository
+                .findClientStateSnapshotByPrincipalId(event.principalId);
             await enqueueBroadcast(
                 wsQBoxServerService,
                 senderId ?? event.actor.principalId ?? event.actor.serviceId ?? options.serverId,
@@ -44,6 +50,11 @@ export function createWsStateSyncPublisher(
                 event.principalId,
                 event.eventId,
                 event,
+                {
+                    requireLiveRoute: snapshot
+                        ? hasActiveClientSessions(snapshot)
+                        : false,
+                },
             );
         },
         publishGroupSnapshot: async (snapshot, senderId) => {
@@ -55,9 +66,19 @@ export function createWsStateSyncPublisher(
                 snapshot.group.groupId,
                 snapshot.group.groupId,
                 snapshot,
+                {
+                    requireLiveRoute: hasActiveGroupSessions(snapshot),
+                },
             );
         },
         publishGroupEvent: async (event, senderId) => {
+            const snapshot = groupStateSnapshotsRepository.findGroupStateSnapshotByRef(
+                {
+                    applicationId: event.applicationId,
+                    workspaceId: event.workspaceId,
+                    groupId: event.groupId,
+                },
+            );
             await enqueueBroadcast(
                 wsQBoxServerService,
                 senderId ?? event.actor.principalId ?? event.actor.serviceId ?? options.serverId,
@@ -65,6 +86,11 @@ export function createWsStateSyncPublisher(
                 event.groupId,
                 event.eventId,
                 event,
+                {
+                    requireLiveRoute: snapshot
+                        ? hasActiveGroupSessions(snapshot)
+                        : false,
+                },
             );
         },
     };
@@ -77,8 +103,11 @@ async function enqueueBroadcast<T>(
     contextId: string,
     resourceId: string,
     payload: T,
+    options: Readonly<{
+        requireLiveRoute?: boolean;
+    }> = {},
 ): Promise<void> {
-    await wsQBoxServerService.enqueueOutboxIfAbsent(
+    const result = await wsQBoxServerService.enqueueOutboxIfAbsent(
         newALBroadcastMessage<T>(
             senderId,
             newALEventRoute(topicId, contextId, resourceId),
@@ -87,4 +116,54 @@ async function enqueueBroadcast<T>(
             payload,
         ),
     );
+
+    assertStateSyncPublishResult(result, {
+        topicId,
+        resourceId,
+        requireLiveRoute: options.requireLiveRoute ?? false,
+    });
+}
+
+function assertStateSyncPublishResult(
+    result: ALOutboundEnqueueResult,
+    input: Readonly<{
+        topicId: string;
+        resourceId: string;
+        requireLiveRoute: boolean;
+    }>,
+): void {
+    switch (result.status) {
+        case 'enqueued':
+        case 'sent-immediate':
+        case 'duplicate':
+            return;
+        case 'no-route':
+        case 'skipped':
+        case 'superseded':
+        case 'expired':
+            if (!input.requireLiveRoute) {
+                return;
+            }
+            break;
+        case 'failed':
+        case 'rate-limited':
+        case 'circuit-open':
+            break;
+    }
+
+    throw new Error(
+        `State sync publish failed for ${input.topicId}/${input.resourceId}: ${result.status}` +
+        (result.reason ? ` (${result.reason})` : ''),
+    );
+}
+
+function hasActiveClientSessions(snapshot: ClientSnapshot): boolean {
+    return snapshot.activeSessions.length > 0 ||
+        snapshot.activeSessionCount > 0 ||
+        snapshot.isOnline;
+}
+
+function hasActiveGroupSessions(snapshot: GroupSnapshot): boolean {
+    return snapshot.activeSessions.length > 0 ||
+        snapshot.onlineMemberCount > 0;
 }

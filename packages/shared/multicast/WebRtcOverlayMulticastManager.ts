@@ -39,7 +39,11 @@ import {
     ALOutboundSupersedenceTrackingPlan,
 } from '../alm/ALOutboundMessageRuntime.ts';
 import { CircuitBreaker, RateLimiter, toCircuitBreaker, toRateLimiter, } from '../resilience/Resilience.ts';
-import { isSameGroupRef, toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import {
+    isOverlayForGroupRef,
+    isSameGroupRef,
+    toScopedOverlayId,
+} from '@shared/api/api-type-utils.ts';
 
 export type WebRtcOverlayMulticastManagerOptions = Readonly<{
     qosProvider?: ALQosInputProvider;
@@ -324,6 +328,12 @@ export class WebRtcOverlayMulticastManager {
             this.overlayCache.peek(overlayId);
         if (!overlay) {
             console.warn(`No OverlayInfo found for overlayId/groupId ${overlayId}`);
+            return undefined;
+        }
+        if (groupRef && !isOverlayForGroupRef(overlay, groupRef)) {
+            console.warn(
+                `Overlay ${overlayId} does not match scoped target ${toScopedOverlayId(groupRef)}`,
+            );
             return undefined;
         }
 

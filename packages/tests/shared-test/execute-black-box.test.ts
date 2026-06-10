@@ -39,6 +39,15 @@ function json(response: ServerResponse, statusCode: number, body: unknown): void
 }
 
 describe('executeBlackBox', () => {
+    it('reports the explicit rallar-signaling RTC provider alias', async () => {
+        const report = await executeBlackBox([], 0, {
+            failFast: true,
+        });
+
+        expect(report.rtcProviderNames).toContain('rallar');
+        expect(report.rtcProviderNames).toContain('rallar-signaling');
+    });
+
     it('supports SET output and placeholder resolution', async () => {
         const report = await executeBlackBox(
             [

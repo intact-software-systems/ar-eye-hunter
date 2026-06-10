@@ -294,8 +294,10 @@ export function redactBlackBoxData<T>(value: T, redactions: Redaction[] = []): T
 }
 
 function createRtcProviders(): Record<string, RtcProvider> {
+    const signalingProvider = createRallarWebRtcWebSocketSignalingProvider();
     return {
-        rallar: createRallarWebRtcWebSocketSignalingProvider(),
+        rallar: signalingProvider,
+        'rallar-signaling': signalingProvider,
         'rallar-stub': createRallarStubRtcProvider(),
         'rallar-memory': createRallarInMemoryProvider(),
         'rallar-browser': createRallarBrowserRtcProvider(),

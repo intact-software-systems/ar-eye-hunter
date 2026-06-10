@@ -1,5 +1,8 @@
 import { OverlayInfo } from '@shared/api/api-config.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import {
+    isOverlayForGroupRef,
+    toScopedOverlayId,
+} from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     type AnyGroupPresence,
@@ -138,6 +141,33 @@ export function findOverlayByGroupRef(
     manager?: RepositoryManager,
 ): OverlayInfo | undefined {
     return findOverlayById(toScopedOverlayId(groupRef), manager);
+}
+
+export function setOverlayByGroupRef(
+    groupRef: GroupRef,
+    overlay: OverlayInfo,
+    manager?: RepositoryManager,
+): void {
+    setOverlayById(toScopedOverlayId(groupRef), overlay, manager);
+}
+
+export function removeOverlayByGroupRef(
+    groupRef: GroupRef,
+    manager?: RepositoryManager,
+): boolean {
+    return removeOverlayById(toScopedOverlayId(groupRef), manager);
+}
+
+export function removeLegacyOverlayByGroupIdIfMatches(
+    groupRef: GroupRef,
+    manager?: RepositoryManager,
+): boolean {
+    const overlay = findOverlayById(groupRef.groupId, manager);
+    if (!overlay || !isOverlayForGroupRef(overlay, groupRef)) {
+        return false;
+    }
+
+    return removeOverlayById(groupRef.groupId, manager);
 }
 
 export function removeOverlayById(

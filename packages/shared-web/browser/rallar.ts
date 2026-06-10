@@ -9,21 +9,17 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundEnqueueResult, ALOutboundEnqueueStatus, } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import {
+    AppTopics,
     type AuthSession,
     type ClientInfo,
     type LoginRequest,
     type LoginResponse,
     type RegisterRequest,
     type RegisterResponse,
-    AppTopics,
 } from '@shared/api/api-config.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { isSameGroupRef, toGroupRefFromScope, toScopedOverlayId, toStateScope } from '@shared/api/api-type-utils.ts';
 import { clearSession, isLoggedIn, readSession, writeSession, } from '@shared/api/auth.ts';
-import type {
-    ClientEvent,
-    ClientEventType,
-    ClientSnapshot,
-} from '@shared/api/client-types.ts';
+import type { ClientEvent, ClientEventType, ClientSnapshot, } from '@shared/api/client-types.ts';
 import {
     isGroupActive,
     isSessionInGroup,
@@ -38,31 +34,25 @@ import {
     isRallarGroupDirectorForSession,
     isRallarGroupDirectorSessionActive,
     mergeRallarGroupDirectorMetadata,
-    readRallarGroupDirectorFreshness,
-    readRallarGroupDirectorFromSnapshot,
     type RallarGroupDirectorAppointment,
     type RallarGroupDirectorFreshness,
+    readRallarGroupDirectorFreshness,
+    readRallarGroupDirectorFromSnapshot,
 } from '@shared/api/group-director.ts';
 import type {
     ApplicationId,
-    GroupJoinMode,
-    GroupMemberStatus,
     GroupEvent,
     GroupEventType,
+    GroupJoinMode,
+    GroupMemberStatus,
     GroupRef,
     GroupRole,
     GroupSnapshot,
     GroupStatus,
     WorkspaceId,
 } from '@shared/api/group-types.ts';
-import {
-    DEFAULT_STATE_WORKSPACE_ID,
-    type StateScope,
-} from '@shared/api/state-types.ts';
-import type {
-    StateEventCursor,
-    StateEventPage,
-} from '@shared/api/state-event-types.ts';
+import { DEFAULT_STATE_WORKSPACE_ID, type StateScope, } from '@shared/api/state-types.ts';
+import type { StateEventCursor, StateEventPage, } from '@shared/api/state-event-types.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
 import { CommandsOrchestrator, type CommandsOrchestratorPolicies, } from '@shared/cache/CommandsOrchestrator.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -103,12 +93,8 @@ import {
     type RallarDataFacade,
     type RallarDataScope,
 } from '@shared-web/browser/rallar-data.ts';
-import {
-    createRallarCrdtFacade,
-    type RallarCrdtFacade,
-} from '@shared-web/browser/rallar-crdt.ts';
+import { createRallarCrdtFacade, type RallarCrdtFacade, } from '@shared-web/browser/rallar-crdt.ts';
 import type { RallarCrdtMessageTransport } from '@shared-web/browser/rallar-crdt-transport.ts';
-import { isSameGroupRef, toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 
 export {
     createRallarDataFacade,
@@ -319,6 +305,7 @@ export type RallarCreateRoomInput =
 export type RallarJoinRoomOptions =
     & RallarScopedOperationOptions
     & Readonly<{
+    roomRef?: GroupRef;
     leaveCurrent?: boolean;
 }>;
 
@@ -1213,44 +1200,44 @@ export type RallarDirectorRelaySendResult = Readonly<{
 
 export type RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot = TOutput> =
     Readonly<{
-    roomId?: string;
-    roomRef?: GroupRef;
-    laneId?: string;
-    topicId?: string;
-    intentTypeId: string;
-    outputTypeId: string;
-    heartbeatTypeId?: string;
-    snapshotTypeId?: string;
-    syncRequestTypeId?: string;
-    heartbeatIntervalMs?: number;
-    snapshotIntervalMs?: number;
-    readSnapshot?: () => TSnapshot | undefined | Promise<TSnapshot | undefined>;
-    onIntent?: (
-        message: RallarDirectorRelayMessage<TIntent>,
-        relay: RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot>,
-    ) => void | TOutput | readonly TOutput[] | Promise<void | TOutput | readonly TOutput[]>;
-    onOutput?: (
-        message: RallarDirectorRelayMessage<TOutput>,
-    ) => void | Promise<void>;
-    onSnapshot?: (
-        message: RallarDirectorRelayMessage<TSnapshot>,
-    ) => void | Promise<void>;
-    onSyncRequest?: (
-        message: RallarDirectorRelayMessage<unknown>,
-        relay: RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot>,
-    ) => void | Promise<void>;
-}>;
+        roomId?: string;
+        roomRef?: GroupRef;
+        laneId?: string;
+        topicId?: string;
+        intentTypeId: string;
+        outputTypeId: string;
+        heartbeatTypeId?: string;
+        snapshotTypeId?: string;
+        syncRequestTypeId?: string;
+        heartbeatIntervalMs?: number;
+        snapshotIntervalMs?: number;
+        readSnapshot?: () => TSnapshot | undefined | Promise<TSnapshot | undefined>;
+        onIntent?: (
+            message: RallarDirectorRelayMessage<TIntent>,
+            relay: RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot>,
+        ) => void | TOutput | readonly TOutput[] | Promise<void | TOutput | readonly TOutput[]>;
+        onOutput?: (
+            message: RallarDirectorRelayMessage<TOutput>,
+        ) => void | Promise<void>;
+        onSnapshot?: (
+            message: RallarDirectorRelayMessage<TSnapshot>,
+        ) => void | Promise<void>;
+        onSyncRequest?: (
+            message: RallarDirectorRelayMessage<unknown>,
+            relay: RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot>,
+        ) => void | Promise<void>;
+    }>;
 
 export type RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot = TOutput> =
     Readonly<{
-    status(): RallarDirectorStatus;
-    sendIntent(intent: TIntent): Promise<RallarDirectorRelaySendResult>;
-    sendOutput(output: TOutput): Promise<RallarDirectorRelaySendResult>;
-    sendHeartbeat(): Promise<RallarDirectorRelaySendResult>;
-    sendSnapshot(snapshot?: TSnapshot): Promise<RallarDirectorRelaySendResult>;
-    requestSync(payload?: unknown): Promise<RallarDirectorRelaySendResult>;
-    stop(): void;
-}>;
+        status(): RallarDirectorStatus;
+        sendIntent(intent: TIntent): Promise<RallarDirectorRelaySendResult>;
+        sendOutput(output: TOutput): Promise<RallarDirectorRelaySendResult>;
+        sendHeartbeat(): Promise<RallarDirectorRelaySendResult>;
+        sendSnapshot(snapshot?: TSnapshot): Promise<RallarDirectorRelaySendResult>;
+        requestSync(payload?: unknown): Promise<RallarDirectorRelaySendResult>;
+        stop(): void;
+    }>;
 
 export type RallarCallSignalEvent = Readonly<{
     kind: RallarCallSignalKind;
@@ -1351,7 +1338,7 @@ export type RallarFacade = Readonly<{
         ): Promise<RallarReplayEventsResult<GroupEvent>>;
         create(input: string | RallarCreateRoomInput): Promise<GroupSnapshot>;
         join(
-            roomId: string,
+            room: string | GroupRef,
             options?: RallarJoinRoomOptions,
         ): Promise<GroupSnapshot>;
         leave(
@@ -1872,14 +1859,26 @@ class BrowserRallarFacade implements RallarFacade {
             return snapshot;
         },
         join: async (
-            roomId: string,
+            room: string | GroupRef,
             options: RallarJoinRoomOptions = {},
         ): Promise<GroupSnapshot> => {
             const operationOptions = this.resolveOperationOptions(options);
             const ctx = await this.connect(operationOptions);
             const session = this.requireSession();
-            const currentRoomId = this.resolveCurrentRoomId();
-            const operationScope = this.resolveOperationScope(options.scope);
+            const currentRoomRef = this.resolveCurrentRoomRef();
+            const roomRef = typeof room === 'string'
+                ? options.roomRef ??
+                this.resolveGroupRefFromRoomId(room, options.scope)
+                : room;
+            const roomId = this.toRoomId(room);
+            const operationScope = options.scope ??
+                (roomRef
+                    ? toStateScope(roomRef)
+                    : this.resolveOperationScope(options.scope));
+
+            if (!roomId) {
+                throw new Error('Cannot join room: room is required.');
+            }
 
             const snapshot = await apiWorkflows.joinStateGroup(
                 roomId,
@@ -1890,14 +1889,14 @@ class BrowserRallarFacade implements RallarFacade {
             );
 
             if (
-                (options.leaveCurrent ?? true) && currentRoomId &&
-                currentRoomId !== roomId
+                (options.leaveCurrent ?? true) && currentRoomRef &&
+                !this.isSameRoomRefOrId(currentRoomRef, roomRef ?? roomId)
             ) {
                 await this.rooms.leave({
-                    roomId: currentRoomId,
-                    roomRef: this.currentRoomRef,
+                    roomId: currentRoomRef.groupId,
+                    roomRef: currentRoomRef,
                     clearCurrent: false,
-                    scope: operationScope,
+                    scope: toStateScope(currentRoomRef),
                     signal: operationOptions.signal,
                     timeoutMs: operationOptions.timeoutMs,
                 });
@@ -2856,9 +2855,9 @@ class BrowserRallarFacade implements RallarFacade {
             ? this.directorHeartbeatByRoom.get(this.toDirectorRoomKey(roomRef))
             : undefined;
         const matchingHeartbeat = heartbeat &&
-                appointment &&
-                heartbeat.sessionId === appointment.sessionId &&
-                heartbeat.epoch === appointment.epoch
+        appointment &&
+        heartbeat.sessionId === appointment.sessionId &&
+        heartbeat.epoch === appointment.epoch
             ? heartbeat
             : undefined;
         const now = options.now ?? Date.now();
@@ -3351,9 +3350,9 @@ class BrowserRallarFacade implements RallarFacade {
     ): boolean {
         return Boolean(
             status.appointment &&
-                status.roomId &&
-                envelope.roomId === status.roomId &&
-                envelope.epoch === status.appointment.epoch,
+            status.roomId &&
+            envelope.roomId === status.roomId &&
+            envelope.epoch === status.appointment.epoch,
         );
     }
 
@@ -3727,10 +3726,10 @@ class BrowserRallarFacade implements RallarFacade {
             },
             stop: async (): Promise<RallarMediaSourceStatus> =>
                 await this.stopMediaSource(kind) ??
-                    toMediaSourceStatus({
-                        ...runtime,
-                        state: 'ended',
-                    }),
+                toMediaSourceStatus({
+                    ...runtime,
+                    state: 'ended',
+                }),
         };
     }
 
@@ -4193,8 +4192,8 @@ class BrowserRallarFacade implements RallarFacade {
                 const membership = definition.membership ?? input.membership ??
                     'fixed';
                 const target = membership === 'live' &&
-                        (input.roomId !== undefined || input.roomRef !== undefined) &&
-                        !hasTargetSelectorOverride(definition)
+                (input.roomId !== undefined || input.roomRef !== undefined) &&
+                !hasTargetSelectorOverride(definition)
                     ? {
                         roomId: input.roomId,
                         roomRef: input.roomRef,
@@ -4300,12 +4299,12 @@ class BrowserRallarFacade implements RallarFacade {
         laneIds: readonly string[];
         peerIds: readonly string[];
         startedAtEpochMs: number;
-            endedAtEpochMs?: number;
-            media: Readonly<{
-                localStreamId?: string;
-                audioEnabled?: boolean;
-                videoEnabled?: boolean;
-            }>;
+        endedAtEpochMs?: number;
+        media: Readonly<{
+            localStreamId?: string;
+            audioEnabled?: boolean;
+            videoEnabled?: boolean;
+        }>;
     }>): RallarCallStatus {
         const participants = input.peerIds.map((peerId) =>
             this.toCallParticipantStatus(
@@ -4345,7 +4344,7 @@ class BrowserRallarFacade implements RallarFacade {
             ? peer?.lanes ?? []
             : laneIds.map((laneId) =>
                 peer?.lanes.find((lane) => lane.laneId === laneId) ??
-                    toMissingRtcLaneStatus(peerId, laneId)
+                toMissingRtcLaneStatus(peerId, laneId)
             );
         const readyLaneIds = lanes
             .filter((lane) => lane.isOpen)
@@ -5559,6 +5558,15 @@ class BrowserRallarFacade implements RallarFacade {
             this.currentRoomId = undefined;
             this.currentRoomRef = undefined;
         }
+    }
+
+    private isSameRoomRefOrId(
+        left: GroupRef,
+        right: string | GroupRef,
+    ): boolean {
+        return typeof right === 'string'
+            ? left.groupId === right
+            : isSameGroupRef(left, right);
     }
 
     private toRoomId(room: string | GroupRef | undefined): string | undefined {
@@ -7237,11 +7245,11 @@ function isRallarCallSignalPayload(
 
     const candidate = value as Partial<RallarCallSignalPayload>;
     return (
-        candidate.kind === 'invite' ||
-        candidate.kind === 'accepted' ||
-        candidate.kind === 'declined' ||
-        candidate.kind === 'cancelled'
-    ) &&
+            candidate.kind === 'invite' ||
+            candidate.kind === 'accepted' ||
+            candidate.kind === 'declined' ||
+            candidate.kind === 'cancelled'
+        ) &&
         typeof candidate.callId === 'string' &&
         typeof candidate.fromPeerId === 'string' &&
         Array.isArray(candidate.toPeerIds) &&
@@ -7279,8 +7287,8 @@ function toMediaSourceStatus(
         .filter((track) => track.readyState === 'ended')
         .map((track) => track.id);
     const state = runtime.state === 'open' &&
-            tracks.length > 0 &&
-            endedTrackIds.length === tracks.length
+    tracks.length > 0 &&
+    endedTrackIds.length === tracks.length
         ? 'ended'
         : runtime.state;
 
@@ -7839,7 +7847,7 @@ function isSameStateScopeValue(
 
     return value.applicationId === scope.applicationId &&
         normalizeStateWorkspaceId(value.workspaceId) ===
-            normalizeStateWorkspaceId(scope.workspaceId);
+        normalizeStateWorkspaceId(scope.workspaceId);
 }
 
 function normalizeStateWorkspaceId(workspaceId?: string): string {

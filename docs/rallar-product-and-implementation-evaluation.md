@@ -1,379 +1,544 @@
 # Rallar Product And Implementation Evaluation
 
-Date: 2026-06-01
+Date: 2026-06-09
 
-This document evaluates the current Rallar and Rallar Server implementation as a product, not only as a set of source
-files. It is based on the package-wide source inventory, the primary browser/server facades, the root Rallar docs,
-server repository docs, black-box testing docs, app integrations, and the focused tests around the public facade
-surface.
+This is a product review of Rallar as it exists in this repository. It treats
+Rallar as a complete early product, not only as source code. The review covers
+the SDK, server, black-box command center, CRDT/data/AI/game surfaces, examples,
+tests, and the live browser experience.
 
-## Evaluation Frame
+## Review Method
 
-A useful evaluation of this kind should answer five questions:
+I inspected the repository, documentation, app structure, data model, server
+composition, browser facade, tests, and the Rallar Black Box UI.
 
-1. What is the product promise?
-2. What are the public surfaces a user is expected to touch?
-3. How much of that promise is implemented, tested, documented, and used by real apps?
-4. Where does the implementation still expose internal machinery or operational risk?
-5. What should be hardened next to make the product easier to adopt?
+Checks run:
 
-For Rallar, that means evaluating four layers together:
+- `npm --workspace rallar-black-box run typecheck`: passed.
+- `npx vitest run packages/tests/shared-web/rallar-flow.test.ts packages/tests/shared-web/rallar-data.test.ts packages/tests/shared-test/rallar-bb-test.test.ts packages/tests/shared-server/rallar-server-app-data.test.ts`: passed, 4 files and 68 tests.
+- Ran `apps/rallar-black-box` at `http://127.0.0.1:5176/`.
+- Ran the memory-backed Rallar API and control server with `npm run start:rallar:servers:memory`.
+- Tested simulated mode, black-box-runner mode, browser-rallar login, and the live Quick Test path.
 
-- Browser SDK: `packages/shared-web/browser/rallar.ts`.
-- Browser local data: `packages/shared-web/browser/rallar-data.ts`.
-- Server SDK and middleware: `packages/shared-server/rallar-facade/RallarServer.ts`,
-  `packages/shared-server/rallar-facade/RallarServerApplication.ts`,
-  `packages/shared-server/rallar-system/middleware/RallarMiddleware.ts`, and
-  `packages/shared-server/rallar-facade/ws-topic-router.ts`.
-- Product examples and verification: root `docs/`, `apps/api-v1`, `apps/rallar-black-box`,
-  `apps/relic-hunter-server-v1`, `packages/shared-test`, and `packages/tests`.
+Important live UI finding:
 
-## Executive Summary
+- In simulated direct mode, the default Quick Test is visible but says `real backend required`, with primary direct actions disabled.
+- In runner mode, the recipe catalog and readiness checks are strong, but the first screen reports API/control/agents unavailable until the exact local stack is running.
+- In browser-rallar mode, the login gate appears with demo credentials. `Register before login` failed when the demo user already existed and surfaced a raw `409` style message. Plain login worked.
+- In the live Quick Test, create/join and WS subscribe reached `Signal WS: open` and `Subscription: room.manual.message / room.manual.message`. `Send WS JSON` completed, but `Wait for receive` timed out after 20 seconds with `rallar.direct.quick.receive.timeout` and 0 received messages. This is not enough by itself to diagnose transport correctness, but it is enough to say the first live proof path is not dependable as product onboarding.
 
-Rallar is no longer just an experiment. The browser facade has a broad, coherent product surface for auth, rooms, people,
-WS messages, RTC messages, realtime data channels, media, and browser IndexedDB data. The implementation is deep and the
-docs already describe the main workflows.
+## Concise Product Summary
 
-Rallar Server is also real, but it is less turnkey. The reusable facade wraps topic routing, middleware installation,
-server app data, and route mounting, while the actual production-shaped runtime still lives in `apps/api-v1` with
-Postgres, Hono routes, auth, state services, CORS, timing, pub/sub, and expiry wiring.
+Rallar appears to be a browser-first realtime application platform for rooms,
+presence, WebSocket messages, WebRTC data channels, local browser data,
+collaborative CRDT documents, AI-generated JSON proposals, and game-oriented
+authority patterns. Around that core is Rallar Black Box: a visible command
+center and recipe runner for testing, debugging, and orchestrating browser
+agents.
 
-The strongest evidence of product maturity is not only the code. It is the black-box testing ecosystem:
-`apps/rallar-black-box`, `packages/shared-test/rallar-bb-test`, and `packages/shared-test/black-box-runner` form a
-visible command center, browser-agent protocol, distributed-run contract, runner recipes, live browser providers, and
-artifact model. That is unusually strong for a realtime middleware product.
+The strongest product inside the repo is not yet a polished developer platform.
+It is a deeply instrumented realtime systems workbench. Rallar is technically
+ambitious and unusually well-tested, but the current product shape asks users to
+understand too many concepts before they get one undeniable success moment.
 
-The main product risk is conceptual weight. Rallar wraps a sophisticated AL/QueueBox/WebSocket/WebRTC/state-sync system,
-but some public APIs and examples still require callers to understand room refs, application/workspace scope, topics,
-type IDs, fanout, sessions, queue engines, tickets, and state snapshots. The next product step should reduce the number
-of concepts required for the first successful app.
+Current maturity:
 
-As of this evaluation, the implementation is best described as an internal beta for the browser SDK and test platform,
-and an alpha-to-beta server SDK. It is powerful enough to build real applications, but not yet packaged as a low-friction
-external developer product.
+- Core runtime and test machinery: strong internal beta.
+- Browser SDK: credible but too broad and internally named.
+- Server SDK: real but not yet turnkey.
+- Black Box app: powerful operator tool, not a friendly first-run experience.
+- Game story: promising, but still more of a proof case than a product wedge.
+- Commercial readiness: not ready for broad external users; ready for highly
+  technical design partners who accept sharp edges.
 
-## Package Map
+## Strongest Product Thesis
 
-| Package | Current role | Product interpretation |
-| --- | --- | --- |
-| `packages/shared` | Core AL contracts, queuebox, command orchestration, repositories, persistence, WebSocket, WebRTC, multicast, cache, resilience, and demo engines. | The runtime substrate. It is powerful but intentionally not the product entry point. |
-| `packages/shared-web` | Browser middleware, REST workflows, WebSocket/RTC engines, state caches, `rallar.ts`, and `rallar-data.ts`. | The main browser SDK. This is the clearest Rallar product surface. |
-| `packages/shared-server` | Server middleware, server facade, dynamic WS topic router, app data facade, repository contracts, Postgres adapters, auth/state services, timing hooks. | The reusable server SDK plus current concrete Postgres implementation. |
-| `packages/shared-test` | Black-box runner, browser providers, `rallar-bb-test` command schema/runtime, distributed-run contracts, artifacts, provider parity. | A serious test product for Rallar and Rallar Server. |
-| `packages/shared-graph` | Graph, tree, mesh, Vivaldi, and removal dynamics services. | Supporting topology layer for RTC overlays and diagnostics. |
-| `packages/relic-hunters` | Domain model/protocol/rules for a demo game. | A product example proving Rallar can carry app-specific state and WS topics. |
-| `packages/tests` | Vitest coverage across browser facade, server facade, middleware, black-box app, shared-test, graph, and core runtime. | Confidence layer and executable specification. |
+The strongest version of Rallar is:
 
-## Product Surface Today
+> Rallar is an open, browser-first realtime platform for room-based games and
+> collaborative applications where teams need not only WS/RTC/CRDT primitives,
+> but also deterministic testing, browser-agent orchestration, diagnostics, and
+> artifact evidence from day one.
 
-### Browser Rallar
+That thesis is stronger than "Rallar is another realtime SDK." Competing with
+generic realtime infrastructure on ease alone would be hard. The defensible
+difference in this repo is observability and verification. Rallar can be the
+toolkit for teams that need to prove realtime behavior across browsers,
+networks, rooms, agents, and failure modes.
 
-The browser facade exposes a single grouped interface:
+The product should lean into:
 
-- lifecycle: `configure`, `setDefaults`, `connect`, `start`, `disconnect`, `status`, `session`
-- auth: login, register, register-and-login, logout, restore
-- rooms: state, list, refresh, create, join, leave, current, change listeners, event listeners, event replay
-- people: state, list, refresh, get, change listeners, event listeners, event replay
-- messages: WS lane, RTC lane, and typed channels
-- RTC: status, lifecycle, peer readiness, room-lane waits
-- WS: status, lifecycle, wait-for-open
-- realtime: JSON/binary data-channel send/listen, typed JSON lane, lane health
-- media: local stream, audio/video toggles, remote streams
-- data: browser local stores through Rallar Data
-- advanced: escape hatch to lower-level middleware
+- Browser-first realtime rooms.
+- WS plus RTC routing with explicit fallback and diagnostics.
+- Testable multiplayer/collaborative behavior.
+- Self-hostable or local-first infrastructure.
+- Game and collaborative-tool workflows where correctness matters more than
+  superficial speed-to-demo.
 
-The design is good: most user operations are grouped by intent, and `start()` offers a clear app boot path. The
-documentation in `docs/rallar-api-reference.md`, `docs/rallar-quickstart-and-recipes.md`, and
-`docs/rallar-ai-skill.md` explains the happy paths and common mistakes.
+The product should avoid claiming:
 
-The implementation also contains important production details:
+- "Drop-in Firebase/Supabase replacement."
+- "Simple for any frontend developer."
+- "Complete game backend for studios."
+- "Production collaboration platform with zero infrastructure burden."
 
-- single-flight `connect()` behavior
-- explicit defaults for application/workspace/room/realtime/operation policies
-- operation timeouts and retries through command orchestration
-- session-aware reconnect and logout cleanup
-- state cache hydration and change events
-- persisted event listing and replay with dedupe
-- WS and RTC lifecycle/status callbacks
-- roomRef-aware RTC/WS/realtime operations for multi-workspace correctness
-- direct RTC realtime lanes plus app-level AL messages over both WS and RTC
-- media stream management over RTC peers
+Those claims do not match the current first-run experience or packaging.
 
-Maturity: high internal maturity. The main issue is not missing capability, but discoverability and conceptual load.
+## Target Users
+
+The best initial users are not general web developers. They are high-context
+builders who already know realtime systems hurt.
+
+Best initial ICP:
+
+- Technical founders building browser multiplayer or collaborative products.
+- Small game/tool teams building room-based browser experiences.
+- Engineers who need self-hostable realtime infrastructure rather than a fully
+  managed black box.
+- Teams debugging RTC/WS delivery, presence, and multi-browser behavior.
+- AI-assisted app/game teams that need schema-validated proposals and audit
+  trails, not autonomous state mutation.
+
+Poor initial ICP:
+
+- Designers or no-code builders.
+- Teams expecting polished React components and hosted collaboration features.
+- Studios that want a complete economy, matchmaking, inventory, and LiveOps
+  backend.
+- Developers whose main need is "add comments/presence to my SaaS app in one
+  afternoon."
+
+The uncomfortable product truth: Rallar should probably choose between two
+near-term buyers:
+
+1. Realtime application developers who need a self-hostable SDK plus server.
+2. Realtime QA/platform teams who need Black Box as a validation command center.
+
+Trying to sell both equally will blur the first release.
+
+## Core Job To Be Done
+
+The real job-to-be-done is:
+
+> "I need to build and verify a browser realtime room system without inventing
+> my own auth, presence, WS routing, RTC signaling, local state, CRDT sync,
+> diagnostics, and multi-browser test harness."
+
+Sub-jobs:
+
+- Create rooms and track clients/presence.
+- Send typed messages over WS and RTC.
+- Move low-latency state over RTC while retaining reliable WS/server fallback.
+- Persist local browser state safely.
+- Use CRDT documents for collaborative authored state.
+- Generate AI proposals without letting AI directly mutate authoritative state.
+- Prove behavior with recipes, artifacts, traces, and browser agents.
+
+This is a good job. It is painful, valuable, and under-served for browser-first
+game/collaboration teams. The issue is that the current product experience
+exposes almost the whole machinery at once.
+
+## Main Workflows
+
+### Browser SDK
+
+The browser quickstart is short on paper: configure API URL, set defaults, log
+in, then start the facade. Evidence: `docs/rallar-quickstart-and-recipes.md`
+shows a compact startup path in lines 5-25.
+
+The actual facade is broad. `RallarFacade` includes auth, rooms, people,
+director, messages, channels, RTC, calls, WS, realtime data channels, media,
+CRDT, local data, flow orchestration, and advanced middleware access. Evidence:
+`packages/shared-web/browser/rallar.ts` lines 1305-1557.
+
+Product judgment: the grouped API is valuable, but the first app path is still
+concept-heavy. A new user must learn application/workspace/room, group refs,
+sessions, topic IDs, type IDs, context IDs, WS vs RTC, realtime lanes, CRDT vs
+local data, and when to use server authority. That is too much before the first
+win.
 
 ### Rallar Data
 
-`rallar-data.ts` is a separate browser-local data product inside the Rallar facade. It gives browser code scoped
-IndexedDB-backed stores with:
+Rallar Data is a local browser data product inside the SDK. It supports scoped
+stores, TTL, durability modes, hydration, schema versions, migrations,
+validation, sync, CAS, exports, and scope cleanup. Evidence:
+`packages/shared-web/browser/rallar-data.ts` lines 45-134.
 
-- `define`, `open`, `lookup`, `close`, `clearScope`, `destroy`, `estimateUsage`
-- scoped storage: `app`, `principal`, `session`, or custom scopes
-- write-through and write-behind durability modes
-- eager or lazy hydration
-- schema versions and migrations
-- TTL and expiry support
-- change listeners
-- cross-tab sync through `BroadcastChannel`
+Product judgment: this is useful, but it must be described as local browser
+persistence, not collaboration. The CRDT guide correctly warns that
+`rallar.data` is local latest-value storage while `rallar.crdt` is for
+mergeable collaboration. Evidence: `docs/rallar-crdt-guide.md` lines 3-8.
 
-This is a credible local-state abstraction for drafts, settings, offline UI state, and local runtime state. Tests cover
-persistence, rehydration, isolation, migrations, incompatible option rejection, BroadcastChannel sync, and scope
-cleanup.
+### Rallar CRDT
 
-Important product caveats:
+The CRDT surface is explicit and unusually careful about boundaries. The docs
+say to use it for shared authored state, not auth, billing, membership,
+inventory, presence, topology, blobs, or privacy erasure. Evidence:
+`docs/rallar-crdt-guide.md` lines 10-28.
 
-- `compareAndSet` is a convenience over current facade state, not a transactional cross-tab lock.
-- BroadcastChannel sync is same-origin active-tab coordination, not durable sync.
-- Opening the same store with different options intentionally throws, which is good, but callers need examples showing
-  stable definitions.
-
-Maturity: strong for browser-local state. It should be documented as local persistence, not as server synchronization.
+Product judgment: the boundaries are strong. The risk is naming and placement.
+For users, "Rallar Data", "room state", "server app data", and "Rallar CRDT"
+will blur unless the docs and UI give a very clear decision tree.
 
 ### Rallar Server
 
-`RallarServer.ts` is a composition facade. It exposes:
+The server facade is intentionally small: default topics, lifecycle hooks,
+dynamic topics, publishing, status, and app data. Evidence:
+`packages/shared-server/rallar-facade/RallarServer.ts` lines 91-205.
 
-- `server.system.useDefaultMiddlewareTopics()`
-- `server.system.useWebSocketLifecycle()`
-- `server.ws.install()`, `defineTopic`, `on`, `proxy`, `publish`, `status`
-- `server.data.open(...)` for server app-data stores
-- `server.start()` to start the queuebox engine
+The real API-v1 server is much heavier. `createRallarServer` wires middleware,
+room authorization, app data, CRDT topics, WS lifecycle, REST routes, Swagger,
+and state routes. Evidence: `apps/api-v1/src/create-rallar-server.ts` lines
+49-133. `initialise()` wires Postgres/PGlite repositories, QueueBox, WebSocket
+server, AL runtime stores, state sync publishers, inbox services, pub/sub, and
+presence expiry. Evidence: `apps/api-v1/src/middleware.ts` lines 60-164.
 
-`RallarServerApplication.ts` adds route mounting:
-
-- `server.ws.mount(app)`
-- `server.rest.mount(app)`
-- idempotent route installer behavior
-
-The server facade is small, which is a strength. Most real behavior lives in reusable lower layers:
-
-- `RallarMiddleware.ts` constructs the queuebox engine, WebSocket server service, inbox reader, app inbox services,
-  target resolver, AL runtime stores, RTC signaling paths, and state repositories.
-- `ws-topic-router.ts` handles dynamic `app.*` and `room.*` topics with validation, handler dispatch, proxy rules,
-  max payload checks, room authorization, live-only fanout, durable outbox fanout, and NACKs.
-- `RallarServerAppData.ts` provides server-side JSON app-data stores with namespace/keyPrefix/schema/TTL/migration
-  support.
-- Postgres adapters currently back queuebox, runtime state, AL runtime state, and app data.
-
-The concrete API product is still `apps/api-v1`. `create-rallar-server.ts` injects middleware, default topics,
-lifecycle cleanup, route installers, room authorization, repositories, and Postgres app data. `middleware.ts` wires
-Postgres queuebox, resource inbox repositories, runtime-state expiry, AL runtime stores, state services, state sync,
-Postgres pub/sub, timing, and presence reconciliation.
-
-Maturity: powerful and well-factored for the current app, but still not turnkey. A new server app must understand more
-setup than the browser quickstart suggests.
+Product judgment: the facade is promising, but external users need a server
+preset, not a tour of internals. Today the server story still feels like "use
+our reference app carefully" rather than "install this package and start."
 
 ### Rallar Black Box
 
-`apps/rallar-black-box` is effectively a companion product:
+Black Box is the most distinctive part of the product. It has a direct Rallar
+workspace and a black-box-runner workspace, with tabs for Quick Test, auth,
+groups/clients, WS, RTC/realtime, topology, diagnostics, data, CRDT, media,
+server REST, traces, recipes, runs, builder, and advanced tools. Evidence:
+`apps/rallar-black-box/src/app-tabs.ts` lines 1-108 and
+`apps/rallar-black-box/docs/current-state.md` lines 50-120.
 
-- visible SPA for direct Rallar operations
-- simulated and real `browser-rallar` provider modes
-- auth, groups/clients, WebSocket, RTC/realtime, data, media, server REST, trace, topology, diagnostics
-- manual workbench and flow builder
-- control-server run manager and distributed recipes
-- composite distributed-run monitor drilldowns for nested loop, parallel, wait, and assert evidence
-- looped WS/RTC load observability with pacing drift, jitter, send/backpressure summaries, and simple loop thresholds
-- composite conformance matrix for local, browser-rallar, and remote-browser/control-server provider rows
-- live distributed warning regression coverage with linked WS/RTC/realtime receive payloads, console artifacts, realtime
-  composite drilldown checks, and high-severity diagnostic policy
-- remote browser-agent orchestration
-- full-stack QA matrix and live three-browser RTC coverage
+The runner side has a real recipe contract for HTTP, WS, RTC, and assertions,
+and explicitly says it should not become a second implementation of Rallar.
+Evidence: `packages/shared-test/black-box-runner/docs/black-box-runner-recipe-guide.md`
+lines 1-10.
 
-The black-box runner stays intentionally provider-neutral: HTTP, WS, RTC, ASSERT, SET, recipes, artifacts, and provider
-adapters. It now also has a safe declarative output-transform layer for derived headers, URLs, IDs, encoded values, and
-JSON conversions, plus post-run assertions for aggregate thresholds over summary, latency, delivery ratio, diagnostics,
-and artifact evidence. Runner artifacts now carry run/step correlation IDs, with opt-in HTTP header and object-payload
-injection so failures can be joined to Rallar Server logs, plus artifact indexes and per-kind event caps so long runs
-remain browsable without loading every raw event. Static recipe fragments/includes now let common setup/connect/cleanup
-snippets be reused while `expanded-recipe.json` keeps artifact replay independent of local fragment files. Live matrix
-traffic failures can now be reduced offline into `reduced-plan.json` replay candidates. Live matrix
-entries also have a provisioning preflight report for env,
-API config, auth, group permission, WS, ICE, control-server, and Playwright checks before browser runs launch. The docs
-repeatedly reinforce that it should not become a second Rallar implementation. That boundary is healthy.
+Product judgment: Black Box is a serious internal/operator product. But it
+should not be the first thing a new SDK user sees. It is dense, powerful, and
+stateful. It explains Rallar by exposing Rallar's complexity, not by hiding it.
 
-Maturity: high as an internal validation and operator tool. For external users, it needs positioning: "test command
-center" rather than "how you build apps."
+### Game Workflows
 
-### Application Examples
+Rallar has a credible game-adjacent story. `apps/api-v1` explicitly says
+browser-director games use the normal browser facade, while server-authoritative
+games opt into Rallar Game Authority and own simulation, command legality,
+payload validation, persistence, scoring, AI, and rendering. Evidence:
+`apps/api-v1/README.md` lines 7-18.
 
-`apps/api-v1` is the canonical Rallar Server runtime. It proves the middleware can run with REST, WebSocket, auth,
-state sync, Postgres persistence, Swagger, CORS, timing, and lifecycle cleanup.
+Relic Hunters proves integration depth: it wraps Rallar auth/room APIs, relic
+REST calls, WS snapshot fanout, RTC snapshot repair, browser AI proposals, a
+paired server, and a Babylon scene. Evidence:
+`apps/relic-hunters-v1/docs/current-state.md` lines 13-47 and 75-114.
 
-`apps/relic-hunter-server-v1` is the best product-shaped example. It creates a Rallar server, opens server app data,
-defines a room-scoped WS command topic, handles commands, stores game state, and publishes snapshots. The example shows
-how an application can use Rallar Server without becoming a Rallar internals project.
+Product judgment: the game story is real, but Rallar is not yet a game engine
+or complete game backend. The best game positioning is "browser realtime and
+verification substrate for room-based games", not "Nakama competitor" or
+"complete multiplayer backend."
 
-`apps/rallar-black-box` proves operational and distributed testing workflows, but it is too large to be the first
-developer example.
+## Strengths
 
-## What Is Implemented Well
+- The technical surface is unusually complete for an early product: auth,
+  rooms, people, WS, RTC, media, local data, CRDT, AI proposals, server app
+  data, game authority, and diagnostics all exist in some form.
+- The testing culture is strong. There are 257 `.test.ts`/`.spec.ts` files
+  across packages, apps, and Playwright coverage, and the root package exposes
+  unit, Deno, e2e, full-stack memory, Postgres, live RTC, and black-box matrix
+  commands. Evidence: `README.md` lines 5-40 and `package.json` lines 14-98.
+- Rallar Black Box is a differentiator. Few realtime SDKs ship with this level
+  of visible recipe execution, readiness checks, artifacts, runtime events,
+  traces, and multi-agent thinking.
+- The docs are honest about boundaries. CRDT docs distinguish local data from
+  mergeable collaboration. AI docs say generated output is candidate JSON and
+  the application owns validation, permissions, and final state changes.
+  Evidence: `docs/rallar-ai-recipes.md` lines 5-7 and 86-115.
+- The architecture recognizes game authority boundaries. The server README
+  explicitly says games own simulation and validation rather than pretending
+  Rallar magically solves game rules.
+- Local memory mode is valuable. It gives a self-contained path for development
+  and full-stack tests without requiring Docker Postgres for every loop.
 
-1. A high-level browser facade exists and covers the expected realtime app needs.
-2. The browser API is grouped by user intent instead of by transport internals.
-3. There is a meaningful server facade, not just loose middleware functions.
-4. Server dynamic topics have validators, authorizers, handlers, proxy rules, fanout modes, and NACK behavior.
-5. Browser and server custom data stores exist and share similar ergonomics.
-6. Scope and `GroupRef` hardening work is already underway and documented.
-7. The black-box testing stack is unusually complete for a realtime middleware project.
-8. Docs already include quickstart, API reference, troubleshooting, AI guide, and prompting guide.
-9. Tests cover a broad set of behavior: facade operation options, message selectors, data stores, server app data,
-   server route mounting, WS topic routing, middleware target resolution, black-box operations, and distributed-run
-   contracts.
-10. Operational evidence is first-class: traces, status APIs, lifecycle callbacks, timing events, redacted artifacts,
-    diagnostics, and QA matrices are all present.
+## Biggest Risks And Weaknesses
 
-## Main Product Gaps
+### 1. The Product Has Too Many Faces
 
-### 1. The First App Path Is Still Too Heavy
+Rallar is currently SDK, server, local data store, CRDT layer, AI proposal
+layer, game authority layer, black-box runner, command center, browser agent,
+and game demo platform. All are related, but they are not one simple promise.
 
-The browser quickstart is clear, but the full mental model is large. A new user quickly encounters auth sessions,
-application/workspace scope, groups/rooms, room refs, WS tickets, topic IDs, type IDs, realtime lanes, RTC readiness,
-fanout, snapshots, and event replay.
+This is the biggest commercial risk. The product is technically coherent to
+the author, but externally it will feel like a toolbox before it feels like a
+product.
 
-Recommended product fix:
+### 2. The First Success Moment Is Weak
 
-- Add a "smallest real app" guide with one room, one typed channel, one presence view, and one fallback path.
-- Add a "concepts in one page" doc that defines session, room, roomRef, topicId, typeId, lane, and fanout.
-- Keep AL/QueueBox details out of beginner docs.
+A new user needs a crisp "it worked" moment. The live browser review did not
+produce that:
 
-### 2. Browser Facade Size Creates Maintenance Risk
+- Simulated mode made the default Quick Test visible but direct actions were
+  blocked by `real backend required`.
+- Browser-rallar registration showed a raw existing-user 409.
+- Login succeeded, group creation/join and WS subscription succeeded, but the
+  one-browser Quick Test send/wait path timed out with 0 received messages.
+- The trace correctly recorded the timeout, which proves diagnostics work, but
+  the user experience still ends in failure.
 
-`rallar.ts` is a large facade implementation. The grouped API is good, but the single file now owns lifecycle, auth,
-rooms, people, WS, RTC, realtime, media, event replay, status mapping, defaults, callback registration, and send
-construction.
+The relevant timeout path is implemented in `apps/rallar-black-box/src/App.tsx`
+lines 5357-5412.
 
-Recommended product fix:
+This does not mean the transport is broken. It means the default demo is not
+trustworthy enough to carry product onboarding.
 
-- Keep the public `RallarFacade` stable, but split implementation modules by domain.
-- Add internal domain tests per module while preserving public facade tests.
-- Treat `advanced.middleware()` usage as a signal that the facade is missing a product operation.
+### 3. Concepts Leak Too Early
 
-### 3. Rallar Server Is Not Yet A Turnkey Server Product
+The UI and docs expose provider mode, API base URL, application, workspace,
+room/group, client, session, topic ID, type ID, context ID, resource ID, WS,
+RTC, realtime lanes, runner recipes, control server, agents, and artifacts very
+early.
 
-`RallarServerApplication` is clean, but `apps/api-v1/src/middleware.ts` shows the real amount of setup: Postgres
-queuebox, resource inbox results, runtime state, AL stores, app inbox services, state sync, pub/sub, timing, expiry,
-presence reconciliation, CORS, auth middleware, and routes.
+This is fine for an operator console. It is bad for a product's first 15
+minutes.
 
-Recommended product fix:
+### 4. Packaging Looks Internal
 
-- Add a "server preset" or `createDefaultRallarServer(...)` builder for the common Postgres/Hono path.
-- Add an in-memory/dev repository preset for local tests and performance experiments where durability is not required.
-- Document which dependencies are mandatory, optional, and production-only.
+Docs import from paths like `@shared-web/browser/rallar.ts` and the root
+package is a private monorepo. Evidence: `docs/rallar-quickstart-and-recipes.md`
+line 8 and `package.json` lines 2-9.
 
-### 4. Persistence Is Abstracted But Postgres Is Still The Concrete Center
+That is acceptable pre-launch, but it prevents commercial credibility. External
+developers expect package names, versioning, install commands, stable module
+boundaries, changelogs, and a migration story.
 
-Repository interfaces exist, and `RallarServer.data` can inject a different app data repository. Still, API-v1 and the
-current middleware path are Postgres-shaped. This is reasonable for production durability, but it limits cheap
-performance testing and lightweight demos.
+### 5. Server Setup Is Not Yet a Productized Path
 
-Recommended product fix:
+The server facade is good, but the real server path depends on a large
+composition of queues, repositories, AL stores, state services, pub/sub,
+presence expiry, WS lifecycle, routes, and CRDT repositories. This is a
+reasonable architecture, but the adoption path needs presets and guardrails.
 
-- Keep Postgres as the production adapter.
-- Introduce explicit in-memory adapters for QueueBox, runtime state, app data, auth, clients, and groups.
-- Make the adapter choice a visible server configuration option.
-- Document the guarantees that are lost in memory mode: no multi-process durability, no crash recovery, and limited
-  cross-instance coordination.
+### 6. The Market Position Is Undecided
 
-### 5. Server App Data Is Useful But Not Fully Durable-Concurrency-Safe
+Liveblocks positions around realtime infrastructure for collaborative apps and
+agents, with presence, broadcast, storage, comments, notifications, and AI
+copilots. PartyKit positions around open-source deployment for AI agents,
+multiplayer, local-first apps, games, and websites. Colyseus positions as a
+real-time multiplayer framework with matchmaking, state sync, and game-engine
+SDKs. Nakama positions as an open-source game backend for realtime multiplayer,
+social systems, and competitive features.
 
-Server app data stores persist through a repository and keep a process-local cache. Methods like `setIfAbsent` and
-`compareAndSet` are read-modify-write conveniences, not database-level atomic compare-and-swap. The Relic Hunter server
-handles this by serializing writes per game in application code.
+Rallar overlaps all of these categories but does not yet beat them on their
+headline promise. It can beat them on "diagnosable, self-hostable,
+browser-first realtime verification", but only if that becomes the headline.
 
-Recommended product fix:
+### 7. Security And Trust Need Product-Level Treatment
 
-- Document this explicitly in server app-data docs.
-- Consider repository-level atomic operations if server app data becomes a recommended state store for games or
-  collaborative apps.
-- Provide a standard keyed mutation queue helper if process-local serialization is the intended pattern.
+The repo has redaction, tokens, local-first control, validation, and explicit
+AI/CRDT boundaries. That is good. But remote browser control, live browser
+agents, media, AI proposals, and CRDT logs are trust-heavy features. They need a
+single product security model, not scattered implementation notes.
 
-### 6. Dynamic WS Topic Naming Rules Need Product-Level Framing
+### 8. Black Box Could Become a Product Trap
 
-The server router reserves `rallar.*` and only allows user topics under `app.*` or `room.*`. This is good, but users
-need to learn it early. The black-box direct operations already validate this before loading the facade, which proves
-the rule is product-facing.
+Black Box is valuable, but it can also become the place every missing product
+decision goes. If Rallar's onboarding depends on Black Box, the product will
+feel like a diagnostic console rather than an SDK. If Black Box is positioned
+as an advanced validation companion, it becomes a moat.
 
-Recommended product fix:
+## Market Positioning
 
-- Add a short "Topic Design" doc with examples:
-  - `app.cursor`
-  - `room.chat`
-  - `room.game.command`
-  - reserved `rallar.*`
-- Explain when to use `live-only`, `outbox`, or `none`.
+Do not position Rallar as "Firebase for realtime" or "Liveblocks but self
+hosted." That sets the comparison on simplicity, polish, hosted infrastructure,
+and ready-made collaboration UI. Rallar is not strongest there today.
 
-### 7. Product Positioning Is Split Across Many Docs
+Better positioning:
 
-The docs are strong, but they are mostly API/reference/runbook oriented. The product needs one opinionated entry path:
-"Use Rallar when..." and "Do not use Rallar when..."
+> Rallar Kit is a self-hostable realtime browser toolkit for room-based games
+> and collaborative apps, with built-in black-box verification for WS, RTC,
+> CRDT, AI proposals, and multi-browser delivery.
 
-Recommended product fix:
+Competitor assumptions:
 
-- Add `docs/rallar-product-overview.md`.
-- Add a decision table for WS vs RTC messages vs realtime data channel vs REST.
-- Link the black-box app as validation tooling, not as the default app-building tutorial.
+- Against Liveblocks: Rallar should not try to win on prebuilt collaboration
+  features. It should win on self-hostable control, game-like room flows, RTC
+  diagnostics, and black-box verification.
+- Against PartyKit: Rallar should not try to win on minimal serverless
+  deployment. It should win on richer runtime semantics, artifact evidence, and
+  test orchestration.
+- Against Colyseus: Rallar should not claim to be the easiest game multiplayer
+  framework. It should be the browser/RTC/WS substrate and verification layer
+  for custom browser games and tools.
+- Against Nakama: Rallar should not claim a complete studio backend. It can
+  serve smaller browser-first teams that want direct ownership and do not need
+  a full social/economy/LiveOps backend.
 
-## Product Maturity Scorecard
+External market reference points:
 
-| Area | Current maturity | Evidence | Main next step |
-| --- | --- | --- | --- |
-| Browser facade | Internal beta | Complete grouped facade, docs, focused tests, app usage. | Reduce conceptual load and split implementation modules. |
-| Browser data | Internal beta | IndexedDB persistence, migrations, BroadcastChannel sync, scope cleanup tests. | Document local-only guarantees and stable definitions. |
-| Server facade | Alpha/beta | Small facade, app wrapper, dynamic topics, app data, tests. | Add a turnkey server preset and clearer setup docs. |
-| Server middleware | Internal beta | Durable QueueBox, state sync, auth/state services, target routing, Postgres adapters. | Add dev/in-memory adapter mode and production hardening checklist. |
-| Dynamic WS topics | Beta | Validators, handlers, proxies, fanout, NACKs, room authorization tests. | Add topic design docs and examples. |
-| App data server store | Alpha/beta | JSON stores, TTL, migration, Postgres adapter, Relic Hunter usage. | Clarify concurrency model and optionally add atomic operations. |
-| Black-box testing | Beta | SPA command center, shared schemas, runner, safe output transforms, post-run thresholds, trace correlation IDs, artifact indexes, live environment preflight, remote provider, distributed-run contracts, composite monitor drilldowns, live matrix docs. | Package operator docs and keep runner boundary clear. |
-| External developer readiness | Alpha | Docs exist, examples exist, but setup and concepts are broad. | Build one polished "first real app" journey. |
-| Production operations | Alpha/beta | Timing events, traces, lifecycle callbacks, artifacts, expiry jobs. | Add deployment/runbook presets and health dashboards. |
+- [Liveblocks](https://liveblocks.io/)
+- [PartyKit](https://www.partykit.io/)
+- [Colyseus](https://colyseus.io/)
+- [Nakama](https://heroiclabs.com/nakama/)
 
-## Recommended Roadmap
+## Monetization Implications
 
-### Near Term
+The likely monetization path depends on which product is chosen.
 
-- Create a product overview and concept map.
-- Add a minimal real app tutorial using one typed channel and one room.
-- Add a server quickstart that hides API-v1 wiring behind a preset.
-- Add explicit docs for topic naming and fanout.
-- Document concurrency limits of browser/server data `compareAndSet`.
-- Add an in-memory single-process server mode for local testing and cheap performance runs.
+If Rallar is an SDK/server product:
 
-### Medium Term
+- Open-source core plus paid hosted control plane.
+- Paid managed server/runtime hosting.
+- Paid support for self-hosted production deployments.
+- Enterprise security, audit, and compliance features.
 
-- Split the browser facade implementation internally while preserving the public API.
-- Promote Relic Hunter server as a compact app integration example.
-- Add package-level public API stability notes.
-- Add a deployment checklist for API-v1/Rallar Server.
-- Add a health endpoint or dashboard that aggregates WS status, queue depth, state-sync health, and app inbox timing.
+If Black Box is the wedge:
 
-### Later
+- Free local runner and command center.
+- Paid artifact storage, historical run comparison, remote browser orchestration,
+  team dashboards, CI integration, and hosted agents.
+- Paid live RTC/WS test matrix execution.
 
-- Consider a dedicated `shared-postgres` adapter package if non-Postgres adapters become real.
-- Add atomic repository operations for server app data if app data becomes a recommended authoritative state store.
-- Extend the `rallar-bb-test` schema compatibility contract and golden corpus
-  pattern to the public Rallar facade version docs.
-- Decide whether Rallar Server is primarily a library, a reference server, or a hosted product shape.
+If games are the wedge:
 
-## Product Conclusion
+- Starter kits for browser multiplayer games.
+- Hosted room/signaling service.
+- Studio support and performance/reliability consulting.
 
-Rallar has the bones of a real realtime application platform:
+The most credible near-term paid product is not "pay for the SDK." It is
+"pay for confidence": hosted diagnostics, test orchestration, artifacts,
+replay, and production support.
 
-- a browser SDK that hides most transport machinery
-- a server SDK that can route, validate, authorize, fan out, and persist
-- durable state and event replay
-- WebSocket and WebRTC paths
-- local browser and server app data
-- operational visibility
-- a distributed black-box testing system
+## Prioritized Roadmap
 
-The current state is strong for internal use and advanced early adopters. The product work ahead is mostly about
-shrinking the first-use surface, packaging server setup, clarifying guarantees, and deciding which concepts are public
-product vocabulary versus implementation vocabulary.
+### Quick Wins
 
-The best product framing today is:
+1. Write a one-page product positioning memo.
+   Decide whether the first release is "Rallar SDK" or "Rallar Black Box".
+   Everything else should be secondary.
 
-> Rallar is a browser and server facade for realtime room-based applications, with built-in auth/session integration,
-> state sync, WebSocket messages, WebRTC messages, low-latency data channels, local data stores, server app data, and a
-> companion black-box testing platform.
+2. Make one local success path impossible to miss.
+   Add a single command and single UI button that starts memory API/control,
+   opens the app, creates/registers a disposable user, creates a room, sends a
+   message, receives it, and shows a green success state.
 
-That framing is accurate, valuable, and close to what the implementation already delivers.
+3. Fix or reframe Quick Test.
+   If one-browser WS loopback is intended, make it pass reliably. If it is not
+   intended, change the UI so the default success path uses two agents or says
+   exactly what is being proven. Do not let "send completed" look like success
+   when receive timed out.
+
+4. Improve login/register ergonomics.
+   "Register before login" should either fall back to login on existing demo
+   users, create a unique disposable user, or show a friendly recovery action.
+
+5. Normalize URL/global-context parameters.
+   During review, `room=review-room` did not affect the login gate's displayed
+   room. Prefer one public query shape such as `roomId`, document it, and make
+   the login gate reflect it.
+
+6. Split docs by audience.
+   Make separate entry points for "Build an app", "Run diagnostics", "Operate a
+   server", "Use CRDT", "Use AI proposals", and "Build a browser game".
+
+7. Add a concept decision tree.
+   Users need to know when to use room state, `rallar.data`, `rallar.crdt`,
+   server app data, WS messages, RTC realtime, and game authority.
+
+### MVP-Critical Fixes
+
+1. Productize the package boundary.
+   Replace internal import examples with stable package names, install commands,
+   versioning, and public API guarantees.
+
+2. Add a server preset.
+   Create a `createDefaultRallarServer(...)` or equivalent that hides the
+   common Hono/Postgres/PGlite setup for normal users.
+
+3. Ship one golden sample app.
+   A tiny chat/presence app or browser game should be the canonical "Rallar in
+   15 minutes" proof. It should avoid Black Box until after the core concept is
+   understood.
+
+4. Make the full-stack memory gate the onboarding gate.
+   The same path that CI trusts should be runnable by a human with one command
+   and visible in the UI.
+
+5. Define production readiness.
+   Publish what is beta, what is experimental, what is internal, what is
+   stable, and what has compatibility guarantees.
+
+6. Create a security and trust overview.
+   Cover browser agents, control server, token handling, redaction, media,
+   CRDT logs, AI proposals, and deployment boundaries in one place.
+
+7. Decide what Black Box is.
+   Either make it a developer-facing diagnostics product, or keep it clearly as
+   an internal/operator companion. Do not let it be both the tutorial and the
+   advanced cockpit.
+
+### Strategic Bets
+
+1. Own "realtime verification for browser apps".
+   This is the clearest differentiation. The black-box runner, recipe matrix,
+   control server, artifacts, trace correlation, and multi-browser live RTC
+   tests are more distinctive than another messaging facade.
+
+2. Make games the proof wedge, not the only market.
+   Relic Hunters and Rallar Game Authority are strong proof points. The broader
+   market is room-based browser realtime: games, collaborative 3D tools,
+   whiteboards, simulations, education, and agent-assisted shared workspaces.
+
+3. Build hosted diagnostics before hosted runtime.
+   Hosted runtime competes with mature infrastructure companies. Hosted
+   diagnostics and artifact replay are more aligned with Rallar's current
+   strengths.
+
+4. Turn recipes into a shareable standard.
+   A portable JSON recipe for HTTP/WS/RTC behavior could become a valuable
+   testing artifact beyond Rallar itself.
+
+5. Keep AI conservative.
+   RallarAI is strongest as schema-guided proposal infrastructure with audit,
+   dedupe, lifecycle, and host approval. Do not market autonomous game logic or
+   direct CRDT mutation yet.
+
+## What To Improve Before Showing Real Users
+
+Before broad external demos:
+
+- The default live demo must pass reliably.
+- The first screen must tell the user what Rallar is in one sentence.
+- The first app guide must avoid internal package names and monorepo paths.
+- The product must choose one primary audience.
+- Black Box must be introduced as diagnostics, not as the default mental model.
+- Server setup must have a preset or guided path.
+- The docs must explain data/CRDT/room/server-state choices clearly.
+- Security boundaries for remote browser control and AI proposals must be
+  consolidated.
+
+Before design-partner demos:
+
+- It is acceptable to show Black Box, but frame it as the differentiator:
+  "Here is how Rallar proves realtime behavior."
+- Use a scripted environment with fresh disposable users and rooms.
+- Avoid the current register/login edge case.
+- Avoid a one-browser Quick Test unless receive is known to pass.
+- Lead with a small app or game, then open Black Box to prove what happened.
+
+## What You May Be Avoiding
+
+The hard choice is not technical. It is product focus.
+
+Rallar has enough implementation to support several products, but not enough
+polish to sell all of them at once. The repository shows a builder who has
+solved many hard realtime problems and then built tools to prove the solutions.
+That is good. The next leap is deciding which pain belongs on the front of the
+box.
+
+My direct recommendation:
+
+Make Rallar's first public product a developer platform for self-hostable,
+browser-first realtime rooms with Black Box as the proof and diagnostics moat.
+Use games as the most vivid demo, not as the entire product category. Do not
+lead with CRDT, AI, media, or remote browser agents until the basic room,
+message, presence, and verification story feels effortless.
+
+If you want Rallar to be commercially credible, the next milestone should not
+be another capability. It should be a reliable first success path that makes a
+skeptical developer say: "I see it. This saves me from building and debugging
+all of that myself."

@@ -1,7 +1,7 @@
 import { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, ClientInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import { isGroupActive, isSessionInGroup, readGroupId, } from '@shared/api/group-client-views.ts';
+import { isGroupActive, isSessionInGroup } from '@shared/api/group-client-views.ts';
 import { type RallarOverlayTopologySnapshot, toOverlayInfoForSession, } from '@shared/api/overlay-topology.ts';
 import type { ClientSnapshot as ClientStateSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-types.ts';
@@ -273,12 +273,9 @@ async function handleGroupSnapshotUpdate(
     webRtcGroupManager: WebRtcGroupManager,
     mySessionId: string,
 ): Promise<void> {
-    const groupId = readGroupId(snapshot);
-    const overlayId = toScopedOverlayId(snapshot.group);
-
     if (!isGroupActive(snapshot)) {
-        overlaysRepository.removeOverlayById(overlayId);
-        overlaysRepository.removeOverlayById(groupId);
+        overlaysRepository.removeOverlayByGroupRef(snapshot.group);
+        overlaysRepository.removeLegacyOverlayByGroupIdIfMatches(snapshot.group);
 
         if (webRtcGroupManager.has(snapshot.group)) {
             await webRtcGroupManager.delete(snapshot.group);
