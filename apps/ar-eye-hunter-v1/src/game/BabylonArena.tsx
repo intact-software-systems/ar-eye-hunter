@@ -305,12 +305,17 @@ export function BabylonArena({
                 ),
             };
         };
-        const onPointerDown = (event: PointerEvent) => {
+        const requestPointerLock = () => {
             try {
-                canvas.requestPointerLock?.();
+                const lockRequest = canvas.requestPointerLock?.();
+                if (lockRequest instanceof Promise) {
+                    void lockRequest.catch(() => undefined);
+                }
             } catch {
                 // Pointer lock can be blocked in headless smoke runs or embedded previews.
             }
+        };
+        const onPointerDown = (event: PointerEvent) => {
             if (event.button === 0) {
                 fireLocalShot({
                     runtime,
@@ -320,11 +325,13 @@ export function BabylonArena({
                     shotSeqRef,
                     callbacksRef,
                 });
+                requestPointerLock();
                 return;
             }
             if (event.button === 2) {
                 runtime.input.altFire = true;
                 createScanPulse(runtime, runtime.localPlayer.position, localColor);
+                requestPointerLock();
             }
         };
         const onPointerUp = (event: PointerEvent) => {
