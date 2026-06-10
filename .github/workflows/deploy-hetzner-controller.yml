@@ -1,0 +1,89 @@
+name: Deploy Hetzner Controller
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to roll out on the controller VM
+        default: main
+        required: true
+      include_caddy:
+        description: Include Caddy in service stop/start handling
+        type: boolean
+        default: false
+      install_playwright:
+        description: Install Playwright Chromium/dependencies during rollout
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hetzner-controller-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Roll out Hetzner controller
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          HETZNER_SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HETZNER_KNOWN_HOSTS: ${{ secrets.HETZNER_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${HETZNER_SSH_PRIVATE_KEY}" > ~/.ssh/hetzner
+          chmod 600 ~/.ssh/hetzner
+          printf '%s\n' "${HETZNER_KNOWN_HOSTS}" > ~/.ssh/known_hosts
+
+      - name: Copy controller scripts
+        shell: bash
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
+            'rm -rf /tmp/rallar-controller && mkdir -p /tmp/rallar-controller'
+          scp -i ~/.ssh/hetzner -r scripts/hetzner/controller/. \
+            "${HETZNER_USER}@${HETZNER_HOST}:/tmp/rallar-controller/"
+
+      - name: Run controlled rollout
+        shell: bash
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          RALLAR_REPO_REF: ${{ inputs.ref }}
+          RALLAR_INCLUDE_CADDY: ${{ inputs.include_caddy }}
+          RALLAR_INSTALL_PLAYWRIGHT: ${{ inputs.install_playwright }}
+        run: |
+          set -euo pipefail
+          include_caddy=0
+          install_playwright=0
+          if [[ "${RALLAR_INCLUDE_CADDY}" == "true" ]]; then
+            include_caddy=1
+          fi
+          if [[ "${RALLAR_INSTALL_PLAYWRIGHT}" == "true" ]]; then
+            install_playwright=1
+          fi
+
+          ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
+            bash -s -- "${RALLAR_REPO_REF}" "${include_caddy}" "${install_playwright}" <<'REMOTE'
+          set -euo pipefail
+          cd /tmp/rallar-controller
+          chmod +x *.sh
+          RALLAR_REPO_REF="$1" \
+            RALLAR_INCLUDE_CADDY="$2" \
+            RALLAR_INSTALL_PLAYWRIGHT="$3" \
+            ./08-rollout-controller.sh
+          REMOTE

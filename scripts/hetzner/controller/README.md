@@ -65,6 +65,12 @@ Show service status, memory, and recent logs:
 ./07-status-controller.sh
 ```
 
+Roll out the latest version from Git using a controlled stop/update/start flow:
+
+```sh
+./08-rollout-controller.sh
+```
+
 By default, the stop/start/restart scripts manage only:
 
 ```text
@@ -78,6 +84,7 @@ Caddy is left running so HTTPS/static SPA stays available. To include Caddy:
 RALLAR_INCLUDE_CADDY=1 ./04-stop-controller.sh
 RALLAR_INCLUDE_CADDY=1 ./05-start-controller.sh
 RALLAR_INCLUDE_CADDY=1 ./06-restart-controller.sh
+RALLAR_INCLUDE_CADDY=1 ./08-rollout-controller.sh
 ```
 
 Important: these scripts stop or start services on the VM. They do not stop
@@ -86,6 +93,50 @@ Hetzner billing. Delete the VM if you want billing to stop.
 Also note that API-v1 uses `pglite-memory`; stopping or restarting
 `rallar-api-v1.service` resets API-v1 in-memory data. Control-server snapshots
 are persisted under `/var/lib/rallar-black-box-control`.
+
+## Controlled Rollout
+
+`08-rollout-controller.sh` is intended for routine upgrades after the initial
+deploy has already installed system packages, env files, systemd units, Caddy,
+and the checkout.
+
+It performs:
+
+```text
+1. Verify root, required commands, and a clean git checkout.
+2. Fetch origin and fast-forward pull RALLAR_REPO_REF, default main.
+3. Run npm ci.
+4. Warm Deno caches for API-v1 and the control server.
+5. Build the rallar-black-box SPA.
+6. Stop rallar-api-v1.service and rallar-black-box-control.service.
+7. Publish static SPA files to /var/www/rallar-black-box.
+8. Start API/control services, reload Caddy, and run local health checks.
+9. Print service status and recent logs.
+```
+
+The script uses `git pull --ff-only`; it does not force-reset the checkout. If
+the VM checkout has local changes, it aborts before changing the running
+version. If the update, dependency install, cache warmup, or SPA build fails,
+the services remain running on the previous process. If failure happens after
+the services are stopped, the script attempts to start them again.
+
+Override the branch/ref:
+
+```sh
+RALLAR_REPO_REF=my-branch ./08-rollout-controller.sh
+```
+
+Override the checkout path:
+
+```sh
+RALLAR_CHECKOUT_DIR=/opt/rallar/ar-eye-hunter ./08-rollout-controller.sh
+```
+
+Install Playwright Chromium/dependencies during rollout if needed:
+
+```sh
+RALLAR_INSTALL_PLAYWRIGHT=1 ./08-rollout-controller.sh
+```
 
 ## Defaults
 
