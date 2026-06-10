@@ -306,7 +306,11 @@ export function BabylonArena({
             };
         };
         const onPointerDown = (event: PointerEvent) => {
-            canvas.requestPointerLock?.();
+            try {
+                canvas.requestPointerLock?.();
+            } catch {
+                // Pointer lock can be blocked in headless smoke runs or embedded previews.
+            }
             if (event.button === 0) {
                 fireLocalShot({
                     runtime,
