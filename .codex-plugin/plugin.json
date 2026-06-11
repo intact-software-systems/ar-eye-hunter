@@ -1,0 +1,34 @@
+{
+  "name": "rallar-repo",
+  "version": "0.1.0",
+  "description": "Repo-local Codex skills for working on Rallar packages and apps.",
+  "author": {
+    "name": "Rallar Project"
+  },
+  "keywords": [
+    "rallar",
+    "realtime",
+    "games",
+    "ai",
+    "codex-skills"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Rallar Repo",
+    "shortDescription": "Navigate and change the Rallar monorepo.",
+    "longDescription": "Repo-local skills that guide Codex through Rallar package boundaries, realtime infrastructure, game apps, RallarAI, and validation commands.",
+    "developerName": "Rallar Project",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Code",
+      "Review",
+      "Testing"
+    ],
+    "defaultPrompt": [
+      "Find the right Rallar package for this change.",
+      "Plan tests for a Rallar realtime fix.",
+      "Update a RallarAI or game flow safely."
+    ],
+    "brandColor": "#2F80ED"
+  }
+}

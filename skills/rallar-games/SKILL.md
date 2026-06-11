@@ -1,0 +1,30 @@
+---
+name: rallar-games
+description: Use when changing AR Eye Hunter, Relic Hunters, Rallar Game authority, Rallar Motion consumers, game room creation, game UI flows, or browser game realtime behavior.
+---
+
+# Rallar Games
+
+## Start Here
+
+Read `references/game-entrypoints.md` for the current app/package map. Then inspect the concrete game path with `rg`; avoid assuming AR Eye and Relic share the same runtime.
+
+Useful searches:
+
+```bash
+rg -n "createRoom|rooms.create|joinRoom|roomId|RallarGame|authority|motion|rtc|RallarAI" apps/ar-eye-hunter-v1 apps/relic-hunters-v1 apps/relic-hunter-server-v1 packages/relic-hunters packages/shared-web packages/shared
+```
+
+## Implementation Guidance
+
+- Keep pure rules in `packages/relic-hunters`; keep browser orchestration in `apps/relic-hunters-v1`.
+- Relic server-side authority and expedition setup live in `apps/relic-hunter-server-v1`.
+- AR Eye’s main browser hook is `useRallarArena`; Relic’s browser hook is `useRelicHunters`.
+- Use package APIs for Rallar Game, Motion, AI, and rooms instead of local duplicates.
+- Preserve room display-name filters when changing room names; both games filter visible room lists by their base game phrase.
+- For frontend changes, validate text fit and real flows with browser/playwright when the UI changes materially.
+
+## Validation
+
+Use `references/test-commands.md` from the rallar-testing skill. Build both game apps after shared game/realtime changes.
+

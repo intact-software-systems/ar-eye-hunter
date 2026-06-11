@@ -1,0 +1,46 @@
+---
+name: rallar-code-writing
+description: Use when writing, refactoring, or reviewing package-oriented Rallar TypeScript under packages/**, or app code that consumes or extends package APIs, to follow repo style, functional design, testability, and AI-generated code safety expectations.
+---
+
+# Rallar Code Writing
+
+## Start Here
+
+Inspect nearby package code and tests before choosing a shape. Read `references/package-code-style.md` when a change introduces exports, state, abstractions, or nontrivial behavior.
+
+Useful first searches:
+
+```bash
+rg -n "export function|export const|export type|export class|createRallar|Readonly<|GroupRef|StateSync|RallarAi" packages
+rg --files packages/tests packages/shared packages/shared-web packages/shared-server packages/relic-hunters
+```
+
+## Workflow
+
+1. Identify the domain boundary first: shared contract, browser facade, server runtime, game rules, AI, motion, graph, or tests.
+2. Reuse existing helpers and package APIs before adding new modules.
+3. Prefer small functions with explicit inputs and return values.
+4. Inject clocks, random IDs, repositories, providers, transports, and side effects through options.
+5. Add or update behavior tests with the code change.
+6. Use the rallar-testing skill to pick targeted checks and package type-checks.
+
+## Shape Decision
+
+- Use a pure function for parsing, validation, transformation, derivation, routing decisions, key building, and policy checks.
+- Use a factory returning a plain interface when behavior needs private mutable state but does not need inheritance or lifecycle hooks.
+- Use a class when the code owns lifecycle, cache state, subscriptions, persistence, connection state, or long-lived runtime coordination.
+- Keep stateful objects narrow and injectable; avoid hidden global state unless the surrounding package already uses that repository pattern.
+
+## AI-Generated Code Safety Checklist
+
+- No untested behavior changes.
+- No new abstraction without real duplication or complexity reduction.
+- No broad public export unless it is intentionally part of the package API.
+- No hidden clock, randomness, network, storage, or repository dependency when injection would make tests deterministic.
+- No clever code where named helpers or explicit branches would be easier to review.
+- No app-local duplicate of behavior that already belongs in `packages/**`.
+
+## Validation
+
+Run focused tests for the touched behavior and type-check the changed package. For public API or cross-runtime changes, check both browser and server consumers before finishing.
