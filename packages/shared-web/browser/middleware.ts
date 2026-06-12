@@ -60,6 +60,7 @@ export type MiddlewareInitOptions = Readonly<{
     timeoutMs?: number;
     dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
     scope?: StateScope;
+    onAuthInvalid?: (error: unknown) => void | Promise<void>;
 }>;
 
 export const DEFAULT_REALTIME_DATA_CHANNEL_LANE: RtcDataChannelLaneConfig = {
@@ -248,6 +249,7 @@ export async function initialiseMiddleware(
     const heartbeatHandle = await heartbeat.initHeartbeat(clientData, {
         authSession: session,
         scope: options.scope,
+        onAuthInvalid: options.onAuthInvalid,
     });
 
     return {

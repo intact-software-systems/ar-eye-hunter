@@ -1,8 +1,10 @@
 import {
     rallar,
+    type RallarAuthChangeListener,
     type RallarRoomState,
     type RallarStartResult,
     type RallarSubscriptionScope,
+    type RallarUnsubscribe,
 } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import {
@@ -122,6 +124,7 @@ export type RelicHuntersRuntimeDeps = Readonly<{
     login(username: string, password: string): Promise<AuthSession>;
     register(username: string, password: string, displayName?: string): Promise<AuthSession>;
     logout(): Promise<void>;
+    onAuthChange(listener: RallarAuthChangeListener): RallarUnsubscribe;
     refreshRooms(): Promise<RallarRoomState>;
     onRoomsChange(handler: (state: RallarRoomState) => void): () => void;
     onSnapshotMessage(handler: (event: RelicServerEvent) => void): () => void;
@@ -158,6 +161,14 @@ export class RelicHuntersRuntime {
     async logout(): Promise<void> {
         await this.deps.logout();
         this.deps.clearRoomId();
+    }
+
+    clearRoomId(): void {
+        this.deps.clearRoomId();
+    }
+
+    onAuthChange(listener: RallarAuthChangeListener): RallarUnsubscribe {
+        return this.deps.onAuthChange(listener);
     }
 
     async connectAndHydrate(
@@ -341,6 +352,9 @@ function browserRelicRuntimeDeps(): RelicHuntersRuntimeDeps {
                 displayName: displayName || username,
             }),
         logout: () => rallar.auth.logout(),
+        onAuthChange: (listener) => rallar.auth.onChange(listener, {
+            emitCurrent: true,
+        }),
         start: () => rallar.start({ refreshRooms: true }),
         subscriptions: () => rallar.subscriptions(),
         refreshRooms: () => rallar.rooms.refresh(),

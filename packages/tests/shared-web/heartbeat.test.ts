@@ -94,6 +94,42 @@ describe('browser heartbeat', () => {
         ).toBeUndefined();
     });
 
+    it('stops and reports auth invalidation after a single client heartbeat 401', async () => {
+        const onAuthInvalid = vi.fn();
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        stubFetch(({ url, method }) => {
+            if (
+                method === 'POST' &&
+                url.includes('/clients/principal-1/') &&
+                url.endsWith('/sessions/session-1/heartbeat')
+            ) {
+                return textResponse('Unauthorized', 401);
+            }
+
+            return textResponse('unexpected', 500);
+        });
+
+        const handle = await initHeartbeat(clientData, {
+            authSession,
+            scope: {
+                applicationId: 'ar-eye-hunter',
+                workspaceId: 'default',
+            },
+            policies: { command: { maxAttempts: 3 } },
+            onAuthInvalid,
+        });
+
+        await vi.waitFor(() => {
+            expect(onAuthInvalid).toHaveBeenCalledOnce();
+        });
+        handle.stop();
+
+        expect(
+            fetchCalls.filter((call) => call.url.includes('/heartbeat')),
+        ).toHaveLength(1);
+        expect(warn).not.toHaveBeenCalled();
+    });
+
     function stubFetch(
         handler: (call: FetchCall) => Response | Promise<Response>,
     ): void {

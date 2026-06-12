@@ -202,6 +202,30 @@ export function useRelicHunters(): RelicHuntersConnection {
         }));
     }, []);
 
+    const resetForSignedOutAuth = useCallback(() => {
+        closeSubscriptions();
+        commandInFlightRef.current = undefined;
+        setSession(undefined);
+        setRoomId(undefined);
+        roomIdRef.current = undefined;
+        runtime.clearRoomId();
+        setRooms([]);
+        clearSnapshot();
+        setError(undefined);
+        setPhase('signed-out', initialRelicDiagnostics(undefined));
+    }, [clearSnapshot, closeSubscriptions, runtime, setPhase]);
+
+    useEffect(() => {
+        return runtime.onAuthChange((state) => {
+            if (state.authenticated) {
+                setSession(state.session);
+                return;
+            }
+
+            resetForSignedOutAuth();
+        });
+    }, [resetForSignedOutAuth, runtime]);
+
     const acceptSnapshotFromSource = useCallback((
         value: unknown,
         source: RelicSnapshotSource,
@@ -524,15 +548,8 @@ export function useRelicHunters(): RelicHuntersConnection {
     const logout = useCallback(async () => {
         closeSubscriptions();
         await runtime.logout();
-        commandInFlightRef.current = undefined;
-        setSession(undefined);
-        setRoomId(undefined);
-        roomIdRef.current = undefined;
-        setRooms([]);
-        clearSnapshot();
-        setError(undefined);
-        setPhase('signed-out', initialRelicDiagnostics(undefined));
-    }, [clearSnapshot, closeSubscriptions, runtime, setPhase]);
+        resetForSignedOutAuth();
+    }, [closeSubscriptions, resetForSignedOutAuth, runtime]);
 
     const hydrateRoom = useCallback(async (work: () => Promise<{
         roomId: string;

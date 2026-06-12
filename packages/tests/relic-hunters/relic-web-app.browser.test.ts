@@ -57,10 +57,25 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
     rallar: {
         auth: {
             restore: () => rallarMock.session,
+            onChange: vi.fn((listener: (state: {
+                authenticated: boolean;
+                reason: 'current';
+                session?: AuthSession;
+            }) => void, options?: { emitCurrent?: boolean }) => {
+                if (options?.emitCurrent ?? true) {
+                    listener({
+                        authenticated: rallarMock.session !== undefined,
+                        reason: 'current',
+                        session: rallarMock.session,
+                    });
+                }
+                return () => undefined;
+            }),
             login: vi.fn(),
             registerAndLogin: vi.fn(),
             logout: vi.fn(),
         },
+        session: () => rallarMock.session,
         connect: async () => {
             rallarMock.connectCalls += 1;
         },
@@ -81,6 +96,7 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
             return scope;
         },
         rooms: {
+            state: () => rallarMock.roomState,
             refresh: async () => {
                 rallarMock.refreshCalls += 1;
                 return rallarMock.roomState;
@@ -90,6 +106,7 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
             join: vi.fn(),
         },
         rtc: {
+            onStatus: () => () => undefined,
             readyPeerIds: () => [],
         },
         messages: {
@@ -109,6 +126,9 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
                         return () => {
                             rallarMock.wsAiMessageHandler = undefined;
                         };
+                    }
+                    if (topicId !== 'room.relic.snapshot') {
+                        return () => undefined;
                     }
                     rallarMock.wsMessageHandler = handler;
                     return () => {
@@ -133,46 +153,61 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
     },
 }));
 
-vi.mock('../../../apps/relic-hunters-v1/src/game/RelicScene.tsx', async () => {
-    const React = await vi.importActual<typeof import('react')>('react');
-    return {
-        RelicScene: ({
-            children,
-            onPrimeAction,
-        }: {
-            children?: ReactNode;
-            onPrimeAction?: (
-                action:
-                    | { kind: 'move'; targetRoomId: string }
-                    | { kind: 'search' }
-            ) => void;
-        }) =>
+async function importReactForSceneMock() {
+    return await vi.importActual<typeof import('react')>('react');
+}
+
+function createMockRelicScene(React: typeof import('react')) {
+    return ({
+        children,
+        onPrimeAction,
+    }: {
+        children?: ReactNode;
+        onPrimeAction?: (
+            action:
+                | { kind: 'move'; targetRoomId: string }
+                | { kind: 'search' }
+        ) => void;
+    }) =>
+        React.createElement(
+            'div',
+            { 'data-testid': 'relic-scene' },
             React.createElement(
-                'div',
-                { 'data-testid': 'relic-scene' },
-                React.createElement(
-                    'button',
-                    {
-                        type: 'button',
-                        'data-testid': 'scene-move-hallway',
-                        onClick: () => onPrimeAction?.({
-                            kind: 'move',
-                            targetRoomId: 'hallway',
-                        }),
-                    },
-                    'Move to Hallway',
-                ),
-                React.createElement(
-                    'button',
-                    {
-                        type: 'button',
-                        'data-testid': 'scene-search-clue',
-                        onClick: () => onPrimeAction?.({ kind: 'search' }),
-                    },
-                    'Search clue',
-                ),
-                children,
+                'button',
+                {
+                    type: 'button',
+                    'data-testid': 'scene-move-hallway',
+                    onClick: () => onPrimeAction?.({
+                        kind: 'move',
+                        targetRoomId: 'hallway',
+                    }),
+                },
+                'Move to Hallway',
             ),
+            React.createElement(
+                'button',
+                {
+                    type: 'button',
+                    'data-testid': 'scene-search-clue',
+                    onClick: () => onPrimeAction?.({ kind: 'search' }),
+                },
+                'Search clue',
+            ),
+            children,
+        );
+}
+
+vi.mock('../../../apps/relic-hunters-v1/src/game/RelicScene.tsx', async () => {
+    const React = await importReactForSceneMock();
+    return {
+        RelicScene: createMockRelicScene(React),
+    };
+});
+
+vi.mock('../../../apps/relic-hunters-v1/src/game/RelicSceneNext.tsx', async () => {
+    const React = await importReactForSceneMock();
+    return {
+        RelicSceneNext: createMockRelicScene(React),
     };
 });
 
@@ -774,7 +809,7 @@ async function waitFor(assertion: () => boolean, attempts = 20): Promise<void> {
         }
     }
 
-    throw new Error('Timed out waiting for browser app state.');
+    throw new Error(`Timed out waiting for browser app state: ${document.body.textContent?.slice(0, 1_000) ?? ''}`);
 }
 
 function installMemoryLocalStorage(): void {

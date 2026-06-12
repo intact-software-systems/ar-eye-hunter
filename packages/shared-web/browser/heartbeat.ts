@@ -24,6 +24,7 @@ export type InitHeartbeatOptions = Readonly<{
     authSession?: AuthSession;
     scope?: StateScope;
     policies?: CommandsOrchestratorPolicies<StateHeartbeatWorkflowValue>;
+    onAuthInvalid?: (error: unknown) => void | Promise<void>;
 }>;
 
 let activeHeartbeat: HeartbeatHandle | undefined;
@@ -67,6 +68,12 @@ export async function initHeartbeat(
             await refreshHeartbeat(clientData, options);
             schedule(intervalMsecs);
         } catch (error) {
+            if (isUnauthorizedApiError(error)) {
+                handle.stop();
+                await options.onAuthInvalid?.(error);
+                return;
+            }
+
             if (!stopped) {
                 console.warn(
                     `State heartbeat failed for client ${clientData.clientId} session ${clientData.sessionId}:`,
@@ -134,4 +141,12 @@ function isGroupSnapshotInScope(
 
     return snapshot.group.applicationId === scope.applicationId &&
         (snapshot.group.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID) === scope.workspaceId;
+}
+
+function isUnauthorizedApiError(error: unknown): boolean {
+    if (typeof error !== 'object' || error === null || !('status' in error)) {
+        return false;
+    }
+
+    return (error as { status?: unknown }).status === 401;
 }

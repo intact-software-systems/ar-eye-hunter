@@ -147,10 +147,27 @@ const DEFAULT_RALLAR_WAIT_FOR_OPEN_TIMEOUT_MS = 5_000;
 const MAX_RALLAR_STATE_EVENT_DEDUPE_KEYS = 1_000;
 const DEFAULT_RALLAR_REPLAY_MAX_PAGES = 1;
 const MAX_RALLAR_REPLAY_MAX_PAGES = 50;
+const MAX_AUTH_EXPIRY_TIMEOUT_MS = 2_147_483_647;
 
 export type RallarUnsubscribe = () => void;
 
 export type RallarStateListener<T> = (state: T) => void | Promise<void>;
+
+export type RallarAuthChangeReason =
+    | 'current'
+    | 'login'
+    | 'logout'
+    | 'expired'
+    | 'unauthorized';
+
+export type RallarAuthState = Readonly<{
+    authenticated: boolean;
+    reason: RallarAuthChangeReason;
+    session?: AuthSession;
+}>;
+
+export type RallarAuthChangeListener =
+    RallarStateListener<RallarAuthState>;
 
 export type RallarConnectStatus = 'idle' | 'connecting' | 'connected';
 
@@ -1319,6 +1336,10 @@ export type RallarFacade = Readonly<{
         logout(options?: RallarOperationOptions): Promise<void>;
         restore(): AuthSession | undefined;
         isLoggedIn(): boolean;
+        onChange(
+            listener: RallarAuthChangeListener,
+            options?: RallarOnChangeOptions,
+        ): RallarUnsubscribe;
     }>;
     rooms: Readonly<{
         state(): RallarRoomState;
@@ -1579,7 +1600,11 @@ class BrowserRallarFacade implements RallarFacade {
     private currentRoomRef: GroupRef | undefined = undefined;
     private configuredDefaults: RallarDefaults | undefined = undefined;
     private defaultScope: StateScope | undefined = undefined;
+    private authExpiryTimer: ReturnType<typeof setTimeout> | undefined = undefined;
+    private authEndPromise: Promise<void> | undefined = undefined;
+    private readonly endedAuthSessionKeys = new Set<string>();
 
+    private readonly authStateListeners = new Set<RallarAuthChangeListener>();
     private readonly roomStateListeners = new Set<
         RallarStateListener<RallarRoomState>
     >();
@@ -1689,6 +1714,9 @@ class BrowserRallarFacade implements RallarFacade {
             }
             await this.closeAuthenticatedDataScopes();
             writeSession(response);
+            this.endedAuthSessionKeys.delete(toAuthSessionKey(response));
+            this.scheduleAuthExpiry(response);
+            this.emitAuthState('login', response);
             return response;
         },
         register: async (
@@ -1722,39 +1750,31 @@ class BrowserRallarFacade implements RallarFacade {
         },
         logout: async (options: RallarOperationOptions = {}): Promise<void> => {
             const operationOptions = this.resolveOperationOptions(options);
-            const session = readSession();
-            let disconnectError: unknown;
-            let dataCleanupError: unknown;
-            try {
-                try {
-                    await this.disconnect();
-                } catch (error) {
-                    disconnectError = error;
-                }
-                if (session) {
-                    await runRallarCommand(
-                        (signal) => api.logoutFromApi({ signal }),
-                        operationOptions,
-                    );
-                }
-            } finally {
-                try {
-                    await this.closeAuthenticatedDataScopes();
-                } catch (error) {
-                    dataCleanupError = error;
-                }
-                clearSession();
-                this.emitState();
-            }
-            if (disconnectError) {
-                throw disconnectError;
-            }
-            if (dataCleanupError) {
-                throw dataCleanupError;
-            }
+            await this.endAuthSession('logout', {
+                revoke: true,
+                operationOptions,
+            });
         },
-        restore: (): AuthSession | undefined => readSession(),
+        restore: (): AuthSession | undefined => {
+            const session = readSession();
+            this.scheduleAuthExpiry(session);
+            return session;
+        },
         isLoggedIn: (): boolean => isLoggedIn(),
+        onChange: (
+            listener: RallarAuthChangeListener,
+            options: RallarOnChangeOptions = {},
+        ): RallarUnsubscribe => {
+            this.authStateListeners.add(listener);
+            if (options.emitCurrent ?? true) {
+                const session = readSession();
+                this.scheduleAuthExpiry(session);
+                notifyListener(listener, this.toAuthState('current', session));
+            }
+            return () => {
+                this.authStateListeners.delete(listener);
+            };
+        },
     };
 
     readonly rooms = {
@@ -1763,16 +1783,18 @@ class BrowserRallarFacade implements RallarFacade {
         refresh: async (
             input?: StateScope | RallarRefreshOptions,
         ): Promise<RallarRoomState> => {
-            const options = toRallarRefreshOptions(input);
-            const operationOptions = this.resolveOperationOptions(options);
-            const ctx = await this.connect(operationOptions);
-            const operationScope = this.resolveOperationScope(options.scope);
-            const { clients, groups } = await apiWorkflows.refreshStateSnapshots(
-                operationScope,
-                toRallarWorkflowPolicies(operationOptions),
-            );
-            await this.acceptSnapshots(ctx, clients, groups, operationScope);
-            return this.toRoomState();
+            return await this.runAuthAwareOperation(async () => {
+                const options = toRallarRefreshOptions(input);
+                const operationOptions = this.resolveOperationOptions(options);
+                const ctx = await this.connect(operationOptions);
+                const operationScope = this.resolveOperationScope(options.scope);
+                const { clients, groups } = await apiWorkflows.refreshStateSnapshots(
+                    operationScope,
+                    toRallarWorkflowPolicies(operationOptions),
+                );
+                await this.acceptSnapshots(ctx, clients, groups, operationScope);
+                return this.toRoomState();
+            });
         },
         listEvents: async (
             input: RallarListRoomEventsInput,
@@ -1789,14 +1811,16 @@ class BrowserRallarFacade implements RallarFacade {
             }
 
             const scope = this.resolveRoomEventListScope(options);
-            return await runRallarCommand(
-                async (signal) =>
-                    await api.listStateGroupEvents(
-                        roomId,
-                        scope,
-                        toStateEventListRequestOptions(options, signal),
-                    ),
-                operationOptions,
+            return await this.runAuthAwareOperation(async () =>
+                await runRallarCommand(
+                    async (signal) =>
+                        await api.listStateGroupEvents(
+                            roomId,
+                            scope,
+                            toStateEventListRequestOptions(options, signal),
+                        ),
+                    operationOptions,
+                )
             );
         },
         listEventPage: async (
@@ -1814,14 +1838,16 @@ class BrowserRallarFacade implements RallarFacade {
             }
 
             const scope = this.resolveRoomEventListScope(options);
-            return await runRallarCommand(
-                async (signal) =>
-                    await api.listStateGroupEventPage(
-                        roomId,
-                        scope,
-                        toStateEventListRequestOptions(options, signal),
-                    ),
-                operationOptions,
+            return await this.runAuthAwareOperation(async () =>
+                await runRallarCommand(
+                    async (signal) =>
+                        await api.listStateGroupEventPage(
+                            roomId,
+                            scope,
+                            toStateEventListRequestOptions(options, signal),
+                        ),
+                    operationOptions,
+                )
             );
         },
         replayEvents: async (
@@ -1839,137 +1865,145 @@ class BrowserRallarFacade implements RallarFacade {
         create: async (
             input: string | RallarCreateRoomInput,
         ): Promise<GroupSnapshot> => {
-            const createInput = typeof input === 'string'
-                ? { displayName: input }
-                : input;
-            const operationOptions = this.resolveOperationOptions(createInput);
-            const ctx = await this.connect(operationOptions);
-            const session = this.requireSession();
-            const operationScope = this.resolveOperationScope(createInput.scope);
-            const snapshot = await apiWorkflows.createAndJoinStateGroup(
-                createInput.displayName,
-                session.clientId,
-                session.sessionId,
-                operationScope,
-                toRallarWorkflowPolicies(operationOptions),
-                createInput.groupId,
-            );
-            this.setCurrentRoom(snapshot);
-            await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
-            return snapshot;
+            return await this.runAuthAwareOperation(async () => {
+                const createInput = typeof input === 'string'
+                    ? { displayName: input }
+                    : input;
+                const operationOptions = this.resolveOperationOptions(createInput);
+                const ctx = await this.connect(operationOptions);
+                const session = this.requireSession();
+                const operationScope = this.resolveOperationScope(createInput.scope);
+                const snapshot = await apiWorkflows.createAndJoinStateGroup(
+                    createInput.displayName,
+                    session.clientId,
+                    session.sessionId,
+                    operationScope,
+                    toRallarWorkflowPolicies(operationOptions),
+                    createInput.groupId,
+                );
+                this.setCurrentRoom(snapshot);
+                await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
+                return snapshot;
+            });
         },
         join: async (
             room: string | GroupRef,
             options: RallarJoinRoomOptions = {},
         ): Promise<GroupSnapshot> => {
-            const operationOptions = this.resolveOperationOptions(options);
-            const ctx = await this.connect(operationOptions);
-            const session = this.requireSession();
-            const currentRoomRef = this.resolveCurrentRoomRef();
-            const roomRef = typeof room === 'string'
-                ? options.roomRef ??
-                this.resolveGroupRefFromRoomId(room, options.scope)
-                : room;
-            const roomId = this.toRoomId(room);
-            const operationScope = options.scope ??
-                (roomRef
-                    ? toStateScope(roomRef)
-                    : this.resolveOperationScope(options.scope));
+            return await this.runAuthAwareOperation(async () => {
+                const operationOptions = this.resolveOperationOptions(options);
+                const ctx = await this.connect(operationOptions);
+                const session = this.requireSession();
+                const currentRoomRef = this.resolveCurrentRoomRef();
+                const roomRef = typeof room === 'string'
+                    ? options.roomRef ??
+                    this.resolveGroupRefFromRoomId(room, options.scope)
+                    : room;
+                const roomId = this.toRoomId(room);
+                const operationScope = options.scope ??
+                    (roomRef
+                        ? toStateScope(roomRef)
+                        : this.resolveOperationScope(options.scope));
 
-            if (!roomId) {
-                throw new Error('Cannot join room: room is required.');
-            }
+                if (!roomId) {
+                    throw new Error('Cannot join room: room is required.');
+                }
 
-            const snapshot = await apiWorkflows.joinStateGroup(
-                roomId,
-                session.clientId,
-                session.sessionId,
-                operationScope,
-                toRallarWorkflowPolicies(operationOptions),
-            );
+                const snapshot = await apiWorkflows.joinStateGroup(
+                    roomId,
+                    session.clientId,
+                    session.sessionId,
+                    operationScope,
+                    toRallarWorkflowPolicies(operationOptions),
+                );
 
-            if (
-                (options.leaveCurrent ?? true) && currentRoomRef &&
-                !this.isSameRoomRefOrId(currentRoomRef, roomRef ?? roomId)
-            ) {
-                await this.rooms.leave({
-                    roomId: currentRoomRef.groupId,
-                    roomRef: currentRoomRef,
-                    clearCurrent: false,
-                    scope: toStateScope(currentRoomRef),
-                    signal: operationOptions.signal,
-                    timeoutMs: operationOptions.timeoutMs,
-                });
-            }
+                if (
+                    (options.leaveCurrent ?? true) && currentRoomRef &&
+                    !this.isSameRoomRefOrId(currentRoomRef, roomRef ?? roomId)
+                ) {
+                    await this.rooms.leave({
+                        roomId: currentRoomRef.groupId,
+                        roomRef: currentRoomRef,
+                        clearCurrent: false,
+                        scope: toStateScope(currentRoomRef),
+                        signal: operationOptions.signal,
+                        timeoutMs: operationOptions.timeoutMs,
+                    });
+                }
 
-            this.setCurrentRoom(snapshot);
-            await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
-            return snapshot;
+                this.setCurrentRoom(snapshot);
+                await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
+                return snapshot;
+            });
         },
         leave: async (
             input?: string | RallarLeaveRoomOptions,
         ): Promise<GroupSnapshot | undefined> => {
-            const options = typeof input === 'string'
-                ? { roomId: input }
-                : input ?? {};
-            const operationOptions = this.resolveOperationOptions(options);
-            const ctx = await this.connect(operationOptions);
-            const session = this.requireSession();
-            const explicitOperationScope = this.resolveOperationScope(options.scope);
-            const roomRef = options.roomRef ?? (
-                options.roomId
-                    ? this.resolveGroupRefFromRoomId(options.roomId, options.scope)
-                    : this.resolveDefaultRoomRef() ?? this.resolveCurrentRoomRef()
-            );
-            const roomId = options.roomId ?? roomRef?.groupId;
-            const operationScope = options.scope ??
-                (roomRef ? toStateScope(roomRef) : explicitOperationScope);
+            return await this.runAuthAwareOperation(async () => {
+                const options = typeof input === 'string'
+                    ? { roomId: input }
+                    : input ?? {};
+                const operationOptions = this.resolveOperationOptions(options);
+                const ctx = await this.connect(operationOptions);
+                const session = this.requireSession();
+                const explicitOperationScope = this.resolveOperationScope(options.scope);
+                const roomRef = options.roomRef ?? (
+                    options.roomId
+                        ? this.resolveGroupRefFromRoomId(options.roomId, options.scope)
+                        : this.resolveDefaultRoomRef() ?? this.resolveCurrentRoomRef()
+                );
+                const roomId = options.roomId ?? roomRef?.groupId;
+                const operationScope = options.scope ??
+                    (roomRef ? toStateScope(roomRef) : explicitOperationScope);
 
-            if (!roomId) {
-                return undefined;
-            }
+                if (!roomId) {
+                    return undefined;
+                }
 
-            const snapshot = await apiWorkflows.leaveStateGroup(
-                roomId,
-                session.clientId,
-                session.sessionId,
-                operationScope,
-                toRallarWorkflowPolicies(operationOptions),
-            );
+                const snapshot = await apiWorkflows.leaveStateGroup(
+                    roomId,
+                    session.clientId,
+                    session.sessionId,
+                    operationScope,
+                    toRallarWorkflowPolicies(operationOptions),
+                );
 
-            this.clearCurrentRoomIfMatches(roomRef ?? roomId, options.clearCurrent ?? true);
+                this.clearCurrentRoomIfMatches(roomRef ?? roomId, options.clearCurrent ?? true);
 
-            await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
-            return snapshot;
+                await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
+                return snapshot;
+            });
         },
         updateMetadata: async (
             room: string | GroupRef,
             patch: Readonly<Record<string, unknown>>,
             options: RallarScopedOperationOptions = {},
         ): Promise<GroupSnapshot> => {
-            const operationOptions = this.resolveOperationOptions(options);
-            const ctx = await this.connect(operationOptions);
-            const session = this.requireSession();
-            const roomRef = this.resolveRoomRef(room);
-            const roomId = this.toRoomId(room);
-            const operationScope = options.scope ??
-                (roomRef ? toStateScope(roomRef) : this.resolveOperationScope());
+            return await this.runAuthAwareOperation(async () => {
+                const operationOptions = this.resolveOperationOptions(options);
+                const ctx = await this.connect(operationOptions);
+                const session = this.requireSession();
+                const roomRef = this.resolveRoomRef(room);
+                const roomId = this.toRoomId(room);
+                const operationScope = options.scope ??
+                    (roomRef ? toStateScope(roomRef) : this.resolveOperationScope());
 
-            if (!roomId) {
-                throw new Error('Cannot update room metadata: room is required.');
-            }
+                if (!roomId) {
+                    throw new Error('Cannot update room metadata: room is required.');
+                }
 
-            const snapshot = await apiWorkflows.updateStateGroupMetadata(
-                roomId,
-                patch,
-                session.clientId,
-                session.sessionId,
-                operationScope,
-                toRallarWorkflowPolicies(operationOptions),
-            );
+                const snapshot = await apiWorkflows.updateStateGroupMetadata(
+                    roomId,
+                    patch,
+                    session.clientId,
+                    session.sessionId,
+                    operationScope,
+                    toRallarWorkflowPolicies(operationOptions),
+                );
 
-            await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
-            return snapshot;
+                await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
+                return snapshot;
+            });
         },
         current: (): GroupSnapshot | undefined => this.toRoomState().currentRoom,
         onChange: (
@@ -1998,16 +2032,18 @@ class BrowserRallarFacade implements RallarFacade {
         refresh: async (
             input?: StateScope | RallarRefreshOptions,
         ): Promise<RallarPeopleState> => {
-            const options = toRallarRefreshOptions(input);
-            const operationOptions = this.resolveOperationOptions(options);
-            const ctx = await this.connect(operationOptions);
-            const operationScope = this.resolveOperationScope(options.scope);
-            const { clients, groups } = await apiWorkflows.refreshStateSnapshots(
-                operationScope,
-                toRallarWorkflowPolicies(operationOptions),
-            );
-            await this.acceptSnapshots(ctx, clients, groups, operationScope);
-            return this.toPeopleState();
+            return await this.runAuthAwareOperation(async () => {
+                const options = toRallarRefreshOptions(input);
+                const operationOptions = this.resolveOperationOptions(options);
+                const ctx = await this.connect(operationOptions);
+                const operationScope = this.resolveOperationScope(options.scope);
+                const { clients, groups } = await apiWorkflows.refreshStateSnapshots(
+                    operationScope,
+                    toRallarWorkflowPolicies(operationOptions),
+                );
+                await this.acceptSnapshots(ctx, clients, groups, operationScope);
+                return this.toPeopleState();
+            });
         },
         listEvents: async (
             principalId: string,
@@ -2016,14 +2052,16 @@ class BrowserRallarFacade implements RallarFacade {
             const operationOptions = this.resolveOperationOptions(options);
             const scope = this.resolveOperationScope(options.scope) ??
                 api.defaultStateScope();
-            return await runRallarCommand(
-                async (signal) =>
-                    await api.listStateClientEvents(
-                        principalId,
-                        scope,
-                        toStateEventListRequestOptions(options, signal),
-                    ),
-                operationOptions,
+            return await this.runAuthAwareOperation(async () =>
+                await runRallarCommand(
+                    async (signal) =>
+                        await api.listStateClientEvents(
+                            principalId,
+                            scope,
+                            toStateEventListRequestOptions(options, signal),
+                        ),
+                    operationOptions,
+                )
             );
         },
         listEventPage: async (
@@ -2033,14 +2071,16 @@ class BrowserRallarFacade implements RallarFacade {
             const operationOptions = this.resolveOperationOptions(options);
             const scope = this.resolveOperationScope(options.scope) ??
                 api.defaultStateScope();
-            return await runRallarCommand(
-                async (signal) =>
-                    await api.listStateClientEventPage(
-                        principalId,
-                        scope,
-                        toStateEventListRequestOptions(options, signal),
-                    ),
-                operationOptions,
+            return await this.runAuthAwareOperation(async () =>
+                await runRallarCommand(
+                    async (signal) =>
+                        await api.listStateClientEventPage(
+                            principalId,
+                            scope,
+                            toStateEventListRequestOptions(options, signal),
+                        ),
+                    operationOptions,
+                )
             );
         },
         replayEvents: async (
@@ -2681,13 +2721,30 @@ class BrowserRallarFacade implements RallarFacade {
         const connectOptions = {
             ...toRallarOperationOptions(operationOptions),
             ...(middlewareScope ? { scope: middlewareScope } : {}),
+            onAuthInvalid: (error: unknown) =>
+                this.endAuthSession('unauthorized', {
+                    revoke: false,
+                    session: this.ctx?.session ?? session ?? undefined,
+                }),
         };
         const session = readSession();
         if (
             this.ctx &&
-            (!session || this.ctx.session.sessionId !== session.sessionId)
+            !session
+        ) {
+            await this.endAuthSession('expired', {
+                revoke: false,
+                session: this.ctx.session,
+            });
+        } else if (
+            this.ctx &&
+            session &&
+            this.ctx.session.sessionId !== session.sessionId
         ) {
             await this.disconnect();
+        }
+        if (session) {
+            this.scheduleAuthExpiry(session);
         }
 
         if (this.ctx) {
@@ -2703,6 +2760,7 @@ class BrowserRallarFacade implements RallarFacade {
             .then((ctx) => {
                 this.ctx = ctx;
                 this.connectState = 'connected';
+                this.scheduleAuthExpiry(ctx.session);
                 this.stateCacheUnsubscribe ??= stateCaches.onStateCacheChange(
                     () => this.emitState(),
                 );
@@ -2717,8 +2775,9 @@ class BrowserRallarFacade implements RallarFacade {
                 this.emitRtcLifecycle('connected');
                 return ctx;
             })
-            .catch((error) => {
+            .catch(async (error) => {
                 this.connectState = 'idle';
+                await this.handleAuthInvalidError(error);
                 throw error;
             })
             .finally(() => {
@@ -5833,57 +5892,58 @@ class BrowserRallarFacade implements RallarFacade {
         }
 
         const scope = this.resolveRoomEventListScope(options);
-        return await runRallarCommand(
-            async (signal) => {
-                let after = options.after;
-                let hasMore = false;
-                let nextCursor: StateEventCursor | undefined;
-                let pageCount = 0;
-                let duplicateCount = 0;
-                const replayedEvents: GroupEvent[] = [];
-                const maxPages = toReplayMaxPages(options.maxPages);
+        return await this.runAuthAwareOperation(async () =>
+            await runRallarCommand(
+                async (signal) => {
+                    let after = options.after;
+                    let hasMore = false;
+                    let nextCursor: StateEventCursor | undefined;
+                    let pageCount = 0;
+                    let duplicateCount = 0;
+                    const replayedEvents: GroupEvent[] = [];
+                    const maxPages = toReplayMaxPages(options.maxPages);
 
-                while (pageCount < maxPages) {
-                    const page = await api.listStateGroupEventPage(
-                        roomId,
-                        scope,
-                        toStateEventListRequestOptions(
-                            {
-                                ...options,
-                                after,
-                            },
-                            signal,
-                        ),
-                    );
-                    pageCount += 1;
-                    hasMore = page.hasMore;
-                    nextCursor = page.nextCursor;
+                    while (pageCount < maxPages) {
+                        const page = await api.listStateGroupEventPage(
+                            roomId,
+                            scope,
+                            toStateEventListRequestOptions(
+                                {
+                                    ...options,
+                                    after,
+                                },
+                                signal,
+                            ),
+                        );
+                        pageCount += 1;
+                        hasMore = page.hasMore;
+                        nextCursor = page.nextCursor;
 
-                    for (const event of page.events) {
-                        const result = await this.replayRoomEvent(event, listener);
-                        if (result === 'duplicate') {
-                            duplicateCount += 1;
-                        } else if (result === 'replayed') {
-                            replayedEvents.push(event);
+                        for (const event of page.events) {
+                            const result = await this.replayRoomEvent(event, listener);
+                            if (result === 'duplicate') {
+                                duplicateCount += 1;
+                            } else if (result === 'replayed') {
+                                replayedEvents.push(event);
+                            }
                         }
-                    }
 
-                    if (!page.hasMore || !page.nextCursor) {
-                        break;
+                        if (!page.hasMore || !page.nextCursor) {
+                            break;
+                        }
+                        after = page.nextCursor;
                     }
-                    after = page.nextCursor;
-                }
-
-                return {
-                    events: replayedEvents,
-                    ...(nextCursor ? { nextCursor } : {}),
-                    hasMore,
-                    pageCount,
-                    replayedCount: replayedEvents.length,
-                    duplicateCount,
-                };
-            },
-            operationOptions,
+                    return {
+                        events: replayedEvents,
+                        ...(nextCursor ? { nextCursor } : {}),
+                        hasMore,
+                        pageCount,
+                        replayedCount: replayedEvents.length,
+                        duplicateCount,
+                    };
+                },
+                operationOptions,
+            )
         );
     }
 
@@ -5895,57 +5955,59 @@ class BrowserRallarFacade implements RallarFacade {
         const operationOptions = this.resolveOperationOptions(options);
         const scope = this.resolveOperationScope(options.scope) ??
             api.defaultStateScope();
-        return await runRallarCommand(
-            async (signal) => {
-                let after = options.after;
-                let hasMore = false;
-                let nextCursor: StateEventCursor | undefined;
-                let pageCount = 0;
-                let duplicateCount = 0;
-                const replayedEvents: ClientEvent[] = [];
-                const maxPages = toReplayMaxPages(options.maxPages);
+        return await this.runAuthAwareOperation(async () =>
+            await runRallarCommand(
+                async (signal) => {
+                    let after = options.after;
+                    let hasMore = false;
+                    let nextCursor: StateEventCursor | undefined;
+                    let pageCount = 0;
+                    let duplicateCount = 0;
+                    const replayedEvents: ClientEvent[] = [];
+                    const maxPages = toReplayMaxPages(options.maxPages);
 
-                while (pageCount < maxPages) {
-                    const page = await api.listStateClientEventPage(
-                        principalId,
-                        scope,
-                        toStateEventListRequestOptions(
-                            {
-                                ...options,
-                                after,
-                            },
-                            signal,
-                        ),
-                    );
-                    pageCount += 1;
-                    hasMore = page.hasMore;
-                    nextCursor = page.nextCursor;
+                    while (pageCount < maxPages) {
+                        const page = await api.listStateClientEventPage(
+                            principalId,
+                            scope,
+                            toStateEventListRequestOptions(
+                                {
+                                    ...options,
+                                    after,
+                                },
+                                signal,
+                            ),
+                        );
+                        pageCount += 1;
+                        hasMore = page.hasMore;
+                        nextCursor = page.nextCursor;
 
-                    for (const event of page.events) {
-                        const result = await this.replayPeopleEvent(event, listener);
-                        if (result === 'duplicate') {
-                            duplicateCount += 1;
-                        } else if (result === 'replayed') {
-                            replayedEvents.push(event);
+                        for (const event of page.events) {
+                            const result = await this.replayPeopleEvent(event, listener);
+                            if (result === 'duplicate') {
+                                duplicateCount += 1;
+                            } else if (result === 'replayed') {
+                                replayedEvents.push(event);
+                            }
                         }
+
+                        if (!page.hasMore || !page.nextCursor) {
+                            break;
+                        }
+                        after = page.nextCursor;
                     }
 
-                    if (!page.hasMore || !page.nextCursor) {
-                        break;
-                    }
-                    after = page.nextCursor;
-                }
-
-                return {
-                    events: replayedEvents,
-                    ...(nextCursor ? { nextCursor } : {}),
-                    hasMore,
-                    pageCount,
-                    replayedCount: replayedEvents.length,
-                    duplicateCount,
-                };
-            },
-            operationOptions,
+                    return {
+                        events: replayedEvents,
+                        ...(nextCursor ? { nextCursor } : {}),
+                        hasMore,
+                        pageCount,
+                        replayedCount: replayedEvents.length,
+                        duplicateCount,
+                    };
+                },
+                operationOptions,
+            )
         );
     }
 
@@ -6691,6 +6753,178 @@ class BrowserRallarFacade implements RallarFacade {
         return ctx;
     }
 
+    private toAuthState(
+        reason: RallarAuthChangeReason,
+        session: AuthSession | undefined,
+    ): RallarAuthState {
+        return {
+            authenticated: session !== undefined,
+            reason,
+            session,
+        };
+    }
+
+    private emitAuthState(
+        reason: RallarAuthChangeReason,
+        session: AuthSession | undefined,
+    ): void {
+        const state = this.toAuthState(reason, session);
+        for (const listener of this.authStateListeners) {
+            notifyListener(listener, state);
+        }
+    }
+
+    private scheduleAuthExpiry(session: AuthSession | undefined): void {
+        this.clearAuthExpiryTimer();
+        if (!session) {
+            return;
+        }
+
+        const delayMs = Math.max(0, session.expiresAtEpochMs - Date.now());
+        this.authExpiryTimer = setTimeout(() => {
+            void this.expireAuthSessionIfCurrent(session);
+        }, Math.min(delayMs, MAX_AUTH_EXPIRY_TIMEOUT_MS));
+    }
+
+    private clearAuthExpiryTimer(): void {
+        if (this.authExpiryTimer !== undefined) {
+            clearTimeout(this.authExpiryTimer);
+            this.authExpiryTimer = undefined;
+        }
+    }
+
+    private async expireAuthSessionIfCurrent(
+        expectedSession: AuthSession,
+    ): Promise<void> {
+        const current = readSession();
+        if (current && current.sessionId !== expectedSession.sessionId) {
+            this.scheduleAuthExpiry(current);
+            return;
+        }
+
+        if (current && current.expiresAtEpochMs > Date.now()) {
+            this.scheduleAuthExpiry(current);
+            return;
+        }
+
+        await this.endAuthSession('expired', {
+            revoke: false,
+            session: current ?? expectedSession,
+        });
+    }
+
+    private async endAuthSession(
+        reason: Exclude<RallarAuthChangeReason, 'current' | 'login'>,
+        options: Readonly<{
+            revoke: boolean;
+            operationOptions?: RallarOperationOptions;
+            session?: AuthSession;
+        }>,
+    ): Promise<void> {
+        const session = options.session ?? this.ctx?.session ?? readSession();
+        const sessionKey = session ? toAuthSessionKey(session) : undefined;
+        if (sessionKey && this.endedAuthSessionKeys.has(sessionKey)) {
+            return;
+        }
+
+        if (this.authEndPromise) {
+            return await this.authEndPromise;
+        }
+
+        if (sessionKey) {
+            this.endedAuthSessionKeys.add(sessionKey);
+        }
+
+        this.authEndPromise = this.doEndAuthSession(reason, {
+                ...options,
+                session,
+            })
+            .finally(() => {
+                this.authEndPromise = undefined;
+            });
+        return await this.authEndPromise;
+    }
+
+    private async doEndAuthSession(
+        reason: Exclude<RallarAuthChangeReason, 'current' | 'login'>,
+        options: Readonly<{
+            revoke: boolean;
+            operationOptions?: RallarOperationOptions;
+            session?: AuthSession;
+        }>,
+    ): Promise<void> {
+        const session = options.session ?? this.ctx?.session ?? readSession();
+        let disconnectError: unknown;
+        let revokeError: unknown;
+        let dataCleanupError: unknown;
+
+        this.clearAuthExpiryTimer();
+        try {
+            try {
+                await this.disconnect();
+            } catch (error) {
+                disconnectError = error;
+            }
+
+            if (options.revoke && session) {
+                try {
+                    await runRallarCommand(
+                        (signal) => api.logoutFromApi({ signal }),
+                        options.operationOptions ?? {},
+                    );
+                } catch (error) {
+                    revokeError = error;
+                }
+            }
+        } finally {
+            try {
+                await this.closeAuthenticatedDataScopes(session);
+            } catch (error) {
+                dataCleanupError = error;
+            }
+            clearSession();
+            this.emitState();
+            this.emitAuthState(reason, undefined);
+        }
+
+        if (disconnectError) {
+            throw disconnectError;
+        }
+        if (revokeError) {
+            throw revokeError;
+        }
+        if (dataCleanupError) {
+            throw dataCleanupError;
+        }
+    }
+
+    private async handleAuthInvalidError(error: unknown): Promise<void> {
+        if (!isUnauthorizedApiError(error)) {
+            return;
+        }
+
+        const session = this.ctx?.session ?? readSession();
+        if (!session) {
+            return;
+        }
+
+        await this.endAuthSession('unauthorized', {
+            revoke: false,
+            session,
+        });
+    }
+
+    private async runAuthAwareOperation<T>(
+        operation: () => T | Promise<T>,
+    ): Promise<T> {
+        try {
+            return await operation();
+        } catch (error) {
+            await this.handleAuthInvalidError(error);
+            throw error;
+        }
+    }
+
     private requireSession(): AuthSession {
         const session = readSession();
         if (!session) {
@@ -6700,14 +6934,16 @@ class BrowserRallarFacade implements RallarFacade {
         return session;
     }
 
-    private async closeAuthenticatedDataScopes(): Promise<void> {
-        if (!readSession()) {
+    private async closeAuthenticatedDataScopes(
+        session: AuthSession | undefined = readSession(),
+    ): Promise<void> {
+        if (!session) {
             return;
         }
 
         await Promise.all([
-            this.data.closeScope('session'),
-            this.data.closeScope('principal'),
+            this.data.closeScope(`session:${session.sessionId}`),
+            this.data.closeScope(`principal:${session.clientId}`),
         ]);
     }
 
@@ -7931,6 +8167,18 @@ function toReplayMaxPages(value?: number): number {
     }
 
     return Math.min(value, MAX_RALLAR_REPLAY_MAX_PAGES);
+}
+
+function isUnauthorizedApiError(error: unknown): boolean {
+    if (typeof error !== 'object' || error === null || !('status' in error)) {
+        return false;
+    }
+
+    return (error as { status?: unknown }).status === 401;
+}
+
+function toAuthSessionKey(session: AuthSession): string {
+    return `${session.clientId}:${session.sessionId}`;
 }
 
 function rememberStateEventKey(keys: Set<string>, key: string): void {

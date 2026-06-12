@@ -68,6 +68,7 @@ import {
     authErrorMessage,
     bootstrapPatchFromAuthSession,
 } from './auth-flow.ts';
+import { readAuthSessionFromRallarAuthState } from './auth-lifecycle.ts';
 import type { RallarBlackBoxControlSnapshot } from './control-client.ts';
 import {
     cancelDistributedRun,
@@ -25383,15 +25384,35 @@ export default function App() {
     }, []);
 
     useEffect(() => {
-        if (requiresLogin) {
-            void loadBrowserRallarFacade()
-                .then((facade) =>
-                    facade.configure({ apiBaseUrl: bootstrap.apiBaseUrl }),
-                )
-                .catch(() => {
-                    // Connect-time diagnostics will surface configuration conflicts.
-                });
+        if (!requiresLogin) {
+            return;
         }
+
+        let cancelled = false;
+        let unsubscribe: (() => void) | undefined;
+        void loadBrowserRallarFacade()
+            .then((facade) => {
+                if (cancelled) {
+                    return;
+                }
+
+                facade.configure({ apiBaseUrl: bootstrap.apiBaseUrl });
+                unsubscribe = facade.auth.onChange((state) => {
+                    const nextSession = readAuthSessionFromRallarAuthState(state);
+                    setAuthSession(nextSession);
+                    if (!nextSession) {
+                        setAuthBusy(false);
+                    }
+                }, { emitCurrent: true });
+            })
+            .catch(() => {
+                // Connect-time diagnostics will surface configuration conflicts.
+            });
+
+        return () => {
+            cancelled = true;
+            unsubscribe?.();
+        };
     }, [bootstrap.apiBaseUrl, requiresLogin]);
 
     useEffect(() => {

@@ -1214,6 +1214,7 @@ describe('Rallar operation options', () => {
         await facade.people.refresh();
 
         expect(mocks.initMiddleware).toHaveBeenCalledWith({
+            onAuthInvalid: expect.any(Function),
             scope: {
                 applicationId: 'default-app',
                 workspaceId: 'default',
@@ -1263,6 +1264,7 @@ describe('Rallar operation options', () => {
         ]);
         expect(result.peopleState?.clients).toEqual([]);
         expect(mocks.initMiddleware).toHaveBeenCalledWith({
+            onAuthInvalid: expect.any(Function),
             scope: {
                 applicationId: 'default-app',
                 workspaceId: 'default',
@@ -2810,6 +2812,7 @@ describe('Rallar operation options', () => {
         });
 
         expect(mocks.initMiddleware).toHaveBeenCalledWith({
+            onAuthInvalid: expect.any(Function),
             scope,
             signal,
             timeoutMs: 123,
@@ -2938,6 +2941,7 @@ describe('Rallar operation options', () => {
         });
 
         expect(mocks.initMiddleware).toHaveBeenCalledWith({
+            onAuthInvalid: expect.any(Function),
             dataChannelLanes: lanes,
         });
     });
@@ -3006,6 +3010,177 @@ describe('Rallar operation options', () => {
             | { signal?: AbortSignal }
             | undefined;
         expect(loginOptions?.signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it('emits the current auth state to auth change subscribers', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const listener = vi.fn();
+
+        const unsubscribe = createRallarFacade().auth.onChange(listener);
+
+        expect(listener).toHaveBeenCalledWith({
+            authenticated: true,
+            reason: 'current',
+            session: mocks.ctx.session,
+        });
+
+        unsubscribe();
+    });
+
+    it('locally logs out and tears down active transports when the session expires', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        vi.useFakeTimers();
+        vi.setSystemTime(1_000);
+        const expiringSession = {
+            ...mocks.ctx.session,
+            expiresAtEpochMs: 1_500,
+        };
+        mocks.initMiddleware.mockResolvedValue({
+            ...mocks.ctx,
+            session: expiringSession,
+        } as ApiMiddleware);
+        mocks.readSession.mockImplementation(() =>
+            Date.now() >= expiringSession.expiresAtEpochMs
+                ? undefined
+                : expiringSession
+        );
+        const facade = createRallarFacade();
+        const authListener = vi.fn();
+        facade.auth.onChange(authListener, { emitCurrent: false });
+
+        await facade.connect();
+        await vi.advanceTimersByTimeAsync(500);
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(mocks.ctx.middleware.webSocketQueueBox.close)
+            .toHaveBeenCalledWith(1000, 'rallar-disconnect');
+        expect(mocks.ctx.middleware.heartbeat.stop).toHaveBeenCalledOnce();
+        expect(mocks.ctx.middleware.rtcRxStreamer.stopAllHeartbeats)
+            .toHaveBeenCalledOnce();
+        expect(mocks.logoutFromApi).not.toHaveBeenCalled();
+        expect(mocks.clearSession).toHaveBeenCalledOnce();
+        expect(authListener).toHaveBeenCalledWith({
+            authenticated: false,
+            reason: 'expired',
+            session: undefined,
+        });
+        expect(facade.isConnected()).toBe(false);
+    });
+
+    it('does not expire a replacement session when an old expiry timer fires', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        vi.useFakeTimers();
+        vi.setSystemTime(1_000);
+        const oldSession = {
+            ...mocks.ctx.session,
+            expiresAtEpochMs: 1_500,
+        };
+        const nextSession = {
+            ...mocks.ctx.session,
+            sessionId: 'session-2',
+            accessToken: 'token-2',
+            expiresAtEpochMs: 10_000,
+        };
+        let currentSession = oldSession;
+        mocks.initMiddleware.mockResolvedValue({
+            ...mocks.ctx,
+            session: oldSession,
+        } as ApiMiddleware);
+        mocks.readSession.mockImplementation(() => currentSession);
+        const facade = createRallarFacade();
+
+        await facade.connect();
+        currentSession = nextSession;
+        mocks.clearSession.mockClear();
+        mocks.ctx.middleware.webSocketQueueBox.close.mockClear();
+        await vi.advanceTimersByTimeAsync(500);
+
+        expect(mocks.clearSession).not.toHaveBeenCalled();
+        expect(mocks.ctx.middleware.webSocketQueueBox.close).not.toHaveBeenCalled();
+    });
+
+    it('locally logs out on API 401 without calling the logout endpoint', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const facade = createRallarFacade();
+        const authListener = vi.fn();
+        facade.auth.onChange(authListener, { emitCurrent: false });
+        await facade.connect();
+        mocks.refreshStateSnapshots.mockRejectedValue(
+            Object.assign(new Error('Unauthorized'), { status: 401 }),
+        );
+
+        await expect(facade.rooms.refresh()).rejects.toThrow('Unauthorized');
+
+        expect(mocks.ctx.middleware.webSocketQueueBox.close)
+            .toHaveBeenCalledWith(1000, 'rallar-disconnect');
+        expect(mocks.logoutFromApi).not.toHaveBeenCalled();
+        expect(mocks.clearSession).toHaveBeenCalledOnce();
+        expect(authListener).toHaveBeenCalledWith({
+            authenticated: false,
+            reason: 'unauthorized',
+            session: undefined,
+        });
+    });
+
+    it('emits unauthorized auth state once when nested room operations see the same 401', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const facade = createRallarFacade();
+        const authListener = vi.fn();
+        const oldRoom = createGroupSnapshot('old-room', ['session-1']);
+        const newRoom = createGroupSnapshot('new-room', ['session-1']);
+
+        facade.setDefaults({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        });
+        mocks.joinStateGroup.mockResolvedValueOnce(oldRoom);
+        await facade.rooms.join('old-room');
+        mockGroupSnapshot(oldRoom);
+
+        facade.auth.onChange(authListener, { emitCurrent: false });
+        mocks.joinStateGroup.mockResolvedValueOnce(newRoom);
+        mocks.leaveStateGroup.mockRejectedValueOnce(
+            Object.assign(new Error('Unauthorized'), { status: 401 }),
+        );
+
+        await expect(facade.rooms.join('new-room')).rejects.toThrow('Unauthorized');
+
+        expect(authListener).toHaveBeenCalledTimes(1);
+        expect(authListener).toHaveBeenCalledWith({
+            authenticated: false,
+            reason: 'unauthorized',
+            session: undefined,
+        });
+        expect(mocks.clearSession).toHaveBeenCalledOnce();
+    });
+
+    it('does not locally log out on API 403 authorization errors', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const facade = createRallarFacade();
+        await facade.connect();
+        mocks.ctx.middleware.webSocketQueueBox.close.mockClear();
+        mocks.refreshStateSnapshots.mockRejectedValue(
+            Object.assign(new Error('Forbidden'), { status: 403 }),
+        );
+
+        await expect(facade.rooms.refresh()).rejects.toThrow('Forbidden');
+
+        expect(mocks.ctx.middleware.webSocketQueueBox.close).not.toHaveBeenCalled();
+        expect(mocks.logoutFromApi).not.toHaveBeenCalled();
+        expect(mocks.clearSession).not.toHaveBeenCalled();
     });
 
     it('passes an explicit admin session into auth registration', async () => {
