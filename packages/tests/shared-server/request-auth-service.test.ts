@@ -92,4 +92,94 @@ describe('request auth service', () => {
             ),
         ).rejects.toThrow('Unauthorized: Websocket session id does not match auth ticket');
     });
+
+    it('keeps same-user sessions independent when one session logs out', async () => {
+        const repository = new AuthSessionRepository(new FakeRuntimeStateRepository());
+        const expiresAtEpochMs = Date.now() + 60_000;
+        const sessionA = {
+            clientId: 'client-1',
+            accessToken: 'token-a',
+            username: 'alice',
+            sessionId: 'session-a',
+            issuedAtEpochMs: 1_000,
+            expiresAtEpochMs,
+        };
+        const sessionB = {
+            clientId: 'client-1',
+            accessToken: 'token-b',
+            username: 'alice',
+            sessionId: 'session-b',
+            issuedAtEpochMs: 1_001,
+            expiresAtEpochMs,
+        };
+        await repository.putSession(sessionA);
+        await repository.putSession(sessionB);
+        await repository.putWebSocketTicket({
+            ticket: 'ticket-a-before-logout',
+            clientId: sessionA.clientId,
+            sessionId: sessionA.sessionId,
+            issuedAtEpochMs: 1_100,
+            expiresAtEpochMs,
+        });
+        await repository.putWebSocketTicket({
+            ticket: 'ticket-b-after-logout',
+            clientId: sessionB.clientId,
+            sessionId: sessionB.sessionId,
+            issuedAtEpochMs: 1_101,
+            expiresAtEpochMs,
+        });
+
+        await repository.deleteSession(sessionA);
+
+        await expect(
+            requireApiAuthSession(
+                authRequest(sessionA.accessToken, sessionA.clientId),
+                repository,
+            ),
+        ).rejects.toThrow('Unauthorized: Invalid or expired access token');
+        await expect(
+            requireApiAuthSession(
+                authRequest(sessionB.accessToken, sessionB.clientId),
+                repository,
+            ),
+        ).resolves.toMatchObject({
+            clientId: 'client-1',
+            sessionId: 'session-b',
+        });
+        await expect(
+            requireWsAuthSession(
+                {
+                    sessionId: sessionA.sessionId,
+                    ticket: 'ticket-a-before-logout',
+                },
+                repository,
+            ),
+        ).rejects.toThrow('Unauthorized: Invalid or expired websocket auth ticket');
+        await expect(
+            requireWsAuthSession(
+                {
+                    sessionId: sessionB.sessionId,
+                    ticket: 'ticket-b-after-logout',
+                },
+                repository,
+            ),
+        ).resolves.toMatchObject({
+            clientId: 'client-1',
+            sessionId: 'session-b',
+        });
+    });
 });
+
+function authRequest(accessToken: string, clientId: string): {
+    header(name: string): string | undefined;
+} {
+    return {
+        header(name) {
+            return name === 'authorization'
+                ? `Bearer ${accessToken}`
+                : name === 'x-client-id'
+                    ? clientId
+                    : undefined;
+        },
+    };
+}

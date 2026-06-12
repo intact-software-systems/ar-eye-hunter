@@ -13,6 +13,7 @@ import { createAuthSessionRepository } from '../repository/createStateRepositori
 import { requireApiAuthSession, toAuthErrorResponse, toAuthSession, } from '../services/request-auth-service.ts';
 import { readRateLimiter, readRequestClientKey } from '@shared-server/http/rate-limit-service.ts';
 import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
+import { getMiddleware, type Middleware } from '../middleware.ts';
 
 const AUTH_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const WS_AUTH_TICKET_TTL_MS = 30_000;
@@ -138,6 +139,7 @@ export function init(app: Hono) {
             try {
                 const authSession = await requireApiAuthSession(c.req);
                 await createAuthSessionRepository().deleteSession(authSession);
+                closeLiveAuthSessionSocket(authSession.sessionId);
                 return toJsonResponse({ loggedOut: true } satisfies LogoutResponse);
             } catch (error) {
                 return toAuthRouteErrorResponse(c, error);
@@ -177,6 +179,32 @@ export function init(app: Hono) {
             }
         },
     );
+}
+
+export type CloseLiveAuthSessionSocketOptions = Readonly<{
+    readMiddleware?: () => Middleware;
+    logger?: Pick<Console, 'warn'>;
+}>;
+
+export function closeLiveAuthSessionSocket(
+    sessionId: string,
+    options: CloseLiveAuthSessionSocketOptions = {},
+): void {
+    const logger = options.logger ?? console;
+
+    try {
+        const middleware = options.readMiddleware?.() ?? getMiddleware();
+        middleware.wsQBoxServerService.socket.closeConnection(
+            sessionId,
+            1000,
+            'auth-logout',
+        );
+    } catch (error) {
+        logger.warn(
+            'Failed to close live websocket session after logout:',
+            error,
+        );
+    }
 }
 
 async function issueAuthSession(

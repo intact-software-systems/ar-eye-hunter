@@ -29,6 +29,22 @@ Deno.test('runtime config can override API and derived WS base URLs', () => {
     );
 });
 
+Deno.test('runtime config derives wss from an https API base URL', () => {
+    assert.deepEqual(
+        applyRuntimeConfigOverrides(
+            baseConfig,
+            fakeEnv({
+                RALLAR_API_BASE_URL: 'https://api.example.test/',
+            }),
+        ),
+        {
+            ...baseConfig,
+            apiBaseUrl: 'https://api.example.test',
+            wsBaseUrl: 'wss://api.example.test',
+        },
+    );
+});
+
 Deno.test('runtime config accepts an explicit WS base URL override', () => {
     assert.deepEqual(
         applyRuntimeConfigOverrides(
