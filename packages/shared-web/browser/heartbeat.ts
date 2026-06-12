@@ -1,7 +1,16 @@
 import { type AuthSession, ClientInfo } from '@shared/api/api-config.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import {
+    DEFAULT_STATE_WORKSPACE_ID,
+    type StateScope,
+} from '@shared/api/state-types.ts';
+import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import { refreshStateHeartbeat } from '@shared-web/browser/api-workflows.ts';
+import {
+    refreshStateHeartbeat,
+    type StateHeartbeatWorkflowValue,
+} from '@shared-web/browser/api-workflows.ts';
 
 const intervalMsecs = 20000;
 const retryIntervalMsecs = 5000;
@@ -13,6 +22,8 @@ export type HeartbeatHandle = Readonly<{
 
 export type InitHeartbeatOptions = Readonly<{
     authSession?: AuthSession;
+    scope?: StateScope;
+    policies?: CommandsOrchestratorPolicies<StateHeartbeatWorkflowValue>;
 }>;
 
 let activeHeartbeat: HeartbeatHandle | undefined;
@@ -80,6 +91,7 @@ async function refreshHeartbeat(
 ): Promise<void> {
     const joinedGroups = groupStateSnapshotsRepository
         .getAllGroupStateSnapshots()
+        .filter((snapshot) => isGroupSnapshotInScope(snapshot, options.scope))
         .filter((snapshot) =>
             snapshot.activeSessions.some((session) =>
                 session.sessionId === clientData.sessionId
@@ -88,6 +100,8 @@ async function refreshHeartbeat(
 
     const refreshed = await refreshStateHeartbeat(clientData, joinedGroups, {
         authSession: options.authSession,
+        scope: options.scope,
+        policies: options.policies,
     });
 
     clientStateSnapshotsRepository.setClientStateSnapshotByPrincipalId(
@@ -96,6 +110,9 @@ async function refreshHeartbeat(
     );
 
     groupStateSnapshotsRepository.setGroupStateSnapshots(refreshed.groups);
+    for (const missingGroup of refreshed.missingGroups) {
+        groupStateSnapshotsRepository.removeGroupStateSnapshotByRef(missingGroup.group);
+    }
 
     await Promise.all([
         clientStateSnapshotsRepository.waitForClientStateSnapshotChangesIdle(),
@@ -105,4 +122,16 @@ async function refreshHeartbeat(
     console.log(
         `State heartbeat refreshed for client ${clientData.clientId} and ${joinedGroups.length} groups`,
     );
+}
+
+function isGroupSnapshotInScope(
+    snapshot: GroupSnapshot,
+    scope: StateScope | undefined,
+): boolean {
+    if (!scope) {
+        return true;
+    }
+
+    return snapshot.group.applicationId === scope.applicationId &&
+        (snapshot.group.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID) === scope.workspaceId;
 }

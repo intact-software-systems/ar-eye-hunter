@@ -1,0 +1,5 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Deno: black box control server" type="DenoConfigurationType" inputPath="$PROJECT_DIR$/apps/rallar-black-box-control-server/src/main.ts" programParameters="run --allow-read --allow-net --allow-env --unstable-http" workingDirectory="$PROJECT_DIR$/apps/rallar-black-box-control-server">
+    <method v="2" />
+  </configuration>
+</component>

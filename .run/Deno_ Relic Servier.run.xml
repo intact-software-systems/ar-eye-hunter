@@ -1,0 +1,5 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Deno: Relic Servier" type="DenoConfigurationType" inputPath="$PROJECT_DIR$/apps/relic-hunter-server-v1/src/main.ts" programParameters="run --env-file=.env.local --allow-read --allow-net --allow-env --unstable-http" workingDirectory="$PROJECT_DIR$/apps/relic-hunter-server-v1">
+    <method v="2" />
+  </configuration>
+</component>

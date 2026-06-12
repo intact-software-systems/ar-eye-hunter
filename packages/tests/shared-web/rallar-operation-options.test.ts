@@ -549,7 +549,7 @@ describe('Rallar operation options', () => {
     it('uses refresh snapshots as convergence without replaying missed event callbacks', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const facade = createRallarFacade();
         const roomEventListener = vi.fn();
         const peopleEventListener = vi.fn();
@@ -588,6 +588,78 @@ describe('Rallar operation options', () => {
                 },
             },
         );
+    });
+
+    it('passes facade defaults into middleware startup scope', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const facade = createRallarFacade();
+
+        facade.setDefaults({
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default',
+        });
+
+        await facade.start({ refreshRooms: true });
+
+        expect(mocks.initMiddleware).toHaveBeenCalledWith(
+            expect.objectContaining({
+                scope: {
+                    applicationId: 'ar-eye-hunter',
+                    workspaceId: 'default',
+                },
+            }),
+        );
+        expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(
+            {
+                applicationId: 'ar-eye-hunter',
+                workspaceId: 'default',
+            },
+            expect.any(Object),
+        );
+    });
+
+    it('filters cached room state to the configured facade scope', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const facade = createRallarFacade();
+        const arRoom = createGroupSnapshot('arena-room', ['session-1'], {
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default',
+        });
+        const staleRallarRoom = createGroupSnapshot('stale-room', ['session-1'], {
+            applicationId: 'rallar-server',
+            workspaceId: 'default',
+        });
+
+        facade.setDefaults({
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default',
+        });
+        mocks.groupRepositoryMissing.mockImplementation((roomRef?: unknown) => {
+            if (roomRef === undefined) {
+                return [staleRallarRoom, arRoom];
+            }
+
+            if (typeof roomRef === 'string') {
+                return arRoom.group;
+            }
+
+            if (typeof roomRef === 'object' && roomRef !== null) {
+                const ref = roomRef as { applicationId?: string; groupId?: string };
+                return ref.applicationId === 'ar-eye-hunter' &&
+                        ref.groupId === 'arena-room'
+                    ? arRoom
+                    : undefined;
+            }
+        });
+
+        expect(facade.rooms.state().rooms.map((room) => room.roomId)).toEqual([
+            'arena-room',
+        ]);
+        expect(facade.rooms.state().currentRoomRef).toEqual(arRoom.group);
     });
 
     it('lists room and people events without connecting or hydrating state caches', async () => {
@@ -1142,6 +1214,10 @@ describe('Rallar operation options', () => {
         await facade.people.refresh();
 
         expect(mocks.initMiddleware).toHaveBeenCalledWith({
+            scope: {
+                applicationId: 'default-app',
+                workspaceId: 'default',
+            },
             timeoutMs: 321,
             dataChannelLanes: lanes,
         });
@@ -1162,7 +1238,10 @@ describe('Rallar operation options', () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
             );
-        mockGroupSnapshot(createGroupSnapshot('match-1', ['session-1', 'peer-1']));
+        mockGroupSnapshot(createGroupSnapshot('match-1', ['session-1', 'peer-1'], {
+            applicationId: 'default-app',
+            workspaceId: 'default',
+        }));
         const facade = createRallarFacade();
         facade.setDefaults({
             applicationId: 'default-app',
@@ -1184,6 +1263,10 @@ describe('Rallar operation options', () => {
         ]);
         expect(result.peopleState?.clients).toEqual([]);
         expect(mocks.initMiddleware).toHaveBeenCalledWith({
+            scope: {
+                applicationId: 'default-app',
+                workspaceId: 'default',
+            },
             timeoutMs: 123,
         });
         expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(
@@ -2727,6 +2810,7 @@ describe('Rallar operation options', () => {
         });
 
         expect(mocks.initMiddleware).toHaveBeenCalledWith({
+            scope,
             signal,
             timeoutMs: 123,
         });

@@ -233,7 +233,7 @@ function installStateRepositoryObservers(
 
     const unsubscribeGroup = groupStateSnapshotsRepository
         .onGroupStateSnapshotChange((change) => {
-            const snapshot = change.snapshot;
+            const snapshot = change.snapshot ?? change.previous;
             if (
                 change.kind === ObservableValueEventType.Refreshed ||
                 change.manager !== undefined ||
@@ -243,11 +243,15 @@ function installStateRepositoryObservers(
             }
 
             return trackStateRepositoryObserverTask((async () => {
-                await handleGroupSnapshotUpdate(
-                    snapshot,
-                    webRtcGroupManager,
-                    myOwnClientData.sessionId,
-                );
+                if (change.kind === ObservableValueEventType.Deleted) {
+                    await handleGroupSnapshotRemoval(snapshot, webRtcGroupManager);
+                } else {
+                    await handleGroupSnapshotUpdate(
+                        snapshot,
+                        webRtcGroupManager,
+                        myOwnClientData.sessionId,
+                    );
+                }
                 await notifyStateCacheChange({
                     clients: [],
                     groups: [snapshot],
@@ -288,6 +292,18 @@ async function handleGroupSnapshotUpdate(
     if (isSessionInGroup(snapshot, mySessionId)) {
         await webRtcGroupManager.acceptGroupUpdate(snapshot);
     } else if (webRtcGroupManager.has(snapshot.group)) {
+        await webRtcGroupManager.delete(snapshot.group);
+    }
+}
+
+async function handleGroupSnapshotRemoval(
+    snapshot: GroupStateSnapshot,
+    webRtcGroupManager: WebRtcGroupManager,
+): Promise<void> {
+    overlaysRepository.removeOverlayByGroupRef(snapshot.group);
+    overlaysRepository.removeLegacyOverlayByGroupIdIfMatches(snapshot.group);
+
+    if (webRtcGroupManager.has(snapshot.group)) {
         await webRtcGroupManager.delete(snapshot.group);
     }
 }
