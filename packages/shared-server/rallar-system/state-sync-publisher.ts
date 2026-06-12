@@ -137,7 +137,6 @@ function assertStateSyncPublishResult(
         case 'sent-immediate':
         case 'duplicate':
             return;
-        case 'no-route':
         case 'skipped':
         case 'superseded':
         case 'expired':
@@ -145,6 +144,16 @@ function assertStateSyncPublishResult(
                 return;
             }
             break;
+        case 'no-route':
+            if (input.requireLiveRoute) {
+                console.warn('State sync publish missed live route', {
+                    topicId: input.topicId,
+                    resourceId: input.resourceId,
+                    status: result.status,
+                    reason: result.reason,
+                });
+            }
+            return;
         case 'failed':
         case 'rate-limited':
         case 'circuit-open':

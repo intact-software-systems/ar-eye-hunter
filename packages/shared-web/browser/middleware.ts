@@ -13,7 +13,10 @@ import {
     type RtcDataChannelLaneConfig,
     WebRtcConnectionService,
 } from '@shared/services/WebRtcConnectionService.ts';
-import { WsQueueBoxClientService } from '@shared/services/WsQueueBoxClientService.ts';
+import {
+    DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
+    WsQueueBoxClientService,
+} from '@shared/services/WsQueueBoxClientService.ts';
 import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
 import { WebRtcRxStreamerService } from '@shared/services/WebRtcRxStreamerService.ts';
 import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
@@ -120,12 +123,6 @@ export async function initialiseMiddleware(
         return toCreateWsUrl(apiConfig, session, wsTicket.ticket);
     });
 
-    await runMiddlewareVoidCommand((signal) => socket.connect({ signal }), options)
-        .catch((error) => {
-            console.error('Failed to connect WebSocket client:', error);
-            throw error;
-        });
-
     const qboxEngine: InboxOutboxEngine = qbox.initialiseQBoxEngine();
 
     const webSocketQueueBox = await wsEngine.initialiseWsEngine(
@@ -133,7 +130,16 @@ export async function initialiseMiddleware(
         socket,
         clientData,
         toResilienceDto(),
-    );
+        {
+            signal: options.signal,
+            connectTimeoutMs: options.timeoutMs ??
+                DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
+        },
+    )
+        .catch((error) => {
+            console.error('Failed to connect WebSocket client:', error);
+            throw error;
+        });
 
     const iceCandidates: IceConfig = await runMiddlewareCommand(
         (signal) => readIceCandidates({ signal }),
@@ -254,19 +260,6 @@ function runMiddlewareCommand<T>(
     options: MiddlewareInitOptions,
 ): Promise<T> {
     return new Command<T>(supplier, toCommandOptions(options)).run();
-}
-
-function runMiddlewareVoidCommand(
-    supplier: (signal?: AbortSignal) => void | Promise<void>,
-    options: MiddlewareInitOptions,
-): Promise<void> {
-    return new Command<void>(
-        supplier,
-        {
-            ...toCommandOptions(options),
-            errorOnNull: false,
-        },
-    ).run();
 }
 
 function toCommandOptions<T>(

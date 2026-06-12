@@ -1,4 +1,5 @@
 import { ClientInfo } from '@shared/api/api-config.ts';
+import { Command } from '@shared/cache/Command.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import WsQueueBoxClientService, {
     DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
@@ -12,11 +13,17 @@ import {
 } from '@shared-web/browser/browser-al-runtime-stores.ts';
 import { readSession } from '@shared/api/auth.ts';
 
+export type WsEngineInitOptions = Readonly<{
+    signal?: AbortSignal;
+    connectTimeoutMs?: number;
+}>;
+
 export async function initialiseWsEngine(
     qboxEngine: InboxOutboxEngine,
     socket: JsonWebSocketClient,
     clientData: ClientInfo,
-    resilience: ResilienceDto
+    resilience: ResilienceDto,
+    options: WsEngineInitOptions = {},
 ) {
     const wsQueueBox =
         new WsQueueBoxClientService(
@@ -35,9 +42,7 @@ export async function initialiseWsEngine(
                         readSession()?.sessionId === clientData.sessionId,
                 },
             },
-        )
-            .enableReconnect()
-            .enableDefaultCallbacks();
+        );
 
     qboxEngine.includeTask(
         WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE,
@@ -79,7 +84,36 @@ export async function initialiseWsEngine(
         }
     );
 
-    await wsQueueBox.socket.connect();
+    await connectInitialSocket(wsQueueBox.socket, options);
+    wsQueueBox
+        .enableReconnect()
+        .enableDefaultCallbacks();
 
     return wsQueueBox;
+}
+
+async function connectInitialSocket(
+    socket: JsonWebSocketClient,
+    options: WsEngineInitOptions,
+): Promise<void> {
+    const connectTimeoutMs = options.connectTimeoutMs ??
+        DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs;
+    if (connectTimeoutMs <= 0) {
+        await socket.connect({
+            signal: options.signal,
+        });
+        return;
+    }
+
+    await new Command<void>(
+        (signal) =>
+            socket.connect({
+                signal,
+            }),
+        {
+            signal: options.signal,
+            timeoutMs: connectTimeoutMs,
+            errorOnNull: false,
+        },
+    ).run();
 }

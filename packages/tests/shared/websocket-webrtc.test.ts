@@ -208,6 +208,27 @@ describe('JsonWebSocketClient', () => {
         await expect(joinedReconnect).resolves.toBeUndefined();
         expect(client.ws).toBe(secondSocket);
     });
+
+    it('clears the active socket when a pending connection is aborted', async () => {
+        vi.stubGlobal('WebSocket', FakeWebSocket);
+
+        const controller = new AbortController();
+        const client = new JsonWebSocketClient('ws://test');
+
+        const connectPromise = client.connect({
+            signal: controller.signal,
+        });
+        await Promise.resolve();
+
+        const socket = FakeWebSocket.instances[0];
+        expect(client.ws).toBe(socket);
+
+        controller.abort();
+
+        await expect(connectPromise).rejects.toThrow('WebSocket connect aborted.');
+        expect(client.ws).toBeUndefined();
+        expect(socket.readyState).toBe(FakeWebSocket.CLOSED);
+    });
 });
 
 describe('JsonWebSocketServer', () => {

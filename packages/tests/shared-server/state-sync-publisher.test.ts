@@ -13,14 +13,26 @@ describe('createWsStateSyncPublisher', () => {
         configureTestCacheRepositories();
     });
 
-    it('rejects no-route for a group snapshot with active sessions', async () => {
+    it('allows no-route for a group snapshot with active sessions and logs a warning', async () => {
         const { publisher } = createPublisherReturning('no-route');
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-        await expect(
-            publisher.publishGroupSnapshot(createGroupSnapshot('room-1', ['session-a'])),
-        ).rejects.toThrow(
-            'State sync publish failed for group-state.snapshot/room-1: no-route',
-        );
+        try {
+            await expect(
+                publisher.publishGroupSnapshot(createGroupSnapshot('room-1', ['session-a'])),
+            ).resolves.toBeUndefined();
+            expect(warn).toHaveBeenCalledWith(
+                'State sync publish missed live route',
+                expect.objectContaining({
+                    topicId: 'group-state.snapshot',
+                    resourceId: 'room-1',
+                    status: 'no-route',
+                    reason: 'test resolver returned no recipients',
+                }),
+            );
+        } finally {
+            warn.mockRestore();
+        }
     });
 
     it('allows no-route for a group snapshot with no live sessions to notify', async () => {
@@ -31,26 +43,50 @@ describe('createWsStateSyncPublisher', () => {
         ).resolves.toBeUndefined();
     });
 
-    it('rejects no-route for a client snapshot with active sessions', async () => {
+    it('allows no-route for a client snapshot with active sessions and logs a warning', async () => {
         const { publisher } = createPublisherReturning('no-route');
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-        await expect(
-            publisher.publishClientSnapshot(createClientSnapshot('alice', ['session-a'])),
-        ).rejects.toThrow(
-            'State sync publish failed for client-state.snapshot/alice: no-route',
-        );
+        try {
+            await expect(
+                publisher.publishClientSnapshot(createClientSnapshot('alice', ['session-a'])),
+            ).resolves.toBeUndefined();
+            expect(warn).toHaveBeenCalledWith(
+                'State sync publish missed live route',
+                expect.objectContaining({
+                    topicId: 'client-state.snapshot',
+                    resourceId: 'alice',
+                    status: 'no-route',
+                    reason: 'test resolver returned no recipients',
+                }),
+            );
+        } finally {
+            warn.mockRestore();
+        }
     });
 
-    it('rejects no-route for a group event when the cached group snapshot has active sessions', async () => {
+    it('allows no-route for a group event when the cached group snapshot has active sessions', async () => {
         const snapshot = createGroupSnapshot('room-2', ['session-b']);
         groupStateSnapshotsRepository.setGroupStateSnapshot(snapshot);
         const { publisher } = createPublisherReturning('no-route');
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-        await expect(
-            publisher.publishGroupEvent(createGroupEvent('room-2', 'event-1')),
-        ).rejects.toThrow(
-            'State sync publish failed for group-state.event/event-1: no-route',
-        );
+        try {
+            await expect(
+                publisher.publishGroupEvent(createGroupEvent('room-2', 'event-1')),
+            ).resolves.toBeUndefined();
+            expect(warn).toHaveBeenCalledWith(
+                'State sync publish missed live route',
+                expect.objectContaining({
+                    topicId: 'group-state.event',
+                    resourceId: 'event-1',
+                    status: 'no-route',
+                    reason: 'test resolver returned no recipients',
+                }),
+            );
+        } finally {
+            warn.mockRestore();
+        }
     });
 
     it('rejects hard enqueue failures even when no live route is expected', async () => {
