@@ -35,6 +35,13 @@ export default function App() {
         room.name.toLowerCase().includes('eye hunter') ||
         room.name === GAME_ROOM_NAME
     );
+    const wave = arena.arenaSnapshot?.wave;
+    const hostileEyeCount = arena.arenaSnapshot?.targets.filter((target) =>
+        target.threat?.kind === 'beam-sentry' || target.threat?.kind === 'boss'
+    ).length ?? 0;
+    const incomingAttack = arena.arenaSnapshot?.attacks.some((attack) =>
+        attack.targetSessionId === arena.session?.sessionId
+    ) ?? false;
 
     const submitAuth = async (event: FormEvent) => {
         event.preventDefault();
@@ -88,6 +95,14 @@ export default function App() {
                         value={localVitals.health <= 0
                             ? 'respawn'
                             : `${Math.ceil(localVitals.health)}/${localVitals.maxHealth}`}
+                    />
+                    <StatusPill
+                        label="Wave"
+                        value={wave ? `${wave.number} ${wave.phase}` : 'arming'}
+                    />
+                    <StatusPill
+                        label="Threats"
+                        value={incomingAttack ? 'incoming' : String(hostileEyeCount)}
                     />
                     <StatusPill
                         label="Weapon"

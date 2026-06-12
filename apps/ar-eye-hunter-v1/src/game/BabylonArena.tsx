@@ -35,13 +35,13 @@ import {
     type ArenaSimulationState,
     type LocalPlayerState,
 } from './simulation.ts';
-import { FALLBACK_ARENA_LAYOUT } from './arenaLayout.ts';
 import type {
     ArenaLayoutSpec,
     ArenaLayoutProp,
     ArenaEvent,
     ArenaSnapshot,
     ArenaPickupState,
+    EyeAttackCue,
     EyeTargetState,
     PickupIntent,
     PlayerArenaState,
@@ -138,6 +138,7 @@ type ArenaRuntime = {
     motionSampleKeys: Map<string, string>;
     remoteShotIds: Set<string>;
     remoteHitIds: Set<string>;
+    attackCueIds: Set<string>;
     sentPickupIds: Set<string>;
     appliedEventIds: Set<string>;
     arenaState: ArenaSimulationState;
@@ -173,7 +174,6 @@ type LocalPoseHistory = Readonly<{
     rotation: Vec3Tuple;
 }>;
 
-const ARENA_SIZE = FALLBACK_ARENA_LAYOUT.halfSize * 2;
 const BASE_FOV = 0.94;
 const MAX_TRANSIENT_EFFECTS = 48;
 
@@ -306,19 +306,18 @@ export function BabylonArena({
 
         const camera = new FreeCamera('hunter-camera', new Vector3(0, 1.72, -11), scene);
         camera.minZ = 0.05;
-        camera.maxZ = 120;
+        camera.maxZ = 190;
         camera.fov = BASE_FOV;
 
         const glow = new GlowLayer('arena-glow', scene);
         glow.intensity = 0.92;
 
-        buildArena(scene);
-        const layoutPropRoot = new TransformNode('arena-layout-props', scene);
-
         const now = Date.now();
         const initialArenaState = snapshotRef.current
             ? hydrateArenaSnapshot(snapshotRef.current)
             : createInitialArenaState(undefined, now);
+        buildArena(scene, initialArenaState.layout);
+        const layoutPropRoot = new TransformNode('arena-layout-props', scene);
         const runtime: ArenaRuntime = {
             engine,
             scene,
@@ -335,6 +334,7 @@ export function BabylonArena({
             motionSampleKeys: new Map(),
             remoteShotIds: new Set(),
             remoteHitIds: new Set(),
+            attackCueIds: new Set(),
             sentPickupIds: new Set(),
             appliedEventIds: new Set(),
             arenaState: initialArenaState,
@@ -474,6 +474,10 @@ export function BabylonArena({
             delete canvas.dataset.arenaAcceptedHitCount;
             delete canvas.dataset.arenaRespawnCount;
             delete canvas.dataset.arenaActiveChaosId;
+            delete canvas.dataset.arenaWave;
+            delete canvas.dataset.arenaWavePhase;
+            delete canvas.dataset.arenaAttackCount;
+            delete canvas.dataset.arenaHostileEyeCount;
             runtimeRef.current = undefined;
         };
     }, [localColor, localSessionId, localUsername, roomId]);
@@ -581,9 +585,11 @@ function runFrame({
         now,
     );
     runtime.arenaState = stepArenaDirectorState(runtime.arenaState, now);
+    syncLocalPlayerFromArenaState(runtime, localPlayerId);
     runtime.arenaState = animateTargets(runtime.arenaState, dtMs, now);
     syncPickupAvatars(runtime, now);
     syncTargetAvatars(runtime, now);
+    syncEyeAttackCues(runtime, now);
     syncRemoteAvatars(runtime, remotePlayers);
     syncRemoteShots(runtime, remoteShots);
     syncRemotePlayerHits(runtime, remotePlayerHits, localPlayerId);
@@ -604,7 +610,9 @@ function runFrame({
     }
 }
 
-function buildArena(scene: Scene): void {
+function buildArena(scene: Scene, layout: ArenaLayoutSpec): void {
+    const arenaSize = layout.halfSize * 2;
+    const halfSize = layout.halfSize;
     const floorMaterial = createMatrixMaterial(
         scene,
         'matrix-floor-mat',
@@ -618,9 +626,9 @@ function buildArena(scene: Scene): void {
     floorMaterial.specularColor = Color3.FromHexString(MATRIX_THEME.cyan).scale(0.24);
 
     const floor = MeshBuilder.CreateGround('floor', {
-        width: ARENA_SIZE,
-        height: ARENA_SIZE,
-        subdivisions: 16,
+        width: arenaSize,
+        height: arenaSize,
+        subdivisions: 24,
     }, scene);
     floor.material = floorMaterial;
 
@@ -652,10 +660,10 @@ function buildArena(scene: Scene): void {
     );
 
     const walls = [
-        { name: 'north-wall', position: [0, 2.6, ARENA_SIZE / 2], scaling: [ARENA_SIZE, 5.2, 0.7] },
-        { name: 'south-wall', position: [0, 2.6, -ARENA_SIZE / 2], scaling: [ARENA_SIZE, 5.2, 0.7] },
-        { name: 'east-wall', position: [ARENA_SIZE / 2, 2.6, 0], scaling: [0.7, 5.2, ARENA_SIZE] },
-        { name: 'west-wall', position: [-ARENA_SIZE / 2, 2.6, 0], scaling: [0.7, 5.2, ARENA_SIZE] },
+        { name: 'north-wall', position: [0, 2.6, halfSize], scaling: [arenaSize, 5.2, 0.7] },
+        { name: 'south-wall', position: [0, 2.6, -halfSize], scaling: [arenaSize, 5.2, 0.7] },
+        { name: 'east-wall', position: [halfSize, 2.6, 0], scaling: [0.7, 5.2, arenaSize] },
+        { name: 'west-wall', position: [-halfSize, 2.6, 0], scaling: [0.7, 5.2, arenaSize] },
     ] as const;
 
     for (const spec of walls) {
@@ -665,19 +673,22 @@ function buildArena(scene: Scene): void {
         wall.material = wallMaterial;
     }
 
-    for (const [index, x] of [-18, -12, -6, 0, 6, 12, 18].entries()) {
+    const lanePositions = [-0.42, -0.28, -0.14, 0, 0.14, 0.28, 0.42].map((value) =>
+        Math.round(value * arenaSize * 100) / 100
+    );
+    for (const [index, x] of lanePositions.entries()) {
         const lane = MeshBuilder.CreateBox(`matrix-longitude-${index}`, {
             width: index % 3 === 0 ? 0.09 : 0.045,
             height: 0.035,
-            depth: ARENA_SIZE * 0.88,
+            depth: arenaSize * 0.88,
         }, scene);
         lane.position.set(x, 0.055, 0);
         lane.material = index % 3 === 0 ? warningMaterial : laneMaterial;
     }
 
-    for (const [index, z] of [-18, -12, -6, 0, 6, 12, 18].entries()) {
+    for (const [index, z] of lanePositions.entries()) {
         const lane = MeshBuilder.CreateBox(`matrix-latitude-${index}`, {
-            width: ARENA_SIZE * 0.88,
+            width: arenaSize * 0.88,
             height: 0.035,
             depth: index % 3 === 0 ? 0.09 : 0.045,
         }, scene);
@@ -685,8 +696,8 @@ function buildArena(scene: Scene): void {
         lane.material = index % 3 === 0 ? warningMaterial : laneMaterial;
     }
 
-    for (const [index, x] of [-13, -5, 6, 14].entries()) {
-        for (const z of [-13, -3, 8]) {
+    for (const [index, x] of [-0.32, -0.12, 0.16, 0.34].map((value) => value * arenaSize).entries()) {
+        for (const z of [-0.34, -0.08, 0.22].map((value) => value * arenaSize)) {
             const pillar = MeshBuilder.CreateCylinder(`pulse-pillar-${index}-${z}`, {
                 height: 4.8,
                 diameterTop: 0.7,
@@ -708,17 +719,17 @@ function buildArena(scene: Scene): void {
         }
     }
 
-    createCodeRainPanel(scene, 'matrix-rain-north-a', [ -10.5, 2.85, ARENA_SIZE / 2 - 0.42 ], Math.PI, 9.2, 4.2, 1);
-    createCodeRainPanel(scene, 'matrix-rain-north-b', [ 10.5, 2.85, ARENA_SIZE / 2 - 0.42 ], Math.PI, 9.2, 4.2, 2);
-    createCodeRainPanel(scene, 'matrix-rain-south-a', [ -10.5, 2.85, -ARENA_SIZE / 2 + 0.42 ], 0, 9.2, 4.2, 3);
-    createCodeRainPanel(scene, 'matrix-rain-south-b', [ 10.5, 2.85, -ARENA_SIZE / 2 + 0.42 ], 0, 9.2, 4.2, 4);
-    createCodeRainPanel(scene, 'matrix-rain-east', [ ARENA_SIZE / 2 - 0.42, 2.85, 0 ], -Math.PI / 2, 12.5, 4.4, 5);
-    createCodeRainPanel(scene, 'matrix-rain-west', [ -ARENA_SIZE / 2 + 0.42, 2.85, 0 ], Math.PI / 2, 12.5, 4.4, 6);
+    createCodeRainPanel(scene, 'matrix-rain-north-a', [ -halfSize * 0.32, 2.85, halfSize - 0.42 ], Math.PI, 11.8, 4.2, 1);
+    createCodeRainPanel(scene, 'matrix-rain-north-b', [ halfSize * 0.32, 2.85, halfSize - 0.42 ], Math.PI, 11.8, 4.2, 2);
+    createCodeRainPanel(scene, 'matrix-rain-south-a', [ -halfSize * 0.32, 2.85, -halfSize + 0.42 ], 0, 11.8, 4.2, 3);
+    createCodeRainPanel(scene, 'matrix-rain-south-b', [ halfSize * 0.32, 2.85, -halfSize + 0.42 ], 0, 11.8, 4.2, 4);
+    createCodeRainPanel(scene, 'matrix-rain-east', [ halfSize - 0.42, 2.85, 0 ], -Math.PI / 2, 15.5, 4.4, 5);
+    createCodeRainPanel(scene, 'matrix-rain-west', [ -halfSize + 0.42, 2.85, 0 ], Math.PI / 2, 15.5, 4.4, 6);
 
     for (const [index, sign] of MATRIX_SIGNS.entries()) {
         const side = index % 2 === 0 ? 1 : -1;
-        const x = index < 3 ? -14 + index * 14 : side * (ARENA_SIZE / 2 - 1.1);
-        const z = index < 3 ? side * (ARENA_SIZE / 2 - 1.05) : -9 + index * 4;
+        const x = index < 3 ? -halfSize * 0.4 + index * halfSize * 0.4 : side * (halfSize - 1.1);
+        const z = index < 3 ? side * (halfSize - 1.05) : -halfSize * 0.25 + index * halfSize * 0.1;
         const rotation = index < 3 ? (side > 0 ? Math.PI : 0) : (side > 0 ? -Math.PI / 2 : Math.PI / 2);
         createHologramSign(
             scene,
@@ -731,28 +742,28 @@ function buildArena(scene: Scene): void {
         );
     }
 
-    createPortalRings(scene, 'matrix-portal-nw', [-17.6, 2.8, 16.8], MATRIX_THEME.cyan);
-    createPortalRings(scene, 'matrix-portal-se', [17.4, 2.8, -16.4], MATRIX_THEME.magenta);
-    createPortalRings(scene, 'matrix-portal-ne', [16.8, 2.2, 16.2], MATRIX_THEME.amber);
+    createPortalRings(scene, 'matrix-portal-nw', [-halfSize * 0.72, 2.8, halfSize * 0.66], MATRIX_THEME.cyan);
+    createPortalRings(scene, 'matrix-portal-se', [halfSize * 0.7, 2.8, -halfSize * 0.64], MATRIX_THEME.magenta);
+    createPortalRings(scene, 'matrix-portal-ne', [halfSize * 0.66, 2.2, halfSize * 0.64], MATRIX_THEME.amber);
 
     const hemi = new HemisphericLight('arena-hemi', new Vector3(0.1, 1, -0.2), scene);
     hemi.intensity = 1.16;
     hemi.groundColor = Color3.FromHexString(MATRIX_THEME.acid).scale(0.18);
 
-    const magenta = new PointLight('magenta-hotspot', new Vector3(-13, 5.6, -11), scene);
+    const magenta = new PointLight('magenta-hotspot', new Vector3(-halfSize * 0.4, 5.6, -halfSize * 0.34), scene);
     magenta.diffuse = Color3.FromHexString(MATRIX_THEME.magenta);
     magenta.intensity = 0.82;
-    magenta.range = 27;
+    magenta.range = halfSize * 0.72;
 
-    const cyan = new PointLight('cyan-hotspot', new Vector3(13, 4, 9), scene);
+    const cyan = new PointLight('cyan-hotspot', new Vector3(halfSize * 0.4, 4, halfSize * 0.3), scene);
     cyan.diffuse = Color3.FromHexString(MATRIX_THEME.cyan);
     cyan.intensity = 0.94;
-    cyan.range = 26;
+    cyan.range = halfSize * 0.7;
 
     const acid = new PointLight('acid-hotspot', new Vector3(0, 7.2, 0), scene);
     acid.diffuse = Color3.FromHexString(MATRIX_THEME.acid);
     acid.intensity = 0.72;
-    acid.range = 32;
+    acid.range = halfSize * 0.9;
 }
 
 function buildLayoutProps(
@@ -1202,27 +1213,38 @@ function syncTargetAvatars(runtime: ArenaRuntime, nowEpochMs: number): void {
     const targetIds = new Set(runtime.arenaState.targets.map((target) => target.id));
     for (const target of runtime.arenaState.targets) {
         const avatar = getOrCreateTargetAvatar(runtime.scene, runtime.targets, target);
+        const hostile = isHostileEye(target);
+        const dangerPulse = hostile ? 1 + Math.sin(nowEpochMs / 92 + target.phase) * 0.12 : 1;
         avatar.root.position = vector3(target.position);
         avatar.root.position.y += Math.sin(nowEpochMs / 440 + target.phase) * 0.26;
-        avatar.root.rotation.y += 0.014 + target.velocity[0] * 0.002;
+        avatar.root.rotation.y += (hostile ? 0.026 : 0.014) + target.velocity[0] * 0.002;
         const healthScale = 0.55 + target.health / Math.max(1, target.maxHealth) * 0.45;
-        avatar.iris.scaling.set(healthScale, healthScale, healthScale);
+        avatar.iris.scaling.set(healthScale * dangerPulse, healthScale, healthScale);
         avatar.ring.scaling.set(
-            1.08 + Math.sin(nowEpochMs / 180 + target.phase) * 0.08,
-            1.08 + Math.cos(nowEpochMs / 220 + target.phase) * 0.08,
+            (hostile ? 1.28 : 1.08) + Math.sin(nowEpochMs / 180 + target.phase) * 0.08,
+            (hostile ? 0.86 : 1.08) + Math.cos(nowEpochMs / 220 + target.phase) * 0.08,
             1.08,
         );
         avatar.halo.scaling.set(
-            1.28 + Math.sin(nowEpochMs / 160 + target.phase) * 0.12,
-            1.28 + Math.cos(nowEpochMs / 210 + target.phase) * 0.12,
+            (hostile ? 1.7 : 1.28) + Math.sin(nowEpochMs / 160 + target.phase) * 0.12,
+            (hostile ? 0.92 : 1.28) + Math.cos(nowEpochMs / 210 + target.phase) * 0.12,
             1.28,
         );
-        avatar.halo.rotation.z -= 0.018;
-        avatar.shardA.rotation.y += 0.035;
-        avatar.shardB.rotation.x -= 0.028;
-        avatar.coreMaterial.emissiveColor = Color3.FromHexString(target.color).scale(0.64);
+        avatar.halo.rotation.z -= hostile ? 0.046 : 0.018;
+        avatar.shardA.rotation.y += hostile ? 0.065 : 0.035;
+        avatar.shardB.rotation.x -= hostile ? 0.052 : 0.028;
+        avatar.shardA.scaling.y = hostile ? 1.45 + Math.sin(nowEpochMs / 105) * 0.08 : 1;
+        avatar.shardB.scaling.y = hostile ? 1.35 + Math.cos(nowEpochMs / 120) * 0.08 : 1;
+        avatar.coreMaterial.emissiveColor = Color3.FromHexString(
+            hostile ? MATRIX_THEME.danger : target.color,
+        ).scale(hostile ? 1.05 : 0.64);
+        avatar.pupilMaterial.emissiveColor = Color3.FromHexString(
+            hostile ? MATRIX_THEME.magenta : MATRIX_THEME.cyan,
+        ).scale(hostile ? 0.82 : 0.26);
         avatar.ringMaterial.emissiveColor = target.rarity === 'bounty'
             ? Color3.FromHexString(MATRIX_THEME.amber).scale(1.05)
+            : hostile
+            ? Color3.FromHexString(MATRIX_THEME.magenta).scale(1.18)
             : Color3.FromHexString(target.color).scale(1.0);
         updateTargetLabel(avatar.labelTexture, target);
     }
@@ -1235,6 +1257,117 @@ function syncTargetAvatars(runtime: ArenaRuntime, nowEpochMs: number): void {
         avatar.labelTexture.dispose();
         runtime.targets.delete(targetId);
     }
+}
+
+function syncEyeAttackCues(runtime: ArenaRuntime, nowEpochMs: number): void {
+    const activeCueIds = new Set(runtime.arenaState.attacks.map((cue) => cue.id));
+    for (const cue of runtime.arenaState.attacks) {
+        if (runtime.attackCueIds.has(cue.id)) {
+            continue;
+        }
+        runtime.attackCueIds.add(cue.id);
+        createEyeBeamWindup(runtime, cue, nowEpochMs);
+    }
+
+    for (const cueId of [...runtime.attackCueIds]) {
+        if (!activeCueIds.has(cueId)) {
+            runtime.attackCueIds.delete(cueId);
+        }
+    }
+}
+
+function createEyeBeamWindup(
+    runtime: ArenaRuntime,
+    cue: EyeAttackCue,
+    nowEpochMs: number,
+): void {
+    const scene = runtime.scene;
+    const origin = vector3(cue.origin);
+    const aimPoint = vector3(cue.aimPoint);
+    const midpoint = Vector3.Center(origin, aimPoint);
+    const length = Vector3.Distance(origin, aimPoint);
+    const duration = Math.max(360, cue.expiresAtEpochMs - nowEpochMs + 220);
+    const windupMs = Math.max(160, cue.firesAtEpochMs - nowEpochMs);
+    const material = createMatrixMaterial(
+        scene,
+        `eye-attack-beam-mat-${cue.id}`,
+        MATRIX_THEME.danger,
+        MATRIX_THEME.magenta,
+        1,
+        0.52,
+    );
+
+    const beam = MeshBuilder.CreateBox(`eye-attack-beam-${cue.id}`, {
+        width: Math.max(0.12, cue.coneRadians * 0.55),
+        height: 0.12,
+        depth: length,
+    }, scene);
+    beam.position = midpoint;
+    beam.lookAt(aimPoint);
+    beam.material = material;
+
+    const reticle = MeshBuilder.CreateTorus(`eye-attack-reticle-${cue.id}`, {
+        diameter: 1.65,
+        thickness: 0.045,
+        tessellation: 52,
+    }, scene);
+    reticle.position = aimPoint.clone();
+    reticle.position.y = Math.max(0.12, reticle.position.y - 0.75);
+    reticle.rotation.x = Math.PI / 2;
+    reticle.material = material;
+
+    const warning = MeshBuilder.CreateTorus(`eye-attack-warning-${cue.id}`, {
+        diameter: 0.76,
+        thickness: 0.035,
+        tessellation: 28,
+    }, scene);
+    warning.position = aimPoint.clone();
+    warning.position.y += 0.72;
+    warning.billboardMode = Mesh.BILLBOARDMODE_ALL;
+    warning.material = material;
+
+    const labelTexture = new DynamicTexture(`eye-attack-label-texture-${cue.id}`, {
+        width: 512,
+        height: 128,
+    }, scene);
+    labelTexture.hasAlpha = true;
+    drawMatrixPanel(labelTexture, 'LASER AUDIT', 'please remain billable', MATRIX_THEME.danger);
+    const labelMaterial = new StandardMaterial(`eye-attack-label-mat-${cue.id}`, scene);
+    labelMaterial.diffuseTexture = labelTexture;
+    labelMaterial.emissiveTexture = labelTexture;
+    labelMaterial.opacityTexture = labelTexture;
+    labelMaterial.backFaceCulling = false;
+
+    const label = MeshBuilder.CreatePlane(`eye-attack-label-${cue.id}`, {
+        width: 2.75,
+        height: 0.7,
+    }, scene);
+    label.position = aimPoint.clone();
+    label.position.y += 1.45;
+    label.billboardMode = Mesh.BILLBOARDMODE_ALL;
+    label.material = labelMaterial;
+
+    addTransientEffect(runtime, {
+        startedAtMs: performance.now(),
+        durationMs: duration,
+        meshes: [beam, reticle, warning, label],
+        materials: [material, labelMaterial],
+        textures: [labelTexture],
+        update: (ageMs, progress) => {
+            const windupProgress = clamp(ageMs / windupMs, 0, 1);
+            const pulse = 1 + Math.sin(ageMs / 38) * 0.08 + windupProgress * 0.34;
+            beam.scaling.x = pulse;
+            beam.scaling.y = 0.45 + windupProgress * 1.7;
+            beam.visibility = Math.max(0, 0.72 - progress * 0.62);
+            reticle.scaling.set(pulse, pulse, pulse);
+            reticle.rotation.z += 0.075 + windupProgress * 0.045;
+            warning.scaling.set(1 + windupProgress * 0.85, 1 + windupProgress * 0.85, 1);
+            warning.rotation.z -= 0.12;
+            material.alpha = Math.max(0, 0.56 - progress * 0.48);
+            label.position.y += Math.sin(ageMs / 64) * 0.002;
+            labelMaterial.alpha = Math.max(0, 1 - Math.max(0, ageMs - windupMs) / 320);
+        },
+    });
 }
 
 function syncPickupAvatars(runtime: ArenaRuntime, nowEpochMs: number): void {
@@ -1433,6 +1566,29 @@ function syncLocalPlayerFromSnapshot(
     };
 }
 
+function syncLocalPlayerFromArenaState(runtime: ArenaRuntime, localSessionId: string): void {
+    const player = runtime.arenaState.players.find((candidate) =>
+        candidate.sessionId === localSessionId
+    );
+    if (!player) {
+        return;
+    }
+    if (
+        player.vitals.respawnedAtEpochMs &&
+        player.vitals.respawnedAtEpochMs !== runtime.localPlayer.vitals.respawnedAtEpochMs
+    ) {
+        runtime.respawnCount += 1;
+    }
+    runtime.localPlayer = {
+        ...runtime.localPlayer,
+        position: player.vitals.deadUntilEpochMs && player.vitals.deadUntilEpochMs > Date.now()
+            ? runtime.localPlayer.position
+            : player.position,
+        vitals: player.vitals,
+        loadout: player.loadout,
+    };
+}
+
 function animateTargets(
     state: ArenaSimulationState,
     dtMs: number,
@@ -1477,42 +1633,46 @@ function getOrCreateTargetAvatar(
 
     const root = new TransformNode(`target-root-${target.id}`, scene);
     root.position = vector3(target.position);
+    const hostile = isHostileEye(target);
+    const coreColor = hostile ? MATRIX_THEME.danger : target.color;
 
     const coreMaterial = new StandardMaterial(`target-core-${target.id}`, scene);
-    coreMaterial.diffuseColor = Color3.FromHexString(target.color);
-    coreMaterial.emissiveColor = Color3.FromHexString(target.color).scale(0.64);
+    coreMaterial.diffuseColor = Color3.FromHexString(coreColor);
+    coreMaterial.emissiveColor = Color3.FromHexString(coreColor).scale(hostile ? 1.0 : 0.64);
     coreMaterial.specularColor = Color3.FromHexString(MATRIX_THEME.white).scale(0.35);
 
     const pupilMaterial = new StandardMaterial(`target-pupil-${target.id}`, scene);
     pupilMaterial.diffuseColor = Color3.FromHexString(MATRIX_THEME.void);
-    pupilMaterial.emissiveColor = Color3.FromHexString(MATRIX_THEME.cyan).scale(0.26);
+    pupilMaterial.emissiveColor = Color3.FromHexString(
+        hostile ? MATRIX_THEME.magenta : MATRIX_THEME.cyan,
+    ).scale(hostile ? 0.82 : 0.26);
 
     const ringMaterial = new StandardMaterial(`target-ring-${target.id}`, scene);
-    ringMaterial.diffuseColor = Color3.FromHexString(target.color);
-    ringMaterial.emissiveColor = Color3.FromHexString(target.color).scale(0.9);
+    ringMaterial.diffuseColor = Color3.FromHexString(coreColor);
+    ringMaterial.emissiveColor = Color3.FromHexString(coreColor).scale(hostile ? 1.15 : 0.9);
     ringMaterial.specularColor = Color3.FromHexString(MATRIX_THEME.white).scale(0.4);
 
     const shardMaterial = createMatrixMaterial(
         scene,
         `target-code-shard-${target.id}`,
-        MATRIX_THEME.cyan,
-        MATRIX_THEME.cyan,
-        0.72,
+        hostile ? MATRIX_THEME.magenta : MATRIX_THEME.cyan,
+        hostile ? MATRIX_THEME.magenta : MATRIX_THEME.cyan,
+        hostile ? 1.0 : 0.72,
         0.78,
     );
 
     const iris = MeshBuilder.CreateSphere(`eye-target-${target.id}`, {
-        diameterX: target.radius * 2.4,
-        diameterY: target.radius * 1.45,
-        diameterZ: target.radius * 0.62,
+        diameterX: target.radius * (hostile ? 3.25 : 2.4),
+        diameterY: target.radius * (hostile ? 0.95 : 1.45),
+        diameterZ: target.radius * (hostile ? 0.48 : 0.62),
         segments: 28,
     }, scene);
     iris.parent = root;
     iris.material = coreMaterial;
 
     const pupil = MeshBuilder.CreateSphere(`eye-pupil-${target.id}`, {
-        diameterX: target.radius * 0.74,
-        diameterY: target.radius * 0.74,
+        diameterX: target.radius * (hostile ? 1.1 : 0.74),
+        diameterY: target.radius * (hostile ? 0.32 : 0.74),
         diameterZ: target.radius * 0.18,
         segments: 18,
     }, scene);
@@ -1521,7 +1681,7 @@ function getOrCreateTargetAvatar(
     pupil.material = pupilMaterial;
 
     const ring = MeshBuilder.CreateTorus(`eye-ring-${target.id}`, {
-        diameter: target.radius * 2.75,
+        diameter: target.radius * (hostile ? 3.28 : 2.75),
         thickness: 0.035,
         tessellation: 32,
     }, scene);
@@ -1530,7 +1690,7 @@ function getOrCreateTargetAvatar(
     ring.material = ringMaterial;
 
     const halo = MeshBuilder.CreateTorus(`eye-holo-halo-${target.id}`, {
-        diameter: target.radius * 3.65,
+        diameter: target.radius * (hostile ? 4.15 : 3.65),
         thickness: 0.018,
         tessellation: 42,
     }, scene);
@@ -1539,23 +1699,31 @@ function getOrCreateTargetAvatar(
     halo.material = ringMaterial;
 
     const shardA = MeshBuilder.CreateBox(`eye-shard-a-${target.id}`, {
-        width: 0.08,
-        height: target.radius * 1.8,
+        width: hostile ? target.radius * 2.7 : 0.08,
+        height: hostile ? 0.07 : target.radius * 1.8,
         depth: 0.04,
     }, scene);
     shardA.parent = root;
-    shardA.position.set(target.radius * 1.8, 0.18, -target.radius * 0.08);
-    shardA.rotation.z = 0.45;
+    shardA.position.set(
+        hostile ? 0 : target.radius * 1.8,
+        hostile ? target.radius * 0.44 : 0.18,
+        -target.radius * 0.08,
+    );
+    shardA.rotation.z = hostile ? 0.13 : 0.45;
     shardA.material = shardMaterial;
 
     const shardB = MeshBuilder.CreateBox(`eye-shard-b-${target.id}`, {
-        width: 0.06,
-        height: target.radius * 1.45,
+        width: hostile ? target.radius * 2.5 : 0.06,
+        height: hostile ? 0.07 : target.radius * 1.45,
         depth: 0.04,
     }, scene);
     shardB.parent = root;
-    shardB.position.set(-target.radius * 1.6, -0.12, -target.radius * 0.06);
-    shardB.rotation.z = -0.5;
+    shardB.position.set(
+        hostile ? 0 : -target.radius * 1.6,
+        hostile ? -target.radius * 0.44 : -0.12,
+        -target.radius * 0.06,
+    );
+    shardB.rotation.z = hostile ? -0.13 : -0.5;
     shardB.material = shardMaterial;
 
     const labelTexture = new DynamicTexture(`target-label-texture-${target.id}`, {
@@ -1906,8 +2074,20 @@ function updatePickupLabel(texture: DynamicTexture, pickup: ArenaPickupState): v
 }
 
 function getTargetLabel(target: EyeTargetState): string {
+    if (target.threat?.kind === 'boss') {
+        return 'Boss Eye Performance Review';
+    }
+    if (target.threat?.kind === 'beam-sentry') {
+        return target.rarity === 'bounty'
+            ? 'Bounty Compliance Laser Auditor'
+            : 'Compliance Laser Auditor';
+    }
     const base = MATRIX_TARGET_LABELS[Math.abs(hashString(target.id)) % MATRIX_TARGET_LABELS.length];
     return target.bountyUntilEpochMs ? `Bounty ${base}` : base;
+}
+
+function isHostileEye(target: EyeTargetState): boolean {
+    return target.threat?.kind === 'beam-sentry' || target.threat?.kind === 'boss';
 }
 
 function createTracer(
@@ -2083,6 +2263,14 @@ function createArenaEventEffect(runtime: ArenaRuntime, event: ArenaEvent): void 
     const scene = runtime.scene;
     const color = event.kind === 'overdrive-window'
         ? MATRIX_THEME.amber
+        : event.kind === 'eye-attack-hit' || event.kind === 'eye-attack-windup' || event.kind === 'boss-eye'
+        ? MATRIX_THEME.danger
+        : event.kind === 'eye-attack-dodged'
+        ? MATRIX_THEME.cyan
+        : event.kind === 'wave-complete'
+        ? MATRIX_THEME.amber
+        : event.kind === 'wave-start'
+        ? MATRIX_THEME.magenta
         : event.kind === 'hazard-burst'
         ? MATRIX_THEME.danger
         : event.kind === 'arena-shift'
@@ -2176,6 +2364,24 @@ function disposeTransientEffect(effect: TransientEffect): void {
 }
 
 function getArenaEventJoke(kind: ArenaEvent['kind']): string {
+    if (kind === 'wave-start') {
+        return 'compliance lasers armed';
+    }
+    if (kind === 'wave-complete') {
+        return 'HR regrets your survival';
+    }
+    if (kind === 'eye-attack-windup') {
+        return 'laser audit is charging';
+    }
+    if (kind === 'eye-attack-hit') {
+        return 'feedback delivered with menace';
+    }
+    if (kind === 'eye-attack-dodged') {
+        return 'audit evaded; paperwork angry';
+    }
+    if (kind === 'boss-eye') {
+        return 'performance review entered the arena';
+    }
     if (kind === 'overdrive-window') {
         return 'approved overtime for your trigger finger';
     }
@@ -2292,6 +2498,12 @@ function writeArenaDiagnostics(canvas: HTMLCanvasElement, runtime: ArenaRuntime)
     canvas.dataset.arenaAcceptedHitCount = String(runtime.acceptedHitCount);
     canvas.dataset.arenaRespawnCount = String(runtime.respawnCount);
     canvas.dataset.arenaActiveChaosId = runtime.arenaState.activeEvent?.id ?? '';
+    canvas.dataset.arenaWave = String(runtime.arenaState.wave.number);
+    canvas.dataset.arenaWavePhase = runtime.arenaState.wave.phase;
+    canvas.dataset.arenaAttackCount = String(runtime.arenaState.attacks.length);
+    canvas.dataset.arenaHostileEyeCount = String(
+        runtime.arenaState.targets.filter(isHostileEye).length,
+    );
 }
 
 function hashString(value: string): number {

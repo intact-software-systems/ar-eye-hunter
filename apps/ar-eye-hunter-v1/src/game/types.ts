@@ -19,6 +19,57 @@ export type Vec3Tuple = readonly [number, number, number];
 
 export type TargetRarity = 'common' | 'volatile' | 'bounty' | 'rift';
 
+export type EyeThreatKind = 'passive' | 'beam-sentry' | 'boss';
+
+export type EyeThreatState = Readonly<{
+    kind: EyeThreatKind;
+    damage: number;
+    range: number;
+    coneRadians: number;
+    windupMs: number;
+    cooldownMs: number;
+    nextAttackAtEpochMs: number;
+    targetSessionId?: string;
+}>;
+
+export type EyeAttackCue = Readonly<{
+    id: string;
+    targetId: string;
+    targetSessionId: string;
+    origin: Vec3Tuple;
+    aimPoint: Vec3Tuple;
+    damage: number;
+    range: number;
+    coneRadians: number;
+    startsAtEpochMs: number;
+    firesAtEpochMs: number;
+    expiresAtEpochMs: number;
+    revision: number;
+}>;
+
+export type EyeAttackAccepted = Readonly<{
+    cue: EyeAttackCue;
+    hit: boolean;
+    impact: Vec3Tuple;
+    damage: number;
+    target?: PlayerArenaState;
+    eliminated: boolean;
+    revision: number;
+    acceptedAtEpochMs: number;
+    reason?: 'hit' | 'cover' | 'dodged' | 'dead-player' | 'stale-cue';
+}>;
+
+export type WaveState = Readonly<{
+    number: number;
+    phase: 'warmup' | 'active' | 'reward';
+    startedAtEpochMs: number;
+    nextPhaseAtEpochMs: number;
+    targetBudget: number;
+    hostileBudget: number;
+    pickupRewardBudget: number;
+    activeModifierId?: string;
+}>;
+
 export type WeaponKind =
     | 'pulse-rifle'
     | 'spread-shot'
@@ -137,6 +188,7 @@ export type EyeTargetState = Readonly<{
     rarity: TargetRarity;
     phase: number;
     color: string;
+    threat?: EyeThreatState;
     bountyUntilEpochMs?: number;
 }>;
 
@@ -262,7 +314,13 @@ export type ArenaEventKind =
     | 'player-eliminated'
     | 'player-respawned'
     | 'layout-shift'
-    | 'chaos-modifier';
+    | 'chaos-modifier'
+    | 'wave-start'
+    | 'wave-complete'
+    | 'eye-attack-windup'
+    | 'eye-attack-hit'
+    | 'eye-attack-dodged'
+    | 'boss-eye';
 
 export type ArenaEvent = Readonly<{
     id: string;
@@ -290,6 +348,8 @@ export type ArenaSnapshot = Readonly<{
     targets: readonly EyeTargetState[];
     pickups: readonly ArenaPickupState[];
     players: readonly PlayerArenaState[];
+    attacks: readonly EyeAttackCue[];
+    wave: WaveState;
     events: readonly ArenaEvent[];
     activeEvent?: ArenaEvent;
     sentAtEpochMs: number;
@@ -372,6 +432,11 @@ export type GameRealtimeMessage =
     protocol: typeof GAME_PROTOCOL;
     kind: 'director-pickup-accepted';
     accepted: PickupAccepted;
+}>
+    | Readonly<{
+    protocol: typeof GAME_PROTOCOL;
+    kind: 'director-eye-attack-accepted';
+    accepted: EyeAttackAccepted;
 }>
     | Readonly<{
     protocol: typeof GAME_PROTOCOL;

@@ -5,6 +5,8 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import {
+    createAiArenaLayoutRequest,
+    createAiDirectorRequest,
     materializeAiArenaEvent,
     validateAiArenaLayoutProposal,
     validateAiDirectorProposalValue,
@@ -106,7 +108,7 @@ describe('AR Eye Hunter AI director', () => {
             id: 'ai-layout-1',
             revision: 2,
             name: 'Exit Through Gift Shop Protocol',
-            halfSize: 44,
+            halfSize: 60,
             theme: {
                 base: '#020805',
                 grid: '#49ff86',
@@ -115,8 +117,8 @@ describe('AR Eye Hunter AI director', () => {
                 reward: '#ffe66d',
             },
             spawnPoints: [
-                [-30, 1.72, -30],
-                [30, 1.72, 30],
+                [-45, 1.72, -45],
+                [45, 1.72, 45],
             ],
             pickupAnchors: [
                 { id: 'pickup-a', position: [0, 1, 0] },
@@ -134,14 +136,33 @@ describe('AR Eye Hunter AI director', () => {
                 id: 'sign-a',
                 title: 'MORALE PATCH',
                 detail: 'fun is mandatory and logged',
-                position: [0, 3, 38],
+                position: [0, 3, 57],
                 rotationY: Math.PI,
             }],
         });
 
         expect(validation.ok).toBe(true);
         expect(validation.layout.id).toBe('ai-layout-1');
+        expect(validation.layout.halfSize).toBe(60);
         expect(validation.layout.pickupAnchors.length).toBe(3);
+    });
+
+    it('requests AI layouts and chaos with the 120m wave-aware FPS context', () => {
+        const now = 15_000;
+        const state = createInitialArenaState(987, now);
+        const layoutRequest = createAiArenaLayoutRequest(state, 'room-1');
+        const chaosRequest = createAiDirectorRequest(state, 'room-1');
+        const layoutSchema = layoutRequest.schema as {
+            properties: { halfSize: { minimum: number; maximum: number } };
+        };
+
+        expect(layoutSchema.properties.halfSize.minimum).toBe(32);
+        expect(layoutSchema.properties.halfSize.maximum).toBe(72);
+        expect(layoutRequest.prompt).toContain('120m x 120m arena');
+        expect(layoutRequest.context?.waveNumber).toBe(1);
+        expect(layoutRequest.context?.wavePhase).toBe('warmup');
+        expect(layoutRequest.context?.hostileCount).toBeGreaterThan(0);
+        expect(chaosRequest.prompt).toContain('wave context');
     });
 });
 

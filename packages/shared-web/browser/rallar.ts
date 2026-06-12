@@ -2716,6 +2716,7 @@ class BrowserRallarFacade implements RallarFacade {
     async connect(
         options: RallarScopedOperationOptions = {},
     ): Promise<ApiMiddleware> {
+        await this.waitForAuthEndIfInProgress();
         const operationOptions = this.resolveOperationOptions(options);
         const middlewareScope = this.resolveOperationScope(operationOptions.scope);
         const connectOptions = {
@@ -2790,6 +2791,7 @@ class BrowserRallarFacade implements RallarFacade {
     async start(
         options: RallarStartOptions = {},
     ): Promise<RallarStartResult> {
+        await this.waitForAuthEndIfInProgress();
         const operationOptions = this.resolveOperationOptions(options);
         const session = options.restoreSession === false
             ? undefined
@@ -6823,12 +6825,12 @@ class BrowserRallarFacade implements RallarFacade {
     ): Promise<void> {
         const session = options.session ?? this.ctx?.session ?? readSession();
         const sessionKey = session ? toAuthSessionKey(session) : undefined;
-        if (sessionKey && this.endedAuthSessionKeys.has(sessionKey)) {
-            return;
-        }
-
         if (this.authEndPromise) {
             return await this.authEndPromise;
+        }
+
+        if (sessionKey && this.endedAuthSessionKeys.has(sessionKey)) {
+            return;
         }
 
         if (sessionKey) {
@@ -6859,6 +6861,7 @@ class BrowserRallarFacade implements RallarFacade {
         let dataCleanupError: unknown;
 
         this.clearAuthExpiryTimer();
+        clearSession();
         try {
             try {
                 await this.disconnect();
@@ -6869,7 +6872,11 @@ class BrowserRallarFacade implements RallarFacade {
             if (options.revoke && session) {
                 try {
                     await runRallarCommand(
-                        (signal) => api.logoutFromApi({ signal }),
+                        (signal) =>
+                            api.logoutFromApi({
+                                signal,
+                                authSession: session,
+                            }),
                         options.operationOptions ?? {},
                     );
                 } catch (error) {
@@ -6882,7 +6889,6 @@ class BrowserRallarFacade implements RallarFacade {
             } catch (error) {
                 dataCleanupError = error;
             }
-            clearSession();
             this.emitState();
             this.emitAuthState(reason, undefined);
         }
@@ -6912,6 +6918,13 @@ class BrowserRallarFacade implements RallarFacade {
             revoke: false,
             session,
         });
+    }
+
+    private async waitForAuthEndIfInProgress(): Promise<void> {
+        const authEndPromise = this.authEndPromise;
+        if (authEndPromise) {
+            await authEndPromise;
+        }
     }
 
     private async runAuthAwareOperation<T>(

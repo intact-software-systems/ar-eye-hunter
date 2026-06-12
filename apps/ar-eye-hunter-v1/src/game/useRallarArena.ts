@@ -25,6 +25,7 @@ import {
     type AiDirectorProposalValue,
     type ArenaEvent,
     type ArenaSnapshot,
+    type EyeAttackAccepted,
     type GameRealtimeMessage,
     type PickupAccepted,
     type PickupIntent,
@@ -46,6 +47,7 @@ import {
     type AiDirectorContext,
 } from './aiDirector.ts';
 import {
+    applyEyeAttackAccepted,
     applyPickupAccepted,
     applyPlayerHitAccepted,
     arenaRevisionKey,
@@ -239,6 +241,23 @@ export function useRallarArena(): ArenaConnection {
         });
     }, []);
 
+    const acceptEyeAttack = useCallback((accepted: EyeAttackAccepted) => {
+        setArenaSnapshot((previous) => {
+            if (!previous) {
+                return previous;
+            }
+            const next = toArenaSnapshot(
+                applyEyeAttackAccepted(hydrateArenaSnapshot(previous), accepted),
+                previous.roomId ?? roomIdRef.current,
+                Date.now(),
+            );
+            arenaSnapshotRef.current = next;
+            setActiveEvent(next.activeEvent);
+            setRemoteEvents(next.events);
+            return next;
+        });
+    }, []);
+
     const acceptDirectorOutput = useCallback((
         message: GameRealtimeMessage,
     ) => {
@@ -325,6 +344,11 @@ export function useRallarArena(): ArenaConnection {
             return;
         }
 
+        if (message.kind === 'director-eye-attack-accepted') {
+            acceptEyeAttack(message.accepted);
+            return;
+        }
+
         if (message.kind === 'arena-event') {
             setRemoteEvents((previous) => [
                 ...previous.filter((event) => event.id !== message.event.id).slice(-12),
@@ -354,7 +378,7 @@ export function useRallarArena(): ArenaConnection {
                     ]),
             ));
         }
-    }, [acceptPickup, acceptPlayerHit]);
+    }, [acceptEyeAttack, acceptPickup, acceptPlayerHit]);
 
     const acceptMotionMessage = useCallback((
         peerId: string,
@@ -435,6 +459,21 @@ export function useRallarArena(): ArenaConnection {
             return;
         }
 
+        if (message.kind === 'director-player-hit-accepted') {
+            acceptPlayerHit(message.accepted);
+            return;
+        }
+
+        if (message.kind === 'director-pickup-accepted') {
+            acceptPickup(message.accepted);
+            return;
+        }
+
+        if (message.kind === 'director-eye-attack-accepted') {
+            acceptEyeAttack(message.accepted);
+            return;
+        }
+
         if (message.kind === 'arena-event') {
             setRemoteEvents((previous) => [
                 ...previous.filter((event) => event.id !== message.event.id).slice(-12),
@@ -449,7 +488,7 @@ export function useRallarArena(): ArenaConnection {
             setActiveEvent(message.snapshot.activeEvent);
             setRemoteEvents(message.snapshot.events);
         }
-    }, []);
+    }, [acceptEyeAttack, acceptPickup, acceptPlayerHit]);
 
     const connect = useCallback(async () => {
         setConnectionState('connecting');
@@ -930,8 +969,13 @@ export function useRallarArena(): ArenaConnection {
     }, [connect]);
 
     const logout = useCallback(async () => {
-        await rallar.auth.logout();
-        resetForSignedOutAuth();
+        try {
+            await rallar.auth.logout();
+        } catch {
+            // Manual logout is best-effort; the facade performs local cleanup first.
+        } finally {
+            resetForSignedOutAuth();
+        }
     }, [resetForSignedOutAuth]);
 
     const createArenaRoom = useCallback(async () => {

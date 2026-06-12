@@ -170,7 +170,7 @@ export function createAiArenaLayoutRequest(
                 id: { type: 'string', minLength: 1, maxLength: 64 },
                 revision: { type: 'integer', minimum: 1, maximum: 99 },
                 name: { type: 'string', minLength: 1, maxLength: 72 },
-                halfSize: { type: 'number', minimum: 26, maximum: 52 },
+                halfSize: { type: 'number', minimum: 32, maximum: 72 },
                 theme: { type: 'object' },
                 spawnPoints: { type: 'array', minItems: 2, maxItems: 10 },
                 pickupAnchors: { type: 'array', minItems: 3, maxItems: 18 },
@@ -181,7 +181,7 @@ export function createAiArenaLayoutRequest(
         prompt: [
             'Create one bounded JSON arena layout for AR Eye Hunter.',
             'Use a bright neon matrix FPS arena with black-glass cover, readable sightlines, safe spawns, pickup anchors, and dry black humour signs.',
-            'Keep halfSize near 40 for an 80x80 arena. Do not overcrowd the crosshair sightlines.',
+            'Keep halfSize near 60 for a 120m x 120m arena. Do not overcrowd the crosshair sightlines.',
         ].join(' '),
         context: buildAiDirectorContext(state, roomId),
         baseStateRevision: arenaRevisionKey(state),
@@ -204,7 +204,10 @@ export type AiDirectorContext = Readonly<{
     roomId?: string;
     revision: number;
     activeEventKind?: ArenaEventKind;
+    waveNumber: number;
+    wavePhase: ArenaSimulationState['wave']['phase'];
     targetCount: number;
+    hostileCount: number;
     bountyCount: number;
     targets: readonly Readonly<{
         id: string;
@@ -221,7 +224,12 @@ export function buildAiDirectorContext(
         roomId,
         revision: state.revision,
         activeEventKind: state.activeEvent?.kind,
+        waveNumber: state.wave.number,
+        wavePhase: state.wave.phase,
         targetCount: state.targets.length,
+        hostileCount: state.targets.filter((target) =>
+            target.threat?.kind === 'beam-sentry' || target.threat?.kind === 'boss'
+        ).length,
         bountyCount: state.targets.filter((target) => target.rarity === 'bounty').length,
         targets: state.targets.slice(0, 10).map((target) => ({
             id: target.id,
@@ -246,6 +254,7 @@ export function createAiDirectorRequest(
         prompt: [
             'You are the AR Eye Hunter live chaos director.',
             'Return one legal JSON event that makes the next 10 seconds faster, stranger, and rewarding.',
+            'Use wave context to escalate pressure every few waves with bounded chaos modifiers, weapon drops, bounty targets, or readable arena shifts.',
             'Only use target ids from context when a target id is needed.',
             'Keep effects readable for a first-person shooter.',
         ].join(' '),

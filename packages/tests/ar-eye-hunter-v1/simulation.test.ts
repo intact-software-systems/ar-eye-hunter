@@ -15,6 +15,7 @@ import {
     resolvePickupIntent,
     resolvePlayerHitIntent,
     resolveShot,
+    resolveEyeAttackCue,
     spawnWeaponPickup,
     stepArenaDirectorState,
     stepLocalPlayer,
@@ -131,11 +132,11 @@ describe('AR Eye Hunter simulation', () => {
         expect(mutated.events.map((event) => event.id)).toContain('event-2');
     });
 
-    it('uses the doubled arena bounds for FPS movement', () => {
+    it('uses the 120m arena bounds for FPS movement', () => {
         const now = 20_000;
         const player = {
             ...createInitialPlayerState(now),
-            position: [39.5, 1.72, 39.5] as Vec3Tuple,
+            position: [59.5, 1.72, 59.5] as Vec3Tuple,
             yaw: Math.PI / 4,
         };
 
@@ -150,10 +151,10 @@ describe('AR Eye Hunter simulation', () => {
             altFire: false,
             overdrive: false,
             pause: false,
-        }, 500, now, 40);
+        }, 500, now, 60);
 
-        expect(Math.abs(next.position[0])).toBeLessThanOrEqual(40);
-        expect(Math.abs(next.position[2])).toBeLessThanOrEqual(40);
+        expect(Math.abs(next.position[0])).toBeLessThanOrEqual(60);
+        expect(Math.abs(next.position[2])).toBeLessThanOrEqual(60);
     });
 
     it('validates PvP hits, eliminations, kill/death scoring, and respawn', () => {
@@ -331,8 +332,8 @@ describe('AR Eye Hunter simulation', () => {
         });
 
         expect(validation.ok).toBe(true);
-        expect(validation.layout.halfSize).toBe(52);
-        expect(validation.layout.spawnPoints[0][0]).toBeGreaterThanOrEqual(-52);
+        expect(validation.layout.halfSize).toBe(72);
+        expect(validation.layout.spawnPoints[0][0]).toBeGreaterThanOrEqual(-72);
         expect(blocksShot(validation.layout, [0, 1.72, 0], [0, 1.72, 8])).toBe(true);
 
         const fallback = validateArenaLayoutSpec({
@@ -361,5 +362,135 @@ describe('AR Eye Hunter simulation', () => {
         expect(dropped.pickups).toHaveLength(1);
         expect(dropped.pickups[0].id).toContain('ai-drop-1');
         expect(dropped.pickups[0].position).toEqual([6, 1.05, 6]);
+    });
+
+    it('starts with a 120m fallback arena and wave escalation state', () => {
+        const now = 60_000;
+        const state = createInitialArenaState(101, now);
+
+        expect(FALLBACK_ARENA_LAYOUT.halfSize).toBe(60);
+        expect(state.layout.halfSize).toBe(60);
+        expect(state.wave.number).toBe(1);
+        expect(state.wave.phase).toBe('warmup');
+        expect(state.targets.some((target) => target.threat?.kind === 'beam-sentry')).toBe(true);
+    });
+
+    it('schedules hostile beam-eye windups and damages visible players after telegraph', () => {
+        const now = 70_000;
+        const base = createInitialArenaState(202, now);
+        const hostile = base.targets.find((target) => target.threat?.kind === 'beam-sentry');
+        expect(hostile).toBeTruthy();
+        if (!hostile) {
+            return;
+        }
+        const withPlayer = upsertPlayerPose(base, {
+            sessionId: 'victim',
+            username: 'victim',
+            color: '#ff3df2',
+            position: [
+                hostile.position[0],
+                1.72,
+                hostile.position[2] + 18,
+            ],
+            rotation: [0, Math.PI, 0],
+            vitals: createInitialVitalsState(),
+            loadout: createInitialLoadoutState(),
+            seq: 1,
+            sentAtEpochMs: now,
+        }, now);
+
+        const active = stepArenaDirectorState({
+            ...withPlayer,
+            wave: {
+                ...withPlayer.wave,
+                phase: 'active',
+                nextPhaseAtEpochMs: now + 20_000,
+            },
+            targets: withPlayer.targets.map((target) =>
+                target.id === hostile.id && target.threat
+                    ? {
+                        ...target,
+                        threat: {
+                            ...target.threat,
+                            nextAttackAtEpochMs: now,
+                        },
+                    }
+                    : target
+            ),
+        }, now);
+
+        expect(active.attacks).toHaveLength(1);
+        expect(active.attacks[0].targetId).toBe(hostile.id);
+        expect(active.activeEvent?.kind).toBe('eye-attack-windup');
+
+        const fired = resolveEyeAttackCue(active, active.attacks[0], active.attacks[0].firesAtEpochMs);
+        expect(fired.accepted).toBe(true);
+        if (!fired.accepted) {
+            return;
+        }
+        expect(fired.acceptedAttack.hit).toBe(true);
+        expect(fired.acceptedAttack.target?.vitals.health).toBeLessThan(100);
+        expect(fired.state.activeEvent?.kind).toBe('eye-attack-hit');
+    });
+
+    it('lets cover block hostile beam-eye damage as a dodge', () => {
+        const now = 80_000;
+        const base = createInitialArenaState(303, now);
+        const hostile = base.targets.find((target) => target.threat?.kind === 'beam-sentry');
+        expect(hostile).toBeTruthy();
+        if (!hostile) {
+            return;
+        }
+        const withCover = {
+            ...base,
+            layout: {
+                ...base.layout,
+                props: [{
+                    id: 'beam-cover',
+                    kind: 'cover' as const,
+                    position: [hostile.position[0], 1.5, hostile.position[2] + 8],
+                    size: [8, 4, 1.5] as Vec3Tuple,
+                    blocksShots: true,
+                }],
+            },
+        };
+        const withPlayer = upsertPlayerPose(withCover, {
+            sessionId: 'dodger',
+            username: 'dodger',
+            color: '#49ff86',
+            position: [hostile.position[0], 1.72, hostile.position[2] + 18],
+            rotation: [0, Math.PI, 0],
+            vitals: createInitialVitalsState(),
+            loadout: createInitialLoadoutState(),
+            seq: 1,
+            sentAtEpochMs: now,
+        }, now);
+        const cue = {
+            id: 'cue-cover-test',
+            targetId: hostile.id,
+            targetSessionId: 'dodger',
+            origin: hostile.position,
+            aimPoint: [hostile.position[0], 1.72, hostile.position[2] + 18] as Vec3Tuple,
+            damage: 24,
+            range: 60,
+            coneRadians: 0.08,
+            startsAtEpochMs: now,
+            firesAtEpochMs: now + 900,
+            expiresAtEpochMs: now + 1_200,
+            revision: withPlayer.revision + 1,
+        };
+
+        const fired = resolveEyeAttackCue({
+            ...withPlayer,
+            attacks: [cue],
+        }, cue, cue.firesAtEpochMs);
+
+        expect(fired.accepted).toBe(true);
+        if (!fired.accepted) {
+            return;
+        }
+        expect(fired.acceptedAttack.hit).toBe(false);
+        expect(fired.state.players.find((player) => player.sessionId === 'dodger')?.vitals.health).toBe(100);
+        expect(fired.state.activeEvent?.kind).toBe('eye-attack-dodged');
     });
 });

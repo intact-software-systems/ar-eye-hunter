@@ -6,7 +6,7 @@ import type {
     Vec3Tuple,
 } from './types.ts';
 
-export const DEFAULT_ARENA_HALF_SIZE = 40;
+export const DEFAULT_ARENA_HALF_SIZE = 60;
 export const DEFAULT_ARENA_SIZE = DEFAULT_ARENA_HALF_SIZE * 2;
 export const ARENA_LAYOUT_SCHEMA_ID = 'ar-eye-hunter.arena-layout';
 export const ARENA_LAYOUT_SCHEMA_VERSION = '1';
@@ -32,29 +32,30 @@ export const FALLBACK_ARENA_LAYOUT: ArenaLayoutSpec = {
         reward: '#ffe66d',
     },
     spawnPoints: [
-        [-30, 1.72, -30],
-        [30, 1.72, 30],
-        [-30, 1.72, 30],
-        [30, 1.72, -30],
-        [0, 1.72, -34],
-        [0, 1.72, 34],
+        [-45, 1.72, -45],
+        [45, 1.72, 45],
+        [-45, 1.72, 45],
+        [45, 1.72, -45],
+        [0, 1.72, -52],
+        [0, 1.72, 52],
     ],
     pickupAnchors: [
-        { id: 'pickup-north', position: [0, 1.05, 24], weight: 1.2 },
-        { id: 'pickup-south', position: [0, 1.05, -24], weight: 1.2 },
-        { id: 'pickup-east', position: [24, 1.05, 0], weight: 1 },
-        { id: 'pickup-west', position: [-24, 1.05, 0], weight: 1 },
+        { id: 'pickup-north', position: [0, 1.05, 42], weight: 1.2 },
+        { id: 'pickup-south', position: [0, 1.05, -42], weight: 1.2 },
+        { id: 'pickup-east', position: [42, 1.05, 0], weight: 1 },
+        { id: 'pickup-west', position: [-42, 1.05, 0], weight: 1 },
         { id: 'pickup-core', position: [0, 1.05, 0], weight: 0.8 },
-        { id: 'pickup-tax-office', position: [-18, 1.05, 18], weight: 1 },
-        { id: 'pickup-hr-portal', position: [18, 1.05, -18], weight: 1 },
-        { id: 'pickup-compliance', position: [27, 1.05, 24], weight: 0.75 },
+        { id: 'pickup-tax-office', position: [-32, 1.05, 32], weight: 1 },
+        { id: 'pickup-hr-portal', position: [32, 1.05, -32], weight: 1 },
+        { id: 'pickup-compliance', position: [47, 1.05, 38], weight: 0.75 },
+        { id: 'pickup-committee', position: [-47, 1.05, -38], weight: 0.75 },
     ],
     props: [
         {
             id: 'cover-audit-1',
             kind: 'cover',
-            position: [-14, 1.4, -9],
-            size: [4.5, 2.8, 1.1],
+            position: [-22, 1.4, -16],
+            size: [6.8, 2.8, 1.2],
             rotationY: 0.2,
             blocksShots: true,
             label: 'Audit Wall',
@@ -62,8 +63,8 @@ export const FALLBACK_ARENA_LAYOUT: ArenaLayoutSpec = {
         {
             id: 'cover-audit-2',
             kind: 'cover',
-            position: [14, 1.4, 9],
-            size: [4.5, 2.8, 1.1],
+            position: [22, 1.4, 16],
+            size: [6.8, 2.8, 1.2],
             rotationY: 0.2,
             blocksShots: true,
             label: 'Audit Wall',
@@ -71,8 +72,8 @@ export const FALLBACK_ARENA_LAYOUT: ArenaLayoutSpec = {
         {
             id: 'cover-policy-1',
             kind: 'cover',
-            position: [-21, 1.2, 12],
-            size: [1.2, 2.4, 5.4],
+            position: [-34, 1.2, 22],
+            size: [1.35, 2.4, 7.4],
             rotationY: -0.35,
             blocksShots: true,
             label: 'Policy Pillar',
@@ -80,8 +81,8 @@ export const FALLBACK_ARENA_LAYOUT: ArenaLayoutSpec = {
         {
             id: 'cover-policy-2',
             kind: 'cover',
-            position: [21, 1.2, -12],
-            size: [1.2, 2.4, 5.4],
+            position: [34, 1.2, -22],
+            size: [1.35, 2.4, 7.4],
             rotationY: -0.35,
             blocksShots: true,
             label: 'Policy Pillar',
@@ -89,32 +90,32 @@ export const FALLBACK_ARENA_LAYOUT: ArenaLayoutSpec = {
         {
             id: 'bounce-morale',
             kind: 'bounce-pad',
-            position: [0, 0.08, 14],
-            size: [5.2, 0.12, 5.2],
+            position: [0, 0.08, 24],
+            size: [7.2, 0.12, 7.2],
             blocksShots: false,
             label: 'Morale Launcher',
         },
         {
             id: 'hazard-late-fee',
             kind: 'hazard',
-            position: [0, 0.1, -14],
-            size: [7.2, 0.12, 2.2],
+            position: [0, 0.1, -24],
+            size: [10.2, 0.12, 2.8],
             blocksShots: false,
             label: 'Late Fee Zone',
         },
         {
             id: 'portal-exit-interview-a',
             kind: 'portal',
-            position: [-32, 2.1, 0],
-            size: [3.4, 3.4, 0.4],
+            position: [-52, 2.1, 0],
+            size: [4.4, 4.4, 0.4],
             blocksShots: false,
             label: 'Exit Interview',
         },
         {
             id: 'portal-exit-interview-b',
             kind: 'portal',
-            position: [32, 2.1, 0],
-            size: [3.4, 3.4, 0.4],
+            position: [52, 2.1, 0],
+            size: [4.4, 4.4, 0.4],
             blocksShots: false,
             label: 'Re-entry Interview',
         },
@@ -124,21 +125,21 @@ export const FALLBACK_ARENA_LAYOUT: ArenaLayoutSpec = {
             id: 'sign-terms',
             title: 'TERMS UPDATED',
             detail: 'you agreed by blinking',
-            position: [-20, 3.4, 37.2],
+            position: [-32, 3.4, 57.2],
             rotationY: Math.PI,
         },
         {
             id: 'sign-audit',
             title: 'FUN AUDIT',
             detail: 'noncompliance looks expensive',
-            position: [20, 3.4, -37.2],
+            position: [32, 3.4, -57.2],
             rotationY: 0,
         },
         {
             id: 'sign-hr',
             title: 'HR PORTAL',
             detail: 'respawn paperwork waived',
-            position: [37.2, 3.2, 14],
+            position: [57.2, 3.2, 24],
             rotationY: -Math.PI / 2,
         },
     ],
@@ -154,7 +155,7 @@ export function validateArenaLayoutSpec(value: unknown): ArenaLayoutValidation {
     }
 
     const rawHalfSize = toFiniteNumber(value['halfSize'], DEFAULT_ARENA_HALF_SIZE);
-    const halfSize = clamp(rawHalfSize, 26, 52);
+    const halfSize = clamp(rawHalfSize, 32, 72);
     const spawnPoints = readVec3Array(value['spawnPoints'], MAX_SPAWNS, halfSize);
     if (spawnPoints.length < 2 || !hasSeparatedSpawns(spawnPoints)) {
         return fallback('Layout needs at least two readable spawn points.');

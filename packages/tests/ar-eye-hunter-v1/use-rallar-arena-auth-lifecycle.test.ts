@@ -168,6 +168,25 @@ describe('useRallarArena auth lifecycle', () => {
         expect(mockRallar.auth.logout).not.toHaveBeenCalled();
     });
 
+    it('catches manual logout rejection and leaves the arena signed out', async () => {
+        await renderHook();
+        await waitForState(() => current?.connectionState === 'connected');
+        mockRallar.auth.logout.mockRejectedValueOnce(new Error('logout failed'));
+
+        await act(async () => {
+            await expect(current?.logout()).resolves.toBeUndefined();
+        });
+
+        expect(mockRallar.auth.logout).toHaveBeenCalledOnce();
+        expect(current?.session).toBeUndefined();
+        expect(current?.connectionState).toBe('signed-out');
+        expect(current?.roomId).toBeUndefined();
+        expect(current?.rooms).toEqual([]);
+        expect(current?.arenaSnapshot).toBeUndefined();
+        expect(current?.remotePlayers.size).toBe(0);
+        expect(current?.remoteEvents).toEqual([]);
+    });
+
     async function renderHook(): Promise<void> {
         root = createRoot(container);
         function Harness() {

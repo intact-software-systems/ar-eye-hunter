@@ -259,7 +259,9 @@ describe('Rallar operation options', () => {
         mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
         mocks.initMiddleware.mockResolvedValue(mocks.ctx);
         mocks.isMiddlewareReady.mockReturnValue(false);
+        mocks.clearSession.mockImplementation(() => undefined);
         mocks.readSession.mockReturnValue(mocks.ctx.session);
+        mocks.logoutFromApi.mockResolvedValue({ loggedOut: true });
         mocks.createAndJoinStateGroup.mockRejectedValue(new Error('create not mocked'));
         mocks.joinStateGroup.mockRejectedValue(new Error('join not mocked'));
         mocks.leaveStateGroup.mockRejectedValue(new Error('leave not mocked'));
@@ -3255,6 +3257,59 @@ describe('Rallar operation options', () => {
             | undefined;
         expect(logoutOptions?.signal).toBeInstanceOf(AbortSignal);
         expect(mocks.clearSession).toHaveBeenCalledOnce();
+    });
+
+    it('clears local auth before revoking manual logout and uses the captured session', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+
+        await createRallarFacade().auth.logout();
+
+        expect(mocks.clearSession).toHaveBeenCalledOnce();
+        expect(mocks.logoutFromApi).toHaveBeenCalledOnce();
+        expect(mocks.clearSession.mock.invocationCallOrder[0])
+            .toBeLessThan(mocks.logoutFromApi.mock.invocationCallOrder[0]);
+        expect(mocks.logoutFromApi.mock.calls[0]?.[0]).toMatchObject({
+            authSession: mocks.ctx.session,
+        });
+    });
+
+    it('does not reconnect with a stale session while manual logout is in progress', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        let storedSession: typeof mocks.ctx.session | undefined = mocks.ctx.session;
+        let releaseLogout: (() => void) | undefined;
+        mocks.readSession.mockImplementation(() => storedSession);
+        mocks.clearSession.mockImplementation(() => {
+            storedSession = undefined;
+        });
+        mocks.logoutFromApi.mockImplementation(
+            () =>
+                new Promise((resolve) => {
+                    releaseLogout = () => resolve({ loggedOut: true });
+                }),
+        );
+        const facade = createRallarFacade();
+
+        await facade.connect();
+        const logoutPromise = facade.auth.logout();
+        await vi.waitFor(() => {
+            expect(mocks.logoutFromApi).toHaveBeenCalledOnce();
+        });
+
+        const startPromise = facade.start();
+        await Promise.resolve();
+        expect(mocks.initMiddleware).toHaveBeenCalledTimes(1);
+        releaseLogout?.();
+        const startResult = await startPromise;
+        await logoutPromise;
+
+        expect(startResult).toEqual({
+            session: undefined,
+            connected: false,
+        });
     });
 
     it('closes WS through the queue-box service when logging out after connect', async () => {
