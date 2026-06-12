@@ -5,13 +5,13 @@ export const GAME_COMBAT_LANE_ID = 'combat';
 export const GAME_FX_LANE_ID = 'fx';
 export const GAME_AI_LANE_ID = 'ai-events';
 export const GAME_ROOM_NAME = 'AR Eye Hunter Arena';
-export const GAME_DIRECTOR_TOPIC_ID = 'ar-eye-hunter.director';
+export const GAME_DIRECTOR_TOPIC_ID = 'room.ar-eye-hunter.director';
 export const GAME_DIRECTOR_INTENT_TYPE_ID = 'ar-eye-hunter.director.intent.v1';
 export const GAME_DIRECTOR_OUTPUT_TYPE_ID = 'ar-eye-hunter.director.output.v1';
 export const GAME_DIRECTOR_HEARTBEAT_TYPE_ID = 'ar-eye-hunter.director.heartbeat.v1';
 export const GAME_DIRECTOR_SNAPSHOT_TYPE_ID = 'ar-eye-hunter.director.snapshot.v1';
 export const GAME_DIRECTOR_SYNC_REQUEST_TYPE_ID = 'ar-eye-hunter.director.sync-request.v1';
-export const GAME_AI_TOPIC_ID = 'ar-eye-hunter.ai-director';
+export const GAME_AI_TOPIC_ID = 'room.ar-eye-hunter.ai-director';
 export const GAME_AI_PROPOSAL_TYPE_ID = 'ar-eye-hunter.ai-director.proposal.v1';
 export const GAME_AI_ACCEPTED_TYPE_ID = 'ar-eye-hunter.ai-director.accepted.v1';
 

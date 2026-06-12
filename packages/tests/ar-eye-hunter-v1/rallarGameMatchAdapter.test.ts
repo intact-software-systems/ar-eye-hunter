@@ -15,6 +15,10 @@ import type {
     PlayerPose,
     ShotIntent,
 } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
+import {
+    GAME_AI_TOPIC_ID,
+    GAME_DIRECTOR_TOPIC_ID,
+} from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
 
 describe('AR Eye Hunter Rallar Game match adapter', () => {
     it('maps AR lanes into the generic Rallar Game lane model', () => {
@@ -27,6 +31,11 @@ describe('AR Eye Hunter Rallar Game match adapter', () => {
         });
         expect(ARENA_RALLAR_GAME_DATA_CHANNEL_LANES.map((lane) => lane.id))
             .toContain(GAME_SNAPSHOT_LANE_ID);
+    });
+
+    it('uses room-scoped topics for production WS fallback compatibility', () => {
+        expect(GAME_DIRECTOR_TOPIC_ID).toMatch(/^room\./);
+        expect(GAME_AI_TOPIC_ID).toMatch(/^room\./);
     });
 
     it('accepts pose and shot intents only from the sender peer', () => {

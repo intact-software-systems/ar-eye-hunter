@@ -207,7 +207,8 @@ describe('AR Eye Hunter simulation', () => {
         if (!first.accepted) {
             return;
         }
-        expect(first.acceptedHit.target.vitals.health).toBeLessThan(100);
+        expect(first.acceptedHit.damage).toBe(13.8);
+        expect(first.acceptedHit.target.vitals.health).toBe(86.2);
         expect(first.acceptedHit.eliminated).toBe(false);
 
         const second = resolvePlayerHitIntent(first.state, {
@@ -231,11 +232,42 @@ describe('AR Eye Hunter simulation', () => {
         if (!second.accepted) {
             return;
         }
-        expect(second.acceptedHit.eliminated).toBe(true);
-        expect(second.acceptedHit.target.vitals.deaths).toBe(1);
-        expect(second.acceptedHit.attacker.vitals.kills).toBe(1);
+        expect(second.acceptedHit.damage).toBe(18.63);
+        expect(second.acceptedHit.target.vitals.health).toBe(67.57);
+        expect(second.acceptedHit.eliminated).toBe(false);
+        expect(second.acceptedHit.target.vitals.deaths).toBe(0);
+        expect(second.acceptedHit.attacker.vitals.kills).toBe(0);
 
-        const blockedWhileDead = resolvePlayerHitIntent(second.state, {
+        let current = second.state;
+        let finalHit = second.acceptedHit;
+        for (let seq = 3; seq <= 7; seq += 1) {
+            const next = resolvePlayerHitIntent(current, {
+                shot: {
+                    sessionId: 'attacker',
+                    username: 'attacker',
+                    color: '#00e5ff',
+                    origin: [0, 1.72, 0],
+                    direction: [0, 0, 1],
+                    weaponKind: 'rail-lance',
+                    seq,
+                    sentAtEpochMs: now + seq * 200,
+                },
+                targetSessionId: 'target',
+                predictedImpact: [0, 1.72, 9],
+                sentAtEpochMs: now + seq * 200,
+            }, now + seq * 200);
+            expect(next.accepted).toBe(true);
+            if (!next.accepted) {
+                return;
+            }
+            current = next.state;
+            finalHit = next.acceptedHit;
+        }
+        expect(finalHit.eliminated).toBe(true);
+        expect(finalHit.target.vitals.deaths).toBe(1);
+        expect(finalHit.attacker.vitals.kills).toBe(1);
+
+        const blockedWhileDead = resolvePlayerHitIntent(current, {
             shot: {
                 sessionId: 'attacker',
                 username: 'attacker',
@@ -252,7 +284,7 @@ describe('AR Eye Hunter simulation', () => {
         }, now + 300);
         expect(blockedWhileDead.accepted).toBe(false);
 
-        const respawned = stepArenaDirectorState(second.state, now + 2_200);
+        const respawned = stepArenaDirectorState(current, now + 4_000);
         const target = respawned.players.find((player) => player.sessionId === 'target');
         expect(target?.vitals.health).toBe(target?.vitals.maxHealth);
         expect(target?.vitals.respawnedAtEpochMs).toBeGreaterThan(now);
@@ -429,7 +461,8 @@ describe('AR Eye Hunter simulation', () => {
             return;
         }
         expect(fired.acceptedAttack.hit).toBe(true);
-        expect(fired.acceptedAttack.target?.vitals.health).toBeLessThan(100);
+        expect(fired.acceptedAttack.damage).toBe(7.2);
+        expect(fired.acceptedAttack.target?.vitals.health).toBe(92.8);
         expect(fired.state.activeEvent?.kind).toBe('eye-attack-hit');
     });
 

@@ -86,6 +86,8 @@ const EYE_ATTACK_DEFAULT_WINDUP_MS = 1_050;
 const EYE_ATTACK_DEFAULT_COOLDOWN_MS = 4_200;
 export const PLAYER_MAX_HEALTH = 100;
 export const PLAYER_RESPAWN_MS = 1_650;
+export const PLAYER_PVP_DAMAGE_MULTIPLIER = 0.3;
+export const PLAYER_EYE_ATTACK_DAMAGE_MULTIPLIER = 0.4;
 export const PICKUP_RADIUS = 1.45;
 export const PICKUP_TTL_MS = 12_000;
 export const PICKUP_MIN_INTERVAL_MS = 4_200;
@@ -724,7 +726,8 @@ export function resolvePlayerHitIntent(
         return { accepted: false, state, reason: 'missed-player' };
     }
 
-    const damage = intent.shot.overdrive ? weapon.damage * 1.35 : weapon.damage;
+    const baseDamage = intent.shot.overdrive ? weapon.damage * 1.35 : weapon.damage;
+    const damage = round2(baseDamage * PLAYER_PVP_DAMAGE_MULTIPLIER);
     const health = round2(Math.max(0, target.vitals.health - damage));
     const eliminated = health <= 0;
     const revision = state.revision + 1;
@@ -1338,9 +1341,10 @@ function createEyeThreat(
     nowEpochMs: number,
 ): EyeThreatState {
     const boss = kind === 'boss';
+    const baseDamage = boss ? 38 : 16 + Math.min(14, waveNumber * 2);
     return {
         kind,
-        damage: boss ? 38 : 16 + Math.min(14, waveNumber * 2),
+        damage: round2(baseDamage * PLAYER_EYE_ATTACK_DAMAGE_MULTIPLIER),
         range: boss ? 88 : 68,
         coneRadians: boss ? 0.12 : 0.085,
         windupMs: Math.max(620, EYE_ATTACK_DEFAULT_WINDUP_MS - waveNumber * 35),
