@@ -817,30 +817,28 @@ export function createClientStateService(
             reason = 'websocket-closed',
         ) => {
             const authSessionRepository = dependencies.authSessionRepository;
+            const session = await findClientSessionBySessionId(
+                runtimeRepository,
+                sessionId,
+            );
             const issuedSession =
                 await authSessionRepository?.findBySessionId(sessionId);
-            const session = issuedSession
-                ? undefined
-                : await findClientSessionBySessionId(
-                    runtimeRepository,
-                    sessionId,
-                );
-            if (!issuedSession && !session) {
+            if (!session && !issuedSession) {
                 throw new NonRetryableException(`Client session not found: ${sessionId}`);
             }
 
-            const scope: StateScope = issuedSession
+            const scope: StateScope = session
                 ? {
-                    applicationId: DEFAULT_STATE_APPLICATION_ID,
-                    workspaceId: DEFAULT_STATE_WORKSPACE_ID,
+                    applicationId: session.applicationId,
+                    workspaceId: session.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
                 }
                 : {
-                    applicationId: session!.applicationId,
-                    workspaceId: session!.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
+                    applicationId: DEFAULT_STATE_APPLICATION_ID,
+                    workspaceId: DEFAULT_STATE_WORKSPACE_ID,
                 };
-            const principalId = issuedSession?.clientId ?? session!.principalId;
-            const clientInstanceId = issuedSession?.clientId ??
-                session!.clientInstanceId;
+            const principalId = session?.principalId ?? issuedSession!.clientId;
+            const clientInstanceId = session?.clientInstanceId ??
+                issuedSession!.clientId;
 
             return await service.disconnectSession(
                 scope,

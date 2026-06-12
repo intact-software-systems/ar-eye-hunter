@@ -22,6 +22,7 @@ import type {
     GroupSnapshot as GroupStateSnapshot,
 } from '@shared/api/group-types.ts';
 import {
+    type ConnectClientSessionRequest,
     type ConnectGroupPresenceSessionRequest,
     type CreateGroupRequest,
     DEFAULT_STATE_APPLICATION_ID,
@@ -405,6 +406,28 @@ export async function connectStateGroupPresenceSession(
         `${toStateScopePath(scope)}/groups/${encodeURIComponent(groupId)}/sessions/${
             encodeURIComponent(sessionId)
         }`,
+        'PUT',
+        request,
+        options,
+    );
+}
+
+export async function connectStateClientSession(
+    principalId: string,
+    clientInstanceId: string,
+    sessionId: string,
+    request: ConnectClientSessionRequest,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<ClientStateSnapshot> {
+    return await executeHttpRequest<
+        ConnectClientSessionRequest,
+        ClientStateSnapshot
+    >(
+        readApiBaseUrl(),
+        `${toStateScopePath(scope)}/clients/${encodeURIComponent(principalId)}/instances/${
+            encodeURIComponent(clientInstanceId)
+        }/sessions/${encodeURIComponent(sessionId)}`,
         'PUT',
         request,
         options,

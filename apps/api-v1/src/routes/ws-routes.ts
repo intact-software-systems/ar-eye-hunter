@@ -2,6 +2,7 @@ import { Hono } from 'jsr:@hono/hono';
 import { getMiddleware } from '../middleware.ts';
 import { requireWsAuthSession, toAuthErrorResponse } from '../services/request-auth-service.ts';
 import { ConnectionContext } from '@shared/websocket/JsonWebSocketServer.ts';
+import type { RegisterAuthorisedWsClientInput } from '@shared-server/rallar-system/services/client-state-service.ts';
 
 export function init(app: Hono): void {
     app.get(
@@ -15,7 +16,8 @@ export function init(app: Hono): void {
 
             try {
                 const sessionId = c.req.param('sessionId');
-                const ticket = new URL(c.req.url).searchParams.get('ticket') ?? undefined;
+                const requestUrl = new URL(c.req.url);
+                const ticket = requestUrl.searchParams.get('ticket') ?? undefined;
                 const userAgent = c.req.header('user-agent');
 
                 const authSession = await requireWsAuthSession({
@@ -32,9 +34,7 @@ export function init(app: Hono): void {
                 const clientStateWritten =
                     await getMiddleware().appClientInboxService.processAuthorisedWsClientConnect(
                         authSession,
-                        {
-                            userAgent,
-                        },
+                        toAuthorisedWsClientInput(requestUrl, userAgent),
                     );
                 clientStateWritten.fold(
                     (error) => {
@@ -63,6 +63,25 @@ export function init(app: Hono): void {
     );
 }
 
+export function toAuthorisedWsClientInput(
+    url: URL,
+    userAgent?: string,
+): RegisterAuthorisedWsClientInput {
+    const applicationId = readNonEmptySearchParam(url, 'applicationId');
+    const workspaceId = readNonEmptySearchParam(url, 'workspaceId');
+
+    return {
+        ...(applicationId ? { applicationId } : {}),
+        ...(workspaceId ? { workspaceId } : {}),
+        ...(userAgent ? { userAgent } : {}),
+    };
+}
+
 function isWebSocketUpgradeHeader(upgrade?: string): boolean {
     return upgrade?.trim().toLowerCase() === 'websocket';
+}
+
+function readNonEmptySearchParam(url: URL, name: string): string | undefined {
+    const value = url.searchParams.get(name)?.trim();
+    return value ? value : undefined;
 }

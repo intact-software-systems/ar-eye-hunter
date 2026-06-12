@@ -593,6 +593,72 @@ describe('state API workflows', () => {
         ).toHaveLength(1);
     });
 
+    it('repairs missing client presence once after a scoped heartbeat 404', async () => {
+        const clientData: ClientInfo = {
+            clientId: 'principal-1',
+            sessionId: 'session-1',
+            isOnline: true,
+        };
+        vi.spyOn(Date, 'now').mockReturnValue(1000);
+        stubFetch(({ url, method }) => {
+            if (
+                method === 'POST' &&
+                url ===
+                    '/api/state/apps/ar-eye-hunter/workspaces/default/clients/principal-1/instances/principal-1/sessions/session-1/heartbeat'
+            ) {
+                return textResponse('Client principal not found: principal-1', 404);
+            }
+
+            if (
+                method === 'PUT' &&
+                url ===
+                    '/api/state/apps/ar-eye-hunter/workspaces/default/clients/principal-1/instances/principal-1/sessions/session-1'
+            ) {
+                return jsonResponse(clientSnapshot('principal-1'));
+            }
+
+            if (
+                method === 'POST' &&
+                url ===
+                    '/api/state/apps/ar-eye-hunter/workspaces/default/groups/group-1/sessions/session-1/heartbeat'
+            ) {
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            return notFoundResponse();
+        });
+
+        const result = await refreshStateHeartbeat(
+            clientData,
+            [groupSnapshot('group-1')],
+            {
+                scope: {
+                    applicationId: 'ar-eye-hunter',
+                    workspaceId: 'default',
+                },
+                policies: { command: { maxAttempts: 3 } },
+            },
+        );
+
+        expect(result.client.principal.principalId).toBe('principal-1');
+        expect(result.groups.map((group) => group.group.groupId)).toEqual([
+            'group-1',
+        ]);
+        expect(fetchCalls.map((call) => `${call.method} ${call.url}`)).toEqual([
+            'POST /api/state/apps/ar-eye-hunter/workspaces/default/clients/principal-1/instances/principal-1/sessions/session-1/heartbeat',
+            'PUT /api/state/apps/ar-eye-hunter/workspaces/default/clients/principal-1/instances/principal-1/sessions/session-1',
+            'POST /api/state/apps/ar-eye-hunter/workspaces/default/groups/group-1/sessions/session-1/heartbeat',
+        ]);
+        expect(fetchCalls[1]?.body).toMatchObject({
+            actorPrincipalId: 'principal-1',
+            actorSessionId: 'session-1',
+            presenceState: 'online',
+            transport: 'ws',
+            lastHeartbeatAtEpochMs: 1000,
+            expiresAtEpochMs: 121000,
+        });
+    });
+
     it('repairs active membership once when create-and-join presence connect returns member forbidden', async () => {
         const connectUrls: string[] = [];
         const memberUrls: string[] = [];

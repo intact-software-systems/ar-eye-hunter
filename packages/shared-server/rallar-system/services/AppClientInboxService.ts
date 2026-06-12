@@ -2,9 +2,13 @@ import type {
     ConnectClientSessionRequest,
     DisconnectClientSessionRequest,
     HeartbeatClientSessionRequest,
-    StateScope,
     UpsertClientInstanceRequest,
     UpsertClientPrincipalRequest,
+} from '@shared/api/state-types.ts';
+import {
+    DEFAULT_STATE_APPLICATION_ID,
+    DEFAULT_STATE_WORKSPACE_ID,
+    type StateScope,
 } from '@shared/api/state-types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
@@ -240,13 +244,22 @@ export class AppClientInboxService extends AppInboxService {
         authSession: AuthSession,
         input?: RegisterAuthorisedWsClientInput,
     ) {
+        const scope = toAuthorisedWsClientScope(input);
+        const principalId = input?.principalId ?? authSession.clientId;
+        const clientInstanceId = input?.clientInstanceId ?? authSession.clientId;
+
         return await this.processEntryUntilCompletion<
             ClientAuthorisedWsSessionConnectAppInboxPayload,
             ClientStateWritten
         >({
             type: AppInboxType.CLIENT_AUTHORISED_WS_CONNECT,
-            resourceId: `authorised-ws-connect-${authSession.sessionId}`,
-            contextId: authSession.clientId,
+            resourceId: toAuthorisedWsClientConnectResourceId(
+                scope,
+                principalId,
+                clientInstanceId,
+                authSession.sessionId,
+            ),
+            contextId: toClientAppInboxContextId(scope, principalId),
             senderId: authSession.clientId,
             data: {
                 authSession: {
@@ -336,4 +349,40 @@ export class AppClientInboxService extends AppInboxService {
             },
         };
     }
+}
+
+function toAuthorisedWsClientScope(
+    input?: RegisterAuthorisedWsClientInput,
+): StateScope {
+    return {
+        applicationId: input?.applicationId ?? DEFAULT_STATE_APPLICATION_ID,
+        workspaceId: input?.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
+    };
+}
+
+function toAuthorisedWsClientConnectResourceId(
+    scope: StateScope,
+    principalId: string,
+    clientInstanceId: string,
+    sessionId: string,
+): string {
+    return [
+        'authorised-ws-connect',
+        scope.applicationId,
+        scope.workspaceId,
+        principalId,
+        clientInstanceId,
+        sessionId,
+    ].map(encodeURIComponent).join(':');
+}
+
+function toClientAppInboxContextId(
+    scope: StateScope,
+    principalId: string,
+): string {
+    return [
+        scope.applicationId,
+        scope.workspaceId,
+        principalId,
+    ].map(encodeURIComponent).join(':');
 }

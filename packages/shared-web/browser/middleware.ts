@@ -79,10 +79,11 @@ export const DEFAULT_REALTIME_DATA_CHANNEL_LANE: RtcDataChannelLaneConfig = {
     },
 };
 
-function toCreateWsUrl(
+export function toCreateWsUrl(
     apiConfig: ApiConfig,
     session: AuthSession,
     ticket: string,
+    scope?: StateScope,
 ): string {
     const path = apiConfig.endpoints.createWs.replace(
         ':id',
@@ -90,6 +91,10 @@ function toCreateWsUrl(
     );
     const url = new URL(path, apiConfig.wsBaseUrl);
     url.searchParams.set('ticket', ticket);
+    if (scope) {
+        url.searchParams.set('applicationId', scope.applicationId);
+        url.searchParams.set('workspaceId', scope.workspaceId);
+    }
     return url.toString();
 }
 
@@ -123,7 +128,7 @@ export async function initialiseMiddleware(
             throw new Error('WebSocket ticket does not match the current session.');
         }
 
-        return toCreateWsUrl(apiConfig, session, wsTicket.ticket);
+        return toCreateWsUrl(apiConfig, session, wsTicket.ticket, options.scope);
     });
 
     const qboxEngine: InboxOutboxEngine = qbox.initialiseQBoxEngine();

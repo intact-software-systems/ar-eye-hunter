@@ -4,6 +4,7 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { initHeartbeat } from '@shared-web/browser/heartbeat.ts';
+import { toCreateWsUrl } from '@shared-web/browser/middleware.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 
@@ -37,6 +38,28 @@ describe('browser heartbeat', () => {
 
     afterEach(() => {
         vi.unstubAllGlobals();
+    });
+
+    it('threads the active state scope into the websocket connection URL', () => {
+        const url = toCreateWsUrl(
+            {
+                apiBaseUrl: 'https://api.example.test',
+                wsBaseUrl: 'wss://api.example.test',
+                endpoints: {
+                    createWs: '/api/ws/:id',
+                },
+            },
+            authSession,
+            'ticket-1',
+            {
+                applicationId: 'ar-eye-hunter',
+                workspaceId: 'default',
+            },
+        );
+
+        expect(url).toBe(
+            'wss://api.example.test/api/ws/session-1?ticket=ticket-1&applicationId=ar-eye-hunter&workspaceId=default',
+        );
     });
 
     it('uses the active scope and prunes a cached group after an authoritative heartbeat 404', async () => {

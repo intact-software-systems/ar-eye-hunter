@@ -323,6 +323,175 @@ describe('AppClientInboxService', () => {
         expect(publisher.publishClientEvent).toHaveBeenCalledTimes(1);
     });
 
+    it('processes authorised websocket connects in the requested state scope', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const publisher = createPublisher();
+        const authSession: AuthSession = {
+            clientId: 'admin',
+            username: 'admin',
+            accessToken: 'secret-token',
+            sessionId: 'admin-ws-session',
+            expiresAtEpochMs: Date.now() + 60_000,
+        };
+        const service = new AppClientInboxService(
+            reader,
+            queue as never,
+            results as never,
+            createClientStateService({
+                runtimeRepository: new FakeRuntimeStateRepository(),
+                syncPublisher: publisher,
+                now: () => 2_000,
+                serviceId: 'server-12345678',
+            }),
+            publisher,
+            'server-12345678',
+        );
+
+        const connected = await processAppInboxMethod(reader, () =>
+            service.processAuthorisedWsClientConnect(authSession, {
+                applicationId: 'ar-eye-hunter',
+                workspaceId: 'default',
+                expiresAtEpochMs: Date.now() + 60_000,
+                userAgent: 'Browser',
+            })
+        );
+
+        const snapshot = requireRightSnapshot(connected);
+        expect(snapshot.principal).toMatchObject({
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default',
+            principalId: 'admin',
+            username: 'admin',
+        });
+        expect(snapshot.instances[0]).toMatchObject({
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default',
+            clientInstanceId: 'admin',
+            userAgent: 'Browser',
+        });
+        expect(snapshot.activeSessions[0]).toMatchObject({
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default',
+            clientInstanceId: 'admin',
+            sessionId: 'admin-ws-session',
+            transport: 'ws',
+        });
+    });
+
+    it('processes authorised websocket connects independently per state scope', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const publisher = createPublisher();
+        const authSession: AuthSession = {
+            clientId: 'admin',
+            username: 'admin',
+            accessToken: 'secret-token',
+            sessionId: 'admin-ws-session',
+            expiresAtEpochMs: Date.now() + 60_000,
+        };
+        const service = new AppClientInboxService(
+            reader,
+            queue as never,
+            results as never,
+            createClientStateService({
+                runtimeRepository: new FakeRuntimeStateRepository(),
+                syncPublisher: publisher,
+                now: () => 2_000,
+                serviceId: 'server-12345678',
+            }),
+            publisher,
+            'server-12345678',
+        );
+
+        const defaultConnect = await processAppInboxMethod(reader, () =>
+            service.processAuthorisedWsClientConnect(authSession, {
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+            })
+        );
+        const scopedConnect = await processAppInboxMethod(reader, () =>
+            service.processAuthorisedWsClientConnect(authSession, {
+                applicationId: 'ar-eye-hunter',
+                workspaceId: 'default',
+            })
+        );
+
+        expect(requireRightSnapshot(defaultConnect).principal).toMatchObject({
+            applicationId: 'rallar-server',
+            workspaceId: 'default',
+        });
+        expect(requireRightSnapshot(scopedConnect).principal).toMatchObject({
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default',
+        });
+    });
+
+    it('disconnects authorised websocket sessions from their connected state scope while auth exists', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const publisher = createPublisher();
+        const authSession: AuthSession = {
+            clientId: 'admin',
+            username: 'admin',
+            accessToken: 'secret-token',
+            sessionId: 'admin-ws-session',
+            expiresAtEpochMs: Date.now() + 60_000,
+        };
+        const service = new AppClientInboxService(
+            reader,
+            queue as never,
+            results as never,
+            createClientStateService({
+                runtimeRepository: new FakeRuntimeStateRepository(),
+                syncPublisher: publisher,
+                authSessionRepository: {
+                    findBySessionId: vi.fn(async (sessionId: string) =>
+                        sessionId === authSession.sessionId
+                            ? {
+                                ...authSession,
+                                issuedAtEpochMs: 1_000,
+                            }
+                            : undefined
+                    ),
+                } as never,
+                now: () => 2_000,
+                serviceId: 'server-12345678',
+            }),
+            publisher,
+            'server-12345678',
+        );
+
+        await processAppInboxMethod(reader, () =>
+            service.processAuthorisedWsClientConnect(authSession, {
+                applicationId: 'ar-eye-hunter',
+                workspaceId: 'default',
+                expiresAtEpochMs: Date.now() + 60_000,
+            })
+        );
+        const disconnected = await processAppInboxMethod(reader, () =>
+            service.processAuthorisedWsClientDisconnect(
+                authSession.sessionId,
+                'socket-closed',
+            )
+        );
+
+        expect(requireRightSnapshot(disconnected).principal).toMatchObject({
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default',
+            principalId: 'admin',
+        });
+        expect(requireRightSnapshot(disconnected).activeSessions).toHaveLength(0);
+        expect(requireRightWritten(disconnected).event).toMatchObject({
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default',
+            eventType: 'session-disconnected',
+        });
+    });
+
     it('processes expired client sessions through the inbox and publishes written mutations', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);

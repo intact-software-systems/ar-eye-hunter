@@ -12,6 +12,7 @@ import {
     type OrchestratorResults,
 } from '@shared/cache/CommandsOrchestrator.ts';
 import {
+    connectStateClientSession,
     connectStateGroupPresenceSession,
     createStateGroup,
     defaultStateScope,
@@ -345,10 +346,8 @@ export async function refreshStateHeartbeat(
     const results = await flow
         .sequential(
             flow.commandStep('client', (signal) =>
-                heartbeatStateClientSession(
-                    clientData.clientId,
-                    clientData.clientId,
-                    clientData.sessionId,
+                heartbeatStateClientSessionWithPresenceRepair(
+                    clientData,
                     {
                         actorPrincipalId: clientData.clientId,
                         actorSessionId: clientData.sessionId,
@@ -365,6 +364,7 @@ export async function refreshStateHeartbeat(
                 ),
                 {
                     shouldRetry: (error, attempt) =>
+                        !isNotFoundApiError(error) &&
                         shouldRetryHeartbeatError(error, attempt, commandPolicy),
                 },
             ),
@@ -424,6 +424,51 @@ export async function refreshStateHeartbeat(
         heartbeatAtEpochMs,
         expiresAtEpochMs,
     };
+}
+
+async function heartbeatStateClientSessionWithPresenceRepair(
+    clientData: ClientInfo,
+    request: Parameters<typeof heartbeatStateClientSession>[3],
+    scope: StateScope,
+    options: Parameters<typeof heartbeatStateClientSession>[5],
+): Promise<ClientStateSnapshot> {
+    try {
+        return await heartbeatStateClientSession(
+            clientData.clientId,
+            clientData.clientId,
+            clientData.sessionId,
+            request,
+            scope,
+            options,
+        );
+    } catch (error) {
+        if (!isNotFoundApiError(error)) {
+            throw error;
+        }
+    }
+
+    return await connectStateClientSession(
+        clientData.clientId,
+        clientData.clientId,
+        clientData.sessionId,
+        {
+            actorPrincipalId: request.actorPrincipalId ?? clientData.clientId,
+            actorSessionId: request.actorSessionId ?? clientData.sessionId,
+            presenceState: request.presenceState ?? 'online',
+            transport: 'ws',
+            connectionId: clientData.sessionId,
+            connectedAtEpochMs: request.lastHeartbeatAtEpochMs,
+            lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs,
+            expiresAtEpochMs: request.expiresAtEpochMs,
+            requestId: toWorkflowRequestId(
+                'client-session-connect-repair',
+                clientData.clientId,
+                clientData.sessionId,
+            ),
+        },
+        scope,
+        options,
+    );
 }
 
 async function connectStateGroupPresenceSessionWithMembershipRepair(
