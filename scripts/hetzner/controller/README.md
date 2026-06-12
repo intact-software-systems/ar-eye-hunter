@@ -150,6 +150,19 @@ Override the API CORS origins written during rollout:
 RALLAR_API_CORS_ORIGINS=https://app.example.test,https://admin.example.test ./08-rollout-controller.sh
 ```
 
+Run public smoke checks:
+
+```sh
+./03-smoke-controller.sh
+```
+
+If credentials are provided, the smoke script also verifies login, CORS headers,
+WS ticket creation, and the public `wss://.../api/ws/{sessionId}` upgrade:
+
+```sh
+RALLAR_SMOKE_USERNAME=alice RALLAR_SMOKE_PASSWORD=secret ./03-smoke-controller.sh
+```
+
 Override the checkout path:
 
 ```sh

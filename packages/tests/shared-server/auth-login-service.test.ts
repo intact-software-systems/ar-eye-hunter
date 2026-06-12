@@ -43,6 +43,40 @@ describe('auth login service', () => {
         ).resolves.toBeUndefined();
     });
 
+    it('issues independent sessions for repeat logins by the same runtime user', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const registered = await registerAuthUser(
+            {
+                username: 'multi-browser',
+                password: 'secret',
+            },
+            { runtimeRepository },
+        );
+        const userRepository = new AuthUserRepository(runtimeRepository);
+
+        const first = await loginAuthUser(
+            { username: 'multi-browser', password: 'secret' },
+            { userRepository },
+        );
+        const second = await loginAuthUser(
+            { username: 'multi-browser', password: 'secret' },
+            { userRepository },
+        );
+
+        expect(first).toMatchObject({
+            clientId: registered.clientId,
+            username: 'multi-browser',
+        });
+        expect(second).toMatchObject({
+            clientId: registered.clientId,
+            username: 'multi-browser',
+        });
+        expect(first?.sessionId).toBeDefined();
+        expect(second?.sessionId).toBeDefined();
+        expect(first?.sessionId).not.toBe(second?.sessionId);
+        expect(first?.accessToken).not.toBe(second?.accessToken);
+    });
+
     it('rejects duplicate usernames including static client reservations', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         await registerAuthUser(

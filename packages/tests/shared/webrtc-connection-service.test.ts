@@ -307,6 +307,85 @@ describe('WebRtcConnectionService', () => {
         expect(service.disconnectPeer('missing')).toBe(false);
     });
 
+    it('treats another session for the same user principal as a normal RTC peer', () => {
+        const signaler = {
+            connect: vi.fn(async () => {
+            }),
+            send: vi.fn(async () => {
+            }),
+        };
+        const service = new WebRtcConnectionService(
+            signaler as never,
+            createConnectionInput('alice-session-a'),
+        );
+
+        const connected = service.ensurePeerConnectionStarted('alice-session-b');
+
+        expect(connected.left).toBeUndefined();
+        expect(connected.right?.peerId).toBe('alice-session-b');
+        expect(service.knownPeerIds()).toEqual(['alice-session-b']);
+        expect(mockState.peerConnections).toHaveLength(1);
+        expect(mockState.dataChannels[0].input).toMatchObject({
+            peerId: 'alice-session-b',
+        });
+    });
+
+    it('rejects same-session RTC self connections without creating a peer', async () => {
+        const signaler = {
+            connect: vi.fn(async () => {
+            }),
+            send: vi.fn(async () => {
+            }),
+        };
+        const service = new WebRtcConnectionService(
+            signaler as never,
+            createConnectionInput('alice-session-a'),
+        );
+
+        const connected = service.ensurePeerConnectionStarted('alice-session-a');
+        const lane = await service.ensurePeerLaneOpen('alice-session-a');
+
+        expect(connected.left).toEqual({
+            kind: 'self',
+            peerId: 'alice-session-a',
+        });
+        expect(lane).toMatchObject({
+            status: 'self',
+            peerId: 'alice-session-a',
+            laneId: 'reliable',
+        });
+        expect(service.knownPeerIds()).toEqual([]);
+        expect(mockState.peerConnections).toHaveLength(0);
+    });
+
+    it('disconnects one same-principal RTC session peer without removing other session peers', () => {
+        const signaler = {
+            connect: vi.fn(async () => {
+            }),
+            send: vi.fn(async () => {
+            }),
+        };
+        const service = new WebRtcConnectionService(
+            signaler as never,
+            createConnectionInput('alice-session-a'),
+        );
+
+        service.ensurePeerConnectionStarted('alice-session-b');
+        service.ensurePeerConnectionStarted('alice-session-c');
+
+        expect(service.knownPeerIds()).toEqual([
+            'alice-session-b',
+            'alice-session-c',
+        ]);
+        expect(service.disconnectPeer('alice-session-b')).toBe(true);
+
+        expect(service.knownPeerIds()).toEqual(['alice-session-c']);
+        expect(mockState.dataChannels[0].reset).toHaveBeenCalledOnce();
+        expect(mockState.peerConnections[0].reset).toHaveBeenCalledOnce();
+        expect(mockState.dataChannels[1].reset).not.toHaveBeenCalled();
+        expect(mockState.peerConnections[1].reset).not.toHaveBeenCalled();
+    });
+
     it('reconnects stale data channels on an otherwise active peer', async () => {
         const signaler = {
             connect: vi.fn(async () => {

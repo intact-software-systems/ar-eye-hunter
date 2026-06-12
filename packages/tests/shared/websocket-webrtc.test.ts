@@ -320,6 +320,66 @@ describe('JsonWebSocketServer', () => {
         expect(second.sent).toEqual([]);
         expect(closed.sent).toEqual([]);
     });
+
+    it('replaces duplicate connection ids without letting stale close remove the current socket', async () => {
+        vi.stubGlobal('WebSocket', FakeWebSocket);
+
+        const server = new JsonWebSocketServer();
+        const lifecycle: string[] = [];
+        const first = new FakeWebSocket('first');
+        const second = new FakeWebSocket('second');
+
+        first.readyState = FakeWebSocket.OPEN;
+        second.readyState = FakeWebSocket.OPEN;
+        server.onWebsocketCallbacksDo('lifecycle', {
+            onClose: (ctx) => lifecycle.push(`close:${ctx.id}:${ctx.socket === second}`),
+        });
+
+        server.addConnection(new ConnectionContext('session-1', first as never));
+        server.addConnection(new ConnectionContext('session-1', second as never));
+
+        expect(first.closedWith).toEqual({
+            code: 1000,
+            reason: 'connection-replaced',
+        });
+        expect(server.connections.get('session-1')?.socket).toBe(second);
+
+        await first.emit('close', {
+            type: 'close',
+            code: 1000,
+            reason: 'connection-replaced',
+        });
+
+        expect(server.connections.get('session-1')?.socket).toBe(second);
+        expect(lifecycle).toEqual([]);
+
+        second.readyState = FakeWebSocket.CLOSED;
+        await second.emit('close', {
+            type: 'close',
+            code: 1000,
+            reason: 'done',
+        });
+
+        expect(server.connections.has('session-1')).toBe(false);
+        expect(lifecycle).toEqual(['close:session-1:true']);
+    });
+
+    it('can close a live connection by id for auth logout', () => {
+        vi.stubGlobal('WebSocket', FakeWebSocket);
+
+        const server = new JsonWebSocketServer();
+        const socket = new FakeWebSocket('session');
+        socket.readyState = FakeWebSocket.OPEN;
+        server.addConnection(new ConnectionContext('session-1', socket as never));
+
+        expect(server.closeConnection('missing-session')).toBe(false);
+        expect(server.closeConnection('session-1', 1000, 'auth-logout')).toBe(true);
+        expect(socket.closedWith).toEqual({
+            code: 1000,
+            reason: 'auth-logout',
+        });
+        expect(socket.readyState).toBe(FakeWebSocket.CLOSED);
+    });
 });
 
 describe('WsRtcSignalingTransport', () => {
@@ -745,7 +805,10 @@ class FakeWebSocket {
         this.sent.push(data);
     }
 
-    close(): void {
+    closedWith: { code?: number; reason?: string } | undefined;
+
+    close(code?: number, reason?: string): void {
+        this.closedWith = { code, reason };
         this.readyState = FakeWebSocket.CLOSED;
     }
 }

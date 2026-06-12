@@ -87,6 +87,7 @@ RALLAR_LOGIN_USER_RATE_LIMIT=100
 RALLAR_TIMING_LOGS=0
 EOF
 chmod 0600 /etc/rallar/api-v1.env
+echo "WARNING: API-v1 is configured with RALLAR_SQL_BACKEND=pglite-memory; restarting rallar-api-v1 resets auth sessions and runtime state."
 
 if [[ -z "${RALLAR_CONTROL_ADMIN_TOKEN:-}" && -r /etc/rallar/control-server.env ]]; then
   RALLAR_CONTROL_ADMIN_TOKEN="$(

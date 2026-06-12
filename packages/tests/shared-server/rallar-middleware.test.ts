@@ -206,6 +206,68 @@ describe('createWsServerTargetResolver state sync routing', () => {
         ).toEqual(['session-a']);
     });
 
+    it('routes group state broadcasts to each live session for the same principal', () => {
+        configureTestCacheRepositories();
+
+        const webSocketServer = new JsonWebSocketServer();
+        addOpenConnection(webSocketServer, 'session-a');
+        addOpenConnection(webSocketServer, 'session-b');
+        addOpenConnection(webSocketServer, 'session-c');
+        const aliceSnapshot = createClientSnapshot(
+            'alice',
+            'session-a',
+            'app-1',
+            'workspace-a',
+            2,
+        );
+        clientStateSnapshotsRepository.setClientStateSnapshots([
+            {
+                ...aliceSnapshot,
+                activeSessions: [
+                    aliceSnapshot.activeSessions[0]!,
+                    {
+                        ...aliceSnapshot.activeSessions[0]!,
+                        clientInstanceId: 'alice-instance-b',
+                        sessionId: 'session-b',
+                    },
+                ],
+                activeSessionCount: 2,
+            },
+            createClientSnapshot('bob', 'session-c', 'app-1', 'workspace-a', 1),
+        ]);
+
+        const snapshot = createGroupSnapshot(
+            'room-a',
+            'app-1',
+            'workspace-a',
+            [
+                { principalId: 'alice', sessionId: 'session-a', status: 'active' },
+                { principalId: 'alice', sessionId: 'session-b', status: 'active' },
+                { principalId: 'bob', sessionId: 'session-c', status: 'removed' },
+            ],
+            3,
+        );
+        const message = newALBroadcastMessage(
+            'server-1',
+            newALEventRoute(
+                AppTopics.groupStateSnapshot,
+                snapshot.group.groupId,
+                snapshot.group.groupId,
+            ),
+            'all',
+            AppTopics.groupStateSnapshot,
+            snapshot,
+        );
+        const resolver = createWsServerTargetResolver(webSocketServer);
+
+        expect(
+            resolver
+                .resolveBroadcastRecipients?.('all', message)
+                .map((recipient) => recipient.connectionId)
+                .sort(),
+        ).toEqual(['session-a', 'session-b']);
+    });
+
     it('routes group events using the event scope when same group id exists in multiple workspaces', () => {
         configureTestCacheRepositories();
 

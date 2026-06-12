@@ -59,9 +59,13 @@ export class JsonWebSocketServer {
     // --------------------
 
     addConnection(ctx: ConnectionContext): void {
+        const existing = this.connections.get(ctx.id);
         this.connections.set(ctx.id, ctx);
 
         this.addAllEventListeners(ctx);
+        if (existing && existing !== ctx) {
+            this.closeContext(existing, 1000, 'connection-replaced');
+        }
     }
 
     private addAllEventListeners(ctx: ConnectionContext) {
@@ -125,6 +129,9 @@ export class JsonWebSocketServer {
         ctx.socket.addEventListener(
             'close',
             (ev: CloseEvent) => {
+                if (this.connections.get(ctx.id) !== ctx) {
+                    return;
+                }
                 this.connections.delete(ctx.id);
 
                 for (const cb of this.webSocketServerCallbacks.values()) {
@@ -136,6 +143,27 @@ export class JsonWebSocketServer {
                 }
             }
         );
+    }
+
+    closeConnection(connectionId: string, code?: number, reason?: string): boolean {
+        const ctx = this.connections.get(connectionId);
+        if (!ctx) {
+            return false;
+        }
+
+        this.closeContext(ctx, code, reason);
+        return true;
+    }
+
+    private closeContext(ctx: ConnectionContext, code?: number, reason?: string): void {
+        if (
+            ctx.socket.readyState === WebSocket.CLOSING ||
+            ctx.socket.readyState === WebSocket.CLOSED
+        ) {
+            return;
+        }
+
+        ctx.socket.close(code, reason);
     }
 
     // --------------------
