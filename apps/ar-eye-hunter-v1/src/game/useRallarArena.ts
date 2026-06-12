@@ -138,6 +138,38 @@ export function useRallarArena(): ArenaConnection {
     const arenaSnapshotRef = useRef<ArenaSnapshot | undefined>(arenaSnapshot);
     const poseSendBudget = useRef(0);
 
+    const resetForSignedOutAuth = useCallback(() => {
+        arenaMatchRef.current?.stop();
+        arenaMatchRef.current = undefined;
+        setSession(undefined);
+        setRoomId(undefined);
+        setRooms([]);
+        setDirectorStatus(rallar.director.status());
+        setRtcLanes([]);
+        setAiStatus('idle');
+        setAiError(undefined);
+        setArenaSnapshot(undefined);
+        setRemoteEvents([]);
+        setActiveEvent(undefined);
+        setRemotePlayers(new Map());
+        setRemoteShots([]);
+        setRemotePlayerHits([]);
+        setPickupAcceptances([]);
+        setError(undefined);
+        setConnectionState('signed-out');
+    }, []);
+
+    useEffect(() => {
+        return rallar.auth.onChange((state) => {
+            if (state.authenticated) {
+                setSession(state.session);
+                return;
+            }
+
+            resetForSignedOutAuth();
+        }, { emitCurrent: true });
+    }, [resetForSignedOutAuth]);
+
     useEffect(() => {
         sessionRef.current = session;
     }, [session]);
@@ -899,18 +931,8 @@ export function useRallarArena(): ArenaConnection {
 
     const logout = useCallback(async () => {
         await rallar.auth.logout();
-        setSession(undefined);
-        setRoomId(undefined);
-        setRooms([]);
-        setArenaSnapshot(undefined);
-        setRemoteEvents([]);
-        setActiveEvent(undefined);
-        setRemotePlayers(new Map());
-        setRemoteShots([]);
-        setRemotePlayerHits([]);
-        setPickupAcceptances([]);
-        setConnectionState('signed-out');
-    }, []);
+        resetForSignedOutAuth();
+    }, [resetForSignedOutAuth]);
 
     const createArenaRoom = useCallback(async () => {
         const displayName = createRallarAiFunnyRoomName({

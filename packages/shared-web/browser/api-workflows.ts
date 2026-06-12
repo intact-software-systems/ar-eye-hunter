@@ -362,7 +362,12 @@ export async function refreshStateHeartbeat(
                         signal,
                         authSession: options.authSession,
                     },
-                )),
+                ),
+                {
+                    shouldRetry: (error, attempt) =>
+                        shouldRetryHeartbeatError(error, attempt, commandPolicy),
+                },
+            ),
         )
         .parallel(
             ...joinedGroups.map((snapshot) => {
@@ -396,7 +401,7 @@ export async function refreshStateHeartbeat(
                         errorOnNull: false,
                         shouldRetry: (error, attempt) =>
                             !isNotFoundApiError(error) &&
-                            (commandPolicy?.shouldRetry?.(error, attempt) ?? true),
+                            shouldRetryHeartbeatError(error, attempt, commandPolicy),
                         fallback: (error) => tolerateNotFound(error, undefined),
                     },
                 );
@@ -504,6 +509,18 @@ function isNotFoundApiError(error: unknown): boolean {
 
     const message = error instanceof Error ? error.message : String(error);
     return message.includes('404');
+}
+
+function shouldRetryHeartbeatError<T>(
+    error: unknown,
+    attempt: number,
+    commandPolicy: CommandsOrchestratorPolicies<T>['command'] | undefined,
+): boolean {
+    if (readApiErrorStatus(error) === 401) {
+        return false;
+    }
+
+    return commandPolicy?.shouldRetry?.(error, attempt) ?? true;
 }
 
 function isRepairableGroupPresenceForbidden(error: unknown): boolean {
