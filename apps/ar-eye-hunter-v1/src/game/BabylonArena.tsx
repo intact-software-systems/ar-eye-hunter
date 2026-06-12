@@ -20,21 +20,34 @@ import {
 
 import {
     applyArenaEvent,
+    applyPlayerHitAccepted,
     createInitialArenaState,
     createInitialPlayerState,
     EMPTY_INPUT,
+    findPickupNearPlayer,
+    getWeaponStats,
     hydrateArenaSnapshot,
     resolveShot,
     stepLocalPlayer,
+    stepArenaDirectorState,
     toArenaSnapshot,
+    upsertPlayerPose,
     type ArenaSimulationState,
     type LocalPlayerState,
 } from './simulation.ts';
+import { FALLBACK_ARENA_LAYOUT } from './arenaLayout.ts';
 import type {
+    ArenaLayoutSpec,
+    ArenaLayoutProp,
     ArenaEvent,
     ArenaSnapshot,
+    ArenaPickupState,
     EyeTargetState,
+    PickupIntent,
+    PlayerArenaState,
     PlayerCombatState,
+    PlayerHitAccepted,
+    PlayerHitIntent,
     PlayerInputState,
     PlayerPose,
     PlayerShot,
@@ -46,12 +59,14 @@ import type {
 } from './types.ts';
 
 type BabylonArenaProps = Readonly<{
+    localSessionId?: string;
     localUsername: string;
     localColor: string;
     roomId?: string;
     roomReady: boolean;
     remotePlayers: ReadonlyMap<string, RemotePlayer>;
     remoteShots: readonly RemoteShot[];
+    remotePlayerHits: readonly PlayerHitAccepted[];
     remoteEvents: readonly ArenaEvent[];
     arenaSnapshot?: ArenaSnapshot;
     onLocalPose: (pose: Omit<PlayerPose, 'sessionId' | 'username' | 'color'>) => void;
@@ -59,7 +74,10 @@ type BabylonArenaProps = Readonly<{
         shot: Omit<ShotIntent, 'sessionId' | 'username' | 'color'>,
         accepted: ShotAccepted,
     ) => void;
+    onPlayerHitIntent: (intent: PlayerHitIntent) => void;
+    onPickupIntent: (intent: PickupIntent) => void;
     onLocalCombatChange: (combat: PlayerCombatState) => void;
+    onLocalPlayerChange: (player: Pick<PlayerArenaState, 'vitals' | 'loadout'>) => void;
     onArenaSnapshot: (snapshot: ArenaSnapshot) => void;
 }>;
 
@@ -67,8 +85,18 @@ type RemoteAvatar = Readonly<{
     root: TransformNode;
     label: Mesh;
     ring: Mesh;
+    health: Mesh;
     material: StandardMaterial;
     accentMaterial: StandardMaterial;
+    labelTexture: DynamicTexture;
+}>;
+
+type PickupAvatar = Readonly<{
+    root: TransformNode;
+    core: Mesh;
+    ring: Mesh;
+    label: Mesh;
+    material: StandardMaterial;
     labelTexture: DynamicTexture;
 }>;
 
@@ -104,9 +132,13 @@ type ArenaRuntime = {
     glow: GlowLayer;
     avatars: Map<string, RemoteAvatar>;
     targets: Map<string, TargetAvatar>;
+    pickups: Map<string, PickupAvatar>;
+    layoutPropRoot: TransformNode;
     motionBuffer: RallarMotionBuffer<PlayerPose>;
     motionSampleKeys: Map<string, string>;
     remoteShotIds: Set<string>;
+    remoteHitIds: Set<string>;
+    sentPickupIds: Set<string>;
     appliedEventIds: Set<string>;
     arenaState: ArenaSimulationState;
     localPlayer: LocalPlayerState;
@@ -118,6 +150,8 @@ type ArenaRuntime = {
     transientEffects: TransientEffect[];
     createdEffectCount: number;
     pointerDownCount: number;
+    acceptedHitCount: number;
+    respawnCount: number;
 };
 
 type MutableInputState = {
@@ -139,7 +173,7 @@ type LocalPoseHistory = Readonly<{
     rotation: Vec3Tuple;
 }>;
 
-const ARENA_SIZE = 42;
+const ARENA_SIZE = FALLBACK_ARENA_LAYOUT.halfSize * 2;
 const BASE_FOV = 0.94;
 const MAX_TRANSIENT_EFFECTS = 48;
 
@@ -175,33 +209,43 @@ const MATRIX_SIGNS = [
 ] as const;
 
 export function BabylonArena({
+    localSessionId,
     localUsername,
     localColor,
     roomId,
     roomReady,
     remotePlayers,
     remoteShots,
+    remotePlayerHits,
     remoteEvents,
     arenaSnapshot,
     onLocalPose,
     onLocalShot,
+    onPlayerHitIntent,
+    onPickupIntent,
     onLocalCombatChange,
+    onLocalPlayerChange,
     onArenaSnapshot,
 }: BabylonArenaProps) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const runtimeRef = useRef<ArenaRuntime | undefined>(undefined);
     const remotePlayersRef = useRef(remotePlayers);
     const remoteShotsRef = useRef(remoteShots);
+    const remotePlayerHitsRef = useRef(remotePlayerHits);
     const remoteEventsRef = useRef(remoteEvents);
     const snapshotRef = useRef(arenaSnapshot);
     const callbacksRef = useRef({
         onLocalPose,
         onLocalShot,
+        onPlayerHitIntent,
+        onPickupIntent,
         onLocalCombatChange,
+        onLocalPlayerChange,
         onArenaSnapshot,
     });
     const poseSeqRef = useRef(0);
     const shotSeqRef = useRef(0);
+    const pickupSeqRef = useRef(0);
     const localPoseRef = useRef<LocalPoseHistory | undefined>(undefined);
 
     useEffect(() => {
@@ -211,6 +255,10 @@ export function BabylonArena({
     useEffect(() => {
         remoteShotsRef.current = remoteShots;
     }, [remoteShots]);
+
+    useEffect(() => {
+        remotePlayerHitsRef.current = remotePlayerHits;
+    }, [remotePlayerHits]);
 
     useEffect(() => {
         remoteEventsRef.current = remoteEvents;
@@ -224,10 +272,21 @@ export function BabylonArena({
         callbacksRef.current = {
             onLocalPose,
             onLocalShot,
+            onPlayerHitIntent,
+            onPickupIntent,
             onLocalCombatChange,
+            onLocalPlayerChange,
             onArenaSnapshot,
         };
-    }, [onArenaSnapshot, onLocalCombatChange, onLocalPose, onLocalShot]);
+    }, [
+        onArenaSnapshot,
+        onLocalCombatChange,
+        onLocalPlayerChange,
+        onLocalPose,
+        onLocalShot,
+        onPickupIntent,
+        onPlayerHitIntent,
+    ]);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -254,8 +313,12 @@ export function BabylonArena({
         glow.intensity = 0.92;
 
         buildArena(scene);
+        const layoutPropRoot = new TransformNode('arena-layout-props', scene);
 
         const now = Date.now();
+        const initialArenaState = snapshotRef.current
+            ? hydrateArenaSnapshot(snapshotRef.current)
+            : createInitialArenaState(undefined, now);
         const runtime: ArenaRuntime = {
             engine,
             scene,
@@ -263,16 +326,18 @@ export function BabylonArena({
             glow,
             avatars: new Map(),
             targets: new Map(),
+            pickups: new Map(),
+            layoutPropRoot,
             motionBuffer: createRallarMotionBuffer<PlayerPose>({
                 interpolationDelayMs: 75,
                 maxExtrapolationMs: 130,
             }),
             motionSampleKeys: new Map(),
             remoteShotIds: new Set(),
+            remoteHitIds: new Set(),
+            sentPickupIds: new Set(),
             appliedEventIds: new Set(),
-            arenaState: snapshotRef.current
-                ? hydrateArenaSnapshot(snapshotRef.current)
-                : createInitialArenaState(undefined, now),
+            arenaState: initialArenaState,
             localPlayer: createInitialPlayerState(now),
             input: { ...EMPTY_INPUT },
             lastFrameEpochMs: now,
@@ -282,8 +347,12 @@ export function BabylonArena({
             transientEffects: [],
             createdEffectCount: 0,
             pointerDownCount: 0,
+            acceptedHitCount: 0,
+            respawnCount: 0,
         };
         runtimeRef.current = runtime;
+        syncLocalPlayerFromSnapshot(runtime, localSessionId, toArenaSnapshot(initialArenaState, roomId, now));
+        buildLayoutProps(scene, layoutPropRoot, initialArenaState.layout);
         syncTargetAvatars(runtime, now);
 
         const resize = () => engine.resize();
@@ -324,9 +393,11 @@ export function BabylonArena({
             if (event.button === 0) {
                 fireLocalShot({
                     runtime,
+                    localSessionId,
                     localUsername,
                     localColor,
                     roomId,
+                    remotePlayers: remotePlayersRef.current,
                     shotSeqRef,
                     callbacksRef,
                 });
@@ -362,9 +433,14 @@ export function BabylonArena({
                 roomId,
                 remotePlayers: remotePlayersRef.current,
                 remoteShots: remoteShotsRef.current,
+                remotePlayerHits: remotePlayerHitsRef.current,
                 remoteEvents: remoteEventsRef.current,
                 arenaSnapshot: snapshotRef.current,
+                localSessionId,
+                localUsername,
+                localColor,
                 poseSeqRef,
+                pickupSeqRef,
                 localPoseRef,
                 callbacksRef,
             });
@@ -390,9 +466,17 @@ export function BabylonArena({
             delete canvas.dataset.arenaMeshCount;
             delete canvas.dataset.arenaEffectCount;
             delete canvas.dataset.arenaActiveEffectCount;
+            delete canvas.dataset.arenaSize;
+            delete canvas.dataset.arenaLayoutId;
+            delete canvas.dataset.arenaPickupCount;
+            delete canvas.dataset.arenaWeaponKind;
+            delete canvas.dataset.arenaLocalHealth;
+            delete canvas.dataset.arenaAcceptedHitCount;
+            delete canvas.dataset.arenaRespawnCount;
+            delete canvas.dataset.arenaActiveChaosId;
             runtimeRef.current = undefined;
         };
-    }, [localColor, localUsername, roomId]);
+    }, [localColor, localSessionId, localUsername, roomId]);
 
     return (
         <div className="arena-shell" data-room-ready={roomReady ? 'true' : 'false'}>
@@ -420,9 +504,14 @@ function runFrame({
     roomId,
     remotePlayers,
     remoteShots,
+    remotePlayerHits,
     remoteEvents,
     arenaSnapshot,
+    localSessionId,
+    localUsername,
+    localColor,
     poseSeqRef,
+    pickupSeqRef,
     localPoseRef,
     callbacksRef,
 }: Readonly<{
@@ -430,14 +519,22 @@ function runFrame({
     roomId?: string;
     remotePlayers: ReadonlyMap<string, RemotePlayer>;
     remoteShots: readonly RemoteShot[];
+    remotePlayerHits: readonly PlayerHitAccepted[];
     remoteEvents: readonly ArenaEvent[];
     arenaSnapshot?: ArenaSnapshot;
+    localSessionId?: string;
+    localUsername: string;
+    localColor: string;
     poseSeqRef: React.MutableRefObject<number>;
+    pickupSeqRef: React.MutableRefObject<number>;
     localPoseRef: React.MutableRefObject<LocalPoseHistory | undefined>;
     callbacksRef: React.MutableRefObject<{
         onLocalPose: BabylonArenaProps['onLocalPose'];
         onLocalShot: BabylonArenaProps['onLocalShot'];
+        onPlayerHitIntent: BabylonArenaProps['onPlayerHitIntent'];
+        onPickupIntent: BabylonArenaProps['onPickupIntent'];
         onLocalCombatChange: BabylonArenaProps['onLocalCombatChange'];
+        onLocalPlayerChange: BabylonArenaProps['onLocalPlayerChange'];
         onArenaSnapshot: BabylonArenaProps['onArenaSnapshot'];
     }>;
 }>): void {
@@ -448,6 +545,7 @@ function runFrame({
 
     if (arenaSnapshot && arenaSnapshot.revision > runtime.arenaState.revision) {
         runtime.arenaState = hydrateArenaSnapshot(arenaSnapshot);
+        syncLocalPlayerFromSnapshot(runtime, localSessionId, arenaSnapshot);
     }
 
     for (const event of remoteEvents) {
@@ -464,14 +562,39 @@ function runFrame({
         freezeInput(runtime.input),
         dtMs,
         now,
+        runtime.arenaState.layout.halfSize,
     );
+    const localPlayerId = localSessionId ?? 'local';
+    runtime.arenaState = upsertPlayerPose(
+        runtime.arenaState,
+        {
+            sessionId: localPlayerId,
+            username: localUsername,
+            color: localColor,
+            position: runtime.localPlayer.position,
+            rotation: [runtime.localPlayer.pitch, runtime.localPlayer.yaw, 0],
+            vitals: runtime.localPlayer.vitals,
+            loadout: runtime.localPlayer.loadout,
+            seq: poseSeqRef.current,
+            sentAtEpochMs: now,
+        },
+        now,
+    );
+    runtime.arenaState = stepArenaDirectorState(runtime.arenaState, now);
     runtime.arenaState = animateTargets(runtime.arenaState, dtMs, now);
+    syncPickupAvatars(runtime, now);
     syncTargetAvatars(runtime, now);
     syncRemoteAvatars(runtime, remotePlayers);
     syncRemoteShots(runtime, remoteShots);
+    syncRemotePlayerHits(runtime, remotePlayerHits, localPlayerId);
+    detectLocalPickup(runtime, localPlayerId, pickupSeqRef, callbacksRef);
     syncCamera(runtime, now);
     updateTransientEffects(runtime);
     publishLocalPose(runtime.localPlayer, poseSeqRef, callbacksRef, localPoseRef);
+    callbacksRef.current.onLocalPlayerChange({
+        vitals: runtime.localPlayer.vitals,
+        loadout: runtime.localPlayer.loadout,
+    });
 
     if (runtime.lastSnapshotRevision !== runtime.arenaState.revision) {
         runtime.lastSnapshotRevision = runtime.arenaState.revision;
@@ -630,6 +753,76 @@ function buildArena(scene: Scene): void {
     acid.diffuse = Color3.FromHexString(MATRIX_THEME.acid);
     acid.intensity = 0.72;
     acid.range = 32;
+}
+
+function buildLayoutProps(
+    scene: Scene,
+    root: TransformNode,
+    layout: ArenaLayoutSpec,
+): void {
+    for (const prop of layout.props) {
+        createLayoutProp(scene, root, prop);
+    }
+
+    for (const sign of layout.signs) {
+        createHologramSign(
+            scene,
+            `layout-sign-${sign.id}`,
+            sign.title,
+            sign.detail,
+            sign.position,
+            sign.rotationY,
+            MATRIX_THEME.acid,
+        );
+    }
+}
+
+function createLayoutProp(
+    scene: Scene,
+    root: TransformNode,
+    prop: ArenaLayoutProp,
+): void {
+    const color = prop.kind === 'hazard'
+        ? MATRIX_THEME.danger
+        : prop.kind === 'portal'
+        ? MATRIX_THEME.magenta
+        : prop.kind === 'bounce-pad'
+        ? MATRIX_THEME.amber
+        : MATRIX_THEME.cyan;
+    const material = createMatrixMaterial(
+        scene,
+        `layout-prop-${prop.id}-mat`,
+        prop.blocksShots ? MATRIX_THEME.glass : MATRIX_THEME.graphite,
+        color,
+        prop.kind === 'cover' ? 0.22 : 0.74,
+        prop.kind === 'cover' ? 0.92 : 0.76,
+    );
+
+    const mesh = MeshBuilder.CreateBox(`layout-prop-${prop.id}`, {
+        width: prop.size[0],
+        height: prop.size[1],
+        depth: prop.size[2],
+    }, scene);
+    mesh.parent = root;
+    mesh.position = vector3(prop.position);
+    mesh.rotation.y = prop.rotationY ?? 0;
+    mesh.material = material;
+
+    if (prop.kind === 'portal') {
+        createPortalRings(scene, `layout-portal-${prop.id}`, prop.position, color);
+    }
+
+    if (prop.label) {
+        createHologramSign(
+            scene,
+            `layout-prop-sign-${prop.id}`,
+            prop.label,
+            'facilities says this is intentional',
+            [prop.position[0], prop.position[1] + prop.size[1] * 0.72 + 0.9, prop.position[2]],
+            prop.rotationY ?? 0,
+            color,
+        );
+    }
 }
 
 function createMatrixMaterial(
@@ -824,34 +1017,44 @@ function drawMatrixPanel(
 
 function fireLocalShot({
     runtime,
+    localSessionId,
     localUsername,
     localColor,
     roomId,
+    remotePlayers,
     shotSeqRef,
     callbacksRef,
 }: Readonly<{
     runtime: ArenaRuntime;
+    localSessionId?: string;
     localUsername: string;
     localColor: string;
     roomId?: string;
+    remotePlayers: ReadonlyMap<string, RemotePlayer>;
     shotSeqRef: React.MutableRefObject<number>;
     callbacksRef: React.MutableRefObject<{
         onLocalPose: BabylonArenaProps['onLocalPose'];
         onLocalShot: BabylonArenaProps['onLocalShot'];
+        onPlayerHitIntent: BabylonArenaProps['onPlayerHitIntent'];
+        onPickupIntent: BabylonArenaProps['onPickupIntent'];
         onLocalCombatChange: BabylonArenaProps['onLocalCombatChange'];
+        onLocalPlayerChange: BabylonArenaProps['onLocalPlayerChange'];
         onArenaSnapshot: BabylonArenaProps['onArenaSnapshot'];
     }>;
 }>): void {
     const now = Date.now();
+    const sessionId = localSessionId ?? 'local';
     const origin = runtime.localPlayer.position;
     const direction = forwardFromAngles(runtime.localPlayer.yaw, runtime.localPlayer.pitch);
+    const weapon = getWeaponStats(runtime.localPlayer.loadout.weaponKind);
     shotSeqRef.current += 1;
     const shot: ShotIntent = {
-        sessionId: 'local',
+        sessionId,
         username: localUsername,
         color: localColor,
         origin,
         direction,
+        weaponKind: weapon.kind,
         charged: runtime.input.altFire,
         overdrive: runtime.input.overdrive,
         seq: shotSeqRef.current,
@@ -872,6 +1075,17 @@ function fireLocalShot({
     runtime.hitStopUntilEpochMs = resolution.accepted.hit ? now + 38 : runtime.hitStopUntilEpochMs;
 
     createTracer(runtime, vector3(origin), vector3(direction), localColor, resolution.accepted.hit);
+    const playerHit = findPredictedPlayerHit(remotePlayers, sessionId, origin, direction, weapon.range);
+    if (playerHit) {
+        callbacksRef.current.onPlayerHitIntent({
+            shot,
+            targetSessionId: playerHit.targetSessionId,
+            targetSeq: playerHit.targetSeq,
+            predictedImpact: playerHit.impact,
+            sentAtEpochMs: now,
+        });
+        createImpact(runtime, vector3(playerHit.impact), MATRIX_THEME.cyan, 1);
+    }
     if (resolution.accepted.hit) {
         createImpact(runtime, vector3(resolution.accepted.impact), MATRIX_THEME.amber, resolution.accepted.combo);
     }
@@ -885,12 +1099,13 @@ function fireLocalShot({
             overdrive: shot.overdrive,
             seq: shot.seq,
             sentAtEpochMs: shot.sentAtEpochMs,
+            weaponKind: shot.weaponKind,
         },
         {
             ...resolution.accepted,
             shot: {
                 ...resolution.accepted.shot,
-                sessionId: 'local',
+                sessionId,
                 username: localUsername,
                 color: localColor,
             },
@@ -907,7 +1122,10 @@ function publishLocalPose(
     callbacksRef: React.MutableRefObject<{
         onLocalPose: BabylonArenaProps['onLocalPose'];
         onLocalShot: BabylonArenaProps['onLocalShot'];
+        onPlayerHitIntent: BabylonArenaProps['onPlayerHitIntent'];
+        onPickupIntent: BabylonArenaProps['onPickupIntent'];
         onLocalCombatChange: BabylonArenaProps['onLocalCombatChange'];
+        onLocalPlayerChange: BabylonArenaProps['onLocalPlayerChange'];
         onArenaSnapshot: BabylonArenaProps['onArenaSnapshot'];
     }>,
     localPoseRef: React.MutableRefObject<LocalPoseHistory | undefined>,
@@ -951,6 +1169,8 @@ function publishLocalPose(
         score: player.combat.score,
         combo: player.combat.combo,
         overdrive: player.combat.overdrive,
+        vitals: player.vitals,
+        loadout: player.loadout,
         seq: poseSeqRef.current,
         sentAtEpochMs: now,
     });
@@ -1017,23 +1237,220 @@ function syncTargetAvatars(runtime: ArenaRuntime, nowEpochMs: number): void {
     }
 }
 
+function syncPickupAvatars(runtime: ArenaRuntime, nowEpochMs: number): void {
+    const visiblePickups = runtime.arenaState.pickups.filter((pickup) =>
+        !pickup.pickedBySessionId && pickup.expiresAtEpochMs > nowEpochMs
+    );
+    const visibleIds = new Set(visiblePickups.map((pickup) => pickup.id));
+
+    for (const pickup of visiblePickups) {
+        const avatar = getOrCreatePickupAvatar(runtime.scene, runtime.pickups, pickup);
+        avatar.root.position = vector3(pickup.position);
+        avatar.root.position.y += 0.2 + Math.sin(nowEpochMs / 280 + pickup.tier) * 0.12;
+        avatar.root.rotation.y += 0.028 + pickup.tier * 0.004;
+        avatar.ring.rotation.z -= 0.04;
+        const pulse = 1 + Math.sin(nowEpochMs / 180) * 0.04;
+        avatar.core.scaling.set(pulse, pulse, pulse);
+        updatePickupLabel(avatar.labelTexture, pickup);
+    }
+
+    for (const [pickupId, avatar] of runtime.pickups) {
+        if (visibleIds.has(pickupId)) {
+            continue;
+        }
+        avatar.root.dispose();
+        avatar.labelTexture.dispose();
+        runtime.pickups.delete(pickupId);
+        runtime.sentPickupIds.delete(pickupId);
+    }
+}
+
+function getOrCreatePickupAvatar(
+    scene: Scene,
+    pickups: Map<string, PickupAvatar>,
+    pickup: ArenaPickupState,
+): PickupAvatar {
+    const existing = pickups.get(pickup.id);
+    if (existing) {
+        return existing;
+    }
+
+    const root = new TransformNode(`pickup-root-${pickup.id}`, scene);
+    root.position = vector3(pickup.position);
+
+    const accent = pickup.tier <= 0
+        ? MATRIX_THEME.danger
+        : pickup.tier >= 3
+        ? MATRIX_THEME.amber
+        : MATRIX_THEME.cyan;
+    const material = createMatrixMaterial(
+        scene,
+        `pickup-mat-${pickup.id}`,
+        MATRIX_THEME.glass,
+        accent,
+        0.92,
+        0.86,
+    );
+
+    const core = MeshBuilder.CreateBox(`pickup-core-${pickup.id}`, {
+        width: 0.72,
+        height: 0.72,
+        depth: 0.72,
+    }, scene);
+    core.parent = root;
+    core.rotation.set(0.4, 0.2, 0.8);
+    core.material = material;
+
+    const ring = MeshBuilder.CreateTorus(`pickup-ring-${pickup.id}`, {
+        diameter: 1.55,
+        thickness: 0.04,
+        tessellation: 36,
+    }, scene);
+    ring.parent = root;
+    ring.rotation.x = Math.PI / 2;
+    ring.material = material;
+
+    const labelTexture = new DynamicTexture(`pickup-label-texture-${pickup.id}`, {
+        width: 640,
+        height: 160,
+    }, scene);
+    labelTexture.hasAlpha = true;
+    updatePickupLabel(labelTexture, pickup);
+
+    const labelMaterial = new StandardMaterial(`pickup-label-mat-${pickup.id}`, scene);
+    labelMaterial.diffuseTexture = labelTexture;
+    labelMaterial.emissiveTexture = labelTexture;
+    labelMaterial.opacityTexture = labelTexture;
+    labelMaterial.backFaceCulling = false;
+
+    const label = MeshBuilder.CreatePlane(`pickup-label-${pickup.id}`, {
+        width: 2.6,
+        height: 0.64,
+    }, scene);
+    label.parent = root;
+    label.position.y = 1.08;
+    label.billboardMode = Mesh.BILLBOARDMODE_ALL;
+    label.material = labelMaterial;
+
+    const avatar = { root, core, ring, label, material, labelTexture };
+    pickups.set(pickup.id, avatar);
+    return avatar;
+}
+
+function detectLocalPickup(
+    runtime: ArenaRuntime,
+    sessionId: string,
+    pickupSeqRef: React.MutableRefObject<number>,
+    callbacksRef: React.MutableRefObject<{
+        onLocalPose: BabylonArenaProps['onLocalPose'];
+        onLocalShot: BabylonArenaProps['onLocalShot'];
+        onPlayerHitIntent: BabylonArenaProps['onPlayerHitIntent'];
+        onPickupIntent: BabylonArenaProps['onPickupIntent'];
+        onLocalCombatChange: BabylonArenaProps['onLocalCombatChange'];
+        onLocalPlayerChange: BabylonArenaProps['onLocalPlayerChange'];
+        onArenaSnapshot: BabylonArenaProps['onArenaSnapshot'];
+    }>,
+): void {
+    const now = Date.now();
+    const pickup = findPickupNearPlayer(runtime.arenaState, sessionId, now);
+    if (!pickup || runtime.sentPickupIds.has(pickup.id)) {
+        return;
+    }
+    runtime.sentPickupIds.add(pickup.id);
+    pickupSeqRef.current += 1;
+    callbacksRef.current.onPickupIntent({
+        pickupId: pickup.id,
+        sessionId,
+        position: runtime.localPlayer.position,
+        seq: pickupSeqRef.current,
+        sentAtEpochMs: now,
+    });
+    createImpact(runtime, vector3(pickup.position), MATRIX_THEME.amber, 3);
+}
+
+function syncRemotePlayerHits(
+    runtime: ArenaRuntime,
+    remotePlayerHits: readonly PlayerHitAccepted[],
+    localSessionId: string,
+): void {
+    for (const accepted of remotePlayerHits) {
+        const id = `${accepted.intent.shot.sessionId}:${accepted.target.sessionId}:${accepted.revision}:${accepted.intent.shot.seq}`;
+        if (runtime.remoteHitIds.has(id)) {
+            continue;
+        }
+        runtime.remoteHitIds.add(id);
+        runtime.acceptedHitCount += 1;
+        runtime.arenaState = applyPlayerHitAccepted(runtime.arenaState, accepted);
+        if (accepted.target.sessionId === localSessionId) {
+            runtime.localPlayer = {
+                ...runtime.localPlayer,
+                vitals: accepted.target.vitals,
+                loadout: accepted.target.loadout,
+                position: accepted.eliminated
+                    ? runtime.localPlayer.position
+                    : accepted.target.position,
+            };
+        }
+        if (accepted.attacker.sessionId === localSessionId) {
+            runtime.localPlayer = {
+                ...runtime.localPlayer,
+                vitals: accepted.attacker.vitals,
+            };
+        }
+        createImpact(
+            runtime,
+            vector3(accepted.impact),
+            accepted.eliminated ? MATRIX_THEME.danger : MATRIX_THEME.cyan,
+            accepted.eliminated ? 8 : 2,
+        );
+    }
+}
+
+function syncLocalPlayerFromSnapshot(
+    runtime: ArenaRuntime,
+    localSessionId: string | undefined,
+    snapshot: ArenaSnapshot,
+): void {
+    const player = localSessionId
+        ? snapshot.players.find((candidate) => candidate.sessionId === localSessionId)
+        : undefined;
+    if (!player) {
+        return;
+    }
+    if (
+        player.vitals.respawnedAtEpochMs &&
+        player.vitals.respawnedAtEpochMs !== runtime.localPlayer.vitals.respawnedAtEpochMs
+    ) {
+        runtime.respawnCount += 1;
+    }
+    runtime.localPlayer = {
+        ...runtime.localPlayer,
+        position: player.position,
+        yaw: player.rotation[1],
+        pitch: player.rotation[0],
+        vitals: player.vitals,
+        loadout: player.loadout,
+    };
+}
+
 function animateTargets(
     state: ArenaSimulationState,
     dtMs: number,
     nowEpochMs: number,
 ): ArenaSimulationState {
     const dt = Math.min(0.05, Math.max(0, dtMs / 1000));
+    const bounds = Math.max(8, state.layout.halfSize - 2.5);
     const targets = state.targets.map((target) => {
         const next = addTuple(target.position, scaleTuple(target.velocity, dt));
-        const bounceX = Math.abs(next[0]) > 19;
+        const bounceX = Math.abs(next[0]) > bounds;
         const bounceY = next[1] < 1.3 || next[1] > 6.2;
-        const bounceZ = Math.abs(next[2]) > 19;
+        const bounceZ = Math.abs(next[2]) > bounds;
         return {
             ...target,
             position: [
-                clamp(next[0], -19, 19),
+                clamp(next[0], -bounds, bounds),
                 clamp(next[1], 1.3, 6.2),
-                clamp(next[2], -19, 19),
+                clamp(next[2], -bounds, bounds),
             ] as Vec3Tuple,
             velocity: [
                 bounceX ? -target.velocity[0] : target.velocity[0],
@@ -1202,7 +1619,28 @@ function syncRemoteAvatars(
         avatar.material.emissiveColor = Color3.FromHexString(pose.color).scale(0.28);
         avatar.accentMaterial.emissiveColor = Color3.FromHexString(pose.color).scale(0.78);
         avatar.ring.rotation.y += 0.025;
-        updateLabel(avatar.labelTexture, pose.username, pose.score, pose.combo ?? 0, pose.color);
+        const vitals = pose.vitals;
+        if (vitals) {
+            const healthRatio = clamp(vitals.health / Math.max(1, vitals.maxHealth), 0, 1);
+            avatar.health.scaling.x = Math.max(0.02, healthRatio);
+            avatar.health.position.x = -0.55 + healthRatio * 0.55;
+            const healthMaterial = avatar.health.material as StandardMaterial | undefined;
+            if (healthMaterial) {
+                healthMaterial.emissiveColor = Color3.FromHexString(
+                    healthRatio <= 0.28 ? MATRIX_THEME.danger : MATRIX_THEME.acid,
+                ).scale(0.86);
+            }
+            avatar.root.setEnabled(!(vitals.deadUntilEpochMs && vitals.deadUntilEpochMs > Date.now()));
+        }
+        updateLabel(
+            avatar.labelTexture,
+            pose.username,
+            pose.score,
+            pose.combo ?? 0,
+            pose.color,
+            pose.vitals,
+            pose.loadout?.weaponKind,
+        );
     }
 
     for (const [sessionId, avatar] of runtime.avatars) {
@@ -1351,10 +1789,28 @@ function getOrCreateAvatar(
     label.billboardMode = Mesh.BILLBOARDMODE_ALL;
     label.material = labelMaterial;
 
+    const healthMaterial = createMatrixMaterial(
+        scene,
+        `remote-health-${sessionId}`,
+        MATRIX_THEME.acid,
+        MATRIX_THEME.acid,
+        0.86,
+        0.92,
+    );
+    const health = MeshBuilder.CreateBox(`remote-health-bar-${sessionId}`, {
+        width: 1.1,
+        height: 0.07,
+        depth: 0.035,
+    }, scene);
+    health.parent = root;
+    health.position.set(0, 0.62, 0);
+    health.material = healthMaterial;
+
     const avatar = {
         root,
         label,
         ring,
+        health,
         material,
         accentMaterial,
         labelTexture,
@@ -1369,6 +1825,8 @@ function updateLabel(
     score: number,
     combo: number,
     color: string,
+    vitals?: PlayerArenaState['vitals'],
+    weaponKind?: string,
 ): void {
     const ctx = texture.getContext();
     ctx.clearRect(0, 0, 512, 128);
@@ -1387,7 +1845,9 @@ function updateLabel(
     ctx.fillText(username.slice(0, 18), 34, 60);
     ctx.fillStyle = MATRIX_THEME.acid;
     ctx.font = '500 24px system-ui, sans-serif';
-    ctx.fillText(`score ${score}  x${combo}`, 34, 92);
+    const health = vitals ? ` hp ${Math.ceil(vitals.health)}` : '';
+    const weapon = weaponKind ? ` ${weaponKind.replace('-', ' ')}` : '';
+    ctx.fillText(`score ${score}  x${combo}${health}${weapon}`.slice(0, 42), 34, 92);
     texture.update();
 }
 
@@ -1417,6 +1877,31 @@ function updateTargetLabel(texture: DynamicTexture, target: EyeTargetState): voi
     ctx.fillStyle = 'rgba(239, 255, 247, 0.74)';
     ctx.font = '500 22px system-ui, sans-serif';
     ctx.fillText(`hp ${Math.max(0, Math.ceil(target.health))}/${target.maxHealth}`, 40, 144);
+    texture.update();
+}
+
+function updatePickupLabel(texture: DynamicTexture, pickup: ArenaPickupState): void {
+    const accent = pickup.tier <= 0
+        ? MATRIX_THEME.danger
+        : pickup.tier >= 3
+        ? MATRIX_THEME.amber
+        : MATRIX_THEME.cyan;
+    const ctx = texture.getContext();
+    ctx.clearRect(0, 0, 640, 160);
+    ctx.fillStyle = 'rgba(0, 8, 7, 0.78)';
+    ctx.fillRect(14, 18, 612, 118);
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 5;
+    ctx.strokeRect(14, 18, 612, 118);
+    ctx.fillStyle = accent;
+    ctx.font = '700 25px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.fillText(pickup.tier <= 0 ? 'DOWNGRADE' : `TIER ${pickup.tier}`, 34, 58);
+    ctx.fillStyle = MATRIX_THEME.white;
+    ctx.font = '700 32px system-ui, sans-serif';
+    ctx.fillText(pickup.label.slice(0, 24), 34, 98);
+    ctx.fillStyle = 'rgba(239, 255, 247, 0.72)';
+    ctx.font = '500 19px system-ui, sans-serif';
+    ctx.fillText('walk over to accept HR consequences', 34, 124);
     texture.update();
 }
 
@@ -1709,6 +2194,47 @@ function getArenaEventJoke(kind: ArenaEvent['kind']): string {
     return 'the director has opinions';
 }
 
+function findPredictedPlayerHit(
+    remotePlayers: ReadonlyMap<string, RemotePlayer>,
+    localSessionId: string,
+    origin: Vec3Tuple,
+    direction: Vec3Tuple,
+    range: number,
+): Readonly<{ targetSessionId: string; targetSeq: number; impact: Vec3Tuple }> | undefined {
+    const ray = normalizeTuple(direction);
+    let best: Readonly<{ targetSessionId: string; targetSeq: number; impact: Vec3Tuple; distance: number }> | undefined;
+    for (const [sessionId, remote] of remotePlayers) {
+        if (sessionId === localSessionId) {
+            continue;
+        }
+        if (
+            remote.pose.vitals?.deadUntilEpochMs &&
+            remote.pose.vitals.deadUntilEpochMs > Date.now()
+        ) {
+            continue;
+        }
+        const toTarget = subTuple(remote.pose.position, origin);
+        const along = dotTuple(toTarget, ray);
+        if (along < 0 || along > range) {
+            continue;
+        }
+        const impact = addTuple(origin, scaleTuple(ray, along));
+        const miss = distanceTuple(impact, remote.pose.position);
+        if (miss > 0.95) {
+            continue;
+        }
+        if (!best || along < best.distance) {
+            best = {
+                targetSessionId: sessionId,
+                targetSeq: remote.pose.seq,
+                impact,
+                distance: along,
+            };
+        }
+    }
+    return best;
+}
+
 function setInputKey(input: MutableInputState, code: string, pressed: boolean): void {
     if (code === 'KeyW') {
         input.moveZ = pressed ? 1 : input.moveZ === 1 ? 0 : input.moveZ;
@@ -1756,6 +2282,16 @@ function writeArenaDiagnostics(canvas: HTMLCanvasElement, runtime: ArenaRuntime)
     canvas.dataset.arenaActiveEffectCount = String(runtime.transientEffects.length);
     canvas.dataset.arenaTargetCount = String(runtime.targets.size);
     canvas.dataset.arenaPointerDownCount = String(runtime.pointerDownCount);
+    canvas.dataset.arenaSize = String(runtime.arenaState.layout.halfSize * 2);
+    canvas.dataset.arenaLayoutId = runtime.arenaState.layout.id;
+    canvas.dataset.arenaPickupCount = String(
+        runtime.arenaState.pickups.filter((pickup) => !pickup.pickedBySessionId).length,
+    );
+    canvas.dataset.arenaWeaponKind = runtime.localPlayer.loadout.weaponKind;
+    canvas.dataset.arenaLocalHealth = String(Math.ceil(runtime.localPlayer.vitals.health));
+    canvas.dataset.arenaAcceptedHitCount = String(runtime.acceptedHitCount);
+    canvas.dataset.arenaRespawnCount = String(runtime.respawnCount);
+    canvas.dataset.arenaActiveChaosId = runtime.arenaState.activeEvent?.id ?? '';
 }
 
 function hashString(value: string): number {
@@ -1783,8 +2319,27 @@ function addTuple(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
     return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 }
 
+function subTuple(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
+    return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+}
+
 function scaleTuple(a: Vec3Tuple, scalar: number): Vec3Tuple {
     return [a[0] * scalar, a[1] * scalar, a[2] * scalar];
+}
+
+function dotTuple(a: Vec3Tuple, b: Vec3Tuple): number {
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function distanceTuple(a: Vec3Tuple, b: Vec3Tuple): number {
+    return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+}
+
+function normalizeTuple(value: Vec3Tuple): Vec3Tuple {
+    const length = Math.hypot(value[0], value[1], value[2]);
+    return length > 0.0001
+        ? [value[0] / length, value[1] / length, value[2] / length]
+        : [0, 0, 1];
 }
 
 function clamp(value: number, min: number, max: number): number {

@@ -110,6 +110,24 @@ export function isArenaAcceptedShotFromSender(
         message.accepted.shot.sessionId === senderId;
 }
 
+export function isArenaPlayerHitIntentFromSender(
+    message: GameRealtimeMessage,
+    senderId: string,
+): message is Extract<GameRealtimeMessage, { kind: 'player-hit-intent' }> {
+    return message.protocol === GAME_PROTOCOL &&
+        message.kind === 'player-hit-intent' &&
+        message.intent.shot.sessionId === senderId;
+}
+
+export function isArenaPickupIntentFromSender(
+    message: GameRealtimeMessage,
+    senderId: string,
+): message is Extract<GameRealtimeMessage, { kind: 'pickup-intent' }> {
+    return message.protocol === GAME_PROTOCOL &&
+        message.kind === 'pickup-intent' &&
+        message.intent.sessionId === senderId;
+}
+
 function readArenaHostCapability() {
     return {
         canHost: true,

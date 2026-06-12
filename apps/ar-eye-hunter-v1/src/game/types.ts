@@ -19,6 +19,114 @@ export type Vec3Tuple = readonly [number, number, number];
 
 export type TargetRarity = 'common' | 'volatile' | 'bounty' | 'rift';
 
+export type WeaponKind =
+    | 'pulse-rifle'
+    | 'spread-shot'
+    | 'rail-lance'
+    | 'glitch-blaster'
+    | 'audit-pea-shooter'
+    | 'confetti-cannon';
+
+export type WeaponStats = Readonly<{
+    kind: WeaponKind;
+    label: string;
+    tier: number;
+    damage: number;
+    cooldownMs: number;
+    range: number;
+    spreadRadians: number;
+    rays: number;
+    knockback: number;
+    flavor: string;
+}>;
+
+export type ArenaLayoutTheme = Readonly<{
+    base: string;
+    grid: string;
+    accent: string;
+    warning: string;
+    reward: string;
+}>;
+
+export type ArenaLayoutProp = Readonly<{
+    id: string;
+    kind: 'cover' | 'ramp' | 'portal' | 'bounce-pad' | 'hazard';
+    position: Vec3Tuple;
+    size: Vec3Tuple;
+    rotationY?: number;
+    blocksShots: boolean;
+    label?: string;
+}>;
+
+export type ArenaLayoutSign = Readonly<{
+    id: string;
+    title: string;
+    detail: string;
+    position: Vec3Tuple;
+    rotationY: number;
+}>;
+
+export type ArenaPickupAnchor = Readonly<{
+    id: string;
+    position: Vec3Tuple;
+    weight?: number;
+}>;
+
+export type ArenaLayoutSpec = Readonly<{
+    schema: 'ar-eye-hunter.arena-layout';
+    version: '1';
+    id: string;
+    revision: number;
+    name: string;
+    halfSize: number;
+    theme: ArenaLayoutTheme;
+    spawnPoints: readonly Vec3Tuple[];
+    pickupAnchors: readonly ArenaPickupAnchor[];
+    props: readonly ArenaLayoutProp[];
+    signs: readonly ArenaLayoutSign[];
+}>;
+
+export type ArenaPickupState = Readonly<{
+    id: string;
+    weaponKind: WeaponKind;
+    tier: number;
+    position: Vec3Tuple;
+    anchorId: string;
+    spawnedAtEpochMs: number;
+    expiresAtEpochMs: number;
+    pickedBySessionId?: string;
+    pickedAtEpochMs?: number;
+    label: string;
+}>;
+
+export type PlayerVitalsState = Readonly<{
+    health: number;
+    maxHealth: number;
+    deaths: number;
+    kills: number;
+    deadUntilEpochMs?: number;
+    respawnedAtEpochMs?: number;
+    lastDamagedAtEpochMs?: number;
+}>;
+
+export type PlayerLoadoutState = Readonly<{
+    weaponKind: WeaponKind;
+    tier: number;
+    pickedAtEpochMs?: number;
+}>;
+
+export type PlayerArenaState = Readonly<{
+    sessionId: string;
+    username: string;
+    color: string;
+    position: Vec3Tuple;
+    rotation: Vec3Tuple;
+    vitals: PlayerVitalsState;
+    loadout: PlayerLoadoutState;
+    seq: number;
+    updatedAtEpochMs: number;
+}>;
+
 export type EyeTargetState = Readonly<{
     id: string;
     position: Vec3Tuple;
@@ -69,6 +177,8 @@ export type PlayerPose = Readonly<{
     score: number;
     combo?: number;
     overdrive?: number;
+    vitals?: PlayerVitalsState;
+    loadout?: PlayerLoadoutState;
     seq: number;
     sentAtEpochMs: number;
 }>;
@@ -79,6 +189,7 @@ export type ShotIntent = Readonly<{
     color: string;
     origin: Vec3Tuple;
     direction: Vec3Tuple;
+    weaponKind?: WeaponKind;
     charged?: boolean;
     overdrive?: boolean;
     seq: number;
@@ -100,6 +211,43 @@ export type ShotAccepted = Readonly<{
     acceptedAtEpochMs: number;
 }>;
 
+export type PlayerHitIntent = Readonly<{
+    shot: ShotIntent;
+    targetSessionId: string;
+    targetSeq?: number;
+    predictedImpact: Vec3Tuple;
+    sentAtEpochMs: number;
+}>;
+
+export type PlayerHitAccepted = Readonly<{
+    intent: PlayerHitIntent;
+    hit: boolean;
+    impact: Vec3Tuple;
+    damage: number;
+    weaponKind: WeaponKind;
+    target: PlayerArenaState;
+    attacker: PlayerArenaState;
+    eliminated: boolean;
+    revision: number;
+    acceptedAtEpochMs: number;
+}>;
+
+export type PickupIntent = Readonly<{
+    pickupId: string;
+    sessionId: string;
+    position: Vec3Tuple;
+    seq: number;
+    sentAtEpochMs: number;
+}>;
+
+export type PickupAccepted = Readonly<{
+    intent: PickupIntent;
+    pickup: ArenaPickupState;
+    player: PlayerArenaState;
+    revision: number;
+    acceptedAtEpochMs: number;
+}>;
+
 export type ArenaEventKind =
     | 'spawn-eye'
     | 'mutate-target'
@@ -107,7 +255,14 @@ export type ArenaEventKind =
     | 'hazard-burst'
     | 'combo-bounty'
     | 'reward-drop'
-    | 'overdrive-window';
+    | 'overdrive-window'
+    | 'weapon-drop'
+    | 'weapon-picked-up'
+    | 'player-hit'
+    | 'player-eliminated'
+    | 'player-respawned'
+    | 'layout-shift'
+    | 'chaos-modifier';
 
 export type ArenaEvent = Readonly<{
     id: string;
@@ -131,7 +286,10 @@ export type ArenaSnapshot = Readonly<{
     roomId?: string;
     revision: number;
     seed: number;
+    layout: ArenaLayoutSpec;
     targets: readonly EyeTargetState[];
+    pickups: readonly ArenaPickupState[];
+    players: readonly PlayerArenaState[];
     events: readonly ArenaEvent[];
     activeEvent?: ArenaEvent;
     sentAtEpochMs: number;
@@ -194,6 +352,26 @@ export type GameRealtimeMessage =
     protocol: typeof GAME_PROTOCOL;
     kind: 'director-shot-accepted';
     accepted: ShotAccepted;
+}>
+    | Readonly<{
+    protocol: typeof GAME_PROTOCOL;
+    kind: 'player-hit-intent';
+    intent: PlayerHitIntent;
+}>
+    | Readonly<{
+    protocol: typeof GAME_PROTOCOL;
+    kind: 'director-player-hit-accepted';
+    accepted: PlayerHitAccepted;
+}>
+    | Readonly<{
+    protocol: typeof GAME_PROTOCOL;
+    kind: 'pickup-intent';
+    intent: PickupIntent;
+}>
+    | Readonly<{
+    protocol: typeof GAME_PROTOCOL;
+    kind: 'director-pickup-accepted';
+    accepted: PickupAccepted;
 }>
     | Readonly<{
     protocol: typeof GAME_PROTOCOL;

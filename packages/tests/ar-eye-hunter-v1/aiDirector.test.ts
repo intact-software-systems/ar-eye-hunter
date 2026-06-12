@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     materializeAiArenaEvent,
+    validateAiArenaLayoutProposal,
     validateAiDirectorProposalValue,
 } from '../../../apps/ar-eye-hunter-v1/src/game/aiDirector.ts';
 import {
@@ -96,6 +97,51 @@ describe('AR Eye Hunter AI director', () => {
         expect(first.applied).toBe(true);
         expect(second.applied).toBe(false);
         expect(applyCount).toBe(1);
+    });
+
+    it('validates bounded AI layout proposals before Babylon can render them', () => {
+        const validation = validateAiArenaLayoutProposal({
+            schema: 'ar-eye-hunter.arena-layout',
+            version: '1',
+            id: 'ai-layout-1',
+            revision: 2,
+            name: 'Exit Through Gift Shop Protocol',
+            halfSize: 44,
+            theme: {
+                base: '#020805',
+                grid: '#49ff86',
+                accent: '#00e5ff',
+                warning: '#ff3df2',
+                reward: '#ffe66d',
+            },
+            spawnPoints: [
+                [-30, 1.72, -30],
+                [30, 1.72, 30],
+            ],
+            pickupAnchors: [
+                { id: 'pickup-a', position: [0, 1, 0] },
+                { id: 'pickup-b', position: [14, 1, 0] },
+                { id: 'pickup-c', position: [-14, 1, 0] },
+            ],
+            props: [{
+                id: 'cover-a',
+                kind: 'cover',
+                position: [0, 1, 8],
+                size: [4, 2, 2],
+                blocksShots: true,
+            }],
+            signs: [{
+                id: 'sign-a',
+                title: 'MORALE PATCH',
+                detail: 'fun is mandatory and logged',
+                position: [0, 3, 38],
+                rotationY: Math.PI,
+            }],
+        });
+
+        expect(validation.ok).toBe(true);
+        expect(validation.layout.id).toBe('ai-layout-1');
+        expect(validation.layout.pickupAnchors.length).toBe(3);
     });
 });
 

@@ -26,6 +26,10 @@ import {
     type ArenaEvent,
     type ArenaSnapshot,
     type GameRealtimeMessage,
+    type PickupAccepted,
+    type PickupIntent,
+    type PlayerHitAccepted,
+    type PlayerHitIntent,
     type PlayerPose,
     type PlayerShot,
     type RemotePlayer,
@@ -41,13 +45,24 @@ import {
     validateAiDirectorProposalValue,
     type AiDirectorContext,
 } from './aiDirector.ts';
-import { arenaRevisionKey, hydrateArenaSnapshot } from './simulation.ts';
+import {
+    applyPickupAccepted,
+    applyPlayerHitAccepted,
+    arenaRevisionKey,
+    hydrateArenaSnapshot,
+    resolvePickupIntent,
+    resolvePlayerHitIntent,
+    toArenaSnapshot,
+    upsertPlayerPose,
+} from './simulation.ts';
 import {
     ARENA_RALLAR_GAME_DATA_CHANNEL_LANES,
     GAME_SNAPSHOT_LANE_ID,
     createArenaRallarGameMatch,
     isArenaAcceptedShotFromSender,
+    isArenaPickupIntentFromSender,
     isArenaPoseIntentFromSender,
+    isArenaPlayerHitIntentFromSender,
     isArenaShotIntentFromSender,
     type ArenaRallarGameMatchHandle,
 } from './rallar-game-match-adapter.ts';
@@ -70,6 +85,8 @@ export type ArenaConnection = Readonly<{
     remoteEvents: readonly ArenaEvent[];
     remotePlayers: ReadonlyMap<string, RemotePlayer>;
     remoteShots: readonly RemoteShot[];
+    remotePlayerHits: readonly PlayerHitAccepted[];
+    pickupAcceptances: readonly PickupAccepted[];
     login(username: string, password: string): Promise<void>;
     register(username: string, password: string, displayName?: string): Promise<void>;
     logout(): Promise<void>;
@@ -82,6 +99,8 @@ export type ArenaConnection = Readonly<{
         shot: Omit<PlayerShot, 'sessionId' | 'username' | 'color'>,
         accepted: ShotAccepted,
     ): void;
+    sendPlayerHit(intent: PlayerHitIntent): void;
+    sendPickupIntent(intent: PickupIntent): void;
     publishArenaSnapshot(snapshot: ArenaSnapshot): void;
 }>;
 
@@ -108,6 +127,8 @@ export function useRallarArena(): ArenaConnection {
         ReadonlyMap<string, RemotePlayer>
     >(new Map());
     const [remoteShots, setRemoteShots] = useState<readonly RemoteShot[]>([]);
+    const [remotePlayerHits, setRemotePlayerHits] = useState<readonly PlayerHitAccepted[]>([]);
+    const [pickupAcceptances, setPickupAcceptances] = useState<readonly PickupAccepted[]>([]);
 
     const roomIdRef = useRef<string | undefined>(undefined);
     const sessionRef = useRef<AuthSession | undefined>(session);
@@ -137,6 +158,55 @@ export function useRallarArena(): ArenaConnection {
         arenaSnapshotRef.current = arenaSnapshot;
     }, [arenaSnapshot]);
 
+    const acceptPlayerHit = useCallback((accepted: PlayerHitAccepted) => {
+        setRemotePlayerHits((previous) => [
+            ...previous.filter((item) =>
+                item.revision !== accepted.revision ||
+                item.target.sessionId !== accepted.target.sessionId ||
+                item.intent.shot.seq !== accepted.intent.shot.seq
+            ).slice(-24),
+            accepted,
+        ]);
+        setArenaSnapshot((previous) => {
+            if (!previous) {
+                return previous;
+            }
+            const next = toArenaSnapshot(
+                applyPlayerHitAccepted(hydrateArenaSnapshot(previous), accepted),
+                previous.roomId ?? roomIdRef.current,
+                Date.now(),
+            );
+            arenaSnapshotRef.current = next;
+            setActiveEvent(next.activeEvent);
+            setRemoteEvents(next.events);
+            return next;
+        });
+    }, []);
+
+    const acceptPickup = useCallback((accepted: PickupAccepted) => {
+        setPickupAcceptances((previous) => [
+            ...previous.filter((item) =>
+                item.revision !== accepted.revision ||
+                item.pickup.id !== accepted.pickup.id
+            ).slice(-24),
+            accepted,
+        ]);
+        setArenaSnapshot((previous) => {
+            if (!previous) {
+                return previous;
+            }
+            const next = toArenaSnapshot(
+                applyPickupAccepted(hydrateArenaSnapshot(previous), accepted),
+                previous.roomId ?? roomIdRef.current,
+                Date.now(),
+            );
+            arenaSnapshotRef.current = next;
+            setActiveEvent(next.activeEvent);
+            setRemoteEvents(next.events);
+            return next;
+        });
+    }, []);
+
     const acceptDirectorOutput = useCallback((
         message: GameRealtimeMessage,
     ) => {
@@ -162,6 +232,18 @@ export function useRallarArena(): ArenaConnection {
                     pose,
                     lastSeenEpochMs: Date.now(),
                 });
+                return next;
+            });
+            setArenaSnapshot((previous) => {
+                if (!previous) {
+                    return previous;
+                }
+                const next = toArenaSnapshot(
+                    upsertPlayerPose(hydrateArenaSnapshot(previous), pose, Date.now()),
+                    previous.roomId ?? roomIdRef.current,
+                    Date.now(),
+                );
+                arenaSnapshotRef.current = next;
                 return next;
             });
             return;
@@ -201,6 +283,16 @@ export function useRallarArena(): ArenaConnection {
             return;
         }
 
+        if (message.kind === 'director-player-hit-accepted') {
+            acceptPlayerHit(message.accepted);
+            return;
+        }
+
+        if (message.kind === 'director-pickup-accepted') {
+            acceptPickup(message.accepted);
+            return;
+        }
+
         if (message.kind === 'arena-event') {
             setRemoteEvents((previous) => [
                 ...previous.filter((event) => event.id !== message.event.id).slice(-12),
@@ -230,7 +322,7 @@ export function useRallarArena(): ArenaConnection {
                     ]),
             ));
         }
-    }, []);
+    }, [acceptPickup, acceptPlayerHit]);
 
     const acceptMotionMessage = useCallback((
         peerId: string,
@@ -264,7 +356,7 @@ export function useRallarArena(): ArenaConnection {
         }
 
         return;
-    }, []);
+    }, [acceptPickup, acceptPlayerHit]);
 
     const acceptRealtimeMessage = useCallback((
         peerId: string,
@@ -497,6 +589,17 @@ export function useRallarArena(): ArenaConnection {
                     return;
                 }
 
+                const previous = arenaSnapshotRef.current;
+                if (previous) {
+                    const next = toArenaSnapshot(
+                        upsertPlayerPose(hydrateArenaSnapshot(previous), data.pose, Date.now()),
+                        previous.roomId ?? roomIdRef.current,
+                        Date.now(),
+                    );
+                    arenaSnapshotRef.current = next;
+                    setArenaSnapshot(next);
+                }
+
                 await arenaMatchRef.current?.publishEvent({
                     protocol: GAME_PROTOCOL,
                     kind: 'director-player-state',
@@ -510,6 +613,70 @@ export function useRallarArena(): ArenaConnection {
                         protocol: GAME_PROTOCOL,
                         kind: 'director-shot-event',
                         shot: data.shot,
+                    });
+                    return;
+                }
+
+                if (isArenaPlayerHitIntentFromSender(data, envelope.senderId)) {
+                    const previous = arenaSnapshotRef.current;
+                    if (!previous) {
+                        return;
+                    }
+                    const result = resolvePlayerHitIntent(
+                        hydrateArenaSnapshot(previous),
+                        data.intent,
+                        Date.now(),
+                    );
+                    if (!result.accepted) {
+                        return;
+                    }
+                    const snapshot = toArenaSnapshot(
+                        result.state,
+                        previous.roomId ?? roomIdRef.current,
+                        Date.now(),
+                    );
+                    arenaSnapshotRef.current = snapshot;
+                    setArenaSnapshot(snapshot);
+                    acceptPlayerHit(result.acceptedHit);
+                    await arenaMatchRef.current?.publishEvent({
+                        protocol: GAME_PROTOCOL,
+                        kind: 'director-player-hit-accepted',
+                        accepted: result.acceptedHit,
+                    });
+                    await arenaMatchRef.current?.publishSnapshot(snapshot, {
+                        reliable: false,
+                    });
+                    return;
+                }
+
+                if (isArenaPickupIntentFromSender(data, envelope.senderId)) {
+                    const previous = arenaSnapshotRef.current;
+                    if (!previous) {
+                        return;
+                    }
+                    const result = resolvePickupIntent(
+                        hydrateArenaSnapshot(previous),
+                        data.intent,
+                        Date.now(),
+                    );
+                    if (!result.accepted) {
+                        return;
+                    }
+                    const snapshot = toArenaSnapshot(
+                        result.state,
+                        previous.roomId ?? roomIdRef.current,
+                        Date.now(),
+                    );
+                    arenaSnapshotRef.current = snapshot;
+                    setArenaSnapshot(snapshot);
+                    acceptPickup(result.acceptedPickup);
+                    await arenaMatchRef.current?.publishEvent({
+                        protocol: GAME_PROTOCOL,
+                        kind: 'director-pickup-accepted',
+                        accepted: result.acceptedPickup,
+                    });
+                    await arenaMatchRef.current?.publishSnapshot(snapshot, {
+                        reliable: false,
                     });
                     return;
                 }
@@ -574,7 +741,7 @@ export function useRallarArena(): ArenaConnection {
                 arenaMatchRef.current = undefined;
             }
         };
-    }, [acceptDirectorOutput, connectionState, roomId]);
+    }, [acceptDirectorOutput, acceptPickup, acceptPlayerHit, connectionState, roomId]);
 
     useEffect(() => {
         if (
@@ -740,6 +907,8 @@ export function useRallarArena(): ArenaConnection {
         setActiveEvent(undefined);
         setRemotePlayers(new Map());
         setRemoteShots([]);
+        setRemotePlayerHits([]);
+        setPickupAcceptances([]);
         setConnectionState('signed-out');
     }, []);
 
@@ -898,6 +1067,136 @@ export function useRallarArena(): ArenaConnection {
         });
     }, []);
 
+    const sendPlayerHit = useCallback((intent: PlayerHitIntent) => {
+        const currentSession = sessionRef.current;
+        const currentRoomId = roomIdRef.current;
+        if (!currentSession || !currentRoomId) {
+            return;
+        }
+
+        const fullIntent: PlayerHitIntent = {
+            ...intent,
+            shot: {
+                ...intent.shot,
+                sessionId: currentSession.sessionId,
+                username: currentSession.username,
+                color: colorForId(currentSession.sessionId),
+            },
+            sentAtEpochMs: Date.now(),
+        };
+        const message: GameRealtimeMessage = {
+            protocol: GAME_PROTOCOL,
+            kind: 'player-hit-intent',
+            intent: fullIntent,
+        };
+        const match = arenaMatchRef.current;
+        if (match?.status().directorIsFresh) {
+            if (match.status().directorPeerId === currentSession.sessionId) {
+                const previous = arenaSnapshotRef.current;
+                if (!previous) {
+                    return;
+                }
+                const result = resolvePlayerHitIntent(
+                    hydrateArenaSnapshot(previous),
+                    fullIntent,
+                    Date.now(),
+                );
+                if (!result.accepted) {
+                    return;
+                }
+                const snapshot = toArenaSnapshot(result.state, previous.roomId ?? currentRoomId, Date.now());
+                arenaSnapshotRef.current = snapshot;
+                setArenaSnapshot(snapshot);
+                acceptPlayerHit(result.acceptedHit);
+                void match.publishEvent({
+                    protocol: GAME_PROTOCOL,
+                    kind: 'director-player-hit-accepted',
+                    accepted: result.acceptedHit,
+                });
+                void match.publishSnapshot(snapshot, { reliable: false });
+            } else {
+                void match.sendIntent(message);
+            }
+            return;
+        }
+
+        const currentDirector = directorStatusRef.current;
+        if (currentDirector.appointment && !currentDirector.isFresh) {
+            return;
+        }
+
+        void rallar.realtime.sendJson<GameRealtimeMessage>({
+            laneId: GAME_COMBAT_LANE_ID,
+            roomId: currentRoomId,
+            data: message,
+            maxAgeMs: 650,
+            openTimeoutMs: 1500,
+        });
+    }, [acceptPlayerHit]);
+
+    const sendPickupIntent = useCallback((intent: PickupIntent) => {
+        const currentSession = sessionRef.current;
+        const currentRoomId = roomIdRef.current;
+        if (!currentSession || !currentRoomId) {
+            return;
+        }
+
+        const fullIntent: PickupIntent = {
+            ...intent,
+            sessionId: currentSession.sessionId,
+            sentAtEpochMs: Date.now(),
+        };
+        const message: GameRealtimeMessage = {
+            protocol: GAME_PROTOCOL,
+            kind: 'pickup-intent',
+            intent: fullIntent,
+        };
+        const match = arenaMatchRef.current;
+        if (match?.status().directorIsFresh) {
+            if (match.status().directorPeerId === currentSession.sessionId) {
+                const previous = arenaSnapshotRef.current;
+                if (!previous) {
+                    return;
+                }
+                const result = resolvePickupIntent(
+                    hydrateArenaSnapshot(previous),
+                    fullIntent,
+                    Date.now(),
+                );
+                if (!result.accepted) {
+                    return;
+                }
+                const snapshot = toArenaSnapshot(result.state, previous.roomId ?? currentRoomId, Date.now());
+                arenaSnapshotRef.current = snapshot;
+                setArenaSnapshot(snapshot);
+                acceptPickup(result.acceptedPickup);
+                void match.publishEvent({
+                    protocol: GAME_PROTOCOL,
+                    kind: 'director-pickup-accepted',
+                    accepted: result.acceptedPickup,
+                });
+                void match.publishSnapshot(snapshot, { reliable: false });
+            } else {
+                void match.sendIntent(message);
+            }
+            return;
+        }
+
+        const currentDirector = directorStatusRef.current;
+        if (currentDirector.appointment && !currentDirector.isFresh) {
+            return;
+        }
+
+        void rallar.realtime.sendJson<GameRealtimeMessage>({
+            laneId: GAME_COMBAT_LANE_ID,
+            roomId: currentRoomId,
+            data: message,
+            key: `pickup:${fullIntent.pickupId}`,
+            maxAgeMs: 650,
+            openTimeoutMs: 1500,
+        });
+    }, [acceptPickup]);
+
     const publishArenaSnapshot = useCallback((snapshot: ArenaSnapshot) => {
         setArenaSnapshot((previous) =>
             !previous || snapshot.revision >= previous.revision ? snapshot : previous
@@ -930,6 +1229,8 @@ export function useRallarArena(): ArenaConnection {
         remoteEvents,
         remotePlayers,
         remoteShots,
+        remotePlayerHits,
+        pickupAcceptances,
         login,
         register,
         logout,
@@ -939,6 +1240,8 @@ export function useRallarArena(): ArenaConnection {
         appointSelfAsDirector,
         sendPose,
         sendShot,
+        sendPlayerHit,
+        sendPickupIntent,
         publishArenaSnapshot,
     }), [
         session,
@@ -955,6 +1258,8 @@ export function useRallarArena(): ArenaConnection {
         remoteEvents,
         remotePlayers,
         remoteShots,
+        remotePlayerHits,
+        pickupAcceptances,
         login,
         register,
         logout,
@@ -964,6 +1269,8 @@ export function useRallarArena(): ArenaConnection {
         appointSelfAsDirector,
         sendPose,
         sendShot,
+        sendPlayerHit,
+        sendPickupIntent,
         publishArenaSnapshot,
     ]);
 }

@@ -5,7 +5,9 @@ import {
     ARENA_RALLAR_GAME_LANE_IDS,
     GAME_SNAPSHOT_LANE_ID,
     isArenaAcceptedShotFromSender,
+    isArenaPickupIntentFromSender,
     isArenaPoseIntentFromSender,
+    isArenaPlayerHitIntentFromSender,
     isArenaShotIntentFromSender,
 } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
 import type {
@@ -55,6 +57,27 @@ describe('AR Eye Hunter Rallar Game match adapter', () => {
                 acceptedAtEpochMs: 1_000,
             },
         };
+        const playerHitIntent: GameRealtimeMessage = {
+            protocol: 'ar-eye-hunter.v1',
+            kind: 'player-hit-intent',
+            intent: {
+                shot: shot('peer-a'),
+                targetSessionId: 'peer-b',
+                predictedImpact: [0, 2, 4],
+                sentAtEpochMs: 1_000,
+            },
+        };
+        const pickupIntent: GameRealtimeMessage = {
+            protocol: 'ar-eye-hunter.v1',
+            kind: 'pickup-intent',
+            intent: {
+                pickupId: 'pickup-1',
+                sessionId: 'peer-a',
+                position: [0, 1, 0],
+                seq: 1,
+                sentAtEpochMs: 1_000,
+            },
+        };
 
         expect(isArenaPoseIntentFromSender(poseIntent, 'peer-a')).toBe(true);
         expect(isArenaPoseIntentFromSender(poseIntent, 'peer-b')).toBe(false);
@@ -62,6 +85,10 @@ describe('AR Eye Hunter Rallar Game match adapter', () => {
         expect(isArenaShotIntentFromSender(shotIntent, 'peer-b')).toBe(false);
         expect(isArenaAcceptedShotFromSender(acceptedShot, 'peer-a')).toBe(true);
         expect(isArenaAcceptedShotFromSender(acceptedShot, 'peer-b')).toBe(false);
+        expect(isArenaPlayerHitIntentFromSender(playerHitIntent, 'peer-a')).toBe(true);
+        expect(isArenaPlayerHitIntentFromSender(playerHitIntent, 'peer-b')).toBe(false);
+        expect(isArenaPickupIntentFromSender(pickupIntent, 'peer-a')).toBe(true);
+        expect(isArenaPickupIntentFromSender(pickupIntent, 'peer-b')).toBe(false);
     });
 });
 

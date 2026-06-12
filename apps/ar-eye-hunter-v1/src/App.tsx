@@ -5,7 +5,12 @@ import { type FormEvent, useMemo, useState } from 'react';
 
 import { BabylonArena } from './game/BabylonArena.tsx';
 import { colorForId } from './game/color.ts';
-import { createInitialCombatState } from './game/simulation.ts';
+import {
+    createInitialCombatState,
+    createInitialLoadoutState,
+    createInitialVitalsState,
+    getWeaponStats,
+} from './game/simulation.ts';
 import { GAME_ROOM_NAME, type RtcLaneStatus } from './game/types.ts';
 import { useRallarArena } from './game/useRallarArena.ts';
 
@@ -18,6 +23,8 @@ export default function App() {
     const [displayName, setDisplayName] = useState('');
     const [password, setPassword] = useState('');
     const [localCombat, setLocalCombat] = useState(createInitialCombatState);
+    const [localVitals, setLocalVitals] = useState(createInitialVitalsState);
+    const [localLoadout, setLocalLoadout] = useState(createInitialLoadoutState);
 
     const localColor = useMemo(
         () => colorForId(arena.session?.sessionId ?? 'local'),
@@ -42,17 +49,25 @@ export default function App() {
     return (
         <main className="app-root">
             <BabylonArena
+                localSessionId={arena.session?.sessionId}
                 localUsername={arena.session?.username ?? 'hunter'}
                 localColor={localColor}
                 roomId={arena.roomId}
                 roomReady={arena.connectionState === 'connected' && Boolean(arena.roomId)}
                 remotePlayers={arena.remotePlayers}
                 remoteShots={arena.remoteShots}
+                remotePlayerHits={arena.remotePlayerHits}
                 remoteEvents={arena.remoteEvents}
                 arenaSnapshot={arena.arenaSnapshot}
                 onLocalPose={arena.sendPose}
                 onLocalShot={arena.sendShot}
+                onPlayerHitIntent={arena.sendPlayerHit}
+                onPickupIntent={arena.sendPickupIntent}
                 onLocalCombatChange={setLocalCombat}
+                onLocalPlayerChange={(player) => {
+                    setLocalVitals(player.vitals);
+                    setLocalLoadout(player.loadout);
+                }}
                 onArenaSnapshot={arena.publishArenaSnapshot}
             />
 
@@ -68,6 +83,16 @@ export default function App() {
                 <div className="status-strip">
                     <StatusPill label="Rallar" value={arena.connectionState}/>
                     <StatusPill label="Score" value={String(localCombat.score)}/>
+                    <StatusPill
+                        label="Health"
+                        value={localVitals.health <= 0
+                            ? 'respawn'
+                            : `${Math.ceil(localVitals.health)}/${localVitals.maxHealth}`}
+                    />
+                    <StatusPill
+                        label="Weapon"
+                        value={getWeaponStats(localLoadout.weaponKind).label}
+                    />
                     <StatusPill label="Combo" value={`x${localCombat.combo}`}/>
                     <StatusPill
                         label="Overdrive"
@@ -258,7 +283,11 @@ export default function App() {
                             style={{ background: remote.pose.color }}
                         />
                         <strong>{remote.pose.username}</strong>
-                        <span>{remote.pose.score}</span>
+                        <span>
+                            {remote.pose.vitals
+                                ? `${Math.ceil(remote.pose.vitals.health)} hp`
+                                : remote.pose.score}
+                        </span>
                     </div>
                 ))}
             </section>

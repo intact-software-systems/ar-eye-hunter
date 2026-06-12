@@ -9,15 +9,23 @@ import {
 import {
     type AiDirectorProposal,
     type AiDirectorProposalValue,
+    type ArenaLayoutSpec,
     type ArenaEvent,
     type ArenaEventKind,
     type ArenaSnapshot,
     type TargetRarity,
 } from './types.ts';
 import { arenaRevisionKey, type ArenaSimulationState } from './simulation.ts';
+import {
+    ARENA_LAYOUT_SCHEMA_ID,
+    ARENA_LAYOUT_SCHEMA_VERSION,
+    validateArenaLayoutSpec,
+} from './arenaLayout.ts';
 
 export const AI_DIRECTOR_SCHEMA_ID = 'ar-eye-hunter.ai-director-event';
 export const AI_DIRECTOR_SCHEMA_VERSION = '1';
+export const AI_LAYOUT_SCHEMA_ID = 'ar-eye-hunter.ai-layout-proposal';
+export const AI_LAYOUT_SCHEMA_VERSION = '1';
 
 export const AI_DIRECTOR_EVENT_SCHEMA: RallarAiJsonSchema = {
     type: 'object',
@@ -39,6 +47,9 @@ export const AI_DIRECTOR_EVENT_SCHEMA: RallarAiJsonSchema = {
                         'combo-bounty',
                         'reward-drop',
                         'overdrive-window',
+                        'weapon-drop',
+                        'layout-shift',
+                        'chaos-modifier',
                     ],
                 },
                 targetId: { type: 'string', minLength: 1, maxLength: 80 },
@@ -62,6 +73,10 @@ export type AiDirectorValidation =
     | Readonly<{ ok: true; value: AiDirectorProposalValue }>
     | Readonly<{ ok: false; reason: string }>;
 
+export type AiLayoutValidation =
+    | Readonly<{ ok: true; layout: ArenaLayoutSpec }>
+    | Readonly<{ ok: false; reason: string; layout: ArenaLayoutSpec }>;
+
 export const acceptedAiDirectorTracker = createRallarAiAcceptedResultTracker<
     AiDirectorProposalValue
 >();
@@ -74,6 +89,9 @@ const ALLOWED_EVENTS: readonly ArenaEventKind[] = [
     'combo-bounty',
     'reward-drop',
     'overdrive-window',
+    'weapon-drop',
+    'layout-shift',
+    'chaos-modifier',
 ];
 
 const ALLOWED_RARITIES: readonly TargetRarity[] = [
@@ -96,22 +114,22 @@ export function createAiDirectorMockProvider(): RallarAiJsonProvider {
                 : index % 4 === 1
                 ? 'arena-shift'
                 : index % 4 === 2
-                ? 'spawn-eye'
-                : 'overdrive-window';
+                ? 'weapon-drop'
+                : 'chaos-modifier';
             return {
                 event: {
                     kind,
                     targetId: target?.id,
                     durationMs: kind === 'arena-shift' ? 6000 : 9000,
                     intensity: kind === 'arena-shift' ? 1.8 : 1.1,
-                    rarity: kind === 'spawn-eye' ? 'volatile' : 'bounty',
+                    rarity: kind === 'combo-bounty' ? 'bounty' : 'volatile',
                     scoreBonus: 150,
                     headline: kind === 'arena-shift'
                         ? 'Arena vectors snapped'
-                        : kind === 'spawn-eye'
-                        ? 'New volatile eye breached'
-                        : kind === 'overdrive-window'
-                        ? 'Overdrive window open'
+                        : kind === 'weapon-drop'
+                        ? 'Mandatory fun crate inbound'
+                        : kind === 'chaos-modifier'
+                        ? 'Compliance audit has feelings'
                         : 'Bounty eye marked',
                 },
                 urgency: 'medium',
@@ -119,6 +137,67 @@ export function createAiDirectorMockProvider(): RallarAiJsonProvider {
             };
         },
     });
+}
+
+export function createAiArenaLayoutRequest(
+    state: ArenaSimulationState,
+    roomId: string | undefined,
+    signal?: AbortSignal,
+): RallarAiJsonRequest<AiDirectorContext> {
+    return {
+        requestId: `ar-eye-layout:${roomId ?? 'solo'}:${state.revision}`,
+        schemaId: AI_LAYOUT_SCHEMA_ID,
+        schemaVersion: AI_LAYOUT_SCHEMA_VERSION,
+        schema: {
+            type: 'object',
+            required: [
+                'schema',
+                'version',
+                'id',
+                'revision',
+                'name',
+                'halfSize',
+                'theme',
+                'spawnPoints',
+                'pickupAnchors',
+                'props',
+                'signs',
+            ],
+            additionalProperties: true,
+            properties: {
+                schema: { type: 'string', const: ARENA_LAYOUT_SCHEMA_ID },
+                version: { type: 'string', const: ARENA_LAYOUT_SCHEMA_VERSION },
+                id: { type: 'string', minLength: 1, maxLength: 64 },
+                revision: { type: 'integer', minimum: 1, maximum: 99 },
+                name: { type: 'string', minLength: 1, maxLength: 72 },
+                halfSize: { type: 'number', minimum: 26, maximum: 52 },
+                theme: { type: 'object' },
+                spawnPoints: { type: 'array', minItems: 2, maxItems: 10 },
+                pickupAnchors: { type: 'array', minItems: 3, maxItems: 18 },
+                props: { type: 'array', maxItems: 24 },
+                signs: { type: 'array', maxItems: 10 },
+            },
+        },
+        prompt: [
+            'Create one bounded JSON arena layout for AR Eye Hunter.',
+            'Use a bright neon matrix FPS arena with black-glass cover, readable sightlines, safe spawns, pickup anchors, and dry black humour signs.',
+            'Keep halfSize near 40 for an 80x80 arena. Do not overcrowd the crosshair sightlines.',
+        ].join(' '),
+        context: buildAiDirectorContext(state, roomId),
+        baseStateRevision: arenaRevisionKey(state),
+        dedupeKey: `ar-eye-layout:${roomId ?? 'solo'}:${state.revision}`,
+        maxOutputTokens: 1_200,
+        temperature: 0.7,
+        timeoutMs: 4_000,
+        signal,
+    };
+}
+
+export function validateAiArenaLayoutProposal(value: unknown): AiLayoutValidation {
+    const validation = validateArenaLayoutSpec(value);
+    return validation.ok
+        ? { ok: true, layout: validation.layout }
+        : { ok: false, reason: validation.reason, layout: validation.layout };
 }
 
 export type AiDirectorContext = Readonly<{
@@ -276,6 +355,15 @@ function defaultHeadline(kind: ArenaEventKind): string {
     }
     if (kind === 'reward-drop') {
         return 'Reward drop';
+    }
+    if (kind === 'weapon-drop') {
+        return 'Weapon drop';
+    }
+    if (kind === 'layout-shift') {
+        return 'Layout shift';
+    }
+    if (kind === 'chaos-modifier') {
+        return 'Mandatory fun audit';
     }
     if (kind === 'mutate-target') {
         return 'Eye mutation';
