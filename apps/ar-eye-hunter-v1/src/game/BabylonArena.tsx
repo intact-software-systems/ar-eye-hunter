@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera.js';
 import { Engine } from '@babylonjs/core/Engines/engine.js';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight.js';
@@ -35,6 +35,24 @@ import {
     type ArenaSimulationState,
     type LocalPlayerState,
 } from './simulation.ts';
+import {
+    calculateVirtualStick,
+    createDefaultMobileControlSettings,
+    createInitialTouchControlState,
+    createTouchControlDiagnostics,
+    loadMobileControlSettings,
+    mapTouchLookDelta,
+    normalizeMobileControlSettings,
+    resetTouchPointer,
+    saveMobileControlSettings,
+    shouldFireHeldWeapon,
+    updateTouchPointer,
+    type InputDeviceKind,
+    type MobileControlSettings,
+    type Point2,
+    type TouchControlState,
+    type VirtualStickResult,
+} from './mobileInput.ts';
 import type {
     ArenaLayoutSpec,
     ArenaLayoutProp,
@@ -153,6 +171,11 @@ type ArenaRuntime = {
     pointerDownCount: number;
     acceptedHitCount: number;
     respawnCount: number;
+    inputDevice: InputDeviceKind;
+    touchState: TouchControlState;
+    touchStick: VirtualStickResult;
+    mobileSettings: MobileControlSettings;
+    mobileControlsEnabled: boolean;
 };
 
 type MutableInputState = {
@@ -168,6 +191,8 @@ type MutableInputState = {
     pause: boolean;
 };
 
+type MutableButtonAction = Exclude<keyof MutableInputState, 'moveX' | 'moveZ'>;
+
 type LocalPoseHistory = Readonly<{
     observedAtEpochMs: number;
     position: Vec3Tuple;
@@ -176,6 +201,8 @@ type LocalPoseHistory = Readonly<{
 
 const BASE_FOV = 0.94;
 const MAX_TRANSIENT_EFFECTS = 48;
+const MOBILE_STICK_RADIUS = 72;
+const EMPTY_TOUCH_STICK = calculateVirtualStick({ x: 0, y: 0 }, { x: 0, y: 0 }, MOBILE_STICK_RADIUS);
 
 const MATRIX_THEME = {
     void: '#020805',
@@ -247,6 +274,22 @@ export function BabylonArena({
     const shotSeqRef = useRef(0);
     const pickupSeqRef = useRef(0);
     const localPoseRef = useRef<LocalPoseHistory | undefined>(undefined);
+    const gyroLastRef = useRef<Readonly<{ beta: number; gamma: number }> | undefined>(undefined);
+    const [mobileSettings, setMobileSettings] = useState<MobileControlSettings>(() =>
+        typeof window === 'undefined'
+            ? createDefaultMobileControlSettings()
+            : loadMobileControlSettings((key) => window.localStorage.getItem(key))
+    );
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [stickView, setStickView] = useState<Readonly<{
+        active: boolean;
+        knobX: number;
+        knobY: number;
+    }>>({
+        active: false,
+        knobX: 0,
+        knobY: 0,
+    });
 
     useEffect(() => {
         remotePlayersRef.current = remotePlayers;
@@ -287,6 +330,237 @@ export function BabylonArena({
         onPickupIntent,
         onPlayerHitIntent,
     ]);
+
+    useEffect(() => {
+        const runtime = runtimeRef.current;
+        if (runtime) {
+            runtime.mobileSettings = mobileSettings;
+            runtime.inputDevice = mobileSettings.gyroEnabled && runtime.inputDevice === 'touch'
+                ? 'gyro-touch'
+                : runtime.inputDevice;
+        }
+    }, [mobileSettings]);
+
+    useEffect(() => {
+        if (!mobileSettings.gyroEnabled) {
+            gyroLastRef.current = undefined;
+            return;
+        }
+
+        const onDeviceOrientation = (event: DeviceOrientationEvent) => {
+            const runtime = runtimeRef.current;
+            if (!runtime || typeof event.beta !== 'number' || typeof event.gamma !== 'number') {
+                return;
+            }
+            const previous = gyroLastRef.current;
+            gyroLastRef.current = { beta: event.beta, gamma: event.gamma };
+            if (!previous) {
+                return;
+            }
+            const delta = mapTouchLookDelta(
+                (event.gamma - previous.gamma) * 2.1,
+                (event.beta - previous.beta) * 1.45,
+                runtime.mobileSettings,
+            );
+            applyLook(runtime, delta.yawDelta, delta.pitchDelta);
+            runtime.inputDevice = 'gyro-touch';
+        };
+
+        window.addEventListener('deviceorientation', onDeviceOrientation);
+        return () => window.removeEventListener('deviceorientation', onDeviceOrientation);
+    }, [mobileSettings.gyroEnabled]);
+
+    const updateMobileSettings = (patch: Partial<MobileControlSettings>) => {
+        setMobileSettings((current) => {
+            const next = normalizeMobileControlSettings({ ...current, ...patch });
+            if (typeof window !== 'undefined') {
+                saveMobileControlSettings(next, (key, value) => window.localStorage.setItem(key, value));
+            }
+            const runtime = runtimeRef.current;
+            if (runtime) {
+                runtime.mobileSettings = next;
+            }
+            return next;
+        });
+    };
+
+    const enableGyro = async () => {
+        const orientationEvent = globalThis.DeviceOrientationEvent as typeof DeviceOrientationEvent & {
+            requestPermission?: () => Promise<'granted' | 'denied' | 'prompt'>;
+        };
+        if (typeof orientationEvent?.requestPermission === 'function') {
+            try {
+                const permission = await orientationEvent.requestPermission();
+                if (permission !== 'granted') {
+                    updateMobileSettings({ gyroEnabled: false });
+                    return;
+                }
+            } catch {
+                updateMobileSettings({ gyroEnabled: false });
+                return;
+            }
+        }
+        updateMobileSettings({ gyroEnabled: true });
+    };
+
+    const updateMoveStick = (runtime: ArenaRuntime): void => {
+        const origin = runtime.touchState.moveOrigin;
+        const current = runtime.touchState.moveCurrent;
+        if (!origin || !current) {
+            runtime.touchStick = EMPTY_TOUCH_STICK;
+            runtime.input.moveX = 0;
+            runtime.input.moveZ = 0;
+            runtime.input.sprint = false;
+            setStickView({ active: false, knobX: 0, knobY: 0 });
+            return;
+        }
+        const stick = calculateVirtualStick(origin, current, MOBILE_STICK_RADIUS);
+        runtime.touchStick = stick;
+        runtime.input.moveX = stick.moveX;
+        runtime.input.moveZ = stick.moveZ;
+        runtime.input.sprint = stick.sprint;
+        runtime.inputDevice = runtime.mobileSettings.gyroEnabled ? 'gyro-touch' : 'touch';
+        runtime.mobileControlsEnabled = true;
+        setStickView({
+            active: true,
+            knobX: stick.knobX,
+            knobY: stick.knobY,
+        });
+    };
+
+    const pointFromPointer = (event: ReactPointerEvent): Point2 => ({
+        x: event.clientX,
+        y: event.clientY,
+    });
+
+    const onMovePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        const runtime = runtimeRef.current;
+        if (!runtime) {
+            return;
+        }
+        safeSetPointerCapture(event.currentTarget, event.pointerId);
+        runtime.touchState = updateTouchPointer(
+            runtime.touchState,
+            'move',
+            event.pointerId,
+            pointFromPointer(event),
+        );
+        updateMoveStick(runtime);
+    };
+
+    const onMovePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+        const runtime = runtimeRef.current;
+        if (!runtime || runtime.touchState.movePointerId !== event.pointerId) {
+            return;
+        }
+        event.preventDefault();
+        runtime.touchState = updateTouchPointer(
+            runtime.touchState,
+            'move',
+            event.pointerId,
+            pointFromPointer(event),
+        );
+        updateMoveStick(runtime);
+    };
+
+    const releasePointer = (event: ReactPointerEvent<HTMLElement>) => {
+        const runtime = runtimeRef.current;
+        if (!runtime) {
+            return;
+        }
+        runtime.touchState = resetTouchPointer(runtime.touchState, event.pointerId);
+        if (!runtime.touchState.movePointerId) {
+            updateMoveStick(runtime);
+        }
+        if (!runtime.touchState.lookPointerId) {
+            runtime.inputDevice = 'touch';
+        }
+        safeReleasePointerCapture(event.currentTarget, event.pointerId);
+    };
+
+    const onLookPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        const runtime = runtimeRef.current;
+        if (!runtime) {
+            return;
+        }
+        safeSetPointerCapture(event.currentTarget, event.pointerId);
+        runtime.touchState = updateTouchPointer(
+            runtime.touchState,
+            'look',
+            event.pointerId,
+            pointFromPointer(event),
+        );
+        runtime.inputDevice = runtime.mobileSettings.gyroEnabled ? 'gyro-touch' : 'touch';
+        runtime.mobileControlsEnabled = true;
+    };
+
+    const onLookPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+        const runtime = runtimeRef.current;
+        if (!runtime || runtime.touchState.lookPointerId !== event.pointerId) {
+            return;
+        }
+        const previous = runtime.touchState.lookLast;
+        const point = pointFromPointer(event);
+        if (previous) {
+            const delta = mapTouchLookDelta(
+                point.x - previous.x,
+                point.y - previous.y,
+                runtime.mobileSettings,
+            );
+            applyLook(runtime, delta.yawDelta, delta.pitchDelta);
+        }
+        runtime.touchState = updateTouchPointer(runtime.touchState, 'look', event.pointerId, point);
+        event.preventDefault();
+    };
+
+    const onActionDown = (
+        event: ReactPointerEvent<HTMLButtonElement>,
+        action: MutableButtonAction,
+        mode: 'hold' | 'pulse',
+    ) => {
+        event.preventDefault();
+        const runtime = runtimeRef.current;
+        if (!runtime) {
+            return;
+        }
+        if (mode === 'hold') {
+            safeSetPointerCapture(event.currentTarget, event.pointerId);
+        }
+        runtime.inputDevice = runtime.mobileSettings.gyroEnabled ? 'gyro-touch' : 'touch';
+        runtime.mobileControlsEnabled = true;
+        triggerHaptic(runtime, 8);
+        if (mode === 'pulse') {
+            pulseAction(runtime, action);
+            return;
+        }
+        setAction(runtime, action, true);
+    };
+
+    const onActionUp = (
+        event: ReactPointerEvent<HTMLButtonElement>,
+        action: MutableButtonAction,
+        mode: 'hold' | 'pulse',
+    ) => {
+        const runtime = runtimeRef.current;
+        if (runtime && mode === 'hold') {
+            setAction(runtime, action, false);
+        }
+        safeReleasePointerCapture(event.currentTarget, event.pointerId);
+    };
+
+    const onScanDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+        onActionDown(event, 'altFire', 'hold');
+        const runtime = runtimeRef.current;
+        if (runtime) {
+            createScanPulse(runtime, runtime.localPlayer.position, localColor);
+        }
+    };
+
+    const mobileControlStyle = {
+        '--mobile-button-scale': mobileSettings.buttonScale,
+    } as CSSProperties;
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -349,6 +623,11 @@ export function BabylonArena({
             pointerDownCount: 0,
             acceptedHitCount: 0,
             respawnCount: 0,
+            inputDevice: 'keyboard-mouse',
+            touchState: createInitialTouchControlState(),
+            touchStick: EMPTY_TOUCH_STICK,
+            mobileSettings,
+            mobileControlsEnabled: false,
         };
         runtimeRef.current = runtime;
         syncLocalPlayerFromSnapshot(runtime, localSessionId, toArenaSnapshot(initialArenaState, roomId, now));
@@ -359,6 +638,7 @@ export function BabylonArena({
         window.addEventListener('resize', resize);
 
         const onKeyDown = (event: KeyboardEvent) => {
+            runtime.inputDevice = 'keyboard-mouse';
             setInputKey(runtime.input, event.code, true);
         };
         const onKeyUp = (event: KeyboardEvent) => {
@@ -368,15 +648,8 @@ export function BabylonArena({
             if (document.pointerLockElement !== canvas) {
                 return;
             }
-            runtime.localPlayer = {
-                ...runtime.localPlayer,
-                yaw: runtime.localPlayer.yaw + event.movementX * 0.0024,
-                pitch: clamp(
-                    runtime.localPlayer.pitch + event.movementY * 0.002,
-                    -1.22,
-                    1.1,
-                ),
-            };
+            runtime.inputDevice = 'keyboard-mouse';
+            applyLook(runtime, event.movementX * 0.0024, event.movementY * 0.002);
         };
         const requestPointerLock = () => {
             try {
@@ -440,6 +713,7 @@ export function BabylonArena({
                 localUsername,
                 localColor,
                 poseSeqRef,
+                shotSeqRef,
                 pickupSeqRef,
                 localPoseRef,
                 callbacksRef,
@@ -478,6 +752,11 @@ export function BabylonArena({
             delete canvas.dataset.arenaWavePhase;
             delete canvas.dataset.arenaAttackCount;
             delete canvas.dataset.arenaHostileEyeCount;
+            delete canvas.dataset.arenaInputMode;
+            delete canvas.dataset.arenaMobileControls;
+            delete canvas.dataset.arenaTouchMoveActive;
+            delete canvas.dataset.arenaTouchLookActive;
+            delete canvas.dataset.arenaGyroEnabled;
             runtimeRef.current = undefined;
         };
     }, [localColor, localSessionId, localUsername, roomId]);
@@ -499,6 +778,178 @@ export function BabylonArena({
             <div className="crosshair" aria-hidden="true">
                 <span/>
             </div>
+            <div
+                className="mobile-fps-controls"
+                style={mobileControlStyle}
+                aria-label="Mobile FPS controls"
+            >
+                <div
+                    className="mobile-stick-zone"
+                    data-active={stickView.active ? 'true' : 'false'}
+                    aria-label="Move and sprint"
+                    onPointerDown={onMovePointerDown}
+                    onPointerMove={onMovePointerMove}
+                    onPointerUp={releasePointer}
+                    onPointerCancel={releasePointer}
+                    onLostPointerCapture={releasePointer}
+                >
+                    <span className="mobile-stick-ring">
+                        <span
+                            className="mobile-stick-knob"
+                            style={{
+                                transform: `translate(${stickView.knobX}px, ${stickView.knobY}px)`,
+                            }}
+                        />
+                    </span>
+                    <span className="mobile-stick-label">MOVE / SPRINT</span>
+                </div>
+
+                <div
+                    className="mobile-look-zone"
+                    aria-label="Look and aim"
+                    onPointerDown={onLookPointerDown}
+                    onPointerMove={onLookPointerMove}
+                    onPointerUp={releasePointer}
+                    onPointerCancel={releasePointer}
+                    onLostPointerCapture={releasePointer}
+                >
+                    <span>LOOK</span>
+                </div>
+
+                <div className="mobile-action-cluster" aria-label="Combat actions">
+                    <button
+                        type="button"
+                        className="mobile-action mobile-action--fire"
+                        onPointerDown={(event) => onActionDown(event, 'fire', 'hold')}
+                        onPointerUp={(event) => onActionUp(event, 'fire', 'hold')}
+                        onPointerCancel={(event) => onActionUp(event, 'fire', 'hold')}
+                        onLostPointerCapture={(event) => onActionUp(event, 'fire', 'hold')}
+                    >
+                        Fire
+                    </button>
+                    <button
+                        type="button"
+                        className="mobile-action"
+                        onPointerDown={onScanDown}
+                        onPointerUp={(event) => onActionUp(event, 'altFire', 'hold')}
+                        onPointerCancel={(event) => onActionUp(event, 'altFire', 'hold')}
+                        onLostPointerCapture={(event) => onActionUp(event, 'altFire', 'hold')}
+                    >
+                        Scan
+                    </button>
+                    <button
+                        type="button"
+                        className="mobile-action"
+                        onPointerDown={(event) => onActionDown(event, 'dash', 'pulse')}
+                    >
+                        Dash
+                    </button>
+                    <button
+                        type="button"
+                        className="mobile-action"
+                        onPointerDown={(event) => onActionDown(event, 'jump', 'pulse')}
+                    >
+                        Jump
+                    </button>
+                    <button
+                        type="button"
+                        className="mobile-action"
+                        onPointerDown={(event) => onActionDown(event, 'slide', 'pulse')}
+                    >
+                        Slide
+                    </button>
+                    <button
+                        type="button"
+                        className="mobile-action"
+                        onPointerDown={(event) => onActionDown(event, 'overdrive', 'hold')}
+                        onPointerUp={(event) => onActionUp(event, 'overdrive', 'hold')}
+                        onPointerCancel={(event) => onActionUp(event, 'overdrive', 'hold')}
+                        onLostPointerCapture={(event) => onActionUp(event, 'overdrive', 'hold')}
+                    >
+                        OD
+                    </button>
+                    <button
+                        type="button"
+                        className="mobile-action mobile-action--settings"
+                        aria-expanded={mobileMenuOpen}
+                        onClick={() => setMobileMenuOpen((open) => !open)}
+                    >
+                        Tune
+                    </button>
+                </div>
+
+                {mobileMenuOpen && (
+                    <div className="mobile-settings-panel">
+                        <div>
+                            <strong>Mobile Controls</strong>
+                            <span>Landscape dual-stick audit mode</span>
+                        </div>
+                        <label>
+                            Sensitivity
+                            <input
+                                type="range"
+                                min="0.35"
+                                max="2.4"
+                                step="0.05"
+                                value={mobileSettings.touchSensitivity}
+                                onChange={(event) => updateMobileSettings({
+                                    touchSensitivity: Number(event.currentTarget.value),
+                                })}
+                            />
+                        </label>
+                        <label>
+                            Button scale
+                            <input
+                                type="range"
+                                min="0.72"
+                                max="1.35"
+                                step="0.03"
+                                value={mobileSettings.buttonScale}
+                                onChange={(event) => updateMobileSettings({
+                                    buttonScale: Number(event.currentTarget.value),
+                                })}
+                            />
+                        </label>
+                        <label className="mobile-setting-check">
+                            <input
+                                type="checkbox"
+                                checked={mobileSettings.invertY}
+                                onChange={(event) => updateMobileSettings({
+                                    invertY: event.currentTarget.checked,
+                                })}
+                            />
+                            Invert look Y
+                        </label>
+                        <label className="mobile-setting-check">
+                            <input
+                                type="checkbox"
+                                checked={mobileSettings.hapticsEnabled}
+                                onChange={(event) => updateMobileSettings({
+                                    hapticsEnabled: event.currentTarget.checked,
+                                })}
+                            />
+                            Haptics
+                        </label>
+                        <button
+                            type="button"
+                            className={mobileSettings.gyroEnabled ? 'mobile-gyro active' : 'mobile-gyro'}
+                            onClick={() => {
+                                if (mobileSettings.gyroEnabled) {
+                                    updateMobileSettings({ gyroEnabled: false });
+                                    return;
+                                }
+                                void enableGyro();
+                            }}
+                        >
+                            {mobileSettings.gyroEnabled ? 'Gyro fine-aim on' : 'Enable gyro fine-aim'}
+                        </button>
+                    </div>
+                )}
+            </div>
+            <div className="mobile-rotate-prompt" role="status">
+                <strong>Rotate for combat</strong>
+                <span>Landscape gives your thumbs room to misbehave.</span>
+            </div>
         </div>
     );
 }
@@ -515,6 +966,7 @@ function runFrame({
     localUsername,
     localColor,
     poseSeqRef,
+    shotSeqRef,
     pickupSeqRef,
     localPoseRef,
     callbacksRef,
@@ -530,6 +982,7 @@ function runFrame({
     localUsername: string;
     localColor: string;
     poseSeqRef: React.MutableRefObject<number>;
+    shotSeqRef: React.MutableRefObject<number>;
     pickupSeqRef: React.MutableRefObject<number>;
     localPoseRef: React.MutableRefObject<LocalPoseHistory | undefined>;
     callbacksRef: React.MutableRefObject<{
@@ -593,6 +1046,17 @@ function runFrame({
     syncRemoteAvatars(runtime, remotePlayers);
     syncRemoteShots(runtime, remoteShots);
     syncRemotePlayerHits(runtime, remotePlayerHits, localPlayerId);
+    maybeFireHeldShot({
+        runtime,
+        localSessionId,
+        localUsername,
+        localColor,
+        roomId,
+        remotePlayers,
+        shotSeqRef,
+        callbacksRef,
+        nowEpochMs: now,
+    });
     detectLocalPickup(runtime, localPlayerId, pickupSeqRef, callbacksRef);
     syncCamera(runtime, now);
     updateTransientEffects(runtime);
@@ -1026,6 +1490,55 @@ function drawMatrixPanel(
     texture.update();
 }
 
+function maybeFireHeldShot({
+    runtime,
+    localSessionId,
+    localUsername,
+    localColor,
+    roomId,
+    remotePlayers,
+    shotSeqRef,
+    callbacksRef,
+    nowEpochMs,
+}: Readonly<{
+    runtime: ArenaRuntime;
+    localSessionId?: string;
+    localUsername: string;
+    localColor: string;
+    roomId?: string;
+    remotePlayers: ReadonlyMap<string, RemotePlayer>;
+    shotSeqRef: React.MutableRefObject<number>;
+    callbacksRef: React.MutableRefObject<{
+        onLocalPose: BabylonArenaProps['onLocalPose'];
+        onLocalShot: BabylonArenaProps['onLocalShot'];
+        onPlayerHitIntent: BabylonArenaProps['onPlayerHitIntent'];
+        onPickupIntent: BabylonArenaProps['onPickupIntent'];
+        onLocalCombatChange: BabylonArenaProps['onLocalCombatChange'];
+        onLocalPlayerChange: BabylonArenaProps['onLocalPlayerChange'];
+        onArenaSnapshot: BabylonArenaProps['onArenaSnapshot'];
+    }>;
+    nowEpochMs: number;
+}>): void {
+    if (!shouldFireHeldWeapon(
+        runtime.input.fire,
+        nowEpochMs,
+        runtime.localPlayer.combat.shotReadyAtEpochMs,
+    )) {
+        return;
+    }
+
+    fireLocalShot({
+        runtime,
+        localSessionId,
+        localUsername,
+        localColor,
+        roomId,
+        remotePlayers,
+        shotSeqRef,
+        callbacksRef,
+    });
+}
+
 function fireLocalShot({
     runtime,
     localSessionId,
@@ -1084,6 +1597,7 @@ function fireLocalShot({
     };
     runtime.recoil = Math.min(1, runtime.recoil + (resolution.accepted.hit ? 0.38 : 0.22));
     runtime.hitStopUntilEpochMs = resolution.accepted.hit ? now + 38 : runtime.hitStopUntilEpochMs;
+    triggerHaptic(runtime, resolution.accepted.hit ? 24 : 9);
 
     createTracer(runtime, vector3(origin), vector3(direction), localColor, resolution.accepted.hit);
     const playerHit = findPredictedPlayerHit(remotePlayers, sessionId, origin, direction, weapon.range);
@@ -1207,6 +1721,18 @@ function syncCamera(runtime: ArenaRuntime, nowEpochMs: number): void {
         Math.min(0.24, speed * 0.011) +
         runtime.recoil * 0.055;
     runtime.recoil *= 0.82;
+}
+
+function applyLook(runtime: ArenaRuntime, yawDelta: number, pitchDelta: number): void {
+    runtime.localPlayer = {
+        ...runtime.localPlayer,
+        yaw: runtime.localPlayer.yaw + yawDelta,
+        pitch: clamp(
+            runtime.localPlayer.pitch + pitchDelta,
+            -1.22,
+            1.1,
+        ),
+    };
 }
 
 function syncTargetAvatars(runtime: ArenaRuntime, nowEpochMs: number): void {
@@ -1499,6 +2025,7 @@ function detectLocalPickup(
         sentAtEpochMs: now,
     });
     createImpact(runtime, vector3(pickup.position), MATRIX_THEME.amber, 3);
+    triggerHaptic(runtime, 28);
 }
 
 function syncRemotePlayerHits(
@@ -1555,6 +2082,13 @@ function syncLocalPlayerFromSnapshot(
         player.vitals.respawnedAtEpochMs !== runtime.localPlayer.vitals.respawnedAtEpochMs
     ) {
         runtime.respawnCount += 1;
+        triggerHaptic(runtime, 30);
+    }
+    if (
+        player.vitals.lastDamagedAtEpochMs &&
+        player.vitals.lastDamagedAtEpochMs !== runtime.localPlayer.vitals.lastDamagedAtEpochMs
+    ) {
+        triggerHaptic(runtime, 42);
     }
     runtime.localPlayer = {
         ...runtime.localPlayer,
@@ -2465,6 +2999,47 @@ function setInputKey(input: MutableInputState, code: string, pressed: boolean): 
     }
 }
 
+function setAction(
+    runtime: ArenaRuntime,
+    action: MutableButtonAction,
+    value: boolean,
+): void {
+    runtime.input[action] = value;
+}
+
+function pulseAction(runtime: ArenaRuntime, action: MutableButtonAction, durationMs = 120): void {
+    setAction(runtime, action, true);
+    window.setTimeout(() => {
+        setAction(runtime, action, false);
+    }, durationMs);
+}
+
+function triggerHaptic(runtime: ArenaRuntime, durationMs: number): void {
+    if (!runtime.mobileSettings.hapticsEnabled || typeof navigator === 'undefined') {
+        return;
+    }
+    navigator.vibrate?.(Math.max(4, Math.min(60, durationMs)));
+}
+
+function safeSetPointerCapture(element: Element, pointerId: number): void {
+    try {
+        element.setPointerCapture?.(pointerId);
+    } catch {
+        // Synthetic mobile tests and some Safari edge cases can reject capture
+        // for a pointer that has already ended. The input state still updates.
+    }
+}
+
+function safeReleasePointerCapture(element: Element, pointerId: number): void {
+    try {
+        if (element.hasPointerCapture?.(pointerId)) {
+            element.releasePointerCapture(pointerId);
+        }
+    } catch {
+        // Best-effort cleanup; pointercancel/up also resets the logical state.
+    }
+}
+
 function freezeInput(input: MutableInputState): PlayerInputState {
     return {
         moveX: input.moveX,
@@ -2504,6 +3079,12 @@ function writeArenaDiagnostics(canvas: HTMLCanvasElement, runtime: ArenaRuntime)
     canvas.dataset.arenaHostileEyeCount = String(
         runtime.arenaState.targets.filter(isHostileEye).length,
     );
+    const touchDiagnostics = createTouchControlDiagnostics(runtime.touchState, runtime.touchStick);
+    canvas.dataset.arenaInputMode = touchDiagnostics.lastInputMode;
+    canvas.dataset.arenaMobileControls = runtime.mobileControlsEnabled ? 'true' : 'false';
+    canvas.dataset.arenaTouchMoveActive = touchDiagnostics.movePointerId === undefined ? 'false' : 'true';
+    canvas.dataset.arenaTouchLookActive = touchDiagnostics.lookActive ? 'true' : 'false';
+    canvas.dataset.arenaGyroEnabled = runtime.mobileSettings.gyroEnabled ? 'true' : 'false';
 }
 
 function hashString(value: string): number {

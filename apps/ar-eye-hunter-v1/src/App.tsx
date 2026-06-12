@@ -25,6 +25,7 @@ export default function App() {
     const [localCombat, setLocalCombat] = useState(createInitialCombatState);
     const [localVitals, setLocalVitals] = useState(createInitialVitalsState);
     const [localLoadout, setLocalLoadout] = useState(createInitialLoadoutState);
+    const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
 
     const localColor = useMemo(
         () => colorForId(arena.session?.sessionId ?? 'local'),
@@ -54,7 +55,10 @@ export default function App() {
     };
 
     return (
-        <main className="app-root">
+        <main
+            className={mobileDrawerOpen ? 'app-root app-root--mobile-drawer-open' : 'app-root'}
+            data-mobile-drawer={mobileDrawerOpen ? 'open' : 'closed'}
+        >
             <BabylonArena
                 localSessionId={arena.session?.sessionId}
                 localUsername={arena.session?.username ?? 'hunter'}
@@ -132,7 +136,16 @@ export default function App() {
                 </div>
             </section>
 
-            <section className="hud hud--side">
+            <button
+                type="button"
+                className="mobile-drawer-toggle"
+                aria-expanded={mobileDrawerOpen}
+                onClick={() => setMobileDrawerOpen((open) => !open)}
+            >
+                {mobileDrawerOpen ? 'Close Ops' : 'Ops'}
+            </button>
+
+            <section className="hud hud--side" aria-label="Arena operations">
                 {arena.connectionState === 'signed-out' || !arena.session
                     ? (
                         <form className="panel stack" onSubmit={submitAuth}>
