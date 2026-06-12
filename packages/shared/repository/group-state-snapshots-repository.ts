@@ -161,6 +161,14 @@ export function setGroupStateSnapshot(
     return false;
 }
 
+export function removeGroupStateSnapshotByRef(
+    ref: GroupRef,
+    manager?: RepositoryManager,
+): boolean {
+    return requireGroupStateSnapshotRepository(manager)
+        .delete(toGroupStateSnapshotRepositoryKey(ref));
+}
+
 export function getAllGroupStateSnapshots(
     manager?: RepositoryManager,
 ): GroupSnapshot[] {

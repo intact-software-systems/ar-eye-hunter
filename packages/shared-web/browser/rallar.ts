@@ -1293,7 +1293,7 @@ export type RallarFacade = Readonly<{
     configure(config: RallarApiClientConfig): void;
     setDefaults(defaults?: RallarDefaults): void;
     defaults(): RallarDefaults | undefined;
-    connect(options?: RallarOperationOptions): Promise<ApiMiddleware>;
+    connect(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
     start(options?: RallarStartOptions): Promise<RallarStartResult>;
     disconnect(): Promise<void>;
     status(): RallarConnectStatus;
@@ -2674,11 +2674,14 @@ class BrowserRallarFacade implements RallarFacade {
     };
 
     async connect(
-        options: RallarOperationOptions = {},
+        options: RallarScopedOperationOptions = {},
     ): Promise<ApiMiddleware> {
-        const connectOptions = toRallarOperationOptions(
-            this.resolveOperationOptions(options),
-        );
+        const operationOptions = this.resolveOperationOptions(options);
+        const middlewareScope = this.resolveOperationScope(operationOptions.scope);
+        const connectOptions = {
+            ...toRallarOperationOptions(operationOptions),
+            ...(middlewareScope ? { scope: middlewareScope } : {}),
+        };
         const session = readSession();
         if (
             this.ctx &&
@@ -5464,7 +5467,7 @@ class BrowserRallarFacade implements RallarFacade {
         return readRallarCacheOrDefault(
             () => groupStateSnapshotsRepository.getAllGroupStateSnapshots(),
             [],
-        );
+        ).filter((snapshot) => this.isStateSnapshotInDefaultScope(snapshot.group));
     }
 
     private findGroupSnapshot(room: string | GroupRef | undefined): GroupSnapshot | undefined {
@@ -5522,7 +5525,7 @@ class BrowserRallarFacade implements RallarFacade {
                     .findFirstGroupStateSnapshotRefSessionIdIsIn(sessionId),
             undefined,
         );
-        if (fromRepository) {
+        if (fromRepository && this.isStateSnapshotInDefaultScope(fromRepository)) {
             return fromRepository;
         }
 
@@ -5538,6 +5541,12 @@ class BrowserRallarFacade implements RallarFacade {
     private setCurrentRoom(snapshot: GroupSnapshot): void {
         this.currentRoomId = readGroupId(snapshot);
         this.currentRoomRef = snapshot.group;
+    }
+
+    private isStateSnapshotInDefaultScope(
+        value: Pick<StateScope, 'applicationId'> & { workspaceId?: string },
+    ): boolean {
+        return isSameStateScopeValue(value, this.defaultScope);
     }
 
     private clearCurrentRoomIfMatches(
@@ -5714,18 +5723,22 @@ class BrowserRallarFacade implements RallarFacade {
         return readRallarCacheOrDefault(
             () => clientStateSnapshotsRepository.getAllClientStateSnapshots(),
             [],
-        );
+        ).filter((snapshot) => this.isStateSnapshotInDefaultScope(snapshot.principal));
     }
 
     private findClientSnapshot(
         principalId: string,
     ): ClientSnapshot | undefined {
-        return readRallarCacheOrDefault(
+        const snapshot = readRallarCacheOrDefault(
             () =>
                 clientStateSnapshotsRepository
                     .findClientStateSnapshotByPrincipalId(principalId),
             undefined,
         );
+
+        return snapshot && this.isStateSnapshotInDefaultScope(snapshot.principal)
+            ? snapshot
+            : undefined;
     }
 
     private onTransportMessage(

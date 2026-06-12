@@ -1,0 +1,8 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Deno: Backend v1" type="DenoConfigurationType" inputPath="$PROJECT_DIR$/apps/api-v1/src/main.ts" programParameters="run --env-file=.env.local --allow-read --allow-net --allow-env --unstable-http" workingDirectory="$PROJECT_DIR$/apps/api-v1">
+    <option name="envs">
+      <entry key="DATABASE_URL" value="postgresql://app:app@localhost:5432/appdb?schema=public" />
+    </option>
+    <method v="2" />
+  </configuration>
+</component>

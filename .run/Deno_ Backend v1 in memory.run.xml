@@ -1,0 +1,8 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Deno: Backend v1 in memory" type="DenoConfigurationType" inputPath="$PROJECT_DIR$/apps/api-v1/src/main.ts" programParameters="task start:memory --allow-read --allow-net --allow-env --unstable-http" workingDirectory="$PROJECT_DIR$/apps/api-v1">
+    <option name="envs">
+      <entry key="DATABASE_URL" value="postgresql://400640190108b8a26c5ae7948e6eadec8a4e0406c85c47c83f9dd7aa9fa08b29:sk_u9ppgwgfe8E7V6fLpRHUZ@db.prisma.io:5432?sslmode=verify-full" />
+    </option>
+    <method v="2" />
+  </configuration>
+</component>

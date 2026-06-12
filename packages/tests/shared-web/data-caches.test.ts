@@ -171,6 +171,58 @@ describe('browser data caches state scope filtering', () => {
         expect(manager.delete).toHaveBeenCalledWith(group.group);
     });
 
+    it('cleans up RTC group tracking and notifies listeners when a group snapshot is removed', async () => {
+        const group = createGroupSnapshot(
+            'shared-room',
+            'app-1',
+            'workspace-b',
+            ['session-a'],
+            1,
+        );
+        const manager = {
+            notifyClientPresenceChanged: vi.fn(async () => undefined),
+            notifyOverlayTopologyChanged: vi.fn(async () => undefined),
+            acceptGroupUpdate: vi.fn(async () => undefined),
+            has: vi.fn((input) => input === group.group),
+            delete: vi.fn(async () => undefined),
+        };
+        const clientData: ClientInfo = {
+            clientId: 'alice',
+            sessionId: 'session-a',
+            isOnline: true,
+        };
+        const listener = vi.fn();
+        const unsubscribe = dataCaches.onStateCacheChange(listener);
+
+        await dataCaches.hydrateStateCaches(
+            manager as never,
+            clientData,
+            [],
+            [group],
+            {
+                scope: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-b',
+                },
+            },
+        );
+        manager.acceptGroupUpdate.mockClear();
+        manager.delete.mockClear();
+        listener.mockClear();
+
+        groupStateSnapshotsRepository.removeGroupStateSnapshotByRef(group.group);
+        await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+
+        expect(manager.delete).toHaveBeenCalledWith(group.group);
+        expect(manager.acceptGroupUpdate).not.toHaveBeenCalled();
+        expect(listener).toHaveBeenCalledWith({
+            clients: [],
+            groups: [group],
+        });
+
+        unsubscribe();
+    });
+
     it('ignores state event websocket messages in the snapshot cache layer', async () => {
         const manager = createWebRtcGroupManager();
         const clientData: ClientInfo = {

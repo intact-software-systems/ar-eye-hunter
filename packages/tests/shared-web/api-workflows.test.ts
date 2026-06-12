@@ -547,7 +547,7 @@ describe('state API workflows', () => {
         expect(disconnectRequestIds[0]).not.toBe(memberRequestIds[0]);
     });
 
-    it('orchestrates client and group heartbeats and tolerates missing group presence', async () => {
+    it('orchestrates client and group heartbeats and tolerates missing group presence without retrying 404s', async () => {
         const clientData: ClientInfo = {
             clientId: 'principal-1',
             sessionId: 'session-1',
@@ -575,15 +575,157 @@ describe('state API workflows', () => {
         const result = await refreshStateHeartbeat(clientData, [
             groupSnapshot('group-1'),
             groupSnapshot('group-2'),
-        ]);
+        ], {
+            policies: { command: { maxAttempts: 3 } },
+        });
 
         expect(result.client.principal.principalId).toBe('principal-1');
         expect(result.groups.map((group) => group.group.groupId)).toEqual([
             'group-1',
         ]);
+        expect(result.missingGroups.map((group) => group.group.groupId)).toEqual([
+            'group-2',
+        ]);
         expect(result.heartbeatAtEpochMs).toBe(1000);
         expect(result.expiresAtEpochMs).toBe(121000);
-        expect(fetchCalls).toHaveLength(3);
+        expect(
+            fetchCalls.filter((call) => call.url.includes('/groups/group-2/')),
+        ).toHaveLength(1);
+    });
+
+    it('repairs active membership once when create-and-join presence connect returns member forbidden', async () => {
+        const connectUrls: string[] = [];
+        const memberUrls: string[] = [];
+        stubFetch(({ url, method }) => {
+            if (method === 'POST' && url.endsWith('/groups')) {
+                return jsonResponse(groupSnapshot('group-1'), 201);
+            }
+
+            if (method === 'PUT' && url.endsWith('/groups/group-1/members/principal-1')) {
+                memberUrls.push(url);
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            if (
+                method === 'PUT' &&
+                url.endsWith('/groups/group-1/sessions/session-1')
+            ) {
+                connectUrls.push(url);
+                if (connectUrls.length === 1) {
+                    return textResponse(
+                        'Forbidden: group member not found for presence session: principal-1',
+                        403,
+                    );
+                }
+
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            return notFoundResponse();
+        });
+
+        await expect(
+            createAndJoinStateGroup(
+                'Room 1',
+                'principal-1',
+                'session-1',
+                undefined,
+                undefined,
+                'group-1',
+            ),
+        ).resolves.toMatchObject({
+            group: { groupId: 'group-1' },
+        });
+
+        expect(connectUrls).toHaveLength(2);
+        expect(memberUrls).toHaveLength(1);
+        const connectRequestIds = fetchCalls
+            .filter((call) =>
+                call.method === 'PUT' &&
+                call.url.endsWith('/groups/group-1/sessions/session-1')
+            )
+            .map((call) => (call.body as { requestId?: string }).requestId);
+        expect(new Set(connectRequestIds).size).toBe(2);
+    });
+
+    it('repairs active membership once when join presence connect returns member forbidden', async () => {
+        const connectUrls: string[] = [];
+        const memberBodies: unknown[] = [];
+        stubFetch(({ url, method, body }) => {
+            if (method === 'PUT' && url.endsWith('/groups/group-1/members/principal-1')) {
+                memberBodies.push(body);
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            if (
+                method === 'PUT' &&
+                url.endsWith('/groups/group-1/sessions/session-1')
+            ) {
+                connectUrls.push(url);
+                if (connectUrls.length === 1) {
+                    return textResponse(
+                        'Forbidden: group member is not active for presence session: principal-1',
+                        403,
+                    );
+                }
+
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            return notFoundResponse();
+        });
+
+        await expect(
+            joinStateGroup('group-1', 'principal-1', 'session-1'),
+        ).resolves.toMatchObject({
+            group: { groupId: 'group-1' },
+        });
+
+        expect(connectUrls).toHaveLength(2);
+        expect(memberBodies).toHaveLength(2);
+        expect(memberBodies[1]).toMatchObject({ status: 'active' });
+    });
+
+    it('surfaces repeated member forbidden after one presence repair attempt', async () => {
+        const connectUrls: string[] = [];
+        const memberUrls: string[] = [];
+        stubFetch(({ url, method }) => {
+            if (method === 'POST' && url.endsWith('/groups')) {
+                return jsonResponse(groupSnapshot('group-1'), 201);
+            }
+
+            if (method === 'PUT' && url.endsWith('/groups/group-1/members/principal-1')) {
+                memberUrls.push(url);
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            if (
+                method === 'PUT' &&
+                url.endsWith('/groups/group-1/sessions/session-1')
+            ) {
+                connectUrls.push(url);
+                return textResponse(
+                    'Forbidden: group member not found for presence session: principal-1',
+                    403,
+                );
+            }
+
+            return notFoundResponse();
+        });
+
+        await expect(
+            createAndJoinStateGroup(
+                'Room 1',
+                'principal-1',
+                'session-1',
+                undefined,
+                undefined,
+                'group-1',
+            ),
+        ).rejects.toThrow('403');
+
+        expect(connectUrls).toHaveLength(2);
+        expect(memberUrls).toHaveLength(1);
     });
 
     it('reuses heartbeat workflow request IDs across HTTP command retries', async () => {

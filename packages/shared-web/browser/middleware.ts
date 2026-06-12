@@ -6,6 +6,7 @@ import {
     IceConfig,
     RttMeasurementInfo,
 } from '@shared/api/api-config.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import {
@@ -58,6 +59,7 @@ export type MiddlewareInitOptions = Readonly<{
     signal?: AbortSignal;
     timeoutMs?: number;
     dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
+    scope?: StateScope;
 }>;
 
 export const DEFAULT_REALTIME_DATA_CHANNEL_LANE: RtcDataChannelLaneConfig = {
@@ -224,12 +226,14 @@ export async function initialiseMiddleware(
         overlaysRepository.readableOverlayCache(),
     );
 
-    cache.initialise(webSocketQueueBox, webRtcGroupManager, clientData);
+    cache.initialise(webSocketQueueBox, webRtcGroupManager, clientData, {
+        scope: options.scope,
+    });
 
     const {
         clients: clientSnapshots,
         groups: groupSnapshots,
-    } = await refreshStateSnapshots(undefined, {
+    } = await refreshStateSnapshots(options.scope, {
         command: toCommandOptions(options),
     });
 
@@ -238,10 +242,12 @@ export async function initialiseMiddleware(
         clientData,
         clientSnapshots,
         groupSnapshots,
+        { scope: options.scope },
     );
 
     const heartbeatHandle = await heartbeat.initHeartbeat(clientData, {
         authSession: session,
+        scope: options.scope,
     });
 
     return {

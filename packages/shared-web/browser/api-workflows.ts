@@ -54,6 +54,7 @@ export type RefreshStateHeartbeatOptions = Readonly<{
 export type RefreshStateHeartbeatResult = Readonly<{
     client: ClientStateSnapshot;
     groups: GroupStateSnapshot[];
+    missingGroups: GroupStateSnapshot[];
     heartbeatAtEpochMs: number;
     expiresAtEpochMs: number;
 }>;
@@ -139,8 +140,9 @@ export async function createAndJoinStateGroup(
                     { signal },
                 )),
             flow.commandStep('joined', (signal) =>
-                connectStateGroupPresenceSession(
+                connectStateGroupPresenceSessionWithMembershipRepair(
                     groupId,
+                    principalId,
                     sessionId,
                     {
                         principalId,
@@ -236,8 +238,9 @@ export async function joinStateGroup(
                     { signal },
                 )),
             flow.commandStep('joined', (signal) =>
-                connectStateGroupPresenceSession(
+                connectStateGroupPresenceSessionWithMembershipRepair(
                     groupId,
+                    principalId,
                     sessionId,
                     {
                         principalId,
@@ -337,6 +340,7 @@ export async function refreshStateHeartbeat(
         StateHeartbeatKey,
         StateHeartbeatWorkflowValue
     >(options.policies ?? {});
+    const commandPolicy = options.policies?.command;
 
     const results = await flow
         .sequential(
@@ -390,6 +394,9 @@ export async function refreshStateHeartbeat(
                         ),
                     {
                         errorOnNull: false,
+                        shouldRetry: (error, attempt) =>
+                            !isNotFoundApiError(error) &&
+                            (commandPolicy?.shouldRetry?.(error, attempt) ?? true),
                         fallback: (error) => tolerateNotFound(error, undefined),
                     },
                 );
@@ -406,9 +413,68 @@ export async function refreshStateHeartbeat(
                     | undefined
             )
             .filter(isDefined),
+        missingGroups: joinedGroups.filter((snapshot) =>
+            results.get(`group:${snapshot.group.groupId}`) === undefined
+        ),
         heartbeatAtEpochMs,
         expiresAtEpochMs,
     };
+}
+
+async function connectStateGroupPresenceSessionWithMembershipRepair(
+    groupId: string,
+    principalId: string,
+    sessionId: string,
+    request: Parameters<typeof connectStateGroupPresenceSession>[2],
+    scope: StateScope,
+    options: Parameters<typeof connectStateGroupPresenceSession>[4],
+): Promise<GroupStateSnapshot> {
+    try {
+        return await connectStateGroupPresenceSession(
+            groupId,
+            sessionId,
+            request,
+            scope,
+            options,
+        );
+    } catch (error) {
+        if (!isRepairableGroupPresenceForbidden(error)) {
+            throw error;
+        }
+    }
+
+    await upsertStateGroupMember(
+        groupId,
+        principalId,
+        {
+            status: 'active',
+            actorPrincipalId: request.actorPrincipalId ?? principalId,
+            actorSessionId: request.actorSessionId ?? sessionId,
+            requestId: toWorkflowRequestId(
+                'group-member-repair',
+                groupId,
+                principalId,
+                sessionId,
+            ),
+        },
+        scope,
+        options,
+    );
+
+    return await connectStateGroupPresenceSession(
+        groupId,
+        sessionId,
+        {
+            ...request,
+            requestId: toWorkflowRequestId(
+                'group-presence-connect-retry',
+                groupId,
+                sessionId,
+            ),
+        },
+        scope,
+        options,
+    );
 }
 
 function requireWorkflowResult<K, V>(
@@ -432,8 +498,39 @@ function tolerateNotFound<T>(error: unknown, value: T): T {
 }
 
 function isNotFoundApiError(error: unknown): boolean {
+    if (readApiErrorStatus(error) === 404) {
+        return true;
+    }
+
     const message = error instanceof Error ? error.message : String(error);
     return message.includes('404');
+}
+
+function isRepairableGroupPresenceForbidden(error: unknown): boolean {
+    if (readApiErrorStatus(error) !== 403) {
+        return false;
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    const bodyText = typeof error === 'object' && error !== null &&
+            'bodyText' in error &&
+            typeof (error as { bodyText?: unknown }).bodyText === 'string'
+        ? (error as { bodyText: string }).bodyText
+        : '';
+    const text = `${message} ${bodyText}`;
+    return text.includes('group member not found for presence session') ||
+        text.includes('group member is not active for presence session');
+}
+
+function readApiErrorStatus(error: unknown): number | undefined {
+    if (typeof error !== 'object' || error === null || !('status' in error)) {
+        return undefined;
+    }
+
+    const status = (error as { status?: unknown }).status;
+    return typeof status === 'number' && Number.isFinite(status)
+        ? status
+        : undefined;
 }
 
 function isDefined<T>(value: T | undefined | null): value is T {
