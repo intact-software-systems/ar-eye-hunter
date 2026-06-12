@@ -35,6 +35,8 @@ describe('rallar-black-box app tabs', () => {
         expect(appTabFromValue('server')).toBe('rallar-server');
         expect(appTabFromValue('flow')).toBe('builder');
         expect(appTabFromValue('runs')).toBe('runs');
+        expect(appTabFromValue('fleet')).toBe('fleet');
+        expect(appTabFromValue('fleet-report')).toBe('fleet');
         expect(appTabFromValue('distributed')).toBe('distributed-recipes');
         expect(appTabFromValue('catalog')).toBe('recipes');
         expect(appTabFromValue('recipes')).toBe('recipes');
@@ -80,6 +82,7 @@ describe('rallar-black-box app tabs', () => {
         expect(appModeForTab('rallar-server')).toBe('rallar');
         expect(appModeForTab('recipes')).toBe('black-box-runner');
         expect(appModeForTab('runs')).toBe('black-box-runner');
+        expect(appModeForTab('fleet')).toBe('black-box-runner');
         expect(appModeForTab('builder')).toBe('black-box-runner');
         expect(appModeForTab('advanced')).toBe('black-box-runner');
         expect(appModeForTab('shared-test')).toBe('black-box-runner');
@@ -111,6 +114,7 @@ describe('rallar-black-box app tabs', () => {
         expect(appTabsForMode('black-box-runner').map(tab => tab.id)).toEqual([
             'recipes',
             'runs',
+            'fleet',
             'builder',
             'event-stream',
             'advanced',
@@ -136,7 +140,9 @@ describe('rallar-black-box app tabs', () => {
 
     it('walks black-box-runner tab order in both keyboard directions', () => {
         expect(nextAppTab('recipes', 1)).toBe('runs');
-        expect(nextAppTab('runs', 1)).toBe('builder');
+        expect(nextAppTab('runs', 1)).toBe('fleet');
+        expect(nextAppTab('fleet', 1)).toBe('builder');
+        expect(nextAppTab('fleet', -1)).toBe('runs');
         expect(nextAppTab('builder', 1)).toBe('event-stream');
         expect(nextAppTab('event-stream', 1, 'black-box-runner')).toBe('advanced');
         expect(nextAppTab('advanced', 1)).toBe('recipes');

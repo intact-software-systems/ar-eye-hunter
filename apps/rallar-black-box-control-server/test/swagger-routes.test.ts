@@ -36,6 +36,10 @@ Deno.test('control OpenAPI spec describes the current server and control endpoin
     assert(spec.paths?.['/distributed-runs/{distributedRunId}/start']);
     assert(spec.paths?.['/distributed-runs/{distributedRunId}/cancel']);
     assert(spec.paths?.['/distributed-runs/{distributedRunId}/artifacts']);
+    assert(spec.paths?.['/fleet/reports']);
+    assert(spec.paths?.['/fleet/reports/rebuild']);
+    assert(spec.paths?.['/fleet/reports/{distributedRunId}']);
+    assert(spec.paths?.['/fleet/reports/{distributedRunId}/artifacts']);
     assert(spec.paths?.['/runs/{runId}/commands']);
     assert(spec.paths?.['/runs/{runId}/reset']);
     assert(spec.paths?.['/runs/{runId}/artifacts']);
@@ -47,10 +51,33 @@ Deno.test('control OpenAPI spec describes the current server and control endpoin
     const schemas = (spec as { components?: { schemas?: Record<string, any> } }).components?.schemas;
     const crdtCapability = schemas?.ControlAgentIdentity?.properties?.capabilities
         ?.properties?.crdt;
+    const distributedArtifact = schemas?.ControlDistributedRunArtifactBundle;
+    const fleetReport = schemas?.ControlFleetRunReport;
+    const fleetBundle = schemas?.ControlFleetReportBundle;
     assertEquals(crdtCapability?.required, ['supported']);
     assert(
         crdtCapability?.properties?.transports?.items?.enum?.includes('rtc-with-ws-fallback'),
         'ControlAgentIdentity should document CRDT transport capability metadata.',
+    );
+    assert(
+        distributedArtifact?.properties?.artifactSchemaVersion?.enum?.includes(2),
+        'Distributed artifact schema should document v2 analysis files.',
+    );
+    assert(
+        Boolean(distributedArtifact?.properties?.files?.properties?.['failures.json']),
+        'Distributed artifact schema should document failures.json.',
+    );
+    assert(
+        Boolean(schemas?.ControlAgentIdentity?.properties?.region),
+        'ControlAgentIdentity should document fleet region metadata.',
+    );
+    assert(
+        Boolean(fleetReport?.properties?.failureSignatures),
+        'Fleet report schema should document failure signatures.',
+    );
+    assert(
+        Boolean(fleetBundle?.properties?.files?.properties?.['summary.md']),
+        'Fleet report bundle should document shareable summary.md.',
     );
 });
 

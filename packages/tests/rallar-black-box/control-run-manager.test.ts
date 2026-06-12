@@ -9,11 +9,15 @@ import {
     fetchDistributedRun,
     fetchDistributedRunArtifactBundle,
     fetchDistributedRuns,
+    fetchFleetReport,
+    fetchFleetReportBundle,
+    fetchFleetReports,
     fetchControlRunArtifactBundle,
     fetchControlRunFailureBundle,
     fetchControlRunJsonl,
     fetchControlRunSnapshot,
     fetchControlServerSnapshot,
+    rebuildFleetReports,
     stageDistributedRun,
     startDistributedRun,
     cancelDistributedRun,
@@ -348,5 +352,133 @@ describe('rallar-black-box control run manager', () => {
         expect(JSON.parse(String(requests[5].init?.body))).toEqual({ reason: 'stop' });
         expect((requests[0].init?.headers as Record<string, string>).Authorization).toBe('Bearer admin-token');
         expect(artifact.files['manifest.json']).toBe('{}');
+    });
+
+    it('calls fleet report endpoints with filters and export helpers', async () => {
+        const requests: Array<{ url: string; init?: RequestInit }> = [];
+        const report = {
+            fleetReportSchemaVersion: 1,
+            distributedRunId: 'dist-1',
+            controlRunId: 'run-1',
+            generatedAtEpochMs: 2_000,
+            state: 'failed',
+            ok: false,
+            group: {
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+                groupId: 'bb-group',
+            },
+            recipeIds: ['health-only'],
+            summary: {
+                agents: 2,
+                regions: 1,
+                passed: 1,
+                failed: 1,
+                missing: 0,
+                flaky: 0,
+                stale: 0,
+                passRate: 0.5,
+                failureGroups: 1,
+            },
+            timing: {
+                run: { count: 1, p95Ms: 25 },
+                commands: { count: 2, p95Ms: 10 },
+            },
+            agents: [],
+            regions: [],
+            failureSignatures: [],
+            artifactRefs: {
+                distributedRun: 'distributed-run:dist-1',
+                controlRun: 'control-run:run-1',
+                fleetReport: 'fleet-report:dist-1',
+            },
+        };
+        const response = {
+            reports: [report],
+            aggregate: {
+                generatedAtEpochMs: 2_000,
+                reportCount: 1,
+                runCount: 1,
+                agentCount: 2,
+                regionCount: 1,
+                passRate: 0.5,
+                staleAgentCount: 0,
+                flakyAgentCount: 0,
+                failureGroupCount: 1,
+                timing: {
+                    runs: { count: 1, p95Ms: 25 },
+                    commands: { count: 2, p95Ms: 10 },
+                },
+                regions: [],
+                failureSignatures: [],
+            },
+        };
+        const bundle = {
+            fleetReportSchemaVersion: 1,
+            distributedRunId: 'dist-1',
+            generatedAtEpochMs: 2_100,
+            files: {
+                'fleet-report.json': '{}',
+                'summary.md': '# Fleet Run Report',
+                'agent-results.csv': 'agentId',
+                'failure-signatures.csv': 'signatureId',
+            },
+        };
+        const fetchFn = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+            const url = String(input);
+            requests.push({ url, init });
+            if (url.endsWith('/fleet/reports/rebuild')) {
+                return new Response(JSON.stringify(response), { status: 200 });
+            }
+            if (url.endsWith('/fleet/reports/dist-1/artifacts')) {
+                return new Response(JSON.stringify(bundle), { status: 200 });
+            }
+            if (url.endsWith('/fleet/reports/dist-1')) {
+                return new Response(JSON.stringify(report), { status: 200 });
+            }
+            return new Response(JSON.stringify(response), { status: 200 });
+        };
+
+        const reports = await fetchFleetReports({
+            baseUrl: 'http://control.test',
+            token: 'admin-token',
+            filter: {
+                region: 'eu-north',
+                provider: 'hetzner',
+                recipeId: 'health-only',
+                groupId: 'bb-group',
+                state: 'failed',
+                fromEpochMs: 1_000,
+                toEpochMs: 3_000,
+            },
+            fetchFn,
+        });
+        const singleReport = await fetchFleetReport({
+            baseUrl: 'http://control.test',
+            distributedRunId: 'dist-1',
+            fetchFn,
+        });
+        const exportBundle = await fetchFleetReportBundle({
+            baseUrl: 'http://control.test',
+            distributedRunId: 'dist-1',
+            fetchFn,
+        });
+        await rebuildFleetReports({
+            baseUrl: 'http://control.test',
+            token: 'admin-token',
+            fetchFn,
+        });
+
+        expect(requests[0].url).toBe(
+            'http://control.test/fleet/reports?region=eu-north&provider=hetzner&recipeId=health-only&groupId=bb-group&state=failed&fromEpochMs=1000&toEpochMs=3000',
+        );
+        expect((requests[0].init?.headers as Record<string, string>).Authorization).toBe('Bearer admin-token');
+        expect(requests[1].url).toBe('http://control.test/fleet/reports/dist-1');
+        expect(requests[2].url).toBe('http://control.test/fleet/reports/dist-1/artifacts');
+        expect(requests[3].url).toBe('http://control.test/fleet/reports/rebuild');
+        expect(requests[3].init?.method).toBe('POST');
+        expect(reports.aggregate.agentCount).toBe(2);
+        expect(singleReport.distributedRunId).toBe('dist-1');
+        expect(exportBundle.files['summary.md']).toContain('Fleet Run Report');
     });
 });

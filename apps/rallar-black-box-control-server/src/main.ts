@@ -17,6 +17,7 @@ import {
     controlRunResultsJsonl,
     createControlRunArtifactBundle,
 } from './control-artifacts.ts';
+import { fleetReportFilterFromUrl } from './control-fleet.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandKind,
@@ -113,6 +114,37 @@ async function handleRequest(request: Request): Promise<Response> {
         return jsonResponse({
             distributedRuns: controlService.listDistributedRuns(),
         });
+    }
+
+    if (isRead && url.pathname === '/fleet/reports') {
+        return jsonResponse(controlService.listFleetReports(fleetReportFilterFromUrl(url)));
+    }
+
+    if (request.method === 'POST' && url.pathname === '/fleet/reports/rebuild') {
+        if (!authorizeAdminRequest(request, url)) {
+            return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
+        }
+        const response = controlService.rebuildFleetReports();
+        persistControlSnapshot();
+        return jsonResponse(response);
+    }
+
+    const fleetReportMatch = url.pathname.match(/^\/fleet\/reports\/([^/]+)$/);
+    if (isRead && fleetReportMatch) {
+        const distributedRunId = decodeURIComponent(fleetReportMatch[1]);
+        const report = controlService.snapshotFleetReport(distributedRunId);
+        return report
+            ? jsonResponse(report)
+            : jsonResponse({ error: 'Fleet report not found.' }, 404);
+    }
+
+    const fleetReportArtifactMatch = url.pathname.match(/^\/fleet\/reports\/([^/]+)\/artifacts$/);
+    if (isRead && fleetReportArtifactMatch) {
+        const distributedRunId = decodeURIComponent(fleetReportArtifactMatch[1]);
+        const bundle = controlService.fleetReportBundle(distributedRunId);
+        return bundle
+            ? jsonResponse(bundle)
+            : jsonResponse({ error: 'Fleet report not found.' }, 404);
     }
 
     if (request.method === 'POST' && url.pathname === '/distributed-runs') {

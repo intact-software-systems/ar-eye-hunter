@@ -206,6 +206,7 @@ function toControlAgentIdentity(
     const defaults = asRecord(config.defaults);
     const control = asRecord(config.control);
     const browser = asRecord(config.browser);
+    const fleet = asRecord(config.fleet);
     const principalId = firstString(rallar.principalId, rallar.clientId, config.actor);
     const sessionId = firstString(rallar.sessionId, config.sessionId);
     const providerMode = firstString(control.providerMode, defaults.providerMode, rallar.providerMode);
@@ -227,6 +228,16 @@ function toControlAgentIdentity(
             sessionId && principalId ? `${principalId}:${sessionId}` : undefined,
             agentId,
         ),
+        region: firstString(fleet.region),
+        provider: firstString(fleet.provider),
+        datacenter: firstString(fleet.datacenter),
+        hostId: firstString(fleet.hostId),
+        agentPoolId: firstString(fleet.agentPoolId),
+        deploymentId: firstString(fleet.deploymentId),
+        browserName: firstString(fleet.browserName, browser.name),
+        browserVersion: firstString(fleet.browserVersion, browser.version),
+        os: firstString(fleet.os, browser.os),
+        tags: stringArray(fleet.tags),
         capabilities: {
             crdt: {
                 supported: crdtSupported,
@@ -241,6 +252,16 @@ function toControlAgentIdentity(
     return Object.values(identity).some(value => value !== undefined)
         ? identity
         : undefined;
+}
+
+function stringArray(value: unknown): readonly string[] | undefined {
+    if (!Array.isArray(value)) {
+        return undefined;
+    }
+    const entries = value
+        .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+        .map(entry => entry.trim());
+    return entries.length > 0 ? entries : undefined;
 }
 
 function toStatsSnapshot(

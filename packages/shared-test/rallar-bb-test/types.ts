@@ -84,6 +84,7 @@ export type RallarBlackBoxTestConfig = Readonly<{
     browser?: Readonly<Record<string, unknown>>;
     control?: Readonly<Record<string, unknown>>;
     defaults?: Readonly<Record<string, unknown>>;
+    fleet?: Readonly<Record<string, unknown>>;
     redaction?: RallarBlackBoxTestRedactionOptions;
 }>;
 

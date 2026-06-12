@@ -91,6 +91,7 @@ export function createControlFleetRunReport(input: Readonly<{
         if (!result.ok) {
             const link = input.distributedRun.commandLinks.find(candidate => candidate.commandId === result.commandId);
             const command = commandMap.get(result.commandId);
+            const commandError = result.error ?? result.result?.error;
             addFailureSignature({
                 signatures: failureSignatures,
                 labels: labelByAgentId,
@@ -98,8 +99,8 @@ export function createControlFleetRunReport(input: Readonly<{
                 agentId: result.agentId,
                 category: 'command',
                 title: 'Command failure',
-                code: errorCode(result.error),
-                message: errorMessage(result.error) ?? 'Distributed command failed.',
+                code: errorCode(commandError),
+                message: errorMessage(commandError) ?? 'Distributed command failed.',
                 recipeId: link?.recipeId,
                 commandKind: command?.envelope.command.kind,
                 atEpochMs: result.result?.endedAtEpochMs ?? result.result?.startedAtEpochMs,
@@ -373,7 +374,7 @@ function agentOutcomeState(
     if (failedResults > 0 || failureSignatures > 0) return 'failed';
     if (missing) return 'missing';
     if (!terminal) return 'running';
-    if (runState === 'passed') return 'passed';
+    if (runState === 'passed' || runState === 'failed' || runState === 'timed-out') return 'passed';
     return 'unknown';
 }
 
@@ -738,4 +739,3 @@ function safeJson(value: unknown): string {
         return '';
     }
 }
-

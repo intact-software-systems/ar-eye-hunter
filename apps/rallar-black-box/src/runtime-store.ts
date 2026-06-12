@@ -67,6 +67,16 @@ export type RallarBlackBoxBootstrapConfig = Readonly<{
     rallarRestoreSession: boolean;
     rallarLogoutOnClose: boolean;
     rallarLeaveRoomOnClose: boolean;
+    fleetRegion?: string;
+    fleetProvider?: string;
+    fleetDatacenter?: string;
+    fleetHostId?: string;
+    fleetAgentPoolId?: string;
+    fleetDeploymentId?: string;
+    fleetBrowserName?: string;
+    fleetBrowserVersion?: string;
+    fleetOs?: string;
+    fleetTags?: readonly string[];
     source: 'url' | 'environment' | 'default';
 }>;
 
@@ -348,8 +358,28 @@ export function resolveRallarBlackBoxBootstrapConfig(
             paramValue(params, env, 'rallarLeaveRoomOnClose', 'VITE_RALLAR_LEAVE_ROOM_ON_CLOSE'),
             true,
         ),
+        fleetRegion: paramValue(params, env, 'fleetRegion', 'VITE_RALLAR_AGENT_REGION'),
+        fleetProvider: paramValue(params, env, 'fleetProvider', 'VITE_RALLAR_AGENT_PROVIDER'),
+        fleetDatacenter: paramValue(params, env, 'fleetDatacenter', 'VITE_RALLAR_AGENT_DATACENTER'),
+        fleetHostId: paramValue(params, env, 'fleetHostId', 'VITE_RALLAR_AGENT_HOST_ID'),
+        fleetAgentPoolId: paramValue(params, env, 'fleetAgentPoolId', 'VITE_RALLAR_AGENT_POOL_ID'),
+        fleetDeploymentId: paramValue(params, env, 'fleetDeploymentId', 'VITE_RALLAR_AGENT_DEPLOYMENT_ID'),
+        fleetBrowserName: paramValue(params, env, 'fleetBrowserName', 'VITE_RALLAR_AGENT_BROWSER_NAME'),
+        fleetBrowserVersion: paramValue(params, env, 'fleetBrowserVersion', 'VITE_RALLAR_AGENT_BROWSER_VERSION'),
+        fleetOs: paramValue(params, env, 'fleetOs', 'VITE_RALLAR_AGENT_OS'),
+        fleetTags: splitBootstrapCsv(paramValue(params, env, 'fleetTags', 'VITE_RALLAR_AGENT_TAGS')),
         source: bootstrapSource(params, env),
     };
+}
+
+function splitBootstrapCsv(value: string | undefined): readonly string[] | undefined {
+    if (!value) {
+        return undefined;
+    }
+    const entries = value.split(',')
+        .map(entry => entry.trim())
+        .filter(Boolean);
+    return entries.length > 0 ? entries : undefined;
 }
 
 function rallarConfigFromBootstrap(
@@ -439,7 +469,28 @@ function remoteControlConfig(
             workspaceId: bootstrap.workspaceId,
             groupId: bootstrap.roomId,
         },
+        fleet: bootstrapFleetMetadata(bootstrap),
     };
+}
+
+function bootstrapFleetMetadata(
+    bootstrap: RallarBlackBoxBootstrapConfig,
+): Readonly<Record<string, unknown>> | undefined {
+    const fleet = {
+        region: bootstrap.fleetRegion,
+        provider: bootstrap.fleetProvider,
+        datacenter: bootstrap.fleetDatacenter,
+        hostId: bootstrap.fleetHostId,
+        agentPoolId: bootstrap.fleetAgentPoolId,
+        deploymentId: bootstrap.fleetDeploymentId,
+        browserName: bootstrap.fleetBrowserName,
+        browserVersion: bootstrap.fleetBrowserVersion,
+        os: bootstrap.fleetOs,
+        tags: bootstrap.fleetTags,
+    };
+    return Object.values(fleet).some(value => value !== undefined)
+        ? fleet
+        : undefined;
 }
 
 function runtimeDelayFor(command: RallarBlackBoxTestCommand): number {
@@ -1282,6 +1333,7 @@ class RallarBlackBoxRuntimeStore {
                 connection: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.connection,
                 providerMode: this.bootstrapConfig.providerMode,
             },
+            fleet: bootstrapFleetMetadata(this.bootstrapConfig),
         };
         await this.runtime.execute({
             kind: 'configure',

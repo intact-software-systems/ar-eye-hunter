@@ -24,6 +24,22 @@ import {
     type RallarBlackBoxDistributedRunRecipeSelection,
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
+import {
+    createControlDistributedRunArtifactBundle,
+    type ControlDistributedRunArtifactBundle,
+} from './control-artifacts.ts';
+import {
+    createControlFleetAggregateReport,
+    createControlFleetReportBundle,
+    createControlFleetRunReport,
+    filterControlFleetReports,
+} from './control-fleet.ts';
+import type {
+    ControlFleetAggregateReport,
+    ControlFleetReportBundle,
+    ControlFleetRunReport,
+    ControlFleetReportsResponse,
+} from '@shared-test/rallar-bb-test/fleet-report.ts';
 
 const DEFAULT_DISTRIBUTED_BARRIER_TIMEOUT_MS = 15_000;
 
@@ -96,16 +112,6 @@ export type ControlDistributedRunSnapshot = Readonly<{
     }>;
 }>;
 
-export type ControlDistributedRunArtifactBundle = Readonly<{
-    artifactSchemaVersion: 1;
-    distributedRunId: string;
-    generatedAtEpochMs: number;
-    files: Readonly<Record<
-        'distributed-run.json' | 'manifest.json' | 'control-run.json',
-        string
-    >>;
-}>;
-
 export type RallarBlackBoxControlServiceReceiveResult = Readonly<{
     kind: ControlClientEnvelope['kind'];
     runId: string;
@@ -154,6 +160,7 @@ export type ControlRunSnapshot = Readonly<{
 export type ControlServerSnapshot = Readonly<{
     runs: readonly ControlRunSnapshot[];
     distributedRuns?: readonly ControlDistributedRunSnapshot[];
+    fleetReports?: readonly ControlFleetRunReport[];
 }>;
 
 type StoredCommand = {
@@ -235,6 +242,7 @@ export class RallarBlackBoxControlService {
     private readonly runTokenTtlMs: number;
     private readonly runs = new Map<string, StoredRun>();
     private readonly distributedRuns = new Map<string, StoredDistributedRun>();
+    private readonly fleetReports = new Map<string, ControlFleetRunReport>();
 
     constructor(options: RallarBlackBoxControlServiceOptions = {}) {
         this.now = options.now ?? (() => Date.now());
@@ -556,16 +564,39 @@ export class RallarBlackBoxControlService {
 
         const snapshot = this.snapshotDistributedRunValue(distributedRun);
         const controlRun = this.snapshotRun(distributedRun.controlRunId);
+        return createControlDistributedRunArtifactBundle(snapshot, controlRun, this.now());
+    }
+
+    listFleetReports(filter: Readonly<{
+        region?: string;
+        provider?: string;
+        recipeId?: string;
+        groupId?: string;
+        state?: string;
+        fromEpochMs?: number;
+        toEpochMs?: number;
+    }> = {}): ControlFleetReportsResponse {
+        this.ensureFleetReports();
+        const reports = filterControlFleetReports([...this.fleetReports.values()], filter);
         return {
-            artifactSchemaVersion: 1,
-            distributedRunId,
-            generatedAtEpochMs: this.now(),
-            files: {
-                'distributed-run.json': JSON.stringify(snapshot, null, 2),
-                'manifest.json': JSON.stringify(snapshot.manifest, null, 2),
-                'control-run.json': JSON.stringify(controlRun ?? null, null, 2),
-            },
+            reports,
+            aggregate: createControlFleetAggregateReport(reports, this.now()),
         };
+    }
+
+    snapshotFleetReport(distributedRunId: string): ControlFleetRunReport | undefined {
+        return this.ensureFleetReport(distributedRunId);
+    }
+
+    fleetReportBundle(distributedRunId: string): ControlFleetReportBundle | undefined {
+        const report = this.ensureFleetReport(distributedRunId);
+        return report ? createControlFleetReportBundle(report) : undefined;
+    }
+
+    rebuildFleetReports(): ControlFleetReportsResponse {
+        this.fleetReports.clear();
+        this.ensureFleetReports();
+        return this.listFleetReports();
     }
 
     takeDispatchableCommands(runId: string, agentId: string): readonly ControlCommandEnvelope[] {
@@ -646,6 +677,7 @@ export class RallarBlackBoxControlService {
             for (const [distributedRunId, distributedRun] of this.distributedRuns.entries()) {
                 if (distributedRun.controlRunId === runId) {
                     this.distributedRuns.delete(distributedRunId);
+                    this.fleetReports.delete(distributedRunId);
                 }
             }
         }
@@ -674,6 +706,7 @@ export class RallarBlackBoxControlService {
         for (const [distributedRunId, distributedRun] of this.distributedRuns.entries()) {
             if (deletedRunIds.includes(distributedRun.controlRunId)) {
                 this.distributedRuns.delete(distributedRunId);
+                this.fleetReports.delete(distributedRunId);
             }
         }
         return deletedRunIds;
@@ -682,6 +715,7 @@ export class RallarBlackBoxControlService {
     restoreSnapshot(snapshot: ControlServerSnapshot): void {
         this.runs.clear();
         this.distributedRuns.clear();
+        this.fleetReports.clear();
         for (const runSnapshot of snapshot.runs) {
             const run: StoredRun = {
                 runId: runSnapshot.runId,
@@ -750,12 +784,16 @@ export class RallarBlackBoxControlService {
                 error: distributedRunSnapshot.error,
             });
         }
+        for (const fleetReport of snapshot.fleetReports ?? []) {
+            this.fleetReports.set(fleetReport.distributedRunId, fleetReport);
+        }
     }
 
     snapshot(bounds: ControlRunSnapshotBounds = {}): ControlServerSnapshot {
         return {
             runs: Array.from(this.runs.values(), (run) => this.snapshotRunValue(run, bounds)),
             distributedRuns: this.listDistributedRuns(),
+            fleetReports: this.listFleetReports().reports,
         };
     }
 
@@ -1302,6 +1340,36 @@ export class RallarBlackBoxControlService {
             rollup,
             error: distributedRun.error,
         };
+    }
+
+    private ensureFleetReports(): void {
+        for (const distributedRunId of this.distributedRuns.keys()) {
+            this.ensureFleetReport(distributedRunId);
+        }
+    }
+
+    private ensureFleetReport(distributedRunId: string): ControlFleetRunReport | undefined {
+        const distributedRun = this.distributedRuns.get(distributedRunId);
+        if (!distributedRun) {
+            this.fleetReports.delete(distributedRunId);
+            return undefined;
+        }
+        const snapshot = this.snapshotDistributedRunValue(distributedRun);
+        if (!isDistributedRunTerminalState(snapshot.state)) {
+            return this.fleetReports.get(distributedRunId);
+        }
+        const existing = this.fleetReports.get(distributedRunId);
+        if (existing && existing.generatedAtEpochMs >= snapshot.updatedAtEpochMs) {
+            return existing;
+        }
+        const report = createControlFleetRunReport({
+            distributedRun: snapshot,
+            controlRun: this.snapshotRun(snapshot.controlRunId),
+            generatedAtEpochMs: this.now(),
+            redaction: this.redaction,
+        });
+        this.fleetReports.set(distributedRunId, report);
+        return report;
     }
 
     private refreshDistributedRunsForControlRun(controlRunId: string): void {

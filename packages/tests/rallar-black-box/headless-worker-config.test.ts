@@ -22,6 +22,15 @@ describe("rallar-black-box headless worker config", () => {
         RALLAR_BLACK_BOX_STATS_INTERVAL_MS: "2000",
         RALLAR_BLACK_BOX_HEARTBEAT_INTERVAL_MS: "3000",
         RALLAR_BLACK_BOX_ENVIRONMENT: "hetzner-fsn1",
+        RALLAR_AGENT_REGION: "eu-north",
+        RALLAR_AGENT_PROVIDER: "hetzner",
+        RALLAR_AGENT_DATACENTER: "fsn1",
+        RALLAR_AGENT_POOL_ID: "pool-a",
+        RALLAR_AGENT_DEPLOYMENT_ID: "deploy-2026-06-11",
+        RALLAR_AGENT_BROWSER_NAME: "chromium",
+        RALLAR_AGENT_BROWSER_VERSION: "126",
+        RALLAR_AGENT_OS: "linux",
+        RALLAR_AGENT_TAGS: "canary,rtc",
         RALLAR_APPLICATION_ID: "rallar-server",
         RALLAR_WORKSPACE_ID: "default",
       },
@@ -30,6 +39,9 @@ describe("rallar-black-box headless worker config", () => {
     expect(config.spaUrl).toBe("https://blackbox.example.test");
     expect(config.apiBaseUrl).toBe("https://api.example.test");
     expect(config.agentCount).toBe(2);
+    expect(config.fleetRegion).toBe("eu-north");
+    expect(config.fleetProvider).toBe("hetzner");
+    expect(config.fleetTags).toEqual(["canary", "rtc"]);
     expect(config.agents.map((agent) => agent.agentId)).toEqual([
       "fsn1-worker-01",
       "fsn1-worker-02",
@@ -57,6 +69,17 @@ describe("rallar-black-box headless worker config", () => {
     expect(firstUrl.searchParams.get("statsIntervalMs")).toBe("2000");
     expect(firstUrl.searchParams.get("heartbeatIntervalMs")).toBe("3000");
     expect(firstUrl.searchParams.get("environment")).toBe("hetzner-fsn1");
+    expect(firstUrl.searchParams.get("fleetRegion")).toBe("eu-north");
+    expect(firstUrl.searchParams.get("fleetProvider")).toBe("hetzner");
+    expect(firstUrl.searchParams.get("fleetDatacenter")).toBe("fsn1");
+    expect(firstUrl.searchParams.get("fleetAgentPoolId")).toBe("pool-a");
+    expect(firstUrl.searchParams.get("fleetDeploymentId")).toBe(
+      "deploy-2026-06-11",
+    );
+    expect(firstUrl.searchParams.get("fleetBrowserName")).toBe("chromium");
+    expect(firstUrl.searchParams.get("fleetBrowserVersion")).toBe("126");
+    expect(firstUrl.searchParams.get("fleetOs")).toBe("linux");
+    expect(firstUrl.searchParams.get("fleetTags")).toBe("canary,rtc");
     expect(firstUrl.searchParams.get("applicationId")).toBe("rallar-server");
     expect(firstUrl.searchParams.get("workspaceId")).toBe("default");
   });

@@ -743,6 +743,16 @@ function parseControlAgentIdentity(value: unknown): RallarBlackBoxControlAgentId
         providerMode: optionalString(value.providerMode),
         browserLabel: optionalString(value.browserLabel),
         sessionLabel: optionalString(value.sessionLabel),
+        region: optionalString(value.region),
+        provider: optionalString(value.provider),
+        datacenter: optionalString(value.datacenter),
+        hostId: optionalString(value.hostId),
+        agentPoolId: optionalString(value.agentPoolId),
+        deploymentId: optionalString(value.deploymentId),
+        browserName: optionalString(value.browserName),
+        browserVersion: optionalString(value.browserVersion),
+        os: optionalString(value.os),
+        tags: parseStringArray(value.tags),
         capabilities: parseControlAgentCapabilities(value.capabilities),
         updatedAtEpochMs: typeof value.updatedAtEpochMs === 'number'
             ? value.updatedAtEpochMs
@@ -752,6 +762,16 @@ function parseControlAgentIdentity(value: unknown): RallarBlackBoxControlAgentId
     return Object.values(identity).some(entry => entry !== undefined)
         ? identity
         : undefined;
+}
+
+function parseStringArray(value: unknown): readonly string[] | undefined {
+    if (!Array.isArray(value)) {
+        return undefined;
+    }
+    const strings = value
+        .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+        .map(entry => entry.trim());
+    return strings.length > 0 ? strings : undefined;
 }
 
 export function validateRallarBlackBoxTestCommand(

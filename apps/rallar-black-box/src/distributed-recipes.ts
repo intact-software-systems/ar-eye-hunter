@@ -34,6 +34,7 @@ import type {
     ControlDistributedRunArtifactBundle,
     ControlDistributedRunCommandLink,
     ControlDistributedRunSnapshot,
+    ControlSnapshotBounds,
     ControlRunSnapshot,
 } from './control-run-manager.ts';
 
@@ -479,6 +480,77 @@ export type DistributedRunCompareSummary = Readonly<{
         delta: number;
         leftOnly: readonly string[];
         rightOnly: readonly string[];
+    }>;
+}>;
+
+export type DistributedFailureExplanation = Readonly<{
+    category:
+        | 'targeting'
+        | 'readiness'
+        | 'barrier'
+        | 'command'
+        | 'diagnostic'
+        | 'runtime'
+        | 'unknown';
+    title: string;
+    likelyCause: string;
+    nextAction: string;
+    evidence: readonly string[];
+}>;
+
+export type DistributedRunAnalysisReport = Readonly<{
+    distributedRunId: string;
+    summary: Readonly<{
+        state: string;
+        ok: boolean;
+        durationMs?: number;
+        targetCount: number;
+        commandCount: number;
+        completedCommandCount: number;
+        failedCommandCount: number;
+        resultCount: number;
+        failedResultCount: number;
+        artifactStatus: DistributedRunArtifactValidationStatus;
+        snapshotMayBeTruncated: boolean;
+        snapshotWarnings: readonly string[];
+    }>;
+    firstFailure?: Readonly<{
+        category: DistributedFailureExplanation['category'];
+        key: string;
+        kind: DistributedRunFailureRow['kind'];
+        message: string;
+        code?: string;
+        agentId?: string;
+        recipeId?: string;
+        commandId?: string;
+        atEpochMs?: number;
+    }>;
+    agents: readonly Readonly<{
+        agentId: string;
+        role?: string;
+        readiness: DistributedRunProgressStatus;
+        barrier: DistributedRunProgressStatus;
+        execution: DistributedRunProgressStatus;
+        eventCount: number;
+        failedCommandCount: number;
+        reconnectCount?: number;
+        lastHeartbeatAtEpochMs?: number;
+    }>[];
+    recipes: readonly DistributedRunRecipeProgressRow[];
+    diagnostics: Readonly<{
+        total: number;
+        warnings: number;
+        errors: number;
+        ws: number;
+        rtc: number;
+        correlated: readonly DistributedRunRuntimeDiagnosticRow[];
+    }>;
+    nextActions: readonly DistributedFailureExplanation[];
+    rawEvidence: Readonly<{
+        failureKeys: readonly string[];
+        diagnosticIds: readonly string[];
+        artifactStatus: DistributedRunArtifactValidationStatus;
+        artifactMessage: string;
     }>;
 }>;
 
@@ -1340,6 +1412,86 @@ export function deriveDistributedRunMonitor(input: Readonly<{
         events: linkedEvents,
         runtimeDiagnostics,
         compositeDrilldowns,
+    };
+}
+
+export function deriveDistributedRunAnalysisReport(input: Readonly<{
+    distributedRun: ControlDistributedRunSnapshot;
+    controlRun?: ControlRunSnapshot;
+    artifactBundle?: ControlDistributedRunArtifactBundle;
+    snapshotBounds?: ControlSnapshotBounds;
+}>): DistributedRunAnalysisReport {
+    const monitor = deriveDistributedRunMonitor(input);
+    const firstFailure = firstDistributedFailure(monitor.failures);
+    const explanations = distributedFailureExplanations(input.distributedRun, monitor, firstFailure);
+    const controlAgents = new Map((input.controlRun?.agents ?? []).map(agent => [agent.agentId, agent]));
+    const snapshotWarnings = distributedSnapshotWarnings(input.controlRun, input.snapshotBounds);
+    const correlatedDiagnostics = monitor.runtimeDiagnostics
+        .filter(row => row.correlatedFailureKeys.length > 0);
+    const firstExplanation = firstFailure
+        ? explanations.find(explanation => explanation.evidence.includes(firstFailure.key)) ??
+            explanations[0]
+        : undefined;
+
+    return {
+        distributedRunId: input.distributedRun.distributedRunId,
+        summary: {
+            state: input.distributedRun.state,
+            ok: input.distributedRun.rollup.ok,
+            durationMs: distributedRunDuration(input.distributedRun),
+            targetCount: input.distributedRun.targetAgentIds.length,
+            commandCount: monitor.commandCounts.total,
+            completedCommandCount: monitor.commandCounts.completed,
+            failedCommandCount: monitor.commandCounts.failed,
+            resultCount: monitor.resultCounts.total,
+            failedResultCount: monitor.resultCounts.failed,
+            artifactStatus: monitor.artifact.status,
+            snapshotMayBeTruncated: snapshotWarnings.length > 0,
+            snapshotWarnings,
+        },
+        firstFailure: firstFailure
+            ? {
+                category: firstExplanation?.category ?? failureCategory(firstFailure),
+                key: firstFailure.key,
+                kind: firstFailure.kind,
+                message: firstFailure.message,
+                code: firstFailure.code,
+                agentId: firstFailure.agentId,
+                recipeId: firstFailure.recipeId,
+                commandId: firstFailure.commandId,
+                atEpochMs: firstFailure.atEpochMs,
+            }
+            : undefined,
+        agents: monitor.agentProgress.map(row => {
+            const agent = controlAgents.get(row.agentId);
+            return {
+                agentId: row.agentId,
+                role: row.role,
+                readiness: row.readiness,
+                barrier: row.barrier,
+                execution: row.execution,
+                eventCount: row.eventCount,
+                failedCommandCount: row.failedCommandCount,
+                reconnectCount: agent?.reconnectCount,
+                lastHeartbeatAtEpochMs: agent?.lastHeartbeatAtEpochMs,
+            };
+        }),
+        recipes: monitor.recipeProgress,
+        diagnostics: {
+            total: monitor.diagnosticCounts.total,
+            warnings: monitor.diagnosticCounts.warning,
+            errors: monitor.diagnosticCounts.error,
+            ws: monitor.diagnosticCounts.ws,
+            rtc: monitor.diagnosticCounts.rtc,
+            correlated: correlatedDiagnostics,
+        },
+        nextActions: explanations,
+        rawEvidence: {
+            failureKeys: monitor.failures.map(failure => failure.key),
+            diagnosticIds: monitor.runtimeDiagnostics.map(row => row.eventId),
+            artifactStatus: monitor.artifact.status,
+            artifactMessage: monitor.artifact.message,
+        },
     };
 }
 
@@ -2362,6 +2514,239 @@ function distributedRunFailures(
     return rows.sort((left, right) => (right.atEpochMs ?? 0) - (left.atEpochMs ?? 0));
 }
 
+function firstDistributedFailure(
+    failures: readonly DistributedRunFailureRow[],
+): DistributedRunFailureRow | undefined {
+    return [...failures]
+        .sort((left, right) =>
+            (left.atEpochMs ?? Number.MAX_SAFE_INTEGER) -
+                (right.atEpochMs ?? Number.MAX_SAFE_INTEGER) ||
+            left.key.localeCompare(right.key)
+        )[0] ?? failures[0];
+}
+
+function distributedFailureExplanations(
+    distributedRun: ControlDistributedRunSnapshot,
+    monitor: DistributedRunMonitor,
+    firstFailure: DistributedRunFailureRow | undefined,
+): readonly DistributedFailureExplanation[] {
+    const explanations: DistributedFailureExplanation[] = [];
+    const orderedFailures = firstFailure
+        ? [
+            firstFailure,
+            ...monitor.failures.filter(failure => failure.key !== firstFailure.key),
+        ]
+        : monitor.failures;
+
+    orderedFailures.slice(0, 6).forEach(failure => {
+        explanations.push(explanationForFailure(distributedRun, failure));
+    });
+
+    const highSignalDiagnostics = monitor.runtimeDiagnostics
+        .filter(row =>
+            row.severity === 'error' ||
+            row.severity === 'warning' ||
+            row.correlatedFailureKeys.length > 0
+        )
+        .slice(0, 3);
+    highSignalDiagnostics.forEach(diagnostic => {
+        explanations.push({
+            category: 'diagnostic',
+            title: `${diagnostic.transport ?? 'Runtime'} diagnostic`,
+            likelyCause: diagnostic.summary || diagnostic.message,
+            nextAction: diagnostic.transport === 'ws'
+                ? 'Inspect the WebSocket topic/payload and confirm every agent is subscribed before the recipe sends.'
+                : diagnostic.transport === 'realtime' || diagnostic.transport === 'messages.rtc'
+                ? 'Inspect RTC peer, lane, group, and topic evidence; mismatched lane or peer metadata usually means agents joined different realtime contexts.'
+                : 'Inspect the correlated diagnostic payload and the command result that emitted it.',
+            evidence: compactStrings([
+                diagnostic.eventId,
+                diagnostic.commandId,
+                diagnostic.agentId,
+                ...diagnostic.correlatedFailureKeys,
+            ]),
+        });
+    });
+
+    if (explanations.length === 0 && !distributedRun.rollup.ok) {
+        explanations.push({
+            category: 'unknown',
+            title: 'Run ended without linked failure evidence',
+            likelyCause: 'The distributed rollup is not OK, but no command result or diagnostic was available in the loaded snapshot.',
+            nextAction: 'Load the distributed artifact, refresh the control run with larger bounds, or inspect the raw control-run snapshot.',
+            evidence: [distributedRun.distributedRunId],
+        });
+    }
+
+    if (explanations.length === 0 && !isDistributedAnalysisTerminal(distributedRun.state)) {
+        explanations.push({
+            category: 'readiness',
+            title: 'Run is still collecting evidence',
+            likelyCause: 'At least one distributed command is still queued, running, or waiting for agent results.',
+            nextAction: 'Keep the agents connected and wait for the live monitor to reach a terminal state.',
+            evidence: [distributedRun.distributedRunId],
+        });
+    }
+
+    return uniqueExplanations(explanations);
+}
+
+function explanationForFailure(
+    distributedRun: ControlDistributedRunSnapshot,
+    failure: DistributedRunFailureRow,
+): DistributedFailureExplanation {
+    const code = failure.code ?? '';
+    const text = `${code} ${failure.message}`.toLowerCase();
+    const evidence = compactStrings([
+        failure.key,
+        failure.code,
+        failure.agentId,
+        failure.recipeId,
+        failure.commandId,
+    ]);
+    if (code === 'RALLAR_BB_DISTRIBUTED_NO_TARGET_AGENTS' || text.includes('no target')) {
+        return {
+            category: 'targeting',
+            title: 'No target agents resolved',
+            likelyCause: 'The selected control run has no connected agents matching the current application, workspace, and group.',
+            nextAction: 'Open or restart agents for this group, then refresh target resolution before launching the recipe again.',
+            evidence,
+        };
+    }
+    if (code === 'RALLAR_BB_DISTRIBUTED_TARGET_COUNT_MISMATCH' || text.includes('target count')) {
+        return {
+            category: 'targeting',
+            title: 'Target count mismatch',
+            likelyCause: 'The recipe expected a fixed participant count, but the resolved agent count was different.',
+            nextAction: 'Adjust the expected participant count or connect exactly the intended number of agents before staging.',
+            evidence,
+        };
+    }
+    if (code === 'RALLAR_BB_DISTRIBUTED_ACK_TIMEOUT' || text.includes('ack') && text.includes('timeout')) {
+        return {
+            category: 'readiness',
+            title: 'Agent did not ACK staging',
+            likelyCause: 'An agent did not load or acknowledge the recipe before ackTimeoutMs expired.',
+            nextAction: 'Check that the agent tab is still connected, logged in, and not blocked by a recipe-load error.',
+            evidence,
+        };
+    }
+    if (code === 'RALLAR_BB_DISTRIBUTED_BARRIER_TIMEOUT' || text.includes('barrier') && text.includes('timeout')) {
+        return {
+            category: 'barrier',
+            title: 'Barrier timed out',
+            likelyCause: 'One or more agents never reported barrier.ready after staging.',
+            nextAction: 'Inspect ACK readiness and per-agent execution; the missing agent usually failed before the synchronized start point.',
+            evidence,
+        };
+    }
+    if (code === 'RALLAR_BB_DISTRIBUTED_BARRIER_DISCONNECTED' || text.includes('disconnected')) {
+        return {
+            category: 'barrier',
+            title: 'Agent disconnected during barrier',
+            likelyCause: 'An agent left the control run while the distributed run waited at the barrier.',
+            nextAction: 'Restart the disconnected agent with the same control run and a unique agent ID, then rerun the recipe.',
+            evidence,
+        };
+    }
+    if (failure.kind === 'command' || failure.commandId) {
+        return {
+            category: 'command',
+            title: 'Distributed command failed',
+            likelyCause: failure.message || 'The browser agent returned a failed command result.',
+            nextAction: commandFailureNextAction(distributedRun, failure),
+            evidence,
+        };
+    }
+    return {
+        category: failureCategory(failure),
+        title: 'Distributed run failure',
+        likelyCause: failure.message || 'The distributed rollup reported a blocking failure.',
+        nextAction: 'Inspect the linked recipe, agent, and raw failure payload for the exact failing stage.',
+        evidence,
+    };
+}
+
+function commandFailureNextAction(
+    distributedRun: ControlDistributedRunSnapshot,
+    failure: DistributedRunFailureRow,
+): string {
+    const link = distributedRun.commandLinks.find(candidate => candidate.commandId === failure.commandId);
+    if (link?.phase === 'stage') {
+        return 'Open the agent progress and recipe-load output; staging failures usually mean invalid recipe JSON, missing auth, or a blocked browser runtime.';
+    }
+    if (link?.phase === 'barrier') {
+        return 'Inspect barrier readiness for every target and confirm all agents stayed connected until the synchronized start.';
+    }
+    if (link?.phase === 'start') {
+        return 'Open the composite drilldown and runtime diagnostics for the failing agent, then compare expected vs observed payload evidence.';
+    }
+    return 'Inspect the command result, runtime diagnostics, and raw evidence for this command ID.';
+}
+
+function failureCategory(failure: DistributedRunFailureRow): DistributedFailureExplanation['category'] {
+    const code = failure.code ?? '';
+    const text = `${code} ${failure.message}`.toLowerCase();
+    if (text.includes('target')) {
+        return 'targeting';
+    }
+    if (text.includes('ack')) {
+        return 'readiness';
+    }
+    if (text.includes('barrier')) {
+        return 'barrier';
+    }
+    if (failure.kind === 'command' || failure.commandId) {
+        return 'command';
+    }
+    return 'unknown';
+}
+
+function distributedSnapshotWarnings(
+    controlRun: ControlRunSnapshot | undefined,
+    bounds: ControlSnapshotBounds | undefined,
+): readonly string[] {
+    if (!controlRun || !bounds) {
+        return [];
+    }
+    const checks: ReadonlyArray<readonly [keyof ControlSnapshotBounds, number]> = [
+        ['commands', controlRun.commands.length],
+        ['results', controlRun.results.length],
+        ['events', controlRun.events.length],
+        ['stats', controlRun.stats.length],
+        ['reports', controlRun.reports.length],
+        ['heartbeats', controlRun.heartbeats.length],
+    ];
+    return checks.flatMap(([key, count]) => {
+        const bound = bounds[key];
+        return bound !== undefined && bound > 0 && count >= bound
+            ? [`Loaded ${count} ${key}; evidence may be truncated by the current snapshot bound.`]
+            : [];
+    });
+}
+
+function isDistributedAnalysisTerminal(state: string): boolean {
+    return state === 'passed' || state === 'failed' || state === 'timed-out' || state === 'cancelled';
+}
+
+function compactStrings(values: readonly (string | undefined)[]): readonly string[] {
+    return uniqueValues(values.filter((value): value is string => Boolean(value && value.length > 0)));
+}
+
+function uniqueExplanations(
+    explanations: readonly DistributedFailureExplanation[],
+): readonly DistributedFailureExplanation[] {
+    const seen = new Set<string>();
+    return explanations.filter(explanation => {
+        const key = `${explanation.category}:${explanation.title}:${explanation.evidence.join(',')}`;
+        if (seen.has(key)) {
+            return false;
+        }
+        seen.add(key);
+        return true;
+    });
+}
+
 function distributedRunTimeline(input: Readonly<{
     distributedRun: ControlDistributedRunSnapshot;
     commands: ReadonlyMap<string, ControlCommandSnapshot>;
@@ -2709,12 +3094,22 @@ function validateDistributedRunArtifact(
         };
     }
 
-    const requiredFiles: ReadonlyArray<keyof ControlDistributedRunArtifactBundle['files']> = [
+    const baseRequiredFiles: ReadonlyArray<keyof ControlDistributedRunArtifactBundle['files']> = [
         'distributed-run.json',
         'manifest.json',
         'control-run.json',
     ];
-    const missing = requiredFiles.filter(fileName => !bundle.files[fileName]);
+    const v2RequiredFiles: ReadonlyArray<keyof ControlDistributedRunArtifactBundle['files']> = [
+        'report.json',
+        'results.jsonl',
+        'events.jsonl',
+        'failures.json',
+        'metadata.json',
+    ];
+    const requiredFiles = bundle.artifactSchemaVersion >= 2
+        ? [...baseRequiredFiles, ...v2RequiredFiles]
+        : baseRequiredFiles;
+    const missing = requiredFiles.filter(fileName => bundle.files[fileName] === undefined);
     if (missing.length > 0) {
         return {
             status: 'missing-file',
@@ -2723,7 +3118,11 @@ function validateDistributedRunArtifact(
         };
     }
     try {
-        requiredFiles.forEach(fileName => JSON.parse(bundle.files[fileName]));
+        [...baseRequiredFiles, ...(
+            bundle.artifactSchemaVersion >= 2
+                ? ['report.json', 'failures.json', 'metadata.json'] as const
+                : []
+        )].forEach(fileName => JSON.parse(bundle.files[fileName] ?? ''));
     } catch (caught) {
         return {
             status: 'invalid-json',
@@ -2734,7 +3133,9 @@ function validateDistributedRunArtifact(
     return {
         status: 'valid',
         fileCount: Object.keys(bundle.files).length,
-        message: 'Distributed artifact files are present and valid JSON.',
+        message: bundle.artifactSchemaVersion >= 2
+            ? 'Distributed artifact v2 analysis files are present and valid.'
+            : 'Distributed artifact v1 snapshot files are present and valid JSON.',
     };
 }
 

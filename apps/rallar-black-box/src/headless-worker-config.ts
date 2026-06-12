@@ -29,6 +29,16 @@ export type HeadlessWorkerConfig = Readonly<{
   controlToken?: string;
   reportUploadUrl?: string;
   environment?: string;
+  fleetRegion?: string;
+  fleetProvider?: string;
+  fleetDatacenter?: string;
+  fleetHostId?: string;
+  fleetAgentPoolId?: string;
+  fleetDeploymentId?: string;
+  fleetBrowserName?: string;
+  fleetBrowserVersion?: string;
+  fleetOs?: string;
+  fleetTags?: readonly string[];
   register: boolean;
   restoreSession: boolean;
   logoutOnClose: boolean;
@@ -108,6 +118,26 @@ export function readHeadlessWorkerConfig(
     controlToken: envValue(env, "RALLAR_BLACK_BOX_CONTROL_TOKEN"),
     reportUploadUrl: envValue(env, "RALLAR_BLACK_BOX_REPORT_UPLOAD_URL"),
     environment: envValue(env, "RALLAR_BLACK_BOX_ENVIRONMENT"),
+    fleetRegion: envValue(env, "RALLAR_AGENT_REGION") ??
+      envValue(env, "RALLAR_BLACK_BOX_AGENT_REGION"),
+    fleetProvider: envValue(env, "RALLAR_AGENT_PROVIDER") ??
+      envValue(env, "RALLAR_BLACK_BOX_AGENT_PROVIDER"),
+    fleetDatacenter: envValue(env, "RALLAR_AGENT_DATACENTER") ??
+      envValue(env, "RALLAR_BLACK_BOX_AGENT_DATACENTER"),
+    fleetHostId: envValue(env, "RALLAR_AGENT_HOST_ID") ??
+      envValue(env, "RALLAR_BLACK_BOX_AGENT_HOST_ID"),
+    fleetAgentPoolId: envValue(env, "RALLAR_AGENT_POOL_ID") ??
+      envValue(env, "RALLAR_BLACK_BOX_AGENT_POOL_ID"),
+    fleetDeploymentId: envValue(env, "RALLAR_AGENT_DEPLOYMENT_ID") ??
+      envValue(env, "RALLAR_BLACK_BOX_AGENT_DEPLOYMENT_ID"),
+    fleetBrowserName: envValue(env, "RALLAR_AGENT_BROWSER_NAME") ??
+      envValue(env, "RALLAR_BLACK_BOX_AGENT_BROWSER_NAME"),
+    fleetBrowserVersion: envValue(env, "RALLAR_AGENT_BROWSER_VERSION") ??
+      envValue(env, "RALLAR_BLACK_BOX_AGENT_BROWSER_VERSION"),
+    fleetOs: envValue(env, "RALLAR_AGENT_OS") ??
+      envValue(env, "RALLAR_BLACK_BOX_AGENT_OS"),
+    fleetTags: csvEnv(env, "RALLAR_AGENT_TAGS") ??
+      csvEnv(env, "RALLAR_BLACK_BOX_AGENT_TAGS"),
     register: booleanEnv(env, "RALLAR_BLACK_BOX_REGISTER", false),
     restoreSession: booleanEnv(env, "RALLAR_BLACK_BOX_RESTORE_SESSION", false),
     logoutOnClose: booleanEnv(env, "RALLAR_BLACK_BOX_LOGOUT_ON_CLOSE", false),
@@ -196,6 +226,16 @@ export function createHeadlessWorkerAgentUrl(
   setOptionalParam(params, "controlToken", input.controlToken);
   setOptionalParam(params, "reportUploadUrl", input.reportUploadUrl);
   setOptionalParam(params, "environment", input.environment);
+  setOptionalParam(params, "fleetRegion", input.fleetRegion);
+  setOptionalParam(params, "fleetProvider", input.fleetProvider);
+  setOptionalParam(params, "fleetDatacenter", input.fleetDatacenter);
+  setOptionalParam(params, "fleetHostId", input.fleetHostId);
+  setOptionalParam(params, "fleetAgentPoolId", input.fleetAgentPoolId);
+  setOptionalParam(params, "fleetDeploymentId", input.fleetDeploymentId);
+  setOptionalParam(params, "fleetBrowserName", input.fleetBrowserName);
+  setOptionalParam(params, "fleetBrowserVersion", input.fleetBrowserVersion);
+  setOptionalParam(params, "fleetOs", input.fleetOs);
+  setOptionalParam(params, "fleetTags", input.fleetTags?.join(","));
 
   if (input.register) {
     params.set("rallarRegister", "1");
@@ -286,6 +326,18 @@ function envValue(
 ): string | undefined {
   const value = env[key]?.trim();
   return value && value.length > 0 ? value : undefined;
+}
+
+function csvEnv(
+  env: Readonly<Record<string, string | undefined>>,
+  key: string,
+): readonly string[] | undefined {
+  const value = envValue(env, key);
+  if (!value) {
+    return undefined;
+  }
+  const entries = value.split(",").map((entry) => entry.trim()).filter(Boolean);
+  return entries.length > 0 ? entries : undefined;
 }
 
 function positiveIntegerEnv(

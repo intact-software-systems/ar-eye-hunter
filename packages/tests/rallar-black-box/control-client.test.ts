@@ -276,6 +276,20 @@ describe('rallar-black-box control client', () => {
                     groupId: 'bb-group',
                     providerMode: 'browser-rallar',
                 },
+                browser: {
+                    name: 'chromium',
+                    version: '126',
+                    os: 'linux',
+                },
+                fleet: {
+                    region: 'eu-north',
+                    provider: 'hetzner',
+                    datacenter: 'fsn1',
+                    hostId: 'host-1',
+                    agentPoolId: 'pool-a',
+                    deploymentId: 'deploy-1',
+                    tags: ['canary', 'rtc'],
+                },
             },
         });
         const client = new RallarBlackBoxControlClient({
@@ -296,6 +310,16 @@ describe('rallar-black-box control client', () => {
             expect(register).toMatchObject({
                 kind: 'register',
                 identity: {
+                    region: 'eu-north',
+                    provider: 'hetzner',
+                    datacenter: 'fsn1',
+                    hostId: 'host-1',
+                    agentPoolId: 'pool-a',
+                    deploymentId: 'deploy-1',
+                    browserName: 'chromium',
+                    browserVersion: '126',
+                    os: 'linux',
+                    tags: ['canary', 'rtc'],
                     capabilities: {
                         crdt: {
                             supported: true,
@@ -315,6 +339,8 @@ describe('rallar-black-box control client', () => {
             expect(parsed.ok ? parsed.envelope : undefined).toMatchObject({
                 kind: 'register',
                 identity: {
+                    region: 'eu-north',
+                    provider: 'hetzner',
                     capabilities: {
                         crdt: {
                             supported: true,

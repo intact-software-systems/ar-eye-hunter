@@ -84,6 +84,16 @@ describe('rallar-black-box control bootstrap', () => {
             VITE_RALLAR_ROOM_ID: 'room-env',
             VITE_RALLAR_TRANSPORT: 'messages.rtc',
             VITE_RALLAR_HEARTBEAT_INTERVAL_MS: '250',
+            VITE_RALLAR_AGENT_REGION: 'eu-north',
+            VITE_RALLAR_AGENT_PROVIDER: 'hetzner',
+            VITE_RALLAR_AGENT_DATACENTER: 'fsn1',
+            VITE_RALLAR_AGENT_HOST_ID: 'host-1',
+            VITE_RALLAR_AGENT_POOL_ID: 'pool-a',
+            VITE_RALLAR_AGENT_DEPLOYMENT_ID: 'deploy-1',
+            VITE_RALLAR_AGENT_BROWSER_NAME: 'chromium',
+            VITE_RALLAR_AGENT_BROWSER_VERSION: '126',
+            VITE_RALLAR_AGENT_OS: 'linux',
+            VITE_RALLAR_AGENT_TAGS: 'canary,rtc',
         });
 
         expect(bootstrap).toMatchObject({
@@ -97,7 +107,33 @@ describe('rallar-black-box control bootstrap', () => {
             roomId: 'room-env',
             transport: 'messages.rtc',
             heartbeatIntervalMs: 250,
+            fleetRegion: 'eu-north',
+            fleetProvider: 'hetzner',
+            fleetDatacenter: 'fsn1',
+            fleetHostId: 'host-1',
+            fleetAgentPoolId: 'pool-a',
+            fleetDeploymentId: 'deploy-1',
+            fleetBrowserName: 'chromium',
+            fleetBrowserVersion: '126',
+            fleetOs: 'linux',
+            fleetTags: ['canary', 'rtc'],
             source: 'environment',
+        });
+    });
+
+    it('lets URL fleet labels override environment labels', () => {
+        const bootstrap = resolveRallarBlackBoxBootstrapConfig(
+            '?fleetRegion=us-east&fleetProvider=hetzner&fleetTags=edge,video',
+            {
+                VITE_RALLAR_AGENT_REGION: 'eu-north',
+                VITE_RALLAR_AGENT_PROVIDER: 'local',
+            },
+        );
+
+        expect(bootstrap).toMatchObject({
+            fleetRegion: 'us-east',
+            fleetProvider: 'hetzner',
+            fleetTags: ['edge', 'video'],
         });
     });
 

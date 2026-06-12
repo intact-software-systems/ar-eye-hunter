@@ -66,6 +66,16 @@ export type RallarBlackBoxControlAgentIdentity = Readonly<{
     providerMode?: string;
     browserLabel?: string;
     sessionLabel?: string;
+    region?: string;
+    provider?: string;
+    datacenter?: string;
+    hostId?: string;
+    agentPoolId?: string;
+    deploymentId?: string;
+    browserName?: string;
+    browserVersion?: string;
+    os?: string;
+    tags?: readonly string[];
     capabilities?: RallarBlackBoxControlAgentCapabilities;
     updatedAtEpochMs?: number;
 }>;

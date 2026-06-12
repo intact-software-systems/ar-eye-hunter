@@ -2125,6 +2125,36 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
             }],
         },
     };
+    const distributedArtifact = {
+        artifactSchemaVersion: 2,
+        distributedRunId: 'dist-diagnostics',
+        generatedAtEpochMs: now - 3_700,
+        files: {
+            'distributed-run.json': JSON.stringify(distributedRun, null, 2),
+            'manifest.json': JSON.stringify(distributedRun.manifest, null, 2),
+            'control-run.json': JSON.stringify(controlRun, null, 2),
+            'report.json': JSON.stringify({
+                schemaVersion: 2,
+                artifactSchemaVersion: 2,
+                execution: 'distributed-run',
+                distributedRunId: 'dist-diagnostics',
+                controlRunId: 'demo-run',
+                state: 'failed',
+                ok: false,
+            }, null, 2),
+            'results.jsonl': controlRun.results.map(result => JSON.stringify(result)).join('\n'),
+            'events.jsonl': controlRun.events.map(event => JSON.stringify(event)).join('\n'),
+            'failures.json': JSON.stringify({
+                failures: distributedRun.rollup.failures,
+            }, null, 2),
+            'metadata.json': JSON.stringify({
+                schemaVersion: 2,
+                artifactSchemaVersion: 2,
+                execution: 'distributed-run',
+                generatedAtEpochMs: now - 3_700,
+            }, null, 2),
+        },
+    };
 
     await page.route('http://localhost:5180/**', async route => {
         const request = route.request();
@@ -2161,6 +2191,14 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
             });
             return;
         }
+        if (request.method() === 'GET' && url.pathname === '/distributed-runs/dist-diagnostics/artifacts') {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify(distributedArtifact),
+            });
+            return;
+        }
         await route.fulfill({
             status: 404,
             contentType: 'application/json',
@@ -2192,6 +2230,21 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
     await diagnostics.getByLabel('Transport').selectOption('ws');
     await expect(diagnostics).toContainText('Unhandled WS message');
     await expect(diagnostics).not.toContainText('rtc-data-channel');
+
+    await page.getByRole('tab', { name: 'Runs', exact: true }).click();
+    await expect(page.getByRole('tab', { name: 'Runs', exact: true })).toHaveAttribute(
+        'aria-selected',
+        'true',
+    );
+    const runsPanel = page.locator('#panel-runs');
+    await expect(runsPanel).toContainText('Distributed Analysis');
+    await expect(runsPanel.locator('.runner-analysis-report')).toContainText('Analysis Report');
+    await expect(runsPanel.locator('.runner-analysis-report')).toContainText('First failure');
+    await expect(runsPanel.locator('.runner-analysis-report')).toContainText('ASSERTION_FAILED');
+    await expect(runsPanel.locator('.runner-analysis-report')).toContainText('Distributed command failed');
+    await expect(runsPanel.locator('.runner-analysis-report')).toContainText('Open the composite drilldown');
+    await expect(runsPanel.locator('.runner-analysis-report')).toContainText('Unhandled WS message');
+    await expect(runsPanel.locator('.distributed-artifact-validation')).toContainText('valid');
 });
 
 test('restores selected tab and redacted UI drafts after a fresh load', async ({ page }) => {

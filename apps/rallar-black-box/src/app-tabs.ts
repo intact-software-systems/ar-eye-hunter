@@ -37,6 +37,7 @@ export const APP_TABS = [
     { id: 'shared-test', label: 'Shared Test' },
     { id: 'recipes', label: 'Recipes' },
     { id: 'runs', label: 'Runs' },
+    { id: 'fleet', label: 'Fleet' },
     { id: 'builder', label: 'Builder' },
     { id: 'advanced', label: 'Advanced' },
 ] as const;
@@ -92,6 +93,7 @@ const RALLAR_MODE_TAB_IDS = [
 const BLACK_BOX_RUNNER_MODE_TAB_IDS = [
     'recipes',
     'runs',
+    'fleet',
     'builder',
     'event-stream',
     'advanced',
@@ -129,6 +131,7 @@ const TAB_PRIMARY_MODE: Readonly<Record<AppTabId, AppModeId>> = {
     'shared-test': 'black-box-runner',
     recipes: 'black-box-runner',
     runs: 'black-box-runner',
+    fleet: 'black-box-runner',
     builder: 'black-box-runner',
     advanced: 'black-box-runner',
 };
@@ -178,6 +181,9 @@ const TAB_ALIASES: Readonly<Record<string, AppTabId>> = {
     workbench: 'local-workbench',
     local: 'local-workbench',
     runs: 'runs',
+    fleet: 'fleet',
+    'fleet-report': 'fleet',
+    'fleet-reports': 'fleet',
     manager: 'run-manager',
     control: 'run-manager',
     orchestrator: 'run-manager',

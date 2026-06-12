@@ -146,6 +146,17 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         evidence: ['run metrics', 'recent command', 'failure focus', 'report panel'],
     },
     {
+        id: 'runner-fleet-regional-reporting',
+        tab: 'fleet',
+        workspace: 'black-box-runner',
+        intent: 'Inspect cross-run fleet reporting with agent heatmaps, region summaries, repeated failures, timing distributions, and shareable exports.',
+        specFile: 'exhaustive-control-distributed.spec.ts',
+        liveBackend: true,
+        requiresControl: true,
+        requiresMedia: false,
+        evidence: ['agent heatmap', 'region summary', 'failure signatures', 'fleet export'],
+    },
+    {
         id: 'runner-builder-primary-flow',
         tab: 'builder',
         workspace: 'black-box-runner',

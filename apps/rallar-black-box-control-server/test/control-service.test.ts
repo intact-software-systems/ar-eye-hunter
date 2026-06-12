@@ -594,6 +594,146 @@ Deno.test('control service stages, starts, monitors, and exports distributed run
     assertEquals(restored.snapshotDistributedRun('dist-1')?.state, 'passed');
 });
 
+Deno.test('control service derives, filters, persists, and exports fleet reports', () => {
+    let now = 1_000;
+    const service = createRallarBlackBoxControlService({
+        now: () => {
+            now += 10;
+            return now;
+        },
+        redaction: {
+            secretValues: ['alpha-secret'],
+        },
+    });
+    const agent1Identity: RallarBlackBoxControlAgentIdentity = {
+        principalId: 'alice',
+        clientId: 'alice',
+        sessionId: 'session-1',
+        applicationId: 'rallar-server',
+        workspaceId: 'default',
+        groupId: 'bb-group',
+        region: 'eu-north',
+        provider: 'hetzner',
+        datacenter: 'fsn1',
+        browserName: 'chromium',
+        browserVersion: '126',
+        os: 'linux',
+        tags: ['pool-a'],
+    };
+    const agent2Identity: RallarBlackBoxControlAgentIdentity = {
+        principalId: 'bob',
+        clientId: 'bob',
+        sessionId: 'session-2',
+        applicationId: 'rallar-server',
+        workspaceId: 'default',
+        groupId: 'bb-group',
+        region: 'us-east',
+        provider: 'hetzner',
+        datacenter: 'ash',
+        browserName: 'chromium',
+        browserVersion: '126',
+        os: 'linux',
+        tags: ['pool-a'],
+    };
+    service.receiveClientEnvelope(registerEnvelopeFor('run-1', 'agent-1', [], agent1Identity));
+    service.receiveClientEnvelope(registerEnvelopeFor('run-1', 'agent-2', [], agent2Identity));
+    service.receiveClientEnvelope({
+        kind: 'heartbeat',
+        protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+        runId: 'run-1',
+        agentId: 'agent-1',
+        atEpochMs: now,
+        status: 'ready',
+        identity: agent1Identity,
+    });
+    service.receiveClientEnvelope({
+        kind: 'heartbeat',
+        protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+        runId: 'run-1',
+        agentId: 'agent-2',
+        atEpochMs: now,
+        status: 'ready',
+        identity: agent2Identity,
+    });
+
+    service.createDistributedRun(distributedManifest());
+    service.stageDistributedRun('dist-1');
+    const agent1StageCommands = service.takeDispatchableCommands('run-1', 'agent-1');
+    const agent2StageCommands = service.takeDispatchableCommands('run-1', 'agent-2');
+    service.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-1', agent1StageCommands[0]));
+    service.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-2', agent2StageCommands[0]));
+    service.startDistributedRun('dist-1');
+    const agent1StartCommands = service.takeDispatchableCommands('run-1', 'agent-1');
+    const agent2StartCommands = service.takeDispatchableCommands('run-1', 'agent-2');
+    service.receiveClientEnvelope({
+        kind: 'event',
+        protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+        runId: 'run-1',
+        agentId: 'agent-2',
+        commandId: agent2StartCommands[0].commandId,
+        atEpochMs: now,
+        payload: {
+            severity: 'warning',
+            diagnosticTypeId: 'rtc.lane.mismatch',
+            transport: 'rtc',
+            message: 'RTC lane mismatch while executing distributed run.',
+        },
+    });
+    service.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-1', agent1StartCommands[0]));
+    const failedResult = commandResultEnvelope(
+        'run-1',
+        'agent-2',
+        agent2StartCommands[0],
+        false,
+    ) as Extract<ControlClientEnvelope, { kind: 'result' }>;
+    service.receiveClientEnvelope({
+        ...failedResult,
+        result: {
+            ...failedResult.result!,
+            error: {
+                code: 'ASSERT_SECRET_LEAK',
+                message: 'Observed alpha-secret in distributed result.',
+            },
+        },
+    });
+
+    const fleet = service.listFleetReports();
+    assertEquals(fleet.reports.length, 1);
+    assertEquals(fleet.aggregate.runCount, 1);
+    assertEquals(fleet.aggregate.agentCount, 2);
+    const report = fleet.reports[0];
+    assertEquals(report.fleetReportSchemaVersion, 1);
+    assertEquals(report.state, 'failed');
+    assertEquals(report.summary.agents, 2);
+    assertEquals(report.summary.passed, 1);
+    assertEquals(report.summary.failed, 1);
+    assertEquals(report.agents.find(agent => agent.agentId === 'agent-2')?.label.region, 'us-east');
+    assert(report.regions.some(region => region.region === 'eu-north'));
+    assert(report.regions.some(region => region.region === 'us-east'));
+    assert(report.failureSignatures.some(signature => signature.category === 'command'));
+    assert(report.failureSignatures.some(signature => signature.category === 'diagnostic'));
+    assertEquals(JSON.stringify(report).includes('alpha-secret'), false);
+    assert(JSON.stringify(report).includes('<redacted>'));
+
+    const filtered = service.listFleetReports({ region: 'us-east' });
+    assertEquals(filtered.reports.map(item => item.distributedRunId), ['dist-1']);
+    assertEquals(service.listFleetReports({ region: 'ap-south' }).reports.length, 0);
+
+    const bundle = service.fleetReportBundle('dist-1');
+    assert(bundle);
+    assert(bundle.files['summary.md'].includes('Fleet Run Report'));
+    assert(bundle.files['agent-results.csv'].includes('agent-2,us-east,hetzner,failed'));
+    assertEquals(bundle.files['fleet-report.json'].includes('alpha-secret'), false);
+
+    const rebuilt = service.rebuildFleetReports();
+    assertEquals(rebuilt.reports.length, 1);
+    const snapshot = service.snapshot();
+    assertEquals(snapshot.fleetReports?.length, 1);
+    const restored = createRallarBlackBoxControlService();
+    restored.restoreSnapshot(snapshot);
+    assertEquals(restored.listFleetReports().reports.length, 1);
+});
+
 Deno.test('control service coordinates distributed barrier before auto start', () => {
     let now = 1_000;
     const service = createRallarBlackBoxControlService({

@@ -51,6 +51,7 @@ import {
     validateJsonSchema,
 } from '@shared-test/rallar-bb-test/schema.ts';
 import {
+    isDistributedRunTerminalState,
     validateDistributedRunManifestContract,
     type RallarBlackBoxDistributedGroupRef,
     type RallarBlackBoxDistributedRunManifest,
@@ -80,16 +81,26 @@ import {
     fetchDistributedRun,
     fetchDistributedRunArtifactBundle,
     fetchDistributedRuns,
+    fetchFleetReportBundle,
+    fetchFleetReports,
     fetchControlRunSnapshot,
     fetchControlRunArtifactBundle,
     fetchControlRunFailureBundle,
     fetchControlRunJsonl,
     fetchControlServerSnapshot,
+    rebuildFleetReports,
     resetControlRun,
     stageDistributedRun,
     startDistributedRun,
     type ControlDistributedRunArtifactBundle,
     type ControlDistributedRunSnapshot,
+    type ControlFleetAgentRunOutcome,
+    type ControlFleetFailureSignature,
+    type ControlFleetReportBundle,
+    type ControlFleetReportFilter,
+    type ControlFleetReportsResponse,
+    type ControlFleetRunReport,
+    type ControlFleetTimingDistribution,
     type ControlRunAgentRow,
     type ControlRunArtifactBundle,
     type ControlRunCommandRow,
@@ -169,6 +180,7 @@ import {
     buildDistributedRunManifest,
     compareDistributedRuns,
     defaultDistributedRecipeTargetIds,
+    deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,
     distributedRecipeCommandKinds,
     distributedRecipeCommandPreview,
@@ -177,6 +189,7 @@ import {
     distributedRecipeTargetRows,
     filterDistributedRuns,
     type DistributedRunCompareSummary,
+    type DistributedRunAnalysisReport,
     type DistributedRunMonitor,
     type DistributedRunProgressStatus,
     type DistributedRecipeCatalogItem,
@@ -6248,6 +6261,7 @@ function RunnerRecipesPanel({
     busy,
     runState,
     lastError,
+    onDistributedRunStarted,
     onOpenTab,
 }: {
     state: RallarBlackBoxTestState;
@@ -6258,6 +6272,7 @@ function RunnerRecipesPanel({
     busy: boolean;
     runState: string;
     lastError?: string;
+    onDistributedRunStarted(selection: RunnerDistributedRunSelection): void;
     onOpenTab(tab: AppTabId): void;
 }) {
     const [controlBaseUrl, setControlBaseUrl] = useState(() =>
@@ -6728,6 +6743,12 @@ function RunnerRecipesPanel({
             setLaunchMessage(
                 `Started ${started.distributedRunId}. Watch progress in Runs or Event Stream; artifact export is available after agents report.`,
             );
+            onDistributedRunStarted({
+                distributedRunId: started.distributedRunId,
+                controlRunId: nextRunId,
+                controlBaseUrl,
+                controlToken,
+            });
             void fetchDistributedRun({
                 baseUrl: controlBaseUrl,
                 token: controlToken,
@@ -7311,16 +7332,281 @@ function RunnerRunsPanel({
     bootstrap,
     control,
     authSession,
+    preferredDistributedRun,
 }: {
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
     control: RallarBlackBoxControlSnapshot;
     authSession?: AuthSession;
+    preferredDistributedRun?: RunnerDistributedRunSelection;
 }) {
     const history = selectRallarBlackBoxCommandHistory(state);
     const failures = selectRallarBlackBoxFailures(state);
     const latestStats = selectRallarBlackBoxLatestStats(state);
     const recentHistory = [...history].reverse().slice(0, 12);
+    const [controlBaseUrl, setControlBaseUrl] = useState(() =>
+        preferredDistributedRun?.controlBaseUrl ??
+            controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl)
+    );
+    const [controlToken, setControlToken] = useState(
+        preferredDistributedRun?.controlToken ?? bootstrap.controlToken ?? '',
+    );
+    const [controlRunId, setControlRunId] = useState(
+        preferredDistributedRun?.controlRunId ?? control.runId ??
+            bootstrap.runId ?? '',
+    );
+    const [distributedRuns, setDistributedRuns] = useState<
+        readonly ControlDistributedRunSnapshot[]
+    >([]);
+    const [selectedDistributedRunId, setSelectedDistributedRunId] = useState(
+        preferredDistributedRun?.distributedRunId ?? '',
+    );
+    const [selectedDistributedRun, setSelectedDistributedRun] = useState<
+        ControlDistributedRunSnapshot | undefined
+    >();
+    const [distributedControlRun, setDistributedControlRun] = useState<
+        ControlRunSnapshot | undefined
+    >();
+    const [artifactBundle, setArtifactBundle] = useState<
+        ControlDistributedRunArtifactBundle | undefined
+    >();
+    const [distributedBusy, setDistributedBusy] = useState<string | undefined>();
+    const [distributedError, setDistributedError] = useState<string | undefined>();
+    const [lastDistributedRefresh, setLastDistributedRefresh] =
+        useState<number | undefined>();
+    const [compareLeftId, setCompareLeftId] = useState('');
+    const [compareRightId, setCompareRightId] = useState('');
+    const didInitialDistributedRefresh = useRef(false);
+    const selectedMonitor = useMemo(
+        () =>
+            selectedDistributedRun
+                ? deriveDistributedRunMonitor({
+                    distributedRun: selectedDistributedRun,
+                    controlRun: distributedControlRun,
+                    artifactBundle,
+                })
+                : undefined,
+        [artifactBundle, distributedControlRun, selectedDistributedRun],
+    );
+    const analysisReport = useMemo(
+        () =>
+            selectedDistributedRun
+                ? deriveDistributedRunAnalysisReport({
+                    distributedRun: selectedDistributedRun,
+                    controlRun: distributedControlRun,
+                    artifactBundle,
+                    snapshotBounds: DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS,
+                })
+                : undefined,
+        [artifactBundle, distributedControlRun, selectedDistributedRun],
+    );
+    const compareLeftRun = useMemo(
+        () =>
+            distributedRuns.find(
+                (item) => item.distributedRunId === compareLeftId,
+            ),
+        [compareLeftId, distributedRuns],
+    );
+    const compareRightRun = useMemo(
+        () =>
+            distributedRuns.find(
+                (item) => item.distributedRunId === compareRightId,
+            ),
+        [compareRightId, distributedRuns],
+    );
+    const compareSummary = useMemo(
+        () =>
+            compareLeftRun && compareRightRun
+                ? compareDistributedRuns({
+                    left: compareLeftRun,
+                    right: compareRightRun,
+                    leftControlRun:
+                        compareLeftRun.controlRunId === distributedControlRun?.runId
+                            ? distributedControlRun
+                            : undefined,
+                    rightControlRun:
+                        compareRightRun.controlRunId === distributedControlRun?.runId
+                            ? distributedControlRun
+                            : undefined,
+                })
+                : undefined,
+        [compareLeftRun, compareRightRun, distributedControlRun],
+    );
+
+    const refreshDistributedAnalysis = async (
+        override?: RunnerDistributedRunSelection,
+        options: Readonly<{ loadArtifact?: boolean; quiet?: boolean }> = {},
+    ): Promise<void> => {
+        const baseUrl = override?.controlBaseUrl ?? controlBaseUrl;
+        const token = override?.controlToken ?? controlToken;
+        const preferredRunId =
+            override?.distributedRunId ?? selectedDistributedRunId;
+        if (!options.quiet) {
+            setDistributedBusy(options.loadArtifact ? 'artifact' : 'refresh');
+        }
+        setDistributedError(undefined);
+        try {
+            const fetchedRuns = await fetchDistributedRuns({ baseUrl, token });
+            const list = [...fetchedRuns].sort(
+                (left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs,
+            );
+            const selectedFromList = preferredRunId
+                ? list.find((item) => item.distributedRunId === preferredRunId)
+                : undefined;
+            const nextDistributedRun = preferredRunId
+                ? await fetchDistributedRun({
+                    baseUrl,
+                    token,
+                    distributedRunId: preferredRunId,
+                }).catch(() => selectedFromList)
+                : list[0];
+            const nextControlRunId =
+                nextDistributedRun?.controlRunId ?? override?.controlRunId ??
+                    controlRunId;
+            const nextControlRun = nextControlRunId
+                ? await fetchControlRunSnapshot({
+                    baseUrl,
+                    token,
+                    runId: nextControlRunId,
+                    bounds: DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS,
+                }).catch(() => undefined)
+                : undefined;
+            const shouldLoadArtifact = Boolean(
+                nextDistributedRun &&
+                    (options.loadArtifact ||
+                        isDistributedRunTerminalState(nextDistributedRun.state)),
+            );
+            const nextArtifact = shouldLoadArtifact && nextDistributedRun
+                ? await fetchDistributedRunArtifactBundle({
+                    baseUrl,
+                    token,
+                    distributedRunId: nextDistributedRun.distributedRunId,
+                }).catch(() => undefined)
+                : preferredRunId === selectedDistributedRunId
+                ? artifactBundle
+                : undefined;
+
+            setControlBaseUrl(baseUrl);
+            setControlToken(token ?? '');
+            setDistributedRuns(list);
+            setSelectedDistributedRun(nextDistributedRun);
+            setSelectedDistributedRunId(nextDistributedRun?.distributedRunId ?? '');
+            setControlRunId(nextControlRunId ?? '');
+            setDistributedControlRun(nextControlRun);
+            setArtifactBundle(nextArtifact);
+            setLastDistributedRefresh(Date.now());
+            setCompareLeftId((current) =>
+                current || nextDistributedRun?.distributedRunId || '',
+            );
+            setCompareRightId((current) => {
+                if (current) {
+                    return current;
+                }
+                const otherRun = list.find(
+                    (item) =>
+                        item.distributedRunId !==
+                            nextDistributedRun?.distributedRunId,
+                );
+                return otherRun?.distributedRunId ?? '';
+            });
+        } catch (error) {
+            setDistributedError(runnerFriendlyErrorMessage(error));
+        } finally {
+            if (!options.quiet) {
+                setDistributedBusy(undefined);
+            }
+        }
+    };
+
+    useEffect(() => {
+        if (!preferredDistributedRun) {
+            return;
+        }
+        setArtifactBundle(undefined);
+        setControlBaseUrl(preferredDistributedRun.controlBaseUrl);
+        setControlToken(preferredDistributedRun.controlToken ?? '');
+        setControlRunId(preferredDistributedRun.controlRunId);
+        setSelectedDistributedRunId(preferredDistributedRun.distributedRunId);
+        void refreshDistributedAnalysis(preferredDistributedRun);
+        // The preferred run object is the handoff from Recipes into Runs.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        preferredDistributedRun?.controlBaseUrl,
+        preferredDistributedRun?.controlRunId,
+        preferredDistributedRun?.controlToken,
+        preferredDistributedRun?.distributedRunId,
+    ]);
+
+    useEffect(() => {
+        if (didInitialDistributedRefresh.current || preferredDistributedRun) {
+            return;
+        }
+        didInitialDistributedRefresh.current = true;
+        void refreshDistributedAnalysis(undefined, { quiet: true });
+        // Initial distributed analysis uses first rendered control values.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+        if (
+            !selectedDistributedRun ||
+            isDistributedRunTerminalState(selectedDistributedRun.state)
+        ) {
+            return;
+        }
+        const timer = window.setInterval(() => {
+            void refreshDistributedAnalysis(undefined, { quiet: true });
+        }, RUNNER_DISTRIBUTED_POLL_MS);
+        return () => window.clearInterval(timer);
+        // Poll the selected run while it is non-terminal.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        controlBaseUrl,
+        controlToken,
+        selectedDistributedRun?.distributedRunId,
+        selectedDistributedRun?.state,
+    ]);
+
+    useEffect(() => {
+        if (
+            !selectedDistributedRun ||
+            !isDistributedRunTerminalState(selectedDistributedRun.state) ||
+            artifactBundle
+        ) {
+            return;
+        }
+        void refreshDistributedAnalysis(undefined, {
+            loadArtifact: true,
+            quiet: true,
+        });
+        // Terminal runs should pull artifacts automatically.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        artifactBundle,
+        selectedDistributedRun?.distributedRunId,
+        selectedDistributedRun?.state,
+    ]);
+
+    const selectDistributedRun = (distributedRunId: string): void => {
+        setSelectedDistributedRunId(distributedRunId);
+        setArtifactBundle(undefined);
+        const selected = distributedRuns.find(
+            (item) => item.distributedRunId === distributedRunId,
+        );
+        void refreshDistributedAnalysis({
+            distributedRunId,
+            controlRunId: selected?.controlRunId ?? controlRunId,
+            controlBaseUrl,
+            controlToken,
+        });
+    };
+
+    const copyDistributedArtifact = async (): Promise<void> => {
+        if (!artifactBundle) {
+            return;
+        }
+        await navigator.clipboard?.writeText(json(artifactBundle.files));
+    };
 
     return (
         <section className="panel runner-runs-panel">
@@ -7328,6 +7614,126 @@ function RunnerRunsPanel({
                 <h2>Runs</h2>
                 <span>{control.runId ?? bootstrap.runId ?? 'local'}</span>
             </div>
+            <section className="runner-distributed-analysis">
+                <div className="section-heading">
+                    <h3>Distributed Analysis</h3>
+                    <span
+                        className={`pill ${selectedDistributedRun ? distributedRecipeStateTone(selectedDistributedRun.state) : 'muted'}`}
+                    >
+                        {distributedBusy ??
+                            selectedDistributedRun?.state ??
+                            'no run'}
+                    </span>
+                </div>
+                <div className="runner-distributed-toolbar">
+                    <label className="field">
+                        <span>Control HTTP</span>
+                        <input
+                            value={controlBaseUrl}
+                            onChange={(event) =>
+                                setControlBaseUrl(event.target.value)
+                            }
+                        />
+                    </label>
+                    <label className="field">
+                        <span>Token</span>
+                        <input
+                            type="password"
+                            autoComplete="off"
+                            value={controlToken}
+                            onChange={(event) =>
+                                setControlToken(event.target.value)
+                            }
+                        />
+                    </label>
+                    <label className="field">
+                        <span>Distributed Run</span>
+                        <select
+                            value={selectedDistributedRunId}
+                            onChange={(event) =>
+                                selectDistributedRun(event.target.value)
+                            }
+                        >
+                            <option value="">Latest run</option>
+                            {distributedRuns.map((run) => (
+                                <option
+                                    key={run.distributedRunId}
+                                    value={run.distributedRunId}
+                                >
+                                    {run.distributedRunId}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <button
+                        type="button"
+                        disabled={Boolean(distributedBusy)}
+                        onClick={() => void refreshDistributedAnalysis()}
+                    >
+                        Refresh
+                    </button>
+                    <button
+                        type="button"
+                        disabled={
+                            Boolean(distributedBusy) ||
+                            !selectedDistributedRun
+                        }
+                        onClick={() =>
+                            void refreshDistributedAnalysis(undefined, {
+                                loadArtifact: true,
+                            })}
+                    >
+                        Export artifact
+                    </button>
+                    <button
+                        type="button"
+                        disabled={!artifactBundle}
+                        onClick={() => void copyDistributedArtifact()}
+                    >
+                        Copy artifact
+                    </button>
+                </div>
+                <div className="runner-distributed-freshness">
+                    <span>
+                        {lastDistributedRefresh
+                            ? `Fresh ${formatTime(lastDistributedRefresh)}`
+                            : 'Not refreshed yet'}
+                    </span>
+                    <span>{controlRunId || 'no control run'}</span>
+                </div>
+                {distributedError && (
+                    <div className="workbench-error" role="status">
+                        {distributedError}
+                    </div>
+                )}
+                {!selectedDistributedRun && !distributedError && (
+                    <div className="empty-state">
+                        No distributed run selected. Start a recipe on connected
+                        agents or refresh the control server.
+                    </div>
+                )}
+                {selectedDistributedRun && (
+                    <DistributedRunSummary run={selectedDistributedRun} />
+                )}
+                {analysisReport && (
+                    <DistributedRunAnalysisReportPanel
+                        report={analysisReport}
+                    />
+                )}
+                {selectedMonitor && (
+                    <DistributedRunMonitorPanel monitor={selectedMonitor} />
+                )}
+                {distributedRuns.length > 1 && (
+                    <DistributedRunComparePanel
+                        runs={distributedRuns}
+                        leftId={compareLeftId}
+                        rightId={compareRightId}
+                        summary={compareSummary}
+                        onLeftChange={setCompareLeftId}
+                        onRightChange={setCompareRightId}
+                    />
+                )}
+            </section>
             <div className="runner-runs-summary-grid">
                 <Metric
                     label="Runtime"
@@ -7390,6 +7796,1665 @@ function RunnerRunsPanel({
                     <ReportPanel state={state} authSession={authSession} />
                 </section>
             </div>
+        </section>
+    );
+}
+
+type FleetFilterState = Readonly<{
+    region: string;
+    provider: string;
+    recipeId: string;
+    groupId: string;
+    state: string;
+    window: '1h' | '24h' | '7d' | 'all';
+}>;
+
+type FleetAgentHeatmapRow = Readonly<{
+    agent: ControlFleetAgentRunOutcome;
+    region: string;
+    provider: string;
+    cells: readonly (ControlFleetAgentRunOutcome | undefined)[];
+}>;
+
+type FleetTimingGroup = Readonly<{
+    id: string;
+    label: string;
+    timing: ControlFleetTimingDistribution;
+}>;
+
+type FleetLabelOverride = Readonly<{
+    region?: string;
+    provider?: string;
+    datacenter?: string;
+    hostId?: string;
+    agentPoolId?: string;
+    deploymentId?: string;
+    browserName?: string;
+    browserVersion?: string;
+    os?: string;
+    tags?: readonly string[];
+}>;
+
+const DEFAULT_FLEET_FILTERS: FleetFilterState = {
+    region: '',
+    provider: '',
+    recipeId: '',
+    groupId: '',
+    state: '',
+    window: '24h',
+};
+
+function RunnerFleetPanel({
+    bootstrap,
+    control,
+}: {
+    bootstrap: RallarBlackBoxBootstrapConfig;
+    control: RallarBlackBoxControlSnapshot;
+}) {
+    const [controlBaseUrl, setControlBaseUrl] = useState(() =>
+        controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl)
+    );
+    const [controlToken, setControlToken] = useState(
+        bootstrap.controlToken ?? '',
+    );
+    const [filters, setFilters] = useState<FleetFilterState>(
+        readFleetFiltersFromUrl,
+    );
+    const [response, setResponse] = useState<
+        ControlFleetReportsResponse | undefined
+    >();
+    const [busy, setBusy] = useState<string | undefined>();
+    const [error, setError] = useState<string | undefined>();
+    const [lastRefresh, setLastRefresh] = useState<number | undefined>();
+    const [selectedAgentId, setSelectedAgentId] = useState('');
+    const [selectedFailureId, setSelectedFailureId] = useState('');
+    const [selectedReportId, setSelectedReportId] = useState('');
+    const [overrideText, setOverrideText] = useState('');
+    const [lastExport, setLastExport] = useState<
+        ControlFleetReportBundle | undefined
+    >();
+    const didInitialRefresh = useRef(false);
+    const overrides = useMemo(
+        () => parseFleetLabelOverrides(overrideText),
+        [overrideText],
+    );
+    const reports = useMemo(
+        () =>
+            applyFleetLabelOverrides(
+                response?.reports ?? [],
+                overrides.value,
+            ),
+        [overrides.value, response?.reports],
+    );
+    const displaySummary = useMemo(
+        () => fleetDisplaySummary(reports, response),
+        [reports, response],
+    );
+    const heatmapRuns = useMemo(() => reports.slice(0, 12), [reports]);
+    const heatmapRows = useMemo(
+        () => fleetHeatmapRows(reports, heatmapRuns),
+        [heatmapRuns, reports],
+    );
+    const regionRows = useMemo(() => fleetRegionRows(reports), [reports]);
+    const failureRows = useMemo(
+        () => fleetFailureRows(reports),
+        [reports],
+    );
+    const selectedFailure = failureRows.find(
+        (failure) => failure.signatureId === selectedFailureId,
+    ) ?? failureRows[0];
+    const selectedAgent = selectedAgentId
+        ? fleetAgentDetail(selectedAgentId, reports)
+        : undefined;
+    const regionTiming = useMemo(
+        () => fleetTimingGroupsByRegion(reports).slice(0, 8),
+        [reports],
+    );
+    const recipeTiming = useMemo(
+        () => fleetTimingGroupsByRecipe(reports).slice(0, 8),
+        [reports],
+    );
+    const missingLabelAgents = useMemo(
+        () => fleetMissingLabelAgents(reports),
+        [reports],
+    );
+    const selectedReport = reports.find(
+        (report) => report.distributedRunId === selectedReportId,
+    ) ?? reports[0];
+
+    const refreshFleet = async (
+        options: Readonly<{ rebuild?: boolean; quiet?: boolean }> = {},
+    ): Promise<void> => {
+        if (!options.quiet) {
+            setBusy(options.rebuild ? 'rebuild' : 'refresh');
+        }
+        setError(undefined);
+        try {
+            const nextResponse = options.rebuild
+                ? await rebuildFleetReports({
+                    baseUrl: controlBaseUrl,
+                    token: controlToken,
+                })
+                : await fetchFleetReports({
+                    baseUrl: controlBaseUrl,
+                    token: controlToken,
+                    filter: fleetReportFilterFromUi(filters),
+                });
+            setResponse(nextResponse);
+            setLastRefresh(Date.now());
+            setSelectedReportId((current) =>
+                current ||
+                nextResponse.reports[0]?.distributedRunId ||
+                '',
+            );
+        } catch (caught) {
+            setError(runnerFriendlyErrorMessage(caught));
+        } finally {
+            if (!options.quiet) {
+                setBusy(undefined);
+            }
+        }
+    };
+
+    useEffect(() => {
+        if (didInitialRefresh.current) {
+            return;
+        }
+        didInitialRefresh.current = true;
+        void refreshFleet({ quiet: true });
+        // Initial fleet refresh uses first rendered control values.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+        writeFleetFiltersToUrl(filters);
+    }, [filters]);
+
+    useEffect(() => {
+        if (!selectedReportId && reports[0]) {
+            setSelectedReportId(reports[0].distributedRunId);
+        }
+    }, [reports, selectedReportId]);
+
+    const updateFilter = <K extends keyof FleetFilterState>(
+        key: K,
+        value: FleetFilterState[K],
+    ): void => {
+        setFilters((current) => ({ ...current, [key]: value }));
+    };
+
+    const copyShareLink = async (): Promise<void> => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        const url = new URL(window.location.href);
+        url.searchParams.set('mode', 'black-box-runner');
+        url.searchParams.set('tab', 'fleet');
+        writeFleetFiltersToSearchParams(url.searchParams, filters);
+        await navigator.clipboard?.writeText(url.toString());
+    };
+
+    const exportSelectedReport = async (): Promise<void> => {
+        if (!selectedReport) {
+            return;
+        }
+        setBusy('export');
+        setError(undefined);
+        try {
+            const bundle = await fetchFleetReportBundle({
+                baseUrl: controlBaseUrl,
+                token: controlToken,
+                distributedRunId: selectedReport.distributedRunId,
+            });
+            setLastExport(bundle);
+            await navigator.clipboard?.writeText(json(bundle.files));
+        } catch (caught) {
+            setError(runnerFriendlyErrorMessage(caught));
+        } finally {
+            setBusy(undefined);
+        }
+    };
+
+    return (
+        <section className="panel runner-fleet-panel">
+            <div className="panel-heading">
+                <h2>Fleet</h2>
+                <span>distributed reports</span>
+            </div>
+            <div className="fleet-toolbar">
+                <label className="field">
+                    <span>Control HTTP</span>
+                    <input
+                        value={controlBaseUrl}
+                        onChange={(event) =>
+                            setControlBaseUrl(event.target.value)
+                        }
+                    />
+                </label>
+                <label className="field compact-field">
+                    <span>Token</span>
+                    <input
+                        type="password"
+                        autoComplete="off"
+                        value={controlToken}
+                        onChange={(event) => setControlToken(event.target.value)}
+                    />
+                </label>
+                <label className="field compact-field">
+                    <span>Window</span>
+                    <select
+                        value={filters.window}
+                        onChange={(event) =>
+                            updateFilter(
+                                'window',
+                                event.target.value as FleetFilterState['window'],
+                            )
+                        }
+                    >
+                        <option value="1h">Last hour</option>
+                        <option value="24h">Last 24h</option>
+                        <option value="7d">Last 7d</option>
+                        <option value="all">All</option>
+                    </select>
+                </label>
+                <button
+                    type="button"
+                    disabled={Boolean(busy)}
+                    onClick={() => void refreshFleet()}
+                >
+                    Refresh
+                </button>
+                <button
+                    type="button"
+                    disabled={Boolean(busy)}
+                    onClick={() => void refreshFleet({ rebuild: true })}
+                >
+                    Rebuild index
+                </button>
+                <button type="button" onClick={() => void copyShareLink()}>
+                    Copy share link
+                </button>
+            </div>
+            <div className="fleet-filter-row">
+                <label className="field">
+                    <span>Region</span>
+                    <input
+                        placeholder="eu-north"
+                        value={filters.region}
+                        onChange={(event) =>
+                            updateFilter('region', event.target.value)
+                        }
+                    />
+                </label>
+                <label className="field">
+                    <span>Provider</span>
+                    <input
+                        placeholder="hetzner"
+                        value={filters.provider}
+                        onChange={(event) =>
+                            updateFilter('provider', event.target.value)
+                        }
+                    />
+                </label>
+                <label className="field">
+                    <span>Recipe</span>
+                    <input
+                        placeholder="recipe id"
+                        value={filters.recipeId}
+                        onChange={(event) =>
+                            updateFilter('recipeId', event.target.value)
+                        }
+                    />
+                </label>
+                <label className="field">
+                    <span>Group</span>
+                    <input
+                        placeholder="group id"
+                        value={filters.groupId}
+                        onChange={(event) =>
+                            updateFilter('groupId', event.target.value)
+                        }
+                    />
+                </label>
+                <label className="field">
+                    <span>State</span>
+                    <select
+                        value={filters.state}
+                        onChange={(event) =>
+                            updateFilter('state', event.target.value)
+                        }
+                    >
+                        <option value="">Any</option>
+                        <option value="passed">Passed</option>
+                        <option value="failed">Failed</option>
+                        <option value="timed-out">Timed out</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                </label>
+            </div>
+            <div className="runner-distributed-freshness">
+                <span>
+                    {lastRefresh
+                        ? `Fresh ${formatTime(lastRefresh)}`
+                        : 'Not refreshed yet'}
+                </span>
+                <span>{busy ?? `${reports.length} reports`}</span>
+            </div>
+            {error && (
+                <div className="workbench-error" role="status">
+                    {error}
+                </div>
+            )}
+            {missingLabelAgents.length > 0 && (
+                <details className="fleet-label-warning">
+                    <summary>
+                        {missingLabelAgents.length} agents need region/provider
+                        labels
+                    </summary>
+                    <p>
+                        Add fleet metadata when agents register, or paste
+                        temporary analysis overrides below.
+                    </p>
+                    <pre className="mini-json">
+                        {missingLabelAgents.slice(0, 12).join('\n')}
+                    </pre>
+                    <textarea
+                        rows={5}
+                        value={overrideText}
+                        onChange={(event) =>
+                            setOverrideText(event.target.value)
+                        }
+                        placeholder={json({
+                            'agent-01': {
+                                region: 'eu-north',
+                                provider: 'hetzner',
+                            },
+                        })}
+                    />
+                    {overrides.error && (
+                        <div className="workbench-error" role="status">
+                            {overrides.error}
+                        </div>
+                    )}
+                </details>
+            )}
+            <div className="fleet-summary-grid">
+                <Metric label="Runs" value={String(displaySummary.runs)} />
+                <Metric label="Agents" value={String(displaySummary.agents)} />
+                <Metric label="Regions" value={String(displaySummary.regions)} />
+                <Metric
+                    label="Pass rate"
+                    value={formatPercent(displaySummary.passRate)}
+                    tone={displaySummary.passRate >= 0.95 ? 'good' : 'warn'}
+                />
+                <Metric
+                    label="Failure groups"
+                    value={String(displaySummary.failureGroups)}
+                    tone={displaySummary.failureGroups > 0 ? 'bad' : 'good'}
+                />
+                <Metric
+                    label="P95 duration"
+                    value={formatFleetDuration(displaySummary.p95DurationMs)}
+                />
+                <Metric
+                    label="Stale agents"
+                    value={String(displaySummary.stale)}
+                    tone={displaySummary.stale > 0 ? 'warn' : 'good'}
+                />
+            </div>
+            {reports.length === 0 && !error && (
+                <div className="empty-state">
+                    No terminal distributed run reports found for these filters.
+                    Start connected-agent recipes or rebuild the fleet index.
+                </div>
+            )}
+            {reports.length > 0 && (
+                <div className="fleet-layout">
+                    <section className="fleet-subpanel fleet-heatmap-panel">
+                        <div className="section-heading">
+                            <h3>Agent x Run Heatmap</h3>
+                            <span>{heatmapRows.length} agents</span>
+                        </div>
+                        <div className="fleet-heatmap" role="table">
+                            <div className="fleet-heatmap-header" role="row">
+                                <span>Agent</span>
+                                {heatmapRuns.map((run) => (
+                                    <button
+                                        type="button"
+                                        key={run.distributedRunId}
+                                        className={run.distributedRunId === selectedReport?.distributedRunId ? 'selected' : ''}
+                                        title={run.distributedRunId}
+                                        onClick={() =>
+                                            setSelectedReportId(
+                                                run.distributedRunId,
+                                            )
+                                        }
+                                    >
+                                        {shortRunId(run.distributedRunId)}
+                                    </button>
+                                ))}
+                            </div>
+                            {heatmapRows.map((row) => (
+                                <div
+                                    className="fleet-heatmap-row"
+                                    role="row"
+                                    key={row.agent.agentId}
+                                >
+                                    <button
+                                        type="button"
+                                        className="fleet-agent-button"
+                                        onClick={() =>
+                                            setSelectedAgentId(row.agent.agentId)
+                                        }
+                                    >
+                                        <strong>{row.agent.agentId}</strong>
+                                        <small>
+                                            {row.region} / {row.provider}
+                                        </small>
+                                    </button>
+                                    {row.cells.map((cell, index) => (
+                                        <button
+                                            type="button"
+                                            key={`${row.agent.agentId}-${heatmapRuns[index]?.distributedRunId ?? index}`}
+                                            className={`fleet-cell ${fleetAgentStateTone(cell?.state)}`}
+                                            title={fleetCellTitle(cell)}
+                                            onClick={() => {
+                                                if (cell) {
+                                                    setSelectedAgentId(
+                                                        cell.agentId,
+                                                    );
+                                                    const firstFailure =
+                                                        cell.failureSignatureIds[0];
+                                                    if (firstFailure) {
+                                                        setSelectedFailureId(
+                                                            firstFailure,
+                                                        );
+                                                    }
+                                                }
+                                            }}
+                                            aria-label={fleetCellTitle(cell)}
+                                        />
+                                    ))}
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                    <section className="fleet-subpanel">
+                        <div className="section-heading">
+                            <h3>Region Summary</h3>
+                            <span>{regionRows.length}</span>
+                        </div>
+                        <div className="fleet-table-scroll">
+                            <table className="fleet-table">
+                                <thead>
+                                    <tr>
+                                        <th>Region</th>
+                                        <th>Pass</th>
+                                        <th>P95</th>
+                                        <th>Failed</th>
+                                        <th>Dominant failure</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {regionRows.map((row) => (
+                                        <tr key={`${row.region}-${row.provider ?? 'any'}`}>
+                                            <td>
+                                                <strong>{row.region}</strong>
+                                                <small>{row.provider ?? 'any provider'}</small>
+                                            </td>
+                                            <td>{formatPercent(row.passRate)}</td>
+                                            <td>{formatFleetDuration(row.timing.p95Ms)}</td>
+                                            <td>{row.failed}</td>
+                                            <td>
+                                                {shortSignatureId(
+                                                    row.dominantFailureSignatureId,
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                    <section className="fleet-subpanel">
+                        <div className="section-heading">
+                            <h3>Failure Signatures</h3>
+                            <span>{failureRows.length}</span>
+                        </div>
+                        <div className="fleet-failure-list">
+                            {failureRows.slice(0, 12).map((failure) => (
+                                <button
+                                    type="button"
+                                    key={failure.signatureId}
+                                    className={`fleet-failure-row ${failure.signatureId === selectedFailure?.signatureId ? 'selected' : ''}`}
+                                    onClick={() =>
+                                        setSelectedFailureId(failure.signatureId)
+                                    }
+                                >
+                                    <span
+                                        className={`pill ${fleetFailureTone(failure.category)}`}
+                                    >
+                                        {failure.category}
+                                    </span>
+                                    <strong>{failure.title}</strong>
+                                    <small>
+                                        {failure.count} hits -{' '}
+                                        {failure.affectedRegions.join(', ') ||
+                                            'unknown region'}
+                                    </small>
+                                    <small>{failure.nextAction}</small>
+                                </button>
+                            ))}
+                            {failureRows.length === 0 && (
+                                <div className="empty-state">
+                                    No repeated failure signatures.
+                                </div>
+                            )}
+                        </div>
+                    </section>
+                    <section className="fleet-subpanel">
+                        <div className="section-heading">
+                            <h3>Timing Distributions</h3>
+                            <span>p50 / p95</span>
+                        </div>
+                        <div className="fleet-timing-grid">
+                            <FleetTimingGroupList
+                                title="By region"
+                                groups={regionTiming}
+                            />
+                            <FleetTimingGroupList
+                                title="By recipe"
+                                groups={recipeTiming}
+                            />
+                        </div>
+                    </section>
+                    <section className="fleet-subpanel fleet-report-export">
+                        <div className="section-heading">
+                            <h3>Shareable Run Report</h3>
+                            <span>{selectedReport ? selectedReport.state : 'none'}</span>
+                        </div>
+                        <div className="fleet-export-row">
+                            <label className="field">
+                                <span>Run</span>
+                                <select
+                                    value={selectedReport?.distributedRunId ?? ''}
+                                    onChange={(event) =>
+                                        setSelectedReportId(event.target.value)
+                                    }
+                                >
+                                    {reports.map((report) => (
+                                        <option
+                                            key={report.distributedRunId}
+                                            value={report.distributedRunId}
+                                        >
+                                            {report.distributedRunId}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                            <button
+                                type="button"
+                                disabled={!selectedReport || Boolean(busy)}
+                                onClick={() => void exportSelectedReport()}
+                            >
+                                Export report
+                            </button>
+                        </div>
+                        {lastExport && (
+                            <div className="fleet-export-files">
+                                {Object.keys(lastExport.files).map((name) => (
+                                    <span className="pill muted" key={name}>
+                                        {name}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                    </section>
+                    {selectedFailure && (
+                        <section className="fleet-subpanel fleet-selected-failure">
+                            <div className="section-heading">
+                                <h3>Selected Failure</h3>
+                                <span>{selectedFailure.count} hits</span>
+                            </div>
+                            <h4>{selectedFailure.title}</h4>
+                            <p>{selectedFailure.likelyCause}</p>
+                            <p>{selectedFailure.nextAction}</p>
+                            <dl className="fleet-detail-list">
+                                <div>
+                                    <dt>Agents</dt>
+                                    <dd>
+                                        {selectedFailure.affectedAgents.join(', ') ||
+                                            '-'}
+                                    </dd>
+                                </div>
+                                <div>
+                                    <dt>Regions</dt>
+                                    <dd>
+                                        {selectedFailure.affectedRegions.join(', ') ||
+                                            '-'}
+                                    </dd>
+                                </div>
+                                <div>
+                                    <dt>Runs</dt>
+                                    <dd>
+                                        {selectedFailure.affectedRuns
+                                            .map(shortRunId)
+                                            .join(', ') || '-'}
+                                    </dd>
+                                </div>
+                            </dl>
+                        </section>
+                    )}
+                    {selectedAgent && (
+                        <section className="fleet-subpanel fleet-agent-detail">
+                            <div className="section-heading">
+                                <h3>Agent Detail</h3>
+                                <span>{selectedAgent.agent.agentId}</span>
+                            </div>
+                            <dl className="fleet-detail-list">
+                                <div>
+                                    <dt>Region</dt>
+                                    <dd>
+                                        {fleetRegionLabel(
+                                            selectedAgent.agent.label,
+                                        )}
+                                    </dd>
+                                </div>
+                                <div>
+                                    <dt>Heartbeat</dt>
+                                    <dd>
+                                        {formatTime(
+                                            selectedAgent.agent
+                                                .lastHeartbeatAtEpochMs,
+                                        )}
+                                    </dd>
+                                </div>
+                                <div>
+                                    <dt>Reconnects</dt>
+                                    <dd>{selectedAgent.reconnectCount}</dd>
+                                </div>
+                                <div>
+                                    <dt>Diagnostics</dt>
+                                    <dd>{selectedAgent.diagnosticCount}</dd>
+                                </div>
+                                <div>
+                                    <dt>Trend</dt>
+                                    <dd>
+                                        {selectedAgent.passed} passed /{' '}
+                                        {selectedAgent.failed} failed /{' '}
+                                        {selectedAgent.missing} missing
+                                    </dd>
+                                </div>
+                            </dl>
+                            <div className="fleet-agent-run-list">
+                                {selectedAgent.runs.map((entry) => (
+                                    <div
+                                        className="runner-analysis-row"
+                                        key={`${entry.run.distributedRunId}-${entry.outcome?.agentId ?? selectedAgent.agent.agentId}`}
+                                    >
+                                        <strong>
+                                            {shortRunId(
+                                                entry.run.distributedRunId,
+                                            )}
+                                        </strong>
+                                        <span
+                                            className={`pill ${fleetAgentStateTone(entry.outcome?.state)}`}
+                                        >
+                                            {entry.outcome?.state ?? 'missing'}
+                                        </span>
+                                        <small>
+                                            {entry.run.recipeIds.join(', ') ||
+                                                'no recipe'}
+                                        </small>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+                </div>
+            )}
+        </section>
+    );
+}
+
+function FleetTimingGroupList({
+    title,
+    groups,
+}: {
+    title: string;
+    groups: readonly FleetTimingGroup[];
+}) {
+    return (
+        <section>
+            <h4>{title}</h4>
+            <div className="fleet-timing-list">
+                {groups.map((group) => (
+                    <div className="fleet-timing-row" key={group.id}>
+                        <span>{group.label}</span>
+                        <FleetTimingStrip timing={group.timing} />
+                        <small>
+                            {formatFleetDuration(group.timing.p50Ms)} /{' '}
+                            {formatFleetDuration(group.timing.p95Ms)}
+                        </small>
+                    </div>
+                ))}
+                {groups.length === 0 && (
+                    <div className="empty-state">No timing samples</div>
+                )}
+            </div>
+        </section>
+    );
+}
+
+function FleetTimingStrip({
+    timing,
+}: {
+    timing: ControlFleetTimingDistribution;
+}) {
+    const min = timing.minMs ?? 0;
+    const max = timing.maxMs ?? min + 1;
+    const spread = Math.max(1, max - min);
+    const position = (value: number | undefined): number => {
+        if (value === undefined) {
+            return 0;
+        }
+        return Math.max(0, Math.min(100, ((value - min) / spread) * 100));
+    };
+    const p50 = position(timing.p50Ms);
+    const p95 = position(timing.p95Ms);
+    return (
+        <svg
+            className="fleet-timing-strip"
+            viewBox="0 0 100 16"
+            role="img"
+            aria-label={`timing ${timing.count} samples`}
+        >
+            <line x1="2" y1="8" x2="98" y2="8" />
+            <rect x={Math.min(p50, p95)} y="4" width={Math.max(2, Math.abs(p95 - p50))} height="8" />
+            <circle cx={p50} cy="8" r="3" />
+            <circle cx={p95} cy="8" r="3" />
+        </svg>
+    );
+}
+
+function readFleetFiltersFromUrl(): FleetFilterState {
+    if (typeof window === 'undefined') {
+        return DEFAULT_FLEET_FILTERS;
+    }
+    const params = new URL(window.location.href).searchParams;
+    return {
+        region: params.get('region') ?? '',
+        provider: params.get('provider') ?? '',
+        recipeId: params.get('recipeId') ?? '',
+        groupId: params.get('groupId') ?? '',
+        state: params.get('state') ?? '',
+        window: parseFleetWindow(
+            params.get('window') ?? params.get('timeWindow'),
+        ),
+    };
+}
+
+function writeFleetFiltersToUrl(filters: FleetFilterState): void {
+    if (typeof window === 'undefined') {
+        return;
+    }
+    const url = new URL(window.location.href);
+    writeFleetFiltersToSearchParams(url.searchParams, filters);
+    window.history.replaceState(window.history.state, '', url.toString());
+}
+
+function writeFleetFiltersToSearchParams(
+    params: URLSearchParams,
+    filters: FleetFilterState,
+): void {
+    const entries: ReadonlyArray<[keyof FleetFilterState, string]> = [
+        ['region', filters.region],
+        ['provider', filters.provider],
+        ['recipeId', filters.recipeId],
+        ['groupId', filters.groupId],
+        ['state', filters.state],
+        ['window', filters.window],
+    ];
+    entries.forEach(([key, value]) => {
+        if (value && value !== DEFAULT_FLEET_FILTERS[key]) {
+            params.set(key, value);
+        } else {
+            params.delete(key);
+        }
+    });
+}
+
+function parseFleetWindow(
+    value: string | null | undefined,
+): FleetFilterState['window'] {
+    return value === '1h' || value === '24h' || value === '7d' ||
+            value === 'all'
+        ? value
+        : DEFAULT_FLEET_FILTERS.window;
+}
+
+function fleetReportFilterFromUi(
+    filters: FleetFilterState,
+): ControlFleetReportFilter {
+    const filter: {
+        region?: string;
+        provider?: string;
+        recipeId?: string;
+        groupId?: string;
+        state?: string;
+        fromEpochMs?: number;
+        toEpochMs?: number;
+    } = {
+        region: filters.region.trim() || undefined,
+        provider: filters.provider.trim() || undefined,
+        recipeId: filters.recipeId.trim() || undefined,
+        groupId: filters.groupId.trim() || undefined,
+        state: filters.state.trim() || undefined,
+    };
+    const now = Date.now();
+    if (filters.window === '1h') {
+        filter.fromEpochMs = now - 60 * 60 * 1000;
+    } else if (filters.window === '24h') {
+        filter.fromEpochMs = now - 24 * 60 * 60 * 1000;
+    } else if (filters.window === '7d') {
+        filter.fromEpochMs = now - 7 * 24 * 60 * 60 * 1000;
+    }
+    return filter;
+}
+
+function parseFleetLabelOverrides(text: string): Readonly<{
+    value: Readonly<Record<string, FleetLabelOverride>>;
+    error?: string;
+}> {
+    const trimmed = text.trim();
+    if (!trimmed) {
+        return { value: {} };
+    }
+    try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        if (!isFleetRecord(parsed)) {
+            return {
+                value: {},
+                error: 'Overrides must be an object keyed by agent id.',
+            };
+        }
+        const overrides: Record<string, FleetLabelOverride> = {};
+        Object.entries(parsed).forEach(([agentId, value]) => {
+            if (!isFleetRecord(value)) {
+                return;
+            }
+            const label: Record<string, string | readonly string[] | undefined> =
+                {};
+            [
+                'region',
+                'provider',
+                'datacenter',
+                'hostId',
+                'agentPoolId',
+                'deploymentId',
+                'browserName',
+                'browserVersion',
+                'os',
+            ].forEach((key) => {
+                const raw = value[key];
+                if (typeof raw === 'string' && raw.trim().length > 0) {
+                    label[key] = raw.trim();
+                }
+            });
+            if (Array.isArray(value.tags)) {
+                label.tags = value.tags
+                    .filter((tag): tag is string => typeof tag === 'string')
+                    .map((tag) => tag.trim())
+                    .filter(Boolean);
+            }
+            if (Object.keys(label).length > 0) {
+                overrides[agentId] = label;
+            }
+        });
+        return { value: overrides };
+    } catch (caught) {
+        return {
+            value: {},
+            error: caught instanceof Error ? caught.message : String(caught),
+        };
+    }
+}
+
+function isFleetRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function applyFleetLabelOverrides(
+    reports: readonly ControlFleetRunReport[],
+    overrides: Readonly<Record<string, FleetLabelOverride>>,
+): readonly ControlFleetRunReport[] {
+    if (Object.keys(overrides).length === 0) {
+        return reports;
+    }
+    return reports.map((report) => ({
+        ...report,
+        agents: report.agents.map((agent) => {
+            const override = overrides[agent.agentId];
+            return override
+                ? {
+                    ...agent,
+                    label: {
+                        ...agent.label,
+                        ...override,
+                        tags: override.tags ?? agent.label.tags,
+                    },
+                }
+                : agent;
+        }),
+    }));
+}
+
+function fleetDisplaySummary(
+    reports: readonly ControlFleetRunReport[],
+    response: ControlFleetReportsResponse | undefined,
+): Readonly<{
+    runs: number;
+    agents: number;
+    regions: number;
+    passRate: number;
+    failureGroups: number;
+    p95DurationMs?: number;
+    stale: number;
+}> {
+    if (reports.length === 0) {
+        return {
+            runs: response?.aggregate.runCount ?? 0,
+            agents: response?.aggregate.agentCount ?? 0,
+            regions: response?.aggregate.regionCount ?? 0,
+            passRate: response?.aggregate.passRate ?? 0,
+            failureGroups: response?.aggregate.failureGroupCount ?? 0,
+            p95DurationMs: response?.aggregate.timing.runs.p95Ms,
+            stale: response?.aggregate.staleAgentCount ?? 0,
+        };
+    }
+    const agents = new Set<string>();
+    const regions = new Set<string>();
+    const staleAgents = new Set<string>();
+    let passed = 0;
+    let outcomes = 0;
+    reports.forEach((report) => {
+        report.agents.forEach((agent) => {
+            agents.add(agent.agentId);
+            regions.add(fleetRegionKey(agent.label));
+            if (agent.stale) {
+                staleAgents.add(agent.agentId);
+            }
+            outcomes += 1;
+            if (agent.ok) {
+                passed += 1;
+            }
+        });
+    });
+    return {
+        runs: reports.length,
+        agents: agents.size,
+        regions: regions.size,
+        passRate: outcomes > 0 ? passed / outcomes : 0,
+        failureGroups: fleetFailureRows(reports).length,
+        p95DurationMs: fleetTimingDistribution(
+            reports
+                .map((report) => report.runDurationMs)
+                .filter((value): value is number => value !== undefined),
+        ).p95Ms,
+        stale: staleAgents.size,
+    };
+}
+
+function fleetHeatmapRows(
+    reports: readonly ControlFleetRunReport[],
+    runs: readonly ControlFleetRunReport[],
+): readonly FleetAgentHeatmapRow[] {
+    const latestByAgent = new Map<string, ControlFleetAgentRunOutcome>();
+    reports.forEach((report) => {
+        report.agents.forEach((agent) => {
+            if (!latestByAgent.has(agent.agentId)) {
+                latestByAgent.set(agent.agentId, agent);
+            }
+        });
+    });
+    return [...latestByAgent.values()]
+        .map((agent) => ({
+            agent,
+            region: agent.label.region ?? 'unlabeled',
+            provider: agent.label.provider ?? 'unknown',
+            cells: runs.map((run) =>
+                run.agents.find((candidate) =>
+                    candidate.agentId === agent.agentId
+                )
+            ),
+        }))
+        .sort((left, right) =>
+            `${left.region}/${left.provider}/${left.agent.agentId}`
+                .localeCompare(
+                    `${right.region}/${right.provider}/${right.agent.agentId}`,
+                )
+        );
+}
+
+function fleetRegionRows(reports: readonly ControlFleetRunReport[]) {
+    type MutableRegion = {
+        region: string;
+        provider?: string;
+        agentIds: Set<string>;
+        passed: number;
+        failed: number;
+        missing: number;
+        flaky: number;
+        stale: number;
+        durations: number[];
+        failureCounts: Map<string, number>;
+    };
+    const regions = new Map<string, MutableRegion>();
+    reports.forEach((report) => {
+        report.agents.forEach((agent) => {
+            const key = fleetRegionKey(agent.label);
+            const row = regions.get(key) ?? {
+                region: agent.label.region ?? 'unlabeled',
+                provider: agent.label.provider,
+                agentIds: new Set<string>(),
+                passed: 0,
+                failed: 0,
+                missing: 0,
+                flaky: 0,
+                stale: 0,
+                durations: [],
+                failureCounts: new Map<string, number>(),
+            };
+            row.agentIds.add(agent.agentId);
+            if (agent.state === 'passed') {
+                row.passed += 1;
+            } else if (agent.state === 'failed') {
+                row.failed += 1;
+            } else if (agent.missing) {
+                row.missing += 1;
+            }
+            if (agent.flaky) {
+                row.flaky += 1;
+            }
+            if (agent.stale) {
+                row.stale += 1;
+            }
+            if (agent.durationMs !== undefined) {
+                row.durations.push(agent.durationMs);
+            }
+            agent.failureSignatureIds.forEach((signatureId) => {
+                row.failureCounts.set(
+                    signatureId,
+                    (row.failureCounts.get(signatureId) ?? 0) + 1,
+                );
+            });
+            regions.set(key, row);
+        });
+    });
+    return [...regions.values()]
+        .map((row) => {
+            const total = row.passed + row.failed + row.missing;
+            return {
+                region: row.region,
+                provider: row.provider,
+                agentCount: row.agentIds.size,
+                passed: row.passed,
+                failed: row.failed,
+                missing: row.missing,
+                flaky: row.flaky,
+                stale: row.stale,
+                passRate: total > 0 ? row.passed / total : 0,
+                timing: fleetTimingDistribution(row.durations),
+                dominantFailureSignatureId: [...row.failureCounts.entries()]
+                    .sort((left, right) => right[1] - left[1])[0]?.[0],
+            };
+        })
+        .sort((left, right) =>
+            right.failed - left.failed ||
+            left.region.localeCompare(right.region)
+        );
+}
+
+function fleetFailureRows(
+    reports: readonly ControlFleetRunReport[],
+): readonly ControlFleetFailureSignature[] {
+    type MutableFailure = {
+        -readonly [K in keyof Omit<
+            ControlFleetFailureSignature,
+            'affectedAgents' | 'affectedRegions' | 'affectedRuns'
+        >]: ControlFleetFailureSignature[K];
+    } & {
+        affectedAgents: Set<string>;
+        affectedRegions: Set<string>;
+        affectedRuns: Set<string>;
+    };
+    const signatures = new Map<string, MutableFailure>();
+    reports.forEach((report) => {
+        report.failureSignatures.forEach((signature) => {
+            const current = signatures.get(signature.signatureId) ?? {
+                ...signature,
+                count: 0,
+                firstSeenAtEpochMs: signature.firstSeenAtEpochMs,
+                lastSeenAtEpochMs: signature.lastSeenAtEpochMs,
+                affectedAgents: new Set<string>(),
+                affectedRegions: new Set<string>(),
+                affectedRuns: new Set<string>(),
+            };
+            current.count += signature.count;
+            current.firstSeenAtEpochMs = minDefined(
+                current.firstSeenAtEpochMs,
+                signature.firstSeenAtEpochMs,
+            );
+            current.lastSeenAtEpochMs = maxDefined(
+                current.lastSeenAtEpochMs,
+                signature.lastSeenAtEpochMs,
+            );
+            signature.affectedAgents.forEach((agentId) =>
+                current.affectedAgents.add(agentId)
+            );
+            signature.affectedRegions.forEach((region) =>
+                current.affectedRegions.add(region)
+            );
+            signature.affectedRuns.forEach((runId) =>
+                current.affectedRuns.add(runId)
+            );
+            current.affectedRuns.add(report.distributedRunId);
+            signatures.set(signature.signatureId, current);
+        });
+    });
+    return [...signatures.values()]
+        .map((signature) => ({
+            ...signature,
+            affectedAgents: [...signature.affectedAgents].sort(),
+            affectedRegions: [...signature.affectedRegions].sort(),
+            affectedRuns: [...signature.affectedRuns].sort(),
+        }))
+        .sort((left, right) =>
+            right.count - left.count ||
+            (right.lastSeenAtEpochMs ?? 0) - (left.lastSeenAtEpochMs ?? 0)
+        );
+}
+
+function fleetTimingGroupsByRegion(
+    reports: readonly ControlFleetRunReport[],
+): readonly FleetTimingGroup[] {
+    const durations = new Map<string, number[]>();
+    reports.forEach((report) => {
+        report.agents.forEach((agent) => {
+            if (agent.durationMs === undefined) {
+                return;
+            }
+            const key = fleetRegionKey(agent.label);
+            const list = durations.get(key) ?? [];
+            list.push(agent.durationMs);
+            durations.set(key, list);
+        });
+    });
+    return [...durations.entries()]
+        .map(([id, values]) => ({
+            id,
+            label: id,
+            timing: fleetTimingDistribution(values),
+        }))
+        .sort((left, right) =>
+            (right.timing.p95Ms ?? 0) - (left.timing.p95Ms ?? 0)
+        );
+}
+
+function fleetTimingGroupsByRecipe(
+    reports: readonly ControlFleetRunReport[],
+): readonly FleetTimingGroup[] {
+    const durations = new Map<string, number[]>();
+    reports.forEach((report) => {
+        if (report.runDurationMs === undefined) {
+            return;
+        }
+        report.recipeIds.forEach((recipeId) => {
+            const list = durations.get(recipeId) ?? [];
+            list.push(report.runDurationMs as number);
+            durations.set(recipeId, list);
+        });
+    });
+    return [...durations.entries()]
+        .map(([id, values]) => ({
+            id,
+            label: id,
+            timing: fleetTimingDistribution(values),
+        }))
+        .sort((left, right) =>
+            (right.timing.p95Ms ?? 0) - (left.timing.p95Ms ?? 0)
+        );
+}
+
+function fleetTimingDistribution(
+    values: readonly number[],
+): ControlFleetTimingDistribution {
+    const sorted = values
+        .filter((value) => Number.isFinite(value))
+        .sort((left, right) => left - right);
+    if (sorted.length === 0) {
+        return { count: 0 };
+    }
+    return {
+        count: sorted.length,
+        minMs: sorted[0],
+        p50Ms: percentile(sorted, 0.5),
+        p90Ms: percentile(sorted, 0.9),
+        p95Ms: percentile(sorted, 0.95),
+        maxMs: sorted[sorted.length - 1],
+    };
+}
+
+function percentile(sortedValues: readonly number[], percentileValue: number): number {
+    const index = Math.max(
+        0,
+        Math.min(
+            sortedValues.length - 1,
+            Math.ceil(sortedValues.length * percentileValue) - 1,
+        ),
+    );
+    return sortedValues[index];
+}
+
+function fleetMissingLabelAgents(
+    reports: readonly ControlFleetRunReport[],
+): readonly string[] {
+    const missing = new Set<string>();
+    reports.forEach((report) => {
+        report.agents.forEach((agent) => {
+            if (!agent.label.region || !agent.label.provider) {
+                missing.add(agent.agentId);
+            }
+        });
+    });
+    return [...missing].sort();
+}
+
+function fleetAgentDetail(
+    agentId: string,
+    reports: readonly ControlFleetRunReport[],
+) {
+    const entries = reports
+        .map((run) => ({
+            run,
+            outcome: run.agents.find((agent) => agent.agentId === agentId),
+        }))
+        .filter((entry) => entry.outcome !== undefined);
+    const agent = entries[0]?.outcome;
+    if (!agent) {
+        return undefined;
+    }
+    return {
+        agent,
+        runs: entries.slice(0, 12),
+        passed: entries.filter((entry) => entry.outcome?.state === 'passed')
+            .length,
+        failed: entries.filter((entry) => entry.outcome?.state === 'failed')
+            .length,
+        missing: entries.filter((entry) => entry.outcome?.missing).length,
+        reconnectCount: Math.max(
+            0,
+            ...entries.map((entry) => entry.outcome?.reconnectCount ?? 0),
+        ),
+        diagnosticCount: entries.reduce(
+            (sum, entry) => sum + (entry.outcome?.diagnosticCount ?? 0),
+            0,
+        ),
+    };
+}
+
+function fleetRegionKey(
+    label: ControlFleetAgentRunOutcome['label'],
+): string {
+    return `${label.region ?? 'unlabeled'} / ${label.provider ?? 'unknown'}`;
+}
+
+function fleetRegionLabel(
+    label: ControlFleetAgentRunOutcome['label'],
+): string {
+    const region = label.region ?? 'unlabeled';
+    const provider = label.provider ?? 'unknown provider';
+    return `${region} / ${provider}`;
+}
+
+function fleetAgentStateTone(
+    state: ControlFleetAgentRunOutcome['state'] | undefined,
+): string {
+    if (state === 'passed') {
+        return 'good';
+    }
+    if (state === 'failed') {
+        return 'bad';
+    }
+    if (state === 'missing' || state === 'timed-out') {
+        return 'warn';
+    }
+    if (state === 'running') {
+        return 'active';
+    }
+    return 'muted';
+}
+
+function fleetFailureTone(
+    category: ControlFleetFailureSignature['category'],
+): string {
+    if (category === 'command' || category === 'runtime') {
+        return 'bad';
+    }
+    if (category === 'diagnostic' || category === 'barrier') {
+        return 'warn';
+    }
+    if (category === 'readiness' || category === 'targeting') {
+        return 'active';
+    }
+    return 'muted';
+}
+
+function fleetCellTitle(
+    cell: ControlFleetAgentRunOutcome | undefined,
+): string {
+    if (!cell) {
+        return 'No result for this agent and run';
+    }
+    return `${cell.agentId}: ${cell.state}, ${cell.failedCommandCount} failed commands`;
+}
+
+function shortRunId(value: string): string {
+    if (value.length <= 12) {
+        return value;
+    }
+    return value.slice(-10);
+}
+
+function shortSignatureId(value: string | undefined): string {
+    if (!value) {
+        return '-';
+    }
+    return value.length > 18 ? `${value.slice(0, 18)}...` : value;
+}
+
+function formatPercent(value: number | undefined): string {
+    if (value === undefined || !Number.isFinite(value)) {
+        return '-';
+    }
+    return `${Math.round(value * 100)}%`;
+}
+
+function formatFleetDuration(value: number | undefined): string {
+    if (value === undefined) {
+        return '-';
+    }
+    return value >= 1000 ? formatRelativeDuration(value) : `${Math.round(value)}ms`;
+}
+
+function minDefined(
+    left: number | undefined,
+    right: number | undefined,
+): number | undefined {
+    if (left === undefined) {
+        return right;
+    }
+    if (right === undefined) {
+        return left;
+    }
+    return Math.min(left, right);
+}
+
+function maxDefined(
+    left: number | undefined,
+    right: number | undefined,
+): number | undefined {
+    if (left === undefined) {
+        return right;
+    }
+    if (right === undefined) {
+        return left;
+    }
+    return Math.max(left, right);
+}
+
+function DistributedRunAnalysisReportPanel({
+    report,
+}: {
+    report: DistributedRunAnalysisReport;
+}) {
+    const firstFailure = report.firstFailure;
+    const topAgents = report.agents.slice(0, 8);
+    const topRecipes = report.recipes.slice(0, 8);
+    const diagnostics = report.diagnostics.correlated.slice(0, 6);
+    const stateTone = report.summary.ok
+        ? 'good'
+        : firstFailure
+        ? 'bad'
+        : distributedRecipeStateTone(report.summary.state);
+
+    return (
+        <section className="distributed-subpanel runner-analysis-report">
+            <div className="section-heading">
+                <h3>Analysis Report</h3>
+                <span className={`pill ${stateTone}`}>
+                    {report.summary.ok ? 'passed' : report.summary.state}
+                </span>
+            </div>
+            <div className="distributed-monitor-metrics">
+                <Metric
+                    label="Verdict"
+                    value={report.summary.ok ? 'passed' : 'attention'}
+                    tone={stateTone}
+                />
+                <Metric
+                    label="Duration"
+                    value={formatDuration(report.summary.durationMs)}
+                />
+                <Metric
+                    label="Targets"
+                    value={String(report.summary.targetCount)}
+                />
+                <Metric
+                    label="Commands"
+                    value={`${report.summary.completedCommandCount}/${report.summary.commandCount}`}
+                />
+                <Metric
+                    label="Failed"
+                    value={String(report.summary.failedCommandCount)}
+                    tone={report.summary.failedCommandCount > 0 ? 'bad' : 'good'}
+                />
+                <Metric
+                    label="Artifact"
+                    value={report.summary.artifactStatus}
+                    tone={
+                        report.summary.artifactStatus === 'valid'
+                            ? 'good'
+                            : report.summary.artifactStatus === 'not-loaded'
+                            ? 'muted'
+                            : 'bad'
+                    }
+                />
+            </div>
+            {report.summary.snapshotWarnings.length > 0 && (
+                <div className="runner-analysis-warning" role="status">
+                    <strong>Snapshot may be truncated</strong>
+                    <span>{report.summary.snapshotWarnings.join(' ')}</span>
+                </div>
+            )}
+            {firstFailure ? (
+                <section className="runner-analysis-first-failure">
+                    <div>
+                        <span className="eyebrow">First failure</span>
+                        <h4>{firstFailure.code ?? firstFailure.category}</h4>
+                        <p>{firstFailure.message}</p>
+                    </div>
+                    <dl>
+                        <div>
+                            <dt>Agent</dt>
+                            <dd>{firstFailure.agentId ?? '-'}</dd>
+                        </div>
+                        <div>
+                            <dt>Recipe</dt>
+                            <dd>{firstFailure.recipeId ?? '-'}</dd>
+                        </div>
+                        <div>
+                            <dt>Command</dt>
+                            <dd>{firstFailure.commandId ?? '-'}</dd>
+                        </div>
+                        <div>
+                            <dt>Time</dt>
+                            <dd>{formatTime(firstFailure.atEpochMs)}</dd>
+                        </div>
+                    </dl>
+                </section>
+            ) : (
+                <div className="empty-state">
+                    No failure evidence in the selected distributed run.
+                </div>
+            )}
+            <section className="runner-analysis-actions">
+                <div className="section-heading compact">
+                    <h3>Next Actions</h3>
+                    <span>{report.nextActions.length}</span>
+                </div>
+                <div className="runner-analysis-action-list">
+                    {report.nextActions.slice(0, 6).map((action, index) => (
+                        <article
+                            className="runner-analysis-action-row"
+                            key={`${action.category}-${action.title}-${index}`}
+                        >
+                            <span
+                                className={`pill ${distributedFailureCategoryTone(action.category)}`}
+                            >
+                                {action.category}
+                            </span>
+                            <div>
+                                <strong>{action.title}</strong>
+                                <small>{action.likelyCause}</small>
+                                <small>{action.nextAction}</small>
+                                {action.evidence.length > 0 && (
+                                    <small>
+                                        Evidence: {action.evidence.join(', ')}
+                                    </small>
+                                )}
+                            </div>
+                        </article>
+                    ))}
+                    {report.nextActions.length === 0 && (
+                        <div className="empty-state">
+                            No recommended action for this run.
+                        </div>
+                    )}
+                </div>
+            </section>
+            <div className="runner-analysis-grid">
+                <section>
+                    <h3>Agents</h3>
+                    <div className="runner-analysis-list">
+                        {topAgents.map((agent) => (
+                            <div
+                                className="runner-analysis-row"
+                                key={agent.agentId}
+                            >
+                                <strong>{agent.agentId}</strong>
+                                <span
+                                    className={`pill ${distributedProgressTone(agent.execution)}`}
+                                >
+                                    {agent.execution}
+                                </span>
+                                <small>
+                                    ack {agent.readiness} - barrier{' '}
+                                    {agent.barrier} - failures{' '}
+                                    {agent.failedCommandCount}
+                                </small>
+                                <small>
+                                    events {agent.eventCount} - reconnects{' '}
+                                    {agent.reconnectCount ?? 0} - heartbeat{' '}
+                                    {formatTime(agent.lastHeartbeatAtEpochMs)}
+                                </small>
+                            </div>
+                        ))}
+                        {topAgents.length === 0 && (
+                            <div className="empty-state">No agents</div>
+                        )}
+                    </div>
+                </section>
+                <section>
+                    <h3>Recipes</h3>
+                    <div className="runner-analysis-list">
+                        {topRecipes.map((recipe) => (
+                            <div
+                                className="runner-analysis-row"
+                                key={`${recipe.recipeId}-${recipe.role ?? 'all'}`}
+                            >
+                                <strong>{recipe.recipeId}</strong>
+                                <span
+                                    className={`pill ${recipe.failedCount > 0 ? 'bad' : recipe.passedCount > 0 ? 'good' : 'muted'}`}
+                                >
+                                    {recipe.failedCount > 0
+                                        ? 'failed'
+                                        : recipe.passedCount > 0
+                                        ? 'passed'
+                                        : 'pending'}
+                                </span>
+                                <small>
+                                    passed {recipe.passedCount} - failed{' '}
+                                    {recipe.failedCount} - running{' '}
+                                    {recipe.runningCount} - missing{' '}
+                                    {recipe.missingCount}
+                                </small>
+                                <small>
+                                    {recipe.role ?? 'all roles'} -{' '}
+                                    {recipe.profile ?? 'default'} - targets{' '}
+                                    {recipe.targetCount}
+                                </small>
+                            </div>
+                        ))}
+                        {topRecipes.length === 0 && (
+                            <div className="empty-state">No recipe rows</div>
+                        )}
+                    </div>
+                </section>
+                <section>
+                    <h3>Diagnostics</h3>
+                    <div className="runner-analysis-list">
+                        <div className="runner-analysis-row">
+                            <strong>
+                                {report.diagnostics.errors} errors,{' '}
+                                {report.diagnostics.warnings} warnings
+                            </strong>
+                            <span
+                                className={`pill ${report.diagnostics.errors > 0 ? 'bad' : report.diagnostics.warnings > 0 ? 'warn' : 'good'}`}
+                            >
+                                {report.diagnostics.total} total
+                            </span>
+                            <small>
+                                WS {report.diagnostics.ws} - RTC{' '}
+                                {report.diagnostics.rtc}
+                            </small>
+                        </div>
+                        {diagnostics.map((diagnostic) => (
+                            <div
+                                className="runner-analysis-row"
+                                key={diagnostic.eventId}
+                            >
+                                <strong>{diagnostic.message}</strong>
+                                <span
+                                    className={`pill ${distributedDiagnosticTone(diagnostic.severity)}`}
+                                >
+                                    {diagnostic.severity}
+                                </span>
+                                <small>
+                                    {diagnostic.transport ?? 'runtime'} -{' '}
+                                    {diagnostic.agentId} -{' '}
+                                    {diagnostic.commandId ?? 'no command'}
+                                </small>
+                                <small>{diagnostic.summary}</small>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+            </div>
+            <details className="runner-analysis-raw">
+                <summary>Raw Evidence</summary>
+                <pre className="mini-json">{json(report.rawEvidence)}</pre>
+            </details>
         </section>
     );
 }
@@ -9487,6 +11552,24 @@ const RUN_MANAGER_SNAPSHOT_BOUNDS = {
     reports: 40,
     heartbeats: 80,
 } as const;
+
+const DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS = {
+    commands: 500,
+    results: 500,
+    events: 1_000,
+    stats: 200,
+    reports: 120,
+    heartbeats: 240,
+} as const;
+
+const RUNNER_DISTRIBUTED_POLL_MS = 1_000;
+
+type RunnerDistributedRunSelection = Readonly<{
+    distributedRunId: string;
+    controlRunId: string;
+    controlBaseUrl: string;
+    controlToken?: string;
+}>;
 
 function parseRunManagerCommandText(text: string): RallarBlackBoxTestCommand {
     const value = JSON.parse(text) as unknown;
@@ -12943,6 +15026,25 @@ function distributedProgressTone(status: DistributedRunProgressStatus): string {
     return 'muted';
 }
 
+function distributedFailureCategoryTone(
+    category: DistributedRunAnalysisReport['nextActions'][number]['category'],
+): string {
+    if (category === 'command' || category === 'diagnostic') {
+        return 'bad';
+    }
+    if (
+        category === 'targeting' ||
+        category === 'readiness' ||
+        category === 'barrier'
+    ) {
+        return 'warn';
+    }
+    if (category === 'runtime') {
+        return 'active';
+    }
+    return 'muted';
+}
+
 function distributedCompositeStatusTone(status: string): string {
     if (status === 'ok' || status === 'passed') {
         return 'good';
@@ -13115,9 +15217,12 @@ function DistributedRunSummary({
                 </div>
             )}
             {run.rollup.failures.length > 0 && (
-                <pre className="mini-json">
-                    {json(run.rollup.failures.slice(0, 6))}
-                </pre>
+                <details className="distributed-run-raw-failures">
+                    <summary>Raw rollup failures</summary>
+                    <pre className="mini-json">
+                        {json(run.rollup.failures.slice(0, 6))}
+                    </pre>
+                </details>
             )}
         </div>
     );
@@ -23223,6 +25328,8 @@ export default function App() {
     const [selectedCommandId, setSelectedCommandId] = useState<
         string | undefined
     >(() => readStoredSelectedCommandId(browserUiStorage()));
+    const [runnerDistributedSelection, setRunnerDistributedSelection] =
+        useState<RunnerDistributedRunSelection | undefined>();
     const [navigation, setNavigation] = useState<AppNavigationState>(() =>
         readInitialAppNavigation(),
     );
@@ -23500,6 +25607,10 @@ export default function App() {
                                 busy={busy}
                                 runState={runState}
                                 lastError={lastError}
+                                onDistributedRunStarted={(selection) => {
+                                    setRunnerDistributedSelection(selection);
+                                    selectTab('runs');
+                                }}
                                 onOpenTab={selectTab}
                             />
                         )}
@@ -23518,6 +25629,22 @@ export default function App() {
                                 bootstrap={bootstrap}
                                 control={control}
                                 authSession={authSession}
+                                preferredDistributedRun={runnerDistributedSelection}
+                            />
+                        )}
+                </section>
+                <section
+                    id="panel-fleet"
+                    className="workspace-grid tab-workspace fleet-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-fleet"
+                    hidden={activeTab !== 'fleet'}
+                >
+                    {activeMode === 'black-box-runner' &&
+                        activeTab === 'fleet' && (
+                            <RunnerFleetPanel
+                                bootstrap={bootstrap}
+                                control={control}
                             />
                         )}
                 </section>

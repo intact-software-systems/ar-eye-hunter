@@ -3,6 +3,7 @@ import {
     buildDistributedRunManifest,
     compareDistributedRuns,
     defaultDistributedRecipeTargetIds,
+    deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,
     deriveDistributedRunWarningRegressionReport,
     distributedRecipeCommandKinds,
@@ -749,6 +750,171 @@ describe('distributed recipes helpers', () => {
         expect(monitor.events[0].payloadSummary).toContain('topic=message.received');
         expect(monitor.failures.map(failure => failure.code)).toContain('ASSERTION_FAILED');
         expect(monitor.timeline.map(item => item.label)).toContain('result failed');
+    });
+
+    it('derives a human-readable analysis report with first failure and truncation warnings', () => {
+        const report = deriveDistributedRunAnalysisReport({
+            distributedRun,
+            controlRun: distributedControlRun,
+            artifactBundle: distributedArtifactBundle,
+            snapshotBounds: {
+                commands: 4,
+                results: 4,
+                events: 1,
+            },
+        });
+
+        expect(report.summary).toMatchObject({
+            state: 'failed',
+            ok: false,
+            durationMs: 700,
+            targetCount: 2,
+            commandCount: 4,
+            failedCommandCount: 1,
+            artifactStatus: 'valid',
+            snapshotMayBeTruncated: true,
+        });
+        expect(report.firstFailure).toMatchObject({
+            category: 'command',
+            commandId: 'start-b',
+            agentId: 'agent-b',
+            code: 'ASSERTION_FAILED',
+        });
+        expect(report.agents.find(row => row.agentId === 'agent-b')).toMatchObject({
+            execution: 'failed',
+            failedCommandCount: 1,
+            reconnectCount: 0,
+        });
+        expect(report.recipes[0]).toMatchObject({
+            recipeId: 'health-only',
+            failedCount: 1,
+        });
+        expect(report.nextActions[0]).toMatchObject({
+            category: 'command',
+            title: 'Distributed command failed',
+        });
+        expect(report.rawEvidence.failureKeys).toContain('start-b');
+        expect(report.summary.snapshotWarnings.join(' ')).toContain('commands');
+    });
+
+    it('validates v1 and v2 distributed artifacts without breaking old bundles', () => {
+        const v1Monitor = deriveDistributedRunMonitor({
+            distributedRun,
+            controlRun: distributedControlRun,
+            artifactBundle: distributedArtifactBundle,
+        });
+        const v2Monitor = deriveDistributedRunMonitor({
+            distributedRun,
+            controlRun: distributedControlRun,
+            artifactBundle: {
+                artifactSchemaVersion: 2,
+                distributedRunId: 'dist-1',
+                generatedAtEpochMs: 2_600,
+                files: {
+                    ...distributedArtifactBundle.files,
+                    'report.json': '{}',
+                    'results.jsonl': '',
+                    'events.jsonl': '',
+                    'failures.json': '{}',
+                    'metadata.json': '{}',
+                },
+            },
+        });
+        const invalidV2Monitor = deriveDistributedRunMonitor({
+            distributedRun,
+            controlRun: distributedControlRun,
+            artifactBundle: {
+                artifactSchemaVersion: 2,
+                distributedRunId: 'dist-1',
+                generatedAtEpochMs: 2_700,
+                files: {
+                    ...distributedArtifactBundle.files,
+                    'report.json': '{}',
+                    'results.jsonl': '',
+                    'events.jsonl': '',
+                    'failures.json': '{}',
+                },
+            },
+        });
+
+        expect(v1Monitor.artifact).toMatchObject({
+            status: 'valid',
+            message: expect.stringContaining('v1'),
+        });
+        expect(v2Monitor.artifact).toMatchObject({
+            status: 'valid',
+            message: expect.stringContaining('v2'),
+        });
+        expect(invalidV2Monitor.artifact).toMatchObject({
+            status: 'missing-file',
+        });
+        expect(invalidV2Monitor.artifact.message).toContain('metadata.json');
+    });
+
+    it('maps common distributed failure modes to actionable explanations', () => {
+        const cases = [
+            {
+                code: 'RALLAR_BB_DISTRIBUTED_NO_TARGET_AGENTS',
+                message: 'No target control agents were resolved for this distributed run.',
+                category: 'targeting',
+                nextAction: 'Open or restart agents',
+            },
+            {
+                code: 'RALLAR_BB_DISTRIBUTED_TARGET_COUNT_MISMATCH',
+                message: 'Resolved 1 target agents, expected 2.',
+                category: 'targeting',
+                nextAction: 'expected participant count',
+            },
+            {
+                code: 'RALLAR_BB_DISTRIBUTED_ACK_TIMEOUT',
+                message: 'Agent agent-a did not ACK distributed-run staging before ackTimeoutMs.',
+                category: 'readiness',
+                nextAction: 'agent tab is still connected',
+            },
+            {
+                code: 'RALLAR_BB_DISTRIBUTED_BARRIER_TIMEOUT',
+                message: 'Agent agent-a did not report barrier.ready before barrier timeout.',
+                category: 'barrier',
+                nextAction: 'ACK readiness',
+            },
+        ] as const;
+
+        cases.forEach(testCase => {
+            const report = deriveDistributedRunAnalysisReport({
+                distributedRun: {
+                    ...distributedRun,
+                    state: testCase.code.includes('TIMEOUT') ? 'timed-out' : 'failed',
+                    error: testCase.code.includes('TARGET')
+                        ? {
+                            code: testCase.code,
+                            message: testCase.message,
+                        }
+                        : undefined,
+                    rollup: {
+                        ...distributedRun.rollup,
+                        state: testCase.code.includes('TIMEOUT') ? 'timed-out' : 'failed',
+                        ok: false,
+                        failures: testCase.code.includes('TARGET')
+                            ? []
+                            : [{
+                                kind: 'participant',
+                                key: 'agent-a',
+                                state: 'timed-out',
+                                required: true,
+                                error: {
+                                    code: testCase.code,
+                                    message: testCase.message,
+                                },
+                            }],
+                    },
+                },
+            });
+
+            expect(report.nextActions[0]).toMatchObject({
+                category: testCase.category,
+            });
+            expect(report.nextActions[0].nextAction).toContain(testCase.nextAction);
+        });
     });
 
     it('derives composite drilldowns and child failure focus for distributed recipe runs', async () => {

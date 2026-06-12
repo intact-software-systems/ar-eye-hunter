@@ -6,6 +6,15 @@ import type {
 } from './control-protocol.ts';
 import type { RallarBlackBoxControlAgentIdentity } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
+    ControlFleetAgentRunOutcome,
+    ControlFleetAggregateReport,
+    ControlFleetFailureSignature,
+    ControlFleetReportBundle,
+    ControlFleetReportsResponse,
+    ControlFleetRunReport,
+    ControlFleetTimingDistribution,
+} from '@shared-test/rallar-bb-test/fleet-report.ts';
+import type {
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedRunRollup,
     RallarBlackBoxDistributedRunState,
@@ -54,6 +63,7 @@ export type ControlRunSnapshot = Readonly<{
 export type ControlServerSnapshot = Readonly<{
     runs: readonly ControlRunSnapshot[];
     distributedRuns?: readonly ControlDistributedRunSnapshot[];
+    fleetReports?: readonly ControlFleetRunReport[];
 }>;
 
 export type ControlSnapshotBounds = Readonly<{
@@ -164,13 +174,46 @@ export type ControlDistributedRunListResponse = Readonly<{
 }>;
 
 export type ControlDistributedRunArtifactBundle = Readonly<{
-    artifactSchemaVersion: number;
+    artifactSchemaVersion: 1 | 2 | number;
     distributedRunId: string;
     generatedAtEpochMs: number;
-    files: Readonly<Record<
-        'distributed-run.json' | 'manifest.json' | 'control-run.json',
-        string
-    >>;
+    files: Readonly<
+        Record<
+            'distributed-run.json' | 'manifest.json' | 'control-run.json',
+            string
+        > &
+            Partial<Record<
+                | 'distributed-run.json'
+                | 'manifest.json'
+                | 'control-run.json'
+                | 'report.json'
+                | 'results.jsonl'
+                | 'events.jsonl'
+                | 'failures.json'
+                | 'metadata.json',
+                string
+            >>
+    >;
+}>;
+
+export type {
+    ControlFleetAgentRunOutcome,
+    ControlFleetAggregateReport,
+    ControlFleetFailureSignature,
+    ControlFleetReportBundle,
+    ControlFleetReportsResponse,
+    ControlFleetRunReport,
+    ControlFleetTimingDistribution,
+};
+
+export type ControlFleetReportFilter = Readonly<{
+    region?: string;
+    provider?: string;
+    recipeId?: string;
+    groupId?: string;
+    state?: string;
+    fromEpochMs?: number;
+    toEpochMs?: number;
 }>;
 
 const DEFAULT_CONTROL_HTTP_BASE_URL = 'http://localhost:5180';
@@ -551,6 +594,65 @@ export async function fetchDistributedRunArtifactBundle(input: Readonly<{
     return readJsonResponse<ControlDistributedRunArtifactBundle>(response);
 }
 
+export async function fetchFleetReports(input: Readonly<{
+    baseUrl: string;
+    token?: string;
+    filter?: ControlFleetReportFilter;
+    fetchFn?: ControlRunManagerFetch;
+}>): Promise<ControlFleetReportsResponse> {
+    const url = new URL('/fleet/reports', normalizedBaseUrl(input.baseUrl));
+    applyFleetReportFilter(url, input.filter ?? {});
+    const response = await (input.fetchFn ?? fetch)(url, {
+        headers: authorizationHeaders(input.token),
+    });
+    return readJsonResponse<ControlFleetReportsResponse>(response);
+}
+
+export async function fetchFleetReport(input: Readonly<{
+    baseUrl: string;
+    distributedRunId: string;
+    token?: string;
+    fetchFn?: ControlRunManagerFetch;
+}>): Promise<ControlFleetRunReport> {
+    const response = await (input.fetchFn ?? fetch)(
+        new URL(`/fleet/reports/${encodeURIComponent(input.distributedRunId)}`, normalizedBaseUrl(input.baseUrl)),
+        {
+            headers: authorizationHeaders(input.token),
+        },
+    );
+    return readJsonResponse<ControlFleetRunReport>(response);
+}
+
+export async function fetchFleetReportBundle(input: Readonly<{
+    baseUrl: string;
+    distributedRunId: string;
+    token?: string;
+    fetchFn?: ControlRunManagerFetch;
+}>): Promise<ControlFleetReportBundle> {
+    const response = await (input.fetchFn ?? fetch)(
+        new URL(`/fleet/reports/${encodeURIComponent(input.distributedRunId)}/artifacts`, normalizedBaseUrl(input.baseUrl)),
+        {
+            headers: authorizationHeaders(input.token),
+        },
+    );
+    return readJsonResponse<ControlFleetReportBundle>(response);
+}
+
+export async function rebuildFleetReports(input: Readonly<{
+    baseUrl: string;
+    token?: string;
+    fetchFn?: ControlRunManagerFetch;
+}>): Promise<ControlFleetReportsResponse> {
+    const response = await (input.fetchFn ?? fetch)(
+        new URL('/fleet/reports/rebuild', normalizedBaseUrl(input.baseUrl)),
+        {
+            method: 'POST',
+            headers: authorizationHeaders(input.token),
+        },
+    );
+    return readJsonResponse<ControlFleetReportsResponse>(response);
+}
+
 async function mutateDistributedRun(
     input: Readonly<{
         baseUrl: string;
@@ -605,6 +707,23 @@ function applySnapshotBounds(url: URL, bounds: ControlSnapshotBounds): void {
     entries.forEach(([name, value]) => {
         if (value !== undefined && Number.isFinite(value) && value >= 0) {
             url.searchParams.set(name, String(Math.floor(value)));
+        }
+    });
+}
+
+function applyFleetReportFilter(url: URL, filter: ControlFleetReportFilter): void {
+    const entries: Array<[string, string | number | undefined]> = [
+        ['region', filter.region],
+        ['provider', filter.provider],
+        ['recipeId', filter.recipeId],
+        ['groupId', filter.groupId],
+        ['state', filter.state],
+        ['fromEpochMs', filter.fromEpochMs],
+        ['toEpochMs', filter.toEpochMs],
+    ];
+    entries.forEach(([name, value]) => {
+        if (value !== undefined && String(value).trim().length > 0) {
+            url.searchParams.set(name, String(value));
         }
     });
 }

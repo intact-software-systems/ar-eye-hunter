@@ -10,7 +10,10 @@
     "realtime",
     "games",
     "ai",
-    "codex-skills"
+    "codex-skills",
+    "code-style",
+    "package-quality",
+    "testability"
   ],
   "skills": "./skills/",
   "interface": {
@@ -27,7 +30,8 @@
     "defaultPrompt": [
       "Find the right Rallar package for this change.",
       "Plan tests for a Rallar realtime fix.",
-      "Update a RallarAI or game flow safely."
+      "Update a RallarAI or game flow safely.",
+      "Write package code in Rallar style."
     ],
     "brandColor": "#2F80ED"
   }
