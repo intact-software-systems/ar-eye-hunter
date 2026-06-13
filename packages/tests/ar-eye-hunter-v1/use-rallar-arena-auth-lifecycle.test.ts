@@ -19,6 +19,41 @@ const session: AuthSession = {
 
 const authListeners = new Set<(state: RallarAuthState) => void | Promise<void>>();
 const unsubscribe = vi.fn();
+const mockMatch = vi.hoisted(() => ({
+    stop: vi.fn(),
+    status: vi.fn(() => ({ directorPeerId: undefined, directorIsFresh: false })),
+    diagnostics: vi.fn(() => ({
+        generatedAtEpochMs: 1,
+        phase: 'starting',
+        directorIsFresh: false,
+        recovery: { status: 'idle' },
+        knownPeerIds: [],
+        readyPeerIds: [],
+        notReadyPeerIds: [],
+        capabilityCount: 0,
+        rtcPeerCount: 0,
+        realtimeHealth: [],
+        issues: [],
+    })),
+    start: vi.fn(() => Promise.resolve()),
+    reportCapability: vi.fn(() => Promise.resolve({ status: 'sent' })),
+    appointIfElected: vi.fn(() => Promise.resolve({
+        status: 'not-elected',
+        election: {
+            candidates: [],
+            nowEpochMs: 1,
+            capabilityTtlMs: 10_000,
+        },
+        reason: 'The local peer is not the elected host.',
+    })),
+    onStatus: vi.fn(() => vi.fn()),
+    waitForReadyLanes: vi.fn(() => Promise.resolve()),
+    publishEvent: vi.fn(),
+    publishSnapshot: vi.fn(),
+    sendIntent: vi.fn(),
+    sendInput: vi.fn(),
+    requestSync: vi.fn(() => Promise.resolve({ status: 'sent' })),
+}));
 const mockRallar = vi.hoisted(() => ({
     auth: {
         restore: vi.fn(),
@@ -43,15 +78,33 @@ const mockRallar = vi.hoisted(() => ({
     realtime: {
         onJson: vi.fn(),
         sendJson: vi.fn(),
+        health: vi.fn(),
     },
     rtc: {
+        status: vi.fn(),
         waitForRoomLane: vi.fn(),
+        diagnostics: vi.fn(),
+    },
+    ws: {
+        status: vi.fn(),
     },
     subscriptions: vi.fn(),
 }));
 
 vi.mock('@shared-web/browser/rallar.ts', () => ({
     rallar: mockRallar,
+}));
+
+vi.mock('@shared-web/browser/api-integration.ts', () => ({
+    readApiConfig: vi.fn(() => Promise.resolve({
+        apiBaseUrl: 'https://api.test',
+        wsBaseUrl: 'wss://api.test',
+    })),
+    readIceCandidates: vi.fn(() => Promise.resolve({
+        iceServers: [
+            { urls: 'stun:stun.test' },
+        ],
+    })),
 }));
 
 vi.mock('@shared-web/browser/rallar-ai.ts', () => ({
@@ -64,18 +117,7 @@ vi.mock('../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts', 
     const actual = await importOriginal<object>();
     return {
         ...actual,
-        createArenaRallarGameMatch: vi.fn(() => ({
-            stop: vi.fn(),
-            status: vi.fn(() => ({ directorPeerId: undefined })),
-            start: vi.fn(() => Promise.resolve()),
-            reportCapability: vi.fn(),
-            appointIfElected: vi.fn(),
-            onStatus: vi.fn(() => vi.fn()),
-            waitForReadyLanes: vi.fn(() => Promise.resolve()),
-            publishEvent: vi.fn(),
-            publishSnapshot: vi.fn(),
-            sendIntent: vi.fn(),
-        })),
+        createArenaRallarGameMatch: vi.fn(() => mockMatch),
     };
 });
 
@@ -124,13 +166,52 @@ describe('useRallarArena auth lifecycle', () => {
             unsubscribe: vi.fn(),
         });
         mockRallar.realtime.onJson.mockReturnValue(vi.fn());
+        mockRallar.realtime.health.mockReturnValue([]);
         mockRallar.rooms.onChange.mockReturnValue(vi.fn());
         mockRallar.director.onStatus.mockReturnValue(vi.fn());
+        mockRallar.ws.status.mockReturnValue({
+            connectState: 'connected',
+            readyState: 'open',
+            isOpen: true,
+            reconnecting: false,
+            reconnectEnabled: true,
+            reconnectAttempts: 0,
+            maxReconnectAttempts: 5,
+            reconnectExhausted: false,
+        });
+        mockRallar.rtc.status.mockReturnValue({
+            laneId: 'motion',
+            knownPeerIds: ['peer-b'],
+            activePeerIds: ['peer-b'],
+            peerIdsWithNoReconnectableLanes: [],
+            readyPeerIds: ['peer-b'],
+            peers: [],
+        });
+        mockRallar.rtc.diagnostics.mockResolvedValue({
+            generatedAtEpochMs: 1,
+            peerCount: 1,
+            connectedPeerCount: 1,
+            relayPeerCount: 0,
+            peers: [],
+        });
         mockRallar.rtc.waitForRoomLane.mockResolvedValue({
             status: 'closed',
             ready: [],
             notReady: [],
         });
+        mockMatch.stop.mockClear();
+        mockMatch.status.mockClear();
+        mockMatch.diagnostics.mockClear();
+        mockMatch.start.mockClear();
+        mockMatch.reportCapability.mockClear();
+        mockMatch.appointIfElected.mockClear();
+        mockMatch.onStatus.mockClear();
+        mockMatch.waitForReadyLanes.mockClear();
+        mockMatch.publishEvent.mockClear();
+        mockMatch.publishSnapshot.mockClear();
+        mockMatch.sendIntent.mockClear();
+        mockMatch.sendInput.mockClear();
+        mockMatch.requestSync.mockClear();
     });
 
     afterEach(async () => {
@@ -185,6 +266,47 @@ describe('useRallarArena auth lifecycle', () => {
         expect(current?.arenaSnapshot).toBeUndefined();
         expect(current?.remotePlayers.size).toBe(0);
         expect(current?.remoteEvents).toEqual([]);
+    });
+
+    it('records director appointment attempts and exposes transport diagnostics', async () => {
+        await renderHook();
+        await waitForState(() => current?.connectionState === 'connected');
+        await waitForState(() => current?.directorAttempt.status === 'not-elected');
+
+        expect(current?.directorAttempt).toMatchObject({
+            source: 'auto',
+            status: 'not-elected',
+            reason: 'The local peer is not the elected host.',
+        });
+
+        mockMatch.appointIfElected.mockResolvedValueOnce({
+            status: 'failed',
+            election: {
+                candidates: [],
+                nowEpochMs: 2,
+                capabilityTtlMs: 10_000,
+            },
+            reason: 'director write timed out',
+        });
+
+        await act(async () => {
+            await current?.appointSelfAsDirector();
+        });
+
+        expect(current?.directorAttempt).toMatchObject({
+            source: 'manual',
+            status: 'failed',
+            reason: 'director write timed out',
+        });
+
+        await act(async () => {
+            await current?.refreshDiagnostics({ includeRtcStats: true });
+        });
+
+        expect(current?.transportDiagnostics.ws?.readyState).toBe('open');
+        expect(current?.transportDiagnostics.rtc?.readyPeerIds).toEqual(['peer-b']);
+        expect(current?.transportDiagnostics.rtcDiagnostics?.connectedPeerCount).toBe(1);
+        expect(current?.gameDiagnostics?.phase).toBe('starting');
     });
 
     async function renderHook(): Promise<void> {

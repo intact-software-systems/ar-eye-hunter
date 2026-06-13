@@ -75,6 +75,7 @@ import type {
     ShotIntent,
     Vec3Tuple,
 } from './types.ts';
+import { avatarAccentForPalette } from './avatarProfile.ts';
 
 type BabylonArenaProps = Readonly<{
     localSessionId?: string;
@@ -82,6 +83,7 @@ type BabylonArenaProps = Readonly<{
     localColor: string;
     roomId?: string;
     roomReady: boolean;
+    diagnosticsAttributes?: Readonly<Record<string, string>>;
     remotePlayers: ReadonlyMap<string, RemotePlayer>;
     remoteShots: readonly RemoteShot[];
     remotePlayerHits: readonly PlayerHitAccepted[];
@@ -101,6 +103,12 @@ type BabylonArenaProps = Readonly<{
 
 type RemoteAvatar = Readonly<{
     root: TransformNode;
+    body: Mesh;
+    visor: Mesh;
+    shoulderLeft: Mesh;
+    shoulderRight: Mesh;
+    trail: Mesh;
+    decal: Mesh;
     label: Mesh;
     ring: Mesh;
     health: Mesh;
@@ -241,6 +249,7 @@ export function BabylonArena({
     localColor,
     roomId,
     roomReady,
+    diagnosticsAttributes,
     remotePlayers,
     remoteShots,
     remotePlayerHits,
@@ -767,6 +776,7 @@ export function BabylonArena({
                 ref={canvasRef}
                 className="arena-canvas"
                 aria-label="AR Eye Hunter gameplay canvas"
+                {...diagnosticsAttributes}
             />
             {!roomReady && (
                 <div className="arena-blocker">
@@ -2317,9 +2327,18 @@ function syncRemoteAvatars(
 
         avatar.root.position = vector3(position);
         avatar.root.rotation.y = rotation[1];
+        const profile = pose.avatarProfile;
+        const accentColor = profile
+            ? avatarAccentForPalette(profile.glowPalette)
+            : pose.color;
         avatar.material.diffuseColor = Color3.FromHexString(pose.color);
         avatar.material.emissiveColor = Color3.FromHexString(pose.color).scale(0.28);
-        avatar.accentMaterial.emissiveColor = Color3.FromHexString(pose.color).scale(0.78);
+        avatar.accentMaterial.emissiveColor = Color3.FromHexString(accentColor).scale(0.78);
+        avatar.accentMaterial.diffuseColor = Color3.FromHexString(accentColor).scale(0.44);
+        avatar.trail.setEnabled(profile?.trailStyle !== 'none');
+        avatar.trail.visibility = profile?.trailStyle === 'spark-leak' ? 0.48 : 0.32;
+        avatar.decal.rotation.z += profile?.decal === 'bug-bounty' ? 0.035 : 0.018;
+        avatar.visor.scaling.x = profile?.helmet === 'split-visor' ? 1.18 : 1;
         avatar.ring.rotation.y += 0.025;
         const vitals = pose.vitals;
         if (vitals) {
@@ -2342,6 +2361,7 @@ function syncRemoteAvatars(
             pose.color,
             pose.vitals,
             pose.loadout?.weaponKind,
+            profile,
         );
     }
 
@@ -2422,6 +2442,17 @@ function getOrCreateAvatar(
 
     const root = new TransformNode(`remote-${sessionId}`, scene);
     root.position = vector3(pose.position);
+    const profile = pose.avatarProfile;
+    const accentColor = profile
+        ? avatarAccentForPalette(profile.glowPalette)
+        : pose.color;
+    const bodyScale = profile?.bodyShape === 'sprinter'
+        ? { height: 1.96, radius: 0.28 }
+        : profile?.bodyShape === 'sentinel'
+        ? { height: 1.82, radius: 0.42 }
+        : profile?.bodyShape === 'cipher'
+        ? { height: 1.72, radius: 0.31 }
+        : { height: 1.85, radius: 0.34 };
 
     const material = new StandardMaterial(`remote-mat-${sessionId}`, scene);
     material.diffuseColor = Color3.FromHexString(pose.color);
@@ -2429,8 +2460,8 @@ function getOrCreateAvatar(
     material.specularColor = Color3.FromHexString(MATRIX_THEME.white).scale(0.22);
 
     const body = MeshBuilder.CreateCapsule(`remote-body-${sessionId}`, {
-        height: 1.85,
-        radius: 0.34,
+        height: bodyScale.height,
+        radius: bodyScale.radius,
         tessellation: 10,
     }, scene);
     body.parent = root;
@@ -2439,25 +2470,63 @@ function getOrCreateAvatar(
 
     const visorMaterial = new StandardMaterial(`remote-visor-mat-${sessionId}`, scene);
     visorMaterial.diffuseColor = Color3.FromHexString(MATRIX_THEME.void);
-    visorMaterial.emissiveColor = Color3.FromHexString(MATRIX_THEME.cyan).scale(0.68);
+    visorMaterial.emissiveColor = Color3.FromHexString(accentColor).scale(0.68);
 
     const visor = MeshBuilder.CreateBox(`remote-visor-${sessionId}`, {
-        width: 0.46,
-        height: 0.14,
+        width: profile?.helmet === 'split-visor' ? 0.58 : 0.46,
+        height: profile?.helmet === 'audit-mask' ? 0.24 : 0.14,
         depth: 0.08,
     }, scene);
     visor.parent = root;
-    visor.position.set(0, 0.02, -0.33);
+    visor.position.set(0, profile?.helmet === 'halo-hood' ? 0.08 : 0.02, -0.33);
     visor.material = visorMaterial;
 
     const accentMaterial = createMatrixMaterial(
         scene,
         `remote-accent-${sessionId}`,
-        pose.color,
-        pose.color,
+        accentColor,
+        accentColor,
         0.78,
         0.78,
     );
+
+    const shoulderWidth = profile?.armorTrim === 'shoulder-plates' ? 0.42 : 0.28;
+    const shoulderLeft = MeshBuilder.CreateBox(`remote-shoulder-l-${sessionId}`, {
+        width: shoulderWidth,
+        height: 0.14,
+        depth: 0.28,
+    }, scene);
+    shoulderLeft.parent = root;
+    shoulderLeft.position.set(-0.42, -0.18, -0.02);
+    shoulderLeft.material = accentMaterial;
+
+    const shoulderRight = MeshBuilder.CreateBox(`remote-shoulder-r-${sessionId}`, {
+        width: shoulderWidth,
+        height: 0.14,
+        depth: 0.28,
+    }, scene);
+    shoulderRight.parent = root;
+    shoulderRight.position.set(0.42, -0.18, -0.02);
+    shoulderRight.material = accentMaterial;
+
+    const trail = MeshBuilder.CreatePlane(`remote-trail-${sessionId}`, {
+        width: profile?.trailStyle === 'afterimage' ? 0.92 : 0.52,
+        height: 1.28,
+    }, scene);
+    trail.parent = root;
+    trail.position.set(0, -0.62, 0.42);
+    trail.rotation.x = Math.PI / 2;
+    trail.material = accentMaterial;
+    trail.setEnabled(profile?.trailStyle !== 'none');
+
+    const decal = MeshBuilder.CreateBox(`remote-decal-${sessionId}`, {
+        width: 0.2,
+        height: 0.2,
+        depth: 0.045,
+    }, scene);
+    decal.parent = root;
+    decal.position.set(0, -0.52, -0.34);
+    decal.material = accentMaterial;
 
     const ring = MeshBuilder.CreateTorus(`remote-floor-ring-${sessionId}`, {
         diameter: 1.05,
@@ -2474,7 +2543,7 @@ function getOrCreateAvatar(
         height: 128,
     }, scene);
     labelTexture.hasAlpha = true;
-    updateLabel(labelTexture, pose.username, pose.score, pose.combo ?? 0, pose.color);
+    updateLabel(labelTexture, pose.username, pose.score, pose.combo ?? 0, pose.color, undefined, undefined, profile);
 
     const labelMaterial = new StandardMaterial(`label-mat-${sessionId}`, scene);
     labelMaterial.diffuseTexture = labelTexture;
@@ -2510,6 +2579,12 @@ function getOrCreateAvatar(
 
     const avatar = {
         root,
+        body,
+        visor,
+        shoulderLeft,
+        shoulderRight,
+        trail,
+        decal,
         label,
         ring,
         health,
@@ -2529,9 +2604,12 @@ function updateLabel(
     color: string,
     vitals?: PlayerArenaState['vitals'],
     weaponKind?: string,
+    profile?: PlayerPose['avatarProfile'],
 ): void {
     const ctx = texture.getContext();
     ctx.clearRect(0, 0, 512, 128);
+    const accent = profile ? avatarAccentForPalette(profile.glowPalette) : color;
+    const displayName = profile?.callsign || username;
     ctx.fillStyle = 'rgba(1, 8, 8, 0.82)';
     ctx.fillRect(10, 20, 492, 86);
     ctx.strokeStyle = MATRIX_THEME.cyan;
@@ -2539,17 +2617,18 @@ function updateLabel(
     ctx.lineWidth = 2;
     ctx.strokeRect(18, 28, 476, 70);
     ctx.globalAlpha = 1;
-    ctx.strokeStyle = color;
+    ctx.strokeStyle = accent;
     ctx.lineWidth = 5;
     ctx.strokeRect(10, 20, 492, 86);
     ctx.fillStyle = MATRIX_THEME.white;
     ctx.font = '600 34px system-ui, sans-serif';
-    ctx.fillText(username.slice(0, 18), 34, 60);
+    ctx.fillText(displayName.slice(0, 18), 34, 60);
     ctx.fillStyle = MATRIX_THEME.acid;
     ctx.font = '500 24px system-ui, sans-serif';
     const health = vitals ? ` hp ${Math.ceil(vitals.health)}` : '';
     const weapon = weaponKind ? ` ${weaponKind.replace('-', ' ')}` : '';
-    ctx.fillText(`score ${score}  x${combo}${health}${weapon}`.slice(0, 42), 34, 92);
+    const tag = profile ? ` ${profile.humourTag}` : '';
+    ctx.fillText(`score ${score}  x${combo}${health}${weapon}${tag}`.slice(0, 42), 34, 92);
     texture.update();
 }
 

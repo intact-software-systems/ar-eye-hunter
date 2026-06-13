@@ -1,3 +1,5 @@
+import type { AvatarProfile } from './avatarProfile.ts';
+
 export const GAME_PROTOCOL = 'ar-eye-hunter.v1';
 export const GAME_LANE_ID = 'realtime';
 export const GAME_MOTION_LANE_ID = 'motion';
@@ -222,6 +224,7 @@ export type PlayerPose = Readonly<{
     sessionId: string;
     username: string;
     color: string;
+    avatarProfile?: AvatarProfile;
     position: Vec3Tuple;
     rotation: Vec3Tuple;
     velocity?: Vec3Tuple;

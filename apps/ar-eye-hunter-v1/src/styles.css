@@ -253,6 +253,17 @@ label {
     font-size: 13px;
 }
 
+.diagnostics-toggle {
+    min-width: 58px;
+    padding: 6px 9px;
+    border-color: rgba(255, 230, 109, 0.42);
+    color: var(--matrix-amber);
+    background: rgba(255, 230, 109, 0.07);
+    pointer-events: auto;
+    font-size: 12px;
+    font-weight: 800;
+}
+
 .panel {
     border-radius: 8px;
     padding: 12px;
@@ -381,6 +392,13 @@ label {
     font-size: 12px;
 }
 
+.attempt-note {
+    margin: -2px 0 0;
+    color: var(--matrix-muted);
+    font-size: 11px;
+    line-height: 1.35;
+}
+
 .room-list {
     display: grid;
     gap: 6px;
@@ -443,6 +461,157 @@ label {
 .peer-chip span:last-child {
     color: var(--matrix-acid);
     font-weight: 700;
+}
+
+.diagnostics-drawer {
+    position: fixed;
+    top: 96px;
+    right: 18px;
+    z-index: 7;
+    width: min(420px, calc(100vw - 36px));
+    max-height: calc(100vh - 126px);
+    display: grid;
+    gap: 10px;
+    overflow: auto;
+    border: 1px solid rgba(0, 229, 255, 0.5);
+    border-radius: 8px;
+    padding: 12px;
+    color: var(--matrix-text);
+    background:
+        linear-gradient(135deg, rgba(0, 229, 255, 0.12), transparent 34%),
+        rgba(1, 8, 8, 0.94);
+    backdrop-filter: blur(16px);
+    box-shadow:
+        0 0 0 1px rgba(73, 255, 134, 0.12),
+        0 20px 60px rgba(0, 0, 0, 0.46),
+        0 0 34px rgba(0, 229, 255, 0.14);
+}
+
+.diagnostics-header,
+.diagnostics-actions,
+.diagnostics-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.diagnostics-header {
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(0, 229, 255, 0.22);
+}
+
+.diagnostics-header div {
+    display: grid;
+    gap: 2px;
+}
+
+.diagnostics-header span,
+.diagnostics-section h2,
+.diagnostics-row span {
+    color: var(--matrix-muted);
+}
+
+.diagnostics-header strong {
+    font-size: 16px;
+}
+
+.diagnostics-header button,
+.diagnostics-actions button,
+.diagnostics-json button {
+    padding: 7px 9px;
+    font-size: 12px;
+}
+
+.diagnostics-actions {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.diagnostics-section {
+    display: grid;
+    gap: 7px;
+    border: 1px solid rgba(73, 255, 134, 0.16);
+    border-radius: 7px;
+    padding: 9px;
+    background: rgba(0, 229, 255, 0.045);
+}
+
+.diagnostics-section h2 {
+    margin: 0 0 2px;
+    font-size: 11px;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.diagnostics-row {
+    min-width: 0;
+    font-size: 12px;
+}
+
+.diagnostics-row strong {
+    min-width: 0;
+    overflow: hidden;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lane-list {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.lane-list span {
+    border: 1px solid rgba(0, 229, 255, 0.22);
+    border-radius: 999px;
+    padding: 4px 7px;
+    color: var(--matrix-muted);
+    background: rgba(1, 8, 8, 0.54);
+    font-size: 11px;
+}
+
+.lane-list span[data-state="open"] {
+    color: var(--matrix-acid);
+    border-color: rgba(73, 255, 134, 0.44);
+}
+
+.lane-list span[data-state="partial"] {
+    color: var(--matrix-amber);
+    border-color: rgba(255, 230, 109, 0.44);
+}
+
+.lane-list span[data-state="closed"],
+.lane-list span[data-state="unavailable"] {
+    color: var(--matrix-danger);
+    border-color: rgba(255, 77, 125, 0.42);
+}
+
+.diagnostics-json {
+    border: 1px solid rgba(255, 230, 109, 0.22);
+    border-radius: 7px;
+    padding: 8px;
+    background: rgba(255, 230, 109, 0.045);
+}
+
+.diagnostics-json summary {
+    cursor: pointer;
+    color: var(--matrix-amber);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.diagnostics-json pre {
+    max-height: 260px;
+    overflow: auto;
+    margin: 8px 0 0;
+    padding: 8px;
+    border-radius: 6px;
+    color: rgba(239, 255, 247, 0.86);
+    background: rgba(0, 0, 0, 0.42);
+    font-size: 11px;
+    white-space: pre-wrap;
 }
 
 .crosshair {
@@ -838,6 +1007,17 @@ label {
 
     .hud--bottom {
         display: none;
+    }
+
+    .diagnostics-drawer {
+        top: max(58px, env(safe-area-inset-top, 0px) + 52px);
+        right: max(10px, env(safe-area-inset-right, 0px));
+        width: min(390px, calc(100vw - 20px));
+        max-height: calc(100vh - 90px - env(safe-area-inset-bottom, 0px));
+    }
+
+    .diagnostics-actions {
+        grid-template-columns: 1fr;
     }
 }
 

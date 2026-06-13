@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 (globalThis as any).Temporal = (globalThis as any).Temporal ?? Temporal;
 
-import { type FormEvent, useMemo, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { BabylonArena } from './game/BabylonArena.tsx';
 import { colorForId } from './game/color.ts';
@@ -12,7 +12,7 @@ import {
     getWeaponStats,
 } from './game/simulation.ts';
 import { GAME_ROOM_NAME, type RtcLaneStatus } from './game/types.ts';
-import { useRallarArena } from './game/useRallarArena.ts';
+import { useRallarArena, type ArenaConnection } from './game/useRallarArena.ts';
 
 type AuthMode = 'login' | 'register';
 
@@ -26,6 +26,7 @@ export default function App() {
     const [localVitals, setLocalVitals] = useState(createInitialVitalsState);
     const [localLoadout, setLocalLoadout] = useState(createInitialLoadoutState);
     const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+    const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
 
     const localColor = useMemo(
         () => colorForId(arena.session?.sessionId ?? 'local'),
@@ -43,6 +44,27 @@ export default function App() {
     const incomingAttack = arena.arenaSnapshot?.attacks.some((attack) =>
         attack.targetSessionId === arena.session?.sessionId
     ) ?? false;
+    const rtcReadyPeers = arena.transportDiagnostics.rtc?.readyPeerIds.length ??
+        arena.rtcLanes.reduce((sum, lane) => sum + lane.readyPeers, 0);
+    const httpStatus = `${arena.httpDiagnostics.apiConfig.status}/${arena.httpDiagnostics.ice.status}`;
+    const arenaDiagnosticsAttributes = {
+        'data-arena-director-attempt': arena.directorAttempt.status,
+        'data-arena-diagnostics-open': diagnosticsOpen ? 'true' : 'false',
+        'data-arena-ws-state': arena.transportDiagnostics.ws?.readyState ?? 'unknown',
+        'data-arena-rtc-ready-peers': String(rtcReadyPeers),
+        'data-arena-http-status': httpStatus,
+    } as const;
+
+    useEffect(() => {
+        if (!diagnosticsOpen) {
+            return;
+        }
+        void arena.refreshDiagnostics({ includeRtcStats: true });
+        const interval = window.setInterval(() => {
+            void arena.refreshDiagnostics({ includeRtcStats: true });
+        }, 4_000);
+        return () => window.clearInterval(interval);
+    }, [arena.refreshDiagnostics, diagnosticsOpen]);
 
     const submitAuth = async (event: FormEvent) => {
         event.preventDefault();
@@ -58,6 +80,7 @@ export default function App() {
         <main
             className={mobileDrawerOpen ? 'app-root app-root--mobile-drawer-open' : 'app-root'}
             data-mobile-drawer={mobileDrawerOpen ? 'open' : 'closed'}
+            {...arenaDiagnosticsAttributes}
         >
             <BabylonArena
                 localSessionId={arena.session?.sessionId}
@@ -65,6 +88,7 @@ export default function App() {
                 localColor={localColor}
                 roomId={arena.roomId}
                 roomReady={arena.connectionState === 'connected' && Boolean(arena.roomId)}
+                diagnosticsAttributes={arenaDiagnosticsAttributes}
                 remotePlayers={arena.remotePlayers}
                 remoteShots={arena.remoteShots}
                 remotePlayerHits={arena.remotePlayerHits}
@@ -133,6 +157,14 @@ export default function App() {
                         label="AI"
                         value={arena.aiStatus}
                     />
+                    <button
+                        type="button"
+                        className="diagnostics-toggle"
+                        aria-expanded={diagnosticsOpen}
+                        onClick={() => setDiagnosticsOpen((open) => !open)}
+                    >
+                        Diag
+                    </button>
                 </div>
             </section>
 
@@ -235,12 +267,21 @@ export default function App() {
                                 <button
                                     type="button"
                                     className="primary"
-                                    disabled={!arena.roomId || arena.directorStatus.isDirector}
+                                    disabled={!arena.roomId ||
+                                        arena.directorStatus.isDirector ||
+                                        arena.directorAttempt.status === 'pending'}
                                     onClick={arena.appointSelfAsDirector}
                                 >
-                                    Appoint this SPA
+                                    {arena.directorAttempt.status === 'pending'
+                                        ? 'Appointing...'
+                                        : 'Appoint this SPA'}
                                 </button>
                             </div>
+                            {arena.directorAttempt.status !== 'idle' && (
+                                <p className="attempt-note">
+                                    {directorAttemptLabel(arena.directorAttempt)}
+                                </p>
+                            )}
 
                             <div className="director-panel director-panel--event">
                                 <div>
@@ -319,6 +360,13 @@ export default function App() {
                     </div>
                 ))}
             </section>
+
+            {diagnosticsOpen && (
+                <DiagnosticsDrawer
+                    arena={arena}
+                    onClose={() => setDiagnosticsOpen(false)}
+                />
+            )}
         </main>
     );
 }
@@ -357,4 +405,204 @@ function rtcLabel(lanes: readonly RtcLaneStatus[]): string {
 
 function shortId(id: string): string {
     return id.length <= 8 ? id : id.slice(0, 8);
+}
+
+function DiagnosticsDrawer({
+    arena,
+    onClose,
+}: Readonly<{
+    arena: ArenaConnection;
+    onClose: () => void;
+}>) {
+    const [copied, setCopied] = useState(false);
+    const diagnosticsJson = useMemo(
+        () => JSON.stringify({
+            directorAttempt: arena.directorAttempt,
+            directorStatus: arena.directorStatus,
+            match: arena.gameDiagnostics,
+            transport: arena.transportDiagnostics,
+            http: arena.httpDiagnostics,
+            lanes: arena.rtcLanes,
+            ai: {
+                status: arena.aiStatus,
+                error: arena.aiError,
+            },
+        }, null, 2),
+        [
+            arena.aiError,
+            arena.aiStatus,
+            arena.directorAttempt,
+            arena.directorStatus,
+            arena.gameDiagnostics,
+            arena.httpDiagnostics,
+            arena.rtcLanes,
+            arena.transportDiagnostics,
+        ],
+    );
+
+    const copyDiagnostics = async () => {
+        if (!navigator.clipboard) {
+            return;
+        }
+        await navigator.clipboard.writeText(diagnosticsJson);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1_200);
+    };
+
+    return (
+        <aside className="diagnostics-drawer" aria-label="Arena diagnostics">
+            <div className="diagnostics-header">
+                <div>
+                    <span>Diagnostics</span>
+                    <strong>{arena.roomId ? shortId(arena.roomId) : 'no room'}</strong>
+                </div>
+                <button type="button" onClick={onClose}>Close</button>
+            </div>
+
+            <div className="diagnostics-actions">
+                <button
+                    type="button"
+                    disabled={!arena.roomId || arena.directorAttempt.status === 'pending'}
+                    onClick={arena.appointSelfAsDirector}
+                >
+                    Retry appoint
+                </button>
+                <button
+                    type="button"
+                    onClick={() => arena.refreshDiagnostics({ includeRtcStats: true })}
+                >
+                    Refresh
+                </button>
+                <button type="button" onClick={arena.requestArenaSync}>
+                    Request sync
+                </button>
+            </div>
+
+            <DiagnosticsSection title="Director">
+                <DiagnosticsRow label="Role" value={directorLabel(arena.directorStatus)}/>
+                <DiagnosticsRow label="Fresh" value={arena.directorStatus.isFresh ? 'yes' : 'no'}/>
+                <DiagnosticsRow label="Attempt" value={directorAttemptLabel(arena.directorAttempt)}/>
+                <DiagnosticsRow
+                    label="Heartbeat"
+                    value={arena.directorStatus.lastHeartbeatAtEpochMs
+                        ? `${Date.now() - arena.directorStatus.lastHeartbeatAtEpochMs} ms ago`
+                        : 'none'}
+                />
+            </DiagnosticsSection>
+
+            <DiagnosticsSection title="Match Election">
+                <DiagnosticsRow label="Phase" value={arena.gameDiagnostics?.phase ?? 'unknown'}/>
+                <DiagnosticsRow label="Host" value={shortOptional(arena.gameDiagnostics?.hostPeerId)}/>
+                <DiagnosticsRow label="Director" value={shortOptional(arena.gameDiagnostics?.directorPeerId)}/>
+                <DiagnosticsRow label="Ready peers" value={String(arena.gameDiagnostics?.readyPeerIds.length ?? 0)}/>
+                <DiagnosticsRow
+                    label="Issues"
+                    value={arena.gameDiagnostics?.issues.join(', ') || 'none'}
+                />
+            </DiagnosticsSection>
+
+            <DiagnosticsSection title="RTC / Realtime">
+                <DiagnosticsRow label="WS" value={arena.transportDiagnostics.ws?.readyState ?? 'unknown'}/>
+                <DiagnosticsRow
+                    label="RTC peers"
+                    value={`${arena.transportDiagnostics.rtc?.readyPeerIds.length ?? 0}/${arena.transportDiagnostics.rtc?.knownPeerIds.length ?? 0}`}
+                />
+                <DiagnosticsRow
+                    label="Relay peers"
+                    value={String(arena.transportDiagnostics.rtcDiagnostics?.relayPeerCount ?? 0)}
+                />
+                <DiagnosticsRow
+                    label="Realtime lanes"
+                    value={String(arena.transportDiagnostics.realtimeHealth.length)}
+                />
+                <div className="lane-list">
+                    {arena.rtcLanes.map((lane) => (
+                        <span key={lane.laneId} data-state={lane.status}>
+                            {lane.laneId}: {lane.status} {lane.readyPeers}/{lane.readyPeers + lane.notReadyPeers}
+                        </span>
+                    ))}
+                </div>
+            </DiagnosticsSection>
+
+            <DiagnosticsSection title="HTTP / API">
+                <DiagnosticsRow
+                    label="Config"
+                    value={httpProbeLabel(arena.httpDiagnostics.apiConfig)}
+                />
+                <DiagnosticsRow
+                    label="ICE"
+                    value={httpProbeLabel(arena.httpDiagnostics.ice)}
+                />
+            </DiagnosticsSection>
+
+            <DiagnosticsSection title="Recent Events">
+                <DiagnosticsRow label="Remote players" value={String(arena.remotePlayers.size)}/>
+                <DiagnosticsRow label="Remote events" value={String(arena.remoteEvents.length)}/>
+                <DiagnosticsRow label="Shots" value={String(arena.remoteShots.length)}/>
+                <DiagnosticsRow label="Hits" value={String(arena.remotePlayerHits.length)}/>
+            </DiagnosticsSection>
+
+            <details className="diagnostics-json">
+                <summary>JSON</summary>
+                <button type="button" onClick={copyDiagnostics}>
+                    {copied ? 'Copied' : 'Copy JSON'}
+                </button>
+                <pre>{diagnosticsJson}</pre>
+            </details>
+        </aside>
+    );
+}
+
+function DiagnosticsSection({
+    title,
+    children,
+}: Readonly<{
+    title: string;
+    children: ReactNode;
+}>) {
+    return (
+        <section className="diagnostics-section">
+            <h2>{title}</h2>
+            {children}
+        </section>
+    );
+}
+
+function DiagnosticsRow({
+    label,
+    value,
+}: Readonly<{
+    label: string;
+    value: string;
+}>) {
+    return (
+        <div className="diagnostics-row">
+            <span>{label}</span>
+            <strong>{value}</strong>
+        </div>
+    );
+}
+
+function directorAttemptLabel(attempt: ArenaConnection['directorAttempt']): string {
+    if (attempt.status === 'idle') {
+        return 'idle';
+    }
+    if (attempt.status === 'pending') {
+        return `${attempt.source ?? 'manual'} pending`;
+    }
+    const detail = attempt.reason ? `: ${attempt.reason}` : '';
+    return `${attempt.source ?? 'manual'} ${attempt.status}${detail}`;
+}
+
+function httpProbeLabel(probe: ArenaConnection['httpDiagnostics']['apiConfig']): string {
+    if (probe.status === 'idle') {
+        return 'idle';
+    }
+    const timing = probe.durationMs === undefined ? '' : ` ${probe.durationMs}ms`;
+    const detail = probe.detail || probe.reason;
+    return `${probe.status}${timing}${detail ? ` ${detail}` : ''}`;
+}
+
+function shortOptional(value: string | undefined): string {
+    return value ? shortId(value) : 'none';
 }
