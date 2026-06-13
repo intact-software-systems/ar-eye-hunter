@@ -1,9 +1,11 @@
-import { Hono, Context } from 'jsr:@hono/hono';
+import { Context, Hono } from 'jsr:@hono/hono';
+import { resolvePublicServerUrl, withPublicOpenApiServer, } from '@shared-server/http/public-server-url.ts';
 import { loadOpenApiYaml } from '../config-repo.ts';
 
+export { resolvePublicServerUrl };
+
 function swaggerHtml(c: Context): string {
-    const url = new URL(c.req.url);
-    const serverUrl = `${url.protocol}//${url.host}`;
+    const serverUrl = resolvePublicServerUrl(c.req.raw);
     const openApiUrl = '/api/openapi.json';
 
     return `
@@ -54,27 +56,39 @@ function swaggerHtml(c: Context): string {
 export function init(app: Hono) {
     app.get(
         '/api/openapi.json',
-        async c => c.json(await loadOpenApiYaml())
+        async (c) =>
+            c.json(
+                withPublicOpenApiServer(
+                    await loadOpenApiYaml(),
+                    c.req.raw,
+                    'Rallar server',
+                ),
+            ),
     );
 
     app.get(
         '/api/docs',
-        c => c.html(swaggerHtml(c))
+        (c) => c.html(swaggerHtml(c)),
     );
 
     app.get(
         '/swagger-ui',
-        c => c.html(swaggerHtml(c))
+        (c) => c.html(swaggerHtml(c)),
     );
 
     app.get(
         '/openapi.json',
-        async c => c.json(await loadOpenApiYaml())
+        async (c) =>
+            c.json(
+                withPublicOpenApiServer(
+                    await loadOpenApiYaml(),
+                    c.req.raw,
+                    'Rallar server',
+                ),
+            ),
     );
 
-    app.get('*', c =>
-        c.redirect('/swagger-ui')
-    );
+    app.get('*', (c) => c.redirect('/swagger-ui'));
 
     return app;
 }

@@ -1,5 +1,9 @@
 import { type Context, Hono } from 'jsr:@hono/hono';
 import { parse } from 'jsr:@std/yaml';
+import {
+  resolvePublicServerUrl,
+  withPublicOpenApiServer,
+} from '@shared-server/http/public-server-url.ts';
 
 const OPENAPI_URL = '/api/relic/openapi.json';
 
@@ -11,8 +15,7 @@ async function loadRelicOpenApiYaml(): Promise<unknown> {
 }
 
 function swaggerHtml(c: Context): string {
-  const url = new URL(c.req.url);
-  const serverUrl = `${url.protocol}//${url.host}`;
+  const serverUrl = resolvePublicServerUrl(c.req.raw);
 
   return `
         <!doctype html>
@@ -57,7 +60,14 @@ function swaggerHtml(c: Context): string {
 export function initRelicSwaggerRoutes(app: Hono): Hono {
   app.get(
     OPENAPI_URL,
-    async (c) => c.json(await loadRelicOpenApiYaml()),
+    async (c) =>
+      c.json(
+        withPublicOpenApiServer(
+          await loadRelicOpenApiYaml(),
+          c.req.raw,
+          'Relic Hunter server',
+        ),
+      ),
   );
 
   app.get(
