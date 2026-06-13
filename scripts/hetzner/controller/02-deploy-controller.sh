@@ -126,6 +126,7 @@ Group=rallar
 WorkingDirectory=${RALLAR_CHECKOUT_DIR}/apps/api-v1
 Environment=DENO_DIR=/var/lib/rallar-deno
 EnvironmentFile=/etc/rallar/api-v1.env
+EnvironmentFile=-/etc/rallar/api-v1.secrets.env
 ExecStart=/usr/local/bin/deno run --config ${RALLAR_CHECKOUT_DIR}/apps/api-v1/deno.json --allow-net --allow-env --allow-read ${RALLAR_CHECKOUT_DIR}/apps/api-v1/src/main.ts
 Restart=always
 RestartSec=5

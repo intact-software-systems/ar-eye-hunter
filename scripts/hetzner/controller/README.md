@@ -35,6 +35,19 @@ configure Caddy:
 ./02-deploy-controller.sh
 ```
 
+Enable Metered TURN for production WebRTC without putting the API key in Git or
+shell history:
+
+```sh
+./13-configure-metered-turn.sh
+```
+
+The script prompts for `METERED_APP_NAME` and a silent `METERED_API_KEY`, writes
+`/etc/rallar/api-v1.secrets.env` as a root-only `0600` file, installs a systemd
+drop-in for `rallar-api-v1.service`, reloads systemd, and restarts API-v1.
+`02-deploy-controller.sh` also references this optional secret file so future
+redeploys keep Metered enabled when the file exists.
+
 Run public smoke checks:
 
 ```sh
@@ -272,6 +285,34 @@ RALLAR_HEADLESS_LOG_LINES=0 ./12-status-headless-workers.sh
 The headless browser service is separate from the controller API/control
 services. Stopping `rallar-black-box-headless-worker.service` closes browser
 contexts but does not stop API-v1, the control server, or Caddy.
+
+## GitHub Action: Controller Deploy
+
+The workflow `.github/workflows/deploy-hetzner-controller.yml` exposes a manual
+`workflow_dispatch` action named `Deploy Hetzner Controller`.
+
+Required GitHub secrets:
+
+```text
+HETZNER_HOST
+HETZNER_USER
+HETZNER_SSH_PRIVATE_KEY
+HETZNER_KNOWN_HOSTS
+```
+
+Optional Metered TURN GitHub secrets:
+
+```text
+METERED_APP_NAME
+METERED_API_KEY
+```
+
+When both Metered secrets are set, the workflow syncs them into
+`/etc/rallar/api-v1.secrets.env` on the VM before rollout. When both are absent,
+the workflow leaves the VM untouched and keeps reusing the existing secret file
+if one is already present. If only one Metered secret is set, the workflow fails
+before rollout so it does not overwrite a working TURN setup with partial
+credentials.
 
 ## GitHub Action: Headless Browsers
 

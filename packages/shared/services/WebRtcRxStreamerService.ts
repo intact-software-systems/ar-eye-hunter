@@ -132,9 +132,6 @@ export class WebRtcRxStreamerService {
                 }
             );
 
-        this.startRtcHeartbeats(peerDto.peerId)
-            .catch(e => console.error('Error starting heartbeat', e));
-
         for (const [id, cb] of this.onRtcMessageCallbacks.entries()) {
             peerDto.channel.onRtcMessageDo(id, cb);
         }

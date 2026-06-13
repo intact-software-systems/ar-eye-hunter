@@ -130,6 +130,8 @@ describe('QRtcDataChannel', () => {
     });
 
     it('registers receiver data-channel callbacks per lane', async () => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {
+        });
         const peerConnection = createPeerConnectionHarness();
         const reliable = new QRtcDataChannel(
             peerConnection.peerConnection as never,
@@ -163,6 +165,12 @@ describe('QRtcDataChannel', () => {
 
         expect(reliable.readHealth().readyState).toBeUndefined();
         expect(realtime.readHealth().readyState).toBe('connecting');
+        expect(consoleError).not.toHaveBeenCalledWith(
+            expect.stringContaining(
+                'Received data channel for different data channel name',
+            ),
+        );
+        consoleError.mockRestore();
     });
 
     it('waits until a connecting channel opens', async () => {

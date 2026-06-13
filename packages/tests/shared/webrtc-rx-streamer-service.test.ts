@@ -77,8 +77,7 @@ describe('WebRtcRxStreamerService', () => {
         const peer = createPeerDto('peer-1');
         service.addPeer(peer as never);
 
-        expect(mockState.heartbeats).toHaveLength(1);
-        expect(mockState.heartbeats[0].start).toHaveBeenCalledOnce();
+        expect(mockState.heartbeats).toHaveLength(0);
         expect(peer.connection.applyMediaPolicy).toHaveBeenCalledWith(policy);
         expect(peer.media.setParameters).toHaveBeenCalledWith(localStream, true, false);
         expect(peer.channel.onRtcCallbacksDo).toHaveBeenCalledWith(
@@ -90,6 +89,14 @@ describe('WebRtcRxStreamerService', () => {
             expect.any(Object),
         );
         expect(peer.channel.onRtcMessageDo).toHaveBeenCalledWith('tap', onRtcMessage);
+
+        const lifecycle = peer.channel.lifecycleCallbacks.get(
+            'self-peer-1-rtc-datachannel-lifecycle',
+        );
+        await lifecycle?.onOpen?.();
+
+        expect(mockState.heartbeats).toHaveLength(1);
+        expect(mockState.heartbeats[0].start).toHaveBeenCalledOnce();
 
         const remoteStream = createMediaStream('remote-1');
         const remoteEvent = createTrackEvent(remoteStream);
@@ -127,11 +134,11 @@ describe('WebRtcRxStreamerService', () => {
         const peer = createPeerDto('peer-1');
         service.addPeer(peer as never);
 
-        const firstHeartbeat = mockState.heartbeats[0];
         const lifecycle = peer.channel.lifecycleCallbacks.get(
             'self-peer-1-rtc-datachannel-lifecycle',
         );
         expect(lifecycle).toBeDefined();
+        expect(mockState.heartbeats).toHaveLength(0);
 
         const localStream = createMediaStream('local-2');
         const policy = {
@@ -149,6 +156,11 @@ describe('WebRtcRxStreamerService', () => {
         expect(peer.media.setLocalVideoEnabled).toHaveBeenLastCalledWith(true);
         expect(peer.media.stopLocalMedia).toHaveBeenCalledWith('video');
         expect(peer.connection.applyMediaPolicy).toHaveBeenLastCalledWith(policy);
+
+        await lifecycle?.onOpen?.();
+
+        expect(mockState.heartbeats).toHaveLength(1);
+        const firstHeartbeat = mockState.heartbeats[0];
 
         await lifecycle?.onOpen?.();
 

@@ -163,6 +163,39 @@ describe('QRtcPeerConnection', () => {
         });
     });
 
+    it('ignores stale answers without clearing negotiation collision flags', async () => {
+        vi.stubGlobal('RTCPeerConnection', FakeRTCPeerConnection);
+
+        const signaler = {
+            send: vi.fn(async () => {
+            }),
+        };
+        const peer = new QRtcPeerConnection(
+            signaler as never,
+            createPeerInput(true),
+        );
+
+        peer.connect();
+
+        const pc = FakeRTCPeerConnection.instances[0];
+        pc.signalingState = 'stable';
+        (peer as any).status.makingOffer = true;
+        (peer as any).status.ignoreOffer = true;
+
+        await peer.handleSignal(QRtcSignalingType.Answer, {
+            description: {
+                type: 'answer',
+                sdp: 'stale-answer',
+            },
+            candidate: null,
+        });
+        await (peer as any).signalingChain;
+
+        expect(pc.setRemoteDescription).not.toHaveBeenCalled();
+        expect((peer as any).status.makingOffer).toBe(true);
+        expect((peer as any).status.ignoreOffer).toBe(true);
+    });
+
     it('ignores offer collisions when impolite and retries with ICE restart on failure', async () => {
         vi.useFakeTimers();
         vi.stubGlobal('RTCPeerConnection', FakeRTCPeerConnection);

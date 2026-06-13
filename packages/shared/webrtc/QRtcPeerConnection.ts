@@ -429,6 +429,14 @@ export class QRtcPeerConnection {
                     return Promise.reject(new Error('signal answer should have description'));
                 }
 
+                if (pc.signalingState !== 'have-local-offer') {
+                    console.warn(
+                        'Ignoring stale answer from ' + this.input.peerSessionId +
+                        ' because signaling state is ' + pc.signalingState,
+                    );
+                    break;
+                }
+
                 await pc.setRemoteDescription(msg.description);
                 await this.flushIceCandidateQueue(pc);
                 this.status.makingOffer = false;

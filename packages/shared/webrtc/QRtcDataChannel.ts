@@ -355,7 +355,6 @@ export class QRtcDataChannel {
                 event => {
 
                     if (event.channel.label !== this.input.dataChannelName) {
-                        console.error('Received data channel for different data channel name: ' + event.channel.label + ' vs ' + this.input.dataChannelName);
                         return Promise.resolve();
                     }
                     if (this.status.dc && this.status.dc !== event.channel) {
