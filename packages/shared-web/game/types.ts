@@ -14,6 +14,7 @@ import type {
     RallarRtcRoomLaneWaitResult,
     RallarRtcStatus,
     RallarUnsubscribe,
+    RallarWsStatus,
 } from '@shared-web/browser/rallar.ts';
 
 export type RallarGameRallarFacade = Pick<
@@ -26,6 +27,7 @@ export type RallarGameRallarFacade = Pick<
     | 'rtc'
     | 'realtime'
     | 'messages'
+    | 'ws'
 >;
 
 export type RallarGameLaneIds = Readonly<{
@@ -145,7 +147,13 @@ export type RallarGameHostLease = Readonly<{
 }>;
 
 export type RallarGameHostAppointResult = Readonly<{
-    status: 'appointed' | 'not-elected' | 'no-local-peer' | 'failed';
+    status:
+        | 'appointed'
+        | 'not-elected'
+        | 'not-authorized'
+        | 'not-ready'
+        | 'no-local-peer'
+        | 'failed';
     election: RallarGameHostElectionResult;
     directorStatus?: RallarDirectorStatus;
     reason?: string;
@@ -153,6 +161,7 @@ export type RallarGameHostAppointResult = Readonly<{
 
 export type RallarGameEnvelopeKind =
     | 'capability'
+    | 'presence'
     | 'input'
     | 'intent'
     | 'event'
@@ -256,9 +265,12 @@ export type RallarGamePeerReadiness = Readonly<{
 export type RallarGameDiagnosticsInput = Readonly<{
     status: RallarGameMatchStatus;
     election?: RallarGameHostElectionResult;
+    appointment?: RallarGameDirectorAppointmentEligibility;
+    lastAppointment?: RallarGameHostAppointResult;
     peerReadiness?: RallarGamePeerReadiness;
     rtcStatus?: RallarRtcStatus;
     rtcDiagnostics?: RallarRtcDiagnostics;
+    wsStatus?: RallarWsStatus;
     realtimeHealth?: readonly RallarRealtimeLaneHealth[];
     capabilities?: readonly RallarGameHostCapability[];
     nowEpochMs?: number;
@@ -281,8 +293,54 @@ export type RallarGameDiagnostics = Readonly<{
     capabilityCount: number;
     rtcPeerCount: number;
     rtcRelayPeerCount?: number;
+    wsStatus?: RallarWsStatus;
     realtimeHealth: readonly RallarRealtimeLaneHealth[];
+    appointment?: RallarGameDirectorAppointmentDiagnostics;
     issues: readonly string[];
+}>;
+
+export type RallarGameDirectorAppointmentPolicy =
+    | 'metadata-owner-admin'
+    | 'none'
+    | 'custom';
+
+export type RallarGameDirectorAppointmentEligibilityStatus =
+    | 'allowed'
+    | 'not-authorized'
+    | 'not-ready'
+    | 'no-local-peer';
+
+export type RallarGameDirectorAppointmentEligibility = Readonly<{
+    allowed: boolean;
+    status: RallarGameDirectorAppointmentEligibilityStatus;
+    policy: RallarGameDirectorAppointmentPolicy;
+    reason?: string;
+    localPeerId?: string;
+    localPrincipalId?: string;
+    localRole?: string;
+    localMemberStatus?: string;
+}>;
+
+export type RallarGameDirectorAppointmentContext = Readonly<{
+    policy: RallarGameDirectorAppointmentPolicy;
+    roomId?: string;
+    roomRef?: GroupRef;
+    roomState: RallarRoomState;
+    localPeerId?: string;
+    localPrincipalId?: string;
+}>;
+
+export type RallarGameDirectorAppointmentDiagnostics =
+    RallarGameDirectorAppointmentEligibility & Readonly<{
+        lastResultStatus?: RallarGameHostAppointResult['status'];
+        lastReason?: string;
+    }>;
+
+export type RallarGamePresenceSendOptions = Readonly<{
+    laneId?: string;
+    key?: string;
+    maxAgeMs?: number;
+    openTimeoutMs?: number;
 }>;
 
 export type RallarGameSendResult = Readonly<{
@@ -310,7 +368,13 @@ export type RallarGameEnvelopeHandler<T> = (
     envelope: RallarGameEnvelope<T>,
 ) => void | Promise<void>;
 
-export type RallarGameMatchConfig<TInput, TIntent, TSnapshot, TEvent> =
+export type RallarGameMatchConfig<
+    TInput,
+    TIntent,
+    TSnapshot,
+    TEvent,
+    TPresence = TInput,
+> =
     Readonly<{
     rallar: RallarGameRallarFacade;
     protocol: string;
@@ -327,10 +391,15 @@ export type RallarGameMatchConfig<TInput, TIntent, TSnapshot, TEvent> =
     >;
     resolvePeerIds?: (roomState: RallarRoomState) => readonly string[];
     scoreHost?: (capability: RallarGameHostCapability) => number;
+    directorAppointmentPolicy?: RallarGameDirectorAppointmentPolicy;
+    canAppointDirector?: (
+        context: RallarGameDirectorAppointmentContext,
+    ) => RallarGameDirectorAppointmentEligibility;
     readSnapshot?: () =>
         | TSnapshot
         | undefined
         | Promise<TSnapshot | undefined>;
+    onPresence?: RallarGameEnvelopeHandler<TPresence>;
     onInput?: RallarGameEnvelopeHandler<TInput>;
     onIntent?: RallarGameEnvelopeHandler<TIntent>;
     onSnapshot?: RallarGameEnvelopeHandler<TSnapshot>;
@@ -338,12 +407,19 @@ export type RallarGameMatchConfig<TInput, TIntent, TSnapshot, TEvent> =
     onSyncRequest?: RallarGameEnvelopeHandler<unknown>;
 }>;
 
-export type RallarGameMatchHandle<TInput, TIntent, TSnapshot, TEvent> =
+export type RallarGameMatchHandle<
+    TInput,
+    TIntent,
+    TSnapshot,
+    TEvent,
+    TPresence = TInput,
+> =
     Readonly<{
     start(): Promise<RallarGameMatchStatus>;
     stop(): void;
     status(): RallarGameMatchStatus;
     diagnostics(): RallarGameDiagnostics;
+    canAppointDirector(): RallarGameDirectorAppointmentEligibility;
     reportCapability(
         capability?: Partial<RallarGameHostCapability>,
     ): Promise<RallarGameSendResult>;
@@ -353,6 +429,10 @@ export type RallarGameMatchHandle<TInput, TIntent, TSnapshot, TEvent> =
         options?: RallarGameLaneReadyOptions,
     ): Promise<RallarGamePeerReadiness>;
     sendInput(input: TInput): Promise<RallarGameSendResult>;
+    sendPresence(
+        presence: TPresence,
+        options?: RallarGamePresenceSendOptions,
+    ): Promise<RallarGameSendResult>;
     sendIntent(intent: TIntent): Promise<RallarGameSendResult>;
     publishSnapshot(
         snapshot: TSnapshot,
@@ -360,6 +440,7 @@ export type RallarGameMatchHandle<TInput, TIntent, TSnapshot, TEvent> =
     ): Promise<RallarGameSendResult>;
     publishEvent(event: TEvent): Promise<RallarGameSendResult>;
     requestSync(payload?: unknown): Promise<RallarGameSendResult>;
+    onPresence(handler: RallarGameEnvelopeHandler<TPresence>): RallarUnsubscribe;
     onStatus(handler: RallarGameStatusHandler): RallarUnsubscribe;
 }>;
 

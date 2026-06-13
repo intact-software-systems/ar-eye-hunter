@@ -35,6 +35,11 @@ const mockMatch = vi.hoisted(() => ({
         realtimeHealth: [],
         issues: [],
     })),
+    canAppointDirector: vi.fn(() => ({
+        allowed: true,
+        status: 'allowed',
+        policy: 'metadata-owner-admin',
+    })),
     start: vi.fn(() => Promise.resolve()),
     reportCapability: vi.fn(() => Promise.resolve({ status: 'sent' })),
     appointIfElected: vi.fn(() => Promise.resolve({
@@ -52,6 +57,7 @@ const mockMatch = vi.hoisted(() => ({
     publishSnapshot: vi.fn(),
     sendIntent: vi.fn(),
     sendInput: vi.fn(),
+    sendPresence: vi.fn(),
     requestSync: vi.fn(() => Promise.resolve({ status: 'sent' })),
 }));
 const mockRallar = vi.hoisted(() => ({
@@ -202,6 +208,7 @@ describe('useRallarArena auth lifecycle', () => {
         mockMatch.stop.mockClear();
         mockMatch.status.mockClear();
         mockMatch.diagnostics.mockClear();
+        mockMatch.canAppointDirector.mockClear();
         mockMatch.start.mockClear();
         mockMatch.reportCapability.mockClear();
         mockMatch.appointIfElected.mockClear();
@@ -211,6 +218,7 @@ describe('useRallarArena auth lifecycle', () => {
         mockMatch.publishSnapshot.mockClear();
         mockMatch.sendIntent.mockClear();
         mockMatch.sendInput.mockClear();
+        mockMatch.sendPresence.mockClear();
         mockMatch.requestSync.mockClear();
     });
 
@@ -310,6 +318,15 @@ describe('useRallarArena auth lifecycle', () => {
     });
 
     it('does not auto-appoint regular room members who cannot update director metadata', async () => {
+        mockMatch.appointIfElected.mockResolvedValueOnce({
+            status: 'not-authorized',
+            election: {
+                candidates: [],
+                nowEpochMs: 2,
+                capabilityTtlMs: 10_000,
+            },
+            reason: 'Only active room owners/admins can appoint the browser director.',
+        });
         mockRallar.rooms.state.mockReturnValue({
             rooms: [],
             currentRoomId: 'arena-1',
@@ -334,13 +351,13 @@ describe('useRallarArena auth lifecycle', () => {
             source: 'auto',
             status: 'not-elected',
             resultStatus: 'not-authorized',
-            reason: 'Only room owners/admins can appoint the browser director.',
+            reason: 'Only active room owners/admins can appoint the browser director.',
         });
-        expect(mockMatch.reportCapability).not.toHaveBeenCalled();
-        expect(mockMatch.appointIfElected).not.toHaveBeenCalled();
+        expect(mockMatch.reportCapability).toHaveBeenCalled();
+        expect(mockMatch.appointIfElected).toHaveBeenCalled();
     });
 
-    it('still publishes the local director pose on the realtime motion lane', async () => {
+    it('still publishes the local director pose through Rallar Game presence', async () => {
         await renderHook();
         await waitForState(() => current?.connectionState === 'connected');
         mockMatch.status.mockReturnValue({
@@ -366,17 +383,21 @@ describe('useRallarArena auth lifecycle', () => {
                 sessionId: session.sessionId,
             }),
         }));
-        expect(mockRallar.realtime.sendJson).toHaveBeenCalledWith(expect.objectContaining({
-            laneId: 'motion',
-            roomId: 'arena-1',
-            key: `pose:${session.sessionId}`,
-            data: expect.objectContaining({
-                kind: 'player-pose',
-                pose: expect.objectContaining({
-                    sessionId: session.sessionId,
-                    position: [1, 2, 3],
-                }),
+        expect(mockMatch.sendPresence).toHaveBeenCalledWith(expect.objectContaining({
+            kind: 'player-pose',
+            pose: expect.objectContaining({
+                sessionId: session.sessionId,
+                position: [1, 2, 3],
             }),
+        }), expect.objectContaining({
+            laneId: 'motion',
+            key: `pose:${session.sessionId}`,
+            maxAgeMs: 250,
+            openTimeoutMs: 1500,
+        }));
+        expect(mockRallar.realtime.sendJson).not.toHaveBeenCalledWith(expect.objectContaining({
+            laneId: 'motion',
+            key: `pose:${session.sessionId}`,
         }));
     });
 

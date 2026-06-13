@@ -492,6 +492,14 @@ function DiagnosticsDrawer({
 
             <DiagnosticsSection title="Match Election">
                 <DiagnosticsRow label="Phase" value={arena.gameDiagnostics?.phase ?? 'unknown'}/>
+                <DiagnosticsRow
+                    label="Eligibility"
+                    value={arena.gameDiagnostics?.appointment?.status ?? 'unknown'}
+                />
+                <DiagnosticsRow
+                    label="Local role"
+                    value={arena.gameDiagnostics?.appointment?.localRole ?? 'unknown'}
+                />
                 <DiagnosticsRow label="Host" value={shortOptional(arena.gameDiagnostics?.hostPeerId)}/>
                 <DiagnosticsRow label="Director" value={shortOptional(arena.gameDiagnostics?.directorPeerId)}/>
                 <DiagnosticsRow label="Ready peers" value={String(arena.gameDiagnostics?.readyPeerIds.length ?? 0)}/>

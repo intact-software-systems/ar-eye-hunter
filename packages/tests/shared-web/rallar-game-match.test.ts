@@ -87,7 +87,7 @@ describe('Rallar Game match', () => {
     });
 
     it('appoints the elected local peer as director', async () => {
-        const fake = createFakeRallar();
+        const fake = createFakeRallar({ localRole: 'owner' });
         const match = createMatch(fake, {
             readCapability: () => ({ scoreBias: 100 }),
             scoreHost: (capability) => capability.scoreBias ?? 0,
@@ -108,8 +108,52 @@ describe('Rallar Game match', () => {
         });
     });
 
+    it('does not appoint a non-admin local peer for metadata-backed directors', async () => {
+        const fake = createFakeRallar({ localRole: 'member' });
+        const match = createMatch(fake, {
+            readCapability: () => ({ scoreBias: 100 }),
+            scoreHost: (capability) => capability.scoreBias ?? 0,
+        });
+        await match.start();
+        await match.reportCapability();
+
+        const result = await match.appointIfElected();
+
+        expect(result.status).toBe('not-authorized');
+        expect(result.reason).toBe('Only active room owners/admins can appoint the browser director.');
+        expect(fake.appoint).not.toHaveBeenCalled();
+        expect(match.canAppointDirector()).toMatchObject({
+            allowed: false,
+            status: 'not-authorized',
+        });
+        expect(match.diagnostics()).toMatchObject({
+            appointment: expect.objectContaining({
+                status: 'not-authorized',
+                localRole: 'member',
+            }),
+        });
+        expect(match.diagnostics().issues).toContain('director-not-authorized');
+    });
+
+    it('waits for local membership before metadata-backed director appointment', async () => {
+        const fake = createFakeRallar({ localMemberKnown: false });
+        const match = createMatch(fake, {
+            readCapability: () => ({ scoreBias: 100 }),
+            scoreHost: (capability) => capability.scoreBias ?? 0,
+        });
+        await match.start();
+        await match.reportCapability();
+
+        const result = await match.appointIfElected();
+
+        expect(result.status).toBe('not-ready');
+        expect(result.reason).toBe('Cannot confirm local room membership yet.');
+        expect(fake.appoint).not.toHaveBeenCalled();
+        expect(match.diagnostics().issues).toContain('director-eligibility-not-ready');
+    });
+
     it('does not appoint a non-elected local peer', async () => {
-        const fake = createFakeRallar();
+        const fake = createFakeRallar({ localRole: 'owner' });
         const match = createMatch(fake, {
             readCapability: () => ({ scoreBias: 1 }),
             scoreHost: (capability) => capability.scoreBias ?? 0,
@@ -126,6 +170,47 @@ describe('Rallar Game match', () => {
 
         expect(result.status).toBe('not-elected');
         expect(fake.appoint).not.toHaveBeenCalled();
+    });
+
+    it('publishes presence over realtime room scope with replace-by-key defaults', async () => {
+        const fake = createFakeRallar();
+        const match = createMatch(fake);
+        await match.start();
+
+        const result = await match.sendPresence({ x: 7 });
+
+        expect(result).toMatchObject({ status: 'sent', transport: 'realtime' });
+        expect(fake.realtimeSendJson).toHaveBeenCalledWith(expect.objectContaining({
+            laneId: 'game-input',
+            roomRef,
+            data: expect.objectContaining({
+                kind: 'presence',
+                payload: { x: 7 },
+                senderId: 'peer-a',
+            }),
+            key: 'presence:peer-a',
+            maxAgeMs: 250,
+            openTimeoutMs: 500,
+        }));
+    });
+
+    it('delivers peer presence envelopes to subscribers', async () => {
+        const fake = createFakeRallar();
+        const onPresence = vi.fn();
+        const match = createMatch(fake, { onPresence });
+        await match.start();
+
+        await fake.emitRealtime(
+            'game-input',
+            'peer-b',
+            envelope('presence', 'peer-b', { x: 4 }, 51),
+        );
+
+        expect(onPresence).toHaveBeenCalledOnce();
+        expect(onPresence.mock.calls[0][0]).toMatchObject({
+            senderId: 'peer-b',
+            payload: { x: 4 },
+        });
     });
 
     it('sends input only to a fresh director', async () => {
@@ -294,6 +379,9 @@ function createFakeRallar(
     options: Readonly<{
         directorPeerId?: string;
         directorIsFresh?: boolean;
+        localRole?: 'owner' | 'admin' | 'member';
+        localStatus?: 'active' | 'left' | 'removed' | 'banned' | 'invited';
+        localMemberKnown?: boolean;
     }> = {},
 ) {
     const roomChangeHandlers: Array<(state: unknown) => void | Promise<void>> = [];
@@ -314,20 +402,21 @@ function createFakeRallar(
         accessToken: 'token',
         expiresAtEpochMs: Date.now() + 60_000,
     };
+    const localMember = {
+        principalId: 'principal-a',
+        username: 'alice',
+        role: options.localRole ?? 'owner',
+        status: options.localStatus ?? 'active',
+        isOwner: (options.localRole ?? 'owner') === 'owner',
+        isOnline: true,
+        sessionIds: ['peer-a'],
+    };
     const roomState = {
         rooms: [],
         currentRoomId: 'room-1',
         currentRoomRef: roomRef,
         members: [
-            {
-                principalId: 'principal-a',
-                username: 'alice',
-                role: 'member',
-                status: 'active',
-                isOwner: false,
-                isOnline: true,
-                sessionIds: ['peer-a'],
-            },
+            ...(options.localMemberKnown === false ? [] : [localMember]),
             {
                 principalId: 'principal-b',
                 username: 'bob',

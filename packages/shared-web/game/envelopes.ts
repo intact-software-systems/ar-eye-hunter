@@ -9,6 +9,7 @@ import type {
 
 const RALLAR_GAME_ENVELOPE_KINDS = new Set<RallarGameEnvelopeKind>([
     'capability',
+    'presence',
     'input',
     'intent',
     'event',
