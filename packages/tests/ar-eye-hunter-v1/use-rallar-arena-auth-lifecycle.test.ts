@@ -309,6 +309,77 @@ describe('useRallarArena auth lifecycle', () => {
         expect(current?.gameDiagnostics?.phase).toBe('starting');
     });
 
+    it('does not auto-appoint regular room members who cannot update director metadata', async () => {
+        mockRallar.rooms.state.mockReturnValue({
+            rooms: [],
+            currentRoomId: 'arena-1',
+            members: [
+                {
+                    principalId: session.clientId,
+                    username: session.username,
+                    role: 'member',
+                    status: 'active',
+                    isOwner: false,
+                    isOnline: true,
+                    sessionIds: [session.sessionId],
+                },
+            ],
+        });
+
+        await renderHook();
+        await waitForState(() => current?.connectionState === 'connected');
+        await waitForState(() => current?.directorAttempt.status === 'not-elected');
+
+        expect(current?.directorAttempt).toMatchObject({
+            source: 'auto',
+            status: 'not-elected',
+            resultStatus: 'not-authorized',
+            reason: 'Only room owners/admins can appoint the browser director.',
+        });
+        expect(mockMatch.reportCapability).not.toHaveBeenCalled();
+        expect(mockMatch.appointIfElected).not.toHaveBeenCalled();
+    });
+
+    it('still publishes the local director pose on the realtime motion lane', async () => {
+        await renderHook();
+        await waitForState(() => current?.connectionState === 'connected');
+        mockMatch.status.mockReturnValue({
+            directorPeerId: session.sessionId,
+            directorIsFresh: true,
+        });
+
+        await act(async () => {
+            current?.sendPose({
+                position: [1, 2, 3],
+                rotation: [0, 0.5, 0],
+                velocity: [0.1, 0, 0.2],
+                score: 12,
+                combo: 2,
+                seq: 7,
+                sentAtEpochMs: 123,
+            });
+        });
+
+        expect(mockMatch.sendInput).toHaveBeenCalledWith(expect.objectContaining({
+            kind: 'player-pose-intent',
+            pose: expect.objectContaining({
+                sessionId: session.sessionId,
+            }),
+        }));
+        expect(mockRallar.realtime.sendJson).toHaveBeenCalledWith(expect.objectContaining({
+            laneId: 'motion',
+            roomId: 'arena-1',
+            key: `pose:${session.sessionId}`,
+            data: expect.objectContaining({
+                kind: 'player-pose',
+                pose: expect.objectContaining({
+                    sessionId: session.sessionId,
+                    position: [1, 2, 3],
+                }),
+            }),
+        }));
+    });
+
     async function renderHook(): Promise<void> {
         root = createRoot(container);
         function Harness() {

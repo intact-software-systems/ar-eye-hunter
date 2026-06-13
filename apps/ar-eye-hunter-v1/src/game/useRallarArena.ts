@@ -742,6 +742,18 @@ export function useRallarArena(): ArenaConnection {
             return;
         }
 
+        const permission = readDirectorWritePermission(sessionRef.current);
+        if (!permission.allowed) {
+            setDirectorStatus(rallar.director.status(currentRoomId));
+            setDirectorAttempt(toDirectorAttemptState(
+                source,
+                startedAtEpochMs,
+                'not-authorized',
+                permission.reason,
+            ));
+            return;
+        }
+
         try {
             const match = arenaMatchRef.current;
             if (!match) {
@@ -1272,24 +1284,28 @@ export function useRallarArena(): ArenaConnection {
             kind: 'player-pose-intent',
             pose: fullPose,
         };
+        const sendRealtimePose = () => {
+            void rallar.realtime.sendJson<GameRealtimeMessage>({
+                laneId: GAME_MOTION_LANE_ID,
+                roomId: currentRoomId,
+                data: {
+                    protocol: GAME_PROTOCOL,
+                    kind: 'player-pose',
+                    pose: fullPose,
+                },
+                key: `pose:${currentSession.sessionId}`,
+                maxAgeMs: 250,
+                openTimeoutMs: 1500,
+            });
+        };
         const match = arenaMatchRef.current;
         if (match?.status().directorIsFresh) {
             void match.sendInput(input);
+            sendRealtimePose();
             return;
         }
 
-        void rallar.realtime.sendJson<GameRealtimeMessage>({
-            laneId: GAME_MOTION_LANE_ID,
-            roomId: currentRoomId,
-            data: {
-                protocol: GAME_PROTOCOL,
-                kind: 'player-pose',
-                pose: fullPose,
-            },
-            key: `pose:${currentSession.sessionId}`,
-            maxAgeMs: 250,
-            openTimeoutMs: 1500,
-        });
+        sendRealtimePose();
     }, []);
 
     const sendShot = useCallback((
@@ -1592,6 +1608,7 @@ function toDirectorAttemptStatus(resultStatus: string): DirectorAttemptStatus {
         case 'appointed':
             return 'succeeded';
         case 'not-elected':
+        case 'not-authorized':
             return 'not-elected';
         case 'failed':
         case 'no-local-peer':
@@ -1654,4 +1671,42 @@ function summarizeProbeValue(value: unknown): string | undefined {
         return [apiBaseUrl, wsBaseUrl].filter(Boolean).join(' / ');
     }
     return undefined;
+}
+
+function readDirectorWritePermission(
+    session: AuthSession | undefined,
+): Readonly<{ allowed: boolean; reason?: string }> {
+    if (!session) {
+        return {
+            allowed: false,
+            reason: 'Cannot appoint a director without a local session.',
+        };
+    }
+
+    const roomState = rallar.rooms.state();
+    const member = (roomState.members ?? []).find((entry) =>
+        entry.principalId === session.clientId
+    ) ?? roomState.currentRoom?.members.find((entry) =>
+        entry.principalId === session.clientId
+    );
+
+    if (!member) {
+        return { allowed: true };
+    }
+
+    if (member.status !== 'active') {
+        return {
+            allowed: false,
+            reason: 'Only active room members can appoint the browser director.',
+        };
+    }
+
+    if (member.role !== 'owner' && member.role !== 'admin') {
+        return {
+            allowed: false,
+            reason: 'Only room owners/admins can appoint the browser director.',
+        };
+    }
+
+    return { allowed: true };
 }
