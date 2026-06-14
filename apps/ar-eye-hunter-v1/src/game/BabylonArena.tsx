@@ -837,6 +837,10 @@ export function BabylonArena({
             delete canvas.dataset.arenaTouchMoveActive;
             delete canvas.dataset.arenaTouchLookActive;
             delete canvas.dataset.arenaGyroEnabled;
+            delete canvas.dataset.arenaAudioUnlocked;
+            delete canvas.dataset.arenaAudioState;
+            delete canvas.dataset.arenaAudioMuted;
+            delete canvas.dataset.arenaAudioVoices;
             runtimeRef.current = undefined;
         };
     }, [localColor, localSessionId, localUsername, roomId]);
@@ -3523,6 +3527,11 @@ function writeArenaDiagnostics(canvas: HTMLCanvasElement, runtime: ArenaRuntime)
     canvas.dataset.arenaTouchMoveActive = touchDiagnostics.movePointerId === undefined ? 'false' : 'true';
     canvas.dataset.arenaTouchLookActive = touchDiagnostics.lookActive ? 'true' : 'false';
     canvas.dataset.arenaGyroEnabled = runtime.mobileSettings.gyroEnabled ? 'true' : 'false';
+    const audioDiagnostics = runtime.audio.diagnostics();
+    canvas.dataset.arenaAudioUnlocked = audioDiagnostics.unlocked ? 'true' : 'false';
+    canvas.dataset.arenaAudioState = audioDiagnostics.contextState;
+    canvas.dataset.arenaAudioMuted = audioDiagnostics.muted ? 'true' : 'false';
+    canvas.dataset.arenaAudioVoices = String(audioDiagnostics.activeVoices);
 }
 
 function hashString(value: string): number {

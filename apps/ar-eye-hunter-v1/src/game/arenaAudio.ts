@@ -14,16 +14,33 @@ export type ArenaAudioEvent =
     | Readonly<{ kind: 'hit' | 'damage' | 'pickup' | 'respawn' }>
     | Readonly<{ kind: 'eye-drone'; threatCount: number; distanceFactor?: number }>;
 
-export const ARENA_AUDIO_STORAGE_KEY = 'ar-eye-hunter.audio.v1';
+export type ArenaAudioEffectiveLevels = Readonly<{
+    music: number;
+    shot: number;
+    eyeDrone: number;
+}>;
+
+export type ArenaAudioDiagnostics = Readonly<{
+    unlocked: boolean;
+    contextState: AudioContextState | 'unavailable';
+    muted: boolean;
+    activeVoices: number;
+}>;
+
+export const ARENA_AUDIO_STORAGE_KEY = 'ar-eye-hunter.audio.v2';
 
 const DEFAULT_ARENA_AUDIO_SETTINGS: ArenaAudioSettings = {
-    masterVolume: 0.18,
-    musicVolume: 0.1,
-    sfxVolume: 0.28,
-    eyeDroneVolume: 0.055,
+    masterVolume: 0.34,
+    musicVolume: 0.2,
+    sfxVolume: 0.54,
+    eyeDroneVolume: 0.16,
     muted: false,
     reducedIntensity: false,
 };
+
+const MUSIC_OSCILLATOR_GAIN = 0.056;
+const SHOT_PEAK_GAIN = 0.52;
+const EYE_DRONE_PEAK_GAIN = 0.026;
 
 export function createDefaultArenaAudioSettings(): ArenaAudioSettings {
     return DEFAULT_ARENA_AUDIO_SETTINGS;
@@ -73,6 +90,18 @@ export function shouldPlayArenaAudioVoice(
         activeVoices < maxVoices;
 }
 
+export function calculateArenaAudioEffectiveLevels(
+    settings: ArenaAudioSettings,
+): ArenaAudioEffectiveLevels {
+    const normalized = normalizeArenaAudioSettings(settings);
+    const master = normalized.muted ? 0 : normalized.masterVolume;
+    return {
+        music: round4(master * normalized.musicVolume * MUSIC_OSCILLATOR_GAIN),
+        shot: round4(master * normalized.sfxVolume * SHOT_PEAK_GAIN),
+        eyeDrone: round4(master * normalized.eyeDroneVolume * EYE_DRONE_PEAK_GAIN),
+    };
+}
+
 export class ProceduralArenaAudio {
     private context?: AudioContext;
     private master?: GainNode;
@@ -95,6 +124,15 @@ export class ProceduralArenaAudio {
 
     isUnlocked(): boolean {
         return Boolean(this.context);
+    }
+
+    diagnostics(): ArenaAudioDiagnostics {
+        return {
+            unlocked: Boolean(this.context),
+            contextState: this.context?.state ?? 'unavailable',
+            muted: this.settings.muted,
+            activeVoices: this.activeVoices,
+        };
     }
 
     async unlock(): Promise<void> {
@@ -175,7 +213,9 @@ export class ProceduralArenaAudio {
             oscillator.type = 'sine';
             oscillator.frequency.value = frequency;
             oscillator.detune.value = detune;
-            gain.gain.value = this.settings.reducedIntensity ? 0.015 : 0.028;
+            gain.gain.value = this.settings.reducedIntensity
+                ? MUSIC_OSCILLATOR_GAIN * 0.55
+                : MUSIC_OSCILLATOR_GAIN;
             oscillator.connect(gain);
             gain.connect(musicGain);
             oscillator.start();
@@ -207,7 +247,7 @@ export class ProceduralArenaAudio {
         filter.frequency.setValueAtTime(base * 2.2, now);
         filter.Q.value = 8;
         gain.gain.setValueAtTime(0.0001, now);
-        gain.gain.exponentialRampToValueAtTime(0.34, now + 0.008);
+        gain.gain.exponentialRampToValueAtTime(SHOT_PEAK_GAIN, now + 0.008);
         gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
         oscillator.connect(filter);
         filter.connect(gain);
@@ -230,7 +270,7 @@ export class ProceduralArenaAudio {
         oscillator.frequency.value = 24 + Math.min(20, threatCount * 2.5);
         gain.gain.setValueAtTime(0.0001, now);
         gain.gain.exponentialRampToValueAtTime(
-            Math.max(0.004, Math.min(0.04, 0.012 * distanceFactor)),
+            Math.max(0.006, Math.min(0.05, EYE_DRONE_PEAK_GAIN * distanceFactor)),
             now + 0.04,
         );
         gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
@@ -279,6 +319,10 @@ function clampVolume(value: unknown, fallback: number): number {
 
 function round3(value: number): number {
     return Math.round(value * 1000) / 1000;
+}
+
+function round4(value: number): number {
+    return Math.round(value * 10000) / 10000;
 }
 
 declare global {

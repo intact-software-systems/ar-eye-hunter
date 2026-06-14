@@ -85,9 +85,12 @@ import {
     validateAvatarProfile,
     type AvatarProfile,
 } from './avatarProfile.ts';
+import { isArenaBrowserAiEnabled } from './browserAiConfig.ts';
 
 type ConnectionState = 'signed-out' | 'connecting' | 'connected' | 'error';
 type AiStatus = 'idle' | 'generating' | 'accepted' | 'error' | 'unavailable';
+
+const BROWSER_RALLAR_AI_ENABLED = isArenaBrowserAiEnabled();
 type DirectorAttemptSource = 'manual' | 'auto';
 type DirectorAttemptStatus =
     | 'idle'
@@ -297,6 +300,9 @@ export function useRallarArena(): ArenaConnection {
         }
         const fallback = createDeterministicAvatarProfile(session.sessionId, session.username);
         localAvatarProfileRef.current = fallback;
+        if (!BROWSER_RALLAR_AI_ENABLED) {
+            return;
+        }
         let cancelled = false;
         const ai = createRallarBrowserAi({
             rallar,
@@ -1116,12 +1122,19 @@ export function useRallarArena(): ArenaConnection {
 
     useEffect(() => {
         if (
+            !BROWSER_RALLAR_AI_ENABLED ||
             connectionState !== 'connected' ||
             !roomId ||
             !directorStatus.isDirector ||
             !directorStatus.isFresh
         ) {
-            setAiStatus((current) => current === 'generating' ? 'idle' : current);
+            setAiStatus((current) =>
+                !BROWSER_RALLAR_AI_ENABLED
+                    ? 'unavailable'
+                    : current === 'generating'
+                    ? 'idle'
+                    : current
+            );
             return;
         }
 

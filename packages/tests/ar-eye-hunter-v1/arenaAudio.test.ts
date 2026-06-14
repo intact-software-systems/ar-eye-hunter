@@ -1,19 +1,31 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    ARENA_AUDIO_STORAGE_KEY,
+    calculateArenaAudioEffectiveLevels,
     createDefaultArenaAudioSettings,
     normalizeArenaAudioSettings,
     shouldPlayArenaAudioVoice,
 } from '../../../apps/ar-eye-hunter-v1/src/game/arenaAudio.ts';
 
 describe('AR Eye Hunter arena audio', () => {
-    it('keeps eerie score and eye drone quiet by default', () => {
+    it('keeps defaults audible but restrained', () => {
         const settings = createDefaultArenaAudioSettings();
+        const levels = calculateArenaAudioEffectiveLevels(settings);
 
-        expect(settings.masterVolume).toBeLessThanOrEqual(0.22);
-        expect(settings.musicVolume).toBeLessThanOrEqual(0.12);
-        expect(settings.eyeDroneVolume).toBeLessThanOrEqual(0.08);
+        expect(settings.masterVolume).toBeGreaterThanOrEqual(0.28);
+        expect(settings.masterVolume).toBeLessThanOrEqual(0.42);
+        expect(settings.musicVolume).toBeGreaterThanOrEqual(0.18);
+        expect(settings.sfxVolume).toBeGreaterThanOrEqual(0.45);
+        expect(settings.eyeDroneVolume).toBeGreaterThanOrEqual(0.12);
+        expect(levels.music).toBeGreaterThanOrEqual(0.003);
+        expect(levels.shot).toBeGreaterThanOrEqual(0.08);
+        expect(levels.eyeDrone).toBeGreaterThanOrEqual(0.001);
+        expect(levels.music).toBeLessThan(0.02);
+        expect(levels.shot).toBeLessThan(0.28);
+        expect(levels.eyeDrone).toBeLessThan(0.01);
         expect(settings.muted).toBe(false);
+        expect(ARENA_AUDIO_STORAGE_KEY).toBe('ar-eye-hunter.audio.v2');
     });
 
     it('normalizes persisted settings and disables voices while muted', () => {

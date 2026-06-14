@@ -29,6 +29,10 @@ jobs:
 
       - name: Install & build web
         working-directory: apps/ar-eye-hunter-v1
+        env:
+          API_BASE_URL: https://api.rallar.intactss.com
+          VITE_RALLAR_BROWSER_AI: mock
+          VITE_RALLAR_BROWSER_AI_ENABLED: "true"
         run: |
           npm install
           npm run build

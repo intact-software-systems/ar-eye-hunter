@@ -101,12 +101,17 @@ for some Rallar Black Box runs.
 This is a Vite browser app. `vite.config.ts` exposes `VITE_*` and `API_*`
 variables to the client bundle.
 
-| Variable       | Required | Default | Usage                                                                                                                                           |
-| -------------- | -------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `API_BASE_URL` | Yes      | None    | Read from `import.meta.env` at startup. Configures the shared browser Rallar API client. The app throws `Missing API_BASE_URL` if it is absent. |
+| Variable                         | Required | Default | Usage                                                                                                                                                                                   |
+| -------------------------------- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `API_BASE_URL`                   | Yes      | None    | Read from `import.meta.env` at startup. Configures the shared browser Rallar API client. The app throws `Missing API_BASE_URL` if it is absent.                                         |
+| `VITE_RALLAR_BROWSER_AI`         | No       | `mock`  | Browser RallarAI mode for app-local chaos director and avatar cosmetics. `mock`, `1`, `true`, or an empty value enables the deterministic browser provider; `off`/`disabled` disables. |
+| `VITE_RALLAR_BROWSER_AI_ENABLED` | No       | Enabled | Optional boolean override. `false`, `0`, `no`, or `off` disables browser RallarAI even if `VITE_RALLAR_BROWSER_AI=mock`.                                                               |
 
-`VITE_*` variables are also exposed by Vite, but no app code currently reads a
-specific `VITE_*` variable in `apps/ar-eye-hunter-v1`.
+The app defaults browser RallarAI to enabled with the deterministic in-browser
+provider. The GitHub Cloudflare Pages build exports
+`VITE_RALLAR_BROWSER_AI=mock` and `VITE_RALLAR_BROWSER_AI_ENABLED=true`
+explicitly so production deployments keep that behavior. These are public Vite
+values; do not put provider secrets in `VITE_*` variables.
 
 ## apps/relic-hunters-v1
 
