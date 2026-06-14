@@ -85,12 +85,23 @@ import {
     validateAvatarProfile,
     type AvatarProfile,
 } from './avatarProfile.ts';
-import { isArenaBrowserAiEnabled } from './browserAiConfig.ts';
+import {
+    resolveArenaBrowserAiConfig,
+} from './browserAiConfig.ts';
+import { createArenaBrowserAiProvider } from './browserAiProvider.ts';
 
 type ConnectionState = 'signed-out' | 'connecting' | 'connected' | 'error';
-type AiStatus = 'idle' | 'generating' | 'accepted' | 'error' | 'unavailable';
+type AiStatus =
+    | 'idle'
+    | 'generating'
+    | 'loading model'
+    | 'webllm'
+    | 'mock fallback'
+    | 'accepted'
+    | 'error'
+    | 'unavailable';
 
-const BROWSER_RALLAR_AI_ENABLED = isArenaBrowserAiEnabled();
+const BROWSER_RALLAR_AI_CONFIG = resolveArenaBrowserAiConfig();
 type DirectorAttemptSource = 'manual' | 'auto';
 type DirectorAttemptStatus =
     | 'idle'
@@ -300,13 +311,17 @@ export function useRallarArena(): ArenaConnection {
         }
         const fallback = createDeterministicAvatarProfile(session.sessionId, session.username);
         localAvatarProfileRef.current = fallback;
-        if (!BROWSER_RALLAR_AI_ENABLED) {
+        const providerSelection = createArenaBrowserAiProvider({
+            config: BROWSER_RALLAR_AI_CONFIG,
+            createMockProvider: createAvatarProfileMockProvider,
+        });
+        if (providerSelection.status !== 'ready') {
             return;
         }
         let cancelled = false;
         const ai = createRallarBrowserAi({
             rallar,
-            provider: createAvatarProfileMockProvider(),
+            provider: providerSelection.provider,
             policy: {
                 mode: 'browser-only',
                 staleResultMode: 'allow',
@@ -1122,16 +1137,13 @@ export function useRallarArena(): ArenaConnection {
 
     useEffect(() => {
         if (
-            !BROWSER_RALLAR_AI_ENABLED ||
             connectionState !== 'connected' ||
             !roomId ||
             !directorStatus.isDirector ||
             !directorStatus.isFresh
         ) {
             setAiStatus((current) =>
-                !BROWSER_RALLAR_AI_ENABLED
-                    ? 'unavailable'
-                    : current === 'generating'
+                current === 'generating' || current === 'loading model'
                     ? 'idle'
                     : current
             );
@@ -1139,10 +1151,31 @@ export function useRallarArena(): ArenaConnection {
         }
 
         let cancelled = false;
-        const provider = createAiDirectorMockProvider();
+        let usedMockFallback = false;
+        const providerSelection = createArenaBrowserAiProvider({
+            config: BROWSER_RALLAR_AI_CONFIG,
+            createMockProvider: createAiDirectorMockProvider,
+            onFallback: (reason) => {
+                usedMockFallback = true;
+                if (!cancelled) {
+                    setAiStatus('mock fallback');
+                    setAiError(`WebLLM fallback: ${reason}`);
+                }
+            },
+            onWebLlmProgress: () => {
+                if (!cancelled) {
+                    setAiStatus('loading model');
+                }
+            },
+        });
+        if (providerSelection.status !== 'ready') {
+            setAiStatus('unavailable');
+            setAiError(providerSelection.reason);
+            return;
+        }
         const ai = createRallarBrowserAi({
             rallar,
-            provider,
+            provider: providerSelection.provider,
             policy: {
                 mode: 'browser-only',
                 staleResultMode: 'reject',
@@ -1164,7 +1197,11 @@ export function useRallarArena(): ArenaConnection {
             }
 
             const state = hydrateArenaSnapshot(snapshot);
-            setAiStatus('generating');
+            setAiStatus(providerSelection.mode === 'webllm'
+                ? 'loading model'
+                : providerSelection.fallback
+                ? 'mock fallback'
+                : 'generating');
             setAiError(undefined);
             try {
                 const draft = await ai.generateJson<AiDirectorProposalValue, AiDirectorContext>(
@@ -1213,7 +1250,11 @@ export function useRallarArena(): ArenaConnection {
                     event,
                 ]);
                 setActiveEvent(event);
-                setAiStatus('accepted');
+                setAiStatus(usedMockFallback
+                    ? 'mock fallback'
+                    : providerSelection.mode === 'webllm'
+                    ? 'webllm'
+                    : 'accepted');
                 void arenaMatchRef.current?.publishEvent({
                     protocol: GAME_PROTOCOL,
                     kind: 'arena-event',

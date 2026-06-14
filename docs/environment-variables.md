@@ -101,17 +101,20 @@ for some Rallar Black Box runs.
 This is a Vite browser app. `vite.config.ts` exposes `VITE_*` and `API_*`
 variables to the client bundle.
 
-| Variable                         | Required | Default | Usage                                                                                                                                                                                   |
-| -------------------------------- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `API_BASE_URL`                   | Yes      | None    | Read from `import.meta.env` at startup. Configures the shared browser Rallar API client. The app throws `Missing API_BASE_URL` if it is absent.                                         |
-| `VITE_RALLAR_BROWSER_AI`         | No       | `mock`  | Browser RallarAI mode for app-local chaos director and avatar cosmetics. `mock`, `1`, `true`, or an empty value enables the deterministic browser provider; `off`/`disabled` disables. |
-| `VITE_RALLAR_BROWSER_AI_ENABLED` | No       | Enabled | Optional boolean override. `false`, `0`, `no`, or `off` disables browser RallarAI even if `VITE_RALLAR_BROWSER_AI=mock`.                                                               |
+| Variable                         | Required | Default                                | Usage                                                                                                                                                                                        |
+| -------------------------------- | -------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `API_BASE_URL`                   | Yes      | None                                   | Read from `import.meta.env` at startup. Configures the shared browser Rallar API client. The app throws `Missing API_BASE_URL` if it is absent.                                              |
+| `VITE_RALLAR_BROWSER_AI`         | No       | `mock`                                 | Browser RallarAI mode for app-local chaos director and avatar cosmetics. `webllm` attempts real in-browser WebLLM, `mock` uses the deterministic browser provider, and `off` disables.      |
+| `VITE_RALLAR_BROWSER_AI_ENABLED` | No       | Enabled                                | Optional boolean override. `false`, `0`, `no`, or `off` disables browser RallarAI even if `VITE_RALLAR_BROWSER_AI=webllm`.                                                                  |
+| `VITE_RALLAR_WEBLLM_MODEL`       | No       | `Llama-3.2-1B-Instruct-q4f16_1-MLC`    | WebLLM model ID used when `VITE_RALLAR_BROWSER_AI=webllm`. Choose a small prebuilt WebLLM model for iPad/phone safety.                                                                       |
+| `VITE_RALLAR_WEBLLM_FALLBACK`    | No       | `mock`                                 | Fallback when WebGPU or WebLLM generation is unavailable. `mock` keeps gameplay moving with deterministic proposals; `off` makes browser RallarAI unavailable instead.                       |
 
 The app defaults browser RallarAI to enabled with the deterministic in-browser
 provider. The GitHub Cloudflare Pages build exports
-`VITE_RALLAR_BROWSER_AI=mock` and `VITE_RALLAR_BROWSER_AI_ENABLED=true`
-explicitly so production deployments keep that behavior. These are public Vite
-values; do not put provider secrets in `VITE_*` variables.
+`VITE_RALLAR_BROWSER_AI=webllm`, `VITE_RALLAR_BROWSER_AI_ENABLED=true`, and
+`VITE_RALLAR_WEBLLM_MODEL=Llama-3.2-1B-Instruct-q4f16_1-MLC` so production
+attempts real browser WebLLM first and falls back to mock when needed. These
+are public Vite values; do not put provider secrets in `VITE_*` variables.
 
 ## apps/relic-hunters-v1
 
