@@ -5,7 +5,7 @@ import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight.js';
 import { PointLight } from '@babylonjs/core/Lights/pointLight.js';
 import { GlowLayer } from '@babylonjs/core/Layers/glowLayer.js';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
-import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
+import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
@@ -35,8 +35,10 @@ import {
     type ArenaSimulationState,
     type LocalPlayerState,
 } from './simulation.ts';
+import { blocksShot } from './arenaLayout.ts';
 import {
     calculateVirtualStick,
+    chooseTouchAimCandidate,
     createDefaultMobileControlSettings,
     createInitialTouchControlState,
     createTouchControlDiagnostics,
@@ -50,9 +52,17 @@ import {
     type InputDeviceKind,
     type MobileControlSettings,
     type Point2,
+    type TouchAimCandidate,
     type TouchControlState,
     type VirtualStickResult,
 } from './mobileInput.ts';
+import {
+    ProceduralArenaAudio,
+    loadArenaAudioSettings,
+    normalizeArenaAudioSettings,
+    saveArenaAudioSettings,
+    type ArenaAudioSettings,
+} from './arenaAudio.ts';
 import type {
     ArenaLayoutSpec,
     ArenaLayoutProp,
@@ -184,6 +194,9 @@ type ArenaRuntime = {
     touchStick: VirtualStickResult;
     mobileSettings: MobileControlSettings;
     mobileControlsEnabled: boolean;
+    audio: ProceduralArenaAudio;
+    audioSettings: ArenaAudioSettings;
+    touchAimAssistUntilMs: number;
 };
 
 type MutableInputState = {
@@ -289,6 +302,11 @@ export function BabylonArena({
             ? createDefaultMobileControlSettings()
             : loadMobileControlSettings((key) => window.localStorage.getItem(key))
     );
+    const [audioSettings, setAudioSettings] = useState<ArenaAudioSettings>(() =>
+        typeof window === 'undefined'
+            ? normalizeArenaAudioSettings({})
+            : loadArenaAudioSettings((key) => window.localStorage.getItem(key))
+    );
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [stickView, setStickView] = useState<Readonly<{
         active: boolean;
@@ -351,6 +369,14 @@ export function BabylonArena({
     }, [mobileSettings]);
 
     useEffect(() => {
+        const runtime = runtimeRef.current;
+        if (runtime) {
+            runtime.audioSettings = audioSettings;
+            runtime.audio.updateSettings(audioSettings);
+        }
+    }, [audioSettings]);
+
+    useEffect(() => {
         if (!mobileSettings.gyroEnabled) {
             gyroLastRef.current = undefined;
             return;
@@ -388,6 +414,21 @@ export function BabylonArena({
             const runtime = runtimeRef.current;
             if (runtime) {
                 runtime.mobileSettings = next;
+            }
+            return next;
+        });
+    };
+
+    const updateAudioSettings = (patch: Partial<ArenaAudioSettings>) => {
+        setAudioSettings((current) => {
+            const next = normalizeArenaAudioSettings({ ...current, ...patch });
+            if (typeof window !== 'undefined') {
+                saveArenaAudioSettings(next, (key, value) => window.localStorage.setItem(key, value));
+            }
+            const runtime = runtimeRef.current;
+            if (runtime) {
+                runtime.audioSettings = next;
+                runtime.audio.updateSettings(next);
             }
             return next;
         });
@@ -448,6 +489,7 @@ export function BabylonArena({
         if (!runtime) {
             return;
         }
+        unlockArenaAudio(runtime);
         safeSetPointerCapture(event.currentTarget, event.pointerId);
         runtime.touchState = updateTouchPointer(
             runtime.touchState,
@@ -494,6 +536,7 @@ export function BabylonArena({
         if (!runtime) {
             return;
         }
+        unlockArenaAudio(runtime);
         safeSetPointerCapture(event.currentTarget, event.pointerId);
         runtime.touchState = updateTouchPointer(
             runtime.touchState,
@@ -534,6 +577,7 @@ export function BabylonArena({
         if (!runtime) {
             return;
         }
+        unlockArenaAudio(runtime);
         if (mode === 'hold') {
             safeSetPointerCapture(event.currentTarget, event.pointerId);
         }
@@ -637,6 +681,9 @@ export function BabylonArena({
             touchStick: EMPTY_TOUCH_STICK,
             mobileSettings,
             mobileControlsEnabled: false,
+            audio: new ProceduralArenaAudio(audioSettings),
+            audioSettings,
+            touchAimAssistUntilMs: 0,
         };
         runtimeRef.current = runtime;
         syncLocalPlayerFromSnapshot(runtime, localSessionId, toArenaSnapshot(initialArenaState, roomId, now));
@@ -672,6 +719,29 @@ export function BabylonArena({
         };
         const onPointerDown = (event: PointerEvent) => {
             runtime.pointerDownCount += 1;
+            unlockArenaAudio(runtime);
+            if (event.pointerType === 'touch' && event.button === 0) {
+                event.preventDefault();
+                const aim = resolveTouchShotDirection(
+                    runtime,
+                    event,
+                    remotePlayersRef.current,
+                    localSessionId ?? 'local',
+                );
+                fireLocalShot({
+                    runtime,
+                    localSessionId,
+                    localUsername,
+                    localColor,
+                    roomId,
+                    remotePlayers: remotePlayersRef.current,
+                    shotSeqRef,
+                    callbacksRef,
+                    directionOverride: aim.direction,
+                    touchAssisted: aim.assisted,
+                });
+                return;
+            }
             if (event.button === 0) {
                 fireLocalShot({
                     runtime,
@@ -742,6 +812,7 @@ export function BabylonArena({
             canvas.removeEventListener('pointerdown', onPointerDown, pointerOptions);
             canvas.removeEventListener('pointerup', onPointerUp, pointerOptions);
             canvas.removeEventListener('contextmenu', onContextMenu, pointerOptions);
+            runtime.audio.dispose();
             scene.dispose();
             engine.dispose();
             delete canvas.dataset.arenaRuntimeReady;
@@ -953,8 +1024,61 @@ export function BabylonArena({
                         >
                             {mobileSettings.gyroEnabled ? 'Gyro fine-aim on' : 'Enable gyro fine-aim'}
                         </button>
+                        <label>
+                            Score
+                            <input
+                                type="range"
+                                min="0"
+                                max="0.24"
+                                step="0.01"
+                                value={audioSettings.musicVolume}
+                                onChange={(event) => updateAudioSettings({
+                                    musicVolume: Number(event.currentTarget.value),
+                                })}
+                            />
+                        </label>
+                        <label>
+                            SFX
+                            <input
+                                type="range"
+                                min="0"
+                                max="0.6"
+                                step="0.02"
+                                value={audioSettings.sfxVolume}
+                                onChange={(event) => updateAudioSettings({
+                                    sfxVolume: Number(event.currentTarget.value),
+                                })}
+                            />
+                        </label>
+                        <label className="mobile-setting-check">
+                            <input
+                                type="checkbox"
+                                checked={audioSettings.reducedIntensity}
+                                onChange={(event) => updateAudioSettings({
+                                    reducedIntensity: event.currentTarget.checked,
+                                })}
+                            />
+                            Reduced audio intensity
+                        </label>
                     </div>
                 )}
+            </div>
+            <div className="arena-audio-controls" aria-label="Arena audio">
+                <button
+                    type="button"
+                    onClick={() => {
+                        const runtime = runtimeRef.current;
+                        if (runtime) {
+                            unlockArenaAudio(runtime);
+                            if (!runtime.audio.isUnlocked() && !audioSettings.muted) {
+                                return;
+                            }
+                        }
+                        updateAudioSettings({ muted: !audioSettings.muted });
+                    }}
+                >
+                    {audioSettings.muted ? 'Audio Off' : 'Audio On'}
+                </button>
             </div>
             <div className="mobile-rotate-prompt" role="status">
                 <strong>Rotate for combat</strong>
@@ -1004,6 +1128,8 @@ function runFrame({
         onLocalPlayerChange: BabylonArenaProps['onLocalPlayerChange'];
         onArenaSnapshot: BabylonArenaProps['onArenaSnapshot'];
     }>;
+    directionOverride?: Vec3Tuple;
+    touchAssisted?: boolean;
 }>): void {
     const now = Date.now();
     const rawDtMs = now - runtime.lastFrameEpochMs;
@@ -1038,6 +1164,7 @@ function runFrame({
             sessionId: localPlayerId,
             username: localUsername,
             color: localColor,
+            score: runtime.localPlayer.combat.score,
             position: runtime.localPlayer.position,
             rotation: [runtime.localPlayer.pitch, runtime.localPlayer.yaw, 0],
             vitals: runtime.localPlayer.vitals,
@@ -1053,6 +1180,11 @@ function runFrame({
     syncPickupAvatars(runtime, now);
     syncTargetAvatars(runtime, now);
     syncEyeAttackCues(runtime, now);
+    runtime.audio.play({
+        kind: 'eye-drone',
+        threatCount: runtime.arenaState.targets.filter(isHostileEye).length,
+        distanceFactor: runtime.audioSettings.reducedIntensity ? 0.55 : 1,
+    });
     syncRemoteAvatars(runtime, remotePlayers);
     syncRemoteShots(runtime, remoteShots);
     syncRemotePlayerHits(runtime, remotePlayerHits, localPlayerId);
@@ -1558,6 +1690,8 @@ function fireLocalShot({
     remotePlayers,
     shotSeqRef,
     callbacksRef,
+    directionOverride,
+    touchAssisted,
 }: Readonly<{
     runtime: ArenaRuntime;
     localSessionId?: string;
@@ -1575,11 +1709,13 @@ function fireLocalShot({
         onLocalPlayerChange: BabylonArenaProps['onLocalPlayerChange'];
         onArenaSnapshot: BabylonArenaProps['onArenaSnapshot'];
     }>;
+    directionOverride?: Vec3Tuple;
+    touchAssisted?: boolean;
 }>): void {
     const now = Date.now();
     const sessionId = localSessionId ?? 'local';
     const origin = runtime.localPlayer.position;
-    const direction = forwardFromAngles(runtime.localPlayer.yaw, runtime.localPlayer.pitch);
+    const direction = directionOverride ?? forwardFromAngles(runtime.localPlayer.yaw, runtime.localPlayer.pitch);
     const weapon = getWeaponStats(runtime.localPlayer.loadout.weaponKind);
     shotSeqRef.current += 1;
     const shot: ShotIntent = {
@@ -1608,6 +1744,10 @@ function fireLocalShot({
     runtime.recoil = Math.min(1, runtime.recoil + (resolution.accepted.hit ? 0.38 : 0.22));
     runtime.hitStopUntilEpochMs = resolution.accepted.hit ? now + 38 : runtime.hitStopUntilEpochMs;
     triggerHaptic(runtime, resolution.accepted.hit ? 24 : 9);
+    runtime.audio.play({ kind: 'shot', weaponKind: weapon.kind });
+    if (resolution.accepted.hit) {
+        runtime.audio.play({ kind: 'hit' });
+    }
 
     createTracer(runtime, vector3(origin), vector3(direction), localColor, resolution.accepted.hit);
     const playerHit = findPredictedPlayerHit(remotePlayers, sessionId, origin, direction, weapon.range);
@@ -1620,6 +1760,9 @@ function fireLocalShot({
             sentAtEpochMs: now,
         });
         createImpact(runtime, vector3(playerHit.impact), MATRIX_THEME.cyan, 1);
+    }
+    if (touchAssisted) {
+        runtime.touchAimAssistUntilMs = performance.now() + 360;
     }
     if (resolution.accepted.hit) {
         createImpact(runtime, vector3(resolution.accepted.impact), MATRIX_THEME.amber, resolution.accepted.combo);
@@ -2035,6 +2178,7 @@ function detectLocalPickup(
         sentAtEpochMs: now,
     });
     createImpact(runtime, vector3(pickup.position), MATRIX_THEME.amber, 3);
+    runtime.audio.play({ kind: 'pickup' });
     triggerHaptic(runtime, 28);
 }
 
@@ -2060,6 +2204,7 @@ function syncRemotePlayerHits(
                     ? runtime.localPlayer.position
                     : accepted.target.position,
             };
+            runtime.audio.play({ kind: accepted.eliminated ? 'damage' : 'damage' });
         }
         if (accepted.attacker.sessionId === localSessionId) {
             runtime.localPlayer = {
@@ -2092,12 +2237,14 @@ function syncLocalPlayerFromSnapshot(
         player.vitals.respawnedAtEpochMs !== runtime.localPlayer.vitals.respawnedAtEpochMs
     ) {
         runtime.respawnCount += 1;
+        runtime.audio.play({ kind: 'respawn' });
         triggerHaptic(runtime, 30);
     }
     if (
         player.vitals.lastDamagedAtEpochMs &&
         player.vitals.lastDamagedAtEpochMs !== runtime.localPlayer.vitals.lastDamagedAtEpochMs
     ) {
+        runtime.audio.play({ kind: 'damage' });
         triggerHaptic(runtime, 42);
     }
     runtime.localPlayer = {
@@ -2122,6 +2269,7 @@ function syncLocalPlayerFromArenaState(runtime: ArenaRuntime, localSessionId: st
         player.vitals.respawnedAtEpochMs !== runtime.localPlayer.vitals.respawnedAtEpochMs
     ) {
         runtime.respawnCount += 1;
+        runtime.audio.play({ kind: 'respawn' });
     }
     runtime.localPlayer = {
         ...runtime.localPlayer,
@@ -2338,7 +2486,7 @@ function syncRemoteAvatars(
         avatar.trail.setEnabled(profile?.trailStyle !== 'none');
         avatar.trail.visibility = profile?.trailStyle === 'spark-leak' ? 0.48 : 0.32;
         avatar.decal.rotation.z += profile?.decal === 'bug-bounty' ? 0.035 : 0.018;
-        avatar.visor.scaling.x = profile?.helmet === 'split-visor' ? 1.18 : 1;
+        avatar.visor.scaling.x = profile?.visorExpression === 'angry-v' ? 1.18 : 1;
         avatar.ring.rotation.y += 0.025;
         const vitals = pose.vitals;
         if (vitals) {
@@ -2446,39 +2594,63 @@ function getOrCreateAvatar(
     const accentColor = profile
         ? avatarAccentForPalette(profile.glowPalette)
         : pose.color;
-    const bodyScale = profile?.bodyShape === 'sprinter'
-        ? { height: 1.96, radius: 0.28 }
-        : profile?.bodyShape === 'sentinel'
-        ? { height: 1.82, radius: 0.42 }
-        : profile?.bodyShape === 'cipher'
-        ? { height: 1.72, radius: 0.31 }
-        : { height: 1.85, radius: 0.34 };
+    const bodyScale = profile?.robotFrame === 'reaper'
+        ? { height: 1.92, width: 0.62, depth: 0.46 }
+        : profile?.robotFrame === 'warden'
+        ? { height: 1.86, width: 0.84, depth: 0.58 }
+        : profile?.robotFrame === 'bulwark'
+        ? { height: 1.78, width: 0.92, depth: 0.64 }
+        : { height: 1.9, width: 0.76, depth: 0.54 };
+    const torsoBoost = profile?.torsoMass === 'titan'
+        ? 1.18
+        : profile?.torsoMass === 'heavy'
+        ? 1.08
+        : 1;
 
     const material = new StandardMaterial(`remote-mat-${sessionId}`, scene);
     material.diffuseColor = Color3.FromHexString(pose.color);
     material.emissiveColor = Color3.FromHexString(pose.color).scale(0.28);
     material.specularColor = Color3.FromHexString(MATRIX_THEME.white).scale(0.22);
 
-    const body = MeshBuilder.CreateCapsule(`remote-body-${sessionId}`, {
-        height: bodyScale.height,
-        radius: bodyScale.radius,
-        tessellation: 10,
+    const body = MeshBuilder.CreateBox(`remote-body-${sessionId}`, {
+        width: bodyScale.width * torsoBoost,
+        height: bodyScale.height * 0.68,
+        depth: bodyScale.depth * torsoBoost,
     }, scene);
     body.parent = root;
-    body.position.y = -0.62;
+    body.position.y = -0.78;
     body.material = material;
+
+    const waist = MeshBuilder.CreateBox(`remote-waist-${sessionId}`, {
+        width: bodyScale.width * 0.72,
+        height: 0.22,
+        depth: bodyScale.depth * 0.74,
+    }, scene);
+    waist.parent = root;
+    waist.position.y = -1.38;
+    waist.material = material;
+
+    const head = MeshBuilder.CreateBox(`remote-head-${sessionId}`, {
+        width: bodyScale.width * 0.74,
+        height: 0.42,
+        depth: bodyScale.depth * 0.72,
+    }, scene);
+    head.parent = root;
+    head.position.set(0, 0.1, -0.02);
+    head.material = material;
 
     const visorMaterial = new StandardMaterial(`remote-visor-mat-${sessionId}`, scene);
     visorMaterial.diffuseColor = Color3.FromHexString(MATRIX_THEME.void);
     visorMaterial.emissiveColor = Color3.FromHexString(accentColor).scale(0.68);
 
     const visor = MeshBuilder.CreateBox(`remote-visor-${sessionId}`, {
-        width: profile?.helmet === 'split-visor' ? 0.58 : 0.46,
-        height: profile?.helmet === 'audit-mask' ? 0.24 : 0.14,
+        width: profile?.visorExpression === 'angry-v' ? 0.64 : 0.52,
+        height: profile?.faceplate === 'tax-mask' ? 0.22 : 0.13,
         depth: 0.08,
     }, scene);
     visor.parent = root;
-    visor.position.set(0, profile?.helmet === 'halo-hood' ? 0.08 : 0.02, -0.33);
+    visor.position.set(0, 0.13, -bodyScale.depth * 0.39);
+    visor.rotation.z = profile?.visorExpression === 'grim-smirk' ? 0.05 : 0;
     visor.material = visorMaterial;
 
     const accentMaterial = createMatrixMaterial(
@@ -2490,24 +2662,80 @@ function getOrCreateAvatar(
         0.78,
     );
 
-    const shoulderWidth = profile?.armorTrim === 'shoulder-plates' ? 0.42 : 0.28;
+    const shoulderWidth = profile?.shoulderStyle === 'riot-shields'
+        ? 0.56
+        : profile?.shoulderStyle === 'spike-rack'
+        ? 0.48
+        : profile?.shoulderStyle === 'reactor-pauldrons'
+        ? 0.5
+        : 0.4;
     const shoulderLeft = MeshBuilder.CreateBox(`remote-shoulder-l-${sessionId}`, {
         width: shoulderWidth,
-        height: 0.14,
-        depth: 0.28,
+        height: 0.2,
+        depth: 0.34,
     }, scene);
     shoulderLeft.parent = root;
-    shoulderLeft.position.set(-0.42, -0.18, -0.02);
+    shoulderLeft.position.set(-bodyScale.width * 0.68, -0.32, -0.02);
+    shoulderLeft.rotation.z = profile?.shoulderStyle === 'spike-rack' ? -0.18 : 0;
     shoulderLeft.material = accentMaterial;
 
     const shoulderRight = MeshBuilder.CreateBox(`remote-shoulder-r-${sessionId}`, {
         width: shoulderWidth,
-        height: 0.14,
-        depth: 0.28,
+        height: 0.2,
+        depth: 0.34,
     }, scene);
     shoulderRight.parent = root;
-    shoulderRight.position.set(0.42, -0.18, -0.02);
+    shoulderRight.position.set(bodyScale.width * 0.68, -0.32, -0.02);
+    shoulderRight.rotation.z = profile?.shoulderStyle === 'spike-rack' ? 0.18 : 0;
     shoulderRight.material = accentMaterial;
+
+    for (const side of [-1, 1] as const) {
+        const arm = MeshBuilder.CreateBox(`remote-arm-${side < 0 ? 'l' : 'r'}-${sessionId}`, {
+            width: 0.18,
+            height: 0.82,
+            depth: 0.22,
+        }, scene);
+        arm.parent = root;
+        arm.position.set(side * bodyScale.width * 0.74, -0.86, -0.02);
+        arm.rotation.z = side * 0.08;
+        arm.material = material;
+
+        const forearm = MeshBuilder.CreateBox(`remote-forearm-${side < 0 ? 'l' : 'r'}-${sessionId}`, {
+            width: 0.2,
+            height: 0.42,
+            depth: 0.26,
+        }, scene);
+        forearm.parent = root;
+        forearm.position.set(side * bodyScale.width * 0.8, -1.24, -0.08);
+        forearm.material = accentMaterial;
+    }
+
+    const browTilt = profile?.browShape === 'visor-scowl' || profile?.visorExpression === 'angry-v'
+        ? 0.16
+        : profile?.browShape === 'forked'
+        ? 0.08
+        : 0;
+    for (const side of [-1, 1] as const) {
+        const brow = MeshBuilder.CreateBox(`remote-brow-${side < 0 ? 'l' : 'r'}-${sessionId}`, {
+            width: 0.26,
+            height: 0.055,
+            depth: 0.05,
+        }, scene);
+        brow.parent = root;
+        brow.position.set(side * 0.16, 0.28, -bodyScale.depth * 0.43);
+        brow.rotation.z = side * -browTilt;
+        brow.material = accentMaterial;
+    }
+
+    const mouth = MeshBuilder.CreateBox(`remote-mouth-${sessionId}`, {
+        width: profile?.visorExpression === 'grim-smirk' ? 0.28 : 0.18,
+        height: 0.035,
+        depth: 0.045,
+    }, scene);
+    mouth.parent = root;
+    mouth.position.set(profile?.visorExpression === 'grim-smirk' ? 0.04 : 0, -0.08, -bodyScale.depth * 0.43);
+    mouth.rotation.z = profile?.visorExpression === 'grim-smirk' ? -0.12 : 0;
+    mouth.material = accentMaterial;
 
     const trail = MeshBuilder.CreatePlane(`remote-trail-${sessionId}`, {
         width: profile?.trailStyle === 'afterimage' ? 0.92 : 0.52,
@@ -3054,6 +3282,133 @@ function findPredictedPlayerHit(
     return best;
 }
 
+function resolveTouchShotDirection(
+    runtime: ArenaRuntime,
+    event: PointerEvent,
+    remotePlayers: ReadonlyMap<string, RemotePlayer>,
+    localSessionId: string,
+): Readonly<{ direction: Vec3Tuple; assisted: boolean }> {
+    const rect = runtime.engine.getRenderingCanvas()?.getBoundingClientRect();
+    const renderWidth = runtime.engine.getRenderWidth();
+    const renderHeight = runtime.engine.getRenderHeight();
+    const x = rect
+        ? (event.clientX - rect.left) * (renderWidth / Math.max(1, rect.width))
+        : event.offsetX;
+    const y = rect
+        ? (event.clientY - rect.top) * (renderHeight / Math.max(1, rect.height))
+        : event.offsetY;
+    const point = { x, y };
+    const origin = runtime.localPlayer.position;
+    const candidate = chooseTouchAimCandidate({
+        point,
+        candidates: buildTouchAimCandidates(runtime, remotePlayers, localSessionId, origin),
+    });
+    if (candidate) {
+        createTouchAimPulse(runtime, candidate.world);
+        return {
+            direction: normalizeTuple(subTuple(candidate.world, origin)),
+            assisted: true,
+        };
+    }
+
+    const ray = runtime.scene.createPickingRay(x, y, Matrix.Identity(), runtime.camera);
+    return {
+        direction: normalizeTuple([ray.direction.x, ray.direction.y, ray.direction.z]),
+        assisted: false,
+    };
+}
+
+function buildTouchAimCandidates(
+    runtime: ArenaRuntime,
+    remotePlayers: ReadonlyMap<string, RemotePlayer>,
+    localSessionId: string,
+    origin: Vec3Tuple,
+): readonly TouchAimCandidate[] {
+    const candidates: TouchAimCandidate[] = [];
+    for (const target of runtime.arenaState.targets) {
+        const world = target.position;
+        const screen = projectWorldToScreen(runtime, world);
+        if (!screen) {
+            continue;
+        }
+        candidates.push({
+            id: target.id,
+            kind: 'eye',
+            screen,
+            world,
+            distance: distanceTuple(origin, world),
+            blocked: blocksShot(runtime.arenaState.layout, origin, world),
+        });
+    }
+
+    for (const [sessionId, remote] of remotePlayers) {
+        if (sessionId === localSessionId) {
+            continue;
+        }
+        const world = remote.pose.position;
+        const screen = projectWorldToScreen(runtime, world);
+        if (!screen) {
+            continue;
+        }
+        candidates.push({
+            id: sessionId,
+            kind: 'player',
+            screen,
+            world,
+            distance: distanceTuple(origin, world),
+            blocked: blocksShot(runtime.arenaState.layout, origin, world),
+        });
+    }
+    return candidates;
+}
+
+function projectWorldToScreen(runtime: ArenaRuntime, world: Vec3Tuple): Point2 | undefined {
+    const projected = Vector3.Project(
+        vector3(world),
+        Matrix.Identity(),
+        runtime.scene.getTransformMatrix(),
+        runtime.camera.viewport.toGlobal(
+            runtime.engine.getRenderWidth(),
+            runtime.engine.getRenderHeight(),
+        ),
+    );
+    if (projected.z < 0 || projected.z > 1) {
+        return undefined;
+    }
+    return { x: projected.x, y: projected.y };
+}
+
+function createTouchAimPulse(runtime: ArenaRuntime, world: Vec3Tuple): void {
+    const material = createMatrixMaterial(
+        runtime.scene,
+        `touch-aim-assist-${performance.now()}`,
+        MATRIX_THEME.acid,
+        MATRIX_THEME.cyan,
+        1,
+        0.72,
+    );
+    const ring = MeshBuilder.CreateTorus(`touch-aim-ring-${performance.now()}`, {
+        diameter: 1.15,
+        thickness: 0.035,
+        tessellation: 36,
+    }, runtime.scene);
+    ring.position = vector3(world);
+    ring.position.y += 0.12;
+    ring.billboardMode = Mesh.BILLBOARDMODE_ALL;
+    ring.material = material;
+    addTransientEffect(runtime, {
+        startedAtMs: performance.now(),
+        durationMs: 360,
+        meshes: [ring],
+        materials: [material],
+        update: (_age, progress) => {
+            const scale = 1 + progress * 0.9;
+            ring.scaling.set(scale, scale, scale);
+            material.alpha = Math.max(0, 0.72 - progress * 0.72);
+        },
+    });
+}
+
 function setInputKey(input: MutableInputState, code: string, pressed: boolean): void {
     if (code === 'KeyW') {
         input.moveZ = pressed ? 1 : input.moveZ === 1 ? 0 : input.moveZ;
@@ -3098,6 +3453,10 @@ function triggerHaptic(runtime: ArenaRuntime, durationMs: number): void {
         return;
     }
     navigator.vibrate?.(Math.max(4, Math.min(60, durationMs)));
+}
+
+function unlockArenaAudio(runtime: ArenaRuntime): void {
+    void runtime.audio.unlock().catch(() => undefined);
 }
 
 function safeSetPointerCapture(element: Element, pointerId: number): void {

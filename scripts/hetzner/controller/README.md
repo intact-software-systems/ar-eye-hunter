@@ -337,6 +337,19 @@ contexts but does not stop API-v1, the control server, or Caddy.
 The workflow `.github/workflows/deploy-hetzner-controller.yml` exposes a manual
 `workflow_dispatch` action named `Deploy Hetzner Controller`.
 
+Use it from GitHub:
+
+```text
+Actions
+Deploy Hetzner Controller
+Run workflow
+```
+
+The deploy action runs `08-rollout-controller.sh` on the VM. It updates the
+repo checkout, builds the static `rallar-black-box` SPA, publishes it under
+Caddy, restarts API/control, and writes `/etc/rallar/black-box-spa.env` with
+the public values baked into the bundle.
+
 Required GitHub secrets:
 
 ```text
@@ -353,12 +366,121 @@ METERED_APP_NAME
 METERED_API_KEY
 ```
 
+Workflow inputs:
+
+```text
+ref
+  Git ref to roll out. Default: main.
+
+include_caddy
+  Also stop/start Caddy during rollout. Default: false.
+
+install_playwright
+  Install/update Chromium and Linux dependencies during rollout. Default: false.
+
+spa_url
+  Public black-box SPA URL recorded in the SPA audit file.
+  Default: https://blackbox.rallar.intactss.com
+
+control_url
+  Public black-box control WebSocket URL baked into the SPA Recipes UI.
+  Default: wss://control.rallar.intactss.com/control
+
+api_base_url
+  Public API-v1 base URL baked into the SPA.
+  Default: https://api.rallar.intactss.com
+
+room_id
+  Default Rallar room/group id shown in Global Context and Recipes.
+  Default: hetzner-headless-room
+
+runner_agent_prefix
+  Default prefix for the Recipes “Open agent tabs” UI.
+  Default: controller
+
+runner_agent_count
+  Default number of browser agent tabs suggested by the Recipes UI.
+  Default: 1
+
+application_id
+  Default Rallar application id baked into the SPA.
+  Default: rallar-server
+
+workspace_id
+  Default Rallar workspace id baked into the SPA.
+  Default: default
+```
+
+The deploy action forwards these public inputs to the remote rollout as:
+
+```text
+RALLAR_BLACK_BOX_SPA_URL
+RALLAR_BLACK_BOX_CONTROL_URL
+RALLAR_API_BASE_URL
+RALLAR_BLACK_BOX_ROOM_ID
+RALLAR_BLACK_BOX_AGENT_PREFIX
+RALLAR_BLACK_BOX_AGENT_COUNT
+RALLAR_BLACK_BOX_APPLICATION_ID
+RALLAR_BLACK_BOX_WORKSPACE_ID
+```
+
+`08-rollout-controller.sh` then maps them to the Vite build-time variables
+used by the SPA:
+
+```text
+VITE_RALLAR_PROVIDER=browser-rallar
+VITE_RALLAR_API_BASE_URL=$RALLAR_API_BASE_URL
+VITE_RALLAR_CONTROL_URL=$RALLAR_BLACK_BOX_CONTROL_URL
+VITE_RALLAR_ROOM_ID=$RALLAR_BLACK_BOX_ROOM_ID
+VITE_RALLAR_RUNNER_AGENT_PREFIX=$RALLAR_BLACK_BOX_AGENT_PREFIX
+VITE_RALLAR_RUNNER_AGENT_COUNT=$RALLAR_BLACK_BOX_AGENT_COUNT
+VITE_RALLAR_APPLICATION_ID=$RALLAR_BLACK_BOX_APPLICATION_ID
+VITE_RALLAR_WORKSPACE_ID=$RALLAR_BLACK_BOX_WORKSPACE_ID
+```
+
+Example production deploy values:
+
+```text
+ref: main
+spa_url: https://blackbox.rallar.intactss.com
+control_url: wss://control.rallar.intactss.com/control
+api_base_url: https://api.rallar.intactss.com
+room_id: hetzner-headless-room
+runner_agent_prefix: controller
+runner_agent_count: 1
+application_id: rallar-server
+workspace_id: default
+```
+
+After the action succeeds, open:
+
+```text
+https://blackbox.rallar.intactss.com/?workspace=black-box-runner
+```
+
+The Recipes tab should default to the configured API/control/room values. To
+audit what was built, SSH to the VM and inspect:
+
+```sh
+cat /etc/rallar/black-box-spa.env
+```
+
 When both Metered secrets are set, the workflow syncs them into
 `/etc/rallar/api-v1.secrets.env` on the VM before rollout. When both are absent,
 the workflow leaves the VM untouched and keeps reusing the existing secret file
 if one is already present. If only one Metered secret is set, the workflow fails
 before rollout so it does not overwrite a working TURN setup with partial
 credentials.
+
+If the Recipes tab warns that no TURN/STUN servers were returned, set both
+`METERED_APP_NAME` and `METERED_API_KEY` as GitHub secrets and rerun `Deploy
+Hetzner Controller`. The workflow syncs Metered TURN before rollout; API-v1 will
+restart as part of the rollout and `/api/webrtc/ice` should then return
+non-empty ICE servers.
+
+The deploy action only configures the SPA defaults. It does not start or resize
+headless browsers. Use the `Manage Hetzner Headless Browsers` action below for
+the actual worker service.
 
 ## GitHub Action: Headless Browsers
 

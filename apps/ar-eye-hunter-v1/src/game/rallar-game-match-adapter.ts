@@ -130,6 +130,15 @@ export function isArenaPickupIntentFromSender(
         message.intent.sessionId === senderId;
 }
 
+export function isArenaMatchStartIntentFromSender(
+    message: GameRealtimeMessage,
+    senderId: string,
+): message is Extract<GameRealtimeMessage, { kind: 'match-start-intent' }> {
+    return message.protocol === GAME_PROTOCOL &&
+        message.kind === 'match-start-intent' &&
+        message.intent.directorSessionId === senderId;
+}
+
 function readArenaHostCapability() {
     return {
         canHost: true,

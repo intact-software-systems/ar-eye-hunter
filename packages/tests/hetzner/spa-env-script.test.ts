@@ -47,4 +47,30 @@ describe('Hetzner SPA public env wiring', () => {
         expect(workflow).toContain('RALLAR_BLACK_BOX_AGENT_PREFIX: ${{ inputs.agent_prefix }}');
         expect(workflow).toContain('RALLAR_BLACK_BOX_AGENT_COUNT: ${{ inputs.agent_count }}');
     });
+
+    it('lets the controller deploy action configure SPA public defaults during rollout', async () => {
+        const workflow = await readFile(
+            path.join(repoRoot, '.github/workflows/deploy-hetzner-controller.yml'),
+            'utf8',
+        );
+
+        expect(workflow).toContain('spa_url:');
+        expect(workflow).toContain('control_url:');
+        expect(workflow).toContain('api_base_url:');
+        expect(workflow).toContain('room_id:');
+        expect(workflow).toContain('runner_agent_prefix:');
+        expect(workflow).toContain('runner_agent_count:');
+        expect(workflow).toContain('application_id:');
+        expect(workflow).toContain('workspace_id:');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_SPA_URL: ${{ inputs.spa_url }}');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_CONTROL_URL: ${{ inputs.control_url }}');
+        expect(workflow).toContain('RALLAR_API_BASE_URL: ${{ inputs.api_base_url }}');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_ROOM_ID: ${{ inputs.room_id }}');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_AGENT_PREFIX: ${{ inputs.runner_agent_prefix }}');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_AGENT_COUNT: ${{ inputs.runner_agent_count }}');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_APPLICATION_ID: ${{ inputs.application_id }}');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_SPA_URL="$4"');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_WORKSPACE_ID="${11}"');
+    });
 });
