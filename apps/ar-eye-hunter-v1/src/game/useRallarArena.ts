@@ -208,6 +208,8 @@ export function useRallarArena(): ArenaConnection {
     const directorStatusRef = useRef<RallarDirectorStatus>(directorStatus);
     const directorAttemptRef = useRef<DirectorAttemptState>(directorAttempt);
     const arenaMatchRef = useRef<ArenaRallarGameMatchHandle | undefined>(undefined);
+    const transportDiagnosticsRef = useRef<ArenaTransportDiagnostics>(transportDiagnostics);
+    const diagnosticsRefreshRef = useRef<Promise<void> | undefined>(undefined);
     const remotePlayersRef = useRef<ReadonlyMap<string, RemotePlayer>>(remotePlayers);
     const arenaSnapshotRef = useRef<ArenaSnapshot | undefined>(arenaSnapshot);
     const poseSendBudget = useRef(0);
@@ -266,6 +268,10 @@ export function useRallarArena(): ArenaConnection {
     useEffect(() => {
         directorAttemptRef.current = directorAttempt;
     }, [directorAttempt]);
+
+    useEffect(() => {
+        transportDiagnosticsRef.current = transportDiagnostics;
+    }, [transportDiagnostics]);
 
     useEffect(() => {
         remotePlayersRef.current = remotePlayers;
@@ -1189,29 +1195,24 @@ export function useRallarArena(): ArenaConnection {
     const refreshDiagnostics = useCallback(async (
         options: ArenaDiagnosticsRefreshOptions = {},
     ) => {
-        const refreshedAtEpochMs = Date.now();
-        try {
-            const match = arenaMatchRef.current;
-            if (match) {
-                setGameDiagnostics(match.diagnostics());
-            }
+        if (diagnosticsRefreshRef.current) {
+            return diagnosticsRefreshRef.current;
+        }
 
-            const rtcStatus = rallar.rtc.status({ laneId: GAME_MOTION_LANE_ID });
-            const nextTransport: ArenaTransportDiagnostics = {
-                refreshedAtEpochMs,
-                ws: rallar.ws.status(),
-                rtc: rtcStatus,
-                realtimeHealth: rallar.realtime.health({
-                    laneIds: [
-                        GAME_MOTION_LANE_ID,
-                        GAME_COMBAT_LANE_ID,
-                        GAME_SNAPSHOT_LANE_ID,
-                        GAME_FX_LANE_ID,
-                        GAME_AI_LANE_ID,
-                    ],
-                }),
-                rtcDiagnostics: options.includeRtcStats
-                    ? await rallar.rtc.diagnostics({
+        const run = (async () => {
+            const refreshedAtEpochMs = Date.now();
+            try {
+                const match = arenaMatchRef.current;
+                if (match) {
+                    setGameDiagnostics(match.diagnostics());
+                }
+
+                const rtcStatus = rallar.rtc.status({ laneId: GAME_MOTION_LANE_ID });
+                const nextTransport: ArenaTransportDiagnostics = {
+                    refreshedAtEpochMs,
+                    ws: rallar.ws.status(),
+                    rtc: rtcStatus,
+                    realtimeHealth: rallar.realtime.health({
                         laneIds: [
                             GAME_MOTION_LANE_ID,
                             GAME_COMBAT_LANE_ID,
@@ -1219,30 +1220,54 @@ export function useRallarArena(): ArenaConnection {
                             GAME_FX_LANE_ID,
                             GAME_AI_LANE_ID,
                         ],
-                    })
-                    : transportDiagnostics.rtcDiagnostics,
-            };
-            setTransportDiagnostics(nextTransport);
-        } catch (err) {
-            setTransportDiagnostics((previous) => ({
-                ...previous,
-                refreshedAtEpochMs,
-                error: toErrorMessage(err),
-            }));
-        }
+                    }),
+                    rtcDiagnostics: options.includeRtcStats
+                        ? await rallar.rtc.diagnostics({
+                            laneIds: [
+                                GAME_MOTION_LANE_ID,
+                                GAME_COMBAT_LANE_ID,
+                                GAME_SNAPSHOT_LANE_ID,
+                                GAME_FX_LANE_ID,
+                                GAME_AI_LANE_ID,
+                            ],
+                        })
+                        : transportDiagnosticsRef.current.rtcDiagnostics,
+                };
+                transportDiagnosticsRef.current = nextTransport;
+                setTransportDiagnostics(nextTransport);
+            } catch (err) {
+                setTransportDiagnostics((previous) => {
+                    const next = {
+                        ...previous,
+                        refreshedAtEpochMs,
+                        error: toErrorMessage(err),
+                    };
+                    transportDiagnosticsRef.current = next;
+                    return next;
+                });
+            }
 
-        const [apiConfig, ice] = await Promise.all([
-            probeHttp((signal) => readApiConfig({ signal })),
-            probeHttp((signal) => readIceCandidates({
-                signal,
-                authSession: sessionRef.current ?? null,
-            })),
-        ]);
-        setHttpDiagnostics({
-            apiConfig,
-            ice,
+            const [apiConfig, ice] = await Promise.all([
+                probeHttp((signal) => readApiConfig({ signal })),
+                probeHttp((signal) => readIceCandidates({
+                    signal,
+                    authSession: sessionRef.current ?? null,
+                })),
+            ]);
+            setHttpDiagnostics({
+                apiConfig,
+                ice,
+            });
+        })();
+
+        const tracked = run.finally(() => {
+            if (diagnosticsRefreshRef.current === tracked) {
+                diagnosticsRefreshRef.current = undefined;
+            }
         });
-    }, [transportDiagnostics.rtcDiagnostics]);
+        diagnosticsRefreshRef.current = tracked;
+        return tracked;
+    }, []);
 
     const requestArenaSync = useCallback(async () => {
         await arenaMatchRef.current?.requestSync({

@@ -6,6 +6,9 @@ if [[ "$(id -u)" != "0" ]]; then
   exit 1
 fi
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
+
 RALLAR_REPO_URL="${RALLAR_REPO_URL:-https://github.com/intact-software-systems/ar-eye-hunter.git}"
 RALLAR_REPO_REF="${RALLAR_REPO_REF:-main}"
 RALLAR_CHECKOUT_DIR="${RALLAR_CHECKOUT_DIR:-/opt/rallar/ar-eye-hunter}"
@@ -58,8 +61,7 @@ if [[ "${RALLAR_INSTALL_PLAYWRIGHT}" == "1" || "${RALLAR_INSTALL_PLAYWRIGHT}" ==
 fi
 
 echo "==> Building rallar-black-box SPA"
-runuser -u rallar -- npm --prefix "${RALLAR_CHECKOUT_DIR}" \
-  --workspace rallar-black-box run build
+build_rallar_black_box_spa "${RALLAR_CHECKOUT_DIR}"
 
 echo "==> Publishing SPA static files"
 rm -rf /var/www/rallar-black-box/*
@@ -72,6 +74,7 @@ echo "==> Writing environment files"
 install -d -m 0700 -o root -g root /etc/rallar
 install -d -m 0755 -o rallar -g rallar /var/lib/rallar-black-box-control
 install -d -m 0755 -o rallar -g rallar /var/lib/rallar-deno
+write_rallar_black_box_spa_env_file
 
 cat >/etc/rallar/api-v1.env <<EOF
 PORT=8080

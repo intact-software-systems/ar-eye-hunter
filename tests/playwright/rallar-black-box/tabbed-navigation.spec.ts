@@ -255,6 +255,124 @@ test('explains runner readiness failures before live recipe launch', async ({ pa
     await expect(panel.locator('.runner-quick-launch-reason')).toContainText('Local: API is offline');
 });
 
+test('warns when ICE returns no TURN servers without blocking recipe actions', async ({ page }) => {
+    const now = Date.now();
+    const run = {
+        runId: 'turn-ready-run',
+        createdAtEpochMs: now - 5_000,
+        updatedAtEpochMs: now - 500,
+        agents: [
+            {
+                runId: 'turn-ready-run',
+                agentId: 'turn-agent-01',
+                connected: true,
+                lastSeenAtEpochMs: now - 200,
+                lastHeartbeatAtEpochMs: now - 200,
+                status: 'running',
+                connectionSequence: 1,
+                reconnectCount: 0,
+                receivedResultCount: 0,
+                receivedEventCount: 0,
+                completedCommandIds: [],
+                resumeCompletedCommandIds: [],
+                identity: {
+                    applicationId: 'rallar-server',
+                    workspaceId: 'default',
+                    groupId: 'bb-group',
+                    principalId: 'alice-client',
+                    sessionId: 'turn-agent-session',
+                    username: 'alice',
+                    capabilities: {
+                        crdt: {
+                            supported: true,
+                            transports: ['local', 'server'],
+                        },
+                    },
+                },
+            },
+        ],
+        commands: [],
+        results: [],
+        events: [],
+        stats: [],
+        reports: [],
+        heartbeats: [],
+    };
+
+    await page.addInitScript(() => {
+        localStorage.setItem('auth.session', JSON.stringify({
+            clientId: 'alice-client',
+            accessToken: 'turn-secret-token',
+            username: 'alice',
+            sessionId: 'alice-session',
+            expiresAtEpochMs: Date.now() + 60_000,
+        }));
+    });
+    await page.route('http://localhost:8080/api/config', async route => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                apiBaseUrl: 'http://localhost:8080',
+                wsBaseUrl: 'ws://localhost:8080',
+                endpoints: {
+                    createWs: '/api/ws/:id',
+                },
+            }),
+        });
+    });
+    await page.route('http://localhost:8080/api/webrtc/ice', async route => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                iceServers: [],
+                expiresAtEpochMs: Date.now() + 300_000,
+            }),
+        });
+    });
+    await page.route('http://localhost:5180/**', async route => {
+        const request = route.request();
+        const url = new URL(request.url());
+        if (request.method() === 'GET' && url.pathname === '/runs') {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({ runs: [run] }),
+            });
+            return;
+        }
+        if (request.method() === 'GET' && url.pathname === '/runs/turn-ready-run') {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify(run),
+            });
+            return;
+        }
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ ok: true }),
+        });
+    });
+
+    await page.goto(
+        '/?provider=browser-rallar&workspace=black-box-runner&roomId=bb-group&runId=turn-ready-run&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&applicationId=rallar-server&workspaceId=default',
+    );
+
+    const panel = page.locator('#panel-recipes');
+    await panel.getByLabel('Search Recipes').fill('composite');
+    await panel.getByRole('button', { name: /Composite Evidence/ }).first().click();
+    const readiness = panel.getByLabel('Runner Readiness');
+    await expect(readiness).toContainText('No TURN/STUN servers returned');
+    await expect(readiness).toContainText('warning');
+    await expect(panel.getByRole('button', { name: 'Run in this browser' }).first())
+        .toBeEnabled();
+    await expect(panel.getByRole('button', { name: 'Run on connected agents' }).first())
+        .toBeEnabled();
+});
+
 test('does not poll control runs while direct Rallar tabs are active', async ({ page }) => {
     const controlRunRequests: string[] = [];
     await page.route('http://localhost:5180/runs**', async route => {

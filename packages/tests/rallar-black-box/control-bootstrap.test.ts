@@ -121,6 +121,31 @@ describe('rallar-black-box control bootstrap', () => {
         });
     });
 
+    it('uses runner agent defaults from Vite env and lets URL params override them', () => {
+        const fromEnv = resolveRallarBlackBoxBootstrapConfig('', {
+            VITE_RALLAR_RUNNER_AGENT_PREFIX: 'controller',
+            VITE_RALLAR_RUNNER_AGENT_COUNT: '3',
+        });
+        const fromUrl = resolveRallarBlackBoxBootstrapConfig(
+            '?runnerAgentPrefix=manual&runnerAgentCount=2',
+            {
+                VITE_RALLAR_RUNNER_AGENT_PREFIX: 'controller',
+                VITE_RALLAR_RUNNER_AGENT_COUNT: '3',
+            },
+        );
+        const invalid = resolveRallarBlackBoxBootstrapConfig('', {
+            VITE_RALLAR_RUNNER_AGENT_PREFIX: 'controller',
+            VITE_RALLAR_RUNNER_AGENT_COUNT: 'not-a-number',
+        });
+
+        expect(fromEnv.runnerAgentPrefix).toBe('controller');
+        expect(fromEnv.runnerAgentCount).toBe(3);
+        expect(fromUrl.runnerAgentPrefix).toBe('manual');
+        expect(fromUrl.runnerAgentCount).toBe(2);
+        expect(invalid.runnerAgentPrefix).toBe('controller');
+        expect(invalid.runnerAgentCount).toBe(1);
+    });
+
     it('lets URL fleet labels override environment labels', () => {
         const bootstrap = resolveRallarBlackBoxBootstrapConfig(
             '?fleetRegion=us-east&fleetProvider=hetzner&fleetTags=edge,video',

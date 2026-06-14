@@ -8,12 +8,15 @@ fi
 
 RALLAR_REPO_REF="${RALLAR_REPO_REF:-main}"
 RALLAR_CHECKOUT_DIR="${RALLAR_CHECKOUT_DIR:-/opt/rallar/ar-eye-hunter}"
+RALLAR_API_HOST="${RALLAR_API_HOST:-api.rallar.intactss.com}"
+RALLAR_CONTROL_HOST="${RALLAR_CONTROL_HOST:-control.rallar.intactss.com}"
 RALLAR_BLACKBOX_HOST="${RALLAR_BLACKBOX_HOST:-blackbox.rallar.intactss.com}"
 RALLAR_API_CORS_ORIGINS="${RALLAR_API_CORS_ORIGINS:-https://${RALLAR_BLACKBOX_HOST},https://ar-eye-hunter.pages.dev,https://relic-hunters-v1.intact-software-systems.workers.dev}"
 RALLAR_INCLUDE_CADDY="${RALLAR_INCLUDE_CADDY:-0}"
 RALLAR_INSTALL_PLAYWRIGHT="${RALLAR_INSTALL_PLAYWRIGHT:-0}"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
 services=(rallar-api-v1.service rallar-black-box-control.service)
 
 if [[ "${RALLAR_INCLUDE_CADDY}" == "1" || "${RALLAR_INCLUDE_CADDY}" == "true" ]]; then
@@ -148,8 +151,7 @@ if [[ "${RALLAR_INSTALL_PLAYWRIGHT}" == "1" || "${RALLAR_INSTALL_PLAYWRIGHT}" ==
 fi
 
 echo "==> Building rallar-black-box SPA"
-runuser -u rallar -- npm --prefix "${RALLAR_CHECKOUT_DIR}" \
-  --workspace rallar-black-box run build
+build_rallar_black_box_spa "${RALLAR_CHECKOUT_DIR}"
 
 echo "==> Stopping services for publish/start"
 stopped_services=1
@@ -163,6 +165,9 @@ rsync -a --delete \
   "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box/dist/" \
   /var/www/rallar-black-box/
 chown -R caddy:caddy /var/www/rallar-black-box
+
+echo "==> Writing SPA public env audit"
+write_rallar_black_box_spa_env_file
 
 echo "==> Updating API CORS origins"
 update_api_cors_origins

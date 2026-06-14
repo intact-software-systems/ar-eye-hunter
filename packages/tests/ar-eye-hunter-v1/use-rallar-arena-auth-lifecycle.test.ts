@@ -317,6 +317,19 @@ describe('useRallarArena auth lifecycle', () => {
         expect(current?.gameDiagnostics?.phase).toBe('starting');
     });
 
+    it('keeps diagnostics refresh stable after updating diagnostics state', async () => {
+        await renderHook();
+        await waitForState(() => current?.connectionState === 'connected');
+        const refreshDiagnostics = current?.refreshDiagnostics;
+
+        await act(async () => {
+            await refreshDiagnostics?.({ includeRtcStats: true });
+        });
+
+        expect(current?.transportDiagnostics.rtcDiagnostics?.connectedPeerCount).toBe(1);
+        expect(current?.refreshDiagnostics).toBe(refreshDiagnostics);
+    });
+
     it('does not auto-appoint regular room members who cannot update director metadata', async () => {
         mockMatch.appointIfElected.mockResolvedValueOnce({
             status: 'not-authorized',

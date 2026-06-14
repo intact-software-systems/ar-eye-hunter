@@ -314,6 +314,7 @@ import {
     type RecipeLaunchState,
     type RunnerReadinessCheck,
     type RunnerServiceProbeStatus,
+    type RunnerTurnProbeStatus,
 } from './runner-readiness.ts';
 
 type CommandQueueRow = Readonly<{
@@ -1002,6 +1003,12 @@ function runnerApiProbeUrl(baseUrl: string): string {
     } catch (_error) {
         return '/api/config';
     }
+}
+
+function runnerApiEndpointUrl(baseUrl: string, path: string): string {
+    const normalizedBase = baseUrl.trim().replace(/\/+$/, '');
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    return `${normalizedBase}${normalizedPath}`;
 }
 
 function runnerControlWsUrlFromHttpBaseUrl(value: string): string {
@@ -6289,9 +6296,12 @@ function RunnerRecipesPanel({
         control.runId ?? bootstrap.runId ?? 'manual-demo-run',
     );
     const [agentPrefix, setAgentPrefix] = useState(
+        bootstrap.runnerAgentPrefix ??
         `${safeIdSegment(authSession?.username ?? bootstrap.actor ?? 'agent')}-agent`,
     );
-    const [agentCount, setAgentCount] = useState(1);
+    const [agentCount, setAgentCount] = useState(
+        Math.min(6, Math.max(1, bootstrap.runnerAgentCount ?? 1)),
+    );
     const [agentLaunchSuffix, setAgentLaunchSuffix] = useState(() =>
         runnerNewAgentLaunchSuffix(),
     );
@@ -6308,6 +6318,10 @@ function RunnerRecipesPanel({
         status: 'checking',
         detail: 'Checking control server',
     });
+    const [turnProbe, setTurnProbe] = useState<Readonly<{
+        status: RunnerTurnProbeStatus;
+        detail?: string;
+    }> | undefined>();
     const [controlRun, setControlRun] = useState<
         ControlRunSnapshot | undefined
     >();
@@ -6407,6 +6421,8 @@ function RunnerRecipesPanel({
         controlRunId,
         connectedAgentCount,
         targetableAgentCount: targetableRows.length,
+        turnStatus: turnProbe?.status,
+        turnDetail: turnProbe?.detail,
         recipePrerequisiteIssues,
     });
     const localDisabledReason =
@@ -6483,6 +6499,14 @@ function RunnerRecipesPanel({
             status: 'checking',
             detail: 'Checking control server',
         });
+        const shouldCheckTurn =
+            bootstrap.providerMode === 'browser-rallar' &&
+            Boolean(authSession?.accessToken);
+        if (shouldCheckTurn) {
+            setTurnProbe({ status: 'checking' });
+        } else {
+            setTurnProbe(undefined);
+        }
         setLaunchError(undefined);
         const apiPromise = fetch(
             runnerApiProbeUrl(globalValues.apiBaseUrl),
@@ -6505,6 +6529,41 @@ function RunnerRecipesPanel({
                     detail: runnerFriendlyErrorMessage(error),
                 });
             });
+        const turnPromise = shouldCheckTurn && authSession
+            ? fetch(
+                runnerApiEndpointUrl(globalValues.apiBaseUrl, '/api/webrtc/ice'),
+                {
+                    method: 'GET',
+                    headers: {
+                        Authorization: `Bearer ${authSession.accessToken}`,
+                        'x-client-id': authSession.clientId,
+                    },
+                },
+            )
+                .then(async (response) => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    const payload = await response.json() as {
+                        iceServers?: unknown;
+                    };
+                    const iceServerCount = Array.isArray(payload.iceServers)
+                        ? payload.iceServers.length
+                        : 0;
+                    setTurnProbe({
+                        status: iceServerCount > 0 ? 'ready' : 'empty',
+                        detail: iceServerCount > 0
+                            ? `${iceServerCount} ICE server${iceServerCount === 1 ? '' : 's'} returned`
+                            : undefined,
+                    });
+                })
+                .catch((error) => {
+                    setTurnProbe({
+                        status: 'error',
+                        detail: runnerFriendlyErrorMessage(error),
+                    });
+                })
+            : Promise.resolve();
         const controlPromise = fetchControlServerSnapshot({
             baseUrl: controlBaseUrl,
             token: controlToken,
@@ -6554,7 +6613,7 @@ function RunnerRecipesPanel({
                 });
             });
 
-        await Promise.allSettled([apiPromise, controlPromise]);
+        await Promise.allSettled([apiPromise, controlPromise, turnPromise]);
         setBusyAction(undefined);
     };
 

@@ -77,6 +77,8 @@ export type RallarBlackBoxBootstrapConfig = Readonly<{
     fleetBrowserVersion?: string;
     fleetOs?: string;
     fleetTags?: readonly string[];
+    runnerAgentPrefix?: string;
+    runnerAgentCount?: number;
     source: 'url' | 'environment' | 'default';
 }>;
 
@@ -135,6 +137,18 @@ function numberParamValue(
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
+function positiveIntegerParamValue(
+    value: string | undefined,
+    fallback: number,
+): number | undefined {
+    if (!value) {
+        return undefined;
+    }
+
+    const parsed = Number.parseInt(value, 10);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
     return value && typeof value === 'object' && !Array.isArray(value)
         ? value as Record<string, unknown>
@@ -185,6 +199,8 @@ function bootstrapSource(
         'rallarRestoreSession',
         'rallarLogoutOnClose',
         'rallarLeaveRoomOnClose',
+        'runnerAgentPrefix',
+        'runnerAgentCount',
     ];
     if (urlKeys.some(key => params.has(key))) {
         return 'url';
@@ -214,6 +230,8 @@ function bootstrapSource(
         'VITE_RALLAR_RESTORE_SESSION',
         'VITE_RALLAR_LOGOUT_ON_CLOSE',
         'VITE_RALLAR_LEAVE_ROOM_ON_CLOSE',
+        'VITE_RALLAR_RUNNER_AGENT_PREFIX',
+        'VITE_RALLAR_RUNNER_AGENT_COUNT',
     ];
     return envKeys.some(key => env[key]) ? 'environment' : 'default';
 }
@@ -296,6 +314,12 @@ export function resolveRallarBlackBoxBootstrapConfig(
     const agentId = paramValue(params, env, 'agentId', 'VITE_RALLAR_AGENT_ID') ??
         RALLAR_BLACK_BOX_CLIENT_DEFAULTS.agentId;
     const transport = paramValue(params, env, 'transport', 'VITE_RALLAR_TRANSPORT');
+    const runnerAgentCountValue = paramValue(
+        params,
+        env,
+        'runnerAgentCount',
+        'VITE_RALLAR_RUNNER_AGENT_COUNT',
+    );
     const runId = paramValue(params, env, 'runId', 'VITE_RALLAR_RUN_ID') ??
         (mode === 'control-agent'
             ? RALLAR_BLACK_BOX_CLIENT_DEFAULTS.controlRunId
@@ -368,6 +392,8 @@ export function resolveRallarBlackBoxBootstrapConfig(
         fleetBrowserVersion: paramValue(params, env, 'fleetBrowserVersion', 'VITE_RALLAR_AGENT_BROWSER_VERSION'),
         fleetOs: paramValue(params, env, 'fleetOs', 'VITE_RALLAR_AGENT_OS'),
         fleetTags: splitBootstrapCsv(paramValue(params, env, 'fleetTags', 'VITE_RALLAR_AGENT_TAGS')),
+        runnerAgentPrefix: paramValue(params, env, 'runnerAgentPrefix', 'VITE_RALLAR_RUNNER_AGENT_PREFIX'),
+        runnerAgentCount: positiveIntegerParamValue(runnerAgentCountValue, 1),
         source: bootstrapSource(params, env),
     };
 }

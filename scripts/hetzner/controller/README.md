@@ -137,12 +137,13 @@ It performs:
 2. Fetch origin and fast-forward pull RALLAR_REPO_REF, default main.
 3. Run npm ci.
 4. Warm Deno caches for API-v1 and the control server.
-5. Build the rallar-black-box SPA.
+5. Build the rallar-black-box SPA with public `VITE_RALLAR_*` defaults.
 6. Stop rallar-api-v1.service and rallar-black-box-control.service.
 7. Publish static SPA files to /var/www/rallar-black-box.
-8. Refresh `CORS_ORIGINS` in `/etc/rallar/api-v1.env`.
-9. Start API/control services, reload Caddy, and run local health checks.
-10. Print service status and recent logs.
+8. Write `/etc/rallar/black-box-spa.env` as a non-secret audit file.
+9. Refresh `CORS_ORIGINS` in `/etc/rallar/api-v1.env`.
+10. Start API/control services, reload Caddy, and run local health checks.
+11. Print service status and recent logs.
 ```
 
 The script uses `git pull --ff-only`; it does not force-reset the checkout. If
@@ -188,6 +189,29 @@ Install Playwright Chromium/dependencies during rollout if needed:
 RALLAR_INSTALL_PLAYWRIGHT=1 ./08-rollout-controller.sh
 ```
 
+The deployed SPA receives its default API/control/room values at build time.
+`02-deploy-controller.sh` and `08-rollout-controller.sh` derive these public
+values and inject the matching Vite variables:
+
+```text
+RALLAR_API_BASE_URL=https://api.rallar.intactss.com
+RALLAR_BLACK_BOX_CONTROL_URL=wss://control.rallar.intactss.com/control
+RALLAR_BLACK_BOX_ROOM_ID=hetzner-headless-room
+RALLAR_BLACK_BOX_AGENT_PREFIX=controller
+RALLAR_BLACK_BOX_AGENT_COUNT=1
+
+VITE_RALLAR_PROVIDER=browser-rallar
+VITE_RALLAR_API_BASE_URL=$RALLAR_API_BASE_URL
+VITE_RALLAR_CONTROL_URL=$RALLAR_BLACK_BOX_CONTROL_URL
+VITE_RALLAR_ROOM_ID=$RALLAR_BLACK_BOX_ROOM_ID
+VITE_RALLAR_RUNNER_AGENT_PREFIX=$RALLAR_BLACK_BOX_AGENT_PREFIX
+VITE_RALLAR_RUNNER_AGENT_COUNT=$RALLAR_BLACK_BOX_AGENT_COUNT
+```
+
+The audit file `/etc/rallar/black-box-spa.env` records the public values used
+for the last SPA build. Changing these values requires another deploy or
+rollout because Vite embeds them into the static bundle.
+
 ## Headless Browser Workers
 
 `09-start-headless-workers.sh` creates or updates:
@@ -217,6 +241,10 @@ RALLAR_BLACK_BOX_ROOM_ID=hetzner-headless-room
 RALLAR_BLACK_BOX_AGENT_PREFIX=controller
 RALLAR_BLACK_BOX_AGENT_COUNT=1
 ```
+
+These values in `/etc/rallar/headless-worker.env` control the actual headless
+worker service. The SPA build uses the same prefix/count only as initial UI
+defaults for the Recipes “Connect Agents” controls.
 
 Start two browser agents:
 
@@ -257,6 +285,24 @@ RALLAR_HEADLESS_READY_TIMEOUT_SECONDS=120
 RALLAR_WRITE_HEADLESS_ENV=0
   Reuse the existing /etc/rallar/headless-worker.env instead of rewriting it.
 ```
+
+## TURN / STUN Readiness
+
+API-v1 starts with `RALLAR_ICE_MODE=local`, which intentionally returns
+`iceServers: []` from `/api/webrtc/ice`. The Rallar black-box Recipes UI shows
+this as a warning because local/LAN testing can still work, but cross-region
+WebRTC may fail without TURN.
+
+For production cross-region RTC tests, configure Metered TURN:
+
+```sh
+./13-configure-metered-turn.sh
+./06-restart-controller.sh
+```
+
+In GitHub Actions, set both optional secrets `METERED_APP_NAME` and
+`METERED_API_KEY`; the deploy workflow syncs them before rollout. Leaving both
+unset keeps any existing VM secret file in place.
 
 Stop browsers:
 
