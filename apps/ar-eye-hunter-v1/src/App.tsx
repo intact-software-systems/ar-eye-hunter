@@ -11,7 +11,7 @@ import {
     createInitialVitalsState,
     getWeaponStats,
 } from './game/simulation.ts';
-import { GAME_ROOM_NAME, type RtcLaneStatus } from './game/types.ts';
+import { GAME_ROOM_NAME, type ArenaMatchState, type RtcLaneStatus } from './game/types.ts';
 import { useRallarArena, type ArenaConnection } from './game/useRallarArena.ts';
 
 type AuthMode = 'login' | 'register';
@@ -27,6 +27,8 @@ export default function App() {
     const [localLoadout, setLocalLoadout] = useState(createInitialLoadoutState);
     const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
     const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+    const [dismissedMatchId, setDismissedMatchId] = useState<string | undefined>();
+    const [clockNow, setClockNow] = useState(() => Date.now());
 
     const localColor = useMemo(
         () => colorForId(arena.session?.sessionId ?? 'local'),
@@ -38,6 +40,13 @@ export default function App() {
         room.name === GAME_ROOM_NAME
     );
     const wave = arena.arenaSnapshot?.wave;
+    const match = arena.arenaSnapshot?.match;
+    const matchRemainingMs = match?.status === 'active'
+        ? Math.max(0, match.endsAtEpochMs - clockNow)
+        : 0;
+    const winnerMatch = match?.status === 'complete' && dismissedMatchId !== match.matchId
+        ? match
+        : undefined;
     const hostileEyeCount = arena.arenaSnapshot?.targets.filter((target) =>
         target.threat?.kind === 'beam-sentry' || target.threat?.kind === 'boss'
     ).length ?? 0;
@@ -65,6 +74,20 @@ export default function App() {
         }, 4_000);
         return () => window.clearInterval(interval);
     }, [arena.refreshDiagnostics, diagnosticsOpen]);
+
+    useEffect(() => {
+        if (match?.status !== 'active') {
+            return;
+        }
+        const interval = window.setInterval(() => setClockNow(Date.now()), 500);
+        return () => window.clearInterval(interval);
+    }, [match?.status, match?.matchId]);
+
+    useEffect(() => {
+        if (match?.status === 'active') {
+            setDismissedMatchId(undefined);
+        }
+    }, [match?.matchId, match?.status]);
 
     const submitAuth = async (event: FormEvent) => {
         event.preventDefault();
@@ -127,6 +150,10 @@ export default function App() {
                     <StatusPill
                         label="Wave"
                         value={wave ? `${wave.number} ${wave.phase}` : 'arming'}
+                    />
+                    <StatusPill
+                        label="Match"
+                        value={matchLabel(match, matchRemainingMs)}
                     />
                     <StatusPill
                         label="Threats"
@@ -283,6 +310,27 @@ export default function App() {
                                 </p>
                             )}
 
+                            <div className="match-panel">
+                                <div>
+                                    <span>Match</span>
+                                    <strong>{matchLabel(match, matchRemainingMs)}</strong>
+                                </div>
+                                <div className="match-buttons">
+                                    {([60_000, 180_000, 300_000] as const).map((duration) => (
+                                        <button
+                                            type="button"
+                                            key={duration}
+                                            disabled={!arena.directorStatus.isDirector ||
+                                                !arena.directorStatus.isFresh ||
+                                                match?.status === 'active'}
+                                            onClick={() => void arena.startArenaMatch(duration)}
+                                        >
+                                            {duration / 60_000}m
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
                             <div className="director-panel director-panel--event">
                                 <div>
                                     <span>Chaos</span>
@@ -367,6 +415,13 @@ export default function App() {
                     onClose={() => setDiagnosticsOpen(false)}
                 />
             )}
+
+            {winnerMatch && (
+                <MatchWinnerOverlay
+                    match={winnerMatch}
+                    onClose={() => setDismissedMatchId(winnerMatch.matchId)}
+                />
+            )}
         </main>
     );
 }
@@ -403,8 +458,65 @@ function rtcLabel(lanes: readonly RtcLaneStatus[]): string {
     return partial > 0 ? `${open}/${lanes.length}+` : `${open}/${lanes.length}`;
 }
 
+function matchLabel(
+    match: ArenaMatchState | undefined,
+    remainingMs: number,
+): string {
+    if (!match) {
+        return 'infinite';
+    }
+    if (match.status === 'active') {
+        return formatDuration(remainingMs);
+    }
+    const winner = match.results?.[0];
+    return winner ? `${winner.username} won` : 'complete';
+}
+
+function formatDuration(ms: number): string {
+    const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
 function shortId(id: string): string {
     return id.length <= 8 ? id : id.slice(0, 8);
+}
+
+function MatchWinnerOverlay({
+    match,
+    onClose,
+}: Readonly<{
+    match: ArenaMatchState;
+    onClose: () => void;
+}>) {
+    const winner = match.results?.[0];
+    return (
+        <section className="match-winner" role="dialog" aria-modal="false" aria-label="Match results">
+            <div className="match-winner__panel">
+                <span className="match-winner__eyebrow">Arena Match Complete</span>
+                <h2>{winner ? `${winner.username} survives the metrics` : 'The metrics are inconclusive'}</h2>
+                <p>
+                    {winner
+                        ? `${winner.scoreDelta} score, ${winner.killsDelta} eliminations, ${winner.deathsDelta} deaths. HR calls this character building.`
+                        : 'Nobody won, which is legally cheaper.'}
+                </p>
+                <div className="match-results">
+                    {(match.results ?? []).slice(0, 5).map((standing) => (
+                        <div className="match-result-row" key={standing.sessionId}>
+                            <strong>#{standing.rank} {standing.username}</strong>
+                            <span>{standing.scoreDelta} pts</span>
+                            <span>{standing.killsDelta} K</span>
+                            <span>{standing.deathsDelta} D</span>
+                        </div>
+                    ))}
+                </div>
+                <button type="button" className="primary" onClick={onClose}>
+                    Continue infinite chaos
+                </button>
+            </div>
+        </section>
+    );
 }
 
 function DiagnosticsDrawer({
@@ -492,6 +604,14 @@ function DiagnosticsDrawer({
 
             <DiagnosticsSection title="Match Election">
                 <DiagnosticsRow label="Phase" value={arena.gameDiagnostics?.phase ?? 'unknown'}/>
+                <DiagnosticsRow
+                    label="Eligibility"
+                    value={arena.gameDiagnostics?.appointment?.status ?? 'unknown'}
+                />
+                <DiagnosticsRow
+                    label="Local role"
+                    value={arena.gameDiagnostics?.appointment?.localRole ?? 'unknown'}
+                />
                 <DiagnosticsRow label="Host" value={shortOptional(arena.gameDiagnostics?.hostPeerId)}/>
                 <DiagnosticsRow label="Director" value={shortOptional(arena.gameDiagnostics?.directorPeerId)}/>
                 <DiagnosticsRow label="Ready peers" value={String(arena.gameDiagnostics?.readyPeerIds.length ?? 0)}/>

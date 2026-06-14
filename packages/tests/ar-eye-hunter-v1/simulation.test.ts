@@ -11,11 +11,13 @@ import {
     createInitialCombatState,
     createInitialLoadoutState,
     createInitialVitalsState,
+    finishArenaMatchIfDue,
     createInitialPlayerState,
     resolvePickupIntent,
     resolvePlayerHitIntent,
     resolveShot,
     resolveEyeAttackCue,
+    startArenaMatch,
     spawnWeaponPickup,
     stepArenaDirectorState,
     stepLocalPlayer,
@@ -207,8 +209,8 @@ describe('AR Eye Hunter simulation', () => {
         if (!first.accepted) {
             return;
         }
-        expect(first.acceptedHit.damage).toBe(13.8);
-        expect(first.acceptedHit.target.vitals.health).toBe(86.2);
+        expect(first.acceptedHit.damage).toBe(6.9);
+        expect(first.acceptedHit.target.vitals.health).toBe(93.1);
         expect(first.acceptedHit.eliminated).toBe(false);
 
         const second = resolvePlayerHitIntent(first.state, {
@@ -232,15 +234,15 @@ describe('AR Eye Hunter simulation', () => {
         if (!second.accepted) {
             return;
         }
-        expect(second.acceptedHit.damage).toBe(18.63);
-        expect(second.acceptedHit.target.vitals.health).toBe(67.57);
+        expect(second.acceptedHit.damage).toBe(9.32);
+        expect(second.acceptedHit.target.vitals.health).toBe(83.78);
         expect(second.acceptedHit.eliminated).toBe(false);
         expect(second.acceptedHit.target.vitals.deaths).toBe(0);
         expect(second.acceptedHit.attacker.vitals.kills).toBe(0);
 
         let current = second.state;
         let finalHit = second.acceptedHit;
-        for (let seq = 3; seq <= 7; seq += 1) {
+        for (let seq = 3; seq <= 15; seq += 1) {
             const next = resolvePlayerHitIntent(current, {
                 shot: {
                     sessionId: 'attacker',
@@ -284,7 +286,7 @@ describe('AR Eye Hunter simulation', () => {
         }, now + 300);
         expect(blockedWhileDead.accepted).toBe(false);
 
-        const respawned = stepArenaDirectorState(current, now + 4_000);
+        const respawned = stepArenaDirectorState(current, now + 5_000);
         const target = respawned.players.find((player) => player.sessionId === 'target');
         expect(target?.vitals.health).toBe(target?.vitals.maxHealth);
         expect(target?.vitals.respawnedAtEpochMs).toBeGreaterThan(now);
@@ -461,9 +463,91 @@ describe('AR Eye Hunter simulation', () => {
             return;
         }
         expect(fired.acceptedAttack.hit).toBe(true);
-        expect(fired.acceptedAttack.damage).toBe(7.2);
-        expect(fired.acceptedAttack.target?.vitals.health).toBe(92.8);
+        expect(fired.acceptedAttack.damage).toBe(3.6);
+        expect(fired.acceptedAttack.target?.vitals.health).toBe(96.4);
         expect(fired.state.activeEvent?.kind).toBe('eye-attack-hit');
+    });
+
+    it('runs a timed director match with score deltas and deterministic tie-breaks', () => {
+        const now = 90_000;
+        let state = createInitialArenaState(404, now);
+        state = upsertPlayerPose(state, {
+            sessionId: 'alpha',
+            username: 'alpha',
+            color: '#49ff86',
+            position: [0, 1.72, 0],
+            rotation: [0, 0, 0],
+            vitals: { ...createInitialVitalsState(), kills: 1, deaths: 1 },
+            loadout: createInitialLoadoutState(),
+            score: 40,
+            seq: 1,
+            sentAtEpochMs: now,
+        }, now);
+        state = upsertPlayerPose(state, {
+            sessionId: 'beta',
+            username: 'beta',
+            color: '#00e5ff',
+            position: [3, 1.72, 0],
+            rotation: [0, 0, 0],
+            vitals: { ...createInitialVitalsState(), kills: 0, deaths: 0 },
+            loadout: createInitialLoadoutState(),
+            score: 20,
+            seq: 1,
+            sentAtEpochMs: now,
+        }, now);
+
+        const started = startArenaMatch(state, {
+            matchId: 'match:test',
+            directorSessionId: 'alpha',
+            durationMs: 60_000,
+            sentAtEpochMs: now,
+        }, now);
+
+        expect(started.accepted).toBe(true);
+        if (!started.accepted) {
+            return;
+        }
+        expect(started.state.match?.status).toBe('active');
+        expect(started.state.match?.baseline['alpha']?.score).toBe(40);
+
+        const progressed = upsertPlayerPose(
+            upsertPlayerPose(started.state, {
+                sessionId: 'alpha',
+                username: 'alpha',
+                color: '#49ff86',
+                position: [0, 1.72, 0],
+                rotation: [0, 0, 0],
+                vitals: { ...createInitialVitalsState(), kills: 3, deaths: 1 },
+                loadout: createInitialLoadoutState(),
+                score: 100,
+                seq: 2,
+                sentAtEpochMs: now + 60_050,
+            }, now + 60_050),
+            {
+                sessionId: 'beta',
+                username: 'beta',
+                color: '#00e5ff',
+                position: [3, 1.72, 0],
+                rotation: [0, 0, 0],
+                vitals: { ...createInitialVitalsState(), kills: 4, deaths: 0 },
+                loadout: createInitialLoadoutState(),
+                score: 80,
+                seq: 2,
+                sentAtEpochMs: now + 60_050,
+            },
+            now + 60_050,
+        );
+        const finished = finishArenaMatchIfDue(progressed, now + 60_050);
+
+        expect(finished.match?.status).toBe('complete');
+        expect(finished.match?.results?.[0]).toMatchObject({
+            sessionId: 'beta',
+            scoreDelta: 60,
+            killsDelta: 4,
+            deathsDelta: 0,
+            rank: 1,
+        });
+        expect(finished.activeEvent?.kind).toBe('match-ended');
     });
 
     it('lets cover block hostile beam-eye damage as a dodge', () => {

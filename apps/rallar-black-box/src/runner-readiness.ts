@@ -14,6 +14,7 @@ export type RunnerReadinessCheckId =
     | 'control'
     | 'run'
     | 'agents'
+    | 'turn'
     | 'recipe-prerequisites';
 
 export type RunnerReadinessCheckStatus =
@@ -40,6 +41,11 @@ export type RunnerReadinessStatus = Readonly<{
 }>;
 
 export type RunnerServiceProbeStatus = 'checking' | 'online' | 'offline';
+export type RunnerTurnProbeStatus =
+    | 'checking'
+    | 'ready'
+    | 'empty'
+    | 'error';
 
 export type RunnerReadinessInput = Readonly<{
     apiStatus: RunnerServiceProbeStatus;
@@ -51,6 +57,8 @@ export type RunnerReadinessInput = Readonly<{
     controlRunId: string;
     connectedAgentCount: number;
     targetableAgentCount: number;
+    turnStatus?: RunnerTurnProbeStatus;
+    turnDetail?: string;
     recipePrerequisiteIssues?: readonly string[];
 }>;
 
@@ -145,6 +153,7 @@ export function runnerReadinessStatus(
                     ? undefined
                     : 'Open another browser as a control agent in the same group.',
         },
+        ...turnChecks(input.turnStatus, input.turnDetail),
         {
             id: 'recipe-prerequisites',
             label: 'Recipe',
@@ -224,6 +233,48 @@ export function runnerFriendlyErrorMessage(error: unknown): string {
         return 'No agents connected. Open another browser as a control agent in this run.';
     }
     return message;
+}
+
+function turnChecks(
+    status: RunnerTurnProbeStatus | undefined,
+    detail: string | undefined,
+): readonly RunnerReadinessCheck[] {
+    if (!status) {
+        return [];
+    }
+    if (status === 'ready') {
+        return [{
+            id: 'turn',
+            label: 'TURN',
+            status: 'ready',
+            message: detail ?? 'TURN/STUN servers returned',
+        }];
+    }
+    if (status === 'checking') {
+        return [{
+            id: 'turn',
+            label: 'TURN',
+            status: 'checking',
+            message: 'Checking TURN/STUN',
+        }];
+    }
+    if (status === 'error') {
+        return [{
+            id: 'turn',
+            label: 'TURN',
+            status: 'warning',
+            message: `TURN/STUN check failed: ${detail ?? 'unknown error'}`,
+            action: 'Check login, API URL, CORS, or Metered TURN configuration.',
+        }];
+    }
+
+    return [{
+        id: 'turn',
+        label: 'TURN',
+        status: 'warning',
+        message: 'No TURN/STUN servers returned. Cross-region WebRTC may fail; configure Metered TURN.',
+        action: 'Set Metered TURN secrets and restart API-v1 before cross-region RTC tests.',
+    }];
 }
 
 function serviceCheck(input: Readonly<{

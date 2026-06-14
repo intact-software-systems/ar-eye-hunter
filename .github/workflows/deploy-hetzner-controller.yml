@@ -15,6 +15,38 @@ on:
         description: Install Playwright Chromium/dependencies during rollout
         type: boolean
         default: false
+      spa_url:
+        description: Public rallar-black-box SPA URL baked into the SPA audit config
+        required: true
+        default: https://blackbox.rallar.intactss.com
+      control_url:
+        description: Public black-box control WebSocket URL baked into the SPA
+        required: true
+        default: wss://control.rallar.intactss.com/control
+      api_base_url:
+        description: Public API-v1 base URL baked into the SPA
+        required: true
+        default: https://api.rallar.intactss.com
+      room_id:
+        description: Default Rallar room/group id baked into the SPA Recipes UI
+        required: true
+        default: hetzner-headless-room
+      runner_agent_prefix:
+        description: Default Recipes UI agent prefix baked into the SPA
+        required: true
+        default: controller
+      runner_agent_count:
+        description: Default Recipes UI agent tab count baked into the SPA
+        type: number
+        default: 1
+      application_id:
+        description: Default Rallar application id baked into the SPA
+        required: true
+        default: rallar-server
+      workspace_id:
+        description: Default Rallar workspace id baked into the SPA
+        required: true
+        default: default
 
 permissions:
   contents: read
@@ -110,6 +142,14 @@ jobs:
           RALLAR_REPO_REF: ${{ inputs.ref }}
           RALLAR_INCLUDE_CADDY: ${{ inputs.include_caddy }}
           RALLAR_INSTALL_PLAYWRIGHT: ${{ inputs.install_playwright }}
+          RALLAR_BLACK_BOX_SPA_URL: ${{ inputs.spa_url }}
+          RALLAR_BLACK_BOX_CONTROL_URL: ${{ inputs.control_url }}
+          RALLAR_API_BASE_URL: ${{ inputs.api_base_url }}
+          RALLAR_BLACK_BOX_ROOM_ID: ${{ inputs.room_id }}
+          RALLAR_BLACK_BOX_AGENT_PREFIX: ${{ inputs.runner_agent_prefix }}
+          RALLAR_BLACK_BOX_AGENT_COUNT: ${{ inputs.runner_agent_count }}
+          RALLAR_BLACK_BOX_APPLICATION_ID: ${{ inputs.application_id }}
+          RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}
         run: |
           set -euo pipefail
           include_caddy=0
@@ -122,12 +162,31 @@ jobs:
           fi
 
           ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
-            bash -s -- "${RALLAR_REPO_REF}" "${include_caddy}" "${install_playwright}" <<'REMOTE'
+            bash -s -- \
+              "${RALLAR_REPO_REF}" \
+              "${include_caddy}" \
+              "${install_playwright}" \
+              "${RALLAR_BLACK_BOX_SPA_URL}" \
+              "${RALLAR_BLACK_BOX_CONTROL_URL}" \
+              "${RALLAR_API_BASE_URL}" \
+              "${RALLAR_BLACK_BOX_ROOM_ID}" \
+              "${RALLAR_BLACK_BOX_AGENT_PREFIX}" \
+              "${RALLAR_BLACK_BOX_AGENT_COUNT}" \
+              "${RALLAR_BLACK_BOX_APPLICATION_ID}" \
+              "${RALLAR_BLACK_BOX_WORKSPACE_ID}" <<'REMOTE'
           set -euo pipefail
           cd /tmp/rallar-controller
           chmod +x *.sh
           RALLAR_REPO_REF="$1" \
             RALLAR_INCLUDE_CADDY="$2" \
             RALLAR_INSTALL_PLAYWRIGHT="$3" \
+            RALLAR_BLACK_BOX_SPA_URL="$4" \
+            RALLAR_BLACK_BOX_CONTROL_URL="$5" \
+            RALLAR_API_BASE_URL="$6" \
+            RALLAR_BLACK_BOX_ROOM_ID="$7" \
+            RALLAR_BLACK_BOX_AGENT_PREFIX="$8" \
+            RALLAR_BLACK_BOX_AGENT_COUNT="$9" \
+            RALLAR_BLACK_BOX_APPLICATION_ID="${10}" \
+            RALLAR_BLACK_BOX_WORKSPACE_ID="${11}" \
             ./08-rollout-controller.sh
           REMOTE

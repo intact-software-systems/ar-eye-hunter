@@ -52,6 +52,7 @@ export type ArenaRallarGameMatchConfig = Readonly<{
     rallar: RallarGameRallarFacade;
     roomId?: string;
     readSnapshot: () => ArenaSnapshot | undefined;
+    onPresence?: RallarGameEnvelopeHandler<GameRealtimeMessage>;
     onInput?: RallarGameEnvelopeHandler<GameRealtimeMessage>;
     onIntent?: RallarGameEnvelopeHandler<GameRealtimeMessage>;
     onSnapshot?: RallarGameEnvelopeHandler<ArenaSnapshot>;
@@ -75,6 +76,7 @@ export function createArenaRallarGameMatch(
         laneIds: ARENA_RALLAR_GAME_LANE_IDS,
         readCapability: readArenaHostCapability,
         readSnapshot: config.readSnapshot,
+        onPresence: config.onPresence,
         onInput: config.onInput,
         onIntent: config.onIntent,
         onSnapshot: config.onSnapshot,
@@ -126,6 +128,15 @@ export function isArenaPickupIntentFromSender(
     return message.protocol === GAME_PROTOCOL &&
         message.kind === 'pickup-intent' &&
         message.intent.sessionId === senderId;
+}
+
+export function isArenaMatchStartIntentFromSender(
+    message: GameRealtimeMessage,
+    senderId: string,
+): message is Extract<GameRealtimeMessage, { kind: 'match-start-intent' }> {
+    return message.protocol === GAME_PROTOCOL &&
+        message.kind === 'match-start-intent' &&
+        message.intent.directorSessionId === senderId;
 }
 
 function readArenaHostCapability() {

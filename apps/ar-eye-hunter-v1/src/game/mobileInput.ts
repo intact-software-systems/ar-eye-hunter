@@ -42,6 +42,26 @@ export type VirtualStickResult = Readonly<{
     sprint: boolean;
 }>;
 
+export type TouchAimAssistSettings = Readonly<{
+    eyeRadiusPx: number;
+    playerRadiusPx: number;
+}>;
+
+export type TouchAimCandidate = Readonly<{
+    id: string;
+    kind: 'eye' | 'player';
+    screen: Point2;
+    world: Vec3Tuple;
+    distance: number;
+    blocked: boolean;
+}>;
+
+export type TouchShotIntent = Readonly<{
+    point: Point2;
+    candidates: readonly TouchAimCandidate[];
+    settings?: Partial<TouchAimAssistSettings>;
+}>;
+
 export const MOBILE_SETTINGS_STORAGE_KEY = 'ar-eye-hunter.mobile-controls.v1';
 
 const DEFAULT_SETTINGS: MobileControlSettings = {
@@ -56,6 +76,10 @@ const STICK_DEADZONE = 0.16;
 const SPRINT_THRESHOLD = 0.82;
 const TOUCH_YAW_SCALE = 0.0027;
 const TOUCH_PITCH_SCALE = 0.00225;
+const DEFAULT_TOUCH_AIM_ASSIST: TouchAimAssistSettings = {
+    eyeRadiusPx: 48,
+    playerRadiusPx: 28,
+};
 
 export function createDefaultMobileControlSettings(): MobileControlSettings {
     return DEFAULT_SETTINGS;
@@ -165,6 +189,37 @@ export function shouldFireHeldWeapon(
     shotReadyAtEpochMs: number,
 ): boolean {
     return fireHeld && nowEpochMs >= shotReadyAtEpochMs;
+}
+
+export function chooseTouchAimCandidate(
+    intent: TouchShotIntent,
+): TouchAimCandidate | undefined {
+    const settings = {
+        ...DEFAULT_TOUCH_AIM_ASSIST,
+        ...intent.settings,
+    };
+    let best: Readonly<{ candidate: TouchAimCandidate; score: number }> | undefined;
+    for (const candidate of intent.candidates) {
+        if (candidate.blocked) {
+            continue;
+        }
+        const radius = candidate.kind === 'eye'
+            ? settings.eyeRadiusPx
+            : settings.playerRadiusPx;
+        const pixelDistance = Math.hypot(
+            candidate.screen.x - intent.point.x,
+            candidate.screen.y - intent.point.y,
+        );
+        if (pixelDistance > radius) {
+            continue;
+        }
+        const eyeAssistBonus = candidate.kind === 'eye' ? 0.28 : 0;
+        const score = pixelDistance / Math.max(1, radius) + candidate.distance * 0.001 - eyeAssistBonus;
+        if (!best || score < best.score) {
+            best = { candidate, score };
+        }
+    }
+    return best?.candidate;
 }
 
 export function loadMobileControlSettings(

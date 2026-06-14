@@ -38,7 +38,15 @@ export function deriveRallarGameDiagnostics(
             input.rtcStatus?.knownPeerIds.length ??
             0,
         rtcRelayPeerCount: input.rtcDiagnostics?.relayPeerCount,
+        wsStatus: input.wsStatus,
         realtimeHealth: input.realtimeHealth ?? [],
+        appointment: input.appointment
+            ? {
+                ...input.appointment,
+                lastResultStatus: input.lastAppointment?.status,
+                lastReason: input.lastAppointment?.reason,
+            }
+            : undefined,
         issues,
     };
 }
@@ -64,6 +72,10 @@ function deriveIssues(input: RallarGameDiagnosticsInput): readonly string[] {
         issues.push('recovering');
     }
 
+    if (input.wsStatus && !input.wsStatus.isOpen) {
+        issues.push('ws-not-open');
+    }
+
     if (input.peerReadiness?.status === 'partial') {
         issues.push('partial-lane-readiness');
     }
@@ -77,6 +89,14 @@ function deriveIssues(input: RallarGameDiagnosticsInput): readonly string[] {
 
     if (input.election && !input.election.host) {
         issues.push('no-electable-host');
+    }
+
+    if (input.appointment?.status === 'not-authorized') {
+        issues.push('director-not-authorized');
+    }
+
+    if (input.appointment?.status === 'not-ready') {
+        issues.push('director-eligibility-not-ready');
     }
 
     return uniqueSorted(issues);

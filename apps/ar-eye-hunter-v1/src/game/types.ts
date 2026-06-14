@@ -72,6 +72,38 @@ export type WaveState = Readonly<{
     activeModifierId?: string;
 }>;
 
+export type ArenaMatchDurationMs = 60_000 | 180_000 | 300_000;
+
+export type ArenaMatchPlayerBaseline = Readonly<{
+    sessionId: string;
+    username: string;
+    score: number;
+    kills: number;
+    deaths: number;
+    joinedOrder: number;
+}>;
+
+export type ArenaMatchStanding = Readonly<{
+    sessionId: string;
+    username: string;
+    scoreDelta: number;
+    killsDelta: number;
+    deathsDelta: number;
+    rank: number;
+}>;
+
+export type ArenaMatchState = Readonly<{
+    matchId: string;
+    status: 'active' | 'complete';
+    durationMs: ArenaMatchDurationMs;
+    directorSessionId: string;
+    startedAtEpochMs: number;
+    endsAtEpochMs: number;
+    baseline: Readonly<Record<string, ArenaMatchPlayerBaseline>>;
+    results?: readonly ArenaMatchStanding[];
+    completedAtEpochMs?: number;
+}>;
+
 export type WeaponKind =
     | 'pulse-rifle'
     | 'spread-shot'
@@ -172,6 +204,7 @@ export type PlayerArenaState = Readonly<{
     sessionId: string;
     username: string;
     color: string;
+    score?: number;
     position: Vec3Tuple;
     rotation: Vec3Tuple;
     vitals: PlayerVitalsState;
@@ -303,6 +336,26 @@ export type PickupAccepted = Readonly<{
     acceptedAtEpochMs: number;
 }>;
 
+export type MatchStartIntent = Readonly<{
+    matchId: string;
+    directorSessionId: string;
+    durationMs: ArenaMatchDurationMs;
+    sentAtEpochMs: number;
+}>;
+
+export type MatchStartedAccepted = Readonly<{
+    intent: MatchStartIntent;
+    match: ArenaMatchState;
+    revision: number;
+    acceptedAtEpochMs: number;
+}>;
+
+export type MatchEndedAccepted = Readonly<{
+    match: ArenaMatchState;
+    revision: number;
+    acceptedAtEpochMs: number;
+}>;
+
 export type ArenaEventKind =
     | 'spawn-eye'
     | 'mutate-target'
@@ -323,7 +376,11 @@ export type ArenaEventKind =
     | 'eye-attack-windup'
     | 'eye-attack-hit'
     | 'eye-attack-dodged'
-    | 'boss-eye';
+    | 'boss-eye'
+    | 'match-started'
+    | 'match-ended'
+    | 'match-winner'
+    | 'avatar-profile-accepted';
 
 export type ArenaEvent = Readonly<{
     id: string;
@@ -353,6 +410,7 @@ export type ArenaSnapshot = Readonly<{
     players: readonly PlayerArenaState[];
     attacks: readonly EyeAttackCue[];
     wave: WaveState;
+    match?: ArenaMatchState;
     events: readonly ArenaEvent[];
     activeEvent?: ArenaEvent;
     sentAtEpochMs: number;
@@ -435,6 +493,21 @@ export type GameRealtimeMessage =
     protocol: typeof GAME_PROTOCOL;
     kind: 'director-pickup-accepted';
     accepted: PickupAccepted;
+}>
+    | Readonly<{
+    protocol: typeof GAME_PROTOCOL;
+    kind: 'match-start-intent';
+    intent: MatchStartIntent;
+}>
+    | Readonly<{
+    protocol: typeof GAME_PROTOCOL;
+    kind: 'director-match-started';
+    accepted: MatchStartedAccepted;
+}>
+    | Readonly<{
+    protocol: typeof GAME_PROTOCOL;
+    kind: 'director-match-ended';
+    accepted: MatchEndedAccepted;
 }>
     | Readonly<{
     protocol: typeof GAME_PROTOCOL;

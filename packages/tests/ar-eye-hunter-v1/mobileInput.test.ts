@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     calculateVirtualStick,
+    chooseTouchAimCandidate,
     createDefaultMobileControlSettings,
     createInitialTouchControlState,
     loadMobileControlSettings,
@@ -85,5 +86,45 @@ describe('AR Eye Hunter mobile input', () => {
 
         const fallback = loadMobileControlSettings(() => 'not json');
         expect(fallback).toEqual(createDefaultMobileControlSettings());
+    });
+
+    it('prefers generous touch assist for eye targets while keeping PvP tighter', () => {
+        const selectedEye = chooseTouchAimCandidate({
+            point: { x: 412, y: 302 },
+            candidates: [
+                {
+                    id: 'remote-avatar',
+                    kind: 'player',
+                    screen: { x: 438, y: 302 },
+                    world: [0, 1.72, 8],
+                    distance: 8,
+                    blocked: false,
+                },
+                {
+                    id: 'compliance-eye',
+                    kind: 'eye',
+                    screen: { x: 448, y: 302 },
+                    world: [0, 2.2, 10],
+                    distance: 10,
+                    blocked: false,
+                },
+            ],
+        });
+
+        expect(selectedEye?.id).toBe('compliance-eye');
+
+        const blocked = chooseTouchAimCandidate({
+            point: { x: 412, y: 302 },
+            candidates: [{
+                id: 'covered-eye',
+                kind: 'eye',
+                screen: { x: 420, y: 302 },
+                world: [0, 2.2, 10],
+                distance: 10,
+                blocked: true,
+            }],
+        });
+
+        expect(blocked).toBeUndefined();
     });
 });

@@ -50,4 +50,49 @@ describe('runner readiness', () => {
         expect(runnerFriendlyErrorMessage(new Error('Failed to fetch'))).toContain('Service is offline');
         expect(runnerFriendlyErrorMessage(new Error('401 Unauthorized'))).toContain('Log in again');
     });
+
+    it('shows empty TURN/STUN as a warning without blocking recipe actions', () => {
+        const readiness = runnerReadinessStatus({
+            apiStatus: 'online',
+            authenticated: true,
+            groupId: 'bb-group',
+            controlStatus: 'online',
+            controlRunId: 'run-1',
+            connectedAgentCount: 1,
+            targetableAgentCount: 1,
+            turnStatus: 'empty',
+        });
+
+        expect(readiness.canRunLocal).toBe(true);
+        expect(readiness.canRunDistributed).toBe(true);
+        expect(runnerDisabledReason(readiness, 'local-browser')).toBeUndefined();
+        expect(runnerDisabledReason(readiness, 'connected-agents')).toBeUndefined();
+        expect(readiness.checks).toContainEqual(expect.objectContaining({
+            id: 'turn',
+            status: 'warning',
+            message: 'No TURN/STUN servers returned. Cross-region WebRTC may fail; configure Metered TURN.',
+        }));
+    });
+
+    it('shows TURN endpoint failures as warnings without blocking recipe actions', () => {
+        const readiness = runnerReadinessStatus({
+            apiStatus: 'online',
+            authenticated: true,
+            groupId: 'bb-group',
+            controlStatus: 'online',
+            controlRunId: 'run-1',
+            connectedAgentCount: 1,
+            targetableAgentCount: 1,
+            turnStatus: 'error',
+            turnDetail: 'HTTP 502',
+        });
+
+        expect(readiness.canRunLocal).toBe(true);
+        expect(readiness.canRunDistributed).toBe(true);
+        expect(readiness.checks).toContainEqual(expect.objectContaining({
+            id: 'turn',
+            status: 'warning',
+            message: 'TURN/STUN check failed: HTTP 502',
+        }));
+    });
 });

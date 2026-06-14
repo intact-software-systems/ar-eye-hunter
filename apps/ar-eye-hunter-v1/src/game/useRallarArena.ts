@@ -30,9 +30,11 @@ import {
     type AiDirectorProposal,
     type AiDirectorProposalValue,
     type ArenaEvent,
+    type ArenaMatchDurationMs,
     type ArenaSnapshot,
     type EyeAttackAccepted,
     type GameRealtimeMessage,
+    type MatchStartIntent,
     type PickupAccepted,
     type PickupIntent,
     type PlayerHitAccepted,
@@ -60,6 +62,7 @@ import {
     hydrateArenaSnapshot,
     resolvePickupIntent,
     resolvePlayerHitIntent,
+    startArenaMatch as startArenaMatchState,
     toArenaSnapshot,
     upsertPlayerPose,
 } from './simulation.ts';
@@ -68,6 +71,7 @@ import {
     GAME_SNAPSHOT_LANE_ID,
     createArenaRallarGameMatch,
     isArenaAcceptedShotFromSender,
+    isArenaMatchStartIntentFromSender,
     isArenaPickupIntentFromSender,
     isArenaPoseIntentFromSender,
     isArenaPlayerHitIntentFromSender,
@@ -75,14 +79,23 @@ import {
     type ArenaRallarGameMatchHandle,
 } from './rallar-game-match-adapter.ts';
 import {
+    createAvatarProfileMockProvider,
+    createAvatarProfileRequest,
     createDeterministicAvatarProfile,
     validateAvatarProfile,
+    type AvatarProfile,
 } from './avatarProfile.ts';
 
 type ConnectionState = 'signed-out' | 'connecting' | 'connected' | 'error';
 type AiStatus = 'idle' | 'generating' | 'accepted' | 'error' | 'unavailable';
 type DirectorAttemptSource = 'manual' | 'auto';
-type DirectorAttemptStatus = 'idle' | 'pending' | 'succeeded' | 'not-elected' | 'failed';
+type DirectorAttemptStatus =
+    | 'idle'
+    | 'pending'
+    | 'succeeded'
+    | 'not-elected'
+    | 'not-ready'
+    | 'failed';
 
 export type DirectorAttemptState = Readonly<{
     source?: DirectorAttemptSource;
@@ -157,6 +170,7 @@ export type ArenaConnection = Readonly<{
     ): void;
     sendPlayerHit(intent: PlayerHitIntent): void;
     sendPickupIntent(intent: PickupIntent): void;
+    startArenaMatch(durationMs: ArenaMatchDurationMs): Promise<void>;
     publishArenaSnapshot(snapshot: ArenaSnapshot): void;
 }>;
 
@@ -202,9 +216,12 @@ export function useRallarArena(): ArenaConnection {
     const directorStatusRef = useRef<RallarDirectorStatus>(directorStatus);
     const directorAttemptRef = useRef<DirectorAttemptState>(directorAttempt);
     const arenaMatchRef = useRef<ArenaRallarGameMatchHandle | undefined>(undefined);
+    const transportDiagnosticsRef = useRef<ArenaTransportDiagnostics>(transportDiagnostics);
+    const diagnosticsRefreshRef = useRef<Promise<void> | undefined>(undefined);
     const remotePlayersRef = useRef<ReadonlyMap<string, RemotePlayer>>(remotePlayers);
     const arenaSnapshotRef = useRef<ArenaSnapshot | undefined>(arenaSnapshot);
     const poseSendBudget = useRef(0);
+    const localAvatarProfileRef = useRef<AvatarProfile | undefined>(undefined);
 
     const resetForSignedOutAuth = useCallback(() => {
         arenaMatchRef.current?.stop();
@@ -262,12 +279,60 @@ export function useRallarArena(): ArenaConnection {
     }, [directorAttempt]);
 
     useEffect(() => {
+        transportDiagnosticsRef.current = transportDiagnostics;
+    }, [transportDiagnostics]);
+
+    useEffect(() => {
         remotePlayersRef.current = remotePlayers;
     }, [remotePlayers]);
 
     useEffect(() => {
         arenaSnapshotRef.current = arenaSnapshot;
     }, [arenaSnapshot]);
+
+    useEffect(() => {
+        if (!session) {
+            localAvatarProfileRef.current = undefined;
+            return;
+        }
+        const fallback = createDeterministicAvatarProfile(session.sessionId, session.username);
+        localAvatarProfileRef.current = fallback;
+        let cancelled = false;
+        const ai = createRallarBrowserAi({
+            rallar,
+            provider: createAvatarProfileMockProvider(),
+            policy: {
+                mode: 'browser-only',
+                staleResultMode: 'allow',
+            },
+        });
+        if (typeof ai.generateJson !== 'function') {
+            return;
+        }
+        void ai.generateJson<AvatarProfile>({
+            ...createAvatarProfileRequest({
+                sessionId: session.sessionId,
+                username: session.username,
+                roomId,
+                revision: arenaSnapshotRef.current?.revision ?? 0,
+            }),
+        }).then((result) => {
+            if (cancelled) {
+                return;
+            }
+            const validation = validateAvatarProfile(result.value, session.sessionId);
+            localAvatarProfileRef.current = validation.ok
+                ? validation.profile
+                : fallback;
+        }).catch(() => {
+            if (!cancelled) {
+                localAvatarProfileRef.current = fallback;
+            }
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [roomId, session]);
 
     const acceptPlayerHit = useCallback((accepted: PlayerHitAccepted) => {
         setRemotePlayerHits((previous) => [
@@ -421,6 +486,47 @@ export function useRallarArena(): ArenaConnection {
             return;
         }
 
+        if (message.kind === 'director-match-started') {
+            setArenaSnapshot((previous) => {
+                if (!previous || message.accepted.revision < previous.revision) {
+                    return previous;
+                }
+                const next = {
+                    ...previous,
+                    revision: message.accepted.revision,
+                    match: message.accepted.match,
+                    activeEvent: {
+                        id: `match-started:${message.accepted.match.matchId}`,
+                        kind: 'match-started' as const,
+                        startsAtEpochMs: message.accepted.acceptedAtEpochMs,
+                        expiresAtEpochMs: message.accepted.acceptedAtEpochMs + 4_000,
+                        revision: message.accepted.revision,
+                        source: 'director' as const,
+                        headline: 'Arena match started',
+                    },
+                };
+                arenaSnapshotRef.current = next;
+                return next;
+            });
+            return;
+        }
+
+        if (message.kind === 'director-match-ended') {
+            setArenaSnapshot((previous) => {
+                if (!previous || message.accepted.revision < previous.revision) {
+                    return previous;
+                }
+                const next = {
+                    ...previous,
+                    revision: message.accepted.revision,
+                    match: message.accepted.match,
+                };
+                arenaSnapshotRef.current = next;
+                return next;
+            });
+            return;
+        }
+
         if (message.kind === 'director-eye-attack-accepted') {
             acceptEyeAttack(message.accepted);
             return;
@@ -456,6 +562,35 @@ export function useRallarArena(): ArenaConnection {
             ));
         }
     }, [acceptEyeAttack, acceptPickup, acceptPlayerHit]);
+
+    const acceptMatchStartIntent = useCallback(async (intent: MatchStartIntent) => {
+        const previous = arenaSnapshotRef.current;
+        const currentRoomId = roomIdRef.current;
+        if (!previous || !currentRoomId) {
+            return;
+        }
+        const result = startArenaMatchState(
+            hydrateArenaSnapshot(previous),
+            intent,
+            Date.now(),
+        );
+        if (!result.accepted) {
+            return;
+        }
+        const snapshot = toArenaSnapshot(result.state, previous.roomId ?? currentRoomId, Date.now());
+        arenaSnapshotRef.current = snapshot;
+        setArenaSnapshot(snapshot);
+        setActiveEvent(snapshot.activeEvent);
+        setRemoteEvents(snapshot.events);
+        await arenaMatchRef.current?.publishEvent({
+            protocol: GAME_PROTOCOL,
+            kind: 'director-match-started',
+            accepted: result.acceptedMatch,
+        });
+        await arenaMatchRef.current?.publishSnapshot(snapshot, {
+            reliable: false,
+        });
+    }, []);
 
     const acceptMotionMessage = useCallback((
         peerId: string,
@@ -742,18 +877,6 @@ export function useRallarArena(): ArenaConnection {
             return;
         }
 
-        const permission = readDirectorWritePermission(sessionRef.current);
-        if (!permission.allowed) {
-            setDirectorStatus(rallar.director.status(currentRoomId));
-            setDirectorAttempt(toDirectorAttemptState(
-                source,
-                startedAtEpochMs,
-                'not-authorized',
-                permission.reason,
-            ));
-            return;
-        }
-
         try {
             const match = arenaMatchRef.current;
             if (!match) {
@@ -804,6 +927,9 @@ export function useRallarArena(): ArenaConnection {
             rallar,
             roomId,
             readSnapshot: () => arenaSnapshotRef.current,
+            onPresence: (envelope) => {
+                acceptMotionMessage(envelope.senderId, envelope.payload);
+            },
             onInput: async (envelope) => {
                 const data = envelope.payload;
                 if (!isArenaPoseIntentFromSender(data, envelope.senderId)) {
@@ -903,6 +1029,15 @@ export function useRallarArena(): ArenaConnection {
                     return;
                 }
 
+                if (isArenaMatchStartIntentFromSender(data, envelope.senderId)) {
+                    const status = arenaMatchRef.current?.status();
+                    if (status?.directorPeerId !== envelope.senderId) {
+                        return;
+                    }
+                    await acceptMatchStartIntent(data.intent);
+                    return;
+                }
+
                 if (isArenaAcceptedShotFromSender(data, envelope.senderId)) {
                     await arenaMatchRef.current?.publishEvent(data);
                 }
@@ -970,6 +1105,8 @@ export function useRallarArena(): ArenaConnection {
         };
     }, [
         acceptDirectorOutput,
+        acceptMatchStartIntent,
+        acceptMotionMessage,
         acceptPickup,
         acceptPlayerHit,
         attemptDirectorAppointment,
@@ -1191,29 +1328,24 @@ export function useRallarArena(): ArenaConnection {
     const refreshDiagnostics = useCallback(async (
         options: ArenaDiagnosticsRefreshOptions = {},
     ) => {
-        const refreshedAtEpochMs = Date.now();
-        try {
-            const match = arenaMatchRef.current;
-            if (match) {
-                setGameDiagnostics(match.diagnostics());
-            }
+        if (diagnosticsRefreshRef.current) {
+            return diagnosticsRefreshRef.current;
+        }
 
-            const rtcStatus = rallar.rtc.status({ laneId: GAME_MOTION_LANE_ID });
-            const nextTransport: ArenaTransportDiagnostics = {
-                refreshedAtEpochMs,
-                ws: rallar.ws.status(),
-                rtc: rtcStatus,
-                realtimeHealth: rallar.realtime.health({
-                    laneIds: [
-                        GAME_MOTION_LANE_ID,
-                        GAME_COMBAT_LANE_ID,
-                        GAME_SNAPSHOT_LANE_ID,
-                        GAME_FX_LANE_ID,
-                        GAME_AI_LANE_ID,
-                    ],
-                }),
-                rtcDiagnostics: options.includeRtcStats
-                    ? await rallar.rtc.diagnostics({
+        const run = (async () => {
+            const refreshedAtEpochMs = Date.now();
+            try {
+                const match = arenaMatchRef.current;
+                if (match) {
+                    setGameDiagnostics(match.diagnostics());
+                }
+
+                const rtcStatus = rallar.rtc.status({ laneId: GAME_MOTION_LANE_ID });
+                const nextTransport: ArenaTransportDiagnostics = {
+                    refreshedAtEpochMs,
+                    ws: rallar.ws.status(),
+                    rtc: rtcStatus,
+                    realtimeHealth: rallar.realtime.health({
                         laneIds: [
                             GAME_MOTION_LANE_ID,
                             GAME_COMBAT_LANE_ID,
@@ -1221,30 +1353,54 @@ export function useRallarArena(): ArenaConnection {
                             GAME_FX_LANE_ID,
                             GAME_AI_LANE_ID,
                         ],
-                    })
-                    : transportDiagnostics.rtcDiagnostics,
-            };
-            setTransportDiagnostics(nextTransport);
-        } catch (err) {
-            setTransportDiagnostics((previous) => ({
-                ...previous,
-                refreshedAtEpochMs,
-                error: toErrorMessage(err),
-            }));
-        }
+                    }),
+                    rtcDiagnostics: options.includeRtcStats
+                        ? await rallar.rtc.diagnostics({
+                            laneIds: [
+                                GAME_MOTION_LANE_ID,
+                                GAME_COMBAT_LANE_ID,
+                                GAME_SNAPSHOT_LANE_ID,
+                                GAME_FX_LANE_ID,
+                                GAME_AI_LANE_ID,
+                            ],
+                        })
+                        : transportDiagnosticsRef.current.rtcDiagnostics,
+                };
+                transportDiagnosticsRef.current = nextTransport;
+                setTransportDiagnostics(nextTransport);
+            } catch (err) {
+                setTransportDiagnostics((previous) => {
+                    const next = {
+                        ...previous,
+                        refreshedAtEpochMs,
+                        error: toErrorMessage(err),
+                    };
+                    transportDiagnosticsRef.current = next;
+                    return next;
+                });
+            }
 
-        const [apiConfig, ice] = await Promise.all([
-            probeHttp((signal) => readApiConfig({ signal })),
-            probeHttp((signal) => readIceCandidates({
-                signal,
-                authSession: sessionRef.current ?? null,
-            })),
-        ]);
-        setHttpDiagnostics({
-            apiConfig,
-            ice,
+            const [apiConfig, ice] = await Promise.all([
+                probeHttp((signal) => readApiConfig({ signal })),
+                probeHttp((signal) => readIceCandidates({
+                    signal,
+                    authSession: sessionRef.current ?? null,
+                })),
+            ]);
+            setHttpDiagnostics({
+                apiConfig,
+                ice,
+            });
+        })();
+
+        const tracked = run.finally(() => {
+            if (diagnosticsRefreshRef.current === tracked) {
+                diagnosticsRefreshRef.current = undefined;
+            }
         });
-    }, [transportDiagnostics.rtcDiagnostics]);
+        diagnosticsRefreshRef.current = tracked;
+        return tracked;
+    }, []);
 
     const requestArenaSync = useCallback(async () => {
         await arenaMatchRef.current?.requestSync({
@@ -1274,38 +1430,33 @@ export function useRallarArena(): ArenaConnection {
             sessionId: currentSession.sessionId,
             username: currentSession.username,
             color: colorForId(currentSession.sessionId),
-            avatarProfile: createDeterministicAvatarProfile(
-                currentSession.sessionId,
-                currentSession.username,
-            ),
+            avatarProfile: localAvatarProfileRef.current ??
+                createDeterministicAvatarProfile(
+                    currentSession.sessionId,
+                    currentSession.username,
+                ),
         };
         const input: GameRealtimeMessage = {
             protocol: GAME_PROTOCOL,
             kind: 'player-pose-intent',
             pose: fullPose,
         };
-        const sendRealtimePose = () => {
-            void rallar.realtime.sendJson<GameRealtimeMessage>({
-                laneId: GAME_MOTION_LANE_ID,
-                roomId: currentRoomId,
-                data: {
-                    protocol: GAME_PROTOCOL,
-                    kind: 'player-pose',
-                    pose: fullPose,
-                },
-                key: `pose:${currentSession.sessionId}`,
-                maxAgeMs: 250,
-                openTimeoutMs: 1500,
-            });
+        const presence: GameRealtimeMessage = {
+            protocol: GAME_PROTOCOL,
+            kind: 'player-pose',
+            pose: fullPose,
         };
         const match = arenaMatchRef.current;
         if (match?.status().directorIsFresh) {
             void match.sendInput(input);
-            sendRealtimePose();
-            return;
         }
 
-        sendRealtimePose();
+        void match?.sendPresence(presence, {
+            laneId: GAME_MOTION_LANE_ID,
+            key: `pose:${currentSession.sessionId}`,
+            maxAgeMs: 250,
+            openTimeoutMs: 1500,
+        });
     }, []);
 
     const sendShot = useCallback((
@@ -1491,6 +1642,49 @@ export function useRallarArena(): ArenaConnection {
         });
     }, [acceptPickup]);
 
+    const startArenaMatch = useCallback(async (durationMs: ArenaMatchDurationMs) => {
+        const currentSession = sessionRef.current;
+        const currentRoomId = roomIdRef.current;
+        if (!currentSession || !currentRoomId) {
+            return;
+        }
+        const now = Date.now();
+        const intent: MatchStartIntent = {
+            matchId: `match:${currentRoomId}:${now}:${durationMs}`,
+            directorSessionId: currentSession.sessionId,
+            durationMs,
+            sentAtEpochMs: now,
+        };
+        const message: GameRealtimeMessage = {
+            protocol: GAME_PROTOCOL,
+            kind: 'match-start-intent',
+            intent,
+        };
+        const match = arenaMatchRef.current;
+        if (match?.status().directorIsFresh) {
+            if (match.status().directorPeerId === currentSession.sessionId) {
+                await acceptMatchStartIntent(intent);
+            } else {
+                await match.sendIntent(message);
+            }
+            return;
+        }
+
+        const currentDirector = directorStatusRef.current;
+        if (currentDirector.appointment && !currentDirector.isFresh) {
+            return;
+        }
+
+        await rallar.realtime.sendJson<GameRealtimeMessage>({
+            laneId: GAME_COMBAT_LANE_ID,
+            roomId: currentRoomId,
+            data: message,
+            key: `match-start:${intent.matchId}`,
+            maxAgeMs: 1_000,
+            openTimeoutMs: 1500,
+        });
+    }, [acceptMatchStartIntent]);
+
     const publishArenaSnapshot = useCallback((snapshot: ArenaSnapshot) => {
         setArenaSnapshot((previous) =>
             !previous || snapshot.revision >= previous.revision ? snapshot : previous
@@ -1542,6 +1736,7 @@ export function useRallarArena(): ArenaConnection {
         sendShot,
         sendPlayerHit,
         sendPickupIntent,
+        startArenaMatch,
         publishArenaSnapshot,
     }), [
         session,
@@ -1577,6 +1772,7 @@ export function useRallarArena(): ArenaConnection {
         sendShot,
         sendPlayerHit,
         sendPickupIntent,
+        startArenaMatch,
         publishArenaSnapshot,
     ]);
 }
@@ -1610,6 +1806,8 @@ function toDirectorAttemptStatus(resultStatus: string): DirectorAttemptStatus {
         case 'not-elected':
         case 'not-authorized':
             return 'not-elected';
+        case 'not-ready':
+            return 'not-ready';
         case 'failed':
         case 'no-local-peer':
         default:
@@ -1671,42 +1869,4 @@ function summarizeProbeValue(value: unknown): string | undefined {
         return [apiBaseUrl, wsBaseUrl].filter(Boolean).join(' / ');
     }
     return undefined;
-}
-
-function readDirectorWritePermission(
-    session: AuthSession | undefined,
-): Readonly<{ allowed: boolean; reason?: string }> {
-    if (!session) {
-        return {
-            allowed: false,
-            reason: 'Cannot appoint a director without a local session.',
-        };
-    }
-
-    const roomState = rallar.rooms.state();
-    const member = (roomState.members ?? []).find((entry) =>
-        entry.principalId === session.clientId
-    ) ?? roomState.currentRoom?.members.find((entry) =>
-        entry.principalId === session.clientId
-    );
-
-    if (!member) {
-        return { allowed: true };
-    }
-
-    if (member.status !== 'active') {
-        return {
-            allowed: false,
-            reason: 'Only active room members can appoint the browser director.',
-        };
-    }
-
-    if (member.role !== 'owner' && member.role !== 'admin') {
-        return {
-            allowed: false,
-            reason: 'Only room owners/admins can appoint the browser director.',
-        };
-    }
-
-    return { allowed: true };
 }
