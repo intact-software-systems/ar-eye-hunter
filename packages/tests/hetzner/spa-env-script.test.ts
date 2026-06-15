@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = path.resolve(__dirname, '../../..');
+const controlServerConfigPath = path.join(repoRoot, 'apps/rallar-black-box-control-server/deno.json');
 
 describe('Hetzner SPA public env wiring', () => {
     it('provides a shared helper that maps public Rallar env to Vite SPA env', async () => {
@@ -36,6 +37,30 @@ describe('Hetzner SPA public env wiring', () => {
             expect(script).toContain('build_rallar_black_box_spa "${RALLAR_CHECKOUT_DIR}"');
             expect(script).toContain('write_rallar_black_box_spa_env_file');
         }
+    });
+
+    it('uses the control-server Deno config for Hetzner cache warming and systemd start', async () => {
+        const controlConfig = JSON.parse(await readFile(controlServerConfigPath, 'utf8')) as {
+            nodeModulesDir?: unknown;
+        };
+        const deployScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
+            'utf8',
+        );
+        const rolloutScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
+            'utf8',
+        );
+
+        expect(controlConfig.nodeModulesDir).toBe('auto');
+        for (const script of [deployScript, rolloutScript]) {
+            expect(script).toContain(
+                'deno cache --config "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/deno.json"',
+            );
+        }
+        expect(deployScript).toContain(
+            'deno run --config ${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/deno.json',
+        );
     });
 
     it('keeps the headless browser workflow responsible for actual agent count and prefix', async () => {

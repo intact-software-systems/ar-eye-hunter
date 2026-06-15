@@ -1,4 +1,5 @@
 {
+  "nodeModulesDir": "auto",
   "tasks": {
     "test:queue": "deno run -A --unstable-temporal npm:vitest run packages/tests/queue.test.ts",
     "test:debug": "deno run -A --unstable-temporal npm:vitest run",

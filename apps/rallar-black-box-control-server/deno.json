@@ -2,6 +2,7 @@
   "name": "rallar-black-box-control-server",
   "exports": {},
   "version": "0.1.0",
+  "nodeModulesDir": "auto",
   "imports": {
     "@shared/": "../../packages/shared/",
     "@shared-test/": "../../packages/shared-test/"
