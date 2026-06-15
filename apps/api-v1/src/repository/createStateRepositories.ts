@@ -8,11 +8,17 @@ import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
     createAuthSessionRepository as createSharedAuthSessionRepository,
     createAuthUserRepository as createSharedAuthUserRepository,
+    createClientStateEventRepository as createSharedClientStateEventRepository,
     createClientStateRepository as createSharedClientStateRepository,
+    createGroupStateEventRepository as createSharedGroupStateEventRepository,
     createGroupStateRepository as createSharedGroupStateRepository,
     createRuntimeStateRepository as createSharedRuntimeStateRepository,
 } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import type {
+    ClientStateEventStore,
+    GroupStateEventStore,
+} from '@shared-server/rallar-system/repositories/StateEventStore.ts';
 import { sql as defaultSql } from '../db/db.ts';
 
 export { PSqlRuntimeStateRepository as RuntimeStateRepository };
@@ -27,6 +33,14 @@ export function createClientStateRepository(
     input: RuntimeStateRepositoryLike | Sql = defaultSql as unknown as Sql,
 ): ClientStateRepository {
     return createSharedClientStateRepository(input as RuntimeStateRepositoryLike | PSqlSql);
+}
+
+export function createClientStateEventRepository(
+    input: RuntimeStateRepositoryLike | Sql = defaultSql as unknown as Sql,
+): ClientStateEventStore {
+    return createSharedClientStateEventRepository(
+        input as RuntimeStateRepositoryLike | PSqlSql,
+    );
 }
 
 export function createAuthSessionRepository(
@@ -45,4 +59,12 @@ export function createGroupStateRepository(
     input: RuntimeStateRepositoryLike | Sql = defaultSql as unknown as Sql,
 ): GroupStateRepository {
     return createSharedGroupStateRepository(input as RuntimeStateRepositoryLike | PSqlSql);
+}
+
+export function createGroupStateEventRepository(
+    input: RuntimeStateRepositoryLike | Sql = defaultSql as unknown as Sql,
+): GroupStateEventStore {
+    return createSharedGroupStateEventRepository(
+        input as RuntimeStateRepositoryLike | PSqlSql,
+    );
 }

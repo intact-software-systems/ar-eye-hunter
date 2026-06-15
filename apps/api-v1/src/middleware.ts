@@ -31,6 +31,8 @@ import { myPublisherId, myServerId } from './runtime/runtime-identity.ts';
 import { toResilienceDto } from './middleware-resilience.ts';
 import {
     createClientStateRepository,
+    createClientStateEventRepository,
+    createGroupStateEventRepository,
     createGroupStateRepository,
     createRuntimeStateRepository,
 } from './repository/createStateRepositories.ts';
@@ -44,7 +46,11 @@ import {
 } from '@shared-server/rallar-system/services/presence-expiry-reconciliation-service.ts';
 import { getApiAppInboxServiceOptions, getApiTimingSink } from './services/timing-service.ts';
 import { readApiV1DatabasePubSubConfig } from './db/database-pubsub-config.ts';
-import { createApiV1QueuePubSubBridge, shouldInstallQueuePubSubBridge, } from './db/api-v1-queue-pubsub-bridge.ts';
+import {
+    createApiV1QueuePubSubBridge,
+    queuePubSubDeliveryForConfig,
+    shouldInstallQueuePubSubBridge,
+} from './db/api-v1-queue-pubsub-bridge.ts';
 
 export type Middleware = RallarMiddlewareRuntime;
 
@@ -101,7 +107,7 @@ function initialise(): Middleware {
         createAppGroupInboxService: ({ inboxQueueReader, wsQBoxServerService }) => {
             const stateSyncPublisher = createWsStateSyncPublisher(
                 wsQBoxServerService,
-                { serverId: myServerId },
+                { serverId: myServerId, timing },
             );
             return new AppGroupInboxService(
                 inboxQueueReader,
@@ -109,6 +115,7 @@ function initialise(): Middleware {
                 resourceInboxResultsRepository,
                 createGroupStateService({
                     runtimeRepository: createRuntimeStateRepository(sql),
+                    createGroupStateEventStore: createGroupStateEventRepository,
                     syncPublisher: stateSyncPublisher,
                     serviceId: myServerId,
                     timing,
@@ -122,7 +129,7 @@ function initialise(): Middleware {
         createAppClientInboxService: ({ inboxQueueReader, wsQBoxServerService }) => {
             const stateSyncPublisher = createWsStateSyncPublisher(
                 wsQBoxServerService,
-                { serverId: myServerId },
+                { serverId: myServerId, timing },
             );
             return new AppClientInboxService(
                 inboxQueueReader,
@@ -130,6 +137,7 @@ function initialise(): Middleware {
                 resourceInboxResultsRepository,
                 createClientStateService({
                     runtimeRepository: createRuntimeStateRepository(sql),
+                    createClientStateEventStore: createClientStateEventRepository,
                     syncPublisher: stateSyncPublisher,
                     serviceId: myServerId,
                     timing,
@@ -154,6 +162,8 @@ function initialise(): Middleware {
             bridge: createApiV1QueuePubSubBridge(pubSubConfig, myPublisherId),
             channel: dbWsChannelId,
             publisherId: myPublisherId,
+            delivery: queuePubSubDeliveryForConfig(pubSubConfig),
+            timing,
         });
     }
 

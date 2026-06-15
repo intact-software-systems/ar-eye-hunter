@@ -2,9 +2,17 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/repositories
 import { AuthUserRepository } from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import type {
+    ClientStateEventStore,
+    GroupStateEventStore,
+} from '@shared-server/rallar-system/repositories/StateEventStore.ts';
 import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import type { PSqlSql } from '../PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '../runtime-state/PSqlRuntimeStateRepository.ts';
+import {
+    PSqlClientStateEventRepository,
+    PSqlGroupStateEventRepository,
+} from './PSqlStateEventRepository.ts';
 
 export function createRuntimeStateRepository(
     sql: PSqlSql,
@@ -15,7 +23,10 @@ export function createRuntimeStateRepository(
 export function createClientStateRepository(
     input: RuntimeStateRepositoryLike | PSqlSql,
 ): ClientStateRepository {
-    return new ClientStateRepository(toRuntimeStateRepository(input));
+    const runtimeRepository = toRuntimeStateRepository(input);
+    return new ClientStateRepository(runtimeRepository, {
+        events: maybeCreateClientStateEventRepository(input),
+    });
 }
 
 export function createAuthSessionRepository(
@@ -33,7 +44,22 @@ export function createAuthUserRepository(
 export function createGroupStateRepository(
     input: RuntimeStateRepositoryLike | PSqlSql,
 ): GroupStateRepository {
-    return new GroupStateRepository(toRuntimeStateRepository(input));
+    const runtimeRepository = toRuntimeStateRepository(input);
+    return new GroupStateRepository(runtimeRepository, {
+        events: maybeCreateGroupStateEventRepository(input),
+    });
+}
+
+export function createClientStateEventRepository(
+    input: RuntimeStateRepositoryLike | PSqlSql,
+): ClientStateEventStore {
+    return new PSqlClientStateEventRepository(toSql(input));
+}
+
+export function createGroupStateEventRepository(
+    input: RuntimeStateRepositoryLike | PSqlSql,
+): GroupStateEventStore {
+    return new PSqlGroupStateEventRepository(toSql(input));
 }
 
 function toRuntimeStateRepository(input: RuntimeStateRepositoryLike | PSqlSql): RuntimeStateRepositoryLike {
@@ -42,6 +68,43 @@ function toRuntimeStateRepository(input: RuntimeStateRepositoryLike | PSqlSql): 
     }
 
     return createRuntimeStateRepository(input);
+}
+
+function toSql(input: RuntimeStateRepositoryLike | PSqlSql): PSqlSql {
+    if (input instanceof PSqlRuntimeStateRepository) {
+        return input.sql;
+    }
+
+    if (!isRuntimeStateRepositoryLike(input)) {
+        return input;
+    }
+
+    throw new Error(
+        'A SQL-backed state event repository requires PSqlSql or PSqlRuntimeStateRepository',
+    );
+}
+
+function maybeCreateClientStateEventRepository(
+    input: RuntimeStateRepositoryLike | PSqlSql,
+): ClientStateEventStore | undefined {
+    return canCreateSqlStateEventRepository(input)
+        ? createClientStateEventRepository(input)
+        : undefined;
+}
+
+function maybeCreateGroupStateEventRepository(
+    input: RuntimeStateRepositoryLike | PSqlSql,
+): GroupStateEventStore | undefined {
+    return canCreateSqlStateEventRepository(input)
+        ? createGroupStateEventRepository(input)
+        : undefined;
+}
+
+function canCreateSqlStateEventRepository(
+    input: RuntimeStateRepositoryLike | PSqlSql,
+): boolean {
+    return input instanceof PSqlRuntimeStateRepository ||
+        !isRuntimeStateRepositoryLike(input);
 }
 
 function isRuntimeStateRepositoryLike(input: RuntimeStateRepositoryLike | PSqlSql): input is RuntimeStateRepositoryLike {

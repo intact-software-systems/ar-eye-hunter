@@ -7,6 +7,9 @@ import type {
     GroupScope,
     GroupSnapshot,
 } from '@shared/api/group-types.ts';
+import type {
+    StateEventPage,
+} from '@shared/api/state-event-types.ts';
 import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import { GroupStateWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
@@ -15,16 +18,32 @@ import {
     isLogicallyActiveSession,
     toSessionPurgeAfterEpochMs,
 } from './session-expiry.ts';
+import {
+    defaultGroupStateEventStoreFor,
+    type GroupStateEventStore,
+} from './StateEventStore.ts';
+import {
+    type StateEventListQuery,
+} from '../state-event-listing.ts';
 
 const GROUPS_NAMESPACE = 'group-state:groups';
 const MEMBERS_NAMESPACE = 'group-state:members';
 const SESSIONS_NAMESPACE = 'group-state:sessions';
-const EVENTS_NAMESPACE = 'group-state:events';
 const IDEMPOTENT_NAMESPACE = 'group-state:idempotent';
 
+export type GroupStateRepositoryOptions = Readonly<{
+    events?: GroupStateEventStore;
+}>;
+
 export class GroupStateRepository extends RuntimeStateJsonStore {
-    constructor(repository: RuntimeStateRepositoryLike) {
+    private readonly events: GroupStateEventStore;
+
+    constructor(
+        repository: RuntimeStateRepositoryLike,
+        options: GroupStateRepositoryOptions = {},
+    ) {
         super(repository);
+        this.events = options.events ?? defaultGroupStateEventStoreFor(repository);
     }
 
     async addIdempotentGroupStateWritten(
@@ -153,16 +172,18 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     }
 
     async appendEvent(event: GroupEvent): Promise<void> {
-        await this.putValue(EVENTS_NAMESPACE, this.eventKey(event), event);
+        await this.events.appendGroupEvent(event);
     }
 
     async listEvents(ref: GroupRef): Promise<readonly GroupEvent[]> {
-        const events = await this.listValues<GroupEvent>(
-            EVENTS_NAMESPACE,
-            this.eventPrefix(ref),
-        );
+        return await this.events.listGroupEvents(ref);
+    }
 
-        return [...events].sort(compareGroupEventsForReplay);
+    async listEventPage(
+        ref: GroupRef,
+        query: StateEventListQuery = {},
+    ): Promise<StateEventPage<GroupEvent>> {
+        return await this.events.listGroupEventPage(ref, query);
     }
 
     async readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined> {
@@ -239,21 +260,4 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         );
     }
 
-    private eventPrefix(ref: GroupRef): string {
-        return this.groupKey(ref);
-    }
-
-    private eventKey(event: GroupEvent): string {
-        return [
-            this.groupKey(event),
-            this.idKey('event-at', this.timeKey(event.occurredAtEpochMs)),
-            this.idKey('event', event.eventId),
-        ].join(':');
-    }
-}
-
-function compareGroupEventsForReplay(left: GroupEvent, right: GroupEvent): number {
-    return left.snapshotVersion - right.snapshotVersion ||
-        left.occurredAtEpochMs - right.occurredAtEpochMs ||
-        left.eventId.localeCompare(right.eventId);
 }

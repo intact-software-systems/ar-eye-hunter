@@ -74,6 +74,9 @@ Potential app-inbox completion notifications are described in
 client/group presence, and AL runtime bookkeeping. Rows are isolated by `store_namespace`, and expired rows are evicted
 both lazily on read and periodically by the Postgres runtime-state expiry evictor.
 
+Durable client/group state-event logs are stored separately in `client_state_events` and `group_state_events`, ordered by
+snapshot version for REST event replay.
+
 Application-specific durable data should not write directly into middleware namespaces. Server-side custom data uses
 the explicit app-data facade (`server.data.open(...)`) backed by `app_data_store`, with `app_namespace`, `store_name`,
 and `data_key` as the isolation boundary. Keeping app data separate avoids retention, backup, and schema-evolution

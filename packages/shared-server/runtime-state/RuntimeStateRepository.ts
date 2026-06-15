@@ -6,6 +6,11 @@ export type RuntimeStateEntry = Readonly<{
     revision: number;
 }>;
 
+export type RuntimeStateEntryPageOptions = Readonly<{
+    afterKey?: string;
+    limit: number;
+}>;
+
 export type RuntimeStateRepositoryLike = Readonly<{
     findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined>;
     findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]>;
@@ -26,8 +31,22 @@ export type RuntimeStateTransactionalRepositoryLike = RuntimeStateRepositoryLike
         lockKey(namespace: string, key: string): Promise<void>;
     }>;
 
+export type RuntimeStatePrefixPageRepositoryLike = Readonly<{
+    findEntriesByPrefixPage(
+        namespace: string,
+        keyPrefix: string,
+        options: RuntimeStateEntryPageOptions,
+    ): Promise<readonly RuntimeStateEntry[]>;
+}>;
+
 export function isRuntimeStateTransactionalRepositoryLike(
     repository: RuntimeStateRepositoryLike,
 ): repository is RuntimeStateTransactionalRepositoryLike {
     return 'begin' in repository && 'findEntriesByPrefix' in repository && 'lockKey' in repository;
+}
+
+export function isRuntimeStatePrefixPageRepositoryLike(
+    repository: RuntimeStateRepositoryLike,
+): repository is RuntimeStateRepositoryLike & RuntimeStatePrefixPageRepositoryLike {
+    return 'findEntriesByPrefixPage' in repository;
 }

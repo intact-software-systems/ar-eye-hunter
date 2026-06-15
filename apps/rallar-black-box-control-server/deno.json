@@ -3,6 +3,7 @@
   "exports": {},
   "version": "0.1.0",
   "imports": {
+    "@shared/": "../../packages/shared/",
     "@shared-test/": "../../packages/shared-test/"
   },
   "tasks": {

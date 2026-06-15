@@ -6,6 +6,10 @@ import type { ALOutboundEnqueueResult } from '@shared/alm/ALOutboundMessageRunti
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import {
+    recordRallarTiming,
+    type RallarTimingSink,
+} from './services/timing.ts';
 
 export type StateSyncPublisher = Readonly<{
     publishClientSnapshot(snapshot: ClientSnapshot, senderId?: string): Promise<void>;
@@ -16,6 +20,7 @@ export type StateSyncPublisher = Readonly<{
 
 export type CreateWsStateSyncPublisherOptions = Readonly<{
     serverId: string;
+    timing?: RallarTimingSink;
 }>;
 
 export function createWsStateSyncPublisher(
@@ -37,6 +42,7 @@ export function createWsStateSyncPublisher(
                 snapshot,
                 {
                     requireLiveRoute: hasActiveClientSessions(snapshot),
+                    timing: options.timing,
                 },
             );
         },
@@ -54,6 +60,7 @@ export function createWsStateSyncPublisher(
                     requireLiveRoute: snapshot
                         ? hasActiveClientSessions(snapshot)
                         : false,
+                    timing: options.timing,
                 },
             );
         },
@@ -68,6 +75,7 @@ export function createWsStateSyncPublisher(
                 snapshot,
                 {
                     requireLiveRoute: hasActiveGroupSessions(snapshot),
+                    timing: options.timing,
                 },
             );
         },
@@ -90,6 +98,7 @@ export function createWsStateSyncPublisher(
                     requireLiveRoute: snapshot
                         ? hasActiveGroupSessions(snapshot)
                         : false,
+                    timing: options.timing,
                 },
             );
         },
@@ -105,6 +114,7 @@ async function enqueueBroadcast<T>(
     payload: T,
     options: Readonly<{
         requireLiveRoute?: boolean;
+        timing?: RallarTimingSink;
     }> = {},
 ): Promise<void> {
     const result = await wsQBoxServerService.enqueueOutboxIfAbsent(
@@ -121,6 +131,7 @@ async function enqueueBroadcast<T>(
         topicId,
         resourceId,
         requireLiveRoute: options.requireLiveRoute ?? false,
+        timing: options.timing,
     });
 }
 
@@ -130,6 +141,7 @@ function assertStateSyncPublishResult(
         topicId: string;
         resourceId: string;
         requireLiveRoute: boolean;
+        timing?: RallarTimingSink;
     }>,
 ): void {
     switch (result.status) {
@@ -152,6 +164,20 @@ function assertStateSyncPublishResult(
                     status: result.status,
                     reason: result.reason,
                 });
+                recordRallarTiming(
+                    input.timing,
+                    {
+                        component: 'state-sync',
+                        operation: 'no-route',
+                        details: {
+                            topicId: input.topicId,
+                            resourceId: input.resourceId,
+                            reason: result.reason,
+                        },
+                    },
+                    'ok',
+                    0,
+                );
             }
             return;
         case 'failed':

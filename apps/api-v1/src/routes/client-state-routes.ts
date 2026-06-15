@@ -8,8 +8,11 @@ import type {
     UpsertClientPrincipalRequest,
 } from '@shared/api/state-types.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import { getClientStateService } from '../services/client-state-service.ts';
-import { requireApiAuthSession } from '../services/request-auth-service.ts';
+import {
+    getClientStateService,
+    type ClientStateService,
+} from '../services/client-state-service.ts';
+import { requireApiAuthSession as defaultRequireApiAuthSession } from '../services/request-auth-service.ts';
 import { getMiddleware } from '../middleware.ts';
 import {
     type AppInboxEnqueueInput,
@@ -23,84 +26,158 @@ import {
 import type { ClientStateWritten, } from '@shared-server/rallar-system/services/client-state-service.ts';
 import {
     filterStateEventsForList,
-    listStateEventsPage,
     readStateEventListQuery,
 } from '@shared-server/rallar-system/state-event-listing.ts';
+import {
+    hydrateStateSyncSnapshotCaches as defaultHydrateStateSyncSnapshotCaches,
+    type StateSyncCacheHydrationInput,
+    type StateSyncCacheHydrationResult,
+} from '@shared-server/rallar-system/state-sync-cache-hydration.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 
-export function init(app: Hono): void {
+export type ClientStateRouteService = Pick<
+    ClientStateService,
+    | 'listSnapshots'
+    | 'readSnapshot'
+    | 'readPresenceSnapshot'
+    | 'listEvents'
+    | 'listEventPage'
+>;
+
+export type ClientStateRouteAuthSession = Pick<
+    AuthSession,
+    'clientId' | 'sessionId'
+>;
+
+export type ClientStateRouteDependencies = Readonly<{
+    getClientStateService?: () => ClientStateRouteService;
+    requireApiAuthSession?: (
+        req: {
+            header(name: string): string | undefined;
+        },
+    ) => Promise<ClientStateRouteAuthSession>;
+    hydrateStateSyncSnapshotCaches?: (
+        input: StateSyncCacheHydrationInput,
+    ) => Promise<StateSyncCacheHydrationResult>;
+}>;
+
+export function init(
+    app: Hono,
+    dependencies: ClientStateRouteDependencies = {},
+): void {
+    const deps = toClientStateRouteDependencies(dependencies);
+
     app.get(
         '/api/state/apps/:applicationId/workspaces/:workspaceId/clients',
         async (c) => {
-            const scope = toScope(c);
-            return c.json(await getClientStateService().listSnapshots(scope));
+            try {
+                const scope = toScope(c);
+                const authSession = await readStrictReadAuthSession(c.req, deps);
+                const snapshots = authSession
+                    ? [
+                        await deps.getClientStateService().readSnapshot({
+                            ...scope,
+                            principalId: authSession.clientId,
+                        }),
+                    ].filter(isDefined)
+                    : await deps.getClientStateService().listSnapshots(scope);
+                hydrateClientSnapshots(deps, snapshots);
+                return c.json(snapshots);
+            } catch (error) {
+                return toErrorResponse(c, error);
+            }
         },
     );
 
     app.get(
         '/api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId',
         async (c) => {
-            const principalId = c.req.param('principalId');
-            const snapshot = await getClientStateService().readSnapshot({
-                ...toScope(c),
-                principalId,
-            });
+            try {
+                const principalId = c.req.param('principalId');
+                await assertCanReadClientState(c.req, deps, principalId);
+                const snapshot = await deps.getClientStateService().readSnapshot({
+                    ...toScope(c),
+                    principalId,
+                });
 
-            return snapshot
-                ? c.json(snapshot)
-                : c.json({ error: `Client not found: ${principalId}` }, 404);
+                if (!snapshot) {
+                    return c.json({ error: `Client not found: ${principalId}` }, 404);
+                }
+
+                hydrateClientSnapshots(deps, [snapshot]);
+                return c.json(snapshot);
+            } catch (error) {
+                return toErrorResponse(c, error);
+            }
         },
     );
 
     app.get(
         '/api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId/presence',
         async (c) => {
-            const principalId = c.req.param('principalId');
-            const snapshot = await getClientStateService().readPresenceSnapshot({
-                ...toScope(c),
-                principalId,
-            });
+            try {
+                const principalId = c.req.param('principalId');
+                await assertCanReadClientState(c.req, deps, principalId);
+                const snapshot = await deps.getClientStateService().readPresenceSnapshot({
+                    ...toScope(c),
+                    principalId,
+                });
 
-            return snapshot
-                ? c.json(snapshot)
-                : c.json({ error: `Client presence not found: ${principalId}` }, 404);
+                return snapshot
+                    ? c.json(snapshot)
+                    : c.json({ error: `Client presence not found: ${principalId}` }, 404);
+            } catch (error) {
+                return toErrorResponse(c, error);
+            }
         },
     );
 
     app.get(
         '/api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId/events',
         async (c) => {
-            const events = await getClientStateService().listEvents({
-                ...toScope(c),
-                principalId: c.req.param('principalId'),
-            });
+            try {
+                const principalId = c.req.param('principalId');
+                await assertCanReadClientState(c.req, deps, principalId);
+                const events = await deps.getClientStateService().listEvents({
+                    ...toScope(c),
+                    principalId,
+                });
 
-            return c.json(
-                filterStateEventsForList(
-                    events,
-                    readStateEventListQuery(
-                        new URL(c.req.raw.url).searchParams,
+                return c.json(
+                    filterStateEventsForList(
+                        events,
+                        readStateEventListQuery(
+                            new URL(c.req.raw.url).searchParams,
+                        ),
                     ),
-                ),
-            );
+                );
+            } catch (error) {
+                return toErrorResponse(c, error);
+            }
         },
     );
 
     app.get(
         '/api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId/events/page',
         async (c) => {
-            const events = await getClientStateService().listEvents({
-                ...toScope(c),
-                principalId: c.req.param('principalId'),
-            });
+            try {
+                const principalId = c.req.param('principalId');
+                await assertCanReadClientState(c.req, deps, principalId);
 
-            return c.json(
-                listStateEventsPage(
-                    events,
-                    readStateEventListQuery(
-                        new URL(c.req.raw.url).searchParams,
+                return c.json(
+                    await deps.getClientStateService().listEventPage(
+                        {
+                            ...toScope(c),
+                            principalId,
+                        },
+                        readStateEventListQuery(
+                            new URL(c.req.raw.url).searchParams,
+                        ),
                     ),
-                ),
-            );
+                );
+            } catch (error) {
+                return toErrorResponse(c, error);
+            }
         },
     );
 
@@ -108,7 +185,7 @@ export function init(app: Hono): void {
         '/api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId/principal',
         async (c) => {
             try {
-                const authSession = await requireApiAuthSession(c.req);
+                const authSession = await deps.requireApiAuthSession(c.req);
                 const scope = toScope(c);
                 const principalId = c.req.param('principalId');
                 assertSelfPrincipal(authSession.clientId, principalId);
@@ -138,7 +215,7 @@ export function init(app: Hono): void {
         '/api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId/instances/:clientInstanceId',
         async (c) => {
             try {
-                const authSession = await requireApiAuthSession(c.req);
+                const authSession = await deps.requireApiAuthSession(c.req);
                 const scope = toScope(c);
                 const principalId = c.req.param('principalId');
                 const clientInstanceId = c.req.param('clientInstanceId');
@@ -170,7 +247,7 @@ export function init(app: Hono): void {
         '/api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId/instances/:clientInstanceId/sessions/:sessionId',
         async (c) => {
             try {
-                const authSession = await requireApiAuthSession(c.req);
+                const authSession = await deps.requireApiAuthSession(c.req);
                 const scope = toScope(c);
                 const principalId = c.req.param('principalId');
                 const clientInstanceId = c.req.param('clientInstanceId');
@@ -208,7 +285,7 @@ export function init(app: Hono): void {
         '/api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId/instances/:clientInstanceId/sessions/:sessionId/heartbeat',
         async (c) => {
             try {
-                const authSession = await requireApiAuthSession(c.req);
+                const authSession = await deps.requireApiAuthSession(c.req);
                 const scope = toScope(c);
                 const principalId = c.req.param('principalId');
                 const clientInstanceId = c.req.param('clientInstanceId');
@@ -246,7 +323,7 @@ export function init(app: Hono): void {
         '/api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId/instances/:clientInstanceId/sessions/:sessionId/disconnect',
         async (c) => {
             try {
-                const authSession = await requireApiAuthSession(c.req);
+                const authSession = await deps.requireApiAuthSession(c.req);
                 const scope = toScope(c);
                 const principalId = c.req.param('principalId');
                 const clientInstanceId = c.req.param('clientInstanceId');
@@ -279,6 +356,77 @@ export function init(app: Hono): void {
             }
         },
     );
+}
+
+function toClientStateRouteDependencies(
+    dependencies: ClientStateRouteDependencies,
+): Required<ClientStateRouteDependencies> {
+    return {
+        getClientStateService: dependencies.getClientStateService ??
+            getClientStateService,
+        requireApiAuthSession: dependencies.requireApiAuthSession ??
+            defaultRequireApiAuthSession,
+        hydrateStateSyncSnapshotCaches:
+            dependencies.hydrateStateSyncSnapshotCaches ??
+                defaultHydrateStateSyncSnapshotCaches,
+    };
+}
+
+async function assertCanReadClientState(
+    req: {
+        header(name: string): string | undefined;
+    },
+    deps: Required<ClientStateRouteDependencies>,
+    principalId: string,
+): Promise<void> {
+    const authSession = await readStrictReadAuthSession(req, deps);
+    if (!authSession) {
+        return;
+    }
+
+    if (authSession.clientId !== principalId) {
+        throw new Error(
+            'Forbidden: state read principal id does not match authenticated client',
+        );
+    }
+}
+
+async function readStrictReadAuthSession(
+    req: {
+        header(name: string): string | undefined;
+    },
+    deps: Required<ClientStateRouteDependencies>,
+): Promise<ClientStateRouteAuthSession | undefined> {
+    return isStrictReadAuthEnabled()
+        ? await deps.requireApiAuthSession(req)
+        : undefined;
+}
+
+function isStrictReadAuthEnabled(): boolean {
+    const value = Deno.env.get('RALLAR_STATE_STRICT_READ_AUTH');
+    if (value === undefined || value.trim() === '') {
+        return false;
+    }
+
+    return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+}
+
+function hydrateClientSnapshots(
+    deps: Required<ClientStateRouteDependencies>,
+    clients: readonly ClientSnapshot[],
+): void {
+    if (clients.length === 0) {
+        return;
+    }
+
+    void deps.hydrateStateSyncSnapshotCaches({ clients })
+        .catch((error) =>
+            console.warn('Failed to hydrate client state sync snapshot caches', error)
+        );
+}
+
+function isDefined<T>(value: T | undefined): value is T {
+    return value !== undefined;
 }
 
 async function processClientAppInbox<V>(

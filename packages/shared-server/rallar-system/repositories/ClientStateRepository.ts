@@ -11,6 +11,9 @@ import type {
     ClientSessionRef,
     ClientSnapshot,
 } from '@shared/api/client-types.ts';
+import type {
+    StateEventPage,
+} from '@shared/api/state-event-types.ts';
 import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type { ClientStateWritten } from '@shared-server/rallar-system/services/client-state-service.ts';
@@ -19,16 +22,30 @@ import {
     isLogicallyActiveSession,
     toSessionPurgeAfterEpochMs,
 } from './session-expiry.ts';
+import {
+    defaultClientStateEventStoreFor,
+    type ClientStateEventStore,
+} from './StateEventStore.ts';
+import type { StateEventListQuery } from '../state-event-listing.ts';
 
 const PRINCIPALS_NAMESPACE = 'client-state:principals';
 const INSTANCES_NAMESPACE = 'client-state:instances';
 const SESSIONS_NAMESPACE = 'client-state:sessions';
-const EVENTS_NAMESPACE = 'client-state:events';
 const IDEMPOTENT_NAMESPACE = 'client-state:idempotent';
 
+export type ClientStateRepositoryOptions = Readonly<{
+    events?: ClientStateEventStore;
+}>;
+
 export class ClientStateRepository extends RuntimeStateJsonStore {
-    constructor(repository: RuntimeStateRepositoryLike) {
+    private readonly events: ClientStateEventStore;
+
+    constructor(
+        repository: RuntimeStateRepositoryLike,
+        options: ClientStateRepositoryOptions = {},
+    ) {
         super(repository);
+        this.events = options.events ?? defaultClientStateEventStoreFor(repository);
     }
 
     async addIdempotentClientStateWritten(
@@ -163,16 +180,18 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     }
 
     async appendEvent(event: ClientEvent): Promise<void> {
-        await this.putValue(EVENTS_NAMESPACE, this.eventKey(event), event);
+        await this.events.appendClientEvent(event);
     }
 
     async listEvents(ref: ClientPrincipalRef): Promise<readonly ClientEvent[]> {
-        const events = await this.listValues<ClientEvent>(
-            EVENTS_NAMESPACE,
-            this.eventPrefix(ref),
-        );
+        return await this.events.listClientEvents(ref);
+    }
 
-        return [...events].sort(compareClientEventsForReplay);
+    async listEventPage(
+        ref: ClientPrincipalRef,
+        query: StateEventListQuery = {},
+    ): Promise<StateEventPage<ClientEvent>> {
+        return await this.events.listClientEventPage(ref, query);
     }
 
     async readPresenceSnapshot(
@@ -308,24 +327,4 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         );
     }
 
-    private eventPrefix(ref: ClientPrincipalRef): string {
-        return this.principalKey(ref);
-    }
-
-    private eventKey(event: ClientEvent): string {
-        return [
-            this.principalKey(event),
-            this.idKey('event-at', this.timeKey(event.occurredAtEpochMs)),
-            this.idKey('event', event.eventId),
-        ].join(':');
-    }
-}
-
-function compareClientEventsForReplay(
-    left: ClientEvent,
-    right: ClientEvent,
-): number {
-    return left.snapshotVersion - right.snapshotVersion ||
-        left.occurredAtEpochMs - right.occurredAtEpochMs ||
-        left.eventId.localeCompare(right.eventId);
 }

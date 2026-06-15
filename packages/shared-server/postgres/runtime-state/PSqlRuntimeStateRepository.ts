@@ -17,7 +17,7 @@ type RuntimeStateRow = Readonly<{
 }>;
 
 export class PSqlRuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {
-    constructor(private readonly sql: PSqlSql) {}
+    constructor(public readonly sql: PSqlSql) {}
 
     async begin<T>(
         fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
@@ -62,6 +62,37 @@ export class PSqlRuntimeStateRepository implements RuntimeStateTransactionalRepo
               and store_key like ${`${keyPrefix}%`}
             order by store_key
         `;
+
+        return rows.map(toEntry);
+    }
+
+    async findEntriesByPrefixPage(
+        namespace: string,
+        keyPrefix: string,
+        options: Readonly<{
+            afterKey?: string;
+            limit: number;
+        }>,
+    ): Promise<readonly RuntimeStateEntry[]> {
+        const limit = Math.max(1, Math.floor(options.limit));
+        const rows = options.afterKey === undefined
+            ? await this.sql<RuntimeStateRow[]>`
+                select store_key, store_value, updated_ts, expire_at_ts, store_namespace, revision
+                from runtime_state_store
+                where store_namespace = ${namespace}
+                  and store_key like ${`${keyPrefix}%`}
+                order by store_key
+                limit ${limit}
+            `
+            : await this.sql<RuntimeStateRow[]>`
+                select store_key, store_value, updated_ts, expire_at_ts, store_namespace, revision
+                from runtime_state_store
+                where store_namespace = ${namespace}
+                  and store_key like ${`${keyPrefix}%`}
+                  and store_key > ${options.afterKey}
+                order by store_key
+                limit ${limit}
+            `;
 
         return rows.map(toEntry);
     }

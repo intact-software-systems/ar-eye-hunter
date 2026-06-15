@@ -18,8 +18,12 @@ import type {
     UpdateGroupRequest,
     UpsertGroupMemberRequest,
 } from '@shared/api/state-types.ts';
+import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
+import {
+    type GroupStateEventStore,
+} from '../repositories/StateEventStore.ts';
 import type { RuntimeStateTransactionalRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import type { StateSyncPublisher } from '../state-sync-publisher.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -29,6 +33,7 @@ import {
     timeRallarAsync,
     type RallarTimingSink,
 } from './timing.ts';
+import type { StateEventListQuery } from '../state-event-listing.ts';
 
 const DEFAULT_GROUP_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const GROUP_PRESENCE_SESSION_LOCK_NAMESPACE =
@@ -53,6 +58,10 @@ export type GroupStateService = Readonly<{
     listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]>;
     readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
     listEvents(ref: GroupRef): Promise<readonly GroupEvent[]>;
+    listEventPage(
+        ref: GroupRef,
+        query: StateEventListQuery,
+    ): Promise<StateEventPage<GroupEvent>>;
     createGroup(
         scope: StateScope,
         request: CreateGroupRequest,
@@ -101,6 +110,9 @@ export type GroupStateService = Readonly<{
 
 export type GroupStateServiceDependencies = Readonly<{
     runtimeRepository: RuntimeStateTransactionalRepositoryLike;
+    createGroupStateEventStore?: (
+        runtimeRepository: RuntimeStateTransactionalRepositoryLike,
+    ) => GroupStateEventStore;
     syncPublisher: StateSyncPublisher;
     now?: () => number;
     serviceId: string;
@@ -111,12 +123,18 @@ export function createGroupStateService(
     dependencies: GroupStateServiceDependencies,
 ): GroupStateService {
     const runtimeRepository = dependencies.runtimeRepository;
+    const repositoryFor = (
+        repository: RuntimeStateTransactionalRepositoryLike,
+    ): GroupStateRepository =>
+        new GroupStateRepository(repository, {
+            events: dependencies.createGroupStateEventStore?.(repository),
+        });
     const now = dependencies.now ?? (() => Date.now());
     const serviceId = dependencies.serviceId;
 
     const service: GroupStateService = {
         listSnapshots: async (scope) => {
-            const repository = new GroupStateRepository(runtimeRepository);
+            const repository = repositoryFor(runtimeRepository);
             const groups = await repository.listGroups(scope);
             const snapshots = await Promise.all(
                 groups.map(async (group) => await repository.readSnapshot(group)),
@@ -125,17 +143,23 @@ export function createGroupStateService(
             return snapshots.filter(isDefined);
         },
         readSnapshot: async (ref) => {
-            return await new GroupStateRepository(runtimeRepository).readSnapshot(
+            return await repositoryFor(runtimeRepository).readSnapshot(
                 ref,
             );
         },
         listEvents: async (ref) => {
-            return await new GroupStateRepository(runtimeRepository).listEvents(ref);
+            return await repositoryFor(runtimeRepository).listEvents(ref);
+        },
+        listEventPage: async (ref, query) => {
+            return await repositoryFor(runtimeRepository).listEventPage(
+                ref,
+                query,
+            );
         },
 
         createGroup: async (scope, request): Promise<GroupStateWritten> => {
             return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = new GroupStateRepository(transactionRepository);
+                const repository = repositoryFor(transactionRepository);
 
                 const ref: GroupRef = {
                     ...scope,
@@ -246,7 +270,7 @@ export function createGroupStateService(
         },
         updateGroup: async (scope, groupId, request) => {
             return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = new GroupStateRepository(transactionRepository);
+                const repository = repositoryFor(transactionRepository);
                 const ref: GroupRef = {
                     ...scope,
                     groupId,
@@ -338,7 +362,7 @@ export function createGroupStateService(
         },
         upsertMember: async (scope, groupId, principalId, request) => {
             return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = new GroupStateRepository(transactionRepository);
+                const repository = repositoryFor(transactionRepository);
                 const groupRef = {
                     ...scope,
                     groupId,
@@ -427,7 +451,7 @@ export function createGroupStateService(
         },
         connectPresenceSession: async (scope, groupId, sessionId, request) => {
             return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = new GroupStateRepository(transactionRepository);
+                const repository = repositoryFor(transactionRepository);
                 const groupRef = {
                     ...scope,
                     groupId,
@@ -534,7 +558,7 @@ export function createGroupStateService(
         },
         heartbeatPresenceSession: async (scope, groupId, sessionId, request) => {
             return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = new GroupStateRepository(transactionRepository);
+                const repository = repositoryFor(transactionRepository);
                 const groupRef = {
                     ...scope,
                     groupId,
@@ -624,7 +648,7 @@ export function createGroupStateService(
         },
         disconnectPresenceSession: async (scope, groupId, sessionId, request) => {
             return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = new GroupStateRepository(transactionRepository);
+                const repository = repositoryFor(transactionRepository);
                 const groupRef = {
                     ...scope,
                     groupId,
@@ -732,7 +756,7 @@ export function createGroupStateService(
             return writtenResults.map(requireGroupStateWrittenSnapshot);
         },
         disconnectPresenceSessionsBySessionIdWritten: async (sessionId, request = {}) => {
-            const repository = new GroupStateRepository(runtimeRepository);
+            const repository = repositoryFor(runtimeRepository);
             const sessions = (await repository.listAllPresenceSessions()).filter(
                 (session) =>
                     session.sessionId === sessionId &&
@@ -769,7 +793,7 @@ export function createGroupStateService(
             return writtenResults;
         },
         expireExpiredPresenceSessions: async (atEpochMs = now()) => {
-            const repository = new GroupStateRepository(runtimeRepository);
+            const repository = repositoryFor(runtimeRepository);
             const sessions = (await repository.listAllPresenceSessions()).filter(
                 (session) =>
                     session.disconnectedAtEpochMs === undefined &&
@@ -847,6 +871,12 @@ function withGroupStateServiceTiming(
                 timing,
                 toGroupTimingInput(serviceId, 'listEvents', ref),
                 () => service.listEvents(ref),
+            ),
+        listEventPage: async (ref, query) =>
+            await timeRallarAsync(
+                timing,
+                toGroupTimingInput(serviceId, 'listEventPage', ref),
+                () => service.listEventPage(ref, query),
             ),
         createGroup: async (scope, request) =>
             await timeRallarAsync(

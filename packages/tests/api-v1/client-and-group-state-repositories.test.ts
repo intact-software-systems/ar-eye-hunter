@@ -14,6 +14,11 @@ import type {
 } from '@shared/api/group-types.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import {
+    InMemoryClientStateEventStore,
+    InMemoryGroupStateEventStore,
+} from '@shared-server/rallar-system/repositories/StateEventStore.ts';
+import { readStateEventListQuery } from '@shared-server/rallar-system/state-event-listing.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateTransactionalRepositoryLike,
@@ -22,7 +27,10 @@ import type {
 describe('ClientStateRepository', () => {
     it('stores durable client records, expires sessions, and assembles snapshots', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const clientRepository = new ClientStateRepository(repository);
+        const eventStore = new InMemoryClientStateEventStore();
+        const clientRepository = new ClientStateRepository(repository, {
+            events: eventStore,
+        });
         const now = Date.now();
 
         const principal = createClientPrincipal();
@@ -105,13 +113,100 @@ describe('ClientStateRepository', () => {
         expect(repository.findStoredEntry('client-state:principals')).toMatchObject({
             expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
         });
+        expect(repository.findStoredEntry('client-state:events')).toBeUndefined();
+        expect(eventStore.listEventsCalls).toBe(1);
+    });
+
+    it('lists client event pages with event-type filtering through dedicated event-store paging', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const eventStore = new InMemoryClientStateEventStore();
+        const clientRepository = new ClientStateRepository(repository, {
+            events: eventStore,
+        });
+        const ref = {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            principalId: 'principal-1',
+        };
+        await clientRepository.appendEvent(
+            createClientEvent('evt-1', 1_000, 'session-connected'),
+        );
+        await clientRepository.appendEvent(
+            createClientEvent('evt-2', 2_000, 'session-disconnected'),
+        );
+        await clientRepository.appendEvent(
+            createClientEvent('evt-3', 3_000, 'session-connected'),
+        );
+        await clientRepository.appendEvent(
+            createClientEvent('evt-4', 4_000, 'session-disconnected'),
+        );
+
+        const firstPage = await clientRepository.listEventPage(
+            ref,
+            readStateEventListQuery(
+                new URLSearchParams('eventType=session-disconnected&limit=1'),
+            ),
+        );
+        const secondPage = await clientRepository.listEventPage(ref, {
+            eventTypes: ['session-disconnected'],
+            limit: 1,
+            after: firstPage.nextCursor,
+        });
+
+        expect(firstPage.events.map((event) => event.eventId)).toEqual(['evt-2']);
+        expect(firstPage.hasMore).toBe(true);
+        expect(secondPage.events.map((event) => event.eventId)).toEqual(['evt-4']);
+        expect(secondPage.hasMore).toBe(false);
+        expect(repository.findEntriesByPrefixCalls).toBe(0);
+        expect(repository.findEntriesByPrefixPageCalls).toHaveLength(0);
+        expect(eventStore.listEventPageCalls).toBe(2);
+    });
+
+    it('preserves client event cursor order when snapshot versions diverge from timestamps', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const clientRepository = new ClientStateRepository(repository, {
+            events: new InMemoryClientStateEventStore(),
+        });
+        const ref = {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            principalId: 'principal-1',
+        };
+        await clientRepository.appendEvent(
+            createClientEvent('evt-late-snapshot', 1_000, 'session-connected', 30),
+        );
+        await clientRepository.appendEvent(
+            createClientEvent('evt-early-snapshot', 2_000, 'session-connected', 10),
+        );
+        await clientRepository.appendEvent(
+            createClientEvent('evt-middle-snapshot', 3_000, 'session-connected', 20),
+        );
+
+        const firstPage = await clientRepository.listEventPage(ref, { limit: 2 });
+        const secondPage = await clientRepository.listEventPage(ref, {
+            limit: 2,
+            after: firstPage.nextCursor,
+        });
+
+        expect(firstPage.events.map((event) => event.eventId)).toEqual([
+            'evt-early-snapshot',
+            'evt-middle-snapshot',
+        ]);
+        expect(firstPage.hasMore).toBe(true);
+        expect(secondPage.events.map((event) => event.eventId)).toEqual([
+            'evt-late-snapshot',
+        ]);
+        expect(secondPage.hasMore).toBe(false);
     });
 });
 
 describe('GroupStateRepository', () => {
     it('stores groups by scope, supports slug lookup, and assembles group snapshots', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(repository);
+        const eventStore = new InMemoryGroupStateEventStore();
+        const groupRepository = new GroupStateRepository(repository, {
+            events: eventStore,
+        });
         const now = Date.now();
 
         const group = createGroup();
@@ -178,6 +273,83 @@ describe('GroupStateRepository', () => {
                 groupId: group.groupId,
             }),
         ).toEqual([createGroupEvent('evt-1', now + 1_000), createGroupEvent('evt-2', now + 2_000)]);
+        expect(repository.findStoredEntry('group-state:events')).toBeUndefined();
+        expect(eventStore.listEventsCalls).toBe(1);
+    });
+
+    it('lists group event pages with cursor order through dedicated event-store paging', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const eventStore = new InMemoryGroupStateEventStore();
+        const groupRepository = new GroupStateRepository(repository, {
+            events: eventStore,
+        });
+        const ref = {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId: 'group-1',
+        };
+        await groupRepository.appendEvent(createGroupEvent('evt-1', 1_000));
+        await groupRepository.appendEvent(createGroupEvent('evt-2', 2_000));
+        await groupRepository.appendEvent(createGroupEvent('evt-3', 3_000));
+
+        const firstPage = await groupRepository.listEventPage(
+            ref,
+            readStateEventListQuery(new URLSearchParams('limit=2')),
+        );
+        const secondPage = await groupRepository.listEventPage(ref, {
+            limit: 2,
+            after: firstPage.nextCursor,
+        });
+
+        expect(firstPage.events.map((event) => event.eventId)).toEqual([
+            'evt-1',
+            'evt-2',
+        ]);
+        expect(firstPage.hasMore).toBe(true);
+        expect(secondPage.events.map((event) => event.eventId)).toEqual([
+            'evt-3',
+        ]);
+        expect(secondPage.hasMore).toBe(false);
+        expect(repository.findEntriesByPrefixCalls).toBe(0);
+        expect(repository.findEntriesByPrefixPageCalls).toHaveLength(0);
+        expect(eventStore.listEventPageCalls).toBe(2);
+    });
+
+    it('preserves group event cursor order when snapshot versions diverge from timestamps', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const groupRepository = new GroupStateRepository(repository, {
+            events: new InMemoryGroupStateEventStore(),
+        });
+        const ref = {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId: 'group-1',
+        };
+        await groupRepository.appendEvent(
+            createGroupEvent('evt-late-snapshot', 1_000, 30),
+        );
+        await groupRepository.appendEvent(
+            createGroupEvent('evt-early-snapshot', 2_000, 10),
+        );
+        await groupRepository.appendEvent(
+            createGroupEvent('evt-middle-snapshot', 3_000, 20),
+        );
+
+        const firstPage = await groupRepository.listEventPage(ref, { limit: 2 });
+        const secondPage = await groupRepository.listEventPage(ref, {
+            limit: 2,
+            after: firstPage.nextCursor,
+        });
+
+        expect(firstPage.events.map((event) => event.eventId)).toEqual([
+            'evt-early-snapshot',
+            'evt-middle-snapshot',
+        ]);
+        expect(firstPage.hasMore).toBe(true);
+        expect(secondPage.events.map((event) => event.eventId)).toEqual([
+            'evt-late-snapshot',
+        ]);
+        expect(secondPage.hasMore).toBe(false);
     });
 });
 
@@ -235,16 +407,21 @@ function createClientSession(
     };
 }
 
-function createClientEvent(eventId: string, occurredAtEpochMs: number): ClientEvent {
+function createClientEvent(
+    eventId: string,
+    occurredAtEpochMs: number,
+    eventType: ClientEvent['eventType'] = 'session-connected',
+    snapshotVersion = occurredAtEpochMs,
+): ClientEvent {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
         principalId: 'principal-1',
         eventId,
-        eventType: 'session-connected',
+        eventType,
         clientInstanceId: 'instance-a',
         sessionId: 'session-a',
-        snapshotVersion: occurredAtEpochMs,
+        snapshotVersion,
         occurredAtEpochMs,
         actor: { serviceId: 'seed' },
     };
@@ -301,14 +478,18 @@ function createGroupSession(
     };
 }
 
-function createGroupEvent(eventId: string, occurredAtEpochMs: number): GroupEvent {
+function createGroupEvent(
+    eventId: string,
+    occurredAtEpochMs: number,
+    snapshotVersion = occurredAtEpochMs,
+): GroupEvent {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
         groupId: 'group-1',
         eventId,
         eventType: 'session-connected',
-        snapshotVersion: occurredAtEpochMs,
+        snapshotVersion,
         occurredAtEpochMs,
         actor: { serviceId: 'seed' },
     };
@@ -316,6 +497,13 @@ function createGroupEvent(eventId: string, occurredAtEpochMs: number): GroupEven
 
 class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {
     readonly data = new Map<string, RuntimeStateEntry>();
+    findEntriesByPrefixCalls = 0;
+    findEntriesByPrefixPageCalls: Array<Readonly<{
+        namespace: string;
+        keyPrefix: string;
+        afterKey?: string;
+        limit: number;
+    }>> = [];
 
     async begin<T>(
         fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
@@ -339,6 +527,7 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
         namespace: string,
         keyPrefix: string,
     ): Promise<readonly RuntimeStateEntry[]> {
+        this.findEntriesByPrefixCalls += 1;
         return [...this.data.entries()]
             .filter(
                 ([compositeKey]) =>
@@ -347,6 +536,36 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
             )
             .map(([, entry]) => ({ ...entry }))
             .sort((left, right) => left.key.localeCompare(right.key));
+    }
+
+    async findEntriesByPrefixPage(
+        namespace: string,
+        keyPrefix: string,
+        options: Readonly<{
+            afterKey?: string;
+            limit: number;
+        }>,
+    ): Promise<readonly RuntimeStateEntry[]> {
+        this.findEntriesByPrefixPageCalls.push({
+            namespace,
+            keyPrefix,
+            afterKey: options.afterKey,
+            limit: options.limit,
+        });
+
+        return [...this.data.entries()]
+            .filter(
+                ([compositeKey]) =>
+                    this.toNamespace(compositeKey) === namespace &&
+                    this.toStoreKey(compositeKey).startsWith(keyPrefix),
+            )
+            .map(([, entry]) => ({ ...entry }))
+            .sort((left, right) => left.key.localeCompare(right.key))
+            .filter((entry) =>
+                options.afterKey === undefined ||
+                entry.key.localeCompare(options.afterKey) > 0
+            )
+            .slice(0, options.limit);
     }
 
     async upsert(

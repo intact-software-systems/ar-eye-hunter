@@ -28,8 +28,10 @@ database lifecycle, and deployment settings around these shared services.
 
 - HTTP client/group mutations are enqueued as durable AppInbox commands, then
   processed by `AppClientInboxService` or `AppGroupInboxService`.
-- Client/group services mutate `runtime_state_store` and return written results.
-  AppInbox services own state-sync publication for those results.
+- Client/group services mutate client/group snapshots in `runtime_state_store`.
+  They append durable state-event logs in `client_state_events` and
+  `group_state_events`. AppInbox services own state-sync publication for those
+  results.
 - State-sync publication updates process-local snapshot caches and enqueues
   messages into the durable WS QueueBox outbox through `StateSyncPublisher`.
 - Retryable AppInbox publication failures keep the command retryable instead of

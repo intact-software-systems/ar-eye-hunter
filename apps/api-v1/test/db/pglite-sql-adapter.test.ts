@@ -8,6 +8,12 @@ import {
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import {
+    PSqlClientStateEventRepository,
+    PSqlGroupStateEventRepository,
+} from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
+import type { ClientEvent } from '@shared/api/client-types.ts';
+import type { GroupEvent } from '@shared/api/group-types.ts';
+import {
     RALLAR_CRDT_OPERATION_VERSION,
     RALLAR_CRDT_PROTOCOL_VERSION,
     type RallarCrdtDocumentRef,
@@ -101,6 +107,129 @@ Deno.test('PSqlRuntimeStateRepository runs against PGlite SQL adapter', async ()
         await repository.upsert('runtime-smoke', 'expired', 'expired', PAST_MS);
         assert.equal(await repository.deleteExpired('runtime-smoke'), 1);
         assert.equal(await repository.findEntry('runtime-smoke', 'expired'), undefined);
+    });
+});
+
+Deno.test('PSql state event repositories page by snapshot cursor order', async () => {
+    await withPGliteSql(async (sql) => {
+        const clientEvents = new PSqlClientStateEventRepository(sql);
+        const groupEvents = new PSqlGroupStateEventRepository(sql);
+        const clientRef = {
+            applicationId: 'rallar-test',
+            workspaceId: 'main',
+            principalId: 'principal-1',
+        };
+        const groupRef = {
+            applicationId: 'rallar-test',
+            workspaceId: 'main',
+            groupId: 'room-1',
+        };
+
+        await clientEvents.appendClientEvent(
+            createClientStateEvent('client-late-snapshot', 1_000, 30),
+        );
+        await clientEvents.appendClientEvent(
+            createClientStateEvent('client-early-snapshot', 2_000, 10),
+        );
+        await clientEvents.appendClientEvent(
+            createClientStateEvent('client-middle-snapshot', 3_000, 20),
+        );
+        await clientEvents.appendClientEvent(
+            createClientStateEvent('client-filtered', 4_000, 40, 'session-disconnected'),
+        );
+        await clientEvents.appendClientEvent(
+            createClientStateEvent('client-filtered', 5_000, 50, 'session-disconnected', {
+                reason: 'updated',
+            }),
+        );
+
+        const firstClientPage = await clientEvents.listClientEventPage(
+            clientRef,
+            { limit: 2 },
+        );
+        const secondClientPage = await clientEvents.listClientEventPage(
+            clientRef,
+            {
+                limit: 2,
+                after: firstClientPage.nextCursor,
+            },
+        );
+        const filteredClientPage = await clientEvents.listClientEventPage(
+            clientRef,
+            {
+                eventTypes: ['session-disconnected'],
+                limit: 1,
+            },
+        );
+
+        assert.deepEqual(
+            firstClientPage.events.map((event) => event.eventId),
+            ['client-early-snapshot', 'client-middle-snapshot'],
+        );
+        assert.equal(firstClientPage.hasMore, true);
+        assert.deepEqual(
+            secondClientPage.events.map((event) => event.eventId),
+            ['client-late-snapshot', 'client-filtered'],
+        );
+        assert.equal(secondClientPage.hasMore, false);
+        assert.equal(filteredClientPage.events[0].reason, undefined);
+        assert.deepEqual(filteredClientPage.nextCursor, {
+            snapshotVersion: 40,
+            occurredAtEpochMs: 4_000,
+            eventId: 'client-filtered',
+        });
+        assert.deepEqual(
+            (await clientEvents.listClientEvents(clientRef)).map((event) => event.eventId),
+            [
+                'client-early-snapshot',
+                'client-middle-snapshot',
+                'client-late-snapshot',
+                'client-filtered',
+            ],
+        );
+
+        await groupEvents.appendGroupEvent(
+            createGroupStateEvent('group-late-snapshot', 1_000, 30),
+        );
+        await groupEvents.appendGroupEvent(
+            createGroupStateEvent('group-early-snapshot', 2_000, 10),
+        );
+        await groupEvents.appendGroupEvent(
+            createGroupStateEvent('group-middle-snapshot', 3_000, 20),
+        );
+        await groupEvents.appendGroupEvent(
+            createGroupStateEvent('group-duplicate', 4_000, 40, 'member-left'),
+        );
+        await groupEvents.appendGroupEvent(
+            createGroupStateEvent('group-duplicate', 5_000, 50, 'member-left', {
+                reason: 'updated',
+            }),
+        );
+
+        const firstGroupPage = await groupEvents.listGroupEventPage(groupRef, {
+            limit: 2,
+        });
+        const secondGroupPage = await groupEvents.listGroupEventPage(groupRef, {
+            limit: 2,
+            after: firstGroupPage.nextCursor,
+        });
+
+        assert.deepEqual(
+            firstGroupPage.events.map((event) => event.eventId),
+            ['group-early-snapshot', 'group-middle-snapshot'],
+        );
+        assert.equal(firstGroupPage.hasMore, true);
+        assert.deepEqual(
+            secondGroupPage.events.map((event) => event.eventId),
+            ['group-late-snapshot', 'group-duplicate'],
+        );
+        assert.equal(secondGroupPage.hasMore, false);
+        assert.equal(secondGroupPage.events[1]?.reason, undefined);
+        assert.deepEqual(secondGroupPage.nextCursor, {
+            snapshotVersion: 40,
+            occurredAtEpochMs: 4_000,
+            eventId: 'group-duplicate',
+        });
     });
 });
 
@@ -412,6 +541,52 @@ async function withPGliteSql(
     } finally {
         await sql.close();
     }
+}
+
+function createClientStateEvent(
+    eventId: string,
+    occurredAtEpochMs: number,
+    snapshotVersion: number,
+    eventType: ClientEvent['eventType'] = 'session-connected',
+    overrides: Partial<ClientEvent> = {},
+): ClientEvent {
+    return {
+        applicationId: 'rallar-test',
+        workspaceId: 'main',
+        principalId: 'principal-1',
+        eventId,
+        eventType,
+        snapshotVersion,
+        occurredAtEpochMs,
+        clientInstanceId: 'instance-1',
+        sessionId: 'session-1',
+        actor: {
+            serviceId: 'pglite-test',
+        },
+        ...overrides,
+    };
+}
+
+function createGroupStateEvent(
+    eventId: string,
+    occurredAtEpochMs: number,
+    snapshotVersion: number,
+    eventType: GroupEvent['eventType'] = 'session-connected',
+    overrides: Partial<GroupEvent> = {},
+): GroupEvent {
+    return {
+        applicationId: 'rallar-test',
+        workspaceId: 'main',
+        groupId: 'room-1',
+        eventId,
+        eventType,
+        snapshotVersion,
+        occurredAtEpochMs,
+        actor: {
+            serviceId: 'pglite-test',
+        },
+        ...overrides,
+    };
 }
 
 const CRDT_ROOM_REF = {

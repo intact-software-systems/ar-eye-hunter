@@ -76,7 +76,7 @@ function toRateLimiterNamespace(namespace: string, path: string): string {
 }
 
 function isEventListRequest(path: string): boolean {
-  return path.endsWith('/events');
+  return path.endsWith('/events') || path.endsWith('/events/page');
 }
 
 function readAuthenticatedClientKey(c: Context): string {

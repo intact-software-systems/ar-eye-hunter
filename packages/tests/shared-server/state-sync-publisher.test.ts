@@ -4,6 +4,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { createWsStateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
@@ -65,6 +66,30 @@ describe('createWsStateSyncPublisher', () => {
         }
     });
 
+    it('records timing details when a live state-sync publish has no route', async () => {
+        const timingEvents: RallarTimingEvent[] = [];
+        const { publisher } = createPublisherReturning('no-route', {
+            timing: (event) => timingEvents.push(event),
+        });
+
+        await publisher.publishClientSnapshot(
+            createClientSnapshot('alice', ['session-a']),
+        );
+
+        expect(timingEvents).toEqual([
+            expect.objectContaining({
+                component: 'state-sync',
+                operation: 'no-route',
+                status: 'ok',
+                details: expect.objectContaining({
+                    topicId: 'client-state.snapshot',
+                    resourceId: 'alice',
+                    reason: 'test resolver returned no recipients',
+                }),
+            }),
+        ]);
+    });
+
     it('allows no-route for a group event when the cached group snapshot has active sessions', async () => {
         const snapshot = createGroupSnapshot('room-2', ['session-b']);
         groupStateSnapshotsRepository.setGroupStateSnapshot(snapshot);
@@ -100,7 +125,10 @@ describe('createWsStateSyncPublisher', () => {
     });
 });
 
-function createPublisherReturning(status: ALOutboundEnqueueStatus): Readonly<{
+function createPublisherReturning(
+    status: ALOutboundEnqueueStatus,
+    options: Partial<Parameters<typeof createWsStateSyncPublisher>[1]> = {},
+): Readonly<{
     publisher: ReturnType<typeof createWsStateSyncPublisher>;
     enqueueOutboxIfAbsent: ReturnType<typeof vi.fn>;
 }> {
@@ -112,7 +140,10 @@ function createPublisherReturning(status: ALOutboundEnqueueStatus): Readonly<{
     }));
     const publisher = createWsStateSyncPublisher(
         { enqueueOutboxIfAbsent } as unknown as WsQueueBoxServerService,
-        { serverId: 'state-service' },
+        {
+            serverId: 'state-service',
+            ...options,
+        },
     );
 
     return {
