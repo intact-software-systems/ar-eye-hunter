@@ -288,6 +288,13 @@ export type RallarStartResult = Readonly<{
     peopleState?: RallarPeopleState;
 }>;
 
+export type RallarSetupInput =
+    & RallarApiClientConfig
+    & RallarDefaults
+    & Readonly<{
+    start?: RallarStartOptions;
+}>;
+
 export type RallarSubscriptionScope = Readonly<{
     add(unsubscribe?: RallarUnsubscribe | null): RallarSubscriptionScope;
     unsubscribe(): void;
@@ -673,6 +680,31 @@ export type RallarRoomMessageChannelDefinition =
 }>;
 
 export type RallarRoomMessageChannel<T> = RallarTypedMessageChannel<T>;
+
+export type RallarRoomSessionRealtimeInput =
+    | string
+    | RallarRoomRealtimeJsonDefaults;
+
+export type RallarRoomSessionMessageDefinition =
+    | string
+    | RallarRoomMessageChannelDefinition;
+
+export type RallarRoomSession = Readonly<{
+    roomId: string;
+    roomRef: GroupRef;
+    snapshot(): GroupSnapshot | undefined;
+    summary(): RallarRoomSummary | undefined;
+    leave(
+        options?: Omit<RallarLeaveRoomOptions, 'roomId' | 'roomRef'>,
+    ): Promise<GroupSnapshot | undefined>;
+    refresh(options?: RallarRefreshOptions): Promise<RallarRoomSession>;
+    realtime<T>(
+        laneIdOrOptions?: RallarRoomSessionRealtimeInput,
+    ): RallarRoomRealtimeJsonChannel<T>;
+    message<T>(
+        nameOrDefinition: RallarRoomSessionMessageDefinition,
+    ): RallarRoomMessageChannel<T>;
+}>;
 
 export type RallarRemoteStream = Readonly<{
     peerId: string;
@@ -1421,6 +1453,7 @@ export type RallarFacade = Readonly<{
     configure(config: RallarApiClientConfig): void;
     setDefaults(defaults?: RallarDefaults): void;
     defaults(): RallarDefaults | undefined;
+    setup(input: RallarSetupInput): Promise<RallarStartResult>;
     connect(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
     start(options?: RallarStartOptions): Promise<RallarStartResult>;
     disconnect(): Promise<void>;
@@ -1473,6 +1506,11 @@ export type RallarFacade = Readonly<{
             room: string | GroupRef | RallarJoinRoomInput,
             options?: RallarJoinRoomOptions,
         ): Promise<GroupSnapshot>;
+        enter(
+            room: string | GroupRef | RallarJoinRoomInput,
+            options?: RallarJoinRoomOptions,
+        ): Promise<RallarRoomSession>;
+        session(room?: string | GroupRef): RallarRoomSession;
         leave(
             input?: string | RallarLeaveRoomOptions,
         ): Promise<GroupSnapshot | undefined>;
@@ -1882,6 +1920,23 @@ class BrowserRallarFacade implements RallarFacade {
         return this.connection.defaults();
     }
 
+    async setup(input: RallarSetupInput): Promise<RallarStartResult> {
+        const {
+            apiBaseUrl,
+            start,
+            ...defaults
+        } = input;
+        this.configure({ apiBaseUrl });
+        this.setDefaults(defaults);
+        return await this.start({
+            restoreSession: true,
+            connect: true,
+            refreshRooms: true,
+            refreshPeople: false,
+            ...start,
+        });
+    }
+
     private readConnectionDefaults(): RallarDefaults | undefined {
         return this.runtime.defaults();
     }
@@ -1990,6 +2045,8 @@ class BrowserRallarFacade implements RallarFacade {
             await this.replayRoomEventsInput(input, listener),
         create: async (input) => await this.createRoom(input),
         join: async (room, options) => await this.joinRoom(room, options),
+        enter: async (room, options) => await this.enterRoom(room, options),
+        session: (room) => this.createRoomSessionForTarget(room),
         leave: async (input) => await this.leaveRoom(input),
         updateMetadata: async (room, patch, options) =>
             await this.updateRoomMetadata(room, patch, options),
@@ -2167,6 +2224,145 @@ class BrowserRallarFacade implements RallarFacade {
             await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
             return snapshot;
         });
+    }
+
+    private async enterRoom(
+        room: string | GroupRef | RallarJoinRoomInput,
+        options: RallarJoinRoomOptions = {},
+    ): Promise<RallarRoomSession> {
+        const snapshot = await this.joinRoom(room, options);
+        return this.createRoomSession(snapshot.group);
+    }
+
+    private createRoomSessionForTarget(
+        room?: string | GroupRef,
+    ): RallarRoomSession {
+        const target = room ??
+            this.resolveDefaultRoomRef() ??
+            this.resolveCurrentRoomRef() ??
+            this.resolveDefaultRoom();
+        const roomRef = typeof target === 'string'
+            ? this.resolveRoomRef(target)
+            : target;
+
+        if (!roomRef) {
+            this.throwMessageValidationIssue(
+                '$.roomRef',
+                'missing-room-ref',
+                'Cannot create room session: no scoped room reference.',
+            );
+        }
+
+        return this.createRoomSession(roomRef);
+    }
+
+    private createRoomSession(roomRef: GroupRef): RallarRoomSession {
+        const roomId = roomRef.groupId;
+        return {
+            roomId,
+            roomRef,
+            snapshot: () => this.findGroupSnapshot(roomRef),
+            summary: () => this.findRoomSummary(roomRef),
+            leave: async (options = {}) =>
+                await this.leaveRoom({
+                    ...options,
+                    roomId,
+                    roomRef,
+                    scope: options.scope ?? toStateScope(roomRef),
+                }),
+            refresh: async (options = {}) => {
+                await this.refreshRooms({
+                    ...options,
+                    scope: options.scope ?? toStateScope(roomRef),
+                });
+                return this.createRoomSession(roomRef);
+            },
+            realtime: <T>(
+                laneIdOrOptions?: RallarRoomSessionRealtimeInput,
+            ): RallarRoomRealtimeJsonChannel<T> =>
+                this.createRoomRealtimeJsonChannel<T>(
+                    this.toRoomSessionRealtimeDefaults(
+                        laneIdOrOptions,
+                        roomRef,
+                    ),
+                ),
+            message: <T>(
+                nameOrDefinition: RallarRoomSessionMessageDefinition,
+            ): RallarRoomMessageChannel<T> =>
+                this.createRoomMessageChannel<T>(
+                    this.toRoomSessionMessageDefinition(
+                        nameOrDefinition,
+                        roomRef,
+                    ),
+                ),
+        };
+    }
+
+    private findRoomSummary(roomRef: GroupRef): RallarRoomSummary | undefined {
+        return this.toRoomState().rooms.find((room) =>
+            isSameGroupRef(room.roomRef, roomRef)
+        );
+    }
+
+    private toRoomSessionRealtimeDefaults(
+        input: RallarRoomSessionRealtimeInput | undefined,
+        roomRef: GroupRef,
+    ): RallarRoomRealtimeJsonDefaults {
+        if (input === undefined) {
+            return { roomRef };
+        }
+        if (typeof input === 'string') {
+            return {
+                laneId: input,
+                roomRef,
+            };
+        }
+
+        const {
+            roomId: _roomId,
+            roomRef: _roomRef,
+            ...defaults
+        } = input;
+        return {
+            ...defaults,
+            roomRef,
+        };
+    }
+
+    private toRoomSessionMessageDefinition(
+        input: RallarRoomSessionMessageDefinition,
+        roomRef: GroupRef,
+    ): RallarRoomMessageChannelDefinition {
+        if (typeof input === 'string') {
+            return {
+                topicId: `room.${input}`,
+                typeId: `room.${input}.v1`,
+                roomRef,
+            };
+        }
+
+        const issues: RallarValidationIssue[] = [];
+        if (input.roomId && input.roomId !== roomRef.groupId) {
+            issues.push({
+                path: '$.roomId',
+                code: 'room-id-mismatch',
+                message: 'roomId must match the bound room session.',
+            });
+        }
+        if (input.roomRef && !isSameGroupRef(input.roomRef, roomRef)) {
+            issues.push({
+                path: '$.roomRef',
+                code: 'room-ref-mismatch',
+                message: 'roomRef must match the bound room session.',
+            });
+        }
+        this.throwIfValidationIssues(issues);
+
+        return {
+            topicId: input.topicId,
+            typeId: input.typeId,
+            roomRef,
+        };
     }
 
     private toJoinRoomInput(

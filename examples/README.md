@@ -9,10 +9,9 @@ surfaces. They are documentation examples, not standalone apps.
   browser facade, restore/login, create a funny RallarAI room name, join it, and
   subscribe to room/people state.
 - [Room Realtime Channel](./room-realtime-channel/README.md): use
-  `rallar.realtime.room<T>(...)` for low-latency room-scoped RTC traffic.
+  `room.realtime<T>(...)` for low-latency room-scoped RTC traffic.
 - [Room Message Channel](./room-message-channel/README.md): use
-  `rallar.messages.room<T>(...)` for typed room messages with RTC and WS
-  options.
+  `room.message<T>(...)` for typed room messages with RTC and WS options.
 - [Director Relay](./director-relay/README.md): route client intents and
   director outputs through the current room director appointment.
 - [Media Calls](./media-calls/README.md): start targeted data/media calls,
@@ -37,6 +36,12 @@ surfaces. They are documentation examples, not standalone apps.
   local Ollama provider private behind a server-side RallarAI flow.
 
 ## Guidance
+
+For browser apps, prefer the golden path: `rallar.setup(...)`, then
+`const room = await rallar.rooms.enter(...)`, then `room.message(...)` or
+`room.realtime(...)`. This is the shorter form of the room/lane setup in
+`apps/ar-eye-hunter-v1` and the runtime adapter shape in
+`apps/relic-hunters-v1`.
 
 Use the full browser facade from `@shared-web/browser/rallar.ts` when an app
 needs several Rallar surfaces. Use narrower entry points such as

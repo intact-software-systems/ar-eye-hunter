@@ -1,8 +1,8 @@
 # Room Message Channel
 
-Use `rallar.messages.room<T>(...)` for typed room messages. The default
-`send(...)` strategy is `rtc-with-ws-fallback`; explicit `sendRtc(...)` and
-`sendWs(...)` are still available.
+Use `room.message<T>(...)` for typed room messages after entering a room. The
+default `send(...)` strategy is `rtc-with-ws-fallback`; explicit `sendRtc(...)`
+and `sendWs(...)` are still available.
 
 ```ts
 import { rallar } from '@shared-web/browser/rallar.ts';
@@ -13,11 +13,8 @@ type ReadyMessage = {
     changedAtEpochMs: number;
 };
 
-const readyChannel = rallar.messages.room<ReadyMessage>({
-    topicId: 'lobby',
-    typeId: 'ready',
-    roomRef: currentRoom.group,
-});
+const room = await rallar.rooms.enter('lobby');
+const readyChannel = room.message<ReadyMessage>('ready');
 
 const unsubscribeWs = readyChannel.onWs((payload, message) => {
     updateReadyState(message.senderId, payload.ready);
@@ -44,6 +41,6 @@ unsubscribeRtc();
 unsubscribeWs();
 ```
 
-Use `messages.channel<T>(...)` for non-room or custom targeting flows. Use
-`messages.room<T>(...)` when the message naturally belongs to the current room.
-
+`room.message('ready')` derives `topicId: 'room.ready'` and
+`typeId: 'room.ready.v1'`. Use `messages.channel<T>(...)` for non-room or
+custom targeting flows.

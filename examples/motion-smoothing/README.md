@@ -36,8 +36,8 @@ const poseGate = createRallarMotionSendGate({
     minPositionDelta: 0.02,
 });
 
-const poses = rallar.realtime.room<Pose>({
-    roomRef: currentRoom.group,
+const room = await rallar.rooms.enter('lobby');
+const poses = room.realtime<Pose>({
     laneId: 'game-snapshot',
     waitTimeoutMs: 500,
 });

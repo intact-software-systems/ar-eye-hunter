@@ -422,6 +422,59 @@ describe('Rallar workflow options compatibility', () => {
         ).toBe(false);
     });
 
+    it('sets up configuration defaults and starts the facade with golden-path defaults', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const { readApiBaseUrl } = await import(
+            '@shared-web/browser/api-client-config.ts'
+        );
+        const facade = createRallarFacade();
+
+        const result = await facade.setup({
+            apiBaseUrl: 'http://localhost:8080///',
+            applicationId: 'game-app',
+            workspaceId: 'arena-1',
+            rtc: {
+                maxPeerConnections: 10,
+            },
+            start: {
+                timeoutMs: 123,
+            },
+        });
+
+        expect(readApiBaseUrl()).toBe('http://localhost:8080');
+        expect(facade.defaults()).toEqual({
+            applicationId: 'game-app',
+            workspaceId: 'arena-1',
+            rtc: {
+                maxPeerConnections: 10,
+            },
+        });
+        expect(result.connected).toBe(true);
+        expect(result.session?.sessionId).toBe('session-1');
+        expect(mocks.initMiddleware).toHaveBeenCalledWith({
+            onAuthInvalid: expect.any(Function),
+            scope: {
+                applicationId: 'game-app',
+                workspaceId: 'arena-1',
+            },
+            timeoutMs: 123,
+            maxPeerConnections: 10,
+        });
+        expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(
+            {
+                applicationId: 'game-app',
+                workspaceId: 'arena-1',
+            },
+            {
+                command: {
+                    timeoutMs: 123,
+                },
+            },
+        );
+    });
+
     it('uses default retry attempts for room workflows', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
@@ -480,6 +533,83 @@ describe('Rallar workflow options compatibility', () => {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
         });
+    });
+
+    it('enters a room and returns a room-bound session handle', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const snapshot = createGroupSnapshot('room-1', ['session-1', 'peer-1']);
+        mockGroupSnapshot(snapshot);
+        mocks.joinStateGroup.mockResolvedValue(snapshot);
+        mocks.webRtcConnectionService.knownPeerIds.mockReturnValue(['peer-1']);
+        mocks.webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
+        mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue(['peer-1']);
+
+        const room = await createRallarFacade().rooms.enter('room-1');
+        const messageResult = await room
+            .message<{ text: string }>('chat')
+            .sendWs(
+                { text: 'hello' },
+                { resourceId: 'chat-message-1' },
+            );
+        const realtimeResult = await room
+            .realtime<{ x: number }>('motion')
+            .send({ x: 1 });
+
+        expect(room.roomId).toBe('room-1');
+        expect(room.roomRef).toEqual(snapshot.group);
+        expect(room.snapshot()).toEqual(snapshot);
+        expect(room.summary()?.roomId).toBe('room-1');
+        expect(messageResult.message.route).toMatchObject({
+            topicId: 'room.chat',
+            contextId: 'room-1',
+            resourceId: 'chat-message-1',
+        });
+        expect(messageResult.message.payload.typeId).toBe('room.chat.v1');
+        expect(messageResult.message.targets).toMatchObject({
+            mode: 'broadcast',
+            scope: 'room',
+            groupRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-1',
+            },
+        });
+        expect(realtimeResult.laneId).toBe('motion');
+        expect(realtimeResult.roomRef).toEqual(snapshot.group);
+    });
+
+    it('creates a room session for the current room without joining', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const snapshot = createGroupSnapshot('room-1', ['session-1']);
+        mockGroupSnapshot(snapshot);
+        mocks.joinStateGroup.mockResolvedValue(snapshot);
+        const facade = createRallarFacade();
+        await facade.rooms.join({ roomRef: snapshot.group, leaveCurrent: false });
+        mocks.joinStateGroup.mockClear();
+
+        const room = facade.rooms.session();
+
+        expect(room.roomId).toBe('room-1');
+        expect(room.roomRef).toEqual(snapshot.group);
+        expect(mocks.joinStateGroup).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid room session message names before routing', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const snapshot = createGroupSnapshot('room-1', ['session-1']);
+        mockGroupSnapshot(snapshot);
+
+        const room = createRallarFacade().rooms.session(snapshot.group);
+
+        expect(() => room.message('bad chat')).toThrow('$.topicId');
+        expect(mocks.ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent)
+            .not.toHaveBeenCalled();
     });
 
     it('rejects mismatched roomId and roomRef in join object input', async () => {

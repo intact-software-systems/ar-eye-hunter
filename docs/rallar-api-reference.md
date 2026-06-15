@@ -42,6 +42,20 @@ rallar.setDefaults({
 
 `defaults()` returns a clone of the current defaults or `undefined`.
 
+`setup(input)` is the browser golden path. It calls `configure`, stores
+defaults, then calls `start`. Unless overridden through `input.start`, it uses
+`restoreSession: true`, `connect: true`, `refreshRooms: true`, and
+`refreshPeople: false`.
+
+```ts
+const started = await rallar.setup({
+    apiBaseUrl: 'http://localhost:8080',
+    applicationId: 'game',
+    workspaceId: 'default',
+    rtc: { maxPeerConnections: 10 },
+});
+```
+
 Route IDs used for rooms, topics, types, lanes, overlays, and peers must be routable Rallar IDs: already-trimmed strings of 1-128 characters using letters, numbers, `.`, `_`, `:`, or `-`. Room IDs are stable route IDs; display names remain human-readable text.
 
 Browser sends validate caller input before enqueueing. Invalid caller input throws `RallarValidationError` with structured `.issues`; delivery/readiness outcomes still use send result statuses such as `no-route`, `not-ready`, and `no-targets`.
@@ -141,6 +155,15 @@ await rallar.auth.registerAndLogin({
 
 `rooms.join(roomIdOrRef, options?)` joins a room. By default it leaves the current room if different. `rooms.join({ roomId })` and `rooms.join({ roomRef })` are also supported; if both are present, `roomId` must match `roomRef.groupId`.
 
+`rooms.enter(roomIdOrRef, options?)` joins a room and returns a
+`RallarRoomSession` bound to that room.
+
+`rooms.session(room?)` returns a `RallarRoomSession` for an explicit room, the
+default room, or the current room without joining.
+
+`RallarRoomSession` exposes `roomId`, `roomRef`, `snapshot()`, `summary()`,
+`leave()`, `refresh()`, `message(...)`, and `realtime(...)`.
+
 `rooms.leave(input?)` leaves a room. It can use explicit `roomId`, `roomRef`, the default room, or the current room.
 
 `rooms.current()` returns the current room snapshot.
@@ -156,12 +179,14 @@ await rallar.auth.registerAndLogin({
 `rooms.replayEvents(input, listener?)` fetches pages of persisted room events, dedupes events already seen by the facade, and optionally feeds the events to a listener.
 
 ```ts
-const room = await rallar.rooms.create({
+const created = await rallar.rooms.create({
     displayName: 'Lobby',
     scope: { applicationId: 'game', workspaceId: 'default' },
 });
 
-await rallar.rooms.join(room.group.groupId);
+const room = await rallar.rooms.enter(created.group);
+const chat = room.message<{ text: string }>('chat');
+const motion = room.realtime<{ x: number; y: number }>('motion');
 
 rallar.rooms.onEvent((event) => {
     if (event.eventType === 'member-joined') {
@@ -240,11 +265,8 @@ Room channels add room defaults and default `send(...)` to the existing
 `rtc-with-ws-fallback` strategy:
 
 ```ts
-const roomChat = rallar.messages.room<ChatMessage>({
-    topicId: 'room.chat',
-    typeId: 'chat.message.v1',
-    roomRef: room.group,
-});
+const roomSession = await rallar.rooms.enter('lobby');
+const roomChat = roomSession.message<ChatMessage>('chat');
 
 roomChat.onWs((payload) => console.log(payload.text));
 await roomChat.send({ text: 'hello' });
@@ -322,9 +344,9 @@ caller intentionally owns peer selection and readiness handling.
 `realtime.health(options?)` returns RTC data channel health records.
 
 ```ts
-const lane = rallar.realtime.room<{ x: number; y: number }>({
-    laneId: 'realtime',
-    roomId: 'lobby',
+const room = await rallar.rooms.enter('lobby');
+const lane = room.realtime<{ x: number; y: number }>({
+    laneId: 'motion',
     waitTimeoutMs: 1000,
 });
 

@@ -109,6 +109,10 @@ export type RelicRoomHydration = Readonly<{
     snapshot?: RelicPublicSnapshot;
 }>;
 
+export type RelicJoinedRoom = Readonly<{
+    roomId: string;
+}>;
+
 export type RelicRuntimeStartResult = Pick<
     RallarStartResult,
     'session' | 'connected' | 'roomState'
@@ -133,7 +137,7 @@ export type RelicHuntersRuntimeDeps = Readonly<{
     authorityStatus(): RallarGameAuthorityClientStatus | undefined;
     publishRtcSnapshot(snapshot: RelicPublicSnapshot): Promise<boolean>;
     createRoom(displayName: string): Promise<{ group: { groupId: string } }>;
-    joinRoom(roomId: string): Promise<{ group: { groupId: string } }>;
+    joinRoom(roomId: string): Promise<RelicJoinedRoom>;
     fetchSnapshot(roomId: string): Promise<RelicPublicSnapshot | undefined>;
     sendCommand(roomId: string, command: RelicCommand): Promise<RelicPublicSnapshot | undefined>;
     resetGame(roomId: string): Promise<RelicPublicSnapshot | undefined>;
@@ -196,7 +200,7 @@ export class RelicHuntersRuntime {
             if (restoredRoomId) {
                 try {
                     const joined = await this.deps.joinRoom(restoredRoomId);
-                    roomId = joined.group.groupId;
+                    roomId = joined.roomId;
                     roomState = await this.deps.refreshRooms();
                 } catch {
                     this.deps.clearRoomId();
@@ -264,7 +268,7 @@ export class RelicHuntersRuntime {
 
     async joinRoom(roomId: string): Promise<RelicRoomHydration> {
         const joined = await this.deps.joinRoom(roomId);
-        return this.hydrateRoom(joined.group.groupId);
+        return this.hydrateRoom(joined.roomId);
     }
 
     async sendCommand(
@@ -381,7 +385,7 @@ function browserRelicRuntimeDeps(): RelicHuntersRuntimeDeps {
             return authority.publishSnapshotRepair(snapshot);
         },
         createRoom: (displayName) => rallar.rooms.create({ displayName }),
-        joinRoom: (roomId) => rallar.rooms.join(roomId),
+        joinRoom: (roomId) => rallar.rooms.enter(roomId),
         fetchSnapshot: (roomId) => fetchRelicSnapshot(roomId),
         sendCommand: (roomId, command) => sendRelicCommand(roomId, command),
         resetGame: (roomId) => resetRelicGame(roomId),
