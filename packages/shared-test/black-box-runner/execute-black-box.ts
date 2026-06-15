@@ -296,6 +296,7 @@ export function redactBlackBoxData<T>(value: T, redactions: Redaction[] = []): T
 function createRtcProviders(): Record<string, RtcProvider> {
     const signalingProvider = createRallarWebRtcWebSocketSignalingProvider();
     return {
+        // Legacy alias; prefer `rallar-signaling` in new signaling-only recipes.
         rallar: signalingProvider,
         'rallar-signaling': signalingProvider,
         'rallar-stub': createRallarStubRtcProvider(),

@@ -134,7 +134,7 @@ describe('browser data caches state scope filtering', () => {
         ).toEqual(['room-b']);
     });
 
-    it('deletes scoped RTC group tracking when the current session is not in the active snapshot', async () => {
+    it('retains RTC connections when the current session leaves an active snapshot', async () => {
         const group = createGroupSnapshot(
             'shared-room',
             'app-1',
@@ -168,7 +168,9 @@ describe('browser data caches state scope filtering', () => {
         );
 
         expect(manager.has).toHaveBeenCalledWith(group.group);
-        expect(manager.delete).toHaveBeenCalledWith(group.group);
+        expect(manager.delete).toHaveBeenCalledWith(group.group, {
+            retainConnections: true,
+        });
     });
 
     it('cleans up RTC group tracking and notifies listeners when a group snapshot is removed', async () => {

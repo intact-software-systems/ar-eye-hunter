@@ -275,6 +275,7 @@ describe('Rallar facade defaults compatibility', () => {
             },
         });
         const wsResult = await facade.messages.ws.send({
+            topicId: 'room.game',
             typeId: 'game.event.v1',
             resourceId: 'ws-event-1',
             payload: {
@@ -295,6 +296,7 @@ describe('Rallar facade defaults compatibility', () => {
             },
         });
         expect(wsResult.message.route).toMatchObject({
+            topicId: 'room.game',
             contextId: 'match-1',
             resourceId: 'ws-event-1',
         });
@@ -323,6 +325,10 @@ describe('Rallar facade defaults compatibility', () => {
             applicationId: 'default-app',
             rtc: {
                 dataChannelLanes: lanes,
+                maxPeerConnections: 12,
+            },
+            messages: {
+                maxPayloadBytes: 2048,
             },
             operations: {
                 timeoutMs: 321,
@@ -339,6 +345,7 @@ describe('Rallar facade defaults compatibility', () => {
             },
             timeoutMs: 321,
             dataChannelLanes: lanes,
+            maxPeerConnections: 12,
         });
         expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(
             {

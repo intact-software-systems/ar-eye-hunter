@@ -179,6 +179,25 @@ describe('rallar-black-box control client', () => {
         );
         expect(directorCommand.ok).toBe(true);
 
+        const invalidRtc = parseControlServerMessage(
+            JSON.stringify(commandEnvelope('rtc-invalid-room', {
+                kind: 'rtc.connect',
+                commandId: 'rtc-invalid-room',
+                roomId: 'bad room',
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+            })),
+            { runId: 'run-1', agentId: 'agent-1' },
+        );
+        expect(invalidRtc.ok).toBe(false);
+        expect(invalidRtc.ok ? [] : invalidRtc.issues).toEqual([
+            {
+                path: 'rtc.roomId',
+                code: 'invalid-route-id',
+                message: expect.stringContaining('Room ID'),
+            },
+        ]);
+
         const mismatchedRun = parseControlServerMessage(
             JSON.stringify({
                 ...commandEnvelope('configure-1', configureCommand()),

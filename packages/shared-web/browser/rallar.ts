@@ -51,6 +51,16 @@ import type {
 } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID, type StateScope, } from '@shared/api/state-types.ts';
 import type { StateEventCursor, StateEventPage, } from '@shared/api/state-event-types.ts';
+import {
+    RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
+    type RallarValidationIssue,
+    validateRallarGroupRef,
+    validateRallarJsonPayload,
+    validateRallarNonNegativeInteger,
+    validateRallarRouteId,
+    validateRallarWsUserTopicId,
+    throwRallarValidation,
+} from '@shared/api/rallar-validation.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { CommandsOrchestrator, type CommandsOrchestratorPolicies, } from '@shared/cache/CommandsOrchestrator.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -360,6 +370,12 @@ export type RallarJoinRoomOptions =
     & Readonly<{
     roomRef?: GroupRef;
     leaveCurrent?: boolean;
+}>;
+
+export type RallarJoinRoomInput =
+    & RallarJoinRoomOptions
+    & Readonly<{
+    roomId?: string;
 }>;
 
 export type RallarLeaveRoomOptions =
@@ -1454,7 +1470,7 @@ export type RallarFacade = Readonly<{
         ): Promise<RallarReplayEventsResult<GroupEvent>>;
         create(input: string | RallarCreateRoomInput): Promise<GroupSnapshot>;
         join(
-            room: string | GroupRef,
+            room: string | GroupRef | RallarJoinRoomInput,
             options?: RallarJoinRoomOptions,
         ): Promise<GroupSnapshot>;
         leave(
@@ -2094,26 +2110,35 @@ class BrowserRallarFacade implements RallarFacade {
     }
 
     private async joinRoom(
-        room: string | GroupRef,
+        room: string | GroupRef | RallarJoinRoomInput,
         options: RallarJoinRoomOptions = {},
     ): Promise<GroupSnapshot> {
         return await this.runAuthAwareOperation(async () => {
-            const operationOptions = this.resolveOperationOptions(options);
+            const joinInput = this.toJoinRoomInput(room, options);
+            this.assertValidJoinRoomInput(joinInput);
+            const operationOptions = this.resolveOperationOptions(joinInput.options);
             const ctx = await this.connect(operationOptions);
             const session = this.requireSession();
             const currentRoomRef = this.resolveCurrentRoomRef();
-            const roomRef = typeof room === 'string'
-                ? options.roomRef ??
-                this.resolveGroupRefFromRoomId(room, options.scope)
-                : room;
-            const roomId = this.toRoomId(room);
-            const operationScope = options.scope ??
+            const roomRef = joinInput.roomRef ??
+                (joinInput.roomId
+                    ? this.resolveGroupRefFromRoomId(
+                        joinInput.roomId,
+                        joinInput.options.scope,
+                    )
+                    : undefined);
+            const roomId = joinInput.roomId ?? roomRef?.groupId;
+            const operationScope = joinInput.options.scope ??
                 (roomRef
                     ? toStateScope(roomRef)
-                    : this.resolveOperationScope(options.scope));
+                    : this.resolveOperationScope(joinInput.options.scope));
 
             if (!roomId) {
-                throw new Error('Cannot join room: room is required.');
+                this.throwMessageValidationIssue(
+                    '$.roomId',
+                    'missing-room',
+                    'Cannot join room: room is required.',
+                );
             }
 
             const snapshot = await apiWorkflows.joinStateGroup(
@@ -2125,7 +2150,7 @@ class BrowserRallarFacade implements RallarFacade {
             );
 
             if (
-                (options.leaveCurrent ?? true) && currentRoomRef &&
+                (joinInput.options.leaveCurrent ?? true) && currentRoomRef &&
                 !this.isSameRoomRefOrId(currentRoomRef, roomRef ?? roomId)
             ) {
                 await this.rooms.leave({
@@ -2142,6 +2167,67 @@ class BrowserRallarFacade implements RallarFacade {
             await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
             return snapshot;
         });
+    }
+
+    private toJoinRoomInput(
+        room: string | GroupRef | RallarJoinRoomInput,
+        options: RallarJoinRoomOptions,
+    ): Readonly<{
+        roomId?: string;
+        roomRef?: GroupRef;
+        options: RallarJoinRoomOptions;
+    }> {
+        if (typeof room === 'string') {
+            return {
+                roomId: room,
+                roomRef: options.roomRef,
+                options,
+            };
+        }
+
+        if (isGroupRefInput(room)) {
+            return {
+                roomId: room.groupId,
+                roomRef: room,
+                options,
+            };
+        }
+
+        return {
+            roomId: room.roomId ?? room.roomRef?.groupId,
+            roomRef: room.roomRef,
+            options: room,
+        };
+    }
+
+    private assertValidJoinRoomInput(
+        input: Readonly<{
+            roomId?: string;
+            roomRef?: GroupRef;
+        }>,
+    ): void {
+        const issues: RallarValidationIssue[] = [];
+        this.pushOptionalRouteIdIssue(input.roomId, '$.roomId', 'Room ID', issues);
+        this.pushOptionalGroupRefIssue(input.roomRef, '$.roomRef', issues);
+        if (!input.roomId && !input.roomRef) {
+            issues.push({
+                path: '$.roomId',
+                code: 'missing-room',
+                message: 'Cannot join room: room is required.',
+            });
+        }
+        if (
+            input.roomId &&
+            input.roomRef &&
+            input.roomId !== input.roomRef.groupId
+        ) {
+            issues.push({
+                path: '$.roomRef.groupId',
+                code: 'room-id-mismatch',
+                message: 'roomId must match roomRef.groupId.',
+            });
+        }
+        this.throwIfValidationIssues(issues);
     }
 
     private async leaveRoom(
@@ -2452,26 +2538,236 @@ class BrowserRallarFacade implements RallarFacade {
             this.createRoomMessageChannel<T>(definition),
     });
 
+    private assertValidRtcMessageInput<T>(
+        input: RallarRtcSendInput<T>,
+        roomId: string | undefined,
+    ): void {
+        const issues: RallarValidationIssue[] = [];
+        this.pushBaseMessageValidationIssues(input, 'rtc', issues);
+        this.pushOptionalRouteIdIssue(input.roomId, '$.roomId', 'Room ID', issues);
+        this.pushOptionalGroupRefIssue(input.roomRef, '$.roomRef', issues);
+        this.pushOptionalRouteIdIssue(input.orderingKey, '$.orderingKey', 'Ordering key', issues);
+        this.pushOptionalRouteIdIssue(input.overlayId, '$.overlayId', 'Overlay ID', issues);
+        input.nextHopPeerIds?.forEach((peerId, index) =>
+            this.pushOptionalRouteIdIssue(
+                peerId,
+                `$.nextHopPeerIds[${index}]`,
+                'Peer ID',
+                issues,
+            )
+        );
+        this.pushOptionalNonNegativeIntegerIssue(
+            input.membershipEpoch,
+            '$.membershipEpoch',
+            issues,
+        );
+        this.pushOptionalNonNegativeIntegerIssue(
+            input.minSnapshotVersion,
+            '$.minSnapshotVersion',
+            issues,
+        );
+        this.pushOptionalNonNegativeIntegerIssue(input.seq, '$.seq', issues);
+        this.pushOptionalNonNegativeIntegerIssue(
+            input.fanoutLimit,
+            '$.fanoutLimit',
+            issues,
+        );
+        if (input.roomId && input.roomRef && input.roomId !== input.roomRef.groupId) {
+            issues.push({
+                path: '$.roomRef.groupId',
+                code: 'room-id-mismatch',
+                message: 'roomId must match roomRef.groupId.',
+            });
+        }
+        if (roomId !== undefined) {
+            this.pushOptionalRouteIdIssue(roomId, '$.roomId', 'Room ID', issues);
+        }
+        this.throwIfValidationIssues(issues);
+    }
+
+    private assertValidWsMessageInput<T>(
+        input: RallarWsSendInput<T>,
+        scope: 'room' | 'world' | 'all',
+        roomId: string | undefined,
+        roomRef: GroupRef | undefined,
+    ): void {
+        const issues: RallarValidationIssue[] = [];
+        this.pushBaseMessageValidationIssues(input, 'ws', issues);
+        this.pushOptionalRouteIdIssue(input.roomId, '$.roomId', 'Room ID', issues);
+        this.pushOptionalGroupRefIssue(input.roomRef, '$.roomRef', issues);
+        input.exceptPeerIds?.forEach((peerId, index) =>
+            this.pushOptionalRouteIdIssue(
+                peerId,
+                `$.exceptPeerIds[${index}]`,
+                'Peer ID',
+                issues,
+            )
+        );
+        this.pushOptionalNonNegativeIntegerIssue(
+            input.minSnapshotVersion,
+            '$.minSnapshotVersion',
+            issues,
+        );
+        if (!['room', 'world', 'all'].includes(scope)) {
+            issues.push({
+                path: '$.scope',
+                code: 'invalid-scope',
+                message: 'WS scope must be room, world, or all.',
+            });
+        }
+        if (input.roomId && input.roomRef && input.roomId !== input.roomRef.groupId) {
+            issues.push({
+                path: '$.roomRef.groupId',
+                code: 'room-id-mismatch',
+                message: 'roomId must match roomRef.groupId.',
+            });
+        }
+        if (scope === 'room') {
+            if (!roomId) {
+                issues.push({
+                    path: '$.roomId',
+                    code: 'missing-room',
+                    message: 'Room-scoped WS messages require a roomId or roomRef.',
+                });
+            }
+            if (!roomRef) {
+                issues.push({
+                    path: '$.roomRef',
+                    code: 'missing-room-ref',
+                    message: 'Room-scoped WS messages require a scoped roomRef.',
+                });
+            } else {
+                this.pushOptionalGroupRefIssue(roomRef, '$.roomRef', issues);
+            }
+        }
+        this.throwIfValidationIssues(issues);
+    }
+
+    private pushBaseMessageValidationIssues<T>(
+        input: RallarMessageSendBase<T>,
+        transport: RallarMessageTransport,
+        issues: RallarValidationIssue[],
+    ): void {
+        if (transport === 'ws') {
+            issues.push(
+                ...validateRallarWsUserTopicId(
+                    input.topicId ?? input.typeId,
+                    '$.topicId',
+                ).issues,
+            );
+        } else {
+            issues.push(
+                ...validateRallarRouteId(
+                    input.topicId ?? input.typeId,
+                    '$.topicId',
+                    'Topic ID',
+                ).issues,
+            );
+        }
+        issues.push(
+            ...validateRallarRouteId(input.typeId, '$.typeId', 'Type ID').issues,
+        );
+        this.pushOptionalRouteIdIssue(input.contextId, '$.contextId', 'Context ID', issues);
+        this.pushOptionalRouteIdIssue(input.resourceId, '$.resourceId', 'Resource ID', issues);
+        this.pushOptionalNonNegativeIntegerIssue(input.ttlHops, '$.ttlHops', issues);
+        this.pushOptionalNonNegativeIntegerIssue(input.ttlMs, '$.ttlMs', issues);
+        issues.push(
+            ...validateRallarJsonPayload(input.payload, {
+                path: '$.payload',
+                maxBytes: this.resolveMessageMaxPayloadBytes(),
+            }).issues,
+        );
+    }
+
+    private assertValidResolvedRoomRef(roomRef: GroupRef, path: string): void {
+        this.throwIfValidationIssues(validateRallarGroupRef(roomRef, path).issues);
+    }
+
+    private pushOptionalRouteIdIssue(
+        value: string | undefined,
+        path: string,
+        label: string,
+        issues: RallarValidationIssue[],
+    ): void {
+        if (value === undefined) {
+            return;
+        }
+        issues.push(...validateRallarRouteId(value, path, label).issues);
+    }
+
+    private pushOptionalGroupRefIssue(
+        value: GroupRef | undefined,
+        path: string,
+        issues: RallarValidationIssue[],
+    ): void {
+        if (value === undefined) {
+            return;
+        }
+        issues.push(...validateRallarGroupRef(value, path).issues);
+    }
+
+    private pushOptionalNonNegativeIntegerIssue(
+        value: number | undefined,
+        path: string,
+        issues: RallarValidationIssue[],
+    ): void {
+        if (value === undefined) {
+            return;
+        }
+        issues.push(...validateRallarNonNegativeInteger(value, path).issues);
+    }
+
+    private throwMessageValidationIssue(
+        path: string,
+        code: string,
+        message: string,
+    ): never {
+        throwRallarValidation([{ path, code, message }]);
+    }
+
+    private throwIfValidationIssues(
+        issues: readonly RallarValidationIssue[],
+    ): void {
+        if (issues.length > 0) {
+            throwRallarValidation(issues);
+        }
+    }
+
+    private resolveMessageMaxPayloadBytes(): number {
+        return this.configuredDefaults?.messages?.maxPayloadBytes ??
+            RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES;
+    }
+
     private async sendRtcMessage<T>(
         input: RallarRtcSendInput<T>,
     ): Promise<RallarMessageSendResult> {
-        const ctx = await this.connect();
-        const session = this.requireSession();
         const room = input.roomRef ??
             input.roomId ??
             this.resolveDefaultRoom() ??
             this.resolveCurrentRoomRef();
         const roomId = this.toRoomId(room);
+
+        this.assertValidRtcMessageInput(input, roomId);
         const roomRef = this.resolveRoomRef(room);
 
         if (!roomId) {
-            throw new Error('Cannot send RTC message: no current room.');
+            this.throwMessageValidationIssue(
+                '$.roomId',
+                'missing-room',
+                'Cannot send RTC message: no current room.',
+            );
         }
         if (!roomRef) {
-            throw new Error(
+            this.throwMessageValidationIssue(
+                '$.roomRef',
+                'missing-room-ref',
                 'Cannot send RTC message: no scoped room reference.',
             );
         }
+        this.assertValidResolvedRoomRef(roomRef, '$.roomRef');
+
+        const ctx = await this.connect();
+        const session = this.requireSession();
 
         const msg = newALMulticastMessage(
             session.sessionId,
@@ -2540,14 +2836,17 @@ class BrowserRallarFacade implements RallarFacade {
     private async sendWsMessage<T>(
         input: RallarWsSendInput<T>,
     ): Promise<RallarMessageSendResult> {
-        const ctx = await this.connect();
-        const session = this.requireSession();
         const room = input.roomRef ??
             input.roomId ??
             (input.scope === undefined ? this.resolveDefaultRoom() : undefined);
         const roomId = this.toRoomId(room);
         const scope = input.scope ?? (roomId ? 'room' : 'all');
         const roomRef = scope === 'room' ? this.resolveRoomRef(room) : undefined;
+
+        this.assertValidWsMessageInput(input, scope, roomId, roomRef);
+
+        const ctx = await this.connect();
+        const session = this.requireSession();
         const contextId = input.contextId ?? roomId ?? input.scope ??
             'all';
         const minSnapshotVersion = room
@@ -3726,11 +4025,12 @@ class BrowserRallarFacade implements RallarFacade {
         if (!selector.typeId) {
             throw new Error('Typed message channels require a typeId.');
         }
-
         const channelDefinition = {
             topicId: selector.topicId,
             typeId: selector.typeId,
         };
+        this.assertValidTypedMessageChannelDefinition(channelDefinition);
+
 
         return {
             send: async (
@@ -3782,6 +4082,7 @@ class BrowserRallarFacade implements RallarFacade {
     private createRoomMessageChannel<T>(
         definition: RallarRoomMessageChannelDefinition,
     ): RallarRoomMessageChannel<T> {
+        this.assertValidRoomMessageChannelDefinition(definition);
         const channel = this.createMessageChannel<T>(definition);
         const roomDefaults = {
             roomId: definition.roomRef ? undefined : definition.roomId,
@@ -3818,6 +4119,37 @@ class BrowserRallarFacade implements RallarFacade {
             onRtc: (handler) => channel.onRtc(handler),
             onWs: (handler) => channel.onWs(handler),
         };
+    }
+
+    private assertValidTypedMessageChannelDefinition(
+        definition: RallarTypedMessageChannelDefinition,
+    ): void {
+        const issues: RallarValidationIssue[] = [];
+        this.pushOptionalRouteIdIssue(definition.topicId, '$.topicId', 'Topic ID', issues);
+        issues.push(
+            ...validateRallarRouteId(definition.typeId, '$.typeId', 'Type ID').issues,
+        );
+        this.throwIfValidationIssues(issues);
+    }
+
+    private assertValidRoomMessageChannelDefinition(
+        definition: RallarRoomMessageChannelDefinition,
+    ): void {
+        const issues: RallarValidationIssue[] = [];
+        this.pushOptionalRouteIdIssue(definition.roomId, '$.roomId', 'Room ID', issues);
+        this.pushOptionalGroupRefIssue(definition.roomRef, '$.roomRef', issues);
+        if (
+            definition.roomId &&
+            definition.roomRef &&
+            definition.roomId !== definition.roomRef.groupId
+        ) {
+            issues.push({
+                path: '$.roomRef.groupId',
+                code: 'room-id-mismatch',
+                message: 'roomId must match roomRef.groupId.',
+            });
+        }
+        this.throwIfValidationIssues(issues);
     }
 
     private async sendTypedMessageWithStrategy<T>(
@@ -6184,6 +6516,9 @@ class BrowserRallarFacade implements RallarFacade {
             ...(operationOptions.dataChannelLanes !== undefined
                 ? { dataChannelLanes: operationOptions.dataChannelLanes }
                 : {}),
+            ...(operationOptions.maxPeerConnections !== undefined
+                ? { maxPeerConnections: operationOptions.maxPeerConnections }
+                : {}),
         };
     }
 
@@ -8152,6 +8487,17 @@ function hasOwn<T extends object, K extends PropertyKey>(
     key: K,
 ): value is T & Record<K, unknown> {
     return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function isGroupRefInput(value: unknown): value is GroupRef {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return false;
+    }
+
+    return typeof (value as { applicationId?: unknown }).applicationId === 'string' &&
+        typeof (value as { groupId?: unknown }).groupId === 'string' &&
+        !hasOwn(value, 'roomId') &&
+        !hasOwn(value, 'roomRef');
 }
 
 function isStateScope(

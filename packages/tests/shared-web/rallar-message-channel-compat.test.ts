@@ -257,6 +257,34 @@ describe('Rallar typed message channel compatibility', () => {
         });
     });
 
+    it('rejects invalid typed message channel definitions', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const facade = createRallarFacade();
+
+        expect(() =>
+            facade.messages.channel({
+                topicId: 'room chat',
+                typeId: 'chat.message.v1',
+            })
+        ).toThrow('$.topicId');
+        expect(() =>
+            facade.messages.room({
+                topicId: 'room.chat',
+                typeId: 'chat message',
+                roomId: 'room-1',
+            })
+        ).toThrow('$.typeId');
+        expect(() =>
+            facade.messages.room({
+                topicId: 'room.chat',
+                typeId: 'chat.message.v1',
+                roomId: 'bad room',
+            })
+        ).toThrow('$.roomId');
+    });
+
     it('falls back to WS through typed channel send when RTC has no route', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'

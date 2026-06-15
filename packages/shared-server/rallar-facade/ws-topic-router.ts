@@ -3,6 +3,13 @@ import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { isALControlTypeId, newALNackControlMessage, } from '@shared/al-contracts/al-control.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import {
+    RALLAR_AL_CONTROL_TOPIC_ID,
+    RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
+    RALLAR_USER_WS_TOPIC_PREFIXES,
+    assertValidRallarWsUserTopicId,
+    isReservedRallarWsTopicId,
+} from '@shared/api/rallar-validation.ts';
 import type { ALOutboundEnqueueResult, ALOutboundEnqueueStatus, } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
@@ -14,11 +21,7 @@ import {
 } from '@shared/services/WsQueueBoxServerService.ts';
 
 const DYNAMIC_TOPIC_ROUTER_CALLBACK_ID = 'dynamic-ws-topic-router';
-const DEFAULT_USER_TOPIC_PREFIXES = ['app.', 'room.'] as const;
-const RESERVED_SYSTEM_TOPIC_PREFIXES = ['rallar.'] as const;
-const DEFAULT_MAX_PAYLOAD_BYTES = 64 * 1024;
 const RESERVED_TOPIC_IDS = new Set<string>(Object.values(AppTopics));
-const AL_CONTROL_TOPIC_ID = 'al-control';
 
 export type RallarServerWsFanout = 'live-only' | 'outbox' | 'none';
 
@@ -227,7 +230,8 @@ export class RallarServerWsFacade {
         private readonly wsQBoxServerService: WsQueueBoxServerService,
         options: RallarServerWsFacadeOptions = {},
     ) {
-        this.maxPayloadBytes = options.maxPayloadBytes ?? DEFAULT_MAX_PAYLOAD_BYTES;
+        this.maxPayloadBytes = options.maxPayloadBytes ??
+            RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES;
         this.sendNacks = options.sendNacks ?? true;
         this.allowImplicitUserTopics = options.allowImplicitUserTopics ?? true;
         this.defaultFanout = options.defaultFanout ?? 'live-only';
@@ -652,27 +656,17 @@ export class RallarServerWsFacade {
     }
 
     private assertUserTopic(topicId: string): void {
-        if (this.isReservedSystemTopic(topicId)) {
-            throw new Error(`Rallar system WS topic is reserved: ${topicId}`);
-        }
-
-        if (!this.isUserTopic(topicId)) {
-            throw new Error(
-                `Rallar user WS topic must start with ${DEFAULT_USER_TOPIC_PREFIXES.join(' or ')}: ${topicId}`,
-            );
-        }
+        assertValidRallarWsUserTopicId(topicId, '$.topicId');
     }
 
     private isSystemMessage(message: ALMessage): boolean {
         return RESERVED_TOPIC_IDS.has(message.route.topicId) ||
-            message.route.topicId === AL_CONTROL_TOPIC_ID ||
+            message.route.topicId === RALLAR_AL_CONTROL_TOPIC_ID ||
             isALControlTypeId(message.payload.typeId);
     }
 
     private isReservedSystemTopic(topicId: string): boolean {
-        return RESERVED_SYSTEM_TOPIC_PREFIXES.some((prefix) =>
-            topicId.startsWith(prefix)
-        );
+        return isReservedRallarWsTopicId(topicId);
     }
 
     private isImplicitUserTopic(topicId: string): boolean {
@@ -680,7 +674,7 @@ export class RallarServerWsFacade {
     }
 
     private isUserTopic(topicId: string): boolean {
-        return DEFAULT_USER_TOPIC_PREFIXES.some((prefix) => topicId.startsWith(prefix));
+        return RALLAR_USER_WS_TOPIC_PREFIXES.some((prefix) => topicId.startsWith(prefix));
     }
 
     private isPayloadSizeAllowed(

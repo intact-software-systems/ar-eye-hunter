@@ -19,6 +19,10 @@ describe('Rallar browser facade runtime context', () => {
             },
             rtc: {
                 dataChannelLanes: lanes,
+                maxPeerConnections: 12,
+            },
+            messages: {
+                maxPayloadBytes: 2048,
             },
             operations: {
                 timeoutMs: 500,
@@ -36,6 +40,10 @@ describe('Rallar browser facade runtime context', () => {
             },
             rtc: {
                 dataChannelLanes: lanes,
+                maxPeerConnections: 12,
+            },
+            messages: {
+                maxPayloadBytes: 2048,
             },
             operations: {
                 timeoutMs: 500,
@@ -63,6 +71,7 @@ describe('Rallar browser facade runtime context', () => {
             maxAttempts: 3,
             shouldRetry,
             dataChannelLanes: lanes,
+            maxPeerConnections: 12,
         });
     });
 

@@ -31,7 +31,7 @@ examples.
 | `rtc-rallar-browser-not-yet-in-sync.json` | Rallar integration | Send with a future `minSnapshotVersion` and assert the observable `not-yet-in-sync` NACK message. |
 | `rtc-rallar-browser-readiness-diagnostics.json` | Rallar integration | Wait for provider readiness diagnostics and health after browser-backed RTC connect. |
 | `rtc-rallar-browser-timeout-diagnostics.json` | Rallar integration | Intentionally waits for a missing diagnostic to demonstrate timeout failure diagnostics. |
-| `rtc-rallar-two-peer-chat.json` | Signaling-only integration | Uses the legacy `rallar` alias for `rallar-signaling`. This opens WebSocket signaling and exercises runner expectations, but it does not prove a real WebRTC data path. |
+| `rtc-rallar-two-peer-chat.json` | Signaling-only integration | Uses the explicit `rallar-signaling` provider. This opens WebSocket signaling and exercises runner expectations, but it does not prove a real WebRTC data path. |
 | `rallar-crdt-browser-ws-convergence.json` | Rallar CRDT integration | Opens the same CRDT document in two browser actors, applies concurrent WS-backed updates, waits for value/health convergence, reads outputs, and asserts both materialized values. |
 | `rallar-crdt-browser-rtc-with-ws-fallback.json` | Rallar CRDT integration | Exercises user-selectable `rtc-with-ws-fallback` CRDT transport with a sequence insert, wait-based convergence, and health assertions. |
 | `rallar-crdt-browser-durable-late-join-catchup.json` | Rallar CRDT integration | Writes before a second browser actor joins, then waits for durable HTTP catch-up and asserts the late-join value. |

@@ -2,11 +2,13 @@ export * from './al-contracts/al-contract.ts';
 export * from './al-contracts/al-control.ts';
 export * from './al-contracts/al-policy.ts';
 export * from './al-contracts/al-runtime.ts';
+export * from './al-contracts/al-validation.ts';
 
 export * from './api/api-config.ts';
 export * from './api/api-type-utils.ts';
 export * from './api/group-director.ts';
 export * from './api/overlay-topology.ts';
+export * from './api/rallar-validation.ts';
 
 export * from './crdt/mod.ts';
 

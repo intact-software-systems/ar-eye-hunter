@@ -446,10 +446,63 @@ describe('Rallar workflow options compatibility', () => {
         expect(policies.command?.maxAttempts).toBe(4);
     });
 
+    it('joins rooms from object input using roomId or roomRef', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const roomRef = {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId: 'room-ref',
+        };
+        const roomIdSnapshot = createGroupSnapshot('room-id', ['session-1']);
+        const roomRefSnapshot = createGroupSnapshot('room-ref', ['session-1'], {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        });
+        mocks.joinStateGroup
+            .mockResolvedValueOnce(roomIdSnapshot)
+            .mockResolvedValueOnce(roomRefSnapshot);
+
+        const facade = createRallarFacade();
+        await facade.rooms.join({
+            roomId: 'room-id',
+            leaveCurrent: false,
+        });
+        await facade.rooms.join({
+            roomRef,
+            leaveCurrent: false,
+        });
+
+        expect(mocks.joinStateGroup.mock.calls[0]?.[0]).toBe('room-id');
+        expect(mocks.joinStateGroup.mock.calls[1]?.[0]).toBe('room-ref');
+        expect(mocks.joinStateGroup.mock.calls[1]?.[3]).toEqual({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        });
+    });
+
+    it('rejects mismatched roomId and roomRef in join object input', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+
+        await expect(createRallarFacade().rooms.join({
+            roomId: 'room-a',
+            roomRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-b',
+            },
+        })).rejects.toThrow('roomId must match roomRef.groupId');
+
+        expect(mocks.joinStateGroup).not.toHaveBeenCalled();
+    });
+
     it('hydrates state caches from room mutation responses without waiting for WS echo', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
-            );
+        );
         const snapshot = createGroupSnapshot('created-room', ['session-1']);
         mocks.createAndJoinStateGroup.mockResolvedValue(snapshot);
 
@@ -491,11 +544,13 @@ describe('Rallar workflow options compatibility', () => {
 
         await createRallarFacade().connect({
             dataChannelLanes: lanes,
+            maxPeerConnections: 12,
         });
 
         expect(mocks.initMiddleware).toHaveBeenCalledWith({
             onAuthInvalid: expect.any(Function),
             dataChannelLanes: lanes,
+            maxPeerConnections: 12,
         });
     });
 

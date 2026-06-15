@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 import {
     newALRoute,
     newALUnicastMessage,
@@ -348,6 +349,83 @@ describe('Rallar message send compatibility', () => {
         );
     });
 
+    it('rejects invalid WS user topics before queueing', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+
+        await expect(createRallarFacade().messages.ws.send({
+            scope: 'all',
+            topicId: 'manual.chat',
+            typeId: 'chat.message.v1',
+            payload: { text: 'invalid topic' },
+        })).rejects.toSatisfy(isRallarValidationError);
+
+        expect(mocks.ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent)
+            .not.toHaveBeenCalled();
+    });
+
+    it('rejects room-scoped WS sends without a room target before queueing', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+
+        await expect(createRallarFacade().messages.ws.send({
+            scope: 'room',
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+            payload: { text: 'missing room' },
+        })).rejects.toSatisfy(isRallarValidationError);
+
+        expect(mocks.ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent)
+            .not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid RTC room ids before connecting or queueing', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+
+        await expect(createRallarFacade().messages.rtc.send({
+            roomId: 'bad room',
+            typeId: 'chat.message.v1',
+            payload: { text: 'invalid room' },
+        })).rejects.toSatisfy(isRallarValidationError);
+
+        expect(mocks.initMiddleware).not.toHaveBeenCalled();
+        expect(mocks.ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent)
+            .not.toHaveBeenCalled();
+    });
+
+    it('rejects corrupt and oversized message payloads before queueing', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const facade = createRallarFacade();
+        facade.setDefaults({
+            applicationId: 'app-1',
+            messages: {
+                maxPayloadBytes: 8,
+            },
+        });
+
+        await expect(facade.messages.ws.send({
+            scope: 'all',
+            topicId: 'app.chat',
+            typeId: 'chat.message.v1',
+            payload: 1n,
+        })).rejects.toSatisfy(isRallarValidationError);
+        await expect(facade.messages.ws.send({
+            scope: 'all',
+            topicId: 'app.chat',
+            typeId: 'chat.message.v1',
+            payload: { text: 'too large' },
+        })).rejects.toSatisfy(isRallarValidationError);
+
+        expect(mocks.ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent)
+            .not.toHaveBeenCalled();
+    });
+
     it('returns RTC send status with the message when multicast enqueue reports no entries', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
@@ -512,6 +590,7 @@ describe('Rallar message send compatibility', () => {
 
         const result = await createRallarFacade().messages.ws.send({
             scope: 'all',
+            topicId: 'app.chat',
             typeId: 'chat.message.v1',
             resourceId: 'msg-ws',
             payload: {
@@ -531,7 +610,7 @@ describe('Rallar message send compatibility', () => {
                     senderId: 'session-1',
                 },
                 route: {
-                    topicId: 'chat.message.v1',
+                    topicId: 'app.chat',
                     resourceId: 'msg-ws',
                     contextId: 'all',
                 },
@@ -555,6 +634,7 @@ describe('Rallar message send compatibility', () => {
 
         await createRallarFacade().messages.ws.send({
             scope: 'all',
+            topicId: 'app.chat',
             typeId: 'chat.message.v1',
             resourceId: 'msg-queued-ws',
             payload: {
@@ -576,6 +656,7 @@ describe('Rallar message send compatibility', () => {
 
         const result = await createRallarFacade().messages.ws.send({
             roomId: 'room-1',
+            topicId: 'room.chat',
             typeId: 'chat.message.v1',
             resourceId: 'msg-versioned-ws',
             payload: {
@@ -624,6 +705,7 @@ describe('Rallar message send compatibility', () => {
         const result = await createRallarFacade().messages.ws.send({
             roomId: 'shared-room',
             roomRef: workspaceB.group,
+            topicId: 'room.chat',
             typeId: 'chat.message.v1',
             resourceId: 'msg-versioned-ws-scoped',
             payload: {

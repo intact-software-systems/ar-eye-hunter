@@ -281,9 +281,7 @@ async function handleGroupSnapshotUpdate(
         overlaysRepository.removeOverlayByGroupRef(snapshot.group);
         overlaysRepository.removeLegacyOverlayByGroupIdIfMatches(snapshot.group);
 
-        if (webRtcGroupManager.has(snapshot.group)) {
-            await webRtcGroupManager.delete(snapshot.group);
-        }
+        await webRtcGroupManager.delete(snapshot.group);
         return;
     }
 
@@ -292,7 +290,7 @@ async function handleGroupSnapshotUpdate(
     if (isSessionInGroup(snapshot, mySessionId)) {
         await webRtcGroupManager.acceptGroupUpdate(snapshot);
     } else if (webRtcGroupManager.has(snapshot.group)) {
-        await webRtcGroupManager.delete(snapshot.group);
+        await webRtcGroupManager.delete(snapshot.group, { retainConnections: true });
     }
 }
 
@@ -303,9 +301,7 @@ async function handleGroupSnapshotRemoval(
     overlaysRepository.removeOverlayByGroupRef(snapshot.group);
     overlaysRepository.removeLegacyOverlayByGroupIdIfMatches(snapshot.group);
 
-    if (webRtcGroupManager.has(snapshot.group)) {
-        await webRtcGroupManager.delete(snapshot.group);
-    }
+    await webRtcGroupManager.delete(snapshot.group);
 }
 
 function trackStateRepositoryObserverTask(task: Promise<void>): Promise<void> {

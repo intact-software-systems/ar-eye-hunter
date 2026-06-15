@@ -254,9 +254,11 @@ function toRequiredSignalingUrl(args: RallarRtcClientArgs): string {
 }
 
 /**
- * The default concrete `rallar` provider used by the black-box CLI today.
+ * The concrete `rallar-signaling` provider used by signaling-only CLI recipes.
  *
- * It uses the global WebSocket implementation and is still signaling-only.
+ * The legacy `rallar` provider name maps to this same implementation for
+ * backward compatibility. It uses the global WebSocket implementation and is
+ * still signaling-only.
  * A successful connect means the signaling transport opened; it does not mean
  * a WebRTC peer connection or data channel has been established yet.
  */
@@ -389,7 +391,8 @@ export function createRallarWebRtcSignalingOnlyRuntime(
  * Provider wrapper for an injected signaling factory.
  *
  * Use this in tests when the signaling transport should be fake/in-memory.
- * Use `createRallarWebRtcWebSocketSignalingProvider()` for the default CLI path.
+ * Use `createRallarWebRtcWebSocketSignalingProvider()` for the explicit
+ * `rallar-signaling` CLI path.
  */
 export function createRallarWebRtcSignalingOnlyProvider(
     options: RallarWebRtcSignalingRuntimeOptions,

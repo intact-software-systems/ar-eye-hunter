@@ -59,6 +59,7 @@ export type MiddlewareInitOptions = Readonly<{
     signal?: AbortSignal;
     timeoutMs?: number;
     dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
+    maxPeerConnections?: number;
     scope?: StateScope;
     onAuthInvalid?: (error: unknown) => void | Promise<void>;
 }>;
@@ -230,6 +231,7 @@ export async function initialiseMiddleware(
         groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
         clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
         overlaysRepository.readableOverlayCache(),
+        { maxPeerConnections: options.maxPeerConnections },
     );
 
     cache.initialise(webSocketQueueBox, webRtcGroupManager, clientData, {

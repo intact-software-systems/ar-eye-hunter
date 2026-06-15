@@ -75,6 +75,30 @@ describe('direct Rallar operations', () => {
         expect(result.events.at(-1)?.topic).toBe('rallar.direct.ws.send.failed');
     });
 
+    it('rejects invalid direct room ids before loading the facade', async () => {
+        let loadCalled = false;
+
+        const result = await runDirectRallarGroupJoin(
+            {
+                providerMode: 'browser-rallar',
+                apiBaseUrl: 'http://localhost:8080',
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                roomId: 'bad room',
+                actor: 'alice',
+                authSession: session,
+            },
+            async () => {
+                loadCalled = true;
+                throw new Error('should not load facade');
+            },
+        );
+
+        expect(loadCalled).toBe(false);
+        expect(result.status).toBe('failed');
+        expect(result.error?.message).toContain('Room ID');
+    });
+
     it('configures and starts the browser Rallar facade for direct status checks', async () => {
         const calls: string[] = [];
         const facade: DirectRallarFacade = {

@@ -121,13 +121,13 @@ Expected API use:
 
 ```ts
 rallar.messages.ws.onMessage(
-  { topicId: 'chat', typeId: 'message' },
+  { topicId: 'room.chat', typeId: 'chat.message.v1' },
   (message) => handleChat(message.payload),
 );
 
 await rallar.messages.ws.send({
-  topicId: 'chat',
-  typeId: 'message',
+  topicId: 'room.chat',
+  typeId: 'chat.message.v1',
   payload: { text },
   scope: 'room',
   roomRef,

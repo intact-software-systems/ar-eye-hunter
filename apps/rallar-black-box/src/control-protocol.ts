@@ -9,6 +9,12 @@ import {
 import type {
     RallarBlackBoxControlAgentIdentity,
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import {
+    type RallarValidationIssue,
+    type RallarValidationResult,
+    formatRallarValidation,
+    validateRallarRouteId,
+} from '@shared/api/rallar-validation.ts';
 
 export const RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION = 1;
 
@@ -84,7 +90,7 @@ export type ControlServerEnvelope = ControlCommandEnvelope;
 
 export type ParseControlMessageResult =
     | Readonly<{ ok: true; envelope: ControlServerEnvelope }>
-    | Readonly<{ ok: false; error: string }>;
+    | Readonly<{ ok: false; error: string; issues?: readonly RallarValidationIssue[] }>;
 
 export type ParseControlClientMessageResult =
     | Readonly<{ ok: true; envelope: ControlClientEnvelope }>
@@ -92,7 +98,7 @@ export type ParseControlClientMessageResult =
 
 export type ControlCommandValidationResult =
     | Readonly<{ ok: true }>
-    | Readonly<{ ok: false; error: string }>;
+    | Readonly<{ ok: false; error: string; issues?: readonly RallarValidationIssue[] }>;
 
 const COMMAND_KINDS: readonly RallarBlackBoxTestCommandKind[] = RALLAR_BLACK_BOX_TEST_COMMAND_KINDS;
 
@@ -124,6 +130,16 @@ function fail(message: string): ControlCommandValidationResult {
     };
 }
 
+function failRallarValidation(
+    validation: RallarValidationResult,
+): ControlCommandValidationResult {
+    return {
+        ok: false,
+        error: formatRallarValidation(validation),
+        issues: validation.issues,
+    };
+}
+
 function validateKeys(
     value: Record<string, unknown>,
     allowed: readonly string[],
@@ -148,6 +164,23 @@ function validateStringField(
     return typeof value[key] === 'string'
         ? { ok: true }
         : fail(`${path}.${key} must be a string.`);
+}
+
+function validateRouteIdField(
+    value: Record<string, unknown>,
+    key: string,
+    path: string,
+    label: string,
+): ControlCommandValidationResult {
+    if (value[key] === undefined) {
+        return { ok: true };
+    }
+    if (typeof value[key] !== 'string') {
+        return fail(`${path}.${key} must be a string.`);
+    }
+
+    const validation = validateRallarRouteId(value[key], `${path}.${key}`, label);
+    return validation.ok ? { ok: true } : failRallarValidation(validation);
 }
 
 function validateNumberField(
@@ -563,6 +596,16 @@ function validateRtcCommand(command: Record<string, unknown>): ControlCommandVal
             return result;
         }
     }
+    for (const [field, label] of [
+        ['roomId', 'Room ID'],
+        ['applicationId', 'Application ID'],
+        ['workspaceId', 'Workspace ID'],
+    ] as const) {
+        const result = validateRouteIdField(command, field, 'rtc', label);
+        if (!result.ok) {
+            return result;
+        }
+    }
     for (const field of ['scope', 'roomRef']) {
         const result = validateObjectField(command, field, 'rtc');
         if (!result.ok) {
@@ -589,6 +632,16 @@ function validateDirectorRoomFields(
 ): ControlCommandValidationResult {
     for (const field of ['roomId', 'applicationId', 'workspaceId']) {
         const result = validateStringField(command, field, path);
+        if (!result.ok) {
+            return result;
+        }
+    }
+    for (const [field, label] of [
+        ['roomId', 'Room ID'],
+        ['applicationId', 'Application ID'],
+        ['workspaceId', 'Workspace ID'],
+    ] as const) {
+        const result = validateRouteIdField(command, field, path, label);
         if (!result.ok) {
             return result;
         }
@@ -1014,6 +1067,7 @@ export function parseControlServerMessage(
         return {
             ok: false,
             error: `Control command payload is invalid: ${commandValidation.error}`,
+            issues: commandValidation.issues,
         };
     }
 

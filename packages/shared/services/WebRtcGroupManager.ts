@@ -24,15 +24,36 @@ export type WebRtcGroupManagerState = {
     readonly peerOwners: ReadonlyMap<PeerId, readonly GroupId[]>;
 };
 
+export const DEFAULT_WEBRTC_MAX_PEER_CONNECTIONS = 10;
+export const MIN_WEBRTC_MAX_PEER_CONNECTIONS = 5;
+
+export type WebRtcGroupManagerOptions = Readonly<{
+    maxPeerConnections?: number;
+}>;
+
+export type WebRtcGroupManagerDeleteOptions = Readonly<{
+    retainConnections?: boolean;
+}>;
+
+type RetainedPeerConnection = Readonly<{
+    peerId: PeerId;
+    groupKey: string;
+    groupId: GroupId;
+    retainedOrder: number;
+}>;
+
 export class WebRtcGroupManager {
     private readonly groupsByKey = new Map<string, WebRtcGroupService>();
+    private readonly retainedPeerConnections = new Map<PeerId, RetainedPeerConnection>();
     private reconcileInFlight: Promise<void> | undefined;
+    private retainedOrder = 0;
 
     constructor(
         public readonly rtcQBox: WebRtcConnectionService,
         public readonly groupCache: ReadableKeyedValues<string, AnyGroupPresence>,
         public readonly clientCache: ReadableKeyedValues<string, AnyClientPresence>,
         public readonly overlayCache?: ReadableKeyedValues<string, OverlayInfo>,
+        public readonly options: WebRtcGroupManagerOptions = {},
     ) {
     }
 
@@ -60,11 +81,22 @@ export class WebRtcGroupManager {
         return this.groupsByKey.has(toWebRtcGroupKey(group));
     }
 
-    async delete(group: GroupRef): Promise<boolean> {
+    async delete(
+        group: GroupRef,
+        options: WebRtcGroupManagerDeleteOptions = {},
+    ): Promise<boolean> {
         const groupKey = toWebRtcGroupKey(group);
+        const service = this.groupsByKey.get(groupKey);
         const existed = this.groupsByKey.delete(groupKey);
-        if (!existed) {
+        const retainedGroupExisted = this.hasRetainedGroup(groupKey);
+        if (!existed && !retainedGroupExisted) {
             return false;
+        }
+
+        if (options.retainConnections && service) {
+            this.retainKnownPeersForGroup(service, groupKey);
+        } else {
+            this.removeRetainedGroup(groupKey);
         }
 
         await this.reconcileAllGroups();
@@ -73,6 +105,7 @@ export class WebRtcGroupManager {
 
     async clear(): Promise<void> {
         this.groupsByKey.clear();
+        this.retainedPeerConnections.clear();
         await this.reconcileAllGroups();
     }
 
@@ -176,7 +209,8 @@ export class WebRtcGroupManager {
             const peerIdsWithNoReconnectableLanes = new Set(
                 this.rtcQBox.peerIdsWithNoReconnectableLanes(),
             );
-            const knownPeerIds = new Set(this.rtcQBox.knownPeerIds());
+            let knownPeerIds = new Set(this.rtcQBox.knownPeerIds());
+            this.removeRetainedDesiredPeers(desiredPeerIds);
 
             const connectablePeerIds = Array.from(desiredPeerIds).filter(
                 (peerId) => onlinePeerIds.has(peerId),
@@ -184,10 +218,6 @@ export class WebRtcGroupManager {
 
             const peersToConnect = connectablePeerIds.filter(
                 (peerId) => !peerIdsWithNoReconnectableLanes.has(peerId),
-            );
-
-            const peersToDisconnect = Array.from(knownPeerIds).filter(
-                (peerId) => !desiredPeerIds.has(peerId),
             );
 
             for (const peerId of peersToConnect) {
@@ -205,11 +235,28 @@ export class WebRtcGroupManager {
                 }
             }
 
+            knownPeerIds = new Set(this.rtcQBox.knownPeerIds());
+            this.removeUnknownRetainedPeers(knownPeerIds);
+            const retainedPeerIds = new Set(this.retainedPeerConnections.keys());
+            const peersToDisconnect = Array.from(knownPeerIds).filter(
+                (peerId) => !desiredPeerIds.has(peerId) && !retainedPeerIds.has(peerId),
+            );
+
             for (const peerId of peersToDisconnect) {
                 try {
                     this.rtcQBox.disconnectPeer(peerId);
+                    this.retainedPeerConnections.delete(peerId);
                 } catch (error) {
                     console.error(`Failed to disconnect peer ${peerId}`, error);
+                }
+            }
+
+            for (const peerId of this.retainedPeersToEvict(desiredPeerIds, knownPeerIds)) {
+                try {
+                    this.rtcQBox.disconnectPeer(peerId);
+                    this.retainedPeerConnections.delete(peerId);
+                } catch (error) {
+                    console.error(`Failed to disconnect retained peer ${peerId}`, error);
                 }
             }
         })();
@@ -278,5 +325,91 @@ export class WebRtcGroupManager {
         return legacy && isOverlayForGroupRef(legacy, groupRef)
             ? legacy
             : undefined;
+    }
+
+    private retainKnownPeersForGroup(
+        group: WebRtcGroupService,
+        groupKey: string,
+    ): void {
+        const knownPeerIds = new Set(this.rtcQBox.knownPeerIds());
+        for (const peerId of this.targetPeerIdsForGroup(group)) {
+            if (!knownPeerIds.has(peerId) || this.retainedPeerConnections.has(peerId)) {
+                continue;
+            }
+
+            this.retainedPeerConnections.set(peerId, {
+                peerId,
+                groupKey,
+                groupId: group.groupRef.groupId,
+                retainedOrder: this.retainedOrder++,
+            });
+        }
+    }
+
+    private hasRetainedGroup(groupKey: string): boolean {
+        return Array.from(this.retainedPeerConnections.values())
+            .some((retained) => retained.groupKey === groupKey);
+    }
+
+    private removeRetainedGroup(groupKey: string): void {
+        for (const [peerId, retained] of this.retainedPeerConnections.entries()) {
+            if (retained.groupKey === groupKey) {
+                this.retainedPeerConnections.delete(peerId);
+            }
+        }
+    }
+
+    private removeRetainedDesiredPeers(desiredPeerIds: Set<PeerId>): void {
+        for (const peerId of desiredPeerIds) {
+            this.retainedPeerConnections.delete(peerId);
+        }
+    }
+
+    private removeUnknownRetainedPeers(knownPeerIds: Set<PeerId>): void {
+        for (const peerId of this.retainedPeerConnections.keys()) {
+            if (!knownPeerIds.has(peerId)) {
+                this.retainedPeerConnections.delete(peerId);
+            }
+        }
+    }
+
+    private retainedPeersToEvict(
+        desiredPeerIds: Set<PeerId>,
+        knownPeerIds: Set<PeerId>,
+    ): readonly PeerId[] {
+        const activeKnownCount = Array.from(knownPeerIds)
+            .filter((peerId) => desiredPeerIds.has(peerId))
+            .length;
+        const retainedKnownPeers = Array.from(this.retainedPeerConnections.values())
+            .filter((retained) =>
+                knownPeerIds.has(retained.peerId) &&
+                !desiredPeerIds.has(retained.peerId)
+            )
+            .sort((left, right) => left.retainedOrder - right.retainedOrder);
+        const retainedBudget = Math.max(0, this.maxPeerConnections() - activeKnownCount);
+        const evictCount = retainedKnownPeers.length - retainedBudget;
+        if (evictCount <= 0) {
+            return [];
+        }
+
+        return retainedKnownPeers
+            .slice(0, evictCount)
+            .map((retained) => retained.peerId);
+    }
+
+    private maxPeerConnections(): number {
+        const requested = this.options.maxPeerConnections;
+        if (
+            requested === undefined ||
+            !Number.isFinite(requested) ||
+            requested <= 0
+        ) {
+            return DEFAULT_WEBRTC_MAX_PEER_CONNECTIONS;
+        }
+
+        return Math.max(
+            MIN_WEBRTC_MAX_PEER_CONNECTIONS,
+            Math.floor(requested),
+        );
     }
 }

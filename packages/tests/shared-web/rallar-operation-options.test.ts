@@ -15,6 +15,7 @@ describe('Rallar operation options compatibility', () => {
                 maxAttempts: 3,
                 shouldRetry,
                 dataChannelLanes: lanes,
+                maxPeerConnections: 12,
             }),
         ).toEqual({
             signal,
@@ -22,6 +23,7 @@ describe('Rallar operation options compatibility', () => {
             maxAttempts: 3,
             shouldRetry,
             dataChannelLanes: lanes,
+            maxPeerConnections: 12,
         });
     });
 });

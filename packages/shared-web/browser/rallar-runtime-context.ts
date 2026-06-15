@@ -36,6 +36,10 @@ export type RallarBrowserRuntimeDefaults = Readonly<{
         waitTimeoutMs?: number;
         connectOnWait?: boolean;
         dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
+        maxPeerConnections?: number;
+    }>;
+    messages?: Readonly<{
+        maxPayloadBytes?: number;
     }>;
     operations?: Readonly<{
         timeoutMs?: number;
@@ -206,12 +210,16 @@ export function createRallarBrowserFacadeRuntimeContext(
             const dataChannelLanes = options.dataChannelLanes !== undefined
                 ? options.dataChannelLanes
                 : state.defaults?.rtc?.dataChannelLanes;
+            const maxPeerConnections = options.maxPeerConnections !== undefined
+                ? options.maxPeerConnections
+                : state.defaults?.rtc?.maxPeerConnections;
 
             if (
                 timeoutMs === undefined &&
                 maxAttempts === undefined &&
                 shouldRetry === undefined &&
-                dataChannelLanes === undefined
+                dataChannelLanes === undefined &&
+                maxPeerConnections === undefined
             ) {
                 return options;
             }
@@ -222,6 +230,7 @@ export function createRallarBrowserFacadeRuntimeContext(
                 ...(maxAttempts !== undefined ? { maxAttempts } : {}),
                 ...(shouldRetry !== undefined ? { shouldRetry } : {}),
                 ...(dataChannelLanes !== undefined ? { dataChannelLanes } : {}),
+                ...(maxPeerConnections !== undefined ? { maxPeerConnections } : {}),
             };
         },
         readAuthExpiryTimer: () => state.authExpiryTimer,
@@ -274,6 +283,9 @@ export function cloneRallarRuntimeDefaults(
                         : {}),
                 },
             }
+            : {}),
+        ...(defaults.messages
+            ? { messages: { ...defaults.messages } }
             : {}),
         ...(defaults.operations
             ? { operations: { ...defaults.operations } }

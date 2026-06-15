@@ -211,6 +211,67 @@ describe('WebRtcGroupManager', () => {
         expect(rtcQBox.peerIdsWithNoReconnectableLanes()).toEqual([]);
     });
 
+    it('retains left-room peers below the inactive connection budget', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcQBoxHarness('self');
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+            undefined,
+            { maxPeerConnections: 10 },
+        );
+
+        clientCache.set('peer-a', createClientInfo('peer-a', true));
+        const group = createGroupSnapshot('group-1', 1, ['self', 'peer-a']);
+        await manager.acceptGroupUpdate(group);
+
+        await expect(manager.delete(group.group, { retainConnections: true }))
+            .resolves.toBe(true);
+
+        expect(manager.size()).toBe(0);
+        expect(rtcQBox.disconnectPeer).not.toHaveBeenCalledWith('peer-a');
+        expect(rtcQBox.knownPeerIds()).toEqual(['peer-a']);
+    });
+
+    it('evicts the oldest retained inactive peers when the connection budget is exceeded', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcQBoxHarness('self');
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+            undefined,
+            { maxPeerConnections: 5 },
+        );
+        const retainedPeerIds = ['peer-a', 'peer-b', 'peer-c', 'peer-d', 'peer-e'];
+
+        for (const peerId of [...retainedPeerIds, 'peer-f']) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+        const oldGroup = createGroupSnapshot('group-1', 1, [
+            'self',
+            ...retainedPeerIds,
+        ]);
+        await manager.acceptGroupUpdate(oldGroup);
+        await manager.delete(oldGroup.group, { retainConnections: true });
+
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot('group-2', 1, ['self', 'peer-f']),
+        );
+
+        expect(rtcQBox.disconnectPeer).toHaveBeenCalledWith('peer-a');
+        expect(rtcQBox.knownPeerIds().sort()).toEqual([
+            'peer-b',
+            'peer-c',
+            'peer-d',
+            'peer-e',
+            'peer-f',
+        ]);
+    });
+
     it('uses overlay next hops as desired RTC peers when topology is available', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
@@ -221,6 +282,7 @@ describe('WebRtcGroupManager', () => {
             groupCache,
             clientCache,
             overlayCache,
+            { maxPeerConnections: 10 },
         );
         const group = createGroupSnapshot('group-1', 1, [
             'self',
