@@ -7,6 +7,9 @@ import type {
     GroupScope,
     GroupSnapshot,
 } from '@shared/api/group-types.ts';
+import type {
+    StateEventPage,
+} from '@shared/api/state-event-types.ts';
 import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import { GroupStateWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
@@ -15,6 +18,11 @@ import {
     isLogicallyActiveSession,
     toSessionPurgeAfterEpochMs,
 } from './session-expiry.ts';
+import {
+    DEFAULT_STATE_EVENT_LIST_LIMIT,
+    listStateEventsPage,
+    type StateEventListQuery,
+} from '../state-event-listing.ts';
 
 const GROUPS_NAMESPACE = 'group-state:groups';
 const MEMBERS_NAMESPACE = 'group-state:members';
@@ -165,6 +173,46 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         return [...events].sort(compareGroupEventsForReplay);
     }
 
+    async listEventPage(
+        ref: GroupRef,
+        query: StateEventListQuery = {},
+    ): Promise<StateEventPage<GroupEvent>> {
+        const limit = query.limit ?? DEFAULT_STATE_EVENT_LIST_LIMIT;
+        const events: GroupEvent[] = [];
+        let afterKey: string | undefined;
+        const pageReadLimit = Math.max(limit + 1, 50);
+
+        for (;;) {
+            const entries = await this.listEntriesPage(
+                EVENTS_NAMESPACE,
+                this.eventPrefix(ref),
+                {
+                    afterKey,
+                    limit: pageReadLimit,
+                },
+            );
+            if (entries.length === 0) {
+                break;
+            }
+
+            afterKey = entries.at(-1)?.key;
+            const values = await this.toLiveValues<GroupEvent>(
+                EVENTS_NAMESPACE,
+                entries,
+            );
+            events.push(...values);
+
+            if (entries.length < pageReadLimit) {
+                break;
+            }
+        }
+
+        return listStateEventsPage(
+            events.sort(compareGroupEventsForReplay),
+            query,
+        );
+    }
+
     async readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined> {
         const group = await this.findGroup(ref);
         if (!group) {
@@ -250,6 +298,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
             this.idKey('event', event.eventId),
         ].join(':');
     }
+
 }
 
 function compareGroupEventsForReplay(left: GroupEvent, right: GroupEvent): number {

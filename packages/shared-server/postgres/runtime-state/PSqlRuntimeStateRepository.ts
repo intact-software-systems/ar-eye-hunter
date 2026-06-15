@@ -66,6 +66,37 @@ export class PSqlRuntimeStateRepository implements RuntimeStateTransactionalRepo
         return rows.map(toEntry);
     }
 
+    async findEntriesByPrefixPage(
+        namespace: string,
+        keyPrefix: string,
+        options: Readonly<{
+            afterKey?: string;
+            limit: number;
+        }>,
+    ): Promise<readonly RuntimeStateEntry[]> {
+        const limit = Math.max(1, Math.floor(options.limit));
+        const rows = options.afterKey === undefined
+            ? await this.sql<RuntimeStateRow[]>`
+                select store_key, store_value, updated_ts, expire_at_ts, store_namespace, revision
+                from runtime_state_store
+                where store_namespace = ${namespace}
+                  and store_key like ${`${keyPrefix}%`}
+                order by store_key
+                limit ${limit}
+            `
+            : await this.sql<RuntimeStateRow[]>`
+                select store_key, store_value, updated_ts, expire_at_ts, store_namespace, revision
+                from runtime_state_store
+                where store_namespace = ${namespace}
+                  and store_key like ${`${keyPrefix}%`}
+                  and store_key > ${options.afterKey}
+                order by store_key
+                limit ${limit}
+            `;
+
+        return rows.map(toEntry);
+    }
+
     async lockKey(namespace: string, key: string): Promise<void> {
         await this.sql`
             select pg_advisory_xact_lock(hashtextextended(${`${namespace}:${key}`}, 0))

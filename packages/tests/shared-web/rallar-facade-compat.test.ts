@@ -35,6 +35,7 @@ describe('Rallar composed facade compatibility', () => {
         expect(Object.keys(facade.rooms).sort()).toEqual([
             'create',
             'current',
+            'enter',
             'join',
             'leave',
             'list',
@@ -44,6 +45,7 @@ describe('Rallar composed facade compatibility', () => {
             'onEvent',
             'refresh',
             'replayEvents',
+            'session',
             'state',
             'updateMetadata',
         ]);

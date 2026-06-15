@@ -1,7 +1,9 @@
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import {
+    isRuntimeStatePrefixPageRepositoryLike,
     isRuntimeStateTransactionalRepositoryLike,
     type RuntimeStateEntry,
+    type RuntimeStateEntryPageOptions,
     type RuntimeStateRepositoryLike,
 } from './RuntimeStateRepository.ts';
 
@@ -33,6 +35,39 @@ export class RuntimeStateJsonStore {
 
     protected async listValues<T>(namespace: string, keyPrefix?: string): Promise<readonly T[]> {
         const entries = await this.listEntries(namespace, keyPrefix);
+        return await this.toLiveValues<T>(namespace, entries);
+    }
+
+    protected async listEntriesPage(
+        namespace: string,
+        keyPrefix: string,
+        options: RuntimeStateEntryPageOptions,
+    ): Promise<readonly RuntimeStateEntry[]> {
+        const limit = Math.max(1, Math.floor(options.limit));
+
+        if (isRuntimeStatePrefixPageRepositoryLike(this.repository)) {
+            return await this.repository.findEntriesByPrefixPage(
+                namespace,
+                keyPrefix,
+                {
+                    afterKey: options.afterKey,
+                    limit,
+                },
+            );
+        }
+
+        return (await this.listEntries(namespace, keyPrefix))
+            .filter((entry) =>
+                options.afterKey === undefined ||
+                entry.key.localeCompare(options.afterKey) > 0
+            )
+            .slice(0, limit);
+    }
+
+    protected async toLiveValues<T>(
+        namespace: string,
+        entries: readonly RuntimeStateEntry[],
+    ): Promise<readonly T[]> {
         const values: T[] = [];
 
         for (const entry of entries) {
@@ -84,7 +119,7 @@ export class RuntimeStateJsonStore {
         return entries.filter((entry) => entry.key.startsWith(keyPrefix));
     }
 
-    private async toLiveValue<T>(
+    protected async toLiveValue<T>(
         namespace: string,
         entry: RuntimeStateEntry,
     ): Promise<T | undefined> {

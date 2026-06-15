@@ -169,6 +169,69 @@ describe('AppInboxService', () => {
         );
     });
 
+    it('records app-inbox wait fallback timing when completion is not observed', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const timingEvents: RallarTimingEvent[] = [];
+        const publisher = {
+            publishClientSnapshot: vi.fn(async () => undefined),
+            publishClientEvent: vi.fn(async () => undefined),
+            publishGroupSnapshot: vi.fn(async () => undefined),
+            publishGroupEvent: vi.fn(async () => undefined),
+        };
+        const service = new AppGroupInboxService(
+            reader,
+            queue as never,
+            results as never,
+            createGroupStateServiceStub({}),
+            publisher,
+            'server-12345678',
+            (event) => timingEvents.push(event),
+            {
+                phaseTiming: true,
+                waitMaxElapsedMsecs: 1,
+                waitRetryIntervalMsecs: 1,
+                waitMaxRetryIntervalMsecs: 1,
+                waitJitterRatio: 0,
+            },
+        );
+
+        const result = await service.processEntryUntilCompletion<
+            GroupUpdateAppInboxPayload,
+            GroupStateWritten
+        >({
+            type: AppInboxType.GROUP_UPDATE,
+            resourceId: 'update-timeout-room',
+            contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:timeout-room`,
+            senderId: 'alice',
+            data: {
+                scope: SCOPE,
+                groupId: 'timeout-room',
+                request: {
+                    displayName: 'Timeout Room',
+                    actorPrincipalId: 'alice',
+                    requestId: 'update-timeout-room',
+                },
+            },
+        });
+
+        expect(result.left).toBe('App inbox entry not completed');
+        expect(timingEvents).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    component: 'app-inbox-phase',
+                    operation: 'wait-fallback',
+                    status: 'ok',
+                    details: expect.objectContaining({
+                        type: AppInboxType.GROUP_UPDATE,
+                        resourceId: 'update-timeout-room',
+                    }),
+                }),
+            ]),
+        );
+    });
+
     it('returns an error result when the same group is created with a different idempotency key', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
@@ -868,6 +931,7 @@ describe('AppInboxService', () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
+        const timingEvents: RallarTimingEvent[] = [];
         const publisher = {
             publishClientSnapshot: vi.fn(async () => undefined),
             publishClientEvent: vi.fn(async () => undefined),
@@ -885,6 +949,7 @@ describe('AppInboxService', () => {
             }),
             publisher,
             'server-12345678',
+            (event) => timingEvents.push(event),
         );
 
         const entry = await processAppInboxNoWaiting<
@@ -908,6 +973,21 @@ describe('AppInboxService', () => {
         expect(entry.status).toBe(EntityStatus.RETRY);
         expect(entry.dequeueAudit.attempts).toBe(1);
         expect(await results.findByKey(entry.key)).toBeUndefined();
+        expect(timingEvents).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    component: 'app-inbox-handler',
+                    operation: 'queue-retry',
+                    status: 'ok',
+                    details: expect.objectContaining({
+                        attempts: 1,
+                        queueAgeMs: expect.any(Number),
+                        type: AppInboxType.GROUP_UPDATE,
+                        resourceId: 'update-retryable-room',
+                    }),
+                }),
+            ]),
+        );
         expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
         expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
     });

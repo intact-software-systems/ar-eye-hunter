@@ -18,6 +18,7 @@ import type {
     UpdateGroupRequest,
     UpsertGroupMemberRequest,
 } from '@shared/api/state-types.ts';
+import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
 import type { RuntimeStateTransactionalRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
@@ -29,6 +30,7 @@ import {
     timeRallarAsync,
     type RallarTimingSink,
 } from './timing.ts';
+import type { StateEventListQuery } from '../state-event-listing.ts';
 
 const DEFAULT_GROUP_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const GROUP_PRESENCE_SESSION_LOCK_NAMESPACE =
@@ -53,6 +55,10 @@ export type GroupStateService = Readonly<{
     listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]>;
     readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
     listEvents(ref: GroupRef): Promise<readonly GroupEvent[]>;
+    listEventPage(
+        ref: GroupRef,
+        query: StateEventListQuery,
+    ): Promise<StateEventPage<GroupEvent>>;
     createGroup(
         scope: StateScope,
         request: CreateGroupRequest,
@@ -131,6 +137,12 @@ export function createGroupStateService(
         },
         listEvents: async (ref) => {
             return await new GroupStateRepository(runtimeRepository).listEvents(ref);
+        },
+        listEventPage: async (ref, query) => {
+            return await new GroupStateRepository(runtimeRepository).listEventPage(
+                ref,
+                query,
+            );
         },
 
         createGroup: async (scope, request): Promise<GroupStateWritten> => {
@@ -847,6 +859,12 @@ function withGroupStateServiceTiming(
                 timing,
                 toGroupTimingInput(serviceId, 'listEvents', ref),
                 () => service.listEvents(ref),
+            ),
+        listEventPage: async (ref, query) =>
+            await timeRallarAsync(
+                timing,
+                toGroupTimingInput(serviceId, 'listEventPage', ref),
+                () => service.listEventPage(ref, query),
             ),
         createGroup: async (scope, request) =>
             await timeRallarAsync(

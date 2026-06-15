@@ -39,6 +39,37 @@ Deno.test('state API event-list middleware rate limits by authenticated client i
   });
 });
 
+Deno.test('state API event page middleware uses event-list rate limits', async () => {
+  const app = new Hono();
+  app.use(
+    '/api/state/*',
+    createStateApiResilienceMiddleware({
+      namespace: `test-${crypto.randomUUID()}`,
+      eventListRateLimitPolicy: new RateLimiterPolicy(60_000, 1),
+      stateRateLimitPolicy: new RateLimiterPolicy(60_000, 100),
+    }),
+  );
+  app.get(
+    '/api/state/apps/app/workspaces/workspace/groups/room/events/page',
+    (c) => c.json({ ok: true }),
+  );
+
+  const first = await app.request(
+    '/api/state/apps/app/workspaces/workspace/groups/room/events/page',
+    { headers: { 'x-client-id': 'alice' } },
+  );
+  const second = await app.request(
+    '/api/state/apps/app/workspaces/workspace/groups/room/events/page',
+    { headers: { 'x-client-id': 'alice' } },
+  );
+
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 429);
+  assert.deepEqual(await second.json(), {
+    error: 'Too many state API requests',
+  });
+});
+
 Deno.test('state API circuit breaker opens after repeated server failures', async () => {
   const app = new Hono();
   const duration = Temporal.Duration.from({ seconds: 60 });

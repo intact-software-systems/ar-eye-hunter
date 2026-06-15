@@ -22,6 +22,7 @@ import type {
     UpsertClientInstanceRequest,
     UpsertClientPrincipalRequest,
 } from '@shared/api/state-types.ts';
+import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID, } from '@shared/api/state-types.ts';
 import { ClientStateRepository } from '../repositories/ClientStateRepository.ts';
 import type { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
@@ -34,6 +35,7 @@ import {
     timeRallarAsync,
     type RallarTimingSink,
 } from './timing.ts';
+import type { StateEventListQuery } from '../state-event-listing.ts';
 
 const DEFAULT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const CLIENT_SESSION_LOCK_NAMESPACE = 'client-state:session-locks';
@@ -67,6 +69,10 @@ export type ClientStateService = Readonly<{
         ref: ClientPrincipalRef,
     ): Promise<ClientPresenceSnapshot | undefined>;
     listEvents(ref: ClientPrincipalRef): Promise<readonly ClientEvent[]>;
+    listEventPage(
+        ref: ClientPrincipalRef,
+        query: StateEventListQuery,
+    ): Promise<StateEventPage<ClientEvent>>;
     upsertPrincipal(
         scope: StateScope,
         principalId: string,
@@ -152,6 +158,12 @@ export function createClientStateService(
         },
         listEvents: async (ref) => {
             return await new ClientStateRepository(runtimeRepository).listEvents(ref);
+        },
+        listEventPage: async (ref, query) => {
+            return await new ClientStateRepository(runtimeRepository).listEventPage(
+                ref,
+                query,
+            );
         },
         upsertPrincipal: async (scope, principalId, request) => {
             return await runtimeRepository.begin(async (transactionRepository) => {
@@ -921,6 +933,12 @@ function withClientStateServiceTiming(
                 timing,
                 toClientTimingInput(serviceId, 'listEvents', ref),
                 () => service.listEvents(ref),
+            ),
+        listEventPage: async (ref, query) =>
+            await timeRallarAsync(
+                timing,
+                toClientTimingInput(serviceId, 'listEventPage', ref),
+                () => service.listEventPage(ref, query),
             ),
         upsertPrincipal: async (scope, principalId, request) =>
             await timeRallarAsync(

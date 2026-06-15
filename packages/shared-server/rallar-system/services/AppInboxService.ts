@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { ALMessage, newALRoute, newALUntargetedMessage, } from '@shared/al-contracts/al-contract.ts';
 import {
     EntityStatus,
@@ -7,7 +8,7 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { TryWithPolicy, tryWithPolicy } from '@shared/resilience/TryWith.ts';
+import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy } from '@shared/resilience/TryWith.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import {
@@ -217,33 +218,7 @@ export class AppInboxService {
                     return Either.ofLeft('No waiting for completion');
                 }
 
-                const isCompleted = await this.timePhase(
-                    'wait-completion',
-                    enqueue,
-                    key,
-                    async () => await tryWithPolicy<boolean>(
-                        async () => {
-                            const isCompleted =
-                                await this.resourceInbox.isEntryWithStatus(
-                                    key,
-                                    [
-                                        EntityStatus.COMPLETED,
-                                        EntityStatus.FAILED,
-                                    ]
-                                );
-
-                            if (!isCompleted) {
-                                throw new Error('App inbox entry not found');
-                            }
-
-                            return true;
-                        },
-                        this.toWaitPolicy(enqueue, key),
-                    ),
-                    {
-                        waitMaxElapsedMsecs: this.options.waitMaxElapsedMsecs,
-                    },
-                );
+                const isCompleted = await this.waitForCompletion(enqueue, key);
 
                 if (!isCompleted) {
                     return Either.ofLeft('App inbox entry not completed');
@@ -274,6 +249,66 @@ export class AppInboxService {
         }
 
         return Either.ofRight(JSON.parse(result.resource) as R);
+    }
+
+    private async waitForCompletion<V>(
+        enqueue: AppInboxEnqueueInput<V>,
+        key: Key,
+    ): Promise<boolean> {
+        try {
+            return await this.timePhase(
+                'wait-completion',
+                enqueue,
+                key,
+                async () => await tryWithPolicy<boolean>(
+                    async () => {
+                        const isCompleted =
+                            await this.resourceInbox.isEntryWithStatus(
+                                key,
+                                [
+                                    EntityStatus.COMPLETED,
+                                    EntityStatus.FAILED,
+                                ]
+                            );
+
+                        if (!isCompleted) {
+                            throw new Error('App inbox entry not found');
+                        }
+
+                        return true;
+                    },
+                    this.toWaitPolicy(enqueue, key),
+                ),
+                {
+                    waitMaxElapsedMsecs: this.options.waitMaxElapsedMsecs,
+                },
+            );
+        } catch (error) {
+            if (!(error instanceof TryWithExhaustedError)) {
+                throw error;
+            }
+
+            recordRallarTiming(
+                this.timing,
+                {
+                    component: 'app-inbox-phase',
+                    operation: 'wait-fallback',
+                    serviceId: this.serviceId,
+                    requestId: enqueue.resourceId,
+                    details: {
+                        ...this.toTimingDetails(enqueue, key),
+                        attempt: error.context.attempt,
+                        elapsedMsecs: error.context.elapsedMsecs,
+                        waitMaxElapsedMsecs: this.options.waitMaxElapsedMsecs,
+                        errorName: error.name,
+                        errorMessage: error.message,
+                    },
+                },
+                'ok',
+                0,
+            );
+            return false;
+        }
     }
 
     onStateMessage<V>(
@@ -326,6 +361,7 @@ export class AppInboxService {
                                 );
                             } catch (error) {
                                 if (!(error instanceof NonRetryableException)) {
+                                    this.recordQueueRetryTiming(enqueue, entry, error);
                                     throw error;
                                 }
 
@@ -347,6 +383,32 @@ export class AppInboxService {
                     );
                 },
             });
+    }
+
+    private recordQueueRetryTiming<V>(
+        enqueue: AppInboxEnqueueInput<V>,
+        entry: ResourceEntry,
+        error: unknown,
+    ): void {
+        recordRallarTiming(
+            this.timing,
+            {
+                component: 'app-inbox-handler',
+                operation: 'queue-retry',
+                serviceId: this.serviceId,
+                requestId: enqueue.resourceId,
+                details: {
+                    ...this.toTimingDetails(enqueue, entry.key),
+                    attempts: entry.dequeueAudit.attempts,
+                    queueAgeMs: toQueueAgeMs(entry),
+                    errorName: error instanceof Error ? error.name : undefined,
+                    errorMessage: error instanceof Error ? error.message : String(error),
+                },
+            },
+            'ok',
+            0,
+            error,
+        );
     }
 
     private async writeAppInboxResult(
@@ -517,4 +579,16 @@ function toRatio(value: number | undefined, fallback: number): number {
     }
 
     return Math.max(0, Math.min(1, value));
+}
+
+function toQueueAgeMs(entry: ResourceEntry): number | undefined {
+    try {
+        return Math.max(
+            0,
+            Temporal.Now.instant().epochMilliseconds -
+                entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds,
+        );
+    } catch {
+        return undefined;
+    }
 }

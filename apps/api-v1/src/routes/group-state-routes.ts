@@ -8,8 +8,11 @@ import type {
     UpdateGroupRequest,
     UpsertGroupMemberRequest,
 } from '@shared/api/state-types.ts';
-import { getGroupStateService } from '../services/group-state-service.ts';
-import { requireApiAuthSession } from '../services/request-auth-service.ts';
+import {
+    getGroupStateService,
+    type GroupStateService,
+} from '../services/group-state-service.ts';
+import { requireApiAuthSession as defaultRequireApiAuthSession } from '../services/request-auth-service.ts';
 import { getMiddleware } from '../middleware.ts';
 import type {
     GroupMutationWritten,
@@ -26,66 +29,140 @@ import {
 import { AppInboxEnqueueInput, AppInboxType, } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import {
     filterStateEventsForList,
-    listStateEventsPage,
     readStateEventListQuery,
 } from '@shared-server/rallar-system/state-event-listing.ts';
+import {
+    hydrateStateSyncSnapshotCaches as defaultHydrateStateSyncSnapshotCaches,
+    type StateSyncCacheHydrationInput,
+    type StateSyncCacheHydrationResult,
+} from '@shared-server/rallar-system/state-sync-cache-hydration.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
-export function init(app: Hono): void {
+export type GroupStateRouteService = Pick<
+    GroupStateService,
+    | 'listSnapshots'
+    | 'readSnapshot'
+    | 'listEvents'
+    | 'listEventPage'
+>;
+
+export type GroupStateRouteAuthSession = Pick<
+    AuthSession,
+    'clientId' | 'sessionId'
+>;
+
+export type GroupStateRouteDependencies = Readonly<{
+    getGroupStateService?: () => GroupStateRouteService;
+    requireApiAuthSession?: (
+        req: {
+            header(name: string): string | undefined;
+        },
+    ) => Promise<GroupStateRouteAuthSession>;
+    hydrateStateSyncSnapshotCaches?: (
+        input: StateSyncCacheHydrationInput,
+    ) => Promise<StateSyncCacheHydrationResult>;
+}>;
+
+export function init(
+    app: Hono,
+    dependencies: GroupStateRouteDependencies = {},
+): void {
+    const deps = toGroupStateRouteDependencies(dependencies);
+
     app.get(
         '/api/state/apps/:applicationId/workspaces/:workspaceId/groups',
         async (c) => {
-            return c.json(await getGroupStateService().listSnapshots(toScope(c)));
+            try {
+                const authSession = await readStrictReadAuthSession(c.req, deps);
+                const snapshots = authSession
+                    ? (await deps.getGroupStateService().listSnapshots(toScope(c)))
+                        .filter((snapshot) =>
+                            canReadGroupSnapshot(authSession.clientId, snapshot)
+                        )
+                    : await deps.getGroupStateService().listSnapshots(toScope(c));
+                hydrateGroupSnapshots(deps, snapshots);
+                return c.json(snapshots);
+            } catch (error) {
+                return toErrorResponse(c, error);
+            }
         },
     );
 
     app.get(
         '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId',
         async (c) => {
-            const groupId = c.req.param('groupId');
-            const snapshot = await getGroupStateService().readSnapshot({
-                ...toScope(c),
-                groupId,
-            });
+            try {
+                const groupId = c.req.param('groupId');
+                const snapshot = await deps.getGroupStateService().readSnapshot({
+                    ...toScope(c),
+                    groupId,
+                });
+                if (!snapshot) {
+                    return c.json({ error: `Group not found: ${groupId}` }, 404);
+                }
+                await assertCanReadGroupState(c.req, deps, snapshot);
+                hydrateGroupSnapshots(deps, [snapshot]);
 
-            return snapshot ? c.json(snapshot) : c.json({ error: `Group not found: ${groupId}` }, 404);
+                return c.json(snapshot);
+            } catch (error) {
+                return toErrorResponse(c, error);
+            }
         },
     );
 
     app.get(
         '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/events',
         async (c) => {
-            const events = await getGroupStateService().listEvents({
-                ...toScope(c),
-                groupId: c.req.param('groupId'),
-            });
+            try {
+                const groupId = c.req.param('groupId');
+                await assertCanReadGroupRef(c.req, deps, {
+                    ...toScope(c),
+                    groupId,
+                });
+                const events = await deps.getGroupStateService().listEvents({
+                    ...toScope(c),
+                    groupId,
+                });
 
-            return c.json(
-                filterStateEventsForList(
-                    events,
-                    readStateEventListQuery(
-                        new URL(c.req.raw.url).searchParams,
+                return c.json(
+                    filterStateEventsForList(
+                        events,
+                        readStateEventListQuery(
+                            new URL(c.req.raw.url).searchParams,
+                        ),
                     ),
-                ),
-            );
+                );
+            } catch (error) {
+                return toErrorResponse(c, error);
+            }
         },
     );
 
     app.get(
         '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/events/page',
         async (c) => {
-            const events = await getGroupStateService().listEvents({
-                ...toScope(c),
-                groupId: c.req.param('groupId'),
-            });
+            try {
+                const groupId = c.req.param('groupId');
+                await assertCanReadGroupRef(c.req, deps, {
+                    ...toScope(c),
+                    groupId,
+                });
 
-            return c.json(
-                listStateEventsPage(
-                    events,
-                    readStateEventListQuery(
-                        new URL(c.req.raw.url).searchParams,
+                return c.json(
+                    await deps.getGroupStateService().listEventPage(
+                        {
+                            ...toScope(c),
+                            groupId,
+                        },
+                        readStateEventListQuery(
+                            new URL(c.req.raw.url).searchParams,
+                        ),
                     ),
-                ),
-            );
+                );
+            } catch (error) {
+                return toErrorResponse(c, error);
+            }
         },
     );
 
@@ -93,7 +170,7 @@ export function init(app: Hono): void {
         '/api/state/apps/:applicationId/workspaces/:workspaceId/groups',
         async (c) => {
             try {
-                const authSession = await requireApiAuthSession(c.req);
+                const authSession = await deps.requireApiAuthSession(c.req);
                 const scope = toScope(c);
                 const requestBody = await readRequestWithRequestId<CreateGroupRequest>(c);
                 const request = withActorAndCreator(requestBody, authSession);
@@ -124,10 +201,15 @@ export function init(app: Hono): void {
         '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId',
         async (c) => {
             try {
-                const authSession = await requireApiAuthSession(c.req);
+                const authSession = await deps.requireApiAuthSession(c.req);
                 const scope = toScope(c);
                 const groupId = c.req.param('groupId');
-                await assertCanUpdateGroup(authSession.clientId, scope, groupId);
+                await assertCanUpdateGroup(
+                    authSession.clientId,
+                    scope,
+                    groupId,
+                    deps.getGroupStateService(),
+                );
                 const request = withActor(
                     await readRequestWithRequestId<UpdateGroupRequest>(c),
                     authSession,
@@ -159,7 +241,7 @@ export function init(app: Hono): void {
         '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/members/:principalId',
         async (c) => {
             try {
-                const authSession = await requireApiAuthSession(c.req);
+                const authSession = await deps.requireApiAuthSession(c.req);
                 const scope = toScope(c);
                 const groupId = c.req.param('groupId');
                 const principalId = c.req.param('principalId');
@@ -200,7 +282,7 @@ export function init(app: Hono): void {
         '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/sessions/:sessionId',
         async (c) => {
             try {
-                const authSession = await requireApiAuthSession(c.req);
+                const authSession = await deps.requireApiAuthSession(c.req);
                 const scope = toScope(c);
                 const groupId = c.req.param('groupId');
                 const sessionId = c.req.param('sessionId');
@@ -239,7 +321,7 @@ export function init(app: Hono): void {
         '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/sessions/:sessionId/heartbeat',
         async (c) => {
             try {
-                const authSession = await requireApiAuthSession(c.req);
+                const authSession = await deps.requireApiAuthSession(c.req);
                 const scope = toScope(c);
                 const groupId = c.req.param('groupId');
                 const sessionId = c.req.param('sessionId');
@@ -280,7 +362,7 @@ export function init(app: Hono): void {
         '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/sessions/:sessionId/disconnect',
         async (c) => {
             try {
-                const authSession = await requireApiAuthSession(c.req);
+                const authSession = await deps.requireApiAuthSession(c.req);
                 const scope = toScope(c);
                 const groupId = c.req.param('groupId');
                 const sessionId = c.req.param('sessionId');
@@ -316,6 +398,109 @@ export function init(app: Hono): void {
             }
         },
     );
+}
+
+function toGroupStateRouteDependencies(
+    dependencies: GroupStateRouteDependencies,
+): Required<GroupStateRouteDependencies> {
+    return {
+        getGroupStateService: dependencies.getGroupStateService ??
+            getGroupStateService,
+        requireApiAuthSession: dependencies.requireApiAuthSession ??
+            defaultRequireApiAuthSession,
+        hydrateStateSyncSnapshotCaches:
+            dependencies.hydrateStateSyncSnapshotCaches ??
+                defaultHydrateStateSyncSnapshotCaches,
+    };
+}
+
+async function assertCanReadGroupRef(
+    req: {
+        header(name: string): string | undefined;
+    },
+    deps: Required<GroupStateRouteDependencies>,
+    ref: StateScope & Readonly<{ groupId: string }>,
+): Promise<void> {
+    const authSession = await readStrictReadAuthSession(req, deps);
+    if (!authSession) {
+        return;
+    }
+
+    const snapshot = await deps.getGroupStateService().readSnapshot(ref);
+    if (!snapshot) {
+        throw new Error(`Group not found: ${ref.groupId}`);
+    }
+
+    assertCanReadGroupSnapshot(authSession.clientId, snapshot);
+}
+
+async function assertCanReadGroupState(
+    req: {
+        header(name: string): string | undefined;
+    },
+    deps: Required<GroupStateRouteDependencies>,
+    snapshot: GroupSnapshot,
+): Promise<void> {
+    const authSession = await readStrictReadAuthSession(req, deps);
+    if (!authSession) {
+        return;
+    }
+
+    assertCanReadGroupSnapshot(authSession.clientId, snapshot);
+}
+
+function assertCanReadGroupSnapshot(
+    principalId: string,
+    snapshot: GroupSnapshot,
+): void {
+    if (!canReadGroupSnapshot(principalId, snapshot)) {
+        throw new Error('Forbidden: only active group members can read group state');
+    }
+}
+
+function canReadGroupSnapshot(
+    principalId: string,
+    snapshot: GroupSnapshot,
+): boolean {
+    return snapshot.members.some(
+        (member) =>
+            member.principalId === principalId &&
+            member.status === 'active',
+    );
+}
+
+async function readStrictReadAuthSession(
+    req: {
+        header(name: string): string | undefined;
+    },
+    deps: Required<GroupStateRouteDependencies>,
+): Promise<GroupStateRouteAuthSession | undefined> {
+    return isStrictReadAuthEnabled()
+        ? await deps.requireApiAuthSession(req)
+        : undefined;
+}
+
+function isStrictReadAuthEnabled(): boolean {
+    const value = Deno.env.get('RALLAR_STATE_STRICT_READ_AUTH');
+    if (value === undefined || value.trim() === '') {
+        return false;
+    }
+
+    return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+}
+
+function hydrateGroupSnapshots(
+    deps: Required<GroupStateRouteDependencies>,
+    groups: readonly GroupSnapshot[],
+): void {
+    if (groups.length === 0) {
+        return;
+    }
+
+    void deps.hydrateStateSyncSnapshotCaches({ groups })
+        .catch((error) =>
+            console.warn('Failed to hydrate group state sync snapshot caches', error)
+        );
 }
 
 async function processGroupAppInbox<V, R>(
@@ -467,8 +652,9 @@ async function assertCanUpdateGroup(
     principalId: string,
     scope: StateScope,
     groupId: string,
+    service: GroupStateRouteService,
 ): Promise<void> {
-    const snapshot = await getGroupStateService().readSnapshot({
+    const snapshot = await service.readSnapshot({
         ...scope,
         groupId,
     });

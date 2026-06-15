@@ -71,3 +71,62 @@ model resource_inbox_results {
   @@index([expire_ts], map: "resource_inbox_results_expire_ts_ix")
   @@index([ris_status, ris_type_id], map: "resource_inbox_results_ix")
 }
+
+model crdt_documents {
+  document_key         String    @id(map: "crdt_documents_pk")
+  application_id       String
+  workspace_id         String?
+  document_scope       String
+  document_type        String
+  document_id          String
+  document_ref         String
+  lifecycle            String    @default("active")
+  created_at_ts        DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at_ts        DateTime  @default(now()) @db.Timestamptz(6)
+  archived_at_ts       DateTime? @db.Timestamptz(6)
+  destroyed_at_ts      DateTime? @db.Timestamptz(6)
+  last_append_sequence BigInt    @default(0)
+  update_count         BigInt    @default(0)
+  snapshot_count       BigInt    @default(0)
+  retention_policy     String?
+  quota_policy         String?
+  projection_ids       String?
+  updates              crdt_updates[]
+  snapshots            crdt_snapshots[]
+
+  @@index([application_id, workspace_id, document_scope, document_type], map: "crdt_documents_lookup_ix")
+  @@index([lifecycle], map: "crdt_documents_lifecycle_ix")
+}
+
+model crdt_updates {
+  document_key         String
+  append_sequence      BigInt
+  update_id            String
+  update_envelope      String
+  accepted_update_hash String
+  actor_id             String?
+  principal_id         String?
+  session_id           String?
+  server_id            String?
+  authorization_scope  String
+  accepted_at_ts       DateTime       @default(now()) @db.Timestamptz(6)
+  document             crdt_documents @relation(fields: [document_key], references: [document_key], onDelete: Cascade, map: "crdt_updates_document_fk")
+
+  @@id([document_key, append_sequence], map: "crdt_updates_pk")
+  @@unique([document_key, update_id], map: "crdt_updates_update_id_uq")
+  @@index([document_key, append_sequence], map: "crdt_updates_document_sequence_ix")
+  @@index([update_id], map: "crdt_updates_update_id_ix")
+}
+
+model crdt_snapshots {
+  document_key      String
+  snapshot_id       String
+  append_sequence   BigInt
+  snapshot_envelope String
+  created_at_ts     DateTime       @default(now()) @db.Timestamptz(6)
+  reason            String?
+  document          crdt_documents @relation(fields: [document_key], references: [document_key], onDelete: Cascade, map: "crdt_snapshots_document_fk")
+
+  @@id([document_key, snapshot_id], map: "crdt_snapshots_pk")
+  @@index([document_key, append_sequence(sort: Desc)], map: "crdt_snapshots_document_append_ix")
+}
