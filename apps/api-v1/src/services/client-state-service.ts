@@ -7,7 +7,11 @@ import {
     type RegisterAuthorisedWsClientInput,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { myServerId } from '../runtime/runtime-identity.ts';
-import { createAuthSessionRepository, createRuntimeStateRepository, } from '../repository/createStateRepositories.ts';
+import {
+    createAuthSessionRepository,
+    createClientStateEventRepository,
+    createRuntimeStateRepository,
+} from '../repository/createStateRepositories.ts';
 import { getWsStateSyncPublisher } from './state-sync-service.ts';
 import { getApiTimingSink } from './timing-service.ts';
 
@@ -25,6 +29,7 @@ export function getClientStateService(): ClientStateService {
 
     return createClientStateService({
         runtimeRepository,
+        createClientStateEventStore: createClientStateEventRepository,
         syncPublisher: getWsStateSyncPublisher(),
         authSessionRepository: createAuthSessionRepository(runtimeRepository),
         serviceId: myServerId,

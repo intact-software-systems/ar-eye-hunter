@@ -31,6 +31,8 @@ import { myPublisherId, myServerId } from './runtime/runtime-identity.ts';
 import { toResilienceDto } from './middleware-resilience.ts';
 import {
     createClientStateRepository,
+    createClientStateEventRepository,
+    createGroupStateEventRepository,
     createGroupStateRepository,
     createRuntimeStateRepository,
 } from './repository/createStateRepositories.ts';
@@ -113,6 +115,7 @@ function initialise(): Middleware {
                 resourceInboxResultsRepository,
                 createGroupStateService({
                     runtimeRepository: createRuntimeStateRepository(sql),
+                    createGroupStateEventStore: createGroupStateEventRepository,
                     syncPublisher: stateSyncPublisher,
                     serviceId: myServerId,
                     timing,
@@ -134,6 +137,7 @@ function initialise(): Middleware {
                 resourceInboxResultsRepository,
                 createClientStateService({
                     runtimeRepository: createRuntimeStateRepository(sql),
+                    createClientStateEventStore: createClientStateEventRepository,
                     syncPublisher: stateSyncPublisher,
                     serviceId: myServerId,
                     timing,

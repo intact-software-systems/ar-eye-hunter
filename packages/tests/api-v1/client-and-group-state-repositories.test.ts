@@ -14,6 +14,10 @@ import type {
 } from '@shared/api/group-types.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import {
+    InMemoryClientStateEventStore,
+    InMemoryGroupStateEventStore,
+} from '@shared-server/rallar-system/repositories/StateEventStore.ts';
 import { readStateEventListQuery } from '@shared-server/rallar-system/state-event-listing.ts';
 import type {
     RuntimeStateEntry,
@@ -23,7 +27,10 @@ import type {
 describe('ClientStateRepository', () => {
     it('stores durable client records, expires sessions, and assembles snapshots', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const clientRepository = new ClientStateRepository(repository);
+        const eventStore = new InMemoryClientStateEventStore();
+        const clientRepository = new ClientStateRepository(repository, {
+            events: eventStore,
+        });
         const now = Date.now();
 
         const principal = createClientPrincipal();
@@ -106,11 +113,16 @@ describe('ClientStateRepository', () => {
         expect(repository.findStoredEntry('client-state:principals')).toMatchObject({
             expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
         });
+        expect(repository.findStoredEntry('client-state:events')).toBeUndefined();
+        expect(eventStore.listEventsCalls).toBe(1);
     });
 
-    it('lists client event pages with event-type filtering through paged prefix reads', async () => {
+    it('lists client event pages with event-type filtering through dedicated event-store paging', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const clientRepository = new ClientStateRepository(repository);
+        const eventStore = new InMemoryClientStateEventStore();
+        const clientRepository = new ClientStateRepository(repository, {
+            events: eventStore,
+        });
         const ref = {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -146,12 +158,15 @@ describe('ClientStateRepository', () => {
         expect(secondPage.events.map((event) => event.eventId)).toEqual(['evt-4']);
         expect(secondPage.hasMore).toBe(false);
         expect(repository.findEntriesByPrefixCalls).toBe(0);
-        expect(repository.findEntriesByPrefixPageCalls.length).toBeGreaterThan(0);
+        expect(repository.findEntriesByPrefixPageCalls).toHaveLength(0);
+        expect(eventStore.listEventPageCalls).toBe(2);
     });
 
     it('preserves client event cursor order when snapshot versions diverge from timestamps', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const clientRepository = new ClientStateRepository(repository);
+        const clientRepository = new ClientStateRepository(repository, {
+            events: new InMemoryClientStateEventStore(),
+        });
         const ref = {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -188,7 +203,10 @@ describe('ClientStateRepository', () => {
 describe('GroupStateRepository', () => {
     it('stores groups by scope, supports slug lookup, and assembles group snapshots', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(repository);
+        const eventStore = new InMemoryGroupStateEventStore();
+        const groupRepository = new GroupStateRepository(repository, {
+            events: eventStore,
+        });
         const now = Date.now();
 
         const group = createGroup();
@@ -255,11 +273,16 @@ describe('GroupStateRepository', () => {
                 groupId: group.groupId,
             }),
         ).toEqual([createGroupEvent('evt-1', now + 1_000), createGroupEvent('evt-2', now + 2_000)]);
+        expect(repository.findStoredEntry('group-state:events')).toBeUndefined();
+        expect(eventStore.listEventsCalls).toBe(1);
     });
 
-    it('lists group event pages with cursor order through paged prefix reads', async () => {
+    it('lists group event pages with cursor order through dedicated event-store paging', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(repository);
+        const eventStore = new InMemoryGroupStateEventStore();
+        const groupRepository = new GroupStateRepository(repository, {
+            events: eventStore,
+        });
         const ref = {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -288,12 +311,15 @@ describe('GroupStateRepository', () => {
         ]);
         expect(secondPage.hasMore).toBe(false);
         expect(repository.findEntriesByPrefixCalls).toBe(0);
-        expect(repository.findEntriesByPrefixPageCalls.length).toBeGreaterThan(0);
+        expect(repository.findEntriesByPrefixPageCalls).toHaveLength(0);
+        expect(eventStore.listEventPageCalls).toBe(2);
     });
 
     it('preserves group event cursor order when snapshot versions diverge from timestamps', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(repository);
+        const groupRepository = new GroupStateRepository(repository, {
+            events: new InMemoryGroupStateEventStore(),
+        });
         const ref = {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',

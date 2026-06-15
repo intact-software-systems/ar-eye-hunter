@@ -1,0 +1,290 @@
+import type { ClientEvent, ClientPrincipalRef } from '@shared/api/client-types.ts';
+import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
+import type { StateEventPage } from '@shared/api/state-event-types.ts';
+import type {
+    ClientStateEventStore,
+    GroupStateEventStore,
+} from '@shared-server/rallar-system/repositories/StateEventStore.ts';
+import type { StateEventListQuery } from '@shared-server/rallar-system/state-event-listing.ts';
+import { DEFAULT_STATE_EVENT_LIST_LIMIT } from '@shared-server/rallar-system/state-event-listing.ts';
+import type { PSqlSql } from '../PostgresSqlClient.ts';
+
+type ClientStateEventRow = Readonly<{
+    event_json: string;
+}>;
+
+type GroupStateEventRow = Readonly<{
+    event_json: string;
+}>;
+
+const DEFAULT_WORKSPACE_KEY = '_';
+
+export class PSqlClientStateEventRepository implements ClientStateEventStore {
+    constructor(private readonly sql: PSqlSql) {}
+
+    async appendClientEvent(event: ClientEvent): Promise<void> {
+        await this.sql`
+            insert into client_state_events (application_id,
+                                             workspace_key,
+                                             principal_id,
+                                             event_id,
+                                             event_type,
+                                             snapshot_version,
+                                             occurred_at_epoch_ms,
+                                             client_instance_id,
+                                             session_id,
+                                             event_json)
+            values (${event.applicationId},
+                    ${toWorkspaceKey(event.workspaceId)},
+                    ${event.principalId},
+                    ${event.eventId},
+                    ${event.eventType},
+                    ${event.snapshotVersion},
+                    ${event.occurredAtEpochMs},
+                    ${event.clientInstanceId ?? null},
+                    ${event.sessionId ?? null},
+                    ${JSON.stringify(event)})
+            on conflict (application_id, workspace_key, principal_id, event_id)
+                do nothing
+        `;
+    }
+
+    async listClientEvents(
+        ref: ClientPrincipalRef,
+    ): Promise<readonly ClientEvent[]> {
+        const rows = await this.sql<ClientStateEventRow[]>`
+            select event_json
+            from client_state_events
+            where application_id = ${ref.applicationId}
+              and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+              and principal_id = ${ref.principalId}
+            order by snapshot_version, occurred_at_epoch_ms, event_id
+        `;
+
+        return rows.map(toClientEvent);
+    }
+
+    async listClientEventPage(
+        ref: ClientPrincipalRef,
+        query: StateEventListQuery = {},
+    ): Promise<StateEventPage<ClientEvent>> {
+        const limit = query.limit ?? DEFAULT_STATE_EVENT_LIST_LIMIT;
+        const rows = await this.queryClientPageRows(ref, query, limit + 1);
+        const eventsPlusOne = rows.map(toClientEvent);
+        const events = eventsPlusOne.slice(0, limit);
+        const lastEvent = events.at(-1);
+
+        return {
+            events,
+            ...(lastEvent ? { nextCursor: toCursor(lastEvent) } : {}),
+            hasMore: eventsPlusOne.length > limit,
+        };
+    }
+
+    private async queryClientPageRows(
+        ref: ClientPrincipalRef,
+        query: StateEventListQuery,
+        limit: number,
+    ): Promise<ClientStateEventRow[]> {
+        const eventTypes = query.eventTypes && query.eventTypes.length > 0
+            ? query.eventTypes
+            : undefined;
+        const after = query.after;
+
+        if (eventTypes && after) {
+            return await this.sql<ClientStateEventRow[]>`
+                select event_json
+                from client_state_events
+                where application_id = ${ref.applicationId}
+                  and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+                  and principal_id = ${ref.principalId}
+                  and event_type in ${this.sql(eventTypes)}
+                  and (snapshot_version, occurred_at_epoch_ms, event_id) >
+                      (${after.snapshotVersion}, ${after.occurredAtEpochMs}, ${after.eventId})
+                order by snapshot_version, occurred_at_epoch_ms, event_id
+                limit ${limit}
+            `;
+        }
+
+        if (eventTypes) {
+            return await this.sql<ClientStateEventRow[]>`
+                select event_json
+                from client_state_events
+                where application_id = ${ref.applicationId}
+                  and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+                  and principal_id = ${ref.principalId}
+                  and event_type in ${this.sql(eventTypes)}
+                order by snapshot_version, occurred_at_epoch_ms, event_id
+                limit ${limit}
+            `;
+        }
+
+        if (after) {
+            return await this.sql<ClientStateEventRow[]>`
+                select event_json
+                from client_state_events
+                where application_id = ${ref.applicationId}
+                  and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+                  and principal_id = ${ref.principalId}
+                  and (snapshot_version, occurred_at_epoch_ms, event_id) >
+                      (${after.snapshotVersion}, ${after.occurredAtEpochMs}, ${after.eventId})
+                order by snapshot_version, occurred_at_epoch_ms, event_id
+                limit ${limit}
+            `;
+        }
+
+        return await this.sql<ClientStateEventRow[]>`
+            select event_json
+            from client_state_events
+            where application_id = ${ref.applicationId}
+              and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+              and principal_id = ${ref.principalId}
+            order by snapshot_version, occurred_at_epoch_ms, event_id
+            limit ${limit}
+        `;
+    }
+}
+
+export class PSqlGroupStateEventRepository implements GroupStateEventStore {
+    constructor(private readonly sql: PSqlSql) {}
+
+    async appendGroupEvent(event: GroupEvent): Promise<void> {
+        await this.sql`
+            insert into group_state_events (application_id,
+                                            workspace_key,
+                                            group_id,
+                                            event_id,
+                                            event_type,
+                                            snapshot_version,
+                                            occurred_at_epoch_ms,
+                                            event_json)
+            values (${event.applicationId},
+                    ${toWorkspaceKey(event.workspaceId)},
+                    ${event.groupId},
+                    ${event.eventId},
+                    ${event.eventType},
+                    ${event.snapshotVersion},
+                    ${event.occurredAtEpochMs},
+                    ${JSON.stringify(event)})
+            on conflict (application_id, workspace_key, group_id, event_id)
+                do nothing
+        `;
+    }
+
+    async listGroupEvents(ref: GroupRef): Promise<readonly GroupEvent[]> {
+        const rows = await this.sql<GroupStateEventRow[]>`
+            select event_json
+            from group_state_events
+            where application_id = ${ref.applicationId}
+              and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+              and group_id = ${ref.groupId}
+            order by snapshot_version, occurred_at_epoch_ms, event_id
+        `;
+
+        return rows.map(toGroupEvent);
+    }
+
+    async listGroupEventPage(
+        ref: GroupRef,
+        query: StateEventListQuery = {},
+    ): Promise<StateEventPage<GroupEvent>> {
+        const limit = query.limit ?? DEFAULT_STATE_EVENT_LIST_LIMIT;
+        const rows = await this.queryGroupPageRows(ref, query, limit + 1);
+        const eventsPlusOne = rows.map(toGroupEvent);
+        const events = eventsPlusOne.slice(0, limit);
+        const lastEvent = events.at(-1);
+
+        return {
+            events,
+            ...(lastEvent ? { nextCursor: toCursor(lastEvent) } : {}),
+            hasMore: eventsPlusOne.length > limit,
+        };
+    }
+
+    private async queryGroupPageRows(
+        ref: GroupRef,
+        query: StateEventListQuery,
+        limit: number,
+    ): Promise<GroupStateEventRow[]> {
+        const eventTypes = query.eventTypes && query.eventTypes.length > 0
+            ? query.eventTypes
+            : undefined;
+        const after = query.after;
+
+        if (eventTypes && after) {
+            return await this.sql<GroupStateEventRow[]>`
+                select event_json
+                from group_state_events
+                where application_id = ${ref.applicationId}
+                  and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+                  and group_id = ${ref.groupId}
+                  and event_type in ${this.sql(eventTypes)}
+                  and (snapshot_version, occurred_at_epoch_ms, event_id) >
+                      (${after.snapshotVersion}, ${after.occurredAtEpochMs}, ${after.eventId})
+                order by snapshot_version, occurred_at_epoch_ms, event_id
+                limit ${limit}
+            `;
+        }
+
+        if (eventTypes) {
+            return await this.sql<GroupStateEventRow[]>`
+                select event_json
+                from group_state_events
+                where application_id = ${ref.applicationId}
+                  and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+                  and group_id = ${ref.groupId}
+                  and event_type in ${this.sql(eventTypes)}
+                order by snapshot_version, occurred_at_epoch_ms, event_id
+                limit ${limit}
+            `;
+        }
+
+        if (after) {
+            return await this.sql<GroupStateEventRow[]>`
+                select event_json
+                from group_state_events
+                where application_id = ${ref.applicationId}
+                  and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+                  and group_id = ${ref.groupId}
+                  and (snapshot_version, occurred_at_epoch_ms, event_id) >
+                      (${after.snapshotVersion}, ${after.occurredAtEpochMs}, ${after.eventId})
+                order by snapshot_version, occurred_at_epoch_ms, event_id
+                limit ${limit}
+            `;
+        }
+
+        return await this.sql<GroupStateEventRow[]>`
+            select event_json
+            from group_state_events
+            where application_id = ${ref.applicationId}
+              and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+              and group_id = ${ref.groupId}
+            order by snapshot_version, occurred_at_epoch_ms, event_id
+            limit ${limit}
+        `;
+    }
+}
+
+function toWorkspaceKey(workspaceId: string | undefined): string {
+    return workspaceId ?? DEFAULT_WORKSPACE_KEY;
+}
+
+function toClientEvent(row: ClientStateEventRow): ClientEvent {
+    return JSON.parse(row.event_json) as ClientEvent;
+}
+
+function toGroupEvent(row: GroupStateEventRow): GroupEvent {
+    return JSON.parse(row.event_json) as GroupEvent;
+}
+
+function toCursor(event: {
+    snapshotVersion: number;
+    occurredAtEpochMs: number;
+    eventId: string;
+}) {
+    return {
+        snapshotVersion: event.snapshotVersion,
+        occurredAtEpochMs: event.occurredAtEpochMs,
+        eventId: event.eventId,
+    };
+}

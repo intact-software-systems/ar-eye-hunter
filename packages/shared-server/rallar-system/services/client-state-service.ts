@@ -25,6 +25,9 @@ import type {
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID, } from '@shared/api/state-types.ts';
 import { ClientStateRepository } from '../repositories/ClientStateRepository.ts';
+import {
+    type ClientStateEventStore,
+} from '../repositories/StateEventStore.ts';
 import type { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
 import type { RuntimeStateTransactionalRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import type { StateSyncPublisher } from '../state-sync-publisher.ts';
@@ -120,6 +123,9 @@ export type ClientStateService = Readonly<{
 
 export type ClientStateServiceDependencies = Readonly<{
     runtimeRepository: RuntimeStateTransactionalRepositoryLike;
+    createClientStateEventStore?: (
+        runtimeRepository: RuntimeStateTransactionalRepositoryLike,
+    ) => ClientStateEventStore;
     syncPublisher: StateSyncPublisher;
     authSessionRepository?: Pick<AuthSessionRepository, 'findBySessionId'>;
     now?: () => number;
@@ -131,12 +137,18 @@ export function createClientStateService(
     dependencies: ClientStateServiceDependencies,
 ): ClientStateService {
     const runtimeRepository = dependencies.runtimeRepository;
+    const repositoryFor = (
+        repository: RuntimeStateTransactionalRepositoryLike,
+    ): ClientStateRepository =>
+        new ClientStateRepository(repository, {
+            events: dependencies.createClientStateEventStore?.(repository),
+        });
     const now = dependencies.now ?? (() => Date.now());
     const serviceId = dependencies.serviceId;
 
     const service: ClientStateService = {
         listSnapshots: async (scope) => {
-            const repository = new ClientStateRepository(runtimeRepository);
+            const repository = repositoryFor(runtimeRepository);
             const principals = await repository.listPrincipals(scope);
             const snapshots = await Promise.all(
                 principals.map(
@@ -147,27 +159,25 @@ export function createClientStateService(
             return snapshots.filter(isDefined);
         },
         readSnapshot: async (ref) => {
-            return await new ClientStateRepository(runtimeRepository).readSnapshot(
+            return await repositoryFor(runtimeRepository).readSnapshot(
                 ref,
             );
         },
         readPresenceSnapshot: async (ref) => {
-            return await new ClientStateRepository(
-                runtimeRepository,
-            ).readPresenceSnapshot(ref);
+            return await repositoryFor(runtimeRepository).readPresenceSnapshot(ref);
         },
         listEvents: async (ref) => {
-            return await new ClientStateRepository(runtimeRepository).listEvents(ref);
+            return await repositoryFor(runtimeRepository).listEvents(ref);
         },
         listEventPage: async (ref, query) => {
-            return await new ClientStateRepository(runtimeRepository).listEventPage(
+            return await repositoryFor(runtimeRepository).listEventPage(
                 ref,
                 query,
             );
         },
         upsertPrincipal: async (scope, principalId, request) => {
             return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = new ClientStateRepository(transactionRepository);
+                const repository = repositoryFor(transactionRepository);
                 const principalRef = {
                     ...scope,
                     principalId,
@@ -228,7 +238,7 @@ export function createClientStateService(
         },
         upsertInstance: async (scope, principalId, clientInstanceId, request) => {
             return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = new ClientStateRepository(transactionRepository);
+                const repository = repositoryFor(transactionRepository);
                 const principalRef = {
                     ...scope,
                     principalId,
@@ -333,7 +343,7 @@ export function createClientStateService(
             request,
         ) => {
             return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = new ClientStateRepository(transactionRepository);
+                const repository = repositoryFor(transactionRepository);
                 const principalRef = {
                     ...scope,
                     principalId,
@@ -461,7 +471,7 @@ export function createClientStateService(
             request,
         ) => {
             return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = new ClientStateRepository(transactionRepository);
+                const repository = repositoryFor(transactionRepository);
                 const principalRef = {
                     ...scope,
                     principalId,
@@ -573,7 +583,7 @@ export function createClientStateService(
             request,
         ) => {
             return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = new ClientStateRepository(transactionRepository);
+                const repository = repositoryFor(transactionRepository);
                 const principalRef = {
                     ...scope,
                     principalId,
@@ -699,7 +709,7 @@ export function createClientStateService(
             );
 
             return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = new ClientStateRepository(transactionRepository);
+                const repository = repositoryFor(transactionRepository);
                 const principalRef = {
                     ...scope,
                     principalId,
@@ -866,7 +876,7 @@ export function createClientStateService(
             );
         },
         expireExpiredSessions: async (atEpochMs = now()) => {
-            const repository = new ClientStateRepository(runtimeRepository);
+            const repository = repositoryFor(runtimeRepository);
             const sessions = (await repository.listAllSessions()).filter(
                 (session) =>
                     session.status === 'active' &&
@@ -878,6 +888,7 @@ export function createClientStateService(
             for (const session of sessions) {
                 const written = await expireClientSession(
                     runtimeRepository,
+                    repositoryFor,
                     session,
                     atEpochMs,
                     serviceId,
@@ -1107,12 +1118,15 @@ async function findClientSessionBySessionId(
 
 async function expireClientSession(
     runtimeRepository: RuntimeStateTransactionalRepositoryLike,
+    repositoryFor: (
+        repository: RuntimeStateTransactionalRepositoryLike,
+    ) => ClientStateRepository,
     candidate: ClientSession,
     atEpochMs: number,
     serviceId: string,
 ): Promise<ClientStateWritten | undefined> {
     return await runtimeRepository.begin(async (transactionRepository) => {
-        const repository = new ClientStateRepository(transactionRepository);
+        const repository = repositoryFor(transactionRepository);
         const principalRef: ClientPrincipalRef = {
             applicationId: candidate.applicationId,
             workspaceId: candidate.workspaceId,

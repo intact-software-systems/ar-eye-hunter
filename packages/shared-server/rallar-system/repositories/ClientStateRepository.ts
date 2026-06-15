@@ -23,20 +23,29 @@ import {
     toSessionPurgeAfterEpochMs,
 } from './session-expiry.ts';
 import {
-    DEFAULT_STATE_EVENT_LIST_LIMIT,
-    listStateEventsPage,
-    type StateEventListQuery,
-} from '../state-event-listing.ts';
+    defaultClientStateEventStoreFor,
+    type ClientStateEventStore,
+} from './StateEventStore.ts';
+import type { StateEventListQuery } from '../state-event-listing.ts';
 
 const PRINCIPALS_NAMESPACE = 'client-state:principals';
 const INSTANCES_NAMESPACE = 'client-state:instances';
 const SESSIONS_NAMESPACE = 'client-state:sessions';
-const EVENTS_NAMESPACE = 'client-state:events';
 const IDEMPOTENT_NAMESPACE = 'client-state:idempotent';
 
+export type ClientStateRepositoryOptions = Readonly<{
+    events?: ClientStateEventStore;
+}>;
+
 export class ClientStateRepository extends RuntimeStateJsonStore {
-    constructor(repository: RuntimeStateRepositoryLike) {
+    private readonly events: ClientStateEventStore;
+
+    constructor(
+        repository: RuntimeStateRepositoryLike,
+        options: ClientStateRepositoryOptions = {},
+    ) {
         super(repository);
+        this.events = options.events ?? defaultClientStateEventStoreFor(repository);
     }
 
     async addIdempotentClientStateWritten(
@@ -171,56 +180,18 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     }
 
     async appendEvent(event: ClientEvent): Promise<void> {
-        await this.putValue(EVENTS_NAMESPACE, this.eventKey(event), event);
+        await this.events.appendClientEvent(event);
     }
 
     async listEvents(ref: ClientPrincipalRef): Promise<readonly ClientEvent[]> {
-        const events = await this.listValues<ClientEvent>(
-            EVENTS_NAMESPACE,
-            this.eventPrefix(ref),
-        );
-
-        return [...events].sort(compareClientEventsForReplay);
+        return await this.events.listClientEvents(ref);
     }
 
     async listEventPage(
         ref: ClientPrincipalRef,
         query: StateEventListQuery = {},
     ): Promise<StateEventPage<ClientEvent>> {
-        const limit = query.limit ?? DEFAULT_STATE_EVENT_LIST_LIMIT;
-        const events: ClientEvent[] = [];
-        let afterKey: string | undefined;
-        const pageReadLimit = Math.max(limit + 1, 50);
-
-        for (;;) {
-            const entries = await this.listEntriesPage(
-                EVENTS_NAMESPACE,
-                this.eventPrefix(ref),
-                {
-                    afterKey,
-                    limit: pageReadLimit,
-                },
-            );
-            if (entries.length === 0) {
-                break;
-            }
-
-            afterKey = entries.at(-1)?.key;
-            const values = await this.toLiveValues<ClientEvent>(
-                EVENTS_NAMESPACE,
-                entries,
-            );
-            events.push(...values);
-
-            if (entries.length < pageReadLimit) {
-                break;
-            }
-        }
-
-        return listStateEventsPage(
-            events.sort(compareClientEventsForReplay),
-            query,
-        );
+        return await this.events.listClientEventPage(ref, query);
     }
 
     async readPresenceSnapshot(
@@ -356,25 +327,4 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         );
     }
 
-    private eventPrefix(ref: ClientPrincipalRef): string {
-        return this.principalKey(ref);
-    }
-
-    private eventKey(event: ClientEvent): string {
-        return [
-            this.principalKey(event),
-            this.idKey('event-at', this.timeKey(event.occurredAtEpochMs)),
-            this.idKey('event', event.eventId),
-        ].join(':');
-    }
-
-}
-
-function compareClientEventsForReplay(
-    left: ClientEvent,
-    right: ClientEvent,
-): number {
-    return left.snapshotVersion - right.snapshotVersion ||
-        left.occurredAtEpochMs - right.occurredAtEpochMs ||
-        left.eventId.localeCompare(right.eventId);
 }

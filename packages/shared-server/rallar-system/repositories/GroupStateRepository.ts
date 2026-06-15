@@ -19,20 +19,31 @@ import {
     toSessionPurgeAfterEpochMs,
 } from './session-expiry.ts';
 import {
-    DEFAULT_STATE_EVENT_LIST_LIMIT,
-    listStateEventsPage,
+    defaultGroupStateEventStoreFor,
+    type GroupStateEventStore,
+} from './StateEventStore.ts';
+import {
     type StateEventListQuery,
 } from '../state-event-listing.ts';
 
 const GROUPS_NAMESPACE = 'group-state:groups';
 const MEMBERS_NAMESPACE = 'group-state:members';
 const SESSIONS_NAMESPACE = 'group-state:sessions';
-const EVENTS_NAMESPACE = 'group-state:events';
 const IDEMPOTENT_NAMESPACE = 'group-state:idempotent';
 
+export type GroupStateRepositoryOptions = Readonly<{
+    events?: GroupStateEventStore;
+}>;
+
 export class GroupStateRepository extends RuntimeStateJsonStore {
-    constructor(repository: RuntimeStateRepositoryLike) {
+    private readonly events: GroupStateEventStore;
+
+    constructor(
+        repository: RuntimeStateRepositoryLike,
+        options: GroupStateRepositoryOptions = {},
+    ) {
         super(repository);
+        this.events = options.events ?? defaultGroupStateEventStoreFor(repository);
     }
 
     async addIdempotentGroupStateWritten(
@@ -161,56 +172,18 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     }
 
     async appendEvent(event: GroupEvent): Promise<void> {
-        await this.putValue(EVENTS_NAMESPACE, this.eventKey(event), event);
+        await this.events.appendGroupEvent(event);
     }
 
     async listEvents(ref: GroupRef): Promise<readonly GroupEvent[]> {
-        const events = await this.listValues<GroupEvent>(
-            EVENTS_NAMESPACE,
-            this.eventPrefix(ref),
-        );
-
-        return [...events].sort(compareGroupEventsForReplay);
+        return await this.events.listGroupEvents(ref);
     }
 
     async listEventPage(
         ref: GroupRef,
         query: StateEventListQuery = {},
     ): Promise<StateEventPage<GroupEvent>> {
-        const limit = query.limit ?? DEFAULT_STATE_EVENT_LIST_LIMIT;
-        const events: GroupEvent[] = [];
-        let afterKey: string | undefined;
-        const pageReadLimit = Math.max(limit + 1, 50);
-
-        for (;;) {
-            const entries = await this.listEntriesPage(
-                EVENTS_NAMESPACE,
-                this.eventPrefix(ref),
-                {
-                    afterKey,
-                    limit: pageReadLimit,
-                },
-            );
-            if (entries.length === 0) {
-                break;
-            }
-
-            afterKey = entries.at(-1)?.key;
-            const values = await this.toLiveValues<GroupEvent>(
-                EVENTS_NAMESPACE,
-                entries,
-            );
-            events.push(...values);
-
-            if (entries.length < pageReadLimit) {
-                break;
-            }
-        }
-
-        return listStateEventsPage(
-            events.sort(compareGroupEventsForReplay),
-            query,
-        );
+        return await this.events.listGroupEventPage(ref, query);
     }
 
     async readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined> {
@@ -287,22 +260,4 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         );
     }
 
-    private eventPrefix(ref: GroupRef): string {
-        return this.groupKey(ref);
-    }
-
-    private eventKey(event: GroupEvent): string {
-        return [
-            this.groupKey(event),
-            this.idKey('event-at', this.timeKey(event.occurredAtEpochMs)),
-            this.idKey('event', event.eventId),
-        ].join(':');
-    }
-
-}
-
-function compareGroupEventsForReplay(left: GroupEvent, right: GroupEvent): number {
-    return left.snapshotVersion - right.snapshotVersion ||
-        left.occurredAtEpochMs - right.occurredAtEpochMs ||
-        left.eventId.localeCompare(right.eventId);
 }

@@ -36,6 +36,7 @@ import type { RallarTimingEvent } from '@shared-server/rallar-system/services/ti
 import { toResultsDomain } from '@shared-server/postgres/resource-inbox/repository-utils.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
 
 const SCOPE: StateScope = {
     applicationId: 'ar-eye-hunter',
@@ -237,6 +238,7 @@ describe('AppInboxService', () => {
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
         const runtimeRepository = new FakeRuntimeStateRepository();
+        const eventStore = new InMemoryGroupStateEventStore();
         const publisher = {
             publishClientSnapshot: vi.fn(async () => undefined),
             publishClientEvent: vi.fn(async () => undefined),
@@ -249,6 +251,7 @@ describe('AppInboxService', () => {
             results as never,
             createGroupStateService({
                 runtimeRepository,
+                createGroupStateEventStore: () => eventStore,
                 syncPublisher: publisher,
                 now: () => 1_000,
                 serviceId: 'server-12345678',
@@ -283,7 +286,9 @@ describe('AppInboxService', () => {
         expect(publisher.publishGroupSnapshot).toHaveBeenCalledTimes(1);
         expect(publisher.publishGroupEvent).toHaveBeenCalledTimes(1);
 
-        const repository = new GroupStateRepository(runtimeRepository);
+        const repository = new GroupStateRepository(runtimeRepository, {
+            events: eventStore,
+        });
         expect(
             await repository.listEvents({
                 ...SCOPE,
@@ -297,6 +302,7 @@ describe('AppInboxService', () => {
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
         const runtimeRepository = new FakeRuntimeStateRepository();
+        const eventStore = new InMemoryGroupStateEventStore();
         const publisher = {
             publishClientSnapshot: vi.fn(async () => undefined),
             publishClientEvent: vi.fn(async () => undefined),
@@ -309,6 +315,7 @@ describe('AppInboxService', () => {
             results as never,
             createGroupStateService({
                 runtimeRepository,
+                createGroupStateEventStore: () => eventStore,
                 syncPublisher: publisher,
                 now: () => 2_000,
                 serviceId: 'server-12345678',
@@ -448,7 +455,9 @@ describe('AppInboxService', () => {
         expect(publisher.publishGroupSnapshot).toHaveBeenCalledTimes(5);
         expect(publisher.publishGroupEvent).toHaveBeenCalledTimes(5);
 
-        const repository = new GroupStateRepository(runtimeRepository);
+        const repository = new GroupStateRepository(runtimeRepository, {
+            events: eventStore,
+        });
         const eventTypes = (
             await repository.listEvents({
                 ...SCOPE,

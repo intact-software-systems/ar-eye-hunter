@@ -22,20 +22,11 @@ test.describe('iPhone Max layout', () => {
         await expect(page.getByRole('tab', { name: 'Quick Test' })).toHaveAttribute('aria-selected', 'true');
         await expect(page.getByLabel('Rallar Quick Test')).toBeVisible();
         await expect(page.getByText('Rallar Kit').first()).toBeVisible();
-        await expect(page.getByLabel('Run state')).toBeHidden();
-        await page.getByRole('button', { name: 'Show status' }).click();
         await expect(page.getByLabel('Run state')).toBeVisible();
+        await expect(page.getByLabel('Run details')).toBeHidden();
+        await page.getByRole('button', { name: 'Show details' }).click();
+        await expect(page.getByLabel('Run details')).toBeVisible();
         await expectNoDocumentHorizontalOverflow(page);
-
-        await page.getByRole('button', { name: 'Hide Rallar Browser Trace' }).click();
-        await expect(page.locator('.rallar-trace-summary')).toBeHidden();
-        await page.getByRole('button', { name: 'Show Rallar Browser Trace' }).click();
-        await expect(page.locator('.rallar-trace-summary')).toBeVisible();
-
-        await page.getByRole('button', { name: 'Hide Direct Rallar Operations' }).click();
-        await expect(page.locator('.direct-rallar-grid')).toBeHidden();
-        await page.getByRole('button', { name: 'Show Direct Rallar Operations' }).click();
-        await expect(page.locator('.direct-rallar-grid')).toBeVisible();
 
         await page.getByRole('button', { name: 'Hide Quick Test Info' }).click();
         await expect(page.locator('.quick-rallar-summary-grid')).toBeHidden();

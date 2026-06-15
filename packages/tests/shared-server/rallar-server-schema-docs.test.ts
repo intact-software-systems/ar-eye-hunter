@@ -12,6 +12,8 @@ describe('Rallar server storage schema docs', () => {
 
         for (const tableName of [
             'runtime_state_store',
+            'client_state_events',
+            'group_state_events',
             'resource_inbox',
             'resource_inbox_results',
             'app_data_store',
@@ -33,6 +35,45 @@ describe('Rallar server storage schema docs', () => {
         ]) {
             expect(schema).toContain(`model ${modelName}`);
         }
+    });
+
+    it('keeps state event tables represented in the API-v1 Prisma schema', () => {
+        const schema = readWorkspaceFile('apps/api-v1/prisma/schema.prisma');
+
+        for (const modelName of [
+            'client_state_events',
+            'group_state_events',
+        ]) {
+            expect(schema).toContain(`model ${modelName}`);
+        }
+
+        for (const indexName of [
+            'client_state_events_page_ix',
+            'client_state_events_type_page_ix',
+            'group_state_events_page_ix',
+            'group_state_events_type_page_ix',
+        ]) {
+            expect(schema).toContain(indexName);
+        }
+    });
+
+    it('keeps QueueBox dequeue indexes represented in the API-v1 Prisma schema', () => {
+        const schema = readWorkspaceFile('apps/api-v1/prisma/schema.prisma');
+
+        for (const indexName of [
+            'resource_inbox_runnable_ix',
+            'resource_inbox_reserved_timeout_ix',
+        ]) {
+            expect(schema).toContain(indexName);
+        }
+    });
+
+    it('documents state snapshots and event logs in the architecture notes', () => {
+        const docs = readWorkspaceFile('packages/shared-server/architecture.md')
+            .replace(/\s+/g, ' ');
+
+        expect(docs).toContain('client/group snapshots in `runtime_state_store`');
+        expect(docs).toContain('state-event logs in `client_state_events` and `group_state_events`');
     });
 });
 

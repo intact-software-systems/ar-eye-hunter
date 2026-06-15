@@ -8,7 +8,7 @@ Rallar Server is both REST HTTP and WebSocket based.
 
 - REST HTTP owns auth, initial state reads, client state mutations, group/room mutations, ICE config, graph reads, and Swagger docs.
 - WebSocket owns live AL messages, RTC signaling, system state snapshot broadcasts, state event broadcasts, dynamic application topics, and server-to-client message fanout.
-- Persistent server state currently uses Postgres through seven physical tables: `runtime_state_store`, `resource_inbox`, `resource_inbox_results`, `app_data_store`, `crdt_documents`, `crdt_updates`, and `crdt_snapshots`.
+- Persistent server state currently uses Postgres through nine physical tables: `runtime_state_store`, `client_state_events`, `group_state_events`, `resource_inbox`, `resource_inbox_results`, `app_data_store`, `crdt_documents`, `crdt_updates`, and `crdt_snapshots`.
 - Process-local caches exist for client snapshots, group snapshots, graphs, RTT, Rallar app-data store instances, WebSocket connections, rate limiters, and repository-manager registrations.
 - Browser Rallar gets initial client/group state over REST, then receives live state snapshot messages over WS. The high-level `rallar.rooms.onChange(...)` and `rallar.people.onChange(...)` APIs are driven by the browser state caches. Live state events can be observed through `rallar.rooms.onEvent(...)` and `rallar.people.onEvent(...)`; lower-level WS messages can still be observed with `rallar.messages.ws.onMessage(...)`.
 
@@ -33,7 +33,8 @@ flowchart LR
     StateSync["StateSyncPublisher<br/>enqueue state snapshots/events"]
     PubSub["QueueBox PubSub bridge<br/>Postgres LISTEN/NOTIFY"]
 
-    RuntimeStore[("runtime_state_store<br/>auth, client state, group state,<br/>AL runtime stores")]
+    RuntimeStore[("runtime_state_store<br/>auth, client/group snapshots,<br/>AL runtime stores")]
+    StateEvents[("client_state_events + group_state_events<br/>version-ordered state event logs")]
     ResourceInbox[("resource_inbox<br/>durable WS inbox/outbox entries")]
     AppDataStore[("app_data_store<br/>RallarServer.data stores")]
     ServerCaches["Server process caches<br/>client/group snapshots,<br/>graphs, RTT, app-data cache"]
@@ -43,6 +44,7 @@ flowchart LR
     ServerFacade --> RestRoutes
     RestRoutes --> Services
     Services --> RuntimeStore
+    Services --> StateEvents
     Services --> StateSync
     StateSync --> ServerCaches
     StateSync -->|"enqueueOutboxIfAbsent"| WsQBox
@@ -93,11 +95,11 @@ The reusable facade is `packages/shared-server/rallar-facade/RallarServer.ts`.
 | Client principals | `ClientStateRepository` | `runtime_state_store` namespace `client-state:principals` | Client snapshot cache after publish/receive | Durable profile/presence identity for a principal inside app/workspace scope. |
 | Client instances | `ClientStateRepository` | `runtime_state_store` namespace `client-state:instances` | Client snapshot cache after publish/receive | Durable instance records under a principal. |
 | Client sessions | `ClientStateRepository` | `runtime_state_store` namespace `client-state:sessions` | Client snapshot cache after publish/receive | Active sessions expire by `expiresAtEpochMs`; lazy deletion also happens on reads. |
-| Client events | `ClientStateRepository` | `runtime_state_store` namespace `client-state:events` | Live event callbacks, no durable browser event cache | Appended on mutations. Broadcast over WS as `client-state.event`; `rallar.people.onEvent(...)` can observe live events, while `data-caches.ts` does not apply event payloads to snapshot caches. |
+| Client events | `ClientStateRepository` through `ClientStateEventStore` | `client_state_events` | Live event callbacks, no durable browser event cache | Appended on mutations. Paged by `(snapshot_version, occurred_at_epoch_ms, event_id)`. Broadcast over WS as `client-state.event`; `rallar.people.onEvent(...)` can observe live events, while `data-caches.ts` does not apply event payloads to snapshot caches. |
 | Groups/rooms | `GroupStateRepository` | `runtime_state_store` namespace `group-state:groups` | Group snapshot cache after publish/receive | Group rows can use `purgeAfterEpochMs`; active/deleted/archived status is in the JSON value. |
 | Group members | `GroupStateRepository` | `runtime_state_store` namespace `group-state:members` | Group snapshot cache after publish/receive | Member status and role are durable. |
 | Group presence sessions | `GroupStateRepository` | `runtime_state_store` namespace `group-state:sessions` | Group snapshot cache after publish/receive | Presence rows expire by `expiresAtEpochMs`. Active means `disconnectedAtEpochMs` is absent. |
-| Group events | `GroupStateRepository` | `runtime_state_store` namespace `group-state:events` | Live event callbacks, no durable browser event cache | Appended on mutations. Broadcast over WS as `group-state.event`; `rallar.rooms.onEvent(...)` can observe live events, while `data-caches.ts` does not apply event payloads to snapshot caches. |
+| Group events | `GroupStateRepository` through `GroupStateEventStore` | `group_state_events` | Live event callbacks, no durable browser event cache | Appended on mutations. Paged by `(snapshot_version, occurred_at_epoch_ms, event_id)`. Broadcast over WS as `group-state.event`; `rallar.rooms.onEvent(...)` can observe live events, while `data-caches.ts` does not apply event payloads to snapshot caches. |
 | WS inbox/outbox entries | `PSqlQueueBox` over `ResourceInboxRepository` | `resource_inbox` | No logical cache; queue engine locks rows | Same table is used for both inbound and outbound queue entries. `ri_type_id` separates `WS_INBOX` and `WS_OUTBOX`. |
 | App inbox results | `ResourceInboxResultsRepository` | `resource_inbox_results` | No logical cache | Stores completed or failed app-inbox results keyed like the originating queue entry so REST callers can wait for durable mutation results. |
 | AL runtime bookkeeping | `createPSqlALRuntimeStores` | `runtime_state_store` under server WS runtime namespaces | Runtime-store objects in process | Used for admission, dedup, ordering, supersedence, sent tracking, pending acks, repair attempts. |
@@ -135,6 +137,26 @@ The key space is namespace plus encoded keys such as:
 - `app=<applicationId>:ws=<workspaceId>:group=<groupId>:session=<sessionId>`
 - `token=<accessToken>`
 - `ticket=<ticket>`
+
+### `client_state_events` and `group_state_events`
+
+These tables store durable state-event logs separately from the JSON runtime
+state table. The Postgres adapters are `PSqlClientStateEventRepository` and
+`PSqlGroupStateEventRepository`.
+
+Important mapped fields:
+
+- `application_id`, `workspace_key`, and `principal_id` or `group_id` scope the
+  event stream. `workspace_key` stores `_` when the event has no workspace id.
+  If `_` needs to be a valid workspace id, a future migration should split this
+  into nullable workspace identity plus an index-safe generated key.
+- `event_id`, `event_type`, `snapshot_version`, and `occurred_at_epoch_ms`
+  mirror the public event payload.
+- `event_json` stores the full event response body returned by REST and replay
+  APIs.
+- Page indexes order by `snapshot_version`, `occurred_at_epoch_ms`, and
+  `event_id`, matching `StateEventCursor` and avoiding full-history scans for
+  `/events/page`.
 
 ### `resource_inbox`
 

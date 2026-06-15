@@ -85,7 +85,10 @@ test.describe("full-stack command-center QA matrix", () => {
     await expect(wsPanel).toContainText("rallar.direct.raw_ws.error");
 
     await page.getByRole("button", { name: /Rallar black-box-runner/ }).click();
-    await page.getByRole("tab", { name: "Shared Test" }).click();
+    await page.getByRole("tab", { name: "Advanced", exact: true }).click();
+    await page.locator("#panel-advanced")
+      .getByRole("button", { name: "Shared Test", exact: true })
+      .click();
     const sharedPanel = page.locator("#panel-shared-test");
     await expect(sharedPanel).toContainText("Recipe Catalog");
     await expect(sharedPanel).toContainText("Memory Delivery");

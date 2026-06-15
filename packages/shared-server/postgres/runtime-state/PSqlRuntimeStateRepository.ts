@@ -17,7 +17,7 @@ type RuntimeStateRow = Readonly<{
 }>;
 
 export class PSqlRuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {
-    constructor(private readonly sql: PSqlSql) {}
+    constructor(public readonly sql: PSqlSql) {}
 
     async begin<T>(
         fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,

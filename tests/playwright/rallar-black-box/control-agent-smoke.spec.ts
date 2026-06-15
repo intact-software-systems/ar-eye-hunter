@@ -18,7 +18,8 @@ test('SPA auto-connects as a control agent and returns command results', async (
         `&agentId=${encodeURIComponent(agentId)}`,
     );
 
-    await expect(page.locator('.control-panel')).toContainText('registered');
+    await expect(page.locator('#panel-local-workbench .control-panel'))
+        .toContainText('registered');
 
     const response = await request.post(
         `${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/agents/${

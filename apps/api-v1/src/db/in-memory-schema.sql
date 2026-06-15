@@ -36,6 +36,12 @@ CREATE INDEX IF NOT EXISTS resource_inbox_ix
 CREATE INDEX IF NOT EXISTS resource_inbox_expire_ts_ix
     ON resource_inbox (expire_ts);
 
+CREATE INDEX IF NOT EXISTS resource_inbox_runnable_ix
+    ON resource_inbox (ri_type_id, ri_status, expire_ts, next_ts, ri_row_id);
+
+CREATE INDEX IF NOT EXISTS resource_inbox_reserved_timeout_ix
+    ON resource_inbox (ri_type_id, ri_status, start_ts, expire_ts, ri_row_id);
+
 CREATE SEQUENCE IF NOT EXISTS trans_inbox_results_seq
     START WITH 1000
     INCREMENT BY 1
@@ -83,6 +89,46 @@ CREATE INDEX IF NOT EXISTS runtime_state_store_namespace_expire_at_ix
 
 CREATE INDEX IF NOT EXISTS runtime_state_store_expire_at_ix
     ON runtime_state_store (expire_at_ts);
+
+CREATE TABLE IF NOT EXISTS client_state_events
+(
+    application_id       text   NOT NULL,
+    workspace_key        text   NOT NULL,
+    principal_id         text   NOT NULL,
+    event_id             text   NOT NULL,
+    event_type           text   NOT NULL,
+    snapshot_version     bigint NOT NULL,
+    occurred_at_epoch_ms bigint NOT NULL,
+    client_instance_id   text,
+    session_id           text,
+    event_json           text   NOT NULL,
+    CONSTRAINT client_state_events_pk PRIMARY KEY (application_id, workspace_key, principal_id, event_id)
+);
+
+CREATE INDEX IF NOT EXISTS client_state_events_page_ix
+    ON client_state_events (application_id, workspace_key, principal_id, snapshot_version, occurred_at_epoch_ms, event_id);
+
+CREATE INDEX IF NOT EXISTS client_state_events_type_page_ix
+    ON client_state_events (application_id, workspace_key, principal_id, event_type, snapshot_version, occurred_at_epoch_ms, event_id);
+
+CREATE TABLE IF NOT EXISTS group_state_events
+(
+    application_id       text   NOT NULL,
+    workspace_key        text   NOT NULL,
+    group_id             text   NOT NULL,
+    event_id             text   NOT NULL,
+    event_type           text   NOT NULL,
+    snapshot_version     bigint NOT NULL,
+    occurred_at_epoch_ms bigint NOT NULL,
+    event_json           text   NOT NULL,
+    CONSTRAINT group_state_events_pk PRIMARY KEY (application_id, workspace_key, group_id, event_id)
+);
+
+CREATE INDEX IF NOT EXISTS group_state_events_page_ix
+    ON group_state_events (application_id, workspace_key, group_id, snapshot_version, occurred_at_epoch_ms, event_id);
+
+CREATE INDEX IF NOT EXISTS group_state_events_type_page_ix
+    ON group_state_events (application_id, workspace_key, group_id, event_type, snapshot_version, occurred_at_epoch_ms, event_id);
 
 CREATE TABLE IF NOT EXISTS app_data_store
 (
