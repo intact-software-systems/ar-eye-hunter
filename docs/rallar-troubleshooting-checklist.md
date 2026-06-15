@@ -45,16 +45,23 @@ Use this checklist when Rallar behavior is surprising in a browser or server int
 ## RTC
 
 - `rallar.rtc.status()` shows the expected known peers.
-- `readyPeerIds(laneId)` includes the target peer before direct realtime send.
-- `waitForRoomLane(room, laneId, { connect: true })` is used before the first realtime send.
+- For room-scoped app/game sends, `rallar.realtime.room(...).status()` or the
+  `send(...)` result shows expected `desiredPeerIds` and ready peers.
+- For low-level direct sends, `readyPeerIds(laneId)` includes the target peer
+  before `realtime.sendJson(...)`.
+- For low-level direct sends, `waitForRoomLane(room, laneId, { connect: true })`
+  is used before the first send.
 - The lane ID matches configured data channel lanes.
 - The room has active presence sessions for peer routing.
 - Partial readiness is handled explicitly.
 
 ## Realtime Data Channels
 
-- Use `realtime.sendJson(...)` only for low-latency peer traffic.
-- Use WS fallback for important messages if RTC is not ready.
+- Prefer `realtime.room<T>(...)` for room-scoped low-latency peer traffic.
+- Use `realtime.sendJson(...)` directly only when the caller owns peer targeting
+  and readiness decisions.
+- Use `messages.room<T>(...)` or WS fallback for important messages if RTC is
+  not ready.
 - Check each `RallarRealtimeSendResult.result` for per-peer send outcome.
 - Add lifecycle logging for `lane-open`, `lane-close`, and `lane-error`.
 
@@ -135,7 +142,8 @@ Use this checklist when Rallar behavior is surprising in a browser or server int
 - Logout followed by socket close.
 - RTC wait timeout.
 - RTC partial room readiness.
-- First realtime send after explicit `waitForRoomLane`.
+- First room realtime send through `realtime.room(...).send(...)`, including
+  `not-ready` and `no-targets` results.
 - Room message scoped by `roomRef` in two workspaces with same `roomId`.
 - Server restart with existing room/client state.
 - App-inbox retry after transient publish failure.
@@ -162,7 +170,8 @@ console.log(server.ws.status());
 
 - Configure defaults once near app startup.
 - Replace direct API calls with facade calls so state caches and lifecycle logic stay coherent.
-- Add `waitForOpen` or `waitForRoomLane` before immediate send flows.
+- Use `realtime.room<T>(...)` for room-scoped sends, or add `waitForOpen` /
+  `waitForRoomLane` before immediate low-level send flows.
 - Use `roomRef` in messages and state calls when application/workspace matters.
 - Move cleanup through `auth.logout`.
 - Use app inbox services for state mutations that must be durable and publish state sync.

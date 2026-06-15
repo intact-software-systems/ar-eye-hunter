@@ -17,20 +17,15 @@ import {
 
 const rallarMock = vi.hoisted(() => ({
     onJson: vi.fn(),
-    readyPeerIds: vi.fn<() => readonly string[]>(),
-    waitForRoomLane: vi.fn(),
-    sendJson: vi.fn(),
+    room: vi.fn(),
+    roomSend: vi.fn(),
 }));
 
 vi.mock('@shared-web/browser/rallar.ts', () => ({
     rallar: {
-        rtc: {
-            readyPeerIds: rallarMock.readyPeerIds,
-            waitForRoomLane: rallarMock.waitForRoomLane,
-        },
         realtime: {
             onJson: rallarMock.onJson,
-            sendJson: rallarMock.sendJson,
+            room: rallarMock.room,
         },
     },
 }));
@@ -38,65 +33,76 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
 describe('Relic scene realtime motion networking', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        rallarMock.readyPeerIds.mockReturnValue(['bob-session']);
-        rallarMock.waitForRoomLane.mockResolvedValue({
-            status: 'open',
-            ready: [{ peerId: 'bob-session' }],
-            notReady: [],
-        });
-        rallarMock.sendJson.mockResolvedValue([{
-            peerId: 'bob-session',
+        rallarMock.roomSend.mockResolvedValue({
+            status: 'sent',
+            peerIds: ['bob-session'],
+            desiredPeerIds: ['bob-session'],
+            results: [{
+                peerId: 'bob-session',
+                laneId: RELIC_MOTION_LANE_ID,
+                result: { status: 'sent', bufferedAmount: 0 },
+            }],
+            transport: 'rtc',
             laneId: RELIC_MOTION_LANE_ID,
-            result: { status: 'sent', bufferedAmount: 0 },
-        }]);
+            transportStatus: {
+                rtc: {
+                    state: 'open',
+                    readyPeerIds: ['bob-session'],
+                },
+            },
+        });
+        rallarMock.room.mockReturnValue({
+            send: rallarMock.roomSend,
+        });
     });
 
-    it('waits for the realtime lane and sends local avatar motion over rallar.realtime', async () => {
+    it('sends local avatar motion through a Rallar room realtime channel', async () => {
         const runtime = sceneRuntime();
 
         await broadcastLocalPosition(runtime);
 
-        expect(rallarMock.waitForRoomLane).toHaveBeenCalledWith(
-            'room-1',
-            RELIC_MOTION_LANE_ID,
-            { connect: true, timeoutMs: 1000 },
-        );
-        expect(rallarMock.sendJson).toHaveBeenCalledWith(expect.objectContaining({
+        expect(rallarMock.room).toHaveBeenCalledWith(expect.objectContaining({
             laneId: RELIC_MOTION_LANE_ID,
             roomId: 'room-1',
             openTimeoutMs: RELIC_MOTION_OPEN_TIMEOUT_MS,
+            waitTimeoutMs: 1000,
+        }));
+        expect(rallarMock.roomSend).toHaveBeenCalledWith(expect.objectContaining({
+            protocol: RELIC_MOTION_PROTOCOL,
+            kind: 'relic-motion',
+            pid: 'alice-session',
+            roomId: 'entrance',
+            x: 1.25,
+            y: 0.65,
+            z: -0.5,
+            ox: 1.25,
+            oz: -0.5,
+            r: 0.75,
+            phase: 'walk',
+        }), expect.objectContaining({
             key: 'relic-motion:alice-session',
             maxAgeMs: RELIC_MOTION_MAX_AGE_MS,
-            data: expect.objectContaining({
-                protocol: RELIC_MOTION_PROTOCOL,
-                kind: 'relic-motion',
-                pid: 'alice-session',
-                roomId: 'entrance',
-                x: 1.25,
-                y: 0.65,
-                z: -0.5,
-                ox: 1.25,
-                oz: -0.5,
-                r: 0.75,
-                phase: 'walk',
-            }),
         }));
         expect(runtime.motion.diagnostics.lastSendStatus).toBe('sent');
     });
 
     it('does not send motion until a realtime room lane has a ready peer', async () => {
-        rallarMock.readyPeerIds.mockReturnValue([]);
-        rallarMock.waitForRoomLane.mockResolvedValue({
-            status: 'empty',
-            ready: [],
-            notReady: [],
+        rallarMock.roomSend.mockResolvedValue({
+            status: 'not-ready',
+            peerIds: [],
+            desiredPeerIds: ['bob-session'],
+            results: [],
+            transport: 'rtc',
+            laneId: RELIC_MOTION_LANE_ID,
+            readiness: {
+                status: 'empty',
+            },
         });
         const runtime = sceneRuntime();
 
         await broadcastLocalPosition(runtime);
 
-        expect(rallarMock.waitForRoomLane).toHaveBeenCalled();
-        expect(rallarMock.sendJson).not.toHaveBeenCalled();
+        expect(rallarMock.roomSend).toHaveBeenCalled();
         expect(runtime.motion.diagnostics.lastSendStatus).toBe('not-ready');
     });
 

@@ -367,6 +367,49 @@ function createFakeRallar() {
                         return () => remove(rtcMessageHandlers, subscription);
                     },
                 },
+                room: (definition: Readonly<{ topicId?: string; typeId: string; roomId?: string; roomRef?: unknown }>) => ({
+                    send: async (payload: unknown, options: Record<string, unknown> = {}) =>
+                        await rtcSend({
+                            ...definition,
+                            ...options,
+                            payload,
+                        }),
+                    sendRtc: async (payload: unknown, options: Record<string, unknown> = {}) =>
+                        await rtcSend({
+                            ...definition,
+                            ...options,
+                            payload,
+                        }),
+                    sendWs: async (payload: unknown, options: Record<string, unknown> = {}) =>
+                        await wsSend({
+                            ...definition,
+                            ...options,
+                            payload,
+                            scope: options['scope'] ?? 'room',
+                        }),
+                    onRtc: (
+                        handler: (payload: unknown, message: RallarMessage<unknown>) => void | Promise<void>,
+                    ) => {
+                        const subscription = {
+                            selector: definition,
+                            handler: async (message: RallarMessage<unknown>) =>
+                                await handler(message.payload, message),
+                        };
+                        rtcMessageHandlers.push(subscription);
+                        return () => remove(rtcMessageHandlers, subscription);
+                    },
+                    onWs: (
+                        handler: (payload: unknown, message: RallarMessage<unknown>) => void | Promise<void>,
+                    ) => {
+                        const subscription = {
+                            selector: definition,
+                            handler: async (message: RallarMessage<unknown>) =>
+                                await handler(message.payload, message),
+                        };
+                        wsMessageHandlers.push(subscription);
+                        return () => remove(wsMessageHandlers, subscription);
+                    },
+                }),
             },
         } as unknown as RallarGameAuthorityClientRallarFacade,
         async emitWs<T>(

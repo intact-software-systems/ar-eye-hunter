@@ -4,6 +4,7 @@ import type {
     RallarDirectorStatus,
     RallarMessageSendStatus,
     RallarRealtimeSendResult,
+    RallarRoomRealtimeSendResult,
     RallarRtcRoomLaneWaitResult,
     RallarRtcRoomLaneWaitStatus,
     RallarRtcStatus,
@@ -452,16 +453,16 @@ export function createRallarGameMatch<
         const envelope = createEnvelope('presence', presence, {
             directorEpoch: currentStatus.directorEpoch ?? 0,
         });
-        const realtime = await config.rallar.realtime.sendJson({
+        const realtime = await config.rallar.realtime.room({
             laneId: options.laneId ?? laneIds.input,
             roomId: room.roomRef ? undefined : room.roomId,
             roomRef: room.roomRef,
-            data: envelope,
+            openTimeoutMs: options.openTimeoutMs ?? 500,
+        }).send(envelope, {
             key: options.key ?? `presence:${envelope.senderId}`,
             maxAgeMs: options.maxAgeMs ?? 250,
-            openTimeoutMs: options.openTimeoutMs ?? 500,
         });
-        return toRealtimeSendResult(realtime);
+        return toRoomRealtimeSendResult(realtime);
     }
 
     async function sendInput(input: TInput): Promise<RallarGameSendResult> {
@@ -531,15 +532,15 @@ export function createRallarGameMatch<
         }
 
         const room = readRoomTarget();
-        const realtime = await config.rallar.realtime.sendJson({
+        const realtime = await config.rallar.realtime.room({
             laneId: laneIds.snapshot,
             roomId: room.roomRef ? undefined : room.roomId,
             roomRef: room.roomRef,
-            data: envelope,
+        }).send(envelope, {
             key: `snapshot:${envelope.senderId}`,
             maxAgeMs: 500,
         });
-        return toRealtimeSendResult(realtime);
+        return toRoomRealtimeSendResult(realtime);
     }
 
     async function publishEvent(event: TEvent): Promise<RallarGameSendResult> {
@@ -1277,6 +1278,46 @@ function toRealtimeSendResult(
         transport: 'realtime',
         realtime,
         reason: 'Realtime lane is not ready.',
+    };
+}
+
+function toRoomRealtimeSendResult(
+    realtime: RallarRoomRealtimeSendResult,
+): RallarGameSendResult {
+    if (realtime.status === 'sent') {
+        return {
+            status: 'sent',
+            transport: 'realtime',
+            realtime: realtime.results,
+        };
+    }
+
+    if (realtime.status === 'partial') {
+        return {
+            status: 'partial',
+            transport: 'realtime',
+            realtime: realtime.results,
+            reason: realtime.reason ?? 'Some room realtime sends did not succeed.',
+        };
+    }
+
+    if (
+        realtime.status === 'not-ready' ||
+        realtime.status === 'no-targets'
+    ) {
+        return {
+            status: 'not-ready',
+            transport: 'realtime',
+            realtime: realtime.results,
+            reason: realtime.reason ?? 'Room realtime transport is not ready.',
+        };
+    }
+
+    return {
+        status: 'failed',
+        transport: 'realtime',
+        realtime: realtime.results,
+        reason: realtime.reason ?? 'Room realtime send failed.',
     };
 }
 

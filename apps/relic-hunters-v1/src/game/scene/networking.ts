@@ -305,14 +305,7 @@ export async function broadcastLocalPosition(
     const sampleForGate = { position, rotation };
     const decision = runtime.motion.sendGate.check(sampleForGate, nowEpochMs);
     runtime.motion.diagnostics.lastSendReason = decision.reason;
-    runtime.motion.diagnostics.readyPeerCount = readReadyPeerCount();
     if (!decision.shouldSend) {
-        return;
-    }
-
-    const laneReady = await ensureRelicMotionLaneReady(runtime, snapshot.roomId, nowEpochMs);
-    if (!laneReady) {
-        runtime.motion.diagnostics.lastSendStatus = 'not-ready';
         return;
     }
 
@@ -330,104 +323,48 @@ export async function broadcastLocalPosition(
     const angularVelocity = kinematics.angularVelocity;
 
     try {
-        const results = await rallar.realtime.sendJson<RelicMotionPayload>({
+        const result = await rallar.realtime.room<RelicMotionPayload>({
             laneId: RELIC_MOTION_LANE_ID,
             roomId: snapshot.roomId,
             openTimeoutMs: RELIC_MOTION_OPEN_TIMEOUT_MS,
+            waitTimeoutMs: RELIC_MOTION_FIRST_WAIT_TIMEOUT_MS,
+        }).send({
+            protocol: RELIC_MOTION_PROTOCOL,
+            version: 1,
+            kind: 'relic-motion',
+            pid: localPlayer.playerId,
+            roomId: room.id,
+            seq,
+            x: position[0],
+            y: position[1],
+            z: position[2],
+            ox: runtime.roamOffset.x,
+            oz: runtime.roamOffset.z,
+            r: runtime.cameraYaw.value,
+            phase: runtime.motionPhase.value,
+            sentAtEpochMs: nowEpochMs,
+            ...(velocity
+                ? { vx: velocity[0], vy: velocity[1], vz: velocity[2] }
+                : {}),
+            ...(angularVelocity ? { vr: angularVelocity[1] } : {}),
+        }, {
             key: `relic-motion:${localPlayer.playerId}`,
             maxAgeMs: RELIC_MOTION_MAX_AGE_MS,
-            data: {
-                protocol: RELIC_MOTION_PROTOCOL,
-                version: 1,
-                kind: 'relic-motion',
-                pid: localPlayer.playerId,
-                roomId: room.id,
-                seq,
-                x: position[0],
-                y: position[1],
-                z: position[2],
-                ox: runtime.roamOffset.x,
-                oz: runtime.roamOffset.z,
-                r: runtime.cameraYaw.value,
-                phase: runtime.motionPhase.value,
-                sentAtEpochMs: nowEpochMs,
-                ...(velocity
-                    ? { vx: velocity[0], vy: velocity[1], vz: velocity[2] }
-                    : {}),
-                ...(angularVelocity ? { vr: angularVelocity[1] } : {}),
-            },
         });
-        const sent = results.some((entry) =>
-            entry.result.status === 'sent' ||
-            entry.result.status === 'queued' ||
-            entry.result.status === 'replaced'
-        );
-        runtime.motion.diagnostics.lastSendStatus = sent ? 'sent' : (results[0]?.result.status ?? 'no-targets');
-        runtime.motion.diagnostics.readyPeerCount = readReadyPeerCount();
+        const sent = result.status === 'sent' || result.status === 'partial';
+        runtime.motion.laneReady.value = sent;
+        runtime.motion.diagnostics.laneReady = sent;
+        runtime.motion.diagnostics.readyPeerCount = result.peerIds.length;
+        runtime.motion.diagnostics.lastReadyWaitStatus =
+            result.readiness?.status ?? result.transportStatus?.rtc.state;
+        runtime.motion.diagnostics.lastSendStatus = result.status;
         if (sent) {
             runtime.motion.sendGate.recordSent(sampleForGate, nowEpochMs);
         }
     } catch {
-        runtime.motion.diagnostics.lastSendStatus = 'failed';
-    }
-}
-
-async function ensureRelicMotionLaneReady(
-    runtime: RelicScenePositionRuntime,
-    roomId: string,
-    nowEpochMs: number,
-): Promise<boolean> {
-    const readyPeerCount = readReadyPeerCount();
-    runtime.motion.diagnostics.readyPeerCount = readyPeerCount;
-    if (runtime.motion.laneReady.value && readyPeerCount > 0) {
-        runtime.motion.diagnostics.laneReady = true;
-        return true;
-    }
-
-    if (runtime.motion.readyWait.value) {
-        return await runtime.motion.readyWait.value;
-    }
-
-    if (
-        runtime.motion.lastReadyWaitEpochMs.value > 0 &&
-        nowEpochMs - runtime.motion.lastReadyWaitEpochMs.value < 350
-    ) {
-        return false;
-    }
-
-    runtime.motion.lastReadyWaitEpochMs.value = nowEpochMs;
-    runtime.motion.readyWait.value = rallar.rtc.waitForRoomLane(
-        roomId,
-        RELIC_MOTION_LANE_ID,
-        {
-            connect: true,
-            timeoutMs: RELIC_MOTION_FIRST_WAIT_TIMEOUT_MS,
-        },
-    ).then((readiness) => {
-        const ready = readiness.status === 'open' || readiness.status === 'partial';
-        const nextReadyPeerCount = readiness.ready.length;
-        runtime.motion.laneReady.value = ready && nextReadyPeerCount > 0;
-        runtime.motion.diagnostics.laneReady = runtime.motion.laneReady.value;
-        runtime.motion.diagnostics.readyPeerCount = nextReadyPeerCount;
-        runtime.motion.diagnostics.lastReadyWaitStatus = readiness.status;
-        return runtime.motion.laneReady.value;
-    }).catch(() => {
         runtime.motion.laneReady.value = false;
         runtime.motion.diagnostics.laneReady = false;
-        runtime.motion.diagnostics.lastReadyWaitStatus = 'failed';
-        return false;
-    }).finally(() => {
-        runtime.motion.readyWait.value = undefined;
-    });
-
-    return await runtime.motion.readyWait.value;
-}
-
-function readReadyPeerCount(): number {
-    try {
-        return rallar.rtc.readyPeerIds(RELIC_MOTION_LANE_ID).length;
-    } catch {
-        return 0;
+        runtime.motion.diagnostics.lastSendStatus = 'failed';
     }
 }
 

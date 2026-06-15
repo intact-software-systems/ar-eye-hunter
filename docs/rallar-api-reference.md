@@ -208,6 +208,20 @@ chat.onWs((payload) => console.log(payload.text));
 await chat.sendWs({ text: 'hello' }, { scope: 'room', roomRef: room.group });
 ```
 
+Room channels add room defaults and default `send(...)` to the existing
+`rtc-with-ws-fallback` strategy:
+
+```ts
+const roomChat = rallar.messages.room<ChatMessage>({
+    topicId: 'chat',
+    typeId: 'message',
+    roomRef: room.group,
+});
+
+roomChat.onWs((payload) => console.log(payload.text));
+await roomChat.send({ text: 'hello' });
+```
+
 ### RTC Status And Readiness
 
 `rtc.status(options?)` returns a snapshot of peer/lane readiness.
@@ -257,7 +271,12 @@ if (result.status !== 'open') {
 
 ### Realtime Data Channels
 
-The `realtime` facade sends directly over RTC data channels. It is for low-latency peer traffic after room membership and RTC readiness exist.
+The `realtime` facade sends directly over RTC data channels. It is for
+low-latency peer traffic after room membership and RTC readiness exist. For
+room-scoped app/game traffic, prefer `realtime.room<T>(defaults)`: it checks
+room transport status, waits for readiness by default, sends only to ready room
+peers, and returns diagnostics. Use lower-level `sendJson`/`json` when the
+caller intentionally owns peer selection and readiness handling.
 
 `realtime.sendJson(input)` sends JSON to selected peer IDs, a room, or the default/current room.
 
@@ -269,25 +288,26 @@ The `realtime` facade sends directly over RTC data channels. It is for low-laten
 
 `realtime.json(defaults?)` creates a typed JSON lane.
 
+`realtime.room(defaults?)` creates a typed room JSON channel with `send`, `on`,
+`status`, and `wait`.
+
 `realtime.health(options?)` returns RTC data channel health records.
 
 ```ts
-const lane = rallar.realtime.json<{ x: number; y: number }>({
+const lane = rallar.realtime.room<{ x: number; y: number }>({
     laneId: 'realtime',
     roomId: 'lobby',
-    openTimeoutMs: 1000,
+    waitTimeoutMs: 1000,
 });
 
 lane.on((message) => {
     updateRemotePlayer(message.peerId, message.data);
 });
 
-await rallar.rtc.waitForRoomLane('lobby', 'realtime', {
-    connect: true,
-    timeoutMs: 1000,
-});
-
-await lane.send({ x: 10, y: 5 });
+const result = await lane.send({ x: 10, y: 5 });
+if (result.status === 'not-ready') {
+    console.warn(result.reason, result.transportStatus);
+}
 ```
 
 ### Rallar Motion

@@ -63,3 +63,7 @@ In production, replace the mock provider with either:
 
 The generated envelope remains proposal data. The game still owns domain
 validation, authorization, host approval, and final state mutation.
+
+`ai.broadcastJson(...)` is the RallarAI-specific proposal broadcast helper. For
+ordinary validated room messages, prefer `rallar.messages.room<T>(...)` or
+`rallar.realtime.room<T>(...)` depending on reliability and latency needs.

@@ -244,8 +244,8 @@ Constraints:
 - The WS send data must include typeId, topicId, contextId, roomRef, and
   payload.messageId.
 - The RTC send must include transport realtime, roomRef, and payload.messageId.
-- Do not add Rallar facade method names such as messages.rtc.send or
-  realtime.sendJson.
+- Do not add Rallar facade method names such as messages.rtc.send,
+  messages.room, realtime.sendJson, or realtime.room.
 ```
 
 ## Prompt: Wait And Assert Evidence

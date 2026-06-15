@@ -3,7 +3,7 @@
 ## Shared Packages
 
 - `packages/shared`: core contracts and runtime-agnostic utilities.
-- `packages/shared-web`: browser-facing Rallar facade, room APIs, RTC/WS message helpers, browser CRDT and data stores.
+- `packages/shared-web`: browser-facing Rallar facade, narrow browser entry points, room realtime/message helpers, RTC/WS transports, browser CRDT and data stores.
 - `packages/shared-server`: server middleware, repositories, state sync, WS topics, Postgres adapters, server RallarAI.
 - `packages/shared-graph`: graph/topology helpers for RTC and group topology.
 - `packages/shared-test`: black-box recipe language, providers, runners, diagnostics, distributed test helpers.
@@ -21,7 +21,6 @@
 
 ## High-Signal Docs
 
-- `docs/rallar-api-reference.md`: browser facade, Rallar Motion, CRDT, data, middleware.
+- `docs/rallar-api-reference.md`: browser facade, room transport helpers, Rallar Motion, CRDT, data, middleware.
 - `docs/environment-variables.md`: app/server env conventions.
 - `docs/rallar-product-and-implementation-evaluation.md`: product review context.
-

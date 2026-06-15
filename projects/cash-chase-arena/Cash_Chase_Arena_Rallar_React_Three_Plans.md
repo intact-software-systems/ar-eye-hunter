@@ -234,13 +234,13 @@ game-snapshot   director to clients state snapshots
 game-metrics    optional diagnostics and ping samples
 ```
 
-Use Rallar WS messages for reliable room coordination and fallback:
+Use `rallar.messages.room<T>(...)` for reliable room coordination and fallback:
 
 - capability reports
 - room-level match status
 - AI or fallback map commit
 - playtest diagnostics
-- fallback delivery when RTC lanes are not ready
+- fallback delivery when room realtime sends return `not-ready` or `no-targets`
 
 No game code should directly create raw WebSocket, WebRTC, or DataChannel objects.
 
@@ -477,7 +477,8 @@ Build:
 - capability report over Rallar WS messages
 - deterministic director election
 - director appointment through Rallar
-- lane readiness checks for `game-input` and `game-snapshot`
+- room transport readiness checks for `game-input` and `game-snapshot` through
+  `rallar.realtime.room<T>(...)`
 - client sends movement input to director
 - director runs a tiny fixed tick simulation
 - director broadcasts snapshots
@@ -707,11 +708,11 @@ Cover:
 - room lifecycle mapping
 - director appointment and stale director handling
 - reliable intent send and receive
-- realtime input routing
+- realtime input routing through `rallar.realtime.room<T>(...)`
 - snapshot receive and acceptance
 - Rallar Motion buffer push, duplicate/stale sequence handling, and render estimate sampling
 - sync request flow
-- partial lane readiness
+- partial room transport readiness
 - Rallar Data open/hydrate/read/write/update/flush flows for settings, loadout, AI replay, and debug logs
 - tests proving Rallar Data is not used for live snapshots, input streams, scores, host election, or recovery leases
 - tests or review checks proving no server `rallar.data.open(...)` calls are introduced for app-owned CCA match/game data in MVP
@@ -726,7 +727,7 @@ Cover:
 - create room
 - join room
 - elect director
-- wait for Rallar lanes
+- wait for Rallar room transport readiness
 - send input
 - observe remote movement
 - complete a cash-out

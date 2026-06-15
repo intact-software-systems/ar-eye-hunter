@@ -2,6 +2,10 @@
 
 Date: 2026-05-31
 
+Status: historical implementation log. The current browser-agent schema and
+contracts live in the schema/capabilities, runtime diagnostic, composite result,
+distributed-run, and companion coverage docs.
+
 ## Goal
 
 Add recipe-level control primitives to `rallar-bb-test` so browser agents can
@@ -42,7 +46,8 @@ and bounded parallel groups inside one browser-agent recipe.
 Keep these guardrails:
 
 - Do not add direct Rallar facade commands such as `rooms.join`,
-  `messages.rtc.send`, `realtime.sendJson`, `data.open`, or `media.start`.
+  `messages.rtc.send`, `messages.room`, `realtime.sendJson`,
+  `realtime.room`, `data.open`, or `media.start`.
 - Keep child commands in the existing portable `rallar-bb-test` command
   vocabulary: HTTP, WS, RTC, health, stats, close, reset, and recipe commands.
 - Composite commands should be transport-neutral. They orchestrate child

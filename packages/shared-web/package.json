@@ -4,12 +4,13 @@
   "version": "0.1.0",
   "type": "module",
   "dependencies": {
-    "graphology": "0.26.0",
     "@js-temporal/polyfill": "^0.5.1"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",
+    "check:browser-bundles": "node scripts/measure-browser-bundles.mjs --check",
     "lint": "tsc -p tsconfig.json --noEmit",
+    "measure:browser-bundles": "node scripts/measure-browser-bundles.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }

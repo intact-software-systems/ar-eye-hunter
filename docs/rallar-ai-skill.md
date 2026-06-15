@@ -55,11 +55,11 @@ Use Rallar Server middleware/facade when the task involves:
 4. Use `start()` for app boot.
    Prefer `rallar.start({ restoreSession: true, connect: true, refreshRooms: true, refreshPeople: true })` over manually calling many boot APIs.
 
-5. Wait for readiness before first low-latency RTC send.
-   Use `rallar.rtc.waitForRoomLane(room, 'realtime', { connect: true, timeoutMs })` before a first `realtime.sendJson`.
+5. Prefer room helpers for room-scoped low-latency sends.
+   Use `rallar.realtime.room<T>({ roomId, laneId: 'realtime', waitTimeoutMs }).send(payload)` for app/game room traffic. It waits for RTC readiness by default and returns transport diagnostics.
 
 6. Use WS for reliable server-routed messages.
-   Use RTC/realtime for peer-to-peer low-latency traffic when partial delivery is acceptable or handled by the app.
+   Use `rallar.messages.room<T>(definition)` when an important room message should use the typed message path with RTC and WS options. Use raw RTC/realtime APIs only when the caller needs custom peer selection or low-level readiness handling.
 
 7. Use `roomRef` where scope matters.
    Prefer `GroupRef` over plain `roomId` when the app can operate in multiple application/workspace scopes.
@@ -108,20 +108,18 @@ subs.add(rallar.people.onChange(renderPeople));
 return () => subs.unsubscribe();
 ```
 
-5. For first realtime send, ensure lane readiness:
+5. For room-scoped realtime sends, use the room helper:
 
 ```ts
-const readiness = await rallar.rtc.waitForRoomLane('lobby', 'realtime', {
-  connect: true,
-  timeoutMs: 1000,
+const roomLane = rallar.realtime.room<{ type: 'move'; x: number; y: number }>({
+  roomId: 'lobby',
+  laneId: 'realtime',
+  waitTimeoutMs: 1000,
 });
 
-if (readiness.ready.length > 0) {
-  await rallar.realtime.sendJson({
-    laneId: 'realtime',
-    roomId: 'lobby',
-    data: { type: 'move', x: 1, y: 2 },
-  });
+const result = await roomLane.send({ type: 'move', x: 1, y: 2 });
+if (result.status === 'not-ready') {
+  console.warn(result.reason);
 }
 ```
 

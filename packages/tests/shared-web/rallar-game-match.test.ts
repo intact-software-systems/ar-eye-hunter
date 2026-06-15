@@ -552,6 +552,45 @@ function createFakeRallar(
             },
             realtime: {
                 sendJson: realtimeSendJson,
+                room: (defaults: Record<string, unknown>) => ({
+                    send: async (data: unknown, options: Record<string, unknown> = {}) => {
+                        const results = await realtimeSendJson({
+                            ...defaults,
+                            ...options,
+                            data,
+                        } as { laneId: string; peerIds?: readonly string[] });
+                        return {
+                            transport: 'rtc' as const,
+                            status: 'sent' as const,
+                            laneId: String(defaults['laneId'] ?? 'realtime'),
+                            roomId: defaults['roomId'] as string | undefined,
+                            roomRef: defaults['roomRef'],
+                            peerIds: results.map((result) => result.peerId),
+                            desiredPeerIds: results.map((result) => result.peerId),
+                            results,
+                        };
+                    },
+                    on: (
+                        handler: (message: { peerId: string; data: unknown }) =>
+                            void | Promise<void>,
+                    ) => {
+                        const laneId = String(defaults['laneId'] ?? 'realtime');
+                        const handlers = realtimeJsonHandlers.get(laneId) ?? [];
+                        handlers.push(handler);
+                        realtimeJsonHandlers.set(laneId, handlers);
+                        return () => remove(handlers, handler);
+                    },
+                    status: () => ({
+                        rtc: {
+                            state: 'open' as const,
+                        },
+                    }),
+                    wait: async () => ({
+                        rtc: {
+                            state: 'open' as const,
+                        },
+                    }),
+                }),
                 onJson: (
                     laneId: string,
                     handler: (message: { peerId: string; data: unknown }) =>

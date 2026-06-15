@@ -84,6 +84,7 @@ const mockRallar = vi.hoisted(() => ({
     realtime: {
         onJson: vi.fn(),
         sendJson: vi.fn(),
+        room: vi.fn(),
         health: vi.fn(),
     },
     rtc: {
@@ -172,6 +173,16 @@ describe('useRallarArena auth lifecycle', () => {
             unsubscribe: vi.fn(),
         });
         mockRallar.realtime.onJson.mockReturnValue(vi.fn());
+        mockRallar.realtime.room.mockReturnValue({
+            send: vi.fn(() => Promise.resolve({
+                status: 'sent',
+                peerIds: ['peer-b'],
+                desiredPeerIds: ['peer-b'],
+                results: [],
+                transport: 'rtc',
+                laneId: 'combat',
+            })),
+        });
         mockRallar.realtime.health.mockReturnValue([]);
         mockRallar.rooms.onChange.mockReturnValue(vi.fn());
         mockRallar.director.onStatus.mockReturnValue(vi.fn());

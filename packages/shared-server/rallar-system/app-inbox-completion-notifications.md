@@ -1,5 +1,9 @@
 # App Inbox Completion Notifications
 
+Status: proposal, not current runtime behavior. The durable result table
+(`resource_inbox_results`) remains the source of truth; completion
+notifications are only a possible future optimization for waking waiters faster.
+
 The current app-inbox waiter is deliberately durable: it enqueues an inbox entry, polls `resource_inbox` until the entry
 is `COMPLETED` or `FAILED`, then reads the durable result from `resource_inbox_results`. This works across processes,
 but slow storage or queue scheduling makes synchronous HTTP operations wait for retry intervals.

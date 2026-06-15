@@ -1553,16 +1553,16 @@ export function useRallarArena(): ArenaConnection {
             return;
         }
 
-        void rallar.realtime.sendJson<GameRealtimeMessage>({
+        void rallar.realtime.room<GameRealtimeMessage>({
             laneId: GAME_COMBAT_LANE_ID,
             roomId: currentRoomId,
-            data: {
-                protocol: GAME_PROTOCOL,
-                kind: 'director-shot-accepted',
-                accepted: fullAccepted,
-            },
-            maxAgeMs: 1000,
             openTimeoutMs: 1500,
+        }).send({
+            protocol: GAME_PROTOCOL,
+            kind: 'director-shot-accepted',
+            accepted: fullAccepted,
+        }, {
+            maxAgeMs: 1000,
         });
     }, []);
 
@@ -1624,12 +1624,12 @@ export function useRallarArena(): ArenaConnection {
             return;
         }
 
-        void rallar.realtime.sendJson<GameRealtimeMessage>({
+        void rallar.realtime.room<GameRealtimeMessage>({
             laneId: GAME_COMBAT_LANE_ID,
             roomId: currentRoomId,
-            data: message,
-            maxAgeMs: 650,
             openTimeoutMs: 1500,
+        }).send(message, {
+            maxAgeMs: 650,
         });
     }, [acceptPlayerHit]);
 
@@ -1686,13 +1686,13 @@ export function useRallarArena(): ArenaConnection {
             return;
         }
 
-        void rallar.realtime.sendJson<GameRealtimeMessage>({
+        void rallar.realtime.room<GameRealtimeMessage>({
             laneId: GAME_COMBAT_LANE_ID,
             roomId: currentRoomId,
-            data: message,
+            openTimeoutMs: 1500,
+        }).send(message, {
             key: `pickup:${fullIntent.pickupId}`,
             maxAgeMs: 650,
-            openTimeoutMs: 1500,
         });
     }, [acceptPickup]);
 
@@ -1729,13 +1729,13 @@ export function useRallarArena(): ArenaConnection {
             return;
         }
 
-        await rallar.realtime.sendJson<GameRealtimeMessage>({
+        await rallar.realtime.room<GameRealtimeMessage>({
             laneId: GAME_COMBAT_LANE_ID,
             roomId: currentRoomId,
-            data: message,
+            openTimeoutMs: 1500,
+        }).send(message, {
             key: `match-start:${intent.matchId}`,
             maxAgeMs: 1_000,
-            openTimeoutMs: 1500,
         });
     }, [acceptMatchStartIntent]);
 

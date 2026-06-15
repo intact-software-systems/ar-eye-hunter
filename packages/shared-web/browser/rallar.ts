@@ -40,7 +40,6 @@ import {
     readRallarGroupDirectorFromSnapshot,
 } from '@shared/api/group-director.ts';
 import type {
-    ApplicationId,
     GroupEvent,
     GroupEventType,
     GroupJoinMode,
@@ -49,11 +48,10 @@ import type {
     GroupRole,
     GroupSnapshot,
     GroupStatus,
-    WorkspaceId,
 } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID, type StateScope, } from '@shared/api/state-types.ts';
 import type { StateEventCursor, StateEventPage, } from '@shared/api/state-event-types.ts';
-import { Command, type CommandOptions } from '@shared/cache/Command.ts';
+import { Command } from '@shared/cache/Command.ts';
 import { CommandsOrchestrator, type CommandsOrchestratorPolicies, } from '@shared/cache/CommandsOrchestrator.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
@@ -74,8 +72,6 @@ import {
 } from '@shared/services/WebRtcConnectionService.ts';
 import {
     type ApiMiddleware,
-    clearMiddleware,
-    getMiddleware,
     initMiddleware,
     isMiddlewareReady,
 } from '@shared-web/browser/app-context.ts';
@@ -89,12 +85,71 @@ import * as api from '@shared-web/browser/api-integration.ts';
 import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
 import * as stateCaches from '@shared-web/browser/data-caches.ts';
 import {
+    createRallarAuthFacade,
+    type RallarAuthFacade,
+} from '@shared-web/browser/rallar-auth-facade.ts';
+import {
+    createRallarCallsFacade,
+    type RallarCallsFacade,
+} from '@shared-web/browser/rallar-calls-facade.ts';
+import {
+    createRallarConnectionFacade,
+    type RallarConnectionFacade,
+} from '@shared-web/browser/rallar-connection-facade.ts';
+import {
     createRallarDataFacade,
     type RallarDataFacade,
     type RallarDataScope,
 } from '@shared-web/browser/rallar-data.ts';
+import {
+    createRallarDirectorFacade,
+    type RallarDirectorFacade,
+} from '@shared-web/browser/rallar-director-facade.ts';
+import {
+    createRallarMediaFacade,
+    type RallarMediaFacade,
+} from '@shared-web/browser/rallar-media-facade.ts';
+import {
+    createRallarMessagesFacade,
+    type RallarMessagesFacade,
+} from '@shared-web/browser/rallar-messages-facade.ts';
+import {
+    createRallarPeopleFacade,
+    type RallarPeopleFacade,
+} from '@shared-web/browser/rallar-people-facade.ts';
+import {
+    createRallarRealtimeFacade,
+    type RallarRealtimeFacade,
+} from '@shared-web/browser/rallar-realtime-facade.ts';
+import {
+    createRallarRtcFacade,
+    type RallarRtcFacade,
+} from '@shared-web/browser/rallar-rtc-facade.ts';
+import {
+    createRallarRoomsFacade,
+    type RallarRoomsFacade,
+} from '@shared-web/browser/rallar-rooms-facade.ts';
 import { createRallarCrdtFacade, type RallarCrdtFacade, } from '@shared-web/browser/rallar-crdt.ts';
 import type { RallarCrdtMessageTransport } from '@shared-web/browser/rallar-crdt-transport.ts';
+import {
+    matchesRallarMessageSelector,
+    normalizeRallarMessageSelector,
+    readRallarMessageRoomId,
+    toRallarMessageSelectorKey,
+    type RallarMessageSelector,
+    type RallarMessageSelectorInput,
+} from '@shared-web/browser/rallar-message-selectors.ts';
+import {
+    toRallarCommandOptions,
+    toRallarOperationOptions,
+    toRallarWorkflowPolicies,
+    type RallarOperationOptions,
+    type RallarOperationRetryPredicate,
+} from '@shared-web/browser/rallar-operation-options.ts';
+import {
+    createRallarBrowserFacadeRuntimeContext,
+    type RallarBrowserRuntimeDefaults,
+} from '@shared-web/browser/rallar-runtime-context.ts';
 
 export {
     createRallarDataFacade,
@@ -104,6 +159,11 @@ export {
 export {
     createRallarCrdtFacade,
 } from '@shared-web/browser/rallar-crdt.ts';
+
+export {
+    matchesRallarMessageSelector,
+    normalizeRallarMessageSelector,
+} from '@shared-web/browser/rallar-message-selectors.ts';
 
 export type {
     RallarCrdtDocument,
@@ -128,6 +188,16 @@ export type {
     RallarDataStoreDefinition,
     RallarDataStoreOptions,
 } from '@shared-web/browser/rallar-data.ts';
+
+export type {
+    RallarMessageSelector,
+    RallarMessageSelectorInput,
+} from '@shared-web/browser/rallar-message-selectors.ts';
+
+export type {
+    RallarOperationOptions,
+    RallarOperationRetryPredicate,
+} from '@shared-web/browser/rallar-operation-options.ts';
 
 const RALLAR_REMOTE_STREAM_CALLBACK_ID = 'rallar:remote-stream';
 const RALLAR_WS_ANY_MESSAGE_CALLBACK_ID = 'rallar:ws:any-message';
@@ -175,41 +245,7 @@ export type RallarFlow<K, V> = CommandsOrchestrator<K, V>;
 
 export type RallarFlowPolicies<V> = CommandsOrchestratorPolicies<V>;
 
-export type RallarDefaults = Readonly<{
-    applicationId: ApplicationId;
-    workspaceId?: WorkspaceId;
-    room?: Readonly<{
-        roomId?: string;
-        roomRef?: GroupRef;
-    }>;
-    realtime?: Readonly<{
-        laneId?: string;
-        openTimeoutMs?: number;
-    }>;
-    rtc?: Readonly<{
-        waitTimeoutMs?: number;
-        connectOnWait?: boolean;
-        dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
-    }>;
-    operations?: Readonly<{
-        timeoutMs?: number;
-        maxAttempts?: number;
-        shouldRetry?: RallarOperationRetryPredicate;
-    }>;
-}>;
-
-export type RallarOperationRetryPredicate = (
-    error: unknown,
-    attempt: number,
-) => boolean;
-
-export type RallarOperationOptions = Readonly<{
-    signal?: AbortSignal;
-    timeoutMs?: number;
-    maxAttempts?: number;
-    shouldRetry?: RallarOperationRetryPredicate;
-    dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
-}>;
+export type RallarDefaults = RallarBrowserRuntimeDefaults;
 
 export type RallarRegisterOptions =
     & RallarOperationOptions
@@ -511,13 +547,6 @@ export type RallarRoomEventListener = RallarStateEventListener<GroupEvent>;
 
 export type RallarPeopleEventListener = RallarStateEventListener<ClientEvent>;
 
-export type RallarMessageSelector = Readonly<{
-    topicId?: string;
-    typeId?: string;
-}>;
-
-export type RallarMessageSelectorInput = string | RallarMessageSelector;
-
 export type RallarMessageSendBase<T> = Readonly<{
     typeId: string;
     payload: T;
@@ -619,6 +648,15 @@ export type RallarTypedMessageChannel<T> = Readonly<{
     onRtc(handler: RallarTypedPayloadHandler<T>): RallarUnsubscribe;
     onWs(handler: RallarTypedPayloadHandler<T>): RallarUnsubscribe;
 }>;
+
+export type RallarRoomMessageChannelDefinition =
+    & RallarTypedMessageChannelDefinition
+    & Readonly<{
+    roomId?: string;
+    roomRef?: GroupRef;
+}>;
+
+export type RallarRoomMessageChannel<T> = RallarTypedMessageChannel<T>;
 
 export type RallarRemoteStream = Readonly<{
     peerId: string;
@@ -730,6 +768,63 @@ export type RallarRealtimeJsonLane<T> = Readonly<{
         options?: RallarRealtimeJsonLaneSendOptions<T>,
     ): Promise<readonly RallarRealtimeSendResult[]>;
     on(handler: RallarRealtimeHandler<T>): RallarUnsubscribe;
+}>;
+
+export type RallarRoomRealtimeSendStatus =
+    | 'sent'
+    | 'partial'
+    | 'not-ready'
+    | 'no-targets'
+    | 'failed';
+
+export type RallarRoomRealtimeJsonDefaults =
+    & Omit<RallarRealtimeJsonLaneDefaults, 'peerIds'>
+    & Readonly<{
+    waitForReady?: boolean;
+    waitTimeoutMs?: number;
+    minReadyPeers?: number;
+    connect?: boolean;
+}>;
+
+export type RallarRoomRealtimeJsonSendOptions<T> =
+    & Omit<RallarRealtimeJsonLaneSendOptions<T>, 'peerIds'>
+    & Readonly<{
+    waitForReady?: boolean;
+    waitTimeoutMs?: number;
+    minReadyPeers?: number;
+    connect?: boolean;
+    signal?: AbortSignal;
+}>;
+
+export type RallarRoomRealtimeTransportOptions =
+    & RallarRtcRoomTransportOptions
+    & Readonly<{
+    roomId?: string;
+    roomRef?: GroupRef;
+}>;
+
+export type RallarRoomRealtimeSendResult = Readonly<{
+    transport: 'rtc';
+    status: RallarRoomRealtimeSendStatus;
+    laneId: string;
+    roomId?: string;
+    roomRef?: GroupRef;
+    peerIds: readonly string[];
+    desiredPeerIds: readonly string[];
+    readiness?: RallarRtcRoomLaneWaitResult;
+    transportStatus?: RallarRoomTransportStatus;
+    results: readonly RallarRealtimeSendResult[];
+    reason?: string;
+}>;
+
+export type RallarRoomRealtimeJsonChannel<T> = Readonly<{
+    send(
+        data: T,
+        options?: RallarRoomRealtimeJsonSendOptions<T>,
+    ): Promise<RallarRoomRealtimeSendResult>;
+    on(handler: RallarRealtimeHandler<T>): RallarUnsubscribe;
+    status(options?: RallarRoomRealtimeTransportOptions): RallarRoomTransportStatus;
+    wait(options?: RallarRoomRealtimeTransportOptions): Promise<RallarRoomTransportStatus>;
 }>;
 
 export type RallarTargetMembership = 'fixed' | 'live';
@@ -1439,6 +1534,9 @@ export type RallarFacade = Readonly<{
         channel<T>(
             definition: RallarTypedMessageChannelDefinition,
         ): RallarTypedMessageChannel<T>;
+        room<T>(
+            definition: RallarRoomMessageChannelDefinition,
+        ): RallarRoomMessageChannel<T>;
     }>;
     channels: Readonly<{
         targeted<T>(
@@ -1542,6 +1640,9 @@ export type RallarFacade = Readonly<{
         json<T>(
             defaults?: RallarRealtimeJsonLaneDefaults,
         ): RallarRealtimeJsonLane<T>;
+        room<T>(
+            defaults?: RallarRoomRealtimeJsonDefaults,
+        ): RallarRoomRealtimeJsonChannel<T>;
         health(
             options?: RallarRealtimeHealthOptions,
         ): readonly RallarRealtimeLaneHealth[];
@@ -1592,17 +1693,71 @@ type RallarMediaSourceRuntime = {
 };
 
 class BrowserRallarFacade implements RallarFacade {
-    private connectState: RallarConnectStatus = 'idle';
-    private ctx: ApiMiddleware | undefined = undefined;
-    private connectPromise: Promise<ApiMiddleware> | undefined = undefined;
-    private stateCacheUnsubscribe: RallarUnsubscribe | undefined = undefined;
-    private currentRoomId: string | undefined = undefined;
-    private currentRoomRef: GroupRef | undefined = undefined;
-    private configuredDefaults: RallarDefaults | undefined = undefined;
-    private defaultScope: StateScope | undefined = undefined;
-    private authExpiryTimer: ReturnType<typeof setTimeout> | undefined = undefined;
-    private authEndPromise: Promise<void> | undefined = undefined;
-    private readonly endedAuthSessionKeys = new Set<string>();
+    private readonly runtime = createRallarBrowserFacadeRuntimeContext();
+
+    private get connectState(): RallarConnectStatus {
+        return this.runtime.readConnectState();
+    }
+
+    private set connectState(state: RallarConnectStatus) {
+        this.runtime.setConnectState(state);
+    }
+
+    private get ctx(): ApiMiddleware | undefined {
+        return this.runtime.cachedMiddleware();
+    }
+
+    private set ctx(ctx: ApiMiddleware | undefined) {
+        this.runtime.setMiddleware(ctx);
+    }
+
+    private get connectPromise(): Promise<ApiMiddleware> | undefined {
+        return this.runtime.readConnectPromise();
+    }
+
+    private set connectPromise(promise: Promise<ApiMiddleware> | undefined) {
+        this.runtime.setConnectPromise(promise);
+    }
+
+    private get stateCacheUnsubscribe(): RallarUnsubscribe | undefined {
+        return this.runtime.readStateCacheUnsubscribe();
+    }
+
+    private set stateCacheUnsubscribe(unsubscribe: RallarUnsubscribe | undefined) {
+        this.runtime.setStateCacheUnsubscribe(unsubscribe);
+    }
+
+    private get currentRoomId(): string | undefined {
+        return this.runtime.currentRoomId();
+    }
+
+    private get currentRoomRef(): GroupRef | undefined {
+        return this.runtime.currentRoomRef();
+    }
+
+    private get configuredDefaults(): RallarDefaults | undefined {
+        return this.runtime.readDefaults();
+    }
+
+    private get defaultScope(): StateScope | undefined {
+        return this.runtime.readDefaultScope();
+    }
+
+    private set authExpiryTimer(timer: ReturnType<typeof setTimeout> | undefined) {
+        this.runtime.setAuthExpiryTimer(timer);
+    }
+
+    private get authEndPromise(): Promise<void> | undefined {
+        return this.runtime.readAuthEndPromise();
+    }
+
+    private set authEndPromise(promise: Promise<void> | undefined) {
+        this.runtime.setAuthEndPromise(promise);
+    }
+
+    private get endedAuthSessionKeys(): Set<string> {
+        return this.runtime.endedAuthSessionKeys();
+    }
 
     private readonly authStateListeners = new Set<RallarAuthChangeListener>();
     private readonly roomStateListeners = new Set<
@@ -1659,6 +1814,20 @@ class BrowserRallarFacade implements RallarFacade {
         RallarMediaSourceKind,
         RallarMediaSourceRuntime
     >();
+    private readonly connection: RallarConnectionFacade = createRallarConnectionFacade({
+        configure: (config) => this.configureConnection(config),
+        setDefaults: (defaults) => this.setConnectionDefaults(defaults),
+        defaults: () => this.readConnectionDefaults(),
+        connect: async (options) => await this.connectConnection(options),
+        start: async (options) => await this.startConnection(options),
+        disconnect: async () => await this.disconnectConnection(),
+        status: () => this.readConnectionStatus(),
+        isConnected: () => this.isConnectionOpen(),
+        session: () => readSession(),
+        subscriptions: () => createRallarSubscriptionScope(),
+        flow: <K, V>(policies: RallarFlowPolicies<V> = {}) =>
+            CommandsOrchestrator.withPolicies<K, V>(policies),
+    });
     readonly data = createRallarDataFacade({
         resolveScopeKey: (scope) => this.resolveDataScopeKey(scope),
     });
@@ -1669,6 +1838,10 @@ class BrowserRallarFacade implements RallarFacade {
     });
 
     configure(config: RallarApiClientConfig): void {
+        this.connection.configure(config);
+    }
+
+    private configureConnection(config: RallarApiClientConfig): void {
         const nextApiBaseUrl = normalizeApiBaseUrl(config.apiBaseUrl ?? '');
         const isChangingApiBaseUrl = nextApiBaseUrl !== readApiBaseUrl();
         if (
@@ -1682,679 +1855,749 @@ class BrowserRallarFacade implements RallarFacade {
     }
 
     setDefaults(defaults?: RallarDefaults): void {
-        this.configuredDefaults = defaults
-            ? cloneRallarDefaults(defaults)
-            : undefined;
-        this.defaultScope = defaults
-            ? {
-                applicationId: defaults.applicationId,
-                workspaceId: defaults.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
-            }
-            : undefined;
+        this.connection.setDefaults(defaults);
+    }
+
+    private setConnectionDefaults(defaults?: RallarDefaults): void {
+        this.runtime.setDefaults(defaults);
     }
 
     defaults(): RallarDefaults | undefined {
-        return this.configuredDefaults
-            ? cloneRallarDefaults(this.configuredDefaults)
-            : undefined;
+        return this.connection.defaults();
     }
 
-    readonly auth = {
-        login: async (
-            request: LoginRequest,
-            options: RallarOperationOptions = {},
-        ): Promise<LoginResponse> => {
-            const operationOptions = this.resolveOperationOptions(options);
-            const response = await runRallarCommand(
-                (signal) => api.loginToApi(request, { signal }),
-                operationOptions,
-            );
-            if (this.ctx || isMiddlewareReady()) {
-                await this.disconnect();
-            }
-            await this.closeAuthenticatedDataScopes();
-            writeSession(response);
-            this.endedAuthSessionKeys.delete(toAuthSessionKey(response));
-            this.scheduleAuthExpiry(response);
-            this.emitAuthState('login', response);
-            return response;
-        },
-        register: async (
-            request: RegisterRequest,
-            options: RallarRegisterOptions = {},
-        ): Promise<RegisterResponse> => {
-            const operationOptions = this.resolveOperationOptions(options);
-            return await runRallarCommand(
-                (signal) =>
-                    api.registerWithApi(request, {
-                        signal,
-                        authSession: hasOwn(operationOptions, 'adminSession')
-                            ? operationOptions.adminSession
-                            : undefined,
-                    }),
-                operationOptions,
-            );
-        },
-        registerAndLogin: async (
-            request: RegisterRequest,
-            options: RallarRegisterOptions = {},
-        ): Promise<LoginResponse> => {
-            await this.auth.register(request, options);
-            return await this.auth.login(
-                {
-                    username: request.username,
-                    password: request.password,
-                },
-                options,
-            );
-        },
-        logout: async (options: RallarOperationOptions = {}): Promise<void> => {
-            const operationOptions = this.resolveOperationOptions(options);
-            await this.endAuthSession('logout', {
-                revoke: true,
-                operationOptions,
-            });
-        },
-        restore: (): AuthSession | undefined => {
+    private readConnectionDefaults(): RallarDefaults | undefined {
+        return this.runtime.defaults();
+    }
+
+    readonly auth: RallarAuthFacade = createRallarAuthFacade({
+        login: async (request, options) => await this.loginAuth(request, options),
+        register: async (request, options) =>
+            await this.registerAuth(request, options),
+        registerAndLogin: async (request, options) =>
+            await this.registerAndLoginAuth(request, options),
+        logout: async (options) => await this.logoutAuth(options),
+        restore: () => this.restoreAuth(),
+        isLoggedIn: () => isLoggedIn(),
+        onChange: (listener, options) => this.onAuthChange(listener, options),
+    });
+
+    private async loginAuth(
+        request: LoginRequest,
+        options: RallarOperationOptions = {},
+    ): Promise<LoginResponse> {
+        const operationOptions = this.resolveOperationOptions(options);
+        const response = await runRallarCommand(
+            (signal) => api.loginToApi(request, { signal }),
+            operationOptions,
+        );
+        if (this.ctx || isMiddlewareReady()) {
+            await this.disconnect();
+        }
+        await this.closeAuthenticatedDataScopes();
+        writeSession(response);
+        this.endedAuthSessionKeys.delete(toAuthSessionKey(response));
+        this.scheduleAuthExpiry(response);
+        this.emitAuthState('login', response);
+        return response;
+    }
+
+    private async registerAuth(
+        request: RegisterRequest,
+        options: RallarRegisterOptions = {},
+    ): Promise<RegisterResponse> {
+        const operationOptions = this.resolveOperationOptions(options);
+        return await runRallarCommand(
+            (signal) =>
+                api.registerWithApi(request, {
+                    signal,
+                    authSession: hasOwn(operationOptions, 'adminSession')
+                        ? operationOptions.adminSession
+                        : undefined,
+                }),
+            operationOptions,
+        );
+    }
+
+    private async registerAndLoginAuth(
+        request: RegisterRequest,
+        options: RallarRegisterOptions = {},
+    ): Promise<LoginResponse> {
+        await this.auth.register(request, options);
+        return await this.auth.login(
+            {
+                username: request.username,
+                password: request.password,
+            },
+            options,
+        );
+    }
+
+    private async logoutAuth(
+        options: RallarOperationOptions = {},
+    ): Promise<void> {
+        const operationOptions = this.resolveOperationOptions(options);
+        await this.endAuthSession('logout', {
+            revoke: true,
+            operationOptions,
+        });
+    }
+
+    private restoreAuth(): AuthSession | undefined {
+        const session = readSession();
+        this.scheduleAuthExpiry(session);
+        return session;
+    }
+
+    private onAuthChange(
+        listener: RallarAuthChangeListener,
+        options: RallarOnChangeOptions = {},
+    ): RallarUnsubscribe {
+        this.authStateListeners.add(listener);
+        if (options.emitCurrent ?? true) {
             const session = readSession();
             this.scheduleAuthExpiry(session);
-            return session;
-        },
-        isLoggedIn: (): boolean => isLoggedIn(),
-        onChange: (
-            listener: RallarAuthChangeListener,
-            options: RallarOnChangeOptions = {},
-        ): RallarUnsubscribe => {
-            this.authStateListeners.add(listener);
-            if (options.emitCurrent ?? true) {
-                const session = readSession();
-                this.scheduleAuthExpiry(session);
-                notifyListener(listener, this.toAuthState('current', session));
-            }
-            return () => {
-                this.authStateListeners.delete(listener);
-            };
-        },
-    };
+            notifyListener(listener, this.toAuthState('current', session));
+        }
+        return () => {
+            this.authStateListeners.delete(listener);
+        };
+    }
 
-    readonly rooms = {
-        state: (): RallarRoomState => this.toRoomState(),
-        list: (): readonly RallarRoomSummary[] => this.toRoomState().rooms,
-        refresh: async (
-            input?: StateScope | RallarRefreshOptions,
-        ): Promise<RallarRoomState> => {
-            return await this.runAuthAwareOperation(async () => {
-                const options = toRallarRefreshOptions(input);
-                const operationOptions = this.resolveOperationOptions(options);
-                const ctx = await this.connect(operationOptions);
-                const operationScope = this.resolveOperationScope(options.scope);
-                const { clients, groups } = await apiWorkflows.refreshStateSnapshots(
-                    operationScope,
-                    toRallarWorkflowPolicies(operationOptions),
-                );
-                await this.acceptSnapshots(ctx, clients, groups, operationScope);
-                return this.toRoomState();
-            });
-        },
-        listEvents: async (
-            input: RallarListRoomEventsInput,
-        ): Promise<readonly GroupEvent[]> => {
-            const options = typeof input === 'string'
-                ? { roomId: input }
-                : input;
+    readonly rooms: RallarRoomsFacade = createRallarRoomsFacade({
+        state: () => this.toRoomState(),
+        list: () => this.toRoomState().rooms,
+        refresh: async (input) => await this.refreshRooms(input),
+        listEvents: async (input) => await this.listRoomEvents(input),
+        listEventPage: async (input) => await this.listRoomEventPage(input),
+        replayEvents: async (input, listener) =>
+            await this.replayRoomEventsInput(input, listener),
+        create: async (input) => await this.createRoom(input),
+        join: async (room, options) => await this.joinRoom(room, options),
+        leave: async (input) => await this.leaveRoom(input),
+        updateMetadata: async (room, patch, options) =>
+            await this.updateRoomMetadata(room, patch, options),
+        current: () => this.toRoomState().currentRoom,
+        onChange: (listener, options) => this.onRoomChange(listener, options),
+        onEvent: (listener, options = {}) => this.onRoomEvent(listener, options),
+    });
+
+    private async refreshRooms(
+        input?: StateScope | RallarRefreshOptions,
+    ): Promise<RallarRoomState> {
+        return await this.runAuthAwareOperation(async () => {
+            const options = toRallarRefreshOptions(input);
             const operationOptions = this.resolveOperationOptions(options);
-            const roomId = options.roomRef?.groupId ?? options.roomId;
+            const ctx = await this.connect(operationOptions);
+            const operationScope = this.resolveOperationScope(options.scope);
+            const { clients, groups } = await apiWorkflows.refreshStateSnapshots(
+                operationScope,
+                toRallarWorkflowPolicies(operationOptions),
+            );
+            await this.acceptSnapshots(ctx, clients, groups, operationScope);
+            return this.toRoomState();
+        });
+    }
+
+    private async listRoomEvents(
+        input: RallarListRoomEventsInput,
+    ): Promise<readonly GroupEvent[]> {
+        const options = typeof input === 'string'
+            ? { roomId: input }
+            : input;
+        const operationOptions = this.resolveOperationOptions(options);
+        const roomId = options.roomRef?.groupId ?? options.roomId;
+        if (!roomId) {
+            throw new Error(
+                'Cannot list room events: roomId or roomRef is required.',
+            );
+        }
+
+        const scope = this.resolveRoomEventListScope(options);
+        return await this.runAuthAwareOperation(async () =>
+            await runRallarCommand(
+                async (signal) =>
+                    await api.listStateGroupEvents(
+                        roomId,
+                        scope,
+                        toStateEventListRequestOptions(options, signal),
+                    ),
+                operationOptions,
+            )
+        );
+    }
+
+    private async listRoomEventPage(
+        input: RallarListRoomEventsInput,
+    ): Promise<StateEventPage<GroupEvent>> {
+        const options = typeof input === 'string'
+            ? { roomId: input }
+            : input;
+        const operationOptions = this.resolveOperationOptions(options);
+        const roomId = options.roomRef?.groupId ?? options.roomId;
+        if (!roomId) {
+            throw new Error(
+                'Cannot list room event page: roomId or roomRef is required.',
+            );
+        }
+
+        const scope = this.resolveRoomEventListScope(options);
+        return await this.runAuthAwareOperation(async () =>
+            await runRallarCommand(
+                async (signal) =>
+                    await api.listStateGroupEventPage(
+                        roomId,
+                        scope,
+                        toStateEventListRequestOptions(options, signal),
+                    ),
+                operationOptions,
+            )
+        );
+    }
+
+    private async replayRoomEventsInput(
+        input: RallarReplayRoomEventsInput,
+        listener?: RallarRoomEventListener,
+    ): Promise<RallarReplayEventsResult<GroupEvent>> {
+        const options = typeof input === 'string'
+            ? { roomId: input }
+            : input;
+        return await this.replayRoomEvents(
+            options,
+            listener ?? options.listener,
+        );
+    }
+
+    private async createRoom(
+        input: string | RallarCreateRoomInput,
+    ): Promise<GroupSnapshot> {
+        return await this.runAuthAwareOperation(async () => {
+            const createInput = typeof input === 'string'
+                ? { displayName: input }
+                : input;
+            const operationOptions = this.resolveOperationOptions(createInput);
+            const ctx = await this.connect(operationOptions);
+            const session = this.requireSession();
+            const operationScope = this.resolveOperationScope(createInput.scope);
+            const snapshot = await apiWorkflows.createAndJoinStateGroup(
+                createInput.displayName,
+                session.clientId,
+                session.sessionId,
+                operationScope,
+                toRallarWorkflowPolicies(operationOptions),
+                createInput.groupId,
+            );
+            this.setCurrentRoom(snapshot);
+            await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
+            return snapshot;
+        });
+    }
+
+    private async joinRoom(
+        room: string | GroupRef,
+        options: RallarJoinRoomOptions = {},
+    ): Promise<GroupSnapshot> {
+        return await this.runAuthAwareOperation(async () => {
+            const operationOptions = this.resolveOperationOptions(options);
+            const ctx = await this.connect(operationOptions);
+            const session = this.requireSession();
+            const currentRoomRef = this.resolveCurrentRoomRef();
+            const roomRef = typeof room === 'string'
+                ? options.roomRef ??
+                this.resolveGroupRefFromRoomId(room, options.scope)
+                : room;
+            const roomId = this.toRoomId(room);
+            const operationScope = options.scope ??
+                (roomRef
+                    ? toStateScope(roomRef)
+                    : this.resolveOperationScope(options.scope));
+
             if (!roomId) {
-                throw new Error(
-                    'Cannot list room events: roomId or roomRef is required.',
-                );
+                throw new Error('Cannot join room: room is required.');
             }
 
-            const scope = this.resolveRoomEventListScope(options);
-            return await this.runAuthAwareOperation(async () =>
-                await runRallarCommand(
-                    async (signal) =>
-                        await api.listStateGroupEvents(
-                            roomId,
-                            scope,
-                            toStateEventListRequestOptions(options, signal),
-                        ),
-                    operationOptions,
-                )
+            const snapshot = await apiWorkflows.joinStateGroup(
+                roomId,
+                session.clientId,
+                session.sessionId,
+                operationScope,
+                toRallarWorkflowPolicies(operationOptions),
             );
-        },
-        listEventPage: async (
-            input: RallarListRoomEventsInput,
-        ): Promise<StateEventPage<GroupEvent>> => {
+
+            if (
+                (options.leaveCurrent ?? true) && currentRoomRef &&
+                !this.isSameRoomRefOrId(currentRoomRef, roomRef ?? roomId)
+            ) {
+                await this.rooms.leave({
+                    roomId: currentRoomRef.groupId,
+                    roomRef: currentRoomRef,
+                    clearCurrent: false,
+                    scope: toStateScope(currentRoomRef),
+                    signal: operationOptions.signal,
+                    timeoutMs: operationOptions.timeoutMs,
+                });
+            }
+
+            this.setCurrentRoom(snapshot);
+            await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
+            return snapshot;
+        });
+    }
+
+    private async leaveRoom(
+        input?: string | RallarLeaveRoomOptions,
+    ): Promise<GroupSnapshot | undefined> {
+        return await this.runAuthAwareOperation(async () => {
             const options = typeof input === 'string'
                 ? { roomId: input }
-                : input;
+                : input ?? {};
             const operationOptions = this.resolveOperationOptions(options);
-            const roomId = options.roomRef?.groupId ?? options.roomId;
+            const ctx = await this.connect(operationOptions);
+            const session = this.requireSession();
+            const explicitOperationScope = this.resolveOperationScope(options.scope);
+            const roomRef = options.roomRef ?? (
+                options.roomId
+                    ? this.resolveGroupRefFromRoomId(options.roomId, options.scope)
+                    : this.resolveDefaultRoomRef() ?? this.resolveCurrentRoomRef()
+            );
+            const roomId = options.roomId ?? roomRef?.groupId;
+            const operationScope = options.scope ??
+                (roomRef ? toStateScope(roomRef) : explicitOperationScope);
+
             if (!roomId) {
-                throw new Error(
-                    'Cannot list room event page: roomId or roomRef is required.',
-                );
+                return undefined;
             }
 
-            const scope = this.resolveRoomEventListScope(options);
-            return await this.runAuthAwareOperation(async () =>
-                await runRallarCommand(
-                    async (signal) =>
-                        await api.listStateGroupEventPage(
-                            roomId,
-                            scope,
-                            toStateEventListRequestOptions(options, signal),
-                        ),
-                    operationOptions,
-                )
+            const snapshot = await apiWorkflows.leaveStateGroup(
+                roomId,
+                session.clientId,
+                session.sessionId,
+                operationScope,
+                toRallarWorkflowPolicies(operationOptions),
             );
-        },
-        replayEvents: async (
-            input: RallarReplayRoomEventsInput,
-            listener?: RallarRoomEventListener,
-        ): Promise<RallarReplayEventsResult<GroupEvent>> => {
-            const options = typeof input === 'string'
-                ? { roomId: input }
-                : input;
-            return await this.replayRoomEvents(
-                options,
-                listener ?? options.listener,
+
+            this.clearCurrentRoomIfMatches(
+                roomRef ?? roomId,
+                options.clearCurrent ?? true,
             );
-        },
-        create: async (
-            input: string | RallarCreateRoomInput,
-        ): Promise<GroupSnapshot> => {
-            return await this.runAuthAwareOperation(async () => {
-                const createInput = typeof input === 'string'
-                    ? { displayName: input }
-                    : input;
-                const operationOptions = this.resolveOperationOptions(createInput);
-                const ctx = await this.connect(operationOptions);
-                const session = this.requireSession();
-                const operationScope = this.resolveOperationScope(createInput.scope);
-                const snapshot = await apiWorkflows.createAndJoinStateGroup(
-                    createInput.displayName,
-                    session.clientId,
-                    session.sessionId,
-                    operationScope,
-                    toRallarWorkflowPolicies(operationOptions),
-                    createInput.groupId,
-                );
-                this.setCurrentRoom(snapshot);
-                await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
-                return snapshot;
-            });
-        },
-        join: async (
-            room: string | GroupRef,
-            options: RallarJoinRoomOptions = {},
-        ): Promise<GroupSnapshot> => {
-            return await this.runAuthAwareOperation(async () => {
-                const operationOptions = this.resolveOperationOptions(options);
-                const ctx = await this.connect(operationOptions);
-                const session = this.requireSession();
-                const currentRoomRef = this.resolveCurrentRoomRef();
-                const roomRef = typeof room === 'string'
-                    ? options.roomRef ??
-                    this.resolveGroupRefFromRoomId(room, options.scope)
-                    : room;
-                const roomId = this.toRoomId(room);
-                const operationScope = options.scope ??
-                    (roomRef
-                        ? toStateScope(roomRef)
-                        : this.resolveOperationScope(options.scope));
 
-                if (!roomId) {
-                    throw new Error('Cannot join room: room is required.');
-                }
+            await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
+            return snapshot;
+        });
+    }
 
-                const snapshot = await apiWorkflows.joinStateGroup(
-                    roomId,
-                    session.clientId,
-                    session.sessionId,
-                    operationScope,
-                    toRallarWorkflowPolicies(operationOptions),
-                );
+    private async updateRoomMetadata(
+        room: string | GroupRef,
+        patch: Readonly<Record<string, unknown>>,
+        options: RallarScopedOperationOptions = {},
+    ): Promise<GroupSnapshot> {
+        return await this.runAuthAwareOperation(async () => {
+            const operationOptions = this.resolveOperationOptions(options);
+            const ctx = await this.connect(operationOptions);
+            const session = this.requireSession();
+            const roomRef = this.resolveRoomRef(room);
+            const roomId = this.toRoomId(room);
+            const operationScope = options.scope ??
+                (roomRef ? toStateScope(roomRef) : this.resolveOperationScope());
 
-                if (
-                    (options.leaveCurrent ?? true) && currentRoomRef &&
-                    !this.isSameRoomRefOrId(currentRoomRef, roomRef ?? roomId)
-                ) {
-                    await this.rooms.leave({
-                        roomId: currentRoomRef.groupId,
-                        roomRef: currentRoomRef,
-                        clearCurrent: false,
-                        scope: toStateScope(currentRoomRef),
-                        signal: operationOptions.signal,
-                        timeoutMs: operationOptions.timeoutMs,
-                    });
-                }
-
-                this.setCurrentRoom(snapshot);
-                await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
-                return snapshot;
-            });
-        },
-        leave: async (
-            input?: string | RallarLeaveRoomOptions,
-        ): Promise<GroupSnapshot | undefined> => {
-            return await this.runAuthAwareOperation(async () => {
-                const options = typeof input === 'string'
-                    ? { roomId: input }
-                    : input ?? {};
-                const operationOptions = this.resolveOperationOptions(options);
-                const ctx = await this.connect(operationOptions);
-                const session = this.requireSession();
-                const explicitOperationScope = this.resolveOperationScope(options.scope);
-                const roomRef = options.roomRef ?? (
-                    options.roomId
-                        ? this.resolveGroupRefFromRoomId(options.roomId, options.scope)
-                        : this.resolveDefaultRoomRef() ?? this.resolveCurrentRoomRef()
-                );
-                const roomId = options.roomId ?? roomRef?.groupId;
-                const operationScope = options.scope ??
-                    (roomRef ? toStateScope(roomRef) : explicitOperationScope);
-
-                if (!roomId) {
-                    return undefined;
-                }
-
-                const snapshot = await apiWorkflows.leaveStateGroup(
-                    roomId,
-                    session.clientId,
-                    session.sessionId,
-                    operationScope,
-                    toRallarWorkflowPolicies(operationOptions),
-                );
-
-                this.clearCurrentRoomIfMatches(roomRef ?? roomId, options.clearCurrent ?? true);
-
-                await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
-                return snapshot;
-            });
-        },
-        updateMetadata: async (
-            room: string | GroupRef,
-            patch: Readonly<Record<string, unknown>>,
-            options: RallarScopedOperationOptions = {},
-        ): Promise<GroupSnapshot> => {
-            return await this.runAuthAwareOperation(async () => {
-                const operationOptions = this.resolveOperationOptions(options);
-                const ctx = await this.connect(operationOptions);
-                const session = this.requireSession();
-                const roomRef = this.resolveRoomRef(room);
-                const roomId = this.toRoomId(room);
-                const operationScope = options.scope ??
-                    (roomRef ? toStateScope(roomRef) : this.resolveOperationScope());
-
-                if (!roomId) {
-                    throw new Error('Cannot update room metadata: room is required.');
-                }
-
-                const snapshot = await apiWorkflows.updateStateGroupMetadata(
-                    roomId,
-                    patch,
-                    session.clientId,
-                    session.sessionId,
-                    operationScope,
-                    toRallarWorkflowPolicies(operationOptions),
-                );
-
-                await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
-                return snapshot;
-            });
-        },
-        current: (): GroupSnapshot | undefined => this.toRoomState().currentRoom,
-        onChange: (
-            listener: RallarStateListener<RallarRoomState>,
-            options: RallarOnChangeOptions = {},
-        ): RallarUnsubscribe => {
-            this.roomStateListeners.add(listener);
-            if (options.emitCurrent ?? true) {
-                notifyListener(listener, this.toRoomState());
+            if (!roomId) {
+                throw new Error('Cannot update room metadata: room is required.');
             }
-            return () => {
-                this.roomStateListeners.delete(listener);
-            };
-        },
-        onEvent: (
-            listener: RallarRoomEventListener,
-            options: RallarRoomEventOptions = {},
-        ): RallarUnsubscribe => {
-            return this.onRoomEvent(listener, options);
-        },
-    };
 
-    readonly people = {
-        state: (): RallarPeopleState => this.toPeopleState(),
-        list: (): readonly RallarPerson[] => this.toPeopleState().people,
-        refresh: async (
-            input?: StateScope | RallarRefreshOptions,
-        ): Promise<RallarPeopleState> => {
-            return await this.runAuthAwareOperation(async () => {
-                const options = toRallarRefreshOptions(input);
-                const operationOptions = this.resolveOperationOptions(options);
-                const ctx = await this.connect(operationOptions);
-                const operationScope = this.resolveOperationScope(options.scope);
-                const { clients, groups } = await apiWorkflows.refreshStateSnapshots(
-                    operationScope,
-                    toRallarWorkflowPolicies(operationOptions),
-                );
-                await this.acceptSnapshots(ctx, clients, groups, operationScope);
-                return this.toPeopleState();
-            });
-        },
-        listEvents: async (
-            principalId: string,
-            options: RallarListPeopleEventsOptions = {},
-        ): Promise<readonly ClientEvent[]> => {
-            const operationOptions = this.resolveOperationOptions(options);
-            const scope = this.resolveOperationScope(options.scope) ??
-                api.defaultStateScope();
-            return await this.runAuthAwareOperation(async () =>
-                await runRallarCommand(
-                    async (signal) =>
-                        await api.listStateClientEvents(
-                            principalId,
-                            scope,
-                            toStateEventListRequestOptions(options, signal),
-                        ),
-                    operationOptions,
-                )
+            const snapshot = await apiWorkflows.updateStateGroupMetadata(
+                roomId,
+                patch,
+                session.clientId,
+                session.sessionId,
+                operationScope,
+                toRallarWorkflowPolicies(operationOptions),
             );
-        },
-        listEventPage: async (
-            principalId: string,
-            options: RallarListPeopleEventsOptions = {},
-        ): Promise<StateEventPage<ClientEvent>> => {
-            const operationOptions = this.resolveOperationOptions(options);
-            const scope = this.resolveOperationScope(options.scope) ??
-                api.defaultStateScope();
-            return await this.runAuthAwareOperation(async () =>
-                await runRallarCommand(
-                    async (signal) =>
-                        await api.listStateClientEventPage(
-                            principalId,
-                            scope,
-                            toStateEventListRequestOptions(options, signal),
-                        ),
-                    operationOptions,
-                )
-            );
-        },
-        replayEvents: async (
-            principalId: string,
-            options: RallarReplayPeopleEventsOptions = {},
-            listener?: RallarPeopleEventListener,
-        ): Promise<RallarReplayEventsResult<ClientEvent>> => {
-            return await this.replayPeopleEvents(
+
+            await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
+            return snapshot;
+        });
+    }
+
+    private onRoomChange(
+        listener: RallarStateListener<RallarRoomState>,
+        options: RallarOnChangeOptions = {},
+    ): RallarUnsubscribe {
+        this.roomStateListeners.add(listener);
+        if (options.emitCurrent ?? true) {
+            notifyListener(listener, this.toRoomState());
+        }
+        return () => {
+            this.roomStateListeners.delete(listener);
+        };
+    }
+
+    readonly people: RallarPeopleFacade = createRallarPeopleFacade({
+        state: () => this.toPeopleState(),
+        list: () => this.toPeopleState().people,
+        refresh: async (input) => await this.refreshPeople(input),
+        listEvents: async (principalId, options) =>
+            await this.listPeopleEvents(principalId, options),
+        listEventPage: async (principalId, options) =>
+            await this.listPeopleEventPage(principalId, options),
+        replayEvents: async (principalId, options, listener) =>
+            await this.replayPeopleEventsFromFacade(
                 principalId,
                 options,
-                listener ?? options.listener,
-            );
-        },
-        get: (principalId: string): RallarPerson | undefined => {
-            const snapshot = this.findClientSnapshot(principalId);
-            return snapshot ? toPerson(snapshot) : undefined;
-        },
-        onChange: (
-            listener: RallarStateListener<RallarPeopleState>,
-            options: RallarOnChangeOptions = {},
-        ): RallarUnsubscribe => {
-            this.peopleStateListeners.add(listener);
-            if (options.emitCurrent ?? true) {
-                notifyListener(listener, this.toPeopleState());
-            }
-            return () => {
-                this.peopleStateListeners.delete(listener);
-            };
-        },
-        onEvent: (
-            listener: RallarPeopleEventListener,
-            options: RallarPeopleEventOptions = {},
-        ): RallarUnsubscribe => {
-            return this.onPeopleEvent(listener, options);
-        },
-    };
+                listener,
+            ),
+        get: (principalId) => this.getPerson(principalId),
+        onChange: (listener, options) => this.onPeopleChange(listener, options),
+        onEvent: (listener, options = {}) => this.onPeopleEvent(listener, options),
+    });
 
-    readonly director = {
-        appoint: async (
-            room?: string | GroupRef,
-            options: RallarDirectorAppointOptions = {},
-        ): Promise<RallarDirectorStatus> => {
-            const target = room ?? this.resolveDefaultRoom() ??
-                this.resolveCurrentRoomRef();
-            const snapshot = this.findGroupSnapshotForDirector(target);
-            const roomRef = this.resolveDirectorRoomRef(target, snapshot);
-            const roomId = this.toRoomId(roomRef ?? target);
-            if (!roomRef || !roomId) {
-                throw new Error('Cannot appoint director: no room selected.');
-            }
+    private async refreshPeople(
+        input?: StateScope | RallarRefreshOptions,
+    ): Promise<RallarPeopleState> {
+        return await this.runAuthAwareOperation(async () => {
+            const options = toRallarRefreshOptions(input);
+            const operationOptions = this.resolveOperationOptions(options);
+            const ctx = await this.connect(operationOptions);
+            const operationScope = this.resolveOperationScope(options.scope);
+            const { clients, groups } = await apiWorkflows.refreshStateSnapshots(
+                operationScope,
+                toRallarWorkflowPolicies(operationOptions),
+            );
+            await this.acceptSnapshots(ctx, clients, groups, operationScope);
+            return this.toPeopleState();
+        });
+    }
 
-            const session = this.requireSession();
-            const previous = readRallarGroupDirectorFromSnapshot(snapshot);
-            const appointment = createRallarGroupDirectorAppointment({
-                session,
-                previous,
-                heartbeatTtlMs: options.heartbeatTtlMs,
-            });
-            const metadata = mergeRallarGroupDirectorMetadata(
-                snapshot?.group.metadata,
-                appointment,
-            );
-            const updated = await this.rooms.updateMetadata(
-                roomRef,
-                metadata,
-                options,
-            );
-            this.recordDirectorHeartbeat(roomRef, appointment);
-            this.emitDirectorStatuses();
-            return this.toDirectorStatus(updated.group);
-        },
-        resign: async (
-            room?: string | GroupRef,
-            options: RallarDirectorResignOptions = {},
-        ): Promise<RallarDirectorStatus> => {
-            const target = room ?? this.resolveDefaultRoom() ??
-                this.resolveCurrentRoomRef();
-            const snapshot = this.findGroupSnapshotForDirector(target);
-            const roomRef = this.resolveDirectorRoomRef(target, snapshot);
-            const roomId = this.toRoomId(roomRef ?? target);
-            if (!roomRef || !roomId) {
-                throw new Error('Cannot resign director: no room selected.');
-            }
+    private async listPeopleEvents(
+        principalId: string,
+        options: RallarListPeopleEventsOptions = {},
+    ): Promise<readonly ClientEvent[]> {
+        const operationOptions = this.resolveOperationOptions(options);
+        const scope = this.resolveOperationScope(options.scope) ??
+            api.defaultStateScope();
+        return await this.runAuthAwareOperation(async () =>
+            await runRallarCommand(
+                async (signal) =>
+                    await api.listStateClientEvents(
+                        principalId,
+                        scope,
+                        toStateEventListRequestOptions(options, signal),
+                    ),
+                operationOptions,
+            )
+        );
+    }
 
-            const session = this.requireSession();
-            const appointment = readRallarGroupDirectorFromSnapshot(snapshot);
-            if (!isRallarGroupDirectorForSession(appointment, session)) {
-                return this.toDirectorStatus(roomRef);
-            }
+    private async listPeopleEventPage(
+        principalId: string,
+        options: RallarListPeopleEventsOptions = {},
+    ): Promise<StateEventPage<ClientEvent>> {
+        const operationOptions = this.resolveOperationOptions(options);
+        const scope = this.resolveOperationScope(options.scope) ??
+            api.defaultStateScope();
+        return await this.runAuthAwareOperation(async () =>
+            await runRallarCommand(
+                async (signal) =>
+                    await api.listStateClientEventPage(
+                        principalId,
+                        scope,
+                        toStateEventListRequestOptions(options, signal),
+                    ),
+                operationOptions,
+            )
+        );
+    }
 
-            const metadata = mergeRallarGroupDirectorMetadata(
-                snapshot?.group.metadata,
-                undefined,
-            );
-            const updated = await this.rooms.updateMetadata(
-                roomRef,
-                metadata,
-                options,
-            );
-            this.directorHeartbeatByRoom.delete(this.toDirectorRoomKey(roomRef));
-            this.emitDirectorStatuses();
-            return this.toDirectorStatus(updated.group);
-        },
-        status: (
-            room?: string | GroupRef,
-            options: RallarDirectorStatusOptions = {},
-        ): RallarDirectorStatus => this.toDirectorStatus(room, options),
-        onStatus: (
-            listener: RallarDirectorStatusListener,
-        ): RallarUnsubscribe => {
-            this.directorStatusListeners.add(listener);
-            notifyListener(listener, this.toDirectorStatus());
-            return () => {
-                this.directorStatusListeners.delete(listener);
-            };
-        },
+    private async replayPeopleEventsFromFacade(
+        principalId: string,
+        options: RallarReplayPeopleEventsOptions = {},
+        listener?: RallarPeopleEventListener,
+    ): Promise<RallarReplayEventsResult<ClientEvent>> {
+        return await this.replayPeopleEvents(
+            principalId,
+            options,
+            listener ?? options.listener,
+        );
+    }
+
+    private getPerson(principalId: string): RallarPerson | undefined {
+        const snapshot = this.findClientSnapshot(principalId);
+        return snapshot ? toPerson(snapshot) : undefined;
+    }
+
+    private onPeopleChange(
+        listener: RallarStateListener<RallarPeopleState>,
+        options: RallarOnChangeOptions = {},
+    ): RallarUnsubscribe {
+        this.peopleStateListeners.add(listener);
+        if (options.emitCurrent ?? true) {
+            notifyListener(listener, this.toPeopleState());
+        }
+        return () => {
+            this.peopleStateListeners.delete(listener);
+        };
+    }
+
+    readonly director: RallarDirectorFacade = createRallarDirectorFacade({
+        appoint: async (room, options) =>
+            await this.appointDirector(room, options),
+        resign: async (room, options) => await this.resignDirector(room, options),
+        status: (room, options) => this.toDirectorStatus(room, options),
+        onStatus: (listener) => this.onDirectorStatus(listener),
         createRelay: <TIntent, TOutput, TSnapshot = TOutput>(
             config: RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot>,
         ): RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot> =>
             this.createDirectorRelay<TIntent, TOutput, TSnapshot>(config),
-    };
+    });
 
-    readonly messages = {
+    private async appointDirector(
+        room?: string | GroupRef,
+        options: RallarDirectorAppointOptions = {},
+    ): Promise<RallarDirectorStatus> {
+        const target = room ?? this.resolveDefaultRoom() ??
+            this.resolveCurrentRoomRef();
+        const snapshot = this.findGroupSnapshotForDirector(target);
+        const roomRef = this.resolveDirectorRoomRef(target, snapshot);
+        const roomId = this.toRoomId(roomRef ?? target);
+        if (!roomRef || !roomId) {
+            throw new Error('Cannot appoint director: no room selected.');
+        }
+
+        const session = this.requireSession();
+        const previous = readRallarGroupDirectorFromSnapshot(snapshot);
+        const appointment = createRallarGroupDirectorAppointment({
+            session,
+            previous,
+            heartbeatTtlMs: options.heartbeatTtlMs,
+        });
+        const metadata = mergeRallarGroupDirectorMetadata(
+            snapshot?.group.metadata,
+            appointment,
+        );
+        const updated = await this.rooms.updateMetadata(
+            roomRef,
+            metadata,
+            options,
+        );
+        this.recordDirectorHeartbeat(roomRef, appointment);
+        this.emitDirectorStatuses();
+        return this.toDirectorStatus(updated.group);
+    }
+
+    private async resignDirector(
+        room?: string | GroupRef,
+        options: RallarDirectorResignOptions = {},
+    ): Promise<RallarDirectorStatus> {
+        const target = room ?? this.resolveDefaultRoom() ??
+            this.resolveCurrentRoomRef();
+        const snapshot = this.findGroupSnapshotForDirector(target);
+        const roomRef = this.resolveDirectorRoomRef(target, snapshot);
+        const roomId = this.toRoomId(roomRef ?? target);
+        if (!roomRef || !roomId) {
+            throw new Error('Cannot resign director: no room selected.');
+        }
+
+        const session = this.requireSession();
+        const appointment = readRallarGroupDirectorFromSnapshot(snapshot);
+        if (!isRallarGroupDirectorForSession(appointment, session)) {
+            return this.toDirectorStatus(roomRef);
+        }
+
+        const metadata = mergeRallarGroupDirectorMetadata(
+            snapshot?.group.metadata,
+            undefined,
+        );
+        const updated = await this.rooms.updateMetadata(
+            roomRef,
+            metadata,
+            options,
+        );
+        this.directorHeartbeatByRoom.delete(this.toDirectorRoomKey(roomRef));
+        this.emitDirectorStatuses();
+        return this.toDirectorStatus(updated.group);
+    }
+
+    private onDirectorStatus(
+        listener: RallarDirectorStatusListener,
+    ): RallarUnsubscribe {
+        this.directorStatusListeners.add(listener);
+        notifyListener(listener, this.toDirectorStatus());
+        return () => {
+            this.directorStatusListeners.delete(listener);
+        };
+    }
+
+    readonly messages: RallarMessagesFacade = createRallarMessagesFacade({
         rtc: {
-            send: async <T>(
-                input: RallarRtcSendInput<T>,
-            ): Promise<RallarMessageSendResult> => {
-                const ctx = await this.connect();
-                const session = this.requireSession();
-                const room = input.roomRef ??
-                    input.roomId ??
-                    this.resolveDefaultRoom() ??
-                    this.resolveCurrentRoomRef();
-                const roomId = this.toRoomId(room);
-                const roomRef = this.resolveRoomRef(room);
-
-                if (!roomId) {
-                    throw new Error('Cannot send RTC message: no current room.');
-                }
-                if (!roomRef) {
-                    throw new Error(
-                        'Cannot send RTC message: no scoped room reference.',
-                    );
-                }
-
-                const msg = newALMulticastMessage(
-                    session.sessionId,
-                    newALRoute(
-                        input.topicId ?? input.typeId,
-                        input.contextId ?? roomId,
-                        input.resourceId ?? crypto.randomUUID(),
-                    ),
-                    roomRef,
-                    input.typeId,
-                    input.payload,
-                    {
-                        membershipEpoch: input.membershipEpoch,
-                        minSnapshotVersion: this.resolveRoomMinSnapshotVersion(
-                            room,
-                            input.minSnapshotVersion,
-                        ),
-                        ttlHops: input.ttlHops,
-                        ttlMs: input.ttlMs,
-                        seq: input.seq,
-                        orderingKey: input.orderingKey ??
-                            toALGroupTargetKey(roomRef),
-                        reliability: input.reliability ?? 'at-least-once',
-                        ack: input.ack ?? 'none',
-                        ownership: input.ownership ?? 'shared',
-                        nextHopPeerIds: input.nextHopPeerIds,
-                        overlayId: input.overlayId ?? toScopedOverlayId(roomRef),
-                        fanoutLimit: input.fanoutLimit,
-                    },
-                );
-
-                if (this.resolveRoomPeerIds(roomRef).length === 0) {
-                    return toRallarMessageSendResult(
-                        'rtc',
-                        msg,
-                        {
-                            status: 'no-route',
-                            message: msg,
-                            entries: [],
-                            reason: 'No RTC peers are desired for this room.',
-                        },
-                    );
-                }
-
-                const enqueueResult = await ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent(msg);
-                wakeQBoxEngineIfQueued(ctx.middleware.qboxEngine, enqueueResult);
-
-                return toRallarMessageSendResult(
-                    'rtc',
-                    msg,
-                    enqueueResult,
-                );
-            },
+            send: async <T>(input: RallarRtcSendInput<T>) =>
+                await this.sendRtcMessage(input),
             onMessage: <T = unknown>(
                 selector: RallarMessageSelectorInput,
                 handler: RallarMessageHandler<T>,
-            ): RallarUnsubscribe => {
-                return this.onTransportMessage(
-                    'rtc',
-                    selector,
-                    handler as RallarMessageHandler<unknown>,
-                );
-            },
+            ) => this.onRtcMessage(selector, handler),
         },
         ws: {
-            send: async <T>(
-                input: RallarWsSendInput<T>,
-            ): Promise<RallarMessageSendResult> => {
-                const ctx = await this.connect();
-                const session = this.requireSession();
-                const room = input.roomRef ??
-                    input.roomId ??
-                    (input.scope === undefined ? this.resolveDefaultRoom() : undefined);
-                const roomId = this.toRoomId(room);
-                const scope = input.scope ?? (roomId ? 'room' : 'all');
-                const roomRef = scope === 'room' ? this.resolveRoomRef(room) : undefined;
-                const contextId = input.contextId ?? roomId ?? input.scope ??
-                    'all';
-                const minSnapshotVersion = room
-                    ? this.resolveRoomMinSnapshotVersion(
-                        room,
-                        input.minSnapshotVersion,
-                    )
-                    : input.minSnapshotVersion;
-                const msg = newALBroadcastMessage(
-                    session.sessionId,
-                    newALRoute(
-                        input.topicId ?? input.typeId,
-                        contextId,
-                        input.resourceId ?? crypto.randomUUID(),
-                    ),
-                    scope,
-                    input.typeId,
-                    input.payload,
-                    {
-                        groupRef: roomRef,
-                        exceptPeerIds: input.exceptPeerIds,
-                        minSnapshotVersion,
-                        ttlHops: input.ttlHops,
-                        ttlMs: input.ttlMs,
-                        reliability: input.reliability ?? 'at-least-once',
-                        ack: input.ack ?? 'none',
-                        ownership: input.ownership ?? 'shared',
-                    },
-                );
-
-                const enqueueResult = await ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent(msg);
-                wakeQBoxEngineIfQueued(ctx.middleware.qboxEngine, enqueueResult);
-
-                return toRallarMessageSendResult(
-                    'ws',
-                    msg,
-                    enqueueResult,
-                );
-            },
+            send: async <T>(input: RallarWsSendInput<T>) =>
+                await this.sendWsMessage(input),
             onMessage: <T = unknown>(
                 selector: RallarMessageSelectorInput,
                 handler: RallarMessageHandler<T>,
-            ): RallarUnsubscribe => {
-                return this.onTransportMessage(
-                    'ws',
-                    selector,
-                    handler as RallarMessageHandler<unknown>,
-                );
-            },
+            ) => this.onWsMessage(selector, handler),
         },
         channel: <T>(
             definition: RallarTypedMessageChannelDefinition,
         ): RallarTypedMessageChannel<T> => this.createMessageChannel<T>(definition),
-    };
+        room: <T>(
+            definition: RallarRoomMessageChannelDefinition,
+        ): RallarRoomMessageChannel<T> =>
+            this.createRoomMessageChannel<T>(definition),
+    });
+
+    private async sendRtcMessage<T>(
+        input: RallarRtcSendInput<T>,
+    ): Promise<RallarMessageSendResult> {
+        const ctx = await this.connect();
+        const session = this.requireSession();
+        const room = input.roomRef ??
+            input.roomId ??
+            this.resolveDefaultRoom() ??
+            this.resolveCurrentRoomRef();
+        const roomId = this.toRoomId(room);
+        const roomRef = this.resolveRoomRef(room);
+
+        if (!roomId) {
+            throw new Error('Cannot send RTC message: no current room.');
+        }
+        if (!roomRef) {
+            throw new Error(
+                'Cannot send RTC message: no scoped room reference.',
+            );
+        }
+
+        const msg = newALMulticastMessage(
+            session.sessionId,
+            newALRoute(
+                input.topicId ?? input.typeId,
+                input.contextId ?? roomId,
+                input.resourceId ?? crypto.randomUUID(),
+            ),
+            roomRef,
+            input.typeId,
+            input.payload,
+            {
+                membershipEpoch: input.membershipEpoch,
+                minSnapshotVersion: this.resolveRoomMinSnapshotVersion(
+                    room,
+                    input.minSnapshotVersion,
+                ),
+                ttlHops: input.ttlHops,
+                ttlMs: input.ttlMs,
+                seq: input.seq,
+                orderingKey: input.orderingKey ??
+                    toALGroupTargetKey(roomRef),
+                reliability: input.reliability ?? 'at-least-once',
+                ack: input.ack ?? 'none',
+                ownership: input.ownership ?? 'shared',
+                nextHopPeerIds: input.nextHopPeerIds,
+                overlayId: input.overlayId ?? toScopedOverlayId(roomRef),
+                fanoutLimit: input.fanoutLimit,
+            },
+        );
+
+        if (this.resolveRoomPeerIds(roomRef).length === 0) {
+            return toRallarMessageSendResult(
+                'rtc',
+                msg,
+                {
+                    status: 'no-route',
+                    message: msg,
+                    entries: [],
+                    reason: 'No RTC peers are desired for this room.',
+                },
+            );
+        }
+
+        const enqueueResult = await ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent(msg);
+        wakeQBoxEngineIfQueued(ctx.middleware.qboxEngine, enqueueResult);
+
+        return toRallarMessageSendResult(
+            'rtc',
+            msg,
+            enqueueResult,
+        );
+    }
+
+    private onRtcMessage<T = unknown>(
+        selector: RallarMessageSelectorInput,
+        handler: RallarMessageHandler<T>,
+    ): RallarUnsubscribe {
+        return this.onTransportMessage(
+            'rtc',
+            selector,
+            handler as RallarMessageHandler<unknown>,
+        );
+    }
+
+    private async sendWsMessage<T>(
+        input: RallarWsSendInput<T>,
+    ): Promise<RallarMessageSendResult> {
+        const ctx = await this.connect();
+        const session = this.requireSession();
+        const room = input.roomRef ??
+            input.roomId ??
+            (input.scope === undefined ? this.resolveDefaultRoom() : undefined);
+        const roomId = this.toRoomId(room);
+        const scope = input.scope ?? (roomId ? 'room' : 'all');
+        const roomRef = scope === 'room' ? this.resolveRoomRef(room) : undefined;
+        const contextId = input.contextId ?? roomId ?? input.scope ??
+            'all';
+        const minSnapshotVersion = room
+            ? this.resolveRoomMinSnapshotVersion(
+                room,
+                input.minSnapshotVersion,
+            )
+            : input.minSnapshotVersion;
+        const msg = newALBroadcastMessage(
+            session.sessionId,
+            newALRoute(
+                input.topicId ?? input.typeId,
+                contextId,
+                input.resourceId ?? crypto.randomUUID(),
+            ),
+            scope,
+            input.typeId,
+            input.payload,
+            {
+                groupRef: roomRef,
+                exceptPeerIds: input.exceptPeerIds,
+                minSnapshotVersion,
+                ttlHops: input.ttlHops,
+                ttlMs: input.ttlMs,
+                reliability: input.reliability ?? 'at-least-once',
+                ack: input.ack ?? 'none',
+                ownership: input.ownership ?? 'shared',
+            },
+        );
+
+        const enqueueResult = await ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent(msg);
+        wakeQBoxEngineIfQueued(ctx.middleware.qboxEngine, enqueueResult);
+
+        return toRallarMessageSendResult(
+            'ws',
+            msg,
+            enqueueResult,
+        );
+    }
+
+    private onWsMessage<T = unknown>(
+        selector: RallarMessageSelectorInput,
+        handler: RallarMessageHandler<T>,
+    ): RallarUnsubscribe {
+        return this.onTransportMessage(
+            'ws',
+            selector,
+            handler as RallarMessageHandler<unknown>,
+        );
+    }
 
     readonly channels = {
         targeted: <T>(
@@ -2372,143 +2615,119 @@ class BrowserRallarFacade implements RallarFacade {
             }),
     };
 
-    readonly rtc = {
-        status: (
-            options: RallarRtcStatusOptions = {},
-        ): RallarRtcStatus => this.toRtcStatus(options),
-        roomStatus: (
-            room: string | GroupRef,
-            options: RallarRtcRoomTransportOptions = {},
-        ): RallarRoomTransportStatus =>
+    readonly rtc: RallarRtcFacade = createRallarRtcFacade({
+        status: (options) => this.toRtcStatus(options),
+        roomStatus: (room, options) =>
             this.toRoomTransportStatus(room, options),
-        openRoom: async (
-            room: string | GroupRef,
-            options: RallarRtcRoomTransportOptions = {},
-        ): Promise<RallarRoomTransportStatus> =>
+        openRoom: async (room, options) =>
             await this.openRtcRoom(room, options),
-        waitForRoom: async (
-            room: string | GroupRef,
-            options: RallarRtcRoomTransportOptions = {},
-        ): Promise<RallarRoomTransportStatus> =>
+        waitForRoom: async (room, options) =>
             await this.waitForRtcRoom(room, options),
-        onStatus: (
-            listener: RallarRtcStatusListener,
-            options: RallarRtcStatusSubscriptionOptions = {},
-        ): RallarUnsubscribe => {
-            const subscription: RallarRtcStatusSubscription = {
-                listener,
-                options,
-            };
-            this.rtcStatusListeners.add(subscription);
-            this.registerRtcStatusCallbacks();
-            if (options.emitCurrent ?? true) {
-                notifyListener(listener, this.toRtcStatus(options));
-            }
-
-            return () => {
-                this.rtcStatusListeners.delete(subscription);
-                this.unregisterRtcStatusCallbacksIfUnused();
-            };
-        },
-        onLifecycle: (
-            listener: RallarRtcLifecycleListener,
-            options: RallarRtcStatusSubscriptionOptions = {},
-        ): RallarUnsubscribe => {
-            const subscription: RallarRtcLifecycleSubscription = {
-                listener,
-                options,
-            };
-            this.rtcLifecycleListeners.add(subscription);
-            this.registerRtcStatusCallbacks();
-            if (options.emitCurrent ?? true) {
-                this.notifyRtcLifecycleSubscription(
-                    subscription,
-                    'snapshot',
-                );
-            }
-
-            return () => {
-                this.rtcLifecycleListeners.delete(subscription);
-                this.unregisterRtcStatusCallbacksIfUnused();
-            };
-        },
-        waitForLane: async (
-            peerId: string,
-            laneId: string,
-            options: RallarRtcWaitForOpenOptions = {},
-        ): Promise<RallarRtcWaitForOpenResult> =>
+        onStatus: (listener, options = {}) =>
+            this.onRtcStatus(listener, options),
+        onLifecycle: (listener, options = {}) =>
+            this.onRtcLifecycle(listener, options),
+        waitForLane: async (peerId, laneId, options) =>
             await this.waitForRtcLaneOpen(peerId, laneId, options),
-        waitForOpen: async (
-            peerId: string,
-            options: RallarRtcWaitForOpenOptions = {},
-        ): Promise<RallarRtcWaitForOpenResult> =>
+        waitForOpen: async (peerId, options = {}) =>
             await this.waitForRtcLaneOpen(
                 peerId,
                 options.laneId ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
                 options,
             ),
-        waitForRoomLane: async (
-            room: string | GroupRef,
-            laneId: string,
-            options: RallarRtcRoomLaneWaitOptions = {},
-        ): Promise<RallarRtcRoomLaneWaitResult> =>
-            await this.waitForRtcRoomLaneOpen(options.roomRef ?? room, laneId, options),
-        peer: (
-            peerId: string,
-            options: RallarRtcStatusOptions = {},
-        ): RallarRtcPeerStatus | undefined => {
-            return this.toRtcStatus(options).peers.find((peer) =>
+        waitForRoomLane: async (room, laneId, options = {}) =>
+            await this.waitForRtcRoomLaneOpen(
+                options.roomRef ?? room,
+                laneId,
+                options,
+            ),
+        peer: (peerId, options) =>
+            this.toRtcStatus(options).peers.find((peer) =>
                 peer.peerId === peerId
-            );
-        },
-        knownPeerIds: (): readonly string[] => {
-            const ctx = this.readMiddleware();
-            return ctx?.middleware.webRtcConnectionService.knownPeerIds() ?? [];
-        },
-        activePeerIds: (): readonly string[] => {
-            const ctx = this.readMiddleware();
-            return ctx?.middleware.webRtcConnectionService.activePeerIds() ?? [];
-        },
-        peerIdsWithNoReconnectableLanes: (): readonly string[] => {
-            const ctx = this.readMiddleware();
-            return ctx?.middleware.webRtcConnectionService
-                .peerIdsWithNoReconnectableLanes() ?? [];
-        },
-        readyPeerIds: (laneId?: string): readonly string[] => {
-            const ctx = this.readMiddleware();
-            return ctx?.middleware.webRtcConnectionService.readyPeerIdsForLane(
-                laneId ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
-            ) ?? [];
-        },
-        diagnostics: async (
-            options: RallarRtcDiagnosticsOptions = {},
-        ): Promise<RallarRtcDiagnostics> =>
-            await this.toRtcDiagnostics(options),
-        restartIce: async (
-            peerId: string,
-        ): Promise<RallarRtcRecoveryResult> =>
-            await this.restartRtcIce(peerId),
-        reconnectPeer: async (
-            peerId: string,
-            options: RallarRtcReconnectOptions = {},
-        ): Promise<RallarRtcRecoveryResult> =>
+            ),
+        knownPeerIds: () => this.knownRtcPeerIds(),
+        activePeerIds: () => this.activeRtcPeerIds(),
+        peerIdsWithNoReconnectableLanes: () =>
+            this.rtcPeerIdsWithNoReconnectableLanes(),
+        readyPeerIds: (laneId) => this.readyRtcPeerIds(laneId),
+        diagnostics: async (options) => await this.toRtcDiagnostics(options),
+        restartIce: async (peerId) => await this.restartRtcIce(peerId),
+        reconnectPeer: async (peerId, options) =>
             await this.reconnectRtcPeer(peerId, options),
-    };
+    });
 
-    readonly calls = {
-        start: async (
-            input: RallarCallStartInput,
-        ): Promise<RallarCallHandle> => await this.startCall(input),
-        invite: async (
-            input: RallarCallInviteInput,
-        ): Promise<RallarCallInviteResult> => await this.inviteCall(input),
-        onInvite: (
-            listener: RallarCallInviteListener,
-        ): RallarUnsubscribe => this.onCallInvite(listener),
-        onSignal: (
-            listener: RallarCallSignalListener,
-        ): RallarUnsubscribe => this.onCallSignal(listener),
-    };
+    private onRtcStatus(
+        listener: RallarRtcStatusListener,
+        options: RallarRtcStatusSubscriptionOptions,
+    ): RallarUnsubscribe {
+        const subscription: RallarRtcStatusSubscription = {
+            listener,
+            options,
+        };
+        this.rtcStatusListeners.add(subscription);
+        this.registerRtcStatusCallbacks();
+        if (options.emitCurrent ?? true) {
+            notifyListener(listener, this.toRtcStatus(options));
+        }
+
+        return () => {
+            this.rtcStatusListeners.delete(subscription);
+            this.unregisterRtcStatusCallbacksIfUnused();
+        };
+    }
+
+    private onRtcLifecycle(
+        listener: RallarRtcLifecycleListener,
+        options: RallarRtcStatusSubscriptionOptions,
+    ): RallarUnsubscribe {
+        const subscription: RallarRtcLifecycleSubscription = {
+            listener,
+            options,
+        };
+        this.rtcLifecycleListeners.add(subscription);
+        this.registerRtcStatusCallbacks();
+        if (options.emitCurrent ?? true) {
+            this.notifyRtcLifecycleSubscription(
+                subscription,
+                'snapshot',
+            );
+        }
+
+        return () => {
+            this.rtcLifecycleListeners.delete(subscription);
+            this.unregisterRtcStatusCallbacksIfUnused();
+        };
+    }
+
+    private knownRtcPeerIds(): readonly string[] {
+        const ctx = this.readMiddleware();
+        return ctx?.middleware.webRtcConnectionService.knownPeerIds() ?? [];
+    }
+
+    private activeRtcPeerIds(): readonly string[] {
+        const ctx = this.readMiddleware();
+        return ctx?.middleware.webRtcConnectionService.activePeerIds() ?? [];
+    }
+
+    private rtcPeerIdsWithNoReconnectableLanes(): readonly string[] {
+        const ctx = this.readMiddleware();
+        return ctx?.middleware.webRtcConnectionService
+            .peerIdsWithNoReconnectableLanes() ?? [];
+    }
+
+    private readyRtcPeerIds(laneId?: string): readonly string[] {
+        const ctx = this.readMiddleware();
+        return ctx?.middleware.webRtcConnectionService.readyPeerIdsForLane(
+            laneId ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
+        ) ?? [];
+    }
+
+    readonly calls: RallarCallsFacade = createRallarCallsFacade({
+        start: async (input) => await this.startCall(input),
+        invite: async (input) => await this.inviteCall(input),
+        onInvite: (listener) => this.onCallInvite(listener),
+        onSignal: (listener) => this.onCallSignal(listener),
+    });
 
     readonly ws = {
         status: (): RallarWsStatus => this.toWsStatus(),
@@ -2556,120 +2775,135 @@ class BrowserRallarFacade implements RallarFacade {
             await this.waitForWsOpen(options),
     };
 
-    readonly realtime = {
-        sendJson: async <T>(
-            input: RallarRealtimeJsonSendInput<T>,
-        ): Promise<readonly RallarRealtimeSendResult[]> => {
-            const ctx = await this.connect();
-            const laneId = this.resolveRealtimeLaneId(input.laneId);
-            const peerIds = this.resolveRealtimePeerIds(input);
-
-            return await Promise.all(
-                peerIds.map(async (peerId) => {
-                    const laneOpen = await this.ensureRealtimeLaneOpen(
-                        ctx,
-                        peerId,
-                        laneId,
-                        input,
-                    );
-                    const sendOptions = toRealtimeDataChannelSendOptions(input);
-                    return {
-                        peerId,
-                        laneId,
-                        result: laneOpen.status === 'open' && laneOpen.channel
-                            ? laneOpen.channel.sendJson(input.data, sendOptions)
-                            : toClosedRealtimeSendResult(),
-                    };
-                }),
-            );
-        },
-        sendBinary: async (
-            input: RallarRealtimeBinarySendInput,
-        ): Promise<readonly RallarRealtimeSendResult[]> => {
-            const ctx = await this.connect();
-            const laneId = this.resolveRealtimeLaneId(input.laneId);
-            const peerIds = this.resolveRealtimePeerIds(input);
-
-            return await Promise.all(
-                peerIds.map(async (peerId) => {
-                    const laneOpen = await this.ensureRealtimeLaneOpen(
-                        ctx,
-                        peerId,
-                        laneId,
-                        input,
-                    );
-                    const sendOptions = toRealtimeDataChannelSendOptions(input);
-                    return {
-                        peerId,
-                        laneId,
-                        result: laneOpen.status === 'open' && laneOpen.channel
-                            ? laneOpen.channel.sendBinary(input.data, sendOptions)
-                            : toClosedRealtimeSendResult(),
-                    };
-                }),
-            );
-        },
+    readonly realtime: RallarRealtimeFacade = createRallarRealtimeFacade({
+        sendJson: async <T>(input: RallarRealtimeJsonSendInput<T>) =>
+            await this.sendRealtimeJson(input),
+        sendBinary: async (input) => await this.sendRealtimeBinary(input),
         onJson: <T = unknown>(
             laneId: string,
             handler: RallarRealtimeHandler<T>,
-        ): RallarUnsubscribe => {
-            const listeners = this.realtimeJsonListeners.get(laneId) ??
-                new Set<RallarRealtimeHandler<unknown>>();
-            listeners.add(handler as RallarRealtimeHandler<unknown>);
-            this.realtimeJsonListeners.set(laneId, listeners);
-            this.registerRealtimeLaneCallbacks(laneId);
+        ) => this.onRealtimeJson(laneId, handler),
+        onBinary: (laneId, handler) => this.onRealtimeBinary(laneId, handler),
+        json: <T>(defaults: RallarRealtimeJsonLaneDefaults = {}) =>
+            this.createRealtimeJsonLane<T>(defaults),
+        room: <T>(defaults: RallarRoomRealtimeJsonDefaults = {}) =>
+            this.createRoomRealtimeJsonChannel<T>(defaults),
+        health: (options) => this.readRealtimeHealth(options),
+    });
 
-            return () => {
-                listeners.delete(handler as RallarRealtimeHandler<unknown>);
-                this.deleteRealtimeLaneIfUnused(laneId);
-            };
-        },
-        onBinary: (
-            laneId: string,
-            handler: RallarRealtimeHandler<ArrayBuffer>,
-        ): RallarUnsubscribe => {
-            const listeners = this.realtimeBinaryListeners.get(laneId) ??
-                new Set<RallarRealtimeHandler<ArrayBuffer>>();
-            listeners.add(handler);
-            this.realtimeBinaryListeners.set(laneId, listeners);
-            this.registerRealtimeLaneCallbacks(laneId);
+    private async sendRealtimeJson<T>(
+        input: RallarRealtimeJsonSendInput<T>,
+    ): Promise<readonly RallarRealtimeSendResult[]> {
+        const ctx = await this.connect();
+        const laneId = this.resolveRealtimeLaneId(input.laneId);
+        const peerIds = this.resolveRealtimePeerIds(input);
 
-            return () => {
-                listeners.delete(handler);
-                this.deleteRealtimeLaneIfUnused(laneId);
-            };
-        },
-        json: <T>(
-            defaults: RallarRealtimeJsonLaneDefaults = {},
-        ): RallarRealtimeJsonLane<T> => this.createRealtimeJsonLane<T>(defaults),
-        health: (
-            options: RallarRealtimeHealthOptions = {},
-        ): readonly RallarRealtimeLaneHealth[] => {
-            const ctx = this.readMiddleware();
-            if (!ctx) {
+        return await Promise.all(
+            peerIds.map(async (peerId) => {
+                const laneOpen = await this.ensureRealtimeLaneOpen(
+                    ctx,
+                    peerId,
+                    laneId,
+                    input,
+                );
+                const sendOptions = toRealtimeDataChannelSendOptions(input);
+                return {
+                    peerId,
+                    laneId,
+                    result: laneOpen.status === 'open' && laneOpen.channel
+                        ? laneOpen.channel.sendJson(input.data, sendOptions)
+                        : toClosedRealtimeSendResult(),
+                };
+            }),
+        );
+    }
+
+    private async sendRealtimeBinary(
+        input: RallarRealtimeBinarySendInput,
+    ): Promise<readonly RallarRealtimeSendResult[]> {
+        const ctx = await this.connect();
+        const laneId = this.resolveRealtimeLaneId(input.laneId);
+        const peerIds = this.resolveRealtimePeerIds(input);
+
+        return await Promise.all(
+            peerIds.map(async (peerId) => {
+                const laneOpen = await this.ensureRealtimeLaneOpen(
+                    ctx,
+                    peerId,
+                    laneId,
+                    input,
+                );
+                const sendOptions = toRealtimeDataChannelSendOptions(input);
+                return {
+                    peerId,
+                    laneId,
+                    result: laneOpen.status === 'open' && laneOpen.channel
+                        ? laneOpen.channel.sendBinary(input.data, sendOptions)
+                        : toClosedRealtimeSendResult(),
+                };
+            }),
+        );
+    }
+
+    private onRealtimeJson<T = unknown>(
+        laneId: string,
+        handler: RallarRealtimeHandler<T>,
+    ): RallarUnsubscribe {
+        const listeners = this.realtimeJsonListeners.get(laneId) ??
+            new Set<RallarRealtimeHandler<unknown>>();
+        listeners.add(handler as RallarRealtimeHandler<unknown>);
+        this.realtimeJsonListeners.set(laneId, listeners);
+        this.registerRealtimeLaneCallbacks(laneId);
+
+        return () => {
+            listeners.delete(handler as RallarRealtimeHandler<unknown>);
+            this.deleteRealtimeLaneIfUnused(laneId);
+        };
+    }
+
+    private onRealtimeBinary(
+        laneId: string,
+        handler: RallarRealtimeHandler<ArrayBuffer>,
+    ): RallarUnsubscribe {
+        const listeners = this.realtimeBinaryListeners.get(laneId) ??
+            new Set<RallarRealtimeHandler<ArrayBuffer>>();
+        listeners.add(handler);
+        this.realtimeBinaryListeners.set(laneId, listeners);
+        this.registerRealtimeLaneCallbacks(laneId);
+
+        return () => {
+            listeners.delete(handler);
+            this.deleteRealtimeLaneIfUnused(laneId);
+        };
+    }
+
+    private readRealtimeHealth(
+        options: RallarRealtimeHealthOptions = {},
+    ): readonly RallarRealtimeLaneHealth[] {
+        const ctx = this.readMiddleware();
+        if (!ctx) {
+            return [];
+        }
+
+        const peerIds = options.peerIds ??
+            ctx.middleware.webRtcConnectionService.activePeerIds();
+
+        return peerIds.flatMap((peerId) => {
+            const peer = ctx.middleware.webRtcConnectionService.readPeer(peerId);
+            if (!peer) {
                 return [];
             }
 
-            const peerIds = options.peerIds ??
-                ctx.middleware.webRtcConnectionService.activePeerIds();
+            const laneIds = options.laneIds ?? Array.from(peer.channels.keys());
+            return laneIds.map((laneId) => ({
+                peerId,
+                laneId,
+                channel: peer.channels.get(laneId)?.readHealth(),
+            }));
+        });
+    }
 
-            return peerIds.flatMap((peerId) => {
-                const peer = ctx.middleware.webRtcConnectionService.readPeer(peerId);
-                if (!peer) {
-                    return [];
-                }
-
-                const laneIds = options.laneIds ?? Array.from(peer.channels.keys());
-                return laneIds.map((laneId) => ({
-                    peerId,
-                    laneId,
-                    channel: peer.channels.get(laneId)?.readHealth(),
-                }));
-            });
-        },
-    };
-
-    readonly media = {
+    readonly media: RallarMediaFacade = createRallarMediaFacade({
         microphone: this.createMediaSourceController('microphone'),
         camera: this.createMediaSourceController('camera'),
         screen: this.createMediaSourceController('screen'),
@@ -2707,13 +2941,19 @@ class BrowserRallarFacade implements RallarFacade {
                 }
             };
         },
-    };
+    });
 
     readonly advanced = {
         middleware: (): ApiMiddleware => this.requireMiddleware(),
     };
 
     async connect(
+        options: RallarScopedOperationOptions = {},
+    ): Promise<ApiMiddleware> {
+        return await this.connection.connect(options);
+    }
+
+    private async connectConnection(
         options: RallarScopedOperationOptions = {},
     ): Promise<ApiMiddleware> {
         await this.waitForAuthEndIfInProgress();
@@ -2791,6 +3031,12 @@ class BrowserRallarFacade implements RallarFacade {
     async start(
         options: RallarStartOptions = {},
     ): Promise<RallarStartResult> {
+        return await this.connection.start(options);
+    }
+
+    private async startConnection(
+        options: RallarStartOptions = {},
+    ): Promise<RallarStartResult> {
         await this.waitForAuthEndIfInProgress();
         const operationOptions = this.resolveOperationOptions(options);
         const session = options.restoreSession === false
@@ -2832,6 +3078,10 @@ class BrowserRallarFacade implements RallarFacade {
     }
 
     disconnect(): Promise<void> {
+        return this.connection.disconnect();
+    }
+
+    private disconnectConnection(): Promise<void> {
         this.stateCacheUnsubscribe?.();
         this.stateCacheUnsubscribe = undefined;
 
@@ -2869,11 +3119,9 @@ class BrowserRallarFacade implements RallarFacade {
         this.registeredRtcMessageTypes.clear();
         this.wsAnyMessageCallbackRegistered = false;
         this.remoteStreamCallbackRegistered = false;
-        this.currentRoomId = undefined;
-        this.currentRoomRef = undefined;
-        this.ctx = undefined;
+        this.runtime.clearCurrentRoom();
         this.connectState = 'idle';
-        clearMiddleware();
+        this.runtime.clearMiddleware();
         this.emitState();
         this.emitWsLifecycle('disconnected', {
             code: 1000,
@@ -2885,24 +3133,32 @@ class BrowserRallarFacade implements RallarFacade {
     }
 
     status(): RallarConnectStatus {
+        return this.connection.status();
+    }
+
+    private readConnectionStatus(): RallarConnectStatus {
         return this.connectState;
     }
 
     isConnected(): boolean {
+        return this.connection.isConnected();
+    }
+
+    private isConnectionOpen(): boolean {
         return this.connectState === 'connected' &&
             this.readMiddleware() !== undefined;
     }
 
     session(): AuthSession | undefined {
-        return readSession();
+        return this.connection.session();
     }
 
     subscriptions(): RallarSubscriptionScope {
-        return createRallarSubscriptionScope();
+        return this.connection.subscriptions();
     }
 
     flow<K, V>(policies: RallarFlowPolicies<V> = {}): RallarFlow<K, V> {
-        return CommandsOrchestrator.withPolicies<K, V>(policies);
+        return this.connection.flow<K, V>(policies);
     }
 
     private toDirectorStatus(
@@ -3523,6 +3779,47 @@ class BrowserRallarFacade implements RallarFacade {
         };
     }
 
+    private createRoomMessageChannel<T>(
+        definition: RallarRoomMessageChannelDefinition,
+    ): RallarRoomMessageChannel<T> {
+        const channel = this.createMessageChannel<T>(definition);
+        const roomDefaults = {
+            roomId: definition.roomRef ? undefined : definition.roomId,
+            roomRef: definition.roomRef,
+        };
+
+        return {
+            send: async (
+                payload,
+                options: RallarTypedMessageSendOptions<T> = {},
+            ) =>
+                await channel.send(payload, {
+                    ...roomDefaults,
+                    strategy: options.strategy ?? 'rtc-with-ws-fallback',
+                    ...options,
+                }),
+            sendRtc: async (
+                payload,
+                options: RallarTypedRtcSendOptions<T> = {},
+            ) =>
+                await channel.sendRtc(payload, {
+                    ...roomDefaults,
+                    ...options,
+                }),
+            sendWs: async (
+                payload,
+                options: RallarTypedWsSendOptions<T> = {},
+            ) =>
+                await channel.sendWs(payload, {
+                    ...roomDefaults,
+                    scope: options.scope ?? 'room',
+                    ...options,
+                }),
+            onRtc: (handler) => channel.onRtc(handler),
+            onWs: (handler) => channel.onWs(handler),
+        };
+    }
+
     private async sendTypedMessageWithStrategy<T>(
         channelDefinition: RallarTypedMessageChannelDefinition,
         payload: T,
@@ -3605,6 +3902,197 @@ class BrowserRallarFacade implements RallarFacade {
                 }),
             on: (handler) => this.realtime.onJson<T>(laneId, handler),
         };
+    }
+
+    private createRoomRealtimeJsonChannel<T>(
+        defaults: RallarRoomRealtimeJsonDefaults,
+    ): RallarRoomRealtimeJsonChannel<T> {
+        const laneId = this.resolveRealtimeLaneId(defaults.laneId);
+
+        return {
+            send: async (
+                data,
+                options: RallarRoomRealtimeJsonSendOptions<T> = {},
+            ) => await this.sendRoomRealtimeJson(defaults, data, options),
+            on: (handler) => this.realtime.onJson<T>(laneId, handler),
+            status: (options: RallarRoomRealtimeTransportOptions = {}) =>
+                this.readRoomRealtimeStatus(defaults, options),
+            wait: async (options: RallarRoomRealtimeTransportOptions = {}) =>
+                await this.waitForRoomRealtime(defaults, options),
+        };
+    }
+
+    private readRoomRealtimeStatus(
+        defaults: RallarRoomRealtimeJsonDefaults,
+        options: RallarRoomRealtimeTransportOptions,
+    ): RallarRoomTransportStatus {
+        const room = this.resolveRoomRealtimeTarget(defaults, options);
+        if (!room) {
+            throw new Error('Cannot read room realtime status without a room.');
+        }
+
+        return this.toRoomTransportStatus(room, {
+            ...options,
+            laneId: this.resolveRealtimeLaneId(options.laneId ?? defaults.laneId),
+        });
+    }
+
+    private async waitForRoomRealtime(
+        defaults: RallarRoomRealtimeJsonDefaults,
+        options: RallarRoomRealtimeTransportOptions,
+    ): Promise<RallarRoomTransportStatus> {
+        const room = this.resolveRoomRealtimeTarget(defaults, options);
+        if (!room) {
+            throw new Error('Cannot wait for room realtime without a room.');
+        }
+
+        return await this.waitForRtcRoom(room, {
+            ...options,
+            laneId: this.resolveRealtimeLaneId(options.laneId ?? defaults.laneId),
+            connect: options.connect ?? defaults.connect ?? true,
+            timeoutMs: options.timeoutMs ?? defaults.waitTimeoutMs,
+            minReadyPeers: options.minReadyPeers ?? defaults.minReadyPeers,
+        });
+    }
+
+    private async sendRoomRealtimeJson<T>(
+        defaults: RallarRoomRealtimeJsonDefaults,
+        data: T,
+        options: RallarRoomRealtimeJsonSendOptions<T>,
+    ): Promise<RallarRoomRealtimeSendResult> {
+        const laneId = this.resolveRealtimeLaneId(options.laneId ?? defaults.laneId);
+        const room = this.resolveRoomRealtimeTarget(defaults, options);
+        if (!room) {
+            return {
+                transport: 'rtc',
+                status: 'no-targets',
+                laneId,
+                peerIds: [],
+                desiredPeerIds: [],
+                results: [],
+                reason: 'Cannot send room realtime payload without a room.',
+            };
+        }
+
+        await this.connect();
+
+        let transportStatus = this.toRoomTransportStatus(room, {
+            laneId,
+            minReadyPeers: options.minReadyPeers ?? defaults.minReadyPeers,
+        });
+        let readiness: RallarRtcRoomLaneWaitResult | undefined;
+        let readyPeerIds = transportStatus.rtc.readyPeerIds;
+        const waitForReady = options.waitForReady ??
+            defaults.waitForReady ??
+            true;
+
+        if (readyPeerIds.length === 0 && waitForReady) {
+            readiness = await this.waitForRtcRoomLaneOpen(room, laneId, {
+                connect: options.connect ?? defaults.connect ?? true,
+                timeoutMs: options.waitTimeoutMs ??
+                    defaults.waitTimeoutMs ??
+                    options.openTimeoutMs ??
+                    defaults.openTimeoutMs,
+                signal: options.signal,
+                roomRef: typeof room === 'string' ? undefined : room,
+            });
+            readyPeerIds = uniquePeerIds(
+                readiness.ready.map((result) => result.peerId),
+            );
+            transportStatus = this.toRoomTransportStatus(room, {
+                laneId,
+                minReadyPeers: options.minReadyPeers ?? defaults.minReadyPeers,
+            }, readiness);
+        }
+
+        const desiredPeerIds = transportStatus.rtc.desiredPeerIds;
+        if (desiredPeerIds.length === 0) {
+            return {
+                transport: 'rtc',
+                status: 'no-targets',
+                laneId,
+                roomId: transportStatus.roomId,
+                roomRef: transportStatus.roomRef,
+                peerIds: [],
+                desiredPeerIds,
+                readiness,
+                transportStatus,
+                results: [],
+                reason: 'Room has no RTC peer targets.',
+            };
+        }
+
+        if (readyPeerIds.length === 0) {
+            return {
+                transport: 'rtc',
+                status: 'not-ready',
+                laneId,
+                roomId: transportStatus.roomId,
+                roomRef: transportStatus.roomRef,
+                peerIds: [],
+                desiredPeerIds,
+                readiness,
+                transportStatus,
+                results: [],
+                reason: readiness?.status
+                    ? `Room RTC wait ended with ${readiness.status}.`
+                    : 'Room RTC has no ready peers.',
+            };
+        }
+
+        const {
+            connect: _connect,
+            minReadyPeers: _minReadyPeers,
+            waitForReady: _waitForReady,
+            waitTimeoutMs: _waitTimeoutMs,
+            ...defaultSendOptions
+        } = defaults;
+        const {
+            connect: _optionConnect,
+            minReadyPeers: _optionMinReadyPeers,
+            signal: _optionSignal,
+            waitForReady: _optionWaitForReady,
+            waitTimeoutMs: _optionWaitTimeoutMs,
+            ...sendOptions
+        } = options;
+        const results = await this.sendRealtimeJson<T>({
+            ...defaultSendOptions,
+            ...sendOptions,
+            laneId,
+            roomId: transportStatus.roomRef ? undefined : transportStatus.roomId,
+            roomRef: transportStatus.roomRef,
+            peerIds: readyPeerIds,
+            data,
+        });
+
+        return {
+            transport: 'rtc',
+            status: toRoomRealtimeSendStatus(
+                desiredPeerIds,
+                readyPeerIds,
+                results,
+            ),
+            laneId,
+            roomId: transportStatus.roomId,
+            roomRef: transportStatus.roomRef,
+            peerIds: readyPeerIds,
+            desiredPeerIds,
+            readiness,
+            transportStatus,
+            results,
+        };
+    }
+
+    private resolveRoomRealtimeTarget(
+        defaults: Readonly<{ roomId?: string; roomRef?: GroupRef }>,
+        options: Readonly<{ roomId?: string; roomRef?: GroupRef }>,
+    ): string | GroupRef | undefined {
+        return options.roomRef ??
+            options.roomId ??
+            defaults.roomRef ??
+            defaults.roomId ??
+            this.resolveDefaultRoom() ??
+            this.resolveCurrentRoomRef();
     }
 
     private createTargetedChannel<T>(
@@ -5600,8 +6088,7 @@ class BrowserRallarFacade implements RallarFacade {
     }
 
     private setCurrentRoom(snapshot: GroupSnapshot): void {
-        this.currentRoomId = readGroupId(snapshot);
-        this.currentRoomRef = snapshot.group;
+        this.runtime.setCurrentRoom(snapshot);
     }
 
     private isStateSnapshotInDefaultScope(
@@ -5614,20 +6101,7 @@ class BrowserRallarFacade implements RallarFacade {
         room: string | GroupRef,
         clearCurrent: boolean,
     ): void {
-        if (!clearCurrent) {
-            return;
-        }
-
-        if (
-            typeof room === 'string'
-                ? this.currentRoomId === room
-                : this.currentRoomRef
-                    ? isSameGroupRef(this.currentRoomRef, room)
-                    : this.currentRoomId === room.groupId
-        ) {
-            this.currentRoomId = undefined;
-            this.currentRoomRef = undefined;
-        }
+        this.runtime.clearCurrentRoomIfMatches(room, clearCurrent);
     }
 
     private isSameRoomRefOrId(
@@ -5659,38 +6133,11 @@ class BrowserRallarFacade implements RallarFacade {
     private resolveOperationOptions<T extends RallarOperationOptions>(
         options: T,
     ): T & RallarOperationOptions {
-        const timeoutMs = options.timeoutMs !== undefined
-            ? options.timeoutMs
-            : this.configuredDefaults?.operations?.timeoutMs;
-        const maxAttempts = options.maxAttempts !== undefined
-            ? options.maxAttempts
-            : this.configuredDefaults?.operations?.maxAttempts;
-        const shouldRetry = options.shouldRetry ??
-            this.configuredDefaults?.operations?.shouldRetry;
-        const dataChannelLanes = options.dataChannelLanes !== undefined
-            ? options.dataChannelLanes
-            : this.configuredDefaults?.rtc?.dataChannelLanes;
-
-        if (
-            timeoutMs === undefined &&
-            maxAttempts === undefined &&
-            shouldRetry === undefined &&
-            dataChannelLanes === undefined
-        ) {
-            return options;
-        }
-
-        return {
-            ...options,
-            ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-            ...(maxAttempts !== undefined ? { maxAttempts } : {}),
-            ...(shouldRetry !== undefined ? { shouldRetry } : {}),
-            ...(dataChannelLanes !== undefined ? { dataChannelLanes } : {}),
-        };
+        return this.runtime.resolveOperationOptions(options);
     }
 
     private resolveOperationScope(scope?: StateScope): StateScope | undefined {
-        return scope ?? this.defaultScope;
+        return this.runtime.resolveOperationScope(scope);
     }
 
     private resolveRoomEventListScope(
@@ -5828,7 +6275,7 @@ class BrowserRallarFacade implements RallarFacade {
             const registry = transport === 'rtc'
                 ? this.rtcMessageListeners
                 : this.wsMessageListeners;
-            registry.delete(toMessageSelectorKey(selector));
+            registry.delete(toRallarMessageSelectorKey(selector));
 
             if (transport === 'rtc' && selector.typeId) {
                 if (!this.hasRtcSubscriptionsForTypeId(selector.typeId)) {
@@ -6124,7 +6571,7 @@ class BrowserRallarFacade implements RallarFacade {
         const registry = transport === 'rtc'
             ? this.rtcMessageListeners
             : this.wsMessageListeners;
-        const key = toMessageSelectorKey(selector);
+        const key = toRallarMessageSelectorKey(selector);
         const existing = registry.get(key);
         if (existing) {
             return existing;
@@ -6734,25 +7181,11 @@ class BrowserRallarFacade implements RallarFacade {
     }
 
     private readMiddleware(): ApiMiddleware | undefined {
-        if (this.ctx) {
-            return this.ctx;
-        }
-
-        if (!isMiddlewareReady()) {
-            return undefined;
-        }
-
-        this.ctx = getMiddleware();
-        return this.ctx;
+        return this.runtime.readMiddleware();
     }
 
     private requireMiddleware(): ApiMiddleware {
-        const ctx = this.readMiddleware();
-        if (!ctx) {
-            throw new Error('Rallar is not connected. Call rallar.connect() first.');
-        }
-
-        return ctx;
+        return this.runtime.requireMiddleware();
     }
 
     private toAuthState(
@@ -6789,10 +7222,7 @@ class BrowserRallarFacade implements RallarFacade {
     }
 
     private clearAuthExpiryTimer(): void {
-        if (this.authExpiryTimer !== undefined) {
-            clearTimeout(this.authExpiryTimer);
-            this.authExpiryTimer = undefined;
-        }
+        this.runtime.clearAuthExpiryTimer();
     }
 
     private async expireAuthSessionIfCurrent(
@@ -7286,6 +7716,33 @@ function toTargetedSendStatus(
     return sentCount > 0 ? 'partial' : 'failed';
 }
 
+function toRoomRealtimeSendStatus(
+    desiredPeerIds: readonly string[],
+    peerIds: readonly string[],
+    results: readonly RallarRealtimeSendResult[],
+): RallarRoomRealtimeSendStatus {
+    if (desiredPeerIds.length === 0) {
+        return 'no-targets';
+    }
+
+    if (peerIds.length === 0) {
+        return 'not-ready';
+    }
+
+    const sentCount = results.filter((result) =>
+        isAcceptedRealtimeSendStatus(result.result.status)
+    ).length;
+    if (sentCount === 0) {
+        return 'failed';
+    }
+
+    return sentCount >= desiredPeerIds.length ? 'sent' : 'partial';
+}
+
+function uniquePeerIds(peerIds: readonly string[]): readonly string[] {
+    return [...new Set(peerIds)];
+}
+
 function isAcceptedRealtimeSendStatus(
     status: RtcDataChannelSendResult['status'],
 ): boolean {
@@ -7672,99 +8129,6 @@ function toRallarRefreshOptions(
     return input;
 }
 
-function cloneRallarDefaults(defaults: RallarDefaults): RallarDefaults {
-    return {
-        applicationId: defaults.applicationId,
-        ...(defaults.workspaceId !== undefined
-            ? { workspaceId: defaults.workspaceId }
-            : {}),
-        ...(defaults.room
-            ? {
-                room: {
-                    ...(defaults.room.roomId !== undefined
-                        ? { roomId: defaults.room.roomId }
-                        : {}),
-                    ...(defaults.room.roomRef
-                        ? { roomRef: { ...defaults.room.roomRef } }
-                        : {}),
-                },
-            }
-            : {}),
-        ...(defaults.realtime
-            ? { realtime: { ...defaults.realtime } }
-            : {}),
-        ...(defaults.rtc
-            ? {
-                rtc: {
-                    ...defaults.rtc,
-                    ...(defaults.rtc.dataChannelLanes
-                        ? { dataChannelLanes: [...defaults.rtc.dataChannelLanes] }
-                        : {}),
-                },
-            }
-            : {}),
-        ...(defaults.operations
-            ? { operations: { ...defaults.operations } }
-            : {}),
-    };
-}
-
-function toRallarWorkflowPolicies<V>(
-    options?: RallarOperationOptions,
-): CommandsOrchestratorPolicies<V> {
-    if (
-        !options?.signal &&
-        options?.timeoutMs === undefined &&
-        options?.maxAttempts === undefined &&
-        options?.shouldRetry === undefined
-    ) {
-        return {};
-    }
-
-    return {
-        command: toRallarCommandOptions(options),
-    };
-}
-
-function toRallarOperationOptions(
-    options: RallarOperationOptions,
-): RallarOperationOptions {
-    if (
-        !options.signal &&
-        options.timeoutMs === undefined &&
-        options.maxAttempts === undefined &&
-        options.shouldRetry === undefined &&
-        options.dataChannelLanes === undefined
-    ) {
-        return {};
-    }
-
-    const normalized: {
-        signal?: AbortSignal;
-        timeoutMs?: number;
-        maxAttempts?: number;
-        shouldRetry?: RallarOperationRetryPredicate;
-        dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
-    } = {};
-    if (options.signal) {
-        normalized.signal = options.signal;
-    }
-    if (options.timeoutMs !== undefined) {
-        normalized.timeoutMs = options.timeoutMs;
-    }
-    if (options.maxAttempts !== undefined) {
-        normalized.maxAttempts = options.maxAttempts;
-    }
-    if (options.shouldRetry !== undefined) {
-        normalized.shouldRetry = options.shouldRetry;
-    }
-    if (options.dataChannelLanes !== undefined) {
-        normalized.dataChannelLanes = options.dataChannelLanes;
-    }
-
-    return normalized;
-}
-
 function runRallarCommand<T>(
     supplier: (signal?: AbortSignal) => T | Promise<T>,
     options: RallarOperationOptions,
@@ -7788,48 +8152,6 @@ function hasOwn<T extends object, K extends PropertyKey>(
     key: K,
 ): value is T & Record<K, unknown> {
     return Object.prototype.hasOwnProperty.call(value, key);
-}
-
-function toRallarCommandOptions<T>(
-    options: RallarOperationOptions,
-): CommandOptions<T> {
-    const commandOptions: CommandOptions<T> = {};
-    if (options.signal) {
-        commandOptions.signal = options.signal;
-    }
-    if (options.timeoutMs !== undefined) {
-        commandOptions.timeoutMs = options.timeoutMs;
-    }
-    if (options.maxAttempts !== undefined) {
-        commandOptions.maxAttempts = options.maxAttempts;
-    }
-    if (options.shouldRetry) {
-        commandOptions.shouldRetry = options.shouldRetry;
-    } else if (options.maxAttempts !== undefined) {
-        commandOptions.shouldRetry = shouldRetryRallarOperation;
-    }
-
-    return commandOptions;
-}
-
-function shouldRetryRallarOperation(error: unknown): boolean {
-    const status = readHttpStatus(error);
-    if (status !== undefined) {
-        return status === 429 || status >= 500;
-    }
-
-    return true;
-}
-
-function readHttpStatus(error: unknown): number | undefined {
-    if (typeof error !== 'object' || error === null) {
-        return undefined;
-    }
-
-    const status = (error as { status?: unknown }).status;
-    return typeof status === 'number' && Number.isFinite(status)
-        ? status
-        : undefined;
 }
 
 function isStateScope(
@@ -7897,7 +8219,7 @@ function toRallarMessage<T>(
         topicId: message.route.topicId,
         contextId: message.route.contextId,
         resourceId: message.route.resourceId,
-        roomId: readMessageRoomId(message),
+        roomId: readRallarMessageRoomId(message),
         senderId: message.id.senderId,
         payload: decodeMessagePayload<T>(message),
         raw: message,
@@ -7955,48 +8277,6 @@ function wakeQBoxEngineIfQueued(
     if (result.status === 'enqueued' || result.status === 'duplicate') {
         engine.wake();
     }
-}
-
-export function normalizeRallarMessageSelector(
-    selector: RallarMessageSelectorInput,
-): RallarMessageSelector {
-    if (typeof selector === 'string') {
-        return { typeId: selector };
-    }
-
-    if (!selector.topicId && !selector.typeId) {
-        throw new Error('Message selector requires topicId or typeId.');
-    }
-
-    return selector;
-}
-
-function toMessageSelectorKey(selector: RallarMessageSelector): string {
-    return `${selector.topicId ?? '*'}/${selector.typeId ?? '*'}`;
-}
-
-export function matchesRallarMessageSelector(
-    selector: RallarMessageSelector,
-    message: ALMessage,
-): boolean {
-    return (selector.topicId === undefined ||
-            selector.topicId === message.route.topicId) &&
-        (selector.typeId === undefined ||
-            selector.typeId === message.payload.typeId);
-}
-
-function readMessageRoomId(message: ALMessage): string | undefined {
-    if (message.targets?.mode === 'multicast') {
-        return message.targets.groupRef.groupId;
-    }
-
-    if (
-        message.targets?.mode === 'broadcast' && message.targets.scope === 'room'
-    ) {
-        return message.route.contextId;
-    }
-
-    return undefined;
 }
 
 function decodeMessagePayload<T>(message: ALMessage): T {

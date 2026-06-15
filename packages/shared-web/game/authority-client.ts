@@ -289,13 +289,14 @@ export function createRallarGameAuthorityClient<
             pendingCommands.set(envelope.seq, envelope.sentAtEpochMs);
         }
 
-        const result = await config.rallar.messages.ws.send({
-            topicId: config.topicId,
-            typeId,
-            payload: envelope,
-            scope: 'room',
-            roomId: room.roomRef ? undefined : room.roomId,
-            roomRef: room.roomRef,
+        const result = await config.rallar.messages
+            .room<RallarGameAuthorityEnvelope<T>>({
+                topicId: config.topicId,
+                typeId,
+                roomId: room.roomRef ? undefined : room.roomId,
+                roomRef: room.roomRef,
+            })
+            .sendWs(envelope, {
             resourceId: options.key,
             reliability: options.reliability,
             ack: options.ack,
@@ -339,12 +340,14 @@ export function createRallarGameAuthorityClient<
             roomId: room.roomId,
             senderId,
         });
-        const result = await config.rallar.messages.rtc.send({
-            topicId: config.topicId,
-            typeId,
-            payload: envelope,
-            roomId: room.roomRef ? undefined : room.roomId,
-            roomRef: room.roomRef,
+        const result = await config.rallar.messages
+            .room<RallarGameAuthorityEnvelope<T>>({
+                topicId: config.topicId,
+                typeId,
+                roomId: room.roomRef ? undefined : room.roomId,
+                roomRef: room.roomRef,
+            })
+            .sendRtc(envelope, {
             reliability: 'best-effort',
             ack: 'none',
             ttlMs: 5_000,

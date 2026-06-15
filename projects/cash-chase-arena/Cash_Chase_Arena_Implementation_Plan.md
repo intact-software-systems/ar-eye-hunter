@@ -13,9 +13,9 @@ ar-eye-hunter/
 ```
 
 ## Runtime architecture
-Before match: clients join a Rallar room, report capability, receive or derive a browser director lease, wait for Rallar realtime lanes, and receive a validated map and mission deck from deterministic fallback content or an accepted Rallar AI proposal. MVP CCA does not persist match/game data server-side; any generated or accepted setup data is transmitted into the room/match flow and then owned by the browser director simulation.
+Before match: clients join a Rallar room, report capability, receive or derive a browser director lease, use Rallar room transport helpers to check/wait for realtime readiness, and receive a validated map and mission deck from deterministic fallback content or an accepted Rallar AI proposal. MVP CCA does not persist match/game data server-side; any generated or accepted setup data is transmitted into the room/match flow and then owned by the browser director simulation.
 
-During match: clients send input to the browser director through Rallar realtime lanes; the director sends snapshots/events; clients route accepted snapshots through Rallar Motion before rendering; the director replicates state to backup when enabled; backend handles coordination and recovery only.
+During match: clients send input to the browser director through `rallar.realtime.room<T>(...)`; the director sends snapshots/events through room realtime/message helpers; clients route accepted snapshots through Rallar Motion before rendering; the director replicates state to backup when enabled; backend handles coordination and recovery only.
 
 Browser Rallar Data may persist local settings, selected cosmetic loadout IDs, last-used room hints, local AI proposal replay, and local debug logs. It must not sit in the active input/snapshot/simulation path, and MVP CCA must not use server app data for match/game data.
 
@@ -96,8 +96,8 @@ Rallar CRDT must not own player positions, director snapshots, Sentinel state, c
 2. Shared schemas and protocol types.
 3. Rallar room, session, and signaling integration.
 4. Browser director election and lease.
-5. Rallar realtime lane readiness.
-6. Rallar Game lane routing and backpressure.
+5. Rallar room transport readiness through `rallar.realtime.room<T>(...)`.
+6. Rallar Game lane routing, room message fallback, and backpressure.
 7. BrowserDirectorRuntime.
 8. Client input and Rallar Motion snapshot interpolation.
 9. Procedural map validator and fallback maps.

@@ -140,9 +140,9 @@ await rallar.messages.ws.send({
 Implement low-latency peer updates over Rallar realtime.
 
 Requirements:
-- Use rallar.rtc.waitForRoomLane(room, 'realtime', { connect: true, timeoutMs: 1000 }) before the first send.
-- Use rallar.realtime.json<T> for typed JSON lane usage.
-- Handle partial readiness: send to ready peers or fall back to WS.
+- Use rallar.realtime.room<T>({ roomId: room, laneId: 'realtime', waitTimeoutMs: 1000 }) for room-scoped app/game sends.
+- Check the returned room send status and diagnostics.
+- Use rallar.messages.room<T>(...) when important messages need typed RTC/WS fallback behavior.
 - Add tests for open, partial, timeout, and no-peer readiness.
 ```
 
@@ -276,11 +276,11 @@ Prioritize:
 ### RTC Send Is Slow
 
 ```text
-Analyze why the first rallar.realtime.sendJson takes several seconds.
+Analyze why the first rallar.realtime.room(...).send(...) takes several seconds.
 
 Check:
-- Whether rallar.rtc.waitForRoomLane is used before sending.
-- Whether connect: true is used on wait.
+- Whether the helper is waiting for RTC readiness and which status it returns.
+- Whether connect: true is used by the wait options.
 - Whether the room has active peer sessions.
 - Whether laneId matches configured data channel lanes.
 - Whether fallback to WS is needed on timeout or partial readiness.

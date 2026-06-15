@@ -2,10 +2,6 @@ import { Temporal } from '@js-temporal/polyfill';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 
-import '@shared/mod.ts';
-import '@shared-graph/mod.ts';
-import '@shared-web/mod.ts';
-
 import { rallar } from '@shared-web/browser/rallar.ts';
 import App from './App.tsx';
 import { GAME_COMBAT_LANE_ID } from './game/types.ts';

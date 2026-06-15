@@ -26,7 +26,9 @@ ok | 130 passed | 0 failed
 
 The implementation now supports RTC scenario parsing, dry-run reporting, multiple RTC providers, deterministic in-memory routing, WebSocket signaling-only Rallar integration, rich diagnostics, and CLI/provider-level regression coverage.
 
-The current default `rallar` provider is **not yet full real WebRTC**. It is WebSocket signaling-only and waits for signaling transport open by default.
+`rallar-signaling` and the legacy `rallar` alias are **not full real WebRTC**.
+They are WebSocket signaling-only and wait for signaling transport open by
+default.
 
 ## Implemented Provider Layers
 
@@ -37,7 +39,7 @@ The current default `rallar` provider is **not yet full real WebRTC**. It is Web
 | `rallar-signaling` | Implemented as signaling-only | Uses global WebSocket for signaling, requires `signalingUrl`, waits for open by default. |
 | `rallar` | Compatibility alias | Same implementation as `rallar-signaling`; prefer the explicit provider name in new recipes. |
 | `rallar-browser` | Browser-backed Rallar provider | Uses Playwright plus the browser Rallar facade. Provider registration, `rtc.connect`, `rtc.close`, event bridging, realtime sends, `messages.rtc` sends, cleanup, diagnostics, and operational docs are implemented at provider-test level. |
-| Real Rallar RTC adapter | In progress | Should wrap the existing Rallar RTC implementation instead of reimplementing RTC in the black-box runner. |
+| Direct non-browser Rallar RTC adapter | Deferred | Browser-backed providers are the current real RTC path. Add a direct adapter only if a future runner use case needs it without a browser. |
 
 ## Current `rallar-signaling` Meaning
 

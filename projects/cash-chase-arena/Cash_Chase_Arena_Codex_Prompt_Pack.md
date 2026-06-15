@@ -82,12 +82,12 @@ Add host election through Rallar Game/browser-director helpers, not a CCA-specif
 In apps/cash-chase-arena, build a minimal React lobby UI: create/join room, display room code, list players, mark ready, show selected director/backup in a debug panel, and show Rallar connection state. Connect through the Rallar browser facade. Send a HostCapability report based on measured signal RTT, approximate FPS sample, navigator.hardwareConcurrency, navigator.deviceMemory if available, and mobile detection. Keep UI simple and functional. Run typecheck and build.
 ```
 
-## 6. Rallar Connection And Lane Readiness
+## 6. Rallar Connection And Room Transport Readiness
 
-**Goal:** Establish Rallar room, director, and realtime lane readiness.
+**Goal:** Establish Rallar room, director, and room realtime readiness.
 
 ```text
-In apps/cash-chase-arena, compose the existing Rallar browser facade. Start Rallar with CCA/Rallar Game lane presets, create or join a room, observe room members, report host capability, elect or observe the browser director, and wait for input/snapshot lane readiness. Do not create raw WebSocket, RTCPeerConnection, or DataChannel objects. Add connection state tracking and debug output for room, director, RTC status, and lane readiness. Do not implement gameplay yet. Run typecheck and build.
+In apps/cash-chase-arena, compose the existing Rallar browser facade. Start Rallar with CCA/Rallar Game lane presets, create or join a room, observe room members, report host capability, elect or observe the browser director, and use rallar.realtime.room<T>(...).status()/wait(...) for input/snapshot room transport readiness. Do not create raw WebSocket, RTCPeerConnection, or DataChannel objects. Add connection state tracking and debug output for room, director, RTC status, and room transport readiness. Do not implement gameplay yet. Run typecheck and build.
 ```
 
 ## 7. Rallar Game Lane Routing And Backpressure
@@ -95,7 +95,7 @@ In apps/cash-chase-arena, compose the existing Rallar browser facade. Start Rall
 **Goal:** Create the CCA Rallar lane protocol.
 
 ```text
-Define CCA lane IDs by composing Rallar Game lane presets: input, intent, snapshot, metrics, and replication. Configure input/snapshot as unordered low-latency lanes and reliable traffic through Director Relay or the appropriate reliable lane. Add thin CCA helpers that call Rallar Game/Rallar realtime send APIs, check lane readiness/health, and expose backpressure diagnostics. Do not add a custom channel manager. Add tests for lane IDs, type IDs, helper behavior, and degraded-state reporting. Run typecheck and build.
+Define CCA lane IDs by composing Rallar Game lane presets: input, intent, snapshot, metrics, and replication. Configure input/snapshot as unordered low-latency lanes and reliable traffic through Director Relay or rallar.messages.room<T>(...). Add thin CCA helpers that call Rallar Game and rallar.realtime.room<T>(...) APIs, check room send status/health, and expose backpressure diagnostics. Do not add a custom channel manager. Add tests for lane IDs, type IDs, helper behavior, and degraded-state reporting. Run typecheck and build.
 ```
 
 ## 8. Browser Host Runtime Skeleton
@@ -199,7 +199,7 @@ After the playable loop and Rallar AI proposal flow are stable, add an optional 
 **Goal:** Connect lobby, AI/fallback map, Rallar lanes, and runtime.
 
 ```text
-Implement the full match start workflow. Host clicks Start. Rallar room state and Rallar Game/director helpers elect or observe host and backup, obtain a validated map and mission deck, broadcast or relay MAP_COMMIT, wait for Rallar lane readiness and client ready acknowledgements, then enter the active phase. After handoff, gameplay traffic should use Rallar realtime lanes and Director Relay. Add status UI for each phase: electing host, generating map, connecting peers, building arena, ready, active. Add integration tests or a manual smoke-test script. Run typecheck, tests, and build.
+Implement the full match start workflow. Host clicks Start. Rallar room state and Rallar Game/director helpers elect or observe host and backup, obtain a validated map and mission deck, broadcast or relay MAP_COMMIT, wait for Rallar room transport readiness and client ready acknowledgements, then enter the active phase. After handoff, gameplay traffic should use rallar.realtime.room<T>(...) and Director Relay. Add status UI for each phase: electing host, generating map, connecting peers, building arena, ready, active. Add integration tests or a manual smoke-test script. Run typecheck, tests, and build.
 ```
 
 ## 17. Backup Host Replication and Migration

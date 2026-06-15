@@ -19,11 +19,15 @@ Provider-specific behavior is selected with `request.provider` or a connection c
 | --- | --- | --- |
 | `rallar-stub` | Fast parser, report, and wait/matching smoke tests. | No |
 | `rallar-memory` | Deterministic multi-peer routing tests without network cost. | No |
-| `rallar` | Current WebSocket signaling-only Rallar provider. | WebSocket signaling only |
+| `rallar-signaling` | Explicit WebSocket signaling-only Rallar provider. | WebSocket signaling only |
+| `rallar` | Legacy alias for `rallar-signaling`. | WebSocket signaling only |
 | `rallar-browser` | Browser-backed Rallar RTC tests through Playwright and the browser `rallar` facade. | Yes |
+| `rallar-remote-browser` | Control-server-backed provider that drives a visible or remote browser agent. | Yes |
 | Custom `RtcProvider` | Unit/integration tests with injected clients or runtimes. | Depends on injection |
 
-Important boundary: the default `rallar` provider is not a real WebRTC data path yet. Use `rallar-browser` for real browser RTC behavior.
+Important boundary: `rallar-signaling` and the legacy `rallar` alias are not
+real WebRTC data paths. Use `rallar-browser` or `rallar-remote-browser` for real
+browser RTC/data-channel behavior.
 
 ## 1. Scenario And Provider Smoke Tests
 
@@ -353,7 +357,7 @@ createRallarWebRtcWebSocketSignalingProvider
 
 ## 10. Signaling-only Rallar Tests
 
-Use these tests for the current default `rallar` provider.
+Use these tests for `rallar-signaling` and the legacy `rallar` alias.
 
 Supported checks:
 
@@ -451,7 +455,7 @@ Supported checks:
 | Test reconnect/duplicate connect behavior | `rallar-memory` |
 | Test generic provider contract with an injected client | `createRtcProviderFromClientFactory` |
 | Test data-channel-like encode/decode/open behavior | `createRallarRtcProviderFromDataChannelFactory` |
-| Test current Rallar signaling WebSocket behavior | `rallar` |
+| Test current Rallar signaling WebSocket behavior | `rallar-signaling` or legacy alias `rallar` |
 | Test real browser Rallar realtime delivery | `rallar-browser` with `transport: "realtime"` |
 | Test real browser Rallar app-level RTC delivery | `rallar-browser` with `transport: "messages.rtc"` |
 | Test deployed-service readiness in CI | `rallar-browser-live-validation.mts` |
@@ -459,7 +463,7 @@ Supported checks:
 ## Current Gaps
 
 - No recorded live deployed-service baseline is committed in the repo yet.
-- The default `rallar` provider remains signaling-only.
+- `rallar-signaling` and the legacy `rallar` alias remain signaling-only.
 - `rallar-browser` live mode requires deployed Rallar endpoint access and test credentials.
 - Browser-backed test stability still needs real-environment failure-mode tuning.
 - Seeded traffic plans and bounded parallel step groups are implemented in the generic runner with deterministic `rallar-memory` examples and gated live `rallar-browser`/`rallar-remote-browser` baselines.

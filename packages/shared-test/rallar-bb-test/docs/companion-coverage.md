@@ -9,7 +9,7 @@ directly.
 
 | Layer | Covers | Does Not Cover |
 | --- | --- | --- |
-| `black-box-runner` | Public network observations, provider sends/waits, reports, artifacts. | Rallar facade methods such as `auth.login`, `rooms.join`, `data.open`, or `realtime.sendJson`. |
+| `black-box-runner` | Public network observations, provider sends/waits, reports, artifacts. | Rallar facade methods such as `auth.login`, `rooms.join`, `data.open`, `messages.room`, or `realtime.room`. |
 | `rallar-bb-test` | Portable browser/control commands, visible/remote browser bridging, event normalization, local wait/assert evidence checks. | A second implementation of the Rallar browser facade or the full black-box-runner assertion engine. |
 | `shared-web-facade` | Direct browser facade behavior: auth, rooms, people, messages, realtime, RTC, data. | Generic recipe execution. |
 | `shared-server-facade` | Direct server facade behavior and application data/topic routing. | Browser-only UI or media behavior. |
@@ -26,9 +26,9 @@ intentionally listed as non-commands:
 - `auth.login`, `auth.register`, `auth.registerAndLogin`, `auth.logout`
 - `rooms.create`, `rooms.join`, `rooms.leave`, `rooms.refresh`
 - `people.refresh`
-- `messages.rtc.send`, `messages.ws.send`, `messages.channel`
-- `realtime.sendJson`, `rtc.waitForOpen`
-- `data.open`, `media.start`
+- `messages.rtc.send`, `messages.ws.send`, `messages.channel`, `messages.room`
+- `realtime.sendJson`, `realtime.room`, `rtc.waitForOpen`
+- `data.open`, `calls.start`, `media.start`
 
 Use the existing recipe vocabulary instead:
 

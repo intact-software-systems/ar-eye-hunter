@@ -1,5 +1,12 @@
 # Rallar Server Repositories Improvement Areas
 
+Status: historical hardening log. This document records implementation evidence,
+past risks, and deferred ideas. Use `architecture.md` and
+`rallar-server-repositories.md` for the active server architecture. In
+particular, the current code intentionally uses the simpler AppInbox plus
+QueueBox retry model for state-sync publication; there is no active
+`state-sync-outbox.ts` publication-intent table.
+
 This document lists problem areas found while analysing Rallar Server repositories, persistence, caches, and REST/WS
 data flow. It is intentionally separate from the architecture document so the descriptive model and hardening work stay
 distinct.
@@ -350,7 +357,7 @@ Remaining gaps:
   state-sync broadcasts.
 - Startup-wide cache hydration and real restart/reconnect browser tests are still pending.
 
-## 3. State Mutation Commit And WS Publish Are Not Atomic
+## 3. State Mutation Commit And WS Publish Are Retried Through AppInbox
 
 Current behavior:
 
@@ -371,14 +378,13 @@ Outbox terminology clarification:
 
 - `WsQueueBoxServerService` does use a durable WS QueueBox outbox. Once `enqueueOutboxIfAbsent(...)` has successfully
   written the WS outbox entry, that queued WS message is durable.
-- The missing outbox described in this section is a different boundary: a durable state-sync publication intent written
-  in the same transaction as the domain state mutation.
+- The previously discussed missing outbox was a different boundary: a durable state-sync publication intent written in
+  the same transaction as the domain state mutation.
 - Today the domain mutation commits first, then publication code later attempts to write to the durable WS QueueBox
-  outbox. If the process dies, throws, or loses connectivity after the domain commit but before the WS outbox write
-  succeeds, there is no durable state-sync intent for a drainer to retry.
-- A transactional state-sync outbox would persist "snapshot/event X must be published" together with the client/group
-  mutation. A separate drainer would then convert that intent into the existing durable WS QueueBox outbox entry and
-  retry until delivered.
+  outbox. If enqueue fails, the active design keeps the AppInbox command retryable and uses idempotent written-result
+  ledgers so the publication can be retried without reapplying the mutation.
+- A separate transactional state-sync outbox remains a deferred architectural option, not the current implementation.
+  Do not add it unless the simpler AppInbox retry boundary proves insufficient for real product usage.
 
 Risk:
 
@@ -392,11 +398,10 @@ Risk:
 - Client mutations now have a service-level written-result ledger for request-keyed retries, but callers must still
   provide or derive a stable request key for replay semantics.
 
-Recommended hardening:
+Deferred hardening option:
 
-- Introduce a transactional outbox for state sync events, ideally committed in the same database transaction as the
-  state mutation.
-- Make WS publication a consumer of that durable outbox.
+- Introduce a transactional outbox for state sync events only if AppInbox retry plus QueueBox delivery is not enough.
+- Make WS publication a consumer of that durable outbox if that design is chosen later.
 - Track publish failures with metrics/logging that include application/workspace/group/principal ids.
 - Add characterization tests that inject a failing publisher and assert the exact durable-state and cache outcomes.
 
@@ -484,9 +489,9 @@ Implementation status:
       `503` and `429` failures with stable per-step `requestId` values before succeeding against API-v1;
     - real-browser/full-stack Playwright coverage now proves WS close cleanup records the disconnected client state
       when `/api/auth/logout` deletes the auth session before the browser socket is closed.
-- No transactional state-sync outbox fix has been applied yet. The current runtime change is a durable command-inbox
-  layer plus group/client command idempotency and app-inbox-owned publication; it is not a state-sync publication intent
-  committed atomically with the domain mutation.
+- No separate transactional state-sync outbox has been added. The current runtime change is a durable command-inbox
+  layer plus group/client command idempotency and app-inbox-owned publication. That is the intended simple architecture
+  for now.
 
 Verification:
 
@@ -517,14 +522,14 @@ Verification:
 - API-v1 Deno regression run:
   `deno test --allow-env --allow-read --config apps/api-v1/deno.json apps/api-v1/test/rallar-server.test.ts apps/api-v1/test/services/client-state-service.test.ts apps/api-v1/test/services/group-state-service.test.ts`.
 
-Remaining iteration 3 issues:
+Remaining boundaries:
 
 - The original atomicity issue remains: state mutation commit and WS state-sync publication are still separate
   operations.
 - There is no durable state-sync outbox table/namespace that stores snapshot/event publication intents in the same
-  transaction as the domain mutation.
+  transaction as the domain mutation. That is a deliberate deferral, not an accidental missing file.
 - There is no state-sync outbox drainer that can retry missed snapshot/event publication independently of the original
-  HTTP request.
+  app-inbox command.
 - `AppGroupInboxService` and `AppClientInboxService` can publish stored written results if a command re-enters the
   handler after a retryable publication failure, but there is still no separate durable publication intent that can be
   drained independently of the original app-inbox command.
@@ -547,15 +552,16 @@ Remaining iteration 3 issues:
 - Real server/browser integration tests for API process death after app-inbox enqueue and before command drain are still
   pending.
 
-Next implementation direction:
+Future option if AppInbox retry is not sufficient:
 
 - Before the deferred transactional outbox work, the remaining real-server/browser proof should focus on API process
   death or server-side fault injection after app-inbox enqueue. Browser `maxAttempts` retry/request-id stability and
   logout/WS-close cleanup now have full-stack Playwright coverage.
-- Decide the durable state-sync outbox boundary before changing publication behavior. The clean target is to persist
-  state-sync publication intents in the same `runtime_state_store` transaction as the client/group mutation.
-- Add a publisher/drainer that converts durable state-sync outbox intents into WS QueueBox messages and marks them
-  delivered or retryable.
+- Revisit whether a durable state-sync outbox boundary is worth the extra moving parts before changing publication
+  behavior. The clean target would be to persist state-sync publication intents in the same `runtime_state_store`
+  transaction as the client/group mutation.
+- If chosen later, add a publisher/drainer that converts durable state-sync outbox intents into WS QueueBox messages and
+  marks them delivered or retryable.
 - Keep the existing `StateSyncPublisher` API as the live WS enqueue adapter, or split it into a mutation-time durable
   writer and an async WS delivery worker.
 - Add tests for retry after enqueue failure, idempotent drain, and no duplicate snapshot/event delivery for the same

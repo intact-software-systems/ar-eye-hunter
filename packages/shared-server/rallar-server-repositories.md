@@ -10,7 +10,7 @@ Rallar Server is both REST HTTP and WebSocket based.
 - WebSocket owns live AL messages, RTC signaling, system state snapshot broadcasts, state event broadcasts, dynamic application topics, and server-to-client message fanout.
 - Persistent server state currently uses Postgres through three physical tables: `runtime_state_store`, `resource_inbox`, and `app_data_store`.
 - Process-local caches exist for client snapshots, group snapshots, graphs, RTT, Rallar app-data store instances, WebSocket connections, rate limiters, and repository-manager registrations.
-- Browser Rallar gets initial client/group state over REST, then receives live state snapshot messages over WS. The high-level `rallar.rooms.onChange(...)` and `rallar.people.onChange(...)` APIs are driven by the browser state caches. Lower-level WS messages can be observed with `rallar.messages.ws.onMessage(...)`.
+- Browser Rallar gets initial client/group state over REST, then receives live state snapshot messages over WS. The high-level `rallar.rooms.onChange(...)` and `rallar.people.onChange(...)` APIs are driven by the browser state caches. Live state events can be observed through `rallar.rooms.onEvent(...)` and `rallar.people.onEvent(...)`; lower-level WS messages can still be observed with `rallar.messages.ws.onMessage(...)`.
 
 ## Architecture Diagram
 
@@ -93,11 +93,11 @@ The reusable facade is `packages/shared-server/rallar-facade/RallarServer.ts`.
 | Client principals | `ClientStateRepository` | `runtime_state_store` namespace `client-state:principals` | Client snapshot cache after publish/receive | Durable profile/presence identity for a principal inside app/workspace scope. |
 | Client instances | `ClientStateRepository` | `runtime_state_store` namespace `client-state:instances` | Client snapshot cache after publish/receive | Durable instance records under a principal. |
 | Client sessions | `ClientStateRepository` | `runtime_state_store` namespace `client-state:sessions` | Client snapshot cache after publish/receive | Active sessions expire by `expiresAtEpochMs`; lazy deletion also happens on reads. |
-| Client events | `ClientStateRepository` | `runtime_state_store` namespace `client-state:events` | No event cache in browser high-level facade | Appended on mutations. Broadcast over WS as `client-state.event`, but browser `data-caches.ts` currently ignores event payloads. |
+| Client events | `ClientStateRepository` | `runtime_state_store` namespace `client-state:events` | Live event callbacks, no durable browser event cache | Appended on mutations. Broadcast over WS as `client-state.event`; `rallar.people.onEvent(...)` can observe live events, while `data-caches.ts` does not apply event payloads to snapshot caches. |
 | Groups/rooms | `GroupStateRepository` | `runtime_state_store` namespace `group-state:groups` | Group snapshot cache after publish/receive | Group rows can use `purgeAfterEpochMs`; active/deleted/archived status is in the JSON value. |
 | Group members | `GroupStateRepository` | `runtime_state_store` namespace `group-state:members` | Group snapshot cache after publish/receive | Member status and role are durable. |
 | Group presence sessions | `GroupStateRepository` | `runtime_state_store` namespace `group-state:sessions` | Group snapshot cache after publish/receive | Presence rows expire by `expiresAtEpochMs`. Active means `disconnectedAtEpochMs` is absent. |
-| Group events | `GroupStateRepository` | `runtime_state_store` namespace `group-state:events` | No event cache in browser high-level facade | Appended on mutations. Broadcast over WS as `group-state.event`, but browser `data-caches.ts` currently ignores event payloads. |
+| Group events | `GroupStateRepository` | `runtime_state_store` namespace `group-state:events` | Live event callbacks, no durable browser event cache | Appended on mutations. Broadcast over WS as `group-state.event`; `rallar.rooms.onEvent(...)` can observe live events, while `data-caches.ts` does not apply event payloads to snapshot caches. |
 | WS inbox/outbox entries | `PSqlQueueBox` over `ResourceInboxRepository` | `resource_inbox` | No logical cache; queue engine locks rows | Same table is used for both inbound and outbound queue entries. `ri_type_id` separates `WS_INBOX` and `WS_OUTBOX`. |
 | AL runtime bookkeeping | `createPSqlALRuntimeStores` | `runtime_state_store` under server WS runtime namespaces | Runtime-store objects in process | Used for admission, dedup, ordering, supersedence, sent tracking, pending acks, repair attempts. |
 | Server app data | `RallarServer.data.open(...)` / `RallarServerAppDataStore` | `app_data_store` | Per-process `Map` inside each opened store | Supports namespace, store name, key prefix, schema version, migration callback, TTL, `expireAtFor`, fresh/cache-first reads, and conditional mutation retries when the repository supports them. |
@@ -195,7 +195,11 @@ Client state routes live in `apps/api-v1/src/routes/client-state-routes.ts`.
 - Heartbeat session.
 - Disconnect session.
 
-Mutations call `ClientStateService`. The service writes through `ClientStateRepository` inside `runtimeRepository.begin(...)`, appends a durable client event, reads a fresh snapshot, then calls `StateSyncPublisher`.
+HTTP and lifecycle mutations enter through `AppClientInboxService`, which calls
+`ClientStateService`. The state service writes through `ClientStateRepository`
+inside `runtimeRepository.begin(...)`, appends a durable client event, reads a
+fresh snapshot, and returns a written result. `AppClientInboxService` owns
+publishing that result through `StateSyncPublisher`.
 
 ### Group/Room State
 
@@ -209,7 +213,11 @@ Group state routes live in `apps/api-v1/src/routes/group-state-routes.ts`.
 - Heartbeat group presence session.
 - Disconnect group presence session.
 
-Mutations call `GroupStateService`. The service writes through `GroupStateRepository` inside `runtimeRepository.begin(...)`, appends a durable group event, reads a fresh snapshot, then calls `StateSyncPublisher`.
+HTTP and lifecycle mutations enter through `AppGroupInboxService`, which calls
+`GroupStateService`. The state service writes through `GroupStateRepository`
+inside `runtimeRepository.begin(...)`, appends a durable group event, reads a
+fresh snapshot, and returns a written result. `AppGroupInboxService` owns
+publishing that result through `StateSyncPublisher`.
 
 ### ICE And Graph
 
@@ -250,6 +258,8 @@ State sync path:
 6. Browser `WsQueueBoxClientService` receives the AL message.
 7. `packages/shared-web/browser/data-caches.ts` stores snapshot messages in browser state caches.
 8. `BrowserRallarFacade` observes cache changes and emits `rooms.onChange(...)` and `people.onChange(...)`.
+9. Live state-event subscribers registered through `rooms.onEvent(...)` and `people.onEvent(...)` observe matching
+   state event messages without mutating the snapshot caches.
 
 Dynamic user-topic path:
 
@@ -274,6 +284,15 @@ High-level state subscriptions:
 
 These are not direct REST polling subscriptions. They are backed by browser state caches. Initial cache hydration comes from REST (`refreshStateSnapshots`). Subsequent live updates come from WS state snapshot messages handled in `data-caches.ts`.
 
+Live state-event subscriptions:
+
+- `rallar.rooms.onEvent(listener, options?)`
+- `rallar.people.onEvent(listener, options?)`
+
+These observe matching `group-state.event` and `client-state.event` messages
+when they arrive over WS. They are live callbacks, not durable event caches or a
+replay protocol for late subscribers.
+
 Lower-level WS message subscriptions:
 
 - `rallar.messages.ws.onMessage(selector, handler)`
@@ -289,7 +308,10 @@ Lifecycle/status subscriptions:
 
 These observe transport lifecycle and readiness, not domain state changes.
 
-Important distinction: the browser high-level state cache currently applies snapshot messages. It ignores `client-state.event` and `group-state.event` payloads in `data-caches.ts`, although those messages are still broadcast over WS.
+Important distinction: the browser high-level state cache applies snapshot
+messages. It does not apply `client-state.event` and `group-state.event`
+payloads in `data-caches.ts`; those event messages are exposed through live
+event callbacks or lower-level WS subscriptions instead.
 
 ## Server-Side Subscription And Publishing Model
 

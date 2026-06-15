@@ -2,6 +2,11 @@
 
 Date: 2026-06-01
 
+Status: implementation history and follow-up backlog. Use
+`../../architecture.md`, `black-box-runner-recipe-guide.md`,
+`black-box-runner-recipe-matrix.md`, and `black-box-rtc-provider.md` for the
+current runner contract before treating any item here as active work.
+
 ## Goal
 
 Review the current `black-box-runner` after the composite `rallar-bb-test`
@@ -56,7 +61,8 @@ HTTP/WS/RTC results.
 ## Guardrails
 
 - Do not add first-class recipe commands such as `auth.login`, `rooms.join`,
-  `messages.rtc.send`, `realtime.sendJson`, or `data.open`.
+  `messages.rtc.send`, `messages.room`, `realtime.sendJson`,
+  `realtime.room`, or `data.open`.
 - Keep Rallar-specific behavior inside provider-owned request fields or
   browser/control adapters.
 - Keep transforms declarative and bounded. Do not add arbitrary JavaScript
@@ -535,8 +541,8 @@ Verification:
 
 These are not recommended as immediate black-box-runner functionality:
 
-- Rallar facade commands such as `rooms.join`, `messages.rtc.send`, or
-  `realtime.sendJson`.
+- Rallar facade commands such as `rooms.join`, `messages.rtc.send`,
+  `messages.room`, `realtime.sendJson`, or `realtime.room`.
 - Arbitrary JavaScript expressions in recipes.
 - Browser-driven shell execution from the SPA.
 - Full distributed browser-agent orchestration inside `black-box-runner`; that

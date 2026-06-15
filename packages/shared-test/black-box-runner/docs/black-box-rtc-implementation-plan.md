@@ -1,5 +1,9 @@
 # Black-box RTC Browser Implementation Plan
 
+Status: historical implementation plan. The browser-backed provider now exists;
+use `black-box-rtc-provider.md`, `black-box-rtc-test-catalog.md`, and
+`rallar-browser-rtc-runbook.md` for current provider behavior.
+
 ## Goal
 
 Build a browser-backed RTC test mode for the black-box runner.
@@ -39,7 +43,8 @@ Keep the existing providers:
 | --- | --- |
 | `rallar-stub` | Fast fake provider for parser and runner smoke tests. |
 | `rallar-memory` | Deterministic in-memory multi-peer provider for runner semantics. |
-| `rallar` | Current WebSocket signaling-only provider. Do not promote yet. |
+| `rallar-signaling` | Explicit WebSocket signaling-only provider. |
+| `rallar` | Legacy alias for the signaling-only provider. |
 
 Add a new opt-in real provider:
 

@@ -1,5 +1,10 @@
 # Iteration Plan: Integrating Existing Rallar RTC into the Black-box Runner
 
+Status: historical iteration plan. The provider names proposed here were
+superseded by `rallar-signaling`, its legacy `rallar` alias,
+`rallar-browser`, and `rallar-remote-browser`. Use
+`black-box-rtc-provider.md` for the current contract.
+
 ## Goal
 
 Integrate the existing Rallar RTC implementation into the black-box runner without reimplementing RTC in the runner.

@@ -12,7 +12,7 @@ Read `references/game-entrypoints.md` for the current app/package map. Then insp
 Useful searches:
 
 ```bash
-rg -n "createRoom|rooms.create|joinRoom|roomId|RallarGame|authority|motion|rtc|RallarAI" apps/ar-eye-hunter-v1 apps/relic-hunters-v1 apps/relic-hunter-server-v1 packages/relic-hunters packages/shared-web packages/shared
+rg -n "createRoom|rooms.create|joinRoom|roomId|RallarGame|authority|motion|rtc|realtime\\.room|messages\\.room|RallarAI" apps/ar-eye-hunter-v1 apps/relic-hunters-v1 apps/relic-hunter-server-v1 packages/relic-hunters packages/shared-web packages/shared
 ```
 
 ## Implementation Guidance
@@ -21,10 +21,10 @@ rg -n "createRoom|rooms.create|joinRoom|roomId|RallarGame|authority|motion|rtc|R
 - Relic server-side authority and expedition setup live in `apps/relic-hunter-server-v1`.
 - AR Eye’s main browser hook is `useRallarArena`; Relic’s browser hook is `useRelicHunters`.
 - Use package APIs for Rallar Game, Motion, AI, and rooms instead of local duplicates.
+- For room-scoped game/motion traffic, prefer `rallar.realtime.room<T>(...)` and `rallar.messages.room<T>(...)`; drop to raw RTC readiness/send APIs only for low-level transport tests or custom peer targeting.
 - Preserve room display-name filters when changing room names; both games filter visible room lists by their base game phrase.
 - For frontend changes, validate text fit and real flows with browser/playwright when the UI changes materially.
 
 ## Validation
 
 Use `references/test-commands.md` from the rallar-testing skill. Build both game apps after shared game/realtime changes.
-

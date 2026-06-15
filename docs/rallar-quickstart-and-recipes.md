@@ -120,30 +120,44 @@ type PlayerUpdate = {
     heading: number;
 };
 
-const playerUpdates = rallar.realtime.json<PlayerUpdate>({
+const playerUpdates = rallar.realtime.room<PlayerUpdate>({
     laneId: 'realtime',
     roomId: 'lobby',
-    openTimeoutMs: 1000,
+    waitTimeoutMs: 1000,
 });
 
 playerUpdates.on((message) => {
     updateRemotePlayer(message.peerId, message.data);
 });
 
+const result = await playerUpdates.send({ x: 10, y: 20, heading: 90 });
+
+if (result.status === 'not-ready' || result.status === 'no-targets') {
+    const reliablePlayerUpdates = rallar.messages.room<PlayerUpdate>({
+        topicId: 'player',
+        typeId: 'update',
+        roomId: 'lobby',
+    });
+
+    await reliablePlayerUpdates.sendWs({ x: 10, y: 20, heading: 90 });
+}
+```
+
+Use `rallar.rtc.waitForRoomLane(...)` and `rallar.realtime.sendJson(...)`
+directly only when you need custom peer selection or low-level readiness
+diagnostics.
+
+```ts
 const readiness = await rallar.rtc.waitForRoomLane('lobby', 'realtime', {
     connect: true,
     timeoutMs: 1000,
 });
 
-if (readiness.status === 'open' || readiness.status === 'partial') {
-    await playerUpdates.send({ x: 10, y: 20, heading: 90 });
-} else {
-    await rallar.messages.ws.send({
-        topicId: 'player',
-        typeId: 'update',
-        payload: { x: 10, y: 20, heading: 90 },
-        scope: 'room',
-        roomId: 'lobby',
+if (readiness.ready.length > 0) {
+    await rallar.realtime.sendJson({
+        laneId: 'realtime',
+        peerIds: readiness.ready.map((entry) => entry.peerId),
+        data: { x: 10, y: 20, heading: 90 },
     });
 }
 ```

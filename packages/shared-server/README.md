@@ -3,6 +3,10 @@
 `packages/shared-server` owns reusable Rallar server-side domain code. It should stay independent of one HTTP app, one
 runtime entrypoint, and one deployment configuration.
 
+For the current package map, active data flow, and validation commands, see
+`architecture.md`. For the deeper repository and transport map, see
+`rallar-server-repositories.md`.
+
 ## Owns
 
 - Rallar server facade APIs in `rallar-facade/`.

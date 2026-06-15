@@ -36,6 +36,16 @@ Rallar facade, Rallar browser data stores, and Rallar server middleware.
   How to run API-v1 with PGlite memory persistence and local queue pub/sub for
   single-server performance tests, including black-box SPA and RTC validation.
 
+## Repo Codex Skills
+
+Use the root `AGENTS.md` for lightweight agent orientation.
+The repo-local Codex plugin is declared in `.codex-plugin/plugin.json` and
+exposes `./skills/`. When that plugin is enabled, Codex can select the relevant
+Rallar skills from each `SKILL.md` frontmatter description. Do not expect Codex
+to read every file under `skills/**` on every prompt; keep skill descriptions
+specific, and explicitly name a skill in the prompt when you want guaranteed
+use, for example: "Use the `rallar-realtime` and `rallar-testing` skills."
+
 ## Implementation Notes
 
 - [API-v1 In-Memory SQL Performance Mode](../iterations/rallar-api-v1-in-memory-sql-performance-mode.md)

@@ -2,6 +2,11 @@
 
 Date: 2026-05-27
 
+Status: historical gap analysis and completion log. The active shared-test
+architecture is now summarized in `architecture.md`; current contracts live in
+the provider, recipe, schema, artifact, runbook, and companion-coverage docs.
+This file is retained as provenance for the iteration sequence.
+
 This document compares `packages/shared-test/black-box-runner` and
 `packages/shared-test/rallar-bb-test` against the updated Rallar/Rallar Server
 surface, with an important boundary from the black-box runner docs:
@@ -42,7 +47,8 @@ The black-box runner docs are clear about the intended design:
 - The runner should not reimplement WebRTC negotiation, ICE, peer lifecycle,
   data-channel lifecycle, room membership, or Rallar routing.
 - `rallar-browser` is the real browser-backed Rallar provider.
-- The default `rallar` provider is still WebSocket signaling-only.
+- `rallar-signaling` is the explicit WebSocket signaling-only provider.
+- `rallar` remains a backward-compatible alias for the signaling-only provider.
 
 That boundary changes how the gaps should be interpreted. Missing Rallar facade
 methods are not automatically missing runner step types. For the runner, the
@@ -81,7 +87,8 @@ Current RTC providers include:
 
 - `rallar-stub`: fake provider for runner smoke tests.
 - `rallar-memory`: deterministic in-memory provider for runner semantics.
-- `rallar`: current signaling-only Rallar provider.
+- `rallar-signaling`: explicit signaling-only Rallar provider.
+- `rallar`: backward-compatible alias for the signaling-only provider.
 - `rallar-browser`: browser-backed provider using Playwright and the browser
   Rallar facade.
 - `rallar-remote-browser`: control-server-backed provider that forwards commands
