@@ -7,24 +7,23 @@ This document gives short, copyable patterns for common Rallar usage.
 ```ts
 import { rallar } from '@shared-web/browser/rallar.ts';
 
-rallar.configure({ apiBaseUrl: 'http://localhost:8080' });
-rallar.setDefaults({
+const setup = {
+    apiBaseUrl: 'http://localhost:8080',
     applicationId: 'game',
     workspaceId: 'default',
-    room: { roomId: 'lobby' },
     realtime: { laneId: 'realtime', openTimeoutMs: 1000 },
     rtc: { maxPeerConnections: 10 },
     messages: { maxPayloadBytes: 64 * 1024 },
-});
+    start: { refreshPeople: true },
+} as const;
 
-await rallar.auth.login({ username: 'alice', password: 'secret' });
+let started = await rallar.setup(setup);
+if (!started.session) {
+    await rallar.auth.login({ username: 'alice', password: 'secret' });
+    started = await rallar.setup(setup);
+}
 
-await rallar.start({
-    restoreSession: true,
-    connect: true,
-    refreshRooms: true,
-    refreshPeople: true,
-});
+const room = await rallar.rooms.enter('lobby');
 ```
 
 ## Subscription Scope
@@ -57,11 +56,11 @@ subscriptions.unsubscribe();
 ## Create And Join A Room
 
 ```ts
-const room = await rallar.rooms.create({
+const created = await rallar.rooms.create({
     displayName: 'Lobby',
 });
 
-await rallar.rooms.join(room.group.groupId);
+const room = await rallar.rooms.enter(created.group);
 
 const current = rallar.rooms.current();
 ```
@@ -98,19 +97,14 @@ type ChatMessage = {
     sentAt: number;
 };
 
-const chat = rallar.messages.channel<ChatMessage>({
-    topicId: 'room.chat',
-    typeId: 'chat.message.v1',
-});
+const room = await rallar.rooms.enter('lobby');
+const chat = room.message<ChatMessage>('chat');
 
 const unsubscribe = chat.onWs((payload, message) => {
     appendChatMessage(message.senderId, payload.text);
 });
 
-await chat.sendWs(
-    { text: 'hello', sentAt: Date.now() },
-    { scope: 'room', roomId: 'lobby' },
-);
+await chat.sendWs({ text: 'hello', sentAt: Date.now() });
 ```
 
 ## Realtime Player Updates
@@ -122,9 +116,9 @@ type PlayerUpdate = {
     heading: number;
 };
 
-const playerUpdates = rallar.realtime.room<PlayerUpdate>({
-    laneId: 'realtime',
-    roomId: 'lobby',
+const room = await rallar.rooms.enter('lobby');
+const playerUpdates = room.realtime<PlayerUpdate>({
+    laneId: 'player',
     waitTimeoutMs: 1000,
 });
 
@@ -135,13 +129,9 @@ playerUpdates.on((message) => {
 const result = await playerUpdates.send({ x: 10, y: 20, heading: 90 });
 
 if (result.status === 'not-ready' || result.status === 'no-targets') {
-    const reliablePlayerUpdates = rallar.messages.room<PlayerUpdate>({
-        topicId: 'room.player',
-        typeId: 'player.update.v1',
-        roomId: 'lobby',
-    });
-
-    await reliablePlayerUpdates.sendWs({ x: 10, y: 20, heading: 90 });
+    await room
+        .message<PlayerUpdate>('player')
+        .sendWs({ x: 10, y: 20, heading: 90 });
 }
 ```
 

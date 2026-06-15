@@ -1347,8 +1347,8 @@ export function useRallarArena(): ArenaConnection {
     }, [refreshRooms, rooms]);
 
     const joinRoom = useCallback(async (nextRoomId: string) => {
-        const snapshot = await rallar.rooms.join(nextRoomId);
-        setRoomId(snapshot.group.groupId);
+        const room = await rallar.rooms.enter(nextRoomId);
+        setRoomId(room.roomId);
         await refreshRooms();
     }, [refreshRooms]);
 

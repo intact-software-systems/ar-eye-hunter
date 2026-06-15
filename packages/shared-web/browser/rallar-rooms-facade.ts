@@ -17,6 +17,7 @@ import type {
     RallarReplayRoomEventsInput,
     RallarRoomEventListener,
     RallarRoomEventOptions,
+    RallarRoomSession,
     RallarRoomState,
     RallarRoomSummary,
     RallarScopedOperationOptions,
@@ -43,6 +44,11 @@ export type RallarRoomsFacade = Readonly<{
         room: string | GroupRef | RallarJoinRoomInput,
         options?: RallarJoinRoomOptions,
     ): Promise<GroupSnapshot>;
+    enter(
+        room: string | GroupRef | RallarJoinRoomInput,
+        options?: RallarJoinRoomOptions,
+    ): Promise<RallarRoomSession>;
+    session(room?: string | GroupRef): RallarRoomSession;
     leave(
         input?: string | RallarLeaveRoomOptions,
     ): Promise<GroupSnapshot | undefined>;
@@ -92,6 +98,12 @@ export function createRallarRoomsFacade(
             room,
             options: RallarJoinRoomOptions = {},
         ): Promise<GroupSnapshot> => await operations.join(room, options),
+        enter: async (
+            room,
+            options: RallarJoinRoomOptions = {},
+        ): Promise<RallarRoomSession> =>
+            await operations.enter(room, options),
+        session: (room): RallarRoomSession => operations.session(room),
         leave: async (
             input,
         ): Promise<GroupSnapshot | undefined> => await operations.leave(input),

@@ -1,7 +1,7 @@
 # Browser Startup And Room
 
-This example shows the normal browser boot path: configure Rallar, restore or
-log in, create a room with a deterministic RallarAI-style display name, join it,
+This example shows the normal browser boot path: set up Rallar, restore or log
+in, create a room with a deterministic RallarAI-style display name, enter it,
 and subscribe to state.
 
 ```ts
@@ -11,19 +11,15 @@ import {
     createRallarAiRoomNameSeed,
 } from '@shared/rallar-ai/mod.ts';
 
-rallar.configure({ apiBaseUrl: 'http://localhost:8080' });
-rallar.setDefaults({
+const started = await rallar.setup({
+    apiBaseUrl: 'http://localhost:8080',
     applicationId: 'demo-game',
     workspaceId: 'default',
     realtime: { laneId: 'realtime', openTimeoutMs: 1000 },
     rtc: { waitTimeoutMs: 1000, connectOnWait: true },
-});
-
-const started = await rallar.start({
-    restoreSession: true,
-    connect: true,
-    refreshRooms: true,
-    refreshPeople: true,
+    start: {
+        refreshPeople: true,
+    },
 });
 
 if (!started.session) {
@@ -33,7 +29,7 @@ if (!started.session) {
 
 const existingNames = rallar.rooms
     .state()
-    .rooms.map((room) => room.displayName)
+    .rooms.map((room) => room.name)
     .filter((name): name is string => Boolean(name));
 
 const displayName = createRallarAiFunnyRoomName({
@@ -43,9 +39,8 @@ const displayName = createRallarAiFunnyRoomName({
     existingNames,
 });
 
-const room = await rallar.rooms.create({ displayName });
-await rallar.rooms.join(room.group);
-rallar.setDefaults({ room: { roomRef: room.group } });
+const created = await rallar.rooms.create({ displayName });
+const room = await rallar.rooms.enter(created.group);
 
 const subscriptions = rallar.subscriptions();
 subscriptions.add(rallar.rooms.onChange((state) => renderRooms(state.rooms)));
@@ -56,6 +51,6 @@ subscriptions.add(rallar.ws.onLifecycle((event) => renderWs(event.status)));
 subscriptions.unsubscribe();
 ```
 
-Prefer `roomRef` after room creation when multiple applications or workspaces
-can contain the same `groupId`.
-
+`rooms.enter(...)` returns a room-bound handle. Use that handle for
+`room.message(...)` and `room.realtime(...)` so app code does not need to pass
+`roomRef` on every send.

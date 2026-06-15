@@ -149,7 +149,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('hydrates a joined room and delegates resets to the game reset transport', async () => {
         const deps = runtimeDeps({
-            joinRoom: vi.fn(async () => ({ group: { groupId: 'joined-room' } })),
+            joinRoom: vi.fn(async () => ({ roomId: 'joined-room' })),
         });
         const runtime = new RelicHuntersRuntime(deps);
 
@@ -208,7 +208,7 @@ function runtimeDeps(
         })),
         publishRtcSnapshot: vi.fn(async () => true),
         createRoom: vi.fn(async () => ({ group: { groupId: 'room-1' } })),
-        joinRoom: vi.fn(async () => ({ group: { groupId: 'room-1' } })),
+        joinRoom: vi.fn(async () => ({ roomId: 'room-1' })),
         fetchSnapshot: vi.fn(async () =>
             toPublicRelicSnapshot(createRelicGame('game-1', 'room-1', 1_700_000_000_000))
         ),

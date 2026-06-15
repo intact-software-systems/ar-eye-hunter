@@ -1,8 +1,8 @@
 # Room Realtime Channel
 
-Use `rallar.realtime.room<T>(...)` for room-scoped, low-latency RTC data. The
-helper checks room transport status, waits for readiness by default, sends only
-to ready room peers, and returns diagnostics.
+Use `room.realtime<T>(...)` for room-scoped, low-latency RTC data after
+entering a room. The helper checks room transport status, waits for readiness by
+default, sends only to ready room peers, and returns diagnostics.
 
 ```ts
 import { rallar } from '@shared-web/browser/rallar.ts';
@@ -14,8 +14,8 @@ type PlayerInput = {
     sprint: boolean;
 };
 
-const inputLane = rallar.realtime.room<PlayerInput>({
-    roomRef: currentRoom.group,
+const room = await rallar.rooms.enter('lobby');
+const inputLane = room.realtime<PlayerInput>({
     laneId: 'game-input',
     waitTimeoutMs: 500,
     maxAgeMs: 120,
@@ -45,4 +45,3 @@ if (result.status === 'sent' || result.status === 'partial') {
 Use lower-level `rtc.waitForRoomLane(...)`, `readyPeerIds(...)`, and
 `realtime.sendJson(...)` only when the caller intentionally owns peer selection
 or low-level readiness diagnostics.
-

@@ -65,5 +65,5 @@ The generated envelope remains proposal data. The game still owns domain
 validation, authorization, host approval, and final state mutation.
 
 `ai.broadcastJson(...)` is the RallarAI-specific proposal broadcast helper. For
-ordinary validated room messages, prefer `rallar.messages.room<T>(...)` or
-`rallar.realtime.room<T>(...)` depending on reliability and latency needs.
+ordinary validated room traffic, prefer `room.message<T>(...)` or
+`room.realtime<T>(...)` depending on reliability and latency needs.
