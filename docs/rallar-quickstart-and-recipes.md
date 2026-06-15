@@ -13,6 +13,8 @@ rallar.setDefaults({
     workspaceId: 'default',
     room: { roomId: 'lobby' },
     realtime: { laneId: 'realtime', openTimeoutMs: 1000 },
+    rtc: { maxPeerConnections: 10 },
+    messages: { maxPayloadBytes: 64 * 1024 },
 });
 
 await rallar.auth.login({ username: 'alice', password: 'secret' });
@@ -97,8 +99,8 @@ type ChatMessage = {
 };
 
 const chat = rallar.messages.channel<ChatMessage>({
-    topicId: 'chat',
-    typeId: 'message',
+    topicId: 'room.chat',
+    typeId: 'chat.message.v1',
 });
 
 const unsubscribe = chat.onWs((payload, message) => {
@@ -134,8 +136,8 @@ const result = await playerUpdates.send({ x: 10, y: 20, heading: 90 });
 
 if (result.status === 'not-ready' || result.status === 'no-targets') {
     const reliablePlayerUpdates = rallar.messages.room<PlayerUpdate>({
-        topicId: 'player',
-        typeId: 'update',
+        topicId: 'room.player',
+        typeId: 'player.update.v1',
         roomId: 'lobby',
     });
 
@@ -476,8 +478,8 @@ server.start();
 
 ```ts
 server.ws.defineTopic<{ text: string }>({
-    topicId: 'chat',
-    typeId: 'message',
+    topicId: 'room.chat',
+    typeId: 'chat.message.v1',
     scope: 'room',
     validate: (message) =>
         typeof message.payload === 'object' &&

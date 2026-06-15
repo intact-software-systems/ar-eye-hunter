@@ -13,6 +13,7 @@ export type RallarOperationOptions = Readonly<{
     maxAttempts?: number;
     shouldRetry?: RallarOperationRetryPredicate;
     dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
+    maxPeerConnections?: number;
 }>;
 
 export function toRallarWorkflowPolicies<V>(
@@ -40,7 +41,8 @@ export function toRallarOperationOptions(
         options.timeoutMs === undefined &&
         options.maxAttempts === undefined &&
         options.shouldRetry === undefined &&
-        options.dataChannelLanes === undefined
+        options.dataChannelLanes === undefined &&
+        options.maxPeerConnections === undefined
     ) {
         return {};
     }
@@ -51,6 +53,7 @@ export function toRallarOperationOptions(
         maxAttempts?: number;
         shouldRetry?: RallarOperationRetryPredicate;
         dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
+        maxPeerConnections?: number;
     } = {};
     if (options.signal) {
         normalized.signal = options.signal;
@@ -66,6 +69,9 @@ export function toRallarOperationOptions(
     }
     if (options.dataChannelLanes !== undefined) {
         normalized.dataChannelLanes = options.dataChannelLanes;
+    }
+    if (options.maxPeerConnections !== undefined) {
+        normalized.maxPeerConnections = options.maxPeerConnections;
     }
 
     return normalized;

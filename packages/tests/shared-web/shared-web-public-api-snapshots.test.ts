@@ -90,6 +90,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarFlow',
                 'RallarFlowPolicies',
                 'RallarIncomingCallInvite',
+                'RallarJoinRoomInput',
                 'RallarJoinRoomOptions',
                 'RallarLeaveRoomOptions',
                 'RallarListPeopleEventsOptions',

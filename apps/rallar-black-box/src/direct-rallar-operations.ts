@@ -1,4 +1,8 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
+import {
+    assertValidRallarRouteId,
+    assertValidRallarWsUserTopicId,
+} from '@shared/api/rallar-validation.ts';
 import type { RallarBlackBoxTestRuntimeEventInput } from '@shared-test/rallar-bb-test/types.ts';
 import type { RallarBlackBoxProviderMode } from './client-defaults.ts';
 
@@ -106,7 +110,6 @@ export type DirectRallarFacade = Readonly<{
 export type DirectRallarFacadeLoader = () => Promise<DirectRallarFacade>;
 
 const DIRECT_BACKEND_REQUIRED_ERROR_CODE = 'RALLAR_DIRECT_BACKEND_REQUIRED';
-const RALLAR_SERVER_USER_TOPIC_PREFIXES = ['app.', 'room.'] as const;
 
 function sessionDiagnostic(session: AuthSession | undefined): Record<string, unknown> | undefined {
     if (!session) {
@@ -339,7 +342,7 @@ function validateRoomId(context: DirectRallarOperationContext, action: string): 
         throw new Error(`${action} requires a group.`);
     }
 
-    return roomId;
+    return assertValidRallarRouteId(roomId, '$.roomId', 'Room ID');
 }
 
 function validateRallarServerUserTopic(topicId: string, action: string): string {
@@ -348,13 +351,7 @@ function validateRallarServerUserTopic(topicId: string, action: string): string 
         throw new Error(`${action} requires a Topic ID.`);
     }
 
-    if (!RALLAR_SERVER_USER_TOPIC_PREFIXES.some(prefix => trimmed.startsWith(prefix))) {
-        throw new Error(
-            `${action} uses Topic ID "${trimmed}", but Rallar Server user WebSocket topics must start with app. or room.`,
-        );
-    }
-
-    return trimmed;
+    return assertValidRallarWsUserTopicId(trimmed, '$.topicId');
 }
 
 function effectiveWsTopicId(input: DirectRallarWsSendInput): string {

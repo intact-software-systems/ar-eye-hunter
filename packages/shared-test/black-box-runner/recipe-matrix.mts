@@ -78,6 +78,7 @@ const SCRIPT_DIR = new URL('.', import.meta.url)
 const REPO_ROOT = new URL('../../../', SCRIPT_DIR)
 const MATRIX_FILE = new URL('./recipe-matrix.json', SCRIPT_DIR)
 const SCENARIO_CLI = new URL('./scenario-black-box.ts', SCRIPT_DIR)
+const OFFLINE_VALIDATION_PROFILE = 'validation'
 
 function usage(): string {
     return [
@@ -85,7 +86,7 @@ function usage(): string {
         '  deno run -A packages/shared-test/black-box-runner/recipe-matrix.mts [options]',
         '',
         'Options:',
-        '  --profile=<name>              quick, dry, deterministic, soak, traffic, parallel, failure-diagnostics, live, live-soak, live-traffic, live-parallel, rallar-server-live, browser-live, remote-live, signaling-live. Default: quick',
+        '  --profile=<name>              quick, dry, deterministic, validation, soak, traffic, parallel, failure-diagnostics, live, live-soak, live-traffic, live-parallel, rallar-server-live, browser-live, remote-live, signaling-live. Default: quick',
         '  --id=<entry-id>               Run one entry. Can be repeated.',
         '  --artifact-dir=<dir>          Write per-entry scenario artifacts and matrix-summary.json.',
         '  --list                        Print the selected matrix entries and exit.',
@@ -178,6 +179,22 @@ async function readMatrix(): Promise<MatrixFile> {
 }
 
 function selectedEntries(matrix: MatrixFile, options: CliOptions): MatrixEntry[] {
+    if (options.profile === OFFLINE_VALIDATION_PROFILE) {
+        const ids = new Set(options.ids)
+        const candidates = options.ids.length === 0
+            ? matrix.entries
+            : matrix.entries.filter(entry => ids.has(entry.id))
+        const seenRecipes = new Set<string>()
+        return candidates.filter(entry => {
+            if (seenRecipes.has(entry.recipe)) {
+                return false
+            }
+
+            seenRecipes.add(entry.recipe)
+            return true
+        })
+    }
+
     const byProfile = matrix.entries.filter(entry => entry.profiles.includes(options.profile))
     if (options.ids.length === 0) {
         return byProfile
@@ -218,7 +235,7 @@ function entryArtifactDir(options: CliOptions, entry: MatrixEntry): string | und
     ].join('/')
 }
 
-function commandArgs(entry: MatrixEntry, artifactDir?: string): string[] {
+function commandArgs(entry: MatrixEntry, options: CliOptions, artifactDir?: string): string[] {
     const recipeUrl = new URL(entry.recipe, SCRIPT_DIR)
     const args = [
         'run',
@@ -228,7 +245,9 @@ function commandArgs(entry: MatrixEntry, artifactDir?: string): string[] {
         repoRelativePath(recipeUrl),
     ]
 
-    if (entry.mode === 'dry-run') {
+    if (options.profile === OFFLINE_VALIDATION_PROFILE) {
+        args.push('--validate')
+    } else if (entry.mode === 'dry-run') {
         args.push('--dry-run')
     }
 
@@ -282,6 +301,10 @@ async function runEntryPreflight(
     options: CliOptions,
     artifactDir: string | undefined,
 ): Promise<MatrixPreflightSummary | undefined> {
+    if (options.profile === OFFLINE_VALIDATION_PROFILE) {
+        return undefined
+    }
+
     const config = await readRecipeConfig(entry)
     if (!shouldRunBlackBoxRunnerLivePreflight({ config, requires: entry.requires })) {
         return undefined
@@ -306,6 +329,10 @@ function parseReportSummary(stdout: string): any {
     } catch (_error) {
         return undefined
     }
+}
+
+function expectedExitCodeFor(entry: MatrixEntry, options: CliOptions): number {
+    return options.profile === OFFLINE_VALIDATION_PROFILE ? 0 : entry.expectedExitCode
 }
 
 async function runEntry(entry: MatrixEntry, options: CliOptions): Promise<MatrixRun> {
@@ -338,7 +365,7 @@ async function runEntry(entry: MatrixEntry, options: CliOptions): Promise<Matrix
             id: entry.id,
             recipe: entry.recipe,
             status: 'PASSED',
-            expectedExitCode: 0,
+            expectedExitCode: expectedExitCodeFor(entry, options),
             code: 0,
             durationMs: endedAt - startedAt,
             artifactDir,
@@ -355,8 +382,9 @@ async function runEntry(entry: MatrixEntry, options: CliOptions): Promise<Matrix
         }
     }
 
+    const expectedExitCode = expectedExitCodeFor(entry, options)
     const output = await new Deno.Command(Deno.execPath(), {
-        args: commandArgs(entry, artifactDir),
+        args: commandArgs(entry, options, artifactDir),
         cwd: filePath(REPO_ROOT),
         env: {
             ...Deno.env.toObject(),
@@ -368,13 +396,13 @@ async function runEntry(entry: MatrixEntry, options: CliOptions): Promise<Matrix
     const endedAt = Date.now()
     const stdout = new TextDecoder().decode(output.stdout)
     const stderr = new TextDecoder().decode(output.stderr)
-    const passed = output.code === entry.expectedExitCode
+    const passed = output.code === expectedExitCode
 
     return {
         id: entry.id,
         recipe: entry.recipe,
         status: passed ? 'PASSED' : 'FAILED',
-        expectedExitCode: entry.expectedExitCode,
+        expectedExitCode,
         code: output.code,
         durationMs: endedAt - startedAt,
         artifactDir,

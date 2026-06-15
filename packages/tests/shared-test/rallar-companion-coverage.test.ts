@@ -15,6 +15,7 @@ describe('Rallar companion coverage boundaries', () => {
             'RTC',
             'ASSERT',
             'SET',
+            'PARALLEL',
         ]);
     });
 
@@ -62,6 +63,29 @@ describe('Rallar companion coverage boundaries', () => {
         });
     });
 
+    it('names current browser facade helpers that stay outside recipe commands', () => {
+        expect(RALLAR_FACADE_METHODS_NOT_RECIPE_COMMANDS).toEqual(expect.arrayContaining([
+            'messages.room',
+            'realtime.room',
+            'calls.start',
+            'calls.invite',
+            'calls.onInvite',
+            'calls.onSignal',
+            'rooms.onEvent',
+            'rooms.listEvents',
+            'rooms.listEventPage',
+            'rooms.replayEvents',
+            'people.onEvent',
+            'people.listEvents',
+            'people.listEventPage',
+            'people.replayEvents',
+            'media.microphone.start',
+            'media.camera.start',
+            'media.screen.start',
+        ]));
+        expect(RALLAR_FACADE_METHODS_NOT_RECIPE_COMMANDS).not.toContain('media.start');
+    });
+
     it('maps direct facade surfaces to companion package or app-level tests', () => {
         const expectedSurfaces = [
             'browser-auth-and-session',
@@ -84,6 +108,37 @@ describe('Rallar companion coverage boundaries', () => {
             expect(surface?.runnerBoundary.length).toBeGreaterThan(0);
             expect(surface?.testFiles.length).toBeGreaterThan(0);
         });
+    });
+
+    it('points facade coverage at focused shared-web suites, not the legacy broad suite', () => {
+        const auth = rallarCompanionCoverageBySurface('browser-auth-and-session');
+        const rooms = rallarCompanionCoverageBySurface('browser-room-and-people-facades');
+        const realtime = rallarCompanionCoverageBySurface('browser-message-and-realtime-facades');
+
+        expect(auth?.testFiles).toEqual(expect.arrayContaining([
+            'packages/tests/shared-web/rallar-auth-facade.test.ts',
+            'packages/tests/shared-web/rallar-auth-session-compat.test.ts',
+            'packages/tests/shared-web/rallar-startup-lifecycle.test.ts',
+        ]));
+        expect(rooms?.testFiles).toEqual(expect.arrayContaining([
+            'packages/tests/shared-web/rallar-rooms-facade.test.ts',
+            'packages/tests/shared-web/rallar-people-facade.test.ts',
+            'packages/tests/shared-web/rallar-rooms-people-state.test.ts',
+            'packages/tests/shared-web/rallar-rooms-people-events.test.ts',
+        ]));
+        expect(realtime?.testFiles).toEqual(expect.arrayContaining([
+            'packages/tests/shared-web/rallar-message-send-compat.test.ts',
+            'packages/tests/shared-web/rallar-message-channel-compat.test.ts',
+            'packages/tests/shared-web/rallar-realtime-send-listen-compat.test.ts',
+            'packages/tests/shared-web/rallar-room-realtime-channel.test.ts',
+            'packages/tests/shared-web/rallar-calls-compat.test.ts',
+            'packages/tests/shared-web/rallar-media-facade.test.ts',
+            'packages/tests/shared-web/rallar-media-sources-compat.test.ts',
+        ]));
+
+        expect(auth?.testFiles).not.toContain('packages/tests/shared-web/rallar-operation-options.test.ts');
+        expect(rooms?.testFiles).not.toContain('packages/tests/shared-web/rallar-operation-options.test.ts');
+        expect(realtime?.testFiles).not.toContain('packages/tests/shared-web/rallar-operation-options.test.ts');
     });
 
     it('keeps direct Rallar facade coverage outside the black-box runner layer', () => {

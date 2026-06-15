@@ -12,7 +12,7 @@
   "connections": {
     "aliceRtc": {
       "type": "rtc",
-      "provider": "rallar",
+      "provider": "rallar-signaling",
       "actor": "alice",
       "peerId": "alice",
       "remotePeerId": "bob",
@@ -32,7 +32,7 @@
     },
     "bobRtc": {
       "type": "rtc",
-      "provider": "rallar",
+      "provider": "rallar-signaling",
       "actor": "bob",
       "peerId": "bob",
       "remotePeerId": "alice",

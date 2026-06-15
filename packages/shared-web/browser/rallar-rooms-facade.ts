@@ -7,6 +7,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import type {
     RallarCreateRoomInput,
+    RallarJoinRoomInput,
     RallarJoinRoomOptions,
     RallarLeaveRoomOptions,
     RallarListRoomEventsInput,
@@ -39,7 +40,7 @@ export type RallarRoomsFacade = Readonly<{
     ): Promise<RallarReplayEventsResult<GroupEvent>>;
     create(input: string | RallarCreateRoomInput): Promise<GroupSnapshot>;
     join(
-        room: string | GroupRef,
+        room: string | GroupRef | RallarJoinRoomInput,
         options?: RallarJoinRoomOptions,
     ): Promise<GroupSnapshot>;
     leave(

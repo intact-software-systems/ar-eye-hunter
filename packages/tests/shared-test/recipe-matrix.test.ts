@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,6 +26,17 @@ const matrixPath = path.join(runnerRoot, 'recipe-matrix.json');
 
 function readMatrix(): { entries: MatrixEntry[] } {
     return JSON.parse(readFileSync(matrixPath, 'utf8'));
+}
+
+function readRecipe(relativePath: string): Record<string, unknown> {
+    return JSON.parse(readFileSync(path.join(runnerRoot, relativePath), 'utf8'));
+}
+
+function rtcProviders(recipe: Record<string, unknown>): string[] {
+    const connections = recipe.connections as Record<string, { type?: string; provider?: string }>;
+    return Object.values(connections)
+        .filter(connection => connection.type === 'rtc')
+        .map(connection => connection.provider ?? '');
 }
 
 describe('black-box runner recipe matrix', () => {
@@ -57,6 +69,29 @@ describe('black-box runner recipe matrix', () => {
         expect([...covered].sort()).toEqual(expect.arrayContaining(examples.sort()));
     });
 
+    it('uses rallar-signaling for signaling recipe examples and keeps one legacy rallar alias fixture', () => {
+        const { entries } = readMatrix();
+        const signalingEntries = entries.filter(entry => entry.category === 'rallar-signaling');
+
+        expect(signalingEntries.map(entry => entry.id).sort()).toEqual([
+            'rallar-signaling-two-peer-chat-dry',
+            'rallar-signaling-two-peer-chat-live',
+        ]);
+
+        signalingEntries.forEach(entry => {
+            expect(rtcProviders(readRecipe(entry.recipe))).toEqual([
+                'rallar-signaling',
+                'rallar-signaling',
+            ]);
+        });
+
+        const legacyAliasFixture = JSON.parse(readFileSync(
+            path.join(repoRoot, 'packages/tests/shared-test/examples/rtc-rallar-two-peer-chat.json'),
+            'utf8',
+        ));
+        expect(rtcProviders(legacyAliasFixture)).toEqual(['rallar', 'rallar']);
+    });
+
     it('classifies profiles and execution modes explicitly', () => {
         const { entries } = readMatrix();
         const profiles = new Set(entries.flatMap(entry => entry.profiles));
@@ -77,6 +112,30 @@ describe('black-box runner recipe matrix', () => {
             expect(entry.profiles.length).toBeGreaterThan(0);
             expect([0, 1]).toContain(entry.expectedExitCode);
         });
+    });
+
+    it('offers an offline validation profile that lists recipes without live preflight gates', () => {
+        const result = spawnSync('deno', [
+            'run',
+            '-A',
+            path.join(runnerRoot, 'recipe-matrix.mts'),
+            '--profile=validation',
+            '--list',
+        ], {
+            cwd: repoRoot,
+            encoding: 'utf8',
+        });
+
+        expect(result.status).toBe(0);
+        expect(result.stderr).toBe('');
+
+        const lines = result.stdout.trim().split('\n').filter(Boolean);
+        const recipes = lines.map(line => line.split('|')[2]?.trim());
+
+        expect(lines.length).toBeGreaterThan(0);
+        expect(new Set(recipes).size).toBe(recipes.length);
+        expect(recipes).toContain('examples/rtc-rallar-browser-connect.json');
+        expect(recipes).toContain('examples/rtc-rallar-two-peer-chat.json');
     });
 
     it('gates live browser and remote entries', () => {

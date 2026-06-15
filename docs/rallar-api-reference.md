@@ -34,12 +34,39 @@ rallar.setDefaults({
     workspaceId: 'default',
     room: { roomId: 'lobby' },
     realtime: { laneId: 'realtime', openTimeoutMs: 1000 },
-    rtc: { waitTimeoutMs: 1000, connectOnWait: true },
+    rtc: { waitTimeoutMs: 1000, connectOnWait: true, maxPeerConnections: 10 },
+    messages: { maxPayloadBytes: 64 * 1024 },
     operations: { timeoutMs: 5000, maxAttempts: 3 },
 });
 ```
 
 `defaults()` returns a clone of the current defaults or `undefined`.
+
+Route IDs used for rooms, topics, types, lanes, overlays, and peers must be routable Rallar IDs: already-trimmed strings of 1-128 characters using letters, numbers, `.`, `_`, `:`, or `-`. Room IDs are stable route IDs; display names remain human-readable text.
+
+Browser sends validate caller input before enqueueing. Invalid caller input throws `RallarValidationError` with structured `.issues`; delivery/readiness outcomes still use send result statuses such as `no-route`, `not-ready`, and `no-targets`.
+
+```ts
+import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
+
+try {
+    await rallar.messages.ws.send({
+        scope: 'room',
+        roomId: 'lobby',
+        topicId: 'room.chat',
+        typeId: 'chat.message.v1',
+        payload: { text: 'hello' },
+    });
+} catch (error) {
+    if (isRallarValidationError(error)) {
+        console.warn(error.issues);
+    }
+}
+```
+
+User WebSocket topics must start with `app.` or `room.`. RTC topics only need to be route-safe.
+
+Active RTC topology keeps the server graph degree limit at `5`. Browser room transitions may retain old inactive RTC peer connections up to `rtc.maxPeerConnections`, default `10`, so changing rooms can be smooth without increasing active graph degree. This is a connect-time setting; reconnect to apply changes after middleware exists.
 
 ### Lifecycle
 
@@ -112,7 +139,7 @@ await rallar.auth.registerAndLogin({
 
 `rooms.create(input)` creates a group/room and joins it. `input` can be a display name string or an object.
 
-`rooms.join(roomId, options?)` joins a room. By default it leaves the current room if different.
+`rooms.join(roomIdOrRef, options?)` joins a room. By default it leaves the current room if different. `rooms.join({ roomId })` and `rooms.join({ roomRef })` are also supported; if both are present, `roomId` must match `roomRef.groupId`.
 
 `rooms.leave(input?)` leaves a room. It can use explicit `roomId`, `roomRef`, the default room, or the current room.
 
@@ -187,7 +214,8 @@ rallar.messages.ws.onMessage('chat.message', (message) => {
 });
 
 await rallar.messages.ws.send({
-    typeId: 'chat.message',
+    topicId: 'room.chat',
+    typeId: 'chat.message.v1',
     payload: { text: 'hello' },
     scope: 'room',
     roomRef: room.group,
@@ -200,8 +228,8 @@ Typed channels reduce boilerplate when one payload type has one topic/type pair:
 type ChatMessage = { text: string };
 
 const chat = rallar.messages.channel<ChatMessage>({
-    topicId: 'chat',
-    typeId: 'message',
+    topicId: 'room.chat',
+    typeId: 'chat.message.v1',
 });
 
 chat.onWs((payload) => console.log(payload.text));
@@ -213,8 +241,8 @@ Room channels add room defaults and default `send(...)` to the existing
 
 ```ts
 const roomChat = rallar.messages.room<ChatMessage>({
-    topicId: 'chat',
-    typeId: 'message',
+    topicId: 'room.chat',
+    typeId: 'chat.message.v1',
     roomRef: room.group,
 });
 
