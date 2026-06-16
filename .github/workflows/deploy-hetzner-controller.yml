@@ -162,6 +162,8 @@ jobs:
           RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}
         run: |
           set -euo pipefail
+          quote() { printf '%q' "$1"; }
+
           include_caddy=0
           install_playwright=0
           if [[ "${RALLAR_INCLUDE_CADDY}" == "true" ]]; then
@@ -171,36 +173,37 @@ jobs:
             install_playwright=1
           fi
 
+          rollout_env="${RUNNER_TEMP}/rallar-controller-rollout.env"
+          {
+            printf 'RALLAR_REPO_REF=%s\n' "$(quote "${RALLAR_REPO_REF}")"
+            printf 'RALLAR_INCLUDE_CADDY=%s\n' "$(quote "${include_caddy}")"
+            printf 'RALLAR_INSTALL_PLAYWRIGHT=%s\n' "$(quote "${install_playwright}")"
+            printf 'RALLAR_BLACK_BOX_SPA_URL=%s\n' "$(quote "${RALLAR_BLACK_BOX_SPA_URL}")"
+            printf 'RALLAR_BLACK_BOX_CONTROL_URL=%s\n' "$(quote "${RALLAR_BLACK_BOX_CONTROL_URL}")"
+            printf 'RALLAR_API_BASE_URL=%s\n' "$(quote "${RALLAR_API_BASE_URL}")"
+            printf 'RALLAR_API_CORS_ORIGINS=%s\n' "$(quote "${RALLAR_API_CORS_ORIGINS}")"
+            printf 'RALLAR_BLACK_BOX_ALLOWED_ORIGINS=%s\n' "$(quote "${RALLAR_BLACK_BOX_ALLOWED_ORIGINS}")"
+            printf 'RALLAR_BLACK_BOX_ROOM_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_ROOM_ID}")"
+            printf 'RALLAR_BLACK_BOX_AGENT_PREFIX=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_PREFIX}")"
+            printf 'RALLAR_BLACK_BOX_AGENT_COUNT=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_COUNT}")"
+            printf 'RALLAR_BLACK_BOX_APPLICATION_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_APPLICATION_ID}")"
+            printf 'RALLAR_BLACK_BOX_WORKSPACE_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_WORKSPACE_ID}")"
+          } > "${rollout_env}"
+          chmod 600 "${rollout_env}"
+
+          scp -i ~/.ssh/hetzner "${rollout_env}" \
+            "${HETZNER_USER}@${HETZNER_HOST}:/tmp/rallar-controller-rollout.env"
+          rm -f "${rollout_env}"
+
           ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
-            bash -s -- \
-              "${RALLAR_REPO_REF}" \
-              "${include_caddy}" \
-              "${install_playwright}" \
-              "${RALLAR_BLACK_BOX_SPA_URL}" \
-              "${RALLAR_BLACK_BOX_CONTROL_URL}" \
-              "${RALLAR_API_BASE_URL}" \
-              "${RALLAR_API_CORS_ORIGINS}" \
-              "${RALLAR_BLACK_BOX_ALLOWED_ORIGINS}" \
-              "${RALLAR_BLACK_BOX_ROOM_ID}" \
-              "${RALLAR_BLACK_BOX_AGENT_PREFIX}" \
-              "${RALLAR_BLACK_BOX_AGENT_COUNT}" \
-              "${RALLAR_BLACK_BOX_APPLICATION_ID}" \
-              "${RALLAR_BLACK_BOX_WORKSPACE_ID}" <<'REMOTE'
+            bash -s <<'REMOTE'
           set -euo pipefail
+          trap 'rm -f /tmp/rallar-controller-rollout.env' EXIT
           cd /tmp/rallar-controller
           chmod +x *.sh
-          RALLAR_REPO_REF="$1" \
-            RALLAR_INCLUDE_CADDY="$2" \
-            RALLAR_INSTALL_PLAYWRIGHT="$3" \
-            RALLAR_BLACK_BOX_SPA_URL="$4" \
-            RALLAR_BLACK_BOX_CONTROL_URL="$5" \
-            RALLAR_API_BASE_URL="$6" \
-            RALLAR_API_CORS_ORIGINS="$7" \
-            RALLAR_BLACK_BOX_ALLOWED_ORIGINS="$8" \
-            RALLAR_BLACK_BOX_ROOM_ID="$9" \
-            RALLAR_BLACK_BOX_AGENT_PREFIX="${10}" \
-            RALLAR_BLACK_BOX_AGENT_COUNT="${11}" \
-            RALLAR_BLACK_BOX_APPLICATION_ID="${12}" \
-            RALLAR_BLACK_BOX_WORKSPACE_ID="${13}" \
-            ./08-rollout-controller.sh
+          set -a
+          # shellcheck disable=SC1091
+          source /tmp/rallar-controller-rollout.env
+          set +a
+          ./08-rollout-controller.sh
           REMOTE
