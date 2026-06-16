@@ -108,6 +108,10 @@ import {
     type ControlRunSnapshot,
     type ControlServerSnapshot,
 } from './control-run-manager.ts';
+import {
+    resolveBlackBoxControlToken,
+    type BlackBoxControlTokenSession,
+} from './control-operator-token.ts';
 import { RUN_MANAGER_COMMAND_PRESETS } from './run-manager-presets.ts';
 import {
     RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE,
@@ -6325,6 +6329,10 @@ function RunnerRecipesPanel({
     const [controlToken, setControlToken] = useState(
         bootstrap.controlToken ?? '',
     );
+    const [brokeredControlToken, setBrokeredControlToken] =
+        useState<BlackBoxControlTokenSession | undefined>();
+    const [brokeredControlTokenError, setBrokeredControlTokenError] =
+        useState<string | undefined>();
     const [controlRunId, setControlRunId] = useState(
         control.runId ?? bootstrap.runId ?? '',
     );
@@ -6527,6 +6535,31 @@ function RunnerRecipesPanel({
         }
         setAgentPrefix(`${safeIdSegment(authSession.username)}-agent`);
     }, [agentPrefix, authSession]);
+
+    useEffect(() => {
+        setBrokeredControlToken(undefined);
+        setBrokeredControlTokenError(undefined);
+    }, [authSession?.clientId, authSession?.sessionId]);
+
+    const resolveDistributedControlToken = async (): Promise<string> => {
+        try {
+            const resolved = await resolveBlackBoxControlToken({
+                manualToken: controlToken,
+                brokeredToken: brokeredControlToken,
+                apiBaseUrl: globalValues.apiBaseUrl,
+                authSession,
+            });
+            if (resolved.source === 'brokered') {
+                setBrokeredControlToken(resolved.session);
+            }
+            setBrokeredControlTokenError(undefined);
+            return resolved.token;
+        } catch (error) {
+            const message = runnerFriendlyErrorMessage(error);
+            setBrokeredControlTokenError(message);
+            throw error;
+        }
+    };
 
     const refreshReadiness = async (): Promise<void> => {
         setBusyAction('refresh-readiness');
@@ -6808,24 +6841,26 @@ function RunnerRecipesPanel({
                 throw new Error(manifestError);
             }
 
+            const distributedControlToken =
+                await resolveDistributedControlToken();
             setLaunchMessage(
                 `Creating ${distributedRunId} for ${agentIds.length} agent(s).`,
             );
             const created = await createDistributedRun({
                 baseUrl: controlBaseUrl,
-                token: controlToken,
+                token: distributedControlToken,
                 manifest,
             });
             setLaunchMessage(`Staging ${created.distributedRunId}.`);
             const staged = await stageDistributedRun({
                 baseUrl: controlBaseUrl,
-                token: controlToken,
+                token: distributedControlToken,
                 distributedRunId: created.distributedRunId,
             });
             setLaunchMessage(`Starting ${staged.distributedRunId}.`);
             const started = await startDistributedRun({
                 baseUrl: controlBaseUrl,
-                token: controlToken,
+                token: distributedControlToken,
                 distributedRunId: staged.distributedRunId,
             });
             setDistributedRun(started);
@@ -6995,6 +7030,23 @@ function RunnerRecipesPanel({
                         autoComplete="off"
                         onChange={(event) => setControlToken(event.target.value)}
                     />
+                    {!controlToken.trim() && authSession && brokeredControlToken && (
+                        <small className="runner-control-token-status">
+                            Session control token valid until {formatTime(
+                                brokeredControlToken.expiresAtEpochMs,
+                            )}
+                        </small>
+                    )}
+                    {!controlToken.trim() && authSession && !brokeredControlToken && (
+                        <small className="runner-control-token-status">
+                            Session control token will be requested when needed.
+                        </small>
+                    )}
+                    {!controlToken.trim() && brokeredControlTokenError && (
+                        <small className="runner-control-token-error">
+                            {brokeredControlTokenError}
+                        </small>
+                    )}
                 </label>
             </div>
             <div className="runner-recipes-summary-grid">

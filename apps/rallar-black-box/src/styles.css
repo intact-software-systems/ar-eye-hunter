@@ -4951,6 +4951,14 @@ h3 {
     font-weight: 700;
 }
 
+.runner-control-token-status {
+    color: #4f6b5d;
+}
+
+.runner-control-token-error {
+    color: #9d3430;
+}
+
 .compact-field span {
     font-size: 0.68rem;
 }

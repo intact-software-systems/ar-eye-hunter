@@ -151,6 +151,16 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(runsPanel).toContain('Synthetic seed');
         expect(runsPanel).toContain('Synthetic evidence');
         expect(runsPanel).toContain('Clear seed');
+        expect(recipesPanel).toContain('resolveBlackBoxControlToken');
+        expect(recipesPanel).toContain('brokeredControlToken');
+        expect(recipesPanel).toContain('Session control token valid until');
+        expect(recipesPanel).toContain('Session control token will be requested when needed.');
+        expect(recipesPanel).toContain('const distributedControlToken');
+        expect(recipesPanel).toContain('token: distributedControlToken');
+        expect(recipesPanel).toContain('controlToken,');
+        expect(recipesPanel.indexOf('runnerAgentLaunchUrl({')).toBeLessThan(
+            recipesPanel.indexOf('const distributedControlToken'),
+        );
         expect(runsPanel.indexOf('RunVerdictPanel')).toBeLessThan(runsPanel.indexOf('runner-distributed-analysis'));
         expect(runsPanel).toContain('selectedMonitor');
         expect(runsPanel).toContain('distributedMonitor: selectedMonitor');

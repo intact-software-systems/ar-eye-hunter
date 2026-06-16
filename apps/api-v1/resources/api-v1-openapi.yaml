@@ -145,6 +145,36 @@ paths:
         '429':
           $ref: '#/components/responses/TooManyRequests'
 
+  /api/black-box/control-token:
+    post:
+      tags: [ Auth ]
+      summary: Create black-box control operator token
+      description: |
+        Issues a short-lived signed token that the rallar-black-box control
+        server accepts for distributed-run admin operations. The caller must be
+        logged in with a valid API-v1 auth session. The token is bearer-capable
+        while valid and is intended for in-memory browser use only.
+      security:
+        - bearerAuth: [ ]
+          clientIdHeader: [ ]
+      responses:
+        '200':
+          description: Black-box operator token issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlackBoxControlTokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          description: Operator token broker is not configured.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/webrtc/ice:
     get:
       tags: [ WebRTC ]
@@ -1339,6 +1369,25 @@ components:
         sessionId:
           type: string
         expiresAtEpochMs:
+          type: integer
+          format: int64
+
+    BlackBoxControlTokenResponse:
+      type: object
+      required: [ tokenType, token, issuedAtEpochMs, expiresAtEpochMs, ttlMs ]
+      properties:
+        tokenType:
+          type: string
+          enum: [ Bearer ]
+        token:
+          type: string
+        issuedAtEpochMs:
+          type: integer
+          format: int64
+        expiresAtEpochMs:
+          type: integer
+          format: int64
+        ttlMs:
           type: integer
           format: int64
 

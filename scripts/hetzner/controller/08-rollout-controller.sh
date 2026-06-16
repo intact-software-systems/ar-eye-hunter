@@ -13,6 +13,8 @@ RALLAR_CONTROL_HOST="${RALLAR_CONTROL_HOST:-control.rallar.intactss.com}"
 RALLAR_BLACKBOX_HOST="${RALLAR_BLACKBOX_HOST:-blackbox.rallar.intactss.com}"
 RALLAR_INCLUDE_CADDY="${RALLAR_INCLUDE_CADDY:-0}"
 RALLAR_INSTALL_PLAYWRIGHT="${RALLAR_INSTALL_PLAYWRIGHT:-0}"
+RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS="${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS:-86400000}"
+RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS="${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS:-}"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
@@ -84,6 +86,38 @@ update_env_value() {
   rm -f "${tmp_file}"
 }
 
+read_env_value() {
+  local env_file="$1"
+  local key="$2"
+
+  if [[ ! -r "${env_file}" ]]; then
+    return 0
+  fi
+
+  grep -E "^${key}=" "${env_file}" \
+    | tail -n 1 \
+    | cut -d= -f2- || true
+}
+
+ensure_operator_token_secret() {
+  local secret="${RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET:-}"
+
+  if [[ -z "${secret}" ]]; then
+    secret="$(read_env_value "/etc/rallar/api-v1.env" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET")"
+  fi
+  if [[ -z "${secret}" ]]; then
+    secret="$(read_env_value "/etc/rallar/control-server.env" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET")"
+  fi
+  if [[ -z "${secret}" ]]; then
+    secret="$(openssl rand -hex 32)"
+  fi
+
+  update_env_value "/etc/rallar/api-v1.env" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET" "${secret}"
+  update_env_value "/etc/rallar/api-v1.env" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS" "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS}"
+  update_env_value "/etc/rallar/api-v1.env" "RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS" "${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS}"
+  update_env_value "/etc/rallar/control-server.env" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET" "${secret}"
+}
+
 update_api_cors_origins() {
   apply_rallar_public_cors_defaults
   update_env_value "/etc/rallar/api-v1.env" "CORS_ORIGINS" "${RALLAR_API_CORS_ORIGINS}"
@@ -99,6 +133,7 @@ require_command npm
 require_command deno
 require_command rsync
 require_command curl
+require_command openssl
 
 if [[ ! -d "${RALLAR_CHECKOUT_DIR}/.git" ]]; then
   echo "Missing git checkout at ${RALLAR_CHECKOUT_DIR}. Run 02-deploy-controller.sh first." >&2
@@ -188,6 +223,9 @@ update_api_cors_origins
 
 echo "==> Updating control-server browser origins"
 update_control_allowed_origins
+
+echo "==> Ensuring black-box operator token broker secret"
+ensure_operator_token_secret
 
 echo "==> Starting services"
 systemctl daemon-reload

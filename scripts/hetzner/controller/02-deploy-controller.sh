@@ -18,6 +18,8 @@ RALLAR_BLACKBOX_HOST="${RALLAR_BLACKBOX_HOST:-blackbox.rallar.intactss.com}"
 RALLAR_RETENTION_MAX_RUNS="${RALLAR_RETENTION_MAX_RUNS:-50}"
 RALLAR_INSTALL_PLAYWRIGHT="${RALLAR_INSTALL_PLAYWRIGHT:-1}"
 RALLAR_ACME_EMAIL="${RALLAR_ACME_EMAIL:-}"
+RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS="${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS:-86400000}"
+RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS="${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS:-}"
 
 apply_rallar_public_spa_defaults
 apply_rallar_public_cors_defaults
@@ -33,6 +35,7 @@ require_command git
 require_command npm
 require_command deno
 require_command caddy
+require_command openssl
 
 echo "==> Deploying ${RALLAR_REPO_URL} ref ${RALLAR_REPO_REF}"
 if [[ -d "${RALLAR_CHECKOUT_DIR}/.git" ]]; then
@@ -78,6 +81,24 @@ install -d -m 0755 -o rallar -g rallar /var/lib/rallar-black-box-control
 install -d -m 0755 -o rallar -g rallar /var/lib/rallar-deno
 write_rallar_black_box_spa_env_file
 
+if [[ -z "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET:-}" && -r /etc/rallar/api-v1.env ]]; then
+  RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="$(
+    grep -E "^RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=" /etc/rallar/api-v1.env \
+      | tail -n 1 \
+      | cut -d= -f2- || true
+  )"
+fi
+if [[ -z "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET:-}" && -r /etc/rallar/control-server.env ]]; then
+  RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="$(
+    grep -E "^RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=" /etc/rallar/control-server.env \
+      | tail -n 1 \
+      | cut -d= -f2- || true
+  )"
+fi
+if [[ -z "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET:-}" ]]; then
+  RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="$(openssl rand -hex 32)"
+fi
+
 cat >/etc/rallar/api-v1.env <<EOF
 PORT=8080
 CORS_ORIGINS=${RALLAR_API_CORS_ORIGINS}
@@ -90,6 +111,9 @@ RALLAR_DB_PUBSUB=local
 RALLAR_ICE_MODE=local
 RALLAR_LOGIN_USER_RATE_LIMIT=100
 RALLAR_TIMING_LOGS=0
+RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=${RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET}
+RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS=${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS}
+RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS=${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS}
 EOF
 chmod 0600 /etc/rallar/api-v1.env
 echo "WARNING: API-v1 is configured with RALLAR_SQL_BACKEND=pglite-memory; restarting rallar-api-v1 resets auth sessions and runtime state."
@@ -108,6 +132,7 @@ fi
 cat >/etc/rallar/control-server.env <<EOF
 PORT=5180
 RALLAR_BLACK_BOX_ADMIN_TOKEN=${RALLAR_CONTROL_ADMIN_TOKEN}
+RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=${RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET}
 RALLAR_BLACK_BOX_REQUIRE_TLS=1
 RALLAR_BLACK_BOX_ALLOWED_ORIGINS=${RALLAR_BLACK_BOX_ALLOWED_ORIGINS}
 RALLAR_BLACK_BOX_HTTP_ALLOWED_HOSTS=${RALLAR_API_HOST}

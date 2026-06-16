@@ -37,6 +37,7 @@ import {
     corsOriginsFromAllowedOrigins,
     createControlResponseHeaders,
 } from './cors.ts';
+import { verifyRallarBlackBoxOperatorToken } from '@shared-server/http/black-box-operator-token.ts';
 
 const DEFAULT_PORT = 5180;
 const OPEN_STATE = 1;
@@ -46,6 +47,7 @@ type SecurityOptions = Readonly<{
     requireTls: boolean;
     requireRunToken: boolean;
     adminToken?: string;
+    operatorTokenSecret?: string;
     runTokenTtlMs: number;
     maxRequestBytes: number;
     allowedCommandKinds?: readonly RallarBlackBoxTestCommandKind[];
@@ -121,7 +123,7 @@ async function handleRequest(request: Request): Promise<Response> {
     }
 
     if (request.method === 'POST' && url.pathname === '/fleet/reports/rebuild') {
-        if (!authorizeAdminRequest(request, url)) {
+        if (!(await authorizeAdminRequest(request, url))) {
             return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
         }
         const response = controlService.rebuildFleetReports();
@@ -148,7 +150,7 @@ async function handleRequest(request: Request): Promise<Response> {
     }
 
     if (request.method === 'POST' && url.pathname === '/distributed-runs') {
-        if (!authorizeAdminRequest(request, url)) {
+        if (!(await authorizeAdminRequest(request, url))) {
             return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
         }
         return await createDistributedRun(request);
@@ -167,7 +169,7 @@ async function handleRequest(request: Request): Promise<Response> {
         /^\/distributed-runs\/([^/]+)\/(stage|start|cancel)$/,
     );
     if (request.method === 'POST' && distributedRunActionMatch) {
-        if (!authorizeAdminRequest(request, url)) {
+        if (!(await authorizeAdminRequest(request, url))) {
             return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
         }
         return await mutateDistributedRun(
@@ -193,7 +195,7 @@ async function handleRequest(request: Request): Promise<Response> {
     }
 
     if (request.method === 'POST' && url.pathname === '/retention/cleanup') {
-        if (!authorizeAdminRequest(request, url)) {
+        if (!(await authorizeAdminRequest(request, url))) {
             return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
         }
         const deletedRunIds = controlService.pruneRuns(security.retentionMaxRuns);
@@ -214,7 +216,7 @@ async function handleRequest(request: Request): Promise<Response> {
 
     if (request.method === 'DELETE' && runMatch) {
         const runId = decodeURIComponent(runMatch[1]);
-        if (!authorizeAdminRequest(request, url)) {
+        if (!(await authorizeAdminRequest(request, url))) {
             return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
         }
         closeRunSockets(runId);
@@ -228,7 +230,7 @@ async function handleRequest(request: Request): Promise<Response> {
     const runResetMatch = url.pathname.match(/^\/runs\/([^/]+)\/reset$/);
     if (request.method === 'POST' && runResetMatch) {
         const runId = decodeURIComponent(runResetMatch[1]);
-        if (!authorizeAdminRequest(request, url)) {
+        if (!(await authorizeAdminRequest(request, url))) {
             return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
         }
         const run = controlService.resetRun(runId);
@@ -241,7 +243,7 @@ async function handleRequest(request: Request): Promise<Response> {
     const runCommandsMatch = url.pathname.match(/^\/runs\/([^/]+)\/commands$/);
     if (request.method === 'POST' && runCommandsMatch) {
         const runId = decodeURIComponent(runCommandsMatch[1]);
-        if (!authorizeAdminRequest(request, url)) {
+        if (!(await authorizeAdminRequest(request, url))) {
             return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
         }
         return await enqueueBulkCommand(request, runId);
@@ -322,7 +324,7 @@ async function handleRequest(request: Request): Promise<Response> {
     if (request.method === 'POST' && agentTokenMatch) {
         const runId = decodeURIComponent(agentTokenMatch[1]);
         const agentId = decodeURIComponent(agentTokenMatch[2]);
-        if (!authorizeAdminRequest(request, url)) {
+        if (!(await authorizeAdminRequest(request, url))) {
             return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
         }
         return await issueRunToken(request, runId, agentId);
@@ -693,6 +695,7 @@ function resolveSecurityOptions(): SecurityOptions {
         requireTls: envBoolean('RALLAR_BLACK_BOX_REQUIRE_TLS'),
         requireRunToken: envBoolean('RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN'),
         adminToken: envString('RALLAR_BLACK_BOX_ADMIN_TOKEN'),
+        operatorTokenSecret: envString('RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET'),
         runTokenTtlMs: envNumber('RALLAR_BLACK_BOX_RUN_TOKEN_TTL_MS', 15 * 60_000),
         maxRequestBytes: envNumber('RALLAR_BLACK_BOX_MAX_REQUEST_BYTES', 2_000_000),
         allowedCommandKinds: allowedCommandKinds.length > 0
@@ -755,8 +758,25 @@ function rejectByRequestPolicy(request: Request, url: URL): Response | undefined
     return undefined;
 }
 
-function authorizeAdminRequest(request: Request, url: URL): boolean {
-    return !security.adminToken || tokenFromRequest(request, url) === security.adminToken;
+async function authorizeAdminRequest(request: Request, url: URL): Promise<boolean> {
+    if (!security.adminToken && !security.operatorTokenSecret) {
+        return true;
+    }
+
+    const token = tokenFromRequest(request, url);
+    if (security.adminToken && token === security.adminToken) {
+        return true;
+    }
+
+    if (!security.operatorTokenSecret) {
+        return false;
+    }
+
+    const verified = await verifyRallarBlackBoxOperatorToken({
+        token,
+        secret: security.operatorTokenSecret,
+    });
+    return verified.ok;
 }
 
 function authorizeRunRequest(
