@@ -5,6 +5,7 @@ import {
     defaultDistributedRecipeTargetIds,
     deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,
+    deriveRunVerdictView,
     deriveDistributedRunWarningRegressionReport,
     distributedRecipeCommandKinds,
     distributedRecipeCommandPreview,
@@ -795,6 +796,207 @@ describe('distributed recipes helpers', () => {
         });
         expect(report.rawEvidence.failureKeys).toContain('start-b');
         expect(report.summary.snapshotWarnings.join(' ')).toContain('commands');
+    });
+
+    it('derives an evidence-first passed run verdict with warnings', () => {
+        const passedRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            state: 'passed',
+            rollup: {
+                ...distributedRun.rollup,
+                state: 'passed',
+                ok: true,
+                failures: [],
+                summary: {
+                    ...distributedRun.rollup.summary,
+                    passedParticipants: 2,
+                    failedParticipants: 0,
+                    passedRecipes: 1,
+                    failedRecipes: 0,
+                    blockingFailures: 0,
+                },
+            },
+        };
+        const monitor = deriveDistributedRunMonitor({
+            distributedRun: passedRun,
+            controlRun: distributedControlRun,
+            artifactBundle: distributedArtifactBundle,
+        });
+        const report = deriveDistributedRunAnalysisReport({
+            distributedRun: passedRun,
+            controlRun: distributedControlRun,
+            artifactBundle: distributedArtifactBundle,
+            snapshotBounds: {
+                commands: 4,
+                results: 4,
+                events: 1,
+            },
+        });
+        const verdict = deriveRunVerdictView({
+            distributedRun: passedRun,
+            monitor,
+            report,
+            refreshedAtEpochMs: 2_800,
+        });
+
+        expect(verdict).toMatchObject({
+            verdict: 'passed',
+            tone: 'warn',
+            title: 'Outcome passed; evidence needs review',
+            runId: 'dist-1',
+            recipeLabel: 'health-only smoke',
+            targetCount: 2,
+            artifactStatus: 'valid',
+        });
+        expect(verdict.primaryEvidence.map(entry => entry.label)).toEqual([
+            'Commands',
+            'Evidence',
+            'Evidence warnings',
+            'Slowest',
+            'Artifact',
+        ]);
+        expect(verdict.warningSignals.join(' ')).toContain('Evidence warning: snapshot');
+        expect(verdict.successSignals.join(' ')).toContain('3 completed commands');
+    });
+
+    it('derives clean pass verdict wording separately from evidence warnings', () => {
+        const passedRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            state: 'passed',
+            rollup: {
+                ...distributedRun.rollup,
+                state: 'passed',
+                ok: true,
+                failures: [],
+                summary: {
+                    ...distributedRun.rollup.summary,
+                    passedParticipants: 2,
+                    failedParticipants: 0,
+                    passedRecipes: 1,
+                    failedRecipes: 0,
+                    blockingFailures: 0,
+                },
+            },
+        };
+        const cleanControlRun: ControlRunSnapshot = {
+            ...distributedControlRun,
+            results: distributedControlRun.results.map(result =>
+                result.commandId === 'start-b'
+                    ? {
+                        ...result,
+                        ok: true,
+                        error: undefined,
+                        result: {
+                            ...result.result,
+                            status: 'ok',
+                            ok: true,
+                            error: undefined,
+                        },
+                    }
+                    : result
+            ),
+        };
+        const monitor = deriveDistributedRunMonitor({
+            distributedRun: passedRun,
+            controlRun: cleanControlRun,
+            artifactBundle: distributedArtifactBundle,
+        });
+        const report = deriveDistributedRunAnalysisReport({
+            distributedRun: passedRun,
+            controlRun: cleanControlRun,
+            artifactBundle: distributedArtifactBundle,
+        });
+        const verdict = deriveRunVerdictView({
+            distributedRun: passedRun,
+            monitor,
+            report,
+        });
+
+        expect(verdict).toMatchObject({
+            verdict: 'passed',
+            tone: 'good',
+            title: 'Outcome passed',
+        });
+        expect(verdict.warningSignals).toEqual([]);
+        expect(verdict.successSignals.join(' ')).toContain('Artifact bundle is valid');
+    });
+
+    it('derives a failed run verdict with a causal trail and linked evidence counts', () => {
+        const monitor = deriveDistributedRunMonitor({
+            distributedRun,
+            controlRun: distributedControlRun,
+            artifactBundle: distributedArtifactBundle,
+        });
+        const report = deriveDistributedRunAnalysisReport({
+            distributedRun,
+            controlRun: distributedControlRun,
+            artifactBundle: distributedArtifactBundle,
+        });
+        const verdict = deriveRunVerdictView({
+            distributedRun,
+            monitor,
+            report,
+            refreshedAtEpochMs: 2_800,
+        });
+
+        expect(verdict).toMatchObject({
+            verdict: 'failed',
+            tone: 'bad',
+            title: 'Outcome failed',
+            likelyCause: 'No received payload.',
+            nextAction: expect.stringContaining('Open command start-b'),
+        });
+        expect(verdict.causalTrail.map(entry => entry.kind)).toEqual([
+            'failure-category',
+            'command-result',
+            'diagnostic',
+            'artifact',
+            'events',
+        ]);
+        expect(verdict.causalTrail[1]).toMatchObject({
+            commandId: 'start-b',
+            agentId: 'agent-b',
+            recipeId: 'health-only',
+            targetKind: 'command',
+            targetId: 'start-b',
+            actionLabel: 'Open command start-b',
+        });
+        expect(verdict.causalTrail[2]).toMatchObject({
+            targetKind: 'diagnostic',
+            actionLabel: expect.stringContaining('Filter diagnostics'),
+        });
+        expect(verdict.causalTrail[3]).toMatchObject({
+            targetKind: 'artifact',
+            targetId: 'valid',
+            actionLabel: 'Inspect artifact evidence',
+        });
+        expect(verdict.primaryEvidence.map(entry => [entry.label, entry.value])).toContainEqual([
+            'Linked evidence',
+            '1 failure / 0 diagnostics / 1 event',
+        ]);
+    });
+
+    it('calls out missing artifacts in the run verdict', () => {
+        const monitor = deriveDistributedRunMonitor({
+            distributedRun,
+            controlRun: distributedControlRun,
+        });
+        const report = deriveDistributedRunAnalysisReport({
+            distributedRun,
+            controlRun: distributedControlRun,
+        });
+        const verdict = deriveRunVerdictView({
+            distributedRun,
+            monitor,
+            report,
+        });
+
+        expect(verdict.artifactStatus).toBe('not-loaded');
+        expect(verdict.warningSignals.join(' ')).toContain('Evidence warning: artifact not loaded');
+        expect(verdict.primaryEvidence).toContainEqual(expect.objectContaining({
+            label: 'Artifact',
+            tone: 'warn',
+        }));
     });
 
     it('validates v1 and v2 distributed artifacts without breaking old bundles', () => {

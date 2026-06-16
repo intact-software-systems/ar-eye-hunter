@@ -554,6 +554,64 @@ export type DistributedRunAnalysisReport = Readonly<{
     }>;
 }>;
 
+export type RunVerdictKind =
+    | 'no-run'
+    | 'running'
+    | 'passed'
+    | 'failed'
+    | 'attention';
+
+export type RunVerdictTone = 'good' | 'active' | 'warn' | 'bad' | 'muted';
+
+export type RunVerdictEvidenceItem = Readonly<{
+    label: string;
+    value: string;
+    tone: RunVerdictTone;
+    detail?: string;
+}>;
+
+export type RunCausalTrailItem = Readonly<{
+    kind:
+        | 'failure-category'
+        | 'command-result'
+        | 'diagnostic'
+        | 'artifact'
+        | 'events';
+    label: string;
+    detail: string;
+    tone: RunVerdictTone;
+    targetKind?: 'command' | 'diagnostic' | 'artifact' | 'event' | 'agent';
+    targetId?: string;
+    actionLabel?: string;
+    agentId?: string;
+    recipeId?: string;
+    commandId?: string;
+    atEpochMs?: number;
+    evidence: readonly string[];
+}>;
+
+export type RunVerdictView = Readonly<{
+    verdict: RunVerdictKind;
+    tone: RunVerdictTone;
+    title: string;
+    summary: string;
+    runId?: string;
+    state?: string;
+    recipeLabel?: string;
+    profileLabel?: string;
+    targetCount?: number;
+    durationMs?: number;
+    artifactStatus: DistributedRunArtifactValidationStatus;
+    artifactMessage: string;
+    refreshedAtEpochMs?: number;
+    likelyCause?: string;
+    nextAction?: string;
+    primaryEvidence: readonly RunVerdictEvidenceItem[];
+    successSignals: readonly string[];
+    warningSignals: readonly string[];
+    causalTrail: readonly RunCausalTrailItem[];
+}>;
+
 export type DistributedRunWarningRegressionExpectation = Readonly<{
     messageEvidence?: readonly string[];
     diagnosticTypeIds?: readonly string[];
@@ -1493,6 +1551,325 @@ export function deriveDistributedRunAnalysisReport(input: Readonly<{
             artifactMessage: monitor.artifact.message,
         },
     };
+}
+
+export function deriveRunVerdictView(input: Readonly<{
+    distributedRun?: ControlDistributedRunSnapshot;
+    monitor?: DistributedRunMonitor;
+    report?: DistributedRunAnalysisReport;
+    artifactBundle?: ControlDistributedRunArtifactBundle;
+    refreshedAtEpochMs?: number;
+}>): RunVerdictView {
+    if (!input.distributedRun) {
+        return {
+            verdict: 'no-run',
+            tone: 'muted',
+            title: 'No run selected',
+            summary: 'Start or select a distributed run to inspect recipe evidence.',
+            artifactStatus: 'not-loaded',
+            artifactMessage: 'No distributed artifact bundle was loaded.',
+            refreshedAtEpochMs: input.refreshedAtEpochMs,
+            primaryEvidence: [
+                { label: 'Evidence', value: 'No run loaded', tone: 'muted' },
+            ],
+            successSignals: [],
+            warningSignals: [],
+            causalTrail: [],
+        };
+    }
+
+    const monitor = input.monitor ?? deriveDistributedRunMonitor({
+        distributedRun: input.distributedRun,
+        artifactBundle: input.artifactBundle,
+    });
+    const report = input.report ?? deriveDistributedRunAnalysisReport({
+        distributedRun: input.distributedRun,
+        artifactBundle: input.artifactBundle,
+    });
+    const selectedRecipe = input.distributedRun.manifest.recipes[0];
+    const recipeLabel = selectedRecipe
+        ? [recipeSelectionId(selectedRecipe), selectedRecipe.profile].filter(Boolean).join(' ')
+        : undefined;
+    const firstAction = report.nextActions[0];
+    const warningSignals = runVerdictWarnings(monitor, report);
+    const successSignals = runVerdictSuccessSignals(monitor, report);
+    const baseVerdict = runVerdictKind(input.distributedRun, report);
+    const hasWarnings = warningSignals.length > 0;
+    const verdict = baseVerdict === 'passed' && hasWarnings ? 'passed' : baseVerdict;
+    const tone = runVerdictTone(verdict, hasWarnings);
+    const title = runVerdictTitle(verdict, hasWarnings);
+    const linkedFailureCount = report.firstFailure ? 1 : report.rawEvidence.failureKeys.length;
+    const linkedEvidence = `${linkedFailureCount} failure${linkedFailureCount === 1 ? '' : 's'} / ${report.rawEvidence.diagnosticIds.length} diagnostic${report.rawEvidence.diagnosticIds.length === 1 ? '' : 's'} / ${monitor.events.length} event${monitor.events.length === 1 ? '' : 's'}`;
+    const evidenceItems: RunVerdictEvidenceItem[] = [
+        {
+            label: 'Commands',
+            value: `${monitor.resultCounts.ok}/${Math.max(monitor.commandCounts.total, monitor.resultCounts.total)} ok`,
+            tone: monitor.resultCounts.failed > 0 ? 'warn' : 'good',
+            detail: `${monitor.commandCounts.completed} completed, ${monitor.commandCounts.pending} pending`,
+        },
+        {
+            label: 'Evidence',
+            value: `${monitor.resultCounts.total} results / ${monitor.events.length} events`,
+            tone: monitor.events.length > 0 || monitor.resultCounts.total > 0 ? 'active' : 'muted',
+            detail: `${monitor.runtimeDiagnostics.length} runtime diagnostics`,
+        },
+        {
+            label: 'Evidence warnings',
+            value: String(warningSignals.length),
+            tone: warningSignals.length > 0 ? 'warn' : 'good',
+        },
+        {
+            label: 'Slowest',
+            value: monitor.latency.maxMs !== undefined ? `${Math.round(monitor.latency.maxMs)} ms` : '-',
+            tone: monitor.latency.maxMs !== undefined ? 'active' : 'muted',
+        },
+        {
+            label: 'Artifact',
+            value: monitor.artifact.status,
+            tone: monitor.artifact.status === 'valid' ? 'good' : 'warn',
+            detail: monitor.artifact.message,
+        },
+    ];
+
+    if (baseVerdict === 'failed') {
+        evidenceItems.push({
+            label: 'Linked evidence',
+            value: linkedEvidence,
+            tone: report.rawEvidence.failureKeys.length > 0 ? 'bad' : 'warn',
+        });
+    }
+
+    return {
+        verdict,
+        tone,
+        title,
+        summary: runVerdictSummary(input.distributedRun, report, monitor),
+        runId: input.distributedRun.distributedRunId,
+        state: input.distributedRun.state,
+        recipeLabel,
+        profileLabel: selectedRecipe?.profile,
+        targetCount: report.summary.targetCount,
+        durationMs: report.summary.durationMs,
+        artifactStatus: monitor.artifact.status,
+        artifactMessage: monitor.artifact.message,
+        refreshedAtEpochMs: input.refreshedAtEpochMs,
+        likelyCause: firstAction
+            ? report.firstFailure?.message ?? firstAction.likelyCause
+            : undefined,
+        nextAction: firstAction?.category === 'command'
+            ? verdictCommandFailureNextAction(report.firstFailure)
+            : firstAction?.nextAction,
+        primaryEvidence: evidenceItems,
+        successSignals,
+        warningSignals,
+        causalTrail: runVerdictCausalTrail(report, monitor),
+    };
+}
+
+function runVerdictKind(
+    run: ControlDistributedRunSnapshot,
+    report: DistributedRunAnalysisReport,
+): RunVerdictKind {
+    if (report.summary.ok || run.state === 'passed') {
+        return 'passed';
+    }
+    if (run.state === 'failed' || run.state === 'timed-out' || report.firstFailure) {
+        return 'failed';
+    }
+    if (run.state === 'running' || run.state === 'waiting-for-ack' || run.state === 'waiting-for-barrier' || run.state === 'staging') {
+        return 'running';
+    }
+    return 'attention';
+}
+
+function runVerdictTone(verdict: RunVerdictKind, hasWarnings: boolean): RunVerdictTone {
+    if (verdict === 'failed') return 'bad';
+    if (verdict === 'running') return 'active';
+    if (verdict === 'passed') return hasWarnings ? 'warn' : 'good';
+    if (verdict === 'attention') return 'warn';
+    return 'muted';
+}
+
+function runVerdictTitle(verdict: RunVerdictKind, hasWarnings: boolean): string {
+    if (verdict === 'passed') {
+        return hasWarnings ? 'Outcome passed; evidence needs review' : 'Outcome passed';
+    }
+    if (verdict === 'failed') return 'Outcome failed';
+    if (verdict === 'running') return 'Outcome still running';
+    if (verdict === 'attention') return 'Outcome needs attention';
+    return 'No run selected';
+}
+
+function verdictCommandFailureNextAction(
+    failure?: DistributedRunAnalysisReport['firstFailure'],
+): string {
+    const command = failure?.commandId ? `Open command ${failure.commandId}` : 'Open the affected command';
+    const agent = failure?.agentId ? ` on agent ${failure.agentId}` : '';
+    return `${command}${agent}, inspect the command payload/result, and compare sibling agents running the same recipe.`;
+}
+
+function runVerdictWarnings(
+    monitor: DistributedRunMonitor,
+    report: DistributedRunAnalysisReport,
+): readonly string[] {
+    const warnings = [
+        ...report.summary.snapshotWarnings.map(warning => `Evidence warning: snapshot ${warning}`),
+        ...(monitor.artifact.status === 'valid'
+            ? []
+            : [`Evidence warning: artifact ${monitor.artifact.status === 'not-loaded' ? 'not loaded' : monitor.artifact.status}: ${monitor.artifact.message}`]),
+        ...(monitor.resultCounts.failed > 0 ? [`Evidence warning: ${monitor.resultCounts.failed} failed command result${monitor.resultCounts.failed === 1 ? '' : 's'} remained in evidence.`] : []),
+        ...(report.diagnostics.warnings > 0 ? [`Evidence warning: ${report.diagnostics.warnings} runtime warning diagnostic${report.diagnostics.warnings === 1 ? '' : 's'}.`] : []),
+        ...(report.diagnostics.errors > 0 ? [`Evidence warning: ${report.diagnostics.errors} runtime error diagnostic${report.diagnostics.errors === 1 ? '' : 's'}.`] : []),
+    ];
+    return uniqueValues(warnings);
+}
+
+function runVerdictSuccessSignals(
+    monitor: DistributedRunMonitor,
+    report: DistributedRunAnalysisReport,
+): readonly string[] {
+    const okResults = monitor.resultCounts.ok;
+    const completed = okResults > 0 ? okResults : monitor.commandCounts.completed;
+    const signals = [
+        completed > 0 ? `${completed} completed command${completed === 1 ? '' : 's'}` : undefined,
+        monitor.events.length > 0 ? `${monitor.events.length} received evidence event${monitor.events.length === 1 ? '' : 's'}` : undefined,
+        report.summary.artifactStatus === 'valid' ? 'Artifact bundle is valid.' : undefined,
+        report.summary.failedCommandCount === 0 && report.summary.failedResultCount === 0
+            ? 'No failed command results in the loaded snapshot.'
+            : undefined,
+    ];
+    return compactStrings(signals);
+}
+
+function runVerdictSummary(
+    run: ControlDistributedRunSnapshot,
+    report: DistributedRunAnalysisReport,
+    monitor: DistributedRunMonitor,
+): string {
+    if (report.firstFailure) {
+        return [
+            report.firstFailure.category,
+            report.firstFailure.agentId ? `agent ${report.firstFailure.agentId}` : undefined,
+            report.firstFailure.commandId ? `command ${report.firstFailure.commandId}` : undefined,
+            report.firstFailure.message,
+        ].filter(Boolean).join(' - ');
+    }
+    if (report.summary.ok || run.state === 'passed') {
+        return `${report.summary.completedCommandCount} commands completed across ${report.summary.targetCount} target${report.summary.targetCount === 1 ? '' : 's'}; ${monitor.events.length} event${monitor.events.length === 1 ? '' : 's'} linked.`;
+    }
+    return `Run state is ${run.state}; ${monitor.commandCounts.pending} command${monitor.commandCounts.pending === 1 ? '' : 's'} still pending.`;
+}
+
+function runVerdictCausalTrail(
+    report: DistributedRunAnalysisReport,
+    monitor: DistributedRunMonitor,
+): readonly RunCausalTrailItem[] {
+    if (!report.firstFailure) {
+        return [];
+    }
+
+    const firstAction = report.nextActions.find(action =>
+        action.evidence.includes(report.firstFailure!.key)
+    ) ?? report.nextActions[0];
+    const correlatedDiagnostics = report.diagnostics.correlated.filter(row =>
+        row.correlatedFailureKeys.includes(report.firstFailure!.key)
+    );
+    const diagnosticEvidence = correlatedDiagnostics.length > 0
+        ? correlatedDiagnostics.map(row => row.eventId)
+        : report.rawEvidence.diagnosticIds.slice(0, 3);
+    const eventEvidence = monitor.events
+        .filter(event =>
+            event.commandId === report.firstFailure?.commandId ||
+            event.agentId === report.firstFailure?.agentId
+        )
+        .map(event => event.eventId);
+
+    return [
+        {
+            kind: 'failure-category',
+            label: firstAction?.title ?? 'Failure category',
+            detail: firstAction?.likelyCause ?? report.firstFailure.message,
+            tone: 'bad',
+            targetKind: report.firstFailure.commandId ? 'command' : 'agent',
+            targetId: report.firstFailure.commandId ?? report.firstFailure.agentId,
+            actionLabel: report.firstFailure.commandId
+                ? `Open command ${report.firstFailure.commandId}`
+                : report.firstFailure.agentId
+                ? `Inspect agent ${report.firstFailure.agentId}`
+                : 'Inspect first failure',
+            agentId: report.firstFailure.agentId,
+            recipeId: report.firstFailure.recipeId,
+            commandId: report.firstFailure.commandId,
+            atEpochMs: report.firstFailure.atEpochMs,
+            evidence: compactStrings([report.firstFailure.key, report.firstFailure.code]),
+        },
+        {
+            kind: 'command-result',
+            label: report.firstFailure.commandId
+                ? `Command ${report.firstFailure.commandId}`
+                : 'Distributed result',
+            detail: report.firstFailure.message,
+            tone: 'bad',
+            targetKind: report.firstFailure.commandId ? 'command' : undefined,
+            targetId: report.firstFailure.commandId,
+            actionLabel: report.firstFailure.commandId
+                ? `Open command ${report.firstFailure.commandId}`
+                : 'Open distributed result',
+            agentId: report.firstFailure.agentId,
+            recipeId: report.firstFailure.recipeId,
+            commandId: report.firstFailure.commandId,
+            atEpochMs: report.firstFailure.atEpochMs,
+            evidence: compactStrings([
+                report.firstFailure.commandId,
+                report.firstFailure.agentId,
+                report.firstFailure.recipeId,
+            ]),
+        },
+        {
+            kind: 'diagnostic',
+            label: correlatedDiagnostics.length > 0
+                ? `${correlatedDiagnostics.length} correlated diagnostic${correlatedDiagnostics.length === 1 ? '' : 's'}`
+                : 'No correlated diagnostics',
+            detail: correlatedDiagnostics[0]?.summary ??
+                'No runtime diagnostic was directly correlated to the first failure in the loaded snapshot.',
+            tone: correlatedDiagnostics.length > 0 ? 'warn' : 'muted',
+            targetKind: 'diagnostic',
+            targetId: diagnosticEvidence[0],
+            actionLabel: correlatedDiagnostics.length > 0
+                ? `Filter diagnostics (${correlatedDiagnostics.length})`
+                : 'Filter diagnostics for first failure',
+            agentId: correlatedDiagnostics[0]?.agentId ?? report.firstFailure.agentId,
+            commandId: correlatedDiagnostics[0]?.commandId ?? report.firstFailure.commandId,
+            atEpochMs: correlatedDiagnostics[0]?.atEpochMs,
+            evidence: diagnosticEvidence,
+        },
+        {
+            kind: 'artifact',
+            label: `Artifact ${report.rawEvidence.artifactStatus}`,
+            detail: report.rawEvidence.artifactMessage,
+            tone: report.rawEvidence.artifactStatus === 'valid' ? 'good' : 'warn',
+            targetKind: 'artifact',
+            targetId: report.rawEvidence.artifactStatus,
+            actionLabel: 'Inspect artifact evidence',
+            evidence: [report.rawEvidence.artifactStatus],
+        },
+        {
+            kind: 'events',
+            label: `${eventEvidence.length} linked event${eventEvidence.length === 1 ? '' : 's'}`,
+            detail: eventEvidence.length > 0
+                ? 'Runtime events were emitted near the failed command or agent.'
+                : 'No runtime events were linked to the first failed command or agent.',
+            tone: eventEvidence.length > 0 ? 'active' : 'muted',
+            targetKind: eventEvidence.length > 0 ? 'event' : undefined,
+            targetId: eventEvidence[0],
+            actionLabel: eventEvidence.length > 0
+                ? `Filter ${eventEvidence.length} linked event${eventEvidence.length === 1 ? '' : 's'}`
+                : 'Review event filters',
+            agentId: report.firstFailure.agentId,
+            commandId: report.firstFailure.commandId,
+            evidence: eventEvidence,
+        },
+    ];
 }
 
 export function filterDistributedRuns(
