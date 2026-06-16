@@ -218,7 +218,7 @@ EOF
     rm -f "${tmp_file}"
     return 1
   fi
-  if ! caddy validate --config "${tmp_file}"; then
+  if ! caddy validate --config "${tmp_file}" --adapter caddyfile; then
     rm -f "${tmp_file}"
     return 1
   fi
