@@ -21,15 +21,34 @@ export async function authenticateRallarBlackBox(
     input: RallarBlackBoxLoginInput,
 ): Promise<AuthSession> {
     facade.configure({ apiBaseUrl: input.apiBaseUrl });
-    return input.register
-        ? await facade.auth.registerAndLogin({
-            username: input.username,
-            password: input.password,
-        })
-        : await facade.auth.login({
+    if (!input.register) {
+        return await facade.auth.login({
             username: input.username,
             password: input.password,
         });
+    }
+
+    try {
+        return await facade.auth.registerAndLogin({
+            username: input.username,
+            password: input.password,
+        });
+    } catch (error) {
+        if (!isExistingUserRegistrationError(error)) {
+            throw error;
+        }
+        return await facade.auth.login({
+            username: input.username,
+            password: input.password,
+        });
+    }
+}
+
+function isExistingUserRegistrationError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes('POST /api/auth/register') &&
+        message.includes('409') &&
+        message.includes('already exists');
 }
 
 export function bootstrapPatchFromAuthSession(

@@ -3,9 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { appTabsForMode } from '../../../apps/rallar-black-box/src/app-tabs.ts';
 
 const appSourcePath = new URL('../../../apps/rallar-black-box/src/App.tsx', import.meta.url);
+const styleSourcePath = new URL('../../../apps/rallar-black-box/src/styles.css', import.meta.url);
 
 function appSource(): string {
     return readFileSync(appSourcePath, 'utf8');
+}
+
+function styleSource(): string {
+    return readFileSync(styleSourcePath, 'utf8');
 }
 
 function sourceBetween(source: string, startMarker: string, endMarker: string): string {
@@ -129,5 +134,45 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(rtcRealtimePanel).toContain('Realtime sub');
         expect(rtcRealtimePanel).toContain('RTC message sub');
         expect(rtcDiagnosticsPanel).toContain('RtcDiagnosticsTimeseriesPanel');
+    });
+
+    it('keeps runner analysis evidence before setup controls and adds RTC performance surfaces', () => {
+        const source = appSource();
+        const styles = styleSource();
+        const recipesPanel = sourceBetween(source, 'function RunnerRecipesPanel', 'function RunnerRunsPanel');
+        const runsPanel = sourceBetween(source, 'function RunnerRunsPanel', 'function RunnerFleetPanel');
+        const rtcDiagnosticsPanel = sourceBetween(source, 'function RtcDiagnosticsPanel', 'function TopologyGraphPanel');
+
+        expect(runsPanel).toContain('RunVerdictPanel');
+        expect(runsPanel).toContain('CausalTrailPanel');
+        expect(runsPanel).toContain('RtcPerformancePanel');
+        expect(runsPanel).toContain('distributedRunSeed');
+        expect(runsPanel).toContain('DISTRIBUTED_RUN_SEEDS');
+        expect(runsPanel).toContain('Synthetic seed');
+        expect(runsPanel).toContain('Synthetic evidence');
+        expect(runsPanel).toContain('Clear seed');
+        expect(runsPanel.indexOf('RunVerdictPanel')).toBeLessThan(runsPanel.indexOf('runner-distributed-analysis'));
+        expect(runsPanel).toContain('selectedMonitor');
+        expect(runsPanel).toContain('distributedMonitor: selectedMonitor');
+        expect(recipesPanel.indexOf('runner-quick-launch-strip')).toBeLessThan(
+            recipesPanel.indexOf('RunnerReadinessPanel'),
+        );
+        expect(rtcDiagnosticsPanel).toContain('RtcPerformancePanel');
+        expect(rtcDiagnosticsPanel.indexOf('RtcPerformancePanel')).toBeLessThan(
+            rtcDiagnosticsPanel.indexOf('RtcDiagnosticsTimeseriesPanel'),
+        );
+        expect(rtcDiagnosticsPanel.indexOf('RtcPerformancePanel')).toBeLessThan(
+            rtcDiagnosticsPanel.indexOf('rtc-stage-list'),
+        );
+        expect(styles).toContain('.run-verdict-band');
+        expect(styles).toContain('.causal-trail-panel');
+        expect(styles).toContain('.rtc-performance-panel');
+        expect(styles).toContain('.runner-evidence-first');
+        expect(styles).toContain('.app-shell.mode-black-box-runner .app-mode-switch');
+        expect(styles).toContain('.app-shell.mode-black-box-runner .app-mode-copy p');
+        expect(styles).toContain('.causal-trail-actions');
+        expect(styles).toContain('.rtc-performance-legend');
+        expect(styles).toContain('.synthetic-seed-control');
+        expect(styles).toContain('.synthetic-seed-notice');
     });
 });

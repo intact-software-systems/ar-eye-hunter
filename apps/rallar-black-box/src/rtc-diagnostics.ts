@@ -3,6 +3,7 @@ import type {
     RallarBlackBoxTestResult,
     RallarBlackBoxTestState,
 } from '@shared-test/rallar-bb-test/types.ts';
+import type { DistributedRunMonitor } from './distributed-recipes.ts';
 
 export type RtcConnectStageId =
     | 'auth'
@@ -100,6 +101,68 @@ export type RtcDiagnosticsSnapshot = Readonly<{
     recentEvents: readonly RallarBlackBoxTestEvent[];
     recentResults: readonly RallarBlackBoxTestResult[];
     bundle: unknown;
+}>;
+
+export type RtcPerformanceTone = 'good' | 'warn' | 'bad' | 'active' | 'muted';
+
+export type RtcPerformanceScatterPoint = Readonly<{
+    sequence: number;
+    commandId: string;
+    kind: RallarBlackBoxTestResult['kind'] | 'distributed-agent';
+    source: 'local-result' | 'distributed-agent';
+    transport: 'rtc' | 'ws' | 'runtime';
+    status: RallarBlackBoxTestResult['status'];
+    ok: boolean;
+    startedAtEpochMs?: number;
+    endedAtEpochMs?: number;
+    durationMs: number;
+    agentId?: string;
+}>;
+
+export type RtcPerformanceHistogramBucket = Readonly<{
+    label: string;
+    minMs: number;
+    maxMs: number;
+    count: number;
+}>;
+
+export type RtcPerformancePhaseSpan = Readonly<{
+    stageId: RtcConnectStageId;
+    label: string;
+    status: RtcConnectStageStatus;
+    startMs: number;
+    endMs: number;
+    durationMs: number;
+    timingKind: 'duration' | 'observed-delta';
+    valueLabel: string;
+    tone: RtcPerformanceTone;
+    eventId?: string;
+}>;
+
+export type RtcPerformanceAgentLaneCell = Readonly<{
+    laneId: string;
+    metric: 'expected' | 'observed' | 'ready' | 'active' | 'stale' | 'missing';
+    value: string;
+    status: RtcPerformanceTone;
+}>;
+
+export type RtcPerformanceView = Readonly<{
+    summary: Readonly<{
+        commandCount: number;
+        p50Ms?: number;
+        p95Ms?: number;
+        maxMs?: number;
+        connectMs?: number;
+        firstPayloadMs?: number;
+        failureCount: number;
+        messageCount: number;
+    }>;
+    emptyReasons: readonly string[];
+    timeseries: readonly RtcDiagnosticsTimeseriesSeries[];
+    scatter: readonly RtcPerformanceScatterPoint[];
+    histogram: readonly RtcPerformanceHistogramBucket[];
+    phaseSpans: readonly RtcPerformancePhaseSpan[];
+    agentMatrix: readonly RtcPerformanceAgentLaneCell[];
 }>;
 
 const RTC_STAGE_DEFINITIONS: readonly Readonly<{
@@ -645,6 +708,299 @@ function isRelevantResult(result: RallarBlackBoxTestResult): boolean {
         result.kind === 'close' ||
         result.kind === 'reset' ||
         result.kind === 'health';
+}
+
+function resultTransport(result: RallarBlackBoxTestResult): RtcPerformanceScatterPoint['transport'] {
+    if (result.kind.startsWith('rtc.')) return 'rtc';
+    if (result.kind.startsWith('ws.')) return 'ws';
+    return 'runtime';
+}
+
+function finiteDurations(results: readonly RallarBlackBoxTestResult[]): readonly number[] {
+    return results
+        .map(result => result.durationMs)
+        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+}
+
+function percentile(values: readonly number[], percentileValue: number): number | undefined {
+    if (values.length === 0) {
+        return undefined;
+    }
+    const sorted = [...values].sort((left, right) => left - right);
+    const index = Math.min(
+        sorted.length - 1,
+        Math.max(0, Math.ceil(percentileValue * sorted.length) - 1),
+    );
+    return sorted[index];
+}
+
+function histogramBuckets(
+    durations: readonly number[],
+    bucketCount: number,
+): readonly RtcPerformanceHistogramBucket[] {
+    if (durations.length === 0) {
+        return [];
+    }
+    const min = Math.min(...durations);
+    const max = Math.max(...durations);
+    const count = Math.max(1, bucketCount);
+    if (min === max) {
+        return [{
+            label: `${Math.round(min)} ms`,
+            minMs: min,
+            maxMs: max,
+            count: durations.length,
+        }];
+    }
+    const width = (max - min) / count;
+    const buckets = Array.from({ length: count }, (_, index) => {
+        const minMs = min + (index * width);
+        const maxMs = index === count - 1 ? max : min + ((index + 1) * width);
+        return {
+            label: `${Math.round(minMs)}-${Math.round(maxMs)} ms`,
+            minMs,
+            maxMs,
+            count: 0,
+        };
+    });
+    durations.forEach(duration => {
+        const rawIndex = Math.floor((duration - min) / width);
+        const index = Math.min(count - 1, Math.max(0, rawIndex));
+        buckets[index] = {
+            ...buckets[index],
+            count: buckets[index].count + 1,
+        };
+    });
+    return buckets;
+}
+
+function performanceStageTone(status: RtcConnectStageStatus): RtcPerformanceTone {
+    if (status === 'observed') return 'good';
+    if (status === 'failed') return 'bad';
+    if (status === 'warning') return 'warn';
+    return 'muted';
+}
+
+function phaseSpans(
+    diagnostics: RtcDiagnosticsSnapshot,
+    results: readonly RallarBlackBoxTestResult[],
+): readonly RtcPerformancePhaseSpan[] {
+    const observedStages = diagnostics.stages.filter(stage => stage.atEpochMs !== undefined);
+    if (observedStages.length === 0) {
+        return [];
+    }
+    const firstEventAt = Math.min(...observedStages.map(stage => stage.atEpochMs!));
+    const firstResultAt = results
+        .map(result => result.startedAtEpochMs)
+        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+        .sort((left, right) => left - right)[0];
+    const baseline = Math.min(firstEventAt, firstResultAt ?? firstEventAt);
+    let previousEnd = 0;
+    return observedStages.map(stage => {
+        const endMs = Math.max(0, (stage.atEpochMs ?? baseline) - baseline);
+        const payloadDurationMs = stagePayloadDurationMs(stage);
+        const startMs = payloadDurationMs === undefined
+            ? Math.min(previousEnd, endMs)
+            : Math.max(0, endMs - payloadDurationMs);
+        const durationMs = payloadDurationMs ?? Math.max(0, endMs - startMs);
+        previousEnd = endMs;
+        const timingKind = payloadDurationMs === undefined ? 'observed-delta' : 'duration';
+        return {
+            stageId: stage.stageId,
+            label: stage.label,
+            status: stage.status,
+            startMs,
+            endMs,
+            durationMs,
+            timingKind,
+            valueLabel: timingKind === 'duration'
+                ? `${Math.round(durationMs)} ms duration`
+                : `${Math.round(endMs)} ms observed delta`,
+            tone: performanceStageTone(stage.status),
+            eventId: stage.eventId,
+        };
+    });
+}
+
+function stagePayloadDurationMs(stage: RtcConnectStage): number | undefined {
+    if (!stage.details || typeof stage.details !== 'object') {
+        return undefined;
+    }
+    const details = stage.details as Record<string, unknown>;
+    return numberValue(
+        details.durationMs ??
+            details.elapsedMs ??
+            details.phaseDurationMs ??
+            details.latencyMs,
+    );
+}
+
+function laneCellsForMembership(
+    membership: RtcMembershipDiagnostics,
+): readonly RtcPerformanceAgentLaneCell[] {
+    const laneIds = unique([
+        ...membership.expectedClients,
+        ...membership.observedClients,
+        ...membership.readyPeerIds,
+        ...membership.activePeerIds,
+        ...membership.staleClients,
+        ...membership.missingClients,
+    ]);
+    const expected = new Set(membership.expectedClients);
+    const observed = new Set(membership.observedClients);
+    const ready = new Set(membership.readyPeerIds);
+    const active = new Set(membership.activePeerIds);
+    const stale = new Set(membership.staleClients);
+    const missing = new Set(membership.missingClients);
+    const metrics: readonly RtcPerformanceAgentLaneCell['metric'][] = [
+        'expected',
+        'observed',
+        'ready',
+        'active',
+        'stale',
+        'missing',
+    ];
+
+    return laneIds.flatMap(laneId => metrics.map(metric => {
+        const set = {
+            expected,
+            observed,
+            ready,
+            active,
+            stale,
+            missing,
+        }[metric];
+        const present = set.has(laneId);
+        const shouldBePresent =
+            metric === 'expected' ||
+            (expected.has(laneId) && metric !== 'stale' && metric !== 'missing');
+        const status: RtcPerformanceTone = metric === 'stale' || metric === 'missing'
+            ? present ? 'bad' : 'good'
+            : present ? 'good' : shouldBePresent ? 'warn' : 'muted';
+        return {
+            laneId,
+            metric,
+            value: present ? 'yes' : 'no',
+            status,
+        };
+    }));
+}
+
+function distributedAgentScatterPoints(
+    monitor: DistributedRunMonitor | undefined,
+    startSequence: number,
+): readonly RtcPerformanceScatterPoint[] {
+    if (!monitor) {
+        return [];
+    }
+    return monitor.agentProgress
+        .filter(row => typeof row.averageLatencyMs === 'number' && Number.isFinite(row.averageLatencyMs))
+        .map((row, index) => {
+            const failed = row.failedCommandCount > 0 || row.execution === 'failed';
+            return {
+                sequence: startSequence + index,
+                commandId: row.agentId,
+                kind: 'distributed-agent',
+                source: 'distributed-agent',
+                transport: 'runtime',
+                status: failed ? 'failed' : 'ok',
+                ok: !failed,
+                durationMs: row.averageLatencyMs!,
+                agentId: row.agentId,
+            };
+        });
+}
+
+function distributedAgentMetricCell(
+    laneId: string,
+    metric: RtcPerformanceAgentLaneCell['metric'],
+    value: string,
+    status: RtcPerformanceTone,
+): RtcPerformanceAgentLaneCell {
+    return { laneId, metric, value, status };
+}
+
+function laneCellsForDistributedMonitor(
+    monitor: DistributedRunMonitor | undefined,
+): readonly RtcPerformanceAgentLaneCell[] | undefined {
+    if (!monitor || monitor.agentProgress.length === 0) {
+        return undefined;
+    }
+    return monitor.agentProgress.flatMap(row => {
+        const observed = row.resultCount > 0 || row.eventCount > 0 || row.completedCommandCount > 0;
+        const ready = row.readiness === 'ready' || row.readiness === 'passed';
+        const readinessFailed = row.readiness === 'failed' || row.readiness === 'cancelled' || row.readiness === 'missing';
+        const active = row.execution === 'running' || row.execution === 'passed';
+        const executionBlocked = row.execution === 'failed' || row.execution === 'cancelled' || row.execution === 'missing';
+        const missing = row.readiness === 'missing' || row.execution === 'missing';
+        return [
+            distributedAgentMetricCell(row.agentId, 'expected', 'yes', 'good'),
+            distributedAgentMetricCell(row.agentId, 'observed', observed ? 'yes' : 'no', observed ? 'good' : 'warn'),
+            distributedAgentMetricCell(row.agentId, 'ready', ready ? 'yes' : 'no', ready ? 'good' : readinessFailed ? 'bad' : 'warn'),
+            distributedAgentMetricCell(row.agentId, 'active', active ? 'yes' : 'no', active ? 'good' : executionBlocked ? 'warn' : 'muted'),
+            distributedAgentMetricCell(row.agentId, 'stale', 'no', 'good'),
+            distributedAgentMetricCell(row.agentId, 'missing', missing ? 'yes' : 'no', missing ? 'bad' : 'good'),
+        ];
+    });
+}
+
+export function deriveRtcPerformanceView(input: Readonly<{
+    diagnostics: RtcDiagnosticsSnapshot;
+    state: RallarBlackBoxTestState;
+    distributedMonitor?: DistributedRunMonitor;
+    histogramBucketCount?: number;
+}>): RtcPerformanceView {
+    const relevantResults = input.diagnostics.recentResults
+        .filter(result => typeof result.durationMs === 'number' && Number.isFinite(result.durationMs));
+    const localScatter = relevantResults.map((result, index) => ({
+        sequence: index + 1,
+        commandId: result.commandId,
+        kind: result.kind,
+        source: 'local-result' as const,
+        transport: resultTransport(result),
+        status: result.status,
+        ok: result.ok,
+        startedAtEpochMs: result.startedAtEpochMs,
+        endedAtEpochMs: result.endedAtEpochMs,
+        durationMs: result.durationMs!,
+        agentId: input.state.currentConfig?.agentId,
+    }));
+    const scatter = [
+        ...localScatter,
+        ...distributedAgentScatterPoints(input.distributedMonitor, localScatter.length + 1),
+    ];
+    const durations = scatter.map(point => point.durationMs);
+    const failureCount = input.diagnostics.recentEvents.filter(isFailureEvent).length +
+        relevantResults.filter(result => !result.ok).length +
+        (input.distributedMonitor?.agentProgress.reduce(
+            (sum, row) => sum + row.failedCommandCount,
+            0,
+        ) ?? 0);
+    const messageCount = input.diagnostics.recentEvents.filter(event => event.kind === 'message').length;
+    const emptyReasons = [
+        scatter.length === 0 ? 'No RTC/WS command results yet' : undefined,
+        input.diagnostics.recentEvents.length === 0 ? 'No RTC timeline events yet' : undefined,
+    ].filter((value): value is string => Boolean(value));
+
+    return {
+        summary: {
+            commandCount: scatter.length,
+            p50Ms: percentile(durations, 0.5),
+            p95Ms: percentile(durations, 0.95),
+            maxMs: durations.length > 0 ? Math.max(...durations) : undefined,
+            connectMs: input.diagnostics.latency.connectMs,
+            firstPayloadMs: input.diagnostics.latency.firstPayloadMs,
+            failureCount,
+            messageCount,
+        },
+        emptyReasons,
+        timeseries: input.diagnostics.timeseries,
+        scatter,
+        histogram: histogramBuckets(durations, input.histogramBucketCount ?? 6),
+        phaseSpans: phaseSpans(input.diagnostics, relevantResults),
+        agentMatrix: laneCellsForDistributedMonitor(input.distributedMonitor) ??
+            laneCellsForMembership(input.diagnostics.membership),
+    };
 }
 
 export function deriveRtcDiagnostics(

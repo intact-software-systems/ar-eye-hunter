@@ -277,7 +277,9 @@ service logs.
 Use `RALLAR_BLACK_BOX_REGISTER=1`, or the GitHub Actions
 `register_before_login` input, when the target API is memory-backed and has just
 been redeployed so the disposable test user must be created before login. Leave
-it disabled for pre-provisioned or persistent auth users.
+it disabled for pre-provisioned or persistent auth users. When registration
+reports that the user already exists, the black-box auth flow falls back to a
+normal login with the same credentials.
 
 The GitHub Actions headless browser workflow resolves credentials for
 `action=start` in this order:

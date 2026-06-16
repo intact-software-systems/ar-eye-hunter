@@ -76,6 +76,40 @@ describe('rallar-black-box auth flow', () => {
         ]);
     });
 
+    it('falls back to login when register-before-login finds an existing user', async () => {
+        const calls: string[] = [];
+        const loginSession = session('alice');
+        const facade: RallarBlackBoxAuthFacade = {
+            configure: (config) => {
+                calls.push(`configure:${config.apiBaseUrl}`);
+            },
+            auth: {
+                login: async (request) => {
+                    calls.push(`login:${request.username}:${request.password}`);
+                    return loginSession;
+                },
+                registerAndLogin: async (request) => {
+                    calls.push(`register:${request.username}:${request.password}`);
+                    throw new Error(
+                        'API POST /api/auth/register failed: 409 {"error":"Auth user already exists: alice"}',
+                    );
+                },
+            },
+        };
+
+        await expect(authenticateRallarBlackBox(facade, {
+            apiBaseUrl: 'https://api.example.test',
+            username: 'alice',
+            password: 'secret',
+            register: true,
+        })).resolves.toBe(loginSession);
+        expect(calls).toEqual([
+            'configure:https://api.example.test',
+            'register:alice:secret',
+            'login:alice:secret',
+        ]);
+    });
+
     it('creates a restore-session bootstrap patch after login', () => {
         expect(bootstrapPatchFromAuthSession(session('alice'), 'https://api.example.test'))
             .toMatchObject({

@@ -6,9 +6,11 @@ import type {
 } from '../../shared-test/rallar-bb-test/types.ts';
 import {
     deriveRtcDiagnostics,
+    deriveRtcPerformanceView,
     deriveRtcDiagnosticsTimeseries,
     rtcConnectStageIdForEvent,
 } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
+import type { DistributedRunMonitor } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 
 function event(
     eventId: string,
@@ -323,6 +325,161 @@ describe('rallar-black-box RTC diagnostics', () => {
             .toEqual([0, 0, 0, 1]);
         expect(series.find(entry => entry.seriesId === 'phase-duration')?.points.map(point => point.value))
             .toEqual([0, 10, 0, 30]);
+    });
+
+    it('derives scatter, distribution, waterfall, and lane matrix performance views', () => {
+        const sampleState = state([
+            event('event-auth', 'rallar.browser.auth.completed', 100, { phase: 'auth' }),
+            event('event-runtime', 'rallar.browser.runtime.bootstrap_completed', 120),
+            event('event-group', 'rallar.browser.room.joined', 140, {
+                roomId: 'room-1',
+                sessionId: 'alice-session',
+                expectedClients: ['alice-session', 'bob-session'],
+                observedClients: ['alice-session', 'bob-session'],
+            }),
+            event('event-signal', 'rallar.browser.signaling.ready', 150),
+            event('event-peer', 'rallar.browser.peer.discovered', 160, {
+                peerId: 'bob-session',
+            }),
+            event('event-channel', 'rallar.browser.data_channel.ready', 170, {
+                readyPeerIds: ['alice-session', 'bob-session'],
+                activePeerIds: ['alice-session'],
+                durationMs: 18,
+            }),
+            {
+                ...event('event-message', 'rallar.browser.realtime.message', 205),
+                kind: 'message',
+            },
+        ], [
+            result('connect-1', 'rtc.connect', 90, 85),
+            result('send-1', 'rtc.send', 180, 12),
+            result('ws-1', 'ws.send', 210, 34),
+        ]);
+        const diagnostics = deriveRtcDiagnostics(sampleState);
+        const performance = deriveRtcPerformanceView({
+            diagnostics,
+            state: sampleState,
+            histogramBucketCount: 3,
+        });
+
+        expect(performance.summary).toMatchObject({
+            commandCount: 3,
+            p50Ms: 34,
+            p95Ms: 85,
+            maxMs: 85,
+            failureCount: 0,
+        });
+        expect(performance.scatter.map(point => [point.commandId, point.transport, point.durationMs])).toEqual([
+            ['connect-1', 'rtc', 85],
+            ['send-1', 'rtc', 12],
+            ['ws-1', 'ws', 34],
+        ]);
+        expect(performance.histogram.reduce((sum, bucket) => sum + bucket.count, 0)).toBe(3);
+        expect(performance.phaseSpans.map(span => [span.stageId, span.status, span.endMs])).toContainEqual([
+            'first-payload',
+            'observed',
+            115,
+        ]);
+        expect(performance.phaseSpans.find(span => span.stageId === 'data-channel')).toMatchObject({
+            durationMs: 18,
+            timingKind: 'duration',
+            valueLabel: '18 ms duration',
+        });
+        expect(performance.phaseSpans.find(span => span.stageId === 'first-payload')).toMatchObject({
+            timingKind: 'observed-delta',
+            valueLabel: '115 ms observed delta',
+        });
+        expect(performance.agentMatrix.map(cell => [cell.laneId, cell.metric, cell.status])).toContainEqual([
+            'bob-session',
+            'active',
+            'warn',
+        ]);
+        expect(performance.timeseries.map(series => series.seriesId)).toEqual([
+            'events',
+            'messages',
+            'failures',
+            'phase-duration',
+        ]);
+    });
+
+    it('adds distributed monitor agent timing to RTC performance views', () => {
+        const sampleState = state([
+            event('event-runtime', 'rallar.browser.runtime.bootstrap_completed', 120),
+        ], [
+            result('send-1', 'rtc.send', 180, 12),
+        ]);
+        const distributedMonitor = {
+            agentProgress: [
+                {
+                    agentId: 'agent-a',
+                    role: 'sender',
+                    readiness: 'passed',
+                    barrier: 'passed',
+                    execution: 'passed',
+                    stageCommandCount: 1,
+                    barrierCommandCount: 1,
+                    startCommandCount: 1,
+                    completedCommandCount: 3,
+                    failedCommandCount: 0,
+                    resultCount: 3,
+                    eventCount: 4,
+                    averageLatencyMs: 42,
+                    lastActivityAtEpochMs: 240,
+                },
+                {
+                    agentId: 'agent-b',
+                    role: 'receiver',
+                    readiness: 'passed',
+                    barrier: 'passed',
+                    execution: 'failed',
+                    stageCommandCount: 1,
+                    barrierCommandCount: 1,
+                    startCommandCount: 1,
+                    completedCommandCount: 2,
+                    failedCommandCount: 1,
+                    resultCount: 3,
+                    eventCount: 1,
+                    averageLatencyMs: 220,
+                    lastActivityAtEpochMs: 260,
+                },
+            ],
+        } as unknown as DistributedRunMonitor;
+        const performance = deriveRtcPerformanceView({
+            diagnostics: deriveRtcDiagnostics(sampleState),
+            state: sampleState,
+            distributedMonitor,
+            histogramBucketCount: 4,
+        });
+
+        expect(performance.summary.commandCount).toBe(3);
+        expect(performance.scatter.map(point => [point.commandId, point.source, point.agentId, point.durationMs])).toEqual([
+            ['send-1', 'local-result', 'agent-1', 12],
+            ['agent-a', 'distributed-agent', 'agent-a', 42],
+            ['agent-b', 'distributed-agent', 'agent-b', 220],
+        ]);
+        expect(performance.agentMatrix.map(cell => [cell.laneId, cell.metric, cell.value, cell.status])).toEqual(expect.arrayContaining([
+            ['agent-b', 'expected', 'yes', 'good'],
+            ['agent-b', 'active', 'no', 'warn'],
+            ['agent-b', 'missing', 'no', 'good'],
+        ]));
+        expect(performance.histogram.reduce((sum, bucket) => sum + bucket.count, 0)).toBe(3);
+    });
+
+    it('returns explicit empty RTC performance states', () => {
+        const emptyState = state([]);
+        const performance = deriveRtcPerformanceView({
+            diagnostics: deriveRtcDiagnostics(emptyState),
+            state: emptyState,
+        });
+
+        expect(performance.summary.commandCount).toBe(0);
+        expect(performance.emptyReasons).toEqual([
+            'No RTC/WS command results yet',
+            'No RTC timeline events yet',
+        ]);
+        expect(performance.scatter).toEqual([]);
+        expect(performance.histogram).toEqual([]);
+        expect(performance.phaseSpans).toEqual([]);
     });
 
     it('classifies control, provider config, auth, permission, and cleanup failures', () => {

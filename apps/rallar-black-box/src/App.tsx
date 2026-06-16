@@ -140,8 +140,13 @@ import {
 } from './manual-workbench.ts';
 import {
     deriveRtcDiagnostics,
+    deriveRtcPerformanceView,
     type RtcConnectStageStatus,
     type RtcDiagnosticsTimeseriesSeries,
+    type RtcPerformanceHistogramBucket,
+    type RtcPerformancePhaseSpan,
+    type RtcPerformanceScatterPoint,
+    type RtcPerformanceView,
 } from './rtc-diagnostics.ts';
 import {
     deriveRallarTopologyGraph,
@@ -183,6 +188,7 @@ import {
     defaultDistributedRecipeTargetIds,
     deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,
+    deriveRunVerdictView,
     distributedRecipeCommandKinds,
     distributedRecipeCommandPreview,
     distributedRecipePreflight,
@@ -193,6 +199,8 @@ import {
     type DistributedRunAnalysisReport,
     type DistributedRunMonitor,
     type DistributedRunProgressStatus,
+    type RunCausalTrailItem,
+    type RunVerdictView,
     type DistributedRecipeCatalogItem,
     type DistributedRecipePreflightSummary,
     type DistributedRecipeRolePattern,
@@ -209,6 +217,13 @@ import {
     type DistributedRecipePromptValidationFeedback,
     type DistributedRecipePromptVariables,
 } from './distributed-recipe-authoring-prompts.ts';
+import {
+    DISTRIBUTED_RUN_SEEDS,
+    createSyntheticDistributedRunSeed,
+    distributedRunSeedIdFromValue,
+    type DistributedRunSeedId,
+    type SyntheticDistributedRunSeed,
+} from './distributed-run-seeds.ts';
 import {
     commandExampleSnippets,
     schemaAuthoringSummary,
@@ -1393,6 +1408,27 @@ function writeAppNavigationToUrl(navigation: AppNavigationState): void {
         url.searchParams.delete('advanced');
     }
     window.history.replaceState(null, '', url);
+}
+
+function readDistributedRunSeedFromUrl(): DistributedRunSeedId | undefined {
+    if (typeof window === 'undefined') {
+        return undefined;
+    }
+    const params = new URLSearchParams(window.location.search);
+    return distributedRunSeedIdFromValue(params.get('distributedRunSeed'));
+}
+
+function writeDistributedRunSeedToUrl(seedId: DistributedRunSeedId | undefined): void {
+    if (typeof window === 'undefined') {
+        return;
+    }
+    const url = new URL(window.location.href);
+    if (seedId) {
+        url.searchParams.set('distributedRunSeed', seedId);
+    } else {
+        url.searchParams.delete('distributedRunSeed');
+    }
+    window.history.replaceState(window.history.state, '', url);
 }
 
 function commandId(command: RallarBlackBoxTestCommand, index: number): string {
@@ -6835,38 +6871,8 @@ function RunnerRecipesPanel({
                     {busyAction ?? launchState}
                 </span>
             </div>
-            <RunnerReadinessPanel
-                checks={readiness.checks}
-                message={readiness.primaryMessage}
-                refreshing={busyAction === 'refresh-readiness'}
-                onRefresh={() => void refreshReadiness()}
-                onOpenAgentTabs={openAgentTabs}
-            />
-            <RunnerAgentSetupPanel
-                runId={agentRunId}
-                agentPrefix={agentPrefix}
-                agentCount={agentCount}
-                restoreSession={agentRestoreSession}
-                providerMode={bootstrap.providerMode}
-                authSession={authSession}
-                controlWsUrl={agentControlWsUrl}
-                groupId={globalValues.roomId}
-                connectedAgents={controlRun?.agents ?? []}
-                launchUrls={agentLaunchUrls}
-                launchMessage={agentLaunchMessage}
-                onRunIdChange={(value) => {
-                    setAgentRunId(value);
-                    setControlRunId(value);
-                    setControlRun(undefined);
-                }}
-                onAgentPrefixChange={setAgentPrefix}
-                onAgentCountChange={setAgentCount}
-                onRestoreSessionChange={setAgentRestoreSession}
-                onOpenAgents={openAgentTabs}
-                onCopyLinks={() => void copyAgentLinks()}
-            />
             {selectedRecipe && (
-                <div className="runner-quick-launch-strip">
+                <div className="runner-quick-launch-strip runner-evidence-first">
                     <div>
                         <span>Selected recipe</span>
                         <strong>{selectedRecipe.title}</strong>
@@ -6904,6 +6910,36 @@ function RunnerRecipesPanel({
                     )}
                 </div>
             )}
+            <RunnerReadinessPanel
+                checks={readiness.checks}
+                message={readiness.primaryMessage}
+                refreshing={busyAction === 'refresh-readiness'}
+                onRefresh={() => void refreshReadiness()}
+                onOpenAgentTabs={openAgentTabs}
+            />
+            <RunnerAgentSetupPanel
+                runId={agentRunId}
+                agentPrefix={agentPrefix}
+                agentCount={agentCount}
+                restoreSession={agentRestoreSession}
+                providerMode={bootstrap.providerMode}
+                authSession={authSession}
+                controlWsUrl={agentControlWsUrl}
+                groupId={globalValues.roomId}
+                connectedAgents={controlRun?.agents ?? []}
+                launchUrls={agentLaunchUrls}
+                launchMessage={agentLaunchMessage}
+                onRunIdChange={(value) => {
+                    setAgentRunId(value);
+                    setControlRunId(value);
+                    setControlRun(undefined);
+                }}
+                onAgentPrefixChange={setAgentPrefix}
+                onAgentCountChange={setAgentCount}
+                onRestoreSessionChange={setAgentRestoreSession}
+                onOpenAgents={openAgentTabs}
+                onCopyLinks={() => void copyAgentLinks()}
+            />
             <div className="runner-recipes-toolbar">
                 <label className="field runner-recipes-search">
                     <span>Search Recipes</span>
@@ -7404,6 +7440,15 @@ function RunnerRunsPanel({
     const failures = selectRallarBlackBoxFailures(state);
     const latestStats = selectRallarBlackBoxLatestStats(state);
     const recentHistory = [...history].reverse().slice(0, 12);
+    const initialSyntheticSeed = useMemo<SyntheticDistributedRunSeed | undefined>(
+        () => {
+            const distributedRunSeed = readDistributedRunSeedFromUrl();
+            return distributedRunSeed
+                ? createSyntheticDistributedRunSeed(distributedRunSeed)
+                : undefined;
+        },
+        [],
+    );
     const [controlBaseUrl, setControlBaseUrl] = useState(() =>
         preferredDistributedRun?.controlBaseUrl ??
             controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl)
@@ -7412,31 +7457,44 @@ function RunnerRunsPanel({
         preferredDistributedRun?.controlToken ?? bootstrap.controlToken ?? '',
     );
     const [controlRunId, setControlRunId] = useState(
-        preferredDistributedRun?.controlRunId ?? control.runId ??
+        initialSyntheticSeed?.controlRun.runId ??
+            preferredDistributedRun?.controlRunId ?? control.runId ??
             bootstrap.runId ?? '',
     );
     const [distributedRuns, setDistributedRuns] = useState<
         readonly ControlDistributedRunSnapshot[]
-    >([]);
+    >(() => initialSyntheticSeed ? [initialSyntheticSeed.distributedRun] : []);
     const [selectedDistributedRunId, setSelectedDistributedRunId] = useState(
-        preferredDistributedRun?.distributedRunId ?? '',
+        initialSyntheticSeed?.distributedRun.distributedRunId ??
+            preferredDistributedRun?.distributedRunId ?? '',
     );
     const [selectedDistributedRun, setSelectedDistributedRun] = useState<
         ControlDistributedRunSnapshot | undefined
-    >();
+    >(initialSyntheticSeed?.distributedRun);
     const [distributedControlRun, setDistributedControlRun] = useState<
         ControlRunSnapshot | undefined
-    >();
+    >(initialSyntheticSeed?.controlRun);
     const [artifactBundle, setArtifactBundle] = useState<
         ControlDistributedRunArtifactBundle | undefined
-    >();
+    >(initialSyntheticSeed?.artifactBundle);
+    const [selectedSyntheticSeedId, setSelectedSyntheticSeedId] = useState<
+        DistributedRunSeedId | ''
+    >(initialSyntheticSeed?.id ?? '');
+    const [activeSyntheticSeed, setActiveSyntheticSeed] = useState<
+        SyntheticDistributedRunSeed | undefined
+    >(initialSyntheticSeed);
     const [distributedBusy, setDistributedBusy] = useState<string | undefined>();
     const [distributedError, setDistributedError] = useState<string | undefined>();
     const [lastDistributedRefresh, setLastDistributedRefresh] =
-        useState<number | undefined>();
-    const [compareLeftId, setCompareLeftId] = useState('');
+        useState<number | undefined>(initialSyntheticSeed?.generatedAtEpochMs);
+    const [compareLeftId, setCompareLeftId] = useState(
+        initialSyntheticSeed?.distributedRun.distributedRunId ?? '',
+    );
     const [compareRightId, setCompareRightId] = useState('');
     const didInitialDistributedRefresh = useRef(false);
+    const activeSyntheticSeedRef = useRef<SyntheticDistributedRunSeed | undefined>(
+        initialSyntheticSeed,
+    );
     const selectedMonitor = useMemo(
         () =>
             selectedDistributedRun
@@ -7459,6 +7517,33 @@ function RunnerRunsPanel({
                 })
                 : undefined,
         [artifactBundle, distributedControlRun, selectedDistributedRun],
+    );
+    const runVerdict = useMemo(
+        () =>
+            deriveRunVerdictView({
+                distributedRun: selectedDistributedRun,
+                monitor: selectedMonitor,
+                report: analysisReport,
+                artifactBundle,
+                refreshedAtEpochMs: lastDistributedRefresh,
+            }),
+        [
+            analysisReport,
+            artifactBundle,
+            lastDistributedRefresh,
+            selectedDistributedRun,
+            selectedMonitor,
+        ],
+    );
+    const rtcDiagnostics = useMemo(() => deriveRtcDiagnostics(state), [state]);
+    const rtcPerformance = useMemo(
+        () =>
+            deriveRtcPerformanceView({
+                diagnostics: rtcDiagnostics,
+                state,
+                distributedMonitor: selectedMonitor,
+            }),
+        [rtcDiagnostics, selectedMonitor, state],
     );
     const compareLeftRun = useMemo(
         () =>
@@ -7497,6 +7582,9 @@ function RunnerRunsPanel({
         override?: RunnerDistributedRunSelection,
         options: Readonly<{ loadArtifact?: boolean; quiet?: boolean }> = {},
     ): Promise<void> => {
+        if (activeSyntheticSeedRef.current && !override) {
+            return;
+        }
         const baseUrl = override?.controlBaseUrl ?? controlBaseUrl;
         const token = override?.controlToken ?? controlToken;
         const preferredRunId =
@@ -7546,6 +7634,9 @@ function RunnerRunsPanel({
                 ? artifactBundle
                 : undefined;
 
+            if (activeSyntheticSeedRef.current && !override) {
+                return;
+            }
             setControlBaseUrl(baseUrl);
             setControlToken(token ?? '');
             setDistributedRuns(list);
@@ -7578,10 +7669,70 @@ function RunnerRunsPanel({
         }
     };
 
+    const applySyntheticDistributedRunSeed = (
+        seedId: DistributedRunSeedId,
+    ): void => {
+        const seed = createSyntheticDistributedRunSeed(seedId);
+        activeSyntheticSeedRef.current = seed;
+        setActiveSyntheticSeed(seed);
+        setSelectedSyntheticSeedId(seed.id);
+        setDistributedBusy(undefined);
+        setDistributedError(undefined);
+        setDistributedRuns([seed.distributedRun]);
+        setSelectedDistributedRun(seed.distributedRun);
+        setSelectedDistributedRunId(seed.distributedRun.distributedRunId);
+        setControlRunId(seed.controlRun.runId);
+        setDistributedControlRun(seed.controlRun);
+        setArtifactBundle(seed.artifactBundle);
+        setLastDistributedRefresh(seed.generatedAtEpochMs);
+        setCompareLeftId(seed.distributedRun.distributedRunId);
+        setCompareRightId('');
+        writeDistributedRunSeedToUrl(seed.id);
+    };
+
+    const clearSyntheticDistributedRunSeed = (): void => {
+        activeSyntheticSeedRef.current = undefined;
+        setActiveSyntheticSeed(undefined);
+        setSelectedSyntheticSeedId('');
+        setDistributedRuns([]);
+        setSelectedDistributedRun(undefined);
+        setSelectedDistributedRunId('');
+        setDistributedControlRun(undefined);
+        setArtifactBundle(undefined);
+        setLastDistributedRefresh(undefined);
+        setCompareLeftId('');
+        setCompareRightId('');
+        setDistributedError(undefined);
+        writeDistributedRunSeedToUrl(undefined);
+    };
+
+    const selectSyntheticDistributedRunSeed = (value: string): void => {
+        const seedId = distributedRunSeedIdFromValue(value);
+        if (seedId) {
+            applySyntheticDistributedRunSeed(seedId);
+            return;
+        }
+        clearSyntheticDistributedRunSeed();
+    };
+
+    const loadDistributedArtifact = async (): Promise<void> => {
+        if (activeSyntheticSeed) {
+            setArtifactBundle(activeSyntheticSeed.artifactBundle);
+            return;
+        }
+        await refreshDistributedAnalysis(undefined, {
+            loadArtifact: true,
+        });
+    };
+
     useEffect(() => {
         if (!preferredDistributedRun) {
             return;
         }
+        activeSyntheticSeedRef.current = undefined;
+        setActiveSyntheticSeed(undefined);
+        setSelectedSyntheticSeedId('');
+        writeDistributedRunSeedToUrl(undefined);
         setArtifactBundle(undefined);
         setControlBaseUrl(preferredDistributedRun.controlBaseUrl);
         setControlToken(preferredDistributedRun.controlToken ?? '');
@@ -7598,7 +7749,11 @@ function RunnerRunsPanel({
     ]);
 
     useEffect(() => {
-        if (didInitialDistributedRefresh.current || preferredDistributedRun) {
+        if (
+            didInitialDistributedRefresh.current ||
+            preferredDistributedRun ||
+            activeSyntheticSeedRef.current
+        ) {
             return;
         }
         didInitialDistributedRefresh.current = true;
@@ -7609,6 +7764,7 @@ function RunnerRunsPanel({
 
     useEffect(() => {
         if (
+            activeSyntheticSeed ||
             !selectedDistributedRun ||
             isDistributedRunTerminalState(selectedDistributedRun.state)
         ) {
@@ -7629,6 +7785,7 @@ function RunnerRunsPanel({
 
     useEffect(() => {
         if (
+            activeSyntheticSeed ||
             !selectedDistributedRun ||
             !isDistributedRunTerminalState(selectedDistributedRun.state) ||
             artifactBundle
@@ -7674,6 +7831,9 @@ function RunnerRunsPanel({
                 <h2>Runs</h2>
                 <span>{control.runId ?? bootstrap.runId ?? 'local'}</span>
             </div>
+            <RunVerdictPanel view={runVerdict} />
+            <CausalTrailPanel items={runVerdict.causalTrail} />
+            <RtcPerformancePanel view={rtcPerformance} compact />
             <section className="runner-distributed-analysis">
                 <div className="section-heading">
                     <h3>Distributed Analysis</h3>
@@ -7685,10 +7845,35 @@ function RunnerRunsPanel({
                             'no run'}
                     </span>
                 </div>
+                {activeSyntheticSeed && (
+                    <div className="synthetic-seed-notice" role="status">
+                        <span className="pill warn">Synthetic evidence</span>
+                        <strong>{activeSyntheticSeed.label}</strong>
+                        <span>{activeSyntheticSeed.description}</span>
+                    </div>
+                )}
                 <div className="runner-distributed-toolbar">
+                    <label className="field synthetic-seed-control">
+                        <span>Synthetic seed</span>
+                        <select
+                            value={selectedSyntheticSeedId}
+                            onChange={(event) =>
+                                selectSyntheticDistributedRunSeed(
+                                    event.target.value,
+                                )}
+                        >
+                            <option value="">Real control data</option>
+                            {DISTRIBUTED_RUN_SEEDS.map((seed) => (
+                                <option key={seed.id} value={seed.id}>
+                                    {seed.label}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
                     <label className="field">
                         <span>Control HTTP</span>
                         <input
+                            disabled={Boolean(activeSyntheticSeed)}
                             value={controlBaseUrl}
                             onChange={(event) =>
                                 setControlBaseUrl(event.target.value)
@@ -7700,6 +7885,7 @@ function RunnerRunsPanel({
                         <input
                             type="password"
                             autoComplete="off"
+                            disabled={Boolean(activeSyntheticSeed)}
                             value={controlToken}
                             onChange={(event) =>
                                 setControlToken(event.target.value)
@@ -7709,6 +7895,7 @@ function RunnerRunsPanel({
                     <label className="field">
                         <span>Distributed Run</span>
                         <select
+                            disabled={Boolean(activeSyntheticSeed)}
                             value={selectedDistributedRunId}
                             onChange={(event) =>
                                 selectDistributedRun(event.target.value)
@@ -7727,7 +7914,7 @@ function RunnerRunsPanel({
                     </label>
                     <button
                         type="button"
-                        disabled={Boolean(distributedBusy)}
+                        disabled={Boolean(distributedBusy) || Boolean(activeSyntheticSeed)}
                         onClick={() => void refreshDistributedAnalysis()}
                     >
                         Refresh
@@ -7736,12 +7923,10 @@ function RunnerRunsPanel({
                         type="button"
                         disabled={
                             Boolean(distributedBusy) ||
+                            (Boolean(activeSyntheticSeed) && !artifactBundle) ||
                             !selectedDistributedRun
                         }
-                        onClick={() =>
-                            void refreshDistributedAnalysis(undefined, {
-                                loadArtifact: true,
-                            })}
+                        onClick={() => void loadDistributedArtifact()}
                     >
                         Export artifact
                     </button>
@@ -7752,6 +7937,14 @@ function RunnerRunsPanel({
                     >
                         Copy artifact
                     </button>
+                    {activeSyntheticSeed && (
+                        <button
+                            type="button"
+                            onClick={clearSyntheticDistributedRunSeed}
+                        >
+                            Clear seed
+                        </button>
+                    )}
                 </div>
                 <div className="runner-distributed-freshness">
                     <span>
@@ -10823,6 +11016,171 @@ function timeseriesPolyline(series: RtcDiagnosticsTimeseriesSeries): string {
         .join(' ');
 }
 
+function RunVerdictPanel({
+    view,
+}: {
+    view: RunVerdictView;
+}) {
+    return (
+        <section className={`run-verdict-band runner-evidence-first ${view.tone}`}>
+            <div className="run-verdict-main">
+                <div>
+                    <span className="eyebrow">Run Verdict</span>
+                    <h3>{view.title}</h3>
+                    <p>{view.summary}</p>
+                </div>
+                <dl>
+                    <div>
+                        <dt>Run</dt>
+                        <dd>{view.runId ?? '-'}</dd>
+                    </div>
+                    <div>
+                        <dt>Recipe</dt>
+                        <dd>{view.recipeLabel ?? '-'}</dd>
+                    </div>
+                    <div>
+                        <dt>Targets</dt>
+                        <dd>{view.targetCount ?? '-'}</dd>
+                    </div>
+                    <div>
+                        <dt>Duration</dt>
+                        <dd>{formatDuration(view.durationMs)}</dd>
+                    </div>
+                    <div>
+                        <dt>Fresh</dt>
+                        <dd>{formatTime(view.refreshedAtEpochMs)}</dd>
+                    </div>
+                </dl>
+            </div>
+            <div className="run-verdict-metrics">
+                {view.primaryEvidence.map((entry) => (
+                    <article
+                        className={`run-verdict-metric ${entry.tone}`}
+                        key={entry.label}
+                    >
+                        <span>{entry.label}</span>
+                        <strong>{entry.value}</strong>
+                        {entry.detail && <small>{entry.detail}</small>}
+                    </article>
+                ))}
+            </div>
+            {(view.successSignals.length > 0 ||
+                view.warningSignals.length > 0 ||
+                view.likelyCause ||
+                view.nextAction) && (
+                <div className="run-verdict-evidence">
+                    {view.successSignals.length > 0 && (
+                        <div>
+                            <strong>Why this passed</strong>
+                            <ul>
+                                {view.successSignals.slice(0, 4).map((signal) => (
+                                    <li key={signal}>{signal}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                    {(view.likelyCause || view.nextAction) && (
+                        <div>
+                            <strong>What to do next</strong>
+                            {view.likelyCause && <p>{view.likelyCause}</p>}
+                            {view.nextAction && <small>{view.nextAction}</small>}
+                        </div>
+                    )}
+                    {view.warningSignals.length > 0 && (
+                        <div>
+                            <strong>Evidence warnings</strong>
+                            <ul>
+                                {view.warningSignals.slice(0, 4).map((warning) => (
+                                    <li key={warning}>{warning}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                </div>
+            )}
+        </section>
+    );
+}
+
+function CausalTrailPanel({
+    items,
+}: {
+    items: readonly RunCausalTrailItem[];
+}) {
+    const copyTrailTarget = (item: RunCausalTrailItem): void => {
+        const target = item.targetId ?? item.commandId ?? item.agentId ?? item.evidence[0];
+        if (!target || !navigator.clipboard) {
+            return;
+        }
+        void navigator.clipboard.writeText(target);
+    };
+
+    return (
+        <section className="causal-trail-panel runner-evidence-first">
+            <div className="section-heading">
+                <h3>Causal Trail</h3>
+                <span>{items.length} steps</span>
+            </div>
+            {items.length === 0 ? (
+                <div className="empty-state">
+                    No failure trail for the selected run.
+                </div>
+            ) : (
+                <div className="causal-trail-list">
+                    {items.map((item, index) => (
+                        <article
+                            className={`causal-trail-item ${item.tone}`}
+                            key={`${item.kind}-${index}`}
+                        >
+                            <span className="causal-trail-index">
+                                {index + 1}
+                            </span>
+                            <div>
+                                <strong>{item.label}</strong>
+                                <p>{item.detail}</p>
+                                <small>
+                                    {[
+                                        item.agentId,
+                                        item.recipeId,
+                                        item.commandId,
+                                    ].filter(Boolean).join(' / ') || 'no linked id'}
+                                </small>
+                                <div className="causal-trail-actions">
+                                    {item.actionLabel && (
+                                        <button
+                                            type="button"
+                                            onClick={() => copyTrailTarget(item)}
+                                            title={
+                                                item.targetId
+                                                    ? `Copy ${item.targetKind ?? 'evidence'} ${item.targetId}`
+                                                    : 'Copy linked evidence id'
+                                            }
+                                        >
+                                            {item.actionLabel}
+                                        </button>
+                                    )}
+                                    {item.evidence.slice(0, 4).map((evidence) => (
+                                        <span
+                                            className="causal-trail-evidence"
+                                            key={evidence}
+                                            title={evidence}
+                                        >
+                                            {evidence}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                            <span className={`pill ${item.tone}`}>
+                                {item.kind.replaceAll('-', ' ')}
+                            </span>
+                        </article>
+                    ))}
+                </div>
+            )}
+        </section>
+    );
+}
+
 function RtcDiagnosticsTimeseriesPanel({
     series,
 }: {
@@ -10867,6 +11225,298 @@ function RtcDiagnosticsTimeseriesPanel({
     );
 }
 
+function scatterCircleClass(point: RtcPerformanceScatterPoint): string {
+    if (!point.ok || point.status === 'failed') {
+        return 'bad';
+    }
+    if (point.transport === 'ws') {
+        return 'active';
+    }
+    if (point.transport === 'rtc') {
+        return 'good';
+    }
+    return 'muted';
+}
+
+function RtcLatencyScatterChart({
+    points,
+}: {
+    points: readonly RtcPerformanceScatterPoint[];
+}) {
+    const width = 280;
+    const height = 150;
+    const padding = 24;
+    const maxDuration = Math.max(1, ...points.map((point) => point.durationMs));
+    const lastSequence = Math.max(1, points.length - 1);
+
+    return (
+        <svg
+            className="rtc-chart rtc-scatter-chart"
+            viewBox={`0 0 ${width} ${height}`}
+            role="img"
+            aria-label="Latency scatter plot"
+        >
+            <line
+                x1={padding}
+                x2={width - padding}
+                y1={height - padding}
+                y2={height - padding}
+            />
+            <line
+                x1={padding}
+                x2={padding}
+                y1={padding}
+                y2={height - padding}
+            />
+            <text x={padding} y={14}>duration ms</text>
+            <text x={width - 88} y={height - 6}>sequence</text>
+            {points.map((point, index) => {
+                const x = padding +
+                    (index / lastSequence) * (width - padding * 2);
+                const y = height - padding -
+                    (point.durationMs / maxDuration) * (height - padding * 2);
+                const radius = point.source === 'distributed-agent'
+                    ? 5.6
+                    : point.transport === 'rtc'
+                    ? 4.8
+                    : 3.8;
+                return (
+                    <g key={point.commandId}>
+                        <circle
+                            className={`${scatterCircleClass(point)} ${point.source === 'distributed-agent' ? 'distributed' : ''}`}
+                            cx={x}
+                            cy={y}
+                            r={radius}
+                        />
+                        <title>
+                            {point.commandId}: {point.durationMs} ms ({point.transport}, {point.source})
+                        </title>
+                    </g>
+                );
+            })}
+        </svg>
+    );
+}
+
+function RtcLatencyHistogram({
+    buckets,
+}: {
+    buckets: readonly RtcPerformanceHistogramBucket[];
+}) {
+    const max = Math.max(1, ...buckets.map((bucket) => bucket.count));
+    return (
+        <div
+            className="rtc-histogram"
+            role="img"
+            aria-label="Latency distribution histogram"
+        >
+            {buckets.map((bucket) => (
+                <div className="rtc-histogram-column" key={bucket.label}>
+                    <span
+                        style={{
+                            height: `${Math.max(8, (bucket.count / max) * 100)}%`,
+                        }}
+                    />
+                    <small>{bucket.label}</small>
+                    <strong>{bucket.count}</strong>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function RtcPhaseWaterfall({
+    spans,
+}: {
+    spans: readonly RtcPerformancePhaseSpan[];
+}) {
+    const max = Math.max(1, ...spans.map((span) => span.endMs));
+    return (
+        <div
+            className="rtc-waterfall"
+            role="img"
+            aria-label="RTC phase waterfall"
+        >
+            {spans.map((span) => (
+                <div className="rtc-waterfall-row" key={span.stageId}>
+                    <span>{span.label}</span>
+                    <div>
+                        <i
+                            className={span.tone}
+                            style={{
+                                marginLeft: `${(span.startMs / max) * 100}%`,
+                                width: `${Math.max(2, (span.durationMs / max) * 100)}%`,
+                            }}
+                        />
+                    </div>
+                    <strong title={span.valueLabel}>
+                        {span.timingKind === 'duration'
+                            ? formatDuration(span.durationMs)
+                            : formatDuration(span.endMs)}
+                    </strong>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function RtcAgentMatrix({
+    cells,
+}: {
+    cells: RtcPerformanceView['agentMatrix'];
+}) {
+    const laneIds = [...new Set(cells.map((cell) => cell.laneId))].slice(0, 8);
+    const metrics: readonly RtcPerformanceView['agentMatrix'][number]['metric'][] = [
+        'expected',
+        'observed',
+        'ready',
+        'active',
+        'stale',
+        'missing',
+    ];
+    const cellByKey = new Map(cells.map((cell) => [
+        `${cell.laneId}:${cell.metric}`,
+        cell,
+    ]));
+
+    if (laneIds.length === 0) {
+        return <div className="empty-state">No peer lanes observed yet</div>;
+    }
+
+    return (
+        <div className="rtc-agent-matrix" role="table" aria-label="RTC peer lane matrix">
+            <div className="rtc-agent-matrix-head" role="row">
+                <span role="columnheader">lane</span>
+                {metrics.map((metric) => (
+                    <span role="columnheader" key={metric}>{metric}</span>
+                ))}
+            </div>
+            {laneIds.map((laneId) => (
+                <div className="rtc-agent-matrix-row" role="row" key={laneId}>
+                    <strong role="rowheader">{laneId}</strong>
+                    {metrics.map((metric) => {
+                        const cell = cellByKey.get(`${laneId}:${metric}`);
+                        return (
+                            <span
+                                className={`rtc-agent-matrix-cell ${cell?.status ?? 'muted'}`}
+                                role="cell"
+                                key={metric}
+                            >
+                                {cell?.value ?? 'no'}
+                            </span>
+                        );
+                    })}
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function RtcPerformancePanel({
+    view,
+    compact = false,
+    showTimeseries = !compact,
+}: {
+    view: RtcPerformanceView;
+    compact?: boolean;
+    showTimeseries?: boolean;
+}) {
+    return (
+        <section className={`rtc-performance-panel ${compact ? 'compact' : ''} runner-evidence-first`}>
+            <div className="section-heading">
+                <h3>RTC Performance</h3>
+                <span>{view.summary.commandCount} commands</span>
+            </div>
+            <div className="rtc-performance-legend" aria-label="RTC performance legend">
+                <span><i className="good" /> RTC ok</span>
+                <span><i className="active" /> WS ok</span>
+                <span><i className="bad" /> Failed</span>
+                <span><i className="distributed" /> Agent aggregate</span>
+                <span>Waterfall bars show measured duration when available, otherwise observed delta.</span>
+            </div>
+            <div className="rtc-performance-summary">
+                <Metric
+                    label="P50"
+                    value={formatDuration(view.summary.p50Ms)}
+                    tone="active"
+                />
+                <Metric
+                    label="P95"
+                    value={formatDuration(view.summary.p95Ms)}
+                    tone={(view.summary.p95Ms ?? 0) > 250 ? 'warn' : 'good'}
+                />
+                <Metric
+                    label="Max"
+                    value={formatDuration(view.summary.maxMs)}
+                    tone={(view.summary.maxMs ?? 0) > 500 ? 'bad' : 'active'}
+                />
+                <Metric
+                    label="Failures"
+                    value={String(view.summary.failureCount)}
+                    tone={view.summary.failureCount > 0 ? 'bad' : 'good'}
+                />
+                <Metric
+                    label="Messages"
+                    value={String(view.summary.messageCount)}
+                    tone="active"
+                />
+            </div>
+            {view.emptyReasons.length > 0 && (
+                <div className="rtc-performance-empty">
+                    {view.emptyReasons.join(' - ')}
+                </div>
+            )}
+            {showTimeseries && (
+                <RtcDiagnosticsTimeseriesPanel series={view.timeseries} />
+            )}
+            <div className="rtc-performance-grid">
+                <article className="rtc-chart-card">
+                    <div>
+                        <strong>Latency Scatter</strong>
+                        <small>duration by command sequence</small>
+                    </div>
+                    {view.scatter.length > 0 ? (
+                        <RtcLatencyScatterChart points={view.scatter} />
+                    ) : (
+                        <div className="empty-state">No command latency yet</div>
+                    )}
+                </article>
+                <article className="rtc-chart-card">
+                    <div>
+                        <strong>Latency Distribution</strong>
+                        <small>bucketed command durations</small>
+                    </div>
+                    {view.histogram.length > 0 ? (
+                        <RtcLatencyHistogram buckets={view.histogram} />
+                    ) : (
+                        <div className="empty-state">No duration buckets yet</div>
+                    )}
+                </article>
+                <article className="rtc-chart-card">
+                    <div>
+                        <strong>Observed Stage Timing</strong>
+                        <small>duration payloads or observed deltas</small>
+                    </div>
+                    {view.phaseSpans.length > 0 ? (
+                        <RtcPhaseWaterfall spans={view.phaseSpans} />
+                    ) : (
+                        <div className="empty-state">No phase timing yet</div>
+                    )}
+                </article>
+                {!compact && (
+                    <article className="rtc-chart-card wide">
+                        <div>
+                            <strong>Agent Lane Matrix</strong>
+                            <small>expected, observed, ready, active</small>
+                        </div>
+                        <RtcAgentMatrix cells={view.agentMatrix} />
+                    </article>
+                )}
+            </div>
+        </section>
+    );
+}
+
 function RtcDiagnosticsPanel({
     state,
     bootstrap,
@@ -10883,6 +11533,10 @@ function RtcDiagnosticsPanel({
     onSelectCommand(commandId: string): void;
 }) {
     const diagnostics = useMemo(() => deriveRtcDiagnostics(state), [state]);
+    const rtcPerformance = useMemo(
+        () => deriveRtcPerformanceView({ diagnostics, state }),
+        [diagnostics, state],
+    );
     const [sequence, setSequence] = useState(1);
     const [bundleVisible, setBundleVisible] = useState(false);
     const [localError, setLocalError] = useState<string | undefined>();
@@ -11103,6 +11757,10 @@ function RtcDiagnosticsPanel({
                     value={formatDuration(diagnostics.latency.maxCommandMs)}
                 />
             </div>
+            <RtcPerformancePanel
+                view={rtcPerformance}
+                showTimeseries={false}
+            />
             <RtcDiagnosticsTimeseriesPanel series={diagnostics.timeseries} />
             <div className="rtc-stage-list">
                 {diagnostics.stages.map((stage) => (
@@ -25637,7 +26295,7 @@ export default function App() {
     }
 
     return (
-        <main className="app-shell">
+        <main className={`app-shell mode-${activeMode}`}>
             <Header
                 mode={activeMode}
                 state={state}
