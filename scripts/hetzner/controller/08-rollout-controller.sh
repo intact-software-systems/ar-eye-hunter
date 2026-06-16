@@ -13,6 +13,7 @@ RALLAR_CONTROL_HOST="${RALLAR_CONTROL_HOST:-control.rallar.intactss.com}"
 RALLAR_BLACKBOX_HOST="${RALLAR_BLACKBOX_HOST:-blackbox.rallar.intactss.com}"
 RALLAR_INCLUDE_CADDY="${RALLAR_INCLUDE_CADDY:-0}"
 RALLAR_INSTALL_PLAYWRIGHT="${RALLAR_INSTALL_PLAYWRIGHT:-0}"
+RALLAR_ACME_EMAIL="${RALLAR_ACME_EMAIL:-}"
 RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS="${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS:-86400000}"
 RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS="${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS:-}"
 
@@ -134,6 +135,7 @@ require_command deno
 require_command rsync
 require_command curl
 require_command openssl
+require_command caddy
 
 if [[ ! -d "${RALLAR_CHECKOUT_DIR}/.git" ]]; then
   echo "Missing git checkout at ${RALLAR_CHECKOUT_DIR}. Run 02-deploy-controller.sh first." >&2
@@ -227,6 +229,9 @@ update_control_allowed_origins
 echo "==> Ensuring black-box operator token broker secret"
 ensure_operator_token_secret
 
+echo "==> Writing Caddyfile"
+write_rallar_controller_caddyfile
+
 echo "==> Starting services"
 systemctl daemon-reload
 systemctl start rallar-api-v1.service
@@ -243,6 +248,7 @@ trap - ERR
 wait_for_url "API-v1 config" "http://127.0.0.1:8080/api/config"
 wait_for_url "API-v1 docs" "http://127.0.0.1:8080/api/docs"
 wait_for_url "control health" "http://127.0.0.1:5180/health" -H "x-forwarded-proto: https"
+verify_rallar_control_public_cors
 
 echo
 "${SCRIPT_DIR}/07-status-controller.sh"

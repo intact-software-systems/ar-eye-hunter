@@ -57,6 +57,10 @@ on:
         description: Optional API-v1 CORS origins; the SPA origin is appended automatically during rollout
         required: false
         default: ''
+      control_cors_origins:
+        description: Optional control-server CORS origins; the SPA origin is appended automatically during rollout
+        required: false
+        default: ''
       application_id:
         description: Rallar application id for headless agents
         required: true
@@ -186,6 +190,7 @@ jobs:
           RALLAR_BLACK_BOX_CONTROL_URL: ${{ inputs.control_url }}
           RALLAR_API_BASE_URL: ${{ inputs.api_base_url }}
           RALLAR_API_CORS_ORIGINS: ${{ inputs.api_cors_origins }}
+          RALLAR_BLACK_BOX_ALLOWED_ORIGINS: ${{ inputs.control_cors_origins }}
           RALLAR_BLACK_BOX_RUN_ID: ${{ inputs.run_id }}
           RALLAR_BLACK_BOX_ROOM_ID: ${{ inputs.room_id }}
           RALLAR_BLACK_BOX_AGENT_PREFIX: ${{ inputs.agent_prefix }}
@@ -222,6 +227,7 @@ jobs:
             printf 'RALLAR_BLACK_BOX_CONTROL_URL=%s\n' "$(quote "${RALLAR_BLACK_BOX_CONTROL_URL}")"
             printf 'RALLAR_API_BASE_URL=%s\n' "$(quote "${RALLAR_API_BASE_URL}")"
             printf 'RALLAR_API_CORS_ORIGINS=%s\n' "$(quote "${RALLAR_API_CORS_ORIGINS}")"
+            printf 'RALLAR_BLACK_BOX_ALLOWED_ORIGINS=%s\n' "$(quote "${RALLAR_BLACK_BOX_ALLOWED_ORIGINS}")"
             printf 'RALLAR_BLACK_BOX_RUN_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_RUN_ID}")"
             printf 'RALLAR_BLACK_BOX_ROOM_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_ROOM_ID}")"
             printf 'RALLAR_BLACK_BOX_AGENT_PREFIX=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_PREFIX}")"

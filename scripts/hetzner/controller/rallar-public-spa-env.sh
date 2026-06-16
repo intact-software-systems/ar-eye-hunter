@@ -20,6 +20,33 @@ rallar_public_url_origin() {
   printf '%s://%s' "${scheme}" "${host}"
 }
 
+rallar_public_control_health_url() {
+  local url="${1:-}"
+  local scheme rest host
+
+  if [[ "${url}" != http://* && "${url}" != https://* && "${url}" != ws://* && "${url}" != wss://* ]]; then
+    return 1
+  fi
+
+  scheme="${url%%://*}"
+  rest="${url#*://}"
+  host="${rest%%/*}"
+  if [[ -z "${scheme}" || -z "${host}" ]]; then
+    return 1
+  fi
+
+  case "${scheme}" in
+    ws)
+      scheme="http"
+      ;;
+    wss)
+      scheme="https"
+      ;;
+  esac
+
+  printf '%s://%s/health' "${scheme}" "${host}"
+}
+
 rallar_csv_append_unique() {
   local list="${1:-}"
   shift || true
@@ -66,6 +93,139 @@ apply_rallar_public_cors_defaults() {
 
   RALLAR_API_CORS_ORIGINS="$(rallar_csv_append_unique "${RALLAR_API_CORS_ORIGINS:-${api_defaults}}" "${spa_origin}")"
   RALLAR_BLACK_BOX_ALLOWED_ORIGINS="$(rallar_csv_append_unique "${RALLAR_BLACK_BOX_ALLOWED_ORIGINS:-${control_defaults}}" "${spa_origin}")"
+}
+
+verify_rallar_control_public_cors() {
+  apply_rallar_public_cors_defaults
+
+  local spa_origin health_url headers_file body_file http_code allow_origin
+  spa_origin="$(rallar_public_url_origin "${RALLAR_BLACK_BOX_SPA_URL}" || printf 'https://%s' "${RALLAR_BLACKBOX_HOST}")"
+  health_url="$(rallar_public_control_health_url "${RALLAR_BLACK_BOX_CONTROL_URL}" || printf 'https://%s/health' "${RALLAR_CONTROL_HOST}")"
+  headers_file="$(mktemp)"
+  body_file="$(mktemp)"
+
+  echo "Checking public control CORS: ${health_url} from ${spa_origin}"
+  http_code="$(
+    curl -sS \
+      -D "${headers_file}" \
+      -o "${body_file}" \
+      -w '%{http_code}' \
+      -H "Origin: ${spa_origin}" \
+      "${health_url}" || true
+  )"
+
+  allow_origin="$(
+    awk '
+      BEGIN { value = "" }
+      tolower($1) == "access-control-allow-origin:" {
+        $1 = ""
+        sub(/^[[:space:]]+/, "")
+        sub(/\r$/, "")
+        value = $0
+      }
+      END { print value }
+    ' "${headers_file}"
+  )"
+
+  if [[ "${http_code}" != 2* && "${http_code}" != 3* ]]; then
+    echo "Public control health returned HTTP ${http_code}; this usually means Caddy cannot reach rallar-black-box-control." >&2
+    echo "Response headers:" >&2
+    sed 's/^/  /' "${headers_file}" >&2
+    echo "Response body:" >&2
+    sed 's/^/  /' "${body_file}" >&2
+    rm -f "${headers_file}" "${body_file}"
+    return 1
+  fi
+
+  if [[ "${allow_origin}" != "${spa_origin}" && "${allow_origin}" != "*" ]]; then
+    echo "Public control CORS mismatch for ${health_url}." >&2
+    echo "Expected Access-Control-Allow-Origin: ${spa_origin} or *" >&2
+    echo "Actual Access-Control-Allow-Origin: ${allow_origin:-<missing>}" >&2
+    echo "Configured RALLAR_BLACK_BOX_ALLOWED_ORIGINS=${RALLAR_BLACK_BOX_ALLOWED_ORIGINS}" >&2
+    rm -f "${headers_file}" "${body_file}"
+    return 1
+  fi
+
+  rm -f "${headers_file}" "${body_file}"
+  echo "  ok: Access-Control-Allow-Origin=${allow_origin}"
+}
+
+write_rallar_controller_caddyfile() {
+  apply_rallar_public_spa_defaults
+
+  local caddyfile caddy_dir tmp_file spa_origin
+  caddyfile="${RALLAR_CADDYFILE:-/etc/caddy/Caddyfile}"
+  caddy_dir="${caddyfile%/*}"
+  if [[ "${caddy_dir}" == "${caddyfile}" ]]; then
+    caddy_dir="."
+  fi
+  spa_origin="$(rallar_public_url_origin "${RALLAR_BLACK_BOX_SPA_URL}" || printf 'https://%s' "${RALLAR_BLACKBOX_HOST}")"
+  tmp_file="$(mktemp)"
+
+  if [[ -n "${RALLAR_ACME_EMAIL:-}" ]]; then
+    cat >"${tmp_file}" <<EOF
+{
+	email ${RALLAR_ACME_EMAIL}
+}
+
+${RALLAR_API_HOST} {
+	reverse_proxy 127.0.0.1:8080
+}
+
+${RALLAR_CONTROL_HOST} {
+	reverse_proxy 127.0.0.1:5180
+	handle_errors {
+		header Access-Control-Allow-Origin "${spa_origin}"
+		header Access-Control-Allow-Methods "GET,POST,DELETE,OPTIONS"
+		header Access-Control-Allow-Headers "Content-Type,Authorization,X-Rallar-Run-Token"
+		header Vary "Origin"
+		respond "Rallar Black Box control upstream unavailable" 502
+	}
+}
+
+${RALLAR_BLACKBOX_HOST} {
+	root * /var/www/rallar-black-box
+	try_files {path} /index.html
+	file_server
+}
+EOF
+  else
+    cat >"${tmp_file}" <<EOF
+${RALLAR_API_HOST} {
+	reverse_proxy 127.0.0.1:8080
+}
+
+${RALLAR_CONTROL_HOST} {
+	reverse_proxy 127.0.0.1:5180
+	handle_errors {
+		header Access-Control-Allow-Origin "${spa_origin}"
+		header Access-Control-Allow-Methods "GET,POST,DELETE,OPTIONS"
+		header Access-Control-Allow-Headers "Content-Type,Authorization,X-Rallar-Run-Token"
+		header Vary "Origin"
+		respond "Rallar Black Box control upstream unavailable" 502
+	}
+}
+
+${RALLAR_BLACKBOX_HOST} {
+	root * /var/www/rallar-black-box
+	try_files {path} /index.html
+	file_server
+}
+EOF
+  fi
+
+  if ! caddy fmt --overwrite "${tmp_file}"; then
+    rm -f "${tmp_file}"
+    return 1
+  fi
+  if ! caddy validate --config "${tmp_file}"; then
+    rm -f "${tmp_file}"
+    return 1
+  fi
+
+  install -d -m 0755 "${caddy_dir}"
+  install -m 0644 "${tmp_file}" "${caddyfile}"
+  rm -f "${tmp_file}"
 }
 
 build_rallar_black_box_spa() {

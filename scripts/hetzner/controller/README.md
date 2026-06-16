@@ -141,8 +141,9 @@ It performs:
 6. Stop rallar-api-v1.service and rallar-black-box-control.service.
 7. Publish static SPA files to /var/www/rallar-black-box.
 8. Write `/etc/rallar/black-box-spa.env` as a non-secret audit file.
-9. Refresh `CORS_ORIGINS` in `/etc/rallar/api-v1.env`.
-10. Start API/control services, reload Caddy, and run local health checks.
+9. Refresh API-v1 and control-server browser origin policy.
+10. Refresh Caddy reverse-proxy config, start API/control services, reload Caddy,
+    and run local/public health checks.
 11. Print service status and recent logs.
 ```
 
@@ -168,6 +169,21 @@ The rollout also keeps the public `RALLAR_BLACK_BOX_SPA_URL` origin allowed in
 both API-v1 CORS and `rallar-black-box-control-server` browser-origin policy.
 If you provide custom `RALLAR_API_CORS_ORIGINS`, the SPA origin is appended so
 headless browser login, API calls, and control-server orchestration still work.
+
+Override the control-server browser origins written during rollout:
+
+```sh
+RALLAR_BLACK_BOX_ALLOWED_ORIGINS=https://blackbox.example.test ./08-rollout-controller.sh
+```
+
+The SPA origin is appended here too. After restart, rollout checks the public
+control health endpoint with the SPA `Origin` header. A browser console CORS
+error against `https://control.../distributed-runs/...` can still be a hidden
+upstream failure: if Caddy returns `502 Bad Gateway` without reaching the
+control server, Chrome reports the missing CORS header. Deploys and rollouts
+install a Caddy error handler that adds the SPA CORS header to control upstream
+failures so the browser can show the real 502, and rollout fails if public
+control health is not reachable with the expected CORS header.
 
 Run public smoke checks:
 
@@ -425,6 +441,15 @@ api_base_url
   Public API-v1 base URL baked into the SPA.
   Default: https://api.rallar.intactss.com
 
+api_cors_origins
+  Optional API-v1 CORS origins. The SPA origin is appended automatically.
+  Default: empty.
+
+control_cors_origins
+  Optional control-server browser origins. The SPA origin is appended
+  automatically.
+  Default: empty.
+
 room_id
   Default Rallar room/group id shown in Global Context and Recipes.
   Default: hetzner-headless-room
@@ -452,6 +477,8 @@ The deploy action forwards these public inputs to the remote rollout as:
 RALLAR_BLACK_BOX_SPA_URL
 RALLAR_BLACK_BOX_CONTROL_URL
 RALLAR_API_BASE_URL
+RALLAR_API_CORS_ORIGINS
+RALLAR_BLACK_BOX_ALLOWED_ORIGINS
 RALLAR_BLACK_BOX_ROOM_ID
 RALLAR_BLACK_BOX_AGENT_PREFIX
 RALLAR_BLACK_BOX_AGENT_COUNT
@@ -545,6 +572,7 @@ spa_url
 control_url
 api_base_url
 api_cors_origins
+control_cors_origins
 application_id
 workspace_id
 rallar_black_box_username
@@ -600,6 +628,11 @@ API/control CORS policy from the public SPA URL, and then start the headless
 worker service. Set `rollout_before_start=false` when you only want to reuse the
 already-deployed checkout and restart browsers from the existing VM files.
 
+Use the optional `control_cors_origins` input only when you need additional
+browser origins for the control server. The workflow always appends `spa_url`
+automatically so `https://blackbox.rallar.intactss.com` can call the control
+HTTP API after frequent headless browser rollouts.
+
 ## Defaults
 
 The deploy script defaults to:
@@ -612,6 +645,7 @@ RALLAR_API_HOST=api.rallar.intactss.com
 RALLAR_CONTROL_HOST=control.rallar.intactss.com
 RALLAR_BLACKBOX_HOST=blackbox.rallar.intactss.com
 RALLAR_API_CORS_ORIGINS=https://blackbox.rallar.intactss.com,https://ar-eye-hunter.pages.dev,https://relic-hunters-v1.intact-software-systems.workers.dev
+RALLAR_BLACK_BOX_ALLOWED_ORIGINS=https://blackbox.rallar.intactss.com
 ```
 
 Override any default by prefixing the deploy command:

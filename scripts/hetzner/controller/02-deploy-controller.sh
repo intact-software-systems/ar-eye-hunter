@@ -36,6 +36,7 @@ require_command npm
 require_command deno
 require_command caddy
 require_command openssl
+require_command curl
 
 echo "==> Deploying ${RALLAR_REPO_URL} ref ${RALLAR_REPO_REF}"
 if [[ -d "${RALLAR_CHECKOUT_DIR}/.git" ]]; then
@@ -191,46 +192,7 @@ WantedBy=multi-user.target
 EOF
 
 echo "==> Writing Caddyfile"
-if [[ -n "${RALLAR_ACME_EMAIL}" ]]; then
-  cat >/etc/caddy/Caddyfile <<EOF
-{
-	email ${RALLAR_ACME_EMAIL}
-}
-
-${RALLAR_API_HOST} {
-	reverse_proxy 127.0.0.1:8080
-}
-
-${RALLAR_CONTROL_HOST} {
-	reverse_proxy 127.0.0.1:5180
-}
-
-${RALLAR_BLACKBOX_HOST} {
-	root * /var/www/rallar-black-box
-	try_files {path} /index.html
-	file_server
-}
-EOF
-else
-  cat >/etc/caddy/Caddyfile <<EOF
-${RALLAR_API_HOST} {
-	reverse_proxy 127.0.0.1:8080
-}
-
-${RALLAR_CONTROL_HOST} {
-	reverse_proxy 127.0.0.1:5180
-}
-
-${RALLAR_BLACKBOX_HOST} {
-	root * /var/www/rallar-black-box
-	try_files {path} /index.html
-	file_server
-}
-EOF
-fi
-
-caddy fmt --overwrite /etc/caddy/Caddyfile
-caddy validate --config /etc/caddy/Caddyfile
+write_rallar_controller_caddyfile
 
 echo "==> Starting services"
 systemctl daemon-reload
@@ -244,6 +206,7 @@ echo "==> Local health checks"
 curl -fsS http://127.0.0.1:8080/api/config >/dev/null
 curl -fsS http://127.0.0.1:8080/api/docs >/dev/null
 curl -fsS -H "x-forwarded-proto: https" http://127.0.0.1:5180/health >/dev/null
+verify_rallar_control_public_cors
 
 echo "Deployment complete."
 echo "Public checks:"
