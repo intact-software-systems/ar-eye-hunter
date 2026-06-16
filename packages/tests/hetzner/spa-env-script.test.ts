@@ -78,6 +78,8 @@ describe('Hetzner SPA public env wiring', () => {
         expect(workflow).toContain('RALLAR_BLACK_BOX_AGENT_COUNT: ${{ inputs.agent_count }}');
         expect(workflow).toContain('application_id:');
         expect(workflow).toContain('workspace_id:');
+        expect(workflow).toContain('rallar_black_box_username:');
+        expect(workflow).toContain('rallar_black_box_password:');
         expect(workflow).toContain('register_before_login:');
         expect(workflow).toContain('RALLAR_BLACK_BOX_APPLICATION_ID: ${{ inputs.application_id }}');
         expect(workflow).toContain('RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}');
@@ -89,6 +91,29 @@ describe('Hetzner SPA public env wiring', () => {
         expect(startScript).toContain(
             'RALLAR_BLACK_BOX_WORKSPACE_ID="${RALLAR_BLACK_BOX_WORKSPACE_ID:-${RALLAR_WORKSPACE_ID:-default}}"',
         );
+    });
+
+    it('resolves headless browser credentials from workflow inputs before falling back to secrets', async () => {
+        const workflow = await readFile(
+            path.join(repoRoot, '.github/workflows/hetzner-headless-browsers.yml'),
+            'utf8',
+        );
+
+        expect(workflow).toContain('name: Resolve headless credentials');
+        expect(workflow.indexOf('name: Resolve headless credentials')).toBeLessThan(
+            workflow.indexOf('name: Configure SSH'),
+        );
+        expect(workflow).toContain('RALLAR_BLACK_BOX_USERNAME_SECRET: ${{ secrets.RALLAR_BLACK_BOX_USERNAME }}');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_PASSWORD_SECRET: ${{ secrets.RALLAR_BLACK_BOX_PASSWORD }}');
+        expect(workflow).toContain('jq -r --arg key "$key"');
+        expect(workflow).toContain('input_value rallar_black_box_username');
+        expect(workflow).toContain('input_value rallar_black_box_password');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_USERNAME_SECRET');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_PASSWORD_SECRET');
+        expect(workflow).toContain('Missing RALLAR_BLACK_BOX_USERNAME/RALLAR_BLACK_BOX_PASSWORD for action=start.');
+        expect(workflow).toContain('source "${credentials_file}"');
+        expect(workflow).not.toContain('RALLAR_BLACK_BOX_USERNAME: ${{ secrets.RALLAR_BLACK_BOX_USERNAME }}');
+        expect(workflow).not.toContain('RALLAR_BLACK_BOX_PASSWORD: ${{ secrets.RALLAR_BLACK_BOX_PASSWORD }}');
     });
 
     it('lets the headless browser workflow roll out the selected ref before starting agents', async () => {

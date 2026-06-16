@@ -65,6 +65,14 @@ on:
         description: Rallar workspace id for headless agents
         required: true
         default: default
+      rallar_black_box_username:
+        description: Optional Rallar username for action=start; falls back to the production secret
+        required: false
+        default: ''
+      rallar_black_box_password:
+        description: Optional Rallar password for action=start; falls back to the production secret
+        required: false
+        default: ''
       register_before_login:
         description: Register disposable test users before login; useful after memory-backed API redeploys
         type: boolean
@@ -107,6 +115,45 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Resolve headless credentials
+        shell: bash
+        env:
+          HEADLESS_ACTION: ${{ inputs.action }}
+          RALLAR_BLACK_BOX_USERNAME_SECRET: ${{ secrets.RALLAR_BLACK_BOX_USERNAME }}
+          RALLAR_BLACK_BOX_PASSWORD_SECRET: ${{ secrets.RALLAR_BLACK_BOX_PASSWORD }}
+        run: |
+          set -euo pipefail
+          quote() { printf '%q' "$1"; }
+          input_value() {
+            local key="$1"
+            jq -r --arg key "$key" '.inputs[$key] // ""' "${GITHUB_EVENT_PATH}"
+          }
+
+          username="$(input_value rallar_black_box_username)"
+          password="$(input_value rallar_black_box_password)"
+          username="${username:-${RALLAR_BLACK_BOX_USERNAME_SECRET:-}}"
+          password="${password:-${RALLAR_BLACK_BOX_PASSWORD_SECRET:-}}"
+
+          if [[ -n "${username}" ]]; then
+            printf '::add-mask::%s\n' "${username}"
+          fi
+          if [[ -n "${password}" ]]; then
+            printf '::add-mask::%s\n' "${password}"
+          fi
+
+          if [[ "${HEADLESS_ACTION}" == "start" && ( -z "${username}" || -z "${password}" ) ]]; then
+            echo "Missing RALLAR_BLACK_BOX_USERNAME/RALLAR_BLACK_BOX_PASSWORD for action=start." >&2
+            echo "Provide workflow inputs rallar_black_box_username/rallar_black_box_password or configure production secrets RALLAR_BLACK_BOX_USERNAME/RALLAR_BLACK_BOX_PASSWORD." >&2
+            exit 1
+          fi
+
+          credentials_file="${RUNNER_TEMP}/rallar-headless-credentials.env"
+          {
+            printf 'RALLAR_BLACK_BOX_USERNAME=%s\n' "$(quote "${username}")"
+            printf 'RALLAR_BLACK_BOX_PASSWORD=%s\n' "$(quote "${password}")"
+          } > "${credentials_file}"
+          chmod 600 "${credentials_file}"
+
       - name: Configure SSH
         shell: bash
         env:
@@ -145,8 +192,6 @@ jobs:
           RALLAR_BLACK_BOX_AGENT_COUNT: ${{ inputs.agent_count }}
           RALLAR_BLACK_BOX_APPLICATION_ID: ${{ inputs.application_id }}
           RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}
-          RALLAR_BLACK_BOX_USERNAME: ${{ secrets.RALLAR_BLACK_BOX_USERNAME }}
-          RALLAR_BLACK_BOX_PASSWORD: ${{ secrets.RALLAR_BLACK_BOX_PASSWORD }}
           RALLAR_BLACK_BOX_REGISTER: ${{ inputs.register_before_login }}
           RALLAR_BLACK_BOX_CONTROL_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}
           RALLAR_REPO_REF: ${{ inputs.ref }}
@@ -160,6 +205,16 @@ jobs:
         run: |
           set -euo pipefail
           quote() { printf '%q' "$1"; }
+
+          credentials_file="${RUNNER_TEMP}/rallar-headless-credentials.env"
+          if [[ -r "${credentials_file}" ]]; then
+            set -a
+            # shellcheck disable=SC1090
+            source "${credentials_file}"
+            set +a
+          fi
+          RALLAR_BLACK_BOX_USERNAME="${RALLAR_BLACK_BOX_USERNAME:-}"
+          RALLAR_BLACK_BOX_PASSWORD="${RALLAR_BLACK_BOX_PASSWORD:-}"
 
           env_file="${RUNNER_TEMP}/rallar-headless-action.env"
           {

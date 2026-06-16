@@ -279,6 +279,19 @@ Use `RALLAR_BLACK_BOX_REGISTER=1`, or the GitHub Actions
 been redeployed so the disposable test user must be created before login. Leave
 it disabled for pre-provisioned or persistent auth users.
 
+The GitHub Actions headless browser workflow resolves credentials for
+`action=start` in this order:
+
+```text
+1. Workflow inputs rallar_black_box_username/rallar_black_box_password
+2. Production secrets RALLAR_BLACK_BOX_USERNAME/RALLAR_BLACK_BOX_PASSWORD
+3. Early failure before SSH, rollout, or service restarts
+```
+
+Prefer production secrets for long-lived credentials. The workflow inputs are
+useful for temporary runs, but GitHub workflow inputs are not repository
+secrets.
+
 If `RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN=1` is enabled on the control server,
 also pass:
 
@@ -532,6 +545,8 @@ api_base_url
 api_cors_origins
 application_id
 workspace_id
+rallar_black_box_username
+rallar_black_box_password
 register_before_login
 install_playwright
 npm_ci
@@ -539,16 +554,26 @@ wait_for_agents
 ready_timeout_seconds
 ```
 
-Required GitHub secrets:
+Required GitHub secrets for remote access:
 
 ```text
 HETZNER_HOST
 HETZNER_USER
 HETZNER_SSH_PRIVATE_KEY
 HETZNER_KNOWN_HOSTS
+```
+
+Fallback GitHub secrets for `action=start` credentials:
+
+```text
 RALLAR_BLACK_BOX_USERNAME
 RALLAR_BLACK_BOX_PASSWORD
 ```
+
+`RALLAR_BLACK_BOX_USERNAME` and `RALLAR_BLACK_BOX_PASSWORD` are optional when
+the dispatch inputs `rallar_black_box_username` and `rallar_black_box_password`
+are provided for the run. For `action=start`, the workflow fails before opening
+SSH if neither inputs nor production secrets provide both values.
 
 Optional GitHub secret when run tokens are enabled:
 
