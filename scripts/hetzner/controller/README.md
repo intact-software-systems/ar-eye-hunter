@@ -577,11 +577,18 @@ the dispatch inputs `rallar_black_box_username` and `rallar_black_box_password`
 are provided for the run. For `action=start`, the workflow fails before opening
 SSH if neither inputs nor production secrets provide both values.
 
-Optional GitHub secret when run tokens are enabled:
+Optional GitHub secret when run tokens are enabled for headless worker links:
 
 ```text
 RALLAR_BLACK_BOX_CONTROL_TOKEN
 ```
+
+For normal browser operation, do not paste the permanent
+`RALLAR_BLACK_BOX_ADMIN_TOKEN` into public Black Box URLs. The Recipes tab now
+requests a short-lived operator token from API-v1 when the operator is logged
+in, the manual Control Token field is empty, and a distributed recipe is
+started. The brokered token is kept in browser memory only and defaults to 24
+hours.
 
 Use `action=start` with the desired `agent_count` to launch browsers. Use
 `action=stop` to stop them. Use `action=status` to inspect the current service
@@ -615,6 +622,15 @@ RALLAR_REPO_REF=my-branch ./02-deploy-controller.sh
 
 If `RALLAR_CONTROL_ADMIN_TOKEN` is not set, the deploy script generates one and
 stores it in `/etc/rallar/control-server.env`.
+
+The deploy and rollout scripts also generate or preserve
+`RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET` and write the same value to
+`/etc/rallar/api-v1.env` and `/etc/rallar/control-server.env`. API-v1 uses it
+for `POST /api/black-box/control-token`; the control server uses it to accept
+the signed operator token for distributed-run admin operations. Override
+`RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS` to change the default 24 hour TTL, or
+set `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS` to restrict token brokerage to
+specific authenticated client IDs.
 
 ## Installed Paths
 

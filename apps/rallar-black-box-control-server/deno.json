@@ -5,6 +5,7 @@
   "nodeModulesDir": "auto",
   "imports": {
     "@shared/": "../../packages/shared/",
+    "@shared-server/": "../../packages/shared-server/",
     "@shared-test/": "../../packages/shared-test/"
   },
   "tasks": {

@@ -5,6 +5,7 @@ import {
     LogoutResponse,
     RegisterRequest,
     RegisterResponse,
+    type AuthSession,
     WebSocketTicketResponse,
 } from '@shared/api/api-config.ts';
 import { configuration } from '../config-repo.ts';
@@ -12,11 +13,13 @@ import * as loginRepository from '../repository/login-repository.ts';
 import { createAuthSessionRepository } from '../repository/createStateRepositories.ts';
 import { requireApiAuthSession, toAuthErrorResponse, toAuthSession, } from '../services/request-auth-service.ts';
 import { readRateLimiter, readRequestClientKey } from '@shared-server/http/rate-limit-service.ts';
+import { signRallarBlackBoxOperatorToken } from '@shared-server/http/black-box-operator-token.ts';
 import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
 import { getMiddleware, type Middleware } from '../middleware.ts';
 
 const AUTH_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const WS_AUTH_TICKET_TTL_MS = 30_000;
+const BLACK_BOX_OPERATOR_TOKEN_DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 const LOGIN_IP_RATE_LIMIT = new RateLimiterPolicy(
     60_000,
     readPositiveIntegerEnv('RALLAR_LOGIN_IP_RATE_LIMIT', 30),
@@ -40,7 +43,28 @@ const ADMIN_CLIENT_IDS = new Set(
         .filter((value) => value.length > 0),
 );
 
-export function init(app: Hono) {
+type BlackBoxControlTokenAuthSession = Pick<
+    AuthSession,
+    'clientId' | 'username' | 'sessionId'
+>;
+
+export type ConfigRouteDependencies = Readonly<{
+    requireApiAuthSession?: (
+        req: { header(name: string): string | undefined },
+    ) => Promise<BlackBoxControlTokenAuthSession>;
+    readEnv?: (name: string) => string | undefined;
+    now?: () => number;
+    createTokenId?: () => string;
+}>;
+
+type ResolvedConfigRouteDependencies = Required<ConfigRouteDependencies>;
+
+export function init(
+    app: Hono,
+    dependencies: ConfigRouteDependencies = {},
+) {
+    const deps = resolveConfigRouteDependencies(dependencies);
+
     app.get(
         '/api/config',
         (c) => c.json(configuration),
@@ -179,6 +203,64 @@ export function init(app: Hono) {
             }
         },
     );
+
+    app.post(
+        '/api/black-box/control-token',
+        async (c) => {
+            try {
+                const authSession = await deps.requireApiAuthSession(c.req);
+                const allowlist = readCsvSet(
+                    deps.readEnv('RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS'),
+                );
+                if (
+                    allowlist.size > 0 &&
+                    !allowlist.has(authSession.clientId)
+                ) {
+                    throw new Error(
+                        'Forbidden: black-box operator token is not allowed for this client',
+                    );
+                }
+
+                const secret =
+                    deps.readEnv('RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET')
+                        ?.trim();
+                if (!secret) {
+                    return toJsonResponse(
+                        {
+                            error: 'Black-box operator token broker is not configured.',
+                        },
+                        503,
+                    );
+                }
+
+                const ttlMs = readPositiveIntegerFromEnv(
+                    deps.readEnv,
+                    'RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS',
+                    BLACK_BOX_OPERATOR_TOKEN_DEFAULT_TTL_MS,
+                );
+                const issuedAtEpochMs = deps.now();
+                const expiresAtEpochMs = issuedAtEpochMs + ttlMs;
+                const token = await signRallarBlackBoxOperatorToken({
+                    secret,
+                    subject: authSession.username || authSession.clientId,
+                    sessionId: authSession.sessionId,
+                    issuedAtEpochMs,
+                    expiresAtEpochMs,
+                    tokenId: deps.createTokenId(),
+                });
+
+                return toJsonResponse({
+                    tokenType: 'Bearer',
+                    token,
+                    issuedAtEpochMs,
+                    expiresAtEpochMs,
+                    ttlMs,
+                } as const);
+            } catch (error) {
+                return toAuthRouteErrorResponse(c, error);
+            }
+        },
+    );
 }
 
 export type CloseLiveAuthSessionSocketOptions = Readonly<{
@@ -241,6 +323,18 @@ function toWebSocketTicket(): string {
     return `${crypto.randomUUID()}${crypto.randomUUID()}`;
 }
 
+function resolveConfigRouteDependencies(
+    dependencies: ConfigRouteDependencies,
+): ResolvedConfigRouteDependencies {
+    return {
+        requireApiAuthSession:
+            dependencies.requireApiAuthSession ?? requireApiAuthSession,
+        readEnv: dependencies.readEnv ?? ((name) => Deno.env.get(name)),
+        now: dependencies.now ?? (() => Date.now()),
+        createTokenId: dependencies.createTokenId ?? (() => crypto.randomUUID()),
+    };
+}
+
 function toJsonResponse<T>(data: T, status = 200): Response {
     return Response.json(
         data,
@@ -269,7 +363,19 @@ function toAuthRouteErrorResponse(
 }
 
 function readPositiveIntegerEnv(name: string, fallback: number): number {
-    const raw = Deno.env.get(name)?.trim();
+    return readPositiveIntegerFromEnv(
+        (envName) => Deno.env.get(envName),
+        name,
+        fallback,
+    );
+}
+
+function readPositiveIntegerFromEnv(
+    readEnv: (name: string) => string | undefined,
+    name: string,
+    fallback: number,
+): number {
+    const raw = readEnv(name)?.trim();
     if (!raw) {
         return fallback;
     }
@@ -280,4 +386,13 @@ function readPositiveIntegerEnv(name: string, fallback: number): number {
     }
 
     return value;
+}
+
+function readCsvSet(raw: string | undefined): Set<string> {
+    return new Set(
+        (raw ?? '')
+            .split(',')
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0),
+    );
 }

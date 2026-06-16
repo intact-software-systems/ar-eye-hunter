@@ -68,6 +68,14 @@ for some Rallar Black Box runs.
 | `RALLAR_LOGIN_IP_RATE_LIMIT`   | No       | `30`     | Login attempts per client IP per 60 seconds. Must be a positive integer.                                                             |
 | `RALLAR_LOGIN_USER_RATE_LIMIT` | No       | `5`      | Login attempts per client IP plus username per 60 seconds. Must be a positive integer. Root memory-mode scripts raise this to `100`. |
 
+### Black Box Operator Tokens
+
+| Variable                                      | Required | Default      | Usage                                                                                                                                                         |
+| --------------------------------------------- | -------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET`      | Yes for `/api/black-box/control-token` | None         | HMAC secret used by API-v1 to issue short-lived control-server operator tokens. The same value must be configured on the black-box control server.             |
+| `RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS`      | No       | `86400000`   | TTL for logged-in operator tokens. The default is 24 hours and is intended for a browser operator session, not for embedding in URLs or persistent storage.     |
+| `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`        | No       | Any logged-in user | Optional comma-separated allow-list of authenticated client IDs that may request `/api/black-box/control-token`. Empty allows any valid logged-in Rallar user. |
+
 ### ICE / WebRTC
 
 | Variable           | Required                                                                   | Default      | Usage                                                                                                                      |
@@ -289,6 +297,7 @@ variables in the shell or through the parent script/process.
 | `RALLAR_BLACK_BOX_REQUIRE_TLS`                  | No       | Disabled                          | Boolean. Rejects non-HTTPS requests unless `x-forwarded-proto` is `https`.                                                                       |
 | `RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN`            | No       | Disabled                          | Boolean. Requires a valid run token for run/agent operations even when no token has been issued yet.                                             |
 | `RALLAR_BLACK_BOX_ADMIN_TOKEN`                  | No       | None                              | Admin token for creating distributed runs and other admin operations. If unset, admin authorization is open. Set this outside local development. |
+| `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET`        | No       | None                              | HMAC secret for accepting logged-in operator tokens issued by API-v1. Keep this equal to API-v1 `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET`.        |
 | `RALLAR_BLACK_BOX_RUN_TOKEN_TTL_MS`             | No       | `900000`                          | Default issued run-token TTL in milliseconds. Non-negative integer.                                                                              |
 | `RALLAR_BLACK_BOX_MAX_REQUEST_BYTES`            | No       | `2000000`                         | Max JSON request body size. Non-negative integer.                                                                                                |
 | `RALLAR_BLACK_BOX_COMMAND_RATE_LIMIT_MAX`       | No       | `120`                             | Max accepted commands per rate-limit window. Non-negative integer.                                                                               |

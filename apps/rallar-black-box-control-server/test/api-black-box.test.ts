@@ -1,5 +1,8 @@
+import { signRallarBlackBoxOperatorToken } from '@shared-server/http/black-box-operator-token.ts';
+
 const CONTROL_ROOT = new URL('..', import.meta.url).pathname;
 const ADMIN_TOKEN = 'black-box-admin-token';
+const OPERATOR_TOKEN_SECRET = 'black-box-operator-token-secret';
 
 type StartedControlServer = Readonly<{
     baseUrl: string;
@@ -119,6 +122,7 @@ Deno.test('control server distributed and fleet APIs validate auth, artifacts, f
     const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-api-' });
     const server = await startControlServer({
         RALLAR_BLACK_BOX_ADMIN_TOKEN: ADMIN_TOKEN,
+        RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET: OPERATOR_TOKEN_SECRET,
         RALLAR_BLACK_BOX_STORAGE_DIR: storageDir,
     });
     let agentSocket: WebSocket | undefined;
@@ -131,9 +135,30 @@ Deno.test('control server distributed and fleet APIs validate auth, artifacts, f
         });
         assertEquals(unauthorizedCreate.status, 401);
 
+        const expiredOperatorToken = await operatorToken({
+            expiresAtEpochMs: Date.now() - 1_000,
+        });
+        const expiredCreate = await fetch(`${server.baseUrl}/distributed-runs`, {
+            method: 'POST',
+            headers: bearerJsonHeaders(expiredOperatorToken),
+            body: JSON.stringify({ manifest: distributedManifest() }),
+        });
+        assertEquals(expiredCreate.status, 401);
+
+        const wrongScopeOperatorToken = await operatorToken({
+            claims: { scope: 'wrong-scope' as never },
+        });
+        const wrongScopeCreate = await fetch(`${server.baseUrl}/distributed-runs`, {
+            method: 'POST',
+            headers: bearerJsonHeaders(wrongScopeOperatorToken),
+            body: JSON.stringify({ manifest: distributedManifest() }),
+        });
+        assertEquals(wrongScopeCreate.status, 401);
+
+        const signedOperatorToken = await operatorToken();
         const createdResponse = await fetch(`${server.baseUrl}/distributed-runs`, {
             method: 'POST',
-            headers: adminHeaders(),
+            headers: bearerJsonHeaders(signedOperatorToken),
             body: JSON.stringify({ manifest: distributedManifest() }),
         });
         assertEquals(createdResponse.status, 201);
@@ -146,7 +171,7 @@ Deno.test('control server distributed and fleet APIs validate auth, artifacts, f
 
         const stagedResponse = await fetch(`${server.baseUrl}/distributed-runs/api-dist-1/stage`, {
             method: 'POST',
-            headers: adminHeaders(),
+            headers: bearerJsonHeaders(signedOperatorToken),
         });
         assertEquals(stagedResponse.status, 202);
         const staged = await stagedResponse.json() as {
@@ -158,6 +183,14 @@ Deno.test('control server distributed and fleet APIs validate auth, artifacts, f
         assertEquals(staged.commandLinks[0].phase, 'stage');
         assertEquals(staged.commandLinks[0].agentId, 'agent-a');
         assertEquals(staged.commandLinks[0].recipeId, 'api-health');
+
+        const startedResponse = await fetch(`${server.baseUrl}/distributed-runs/api-dist-1/start`, {
+            method: 'POST',
+            headers: bearerJsonHeaders(signedOperatorToken),
+        });
+        assertEquals(startedResponse.status, 202);
+        const started = await startedResponse.json() as { state: string };
+        assertEquals(started.state, 'waiting-for-ack');
 
         const distributed = await getJson(server.baseUrl, '/distributed-runs/api-dist-1') as {
             state: string;
@@ -276,6 +309,31 @@ function adminHeaders(): HeadersInit {
         authorization: `Bearer ${ADMIN_TOKEN}`,
         'content-type': 'application/json',
     };
+}
+
+function bearerJsonHeaders(token: string): HeadersInit {
+    return {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+    };
+}
+
+async function operatorToken(
+    input: Readonly<{
+        expiresAtEpochMs?: number;
+        claims?: Parameters<typeof signRallarBlackBoxOperatorToken>[0]['claims'];
+    }> = {},
+): Promise<string> {
+    const issuedAtEpochMs = Date.now() - 1_000;
+    return await signRallarBlackBoxOperatorToken({
+        secret: OPERATOR_TOKEN_SECRET,
+        subject: 'alice',
+        sessionId: 'alice-session',
+        issuedAtEpochMs,
+        expiresAtEpochMs: input.expiresAtEpochMs ?? issuedAtEpochMs + 60_000,
+        tokenId: 'operator-token-id',
+        claims: input.claims,
+    });
 }
 
 async function registerAgent(baseUrl: string, runId: string, agentId: string): Promise<WebSocket> {

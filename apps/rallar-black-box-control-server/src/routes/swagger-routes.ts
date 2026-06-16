@@ -95,7 +95,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                 tags: ['Distributed Runs'],
                 summary: 'Create a distributed recipe run',
                 description:
-                    'Creates distributed orchestration metadata over a lower-level control run. Requires the admin token when configured.',
+                    'Creates distributed orchestration metadata over a lower-level control run. Requires the admin token or a signed logged-in operator token when configured.',
                 security: [{ bearerAuth: [] }, { queryToken: [] }],
                 requestBody: {
                     required: true,
@@ -319,7 +319,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                 tags: ['Fleet'],
                 summary: 'Rebuild fleet report index',
                 description:
-                    'Recomputes persisted fleet reports for terminal distributed runs. Requires the admin token when configured.',
+                    'Recomputes persisted fleet reports for terminal distributed runs. Requires the admin token or a signed logged-in operator token when configured.',
                 security: [{ bearerAuth: [] }, { queryToken: [] }],
                 responses: {
                     '200': {
@@ -375,7 +375,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                 tags: ['Retention'],
                 summary: 'Apply configured run retention',
                 description:
-                    'Deletes the oldest in-memory runs beyond `RALLAR_BLACK_BOX_RETENTION_MAX_RUNS`. Requires the admin token when configured.',
+                    'Deletes the oldest in-memory runs beyond `RALLAR_BLACK_BOX_RETENTION_MAX_RUNS`. Requires the admin token or a signed logged-in operator token when configured.',
                 security: [{ bearerAuth: [] }, { queryToken: [] }],
                 responses: {
                     '200': {
@@ -419,7 +419,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                 tags: ['Runs'],
                 summary: 'Delete one run',
                 description:
-                    'Removes the in-memory run and closes any connected browser-agent sockets for that run. Requires the admin token when configured.',
+                    'Removes the in-memory run and closes any connected browser-agent sockets for that run. Requires the admin token or a signed logged-in operator token when configured.',
                 security: [{ bearerAuth: [] }, { queryToken: [] }],
                 parameters: [{ $ref: '#/components/parameters/RunId' }],
                 responses: {
@@ -441,7 +441,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                 tags: ['Runs'],
                 summary: 'Reset one run snapshot',
                 description:
-                    'Clears queued commands, results, events, stats, reports, heartbeats, and agent counters while keeping known agents and run tokens. Requires the admin token when configured.',
+                    'Clears queued commands, results, events, stats, reports, heartbeats, and agent counters while keeping known agents and run tokens. Requires the admin token or a signed logged-in operator token when configured.',
                 security: [{ bearerAuth: [] }, { queryToken: [] }],
                 parameters: [{ $ref: '#/components/parameters/RunId' }],
                 responses: {
@@ -463,7 +463,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                 tags: ['Commands'],
                 summary: 'Queue a command for multiple browser agents',
                 description:
-                    'Queues one command per selected agent. Requires the admin token when configured and is intended for run-manager bulk orchestration.',
+                    'Queues one command per selected agent. Requires the admin token or a signed logged-in operator token when configured and is intended for run-manager bulk orchestration.',
                 security: [{ bearerAuth: [] }, { queryToken: [] }],
                 parameters: [{ $ref: '#/components/parameters/RunId' }],
                 requestBody: {
@@ -677,7 +677,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                 tags: ['Tokens'],
                 summary: 'Issue a run token for one agent',
                 description:
-                    'Requires the admin token when `RALLAR_BLACK_BOX_ADMIN_TOKEN` is configured. The issued token can authorize REST commands and WebSocket registration for the target run/agent.',
+                    'Requires the admin token or a signed logged-in operator token when configured. The issued token can authorize REST commands and WebSocket registration for the target run/agent.',
                 security: [{ bearerAuth: [] }, { queryToken: [] }],
                 parameters: [
                     { $ref: '#/components/parameters/RunId' },
