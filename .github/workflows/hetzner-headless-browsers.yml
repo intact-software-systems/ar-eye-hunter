@@ -13,6 +13,18 @@ on:
           - stop
           - restart
           - status
+      ref:
+        description: Git ref to roll out before action=start/restart when rollout_before_start is enabled
+        required: true
+        default: main
+      rollout_before_start:
+        description: Roll out the selected ref before action=start/restart so headless browser bug fixes are deployed
+        type: boolean
+        default: true
+      include_caddy:
+        description: Include Caddy in rollout stop/start handling when rollout_before_start is enabled
+        type: boolean
+        default: false
       agent_count:
         description: Number of headless browser agents to run when action=start
         type: number
@@ -28,7 +40,7 @@ on:
       agent_prefix:
         description: Agent id prefix for action=start
         required: true
-        default: gha-controller
+        default: controller
       spa_url:
         description: Public rallar-black-box SPA URL
         required: true
@@ -41,6 +53,22 @@ on:
         description: Public API-v1 base URL
         required: true
         default: https://api.rallar.intactss.com
+      api_cors_origins:
+        description: Optional API-v1 CORS origins; the SPA origin is appended automatically during rollout
+        required: false
+        default: ''
+      application_id:
+        description: Rallar application id for headless agents
+        required: true
+        default: rallar-server
+      workspace_id:
+        description: Rallar workspace id for headless agents
+        required: true
+        default: default
+      register_before_login:
+        description: Register disposable test users before login; useful after memory-backed API redeploys
+        type: boolean
+        default: false
       install_playwright:
         description: Install/update Chromium and Linux dependencies before starting
         type: boolean
@@ -110,13 +138,20 @@ jobs:
           RALLAR_BLACK_BOX_SPA_URL: ${{ inputs.spa_url }}
           RALLAR_BLACK_BOX_CONTROL_URL: ${{ inputs.control_url }}
           RALLAR_API_BASE_URL: ${{ inputs.api_base_url }}
+          RALLAR_API_CORS_ORIGINS: ${{ inputs.api_cors_origins }}
           RALLAR_BLACK_BOX_RUN_ID: ${{ inputs.run_id }}
           RALLAR_BLACK_BOX_ROOM_ID: ${{ inputs.room_id }}
           RALLAR_BLACK_BOX_AGENT_PREFIX: ${{ inputs.agent_prefix }}
           RALLAR_BLACK_BOX_AGENT_COUNT: ${{ inputs.agent_count }}
+          RALLAR_BLACK_BOX_APPLICATION_ID: ${{ inputs.application_id }}
+          RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}
           RALLAR_BLACK_BOX_USERNAME: ${{ secrets.RALLAR_BLACK_BOX_USERNAME }}
           RALLAR_BLACK_BOX_PASSWORD: ${{ secrets.RALLAR_BLACK_BOX_PASSWORD }}
+          RALLAR_BLACK_BOX_REGISTER: ${{ inputs.register_before_login }}
           RALLAR_BLACK_BOX_CONTROL_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}
+          RALLAR_REPO_REF: ${{ inputs.ref }}
+          RALLAR_ROLLOUT_BEFORE_HEADLESS_START: ${{ inputs.rollout_before_start }}
+          RALLAR_INCLUDE_CADDY: ${{ inputs.include_caddy }}
           RALLAR_INSTALL_PLAYWRIGHT: ${{ inputs.install_playwright }}
           RALLAR_NPM_CI: ${{ inputs.npm_ci }}
           RALLAR_WAIT_FOR_HEADLESS_WORKERS: ${{ inputs.wait_for_agents }}
@@ -131,13 +166,20 @@ jobs:
             printf 'RALLAR_BLACK_BOX_SPA_URL=%s\n' "$(quote "${RALLAR_BLACK_BOX_SPA_URL}")"
             printf 'RALLAR_BLACK_BOX_CONTROL_URL=%s\n' "$(quote "${RALLAR_BLACK_BOX_CONTROL_URL}")"
             printf 'RALLAR_API_BASE_URL=%s\n' "$(quote "${RALLAR_API_BASE_URL}")"
+            printf 'RALLAR_API_CORS_ORIGINS=%s\n' "$(quote "${RALLAR_API_CORS_ORIGINS}")"
             printf 'RALLAR_BLACK_BOX_RUN_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_RUN_ID}")"
             printf 'RALLAR_BLACK_BOX_ROOM_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_ROOM_ID}")"
             printf 'RALLAR_BLACK_BOX_AGENT_PREFIX=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_PREFIX}")"
             printf 'RALLAR_BLACK_BOX_AGENT_COUNT=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_COUNT}")"
+            printf 'RALLAR_BLACK_BOX_APPLICATION_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_APPLICATION_ID}")"
+            printf 'RALLAR_BLACK_BOX_WORKSPACE_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_WORKSPACE_ID}")"
             printf 'RALLAR_BLACK_BOX_USERNAME=%s\n' "$(quote "${RALLAR_BLACK_BOX_USERNAME}")"
             printf 'RALLAR_BLACK_BOX_PASSWORD=%s\n' "$(quote "${RALLAR_BLACK_BOX_PASSWORD}")"
+            printf 'RALLAR_BLACK_BOX_REGISTER=%s\n' "$(quote "${RALLAR_BLACK_BOX_REGISTER}")"
             printf 'RALLAR_BLACK_BOX_CONTROL_TOKEN=%s\n' "$(quote "${RALLAR_BLACK_BOX_CONTROL_TOKEN}")"
+            printf 'RALLAR_REPO_REF=%s\n' "$(quote "${RALLAR_REPO_REF}")"
+            printf 'RALLAR_ROLLOUT_BEFORE_HEADLESS_START=%s\n' "$(quote "${RALLAR_ROLLOUT_BEFORE_HEADLESS_START}")"
+            printf 'RALLAR_INCLUDE_CADDY=%s\n' "$(quote "${RALLAR_INCLUDE_CADDY}")"
             printf 'RALLAR_INSTALL_PLAYWRIGHT=%s\n' "$(quote "${RALLAR_INSTALL_PLAYWRIGHT}")"
             printf 'RALLAR_NPM_CI=%s\n' "$(quote "${RALLAR_NPM_CI}")"
             printf 'RALLAR_WAIT_FOR_HEADLESS_WORKERS=%s\n' "$(quote "${RALLAR_WAIT_FOR_HEADLESS_WORKERS}")"
@@ -178,6 +220,22 @@ jobs:
             source /tmp/rallar-headless-action.env
             set +a
             rm -f /tmp/rallar-headless-action.env
+          fi
+
+          bool_enabled() {
+            local value="${1:-0}"
+            [[ "${value}" == "1" || "${value}" == "true" || "${value}" == "yes" || "${value}" == "on" ]]
+          }
+
+          should_rollout() {
+            [[ "${action}" == "start" || "${action}" == "restart" ]] &&
+              bool_enabled "${RALLAR_ROLLOUT_BEFORE_HEADLESS_START:-0}"
+          }
+
+          if should_rollout; then
+            echo "Rolling out ${RALLAR_REPO_REF:-main} before ${action}."
+            ./10-stop-headless-workers.sh || true
+            ./08-rollout-controller.sh
           fi
 
           case "${action}" in

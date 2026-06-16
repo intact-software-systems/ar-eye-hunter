@@ -15,10 +15,12 @@ RALLAR_CHECKOUT_DIR="${RALLAR_CHECKOUT_DIR:-/opt/rallar/ar-eye-hunter}"
 RALLAR_API_HOST="${RALLAR_API_HOST:-api.rallar.intactss.com}"
 RALLAR_CONTROL_HOST="${RALLAR_CONTROL_HOST:-control.rallar.intactss.com}"
 RALLAR_BLACKBOX_HOST="${RALLAR_BLACKBOX_HOST:-blackbox.rallar.intactss.com}"
-RALLAR_API_CORS_ORIGINS="${RALLAR_API_CORS_ORIGINS:-https://${RALLAR_BLACKBOX_HOST},https://ar-eye-hunter.pages.dev,https://relic-hunters-v1.intact-software-systems.workers.dev}"
 RALLAR_RETENTION_MAX_RUNS="${RALLAR_RETENTION_MAX_RUNS:-50}"
 RALLAR_INSTALL_PLAYWRIGHT="${RALLAR_INSTALL_PLAYWRIGHT:-1}"
 RALLAR_ACME_EMAIL="${RALLAR_ACME_EMAIL:-}"
+
+apply_rallar_public_spa_defaults
+apply_rallar_public_cors_defaults
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -107,7 +109,7 @@ cat >/etc/rallar/control-server.env <<EOF
 PORT=5180
 RALLAR_BLACK_BOX_ADMIN_TOKEN=${RALLAR_CONTROL_ADMIN_TOKEN}
 RALLAR_BLACK_BOX_REQUIRE_TLS=1
-RALLAR_BLACK_BOX_ALLOWED_ORIGINS=https://${RALLAR_BLACKBOX_HOST}
+RALLAR_BLACK_BOX_ALLOWED_ORIGINS=${RALLAR_BLACK_BOX_ALLOWED_ORIGINS}
 RALLAR_BLACK_BOX_HTTP_ALLOWED_HOSTS=${RALLAR_API_HOST}
 RALLAR_BLACK_BOX_WS_ALLOWED_HOSTS=${RALLAR_API_HOST},${RALLAR_CONTROL_HOST}
 RALLAR_BLACK_BOX_STORAGE_DIR=/var/lib/rallar-black-box-control

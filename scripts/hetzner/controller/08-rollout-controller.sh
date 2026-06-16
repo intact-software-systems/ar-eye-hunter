@@ -11,12 +11,14 @@ RALLAR_CHECKOUT_DIR="${RALLAR_CHECKOUT_DIR:-/opt/rallar/ar-eye-hunter}"
 RALLAR_API_HOST="${RALLAR_API_HOST:-api.rallar.intactss.com}"
 RALLAR_CONTROL_HOST="${RALLAR_CONTROL_HOST:-control.rallar.intactss.com}"
 RALLAR_BLACKBOX_HOST="${RALLAR_BLACKBOX_HOST:-blackbox.rallar.intactss.com}"
-RALLAR_API_CORS_ORIGINS="${RALLAR_API_CORS_ORIGINS:-https://${RALLAR_BLACKBOX_HOST},https://ar-eye-hunter.pages.dev,https://relic-hunters-v1.intact-software-systems.workers.dev}"
 RALLAR_INCLUDE_CADDY="${RALLAR_INCLUDE_CADDY:-0}"
 RALLAR_INSTALL_PLAYWRIGHT="${RALLAR_INSTALL_PLAYWRIGHT:-0}"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
+apply_rallar_public_spa_defaults
+apply_rallar_public_cors_defaults
+
 services=(rallar-api-v1.service rallar-black-box-control.service)
 
 if [[ "${RALLAR_INCLUDE_CADDY}" == "1" || "${RALLAR_INCLUDE_CADDY}" == "true" ]]; then
@@ -50,8 +52,10 @@ wait_for_url() {
   return 1
 }
 
-update_api_cors_origins() {
-  local env_file="/etc/rallar/api-v1.env"
+update_env_value() {
+  local env_file="$1"
+  local key="$2"
+  local value="$3"
   local tmp_file
 
   if [[ ! -f "${env_file}" ]]; then
@@ -60,9 +64,9 @@ update_api_cors_origins() {
   fi
 
   tmp_file="$(mktemp)"
-  awk -v value="CORS_ORIGINS=${RALLAR_API_CORS_ORIGINS}" '
+  awk -v key="${key}" -v value="${key}=${value}" '
     BEGIN { replaced = 0 }
-    /^CORS_ORIGINS=/ {
+    $0 ~ "^" key "=" {
       if (!replaced) {
         print value
         replaced = 1
@@ -78,6 +82,16 @@ update_api_cors_origins() {
   ' "${env_file}" >"${tmp_file}"
   install -m 0600 -o root -g root "${tmp_file}" "${env_file}"
   rm -f "${tmp_file}"
+}
+
+update_api_cors_origins() {
+  apply_rallar_public_cors_defaults
+  update_env_value "/etc/rallar/api-v1.env" "CORS_ORIGINS" "${RALLAR_API_CORS_ORIGINS}"
+}
+
+update_control_allowed_origins() {
+  apply_rallar_public_cors_defaults
+  update_env_value "/etc/rallar/control-server.env" "RALLAR_BLACK_BOX_ALLOWED_ORIGINS" "${RALLAR_BLACK_BOX_ALLOWED_ORIGINS}"
 }
 
 require_command git
@@ -171,6 +185,9 @@ write_rallar_black_box_spa_env_file
 
 echo "==> Updating API CORS origins"
 update_api_cors_origins
+
+echo "==> Updating control-server browser origins"
+update_control_allowed_origins
 
 echo "==> Starting services"
 systemctl daemon-reload

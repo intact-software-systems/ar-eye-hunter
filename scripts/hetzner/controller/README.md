@@ -164,6 +164,11 @@ Override the API CORS origins written during rollout:
 RALLAR_API_CORS_ORIGINS=https://app.example.test,https://admin.example.test ./08-rollout-controller.sh
 ```
 
+The rollout also keeps the public `RALLAR_BLACK_BOX_SPA_URL` origin allowed in
+both API-v1 CORS and `rallar-black-box-control-server` browser-origin policy.
+If you provide custom `RALLAR_API_CORS_ORIGINS`, the SPA origin is appended so
+headless browser login, API calls, and control-server orchestration still work.
+
 Run public smoke checks:
 
 ```sh
@@ -258,6 +263,21 @@ RALLAR_BLACK_BOX_PASSWORD=<password> \
 RALLAR_INSTALL_PLAYWRIGHT=1 \
 ./09-start-headless-workers.sh
 ```
+
+Headless browser login uses the same visible Rallar Kit login flow as a human
+browser. The worker opens the public SPA with `provider=browser-rallar`,
+`rallarUsername`, `rallarPassword`, `apiBaseUrl`, `applicationId`,
+`workspaceId`, `roomId`, `runId`, and `agentId` in the bootstrap query string.
+The SPA pre-fills the login form from those values, the worker clicks `Sign in`,
+and only after a real browser auth session exists does the SPA connect to the
+control WebSocket as a remote agent. If login or CORS fails, the agent never
+appears as connected and the start script times out while printing recent
+service logs.
+
+Use `RALLAR_BLACK_BOX_REGISTER=1`, or the GitHub Actions
+`register_before_login` input, when the target API is memory-backed and has just
+been redeployed so the disposable test user must be created before login. Leave
+it disabled for pre-provisioned or persistent auth users.
 
 If `RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN=1` is enabled on the control server,
 also pass:
@@ -499,6 +519,9 @@ status
 For `start`, configure:
 
 ```text
+ref
+rollout_before_start
+include_caddy
 agent_count
 run_id
 room_id
@@ -506,6 +529,10 @@ agent_prefix
 spa_url
 control_url
 api_base_url
+api_cors_origins
+application_id
+workspace_id
+register_before_login
 install_playwright
 npm_ci
 wait_for_agents
@@ -532,6 +559,12 @@ RALLAR_BLACK_BOX_CONTROL_TOKEN
 Use `action=start` with the desired `agent_count` to launch browsers. Use
 `action=stop` to stop them. Use `action=status` to inspect the current service
 and connected agents.
+
+By default `action=start` and `action=restart` first stop the existing headless
+worker service, run `08-rollout-controller.sh` for the selected `ref`, refresh
+API/control CORS policy from the public SPA URL, and then start the headless
+worker service. Set `rollout_before_start=false` when you only want to reuse the
+already-deployed checkout and restart browsers from the existing VM files.
 
 ## Defaults
 

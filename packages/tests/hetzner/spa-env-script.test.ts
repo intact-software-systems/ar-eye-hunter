@@ -68,9 +68,72 @@ describe('Hetzner SPA public env wiring', () => {
             path.join(repoRoot, '.github/workflows/hetzner-headless-browsers.yml'),
             'utf8',
         );
+        const startScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/09-start-headless-workers.sh'),
+            'utf8',
+        );
 
+        expect(workflow).toContain('default: controller');
         expect(workflow).toContain('RALLAR_BLACK_BOX_AGENT_PREFIX: ${{ inputs.agent_prefix }}');
         expect(workflow).toContain('RALLAR_BLACK_BOX_AGENT_COUNT: ${{ inputs.agent_count }}');
+        expect(workflow).toContain('application_id:');
+        expect(workflow).toContain('workspace_id:');
+        expect(workflow).toContain('register_before_login:');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_APPLICATION_ID: ${{ inputs.application_id }}');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_REGISTER: ${{ inputs.register_before_login }}');
+        expect(workflow).toContain('printf \'RALLAR_BLACK_BOX_REGISTER=%s\\n\'');
+        expect(startScript).toContain(
+            'RALLAR_BLACK_BOX_APPLICATION_ID="${RALLAR_BLACK_BOX_APPLICATION_ID:-${RALLAR_APPLICATION_ID:-rallar-server}}"',
+        );
+        expect(startScript).toContain(
+            'RALLAR_BLACK_BOX_WORKSPACE_ID="${RALLAR_BLACK_BOX_WORKSPACE_ID:-${RALLAR_WORKSPACE_ID:-default}}"',
+        );
+    });
+
+    it('lets the headless browser workflow roll out the selected ref before starting agents', async () => {
+        const workflow = await readFile(
+            path.join(repoRoot, '.github/workflows/hetzner-headless-browsers.yml'),
+            'utf8',
+        );
+
+        expect(workflow).toContain('ref:');
+        expect(workflow).toContain('rollout_before_start:');
+        expect(workflow).toContain('RALLAR_REPO_REF: ${{ inputs.ref }}');
+        expect(workflow).toContain('RALLAR_ROLLOUT_BEFORE_HEADLESS_START: ${{ inputs.rollout_before_start }}');
+        expect(workflow).toContain('RALLAR_API_CORS_ORIGINS: ${{ inputs.api_cors_origins }}');
+        expect(workflow).toContain('if should_rollout; then');
+        expect(workflow).toContain('./10-stop-headless-workers.sh');
+        expect(workflow).toContain('./08-rollout-controller.sh');
+        expect(workflow.indexOf('./08-rollout-controller.sh')).toBeLessThan(
+            workflow.indexOf('RALLAR_WRITE_HEADLESS_ENV=1 ./09-start-headless-workers.sh'),
+        );
+    });
+
+    it('keeps public SPA origin allowed for API CORS and control-server browser requests', async () => {
+        const helper = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/rallar-public-spa-env.sh'),
+            'utf8',
+        );
+        const deployScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
+            'utf8',
+        );
+        const rolloutScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
+            'utf8',
+        );
+
+        expect(helper).toContain('apply_rallar_public_cors_defaults');
+        expect(helper).toContain('rallar_public_url_origin "${RALLAR_BLACK_BOX_SPA_URL}"');
+        expect(helper).toContain('RALLAR_API_CORS_ORIGINS=');
+        expect(helper).toContain('RALLAR_BLACK_BOX_ALLOWED_ORIGINS=');
+        expect(deployScript).toContain('apply_rallar_public_cors_defaults');
+        expect(deployScript).toContain('CORS_ORIGINS=${RALLAR_API_CORS_ORIGINS}');
+        expect(deployScript).toContain('RALLAR_BLACK_BOX_ALLOWED_ORIGINS=${RALLAR_BLACK_BOX_ALLOWED_ORIGINS}');
+        expect(rolloutScript).toContain('update_api_cors_origins');
+        expect(rolloutScript).toContain('update_control_allowed_origins');
+        expect(rolloutScript).toContain('RALLAR_BLACK_BOX_ALLOWED_ORIGINS');
     });
 
     it('lets the controller deploy action configure SPA public defaults during rollout', async () => {
