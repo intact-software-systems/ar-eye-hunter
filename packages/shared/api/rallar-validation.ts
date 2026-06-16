@@ -432,7 +432,6 @@ function validateJsonCompatibleValue(
                 });
             }
             return;
-        case 'undefined':
         case 'function':
         case 'symbol':
         case 'bigint':
@@ -441,6 +440,8 @@ function validateJsonCompatibleValue(
                 code: 'invalid-json-payload',
                 message: 'Payload must be JSON-compatible.',
             });
+            return;
+        case 'undefined':
             return;
         case 'object':
             break;

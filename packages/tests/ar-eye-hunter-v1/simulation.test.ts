@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { validateRallarJsonPayload } from '@shared/api/rallar-validation.ts';
 
 import {
     FALLBACK_ARENA_LAYOUT,
@@ -21,6 +22,7 @@ import {
     spawnWeaponPickup,
     stepArenaDirectorState,
     stepLocalPlayer,
+    toArenaSnapshot,
     upsertPlayerPose,
 } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
 import type {
@@ -407,6 +409,19 @@ describe('AR Eye Hunter simulation', () => {
         expect(state.wave.number).toBe(1);
         expect(state.wave.phase).toBe('warmup');
         expect(state.targets.some((target) => target.threat?.kind === 'beam-sentry')).toBe(true);
+    });
+
+    it('emits Rallar JSON-compatible arena snapshots', () => {
+        const now = 65_000;
+        const snapshot = toArenaSnapshot(createInitialArenaState(101, now), 'arena-1', now);
+
+        const validation = validateRallarJsonPayload({
+            protocol: 'ar-eye-hunter.v1',
+            kind: 'director-arena-snapshot',
+            payload: snapshot,
+        }, { path: '$.payload' });
+
+        expect(validation.ok).toBe(true);
     });
 
     it('schedules hostile beam-eye windups and damages visible players after telegraph', () => {

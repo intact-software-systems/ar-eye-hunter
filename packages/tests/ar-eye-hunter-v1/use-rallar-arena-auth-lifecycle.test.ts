@@ -4,7 +4,9 @@ import { createRoot, type Root } from 'react-dom/client';
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { validateRallarJsonPayload } from '@shared/api/rallar-validation.ts';
 import type { RallarAuthState } from '@shared-web/browser/rallar.ts';
+import { createInitialVitalsState } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
 import { useRallarArena, type ArenaConnection } from '../../../apps/ar-eye-hunter-v1/src/game/useRallarArena.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -423,6 +425,35 @@ describe('useRallarArena auth lifecycle', () => {
             laneId: 'motion',
             key: `pose:${session.sessionId}`,
         }));
+    });
+
+    it('sends Rallar JSON-compatible pose envelopes when optional vitals are unset', async () => {
+        await renderHook();
+        await waitForState(() => current?.connectionState === 'connected');
+        mockMatch.status.mockReturnValue({
+            directorPeerId: session.sessionId,
+            directorIsFresh: true,
+        });
+
+        await act(async () => {
+            current?.sendPose({
+                position: [1, 2, 3],
+                rotation: [0, 0.5, 0],
+                score: 12,
+                seq: 8,
+                sentAtEpochMs: 456,
+                vitals: {
+                    ...createInitialVitalsState(),
+                    deadUntilEpochMs: undefined,
+                },
+            });
+        });
+
+        const input = mockMatch.sendInput.mock.calls[0]?.[0];
+        const presence = mockMatch.sendPresence.mock.calls[0]?.[0];
+
+        expect(validateRallarJsonPayload(input, { path: '$.payload' }).ok).toBe(true);
+        expect(validateRallarJsonPayload(presence, { path: '$.payload' }).ok).toBe(true);
     });
 
     async function renderHook(): Promise<void> {

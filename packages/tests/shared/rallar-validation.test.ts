@@ -88,6 +88,27 @@ describe('Rallar shared validation', () => {
         expect(accepted.serialized).toBe('{"text":"hello"}');
         expect(accepted.byteLength).toBeGreaterThan(0);
 
+        const withUndefinedProperties = validateRallarJsonPayload(
+            {
+                text: 'hello',
+                omitted: undefined,
+                nested: {
+                    kept: true,
+                    alsoOmitted: undefined,
+                },
+            },
+            { path: '$.payload' },
+        );
+        expect(withUndefinedProperties.ok).toBe(true);
+        expect(withUndefinedProperties.serialized).toBe('{"text":"hello","nested":{"kept":true}}');
+
+        const withUndefinedArrayItems = validateRallarJsonPayload(
+            ['hello', undefined, { value: undefined }],
+            { path: '$.payload' },
+        );
+        expect(withUndefinedArrayItems.ok).toBe(true);
+        expect(withUndefinedArrayItems.serialized).toBe('["hello",null,{}]');
+
         expect(validateRallarJsonPayload(undefined, { path: '$.payload' }).issues[0]?.code)
             .toBe('invalid-json-payload');
         expect(validateRallarJsonPayload(1 / 0, { path: '$.payload' }).issues[0]?.code)
