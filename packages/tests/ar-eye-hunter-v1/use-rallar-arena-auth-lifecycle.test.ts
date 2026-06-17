@@ -114,6 +114,7 @@ vi.mock('@shared-web/browser/api-integration.ts', () => ({
             { urls: 'stun:stun.test' },
         ],
     })),
+    readWebSocketTicketBackoffState: vi.fn(() => ({ status: 'idle' })),
 }));
 
 vi.mock('@shared-web/browser/rallar-ai.ts', () => ({
@@ -287,6 +288,140 @@ describe('useRallarArena auth lifecycle', () => {
         expect(current?.arenaSnapshot).toBeUndefined();
         expect(current?.remotePlayers.size).toBe(0);
         expect(current?.remoteEvents).toEqual([]);
+    });
+
+    it('blocks stale canvas snapshot publication after logout', async () => {
+        await renderHook();
+        await waitForState(() => current?.connectionState === 'connected');
+
+        await act(async () => {
+            await current?.logout();
+        });
+
+        const signedOutConnection = current;
+        await act(async () => {
+            signedOutConnection?.publishArenaSnapshot({
+                protocol: 'ar-eye-hunter.v1',
+                roomId: 'arena-1',
+                revision: 99,
+                generatedAtEpochMs: 5_000,
+                localPlayer: {
+                    sessionId: session.sessionId,
+                    username: session.username,
+                    color: '#00ffaa',
+                    position: [0, 0, 0],
+                    rotation: [0, 0, 0],
+                    velocity: [0, 0, 0],
+                    score: 0,
+                    combo: 0,
+                    seq: 1,
+                    sentAtEpochMs: 5_000,
+                },
+                combat: {
+                    energy: 100,
+                    maxEnergy: 100,
+                    shotReadyAtEpochMs: 0,
+                    dashReadyAtEpochMs: 0,
+                    slideReadyAtEpochMs: 0,
+                    overdrive: 0,
+                    overdriveReady: false,
+                    streak: 0,
+                    multiplier: 1,
+                },
+                targets: [],
+                events: [],
+                pickups: [],
+                players: [],
+                attacks: [],
+                wave: {
+                    wave: 1,
+                    phase: 'warmup',
+                    phaseStartedAtEpochMs: 0,
+                    phaseEndsAtEpochMs: 1_000,
+                    targetBudget: 0,
+                    hostileBudget: 0,
+                    pickupRewardBudget: 0,
+                },
+            });
+        });
+
+        expect(current?.connectionState).toBe('signed-out');
+        expect(current?.arenaSnapshot).toBeUndefined();
+        expect(mockMatch.publishSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('blocks stale canvas combat callbacks after logout', async () => {
+        await renderHook();
+        await waitForState(() => current?.connectionState === 'connected');
+
+        await act(async () => {
+            await current?.logout();
+        });
+
+        const signedOutConnection = current;
+        mockMatch.publishEvent.mockClear();
+        mockMatch.publishSnapshot.mockClear();
+        mockMatch.sendIntent.mockClear();
+        mockMatch.sendInput.mockClear();
+        mockMatch.sendPresence.mockClear();
+        mockRallar.realtime.room.mockClear();
+        mockRallar.realtime.sendJson.mockClear();
+
+        const fullShot = {
+            sessionId: session.sessionId,
+            username: session.username,
+            color: '#00ffaa',
+            origin: [0, 1.5, 0] as const,
+            direction: [0, 0, 1] as const,
+            weaponKind: 'pulse-rifle' as const,
+            seq: 1,
+            sentAtEpochMs: 5_000,
+        };
+
+        await act(async () => {
+            signedOutConnection?.sendShot(
+                {
+                    origin: fullShot.origin,
+                    direction: fullShot.direction,
+                    weaponKind: fullShot.weaponKind,
+                    seq: fullShot.seq,
+                    sentAtEpochMs: fullShot.sentAtEpochMs,
+                },
+                {
+                    shot: fullShot,
+                    hit: false,
+                    impact: [0, 1.5, 8],
+                    scoreDelta: 0,
+                    combo: 0,
+                    multiplier: 1,
+                    overdrive: 0,
+                    revision: 1,
+                    acceptedAtEpochMs: 5_000,
+                },
+            );
+            signedOutConnection?.sendPlayerHit({
+                shot: fullShot,
+                targetSessionId: 'target-session',
+                targetSeq: 3,
+                predictedImpact: [0, 1.5, 8],
+                sentAtEpochMs: 5_001,
+            });
+            signedOutConnection?.sendPickupIntent({
+                pickupId: 'pickup-1',
+                sessionId: session.sessionId,
+                position: [0, 0, 1],
+                seq: 1,
+                sentAtEpochMs: 5_002,
+            });
+        });
+
+        expect(mockMatch.publishEvent).not.toHaveBeenCalled();
+        expect(mockMatch.publishSnapshot).not.toHaveBeenCalled();
+        expect(mockMatch.sendIntent).not.toHaveBeenCalled();
+        expect(mockMatch.sendInput).not.toHaveBeenCalled();
+        expect(mockMatch.sendPresence).not.toHaveBeenCalled();
+        expect(mockRallar.realtime.room).not.toHaveBeenCalled();
+        expect(mockRallar.realtime.sendJson).not.toHaveBeenCalled();
     });
 
     it('records director appointment attempts and exposes transport diagnostics', async () => {

@@ -103,6 +103,14 @@ export type ALOutboundRuntimeStores = Readonly<{
     stateStore?: ALOutboundRuntimeStateStore;
 }>;
 
+type BrowserLockManager = Readonly<{
+    request<T>(
+        name: string,
+        options: Readonly<{ mode: 'exclusive' }>,
+        callback: () => Promise<T>,
+    ): Promise<T>;
+}>;
+
 export type ALOutboundEnqueueStatus =
     | 'enqueued'
     | 'sent-immediate'
@@ -943,13 +951,39 @@ export class ALOutboundMessageRuntime<TPrepared> {
         await previous.catch(() => undefined);
 
         try {
-            return await task();
+            return await this.withCrossContextCommitLock(senderId, task);
         } finally {
             release?.();
             if (this.commitQueuesBySenderId.get(senderId) === tail) {
                 this.commitQueuesBySenderId.delete(senderId);
             }
         }
+    }
+
+    private async withCrossContextCommitLock<T>(
+        senderId: string,
+        task: () => Promise<T>,
+    ): Promise<T> {
+        const locks = this.readBrowserLockManager();
+        if (!locks) {
+            return await task();
+        }
+
+        return await locks.request(
+            `rallar:al-outbound-commit:${senderId}`,
+            { mode: 'exclusive' },
+            task,
+        );
+    }
+
+    private readBrowserLockManager(): BrowserLockManager | undefined {
+        const candidate = (globalThis as {
+            navigator?: {
+                locks?: BrowserLockManager;
+            };
+        }).navigator?.locks;
+
+        return typeof candidate?.request === 'function' ? candidate : undefined;
     }
 
     private async retransmitByMsgId(

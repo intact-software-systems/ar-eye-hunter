@@ -56,12 +56,14 @@ export default function App() {
     const rtcReadyPeers = arena.transportDiagnostics.rtc?.readyPeerIds.length ??
         arena.rtcLanes.reduce((sum, lane) => sum + lane.readyPeers, 0);
     const httpStatus = `${arena.httpDiagnostics.apiConfig.status}/${arena.httpDiagnostics.ice.status}`;
+    const arenaNetworkEnabled = arena.networkEnabled;
     const arenaDiagnosticsAttributes = {
         'data-arena-director-attempt': arena.directorAttempt.status,
         'data-arena-diagnostics-open': diagnosticsOpen ? 'true' : 'false',
         'data-arena-ws-state': arena.transportDiagnostics.ws?.readyState ?? 'unknown',
         'data-arena-rtc-ready-peers': String(rtcReadyPeers),
         'data-arena-http-status': httpStatus,
+        'data-arena-network-enabled': arenaNetworkEnabled ? 'true' : 'false',
     } as const;
 
     useEffect(() => {
@@ -111,6 +113,7 @@ export default function App() {
                 localColor={localColor}
                 roomId={arena.roomId}
                 roomReady={arena.connectionState === 'connected' && Boolean(arena.roomId)}
+                networkEnabled={arenaNetworkEnabled}
                 diagnosticsAttributes={arenaDiagnosticsAttributes}
                 remotePlayers={arena.remotePlayers}
                 remoteShots={arena.remoteShots}
@@ -535,6 +538,13 @@ function DiagnosticsDrawer({
             transport: arena.transportDiagnostics,
             http: arena.httpDiagnostics,
             lanes: arena.rtcLanes,
+            lifecycle: {
+                authStorageKind: arena.authStorageKind,
+                authGeneration: arena.authGeneration,
+                networkEnabled: arena.networkEnabled,
+                logoutQuiesced: arena.logoutQuiesced,
+                wsTicketBackoff: arena.transportDiagnostics.wsTicketBackoff,
+            },
             ai: {
                 status: arena.aiStatus,
                 error: arena.aiError,
@@ -547,7 +557,11 @@ function DiagnosticsDrawer({
             arena.directorStatus,
             arena.gameDiagnostics,
             arena.httpDiagnostics,
+            arena.authGeneration,
+            arena.authStorageKind,
+            arena.logoutQuiesced,
             arena.rtcLanes,
+            arena.networkEnabled,
             arena.transportDiagnostics,
         ],
     );
@@ -624,6 +638,10 @@ function DiagnosticsDrawer({
             <DiagnosticsSection title="RTC / Realtime">
                 <DiagnosticsRow label="WS" value={arena.transportDiagnostics.ws?.readyState ?? 'unknown'}/>
                 <DiagnosticsRow
+                    label="WS ticket"
+                    value={wsTicketBackoffLabel(arena.transportDiagnostics.wsTicketBackoff)}
+                />
+                <DiagnosticsRow
                     label="RTC peers"
                     value={`${arena.transportDiagnostics.rtc?.readyPeerIds.length ?? 0}/${arena.transportDiagnostics.rtc?.knownPeerIds.length ?? 0}`}
                 />
@@ -645,6 +663,10 @@ function DiagnosticsDrawer({
             </DiagnosticsSection>
 
             <DiagnosticsSection title="HTTP / API">
+                <DiagnosticsRow label="Auth storage" value={arena.authStorageKind}/>
+                <DiagnosticsRow label="Generation" value={String(arena.authGeneration)}/>
+                <DiagnosticsRow label="Network" value={arena.networkEnabled ? 'enabled' : 'disabled'}/>
+                <DiagnosticsRow label="Logout" value={arena.logoutQuiesced ? 'quiesced' : 'active'}/>
                 <DiagnosticsRow
                     label="Config"
                     value={httpProbeLabel(arena.httpDiagnostics.apiConfig)}
@@ -721,6 +743,21 @@ function httpProbeLabel(probe: ArenaConnection['httpDiagnostics']['apiConfig']):
     const timing = probe.durationMs === undefined ? '' : ` ${probe.durationMs}ms`;
     const detail = probe.detail || probe.reason;
     return `${probe.status}${timing}${detail ? ` ${detail}` : ''}`;
+}
+
+function wsTicketBackoffLabel(
+    state: ArenaConnection['transportDiagnostics']['wsTicketBackoff'],
+): string {
+    if (!state || state.status === 'idle') {
+        return 'idle';
+    }
+    if (state.status === 'local-rate-limited') {
+        return 'local throttle';
+    }
+    if (state.status === 'circuit-open') {
+        return 'circuit open';
+    }
+    return `cooldown ${Math.max(0, state.retryAtEpochMs - Date.now())}ms`;
 }
 
 function shortOptional(value: string | undefined): string {

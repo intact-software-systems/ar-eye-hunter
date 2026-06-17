@@ -31,6 +31,7 @@ jobs:
         working-directory: apps/ar-eye-hunter-v1
         env:
           API_BASE_URL: https://api.rallar.intactss.com
+          VITE_RALLAR_AUTH_STORAGE: session
           VITE_RALLAR_BROWSER_AI: webllm
           VITE_RALLAR_BROWSER_AI_ENABLED: "true"
           VITE_RALLAR_WEBLLM_MODEL: Llama-3.2-1B-Instruct-q4f16_1-MLC

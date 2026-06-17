@@ -1370,7 +1370,7 @@ export type RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot = TOutput> =
         snapshotTypeId?: string;
         syncRequestTypeId?: string;
         heartbeatIntervalMs?: number;
-        snapshotIntervalMs?: number;
+        snapshotIntervalMs?: number | false;
         readSnapshot?: () => TSnapshot | undefined | Promise<TSnapshot | undefined>;
         onIntent?: (
             message: RallarDirectorRelayMessage<TIntent>,
@@ -3995,14 +3995,18 @@ class BrowserRallarFacade implements RallarFacade {
             );
         timers.push(setInterval(() => {
             if (status().isDirector) {
-                void relay.sendHeartbeat();
+                void relay.sendHeartbeat().catch((error) => {
+                    console.error('Failed to send director relay heartbeat:', error);
+                });
             }
         }, heartbeatIntervalMs));
 
-        if (config.readSnapshot) {
+        if (config.readSnapshot && config.snapshotIntervalMs !== false) {
             timers.push(setInterval(() => {
                 if (status().isDirector) {
-                    void relay.sendSnapshot();
+                    void relay.sendSnapshot().catch((error) => {
+                        console.error('Failed to send director relay snapshot:', error);
+                    });
                 }
             }, config.snapshotIntervalMs ?? 2_000));
         }

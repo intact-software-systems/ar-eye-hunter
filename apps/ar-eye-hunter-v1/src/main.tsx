@@ -2,6 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 
+import { configureAuthSessionStorage } from '@shared/api/auth.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import App from './App.tsx';
 import { GAME_COMBAT_LANE_ID } from './game/types.ts';
@@ -15,6 +16,11 @@ const env = (import.meta as { env?: Record<string, string | undefined> }).env ??
 const url = env['API_BASE_URL'];
 if (url === undefined) {
     throw new Error('Missing API_BASE_URL');
+}
+
+const authStorage = env['VITE_RALLAR_AUTH_STORAGE'] ?? 'session';
+if (authStorage === 'session' || authStorage === 'local') {
+    configureAuthSessionStorage(authStorage);
 }
 
 rallar.configure({

@@ -121,7 +121,9 @@ import {
     RALLAR_BLACK_BOX_RTC_REALTIME_MIN_DURATION_SECONDS,
     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
     RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
+    createRallarBlackBoxProviderParityLiveRecipe,
     createRallarBlackBoxRtcRealtimeRecipe,
+    createRallarBlackBoxRtcSmokeRecipe,
     normalizeRallarBlackBoxRtcRealtimeDurationSeconds,
     recipeFixtureText,
 } from './recipe-fixtures.ts';
@@ -811,7 +813,7 @@ const APP_LOCAL_RECIPE_CATALOG: readonly AppLocalRecipeEntry[] = [
         providerMode: 'browser-rallar',
         requirements: [
             'logged-in browser session',
-            'existing or creatable group',
+            'group state API can create or reuse bb-group',
             'RTC signaling available',
         ],
         expectedResult: 'RTC connect succeeds and payload is sent',
@@ -863,24 +865,45 @@ function configuredDistributedRecipeCatalogItem(
     item: DistributedRecipeCatalogItem,
     input: Readonly<{
         group: RallarBlackBoxDistributedGroupRef;
+        apiBaseUrl: string;
         rtcRealtimeDurationSeconds: number;
     }>,
 ): DistributedRecipeCatalogItem {
-    if (item.itemId !== RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID) {
-        return item;
+    if (item.itemId === 'rtc-smoke') {
+        return {
+            ...item,
+            recipe: createRallarBlackBoxRtcSmokeRecipe({
+                group: input.group,
+            }),
+        };
     }
 
-    return {
-        ...item,
-        recipe: createRallarBlackBoxRtcRealtimeRecipe({
-            durationSeconds: input.rtcRealtimeDurationSeconds,
-            group: input.group,
-        }),
-    };
+    if (item.itemId === 'provider-parity') {
+        return {
+            ...item,
+            recipe: createRallarBlackBoxProviderParityLiveRecipe({
+                group: input.group,
+                apiBaseUrl: input.apiBaseUrl,
+            }),
+        };
+    }
+
+    if (item.itemId === RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID) {
+        return {
+            ...item,
+            recipe: createRallarBlackBoxRtcRealtimeRecipe({
+                durationSeconds: input.rtcRealtimeDurationSeconds,
+                group: input.group,
+            }),
+        };
+    }
+
+    return item;
 }
 
 function runnerRecipeCatalog(input: Readonly<{
     group: RallarBlackBoxDistributedGroupRef;
+    apiBaseUrl: string;
     rtcRealtimeDurationSeconds: number;
 }>): readonly RunnerRecipeCatalogEntry[] {
     const distributedItems = DISTRIBUTED_RECIPE_CATALOG.map((item) =>
@@ -6409,10 +6432,11 @@ function RunnerRecipesPanel({
         () =>
             runnerRecipeCatalog({
                 group: groupRef,
+                apiBaseUrl: globalValues.apiBaseUrl,
                 rtcRealtimeDurationSeconds:
                     RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS,
             }),
-        [groupRef],
+        [globalValues.apiBaseUrl, groupRef],
     );
     const profileOptions = useMemo(
         () => uniqueValues(catalog.flatMap((entry) => entry.profiles)),
@@ -13162,10 +13186,11 @@ function DistributedRecipesPanel({
             DISTRIBUTED_RECIPE_CATALOG.map((item) =>
                 configuredDistributedRecipeCatalogItem(item, {
                     group: groupRef,
+                    apiBaseUrl: globalValues.apiBaseUrl,
                     rtcRealtimeDurationSeconds,
                 }),
             ),
-        [groupRef, rtcRealtimeDurationSeconds],
+        [globalValues.apiBaseUrl, groupRef, rtcRealtimeDurationSeconds],
     );
     const runOptions = useMemo(
         () =>

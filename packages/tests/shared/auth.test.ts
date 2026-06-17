@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readSession, writeSession } from '@shared/api/auth.ts';
+import {
+    configureAuthSessionStorage,
+    readAuthSessionStorageKind,
+    readSession,
+    resetAuthSessionStorage,
+    writeSession,
+} from '@shared/api/auth.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
 describe('browser auth session storage', () => {
@@ -7,10 +13,13 @@ describe('browser auth session storage', () => {
         vi.useFakeTimers();
         vi.setSystemTime(1_000);
         vi.stubGlobal('localStorage', memoryStorage());
+        vi.stubGlobal('sessionStorage', memoryStorage());
+        resetAuthSessionStorage();
     });
 
     afterEach(() => {
         vi.useRealTimers();
+        resetAuthSessionStorage();
         vi.unstubAllGlobals();
     });
 
@@ -25,6 +34,24 @@ describe('browser auth session storage', () => {
         writeSession(expiredSession);
 
         expect(readSession()).toBeUndefined();
+        expect(localStorage.getItem('auth.session')).toBeNull();
+    });
+
+    it('can isolate auth sessions in browser session storage', () => {
+        const activeSession: AuthSession = {
+            clientId: 'principal-2',
+            sessionId: 'session-2',
+            username: 'principal-2',
+            accessToken: 'token-2',
+            expiresAtEpochMs: 2_000,
+        };
+
+        configureAuthSessionStorage('session');
+        writeSession(activeSession);
+
+        expect(readAuthSessionStorageKind()).toBe('session');
+        expect(readSession()).toEqual(activeSession);
+        expect(sessionStorage.getItem('auth.session')).not.toBeNull();
         expect(localStorage.getItem('auth.session')).toBeNull();
     });
 });

@@ -9,8 +9,17 @@ import {
     type RallarWsStatus,
 } from '@shared-web/browser/rallar.ts';
 import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
-import { readApiConfig, readIceCandidates } from '@shared-web/browser/api-integration.ts';
+import {
+    readApiConfig,
+    readIceCandidates,
+    readWebSocketTicketBackoffState,
+    type WebSocketTicketBackoffState,
+} from '@shared-web/browser/api-integration.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import {
+    readAuthSessionStorageKind,
+    type AuthSessionStorageKind,
+} from '@shared/api/auth.ts';
 import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
 import {
     createRallarAiFunnyRoomName,
@@ -135,6 +144,7 @@ export type ArenaTransportDiagnostics = Readonly<{
     rtc?: RallarRtcStatus;
     realtimeHealth: readonly RallarRealtimeLaneHealth[];
     rtcDiagnostics?: RallarRtcDiagnostics;
+    wsTicketBackoff?: WebSocketTicketBackoffState;
     error?: string;
 }>;
 
@@ -159,6 +169,10 @@ export type ArenaConnection = Readonly<{
     gameDiagnostics?: RallarGameDiagnostics;
     transportDiagnostics: ArenaTransportDiagnostics;
     httpDiagnostics: ArenaHttpDiagnostics;
+    authStorageKind: AuthSessionStorageKind;
+    authGeneration: number;
+    networkEnabled: boolean;
+    logoutQuiesced: boolean;
     aiStatus: AiStatus;
     aiError?: string;
     activeEvent?: ArenaEvent;
@@ -236,17 +250,45 @@ export function useRallarArena(): ArenaConnection {
     const arenaSnapshotRef = useRef<ArenaSnapshot | undefined>(arenaSnapshot);
     const poseSendBudget = useRef(0);
     const localAvatarProfileRef = useRef<AvatarProfile | undefined>(undefined);
+    const networkGenerationRef = useRef(0);
+
+    const bumpNetworkGeneration = useCallback(() => {
+        networkGenerationRef.current += 1;
+        return networkGenerationRef.current;
+    }, []);
+
+    const isCurrentNetworkGeneration = useCallback((generation: number) =>
+        networkGenerationRef.current === generation, []);
+
+    const isNetworkEnabled = useCallback(() =>
+        Boolean(sessionRef.current && roomIdRef.current && arenaMatchRef.current), []);
 
     const resetForSignedOutAuth = useCallback(() => {
+        bumpNetworkGeneration();
         arenaMatchRef.current?.stop();
         arenaMatchRef.current = undefined;
+        sessionRef.current = undefined;
+        roomIdRef.current = undefined;
+        arenaSnapshotRef.current = undefined;
+        remotePlayersRef.current = new Map();
+        poseSendBudget.current = 0;
+        localAvatarProfileRef.current = undefined;
         setSession(undefined);
         setRoomId(undefined);
         setRooms([]);
-        setDirectorStatus(rallar.director.status());
-        setDirectorAttempt({ status: 'idle' });
+        const signedOutDirectorStatus = rallar.director.status();
+        const signedOutDirectorAttempt: DirectorAttemptState = { status: 'idle' };
+        const signedOutTransportDiagnostics: ArenaTransportDiagnostics = {
+            realtimeHealth: [],
+            wsTicketBackoff: readWebSocketTicketBackoffState(),
+        };
+        directorStatusRef.current = signedOutDirectorStatus;
+        directorAttemptRef.current = signedOutDirectorAttempt;
+        transportDiagnosticsRef.current = signedOutTransportDiagnostics;
+        setDirectorStatus(signedOutDirectorStatus);
+        setDirectorAttempt(signedOutDirectorAttempt);
         setGameDiagnostics(undefined);
-        setTransportDiagnostics({ realtimeHealth: [] });
+        setTransportDiagnostics(signedOutTransportDiagnostics);
         setHttpDiagnostics({
             apiConfig: { status: 'idle' },
             ice: { status: 'idle' },
@@ -263,7 +305,7 @@ export function useRallarArena(): ArenaConnection {
         setPickupAcceptances([]);
         setError(undefined);
         setConnectionState('signed-out');
-    }, []);
+    }, [bumpNetworkGeneration]);
 
     useEffect(() => {
         return rallar.auth.onChange((state) => {
@@ -304,6 +346,37 @@ export function useRallarArena(): ArenaConnection {
         arenaSnapshotRef.current = arenaSnapshot;
     }, [arenaSnapshot]);
 
+    const recordNetworkSendFailure = useCallback((
+        generation: number,
+        error: unknown,
+    ) => {
+        if (!isCurrentNetworkGeneration(generation)) {
+            return;
+        }
+        setTransportDiagnostics((previous) => ({
+            ...previous,
+            error: toErrorMessage(error),
+        }));
+    }, [isCurrentNetworkGeneration]);
+
+    const runBestEffortNetworkTask = useCallback((
+        task: () => Promise<unknown> | undefined,
+        generation = networkGenerationRef.current,
+    ) => {
+        if (!isCurrentNetworkGeneration(generation)) {
+            return;
+        }
+        try {
+            const promise = task();
+            if (!promise) {
+                return;
+            }
+            void promise.catch((error) => recordNetworkSendFailure(generation, error));
+        } catch (error) {
+            recordNetworkSendFailure(generation, error);
+        }
+    }, [isCurrentNetworkGeneration, recordNetworkSendFailure]);
+
     useEffect(() => {
         if (!session) {
             localAvatarProfileRef.current = undefined;
@@ -319,6 +392,7 @@ export function useRallarArena(): ArenaConnection {
             return;
         }
         let cancelled = false;
+        const generation = networkGenerationRef.current;
         const ai = createRallarBrowserAi({
             rallar,
             provider: providerSelection.provider,
@@ -338,7 +412,7 @@ export function useRallarArena(): ArenaConnection {
                 revision: arenaSnapshotRef.current?.revision ?? 0,
             }),
         }).then((result) => {
-            if (cancelled) {
+            if (cancelled || !isCurrentNetworkGeneration(generation)) {
                 return;
             }
             const validation = validateAvatarProfile(result.value, session.sessionId);
@@ -346,14 +420,14 @@ export function useRallarArena(): ArenaConnection {
                 ? validation.profile
                 : fallback;
         }).catch(() => {
-            if (!cancelled) {
+            if (!cancelled && isCurrentNetworkGeneration(generation)) {
                 localAvatarProfileRef.current = fallback;
             }
         });
         return () => {
             cancelled = true;
         };
-    }, [roomId, session]);
+    }, [isCurrentNetworkGeneration, roomId, session]);
 
     const acceptPlayerHit = useCallback((accepted: PlayerHitAccepted) => {
         setRemotePlayerHits((previous) => [
@@ -879,6 +953,7 @@ export function useRallarArena(): ArenaConnection {
         source: DirectorAttemptSource,
     ) => {
         const currentRoomId = roomIdRef.current;
+        const generation = networkGenerationRef.current;
         const startedAtEpochMs = Date.now();
         setDirectorAttempt({
             source,
@@ -913,6 +988,9 @@ export function useRallarArena(): ArenaConnection {
 
             await match.reportCapability();
             const result = await match.appointIfElected();
+            if (!isCurrentNetworkGeneration(generation)) {
+                return;
+            }
             if (result.directorStatus) {
                 setDirectorStatus(result.directorStatus);
             } else {
@@ -926,6 +1004,9 @@ export function useRallarArena(): ArenaConnection {
                 result.reason,
             ));
         } catch (err) {
+            if (!isCurrentNetworkGeneration(generation)) {
+                return;
+            }
             setDirectorStatus(rallar.director.status(currentRoomId));
             setDirectorAttempt(toDirectorAttemptState(
                 source,
@@ -934,9 +1015,10 @@ export function useRallarArena(): ArenaConnection {
                 toErrorMessage(err),
             ));
         }
-    }, []);
+    }, [isCurrentNetworkGeneration]);
 
     useEffect(() => {
+        bumpNetworkGeneration();
         arenaMatchRef.current?.stop();
         arenaMatchRef.current = undefined;
 
@@ -944,14 +1026,21 @@ export function useRallarArena(): ArenaConnection {
             return;
         }
 
+        const generation = networkGenerationRef.current;
         const match = createArenaRallarGameMatch({
             rallar,
             roomId,
             readSnapshot: () => arenaSnapshotRef.current,
             onPresence: (envelope) => {
+                if (!isCurrentNetworkGeneration(generation)) {
+                    return;
+                }
                 acceptMotionMessage(envelope.senderId, envelope.payload);
             },
             onInput: async (envelope) => {
+                if (!isCurrentNetworkGeneration(generation)) {
+                    return;
+                }
                 const data = envelope.payload;
                 if (!isArenaPoseIntentFromSender(data, envelope.senderId)) {
                     return;
@@ -969,16 +1058,19 @@ export function useRallarArena(): ArenaConnection {
                     setArenaSnapshot(next);
                 }
 
-                await arenaMatchRef.current?.publishEvent({
+                await match.publishEvent({
                     protocol: GAME_PROTOCOL,
                     kind: 'director-player-state',
                     pose,
                 });
             },
             onIntent: async (envelope) => {
+                if (!isCurrentNetworkGeneration(generation)) {
+                    return;
+                }
                 const data = envelope.payload;
                 if (isArenaShotIntentFromSender(data, envelope.senderId)) {
-                    await arenaMatchRef.current?.publishEvent({
+                    await match.publishEvent({
                         protocol: GAME_PROTOCOL,
                         kind: 'director-shot-event',
                         shot: data.shot,
@@ -1007,12 +1099,12 @@ export function useRallarArena(): ArenaConnection {
                     arenaSnapshotRef.current = snapshot;
                     setArenaSnapshot(snapshot);
                     acceptPlayerHit(result.acceptedHit);
-                    await arenaMatchRef.current?.publishEvent({
+                    await match.publishEvent({
                         protocol: GAME_PROTOCOL,
                         kind: 'director-player-hit-accepted',
                         accepted: result.acceptedHit,
                     });
-                    await arenaMatchRef.current?.publishSnapshot(snapshot, {
+                    await match.publishSnapshot(snapshot, {
                         reliable: false,
                     });
                     return;
@@ -1039,12 +1131,12 @@ export function useRallarArena(): ArenaConnection {
                     arenaSnapshotRef.current = snapshot;
                     setArenaSnapshot(snapshot);
                     acceptPickup(result.acceptedPickup);
-                    await arenaMatchRef.current?.publishEvent({
+                    await match.publishEvent({
                         protocol: GAME_PROTOCOL,
                         kind: 'director-pickup-accepted',
                         accepted: result.acceptedPickup,
                     });
-                    await arenaMatchRef.current?.publishSnapshot(snapshot, {
+                    await match.publishSnapshot(snapshot, {
                         reliable: false,
                     });
                     return;
@@ -1060,23 +1152,32 @@ export function useRallarArena(): ArenaConnection {
                 }
 
                 if (isArenaAcceptedShotFromSender(data, envelope.senderId)) {
-                    await arenaMatchRef.current?.publishEvent(data);
+                    await match.publishEvent(data);
                 }
             },
             onEvent: (envelope) => {
+                if (!isCurrentNetworkGeneration(generation)) {
+                    return;
+                }
                 acceptDirectorOutput(envelope.payload);
             },
             onSnapshot: (envelope) => {
+                if (!isCurrentNetworkGeneration(generation)) {
+                    return;
+                }
                 setArenaSnapshot(envelope.payload);
                 setActiveEvent(envelope.payload.activeEvent);
                 setRemoteEvents(envelope.payload.events);
             },
             onSyncRequest: async () => {
+                if (!isCurrentNetworkGeneration(generation)) {
+                    return;
+                }
                 const snapshot = arenaSnapshotRef.current;
                 if (!snapshot) {
                     return;
                 }
-                await arenaMatchRef.current?.publishSnapshot(snapshot, {
+                await match.publishSnapshot(snapshot, {
                     reliable: true,
                 });
             },
@@ -1091,12 +1192,20 @@ export function useRallarArena(): ArenaConnection {
         let cancelled = false;
         void match.start()
             .then(async () => {
-                if (cancelled || arenaMatchRef.current !== match) {
+                if (
+                    cancelled ||
+                    arenaMatchRef.current !== match ||
+                    !isCurrentNetworkGeneration(generation)
+                ) {
                     return;
                 }
                 setGameDiagnostics(match.diagnostics());
                 await attemptDirectorAppointment('auto');
-                if (cancelled || arenaMatchRef.current !== match) {
+                if (
+                    cancelled ||
+                    arenaMatchRef.current !== match ||
+                    !isCurrentNetworkGeneration(generation)
+                ) {
                     return;
                 }
                 await match.waitForReadyLanes({
@@ -1113,7 +1222,9 @@ export function useRallarArena(): ArenaConnection {
                 await match.requestSync({ reason: 'arena-join' });
             })
             .catch((err) => {
-                setError(toErrorMessage(err));
+                if (isCurrentNetworkGeneration(generation)) {
+                    setError(toErrorMessage(err));
+                }
             });
 
         return () => {
@@ -1131,7 +1242,9 @@ export function useRallarArena(): ArenaConnection {
         acceptPickup,
         acceptPlayerHit,
         attemptDirectorAppointment,
+        bumpNetworkGeneration,
         connectionState,
+        isCurrentNetworkGeneration,
         roomId,
     ]);
 
@@ -1151,19 +1264,20 @@ export function useRallarArena(): ArenaConnection {
         }
 
         let cancelled = false;
+        const generation = networkGenerationRef.current;
         let usedMockFallback = false;
         const providerSelection = createArenaBrowserAiProvider({
             config: BROWSER_RALLAR_AI_CONFIG,
             createMockProvider: createAiDirectorMockProvider,
             onFallback: (reason) => {
                 usedMockFallback = true;
-                if (!cancelled) {
+                if (!cancelled && isCurrentNetworkGeneration(generation)) {
                     setAiStatus('mock fallback');
                     setAiError(`WebLLM fallback: ${reason}`);
                 }
             },
             onWebLlmProgress: () => {
-                if (!cancelled) {
+                if (!cancelled && isCurrentNetworkGeneration(generation)) {
                     setAiStatus('loading model');
                 }
             },
@@ -1191,7 +1305,7 @@ export function useRallarArena(): ArenaConnection {
 
         const generate = async () => {
             const snapshot = arenaSnapshotRef.current;
-            if (!snapshot || cancelled) {
+            if (!snapshot || cancelled || !isCurrentNetworkGeneration(generation)) {
                 setAiStatus('unavailable');
                 return;
             }
@@ -1207,6 +1321,9 @@ export function useRallarArena(): ArenaConnection {
                 const draft = await ai.generateJson<AiDirectorProposalValue, AiDirectorContext>(
                     createAiDirectorRequest(state, roomId),
                 );
+                if (cancelled || !isCurrentNetworkGeneration(generation)) {
+                    return;
+                }
                 const validation = validateAiDirectorProposalValue(draft.value, snapshot);
                 if (!validation.ok) {
                     setAiStatus('error');
@@ -1244,6 +1361,9 @@ export function useRallarArena(): ArenaConnection {
                     durability: 'write-behind',
                     schemaVersion: 1,
                 }).then((store) => store.set(proposal.dedupeKey, proposal));
+                if (cancelled || !isCurrentNetworkGeneration(generation)) {
+                    return;
+                }
 
                 setRemoteEvents((previous) => [
                     ...previous.filter((item) => item.id !== event.id).slice(-12),
@@ -1255,13 +1375,13 @@ export function useRallarArena(): ArenaConnection {
                     : providerSelection.mode === 'webllm'
                     ? 'webllm'
                     : 'accepted');
-                void arenaMatchRef.current?.publishEvent({
+                runBestEffortNetworkTask(() => arenaMatchRef.current?.publishEvent({
                     protocol: GAME_PROTOCOL,
                     kind: 'arena-event',
                     event,
-                });
+                }), generation);
             } catch (err) {
-                if (!cancelled) {
+                if (!cancelled && isCurrentNetworkGeneration(generation)) {
                     setAiStatus('error');
                     setAiError(toErrorMessage(err));
                 }
@@ -1279,6 +1399,8 @@ export function useRallarArena(): ArenaConnection {
         connectionState,
         directorStatus.isDirector,
         directorStatus.isFresh,
+        isCurrentNetworkGeneration,
+        runBestEffortNetworkTask,
         roomId,
     ]);
 
@@ -1419,6 +1541,7 @@ export function useRallarArena(): ArenaConnection {
                             ],
                         })
                         : transportDiagnosticsRef.current.rtcDiagnostics,
+                    wsTicketBackoff: readWebSocketTicketBackoffState(),
                 };
                 transportDiagnosticsRef.current = nextTransport;
                 setTransportDiagnostics(nextTransport);
@@ -1469,9 +1592,10 @@ export function useRallarArena(): ArenaConnection {
     ) => {
         const currentSession = sessionRef.current;
         const currentRoomId = roomIdRef.current;
-        if (!currentSession || !currentRoomId) {
+        if (!currentSession || !currentRoomId || !isNetworkEnabled()) {
             return;
         }
+        const generation = networkGenerationRef.current;
 
         const now = Date.now();
         if (!shouldSendRallarMotionSample(now, poseSendBudget.current, 50)) {
@@ -1502,16 +1626,16 @@ export function useRallarArena(): ArenaConnection {
         };
         const match = arenaMatchRef.current;
         if (match?.status().directorIsFresh) {
-            void match.sendInput(input);
+            runBestEffortNetworkTask(() => match.sendInput(input), generation);
         }
 
-        void match?.sendPresence(presence, {
+        runBestEffortNetworkTask(() => match?.sendPresence(presence, {
             laneId: GAME_MOTION_LANE_ID,
             key: `pose:${currentSession.sessionId}`,
             maxAgeMs: 250,
             openTimeoutMs: 1500,
-        });
-    }, []);
+        }), generation);
+    }, [isNetworkEnabled, runBestEffortNetworkTask]);
 
     const sendShot = useCallback((
         shot: Omit<PlayerShot, 'sessionId' | 'username' | 'color'>,
@@ -1519,9 +1643,10 @@ export function useRallarArena(): ArenaConnection {
     ) => {
         const currentSession = sessionRef.current;
         const currentRoomId = roomIdRef.current;
-        if (!currentSession || !currentRoomId) {
+        if (!currentSession || !currentRoomId || !isNetworkEnabled()) {
             return;
         }
+        const generation = networkGenerationRef.current;
 
         const fullShot: PlayerShot = {
             ...shot,
@@ -1541,9 +1666,9 @@ export function useRallarArena(): ArenaConnection {
         const match = arenaMatchRef.current;
         if (match?.status().directorIsFresh) {
             if (match.status().directorPeerId === currentSession.sessionId) {
-                void match.publishEvent(acceptedMessage);
+                runBestEffortNetworkTask(() => match.publishEvent(acceptedMessage), generation);
             } else {
-                void match.sendIntent(acceptedMessage);
+                runBestEffortNetworkTask(() => match.sendIntent(acceptedMessage), generation);
             }
             return;
         }
@@ -1553,7 +1678,7 @@ export function useRallarArena(): ArenaConnection {
             return;
         }
 
-        void rallar.realtime.room<GameRealtimeMessage>({
+        runBestEffortNetworkTask(() => rallar.realtime.room<GameRealtimeMessage>({
             laneId: GAME_COMBAT_LANE_ID,
             roomId: currentRoomId,
             openTimeoutMs: 1500,
@@ -1563,15 +1688,16 @@ export function useRallarArena(): ArenaConnection {
             accepted: fullAccepted,
         }, {
             maxAgeMs: 1000,
-        });
-    }, []);
+        }), generation);
+    }, [isNetworkEnabled, runBestEffortNetworkTask]);
 
     const sendPlayerHit = useCallback((intent: PlayerHitIntent) => {
         const currentSession = sessionRef.current;
         const currentRoomId = roomIdRef.current;
-        if (!currentSession || !currentRoomId) {
+        if (!currentSession || !currentRoomId || !isNetworkEnabled()) {
             return;
         }
+        const generation = networkGenerationRef.current;
 
         const fullIntent: PlayerHitIntent = {
             ...intent,
@@ -1607,14 +1733,15 @@ export function useRallarArena(): ArenaConnection {
                 arenaSnapshotRef.current = snapshot;
                 setArenaSnapshot(snapshot);
                 acceptPlayerHit(result.acceptedHit);
-                void match.publishEvent({
+                runBestEffortNetworkTask(() => match.publishEvent({
                     protocol: GAME_PROTOCOL,
                     kind: 'director-player-hit-accepted',
                     accepted: result.acceptedHit,
-                });
-                void match.publishSnapshot(snapshot, { reliable: false });
+                }), generation);
+                runBestEffortNetworkTask(() =>
+                    match.publishSnapshot(snapshot, { reliable: false }), generation);
             } else {
-                void match.sendIntent(message);
+                runBestEffortNetworkTask(() => match.sendIntent(message), generation);
             }
             return;
         }
@@ -1624,21 +1751,22 @@ export function useRallarArena(): ArenaConnection {
             return;
         }
 
-        void rallar.realtime.room<GameRealtimeMessage>({
+        runBestEffortNetworkTask(() => rallar.realtime.room<GameRealtimeMessage>({
             laneId: GAME_COMBAT_LANE_ID,
             roomId: currentRoomId,
             openTimeoutMs: 1500,
         }).send(message, {
             maxAgeMs: 650,
-        });
-    }, [acceptPlayerHit]);
+        }), generation);
+    }, [acceptPlayerHit, isNetworkEnabled, runBestEffortNetworkTask]);
 
     const sendPickupIntent = useCallback((intent: PickupIntent) => {
         const currentSession = sessionRef.current;
         const currentRoomId = roomIdRef.current;
-        if (!currentSession || !currentRoomId) {
+        if (!currentSession || !currentRoomId || !isNetworkEnabled()) {
             return;
         }
+        const generation = networkGenerationRef.current;
 
         const fullIntent: PickupIntent = {
             ...intent,
@@ -1669,14 +1797,15 @@ export function useRallarArena(): ArenaConnection {
                 arenaSnapshotRef.current = snapshot;
                 setArenaSnapshot(snapshot);
                 acceptPickup(result.acceptedPickup);
-                void match.publishEvent({
+                runBestEffortNetworkTask(() => match.publishEvent({
                     protocol: GAME_PROTOCOL,
                     kind: 'director-pickup-accepted',
                     accepted: result.acceptedPickup,
-                });
-                void match.publishSnapshot(snapshot, { reliable: false });
+                }), generation);
+                runBestEffortNetworkTask(() =>
+                    match.publishSnapshot(snapshot, { reliable: false }), generation);
             } else {
-                void match.sendIntent(message);
+                runBestEffortNetworkTask(() => match.sendIntent(message), generation);
             }
             return;
         }
@@ -1686,20 +1815,20 @@ export function useRallarArena(): ArenaConnection {
             return;
         }
 
-        void rallar.realtime.room<GameRealtimeMessage>({
+        runBestEffortNetworkTask(() => rallar.realtime.room<GameRealtimeMessage>({
             laneId: GAME_COMBAT_LANE_ID,
             roomId: currentRoomId,
             openTimeoutMs: 1500,
         }).send(message, {
             key: `pickup:${fullIntent.pickupId}`,
             maxAgeMs: 650,
-        });
-    }, [acceptPickup]);
+        }), generation);
+    }, [acceptPickup, isNetworkEnabled, runBestEffortNetworkTask]);
 
     const startArenaMatch = useCallback(async (durationMs: ArenaMatchDurationMs) => {
         const currentSession = sessionRef.current;
         const currentRoomId = roomIdRef.current;
-        if (!currentSession || !currentRoomId) {
+        if (!currentSession || !currentRoomId || !isNetworkEnabled()) {
             return;
         }
         const now = Date.now();
@@ -1737,9 +1866,13 @@ export function useRallarArena(): ArenaConnection {
             key: `match-start:${intent.matchId}`,
             maxAgeMs: 1_000,
         });
-    }, [acceptMatchStartIntent]);
+    }, [acceptMatchStartIntent, isNetworkEnabled]);
 
     const publishArenaSnapshot = useCallback((snapshot: ArenaSnapshot) => {
+        if (!isNetworkEnabled()) {
+            return;
+        }
+        const generation = networkGenerationRef.current;
         setArenaSnapshot((previous) =>
             !previous || snapshot.revision >= previous.revision ? snapshot : previous
         );
@@ -1751,10 +1884,10 @@ export function useRallarArena(): ArenaConnection {
             return;
         }
 
-        void arenaMatchRef.current?.publishSnapshot(snapshot, {
+        runBestEffortNetworkTask(() => arenaMatchRef.current?.publishSnapshot(snapshot, {
             reliable: true,
-        });
-    }, []);
+        }), generation);
+    }, [isNetworkEnabled, runBestEffortNetworkTask]);
 
     return useMemo(() => ({
         session,
@@ -1768,6 +1901,13 @@ export function useRallarArena(): ArenaConnection {
         gameDiagnostics,
         transportDiagnostics,
         httpDiagnostics,
+        authStorageKind: readAuthSessionStorageKind(),
+        authGeneration: networkGenerationRef.current,
+        networkEnabled: isNetworkEnabled(),
+        logoutQuiesced: connectionState === 'signed-out' &&
+            !sessionRef.current &&
+            !roomIdRef.current &&
+            !arenaMatchRef.current,
         aiStatus,
         aiError,
         activeEvent,
@@ -1804,6 +1944,7 @@ export function useRallarArena(): ArenaConnection {
         gameDiagnostics,
         transportDiagnostics,
         httpDiagnostics,
+        isNetworkEnabled,
         aiStatus,
         aiError,
         activeEvent,

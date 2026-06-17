@@ -168,6 +168,67 @@ describe('rallar-bb-test capability and schema contract', () => {
         }
     });
 
+    it('keeps the app-local RTC example self-contained for headless browser agents', () => {
+        const recipe = readJsonFile(
+            path.join(appExamplesRoot, 'rallar-server-rtc-connect-send.recipe.json'),
+        ) as RallarBlackBoxTestRecipe;
+
+        expect(recipe.metadata?.requires).not.toEqual(expect.arrayContaining([
+            expect.stringContaining('Run rallar-server-group-ws-setup first'),
+        ]));
+        expect(recipe.commands.slice(0, 4).map(command => command.kind)).toEqual([
+            'http.request',
+            'http.request',
+            'http.request',
+            'rtc.connect',
+        ]);
+        expect(recipe.commands[0]).toMatchObject({
+            kind: 'http.request',
+            request: {
+                method: 'POST',
+                path: '/api/state/apps/ar-eye-hunter/workspaces/default/groups',
+                body: {
+                    requestId: 'rallar-black-box:bb-rtc:ensure-group',
+                    groupId: 'bb-group',
+                    joinMode: 'open',
+                },
+            },
+        });
+        expect(recipe.commands[1]).toMatchObject({
+            kind: 'http.request',
+            request: {
+                method: 'PUT',
+                path: '/api/state/apps/ar-eye-hunter/workspaces/default/groups/bb-group/members/{auth.clientId}',
+                body: {
+                    requestId: 'rallar-black-box:bb-rtc:ensure-member:{auth.clientId}',
+                    status: 'active',
+                },
+            },
+        });
+        expect(recipe.commands[2]).toMatchObject({
+            kind: 'http.request',
+            request: {
+                method: 'PUT',
+                path: '/api/state/apps/ar-eye-hunter/workspaces/default/groups/bb-group/sessions/{auth.sessionId}',
+                body: {
+                    requestId: 'rallar-black-box:bb-rtc:ensure-session:{auth.sessionId}',
+                    principalId: '{auth.clientId}',
+                },
+            },
+        });
+        expect(recipe.commands[3]).toMatchObject({
+            kind: 'rtc.connect',
+            roomId: 'bb-group',
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default',
+            roomRef: {
+                applicationId: 'ar-eye-hunter',
+                workspaceId: 'default',
+                groupId: 'bb-group',
+            },
+        });
+    });
+
     it('keeps the v1 golden compatibility corpus stable', () => {
         const corpus = readGoldenCompatibilityCorpus();
         const inlineRecipes = corpus.validDistributedManifests.flatMap(inlineRecipesInManifest);

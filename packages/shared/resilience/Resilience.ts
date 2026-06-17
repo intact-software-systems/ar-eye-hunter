@@ -308,10 +308,9 @@ export class CircuitBreaker {
             }
 
             const value = await supplier();
-            if(isSuccessful(value)) {
+            if (isSuccessful(value)) {
                 circuitBreaker.success();
-            }
-            else {
+            } else {
                 circuitBreaker.failure();
             }
 
@@ -565,6 +564,18 @@ export class RateLimiter {
         if (!rateLimiter.allow()) {
             return defaultValue;
         }
+        return await supplier();
+    }
+
+    static async tryToExecuteOrElse<T>(
+        rateLimiter: RateLimiter,
+        supplier: () => Promise<T>,
+        orElse: () => Promise<T>,
+    ): Promise<T> {
+        if (!rateLimiter.allow()) {
+            return await orElse();
+        }
+
         return await supplier();
     }
 

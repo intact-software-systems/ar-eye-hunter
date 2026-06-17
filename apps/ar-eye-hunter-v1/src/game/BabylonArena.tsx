@@ -93,6 +93,7 @@ type BabylonArenaProps = Readonly<{
     localColor: string;
     roomId?: string;
     roomReady: boolean;
+    networkEnabled: boolean;
     diagnosticsAttributes?: Readonly<Record<string, string>>;
     remotePlayers: ReadonlyMap<string, RemotePlayer>;
     remoteShots: readonly RemoteShot[];
@@ -262,6 +263,7 @@ export function BabylonArena({
     localColor,
     roomId,
     roomReady,
+    networkEnabled,
     diagnosticsAttributes,
     remotePlayers,
     remoteShots,
@@ -283,6 +285,7 @@ export function BabylonArena({
     const remotePlayerHitsRef = useRef(remotePlayerHits);
     const remoteEventsRef = useRef(remoteEvents);
     const snapshotRef = useRef(arenaSnapshot);
+    const networkEnabledRef = useRef(networkEnabled);
     const callbacksRef = useRef({
         onLocalPose,
         onLocalShot,
@@ -337,6 +340,10 @@ export function BabylonArena({
     useEffect(() => {
         snapshotRef.current = arenaSnapshot;
     }, [arenaSnapshot]);
+
+    useEffect(() => {
+        networkEnabledRef.current = networkEnabled;
+    }, [networkEnabled]);
 
     useEffect(() => {
         callbacksRef.current = {
@@ -734,6 +741,7 @@ export function BabylonArena({
                     localUsername,
                     localColor,
                     roomId,
+                    networkEnabled: networkEnabledRef.current,
                     remotePlayers: remotePlayersRef.current,
                     shotSeqRef,
                     callbacksRef,
@@ -749,6 +757,7 @@ export function BabylonArena({
                     localUsername,
                     localColor,
                     roomId,
+                    networkEnabled: networkEnabledRef.current,
                     remotePlayers: remotePlayersRef.current,
                     shotSeqRef,
                     callbacksRef,
@@ -783,6 +792,7 @@ export function BabylonArena({
             runFrame({
                 runtime,
                 roomId,
+                networkEnabled: networkEnabledRef.current,
                 remotePlayers: remotePlayersRef.current,
                 remoteShots: remoteShotsRef.current,
                 remotePlayerHits: remotePlayerHitsRef.current,
@@ -1095,6 +1105,7 @@ export function BabylonArena({
 function runFrame({
     runtime,
     roomId,
+    networkEnabled,
     remotePlayers,
     remoteShots,
     remotePlayerHits,
@@ -1111,6 +1122,7 @@ function runFrame({
 }: Readonly<{
     runtime: ArenaRuntime;
     roomId?: string;
+    networkEnabled: boolean;
     remotePlayers: ReadonlyMap<string, RemotePlayer>;
     remoteShots: readonly RemoteShot[];
     remotePlayerHits: readonly PlayerHitAccepted[];
@@ -1192,27 +1204,32 @@ function runFrame({
     syncRemoteAvatars(runtime, remotePlayers);
     syncRemoteShots(runtime, remoteShots);
     syncRemotePlayerHits(runtime, remotePlayerHits, localPlayerId);
-    maybeFireHeldShot({
-        runtime,
-        localSessionId,
-        localUsername,
-        localColor,
-        roomId,
-        remotePlayers,
-        shotSeqRef,
-        callbacksRef,
-        nowEpochMs: now,
-    });
-    detectLocalPickup(runtime, localPlayerId, pickupSeqRef, callbacksRef);
+    if (networkEnabled) {
+        maybeFireHeldShot({
+            runtime,
+            localSessionId,
+            localUsername,
+            localColor,
+            roomId,
+            networkEnabled,
+            remotePlayers,
+            shotSeqRef,
+            callbacksRef,
+            nowEpochMs: now,
+        });
+        detectLocalPickup(runtime, localPlayerId, pickupSeqRef, callbacksRef);
+    }
     syncCamera(runtime, now);
     updateTransientEffects(runtime);
-    publishLocalPose(runtime.localPlayer, poseSeqRef, callbacksRef, localPoseRef);
+    if (networkEnabled) {
+        publishLocalPose(runtime.localPlayer, poseSeqRef, callbacksRef, localPoseRef);
+    }
     callbacksRef.current.onLocalPlayerChange({
         vitals: runtime.localPlayer.vitals,
         loadout: runtime.localPlayer.loadout,
     });
 
-    if (runtime.lastSnapshotRevision !== runtime.arenaState.revision) {
+    if (networkEnabled && runtime.lastSnapshotRevision !== runtime.arenaState.revision) {
         runtime.lastSnapshotRevision = runtime.arenaState.revision;
         callbacksRef.current.onArenaSnapshot(
             toArenaSnapshot(runtime.arenaState, roomId, now),
@@ -1642,6 +1659,7 @@ function maybeFireHeldShot({
     localUsername,
     localColor,
     roomId,
+    networkEnabled,
     remotePlayers,
     shotSeqRef,
     callbacksRef,
@@ -1652,6 +1670,7 @@ function maybeFireHeldShot({
     localUsername: string;
     localColor: string;
     roomId?: string;
+    networkEnabled: boolean;
     remotePlayers: ReadonlyMap<string, RemotePlayer>;
     shotSeqRef: React.MutableRefObject<number>;
     callbacksRef: React.MutableRefObject<{
@@ -1679,6 +1698,7 @@ function maybeFireHeldShot({
         localUsername,
         localColor,
         roomId,
+        networkEnabled: true,
         remotePlayers,
         shotSeqRef,
         callbacksRef,
@@ -1691,6 +1711,7 @@ function fireLocalShot({
     localUsername,
     localColor,
     roomId,
+    networkEnabled,
     remotePlayers,
     shotSeqRef,
     callbacksRef,
@@ -1702,6 +1723,7 @@ function fireLocalShot({
     localUsername: string;
     localColor: string;
     roomId?: string;
+    networkEnabled: boolean;
     remotePlayers: ReadonlyMap<string, RemotePlayer>;
     shotSeqRef: React.MutableRefObject<number>;
     callbacksRef: React.MutableRefObject<{
@@ -1756,13 +1778,15 @@ function fireLocalShot({
     createTracer(runtime, vector3(origin), vector3(direction), localColor, resolution.accepted.hit);
     const playerHit = findPredictedPlayerHit(remotePlayers, sessionId, origin, direction, weapon.range);
     if (playerHit) {
-        callbacksRef.current.onPlayerHitIntent({
-            shot,
-            targetSessionId: playerHit.targetSessionId,
-            targetSeq: playerHit.targetSeq,
-            predictedImpact: playerHit.impact,
-            sentAtEpochMs: now,
-        });
+        if (networkEnabled) {
+            callbacksRef.current.onPlayerHitIntent({
+                shot,
+                targetSessionId: playerHit.targetSessionId,
+                targetSeq: playerHit.targetSeq,
+                predictedImpact: playerHit.impact,
+                sentAtEpochMs: now,
+            });
+        }
         createImpact(runtime, vector3(playerHit.impact), MATRIX_THEME.cyan, 1);
     }
     if (touchAssisted) {
@@ -1773,6 +1797,9 @@ function fireLocalShot({
     }
 
     callbacksRef.current.onLocalCombatChange(resolution.combat);
+    if (!networkEnabled) {
+        return;
+    }
     callbacksRef.current.onLocalShot(
         {
             origin,

@@ -424,7 +424,7 @@ describe('Rallar director relay compatibility', () => {
         const relay = facade.director.createRelay<{ move: string }, { ok: true }>({
             roomId: 'room-1',
             laneId: 'director',
-            topicId: 'game.director',
+            topicId: 'app.game.director',
             intentTypeId: 'game.intent',
             outputTypeId: 'game.output',
         });
@@ -468,7 +468,7 @@ describe('Rallar director relay compatibility', () => {
         const relay = createRallarFacade().director.createRelay<{ move: string }, { ok: true }>({
             roomId: 'room-1',
             laneId: 'director',
-            topicId: 'game.director',
+            topicId: 'app.game.director',
             intentTypeId: 'game.intent',
             outputTypeId: 'game.output',
         });
@@ -482,6 +482,44 @@ describe('Rallar director relay compatibility', () => {
         expect(mocks.webRtcConnectionService.ensurePeerLaneOpen).not.toHaveBeenCalled();
     });
 
+    it('can disable periodic director snapshots while keeping explicit sync snapshots', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(1_000);
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        mockGroupSnapshot(createDirectorGroupSnapshot({
+            sessionId: 'session-1',
+            principalId: 'principal-1',
+            epoch: 3,
+            appointedAtEpochMs: 1,
+            heartbeatTtlMs: 60_000,
+        }));
+        const relay = createRallarFacade().director.createRelay<
+            { move: string },
+            { ok: true },
+            { revision: number }
+        >({
+            roomId: 'room-1',
+            laneId: 'director',
+            topicId: 'app.game.director',
+            intentTypeId: 'game.intent',
+            outputTypeId: 'game.output',
+            heartbeatIntervalMs: 60_000,
+            snapshotTypeId: 'game.snapshot',
+            snapshotIntervalMs: false,
+            readSnapshot: () => ({ revision: 1 }),
+        });
+
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(enqueuedWsTypeIds()).not.toContain('game.snapshot');
+
+        await relay.sendSnapshot();
+        relay.stop();
+
+        expect(enqueuedWsTypeIds()).toContain('game.snapshot');
+    });
+
 });
 
 
@@ -492,6 +530,15 @@ function findLatestWsAnyMessageCallback(): {
         .onAnyInboxMessageDo.mock.calls
         .filter(([callbackId]) => callbackId === 'rallar:ws:any-message')
         .at(-1)?.[1] as { onMessage?: (message: unknown) => Promise<void> } | undefined;
+}
+
+function enqueuedWsTypeIds(): readonly string[] {
+    return mocks.ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls
+        .map(([message]) => {
+            const payload = (message as { payload?: { typeId?: unknown } }).payload;
+            return typeof payload?.typeId === 'string' ? payload.typeId : undefined;
+        })
+        .filter((typeId): typeId is string => typeId !== undefined);
 }
 
 function createChannelHealth(

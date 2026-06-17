@@ -19,7 +19,9 @@ import {
     RALLAR_BLACK_BOX_RECIPE_FIXTURES,
     RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
+    createRallarBlackBoxProviderParityLiveRecipe,
     createRallarBlackBoxRtcRealtimeRecipe,
+    createRallarBlackBoxRtcSmokeRecipe,
 } from '../../../apps/rallar-black-box/src/recipe-fixtures.ts';
 import type {
     ControlDistributedRunArtifactBundle,
@@ -365,6 +367,12 @@ describe('distributed recipes helpers', () => {
                 groupId: 'arena-1',
             },
         });
+        const createGroupCommand = recipe.commands[0] as
+            | Extract<typeof recipe.commands[number], { kind: 'http.request' }>
+            | undefined;
+        const upsertMemberCommand = recipe.commands[1] as
+            | Extract<typeof recipe.commands[number], { kind: 'http.request' }>
+            | undefined;
         const loopCommand = recipe.commands.find(command => command.kind === 'loop') as
             | Extract<typeof recipe.commands[number], { kind: 'loop' }>
             | undefined;
@@ -379,7 +387,39 @@ describe('distributed recipes helpers', () => {
         const preview = distributedRecipeCommandPreview(recipe);
 
         expect(recipe.recipeId).toBe('rtc-realtime');
-        expect(recipe.commands).toHaveLength(3);
+        expect(recipe.commands).toHaveLength(5);
+        expect(createGroupCommand).toMatchObject({
+            kind: 'http.request',
+            commandId: 'rtc-realtime-ensure-group',
+            request: {
+                method: 'POST',
+                path: '/api/state/apps/game-app/workspaces/live/groups',
+                body: {
+                    requestId: 'rtc-realtime:ensure-group:game-app:live:arena-1',
+                    groupId: 'arena-1',
+                    displayName: 'arena-1',
+                    joinMode: 'open',
+                },
+            },
+            response: {
+                body: 'json',
+            },
+        });
+        expect(upsertMemberCommand).toMatchObject({
+            kind: 'http.request',
+            commandId: 'rtc-realtime-ensure-member',
+            request: {
+                method: 'PUT',
+                path: '/api/state/apps/game-app/workspaces/live/groups/arena-1/members/{auth.clientId}',
+                body: {
+                    requestId: 'rtc-realtime:ensure-member:game-app:live:arena-1:{auth.clientId}',
+                    status: 'active',
+                },
+            },
+            response: {
+                body: 'json',
+            },
+        });
         expect(loopCommand).toMatchObject({
             kind: 'loop',
             commandId: 'rtc-realtime-position-loop',
@@ -425,10 +465,161 @@ describe('distributed recipes helpers', () => {
             frameCount: 40,
         });
         expect(preview).toEqual({
-            manifestCommandCount: 3,
-            effectiveCommandCount: 42,
+            manifestCommandCount: 5,
+            effectiveCommandCount: 44,
             effectiveFrameCount: 40,
-            label: '3 manifest commands - 42 effective operations - 40 frames',
+            label: '5 manifest commands - 44 effective operations - 40 frames',
+        });
+    });
+
+    it('builds the RTC smoke fixture with idempotent group and member setup before connect', () => {
+        const recipe = createRallarBlackBoxRtcSmokeRecipe({
+            group: {
+                applicationId: 'game-app',
+                workspaceId: 'live',
+                groupId: 'arena-1',
+            },
+        });
+        const connectCommand = recipe.commands.find(command => command.kind === 'rtc.connect');
+        const sendCommand = recipe.commands.find(command => command.kind === 'rtc.send');
+
+        expect(recipe.commands).toHaveLength(5);
+        expect(recipe.commands[0]).toMatchObject({
+            kind: 'http.request',
+            commandId: 'rtc-smoke-ensure-group',
+            request: {
+                method: 'POST',
+                path: '/api/state/apps/game-app/workspaces/live/groups',
+                body: {
+                    requestId: 'rtc-smoke:ensure-group:game-app:live:arena-1',
+                    groupId: 'arena-1',
+                    joinMode: 'open',
+                },
+            },
+        });
+        expect(recipe.commands[1]).toMatchObject({
+            kind: 'http.request',
+            commandId: 'rtc-smoke-ensure-member',
+            request: {
+                method: 'PUT',
+                path: '/api/state/apps/game-app/workspaces/live/groups/arena-1/members/{auth.clientId}',
+                body: {
+                    requestId: 'rtc-smoke:ensure-member:game-app:live:arena-1:{auth.clientId}',
+                    status: 'active',
+                },
+            },
+        });
+        expect(connectCommand).toMatchObject({
+            kind: 'rtc.connect',
+            actor: '{auth.clientId}',
+            roomId: 'arena-1',
+            applicationId: 'game-app',
+            workspaceId: 'live',
+            roomRef: {
+                applicationId: 'game-app',
+                workspaceId: 'live',
+                groupId: 'arena-1',
+            },
+        });
+        expect(sendCommand).toMatchObject({
+            kind: 'rtc.send',
+            applicationId: 'game-app',
+            workspaceId: 'live',
+            send: {
+                roomId: 'arena-1',
+                data: {
+                    actor: '{auth.clientId}',
+                },
+            },
+        });
+        expect(distributedRecipeCommandKinds(recipe)).toEqual([
+            'http.request',
+            'rtc.connect',
+            'rtc.send',
+            'stats',
+        ]);
+    });
+
+    it('builds provider parity for live browser agents without the demo API backend', () => {
+        const defaultRecipe = createRallarBlackBoxProviderParityLiveRecipe();
+        const recipe = createRallarBlackBoxProviderParityLiveRecipe({
+            apiBaseUrl: 'https://api.rallar.test',
+            group: {
+                applicationId: 'game-app',
+                workspaceId: 'live',
+                groupId: 'arena-1',
+            },
+        });
+        const configureCommand = recipe.commands[0];
+        const connectCommand = recipe.commands.find(command => command.kind === 'rtc.connect');
+        const sendCommands = recipe.commands.filter(command => command.kind === 'rtc.send');
+
+        expect(JSON.stringify(defaultRecipe)).not.toContain('api.example.invalid');
+        expect(defaultRecipe.commands[0]).toMatchObject({
+            kind: 'configure',
+            config: {
+                apiBaseUrl: 'https://api.rallar.intactss.com',
+            },
+        });
+        expect(JSON.stringify(recipe)).not.toContain('api.example.invalid');
+        expect(recipe.commands).toHaveLength(10);
+        expect(configureCommand).toMatchObject({
+            kind: 'configure',
+            config: {
+                apiBaseUrl: 'https://api.rallar.test',
+                actor: '{auth.clientId}',
+                roomId: 'arena-1',
+                control: {
+                    providerMode: 'browser-rallar',
+                },
+                rallar: {
+                    apiBaseUrl: 'https://api.rallar.test',
+                    applicationId: 'game-app',
+                    workspaceId: 'live',
+                    roomRef: {
+                        applicationId: 'game-app',
+                        workspaceId: 'live',
+                        groupId: 'arena-1',
+                    },
+                },
+            },
+        });
+        expect(recipe.commands[1]).toMatchObject({
+            kind: 'http.request',
+            commandId: 'parity-ensure-group',
+            request: {
+                method: 'POST',
+                path: '/api/state/apps/game-app/workspaces/live/groups',
+            },
+        });
+        expect(recipe.commands[2]).toMatchObject({
+            kind: 'http.request',
+            commandId: 'parity-ensure-member',
+            request: {
+                method: 'PUT',
+                path: '/api/state/apps/game-app/workspaces/live/groups/arena-1/members/{auth.clientId}',
+            },
+        });
+        expect(connectCommand).toMatchObject({
+            kind: 'rtc.connect',
+            actor: '{auth.clientId}',
+            roomId: 'arena-1',
+            applicationId: 'game-app',
+            workspaceId: 'live',
+        });
+        expect(sendCommands).toHaveLength(3);
+        expect(sendCommands[0]).toMatchObject({
+            kind: 'rtc.send',
+            applicationId: 'game-app',
+            workspaceId: 'live',
+            send: {
+                roomId: 'arena-1',
+                roomRef: {
+                    applicationId: 'game-app',
+                    workspaceId: 'live',
+                    groupId: 'arena-1',
+                },
+            },
         });
     });
 
@@ -534,8 +725,8 @@ describe('distributed recipes helpers', () => {
 
         expect(preflight).toMatchObject({
             recipeId: 'rtc-realtime',
-            manifestCommandCount: 3,
-            effectiveCommandCount: 42,
+            manifestCommandCount: 5,
+            effectiveCommandCount: 44,
             effectiveFrameCount: 40,
             errors: [],
         });
@@ -545,7 +736,7 @@ describe('distributed recipes helpers', () => {
             intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
             frameCount: 40,
         });
-        expect(preflight.commandKinds).toEqual(['loop', 'rtc.connect', 'rtc.send', 'stats']);
+        expect(preflight.commandKinds).toEqual(['http.request', 'loop', 'rtc.connect', 'rtc.send', 'stats']);
         expect(preflight.liveServiceRequirements).toEqual(expect.arrayContaining([
             'Rallar API and signaling when provider mode is browser-rallar or rallar-browser',
             'active RTC connection',
@@ -559,6 +750,8 @@ describe('distributed recipes helpers', () => {
             expect.stringContaining('RTC recipes require real Rallar signaling'),
         ]));
         expect(preflight.tree.map(row => [row.kind, row.summary])).toEqual([
+            ['http.request', 'POST /api/state/apps/game-app/workspaces/live/groups'],
+            ['http.request', 'PUT /api/state/apps/game-app/workspaces/live/groups/arena-1/members/{auth.clientId}'],
             ['rtc.connect', 'connect RTC - rtcRealtime - arena-1'],
             ['loop', 'loop x40'],
             ['rtc.send', 'send RTC - rtcRealtime - arena-1'],
