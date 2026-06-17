@@ -1,28 +1,102 @@
 {
   "recipeId": "rallar-server-rtc-connect-send",
   "name": "Rallar Server RTC connect and send",
-  "description": "Uses the current logged-in browser-rallar session to connect to bb-group over RTC and send a JSON payload.",
+  "description": "Uses the current logged-in browser-rallar session to create or reuse bb-group, join it, connect over RTC, and send a JSON payload.",
   "continueOnFailure": false,
   "metadata": {
     "requires": [
-      "Run rallar-server-group-ws-setup first, or otherwise ensure bb-group exists and the logged-in user has joined it.",
       "Open the SPA with provider=browser-rallar and log in before loading this recipe.",
       "For visible delivery in another browser, run the same setup/connect flow for a second logged-in user in bb-group."
     ],
     "notes": [
+      "State mutations use stable requestId values so repeated headless runs are idempotent.",
       "This recipe uses the current runtime config for apiBaseUrl and restored auth session.",
       "The send command omits peerIds so the active Rallar realtime implementation can route according to the joined group."
     ]
   },
   "commands": [
     {
+      "kind": "http.request",
+      "commandId": "bb-rtc-group-create",
+      "label": "Create bb-group if missing",
+      "request": {
+        "path": "/api/state/apps/ar-eye-hunter/workspaces/default/groups",
+        "method": "POST",
+        "body": {
+          "requestId": "rallar-black-box:bb-rtc:ensure-group",
+          "groupId": "bb-group",
+          "displayName": "bb-group",
+          "description": "Created by rallar-black-box RTC example recipe",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{auth.clientId}",
+          "metadata": {
+            "source": "rallar-black-box",
+            "example": "rtc-connect-send"
+          }
+        }
+      },
+      "response": {
+        "body": "json"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "http.request",
+      "commandId": "bb-rtc-group-join-current-user",
+      "label": "Join bb-group as logged-in user",
+      "request": {
+        "path": "/api/state/apps/ar-eye-hunter/workspaces/default/groups/bb-group/members/{auth.clientId}",
+        "method": "PUT",
+        "body": {
+          "requestId": "rallar-black-box:bb-rtc:ensure-member:{auth.clientId}",
+          "status": "active"
+        }
+      },
+      "response": {
+        "body": "json"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "http.request",
+      "commandId": "bb-rtc-group-connect-current-session",
+      "label": "Attach logged-in session to bb-group",
+      "request": {
+        "path": "/api/state/apps/ar-eye-hunter/workspaces/default/groups/bb-group/sessions/{auth.sessionId}",
+        "method": "PUT",
+        "body": {
+          "requestId": "rallar-black-box:bb-rtc:ensure-session:{auth.sessionId}",
+          "principalId": "{auth.clientId}"
+        }
+      },
+      "response": {
+        "body": "json"
+      },
+      "timeoutMs": 5000
+    },
+    {
       "kind": "rtc.connect",
       "commandId": "bb-rtc-connect",
       "label": "Connect RTC to bb-group",
       "connection": "bbRtc",
       "roomId": "bb-group",
+      "applicationId": "ar-eye-hunter",
+      "workspaceId": "default",
+      "roomRef": {
+        "applicationId": "ar-eye-hunter",
+        "workspaceId": "default",
+        "groupId": "bb-group"
+      },
       "transport": "realtime",
       "rallar": {
+        "applicationId": "ar-eye-hunter",
+        "workspaceId": "default",
+        "roomRef": {
+          "applicationId": "ar-eye-hunter",
+          "workspaceId": "default",
+          "groupId": "bb-group"
+        },
         "restoreSession": true,
         "leaveRoomOnClose": true
       },
@@ -33,9 +107,21 @@
       "commandId": "bb-rtc-send-json",
       "label": "Send JSON over RTC",
       "connection": "bbRtc",
+      "applicationId": "ar-eye-hunter",
+      "workspaceId": "default",
+      "roomRef": {
+        "applicationId": "ar-eye-hunter",
+        "workspaceId": "default",
+        "groupId": "bb-group"
+      },
       "transport": "realtime",
       "send": {
         "roomId": "bb-group",
+        "roomRef": {
+          "applicationId": "ar-eye-hunter",
+          "workspaceId": "default",
+          "groupId": "bb-group"
+        },
         "data": {
           "topic": "bb-group.recipe.ping",
           "kind": "black-box-ping",

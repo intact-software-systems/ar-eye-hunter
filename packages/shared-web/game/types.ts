@@ -399,6 +399,7 @@ export type RallarGameMatchConfig<
         | TSnapshot
         | undefined
         | Promise<TSnapshot | undefined>;
+    autoSnapshotIntervalMs?: number | false;
     onPresence?: RallarGameEnvelopeHandler<TPresence>;
     onInput?: RallarGameEnvelopeHandler<TInput>;
     onIntent?: RallarGameEnvelopeHandler<TIntent>;

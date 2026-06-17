@@ -10,6 +10,7 @@
       "The current runtime config must point apiBaseUrl at the target Rallar Server."
     ],
     "notes": [
+      "State mutations use stable requestId values so repeated headless runs are idempotent.",
       "The create-group REST command is intentionally tolerant of an existing group because http.request records HTTP status in the result value instead of failing the recipe on 409.",
       "{auth.clientId}, {auth.sessionId}, and {auth.wsTicket} are resolved from the logged-in browser session at execution time.",
       "{auth.wsTicket} causes ws.open to request a fresh /api/auth/ws-ticket before opening the WebSocket."
@@ -24,6 +25,7 @@
         "path": "/api/state/apps/ar-eye-hunter/workspaces/default/groups",
         "method": "POST",
         "body": {
+          "requestId": "rallar-black-box:bb-group:ensure-group",
           "groupId": "bb-group",
           "displayName": "bb-group",
           "description": "Created by rallar-black-box example recipe",
@@ -62,6 +64,7 @@
         "path": "/api/state/apps/ar-eye-hunter/workspaces/default/groups/bb-group/members/{auth.clientId}",
         "method": "PUT",
         "body": {
+          "requestId": "rallar-black-box:bb-group:ensure-member:{auth.clientId}",
           "status": "active"
         }
       },
@@ -78,6 +81,7 @@
         "path": "/api/state/apps/ar-eye-hunter/workspaces/default/groups/bb-group/sessions/{auth.sessionId}",
         "method": "PUT",
         "body": {
+          "requestId": "rallar-black-box:bb-group:ensure-session:{auth.sessionId}",
           "principalId": "{auth.clientId}"
         }
       },

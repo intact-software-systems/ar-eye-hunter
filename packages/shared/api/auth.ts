@@ -2,8 +2,31 @@ import { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
 
 const KEY = 'auth.session';
 
+export type AuthSessionStorageKind = 'local' | 'session';
+
+let authSessionStorageKind: AuthSessionStorageKind = 'local';
+
+function readStorage(): Storage {
+    return authSessionStorageKind === 'session'
+        ? sessionStorage
+        : localStorage;
+}
+
+export function configureAuthSessionStorage(kind: AuthSessionStorageKind): void {
+    authSessionStorageKind = kind;
+}
+
+export function resetAuthSessionStorage(): void {
+    authSessionStorageKind = 'local';
+}
+
+export function readAuthSessionStorageKind(): AuthSessionStorageKind {
+    return authSessionStorageKind;
+}
+
 export function readSession(): AuthSession | undefined {
-    const raw = localStorage.getItem(KEY);
+    const storage = readStorage();
+    const raw = storage.getItem(KEY);
     if (!raw || raw.length === 0) return undefined;
 
     try {
@@ -41,11 +64,11 @@ export function readSessionAsClientInfo(): ClientInfo {
 }
 
 export function writeSession(session: AuthSession): void {
-    localStorage.setItem(KEY, JSON.stringify(session));
+    readStorage().setItem(KEY, JSON.stringify(session));
 }
 
 export function clearSession(): void {
-    localStorage.removeItem(KEY);
+    readStorage().removeItem(KEY);
 }
 
 export function isLoggedIn(): boolean {

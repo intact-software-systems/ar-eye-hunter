@@ -2,6 +2,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/browser-adapter.ts';
+import { createRallarBlackBoxRtcRealtimeRecipe } from '../../../apps/rallar-black-box/src/recipe-fixtures.ts';
 
 function installStorage(): Storage {
     const values = new Map<string, string>();
@@ -146,6 +147,96 @@ describe('rallar-bb browser adapter auth', () => {
             nested: {
                 sessionId: 'session-1',
             },
+        });
+    });
+
+    it('runs the RTC realtime recipe setup before browser RTC connect', async () => {
+        storage.setItem('auth.session', JSON.stringify({
+            clientId: 'alice',
+            accessToken: 'token-1',
+            username: 'alice',
+            sessionId: 'session-1',
+            expiresAtEpochMs: Date.now() + 60_000,
+        }));
+        const operations: string[] = [];
+        const fetchCalls: Array<{
+            input: RequestInfo | URL;
+            init?: RequestInit;
+        }> = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            fetch: (async (input, init) => {
+                fetchCalls.push({ input, init });
+                operations.push(`${init?.method ?? 'GET'} ${new URL(String(input)).pathname}`);
+                return new Response(JSON.stringify({ ok: true }), {
+                    status: init?.method === 'POST' ? 201 : 200,
+                    headers: {
+                        'content-type': 'application/json',
+                    },
+                });
+            }) as typeof fetch,
+            rallarRuntime: {
+                connect: async () => {
+                    operations.push('RTC connect');
+                    return { connected: true };
+                },
+                send: async () => ({ status: 'sent', peerIds: ['bob-session'], results: [], health: [] }),
+                close: async () => ({ closed: true }),
+                health: async () => ({ connected: true }),
+            },
+        });
+        const recipe = createRallarBlackBoxRtcRealtimeRecipe({
+            durationSeconds: 1,
+            group: {
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+                groupId: 'hetzner-headless-room',
+            },
+        });
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-rtc-realtime',
+            config: {
+                apiBaseUrl: 'https://api.example.test',
+                actor: 'alice',
+                sessionId: 'session-1',
+                transport: 'realtime',
+                rallar: {
+                    username: 'alice',
+                    password: 'secret',
+                    apiBaseUrl: 'https://api.example.test',
+                    transport: 'realtime',
+                },
+            },
+        });
+        await runtime.execute({
+            kind: 'recipe.load',
+            commandId: 'load-rtc-realtime',
+            recipe,
+        });
+        const runResult = await runtime.execute({
+            kind: 'recipe.run',
+            commandId: 'run-rtc-realtime',
+        });
+
+        expect(runResult.ok).toBe(true);
+        expect(operations.slice(0, 3)).toEqual([
+            'POST /api/state/apps/rallar-server/workspaces/default/groups',
+            'PUT /api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/alice',
+            'RTC connect',
+        ]);
+        expect(fetchCalls.map(call => new URL(String(call.input)).pathname)).toEqual([
+            '/api/state/apps/rallar-server/workspaces/default/groups',
+            '/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/alice',
+        ]);
+        expect(JSON.parse(String(fetchCalls[0].init?.body))).toMatchObject({
+            requestId: 'rtc-realtime:ensure-group:rallar-server:default:hetzner-headless-room',
+            groupId: 'hetzner-headless-room',
+            joinMode: 'open',
+        });
+        expect(JSON.parse(String(fetchCalls[1].init?.body))).toMatchObject({
+            requestId: 'rtc-realtime:ensure-member:rallar-server:default:hetzner-headless-room:alice',
+            status: 'active',
         });
     });
 

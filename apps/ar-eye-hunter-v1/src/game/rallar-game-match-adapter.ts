@@ -76,6 +76,7 @@ export function createArenaRallarGameMatch(
         laneIds: ARENA_RALLAR_GAME_LANE_IDS,
         readCapability: readArenaHostCapability,
         readSnapshot: config.readSnapshot,
+        autoSnapshotIntervalMs: false,
         onPresence: config.onPresence,
         onInput: config.onInput,
         onIntent: config.onIntent,

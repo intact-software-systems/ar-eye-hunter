@@ -16,10 +16,18 @@ export const RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS =
 export const RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS = 5;
 export const RALLAR_BLACK_BOX_RTC_REALTIME_MIN_DURATION_SECONDS = 1;
 export const RALLAR_BLACK_BOX_RTC_REALTIME_MAX_DURATION_SECONDS = 60;
+const RALLAR_BLACK_BOX_LIVE_API_BASE_URL = 'https://api.rallar.intactss.com';
 
 export type RallarBlackBoxRtcRealtimeRecipeOptions = Readonly<{
     durationSeconds?: number;
     group?: RallarBlackBoxDistributedGroupRef;
+    connection?: string;
+}>;
+
+export type RallarBlackBoxLiveRecipeOptions = Readonly<{
+    group?: RallarBlackBoxDistributedGroupRef;
+    apiBaseUrl?: string;
+    actor?: string;
     connection?: string;
 }>;
 
@@ -39,22 +47,272 @@ export function normalizeRallarBlackBoxRtcRealtimeDurationSeconds(value: unknown
     );
 }
 
+function stateApiPathSegment(value: string): string {
+    return encodeURIComponent(value);
+}
+
+function stateApiActorPathSegment(value: string): string {
+    return value.includes('{') ? value : stateApiPathSegment(value);
+}
+
+function defaultRallarBlackBoxGroup(): RallarBlackBoxDistributedGroupRef {
+    return {
+        applicationId: 'rallar-server',
+        workspaceId: 'default',
+        groupId: 'rallar-black-box-room',
+    };
+}
+
+function groupRoomRef(group: RallarBlackBoxDistributedGroupRef): RallarBlackBoxDistributedGroupRef {
+    return {
+        applicationId: group.applicationId,
+        workspaceId: group.workspaceId,
+        groupId: group.groupId,
+    };
+}
+
+function createRallarBlackBoxEnsureGroupCommands(input: Readonly<{
+    commandPrefix: string;
+    requestPrefix: string;
+    group: RallarBlackBoxDistributedGroupRef;
+    actor?: string;
+}>): readonly RallarBlackBoxTestCommand[] {
+    const actor = input.actor ?? '{auth.clientId}';
+    const encodedApplicationId = stateApiPathSegment(input.group.applicationId);
+    const encodedWorkspaceId = stateApiPathSegment(input.group.workspaceId);
+    const encodedGroupId = stateApiPathSegment(input.group.groupId);
+    const actorPathSegment = stateApiActorPathSegment(actor);
+    const groupStatePath =
+        `/api/state/apps/${encodedApplicationId}/workspaces/${encodedWorkspaceId}/groups`;
+    const groupMemberPath =
+        `${groupStatePath}/${encodedGroupId}/members/${actorPathSegment}`;
+    const groupRequestKey = [
+        input.requestPrefix,
+        'ensure-group',
+        input.group.applicationId,
+        input.group.workspaceId,
+        input.group.groupId,
+    ].join(':');
+    const memberRequestKey = [
+        input.requestPrefix,
+        'ensure-member',
+        input.group.applicationId,
+        input.group.workspaceId,
+        input.group.groupId,
+        actor,
+    ].join(':');
+
+    return [
+        {
+            kind: 'http.request',
+            commandId: `${input.commandPrefix}-ensure-group`,
+            timeoutMs: 5_000,
+            metadata: {
+                purpose: 'Ensure the backend group exists before RTC room join.',
+                idempotent: true,
+                group: input.group,
+            },
+            request: {
+                method: 'POST',
+                path: groupStatePath,
+                body: {
+                    requestId: groupRequestKey,
+                    groupId: input.group.groupId,
+                    displayName: input.group.groupId,
+                    joinMode: 'open',
+                },
+            },
+            response: {
+                body: 'json',
+            },
+        },
+        {
+            kind: 'http.request',
+            commandId: `${input.commandPrefix}-ensure-member`,
+            timeoutMs: 5_000,
+            metadata: {
+                purpose: 'Ensure the logged-in browser client is an active group member before RTC room join.',
+                idempotent: true,
+                group: input.group,
+            },
+            request: {
+                method: 'PUT',
+                path: groupMemberPath,
+                body: {
+                    requestId: memberRequestKey,
+                    status: 'active',
+                },
+            },
+            response: {
+                body: 'json',
+            },
+        },
+    ];
+}
+
+export function createRallarBlackBoxRtcSmokeRecipe(
+    options: RallarBlackBoxLiveRecipeOptions = {},
+): RallarBlackBoxTestRecipe {
+    const group = options.group ?? defaultRallarBlackBoxGroup();
+    const roomRef = groupRoomRef(group);
+    const actor = options.actor ?? '{auth.clientId}';
+    const connection = options.connection ?? 'aliceRtc';
+
+    return {
+        recipeId: 'rtc-smoke-recipe',
+        name: 'RTC smoke recipe',
+        continueOnFailure: false,
+        metadata: {
+            profile: 'rtc-smoke',
+            group,
+        },
+        commands: [
+            ...createRallarBlackBoxEnsureGroupCommands({
+                commandPrefix: 'rtc-smoke',
+                requestPrefix: 'rtc-smoke',
+                group,
+                actor,
+            }),
+            {
+                kind: 'rtc.connect',
+                commandId: 'rtc-connect-alice',
+                connection,
+                actor,
+                roomId: group.groupId,
+                applicationId: group.applicationId,
+                workspaceId: group.workspaceId,
+                roomRef,
+                transport: 'realtime',
+                timeoutMs: 5_000,
+            },
+            {
+                kind: 'rtc.send',
+                commandId: 'rtc-send-greeting',
+                connection,
+                applicationId: group.applicationId,
+                workspaceId: group.workspaceId,
+                roomRef,
+                transport: 'realtime',
+                send: {
+                    roomId: group.groupId,
+                    roomRef,
+                    data: {
+                        topic: 'black-box.smoke',
+                        text: 'hello from local workbench',
+                        actor,
+                    },
+                },
+                timeoutMs: 3_000,
+            },
+            {
+                kind: 'stats',
+                commandId: 'rtc-stats-snapshot',
+            },
+        ],
+    };
+}
+
+export function createRallarBlackBoxProviderParityLiveRecipe(
+    options: RallarBlackBoxLiveRecipeOptions = {},
+): RallarBlackBoxTestRecipe {
+    const group = options.group ?? defaultRallarBlackBoxGroup();
+    const roomRef = groupRoomRef(group);
+    const actor = options.actor ?? '{auth.clientId}';
+    const connection = options.connection ?? 'aliceRtc';
+    const apiBaseUrl = options.apiBaseUrl ?? RALLAR_BLACK_BOX_LIVE_API_BASE_URL;
+    const baseRecipe = createRallarBlackBoxProviderParityRecipe({
+        providerMode: 'browser-rallar',
+        apiBaseUrl,
+        actor,
+        roomId: group.groupId,
+        connection,
+        rallar: {
+            apiBaseUrl,
+            applicationId: group.applicationId,
+            workspaceId: group.workspaceId,
+            scope: {
+                applicationId: group.applicationId,
+                workspaceId: group.workspaceId,
+            },
+            roomRef,
+            restoreSession: true,
+        },
+        control: {
+            providerMode: 'browser-rallar',
+            parity: true,
+        },
+    });
+    const configureCommand = baseRecipe.commands[0];
+    const scopedCommands = baseRecipe.commands.slice(1).map((command): RallarBlackBoxTestCommand => {
+        if (command.kind === 'rtc.connect') {
+            return {
+                ...command,
+                actor,
+                roomId: group.groupId,
+                applicationId: group.applicationId,
+                workspaceId: group.workspaceId,
+                roomRef,
+                rallar: {
+                    ...command.rallar,
+                    apiBaseUrl,
+                    applicationId: group.applicationId,
+                    workspaceId: group.workspaceId,
+                    scope: {
+                        applicationId: group.applicationId,
+                        workspaceId: group.workspaceId,
+                    },
+                    roomRef,
+                    restoreSession: true,
+                },
+            };
+        }
+        if (command.kind === 'rtc.send') {
+            const send = command.send && typeof command.send === 'object' && !Array.isArray(command.send)
+                ? command.send
+                : {};
+            return {
+                ...command,
+                applicationId: group.applicationId,
+                workspaceId: group.workspaceId,
+                roomRef,
+                send: {
+                    ...send,
+                    roomId: group.groupId,
+                    roomRef,
+                },
+            };
+        }
+        return command;
+    });
+
+    return {
+        ...baseRecipe,
+        metadata: {
+            ...baseRecipe.metadata,
+            group,
+            selfContainedSetup: true,
+        },
+        commands: [
+            configureCommand,
+            ...createRallarBlackBoxEnsureGroupCommands({
+                commandPrefix: 'parity',
+                requestPrefix: 'provider-parity',
+                group,
+                actor,
+            }),
+            ...scopedCommands,
+        ],
+    };
+}
+
 export function createRallarBlackBoxRtcRealtimeRecipe(
     options: RallarBlackBoxRtcRealtimeRecipeOptions = {},
 ): RallarBlackBoxTestRecipe {
     const durationSeconds = normalizeRallarBlackBoxRtcRealtimeDurationSeconds(options.durationSeconds);
     const frameCount = durationSeconds * RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ;
     const connection = options.connection ?? 'rtcRealtime';
-    const group = options.group ?? {
-        applicationId: 'rallar-server',
-        workspaceId: 'default',
-        groupId: 'rallar-black-box-room',
-    };
-    const roomRef = {
-        applicationId: group.applicationId,
-        workspaceId: group.workspaceId,
-        groupId: group.groupId,
-    };
+    const group = options.group ?? defaultRallarBlackBoxGroup();
+    const roomRef = groupRoomRef(group);
     const sendCommand: RallarBlackBoxTestCommand = {
         kind: 'rtc.send',
         commandId: 'rtc-realtime-position',
@@ -98,7 +356,6 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
             },
         },
     };
-
     return {
         recipeId: RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
         name: 'RTC realtime position stream',
@@ -113,6 +370,12 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
             group,
         },
         commands: [
+            ...createRallarBlackBoxEnsureGroupCommands({
+                commandPrefix: 'rtc-realtime',
+                requestPrefix: 'rtc-realtime',
+                group,
+                actor: '{auth.clientId}',
+            }),
             {
                 kind: 'rtc.connect',
                 commandId: 'rtc-realtime-connect',
@@ -169,39 +432,7 @@ export const RALLAR_BLACK_BOX_RECIPE_FIXTURES: readonly RallarBlackBoxRecipeFixt
         fixtureId: 'rtc-smoke',
         label: 'RTC Smoke',
         description: 'Connects one actor, sends a loopback RTC payload, and records stats.',
-        recipe: {
-            recipeId: 'rtc-smoke-recipe',
-            name: 'RTC smoke recipe',
-            continueOnFailure: false,
-            commands: [
-                {
-                    kind: 'rtc.connect',
-                    commandId: 'rtc-connect-alice',
-                    connection: 'aliceRtc',
-                    actor: 'alice',
-                    roomId: 'rallar-black-box-room',
-                    transport: 'realtime',
-                    timeoutMs: 5_000,
-                },
-                {
-                    kind: 'rtc.send',
-                    commandId: 'rtc-send-greeting',
-                    connection: 'aliceRtc',
-                    transport: 'realtime',
-                    send: {
-                        data: {
-                            topic: 'black-box.smoke',
-                            text: 'hello from local workbench',
-                        },
-                    },
-                    timeoutMs: 3_000,
-                },
-                {
-                    kind: 'stats',
-                    commandId: 'rtc-stats-snapshot',
-                },
-            ],
-        },
+        recipe: createRallarBlackBoxRtcSmokeRecipe(),
     },
     {
         fixtureId: 'ws-http-smoke',
@@ -259,7 +490,7 @@ export const RALLAR_BLACK_BOX_RECIPE_FIXTURES: readonly RallarBlackBoxRecipeFixt
         fixtureId: 'provider-parity',
         label: 'Provider Parity',
         description: 'Portable SPA and runner recipe covering connect, direct, multicast, broadcast, health, close, and reset.',
-        recipe: createRallarBlackBoxProviderParityRecipe(),
+        recipe: createRallarBlackBoxProviderParityLiveRecipe(),
     },
     {
         fixtureId: RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,

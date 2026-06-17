@@ -607,6 +607,7 @@ export function createRallarGameMatch<
             snapshotTypeId: typeIds.snapshot,
             syncRequestTypeId: typeIds.syncRequest,
             heartbeatIntervalMs: Math.max(500, heartbeatTtlMs / 2),
+            snapshotIntervalMs: config.autoSnapshotIntervalMs,
             readSnapshot: config.readSnapshot
                 ? async () => {
                     const snapshot = await config.readSnapshot?.();

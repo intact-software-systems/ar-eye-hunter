@@ -7,8 +7,9 @@ For the full command-center examples index, including shared-test runner recipes
 The SPA `Shared Test` tab also lists these app-local recipes next to selected shared-test runner entries.
 
 1. Log in to the Rallar Server from the SPA login gate or `Auth` tab.
-2. Load `rallar-server-group-ws-setup.recipe.json` and run it.
-3. Load `rallar-server-rtc-connect-send.recipe.json` and run it.
+2. Load either recipe and run it. `rallar-server-rtc-connect-send.recipe.json`
+   creates or reuses `bb-group` before connecting RTC, so it does not depend on
+   running `rallar-server-group-ws-setup.recipe.json` first.
 
 `composite-evidence.recipe.json` is different: it is a deterministic local
 authoring example for `loop`, `parallel`, `wait`, and `assert`. It can run in
@@ -28,8 +29,10 @@ The recipes use runtime placeholders resolved from the logged-in browser session
 `POST /api/auth/ws-ticket` with the current auth session and then opens `/api/ws/{auth.sessionId}` with the returned
 ticket.
 
-The REST create-group command is safe to run when `bb-group` already exists. The HTTP command records the server status
-and body in the result; a `409` response does not stop the recipe by itself.
+The REST state mutation commands include stable `requestId` values and are safe
+to repeat during headless redeploy and QA loops. The HTTP command records the
+server status and body in the result; a duplicate create response does not stop
+the recipe by itself.
 
 The broader shared-test runner catalog lives under `packages/shared-test/black-box-runner/examples/` and is indexed by
 `packages/shared-test/black-box-runner/recipe-matrix.json`. Those recipes cover REST/WS/RTC examples, deterministic

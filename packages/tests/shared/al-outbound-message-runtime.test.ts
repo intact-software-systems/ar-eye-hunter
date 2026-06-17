@@ -20,6 +20,8 @@ import {
 describe('ALOutboundMessageRuntime', () => {
     afterEach(() => {
         vi.useRealTimers();
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
     });
 
     it('returns left when the outbound planner drops enqueue', async () => {
@@ -86,6 +88,37 @@ describe('ALOutboundMessageRuntime', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
         ]);
         expect(await reserveOutbox(outbox)).toHaveLength(0);
+        runtime.dispose();
+    });
+
+    it('uses browser Web Locks around outbound commits when available', async () => {
+        const requestLock = vi.fn(
+            async <T>(
+                _name: string,
+                _options: { mode: 'exclusive' },
+                callback: () => Promise<T>,
+            ) => await callback(),
+        );
+        vi.stubGlobal('navigator', {
+            locks: {
+                request: requestLock,
+            },
+        });
+        const runtime = createOutboundRuntime({
+            sendPreparedMessage: async () => Promise.resolve(),
+            planOutgoingMessage: () => ({
+                persist: false,
+                preparedMessages: [{ kind: 'send' }],
+            }),
+        });
+
+        await runtime.enqueueIfAbsent(createOutboundMessage('msg-web-lock'));
+
+        expect(requestLock).toHaveBeenCalledWith(
+            'rallar:al-outbound-commit:self',
+            { mode: 'exclusive' },
+            expect.any(Function),
+        );
         runtime.dispose();
     });
 

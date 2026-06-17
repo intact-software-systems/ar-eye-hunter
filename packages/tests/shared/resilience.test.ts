@@ -92,4 +92,23 @@ describe('Resilience', () => {
             RateLimiter.tryToExecuteOrDefault(limiter, async () => 7, 9),
         ).resolves.toBe(7);
     });
+
+    it('executes the fallback supplier when rate limiting blocks execution', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+        const limiter = RateLimiter.init(100, 1);
+        const supplier = vi.fn(async () => 'allowed');
+        const fallback = vi.fn(async () => 'blocked');
+
+        await expect(
+            RateLimiter.tryToExecuteOrElse(limiter, supplier, fallback),
+        ).resolves.toBe('allowed');
+        await expect(
+            RateLimiter.tryToExecuteOrElse(limiter, supplier, fallback),
+        ).resolves.toBe('blocked');
+
+        expect(supplier).toHaveBeenCalledTimes(1);
+        expect(fallback).toHaveBeenCalledTimes(1);
+    });
 });
