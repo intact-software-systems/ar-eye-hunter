@@ -18,7 +18,10 @@ import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { EnqueuedType } from '../api/api-config.ts';
 import type { ALInboundRuntimeStores } from '../alm/ALInboundMessageRuntime.ts';
 import { ALInboundMessageRuntime } from '../alm/ALInboundMessageRuntime.ts';
-import type { ALOutboundRuntimeStores } from '../alm/ALOutboundMessageRuntime.ts';
+import type {
+    ALOutboundRuntimeDiagnosticsSink,
+    ALOutboundRuntimeStores,
+} from '../alm/ALOutboundMessageRuntime.ts';
 import {
     ALOutboundAckTrackingPlan,
     ALOutboundEnqueueResult,
@@ -35,6 +38,7 @@ export type WsQueueBoxClientServiceOptions = Readonly<{
     qosProvider?: ALQosInputProvider;
     inboundStores?: ALInboundRuntimeStores;
     outboundStores?: ALOutboundRuntimeStores;
+    outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
     reconnect: WsQueueBoxClientReconnectOptions;
 }>;
 
@@ -107,6 +111,7 @@ export class WsQueueBoxClientService {
 
     private readonly inboundRuntime: ALInboundMessageRuntime;
     private readonly outboundRuntime: ALOutboundMessageRuntime<ALMessage>;
+    private closed = false;
 
     private readonly reconnectStatus: WsQueueBoxClientReconnectStatus = {
         task: undefined,
@@ -128,6 +133,7 @@ export class WsQueueBoxClientService {
         this.outboundRuntime = new ALOutboundMessageRuntime<ALMessage>(
             {
                 stores: this.options.outboundStores,
+                diagnostics: this.options.outboundDiagnostics,
                 outbox: this.outbox,
                 toOutboxEntry: (msg) =>
                     QueueBoxUtilities.toResourceEntryFromMsg(
@@ -170,6 +176,7 @@ export class WsQueueBoxClientService {
                             WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE,
                         ),
                     );
+                    return { status: 'sent' };
                 },
             },
         );
@@ -329,7 +336,9 @@ export class WsQueueBoxClientService {
     }
 
     close(code?: number, reason?: string): void {
+        this.closed = true;
         this.disableReconnect();
+        this.outboundRuntime.dispose();
         this.socket.close(code, reason);
     }
 
@@ -482,10 +491,23 @@ export class WsQueueBoxClientService {
     }
 
     async enqueueOutboxIfAbsent(message: ALMessage): Promise<ALOutboundEnqueueResult> {
+        if (this.closed) {
+            return {
+                status: 'skipped',
+                message,
+                entries: [],
+                reason: 'WS queue-box client is closed.',
+            };
+        }
+
         return await this.outboundRuntime.enqueueIfAbsent(message);
     }
 
     async dequeueOutbox(typesToDequeue: Set<string>, resilience: ResilienceDto) {
+        if (this.closed) {
+            return;
+        }
+
         await this.outboundRuntime.dequeue(typesToDequeue, resilience);
     }
 

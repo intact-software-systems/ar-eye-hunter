@@ -7,6 +7,11 @@ export function deriveRallarGameDiagnostics(
     input: RallarGameDiagnosticsInput,
 ): RallarGameDiagnostics {
     const generatedAtEpochMs = input.nowEpochMs ?? Date.now();
+    const egress = input.status.egress ?? {
+        reliable: 'empty' as const,
+        realtime: 'empty' as const,
+    };
+    const directorAuthority = input.status.directorAuthority ?? 'none';
     const readyPeerIds = uniqueSorted([
         ...(input.peerReadiness?.readyPeerIds ?? []),
         ...(input.rtcStatus?.readyPeerIds ?? []),
@@ -27,6 +32,8 @@ export function deriveRallarGameDiagnostics(
         directorPeerId: input.status.directorPeerId,
         directorEpoch: input.status.directorEpoch,
         directorIsFresh: input.status.directorIsFresh,
+        directorAuthority,
+        egress,
         recovery: input.status.recovery,
         hostPeerId: input.election?.host?.peerId,
         backupPeerId: input.election?.backup?.peerId,
@@ -78,6 +85,19 @@ function deriveIssues(input: RallarGameDiagnosticsInput): readonly string[] {
 
     if (input.peerReadiness?.status === 'partial') {
         issues.push('partial-lane-readiness');
+    }
+
+    const egress = input.status.egress ?? {
+        reliable: 'empty' as const,
+        realtime: 'empty' as const,
+    };
+
+    if (egress.realtime === 'warming') {
+        issues.push('rtc-warming');
+    } else if (egress.realtime === 'timeout') {
+        issues.push('rtc-timeout');
+    } else if (egress.realtime === 'failed') {
+        issues.push('rtc-failed');
     }
 
     if (

@@ -49,6 +49,7 @@ describe('Rallar rooms facade factory', () => {
             listEventPage: vi.fn(async () => page),
             replayEvents: vi.fn(async () => replay),
             create: vi.fn(async () => snapshot),
+            createAndSwitch: vi.fn(async () => snapshot),
             join: vi.fn(async () => snapshot),
             leave: vi.fn(async () => snapshot),
             updateMetadata: vi.fn(async () => snapshot),
@@ -75,6 +76,7 @@ describe('Rallar rooms facade factory', () => {
             facade.replayEvents({ roomRef, maxPages: 1 }, eventListener),
         ).resolves.toBe(replay);
         await expect(facade.create('Room 1')).resolves.toBe(snapshot);
+        await expect(facade.createAndSwitch('Room 2')).resolves.toBe(snapshot);
         await expect(
             facade.join(roomRef, { leaveCurrent: false }),
         ).resolves.toBe(snapshot);
@@ -102,6 +104,7 @@ describe('Rallar rooms facade factory', () => {
             eventListener,
         );
         expect(operations.create).toHaveBeenCalledWith('Room 1');
+        expect(operations.createAndSwitch).toHaveBeenCalledWith('Room 2');
         expect(operations.join).toHaveBeenCalledWith(roomRef, {
             leaveCurrent: false,
         });

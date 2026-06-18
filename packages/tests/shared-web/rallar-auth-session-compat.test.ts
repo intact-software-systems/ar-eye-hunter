@@ -162,6 +162,9 @@ const mocks = vi.hoisted(() => {
         logoutFromApi: vi.fn((_options?: unknown) =>
             Promise.resolve({ loggedOut: true })
         ),
+        deleteBrowserALRuntimeEntriesForSession: vi.fn((_sessionId: string) =>
+            Promise.resolve({ deleted: 0, scanned: 0, keyPrefixes: [], dbName: '', storeName: '' })
+        ),
         registerWithApi: vi.fn((_request?: unknown, _options?: unknown) =>
             Promise.resolve({
                 clientId: 'client-new',
@@ -214,6 +217,11 @@ vi.mock('@shared-web/browser/api-workflows.ts', () => ({
     updateStateGroupMetadata: mocks.updateStateGroupMetadata,
 }));
 
+vi.mock('@shared-web/browser/browser-al-runtime-stores.ts', () => ({
+    deleteBrowserALRuntimeEntriesForSession:
+        mocks.deleteBrowserALRuntimeEntriesForSession,
+}));
+
 vi.mock('@shared-web/browser/data-caches.ts', () => ({
     hydrateStateCaches: mocks.hydrateStateCaches,
     onStateCacheChange: mocks.onStateCacheChange,
@@ -257,6 +265,13 @@ describe('Rallar auth session compatibility', () => {
         mocks.clearSession.mockImplementation(() => undefined);
         mocks.readSession.mockReturnValue(mocks.ctx.session);
         mocks.logoutFromApi.mockResolvedValue({ loggedOut: true });
+        mocks.deleteBrowserALRuntimeEntriesForSession.mockResolvedValue({
+            dbName: 'rallar-browser-al-runtime',
+            storeName: 'entries',
+            keyPrefixes: [],
+            scanned: 0,
+            deleted: 0,
+        });
         mocks.createAndJoinStateGroup.mockRejectedValue(new Error('create not mocked'));
         mocks.joinStateGroup.mockRejectedValue(new Error('join not mocked'));
         mocks.leaveStateGroup.mockRejectedValue(new Error('leave not mocked'));
@@ -636,6 +651,20 @@ describe('Rallar auth session compatibility', () => {
         });
     });
 
+    it('deletes captured session browser AL runtime rows even when revoke fails', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        mocks.logoutFromApi.mockRejectedValueOnce(new Error('revoke failed'));
+
+        await expect(createRallarFacade().auth.logout()).rejects.toThrow(
+            'revoke failed',
+        );
+
+        expect(mocks.deleteBrowserALRuntimeEntriesForSession)
+            .toHaveBeenCalledWith('session-1');
+    });
+
     it('does not reconnect with a stale session while manual logout is in progress', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
@@ -671,6 +700,38 @@ describe('Rallar auth session compatibility', () => {
             session: undefined,
             connected: false,
         });
+    });
+
+    it('shuts down middleware that resolves after logout during connect', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const deferred = createDeferred<ApiMiddleware>();
+        mocks.initMiddleware.mockReturnValueOnce(deferred.promise);
+        const facade = createRallarFacade();
+
+        const connectPromise = facade.connect();
+        await Promise.resolve();
+
+        await facade.auth.logout();
+        const expectation = expect(connectPromise).rejects.toThrow(
+            'Rallar connection was cancelled because auth ended.',
+        );
+
+        deferred.resolve(mocks.ctx);
+        await expectation;
+
+        expect(facade.status()).toBe('idle');
+        expect(facade.isConnected()).toBe(false);
+        expect(mocks.ctx.middleware.heartbeat.stop).toHaveBeenCalled();
+        expect(mocks.ctx.middleware.rtcRxStreamer.stopAllHeartbeats)
+            .toHaveBeenCalled();
+        expect(mocks.ctx.middleware.webRtcConnectionService.knownPeerIds)
+            .toHaveBeenCalled();
+        expect(mocks.ctx.middleware.qboxEngine.stop).toHaveBeenCalled();
+        expect(mocks.ctx.middleware.webSocketQueueBox.close)
+            .toHaveBeenCalledWith(1000, 'rallar-disconnect');
+        expect(mocks.clearMiddleware).toHaveBeenCalled();
     });
 
     it('closes WS through the queue-box service when logging out after connect', async () => {

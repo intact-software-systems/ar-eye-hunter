@@ -7,6 +7,7 @@ import * as groupStateSnapshotsRepository from '@shared/repository/group-state-s
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import {
+    DEFAULT_WEB_RTC_PEER_CONNECTION_ATTEMPT_BUDGET_POLICY,
     DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY,
     type RtcDataChannelLaneConfig,
     WebRtcConnectionService,
@@ -19,11 +20,15 @@ import {
     resolveBrowserRtcOverlayALOutboundRuntimeStores,
     resolveBrowserRtcRxALInboundRuntimeStores,
 } from '@shared-web/browser/browser-al-runtime-stores.ts';
+import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/ALOutboundMessageRuntime.ts';
 
 export function initialiseRtcOverlayMulticastManager(
     webRtcConnectionService: WebRtcConnectionService,
     qboxEngine: InboxOutboxEngine,
     resilience: ResilienceDto,
+    options: Readonly<{
+        outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
+    }> = {},
 ) {
     const webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager =
         new WebRtcOverlayMulticastManager(
@@ -37,6 +42,7 @@ export function initialiseRtcOverlayMulticastManager(
                 outboundStores: resolveBrowserRtcOverlayALOutboundRuntimeStores(
                     webRtcConnectionService.input.sessionId,
                 ),
+                outboundDiagnostics: options.outboundDiagnostics,
             },
         );
 
@@ -114,6 +120,7 @@ export async function initialiseRtcConnectionService(
     rtcSignalingTopicId: string,
     options: Readonly<{
         dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
+        maxPeerConnections?: number;
     }> = {},
 ): Promise<WebRtcConnectionService> {
     const rtcQBox = new WebRtcConnectionService(
@@ -133,6 +140,11 @@ export async function initialiseRtcConnectionService(
                 ...DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY,
                 enabled: true,
             },
+            peerConnectionAttemptBudget: {
+                ...DEFAULT_WEB_RTC_PEER_CONNECTION_ATTEMPT_BUDGET_POLICY,
+                enabled: true,
+            },
+            maxPeerConnections: options.maxPeerConnections,
         },
     );
 

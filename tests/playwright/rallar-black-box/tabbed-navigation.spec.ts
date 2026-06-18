@@ -1846,7 +1846,7 @@ test('shows distributed recipe composite preflight before staging', async ({ pag
     await rtcRow.getByRole('checkbox').check();
     await expect(rtcRow).toContainText('Preflight');
     await expect(rtcRow).toContainText('Effective ops');
-    await expect(rtcRow).toContainText('102');
+    await expect(rtcRow).toContainText('104');
     await expect(rtcRow).toContainText('Loop x100');
     await expect(rtcRow).toContainText('Rallar auth/signaling');
     await expect(rtcRow).toContainText('RTC peers');

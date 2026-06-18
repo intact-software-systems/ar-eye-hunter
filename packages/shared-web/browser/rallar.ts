@@ -93,6 +93,7 @@ import {
 } from '@shared-web/browser/api-client-config.ts';
 import * as api from '@shared-web/browser/api-integration.ts';
 import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
+import { deleteBrowserALRuntimeEntriesForSession } from '@shared-web/browser/browser-al-runtime-stores.ts';
 import * as stateCaches from '@shared-web/browser/data-caches.ts';
 import {
     createRallarAuthFacade,
@@ -139,6 +140,14 @@ import {
     createRallarRoomsFacade,
     type RallarRoomsFacade,
 } from '@shared-web/browser/rallar-rooms-facade.ts';
+import {
+    evaluateRallarReadinessExpectation,
+    normalizeRallarReadinessExpectation,
+    type RallarNormalizedReadinessExpectation,
+    type RallarReadinessEvaluation,
+    type RallarReadinessExpectation,
+    type RallarReadinessStatus,
+} from '@shared-web/browser/readiness.ts';
 import { createRallarCrdtFacade, type RallarCrdtFacade, } from '@shared-web/browser/rallar-crdt.ts';
 import type { RallarCrdtMessageTransport } from '@shared-web/browser/rallar-crdt-transport.ts';
 import {
@@ -175,6 +184,11 @@ export {
     normalizeRallarMessageSelector,
 } from '@shared-web/browser/rallar-message-selectors.ts';
 
+export {
+    evaluateRallarReadinessExpectation,
+    normalizeRallarReadinessExpectation,
+} from '@shared-web/browser/readiness.ts';
+
 export type {
     RallarCrdtDocument,
     RallarCrdtFacade,
@@ -208,6 +222,13 @@ export type {
     RallarOperationOptions,
     RallarOperationRetryPredicate,
 } from '@shared-web/browser/rallar-operation-options.ts';
+
+export type {
+    RallarNormalizedReadinessExpectation,
+    RallarReadinessEvaluation,
+    RallarReadinessExpectation,
+    RallarReadinessStatus,
+} from '@shared-web/browser/readiness.ts';
 
 const RALLAR_REMOTE_STREAM_CALLBACK_ID = 'rallar:remote-stream';
 const RALLAR_WS_ANY_MESSAGE_CALLBACK_ID = 'rallar:ws:any-message';
@@ -350,6 +371,23 @@ export type RallarRoomState = Readonly<{
     members: readonly RallarRoomMember[];
 }>;
 
+export type RallarRoomPresenceWaitOptions =
+    & RallarScopedOperationOptions
+    & Readonly<{
+    expect?: RallarReadinessExpectation;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+}>;
+
+export type RallarRoomPresenceWaitResult =
+    & RallarReadinessEvaluation
+    & Readonly<{
+    roomId: string;
+    roomRef?: GroupRef;
+    activeSessionIds: readonly string[];
+    timedOut: boolean;
+}>;
+
 export type RallarPerson = Readonly<{
     principalId: string;
     username: string;
@@ -484,6 +522,7 @@ export type RallarRtcRoomLaneWaitOptions =
     & Readonly<{
     connect?: boolean;
     roomRef?: GroupRef;
+    expect?: RallarReadinessExpectation;
 }>;
 
 export type RallarRtcRoomLaneWaitStatus =
@@ -491,6 +530,7 @@ export type RallarRtcRoomLaneWaitStatus =
     | 'partial'
     | 'not-ready'
     | 'empty'
+    | 'over-capacity'
     | 'not-connected'
     | 'timeout'
     | 'aborted'
@@ -1175,6 +1215,12 @@ export type RallarRtcRoomLaneWaitResult = Readonly<{
     rtcStatus: RallarRtcStatus;
     ready: readonly RallarRtcWaitForOpenResult[];
     notReady: readonly RallarRtcWaitForOpenResult[];
+    readyPeerIds: readonly string[];
+    notReadyPeerIds: readonly string[];
+    missingPeerIds: readonly string[];
+    extraPeerIds: readonly string[];
+    observedCount: number;
+    expectedCount?: number;
 }>;
 
 export type RallarCallMediaInput = Readonly<{
@@ -1502,6 +1548,7 @@ export type RallarFacade = Readonly<{
             listener?: RallarRoomEventListener,
         ): Promise<RallarReplayEventsResult<GroupEvent>>;
         create(input: string | RallarCreateRoomInput): Promise<GroupSnapshot>;
+        createAndSwitch(input: string | RallarCreateRoomInput): Promise<GroupSnapshot>;
         join(
             room: string | GroupRef | RallarJoinRoomInput,
             options?: RallarJoinRoomOptions,
@@ -1519,6 +1566,10 @@ export type RallarFacade = Readonly<{
             patch: Readonly<Record<string, unknown>>,
             options?: RallarScopedOperationOptions,
         ): Promise<GroupSnapshot>;
+        waitForPresence(
+            room: string | GroupRef,
+            options?: RallarRoomPresenceWaitOptions,
+        ): Promise<RallarRoomPresenceWaitResult>;
         current(): GroupSnapshot | undefined;
         onChange(
             listener: RallarStateListener<RallarRoomState>,
@@ -1830,6 +1881,7 @@ class BrowserRallarFacade implements RallarFacade {
             atEpochMs: number;
         }>
     >();
+    private readonly directorRelayStops = new Set<() => void>();
     private readonly roomEventSubscriptions =
         new Set<RallarRoomEventSubscription>();
     private readonly peopleEventSubscriptions =
@@ -1860,6 +1912,7 @@ class BrowserRallarFacade implements RallarFacade {
         new Set<RallarWsLifecycleSubscription>();
     private readonly registeredRtcMessageTypes = new Set<string>();
     private wsAnyMessageCallbackRegistered = false;
+    private connectionGeneration = 0;
     private readonly remoteStreamListeners = new Set<
         (remote: RallarRemoteStream) => void | Promise<void>
     >();
@@ -2044,12 +2097,15 @@ class BrowserRallarFacade implements RallarFacade {
         replayEvents: async (input, listener) =>
             await this.replayRoomEventsInput(input, listener),
         create: async (input) => await this.createRoom(input),
+        createAndSwitch: async (input) => await this.createAndSwitchRoom(input),
         join: async (room, options) => await this.joinRoom(room, options),
         enter: async (room, options) => await this.enterRoom(room, options),
         session: (room) => this.createRoomSessionForTarget(room),
         leave: async (input) => await this.leaveRoom(input),
         updateMetadata: async (room, patch, options) =>
             await this.updateRoomMetadata(room, patch, options),
+        waitForPresence: async (room, options) =>
+            await this.waitForRoomPresence(room, options),
         current: () => this.toRoomState().currentRoom,
         onChange: (listener, options) => this.onRoomChange(listener, options),
         onEvent: (listener, options = {}) => this.onRoomEvent(listener, options),
@@ -2164,6 +2220,34 @@ class BrowserRallarFacade implements RallarFacade {
             await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
             return snapshot;
         });
+    }
+
+    private async createAndSwitchRoom(
+        input: string | RallarCreateRoomInput,
+    ): Promise<GroupSnapshot> {
+        const createInput = typeof input === 'string'
+            ? { displayName: input }
+            : input;
+        const previousRoomRef = this.resolveCurrentRoomRef();
+        const leaveOptions = toRallarOperationOptions(
+            this.resolveOperationOptions(createInput),
+        );
+        const snapshot = await this.createRoom(input);
+
+        if (
+            previousRoomRef &&
+            !this.isSameRoomRefOrId(previousRoomRef, snapshot.group)
+        ) {
+            await this.leaveRoom({
+                ...leaveOptions,
+                roomId: previousRoomRef.groupId,
+                roomRef: previousRoomRef,
+                clearCurrent: false,
+                scope: toStateScope(previousRoomRef),
+            });
+        }
+
+        return snapshot;
     }
 
     private async joinRoom(
@@ -2497,6 +2581,111 @@ class BrowserRallarFacade implements RallarFacade {
 
             await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
             return snapshot;
+        });
+    }
+
+    private async waitForRoomPresence(
+        room: string | GroupRef,
+        options: RallarRoomPresenceWaitOptions = {},
+    ): Promise<RallarRoomPresenceWaitResult> {
+        const operationOptions = this.resolveOperationOptions(options);
+        const roomId = this.toRoomId(room) ??
+            (typeof room === 'string' ? room : room.groupId);
+        const roomRef = typeof room === 'string'
+            ? this.resolveGroupRefFromRoomId(room, options.scope) ??
+                this.resolveRoomRef(room)
+            : room;
+        const expectation = normalizeRallarReadinessExpectation(options.expect);
+
+        const readResult = (
+            statusOverride?: RallarReadinessStatus,
+        ): RallarRoomPresenceWaitResult => {
+            const snapshot = this.findGroupSnapshot(roomRef ?? room);
+            if (!snapshot || !isGroupActive(snapshot)) {
+                const empty = evaluateRallarReadinessExpectation([], expectation);
+                return {
+                    ...empty,
+                    status: statusOverride ?? 'not-found',
+                    roomId,
+                    roomRef: roomRef ?? undefined,
+                    activeSessionIds: [],
+                    timedOut: statusOverride === 'timeout',
+                };
+            }
+
+            const activeSessionIds = uniquePeerIds(
+                snapshot.activeSessions.map((session) => session.sessionId),
+            );
+            const evaluation = evaluateRallarReadinessExpectation(
+                activeSessionIds,
+                expectation,
+            );
+            return {
+                ...evaluation,
+                status: statusOverride ?? evaluation.status,
+                roomId,
+                roomRef: snapshot.group,
+                activeSessionIds,
+                timedOut: statusOverride === 'timeout',
+            };
+        };
+
+        const current = readResult();
+        if (isTerminalReadinessWaitResult(current)) {
+            return current;
+        }
+
+        if (operationOptions.signal?.aborted) {
+            return { ...current, status: 'aborted' };
+        }
+
+        const timeoutMs = normalizeWaitTimeoutMs(options.timeoutMs);
+        if (timeoutMs <= 0) {
+            return readResult('timeout');
+        }
+
+        return await new Promise<RallarRoomPresenceWaitResult>((resolve) => {
+            let settled = false;
+            let timeout: ReturnType<typeof setTimeout> | undefined;
+            let unsubscribe: RallarUnsubscribe = () => {};
+
+            const finish = (result: RallarRoomPresenceWaitResult): void => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                if (timeout !== undefined) {
+                    clearTimeout(timeout);
+                }
+                operationOptions.signal?.removeEventListener('abort', onAbort);
+                unsubscribe();
+                resolve(result);
+            };
+
+            const onAbort = (): void => finish({
+                ...readResult(),
+                status: 'aborted',
+            });
+
+            unsubscribe = stateCaches.onStateCacheChange(() => {
+                const next = readResult();
+                if (isTerminalReadinessWaitResult(next)) {
+                    finish(next);
+                }
+            });
+            operationOptions.signal?.addEventListener('abort', onAbort, {
+                once: true,
+            });
+            const next = readResult();
+            if (isTerminalReadinessWaitResult(next)) {
+                finish(next);
+                return;
+            }
+            if (operationOptions.signal?.aborted) {
+                onAbort();
+                return;
+            }
+            timeout = setTimeout(() => finish(readResult('timeout')), timeoutMs);
         });
     }
 
@@ -3491,9 +3680,22 @@ class BrowserRallarFacade implements RallarFacade {
             return await waitForRallarOperation(this.connectPromise, connectOptions);
         }
 
+        const generation = this.connectionGeneration;
         this.connectState = 'connecting';
         this.connectPromise = initMiddleware(connectOptions)
             .then((ctx) => {
+                if (
+                    generation !== this.connectionGeneration ||
+                    this.authEndPromise ||
+                    readSession()?.sessionId !== ctx.session.sessionId
+                ) {
+                    shutdownApiMiddleware(ctx);
+                    this.runtime.clearMiddleware();
+                    this.connectState = 'idle';
+                    throw new Error(
+                        'Rallar connection was cancelled because auth ended.',
+                    );
+                }
                 this.ctx = ctx;
                 this.connectState = 'connected';
                 this.scheduleAuthExpiry(ctx.session);
@@ -3577,6 +3779,8 @@ class BrowserRallarFacade implements RallarFacade {
     }
 
     private disconnectConnection(): Promise<void> {
+        this.connectionGeneration += 1;
+        this.stopDirectorRelays();
         this.stateCacheUnsubscribe?.();
         this.stateCacheUnsubscribe = undefined;
 
@@ -3595,20 +3799,9 @@ class BrowserRallarFacade implements RallarFacade {
                 RALLAR_REALTIME_LIFECYCLE_CALLBACK_ID,
             );
             this.unregisterRtcStatusCallbacks(ctx);
-            ctx.middleware.rtcRxStreamer.stopAllHeartbeats();
-            const peerIds = ctx.middleware.webRtcConnectionService.knownPeerIds();
-            for (const peerId of peerIds) {
-                ctx.middleware.webRtcConnectionService.disconnectPeer(peerId);
-            }
             this.unregisterRemoteStreamCallback();
             this.stopLocalMediaSourcesForKind('all', false);
-            ctx.middleware.rtcRxStreamer.stopLocalMedia('all');
-            ctx.middleware.heartbeat?.stop();
-            ctx.middleware.qboxEngine.stop();
-            ctx.middleware.webSocketQueueBox.close(
-                1000,
-                'rallar-disconnect',
-            );
+            shutdownApiMiddleware(ctx);
         }
 
         this.registeredRtcMessageTypes.clear();
@@ -3777,28 +3970,74 @@ class BrowserRallarFacade implements RallarFacade {
         const status = (): RallarDirectorStatus =>
             this.toDirectorStatus(roomTarget);
 
+        const stopRelay = (): void => {
+            if (stopped) {
+                return;
+            }
+            stopped = true;
+            subscriptions.unsubscribe();
+            for (const timer of timers) {
+                clearInterval(timer);
+            }
+            timers.length = 0;
+            this.directorRelayStops.delete(stopRelay);
+        };
+        this.directorRelayStops.add(stopRelay);
+
+        const authEndedResult = (): RallarDirectorRelaySendResult => ({
+            status: 'no-director',
+            reason: 'Auth session ended.',
+        });
+        const guardRelaySend = (): RallarDirectorRelaySendResult | undefined => {
+            if (stopped) {
+                return authEndedResult();
+            }
+            if (!readSession()) {
+                stopRelay();
+                return authEndedResult();
+            }
+            return undefined;
+        };
+
         const relay = {
             status,
             sendIntent: async (
                 intent: TIntent,
-            ): Promise<RallarDirectorRelaySendResult> =>
-                await this.sendDirectorIntent(
+            ): Promise<RallarDirectorRelaySendResult> => {
+                const guarded = guardRelaySend();
+                if (guarded) {
+                    return guarded;
+                }
+
+                return await this.sendDirectorIntent(
                     status(),
                     laneId,
                     topicId,
                     config.intentTypeId,
                     intent,
-                ),
+                );
+            },
             sendOutput: async (
                 output: TOutput,
-            ): Promise<RallarDirectorRelaySendResult> =>
-                await this.sendDirectorRoomEnvelope(
+            ): Promise<RallarDirectorRelaySendResult> => {
+                const guarded = guardRelaySend();
+                if (guarded) {
+                    return guarded;
+                }
+
+                return await this.sendDirectorRoomEnvelope(
                     status(),
                     topicId,
                     config.outputTypeId,
                     output,
-                ),
+                );
+            },
             sendHeartbeat: async (): Promise<RallarDirectorRelaySendResult> => {
+                const guarded = guardRelaySend();
+                if (guarded) {
+                    return guarded;
+                }
+
                 const current = status();
                 if (current.roomRef && current.appointment && current.isDirector) {
                     this.recordDirectorHeartbeat(
@@ -3820,6 +4059,11 @@ class BrowserRallarFacade implements RallarFacade {
             sendSnapshot: async (
                 snapshot?: TSnapshot,
             ): Promise<RallarDirectorRelaySendResult> => {
+                const guarded = guardRelaySend();
+                if (guarded) {
+                    return guarded;
+                }
+
                 const resolvedSnapshot = snapshot ??
                     await config.readSnapshot?.();
                 if (resolvedSnapshot === undefined) {
@@ -3838,24 +4082,21 @@ class BrowserRallarFacade implements RallarFacade {
             },
             requestSync: async (
                 payload?: unknown,
-            ): Promise<RallarDirectorRelaySendResult> =>
-                await this.sendDirectorIntent(
+            ): Promise<RallarDirectorRelaySendResult> => {
+                const guarded = guardRelaySend();
+                if (guarded) {
+                    return guarded;
+                }
+
+                return await this.sendDirectorIntent(
                     status(),
                     laneId,
                     topicId,
                     syncRequestTypeId,
                     payload ?? {},
-                ),
-            stop: (): void => {
-                if (stopped) {
-                    return;
-                }
-                stopped = true;
-                subscriptions.unsubscribe();
-                for (const timer of timers) {
-                    clearInterval(timer);
-                }
+                );
             },
+            stop: stopRelay,
         } satisfies RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot>;
 
         const handleEnvelope = async <T>(
@@ -3994,6 +4235,13 @@ class BrowserRallarFacade implements RallarFacade {
                 ),
             );
         timers.push(setInterval(() => {
+            if (stopped) {
+                return;
+            }
+            if (!readSession()) {
+                stopRelay();
+                return;
+            }
             if (status().isDirector) {
                 void relay.sendHeartbeat().catch((error) => {
                     console.error('Failed to send director relay heartbeat:', error);
@@ -4003,6 +4251,13 @@ class BrowserRallarFacade implements RallarFacade {
 
         if (config.readSnapshot && config.snapshotIntervalMs !== false) {
             timers.push(setInterval(() => {
+                if (stopped) {
+                    return;
+                }
+                if (!readSession()) {
+                    stopRelay();
+                    return;
+                }
                 if (status().isDirector) {
                     void relay.sendSnapshot().catch((error) => {
                         console.error('Failed to send director relay snapshot:', error);
@@ -4014,6 +4269,14 @@ class BrowserRallarFacade implements RallarFacade {
         return relay;
     }
 
+    private stopDirectorRelays(): void {
+        const stops = [...this.directorRelayStops];
+        this.directorRelayStops.clear();
+        for (const stop of stops) {
+            runShutdownStep(stop);
+        }
+    }
+
     private async sendDirectorIntent<T>(
         status: RallarDirectorStatus,
         laneId: string,
@@ -4021,6 +4284,13 @@ class BrowserRallarFacade implements RallarFacade {
         typeId: string,
         payload: T,
     ): Promise<RallarDirectorRelaySendResult> {
+        if (!readSession()) {
+            return {
+                status: 'no-director',
+                reason: 'Auth session ended.',
+            };
+        }
+
         if (!status.appointment || !status.roomId) {
             return {
                 status: 'no-director',
@@ -4085,6 +4355,13 @@ class BrowserRallarFacade implements RallarFacade {
         typeId: string,
         payload: T,
     ): Promise<RallarDirectorRelaySendResult> {
+        if (!readSession()) {
+            return {
+                status: 'no-director',
+                reason: 'Auth session ended.',
+            };
+        }
+
         if (!status.appointment || !status.roomRef || !status.roomId) {
             return {
                 status: 'no-director',
@@ -5918,8 +6195,18 @@ class BrowserRallarFacade implements RallarFacade {
     ): Promise<RallarRtcRoomLaneWaitResult> {
         const roomId = typeof room === 'string' ? room : room.groupId;
         const peerIds = this.resolveRoomPeerIds(options.roomRef ?? room);
+        const expectation = normalizeRallarReadinessExpectation(
+            options.expect ?? { exact: peerIds.length },
+        );
         if (peerIds.length === 0) {
-            return this.toRtcRoomLaneWaitResult(roomId, laneId, [], []);
+            return this.toRtcRoomLaneWaitResult(
+                roomId,
+                laneId,
+                [],
+                [],
+                expectation,
+                options.expect !== undefined,
+            );
         }
 
         const results = await Promise.all(
@@ -5934,7 +6221,14 @@ class BrowserRallarFacade implements RallarFacade {
         const ready = results.filter((result) => result.status === 'open');
         const notReady = results.filter((result) => result.status !== 'open');
 
-        return this.toRtcRoomLaneWaitResult(roomId, laneId, ready, notReady);
+        return this.toRtcRoomLaneWaitResult(
+            roomId,
+            laneId,
+            ready,
+            notReady,
+            expectation,
+            options.expect !== undefined,
+        );
     }
 
     private async openRtcRoom(
@@ -6091,15 +6385,36 @@ class BrowserRallarFacade implements RallarFacade {
         laneId: string,
         ready: readonly RallarRtcWaitForOpenResult[],
         notReady: readonly RallarRtcWaitForOpenResult[],
+        expectation: RallarNormalizedReadinessExpectation,
+        preferUnsatisfiedTerminalStatus: boolean,
     ): RallarRtcRoomLaneWaitResult {
+        const readyPeerIds = uniquePeerIds(ready.map((result) => result.peerId));
+        const notReadyPeerIds = uniquePeerIds(notReady.map((result) => result.peerId));
+        const evaluation = evaluateRallarReadinessExpectation(
+            readyPeerIds,
+            expectation,
+        );
+        const waitStatus = toRtcRoomLaneWaitStatus(ready, notReady);
         return {
             transport: 'rtc',
             roomId,
             laneId,
-            status: toRtcRoomLaneWaitStatus(ready, notReady),
+            status: toExpectationAwareRtcRoomLaneWaitStatus(
+                evaluation,
+                waitStatus,
+                readyPeerIds,
+                notReady,
+                preferUnsatisfiedTerminalStatus,
+            ),
             rtcStatus: this.toRtcStatus({ laneId }),
             ready,
             notReady,
+            readyPeerIds,
+            notReadyPeerIds,
+            missingPeerIds: evaluation.missingSessionIds,
+            extraPeerIds: evaluation.extraSessionIds,
+            observedCount: evaluation.observedCount,
+            expectedCount: evaluation.expectedCount,
         };
     }
 
@@ -7391,6 +7706,15 @@ class BrowserRallarFacade implements RallarFacade {
     private resolveRoomPeerIds(room: string | GroupRef): readonly string[] {
         const session = readSession();
         const snapshot = this.findGroupSnapshot(room);
+        if (
+            !session ||
+            !snapshot ||
+            !isGroupActive(snapshot) ||
+            !isSessionInGroup(snapshot, session.sessionId)
+        ) {
+            return [];
+        }
+
         const peerIds = (snapshot?.activeSessions ?? [])
             .map((activeSession) => activeSession.sessionId)
             .filter((sessionId) => sessionId !== session?.sessionId);
@@ -7854,6 +8178,13 @@ class BrowserRallarFacade implements RallarFacade {
             } catch (error) {
                 dataCleanupError = error;
             }
+            if (session) {
+                try {
+                    await deleteBrowserALRuntimeEntriesForSession(session.sessionId);
+                } catch {
+                    // Browser-local AL cleanup is best-effort during auth teardown.
+                }
+            }
             this.emitState();
             this.emitAuthState(reason, undefined);
         }
@@ -8015,6 +8346,14 @@ function normalizeWaitTimeoutMs(timeoutMs: number | undefined): number {
     return Math.max(0, Math.floor(timeoutMs));
 }
 
+function isTerminalReadinessWaitResult(
+    result: RallarReadinessEvaluation,
+): boolean {
+    return result.status === 'ready' ||
+        result.status === 'over-capacity' ||
+        (result.status === 'empty' && result.expectedCount === 0);
+}
+
 function toPublicWsStatusUrl(url: string | undefined): string | undefined {
     if (!url) {
         return url;
@@ -8086,6 +8425,7 @@ function toRallarWaitForOpenStatus(
         case 'no-lane':
         case 'closed':
             return status;
+        case 'exhausted':
         case 'self':
         case 'connect-failed':
         case 'failed':
@@ -8126,6 +8466,49 @@ function toRtcRoomLaneWaitStatus(
     }
 
     return 'not-ready';
+}
+
+function toExpectationAwareRtcRoomLaneWaitStatus(
+    evaluation: RallarReadinessEvaluation,
+    waitStatus: RallarRtcRoomLaneWaitStatus,
+    readyPeerIds: readonly string[],
+    notReady: readonly RallarRtcWaitForOpenResult[],
+    preferUnsatisfiedTerminalStatus: boolean,
+): RallarRtcRoomLaneWaitStatus {
+    if (evaluation.status === 'over-capacity') {
+        return 'over-capacity';
+    }
+
+    if (evaluation.status === 'empty' && evaluation.expectedCount === 0) {
+        return 'empty';
+    }
+
+    if (evaluation.status === 'ready') {
+        return waitStatus === 'open'
+            ? 'open'
+            : readyPeerIds.length > 0
+            ? 'partial'
+            : 'empty';
+    }
+
+    if (!preferUnsatisfiedTerminalStatus) {
+        return waitStatus;
+    }
+
+    if (notReady.some((peer) => peer.status === 'failed')) {
+        return 'failed';
+    }
+    if (notReady.some((peer) => peer.status === 'aborted')) {
+        return 'aborted';
+    }
+    if (notReady.some((peer) => peer.status === 'timeout')) {
+        return 'timeout';
+    }
+    if (notReady.some((peer) => peer.status === 'not-connected')) {
+        return 'not-connected';
+    }
+
+    return waitStatus;
 }
 
 function toRoomTransportState(
@@ -9014,6 +9397,37 @@ function isUnauthorizedApiError(error: unknown): boolean {
     }
 
     return (error as { status?: unknown }).status === 401;
+}
+
+function shutdownApiMiddleware(
+    ctx: ApiMiddleware | undefined,
+    reason = 'rallar-disconnect',
+): void {
+    if (!ctx) {
+        return;
+    }
+
+    runShutdownStep(() => ctx.middleware.heartbeat?.stop());
+    runShutdownStep(() => ctx.middleware.rtcRxStreamer.stopAllHeartbeats());
+    runShutdownStep(() => {
+        for (const peerId of ctx.middleware.webRtcConnectionService.knownPeerIds()) {
+            ctx.middleware.webRtcConnectionService.disconnectPeer(peerId);
+        }
+    });
+    runShutdownStep(() => ctx.middleware.rtcRxStreamer.stopLocalMedia('all'));
+    runShutdownStep(() =>
+        ctx.middleware.webRtcOverlayMulticastManager?.dispose?.()
+    );
+    runShutdownStep(() => ctx.middleware.qboxEngine.stop());
+    runShutdownStep(() => ctx.middleware.webSocketQueueBox.close(1000, reason));
+}
+
+function runShutdownStep(step: () => void): void {
+    try {
+        step();
+    } catch {
+        // Auth teardown is best-effort and should continue through stale transports.
+    }
 }
 
 function toAuthSessionKey(session: AuthSession): string {

@@ -19,6 +19,7 @@ import type { ALInboundRuntimeStores } from '../alm/ALInboundMessageRuntime.ts';
 import { ALInboundMessageRuntime } from '../alm/ALInboundMessageRuntime.ts';
 import type {
     ALOutboundEnqueueResult,
+    ALOutboundRuntimeDiagnosticsSink,
     ALOutboundRuntimeStores,
 } from '../alm/ALOutboundMessageRuntime.ts';
 import {
@@ -82,6 +83,7 @@ export type WsQueueBoxServerServiceOptions = Readonly<{
     targetResolver?: WsServerTargetResolver;
     inboundStores?: ALInboundRuntimeStores;
     outboundStores?: ALOutboundRuntimeStores;
+    outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
 }>;
 
 type WsServerPreparedMessage = Readonly<{
@@ -132,6 +134,7 @@ export class WsQueueBoxServerService {
         >(
             {
                 stores: options.outboundStores,
+                diagnostics: options.outboundDiagnostics,
                 outbox: this.outbox,
                 toOutboxEntry: (message: ALMessage) =>
                     QueueBoxUtilities.toResourceEntryFromMsg(
@@ -141,8 +144,10 @@ export class WsQueueBoxServerService {
                 readMessageFromEntry: (entry) =>
                     JSON.parse(entry.resource) as ALMessage,
                 planOutgoingMessage: (message) => this.planOutgoingMessage(message),
-                sendPreparedMessage: async (prepared, _phase) =>
-                    await this.sendPreparedMessage(prepared),
+                sendPreparedMessage: async (prepared, _phase) => {
+                    await this.sendPreparedMessage(prepared);
+                    return { status: 'sent' };
+                },
                 planRepairMessage: async (message, request) =>
                     await this.planRepairMessage(message, request),
             },

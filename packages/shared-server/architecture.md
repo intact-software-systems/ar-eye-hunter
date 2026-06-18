@@ -34,6 +34,9 @@ database lifecycle, and deployment settings around these shared services.
   results.
 - State-sync publication updates process-local snapshot caches and enqueues
   messages into the durable WS QueueBox outbox through `StateSyncPublisher`.
+- Built-in WS system topics include state sync, RTC signaling, overlay topology,
+  and RTT. RTT measurements can trigger topology recomputes through the same
+  durable/coalesced AppInbox path used for group-snapshot topology work.
 - Retryable AppInbox publication failures keep the command retryable instead of
   writing a terminal failed app-inbox result. On retry, idempotency ledgers allow
   stored mutation results to be republished without applying the mutation again.

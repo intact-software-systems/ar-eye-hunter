@@ -91,6 +91,138 @@ describe('ALOutboundMessageRuntime', () => {
         runtime.dispose();
     });
 
+    it('uses explicit message expiry for outbound owner tracking', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+        const admissionStore = createMemoryOutboundAdmissionStore();
+        const committedBundles: ALOutboundCommitBundle<Record<string, unknown>>[] = [];
+        const runtime = createOutboundRuntime({
+            stores: {
+                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
+                    commitBundle: async <TPrepared>(bundle: ALOutboundCommitBundle<TPrepared>) => {
+                        committedBundles.push(
+                            bundle as ALOutboundCommitBundle<Record<string, unknown>>,
+                        );
+                        return await admissionStore.commitBundle(bundle);
+                    },
+                }),
+            },
+            sendPreparedMessage: async () => Promise.resolve(),
+            planOutgoingMessage: () => ({
+                persist: false,
+                preparedMessages: [{ kind: 'send' }],
+            }),
+        });
+        const msg = createOutboundMessage('msg-owner-expiry', { ttlMs: 15_000 });
+
+        await enqueueOutboundOrThrow(runtime, msg);
+
+        const ownerMutation = committedBundles
+            .flatMap(bundle => bundle.mutations)
+            .find(mutation => mutation.kind === 'set-msg-owner');
+        expect(ownerMutation).toMatchObject({
+            kind: 'set-msg-owner',
+            msgId: msg.id.msgId,
+            senderId: msg.id.senderId,
+            expireAtTimestamp: msg.constraints?.expiresAtMs,
+        });
+        runtime.dispose();
+    });
+
+    it('reschedules durable send-prepared effects when the transport is not ready', async () => {
+        const admissionStore = createMemoryOutboundAdmissionStore();
+        const rescheduleEffect = vi.fn(async (
+            effectId: string,
+            workerId: string,
+            retryAtMs: number,
+            lastError?: string,
+        ) =>
+            await admissionStore.rescheduleEffect(
+                effectId,
+                workerId,
+                retryAtMs,
+                lastError,
+            )
+        );
+        const completeEffect = vi.fn(async (effectId: string, workerId: string) =>
+            await admissionStore.completeEffect(effectId, workerId)
+        );
+        const runtime = createOutboundRuntime({
+            stores: {
+                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
+                    completeEffect,
+                    rescheduleEffect,
+                }),
+            },
+            nowMs: () => 1_000,
+            sendPreparedMessage: async () => ({
+                status: 'not-ready',
+                reason: 'RTC lane warming',
+                retryAfterMs: 25,
+            }),
+            planOutgoingMessage: () => ({
+                persist: false,
+                preparedMessages: [{ kind: 'send' }],
+            }),
+        });
+
+        const result = await runtime.enqueueIfAbsent(createOutboundMessage('msg-not-ready'));
+
+        expect(result.status).toBe('sent-immediate');
+        expect(rescheduleEffect).toHaveBeenCalledWith(
+            expect.stringContaining('send:'),
+            expect.any(String),
+            1_025,
+            'RTC lane warming',
+        );
+        expect(completeEffect).not.toHaveBeenCalled();
+        runtime.dispose();
+    });
+
+    it('completes durable send-prepared effects when there are no RTC targets', async () => {
+        const admissionStore = createMemoryOutboundAdmissionStore();
+        const rescheduleEffect = vi.fn(async (
+            effectId: string,
+            workerId: string,
+            retryAtMs: number,
+            lastError?: string,
+        ) =>
+            await admissionStore.rescheduleEffect(
+                effectId,
+                workerId,
+                retryAtMs,
+                lastError,
+            )
+        );
+        const completeEffect = vi.fn(async (effectId: string, workerId: string) =>
+            await admissionStore.completeEffect(effectId, workerId)
+        );
+        const runtime = createOutboundRuntime({
+            stores: {
+                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
+                    completeEffect,
+                    rescheduleEffect,
+                }),
+            },
+            sendPreparedMessage: async () => ({
+                status: 'no-targets',
+                reason: 'solo room',
+            }),
+            planOutgoingMessage: () => ({
+                persist: false,
+                preparedMessages: [{ kind: 'send' }],
+            }),
+        });
+
+        const result = await runtime.enqueueIfAbsent(createOutboundMessage('msg-no-targets'));
+
+        expect(result.status).toBe('sent-immediate');
+        expect(completeEffect).toHaveBeenCalledOnce();
+        expect(rescheduleEffect).not.toHaveBeenCalled();
+        runtime.dispose();
+    });
+
     it('uses browser Web Locks around outbound commits when available', async () => {
         const requestLock = vi.fn(
             async <T>(
@@ -119,6 +251,141 @@ describe('ALOutboundMessageRuntime', () => {
             { mode: 'exclusive' },
             expect.any(Function),
         );
+        runtime.dispose();
+    });
+
+    it('releases browser Web Locks before draining committed send effects', async () => {
+        const events: string[] = [];
+        const sendGate = createDeferred<void>();
+        const requestLock = vi.fn(
+            async <T>(
+                _name: string,
+                _options: { mode: 'exclusive' },
+                callback: () => Promise<T>,
+            ) => {
+                events.push('lock-enter');
+                const result = await callback();
+                events.push('lock-exit');
+                return result;
+            },
+        );
+        vi.stubGlobal('navigator', {
+            locks: {
+                request: requestLock,
+            },
+        });
+        const runtime = createOutboundRuntime({
+            sendPreparedMessage: async () => {
+                events.push('send-start');
+                await sendGate.promise;
+                events.push('send-end');
+            },
+            planOutgoingMessage: () => ({
+                persist: false,
+                preparedMessages: [{ kind: 'send' }],
+            }),
+        });
+
+        const enqueue = runtime.enqueueIfAbsent(createOutboundMessage('msg-web-lock-drain'));
+        await waitUntil(() => events.includes('send-start'));
+
+        expect(events).toEqual(['lock-enter', 'lock-exit', 'send-start']);
+        let settled = false;
+        void enqueue.then(() => {
+            settled = true;
+        });
+        await Promise.resolve();
+        expect(settled).toBe(false);
+
+        sendGate.resolve();
+        await enqueue;
+
+        expect(events).toEqual(['lock-enter', 'lock-exit', 'send-start', 'send-end']);
+        expect(settled).toBe(true);
+        runtime.dispose();
+    });
+
+    it('waits for effects committed while another drain is running', async () => {
+        const planned: string[] = [];
+        const started: string[] = [];
+        const firstGate = createDeferred<void>();
+        const secondGate = createDeferred<void>();
+        const runtime = createOutboundRuntime({
+            sendPreparedMessage: async (prepared) => {
+                const resourceId = String(prepared.resourceId);
+                started.push(resourceId);
+                if (resourceId === 'msg-drain-first') {
+                    await firstGate.promise;
+                }
+                if (resourceId === 'msg-drain-second') {
+                    await secondGate.promise;
+                }
+            },
+            planOutgoingMessage: (msg) => {
+                planned.push(msg.route.resourceId);
+                return {
+                    persist: false,
+                    preparedMessages: [{ kind: 'send', resourceId: msg.route.resourceId }],
+                };
+            },
+        });
+
+        const first = runtime.enqueueIfAbsent(createOutboundMessage('msg-drain-first'));
+        await waitUntil(() => started.includes('msg-drain-first'));
+
+        const second = runtime.enqueueIfAbsent(createOutboundMessage('msg-drain-second'));
+        let secondSettled = false;
+        void second.then(() => {
+            secondSettled = true;
+        });
+
+        await waitUntil(() => planned.includes('msg-drain-second'));
+        await Promise.resolve();
+        expect(secondSettled).toBe(false);
+
+        firstGate.resolve();
+        await waitUntil(() => started.includes('msg-drain-second'));
+        await Promise.resolve();
+        expect(secondSettled).toBe(false);
+
+        secondGate.resolve();
+        await Promise.all([first, second]);
+        expect(secondSettled).toBe(true);
+        runtime.dispose();
+    });
+
+    it('emits diagnostics for sender queue, browser lock, and effect drains', async () => {
+        const diagnostics = vi.fn();
+        let nowMs = 0;
+        const runtime = createOutboundRuntime({
+            diagnostics,
+            nowMs: () => {
+                nowMs += 5;
+                return nowMs;
+            },
+            sendPreparedMessage: async () => Promise.resolve(),
+            planOutgoingMessage: () => ({
+                persist: false,
+                preparedMessages: [{ kind: 'send' }],
+            }),
+        });
+
+        await runtime.enqueueIfAbsent(createOutboundMessage('msg-diagnostics'));
+
+        const eventKinds = diagnostics.mock.calls.map(([event]) => event.kind);
+        expect(eventKinds).toEqual(expect.arrayContaining([
+            'sender-queue-wait',
+            'browser-lock-wait',
+            'browser-lock-hold',
+            'effect-drain',
+        ]));
+        expect(diagnostics.mock.calls).toContainEqual([
+            expect.objectContaining({
+                kind: 'effect-drain',
+                claimedCount: 1,
+                completedCount: 1,
+            }),
+        ]);
         runtime.dispose();
     });
 
@@ -1105,6 +1372,102 @@ describe('ALOutboundMessageRuntime', () => {
         ]);
         runtime.dispose();
     });
+
+    it('skips outbound enqueue after dispose without planning or sending', async () => {
+        const planOutgoingMessage = vi.fn((msg: ALMessage) => ({
+            persist: false,
+            preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+        }));
+        const sendPreparedMessage = vi.fn(async () => Promise.resolve());
+        const runtime = createOutboundRuntime({
+            planOutgoingMessage,
+            sendPreparedMessage,
+        });
+        runtime.dispose();
+
+        const result = await runtime.enqueueIfAbsent(createOutboundMessage('msg-after-dispose'));
+
+        expect(result).toMatchObject({
+            status: 'skipped',
+            reason: 'Outbound runtime is disposed.',
+            entries: [],
+        });
+        expect(planOutgoingMessage).not.toHaveBeenCalled();
+        expect(sendPreparedMessage).not.toHaveBeenCalled();
+    });
+
+    it('ignores control messages after dispose without bootstrapping durable effects', async () => {
+        const admissionStore = createMemoryOutboundAdmissionStore();
+        const claimReadyEffects = vi.fn(async () => []);
+        const runtime = createOutboundRuntime({
+            stores: {
+                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
+                    claimReadyEffects,
+                }),
+            },
+            sendPreparedMessage: async () => Promise.resolve(),
+            planOutgoingMessage: (msg) => ({
+                persist: false,
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+            }),
+        });
+        runtime.dispose();
+
+        const handled = await runtime.acceptControlMessage(
+            newALNackControlMessage('peer-1', 'self', 'missing-msg', 'gap'),
+        );
+
+        expect(handled).toBe(false);
+        expect(claimReadyEffects).not.toHaveBeenCalled();
+    });
+
+    it('does not reschedule a failed durable effect after dispose', async () => {
+        const msg = createOutboundMessage('msg-dispose-during-effect');
+        const effect = {
+            effectId: 'effect-dispose-during-send',
+            payload: {
+                kind: 'send-prepared' as const,
+                msg,
+                prepared: { kind: 'send', msgId: msg.id.msgId },
+                phase: 'immediate' as const,
+            },
+            status: 'running' as const,
+            attempts: 1,
+            retryAtMs: Date.now(),
+            updatedAtMs: Date.now(),
+            expireAtTimestamp: Date.now() + 60_000,
+        };
+        const admissionStore = createMemoryOutboundAdmissionStore();
+        let claimed = false;
+        const rescheduleEffect = vi.fn(async () => undefined);
+        let runtime!: ALOutboundMessageRuntime<Record<string, unknown>>;
+        runtime = createOutboundRuntime({
+            stores: {
+                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
+                    claimReadyEffects: async () => {
+                        if (claimed) {
+                            return [];
+                        }
+                        claimed = true;
+                        return [effect];
+                    },
+                    rescheduleEffect,
+                }),
+            },
+            sendPreparedMessage: async () => {
+                runtime.dispose();
+                throw new Error('network closed');
+            },
+            planOutgoingMessage: (plannedMsg) => ({
+                persist: false,
+                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
+            }),
+        });
+
+        await runtime.ready();
+
+        expect(rescheduleEffect).not.toHaveBeenCalled();
+    });
 });
 
 async function enqueueOutboundOrThrow(
@@ -1136,6 +1499,8 @@ function createOutboundRuntime(options: {
     stores?: ConstructorParameters<
         typeof ALOutboundMessageRuntime<Record<string, unknown>>
     >[0]['stores'];
+    diagnostics?: (event: { kind: string }) => void;
+    nowMs?: () => number;
     planOutgoingMessage: (
         msg: ALMessage,
     ) => ReturnType<
@@ -1155,6 +1520,8 @@ function createOutboundRuntime(options: {
     return new ALOutboundMessageRuntime<Record<string, unknown>>({
         outbox,
         stores: options.stores,
+        ...(options.diagnostics ? { diagnostics: options.diagnostics } : {}),
+        ...(options.nowMs ? { nowMs: options.nowMs } : {}),
         toOutboxEntry: (msg) =>
             QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
         readMessageFromEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
@@ -1162,6 +1529,30 @@ function createOutboundRuntime(options: {
         planRepairMessage: options.planRepairMessage,
         sendPreparedMessage: options.sendPreparedMessage,
     });
+}
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+    for (let i = 0; i < 20; i += 1) {
+        if (predicate()) {
+            return;
+        }
+        await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    expect(predicate()).toBe(true);
+}
+
+function createDeferred<T>(): {
+    promise: Promise<T>;
+    resolve(value: T): void;
+    reject(error: unknown): void;
+} {
+    let resolve!: (value: T) => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+        resolve = resolvePromise;
+        reject = rejectPromise;
+    });
+    return { promise, resolve, reject };
 }
 
 function createMemoryOutboundAdmissionStore(): ALOutboundAdmissionStore {
@@ -1223,7 +1614,10 @@ function createFlakyOutboundAdmissionStore(
     };
 }
 
-function createOutboundMessage(resourceId: string) {
+function createOutboundMessage(
+    resourceId: string,
+    options?: { ttlMs?: number },
+) {
     return newALUnicastMessage(
         'self',
         {
@@ -1236,6 +1630,7 @@ function createOutboundMessage(resourceId: string) {
         {
             text: resourceId,
         },
+        options,
     );
 }
 

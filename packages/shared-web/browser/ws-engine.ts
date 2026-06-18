@@ -12,10 +12,12 @@ import {
     resolveBrowserWsClientALOutboundRuntimeStores,
 } from '@shared-web/browser/browser-al-runtime-stores.ts';
 import { readSession } from '@shared/api/auth.ts';
+import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/ALOutboundMessageRuntime.ts';
 
 export type WsEngineInitOptions = Readonly<{
     signal?: AbortSignal;
     connectTimeoutMs?: number;
+    outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
 }>;
 
 export async function initialiseWsEngine(
@@ -36,6 +38,7 @@ export async function initialiseWsEngine(
             {
                 inboundStores: resolveBrowserWsClientALInboundRuntimeStores(clientData.sessionId),
                 outboundStores: resolveBrowserWsClientALOutboundRuntimeStores(clientData.sessionId),
+                outboundDiagnostics: options.outboundDiagnostics,
                 reconnect: {
                     ...DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
                     canReconnect: () =>

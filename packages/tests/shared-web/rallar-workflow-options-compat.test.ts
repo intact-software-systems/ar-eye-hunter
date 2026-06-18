@@ -650,6 +650,77 @@ describe('Rallar workflow options compatibility', () => {
         );
     });
 
+    it('creates and switches rooms by leaving the previous current room after create succeeds', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const oldRoom = createGroupSnapshot('old-room', ['session-1']);
+        const newRoom = createGroupSnapshot('new-room', ['session-1']);
+        const leftOldRoom = createGroupSnapshot('old-room', []);
+        mockGroupSnapshot(oldRoom);
+        mocks.createAndJoinStateGroup.mockResolvedValue(newRoom);
+        mocks.leaveStateGroup.mockResolvedValue(leftOldRoom);
+
+        const snapshot = await createRallarFacade().rooms.createAndSwitch({
+            displayName: 'New Room',
+        });
+
+        expect(snapshot).toBe(newRoom);
+        expect(mocks.createAndJoinStateGroup).toHaveBeenCalledWith(
+            'New Room',
+            'principal-1',
+            'session-1',
+            undefined,
+            {},
+            undefined,
+        );
+        expect(mocks.leaveStateGroup).toHaveBeenCalledWith(
+            'old-room',
+            'principal-1',
+            'session-1',
+            {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+            },
+            {},
+        );
+        expect(mocks.hydrateStateCaches).toHaveBeenCalledWith(
+            mocks.ctx.middleware.webRtcGroupManager,
+            expect.objectContaining({
+                clientId: 'principal-1',
+                sessionId: 'session-1',
+            }),
+            [],
+            [newRoom],
+            expect.any(Object),
+        );
+        expect(mocks.hydrateStateCaches).toHaveBeenCalledWith(
+            mocks.ctx.middleware.webRtcGroupManager,
+            expect.objectContaining({
+                clientId: 'principal-1',
+                sessionId: 'session-1',
+            }),
+            [],
+            [leftOldRoom],
+            expect.any(Object),
+        );
+    });
+
+    it('does not leave the current room when create-and-switch fails before creating', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const oldRoom = createGroupSnapshot('old-room', ['session-1']);
+        mockGroupSnapshot(oldRoom);
+        mocks.createAndJoinStateGroup.mockRejectedValueOnce(new Error('create failed'));
+
+        await expect(createRallarFacade().rooms.createAndSwitch({
+            displayName: 'New Room',
+        })).rejects.toThrow('create failed');
+
+        expect(mocks.leaveStateGroup).not.toHaveBeenCalled();
+    });
+
     it('passes custom data-channel lanes into middleware connect', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'

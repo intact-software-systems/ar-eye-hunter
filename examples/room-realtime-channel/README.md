@@ -42,6 +42,6 @@ if (result.status === 'sent' || result.status === 'partial') {
 }
 ```
 
-Use lower-level `rtc.waitForRoomLane(...)`, `readyPeerIds(...)`, and
-`realtime.sendJson(...)` only when the caller intentionally owns peer selection
-or low-level readiness diagnostics.
+Use lower-level `rtc.waitForRoomLane(..., { expect })`, `readyPeerIds(...)`,
+and `realtime.sendJson(...)` only when the caller intentionally owns peer
+selection or low-level readiness diagnostics.

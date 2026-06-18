@@ -47,6 +47,12 @@ export function resolveStateSyncRecipients(
             );
         case 'group':
             return resolveGroupRecipients(webSocketServer, payload.snapshot, options);
+        case 'group-directory':
+            return resolveScopeRecipients(
+                webSocketServer,
+                payload.snapshot.group,
+                options,
+            );
         case 'group-event': {
             const groupRef = {
                 ...payload.scope,
@@ -173,6 +179,10 @@ function parseStateSyncPayload(message: ALMessage):
     snapshot: GroupSnapshot;
 }>
     | Readonly<{
+    kind: 'group-directory';
+    snapshot: GroupSnapshot;
+}>
+    | Readonly<{
     kind: 'group-event';
     scope: StateSyncScope;
     groupId: string;
@@ -211,6 +221,16 @@ function parseStateSyncPayload(message: ALMessage):
                 }
                 return {
                     kind: 'group',
+                    snapshot,
+                };
+            }
+            case AppTopics.groupDirectorySnapshot: {
+                const snapshot = JSON.parse(message.payload.resource);
+                if (!isGroupSnapshot(snapshot)) {
+                    return { kind: 'invalid' };
+                }
+                return {
+                    kind: 'group-directory',
                     snapshot,
                 };
             }
@@ -262,6 +282,7 @@ function isStateSyncTopic(typeId: string): boolean {
     return typeId === AppTopics.clientStateSnapshot ||
         typeId === AppTopics.clientStateEvent ||
         typeId === AppTopics.groupStateSnapshot ||
+        typeId === AppTopics.groupDirectorySnapshot ||
         typeId === AppTopics.groupStateEvent ||
         typeId === AppTopics.overlayTopology;
 }

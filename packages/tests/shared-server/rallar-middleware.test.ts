@@ -206,6 +206,50 @@ describe('createWsServerTargetResolver state sync routing', () => {
         ).toEqual(['session-a']);
     });
 
+    it('routes group directory broadcasts to open sessions in the same scope', () => {
+        configureTestCacheRepositories();
+
+        const webSocketServer = new JsonWebSocketServer();
+        addOpenConnection(webSocketServer, 'session-a');
+        addOpenConnection(webSocketServer, 'session-b');
+        addOpenConnection(webSocketServer, 'session-c');
+
+        clientStateSnapshotsRepository.setClientStateSnapshots([
+            createClientSnapshot('alice', 'session-a', 'app-1', 'workspace-a', 1),
+            createClientSnapshot('bob', 'session-b', 'app-1', 'workspace-a', 1),
+            createClientSnapshot('carol', 'session-c', 'app-1', 'workspace-b', 1),
+        ]);
+
+        const snapshot = createGroupSnapshot(
+            'room-a',
+            'app-1',
+            'workspace-a',
+            [
+                { principalId: 'alice', sessionId: 'session-a', status: 'active' },
+            ],
+            2,
+        );
+        const message = newALBroadcastMessage(
+            'server-1',
+            newALEventRoute(
+                AppTopics.groupDirectorySnapshot,
+                snapshot.group.groupId,
+                snapshot.group.groupId,
+            ),
+            'all',
+            AppTopics.groupDirectorySnapshot,
+            snapshot,
+        );
+        const resolver = createWsServerTargetResolver(webSocketServer);
+
+        expect(
+            resolver
+                .resolveBroadcastRecipients?.('all', message)
+                .map((recipient) => recipient.connectionId)
+                .sort(),
+        ).toEqual(['session-a', 'session-b']);
+    });
+
     it('routes group state broadcasts to each live session for the same principal', () => {
         configureTestCacheRepositories();
 

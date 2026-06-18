@@ -20,9 +20,15 @@ Use this checklist when Rallar behavior is surprising in a browser or server int
 ## Rooms
 
 - `rooms.refresh()` was called after login or startup.
-- The current room is set by `rooms.create(...)` or `rooms.join(...)`.
+- The current room is set by `rooms.create(...)`, `rooms.createAndSwitch(...)`,
+  or `rooms.join(...)`.
+- New-room flows that should leave the previous room use
+  `rooms.createAndSwitch(...)`; `rooms.create(...)` intentionally keeps the
+  previous membership.
 - `leaveCurrent` behavior is intentional when joining another room.
 - Multi-workspace code passes `roomRef` instead of only `roomId`.
+- `rooms.waitForPresence(...)` uses the right expectation for the flow:
+  `{ min, max? }`, `{ exact }`, or `{ sessionIds, allowExtras? }`.
 - Room event subscriptions use the correct `scope`, `roomId`, `roomRef`, and `eventTypes`.
 
 ## People And Presence
@@ -51,9 +57,20 @@ Use this checklist when Rallar behavior is surprising in a browser or server int
   before `realtime.sendJson(...)`.
 - For low-level direct sends, `waitForRoomLane(room, laneId, { connect: true })`
   is used before the first send.
+- Room-lane waits pass `expect` when the caller knows the required peer count or
+  exact peer/session IDs, and handle `over-capacity` separately from
+  `not-ready`.
 - The lane ID matches configured data channel lanes.
 - The room has active presence sessions for peer routing.
 - Partial readiness is handled explicitly.
+- Repeated initial setup stalls are bounded: browser RTC defaults to six
+  attempts, 180 seconds total, then a 30 second cooldown. Facade waits report
+  this as `status: 'failed'` with reason
+  `rtc-connect-attempt-budget-exhausted`.
+- Inbound RTC offers from peers missing from the local group cache can be
+  admitted tentatively because group ownership is eventually consistent. Hard
+  rejects still apply to malformed/self/wrong-target signals and exhausted or
+  cap-blocked peers.
 
 ## Realtime Data Channels
 
@@ -142,6 +159,8 @@ Use this checklist when Rallar behavior is surprising in a browser or server int
 - Logout followed by socket close.
 - RTC wait timeout.
 - RTC partial room readiness.
+- RTC attempt-budget exhaustion and cooldown.
+- Inbound offer before group cache hydration.
 - First room realtime send through `realtime.room(...).send(...)`, including
   `not-ready` and `no-targets` results.
 - Room message scoped by `roomRef` in two workspaces with same `roomId`.
@@ -170,8 +189,11 @@ console.log(server.ws.status());
 
 - Configure defaults once near app startup.
 - Replace direct API calls with facade calls so state caches and lifecycle logic stay coherent.
+- Use `rooms.createAndSwitch(...)` when a newly created room should replace the
+  current room.
 - Use `realtime.room<T>(...)` for room-scoped sends, or add `waitForOpen` /
-  `waitForRoomLane` before immediate low-level send flows.
+  `waitForRoomLane` with an explicit `expect` before immediate low-level send
+  flows.
 - Use `roomRef` in messages and state calls when application/workspace matters.
 - Move cleanup through `auth.logout`.
 - Use app inbox services for state mutations that must be durable and publish state sync.

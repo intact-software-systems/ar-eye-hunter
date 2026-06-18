@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { newALBroadcastMessage, newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALMulticastMessage,
+    newALUnicastMessage,
+    newALUntargetedMessage,
+} from '@shared/al-contracts/al-contract.ts';
 import {
     ALQosInputProvider,
     normalizeALQosPolicy,
@@ -13,6 +18,48 @@ import {
 } from '@shared/al-contracts/al-runtime.ts';
 
 describe('AL QoS policy', () => {
+    it('applies ttlMs to untargeted and unicast builders only when requested', () => {
+        const ttlOptions = { ttlMs: 15_000 };
+
+        const untargeted = newALUntargetedMessage(
+            'sender-ttl',
+            {
+                topicId: 'rtt',
+                resourceId: '1',
+                contextId: 'peer-a:peer-b',
+            },
+            'rtt.v1',
+            { rttMs: 12 },
+            ttlOptions,
+        );
+        const unicast = newALUnicastMessage(
+            'sender-ttl',
+            {
+                topicId: 'chat',
+                resourceId: 'msg-1',
+                contextId: 'room-1',
+            },
+            'peer-b',
+            'chat.v1',
+            { text: 'hi' },
+            ttlOptions,
+        );
+        const noTtl = newALUntargetedMessage(
+            'sender-ttl',
+            {
+                topicId: 'rtt',
+                resourceId: '2',
+                contextId: 'peer-a:peer-b',
+            },
+            'rtt.v1',
+            { rttMs: 13 },
+        );
+
+        expect(untargeted.constraints?.expiresAtMs).toBe(untargeted.id.ts + ttlOptions.ttlMs);
+        expect(unicast.constraints?.expiresAtMs).toBe(unicast.id.ts + ttlOptions.ttlMs);
+        expect(noTtl.constraints).toBeUndefined();
+    });
+
     it('normalizes requested policy against local caps and authz', () => {
         const msg = newALMulticastMessage(
             'sender-1',

@@ -403,6 +403,88 @@ describe('Rallar director relay compatibility', () => {
         });
     });
 
+    it('lets the room owner appoint their new session after logout and rejoin', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const created = createDirectorGroupSnapshot();
+        const rejoinSession = {
+            ...mocks.ctx.session,
+            sessionId: 'session-2',
+            accessToken: 'token-2',
+        };
+        const rejoined: GroupSnapshot = {
+            ...created,
+            activeSessions: [
+                {
+                    ...created.activeSessions[0],
+                    sessionId: rejoinSession.sessionId,
+                    principalId: rejoinSession.clientId,
+                    connectedAtEpochMs: 2,
+                    lastHeartbeatAtEpochMs: 2,
+                    expiresAtEpochMs: 61_000,
+                },
+            ],
+            onlineMemberCount: 1,
+        };
+        mockGroupSnapshot(created);
+        mocks.createAndJoinStateGroup.mockResolvedValueOnce(created);
+        mocks.joinStateGroup.mockImplementationOnce(async () => {
+            mockGroupSnapshot(rejoined);
+            return rejoined;
+        });
+        mocks.updateStateGroupMetadata.mockImplementationOnce(
+            async (
+                _roomId: string,
+                patch: Record<string, unknown>,
+                principalId: string,
+                sessionId: string,
+            ) => {
+                const updated = {
+                    ...rejoined,
+                    group: {
+                        ...rejoined.group,
+                        metadata: {
+                            ...rejoined.group.metadata,
+                            ...patch,
+                        },
+                    },
+                };
+                mockGroupSnapshot(updated);
+                expect(principalId).toBe(rejoinSession.clientId);
+                expect(sessionId).toBe(rejoinSession.sessionId);
+                return updated;
+            },
+        );
+
+        const facade = createRallarFacade();
+        await facade.rooms.createAndSwitch('Owner arena');
+        await facade.auth.logout();
+        mocks.readSession.mockReturnValue(rejoinSession);
+        mocks.initMiddleware.mockResolvedValue({
+            ...mocks.ctx,
+            session: rejoinSession,
+        } as ApiMiddleware);
+        await facade.rooms.enter('room-1');
+
+        const status = await facade.director.appoint('room-1', {
+            heartbeatTtlMs: 1_000,
+        });
+
+        expect(status).toMatchObject({
+            role: 'director',
+            state: 'fresh',
+            isDirector: true,
+            isFresh: true,
+            appointment: {
+                sessionId: 'session-2',
+                principalId: 'principal-1',
+                epoch: 1,
+                heartbeatTtlMs: 1_000,
+            },
+        });
+    });
+
     it('sends director intents with WS unicast fallback when RTC is not ready', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
@@ -518,6 +600,125 @@ describe('Rallar director relay compatibility', () => {
         relay.stop();
 
         expect(enqueuedWsTypeIds()).toContain('game.snapshot');
+    });
+
+    it('falls back to WS when director room RTC output has no remote route', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        mockGroupSnapshot(createDirectorGroupSnapshot({
+            sessionId: 'session-1',
+            principalId: 'principal-1',
+            epoch: 3,
+            appointedAtEpochMs: 1,
+            heartbeatTtlMs: 60_000,
+        }));
+        const relay = createRallarFacade().director.createRelay<
+            { move: string },
+            { ok: true }
+        >({
+            roomId: 'room-1',
+            laneId: 'director',
+            topicId: 'app.game.director',
+            intentTypeId: 'game.intent',
+            outputTypeId: 'game.output',
+        });
+
+        const result = await relay.sendOutput({ ok: true });
+        relay.stop();
+
+        expect(result).toMatchObject({
+            status: 'sent',
+            rtc: {
+                transport: 'rtc',
+                status: 'no-route',
+            },
+            ws: {
+                transport: 'ws',
+                status: 'enqueued',
+            },
+        });
+    });
+
+    it('stops director relay heartbeats when auth logs out', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(1_000);
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        mockGroupSnapshot(createDirectorGroupSnapshot({
+            sessionId: 'session-1',
+            principalId: 'principal-1',
+            epoch: 3,
+            appointedAtEpochMs: 1,
+            heartbeatTtlMs: 60_000,
+        }));
+        const facade = createRallarFacade();
+        facade.director.createRelay<{ move: string }, { ok: true }>({
+            roomId: 'room-1',
+            laneId: 'director',
+            topicId: 'app.game.director',
+            intentTypeId: 'game.intent',
+            outputTypeId: 'game.output',
+            heartbeatIntervalMs: 1_000,
+        });
+
+        await facade.auth.logout();
+        mocks.ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent.mockClear();
+        mocks.ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent.mockClear();
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        expect(mocks.ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent)
+            .not.toHaveBeenCalled();
+        expect(mocks.ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent)
+            .not.toHaveBeenCalled();
+        expect(mocks.initMiddleware).not.toHaveBeenCalled();
+    });
+
+    it('rejects stale director relay handle sends after logout without reconnecting', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        mockGroupSnapshot(createDirectorGroupSnapshot({
+            sessionId: 'session-1',
+            principalId: 'principal-1',
+            epoch: 3,
+            appointedAtEpochMs: 1,
+            heartbeatTtlMs: 60_000,
+        }));
+        const facade = createRallarFacade();
+        const relay = facade.director.createRelay<{ move: string }, { ok: true }, { revision: number }>({
+            roomId: 'room-1',
+            laneId: 'director',
+            topicId: 'app.game.director',
+            intentTypeId: 'game.intent',
+            outputTypeId: 'game.output',
+            heartbeatIntervalMs: 60_000,
+            snapshotTypeId: 'game.snapshot',
+            snapshotIntervalMs: false,
+            readSnapshot: () => ({ revision: 1 }),
+        });
+
+        await facade.auth.logout();
+        mocks.ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent.mockClear();
+        mocks.ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent.mockClear();
+        mocks.initMiddleware.mockClear();
+
+        const results = await Promise.all([
+            relay.sendHeartbeat(),
+            relay.sendOutput({ ok: true }),
+            relay.sendSnapshot({ revision: 2 }),
+            relay.sendIntent({ move: 'dash' }),
+            relay.requestSync({ reason: 'late-join' }),
+        ]);
+
+        expect(results.every((result) => result.status === 'no-director')).toBe(true);
+        expect(results.every((result) => result.reason === 'Auth session ended.')).toBe(true);
+        expect(mocks.ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent)
+            .not.toHaveBeenCalled();
+        expect(mocks.ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent)
+            .not.toHaveBeenCalled();
+        expect(mocks.initMiddleware).not.toHaveBeenCalled();
     });
 
 });

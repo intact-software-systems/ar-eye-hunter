@@ -78,6 +78,17 @@ export function createWsStateSyncPublisher(
                     timing: options.timing,
                 },
             );
+            await enqueueBroadcast(
+                wsQBoxServerService,
+                senderId ?? snapshot.group.groupId,
+                AppTopics.groupDirectorySnapshot,
+                snapshot.group.groupId,
+                snapshot.group.groupId,
+                snapshot,
+                {
+                    timing: options.timing,
+                },
+            );
         },
         publishGroupEvent: async (event, senderId) => {
             const snapshot = groupStateSnapshotsRepository.findGroupStateSnapshotByRef(

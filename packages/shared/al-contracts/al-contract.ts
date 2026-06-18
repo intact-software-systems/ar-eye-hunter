@@ -153,6 +153,7 @@ export type ALMessage = Readonly<{
 
 type ALMessageBuilderOptions = Readonly<{
     qos?: ALQosPolicyRequest;
+    ttlMs?: number;
 }>;
 
 export function newALRoute(
@@ -184,6 +185,9 @@ function buildALMessage<T>(
     msgId: string = crypto.randomUUID(),
 ): ALMessage {
     const now = Date.now();
+    const expiresAtMs = options?.ttlMs !== undefined
+        ? now + options.ttlMs
+        : undefined;
 
     return {
         id: {
@@ -193,6 +197,9 @@ function buildALMessage<T>(
             senderId: senderId,
         },
         route,
+        constraints: expiresAtMs !== undefined
+            ? { expiresAtMs }
+            : undefined,
         qos: options?.qos,
         payload: {
             typeId: typeId,

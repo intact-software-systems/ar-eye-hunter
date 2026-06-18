@@ -11,7 +11,7 @@ import {
     createInitialVitalsState,
     getWeaponStats,
 } from './game/simulation.ts';
-import { GAME_ROOM_NAME, type ArenaMatchState, type RtcLaneStatus } from './game/types.ts';
+import { GAME_ROOM_NAME, type ArenaMatchState } from './game/types.ts';
 import { useRallarArena, type ArenaConnection } from './game/useRallarArena.ts';
 
 type AuthMode = 'login' | 'register';
@@ -27,6 +27,7 @@ export default function App() {
     const [localLoadout, setLocalLoadout] = useState(createInitialLoadoutState);
     const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
     const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+    const [linkDetailsOpen, setLinkDetailsOpen] = useState(false);
     const [dismissedMatchId, setDismissedMatchId] = useState<string | undefined>();
     const [clockNow, setClockNow] = useState(() => Date.now());
 
@@ -67,7 +68,7 @@ export default function App() {
     } as const;
 
     useEffect(() => {
-        if (!diagnosticsOpen) {
+        if (!diagnosticsOpen || !arenaNetworkEnabled) {
             return;
         }
         void arena.refreshDiagnostics({ includeRtcStats: true });
@@ -75,7 +76,7 @@ export default function App() {
             void arena.refreshDiagnostics({ includeRtcStats: true });
         }, 4_000);
         return () => window.clearInterval(interval);
-    }, [arena.refreshDiagnostics, diagnosticsOpen]);
+    }, [arena.refreshDiagnostics, arenaNetworkEnabled, diagnosticsOpen]);
 
     useEffect(() => {
         if (match?.status !== 'active') {
@@ -114,6 +115,8 @@ export default function App() {
                 roomId={arena.roomId}
                 roomReady={arena.connectionState === 'connected' && Boolean(arena.roomId)}
                 networkEnabled={arenaNetworkEnabled}
+                linkState={arena.linkState}
+                presenceNotices={arena.presenceNotices}
                 diagnosticsAttributes={arenaDiagnosticsAttributes}
                 remotePlayers={arena.remotePlayers}
                 remoteShots={arena.remoteShots}
@@ -142,7 +145,7 @@ export default function App() {
                 </div>
 
                 <div className="status-strip">
-                    <StatusPill label="Rallar" value={arena.connectionState}/>
+                    <StatusPill label="Arena" value={arena.connectionState}/>
                     <StatusPill label="Score" value={String(localCombat.score)}/>
                     <StatusPill
                         label="Health"
@@ -171,13 +174,15 @@ export default function App() {
                         label="Overdrive"
                         value={`${Math.round(localCombat.overdrive)}%`}
                     />
-                    <StatusPill
-                        label="Peers"
-                        value={String(arena.remotePlayers.size)}
-                    />
-                    <StatusPill
-                        label="RTC"
-                        value={rtcLabel(arena.rtcLanes)}
+                    <SquadLinkChip
+                        linkState={arena.linkState}
+                        open={linkDetailsOpen}
+                        onToggle={() => setLinkDetailsOpen((open) => !open)}
+                        onOpenDiagnostics={() => {
+                            setDiagnosticsOpen(true);
+                            setLinkDetailsOpen(false);
+                        }}
+                        directorLabel={directorLabel(arena.directorStatus)}
                     />
                     <StatusPill
                         label="Director"
@@ -197,6 +202,11 @@ export default function App() {
                     </button>
                 </div>
             </section>
+
+            <PresenceToastStack
+                notices={arena.presenceNotices}
+                onDismiss={arena.dismissPresenceNotice}
+            />
 
             <button
                 type="button"
@@ -438,6 +448,71 @@ function StatusPill({ label, value }: Readonly<{ label: string; value: string }>
     );
 }
 
+function SquadLinkChip({
+    linkState,
+    open,
+    onToggle,
+    onOpenDiagnostics,
+    directorLabel,
+}: Readonly<{
+    linkState: ArenaConnection['linkState'];
+    open: boolean;
+    onToggle: () => void;
+    onOpenDiagnostics: () => void;
+    directorLabel: string;
+}>) {
+    return (
+        <div className="squad-link" data-tone={linkState.tone}>
+            <button
+                type="button"
+                className="squad-link__button"
+                aria-expanded={open}
+                onClick={onToggle}
+            >
+                <span>Squad Link</span>
+                <strong>{linkState.label}</strong>
+            </button>
+            {open && (
+                <div className="squad-link__popover">
+                    <strong>{linkState.detail}</strong>
+                    <span>{linkState.playerCount} hunter{linkState.playerCount === 1 ? '' : 's'} in this signal mess.</span>
+                    <span>Arena host: {directorLabel}</span>
+                    <button type="button" onClick={onOpenDiagnostics}>
+                        Open diagnostics
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function PresenceToastStack({
+    notices,
+    onDismiss,
+}: Readonly<{
+    notices: ArenaConnection['presenceNotices'];
+    onDismiss: (id: string) => void;
+}>) {
+    if (notices.length === 0) {
+        return null;
+    }
+    return (
+        <div className="presence-toasts" aria-live="polite" aria-label="Squad link updates">
+            {notices.slice(-4).map((notice) => (
+                <button
+                    type="button"
+                    key={notice.id}
+                    className="presence-toast"
+                    data-kind={notice.kind}
+                    onClick={() => onDismiss(notice.id)}
+                >
+                    <span>{notice.message}</span>
+                </button>
+            ))}
+        </div>
+    );
+}
+
 function directorLabel(status: Readonly<{
     role: string;
     state: string;
@@ -450,15 +525,6 @@ function directorLabel(status: Readonly<{
         return status.state === 'fresh' ? 'you' : `you ${status.state}`;
     }
     return status.state;
-}
-
-function rtcLabel(lanes: readonly RtcLaneStatus[]): string {
-    if (lanes.length === 0) {
-        return 'solo';
-    }
-    const open = lanes.filter((lane) => lane.status === 'open').length;
-    const partial = lanes.filter((lane) => lane.status === 'partial').length;
-    return partial > 0 ? `${open}/${lanes.length}+` : `${open}/${lanes.length}`;
 }
 
 function matchLabel(
@@ -537,6 +603,7 @@ function DiagnosticsDrawer({
             match: arena.gameDiagnostics,
             transport: arena.transportDiagnostics,
             http: arena.httpDiagnostics,
+            link: arena.linkState,
             lanes: arena.rtcLanes,
             lifecycle: {
                 authStorageKind: arena.authStorageKind,
@@ -557,6 +624,7 @@ function DiagnosticsDrawer({
             arena.directorStatus,
             arena.gameDiagnostics,
             arena.httpDiagnostics,
+            arena.linkState,
             arena.authGeneration,
             arena.authStorageKind,
             arena.logoutQuiesced,
@@ -588,18 +656,24 @@ function DiagnosticsDrawer({
             <div className="diagnostics-actions">
                 <button
                     type="button"
-                    disabled={!arena.roomId || arena.directorAttempt.status === 'pending'}
+                    disabled={!arena.networkEnabled || !arena.roomId ||
+                        arena.directorAttempt.status === 'pending'}
                     onClick={arena.appointSelfAsDirector}
                 >
                     Retry appoint
                 </button>
                 <button
                     type="button"
+                    disabled={!arena.networkEnabled}
                     onClick={() => arena.refreshDiagnostics({ includeRtcStats: true })}
                 >
                     Refresh
                 </button>
-                <button type="button" onClick={arena.requestArenaSync}>
+                <button
+                    type="button"
+                    disabled={!arena.networkEnabled}
+                    onClick={arena.requestArenaSync}
+                >
                     Request sync
                 </button>
             </div>
@@ -619,6 +693,10 @@ function DiagnosticsDrawer({
             <DiagnosticsSection title="Match Election">
                 <DiagnosticsRow label="Phase" value={arena.gameDiagnostics?.phase ?? 'unknown'}/>
                 <DiagnosticsRow
+                    label="Authority"
+                    value={arena.gameDiagnostics?.directorAuthority ?? 'unknown'}
+                />
+                <DiagnosticsRow
                     label="Eligibility"
                     value={arena.gameDiagnostics?.appointment?.status ?? 'unknown'}
                 />
@@ -636,6 +714,15 @@ function DiagnosticsDrawer({
             </DiagnosticsSection>
 
             <DiagnosticsSection title="RTC / Realtime">
+                <DiagnosticsRow label="Squad Link" value={`${arena.linkState.label} (${arena.linkState.tone})`}/>
+                <DiagnosticsRow
+                    label="Reliable"
+                    value={arena.gameDiagnostics?.egress.reliable ?? 'unknown'}
+                />
+                <DiagnosticsRow
+                    label="RTC"
+                    value={arena.gameDiagnostics?.egress.realtime ?? 'unknown'}
+                />
                 <DiagnosticsRow label="WS" value={arena.transportDiagnostics.ws?.readyState ?? 'unknown'}/>
                 <DiagnosticsRow
                     label="WS ticket"

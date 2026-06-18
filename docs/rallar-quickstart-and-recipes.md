@@ -53,16 +53,34 @@ subscriptions.add(
 subscriptions.unsubscribe();
 ```
 
-## Create And Join A Room
+## Create And Switch To A Room
 
 ```ts
-const created = await rallar.rooms.create({
+const created = await rallar.rooms.createAndSwitch({
     displayName: 'Lobby',
 });
 
-const room = await rallar.rooms.enter(created.group);
+const room = rallar.rooms.session(created.group);
 
 const current = rallar.rooms.current();
+```
+
+Use `rooms.create(...)` instead when the browser should remain a member of the
+previous current room too.
+
+## Wait For Room Presence
+
+```ts
+const presence = await rallar.rooms.waitForPresence('lobby', {
+    expect: { min: 2, max: 8 },
+    timeoutMs: 2000,
+});
+
+if (presence.status === 'ready') {
+    renderReadyPlayers(presence.activeSessionIds);
+} else {
+    renderWaitingState(presence.status, presence.missingSessionIds);
+}
 ```
 
 ## Room Event Replay
@@ -143,12 +161,13 @@ diagnostics.
 const readiness = await rallar.rtc.waitForRoomLane('lobby', 'realtime', {
     connect: true,
     timeoutMs: 1000,
+    expect: { min: 1, max: 10 },
 });
 
-if (readiness.ready.length > 0) {
+if (readiness.readyPeerIds.length > 0) {
     await rallar.realtime.sendJson({
         laneId: 'realtime',
-        peerIds: readiness.ready.map((entry) => entry.peerId),
+        peerIds: readiness.readyPeerIds,
         data: { x: 10, y: 20, heading: 90 },
     });
 }

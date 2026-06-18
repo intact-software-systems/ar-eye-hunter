@@ -267,6 +267,29 @@ describe('Rallar room realtime channel', () => {
         expect(mocks.realtimeChannel.sendJson).not.toHaveBeenCalled();
     });
 
+    it('does not open or send room realtime for a room the current session has not joined', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['peer-ready']));
+
+        const result = await createRallarFacade()
+            .realtime
+            .room<{ x: number }>({
+                roomId: 'room-1',
+                laneId: 'motion',
+                waitTimeoutMs: 100,
+            })
+            .send({ x: 1 });
+
+        expect(result.status).toBe('no-targets');
+        expect(result.peerIds).toEqual([]);
+        expect(result.desiredPeerIds).toEqual([]);
+        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen)
+            .not.toHaveBeenCalled();
+        expect(mocks.realtimeChannel.sendJson).not.toHaveBeenCalled();
+    });
+
     it('uses already-ready room peers without a readiness wait', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'

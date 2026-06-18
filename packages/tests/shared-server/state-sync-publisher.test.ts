@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { AppTopics } from '@shared/api/api-config.ts';
 import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
@@ -42,6 +43,24 @@ describe('createWsStateSyncPublisher', () => {
         await expect(
             publisher.publishGroupSnapshot(createGroupSnapshot('room-1', [])),
         ).resolves.toBeUndefined();
+    });
+
+    it('publishes group snapshots to member state and scope directory topics', async () => {
+        const { publisher, enqueueOutboxIfAbsent } = createPublisherReturning('enqueued');
+
+        await publisher.publishGroupSnapshot(createGroupSnapshot('room-1', ['session-a']));
+
+        expect(
+            enqueueOutboxIfAbsent.mock.calls.map(([message]) => message.payload.typeId),
+        ).toEqual([
+            AppTopics.groupStateSnapshot,
+            AppTopics.groupDirectorySnapshot,
+        ]);
+        expect(enqueueOutboxIfAbsent.mock.calls[1]?.[0]).toMatchObject({
+            payload: expect.objectContaining({
+                typeId: AppTopics.groupDirectorySnapshot,
+            }),
+        });
     });
 
     it('allows no-route for a client snapshot with active sessions and logs a warning', async () => {

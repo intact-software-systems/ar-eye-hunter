@@ -14,6 +14,7 @@ export type ApiMiddleware = {
 
 let ctx: ApiMiddleware | undefined = undefined;
 let initPromise: Promise<ApiMiddleware> | undefined = undefined;
+let middlewareGeneration = 0;
 
 export type InitMiddlewareOptions = MiddlewareInitOptions;
 
@@ -42,6 +43,7 @@ export async function initMiddleware(
         return await initPromise;
     }
 
+    const generation = middlewareGeneration;
     initPromise = (async () => {
         const session = readSession();
         if (!session) {
@@ -62,6 +64,16 @@ export async function initMiddleware(
             options,
         );
 
+        const currentSession = readSession();
+        if (
+            generation !== middlewareGeneration ||
+            !currentSession ||
+            currentSession.sessionId !== session.sessionId
+        ) {
+            shutdownMiddleware(mw);
+            throw new Error('Cannot init middleware: auth session ended.');
+        }
+
         ctx = {
             session,
             authFetch,
@@ -81,7 +93,37 @@ export async function initMiddleware(
 }
 
 export function clearMiddleware(): void {
-    ctx?.middleware.heartbeat?.stop();
+    middlewareGeneration += 1;
+    shutdownMiddleware(ctx?.middleware);
     ctx = undefined;
     initPromise = undefined;
+}
+
+export function shutdownMiddleware(
+    mw: Middleware | undefined,
+    reason = 'rallar-disconnect',
+): void {
+    if (!mw) {
+        return;
+    }
+
+    runShutdownStep(() => mw.heartbeat?.stop());
+    runShutdownStep(() => mw.rtcRxStreamer.stopAllHeartbeats());
+    runShutdownStep(() => {
+        for (const peerId of mw.webRtcConnectionService.knownPeerIds()) {
+            mw.webRtcConnectionService.disconnectPeer(peerId);
+        }
+    });
+    runShutdownStep(() => mw.rtcRxStreamer.stopLocalMedia('all'));
+    runShutdownStep(() => mw.webRtcOverlayMulticastManager?.dispose?.());
+    runShutdownStep(() => mw.qboxEngine.stop());
+    runShutdownStep(() => mw.webSocketQueueBox.close(1000, reason));
+}
+
+function runShutdownStep(step: () => void): void {
+    try {
+        step();
+    } catch {
+        // Shutdown is best-effort; callers are already tearing down auth state.
+    }
 }

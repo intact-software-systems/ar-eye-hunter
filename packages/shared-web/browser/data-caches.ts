@@ -99,6 +99,17 @@ export function initialise(
                             await waitForStateRepositoryObserverTasks();
                             break;
                         }
+                        case AppTopics.groupDirectorySnapshot: {
+                            const scope = readActiveStateCacheScope(initialScope);
+                            const groupSnapshot = JSON.parse(
+                                data.payload.resource,
+                            ) as GroupStateSnapshot;
+                            acceptGroupStateSnapshots([groupSnapshot], scope);
+                            await groupStateSnapshotsRepository
+                                .waitForGroupStateSnapshotChangesIdle();
+                            await waitForStateRepositoryObserverTasks();
+                            break;
+                        }
 
                         case AppTopics.clientStateEvent:
                         case AppTopics.groupStateEvent: {
@@ -285,13 +296,19 @@ async function handleGroupSnapshotUpdate(
         return;
     }
 
-    overlaysRepository.createAndSetStarOverlays([snapshot]);
-
-    if (isSessionInGroup(snapshot, mySessionId)) {
-        await webRtcGroupManager.acceptGroupUpdate(snapshot);
-    } else if (webRtcGroupManager.has(snapshot.group)) {
-        await webRtcGroupManager.delete(snapshot.group, { retainConnections: true });
+    if (!isSessionInGroup(snapshot, mySessionId)) {
+        overlaysRepository.removeOverlayByGroupRef(snapshot.group);
+        overlaysRepository.removeLegacyOverlayByGroupIdIfMatches(snapshot.group);
+        if (webRtcGroupManager.has(snapshot.group)) {
+            await webRtcGroupManager.delete(snapshot.group, { retainConnections: true });
+        } else {
+            await webRtcGroupManager.ensureAllGroupsConnected();
+        }
+        return;
     }
+
+    overlaysRepository.createAndSetStarOverlays([snapshot]);
+    await webRtcGroupManager.acceptGroupUpdate(snapshot);
 }
 
 async function handleGroupSnapshotRemoval(

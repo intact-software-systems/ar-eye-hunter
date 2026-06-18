@@ -263,6 +263,7 @@ describe('Rallar RTC wait compatibility', () => {
         mocks.updateStateGroupMetadata.mockRejectedValue(
             new Error('metadata update not mocked'),
         );
+        mocks.onStateCacheChange.mockImplementation(() => vi.fn());
         mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes
             .mockReturnValue([]);
         mocks.webRtcConnectionService.knownPeerIds.mockReturnValue([]);
@@ -740,6 +741,12 @@ describe('Rallar RTC wait compatibility', () => {
             roomId: 'room-1',
             laneId: 'realtime',
             status: 'partial',
+            readyPeerIds: ['peer-ready'],
+            notReadyPeerIds: ['peer-slow'],
+            missingPeerIds: [],
+            extraPeerIds: [],
+            observedCount: 1,
+            expectedCount: 2,
             ready: [
                 {
                     peerId: 'peer-ready',
@@ -775,6 +782,243 @@ describe('Rallar RTC wait compatibility', () => {
                     timeoutMs: 1_000,
                 }),
             );
+    });
+
+    it('waits for local room presence with min one for solo rooms', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1']));
+        const facade = createRallarFacade();
+
+        await facade.connect();
+
+        await expect(
+            facade.rooms.waitForPresence('room-1', {
+                expect: { min: 1 },
+                timeoutMs: 10,
+            }),
+        ).resolves.toMatchObject({
+            status: 'ready',
+            roomId: 'room-1',
+            activeSessionIds: ['session-1'],
+            observedCount: 1,
+            expectedCount: 1,
+            timedOut: false,
+        });
+    });
+
+    it('resolves room presence waits when later cache updates satisfy expectations', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        let onCacheChange: (() => void | Promise<void>) | undefined;
+        mocks.onStateCacheChange.mockImplementation((listener) => {
+            onCacheChange = listener;
+            return vi.fn();
+        });
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1']));
+        const facade = createRallarFacade();
+
+        await facade.connect();
+        const wait = facade.rooms.waitForPresence('room-1', {
+            expect: { exact: 2 },
+            timeoutMs: 1_000,
+        });
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-a']));
+        await onCacheChange?.();
+
+        await expect(wait).resolves.toMatchObject({
+            status: 'ready',
+            roomId: 'room-1',
+            activeSessionIds: ['session-1', 'peer-a'],
+            observedCount: 2,
+            expectedCount: 2,
+            timedOut: false,
+        });
+    });
+
+    it('rechecks room presence after subscribing to avoid missing a ready cache update', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1']));
+        mocks.onStateCacheChange.mockImplementation(() => {
+            mockGroupSnapshot(createGroupSnapshot('room-1', [
+                'session-1',
+                'peer-a',
+            ]));
+            return vi.fn();
+        });
+        const facade = createRallarFacade();
+
+        await facade.connect();
+
+        await expect(
+            facade.rooms.waitForPresence('room-1', {
+                expect: { exact: 2 },
+                timeoutMs: 1,
+            }),
+        ).resolves.toMatchObject({
+            status: 'ready',
+            roomId: 'room-1',
+            activeSessionIds: ['session-1', 'peer-a'],
+            observedCount: 2,
+            expectedCount: 2,
+            timedOut: false,
+        });
+    });
+
+    it('returns timeout when exact expected room RTC peers do not all open', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        mockGroupSnapshot(
+            createGroupSnapshot('room-1', [
+                'session-1',
+                'peer-ready',
+                'peer-slow',
+            ]),
+        );
+        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
+            async (peerId: string, laneId: string) => ({
+                status: peerId === 'peer-ready' ? 'open' : 'timeout',
+                peerId,
+                laneId,
+            }),
+        );
+        const facade = createRallarFacade();
+
+        await facade.connect();
+
+        await expect(
+            facade.rtc.waitForRoomLane('room-1', 'realtime', {
+                connect: true,
+                expect: { exact: 2 },
+                timeoutMs: 1_000,
+            }),
+        ).resolves.toMatchObject({
+            transport: 'rtc',
+            roomId: 'room-1',
+            laneId: 'realtime',
+            status: 'timeout',
+            readyPeerIds: ['peer-ready'],
+            notReadyPeerIds: ['peer-slow'],
+            observedCount: 1,
+            expectedCount: 2,
+        });
+    });
+
+    it('maps exhausted RTC lane attempts to failed with a stable reason', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-a']));
+        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValue({
+            status: 'exhausted',
+            peerId: 'peer-a',
+            laneId: 'realtime',
+            error: new Error('rtc-connect-attempt-budget-exhausted'),
+        });
+        const facade = createRallarFacade();
+
+        await facade.connect();
+
+        await expect(
+            facade.rtc.waitForRoomLane('room-1', 'realtime', {
+                connect: true,
+                timeoutMs: 1_000,
+            }),
+        ).resolves.toMatchObject({
+            status: 'failed',
+            notReady: [
+                {
+                    peerId: 'peer-a',
+                    status: 'failed',
+                    reason: 'rtc-connect-attempt-budget-exhausted',
+                },
+            ],
+        });
+    });
+
+    it('reports over-capacity for strict expected room RTC peer ids', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        mockGroupSnapshot(
+            createGroupSnapshot('room-1', [
+                'session-1',
+                'peer-a',
+                'peer-b',
+            ]),
+        );
+        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
+            async (peerId: string, laneId: string) => ({
+                status: 'open',
+                peerId,
+                laneId,
+            }),
+        );
+        const facade = createRallarFacade();
+
+        await facade.connect();
+
+        await expect(
+            facade.rtc.waitForRoomLane('room-1', 'realtime', {
+                connect: true,
+                expect: {
+                    sessionIds: ['peer-a'],
+                    allowExtras: false,
+                },
+                timeoutMs: 1_000,
+            }),
+        ).resolves.toMatchObject({
+            status: 'over-capacity',
+            readyPeerIds: ['peer-a', 'peer-b'],
+            missingPeerIds: [],
+            extraPeerIds: ['peer-b'],
+            observedCount: 2,
+            expectedCount: 1,
+        });
+    });
+
+    it('returns empty for a room RTC lane when the current session is not in the room', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+        mockGroupSnapshot(
+            createGroupSnapshot('room-1', [
+                'peer-ready',
+                'peer-slow',
+            ]),
+        );
+        const facade = createRallarFacade();
+
+        await facade.connect();
+        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockClear();
+
+        await expect(
+            facade.rtc.waitForRoomLane(
+                'room-1',
+                'realtime',
+                {
+                    connect: true,
+                    timeoutMs: 1_000,
+                },
+            ),
+        ).resolves.toMatchObject({
+            transport: 'rtc',
+            roomId: 'room-1',
+            laneId: 'realtime',
+            status: 'empty',
+            readyPeerIds: [],
+            notReadyPeerIds: [],
+            observedCount: 0,
+            ready: [],
+            notReady: [],
+        });
+        expect(mocks.webRtcConnectionService.ensurePeerLaneOpen)
+            .not.toHaveBeenCalled();
     });
 
     it('reports room RTC transport status without opening lanes', async () => {
@@ -918,6 +1162,9 @@ describe('Rallar RTC wait compatibility', () => {
             roomId: 'room-1',
             laneId: 'realtime',
             status: 'empty',
+            readyPeerIds: [],
+            notReadyPeerIds: [],
+            observedCount: 0,
             ready: [],
             notReady: [],
         });

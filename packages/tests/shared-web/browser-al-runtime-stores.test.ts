@@ -262,6 +262,49 @@ describe('Browser AL runtime IndexedDB stores', () => {
         ]);
     });
 
+    it('deletes outbound message-owner rows after their explicit expiry', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+        const sessionId = `owner-retention-${crypto.randomUUID()}`;
+        const msgId = 'browser-owner-short-lived';
+        const expireAtTimestamp = Date.now() + 15_000;
+        configureBrowserALRuntimeStores(sessionId);
+        const stores = resolveBrowserWsClientALOutboundRuntimeStores(sessionId);
+        if (!stores.admissionStore) {
+            throw new Error('Expected outbound admission store');
+        }
+
+        await stores.admissionStore.commitBundle({
+            senderId: sessionId,
+            expectedVersion: undefined,
+            mutations: [
+                {
+                    kind: 'set-msg-owner',
+                    msgId,
+                    senderId: sessionId,
+                    expireAtTimestamp,
+                },
+            ],
+            durableEffects: [],
+        });
+
+        const ownerPrefix = `${toBrowserALRuntimeEntryKeyPrefix(
+            toBrowserWsClientALRuntimeStoreId(sessionId),
+        )}outbound:admission:msg-owner`;
+
+        expect(await readBrowserALRuntimeEntryKeys(ownerPrefix)).toEqual([
+            `${ownerPrefix}:${msgId}`,
+        ]);
+
+        await vi.advanceTimersByTimeAsync(15_001);
+
+        const result = await deleteExpiredBrowserALRuntimeEntriesForSession(sessionId);
+
+        expect(result.deleted).toBe(1);
+        expect(await readBrowserALRuntimeEntryKeys(ownerPrefix)).toEqual([]);
+    });
+
     it('can purge every browser AL runtime row for one session', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));

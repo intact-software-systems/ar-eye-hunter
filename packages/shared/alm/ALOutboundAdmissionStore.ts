@@ -98,6 +98,7 @@ export type ALOutboundAdmissionMutation =
     kind: 'set-msg-owner';
     msgId: string;
     senderId: string;
+    expireAtTimestamp?: number;
 }>
     | Readonly<{
     kind: 'set-sent-message';
@@ -755,7 +756,10 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                 await tx.set(
                     this.toMsgOwnerKey(mutation.msgId),
                     mutation.senderId,
-                    toExpireAtTimestampFromNow(this.retention.msgOwnerTtlMs),
+                    resolveExpireAtTimestampWithFallback(
+                        mutation.expireAtTimestamp,
+                        this.retention.msgOwnerTtlMs,
+                    ),
                 );
                 return;
             case 'set-sent-message':

@@ -15,6 +15,8 @@ import type {
     RallarRefreshOptions,
     RallarReplayEventsResult,
     RallarReplayRoomEventsInput,
+    RallarRoomPresenceWaitOptions,
+    RallarRoomPresenceWaitResult,
     RallarRoomEventListener,
     RallarRoomEventOptions,
     RallarRoomSession,
@@ -40,6 +42,7 @@ export type RallarRoomsFacade = Readonly<{
         listener?: RallarRoomEventListener,
     ): Promise<RallarReplayEventsResult<GroupEvent>>;
     create(input: string | RallarCreateRoomInput): Promise<GroupSnapshot>;
+    createAndSwitch(input: string | RallarCreateRoomInput): Promise<GroupSnapshot>;
     join(
         room: string | GroupRef | RallarJoinRoomInput,
         options?: RallarJoinRoomOptions,
@@ -57,6 +60,10 @@ export type RallarRoomsFacade = Readonly<{
         patch: Readonly<Record<string, unknown>>,
         options?: RallarScopedOperationOptions,
     ): Promise<GroupSnapshot>;
+    waitForPresence(
+        room: string | GroupRef,
+        options?: RallarRoomPresenceWaitOptions,
+    ): Promise<RallarRoomPresenceWaitResult>;
     current(): GroupSnapshot | undefined;
     onChange(
         listener: RallarStateListener<RallarRoomState>,
@@ -68,7 +75,11 @@ export type RallarRoomsFacade = Readonly<{
     ): RallarUnsubscribe;
 }>;
 
-export type CreateRallarRoomsFacadeOptions = RallarRoomsFacade;
+export type CreateRallarRoomsFacadeOptions =
+    & Omit<RallarRoomsFacade, 'createAndSwitch'>
+    & Readonly<{
+    createAndSwitch?: RallarRoomsFacade['createAndSwitch'];
+}>;
 
 export function createRallarRoomsFacade(
     operations: CreateRallarRoomsFacadeOptions,
@@ -94,6 +105,10 @@ export function createRallarRoomsFacade(
         create: async (
             input,
         ): Promise<GroupSnapshot> => await operations.create(input),
+        createAndSwitch: async (
+            input,
+        ): Promise<GroupSnapshot> =>
+            await (operations.createAndSwitch ?? operations.create)(input),
         join: async (
             room,
             options: RallarJoinRoomOptions = {},
@@ -113,6 +128,11 @@ export function createRallarRoomsFacade(
             options: RallarScopedOperationOptions = {},
         ): Promise<GroupSnapshot> =>
             await operations.updateMetadata(room, patch, options),
+        waitForPresence: async (
+            room,
+            options: RallarRoomPresenceWaitOptions = {},
+        ): Promise<RallarRoomPresenceWaitResult> =>
+            await operations.waitForPresence(room, options),
         current: (): GroupSnapshot | undefined => operations.current(),
         onChange: (
             listener,

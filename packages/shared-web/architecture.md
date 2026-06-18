@@ -9,7 +9,8 @@ workflows, data, CRDT, middleware, transport engines, RallarAI, and game helpers
 - `browser/rallar.ts` is the full compatibility facade and the canonical
   browser object. Existing apps import `rallar` from here. The beginner path is
   `rallar.setup(...)`, then `rallar.rooms.enter(...)`, then room-bound
-  `message(...)` or `realtime(...)` channels.
+  `message(...)` or `realtime(...)` channels. New-room flows that should leave
+  the previous room use `rallar.rooms.createAndSwitch(...)`.
 - `browser/rallar-core.ts` is the narrow core entry point for browser config,
   connection/startup, auth, rooms, people, message helpers, and WS/RTC message
   facade factories. It exports the room-session/setup types but does not export
@@ -37,6 +38,10 @@ compatible; migration is intentionally gradual.
 - `rallar.rooms.enter(room, options)` joins a room and returns a
   `RallarRoomSession`. `rallar.rooms.session(room?)` returns the same kind of
   handle for an explicit/default/current room without joining.
+- `rallar.rooms.createAndSwitch(input)` creates a room, makes it current, and
+  leaves the previous current room. `rallar.rooms.waitForPresence(...)` waits
+  for active room sessions against a readiness expectation before game/realtime
+  setup needs to proceed.
 - `RallarRoomSession` binds room identity once. `room.realtime<T>(...)`
   delegates to `rallar.realtime.room<T>(...)` with the room ref applied, and
   `room.message<T>(...)` delegates to `rallar.messages.room<T>(...)` with the
@@ -53,15 +58,21 @@ compatible; migration is intentionally gradual.
   advanced use.
 - Low-level `rallar.rtc.*`, `rallar.realtime.sendJson`, and
   `rallar.messages.*` remain stable advanced surfaces for diagnostics,
-  black-box testing, targeted peer sends, and custom transports.
+  black-box testing, targeted peer sends, and custom transports. Room RTC waits
+  are expectation-aware and return ready/not-ready peer IDs plus missing/extra
+  peer diagnostics, including `over-capacity`.
+- `browser/readiness.ts` owns the shared browser readiness expectation helpers
+  used by room presence waits, RTC room-lane waits, and game readiness checks.
 
 ## Current App Usage
 
 - `apps/ar-eye-hunter-v1` uses the full facade for startup, auth, rooms,
-  realtime lanes, RTC readiness/diagnostics, director status, and local data.
-  Manual room joins now use `rallar.rooms.enter`; room-scoped fallback game
-  sends still use `rallar.realtime.room` because the app's match helper owns
-  most transport behavior.
+  realtime lanes, RTC readiness/diagnostics, director authority, egress status,
+  Squad Link state, and local data. New arena creation uses
+  `rallar.rooms.createAndSwitch(...)`; manual room joins use
+  `rallar.rooms.enter`; room-scoped fallback game sends still use
+  `rallar.realtime.room` because the app's match helper owns most transport
+  behavior.
 - `apps/relic-hunters-v1` uses the full facade through a runtime adapter for
   auth, rooms, WS/RTC messages, realtime motion, and RTC lane readiness.
   Its runtime adapter now maps joins through `rallar.rooms.enter` and keeps the
