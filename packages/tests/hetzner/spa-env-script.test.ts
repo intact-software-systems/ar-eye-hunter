@@ -183,7 +183,18 @@ describe('Hetzner SPA public env wiring', () => {
         expect(workflow).toContain('RALLAR_BLACK_BOX_AGENT_COUNT: ${{ inputs.runner_agent_count }}');
         expect(workflow).toContain('RALLAR_BLACK_BOX_APPLICATION_ID: ${{ inputs.application_id }}');
         expect(workflow).toContain('RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}');
-        expect(workflow).toContain('RALLAR_BLACK_BOX_SPA_URL="$4"');
-        expect(workflow).toContain('RALLAR_BLACK_BOX_WORKSPACE_ID="${11}"');
+        expect(workflow).toContain('quote() { printf \'%q\' "$1"; }');
+        expect(workflow).toContain('rollout_env="${RUNNER_TEMP}/rallar-controller-rollout.env"');
+        expect(workflow).toContain(
+            'printf \'RALLAR_BLACK_BOX_SPA_URL=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_SPA_URL}")"',
+        );
+        expect(workflow).toContain(
+            'printf \'RALLAR_BLACK_BOX_WORKSPACE_ID=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_WORKSPACE_ID}")"',
+        );
+        expect(workflow).toContain(
+            '"${HETZNER_USER}@${HETZNER_HOST}:/tmp/rallar-controller-rollout.env"',
+        );
+        expect(workflow).toContain('source /tmp/rallar-controller-rollout.env');
+        expect(workflow).toContain('./08-rollout-controller.sh');
     });
 });

@@ -57,12 +57,15 @@ import {
     type VirtualStickResult,
 } from './mobileInput.ts';
 import {
+    calculateArenaMusicLayerState,
     ProceduralArenaAudio,
     loadArenaAudioSettings,
     normalizeArenaAudioSettings,
     saveArenaAudioSettings,
+    type ArenaMusicLayerState,
     type ArenaAudioSettings,
 } from './arenaAudio.ts';
+import type { ArenaLinkState, ArenaPresenceNotice } from './squadLink.ts';
 import type {
     ArenaLayoutSpec,
     ArenaLayoutProp,
@@ -94,6 +97,8 @@ type BabylonArenaProps = Readonly<{
     roomId?: string;
     roomReady: boolean;
     networkEnabled: boolean;
+    linkState: ArenaLinkState;
+    presenceNotices: readonly ArenaPresenceNotice[];
     diagnosticsAttributes?: Readonly<Record<string, string>>;
     remotePlayers: ReadonlyMap<string, RemotePlayer>;
     remoteShots: readonly RemoteShot[];
@@ -197,6 +202,12 @@ type ArenaRuntime = {
     mobileControlsEnabled: boolean;
     audio: ProceduralArenaAudio;
     audioSettings: ArenaAudioSettings;
+    audioLayerState: ArenaMusicLayerState;
+    linkTone: ArenaLinkState['tone'];
+    playedNoticeIds: Set<string>;
+    lastAudioMatchStatus: string;
+    lastAudioWaveKey: string;
+    lowHealthWarned: boolean;
     touchAimAssistUntilMs: number;
 };
 
@@ -264,6 +275,8 @@ export function BabylonArena({
     roomId,
     roomReady,
     networkEnabled,
+    linkState,
+    presenceNotices,
     diagnosticsAttributes,
     remotePlayers,
     remoteShots,
@@ -286,6 +299,8 @@ export function BabylonArena({
     const remoteEventsRef = useRef(remoteEvents);
     const snapshotRef = useRef(arenaSnapshot);
     const networkEnabledRef = useRef(networkEnabled);
+    const linkStateRef = useRef(linkState);
+    const presenceNoticesRef = useRef(presenceNotices);
     const callbacksRef = useRef({
         onLocalPose,
         onLocalShot,
@@ -344,6 +359,14 @@ export function BabylonArena({
     useEffect(() => {
         networkEnabledRef.current = networkEnabled;
     }, [networkEnabled]);
+
+    useEffect(() => {
+        linkStateRef.current = linkState;
+    }, [linkState]);
+
+    useEffect(() => {
+        presenceNoticesRef.current = presenceNotices;
+    }, [presenceNotices]);
 
     useEffect(() => {
         callbacksRef.current = {
@@ -690,6 +713,22 @@ export function BabylonArena({
             mobileControlsEnabled: false,
             audio: new ProceduralArenaAudio(audioSettings),
             audioSettings,
+            audioLayerState: calculateArenaMusicLayerState({
+                matchStatus: 'infinite',
+                matchRemainingRatio: 1,
+                wavePhase: 'warmup',
+                waveNumber: 1,
+                hostileCount: 0,
+                incomingAttack: false,
+                healthRatio: 1,
+                linkTone: linkStateRef.current.tone,
+                reducedIntensity: audioSettings.reducedIntensity,
+            }, audioSettings),
+            linkTone: linkStateRef.current.tone,
+            playedNoticeIds: new Set(),
+            lastAudioMatchStatus: 'infinite',
+            lastAudioWaveKey: '1:warmup',
+            lowHealthWarned: false,
             touchAimAssistUntilMs: 0,
         };
         runtimeRef.current = runtime;
@@ -793,6 +832,8 @@ export function BabylonArena({
                 runtime,
                 roomId,
                 networkEnabled: networkEnabledRef.current,
+                linkState: linkStateRef.current,
+                presenceNotices: presenceNoticesRef.current,
                 remotePlayers: remotePlayersRef.current,
                 remoteShots: remoteShotsRef.current,
                 remotePlayerHits: remotePlayerHitsRef.current,
@@ -851,6 +892,9 @@ export function BabylonArena({
             delete canvas.dataset.arenaAudioState;
             delete canvas.dataset.arenaAudioMuted;
             delete canvas.dataset.arenaAudioVoices;
+            delete canvas.dataset.arenaAudioLayer;
+            delete canvas.dataset.arenaAudioIntensity;
+            delete canvas.dataset.arenaLinkState;
             runtimeRef.current = undefined;
         };
     }, [localColor, localSessionId, localUsername, roomId]);
@@ -1074,6 +1118,16 @@ export function BabylonArena({
                             />
                             Reduced audio intensity
                         </label>
+                        <label className="mobile-setting-check">
+                            <input
+                                type="checkbox"
+                                checked={audioSettings.autoStartOnGesture}
+                                onChange={(event) => updateAudioSettings({
+                                    autoStartOnGesture: event.currentTarget.checked,
+                                })}
+                            />
+                            Auto-start subtle score
+                        </label>
                     </div>
                 )}
             </div>
@@ -1083,7 +1137,7 @@ export function BabylonArena({
                     onClick={() => {
                         const runtime = runtimeRef.current;
                         if (runtime) {
-                            unlockArenaAudio(runtime);
+                            forceUnlockArenaAudio(runtime);
                             if (!runtime.audio.isUnlocked() && !audioSettings.muted) {
                                 return;
                             }
@@ -1106,6 +1160,8 @@ function runFrame({
     runtime,
     roomId,
     networkEnabled,
+    linkState,
+    presenceNotices,
     remotePlayers,
     remoteShots,
     remotePlayerHits,
@@ -1123,6 +1179,8 @@ function runFrame({
     runtime: ArenaRuntime;
     roomId?: string;
     networkEnabled: boolean;
+    linkState: ArenaLinkState;
+    presenceNotices: readonly ArenaPresenceNotice[];
     remotePlayers: ReadonlyMap<string, RemotePlayer>;
     remoteShots: readonly RemoteShot[];
     remotePlayerHits: readonly PlayerHitAccepted[];
@@ -1196,6 +1254,7 @@ function runFrame({
     syncPickupAvatars(runtime, now);
     syncTargetAvatars(runtime, now);
     syncEyeAttackCues(runtime, now);
+    syncAdaptiveAudio(runtime, linkState, presenceNotices, localPlayerId, now);
     runtime.audio.play({
         kind: 'eye-drone',
         threatCount: runtime.arenaState.targets.filter(isHostileEye).length,
@@ -3486,7 +3545,95 @@ function triggerHaptic(runtime: ArenaRuntime, durationMs: number): void {
     navigator.vibrate?.(Math.max(4, Math.min(60, durationMs)));
 }
 
+function syncAdaptiveAudio(
+    runtime: ArenaRuntime,
+    linkState: ArenaLinkState,
+    presenceNotices: readonly ArenaPresenceNotice[],
+    localPlayerId: string,
+    now: number,
+): void {
+    const match = runtime.arenaState.match;
+    runtime.linkTone = linkState.tone;
+    const matchRemainingRatio = match?.status === 'active'
+        ? Math.max(0, Math.min(1, (match.endsAtEpochMs - now) / match.durationMs))
+        : 1;
+    const healthRatio = runtime.localPlayer.vitals.maxHealth > 0
+        ? runtime.localPlayer.vitals.health / runtime.localPlayer.vitals.maxHealth
+        : 1;
+    const hostileCount = runtime.arenaState.targets.filter(isHostileEye).length;
+    runtime.audioLayerState = runtime.audio.updateMusic({
+        matchStatus: match?.status ?? 'infinite',
+        matchRemainingRatio,
+        wavePhase: runtime.arenaState.wave.phase,
+        waveNumber: runtime.arenaState.wave.number,
+        hostileCount,
+        incomingAttack: runtime.arenaState.attacks.some((attack) =>
+            attack.targetSessionId === localPlayerId
+        ),
+        healthRatio,
+        linkTone: linkState.tone,
+        reducedIntensity: runtime.audioSettings.reducedIntensity,
+    });
+
+    const matchKey = match ? `${match.matchId}:${match.status}` : 'infinite';
+    if (runtime.lastAudioMatchStatus !== matchKey) {
+        if (match?.status === 'active') {
+            runtime.audio.play({ kind: 'match-start' });
+        } else if (match?.status === 'complete') {
+            runtime.audio.play({ kind: 'match-end' });
+        }
+        runtime.lastAudioMatchStatus = matchKey;
+    }
+
+    const waveKey = `${runtime.arenaState.wave.number}:${runtime.arenaState.wave.phase}`;
+    if (runtime.lastAudioWaveKey !== waveKey) {
+        if (runtime.arenaState.wave.phase === 'active') {
+            runtime.audio.play({ kind: 'wave-start' });
+        } else if (runtime.arenaState.wave.phase === 'reward') {
+            runtime.audio.play({ kind: 'wave-complete' });
+        }
+        runtime.lastAudioWaveKey = waveKey;
+    }
+
+    if (healthRatio <= 0.3 && !runtime.lowHealthWarned) {
+        runtime.audio.play({ kind: 'low-health-warning' });
+        runtime.lowHealthWarned = true;
+    } else if (healthRatio > 0.45) {
+        runtime.lowHealthWarned = false;
+    }
+
+    for (const notice of presenceNotices) {
+        if (runtime.playedNoticeIds.has(notice.id)) {
+            continue;
+        }
+        runtime.playedNoticeIds.add(notice.id);
+        runtime.audio.play({ kind: toPresenceAudioKind(notice.kind) });
+    }
+    if (runtime.playedNoticeIds.size > 64) {
+        runtime.playedNoticeIds = new Set([...runtime.playedNoticeIds].slice(-32));
+    }
+}
+
+function toPresenceAudioKind(
+    kind: ArenaPresenceNotice['kind'],
+): Exclude<Parameters<ProceduralArenaAudio['play']>[0]['kind'], 'shot' | 'eye-drone'> {
+    if (kind === 'joined' || kind === 'link-live') {
+        return 'link-joined';
+    }
+    if (kind === 'left' || kind === 'link-degraded') {
+        return 'link-left';
+    }
+    return 'sync';
+}
+
 function unlockArenaAudio(runtime: ArenaRuntime): void {
+    if (!runtime.audioSettings.autoStartOnGesture || runtime.audioSettings.muted) {
+        return;
+    }
+    void runtime.audio.unlock().catch(() => undefined);
+}
+
+function forceUnlockArenaAudio(runtime: ArenaRuntime): void {
     void runtime.audio.unlock().catch(() => undefined);
 }
 
@@ -3559,6 +3706,9 @@ function writeArenaDiagnostics(canvas: HTMLCanvasElement, runtime: ArenaRuntime)
     canvas.dataset.arenaAudioState = audioDiagnostics.contextState;
     canvas.dataset.arenaAudioMuted = audioDiagnostics.muted ? 'true' : 'false';
     canvas.dataset.arenaAudioVoices = String(audioDiagnostics.activeVoices);
+    canvas.dataset.arenaAudioLayer = audioDiagnostics.musicLayer;
+    canvas.dataset.arenaAudioIntensity = String(audioDiagnostics.musicIntensity);
+    canvas.dataset.arenaLinkState = runtime.linkTone;
 }
 
 function hashString(value: string): number {

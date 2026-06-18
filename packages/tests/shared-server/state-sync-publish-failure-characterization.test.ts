@@ -232,11 +232,12 @@ describe('state sync publish failure characterization', () => {
                 .readSnapshot(groupRef);
             expect(durableSnapshot?.activeSessions.map(session => session.sessionId))
                 .toEqual(['session-alice']);
-            expect(enqueueOutboxIfAbsent).toHaveBeenCalledTimes(2);
+            expect(enqueueOutboxIfAbsent).toHaveBeenCalledTimes(3);
             expect(enqueueOutboxIfAbsent.mock.calls.map(([message]) =>
                 (message as ALMessage).payload.typeId
             )).toEqual([
                 AppTopics.groupStateSnapshot,
+                AppTopics.groupDirectorySnapshot,
                 AppTopics.groupStateEvent,
             ]);
             expect(entry.status).toBe(EntityStatus.COMPLETED);
@@ -255,7 +256,7 @@ describe('state sync publish failure characterization', () => {
         const enqueuedMessages: ALMessage[] = [];
         const enqueueOutboxIfAbsent = vi.fn(async (message: ALMessage) => {
             enqueuedMessages.push(message);
-            if (enqueuedMessages.length === 2) {
+            if (enqueuedMessages.length === 3) {
                 throw new Error('event enqueue unavailable');
             }
             return {
@@ -283,6 +284,7 @@ describe('state sync publish failure characterization', () => {
 
         expect(enqueuedMessages.map((message) => message.payload.typeId)).toEqual([
             AppTopics.groupStateSnapshot,
+            AppTopics.groupDirectorySnapshot,
             AppTopics.groupStateEvent,
         ]);
         expect(

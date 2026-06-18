@@ -28,6 +28,7 @@ import type {
     RallarGameEnvelopeKind,
     RallarGameDirectorAppointmentEligibility,
     RallarGameDirectorAppointmentPolicy,
+    RallarGameEgressState,
     RallarGameHostAppointResult,
     RallarGameHostCapability,
     RallarGameHostElectionResult,
@@ -92,6 +93,8 @@ export function createRallarGameMatch<
     let nextSeq = 1;
     let lastPeerReadiness: RallarGamePeerReadiness | undefined;
     let lastAppointmentResult: RallarGameHostAppointResult | undefined;
+    let reliableEgress: RallarGameEgressState = 'empty';
+    let realtimeEgress: RallarGameEgressState = 'empty';
     let recovery: RallarGameRecoveryState = { status: 'idle' };
     let currentStatus = createStatus('idle');
 
@@ -173,6 +176,7 @@ export function createRallarGameMatch<
             ))
             .add(() => relay?.stop());
 
+        await refreshReliableEgress();
         refreshStatus();
         return currentStatus;
     }
@@ -191,11 +195,15 @@ export function createRallarGameMatch<
         setStatus('stopped');
     }
 
+    function stoppedResult(): RallarGameSendResult {
+        return { status: 'stopped', reason: 'Rallar Game match is stopped.' };
+    }
+
     async function reportCapability(
         capability: Partial<RallarGameHostCapability> = {},
     ): Promise<RallarGameSendResult> {
         if (stopped) {
-            return { status: 'stopped', reason: 'Rallar Game match is stopped.' };
+            return stoppedResult();
         }
 
         const localPeerId = readLocalPeerId();
@@ -375,7 +383,6 @@ export function createRallarGameMatch<
     async function waitForReadyLanes(
         options: RallarGameLaneReadyOptions = {},
     ): Promise<RallarGamePeerReadiness> {
-        const room = readRoomTarget();
         const selectedLaneIds = options.laneIds ?? [
             laneIds.input,
             laneIds.intent,
@@ -383,15 +390,37 @@ export function createRallarGameMatch<
             laneIds.metrics,
             laneIds.replication,
         ];
+        if (stopped) {
+            lastPeerReadiness = {
+                status: 'aborted',
+                laneIds: selectedLaneIds,
+                readyPeerIds: [],
+                notReadyPeerIds: [],
+                missingPeerIds: [],
+                extraPeerIds: [],
+                observedCount: 0,
+                lanes: [],
+                reason: 'Rallar Game match is stopped.',
+            };
+            realtimeEgress = toRealtimeEgressState(lastPeerReadiness.status);
+            refreshStatus();
+            return lastPeerReadiness;
+        }
+
+        const room = readRoomTarget();
         if (!room.roomId) {
             lastPeerReadiness = {
                 status: 'no-room',
                 laneIds: selectedLaneIds,
                 readyPeerIds: [],
                 notReadyPeerIds: [],
+                missingPeerIds: [],
+                extraPeerIds: [],
+                observedCount: 0,
                 lanes: [],
                 reason: 'Cannot wait for lanes without a room.',
             };
+            realtimeEgress = toRealtimeEgressState(lastPeerReadiness.status);
             refreshStatus();
             return lastPeerReadiness;
         }
@@ -406,20 +435,34 @@ export function createRallarGameMatch<
                         connect: options.connect ?? true,
                         timeoutMs: options.timeoutMs,
                         signal: options.signal,
+                        expect: options.expect,
                     },
                 )
             ),
         );
         const readyPeerIds = uniqueSorted(
             lanes.flatMap((lane) =>
-                lane.ready.map((entry) => entry.peerId)
+                lane.readyPeerIds.length > 0
+                    ? lane.readyPeerIds
+                    : lane.ready.map((entry) => entry.peerId)
             ),
         );
         const notReadyPeerIds = uniqueSorted(
             lanes.flatMap((lane) =>
-                lane.notReady.map((entry) => entry.peerId)
+                lane.notReadyPeerIds.length > 0
+                    ? lane.notReadyPeerIds
+                    : lane.notReady.map((entry) => entry.peerId)
             ),
         );
+        const missingPeerIds = uniqueSorted(
+            lanes.flatMap((lane) => lane.missingPeerIds),
+        );
+        const extraPeerIds = uniqueSorted(
+            lanes.flatMap((lane) => lane.extraPeerIds),
+        );
+        const expectedCounts = lanes
+            .map((lane) => lane.expectedCount)
+            .filter((count): count is number => count !== undefined);
 
         lastPeerReadiness = {
             status: combineLaneStatuses(lanes),
@@ -427,8 +470,15 @@ export function createRallarGameMatch<
             laneIds: selectedLaneIds,
             readyPeerIds,
             notReadyPeerIds,
+            missingPeerIds,
+            extraPeerIds,
+            observedCount: readyPeerIds.length,
+            expectedCount: expectedCounts.length > 0
+                ? Math.max(...expectedCounts)
+                : undefined,
             lanes,
         };
+        realtimeEgress = toRealtimeEgressState(lastPeerReadiness.status);
         refreshStatus();
         return lastPeerReadiness;
     }
@@ -438,7 +488,7 @@ export function createRallarGameMatch<
         options: RallarGamePresenceSendOptions = {},
     ): Promise<RallarGameSendResult> {
         if (stopped) {
-            return { status: 'stopped', reason: 'Rallar Game match is stopped.' };
+            return stoppedResult();
         }
 
         const room = readRoomTarget();
@@ -453,19 +503,80 @@ export function createRallarGameMatch<
         const envelope = createEnvelope('presence', presence, {
             directorEpoch: currentStatus.directorEpoch ?? 0,
         });
+        const laneId = options.laneId ?? laneIds.input;
+        const key = options.key ?? `presence:${envelope.senderId}`;
+        const maxAgeMs = options.maxAgeMs ?? 250;
+        const openTimeoutMs = options.openTimeoutMs ?? 500;
         const realtime = await config.rallar.realtime.room({
-            laneId: options.laneId ?? laneIds.input,
+            laneId,
             roomId: room.roomRef ? undefined : room.roomId,
             roomRef: room.roomRef,
-            openTimeoutMs: options.openTimeoutMs ?? 500,
+            openTimeoutMs,
         }).send(envelope, {
-            key: options.key ?? `presence:${envelope.senderId}`,
-            maxAgeMs: options.maxAgeMs ?? 250,
+            key,
+            maxAgeMs,
         });
-        return toRoomRealtimeSendResult(realtime);
+
+        const roomResult = toRoomRealtimeSendResult(realtime);
+        if (roomResult.status === 'sent' || roomResult.status === 'partial') {
+            return roomResult;
+        }
+        if (realtime.status !== 'no-targets' && realtime.status !== 'not-ready') {
+            return roomResult;
+        }
+
+        const roomScopedPeerIds = uniqueSorted([
+            ...realtime.desiredPeerIds,
+            ...config.rallar.rooms.state().members
+                .filter((member) => member.isOnline)
+                .flatMap((member) => member.sessionIds),
+        ]);
+        if (roomScopedPeerIds.length === 0) {
+            return roomResult;
+        }
+
+        const localPeerId = readLocalPeerId();
+        const roomScopedPeerIdSet = new Set(roomScopedPeerIds);
+        const readinessReadyPeerIds = lastPeerReadiness?.laneIds.includes(laneId)
+            ? lastPeerReadiness.readyPeerIds
+            : [];
+        const rtcReadyPeerIds = safeReadRtcStatus(laneId)?.readyPeerIds ?? [];
+        const readyPeerIds = uniqueSorted([
+            ...readinessReadyPeerIds,
+            ...rtcReadyPeerIds,
+        ])
+            .filter((peerId) => peerId !== localPeerId)
+            .filter((peerId) => roomScopedPeerIdSet.has(peerId));
+        if (readyPeerIds.length === 0) {
+            return roomResult;
+        }
+
+        const fallbackRealtime = await config.rallar.realtime.sendJson({
+            laneId,
+            roomId: room.roomRef ? undefined : room.roomId,
+            roomRef: room.roomRef,
+            peerIds: readyPeerIds,
+            data: envelope,
+            key,
+            maxAgeMs,
+            openTimeoutMs,
+        });
+        const fallbackResult = toRealtimeSendResult(fallbackRealtime);
+        if (
+            fallbackResult.status === 'sent' ||
+            fallbackResult.status === 'partial'
+        ) {
+            return fallbackResult;
+        }
+
+        return roomResult;
     }
 
     async function sendInput(input: TInput): Promise<RallarGameSendResult> {
+        if (stopped) {
+            return stoppedResult();
+        }
+
         const director = readFreshDirectorStatus();
         if (!director) {
             return noDirectorResult();
@@ -491,6 +602,10 @@ export function createRallarGameMatch<
     }
 
     async function sendIntent(intent: TIntent): Promise<RallarGameSendResult> {
+        if (stopped) {
+            return stoppedResult();
+        }
+
         const director = readFreshDirectorStatus();
         if (!director) {
             return noDirectorResult();
@@ -512,6 +627,10 @@ export function createRallarGameMatch<
         snapshot: TSnapshot,
         options: { reliable?: boolean } = {},
     ): Promise<RallarGameSendResult> {
+        if (stopped) {
+            return stoppedResult();
+        }
+
         const director = readFreshDirectorStatus();
         if (!director) {
             return noDirectorResult();
@@ -544,6 +663,10 @@ export function createRallarGameMatch<
     }
 
     async function publishEvent(event: TEvent): Promise<RallarGameSendResult> {
+        if (stopped) {
+            return stoppedResult();
+        }
+
         const director = readFreshDirectorStatus();
         if (!director) {
             return noDirectorResult();
@@ -565,6 +688,10 @@ export function createRallarGameMatch<
     async function requestSync(
         payload: unknown = {},
     ): Promise<RallarGameSendResult> {
+        if (stopped) {
+            return stoppedResult();
+        }
+
         const director = readFreshDirectorStatus();
         if (!director) {
             return noDirectorResult();
@@ -883,6 +1010,27 @@ export function createRallarGameMatch<
         setStatus(nextPhase, directorStatus);
     }
 
+    async function refreshReliableEgress(): Promise<void> {
+        const room = readRoomTarget();
+        if (!room.roomId) {
+            reliableEgress = 'empty';
+            return;
+        }
+
+        try {
+            const presence = await config.rallar.rooms.waitForPresence(
+                room.roomRef ?? room.roomId,
+                {
+                    expect: { min: 1 },
+                    timeoutMs: 0,
+                },
+            );
+            reliableEgress = toReliableEgressState(presence.status);
+        } catch {
+            reliableEgress = 'failed';
+        }
+    }
+
     function setStatus(
         phase: RallarGameMatchPhase,
         directorStatus: RallarDirectorStatus = readDirectorStatus(),
@@ -908,12 +1056,35 @@ export function createRallarGameMatch<
             directorPeerId: directorStatus.appointment?.sessionId,
             directorEpoch: directorStatus.appointment?.epoch,
             directorIsFresh: directorStatus.isFresh,
+            directorAuthority: toDirectorAuthority(directorStatus),
+            egress: {
+                reliable: reliableEgress,
+                realtime: realtimeEgress,
+            },
             recovery,
             started,
             stopped,
             updatedAtEpochMs: Date.now(),
             reason,
         };
+    }
+
+    function toDirectorAuthority(
+        directorStatus: RallarDirectorStatus,
+    ): RallarGameMatchStatus['directorAuthority'] {
+        const localPeerId = readLocalPeerId();
+        if (
+            localPeerId &&
+            directorStatus.appointment?.sessionId === localPeerId
+        ) {
+            return directorStatus.isFresh ? 'active' : 'stale';
+        }
+
+        if (!directorStatus.appointment && canAppointDirector().allowed) {
+            return 'candidate';
+        }
+
+        return 'none';
     }
 
     function readFreshDirectorStatus(): (RallarDirectorStatus & {
@@ -991,6 +1162,10 @@ export function createRallarGameMatch<
     }
 
     function ensureRelay(): RallarGameRuntimeRelay<TIntent, TSnapshot, TEvent> {
+        if (stopped) {
+            throw new Error('Cannot create Rallar Game relay after match stop.');
+        }
+
         if (relay) {
             return relay;
         }
@@ -1189,6 +1364,10 @@ function combineLaneStatuses(
         return 'not-connected';
     }
 
+    if (statuses.some((status) => status === 'over-capacity')) {
+        return 'over-capacity';
+    }
+
     if (statuses.some(isPartiallyReadyLaneStatus)) {
         return 'partial';
     }
@@ -1197,7 +1376,53 @@ function combineLaneStatuses(
 }
 
 function isPartiallyReadyLaneStatus(status: RallarRtcRoomLaneWaitStatus): boolean {
-    return status === 'open' || status === 'partial' || status === 'empty';
+    return status === 'open' ||
+        status === 'partial' ||
+        status === 'empty' ||
+        status === 'over-capacity';
+}
+
+function toReliableEgressState(status: string): RallarGameEgressState {
+    switch (status) {
+        case 'ready':
+            return 'ready';
+        case 'partial':
+        case 'over-capacity':
+            return 'partial';
+        case 'timeout':
+            return 'timeout';
+        case 'empty':
+            return 'empty';
+        case 'aborted':
+        case 'not-connected':
+        case 'not-found':
+            return 'failed';
+        default:
+            return 'warming';
+    }
+}
+
+function toRealtimeEgressState(
+    status: RallarGamePeerReadiness['status'],
+): RallarGameEgressState {
+    switch (status) {
+        case 'open':
+            return 'ready';
+        case 'empty':
+        case 'no-room':
+            return 'empty';
+        case 'partial':
+        case 'over-capacity':
+            return 'partial';
+        case 'not-ready':
+        case 'not-connected':
+            return 'warming';
+        case 'timeout':
+            return 'timeout';
+        case 'aborted':
+        case 'failed':
+            return 'failed';
+    }
 }
 
 function toRelaySendResult(

@@ -430,6 +430,49 @@ describe('multicast QoS integration', () => {
         expect(reserved.size).toBe(0);
     });
 
+    it('does not call raw RTC send when the next-hop channel is not open', async () => {
+        const connectionService = createConnectionService(['peer-1'], {
+            'peer-1': 'connecting',
+        });
+        const queue = new shared.InMemoryQueueBox(new Map());
+        const manager = new shared.WebRtcOverlayMulticastManager(
+            queue,
+            connectionService as never,
+            createReadableCache({}),
+            createReadableCache({}),
+            (overlayId) =>
+                new shared.WebRtcOverlayMulticastService(
+                    overlayId,
+                    connectionService as never,
+                ),
+        );
+
+        const msg = shared.newALUnicastMessage(
+            'sender-4b',
+            {
+                topicId: 'chat',
+                resourceId: 'msg-4b',
+                contextId: 'conversation-1',
+            },
+            'peer-1',
+            'chat.private-text.v1',
+            {
+                text: 'warming hello',
+            },
+            {
+                qos: {
+                    durability: {
+                        algo: 'volatile',
+                    },
+                },
+            },
+        );
+
+        await manager.enqueueIfAbsent(msg);
+
+        expect(connectionService.sendByPeerId.get('peer-1')).toBeUndefined();
+    });
+
     it('queues durable unicast when qos requests persistence', async () => {
         const connectionService = createConnectionService(['peer-1']);
         const queue = new shared.InMemoryQueueBox(new Map());
@@ -495,7 +538,10 @@ describe('multicast QoS integration', () => {
     });
 });
 
-function createConnectionService(connectedPeerIds: readonly string[]) {
+function createConnectionService(
+    connectedPeerIds: readonly string[],
+    readyStates: Readonly<Record<string, RTCDataChannelState>> = {},
+) {
     const sendByPeerId = new Map<string, unknown[]>();
 
     return {
@@ -505,6 +551,9 @@ function createConnectionService(connectedPeerIds: readonly string[]) {
         readyPeerIdsForLane: () => [...connectedPeerIds],
         readPeer: (peerId: string) => ({
             channel: {
+                readHealth: vi.fn(() => ({
+                    readyState: readyStates[peerId] ?? 'open',
+                })),
                 send: vi.fn(async (msg: unknown) => {
                     const sent = sendByPeerId.get(peerId) ?? [];
                     sent.push(msg);

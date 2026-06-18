@@ -16786,10 +16786,15 @@ function FilterSelect({
     values: readonly string[];
     onChange(value: string): void;
 }) {
+    const selectId = useId();
+
     return (
-        <label className="field compact-field">
-            <span>{label}</span>
+        <div className="field compact-field">
+            <label htmlFor={selectId}>
+                <span>{label}</span>
+            </label>
             <select
+                id={selectId}
                 value={value}
                 onChange={(event) => onChange(event.target.value)}
             >
@@ -16800,7 +16805,7 @@ function FilterSelect({
                     </option>
                 ))}
             </select>
-        </label>
+        </div>
     );
 }
 

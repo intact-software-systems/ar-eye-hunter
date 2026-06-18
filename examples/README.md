@@ -6,8 +6,8 @@ surfaces. They are documentation examples, not standalone apps.
 ## Browser Facade
 
 - [Browser Startup And Room](./browser-startup-room/README.md): configure the
-  browser facade, restore/login, create a funny RallarAI room name, join it, and
-  subscribe to room/people state.
+  browser facade, restore/login, create a funny RallarAI room name, switch to
+  it, and subscribe to room/people state.
 - [Room Realtime Channel](./room-realtime-channel/README.md): use
   `room.realtime<T>(...)` for low-latency room-scoped RTC traffic.
 - [Room Message Channel](./room-message-channel/README.md): use
@@ -42,6 +42,11 @@ For browser apps, prefer the golden path: `rallar.setup(...)`, then
 `room.realtime(...)`. This is the shorter form of the room/lane setup in
 `apps/ar-eye-hunter-v1` and the runtime adapter shape in
 `apps/relic-hunters-v1`.
+
+When creating a new room should replace the browser's current arena, use
+`rallar.rooms.createAndSwitch(...)` and then `rallar.rooms.session(...)` for the
+room-bound handle. Use `rooms.create(...)` only when staying in the previous
+room is intentional.
 
 Use the full browser facade from `@shared-web/browser/rallar.ts` when an app
 needs several Rallar surfaces. Use narrower entry points such as

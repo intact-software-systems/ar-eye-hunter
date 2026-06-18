@@ -10,7 +10,7 @@ description: Use when changing Rallar rooms, GroupRef/scoped identity, group/cli
 Inspect both runtime sides before editing:
 
 ```bash
-rg -n "GroupRef|groupRef|groupId|roomId|createAndJoin|joinRoom|state-sync|WebSocket|RTC|topology|presence|realtime\\.room|messages\\.room" packages/shared packages/shared-web packages/shared-server packages/shared-graph apps/api-v1 apps/ar-eye-hunter-v1 apps/relic-hunters-v1
+rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|waitForPresence|RallarReadinessExpectation|state-sync|WebSocket|RTC|topology|presence|realtime\\.room|messages\\.room|peerConnectionAttemptBudget|connect-exhausted" packages/shared packages/shared-web packages/shared-server packages/shared-graph apps/api-v1 apps/ar-eye-hunter-v1 apps/relic-hunters-v1
 ```
 
 ## Core Areas
@@ -29,9 +29,20 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndJoin|joinRoom|state-sync|WebSoc
 - Prefer `GroupRef` over bare `groupId` when application/workspace scope matters.
 - Do not trust warm in-memory presence blindly; check expiry and durable read-through paths.
 - Keep browser ergonomics, but diagnose ambiguity where string room IDs can cross scopes.
+- Use `rallar.rooms.createAndSwitch(...)` for browser flows where creating a new
+  room should leave the previous current room. Plain `rooms.create(...)` keeps
+  the previous membership.
+- Use `rooms.waitForPresence(...)` and RTC `expect` options when a flow needs a
+  bounded number or exact set of active sessions/peers.
 - Prefer `rallar.realtime.room<T>(...)` for app/game room traffic before wiring `rtc.waitForRoomLane`, `readyPeerIds`, and `realtime.sendJson` manually.
 - Prefer `rallar.messages.room<T>(...)` when important room-scoped messages need typed RTC/WS fallback behavior.
 - For RTC tests, distinguish signaling readiness from actual data-channel readiness.
+- For inbound RTC peer creation, group state is eventually consistent. Prefer
+  optimistic/tentative admission under caps and attempt budgets; keep hard
+  rejects for malformed, self, wrong-target, exhausted, or cap-blocked peers.
+- Browser RTC enables the initial connection-attempt budget by default. The
+  shared service exposes `connect-exhausted`; browser facade waits report
+  exhaustion as `failed` with reason `rtc-connect-attempt-budget-exhausted`.
 - Game and motion traffic are reliability consumers of the realtime layer, not separate demos.
 
 ## Validation

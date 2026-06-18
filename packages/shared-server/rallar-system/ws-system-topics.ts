@@ -149,6 +149,10 @@ export function initRallarSystemWsTopics(
             );
         }
     });
+    initStateBroadcastTopic(AppTopics.groupDirectorySnapshot, wsQBoxServerService, (rawData) => {
+        const data = rawData as GroupSnapshot;
+        groupStateSnapshotsRepository.setGroupStateSnapshot(data);
+    });
     initStateBroadcastTopic(AppTopics.groupStateEvent, wsQBoxServerService);
     initGraphsTopic(wsQBoxServerService);
     initOverlayTopologyTopic(wsQBoxServerService);

@@ -24,7 +24,7 @@ Read these files before changing behavior:
 Use `rallar` in browser code when the task involves:
 
 - Login, logout, registration, or restoring a session.
-- Creating, joining, leaving, listing, or observing rooms.
+- Creating, switching, joining, leaving, listing, or observing rooms.
 - Observing people/client presence.
 - Sending AL messages over WS or RTC.
 - Waiting for WS or RTC readiness.
@@ -58,18 +58,28 @@ Use Rallar Server middleware/facade when the task involves:
 5. Prefer room helpers for room-scoped low-latency sends.
    Use `rallar.realtime.room<T>({ roomId, laneId: 'realtime', waitTimeoutMs }).send(payload)` for app/game room traffic. It waits for RTC readiness by default and returns transport diagnostics.
 
-6. Use WS for reliable server-routed messages.
+6. Use `createAndSwitch` for replacement room creation.
+   Use `rallar.rooms.createAndSwitch(...)` when creating a new room should
+   leave the previous current room. Use `rooms.create(...)` only when staying in
+   the previous room is intentional.
+
+7. Use readiness expectations when counts matter.
+   Use `rooms.waitForPresence(...)` or `rtc.waitForRoomLane(..., { expect })`
+   for flows that require a minimum, maximum, exact count, or exact set of
+   active sessions/peers.
+
+8. Use WS for reliable server-routed messages.
    Use `rallar.messages.room<T>(definition)` when an important room message should use the typed message path with RTC and WS options. Use raw RTC/realtime APIs only when the caller needs custom peer selection or low-level readiness handling.
 
-7. Use `roomRef` where scope matters.
+9. Use `roomRef` where scope matters.
    Prefer `GroupRef` over plain `roomId` when the app can operate in multiple application/workspace scopes.
 
-8. Store unsubscribe callbacks.
+10. Store unsubscribe callbacks.
    Use `rallar.subscriptions()` for UI component lifecycles.
 
-9. Do not call `advanced.middleware()` unless the public facade is missing the needed operation.
+11. Do not call `advanced.middleware()` unless the public facade is missing the needed operation.
 
-10. For Rallar Data, do not open the same store with different options.
+12. For Rallar Data, do not open the same store with different options.
     The facade intentionally throws when an already-open store is requested with incompatible options.
 
 ## Browser Implementation Workflow

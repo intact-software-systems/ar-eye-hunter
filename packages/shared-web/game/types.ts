@@ -7,6 +7,7 @@ import type {
     RallarFacade,
     RallarMessage,
     RallarMessageSendResult,
+    RallarReadinessExpectation,
     RallarRealtimeLaneHealth,
     RallarRealtimeSendResult,
     RallarRoomState,
@@ -77,6 +78,25 @@ export type RallarGameRecoveryState = Readonly<{
     lastSnapshotAtEpochMs?: number;
 }>;
 
+export type RallarGameDirectorAuthority =
+    | 'none'
+    | 'candidate'
+    | 'active'
+    | 'stale';
+
+export type RallarGameEgressState =
+    | 'empty'
+    | 'warming'
+    | 'ready'
+    | 'partial'
+    | 'timeout'
+    | 'failed';
+
+export type RallarGameEgressStatus = Readonly<{
+    reliable: RallarGameEgressState;
+    realtime: RallarGameEgressState;
+}>;
+
 export type RallarGameMatchStatus = Readonly<{
     phase: RallarGameMatchPhase;
     protocol: string;
@@ -87,6 +107,8 @@ export type RallarGameMatchStatus = Readonly<{
     directorPeerId?: string;
     directorEpoch?: number;
     directorIsFresh: boolean;
+    directorAuthority: RallarGameDirectorAuthority;
+    egress: RallarGameEgressStatus;
     recovery: RallarGameRecoveryState;
     started: boolean;
     stopped: boolean;
@@ -241,6 +263,7 @@ export type RallarGameLaneReadyOptions = Readonly<{
     timeoutMs?: number;
     signal?: AbortSignal;
     connect?: boolean;
+    expect?: RallarReadinessExpectation;
 }>;
 
 export type RallarGamePeerReadiness = Readonly<{
@@ -253,11 +276,16 @@ export type RallarGamePeerReadiness = Readonly<{
         | 'timeout'
         | 'aborted'
         | 'failed'
+        | 'over-capacity'
         | 'no-room';
     roomId?: string;
     laneIds: readonly string[];
     readyPeerIds: readonly string[];
     notReadyPeerIds: readonly string[];
+    missingPeerIds: readonly string[];
+    extraPeerIds: readonly string[];
+    observedCount: number;
+    expectedCount?: number;
     lanes: readonly RallarRtcRoomLaneWaitResult[];
     reason?: string;
 }>;
@@ -284,6 +312,8 @@ export type RallarGameDiagnostics = Readonly<{
     directorPeerId?: string;
     directorEpoch?: number;
     directorIsFresh: boolean;
+    directorAuthority: RallarGameDirectorAuthority;
+    egress: RallarGameEgressStatus;
     recovery: RallarGameRecoveryState;
     hostPeerId?: string;
     backupPeerId?: string;

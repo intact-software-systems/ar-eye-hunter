@@ -26,6 +26,8 @@ import { WebRtcConnectionService } from '../services/WebRtcConnectionService.ts'
 import type {
     ALOutboundEnqueueResult,
     ALOutboundEnqueueStatus,
+    ALOutboundPreparedSendResult,
+    ALOutboundRuntimeDiagnosticsSink,
     ALOutboundRuntimeStores,
 } from '../alm/ALOutboundMessageRuntime.ts';
 import {
@@ -47,6 +49,7 @@ import {
 
 export type WebRtcOverlayMulticastManagerOptions = Readonly<{
     qosProvider?: ALQosInputProvider;
+    outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
     outboundStores?: ALOutboundRuntimeStores;
 }>;
 
@@ -62,6 +65,7 @@ export class WebRtcOverlayMulticastManager {
     >();
     private readonly outboundRuntime: ALOutboundMessageRuntime<ALMessage>;
     private readonly qosProvider?: ALQosInputProvider;
+    private disposed = false;
 
     constructor(
         public readonly outbox: QueueBoxResourceEntryRepository,
@@ -90,6 +94,7 @@ export class WebRtcOverlayMulticastManager {
                     await this.sendPreparedMessage(msg, phase),
                 planRepairMessage: async (msg, request) =>
                     await this.planRepairMessage(msg, request),
+                diagnostics: options.outboundDiagnostics,
             },
         );
     }
@@ -105,7 +110,17 @@ export class WebRtcOverlayMulticastManager {
         return multicaster;
     }
 
+    dispose(): void {
+        this.disposed = true;
+        this.outboundRuntime.dispose();
+        this.multicasterByOverlayId.clear();
+    }
+
     async enqueueIfAbsent(msg: ALMessage): Promise<ALOutboundEnqueueResult> {
+        if (this.disposed) {
+            return WebRtcOverlayMulticastManager.toDisposedEnqueueResult(msg);
+        }
+
         const either =
             await CircuitBreaker.tryToExecute<ALOutboundEnqueueResult>(
                 this.circuitBreaker,
@@ -172,6 +187,15 @@ export class WebRtcOverlayMulticastManager {
             message: msg,
             entries: [],
             reason,
+        };
+    }
+
+    private static toDisposedEnqueueResult(msg: ALMessage): ALOutboundEnqueueResult {
+        return {
+            status: 'skipped',
+            message: msg,
+            entries: [],
+            reason: 'RTC overlay multicast manager is disposed.',
         };
     }
 
@@ -277,10 +301,18 @@ export class WebRtcOverlayMulticastManager {
         typesToDequeue: Set<string>,
         resilience: ResilienceDto,
     ): Promise<void> {
+        if (this.disposed) {
+            return;
+        }
+
         await this.outboundRuntime.dequeue(typesToDequeue, resilience);
     }
 
     async acceptControlMessage(msg: ALMessage): Promise<void> {
+        if (this.disposed) {
+            return;
+        }
+
         await this.outboundRuntime.acceptControlMessage(msg);
     }
 
@@ -554,32 +586,42 @@ export class WebRtcOverlayMulticastManager {
     private async sendPreparedMessage(
         msg: ALMessage,
         phase: ALOutboundDispatchPhase,
-    ): Promise<void> {
+    ): Promise<ALOutboundPreparedSendResult> {
         const peerId = msg.forwarding?.nextHopPeerIds?.[0];
         if (!peerId) {
             const reason = 'Skipping RTC send without immediate next hop';
-            if (phase === 'dequeue') {
-                throw new Error(reason);
+            if (phase === 'immediate') {
+                console.warn(reason);
             }
-
-            console.warn(reason);
-            return;
+            return { status: 'no-targets', reason };
         }
 
         const peer = this.connectionService.readPeer(peerId);
         if (!peer?.channel) {
             const reason = `No RTC channel for peer ${peerId}`;
-            if (phase === 'dequeue') {
-                throw new Error(reason);
+            if (phase === 'immediate') {
+                console.warn(
+                    `Skipping immediate send without RTC channel for peer ${peerId}`,
+                );
             }
+            return {
+                status: 'not-ready',
+                reason,
+                retryAfterMs: 50,
+            };
+        }
 
-            console.warn(
-                `Skipping immediate send without RTC channel for peer ${peerId}`,
-            );
-            return;
+        const health = peer.channel.readHealth();
+        if (health.readyState !== 'open') {
+            return {
+                status: 'not-ready',
+                reason: `RTC channel for peer ${peerId} is ${health.readyState}`,
+                retryAfterMs: 50,
+            };
         }
 
         await peer.channel.send(msg);
+        return { status: 'sent' };
     }
 
     private async sendImmediately(messages: readonly ALMessage[]): Promise<void> {

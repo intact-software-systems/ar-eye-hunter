@@ -82,7 +82,12 @@ Implement room list, create, join, leave, and current room display using Rallar 
 
 Requirements:
 - Use rallar.rooms.refresh for initial load.
-- Use rallar.rooms.create, join, leave, and current.
+- Use rallar.rooms.createAndSwitch when a new room should replace the current
+  room; use rallar.rooms.create only when the browser should stay in both.
+- Use rallar.rooms.join, leave, current, and session for existing/current room
+  flows.
+- Use rallar.rooms.waitForPresence when UI or game setup depends on active
+  session counts.
 - Subscribe with rallar.rooms.onChange.
 - Use rallar.rooms.onEvent for state-sync events.
 - Prefer configured defaults and GroupRef.
@@ -142,8 +147,10 @@ Implement low-latency peer updates over Rallar realtime.
 Requirements:
 - Use rallar.realtime.room<T>({ roomId: room, laneId: 'realtime', waitTimeoutMs: 1000 }) for room-scoped app/game sends.
 - Check the returned room send status and diagnostics.
+- Use rtc.waitForRoomLane(..., { expect }) only for low-level peer targeting or
+  custom readiness diagnostics.
 - Use rallar.messages.room<T>(...) when important messages need typed RTC/WS fallback behavior.
-- Add tests for open, partial, timeout, and no-peer readiness.
+- Add tests for open, partial, timeout, over-capacity, and no-peer readiness.
 ```
 
 ### Typed Message Channel

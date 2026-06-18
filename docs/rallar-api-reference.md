@@ -151,7 +151,14 @@ await rallar.auth.registerAndLogin({
 
 `rooms.refresh(input?)` fetches current room and client snapshots from the API and updates local caches.
 
-`rooms.create(input)` creates a group/room and joins it. `input` can be a display name string or an object.
+`rooms.create(input)` creates a group/room, joins it, and makes it current.
+`input` can be a display name string or an object. It does not leave the
+previous current room, so use it when multi-room membership is intentional.
+
+`rooms.createAndSwitch(input)` creates a group/room, makes it current, and then
+leaves the previous current room when it is different. It accepts the same input
+shape as `rooms.create(...)` and is the preferred browser-app helper for "new
+arena, leave the old arena" flows.
 
 `rooms.join(roomIdOrRef, options?)` joins a room. By default it leaves the current room if different. `rooms.join({ roomId })` and `rooms.join({ roomRef })` are also supported; if both are present, `roomId` must match `roomRef.groupId`.
 
@@ -166,6 +173,13 @@ default room, or the current room without joining.
 
 `rooms.leave(input?)` leaves a room. It can use explicit `roomId`, `roomRef`, the default room, or the current room.
 
+`rooms.waitForPresence(room, options?)` waits for active room sessions to match
+a readiness expectation. Expectations can be `{ min, max? }`, `{ exact }`, or
+`{ sessionIds, allowExtras? }`; the default is `{ min: 1 }`. The result includes
+the active session IDs, missing/extra IDs, observed/expected counts, and statuses
+such as `ready`, `partial`, `empty`, `timeout`, `over-capacity`, `aborted`, and
+`not-found`.
+
 `rooms.current()` returns the current room snapshot.
 
 `rooms.onChange(listener, options?)` subscribes to derived room state.
@@ -179,14 +193,19 @@ default room, or the current room without joining.
 `rooms.replayEvents(input, listener?)` fetches pages of persisted room events, dedupes events already seen by the facade, and optionally feeds the events to a listener.
 
 ```ts
-const created = await rallar.rooms.create({
+const created = await rallar.rooms.createAndSwitch({
     displayName: 'Lobby',
     scope: { applicationId: 'game', workspaceId: 'default' },
 });
 
-const room = await rallar.rooms.enter(created.group);
+const room = rallar.rooms.session(created.group);
 const chat = room.message<{ text: string }>('chat');
 const motion = room.realtime<{ x: number; y: number }>('motion');
+
+const presence = await rallar.rooms.waitForPresence(created.group, {
+    expect: { min: 2, max: 8 },
+    timeoutMs: 2000,
+});
 
 rallar.rooms.onEvent((event) => {
     if (event.eventType === 'member-joined') {
@@ -284,7 +303,11 @@ await roomChat.send({ text: 'hello' });
 
 `rtc.waitForOpen(peerId, options?)` waits for the default or configured lane.
 
-`rtc.waitForRoomLane(room, laneId, options?)` waits for all known active peers in a room and returns separate `ready` and `notReady` lists.
+`rtc.waitForRoomLane(room, laneId, options?)` waits for room peers on one RTC
+lane and returns separate `ready` and `notReady` lists. The same readiness
+expectation shape used by `rooms.waitForPresence(...)` can be passed as
+`options.expect`; the result also includes `readyPeerIds`, `notReadyPeerIds`,
+`missingPeerIds`, `extraPeerIds`, `observedCount`, and `expectedCount`.
 
 `rtc.peer(peerId, options?)`, `knownPeerIds()`, `activePeerIds()`, `peerIdsWithNoReconnectableLanes()`, and `readyPeerIds(laneId?)` expose peer subsets.
 
@@ -292,15 +315,23 @@ await roomChat.send({ text: 'hello' });
 const readiness = await rallar.rtc.waitForRoomLane('lobby', 'realtime', {
     connect: true,
     timeoutMs: 1000,
+    expect: { min: 1, max: 10 },
 });
 
 if (readiness.status === 'open' || readiness.status === 'partial') {
     console.log(
         'Ready peers',
-        readiness.ready.map((entry) => entry.peerId),
+        readiness.readyPeerIds,
     );
 }
 ```
+
+Browser RTC enables a bounded initial-establishment budget by default: six
+attempts, 180 seconds total, and a 30 second cooldown after exhaustion. The
+shared service exposes `WebRtcPeerLaneOpenStatus: 'exhausted'` and
+`WebRtcPeerConnectionLeft.kind: 'connect-exhausted'`; the browser facade keeps
+`RallarWaitForOpenStatus` compatible by returning `status: 'failed'` with reason
+`rtc-connect-attempt-budget-exhausted`.
 
 ### WebSocket Status And Readiness
 

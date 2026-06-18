@@ -13,7 +13,9 @@ without pulling in DOM, HTTP-server, Postgres, or app-specific runtime wiring.
   caller can operate across more than one app/workspace.
 - `al-contracts/` and `alm/` define AL message shapes, QoS/admission policies,
   runtime stores, inbound/outbound message processing, multicast targeting, and
-  WebSocket/RTC policy helpers.
+  WebSocket/RTC policy helpers. Outbound prepared sends can report `sent`,
+  `no-targets`, or `not-ready` with retry timing so callers can reschedule
+  instead of treating a warm transport as a terminal send failure.
 - `queuebox/`, `services/`, `repository/`, `persistence/`, and `resilience/`
   provide runtime-neutral persistence, queue, retry, clock, and utility
   contracts used by browser and server packages.
@@ -24,7 +26,11 @@ without pulling in DOM, HTTP-server, Postgres, or app-specific runtime wiring.
 - `rallar-game/` and `rallar-motion/` own transport-neutral game authority,
   command, motion lane, and payload contracts consumed by shared-web and games.
 - `webrtc/` owns shared WebRTC group, multicast, overlay, and signaling
-  contracts that do not depend on browser APIs directly.
+  contracts that do not depend on browser APIs directly. The shared RTC
+  connection service supports bounded initial connection-attempt budgets,
+  `connect-exhausted` diagnostics, max-peer caps, and tentative inbound peer
+  admission for eventually consistent group state; browser wiring enables the
+  budget by default.
 
 ## Boundaries
 

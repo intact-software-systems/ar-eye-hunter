@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
     ARENA_AUDIO_STORAGE_KEY,
     calculateArenaAudioEffectiveLevels,
+    calculateArenaMusicLayerState,
     createDefaultArenaAudioSettings,
     normalizeArenaAudioSettings,
     shouldPlayArenaAudioVoice,
@@ -18,6 +19,7 @@ describe('AR Eye Hunter arena audio', () => {
         expect(settings.musicVolume).toBeGreaterThanOrEqual(0.18);
         expect(settings.sfxVolume).toBeGreaterThanOrEqual(0.45);
         expect(settings.eyeDroneVolume).toBeGreaterThanOrEqual(0.12);
+        expect(settings.autoStartOnGesture).toBe(true);
         expect(levels.music).toBeGreaterThanOrEqual(0.003);
         expect(levels.shot).toBeGreaterThanOrEqual(0.08);
         expect(levels.eyeDrone).toBeGreaterThanOrEqual(0.001);
@@ -43,6 +45,7 @@ describe('AR Eye Hunter arena audio', () => {
         expect(settings.sfxVolume).toBe(1);
         expect(settings.eyeDroneVolume).toBe(1);
         expect(settings.reducedIntensity).toBe(true);
+        expect(settings.autoStartOnGesture).toBe(true);
         expect(shouldPlayArenaAudioVoice(settings, 0, 8)).toBe(false);
     });
 
@@ -51,5 +54,70 @@ describe('AR Eye Hunter arena audio', () => {
 
         expect(shouldPlayArenaAudioVoice(settings, 7, 8)).toBe(true);
         expect(shouldPlayArenaAudioVoice(settings, 8, 8)).toBe(false);
+    });
+
+    it('raises adaptive music layers for match pressure, threats, low health, and weak links', () => {
+        const settings = createDefaultArenaAudioSettings();
+
+        const calm = calculateArenaMusicLayerState({
+            matchStatus: 'infinite',
+            matchRemainingRatio: 1,
+            wavePhase: 'warmup',
+            waveNumber: 1,
+            hostileCount: 0,
+            incomingAttack: false,
+            healthRatio: 1,
+            linkTone: 'live',
+            reducedIntensity: false,
+        }, settings);
+        const tense = calculateArenaMusicLayerState({
+            matchStatus: 'active',
+            matchRemainingRatio: 0.12,
+            wavePhase: 'active',
+            waveNumber: 8,
+            hostileCount: 5,
+            incomingAttack: true,
+            healthRatio: 0.22,
+            linkTone: 'degraded',
+            reducedIntensity: false,
+        }, settings);
+
+        expect(calm.baseHum).toBeGreaterThan(0);
+        expect(tense.pulseBass).toBeGreaterThan(calm.pulseBass);
+        expect(tense.threatDrone).toBeGreaterThan(calm.threatDrone);
+        expect(tense.matchClock).toBeGreaterThan(0);
+        expect(tense.lowHealth).toBeGreaterThan(0);
+        expect(tense.linkStatic).toBeGreaterThan(0);
+        expect(tense.intensity).toBeGreaterThan(calm.intensity);
+    });
+
+    it('keeps adaptive music restrained in reduced-intensity mode', () => {
+        const settings = createDefaultArenaAudioSettings();
+        const normal = calculateArenaMusicLayerState({
+            matchStatus: 'active',
+            matchRemainingRatio: 0.05,
+            wavePhase: 'reward',
+            waveNumber: 12,
+            hostileCount: 8,
+            incomingAttack: true,
+            healthRatio: 0.1,
+            linkTone: 'rejoining',
+            reducedIntensity: false,
+        }, settings);
+        const reduced = calculateArenaMusicLayerState({
+            matchStatus: 'active',
+            matchRemainingRatio: 0.05,
+            wavePhase: 'reward',
+            waveNumber: 12,
+            hostileCount: 8,
+            incomingAttack: true,
+            healthRatio: 0.1,
+            linkTone: 'rejoining',
+            reducedIntensity: true,
+        }, { ...settings, reducedIntensity: true });
+
+        expect(normal.rewardShimmer).toBeGreaterThan(0);
+        expect(reduced.intensity).toBeLessThan(normal.intensity);
+        expect(reduced.threatDrone).toBeLessThan(normal.threatDrone);
     });
 });

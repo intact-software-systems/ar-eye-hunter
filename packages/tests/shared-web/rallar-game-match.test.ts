@@ -12,6 +12,7 @@ import type {
     RallarDirectorRelayConfig,
     RallarDirectorRelayHandle,
     RallarDirectorStatus,
+    RallarRoomRealtimeSendResult,
 } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
@@ -108,6 +109,114 @@ describe('Rallar Game match', () => {
         });
     });
 
+    it('marks a solo auto-appointed director as active with empty realtime egress', async () => {
+        const fake = createFakeRallar({
+            localRole: 'owner',
+            remoteMemberKnown: false,
+        });
+        fake.waitForRoomLane.mockResolvedValue({
+            transport: 'rtc',
+            roomId: 'room-1',
+            laneId: 'game-snapshot',
+            status: 'empty',
+            rtcStatus: {
+                sessionId: 'peer-a',
+                laneId: 'game-snapshot',
+                knownPeerIds: [],
+                activePeerIds: [],
+                peerIdsWithNoReconnectableLanes: [],
+                readyPeerIds: [],
+                peers: [],
+            },
+            ready: [],
+            notReady: [],
+            readyPeerIds: [],
+            notReadyPeerIds: [],
+            missingPeerIds: [],
+            extraPeerIds: [],
+            observedCount: 0,
+            expectedCount: 0,
+        });
+        const match = createMatch(fake, {
+            readCapability: () => ({ scoreBias: 100 }),
+            scoreHost: (capability) => capability.scoreBias ?? 0,
+        });
+
+        await match.start();
+        await match.reportCapability();
+        await match.appointIfElected();
+        await match.waitForReadyLanes({
+            laneIds: ['game-snapshot'],
+            expect: { exact: 0 },
+            timeoutMs: 10,
+        });
+
+        expect(match.status()).toMatchObject({
+            directorPeerId: 'peer-a',
+            directorIsFresh: true,
+            directorAuthority: 'active',
+            egress: {
+                reliable: 'ready',
+                realtime: 'empty',
+            },
+        });
+        expect(match.diagnostics()).toMatchObject({
+            directorAuthority: 'active',
+            egress: {
+                reliable: 'ready',
+                realtime: 'empty',
+            },
+        });
+    });
+
+    it('keeps local director authority active while remote realtime lanes warm', async () => {
+        const fake = createFakeRallar({ localRole: 'owner' });
+        fake.waitForRoomLane.mockResolvedValue({
+            transport: 'rtc',
+            roomId: 'room-1',
+            laneId: 'game-snapshot',
+            status: 'timeout',
+            rtcStatus: {
+                sessionId: 'peer-a',
+                laneId: 'game-snapshot',
+                knownPeerIds: ['peer-b'],
+                activePeerIds: ['peer-b'],
+                peerIdsWithNoReconnectableLanes: [],
+                readyPeerIds: [],
+                peers: [],
+            },
+            ready: [],
+            notReady: [],
+            readyPeerIds: [],
+            notReadyPeerIds: ['peer-b'],
+            missingPeerIds: [],
+            extraPeerIds: [],
+            observedCount: 0,
+            expectedCount: 1,
+        });
+        const match = createMatch(fake, {
+            readCapability: () => ({ scoreBias: 100 }),
+            scoreHost: (capability) => capability.scoreBias ?? 0,
+        });
+
+        await match.start();
+        await match.reportCapability();
+        await match.appointIfElected();
+        await match.waitForReadyLanes({
+            laneIds: ['game-snapshot'],
+            expect: { exact: 1 },
+            timeoutMs: 1,
+        });
+
+        expect(match.status()).toMatchObject({
+            directorAuthority: 'active',
+            egress: {
+                reliable: 'ready',
+                realtime: 'timeout',
+            },
+        });
+    });
+
     it('does not appoint a non-admin local peer for metadata-backed directors', async () => {
         const fake = createFakeRallar({ localRole: 'member' });
         const match = createMatch(fake, {
@@ -183,6 +292,40 @@ describe('Rallar Game match', () => {
         expect(fake.realtimeSendJson).toHaveBeenCalledWith(expect.objectContaining({
             laneId: 'game-input',
             roomRef,
+            data: expect.objectContaining({
+                kind: 'presence',
+                payload: { x: 7 },
+                senderId: 'peer-a',
+            }),
+            key: 'presence:peer-a',
+            maxAgeMs: 250,
+            openTimeoutMs: 500,
+        }));
+    });
+
+    it('falls back to ready realtime peers when room-scoped presence finds no targets', async () => {
+        const fake = createFakeRallar();
+        fake.setRoomRealtimeSendResult({
+            transport: 'rtc',
+            status: 'no-targets',
+            laneId: 'game-input',
+            roomRef,
+            peerIds: [],
+            desiredPeerIds: ['peer-b'],
+            results: [],
+            reason: 'Room RTC has no ready peers.',
+        });
+        const match = createMatch(fake);
+        await match.start();
+
+        const result = await match.sendPresence({ x: 7 });
+
+        expect(result).toMatchObject({ status: 'sent', transport: 'realtime' });
+        expect(fake.realtimeSendJson).toHaveBeenCalledOnce();
+        expect(fake.realtimeSendJson).toHaveBeenCalledWith(expect.objectContaining({
+            laneId: 'game-input',
+            roomRef,
+            peerIds: ['peer-b'],
             data: expect.objectContaining({
                 kind: 'presence',
                 payload: { x: 7 },
@@ -343,6 +486,55 @@ describe('Rallar Game match', () => {
         expect(onSnapshot).not.toHaveBeenCalled();
         expect(fake.relay.stop).toHaveBeenCalled();
     });
+
+    it('returns stopped for network methods after stop without touching transports', async () => {
+        const fake = createFakeRallar({
+            directorPeerId: 'peer-a',
+            directorIsFresh: true,
+        });
+        const match = createMatch(fake, {
+            readSnapshot: () => ({ tick: 99 }),
+        });
+        await match.start();
+        match.stop();
+        fake.createRelay.mockClear();
+        fake.relay.sendIntent.mockClear();
+        fake.relay.sendOutput.mockClear();
+        fake.relay.sendSnapshot.mockClear();
+        fake.relay.requestSync.mockClear();
+        fake.realtimeSendJson.mockClear();
+        fake.wsSend.mockClear();
+        fake.waitForRoomLane.mockClear();
+
+        const sendResults = await Promise.all([
+            match.sendInput({ x: 1 }),
+            match.sendIntent({ action: 'dash' }),
+            match.publishSnapshot({ tick: 2 }),
+            match.publishEvent({ kind: 'hit' }),
+            match.requestSync({ reason: 'late-join' }),
+            match.sendPresence({ x: 3 }),
+        ]);
+        const readiness = await match.waitForReadyLanes();
+
+        expect(sendResults).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ status: 'stopped' }),
+            ]),
+        );
+        expect(sendResults.every((result) => result.status === 'stopped')).toBe(true);
+        expect(readiness).toMatchObject({
+            status: 'aborted',
+            reason: 'Rallar Game match is stopped.',
+        });
+        expect(fake.createRelay).not.toHaveBeenCalled();
+        expect(fake.relay.sendIntent).not.toHaveBeenCalled();
+        expect(fake.relay.sendOutput).not.toHaveBeenCalled();
+        expect(fake.relay.sendSnapshot).not.toHaveBeenCalled();
+        expect(fake.relay.requestSync).not.toHaveBeenCalled();
+        expect(fake.realtimeSendJson).not.toHaveBeenCalled();
+        expect(fake.wsSend).not.toHaveBeenCalled();
+        expect(fake.waitForRoomLane).not.toHaveBeenCalled();
+    });
 });
 
 function createMatch(
@@ -382,6 +574,7 @@ function createFakeRallar(
         localRole?: 'owner' | 'admin' | 'member';
         localStatus?: 'active' | 'left' | 'removed' | 'banned' | 'invited';
         localMemberKnown?: boolean;
+        remoteMemberKnown?: boolean;
     }> = {},
 ) {
     const roomChangeHandlers: Array<(state: unknown) => void | Promise<void>> = [];
@@ -417,7 +610,7 @@ function createFakeRallar(
         currentRoomRef: roomRef,
         members: [
             ...(options.localMemberKnown === false ? [] : [localMember]),
-            {
+            ...(options.remoteMemberKnown === false ? [] : [{
                 principalId: 'principal-b',
                 username: 'bob',
                 role: 'member',
@@ -425,7 +618,7 @@ function createFakeRallar(
                 isOwner: false,
                 isOnline: true,
                 sessionIds: ['peer-b'],
-            },
+            }]),
         ],
     };
     let directorStatus = createDirectorStatus(
@@ -458,6 +651,10 @@ function createFakeRallar(
         message: input,
         entries: [],
     }));
+    const createRelay = vi.fn((config: typeof relayConfig) => {
+        relayConfig = config;
+        return relay;
+    });
     const realtimeSendJson = vi.fn(async (input: { laneId: string; peerIds?: readonly string[] }) =>
         (input.peerIds ?? ['peer-b']).map((peerId) => ({
             peerId,
@@ -468,10 +665,71 @@ function createFakeRallar(
             },
         }))
     );
+    let roomRealtimeSendResult: RallarRoomRealtimeSendResult | undefined;
+    const roomRealtimeSend = vi.fn(async (
+        defaults: Record<string, unknown>,
+        data: unknown,
+        options: Record<string, unknown> = {},
+    ): Promise<RallarRoomRealtimeSendResult> => {
+        if (roomRealtimeSendResult) {
+            return roomRealtimeSendResult;
+        }
+
+        const results = await realtimeSendJson({
+            ...defaults,
+            ...options,
+            data,
+        } as { laneId: string; peerIds?: readonly string[] });
+        return {
+            transport: 'rtc' as const,
+            status: 'sent' as const,
+            laneId: String(defaults['laneId'] ?? 'realtime'),
+            roomId: defaults['roomId'] as string | undefined,
+            roomRef: defaults['roomRef'] as GroupRef | undefined,
+            peerIds: results.map((result) => result.peerId),
+            desiredPeerIds: results.map((result) => result.peerId),
+            results,
+        };
+    });
     const appoint = vi.fn(async () => {
         directorStatus = createDirectorStatus('peer-a', true);
         return directorStatus;
     });
+    const waitForRoomLane = vi.fn(async (_room: unknown, laneId: string) => ({
+        transport: 'rtc' as const,
+        roomId: 'room-1',
+        laneId,
+        status: 'open' as const,
+        rtcStatus: {
+            sessionId: session.sessionId,
+            laneId,
+            knownPeerIds: ['peer-b'],
+            activePeerIds: ['peer-b'],
+            peerIdsWithNoReconnectableLanes: [],
+            readyPeerIds: ['peer-b'],
+            peers: [],
+        },
+        ready: [],
+        notReady: [],
+        readyPeerIds: ['peer-b'],
+        notReadyPeerIds: [],
+        missingPeerIds: [],
+        extraPeerIds: [],
+        observedCount: 1,
+        expectedCount: 1,
+    }));
+    const waitForPresence = vi.fn(async () => ({
+        status: 'ready' as const,
+        roomId: 'room-1',
+        roomRef,
+        activeSessionIds: roomState.members.flatMap((member) => member.sessionIds),
+        observedSessionIds: roomState.members.flatMap((member) => member.sessionIds),
+        missingSessionIds: [],
+        extraSessionIds: [],
+        observedCount: roomState.members.flatMap((member) => member.sessionIds).length,
+        expectedCount: 1,
+        timedOut: false,
+    }));
 
     const fake = {
         roomChangeHandlers,
@@ -482,7 +740,11 @@ function createFakeRallar(
         realtimeJsonHandlers,
         wsSend,
         realtimeSendJson,
+        roomRealtimeSend,
         appoint,
+        createRelay,
+        waitForRoomLane,
+        waitForPresence,
         relay,
         get relayConfig() {
             return relayConfig;
@@ -492,6 +754,7 @@ function createFakeRallar(
             subscriptions: createSubscriptionScope,
             rooms: {
                 state: () => roomState,
+                waitForPresence,
                 onChange: (handler: (state: unknown) => void | Promise<void>) => {
                     roomChangeHandlers.push(handler);
                     return () => remove(roomChangeHandlers, handler);
@@ -513,10 +776,7 @@ function createFakeRallar(
                     return () => remove(directorStatusHandlers, handler);
                 },
                 appoint,
-                createRelay: (config: typeof relayConfig) => {
-                    relayConfig = config;
-                    return relay;
-                },
+                createRelay,
             },
             rtc: {
                 status: () => ({
@@ -532,43 +792,13 @@ function createFakeRallar(
                     rtcStatusHandlers.push(handler);
                     return () => remove(rtcStatusHandlers, handler);
                 },
-                waitForRoomLane: vi.fn(async (_room: unknown, laneId: string) => ({
-                    transport: 'rtc' as const,
-                    roomId: 'room-1',
-                    laneId,
-                    status: 'open' as const,
-                    rtcStatus: {
-                        sessionId: session.sessionId,
-                        laneId,
-                        knownPeerIds: ['peer-b'],
-                        activePeerIds: ['peer-b'],
-                        peerIdsWithNoReconnectableLanes: [],
-                        readyPeerIds: ['peer-b'],
-                        peers: [],
-                    },
-                    ready: [],
-                    notReady: [],
-                })),
+                waitForRoomLane,
             },
             realtime: {
                 sendJson: realtimeSendJson,
                 room: (defaults: Record<string, unknown>) => ({
                     send: async (data: unknown, options: Record<string, unknown> = {}) => {
-                        const results = await realtimeSendJson({
-                            ...defaults,
-                            ...options,
-                            data,
-                        } as { laneId: string; peerIds?: readonly string[] });
-                        return {
-                            transport: 'rtc' as const,
-                            status: 'sent' as const,
-                            laneId: String(defaults['laneId'] ?? 'realtime'),
-                            roomId: defaults['roomId'] as string | undefined,
-                            roomRef: defaults['roomRef'],
-                            peerIds: results.map((result) => result.peerId),
-                            desiredPeerIds: results.map((result) => result.peerId),
-                            results,
-                        };
+                        return roomRealtimeSend(defaults, data, options);
                     },
                     on: (
                         handler: (message: { peerId: string; data: unknown }) =>
@@ -615,6 +845,9 @@ function createFakeRallar(
         } as unknown as RallarGameRallarFacade,
         setDirector(peerId: string | undefined, isFresh: boolean) {
             directorStatus = createDirectorStatus(peerId, isFresh);
+        },
+        setRoomRealtimeSendResult(result: RallarRoomRealtimeSendResult | undefined) {
+            roomRealtimeSendResult = result;
         },
         async emitDirectorStatus() {
             await Promise.all(

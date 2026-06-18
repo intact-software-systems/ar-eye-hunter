@@ -48,6 +48,7 @@ describe('Rallar composed facade compatibility', () => {
             'session',
             'state',
             'updateMetadata',
+            'waitForPresence',
         ]);
         expect(Object.keys(facade.people).sort()).toEqual([
             'get',

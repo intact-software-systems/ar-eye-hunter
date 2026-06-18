@@ -238,9 +238,7 @@ describe('WebRtc overlay services', () => {
 
     it('resolves multicast room context from target groupRef when group ids collide', async () => {
         const queue = new InMemoryQueueBox(new Map());
-        const channel = {
-            send: vi.fn(async () => Promise.resolve()),
-        };
+        const channel = createOpenRtcChannel();
         const connectionService = createConnectionService(['peer-b'], {
             'peer-b': {
                 channel,
@@ -303,9 +301,7 @@ describe('WebRtc overlay services', () => {
     it('rejects a legacy bare overlay fallback when its groupRef belongs to another workspace', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         const queue = new InMemoryQueueBox(new Map());
-        const channel = {
-            send: vi.fn(async () => Promise.resolve()),
-        };
+        const channel = createOpenRtcChannel();
         const connectionService = createConnectionService(['peer-b'], {
             'peer-b': {
                 channel,
@@ -372,9 +368,7 @@ describe('WebRtc overlay services', () => {
 
     it('returns no entries for volatile immediate sends even when channel send succeeds', async () => {
         const queue = new InMemoryQueueBox(new Map());
-        const channel = {
-            send: vi.fn(async () => Promise.resolve()),
-        };
+        const channel = createOpenRtcChannel();
         const connectionService = createConnectionService(['peer-1'], {
             'peer-1': {
                 channel,
@@ -415,9 +409,7 @@ describe('WebRtc overlay services', () => {
 
     it('rate-limits RTC enqueue attempts before dispatch side effects', async () => {
         const queue = new InMemoryQueueBox(new Map());
-        const channel = {
-            send: vi.fn(async () => Promise.resolve()),
-        };
+        const channel = createOpenRtcChannel();
         const connectionService = createConnectionService(['peer-1'], {
             'peer-1': {
                 channel,
@@ -461,9 +453,7 @@ describe('WebRtc overlay services', () => {
 
     it('returns circuit-open without dispatch side effects when the enqueue breaker is open', async () => {
         const queue = new InMemoryQueueBox(new Map());
-        const channel = {
-            send: vi.fn(async () => Promise.resolve()),
-        };
+        const channel = createOpenRtcChannel();
         const connectionService = createConnectionService(['peer-1'], {
             'peer-1': {
                 channel,
@@ -634,7 +624,7 @@ describe('WebRtc overlay services', () => {
         vi.useFakeTimers();
 
         const queue = new InMemoryQueueBox(new Map());
-        const peer = {} as { channel?: { send: ReturnType<typeof vi.fn> } };
+        const peer = {} as { channel?: ReturnType<typeof createOpenRtcChannel> };
         const connectionService = createConnectionService(['peer-1'], {
             'peer-1': peer,
         });
@@ -700,9 +690,7 @@ describe('WebRtc overlay services', () => {
         expect(connectionService.readPeer).toHaveBeenCalledWith('peer-1');
         expect(storedEntry.status).toBe(EntityStatus.COMPLETED);
 
-        peer.channel = {
-            send: vi.fn(async () => Promise.resolve()),
-        };
+        peer.channel = createOpenRtcChannel();
         await vi.advanceTimersByTimeAsync(50);
 
         expect(peer.channel.send).toHaveBeenCalledOnce();
@@ -731,6 +719,15 @@ function createConnectionService(
         },
         readyPeerIdsForLane: () => [...connectedPeerIds],
         readPeer: vi.fn((peerId: string) => peersById[peerId]),
+    };
+}
+
+function createOpenRtcChannel() {
+    return {
+        send: vi.fn(async () => Promise.resolve()),
+        readHealth: () => ({
+            readyState: 'open' as const,
+        }),
     };
 }
 

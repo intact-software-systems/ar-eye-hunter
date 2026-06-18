@@ -173,6 +173,100 @@ describe('browser data caches state scope filtering', () => {
         });
     });
 
+    it('removes overlays but retains RTC connections when an active snapshot no longer includes the current session', async () => {
+        const joined = createGroupSnapshot(
+            'shared-room',
+            'app-1',
+            'workspace-b',
+            ['session-a', 'session-b'],
+            1,
+        );
+        const left = createGroupSnapshot(
+            'shared-room',
+            'app-1',
+            'workspace-b',
+            ['session-b'],
+            2,
+        );
+        const manager = {
+            notifyClientPresenceChanged: vi.fn(async () => undefined),
+            acceptGroupUpdate: vi.fn(async () => undefined),
+            has: vi.fn(() => true),
+            delete: vi.fn(async () => undefined),
+        };
+        const clientData: ClientInfo = {
+            clientId: 'alice',
+            sessionId: 'session-a',
+            isOnline: true,
+        };
+
+        await dataCaches.hydrateStateCaches(
+            manager as never,
+            clientData,
+            [],
+            [joined],
+            {
+                scope: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-b',
+                },
+            },
+        );
+
+        expect(findOverlayById(toScopedOverlayId(joined.group))).toBeDefined();
+        manager.acceptGroupUpdate.mockClear();
+        manager.delete.mockClear();
+
+        groupStateSnapshotsRepository.setGroupStateSnapshot(left);
+        await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+
+        expect(findOverlayById(toScopedOverlayId(left.group))).toBeUndefined();
+        expect(manager.acceptGroupUpdate).not.toHaveBeenCalled();
+        expect(manager.delete).toHaveBeenCalledWith(left.group, {
+            retainConnections: true,
+        });
+    });
+
+    it('reconciles RTC peers when an active directory snapshot excludes the current session', async () => {
+        const directoryOnly = createGroupSnapshot(
+            'shared-room',
+            'app-1',
+            'workspace-b',
+            ['session-b'],
+            1,
+        );
+        const manager = {
+            notifyClientPresenceChanged: vi.fn(async () => undefined),
+            notifyOverlayTopologyChanged: vi.fn(async () => undefined),
+            acceptGroupUpdate: vi.fn(async () => undefined),
+            has: vi.fn(() => false),
+            delete: vi.fn(async () => undefined),
+            ensureAllGroupsConnected: vi.fn(async () => undefined),
+        };
+        const clientData: ClientInfo = {
+            clientId: 'alice',
+            sessionId: 'session-a',
+            isOnline: true,
+        };
+
+        await dataCaches.hydrateStateCaches(
+            manager as never,
+            clientData,
+            [],
+            [directoryOnly],
+            {
+                scope: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-b',
+                },
+            },
+        );
+
+        expect(manager.acceptGroupUpdate).not.toHaveBeenCalled();
+        expect(manager.delete).not.toHaveBeenCalled();
+        expect(manager.ensureAllGroupsConnected).toHaveBeenCalledOnce();
+    });
+
     it('cleans up RTC group tracking and notifies listeners when a group snapshot is removed', async () => {
         const group = createGroupSnapshot(
             'shared-room',
@@ -280,6 +374,66 @@ describe('browser data caches state scope filtering', () => {
         expect(groupStateSnapshotsRepository.getAllGroupStateSnapshots()).toEqual(
             [],
         );
+
+        unsubscribe();
+    });
+
+    it('applies group directory websocket snapshots to the room cache', async () => {
+        const manager = createWebRtcGroupManager();
+        const clientData: ClientInfo = {
+            clientId: 'alice',
+            sessionId: 'session-a',
+            isOnline: true,
+        };
+        let onInboxMessage:
+            | ((message: unknown) => Promise<void>)
+            | undefined;
+        const webSocketQueueBox = {
+            onAllInboxMessagesDo: vi.fn((callback: {
+                onMessage: (message: unknown) => Promise<void>;
+            }) => {
+                onInboxMessage = callback.onMessage;
+                return webSocketQueueBox;
+            }),
+        };
+        const listener = vi.fn();
+        const unsubscribe = dataCaches.onStateCacheChange(listener);
+        const groupSnapshot = createGroupSnapshot(
+            'room-a',
+            DEFAULT_STATE_APPLICATION_ID,
+            DEFAULT_STATE_WORKSPACE_ID,
+            ['session-b'],
+            2,
+        );
+
+        dataCaches.initialise(
+            webSocketQueueBox as never,
+            manager,
+            clientData,
+        );
+
+        await onInboxMessage?.(
+            newALBroadcastMessage(
+                'server-1',
+                newALEventRoute(
+                    AppTopics.groupDirectorySnapshot,
+                    'room-a',
+                    'room-a',
+                ),
+                'all',
+                AppTopics.groupDirectorySnapshot,
+                groupSnapshot,
+            ),
+        );
+
+        expect(groupStateSnapshotsRepository.getAllGroupStateSnapshots()).toEqual([
+            groupSnapshot,
+        ]);
+        expect(listener).toHaveBeenCalledWith({
+            clients: [],
+            groups: [groupSnapshot],
+        });
+        expect(manager.acceptGroupUpdate).not.toHaveBeenCalled();
 
         unsubscribe();
     });
@@ -454,6 +608,7 @@ function createWebRtcGroupManager() {
         notifyClientPresenceChanged: vi.fn(async () => undefined),
         notifyOverlayTopologyChanged: vi.fn(async () => undefined),
         acceptGroupUpdate: vi.fn(async () => undefined),
+        ensureAllGroupsConnected: vi.fn(async () => undefined),
         delete: vi.fn(async () => undefined),
         has: vi.fn(() => false),
     } as never;

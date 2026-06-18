@@ -12,6 +12,7 @@ import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import {
     QRtcPeerDto,
     type RtcDataChannelLaneConfig,
+    type WebRtcInboundPeerCreationDecision,
     WebRtcConnectionService,
 } from '@shared/services/WebRtcConnectionService.ts';
 import {
@@ -26,6 +27,7 @@ import * as clientStateSnapshotsRepository from '@shared/repository/client-state
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import { pairKey } from '@shared/repository/rtt-repository.ts';
 
 import { createWebSocketTicket, readApiConfig, readIceCandidates, } from '@shared-web/browser/api-integration.ts';
@@ -62,7 +64,10 @@ export type MiddlewareInitOptions = Readonly<{
     maxPeerConnections?: number;
     scope?: StateScope;
     onAuthInvalid?: (error: unknown) => void | Promise<void>;
+    outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
 }>;
+
+export const BROWSER_RTT_HEARTBEAT_TTL_MS = 15_000;
 
 export const DEFAULT_REALTIME_DATA_CHANNEL_LANE: RtcDataChannelLaneConfig = {
     id: 'realtime',
@@ -97,6 +102,36 @@ export function toCreateWsUrl(
         url.searchParams.set('workspaceId', scope.workspaceId);
     }
     return url.toString();
+}
+
+export function toBrowserRttHeartbeatMessage(
+    sessionId: string,
+    rtt: RttMeasurementInfo,
+) {
+    return newALUntargetedMessage<RttMeasurementInfo>(
+        sessionId,
+        newALRoute(
+            AppTopics.rtt,
+            pairKey(rtt.sessionIdFrom, rtt.sessionIdTo),
+            `${rtt.version}`,
+        ),
+        AppTopics.rtt,
+        rtt,
+        {
+            ttlMs: BROWSER_RTT_HEARTBEAT_TTL_MS,
+        },
+    );
+}
+
+export function toBrowserRtcInboundPeerCreationDecision(
+    isPeerOwnedByAnyGroup: boolean,
+): WebRtcInboundPeerCreationDecision {
+    return isPeerOwnedByAnyGroup
+        ? { decision: 'allow' }
+        : {
+            decision: 'tentative',
+            reason: 'group-state-eventually-consistent',
+        };
 }
 
 export async function initialiseMiddleware(
@@ -143,6 +178,7 @@ export async function initialiseMiddleware(
             signal: options.signal,
             connectTimeoutMs: options.timeoutMs ??
                 DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
+            outboundDiagnostics: options.outboundDiagnostics,
         },
     )
         .catch((error) => {
@@ -166,6 +202,7 @@ export async function initialiseMiddleware(
             {
                 dataChannelLanes: options.dataChannelLanes ??
                     [DEFAULT_REALTIME_DATA_CHANNEL_LANE],
+                maxPeerConnections: options.maxPeerConnections,
             },
         );
 
@@ -174,6 +211,9 @@ export async function initialiseMiddleware(
             webRtcConnectionService,
             qboxEngine,
             toResilienceDto(),
+            {
+                outboundDiagnostics: options.outboundDiagnostics,
+            },
         );
 
     const rtcRxStreamer = rtcEngine.initialiseRtcRxStreamer(
@@ -188,16 +228,7 @@ export async function initialiseMiddleware(
         {
             onHeartbeat: (rtt: RttMeasurementInfo): Promise<void> => {
                 void webSocketQueueBox.enqueueOutboxIfAbsent(
-                        newALUntargetedMessage<RttMeasurementInfo>(
-                            clientData.sessionId,
-                            newALRoute(
-                                AppTopics.rtt,
-                                pairKey(rtt.sessionIdFrom, rtt.sessionIdTo),
-                                `${rtt.version}`,
-                            ),
-                            AppTopics.rtt,
-                            rtt,
-                        ),
+                        toBrowserRttHeartbeatMessage(clientData.sessionId, rtt),
                     )
                     .then((result) => {
                         if (result.status === 'enqueued' || result.status === 'duplicate') {
@@ -232,6 +263,11 @@ export async function initialiseMiddleware(
         clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
         overlaysRepository.readableOverlayCache(),
         { maxPeerConnections: options.maxPeerConnections },
+    );
+    webRtcConnectionService.setInboundPeerCreationPolicy(({ peerId }) =>
+        toBrowserRtcInboundPeerCreationDecision(
+            webRtcGroupManager.isPeerOwnedByAnyGroup(peerId),
+        )
     );
 
     cache.initialise(webSocketQueueBox, webRtcGroupManager, clientData, {
