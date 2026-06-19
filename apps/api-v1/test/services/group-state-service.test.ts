@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { readRallarGroupDirectorFromSnapshot } from '@shared/api/group-director.ts';
 import { createGroupStateService } from '../../src/services/group-state-service.ts';
 import type { StateSyncPublisher } from '../../src/services/state-sync-service.ts';
 import type { GroupStateWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
@@ -262,6 +263,207 @@ Deno.test('updateGroup ignores unchanged metadata state', async () => {
   assert.equal(syncPublisher.groupEvents.length, 0);
 });
 
+Deno.test('appointDirector lets an active member become director when owner is offline', async () => {
+  const syncPublisher = createRecordingStateSyncPublisher();
+  const service = createTestGroupStateService(syncPublisher);
+  await service.createGroup(TEST_SCOPE, {
+    groupId: 'group-1',
+    displayName: 'Room 1',
+    kind: 'room',
+    createdByPrincipalId: 'owner-1',
+    actorPrincipalId: 'owner-1',
+    metadata: { keep: true },
+  });
+  await service.upsertMember(TEST_SCOPE, 'group-1', 'member-1', {
+    status: 'active',
+    role: 'member',
+    actorPrincipalId: 'owner-1',
+  });
+  await service.upsertMember(TEST_SCOPE, 'group-1', 'member-2', {
+    status: 'active',
+    role: 'member',
+    actorPrincipalId: 'owner-1',
+  });
+  await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
+    principalId: 'member-1',
+    actorPrincipalId: 'member-1',
+    actorSessionId: 'member-session',
+    lastHeartbeatAtEpochMs: 1_000,
+    expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
+  });
+  syncPublisher.reset();
+
+  const written = await service.appointDirector(TEST_SCOPE, 'group-1', {
+    actorPrincipalId: 'member-1',
+    actorSessionId: 'member-session',
+    heartbeatTtlMs: 9_000,
+    requestId: 'appoint-member-1',
+  });
+  const appointed = snapshotFromGroupStateWritten(written);
+
+  const appointment = readRallarGroupDirectorFromSnapshot(appointed);
+  assert.equal(appointment?.principalId, 'member-1');
+  assert.equal(appointment?.sessionId, 'member-session');
+  assert.equal(appointment?.epoch, 1);
+  assert.equal(appointment?.heartbeatTtlMs, 9_000);
+  assert.equal(appointed.group.metadata.keep, true);
+  assert.equal(written.result.right?.event?.eventType, 'group-updated');
+  assert.equal(syncPublisher.groupSnapshots.length, 0);
+  assert.equal(syncPublisher.groupEvents.length, 0);
+});
+
+Deno.test('appointDirector does not replay cached appointments to a different actor', async () => {
+  const service = createTestGroupStateService();
+  await service.createGroup(TEST_SCOPE, {
+    groupId: 'group-1',
+    displayName: 'Room 1',
+    kind: 'room',
+    createdByPrincipalId: 'owner-1',
+    actorPrincipalId: 'owner-1',
+  });
+  await service.upsertMember(TEST_SCOPE, 'group-1', 'member-1', {
+    status: 'active',
+    role: 'member',
+    actorPrincipalId: 'owner-1',
+  });
+  await service.upsertMember(TEST_SCOPE, 'group-1', 'member-2', {
+    status: 'active',
+    role: 'member',
+    actorPrincipalId: 'owner-1',
+  });
+  await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-1-session', {
+    principalId: 'member-1',
+    actorPrincipalId: 'member-1',
+    actorSessionId: 'member-1-session',
+    expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
+  });
+  await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-2-session', {
+    principalId: 'member-2',
+    actorPrincipalId: 'member-2',
+    actorSessionId: 'member-2-session',
+    expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
+  });
+
+  await service.appointDirector(TEST_SCOPE, 'group-1', {
+    actorPrincipalId: 'member-1',
+    actorSessionId: 'member-1-session',
+    requestId: 'shared-request',
+  });
+
+  await assert.rejects(
+    () =>
+      service.appointDirector(TEST_SCOPE, 'group-1', {
+        actorPrincipalId: 'member-2',
+        actorSessionId: 'member-2-session',
+        requestId: 'shared-request',
+      }),
+    /Idempotent director appointment request belongs to a different session/,
+  );
+});
+
+Deno.test('appointDirector rejects invalid heartbeat TTL values', async () => {
+  const service = createTestGroupStateService();
+  await service.createGroup(TEST_SCOPE, {
+    groupId: 'group-1',
+    displayName: 'Room 1',
+    kind: 'room',
+    createdByPrincipalId: 'owner-1',
+    actorPrincipalId: 'owner-1',
+  });
+  await service.upsertMember(TEST_SCOPE, 'group-1', 'member-1', {
+    status: 'active',
+    role: 'member',
+    actorPrincipalId: 'owner-1',
+  });
+  await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
+    principalId: 'member-1',
+    actorPrincipalId: 'member-1',
+    actorSessionId: 'member-session',
+    expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
+  });
+
+  await assert.rejects(
+    () =>
+      service.appointDirector(TEST_SCOPE, 'group-1', {
+        actorPrincipalId: 'member-1',
+        actorSessionId: 'member-session',
+        heartbeatTtlMs: Number.NaN,
+        requestId: 'invalid-ttl',
+      }),
+    /Invalid director heartbeat TTL/,
+  );
+});
+
+Deno.test('appointDirector denies member fallback while owner is online or director is active', async () => {
+  const service = createTestGroupStateService();
+  await service.createGroup(TEST_SCOPE, {
+    groupId: 'group-1',
+    displayName: 'Room 1',
+    kind: 'room',
+    createdByPrincipalId: 'owner-1',
+    actorPrincipalId: 'owner-1',
+  });
+  await service.upsertMember(TEST_SCOPE, 'group-1', 'member-1', {
+    status: 'active',
+    role: 'member',
+    actorPrincipalId: 'owner-1',
+  });
+  await service.upsertMember(TEST_SCOPE, 'group-1', 'member-2', {
+    status: 'active',
+    role: 'member',
+    actorPrincipalId: 'owner-1',
+  });
+  await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session', {
+    principalId: 'owner-1',
+    actorPrincipalId: 'owner-1',
+    actorSessionId: 'owner-session',
+    expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
+  });
+  await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
+    principalId: 'member-1',
+    actorPrincipalId: 'member-1',
+    actorSessionId: 'member-session',
+    expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
+  });
+  await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'director-session', {
+    principalId: 'member-2',
+    actorPrincipalId: 'member-2',
+    actorSessionId: 'director-session',
+    expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
+  });
+
+  await assert.rejects(
+    () =>
+      service.appointDirector(TEST_SCOPE, 'group-1', {
+        actorPrincipalId: 'member-1',
+        actorSessionId: 'member-session',
+        requestId: 'appoint-member-owner-online',
+      }),
+    /Only owners\/admins can appoint while an owner\/admin is online/,
+  );
+
+  await service.disconnectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session', {
+    principalId: 'owner-1',
+    actorPrincipalId: 'owner-1',
+    actorSessionId: 'owner-session',
+  });
+  await service.appointDirector(TEST_SCOPE, 'group-1', {
+    actorPrincipalId: 'member-2',
+    actorSessionId: 'director-session',
+    requestId: 'appoint-member-2',
+  });
+
+  await assert.rejects(
+    () =>
+      service.appointDirector(TEST_SCOPE, 'group-1', {
+        actorPrincipalId: 'member-1',
+        actorSessionId: 'member-session',
+        requestId: 'appoint-member-director-active',
+      }),
+    /Cannot appoint a fallback director while another director is active/,
+  );
+});
+
 Deno.test('upsertMember and connectPresenceSession ignore unchanged semantic state', async () => {
   const syncPublisher = createRecordingStateSyncPublisher();
   const service = createTestGroupStateService(syncPublisher);
@@ -360,11 +562,13 @@ function createRecordingStateSyncPublisher() {
     },
     publishClientEvent: async () => {
     },
-    publishGroupSnapshot: async (snapshot: GroupSnapshot) => {
+    publishGroupSnapshot: (snapshot: GroupSnapshot) => {
       groupSnapshots.push(snapshot);
+      return Promise.resolve();
     },
-    publishGroupEvent: async (event: GroupEvent) => {
+    publishGroupEvent: (event: GroupEvent) => {
       groupEvents.push(event);
+      return Promise.resolve();
     },
   } satisfies StateSyncPublisher & {
     groupSnapshots: GroupSnapshot[];

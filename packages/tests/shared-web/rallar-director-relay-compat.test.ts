@@ -144,6 +144,16 @@ const mocks = vi.hoisted(() => {
                 _policies?: unknown,
             ) => Promise.reject(new Error('metadata update not mocked')),
         ),
+        appointStateGroupDirector: vi.fn(
+            (
+                _roomId?: unknown,
+                _request?: unknown,
+                _principalId?: unknown,
+                _sessionId?: unknown,
+                _scope?: unknown,
+                _policies?: unknown,
+            ) => Promise.reject(new Error('director appointment not mocked')),
+        ),
         loginToApi: vi.fn((_request?: unknown, _options?: unknown) =>
             Promise.resolve(session)
         ),
@@ -207,6 +217,7 @@ vi.mock('@shared-web/browser/api-integration.ts', () => ({
 }));
 
 vi.mock('@shared-web/browser/api-workflows.ts', () => ({
+    appointStateGroupDirector: mocks.appointStateGroupDirector,
     createAndJoinStateGroup: mocks.createAndJoinStateGroup,
     joinStateGroup: mocks.joinStateGroup,
     leaveStateGroup: mocks.leaveStateGroup,
@@ -262,6 +273,9 @@ describe('Rallar director relay compatibility', () => {
         mocks.leaveStateGroup.mockRejectedValue(new Error('leave not mocked'));
         mocks.updateStateGroupMetadata.mockRejectedValue(
             new Error('metadata update not mocked'),
+        );
+        mocks.appointStateGroupDirector.mockRejectedValue(
+            new Error('director appointment not mocked'),
         );
         mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes
             .mockReturnValue([]);
@@ -354,15 +368,27 @@ describe('Rallar director relay compatibility', () => {
             );
         const snapshot = createDirectorGroupSnapshot();
         mockGroupSnapshot(snapshot);
-        mocks.updateStateGroupMetadata.mockImplementation(
-            async (_roomId: string, patch: Record<string, unknown>) => {
+        mocks.appointStateGroupDirector.mockImplementation(
+            async (
+                _roomId: string,
+                request: { heartbeatTtlMs?: number },
+            ) => {
+                const appointment = {
+                    version: 1,
+                    mode: 'appointed-spa',
+                    sessionId: 'session-1',
+                    principalId: 'principal-1',
+                    epoch: 1,
+                    appointedAtEpochMs: Date.now(),
+                    heartbeatTtlMs: request.heartbeatTtlMs ?? 5_000,
+                };
                 const updated = {
                     ...snapshot,
                     group: {
                         ...snapshot.group,
                         metadata: {
                             ...snapshot.group.metadata,
-                            ...patch,
+                            rallarDirector: appointment,
                         },
                     },
                 };
@@ -375,16 +401,10 @@ describe('Rallar director relay compatibility', () => {
             heartbeatTtlMs: 1_000,
         });
 
-        expect(mocks.updateStateGroupMetadata).toHaveBeenCalledWith(
+        expect(mocks.appointStateGroupDirector).toHaveBeenCalledWith(
             'room-1',
             expect.objectContaining({
-                rallarDirector: expect.objectContaining({
-                    mode: 'appointed-spa',
-                    sessionId: 'session-1',
-                    principalId: 'principal-1',
-                    epoch: 1,
-                    heartbeatTtlMs: 1_000,
-                }),
+                heartbeatTtlMs: 1_000,
             }),
             'principal-1',
             'session-1',
@@ -433,20 +453,29 @@ describe('Rallar director relay compatibility', () => {
             mockGroupSnapshot(rejoined);
             return rejoined;
         });
-        mocks.updateStateGroupMetadata.mockImplementationOnce(
+        mocks.appointStateGroupDirector.mockImplementationOnce(
             async (
                 _roomId: string,
-                patch: Record<string, unknown>,
+                request: { heartbeatTtlMs?: number },
                 principalId: string,
                 sessionId: string,
             ) => {
+                const appointment = {
+                    version: 1,
+                    mode: 'appointed-spa',
+                    sessionId,
+                    principalId,
+                    epoch: 1,
+                    appointedAtEpochMs: Date.now(),
+                    heartbeatTtlMs: request.heartbeatTtlMs ?? 5_000,
+                };
                 const updated = {
                     ...rejoined,
                     group: {
                         ...rejoined.group,
                         metadata: {
                             ...rejoined.group.metadata,
-                            ...patch,
+                            rallarDirector: appointment,
                         },
                     },
                 };

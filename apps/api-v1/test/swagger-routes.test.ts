@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { Hono } from 'jsr:@hono/hono';
+import { Hono } from 'jsr:@hono/hono@4.11.9';
 import { init, resolvePublicServerUrl } from '../src/routes/swagger-routes.ts';
 
 Deno.test('swagger public server URL trusts proxy HTTPS headers', () => {

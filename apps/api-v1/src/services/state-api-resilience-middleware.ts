@@ -1,4 +1,4 @@
-import type { Context, Next } from 'jsr:@hono/hono';
+import type { Context, Next } from 'jsr:@hono/hono@4.11.9';
 import { Temporal } from '@js-temporal/polyfill';
 import {
   CircuitBreaker,

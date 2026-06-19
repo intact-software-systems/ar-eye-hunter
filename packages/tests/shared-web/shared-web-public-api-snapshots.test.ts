@@ -575,12 +575,27 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
     {
         filePath: 'packages/shared-web/mod.ts',
         expected: {
-            values: [],
-            types: [],
+            values: [
+                'DEFAULT_STATE_HEARTBEAT_TTL_MSECS',
+                'appointStateGroupDirectorWorkflow',
+                'createAndJoinStateGroup',
+                'joinStateGroup',
+                'leaveStateGroup',
+                'refreshStateHeartbeat',
+                'refreshStateSnapshots',
+                'updateStateGroupMetadata',
+            ],
+            types: [
+                'RefreshStateHeartbeatOptions',
+                'RefreshStateHeartbeatResult',
+                'StateGroupWorkflowValue',
+                'StateHeartbeatWorkflowValue',
+                'StateSnapshots',
+                'StateSnapshotsWorkflowValue',
+            ],
             starExports: [
                 './browser/api-client-config.ts',
                 './browser/api-integration.ts',
-                './browser/api-workflows.ts',
                 './browser/app-context.ts',
                 './browser/browser-al-runtime-stores.ts',
                 './browser/browser-cache-repositories.ts',

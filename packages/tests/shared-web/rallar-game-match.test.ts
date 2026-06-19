@@ -217,9 +217,36 @@ describe('Rallar Game match', () => {
         });
     });
 
-    it('does not appoint a non-admin local peer for metadata-backed directors', async () => {
+    it('allows the elected active member to appoint when owners are offline by default', async () => {
+        const fake = createFakeRallar({
+            localRole: 'member',
+            remoteMemberKnown: false,
+        });
+        const match = createMatch(fake, {
+            readCapability: () => ({ scoreBias: 100 }),
+            scoreHost: (capability) => capability.scoreBias ?? 0,
+        });
+        await match.start();
+        await match.reportCapability();
+
+        expect(match.canAppointDirector()).toMatchObject({
+            allowed: true,
+            status: 'allowed',
+            localRole: 'member',
+        });
+
+        const result = await match.appointIfElected();
+
+        expect(result.status).toBe('appointed');
+        expect(fake.appoint).toHaveBeenCalledWith(roomRef, {
+            heartbeatTtlMs: 10_000,
+        });
+    });
+
+    it('does not appoint a non-admin local peer with the strict metadata-backed policy', async () => {
         const fake = createFakeRallar({ localRole: 'member' });
         const match = createMatch(fake, {
+            directorAppointmentPolicy: 'metadata-owner-admin',
             readCapability: () => ({ scoreBias: 100 }),
             scoreHost: (capability) => capability.scoreBias ?? 0,
         });
@@ -242,6 +269,56 @@ describe('Rallar Game match', () => {
             }),
         });
         expect(match.diagnostics().issues).toContain('director-not-authorized');
+    });
+
+    it('does not use member fallback while another director appointment is active', async () => {
+        const fake = createFakeRallar({
+            directorPeerId: 'peer-b',
+            directorIsFresh: true,
+            localRole: 'member',
+            remoteMemberKnown: false,
+        });
+        const match = createMatch(fake, {
+            readCapability: () => ({ scoreBias: 100 }),
+            scoreHost: (capability) => capability.scoreBias ?? 0,
+        });
+        await match.start();
+        await match.reportCapability();
+
+        const result = await match.appointIfElected();
+
+        expect(result.status).toBe('not-authorized');
+        expect(result.reason).toBe(
+            'Cannot appoint a fallback director while another director is active.',
+        );
+        expect(fake.appoint).not.toHaveBeenCalled();
+        expect(match.canAppointDirector()).toMatchObject({
+            allowed: false,
+            status: 'not-authorized',
+            localRole: 'member',
+        });
+    });
+
+    it('does not use member fallback until the local session is active', async () => {
+        const fake = createFakeRallar({
+            localRole: 'member',
+            localSessionIds: [],
+            remoteMemberKnown: false,
+        });
+        const match = createMatch(fake, {
+            readCapability: () => ({ scoreBias: 100 }),
+            scoreHost: (capability) => capability.scoreBias ?? 0,
+        });
+        await match.start();
+        await match.reportCapability();
+
+        const result = await match.appointIfElected();
+
+        expect(result.status).toBe('not-authorized');
+        expect(result.reason).toBe(
+            'Only active room members can appoint the browser director.',
+        );
+        expect(fake.appoint).not.toHaveBeenCalled();
     });
 
     it('waits for local membership before metadata-backed director appointment', async () => {
@@ -573,6 +650,7 @@ function createFakeRallar(
         directorIsFresh?: boolean;
         localRole?: 'owner' | 'admin' | 'member';
         localStatus?: 'active' | 'left' | 'removed' | 'banned' | 'invited';
+        localSessionIds?: readonly string[];
         localMemberKnown?: boolean;
         remoteMemberKnown?: boolean;
     }> = {},
@@ -601,8 +679,8 @@ function createFakeRallar(
         role: options.localRole ?? 'owner',
         status: options.localStatus ?? 'active',
         isOwner: (options.localRole ?? 'owner') === 'owner',
-        isOnline: true,
-        sessionIds: ['peer-a'],
+        isOnline: (options.localSessionIds ?? ['peer-a']).length > 0,
+        sessionIds: options.localSessionIds ?? ['peer-a'],
     };
     const roomState = {
         rooms: [],

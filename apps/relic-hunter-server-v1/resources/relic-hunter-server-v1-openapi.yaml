@@ -16,7 +16,7 @@ tags:
 paths:
   /api/relic/games/{gameId}:
     get:
-      tags: [ Relic Hunters ]
+      tags: [Relic Hunters]
       summary: Read or create a Relic Hunters game snapshot
       description: |
         Ensures an authoritative Relic Hunters game exists for the requested
@@ -24,8 +24,8 @@ paths:
         generation is enabled, initial map/relic setup may be generated before
         the snapshot is persisted.
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/GameId'
       responses:
@@ -40,7 +40,7 @@ paths:
 
   /api/relic/games/{gameId}/commands:
     post:
-      tags: [ Relic Hunters ]
+      tags: [Relic Hunters]
       summary: Apply an authoritative Relic Hunters command
       description: |
         Applies a gameplay command to the server-owned game state and returns
@@ -48,8 +48,8 @@ paths:
         and `username` from the authenticated session, overriding those fields if
         they are present in the request body.
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/GameId'
       requestBody:
@@ -72,15 +72,15 @@ paths:
 
   /api/relic/games/{gameId}/reset:
     post:
-      tags: [ Relic Hunters ]
+      tags: [Relic Hunters]
       summary: Reset a Relic Hunters game
       description: |
         Recreates the authoritative game state for the requested id and returns
         the new public snapshot. When Relic AI expedition generation is enabled,
         reset can generate a fresh expedition setup.
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/GameId'
       responses:
@@ -95,7 +95,7 @@ paths:
 
   /api/relic/openapi.json:
     get:
-      tags: [ Docs ]
+      tags: [Docs]
       summary: Read the Relic Hunters OpenAPI specification JSON
       responses:
         '200':
@@ -108,7 +108,7 @@ paths:
 
   /api/relic/docs:
     get:
-      tags: [ Docs ]
+      tags: [Docs]
       summary: Read Relic Hunters Swagger UI
       responses:
         '200':
@@ -157,21 +157,21 @@ components:
   schemas:
     ErrorResponse:
       type: object
-      required: [ error ]
+      required: [error]
       properties:
         error:
           type: string
 
     RelicExpeditionSetupMetadata:
       type: object
-      required: [ schemaVersion, source ]
+      required: [schemaVersion, source]
       properties:
         schemaVersion:
           type: integer
           const: 1
         source:
           type: string
-          enum: [ default, procedural, rallar-ai, mock ]
+          enum: [default, procedural, rallar-ai, mock]
         seed:
           type: string
         theme:
@@ -181,7 +181,7 @@ components:
 
     RelicRoom:
       type: object
-      required: [ id, name, kind, x, z, neighbors ]
+      required: [id, name, kind, x, z, neighbors]
       properties:
         id:
           type: string
@@ -189,7 +189,7 @@ components:
           type: string
         kind:
           type: string
-          enum: [ entrance, hallway, storage, shrine, trap, treasure, monster, exit ]
+          enum: [entrance, hallway, storage, shrine, trap, treasure, monster, exit]
         x:
           type: number
         z:
@@ -205,7 +205,7 @@ components:
 
     RelicDefinition:
       type: object
-      required: [ id, name, value, roomId ]
+      required: [id, name, value, roomId]
       properties:
         id:
           type: string
@@ -250,7 +250,7 @@ components:
           format: int64
         result:
           type: string
-          enum: [ empty, relic-found ]
+          enum: [empty, relic-found]
         summary:
           type: string
         hint:
@@ -274,7 +274,17 @@ components:
 
     RelicPlayer:
       type: object
-      required: [ playerId, username, characterId, roomId, health, escaped, defeated, score, relicIds ]
+      required: [
+        playerId,
+        username,
+        characterId,
+        roomId,
+        health,
+        escaped,
+        defeated,
+        score,
+        relicIds,
+      ]
       properties:
         playerId:
           type: string
@@ -301,7 +311,7 @@ components:
 
     RelicAnimationCue:
       type: object
-      required: [ type ]
+      required: [type]
       properties:
         type:
           type: string
@@ -331,11 +341,11 @@ components:
           format: int64
         intensity:
           type: string
-          enum: [ low, medium, high ]
+          enum: [low, medium, high]
 
     RelicEvent:
       type: object
-      required: [ id, round, type, message, createdAtEpochMs ]
+      required: [id, round, type, message, createdAtEpochMs]
       properties:
         id:
           type: string
@@ -369,7 +379,7 @@ components:
           $ref: '#/components/schemas/RelicAnimationCue'
         tone:
           type: string
-          enum: [ neutral, success, danger, mystery ]
+          enum: [neutral, success, danger, mystery]
         createdAtEpochMs:
           type: integer
           format: int64
@@ -402,7 +412,7 @@ components:
           type: string
         phase:
           type: string
-          enum: [ lobby, planning, review, finished ]
+          enum: [lobby, planning, review, finished]
         round:
           type: integer
           format: int64
@@ -467,11 +477,11 @@ components:
 
     RelicActionInput:
       type: object
-      required: [ kind ]
+      required: [kind]
       properties:
         kind:
           type: string
-          enum: [ move, search, steal, escape ]
+          enum: [move, search, steal, escape]
         targetRoomId:
           type: string
         targetPlayerId:
@@ -493,7 +503,7 @@ components:
 
     RelicCommandRequestBase:
       type: object
-      required: [ protocolVersion, kind ]
+      required: [protocolVersion, kind]
       properties:
         protocolVersion:
           type: integer
@@ -511,7 +521,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/RelicCommandRequestBase'
         - type: object
-          required: [ kind ]
+          required: [kind]
           properties:
             kind:
               type: string
@@ -523,7 +533,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/RelicCommandRequestBase'
         - type: object
-          required: [ kind ]
+          required: [kind]
           properties:
             kind:
               type: string
@@ -533,7 +543,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/RelicCommandRequestBase'
         - type: object
-          required: [ kind, action ]
+          required: [kind, action]
           properties:
             kind:
               type: string
@@ -545,7 +555,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/RelicCommandRequestBase'
         - type: object
-          required: [ kind ]
+          required: [kind]
           properties:
             kind:
               type: string
@@ -555,7 +565,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/RelicCommandRequestBase'
         - type: object
-          required: [ kind ]
+          required: [kind]
           properties:
             kind:
               type: string
@@ -565,7 +575,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/RelicCommandRequestBase'
         - type: object
-          required: [ kind, relicId ]
+          required: [kind, relicId]
           properties:
             kind:
               type: string
@@ -577,11 +587,11 @@ components:
       allOf:
         - $ref: '#/components/schemas/RelicCommandRequestBase'
         - type: object
-          required: [ kind, timeLimitMs ]
+          required: [kind, timeLimitMs]
           properties:
             kind:
               type: string
               const: set-round-limit
             timeLimitMs:
               type: integer
-              enum: [ 60000, 180000, 300000 ]
+              enum: [60000, 180000, 300000]

@@ -1,6 +1,21 @@
 export * from './browser/api-client-config.ts';
 export * from './browser/api-integration.ts';
-export * from './browser/api-workflows.ts';
+export {
+    appointStateGroupDirector as appointStateGroupDirectorWorkflow,
+    createAndJoinStateGroup,
+    DEFAULT_STATE_HEARTBEAT_TTL_MSECS,
+    joinStateGroup,
+    leaveStateGroup,
+    refreshStateHeartbeat,
+    refreshStateSnapshots,
+    updateStateGroupMetadata,
+    type RefreshStateHeartbeatOptions,
+    type RefreshStateHeartbeatResult,
+    type StateGroupWorkflowValue,
+    type StateHeartbeatWorkflowValue,
+    type StateSnapshots,
+    type StateSnapshotsWorkflowValue,
+} from './browser/api-workflows.ts';
 export * from './browser/app-context.ts';
 export * from './browser/browser-al-runtime-stores.ts';
 export * from './browser/browser-cache-repositories.ts';

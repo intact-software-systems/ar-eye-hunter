@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { Hono } from 'jsr:@hono/hono';
+import { Hono } from 'jsr:@hono/hono@4.11.9';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -19,7 +19,7 @@ Deno.test('non-strict state read routes preserve authenticated non-self client r
     const deps = createClientRouteDeps({
       session: createAuthSession('alice'),
       clientService: {
-        readSnapshot: async () => snapshot,
+        readSnapshot: () => Promise.resolve(snapshot),
       },
     });
     const app = createClientRouteApp(deps);
@@ -40,11 +40,12 @@ Deno.test('strict state read routes reject non-self client snapshot and event re
     const deps = createClientRouteDeps({
       session: createAuthSession('alice'),
       clientService: {
-        readSnapshot: async () => createClientSnapshot('bob'),
-        listEventPage: async () => ({
-          events: [createClientEvent('bob-event')],
-          hasMore: false,
-        }),
+        readSnapshot: () => Promise.resolve(createClientSnapshot('bob')),
+        listEventPage: () =>
+          Promise.resolve({
+            events: [createClientEvent('bob-event')],
+            hasMore: false,
+          }),
       },
     });
     const app = createClientRouteApp(deps);
@@ -73,8 +74,10 @@ Deno.test('strict state read routes allow active group members and reject non-me
     const deps = createGroupRouteDeps({
       session: createAuthSession('alice'),
       groupService: {
-        readSnapshot: async (ref: { groupId: string }) =>
-          ref.groupId === 'room-1' ? memberSnapshot : nonMemberSnapshot,
+        readSnapshot: (ref: { groupId: string }) =>
+          Promise.resolve(
+            ref.groupId === 'room-1' ? memberSnapshot : nonMemberSnapshot,
+          ),
       },
     });
     const app = createGroupRouteApp(deps);
@@ -105,21 +108,21 @@ Deno.test('state read routes hydrate process snapshot caches after successful cl
     const clientDeps = createClientRouteDeps({
       session: createAuthSession('alice'),
       clientService: {
-        listSnapshots: async () => [clientSnapshot],
+        listSnapshots: () => Promise.resolve([clientSnapshot]),
       },
-      hydrateStateSyncSnapshotCaches: async (input: unknown) => {
+      hydrateStateSyncSnapshotCaches: (input: unknown) => {
         hydrationInputs.push(input);
-        return { clientSnapshotCount: 1, groupSnapshotCount: 0 };
+        return Promise.resolve({ clientSnapshotCount: 1, groupSnapshotCount: 0 });
       },
     });
     const groupDeps = createGroupRouteDeps({
       session: createAuthSession('alice'),
       groupService: {
-        readSnapshot: async () => groupSnapshot,
+        readSnapshot: () => Promise.resolve(groupSnapshot),
       },
-      hydrateStateSyncSnapshotCaches: async (input: unknown) => {
+      hydrateStateSyncSnapshotCaches: (input: unknown) => {
         hydrationInputs.push(input);
-        return { clientSnapshotCount: 0, groupSnapshotCount: 1 };
+        return Promise.resolve({ clientSnapshotCount: 0, groupSnapshotCount: 1 });
       },
     });
     const app = new Hono();
@@ -158,19 +161,15 @@ Deno.test('state event page routes call paged services instead of full-history l
     const clientDeps = createClientRouteDeps({
       session: createAuthSession('alice'),
       clientService: {
-        listEvents: async () => {
-          throw new Error('full client history should not be loaded');
-        },
-        listEventPage: async () => clientPage,
+        listEvents: () => Promise.reject(new Error('full client history should not be loaded')),
+        listEventPage: () => Promise.resolve(clientPage),
       },
     });
     const groupDeps = createGroupRouteDeps({
       session: createAuthSession('alice'),
       groupService: {
-        listEvents: async () => {
-          throw new Error('full group history should not be loaded');
-        },
-        listEventPage: async () => groupPage,
+        listEvents: () => Promise.reject(new Error('full group history should not be loaded')),
+        listEventPage: () => Promise.resolve(groupPage),
       },
     });
     const app = new Hono();
@@ -232,25 +231,27 @@ function createClientRouteDeps(
       'hydrateStateSyncSnapshotCaches'
     ];
   }>,
-): Required<clientStateRoutes.ClientStateRouteDependencies> & Readonly<{
-  authCallCount(): number;
-}> {
+):
+  & Required<clientStateRoutes.ClientStateRouteDependencies>
+  & Readonly<{
+    authCallCount(): number;
+  }> {
   let authCalls = 0;
   return {
     getClientStateService: () => ({
-      listSnapshots: async () => [],
-      readSnapshot: async () => undefined,
-      readPresenceSnapshot: async () => undefined,
-      listEvents: async () => [],
-      listEventPage: async () => ({ events: [], hasMore: false }),
+      listSnapshots: () => Promise.resolve([]),
+      readSnapshot: () => Promise.resolve(undefined),
+      readPresenceSnapshot: () => Promise.resolve(undefined),
+      listEvents: () => Promise.resolve([]),
+      listEventPage: () => Promise.resolve({ events: [], hasMore: false }),
       ...input.clientService,
     } as clientStateRoutes.ClientStateRouteService),
-    requireApiAuthSession: async () => {
+    requireApiAuthSession: () => {
       authCalls += 1;
-      return input.session;
+      return Promise.resolve(input.session);
     },
     hydrateStateSyncSnapshotCaches: input.hydrateStateSyncSnapshotCaches ??
-      (async () => ({ clientSnapshotCount: 0, groupSnapshotCount: 0 })),
+      (() => Promise.resolve({ clientSnapshotCount: 0, groupSnapshotCount: 0 })),
     authCallCount: () => authCalls,
   };
 }
@@ -266,15 +267,15 @@ function createGroupRouteDeps(
 ): Required<groupStateRoutes.GroupStateRouteDependencies> {
   return {
     getGroupStateService: () => ({
-      listSnapshots: async () => [],
-      readSnapshot: async () => undefined,
-      listEvents: async () => [],
-      listEventPage: async () => ({ events: [], hasMore: false }),
+      listSnapshots: () => Promise.resolve([]),
+      readSnapshot: () => Promise.resolve(undefined),
+      listEvents: () => Promise.resolve([]),
+      listEventPage: () => Promise.resolve({ events: [], hasMore: false }),
       ...input.groupService,
     } as groupStateRoutes.GroupStateRouteService),
-    requireApiAuthSession: async () => input.session,
+    requireApiAuthSession: () => Promise.resolve(input.session),
     hydrateStateSyncSnapshotCaches: input.hydrateStateSyncSnapshotCaches ??
-      (async () => ({ clientSnapshotCount: 0, groupSnapshotCount: 0 })),
+      (() => Promise.resolve({ clientSnapshotCount: 0, groupSnapshotCount: 0 })),
   };
 }
 

@@ -1,5 +1,11 @@
 import type { AuthSession } from './api-config.ts';
-import type { GroupRef, GroupSnapshot } from './group-types.ts';
+import type {
+    GroupMember,
+    GroupMemberStatus,
+    GroupRef,
+    GroupRole,
+    GroupSnapshot,
+} from './group-types.ts';
 
 export const RALLAR_GROUP_DIRECTOR_METADATA_KEY = 'rallarDirector';
 export const RALLAR_GROUP_DIRECTOR_VERSION = 1;
@@ -18,6 +24,22 @@ export type RallarGroupDirectorAppointment = Readonly<{
 }>;
 
 export type RallarGroupDirectorFreshness = 'none' | 'fresh' | 'stale';
+
+export type RallarGroupDirectorAppointmentEligibilityStatus =
+    | 'allowed'
+    | 'not-authorized'
+    | 'not-ready'
+    | 'no-local-peer';
+
+export type RallarGroupDirectorAppointmentEligibility = Readonly<{
+    allowed: boolean;
+    status: RallarGroupDirectorAppointmentEligibilityStatus;
+    reason?: string;
+    localPrincipalId?: string;
+    localPeerId?: string;
+    localRole?: GroupRole;
+    localMemberStatus?: GroupMemberStatus;
+}>;
 
 export type RallarGroupDirectorMetadataPatch = Readonly<{
     rallarDirector?: RallarGroupDirectorAppointment;
@@ -38,7 +60,7 @@ export function readRallarGroupDirectorAppointment(
         typeof value.principalId !== 'string' ||
         typeof value.epoch !== 'number' ||
         typeof value.appointedAtEpochMs !== 'number' ||
-        typeof value.heartbeatTtlMs !== 'number'
+        !isValidRallarGroupDirectorHeartbeatTtlMs(value.heartbeatTtlMs)
     ) {
         return undefined;
     }
@@ -50,7 +72,9 @@ export function readRallarGroupDirectorAppointment(
         principalId: value.principalId,
         epoch: Math.max(0, Math.floor(value.epoch)),
         appointedAtEpochMs: value.appointedAtEpochMs,
-        heartbeatTtlMs: Math.max(1, Math.floor(value.heartbeatTtlMs)),
+        heartbeatTtlMs: normalizeRallarGroupDirectorHeartbeatTtlMs(
+            value.heartbeatTtlMs,
+        ),
     };
 }
 
@@ -75,10 +99,22 @@ export function createRallarGroupDirectorAppointment(
         principalId: input.session.clientId,
         epoch: (input.previous?.epoch ?? 0) + 1,
         appointedAtEpochMs: input.now ?? Date.now(),
-        heartbeatTtlMs: input.heartbeatTtlMs ??
-            input.previous?.heartbeatTtlMs ??
-            DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS,
+        heartbeatTtlMs: normalizeRallarGroupDirectorHeartbeatTtlMs(
+            input.heartbeatTtlMs ??
+                input.previous?.heartbeatTtlMs ??
+                DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS,
+        ),
     };
+}
+
+export function normalizeRallarGroupDirectorHeartbeatTtlMs(
+    value: unknown,
+): number {
+    if (!isValidRallarGroupDirectorHeartbeatTtlMs(value)) {
+        throw new TypeError('Invalid director heartbeat TTL.');
+    }
+
+    return Math.floor(value);
 }
 
 export function mergeRallarGroupDirectorMetadata(
@@ -106,6 +142,111 @@ export function isRallarGroupDirectorSessionActive(
         session.sessionId === appointment.sessionId &&
         session.principalId === appointment.principalId
     );
+}
+
+export function resolveRallarGroupDirectorAppointmentEligibility(
+    input: Readonly<{
+        snapshot: GroupSnapshot | undefined;
+        principalId?: string;
+        sessionId?: string;
+    }>,
+): RallarGroupDirectorAppointmentEligibility {
+    const localPrincipalId = input.principalId;
+    const localPeerId = input.sessionId;
+    if (!localPrincipalId || !localPeerId) {
+        return {
+            allowed: false,
+            status: 'no-local-peer',
+            reason: 'Cannot appoint a director without a local session.',
+            localPrincipalId,
+            localPeerId,
+        };
+    }
+
+    const snapshot = input.snapshot;
+    if (!snapshot) {
+        return {
+            allowed: false,
+            status: 'not-ready',
+            reason: 'Cannot confirm local room membership yet.',
+            localPrincipalId,
+            localPeerId,
+        };
+    }
+
+    const member = snapshot.members.find((entry) =>
+        entry.principalId === localPrincipalId
+    );
+    if (!member) {
+        return {
+            allowed: false,
+            status: 'not-ready',
+            reason: 'Cannot confirm local room membership yet.',
+            localPrincipalId,
+            localPeerId,
+        };
+    }
+
+    const localSessionActive = snapshot.activeSessions.some((session) =>
+        session.principalId === localPrincipalId &&
+        session.sessionId === localPeerId
+    );
+    if (member.status !== 'active' || !localSessionActive) {
+        return {
+            allowed: false,
+            status: 'not-authorized',
+            reason: 'Only active room members can appoint the browser director.',
+            localPrincipalId,
+            localPeerId,
+            localRole: member.role,
+            localMemberStatus: member.status,
+        };
+    }
+
+    if (isOwnerOrAdmin(member)) {
+        return {
+            allowed: true,
+            status: 'allowed',
+            localPrincipalId,
+            localPeerId,
+            localRole: member.role,
+            localMemberStatus: member.status,
+        };
+    }
+
+    if (hasActiveOwnerOrAdminSession(snapshot)) {
+        return {
+            allowed: false,
+            status: 'not-authorized',
+            reason: 'Only owners/admins can appoint while an owner/admin is online.',
+            localPrincipalId,
+            localPeerId,
+            localRole: member.role,
+            localMemberStatus: member.status,
+        };
+    }
+
+    const appointment = readRallarGroupDirectorFromSnapshot(snapshot);
+    if (isRallarGroupDirectorSessionActive(snapshot, appointment)) {
+        return {
+            allowed: false,
+            status: 'not-authorized',
+            reason: 'Cannot appoint a fallback director while another director is active.',
+            localPrincipalId,
+            localPeerId,
+            localRole: member.role,
+            localMemberStatus: member.status,
+        };
+    }
+
+    return {
+        allowed: true,
+        status: 'allowed',
+        localPrincipalId,
+        localPeerId,
+        localRole: member.role,
+        localMemberStatus: member.status,
+    };
 }
 
 export function isRallarGroupDirectorForSession(
@@ -148,4 +289,27 @@ export function toRallarGroupDirectorRoomRef(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isValidRallarGroupDirectorHeartbeatTtlMs(value: unknown): value is number {
+    return typeof value === 'number' &&
+        Number.isFinite(value) &&
+        Math.floor(value) >= 1;
+}
+
+function hasActiveOwnerOrAdminSession(snapshot: GroupSnapshot): boolean {
+    return snapshot.activeSessions.some((session) => {
+        const member = snapshot.members.find((entry) =>
+            entry.principalId === session.principalId
+        );
+        return Boolean(
+            member &&
+                member.status === 'active' &&
+                isOwnerOrAdmin(member),
+        );
+    });
+}
+
+function isOwnerOrAdmin(member: Pick<GroupMember, 'role'>): boolean {
+    return member.role === 'owner' || member.role === 'admin';
 }

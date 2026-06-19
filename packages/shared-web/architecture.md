@@ -61,6 +61,11 @@ compatible; migration is intentionally gradual.
   black-box testing, targeted peer sends, and custom transports. Room RTC waits
   are expectation-aware and return ready/not-ready peer IDs plus missing/extra
   peer diagnostics, including `over-capacity`.
+- `rallar.director.appoint(...)` uses the dedicated state API appointment route.
+  It must not write `rallarDirector` through generic `rooms.updateMetadata(...)`;
+  generic metadata updates stay owner/admin-only while Rallar Game can use the
+  member fallback policy when owners/admins are offline and no director session
+  is active.
 - `browser/readiness.ts` owns the shared browser readiness expectation helpers
   used by room presence waits, RTC room-lane waits, and game readiness checks.
 

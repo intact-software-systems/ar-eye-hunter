@@ -1,5 +1,5 @@
-import { type Context, Hono } from 'jsr:@hono/hono';
-import { parse } from 'jsr:@std/yaml';
+import { type Context, Hono } from 'jsr:@hono/hono@4.11.9';
+import { parse } from 'jsr:@std/yaml@1.0.12';
 import {
   resolvePublicServerUrl,
   withPublicOpenApiServer,

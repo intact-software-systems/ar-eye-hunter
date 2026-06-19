@@ -110,6 +110,12 @@ export type UpdateGroupRequest =
     purgeAfterEpochMs?: number;
 }>;
 
+export type AppointGroupDirectorRequest =
+    & MutationActorInput
+    & Readonly<{
+    heartbeatTtlMs?: number;
+}>;
+
 export type UpsertGroupMemberRequest =
     & MutationActorInput
     & Readonly<{

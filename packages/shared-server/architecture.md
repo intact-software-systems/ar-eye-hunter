@@ -28,6 +28,10 @@ database lifecycle, and deployment settings around these shared services.
 
 - HTTP client/group mutations are enqueued as durable AppInbox commands, then
   processed by `AppClientInboxService` or `AppGroupInboxService`.
+- Group director appointment is a narrow group mutation handled by
+  `GroupStateService.appointDirector(...)`. It is the only fallback-member path
+  that writes `rallarDirector`; generic group metadata updates remain
+  owner/admin-gated.
 - Client/group services mutate client/group snapshots in `runtime_state_store`.
   They append durable state-event logs in `client_state_events` and
   `group_state_events`. AppInbox services own state-sync publication for those

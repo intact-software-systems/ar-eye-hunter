@@ -27,6 +27,10 @@ rg -n "createRoom|rooms.create|createAndSwitch|waitForPresence|joinRoom|roomId|R
 - For room-scoped game/motion traffic, prefer `rallar.realtime.room<T>(...)` and `rallar.messages.room<T>(...)`; drop to raw RTC readiness/send APIs only for low-level transport tests or custom peer targeting.
 - Use Rallar Game diagnostics for `directorAuthority`, `egress`, ready peers,
   and appointment issues before adding app-local transport heuristics.
+- Rallar Game's default browser-director appointment policy allows elected active
+  members to appoint only when no owner/admin session and no active director
+  session are present. Keep appointment calls on `rallar.director.appoint(...)`,
+  not generic room metadata updates.
 - AR Eye's browser UI derives Squad Link and presence notices from the Rallar
   connection, RTC lane, and director diagnostics; keep that derivation pure and
   testable.

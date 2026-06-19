@@ -5,16 +5,16 @@ import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
 const duration = Temporal.Duration.from({ seconds: 10 });
 
 export function toResilienceDto() {
-    return ResilienceDto.toResilienceDto(
-        new CircuitBreakerPolicy(
-            10,
-            duration,
-            duration,
-            duration,
-        ),
-        1,
-        10,
-        1,
-        1,
-    );
+  return ResilienceDto.toResilienceDto(
+    new CircuitBreakerPolicy(
+      10,
+      duration,
+      duration,
+      duration,
+    ),
+    1,
+    10,
+    1,
+    1,
+  );
 }

@@ -1,7 +1,10 @@
 import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientSnapshot as ClientStateSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-types.ts';
-import type { StateScope } from '@shared/api/state-types.ts';
+import type {
+    AppointGroupDirectorRequest,
+    StateScope,
+} from '@shared/api/state-types.ts';
 import {
     Command,
     type CommandOptions,
@@ -12,6 +15,7 @@ import {
     type OrchestratorResults,
 } from '@shared/cache/CommandsOrchestrator.ts';
 import {
+    appointStateGroupDirector as appointStateGroupDirectorApi,
     connectStateClientSession,
     connectStateGroupPresenceSession,
     createStateGroup,
@@ -190,6 +194,37 @@ export async function updateStateGroupMetadata(
                         ...current.group.metadata,
                         ...patch,
                     },
+                    actorPrincipalId: principalId,
+                    actorSessionId: sessionId,
+                    requestId,
+                },
+                scope,
+                { signal },
+            ),
+        commandOptions,
+    ).run();
+}
+
+export async function appointStateGroupDirector(
+    groupId: string,
+    request: AppointGroupDirectorRequest,
+    principalId: string,
+    sessionId: string,
+    scope: StateScope = defaultStateScope(),
+    policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue> = {},
+): Promise<GroupStateSnapshot> {
+    const requestId = request.requestId ??
+        toWorkflowRequestId('group-director-appoint', groupId, sessionId);
+    const commandOptions = (policies.command ?? {}) as CommandOptions<
+        GroupStateSnapshot
+    >;
+
+    return await new Command<GroupStateSnapshot>(
+        (signal) =>
+            appointStateGroupDirectorApi(
+                groupId,
+                {
+                    ...request,
                     actorPrincipalId: principalId,
                     actorSessionId: sessionId,
                     requestId,

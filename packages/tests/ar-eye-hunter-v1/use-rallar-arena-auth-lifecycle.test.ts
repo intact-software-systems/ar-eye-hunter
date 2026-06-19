@@ -45,7 +45,7 @@ const mockMatch = vi.hoisted(() => ({
     canAppointDirector: vi.fn(() => ({
         allowed: true,
         status: 'allowed',
-        policy: 'metadata-owner-admin',
+        policy: 'metadata-owner-admin-or-member-fallback',
     })),
     start: vi.fn(() => Promise.resolve()),
     reportCapability: vi.fn(() => Promise.resolve({ status: 'sent' })),
@@ -931,15 +931,15 @@ describe('useRallarArena auth lifecycle', () => {
         expect(current?.refreshDiagnostics).toBe(refreshDiagnostics);
     });
 
-    it('does not auto-appoint regular room members who cannot update director metadata', async () => {
+    it('auto-appoints regular room members when the owner is offline', async () => {
         mockMatch.appointIfElected.mockResolvedValueOnce({
-            status: 'not-authorized',
+            status: 'appointed',
             election: {
                 candidates: [],
                 nowEpochMs: 2,
                 capabilityTtlMs: 10_000,
             },
-            reason: 'Only active room owners/admins can appoint the browser director.',
+            directorStatus: freshDirectorStatus(),
         });
         mockRallar.rooms.state.mockReturnValue({
             rooms: [],
@@ -959,13 +959,12 @@ describe('useRallarArena auth lifecycle', () => {
 
         await renderHook();
         await waitForState(() => current?.connectionState === 'connected');
-        await waitForState(() => current?.directorAttempt.status === 'not-elected');
+        await waitForState(() => current?.directorAttempt.status === 'succeeded');
 
         expect(current?.directorAttempt).toMatchObject({
             source: 'auto',
-            status: 'not-elected',
-            resultStatus: 'not-authorized',
-            reason: 'Only active room owners/admins can appoint the browser director.',
+            status: 'succeeded',
+            resultStatus: 'appointed',
         });
         expect(mockMatch.reportCapability).toHaveBeenCalled();
         expect(mockMatch.appointIfElected).toHaveBeenCalled();

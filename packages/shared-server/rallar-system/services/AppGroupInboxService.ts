@@ -1,4 +1,5 @@
 import type {
+    AppointGroupDirectorRequest,
     ConnectGroupPresenceSessionRequest,
     CreateGroupRequest,
     DisconnectGroupPresenceSessionRequest,
@@ -44,6 +45,12 @@ export type GroupUpdateAppInboxPayload = Readonly<{
     scope: StateScope;
     groupId: string;
     request: UpdateGroupRequest;
+}>;
+
+export type GroupDirectorAppointAppInboxPayload = Readonly<{
+    scope: StateScope;
+    groupId: string;
+    request: AppointGroupDirectorRequest;
 }>;
 
 export type GroupMemberUpsertAppInboxPayload = Readonly<{
@@ -125,6 +132,21 @@ export class AppGroupInboxService extends AppInboxService {
                     update.groupId,
                     update.request,
                 );
+
+                await this.publishGroupStateWritten(groupStateWritten);
+
+                return groupStateWritten;
+            },
+        );
+        this.onStateMessage<GroupDirectorAppointAppInboxPayload>(
+            AppInboxType.GROUP_DIRECTOR_APPOINT,
+            async (appointment) => {
+                const groupStateWritten =
+                    await this.groupStateService.appointDirector(
+                        appointment.scope,
+                        appointment.groupId,
+                        appointment.request,
+                    );
 
                 await this.publishGroupStateWritten(groupStateWritten);
 

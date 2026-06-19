@@ -9,6 +9,7 @@ import type {
     GroupSnapshot,
 } from '@shared/api/group-types.ts';
 import type {
+    AppointGroupDirectorRequest,
     ConnectGroupPresenceSessionRequest,
     CreateGroupRequest,
     DisconnectGroupPresenceSessionRequest,
@@ -20,6 +21,13 @@ import type {
 } from '@shared/api/state-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
+import {
+    createRallarGroupDirectorAppointment,
+    mergeRallarGroupDirectorMetadata,
+    normalizeRallarGroupDirectorHeartbeatTtlMs,
+    readRallarGroupDirectorFromSnapshot,
+    resolveRallarGroupDirectorAppointmentEligibility,
+} from '@shared/api/group-director.ts';
 import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
 import {
     type GroupStateEventStore,
@@ -70,6 +78,11 @@ export type GroupStateService = Readonly<{
         scope: StateScope,
         groupId: string,
         request: UpdateGroupRequest,
+    ): Promise<GroupStateWritten>;
+    appointDirector(
+        scope: StateScope,
+        groupId: string,
+        request: AppointGroupDirectorRequest,
     ): Promise<GroupStateWritten>;
     upsertMember(
         scope: StateScope,
@@ -355,6 +368,101 @@ export function createGroupStateService(
                     request.requestId,
                     {
                         snapshot: await requireGroupSnapshot(repository, ref),
+                        event,
+                    },
+                );
+            });
+        },
+        appointDirector: async (scope, groupId, request) => {
+            return await runtimeRepository.begin(async (transactionRepository) => {
+                const repository = repositoryFor(transactionRepository);
+                const ref: GroupRef = {
+                    ...scope,
+                    groupId,
+                };
+                const actorPrincipalId = request.actorPrincipalId;
+                const actorSessionId = request.actorSessionId;
+                if (!actorPrincipalId || !actorSessionId) {
+                    throw new NonRetryableException(
+                        'Forbidden: Cannot appoint a director without a local session.',
+                    );
+                }
+                const heartbeatTtlMs = toDirectorHeartbeatTtlMs(request);
+
+                const idempotentWritten = await findIdempotentGroupMutationWritten(
+                    repository,
+                    ref,
+                    request.requestId,
+                );
+                if (idempotentWritten) {
+                    assertIdempotentDirectorAppointmentMatchesActor(
+                        idempotentWritten,
+                        actorPrincipalId,
+                        actorSessionId,
+                    );
+                    return idempotentWritten;
+                }
+
+                const snapshot = await requireGroupSnapshot(repository, ref);
+                const eligibility = resolveRallarGroupDirectorAppointmentEligibility({
+                    snapshot,
+                    principalId: actorPrincipalId,
+                    sessionId: actorSessionId,
+                });
+                if (!eligibility.allowed) {
+                    throw new NonRetryableException(
+                        `Forbidden: ${
+                            eligibility.reason ??
+                                'Cannot appoint the browser director.'
+                        }`,
+                    );
+                }
+
+                const timestamp = now();
+                const previous = readRallarGroupDirectorFromSnapshot(snapshot);
+                const appointment = createRallarGroupDirectorAppointment({
+                    session: {
+                        clientId: actorPrincipalId,
+                        sessionId: actorSessionId,
+                    },
+                    previous,
+                    now: timestamp,
+                    heartbeatTtlMs,
+                });
+                const updatedAudit = toGroupAuditStamp(
+                    request,
+                    timestamp,
+                    serviceId,
+                    actorPrincipalId,
+                );
+                const group: Group = {
+                    ...snapshot.group,
+                    metadata: mergeRallarGroupDirectorMetadata(
+                        snapshot.group.metadata,
+                        appointment,
+                    ),
+                    snapshotVersion: nextGroupSnapshotVersion(snapshot.group),
+                    metadataVersion: snapshot.group.metadataVersion + 1,
+                    updated: updatedAudit,
+                };
+
+                await repository.putGroup(group);
+
+                const event = newGroupEvent(
+                    'group-updated',
+                    group,
+                    request,
+                    timestamp,
+                    serviceId,
+                );
+                await repository.appendEvent(event);
+
+                return await addIdempotentGroupMutationWritten(
+                    repository,
+                    ref,
+                    request.requestId,
+                    {
+                        snapshot: await requireGroupSnapshot(repository, group),
                         event,
                     },
                 );
@@ -909,6 +1017,22 @@ function withGroupStateServiceTiming(
                 },
                 () => service.updateGroup(scope, groupId, request),
             ),
+        appointDirector: async (scope, groupId, request) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'group-state-service',
+                    operation: 'appointDirector',
+                    serviceId,
+                    requestId: request.requestId,
+                    applicationId: scope.applicationId,
+                    workspaceId: scope.workspaceId,
+                    groupId,
+                    principalId: request.actorPrincipalId,
+                    sessionId: request.actorSessionId,
+                },
+                () => service.appointDirector(scope, groupId, request),
+            ),
         upsertMember: async (scope, groupId, principalId, request) =>
             await timeRallarAsync(
                 timing,
@@ -1049,6 +1173,40 @@ function toGroupPresenceSessionLockKey(
         ref.groupId,
         ref.sessionId,
     ].join(':');
+}
+
+function toDirectorHeartbeatTtlMs(
+    request: AppointGroupDirectorRequest,
+): number | undefined {
+    if (request.heartbeatTtlMs === undefined) {
+        return undefined;
+    }
+
+    try {
+        return normalizeRallarGroupDirectorHeartbeatTtlMs(request.heartbeatTtlMs);
+    } catch {
+        throw new NonRetryableException('Invalid director heartbeat TTL.');
+    }
+}
+
+function assertIdempotentDirectorAppointmentMatchesActor(
+    written: GroupStateWritten,
+    actorPrincipalId: string,
+    actorSessionId: string,
+): void {
+    const appointment = readRallarGroupDirectorFromSnapshot(
+        written.result.right?.snapshot,
+    );
+    if (
+        appointment?.principalId === actorPrincipalId &&
+        appointment.sessionId === actorSessionId
+    ) {
+        return;
+    }
+
+    throw new NonRetryableException(
+        'Forbidden: Idempotent director appointment request belongs to a different session.',
+    );
 }
 
 async function findIdempotentGroupMutationWritten(

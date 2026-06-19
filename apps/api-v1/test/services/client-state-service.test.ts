@@ -365,11 +365,13 @@ function createRecordingStateSyncPublisher() {
       clientSnapshots.length = 0;
       clientEvents.length = 0;
     },
-    publishClientSnapshot: async (snapshot: ClientSnapshot) => {
+    publishClientSnapshot: (snapshot: ClientSnapshot) => {
       clientSnapshots.push(snapshot);
+      return Promise.resolve();
     },
-    publishClientEvent: async (event: ClientEvent) => {
+    publishClientEvent: (event: ClientEvent) => {
       clientEvents.push(event);
+      return Promise.resolve();
     },
     publishGroupSnapshot: async () => {
     },

@@ -11,6 +11,10 @@ without pulling in DOM, HTTP-server, Postgres, or app-specific runtime wiring.
 - `api/` defines shared auth, client, group, state, director, overlay, and
   message contracts. Scoped group identity should flow through `GroupRef` when a
   caller can operate across more than one app/workspace.
+- `api/group-director.ts` owns runtime-neutral director metadata parsing,
+  heartbeat TTL validation, and appointment eligibility. Active owner/admin
+  sessions can appoint; active members are eligible only when no owner/admin
+  session and no existing director appointment session are active.
 - `al-contracts/` and `alm/` define AL message shapes, QoS/admission policies,
   runtime stores, inbound/outbound message processing, multicast targeting, and
   WebSocket/RTC policy helpers. Outbound prepared sends can report `sent`,

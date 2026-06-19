@@ -1,6 +1,9 @@
 {
   "nodeModulesDir": "auto",
   "tasks": {
+    "fmt": "deno fmt",
+    "fmt:check": "deno fmt --check",
+    "lint": "deno lint",
     "test:queue": "deno run -A --unstable-temporal npm:vitest run packages/tests/queue.test.ts",
     "test:debug": "deno run -A --unstable-temporal npm:vitest run",
     "qbox": "deno run -A --unstable-temporal npm:vitest run --inspect-brk=127.0.0.1:53287 packages/tests/queue.test.ts --no-file-parallelism",
@@ -27,5 +30,28 @@
       "deno.ns",
       "dom"
     ]
+  },
+  "fmt": {
+    "include": [
+      "deno.json",
+      "apps/api-v1",
+      "apps/rallar-black-box-control-server",
+      "apps/relic-hunter-server-v1"
+    ],
+    "lineWidth": 100,
+    "semiColons": true,
+    "singleQuote": true
+  },
+  "lint": {
+    "include": [
+      "apps/api-v1",
+      "apps/rallar-black-box-control-server",
+      "apps/relic-hunter-server-v1"
+    ],
+    "rules": {
+      "tags": [
+        "recommended"
+      ]
+    }
   }
 }

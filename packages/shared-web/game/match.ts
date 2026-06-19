@@ -293,13 +293,15 @@ export function createRallarGameMatch<
         const session = config.rallar.session();
         const localPeerId = session?.sessionId;
         const localPrincipalId = session?.clientId;
+        const directorStatus = readDirectorStatus();
         const policy = config.directorAppointmentPolicy ??
-            'metadata-owner-admin';
+            'metadata-owner-admin-or-member-fallback';
         const context = {
             policy,
             roomId: room.roomId,
             roomRef: room.roomRef,
             roomState,
+            directorStatus,
             localPeerId,
             localPrincipalId,
         };
@@ -1233,6 +1235,8 @@ function resolveMetadataOwnerAdminAppointmentEligibility(
                 principalId: string;
                 role: string;
                 status: string;
+                isOnline?: boolean;
+                sessionIds?: readonly string[];
             }[];
             currentRoom?: {
                 members: readonly {
@@ -1240,8 +1244,13 @@ function resolveMetadataOwnerAdminAppointmentEligibility(
                     role: string;
                     status: string;
                 }[];
+                activeSessions?: readonly {
+                    principalId: string;
+                    sessionId: string;
+                }[];
             };
         };
+        directorStatus: RallarDirectorStatus;
         localPeerId?: string;
         localPrincipalId?: string;
     }>,
@@ -1274,7 +1283,12 @@ function resolveMetadataOwnerAdminAppointmentEligibility(
         };
     }
 
-    if (member.status !== 'active') {
+    const localSessionActive = hasActiveLocalRoomSession(
+        context.roomState,
+        context.localPrincipalId,
+        context.localPeerId,
+    );
+    if (member.status !== 'active' || !localSessionActive) {
         return {
             allowed: false,
             status: 'not-authorized',
@@ -1287,12 +1301,50 @@ function resolveMetadataOwnerAdminAppointmentEligibility(
         };
     }
 
-    if (member.role !== 'owner' && member.role !== 'admin') {
+    if (member.role === 'owner' || member.role === 'admin') {
+        return {
+            allowed: true,
+            status: 'allowed',
+            policy: context.policy,
+            localPeerId: context.localPeerId,
+            localPrincipalId: context.localPrincipalId,
+            localRole: member.role,
+            localMemberStatus: member.status,
+        };
+    }
+
+    if (context.policy !== 'metadata-owner-admin-or-member-fallback') {
         return {
             allowed: false,
             status: 'not-authorized',
             policy: context.policy,
             reason: 'Only active room owners/admins can appoint the browser director.',
+            localPeerId: context.localPeerId,
+            localPrincipalId: context.localPrincipalId,
+            localRole: member.role,
+            localMemberStatus: member.status,
+        };
+    }
+
+    if (hasOnlineOwnerOrAdmin(context.roomState)) {
+        return {
+            allowed: false,
+            status: 'not-authorized',
+            policy: context.policy,
+            reason: 'Only owners/admins can appoint while an owner/admin is online.',
+            localPeerId: context.localPeerId,
+            localPrincipalId: context.localPrincipalId,
+            localRole: member.role,
+            localMemberStatus: member.status,
+        };
+    }
+
+    if (context.directorStatus.active) {
+        return {
+            allowed: false,
+            status: 'not-authorized',
+            policy: context.policy,
+            reason: 'Cannot appoint a fallback director while another director is active.',
             localPeerId: context.localPeerId,
             localPrincipalId: context.localPrincipalId,
             localRole: member.role,
@@ -1309,6 +1361,75 @@ function resolveMetadataOwnerAdminAppointmentEligibility(
         localRole: member.role,
         localMemberStatus: member.status,
     };
+}
+
+function hasActiveLocalRoomSession(
+    roomState: Readonly<{
+        members: readonly {
+            principalId: string;
+            sessionIds?: readonly string[];
+        }[];
+        currentRoom?: {
+            activeSessions?: readonly {
+                principalId: string;
+                sessionId: string;
+            }[];
+        };
+    }>,
+    principalId: string,
+    sessionId: string,
+): boolean {
+    return roomState.members.some((member) =>
+        member.principalId === principalId &&
+        (member.sessionIds ?? []).includes(sessionId)
+    ) ||
+        (roomState.currentRoom?.activeSessions ?? []).some((session) =>
+            session.principalId === principalId &&
+            session.sessionId === sessionId
+        );
+}
+
+function hasOnlineOwnerOrAdmin(
+    roomState: Readonly<{
+        members: readonly {
+            principalId: string;
+            role: string;
+            status: string;
+            isOnline?: boolean;
+            sessionIds?: readonly string[];
+        }[];
+        currentRoom?: {
+            members: readonly {
+                principalId: string;
+                role: string;
+                status: string;
+            }[];
+            activeSessions?: readonly {
+                principalId: string;
+                sessionId: string;
+            }[];
+        };
+    }>,
+): boolean {
+    const ownerAdminIds = new Set(
+        [
+            ...roomState.members,
+            ...(roomState.currentRoom?.members ?? []),
+        ]
+            .filter((member) =>
+                member.status === 'active' &&
+                (member.role === 'owner' || member.role === 'admin')
+            )
+            .map((member) => member.principalId),
+    );
+
+    return roomState.members.some((member) =>
+        ownerAdminIds.has(member.principalId) &&
+        (member.isOnline === true || (member.sessionIds?.length ?? 0) > 0)
+    ) ||
+        (roomState.currentRoom?.activeSessions ?? []).some((session) =>
+            ownerAdminIds.has(session.principalId)
+        );
 }
 
 function toHostCapability(

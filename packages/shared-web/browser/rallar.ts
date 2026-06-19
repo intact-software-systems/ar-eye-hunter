@@ -29,7 +29,6 @@ import {
     readGroupVersion,
 } from '@shared/api/group-client-views.ts';
 import {
-    createRallarGroupDirectorAppointment,
     DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS,
     isRallarGroupDirectorForSession,
     isRallarGroupDirectorSessionActive,
@@ -54,12 +53,12 @@ import type { StateEventCursor, StateEventPage, } from '@shared/api/state-event-
 import {
     RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
     type RallarValidationIssue,
+    throwRallarValidation,
     validateRallarGroupRef,
     validateRallarJsonPayload,
     validateRallarNonNegativeInteger,
     validateRallarRouteId,
     validateRallarWsUserTopicId,
-    throwRallarValidation,
 } from '@shared/api/rallar-validation.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { CommandsOrchestrator, type CommandsOrchestratorPolicies, } from '@shared/cache/CommandsOrchestrator.ts';
@@ -77,14 +76,9 @@ import type {
 import {
     DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
     type QRtcPeerDto,
-    type RtcDataChannelLaneConfig,
     type WebRtcPeerLaneOpenResult,
 } from '@shared/services/WebRtcConnectionService.ts';
-import {
-    type ApiMiddleware,
-    initMiddleware,
-    isMiddlewareReady,
-} from '@shared-web/browser/app-context.ts';
+import { type ApiMiddleware, initMiddleware, isMiddlewareReady, } from '@shared-web/browser/app-context.ts';
 import {
     configureApiClient,
     normalizeApiBaseUrl,
@@ -95,14 +89,8 @@ import * as api from '@shared-web/browser/api-integration.ts';
 import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
 import { deleteBrowserALRuntimeEntriesForSession } from '@shared-web/browser/browser-al-runtime-stores.ts';
 import * as stateCaches from '@shared-web/browser/data-caches.ts';
-import {
-    createRallarAuthFacade,
-    type RallarAuthFacade,
-} from '@shared-web/browser/rallar-auth-facade.ts';
-import {
-    createRallarCallsFacade,
-    type RallarCallsFacade,
-} from '@shared-web/browser/rallar-calls-facade.ts';
+import { createRallarAuthFacade, type RallarAuthFacade, } from '@shared-web/browser/rallar-auth-facade.ts';
+import { createRallarCallsFacade, type RallarCallsFacade, } from '@shared-web/browser/rallar-calls-facade.ts';
 import {
     createRallarConnectionFacade,
     type RallarConnectionFacade,
@@ -112,34 +100,13 @@ import {
     type RallarDataFacade,
     type RallarDataScope,
 } from '@shared-web/browser/rallar-data.ts';
-import {
-    createRallarDirectorFacade,
-    type RallarDirectorFacade,
-} from '@shared-web/browser/rallar-director-facade.ts';
-import {
-    createRallarMediaFacade,
-    type RallarMediaFacade,
-} from '@shared-web/browser/rallar-media-facade.ts';
-import {
-    createRallarMessagesFacade,
-    type RallarMessagesFacade,
-} from '@shared-web/browser/rallar-messages-facade.ts';
-import {
-    createRallarPeopleFacade,
-    type RallarPeopleFacade,
-} from '@shared-web/browser/rallar-people-facade.ts';
-import {
-    createRallarRealtimeFacade,
-    type RallarRealtimeFacade,
-} from '@shared-web/browser/rallar-realtime-facade.ts';
-import {
-    createRallarRtcFacade,
-    type RallarRtcFacade,
-} from '@shared-web/browser/rallar-rtc-facade.ts';
-import {
-    createRallarRoomsFacade,
-    type RallarRoomsFacade,
-} from '@shared-web/browser/rallar-rooms-facade.ts';
+import { createRallarDirectorFacade, type RallarDirectorFacade, } from '@shared-web/browser/rallar-director-facade.ts';
+import { createRallarMediaFacade, type RallarMediaFacade, } from '@shared-web/browser/rallar-media-facade.ts';
+import { createRallarMessagesFacade, type RallarMessagesFacade, } from '@shared-web/browser/rallar-messages-facade.ts';
+import { createRallarPeopleFacade, type RallarPeopleFacade, } from '@shared-web/browser/rallar-people-facade.ts';
+import { createRallarRealtimeFacade, type RallarRealtimeFacade, } from '@shared-web/browser/rallar-realtime-facade.ts';
+import { createRallarRtcFacade, type RallarRtcFacade, } from '@shared-web/browser/rallar-rtc-facade.ts';
+import { createRallarRoomsFacade, type RallarRoomsFacade, } from '@shared-web/browser/rallar-rooms-facade.ts';
 import {
     evaluateRallarReadinessExpectation,
     normalizeRallarReadinessExpectation,
@@ -153,17 +120,17 @@ import type { RallarCrdtMessageTransport } from '@shared-web/browser/rallar-crdt
 import {
     matchesRallarMessageSelector,
     normalizeRallarMessageSelector,
-    readRallarMessageRoomId,
-    toRallarMessageSelectorKey,
     type RallarMessageSelector,
     type RallarMessageSelectorInput,
+    readRallarMessageRoomId,
+    toRallarMessageSelectorKey,
 } from '@shared-web/browser/rallar-message-selectors.ts';
 import {
+    type RallarOperationOptions,
+    type RallarOperationRetryPredicate,
     toRallarCommandOptions,
     toRallarOperationOptions,
     toRallarWorkflowPolicies,
-    type RallarOperationOptions,
-    type RallarOperationRetryPredicate,
 } from '@shared-web/browser/rallar-operation-options.ts';
 import {
     createRallarBrowserFacadeRuntimeContext,
@@ -2593,7 +2560,7 @@ class BrowserRallarFacade implements RallarFacade {
             (typeof room === 'string' ? room : room.groupId);
         const roomRef = typeof room === 'string'
             ? this.resolveGroupRefFromRoomId(room, options.scope) ??
-                this.resolveRoomRef(room)
+            this.resolveRoomRef(room)
             : room;
         const expectation = normalizeRallarReadinessExpectation(options.expect);
 
@@ -2647,7 +2614,8 @@ class BrowserRallarFacade implements RallarFacade {
         return await new Promise<RallarRoomPresenceWaitResult>((resolve) => {
             let settled = false;
             let timeout: ReturnType<typeof setTimeout> | undefined;
-            let unsubscribe: RallarUnsubscribe = () => {};
+            let unsubscribe: RallarUnsubscribe = () => {
+            };
 
             const finish = (result: RallarRoomPresenceWaitResult): void => {
                 if (settled) {
@@ -2824,34 +2792,38 @@ class BrowserRallarFacade implements RallarFacade {
         room?: string | GroupRef,
         options: RallarDirectorAppointOptions = {},
     ): Promise<RallarDirectorStatus> {
-        const target = room ?? this.resolveDefaultRoom() ??
-            this.resolveCurrentRoomRef();
-        const snapshot = this.findGroupSnapshotForDirector(target);
-        const roomRef = this.resolveDirectorRoomRef(target, snapshot);
-        const roomId = this.toRoomId(roomRef ?? target);
-        if (!roomRef || !roomId) {
-            throw new Error('Cannot appoint director: no room selected.');
-        }
+        return await this.runAuthAwareOperation(async () => {
+            const operationOptions = this.resolveOperationOptions(options);
+            const ctx = await this.connect(operationOptions);
+            const target = room ?? this.resolveDefaultRoom() ??
+                this.resolveCurrentRoomRef();
+            const snapshot = this.findGroupSnapshotForDirector(target);
+            const roomRef = this.resolveDirectorRoomRef(target, snapshot);
+            const roomId = this.toRoomId(roomRef ?? target);
+            if (!roomRef || !roomId) {
+                throw new Error('Cannot appoint director: no room selected.');
+            }
 
-        const session = this.requireSession();
-        const previous = readRallarGroupDirectorFromSnapshot(snapshot);
-        const appointment = createRallarGroupDirectorAppointment({
-            session,
-            previous,
-            heartbeatTtlMs: options.heartbeatTtlMs,
+            const session = this.requireSession();
+            const operationScope = options.scope ??
+                (roomRef ? toStateScope(roomRef) : this.resolveOperationScope());
+            const updated = await apiWorkflows.appointStateGroupDirector(
+                roomId,
+                { heartbeatTtlMs: options.heartbeatTtlMs },
+                session.clientId,
+                session.sessionId,
+                operationScope,
+                toRallarWorkflowPolicies(operationOptions),
+            );
+            await this.acceptSnapshots(ctx, [], [updated], operationScope);
+
+            const appointment = readRallarGroupDirectorFromSnapshot(updated);
+            if (appointment) {
+                this.recordDirectorHeartbeat(roomRef, appointment);
+            }
+            this.emitDirectorStatuses();
+            return this.toDirectorStatus(updated.group);
         });
-        const metadata = mergeRallarGroupDirectorMetadata(
-            snapshot?.group.metadata,
-            appointment,
-        );
-        const updated = await this.rooms.updateMetadata(
-            roomRef,
-            metadata,
-            options,
-        );
-        this.recordDirectorHeartbeat(roomRef, appointment);
-        this.emitDirectorStatuses();
-        return this.toDirectorStatus(updated.group);
     }
 
     private async resignDirector(
@@ -8487,8 +8459,8 @@ function toExpectationAwareRtcRoomLaneWaitStatus(
         return waitStatus === 'open'
             ? 'open'
             : readyPeerIds.length > 0
-            ? 'partial'
-            : 'empty';
+                ? 'partial'
+                : 'empty';
     }
 
     if (!preferUnsatisfiedTerminalStatus) {

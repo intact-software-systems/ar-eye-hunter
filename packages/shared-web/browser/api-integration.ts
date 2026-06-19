@@ -23,6 +23,7 @@ import type {
     GroupSnapshot as GroupStateSnapshot,
 } from '@shared/api/group-types.ts';
 import {
+    type AppointGroupDirectorRequest,
     type ConnectClientSessionRequest,
     type ConnectGroupPresenceSessionRequest,
     type CreateGroupRequest,
@@ -680,6 +681,23 @@ export async function updateStateGroup(
         readApiBaseUrl(),
         `${toStateScopePath(scope)}/groups/${encodeURIComponent(groupId)}`,
         'PUT',
+        request,
+        options,
+    );
+}
+
+export async function appointStateGroupDirector(
+    groupId: string,
+    request: AppointGroupDirectorRequest,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<GroupStateSnapshot> {
+    return await executeHttpRequest<AppointGroupDirectorRequest, GroupStateSnapshot>(
+        readApiBaseUrl(),
+        `${toStateScopePath(scope)}/groups/${
+            encodeURIComponent(groupId)
+        }/director/appoint`,
+        'POST',
         request,
         options,
     );

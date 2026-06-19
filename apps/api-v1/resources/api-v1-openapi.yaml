@@ -28,7 +28,7 @@ tags:
 paths:
   /api/config:
     get:
-      tags: [ Config ]
+      tags: [Config]
       summary: Read runtime configuration
       responses:
         '200':
@@ -40,7 +40,7 @@ paths:
 
   /api/auth/login:
     post:
-      tags: [ Auth ]
+      tags: [Auth]
       summary: Login client
       description: |
         Authenticates a configured client and issues an access token plus a
@@ -67,7 +67,7 @@ paths:
 
   /api/auth/register:
     post:
-      tags: [ Auth ]
+      tags: [Auth]
       summary: Register client
       description: |
         Creates a runtime-backed user that can subsequently authenticate with
@@ -107,12 +107,12 @@ paths:
 
   /api/auth/logout:
     post:
-      tags: [ Auth ]
+      tags: [Auth]
       summary: Logout current session
       description: Revokes the authenticated server-side auth session.
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       responses:
         '200':
           description: Session revoked.
@@ -125,14 +125,14 @@ paths:
 
   /api/auth/ws-ticket:
     post:
-      tags: [ Auth ]
+      tags: [Auth]
       summary: Create websocket auth ticket
       description: |
         Creates a short-lived one-time ticket for `/api/ws/{sessionId}`. This
         avoids putting the long-lived access token in the websocket URL.
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       responses:
         '200':
           description: Websocket ticket issued.
@@ -147,7 +147,7 @@ paths:
 
   /api/black-box/control-token:
     post:
-      tags: [ Auth ]
+      tags: [Auth]
       summary: Create black-box control operator token
       description: |
         Issues a short-lived signed token that the rallar-black-box control
@@ -155,8 +155,8 @@ paths:
         logged in with a valid API-v1 auth session. The token is bearer-capable
         while valid and is intended for in-memory browser use only.
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       responses:
         '200':
           description: Black-box operator token issued.
@@ -177,11 +177,11 @@ paths:
 
   /api/webrtc/ice:
     get:
-      tags: [ WebRTC ]
+      tags: [WebRTC]
       summary: Read ICE servers
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       responses:
         '200':
           description: ICE configuration and cache expiry.
@@ -208,13 +208,13 @@ paths:
 
   /api/ws/{sessionId}:
     get:
-      tags: [ WebRTC ]
+      tags: [WebRTC]
       summary: Upgrade to websocket
       description: |
         Upgrades the connection to a websocket after validating the `sessionId`
         path parameter against a short-lived one-time `ticket` query parameter.
       security:
-        - wsTicket: [ ]
+        - wsTicket: []
       parameters:
         - $ref: '#/components/parameters/SessionId'
       responses:
@@ -233,11 +233,11 @@ paths:
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients:
     get:
-      tags: [ Client State ]
+      tags: [Client State]
       summary: List client snapshots
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -255,11 +255,11 @@ paths:
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}:
     get:
-      tags: [ Client State ]
+      tags: [Client State]
       summary: Read a client snapshot
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -278,11 +278,11 @@ paths:
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/presence:
     get:
-      tags: [ Client State ]
+      tags: [Client State]
       summary: Read client presence snapshot
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -301,11 +301,11 @@ paths:
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/events:
     get:
-      tags: [ Client State ]
+      tags: [Client State]
       summary: List client events
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -324,11 +324,11 @@ paths:
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/events/page:
     get:
-      tags: [ Client State ]
+      tags: [Client State]
       summary: List a cursor page of client events
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -350,14 +350,14 @@ paths:
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/principal:
     put:
-      tags: [ Client State ]
+      tags: [Client State]
       summary: Upsert the authenticated client principal
       description: |
         Updates the client principal record. The authenticated `clientId`
         must match the `{principalId}` path parameter.
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -382,11 +382,11 @@ paths:
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}:
     put:
-      tags: [ Client State ]
+      tags: [Client State]
       summary: Upsert an authenticated client instance
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -412,11 +412,11 @@ paths:
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}/sessions/{sessionId}:
     put:
-      tags: [ Client State ]
+      tags: [Client State]
       summary: Connect an authenticated client session
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -443,11 +443,11 @@ paths:
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}/sessions/{sessionId}/heartbeat:
     post:
-      tags: [ Client State ]
+      tags: [Client State]
       summary: Heartbeat an authenticated client session
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -476,11 +476,11 @@ paths:
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}/sessions/{sessionId}/disconnect:
     post:
-      tags: [ Client State ]
+      tags: [Client State]
       summary: Disconnect an authenticated client session
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -509,11 +509,11 @@ paths:
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups:
     get:
-      tags: [ Group State ]
+      tags: [Group State]
       summary: List group snapshots
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -529,15 +529,15 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
     post:
-      tags: [ Group State ]
+      tags: [Group State]
       summary: Create a group
       description: |
         Creates a group and automatically inserts the authenticated client as an
         active `owner` member. `createdByPrincipalId` and actor fields are
         derived from the authenticated session.
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -561,11 +561,11 @@ paths:
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}:
     get:
-      tags: [ Group State ]
+      tags: [Group State]
       summary: Read a group snapshot
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -582,14 +582,14 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     put:
-      tags: [ Group State ]
+      tags: [Group State]
       summary: Update a group
       description: |
         Only active group `owner` or `admin` members may update group metadata
         and status.
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -614,13 +614,57 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/director/appoint:
+    post:
+      tags: [Group State]
+      summary: Appoint the browser director
+      description: |
+        Appoints the authenticated active room session as the Rallar browser
+        director by patching only the `rallarDirector` metadata entry.
+
+        Active owners/admins may appoint while online. Active members may appoint
+        only when no owner/admin session is active and no existing director
+        appointment has an active session. This endpoint does not grant
+        owner/admin permissions and does not allow generic group metadata
+        updates.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppointGroupDirectorRequest'
+      responses:
+        '200':
+          description: Updated group snapshot with the director appointment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events:
     get:
-      tags: [ Group State ]
+      tags: [Group State]
       summary: List group events
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -639,11 +683,11 @@ paths:
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events/page:
     get:
-      tags: [ Group State ]
+      tags: [Group State]
       summary: List a cursor page of group events
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -665,15 +709,15 @@ paths:
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}:
     put:
-      tags: [ Group State ]
+      tags: [Group State]
       summary: Update self membership state for a group
       description: |
         Self-service membership transitions only allow `active` and `left`.
         Role changes are ignored by the route layer, so an existing `owner` or
         `admin` role is preserved across leave/rejoin.
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -701,14 +745,14 @@ paths:
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}:
     put:
-      tags: [ Group State ]
+      tags: [Group State]
       summary: Connect self presence session in a group
       description: |
         Creates or refreshes live group presence for the authenticated session.
         The caller must already have an `active` membership in the group.
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -736,11 +780,11 @@ paths:
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/heartbeat:
     post:
-      tags: [ Group State ]
+      tags: [Group State]
       summary: Heartbeat self group presence session
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -768,11 +812,11 @@ paths:
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/disconnect:
     post:
-      tags: [ Group State ]
+      tags: [Group State]
       summary: Disconnect self group presence session
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -800,7 +844,7 @@ paths:
 
   /api/graph:
     get:
-      tags: [ Graph ]
+      tags: [Graph]
       summary: Read the global graph snapshot
       responses:
         '200':
@@ -812,7 +856,7 @@ paths:
 
   /api/graph/tree/{groupId}:
     get:
-      tags: [ Graph ]
+      tags: [Graph]
       summary: Read the graph snapshot for a group
       parameters:
         - $ref: '#/components/parameters/GroupId'
@@ -832,15 +876,15 @@ paths:
 
   /api/crdt/catch-up:
     post:
-      tags: [ CRDT ]
+      tags: [CRDT]
       summary: Catch up a CRDT document from the server log
       description: |
         Returns the latest server snapshot unless `includeSnapshot` is false,
         plus a page of accepted updates after `afterSequence` or `afterCursor`.
         This route is authenticated but does not require CRDT admin privileges.
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       requestBody:
         required: true
         content:
@@ -865,12 +909,12 @@ paths:
 
   /api/crdt/admin/documents/list:
     post:
-      tags: [ CRDT ]
+      tags: [CRDT]
       summary: List CRDT documents
       description: Requires a CRDT admin auth session.
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       requestBody:
         required: false
         content:
@@ -891,12 +935,12 @@ paths:
 
   /api/crdt/admin/documents/integrity:
     post:
-      tags: [ CRDT ]
+      tags: [CRDT]
       summary: Verify CRDT document integrity
       description: Requires a CRDT admin auth session.
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       requestBody:
         required: true
         content:
@@ -917,12 +961,12 @@ paths:
 
   /api/crdt/admin/documents/debug-export:
     post:
-      tags: [ CRDT ]
+      tags: [CRDT]
       summary: Export a redacted CRDT debug bundle
       description: Requires a CRDT admin auth session.
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       requestBody:
         required: true
         content:
@@ -943,12 +987,12 @@ paths:
 
   /api/crdt/admin/documents/backup-export:
     post:
-      tags: [ CRDT ]
+      tags: [CRDT]
       summary: Export a CRDT backup bundle
       description: Requires a CRDT admin auth session.
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       requestBody:
         required: true
         content:
@@ -969,12 +1013,12 @@ paths:
 
   /api/crdt/admin/documents/rebuild-projection:
     post:
-      tags: [ CRDT ]
+      tags: [CRDT]
       summary: Rebuild a CRDT projection
       description: Requires a CRDT admin auth session.
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       requestBody:
         required: true
         content:
@@ -995,14 +1039,14 @@ paths:
 
   /api/crdt/admin/documents/compact:
     post:
-      tags: [ CRDT ]
+      tags: [CRDT]
       summary: Compact a CRDT document snapshot
       description: |
         Exports a backup, creates or accepts a compacted snapshot, and writes it
         at the current append sequence. Requires a CRDT admin auth session.
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       requestBody:
         required: true
         content:
@@ -1023,12 +1067,12 @@ paths:
 
   /api/crdt/admin/documents/lifecycle:
     post:
-      tags: [ CRDT ]
+      tags: [CRDT]
       summary: Update CRDT document lifecycle
       description: Requires a CRDT admin auth session.
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       requestBody:
         required: true
         content:
@@ -1049,12 +1093,12 @@ paths:
 
   /api/crdt/admin/documents/erase:
     post:
-      tags: [ CRDT ]
+      tags: [CRDT]
       summary: Erase or redact a CRDT document
       description: Requires a CRDT admin auth session.
       security:
-        - bearerAuth: [ ]
-          clientIdHeader: [ ]
+        - bearerAuth: []
+          clientIdHeader: []
       requestBody:
         required: true
         content:
@@ -1073,10 +1117,9 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
-
   /api/openapi.json:
     get:
-      tags: [ Docs ]
+      tags: [Docs]
       summary: Read the OpenAPI specification JSON
       responses:
         '200':
@@ -1089,7 +1132,7 @@ paths:
 
   /openapi.json:
     get:
-      tags: [ Docs ]
+      tags: [Docs]
       summary: Read the OpenAPI specification JSON without the `/api` prefix
       responses:
         '200':
@@ -1102,7 +1145,7 @@ paths:
 
   /api/docs:
     get:
-      tags: [ Docs ]
+      tags: [Docs]
       summary: Read Swagger UI
       responses:
         '200':
@@ -1114,7 +1157,7 @@ paths:
 
   /swagger-ui:
     get:
-      tags: [ Docs ]
+      tags: [Docs]
       summary: Read Swagger UI without the `/api` prefix
       responses:
         '200':
@@ -1275,14 +1318,14 @@ components:
   schemas:
     ErrorResponse:
       type: object
-      required: [ error ]
+      required: [error]
       properties:
         error:
           type: string
 
     ApiConfig:
       type: object
-      required: [ apiBaseUrl, wsBaseUrl, endpoints ]
+      required: [apiBaseUrl, wsBaseUrl, endpoints]
       properties:
         apiBaseUrl:
           type: string
@@ -1296,7 +1339,7 @@ components:
 
     ApiEndpoints:
       type: object
-      required: [ createWs ]
+      required: [createWs]
       properties:
         createWs:
           type: string
@@ -1305,7 +1348,7 @@ components:
 
     LoginRequest:
       type: object
-      required: [ username, password ]
+      required: [username, password]
       properties:
         username:
           type: string
@@ -1314,7 +1357,7 @@ components:
 
     RegisterRequest:
       type: object
-      required: [ username, password ]
+      required: [username, password]
       properties:
         username:
           type: string
@@ -1325,7 +1368,7 @@ components:
 
     LoginResponse:
       type: object
-      required: [ clientId, accessToken, username, sessionId, expiresAtEpochMs ]
+      required: [clientId, accessToken, username, sessionId, expiresAtEpochMs]
       properties:
         clientId:
           type: string
@@ -1341,7 +1384,7 @@ components:
 
     RegisterResponse:
       type: object
-      required: [ clientId, username, registeredAtEpochMs ]
+      required: [clientId, username, registeredAtEpochMs]
       properties:
         clientId:
           type: string
@@ -1355,14 +1398,14 @@ components:
 
     LogoutResponse:
       type: object
-      required: [ loggedOut ]
+      required: [loggedOut]
       properties:
         loggedOut:
           type: boolean
 
     WebSocketTicketResponse:
       type: object
-      required: [ ticket, sessionId, expiresAtEpochMs ]
+      required: [ticket, sessionId, expiresAtEpochMs]
       properties:
         ticket:
           type: string
@@ -1374,11 +1417,11 @@ components:
 
     BlackBoxControlTokenResponse:
       type: object
-      required: [ tokenType, token, issuedAtEpochMs, expiresAtEpochMs, ttlMs ]
+      required: [tokenType, token, issuedAtEpochMs, expiresAtEpochMs, ttlMs]
       properties:
         tokenType:
           type: string
-          enum: [ Bearer ]
+          enum: [Bearer]
         token:
           type: string
         issuedAtEpochMs:
@@ -1393,7 +1436,7 @@ components:
 
     IceConfig:
       type: object
-      required: [ iceServers, expiresAtEpochMs ]
+      required: [iceServers, expiresAtEpochMs]
       properties:
         iceServers:
           type: array
@@ -1422,7 +1465,7 @@ components:
 
     AuditStamp:
       type: object
-      required: [ atEpochMs ]
+      required: [atEpochMs]
       properties:
         atEpochMs:
           type: integer
@@ -1480,7 +1523,7 @@ components:
           type: string
         status:
           type: string
-          enum: [ active, disabled, deleted ]
+          enum: [active, disabled, deleted]
         authProvider:
           type: string
         externalSubjectId:
@@ -1536,10 +1579,10 @@ components:
           type: string
         status:
           type: string
-          enum: [ active, revoked, retired ]
+          enum: [active, revoked, retired]
         platform:
           type: string
-          enum: [ web, ios, android, desktop, server, unknown ]
+          enum: [web, ios, android, desktop, server, unknown]
         deviceLabel:
           type: string
         appVersion:
@@ -1585,13 +1628,13 @@ components:
           type: string
         status:
           type: string
-          enum: [ active, disconnected, expired ]
+          enum: [active, disconnected, expired]
         presenceState:
           type: string
-          enum: [ online, offline, away, busy ]
+          enum: [online, offline, away, busy]
         transport:
           type: string
-          enum: [ ws, http, rtc, unknown ]
+          enum: [ws, http, rtc, unknown]
         connectionId:
           type: string
         authenticatedAtEpochMs:
@@ -1636,7 +1679,7 @@ components:
           type: boolean
         presenceState:
           type: string
-          enum: [ online, offline, away, busy ]
+          enum: [online, offline, away, busy]
         activeSessions:
           type: array
           items:
@@ -1793,13 +1836,13 @@ components:
           type: string
         kind:
           type: string
-          enum: [ party, room, team, custom ]
+          enum: [party, room, team, custom]
         status:
           type: string
-          enum: [ active, archived, deleted ]
+          enum: [active, archived, deleted]
         joinMode:
           type: string
-          enum: [ invite-only, code, open ]
+          enum: [invite-only, code, open]
         maxMembers:
           type: integer
           format: int64
@@ -1861,10 +1904,10 @@ components:
           type: string
         role:
           type: string
-          enum: [ owner, admin, member ]
+          enum: [owner, admin, member]
         status:
           type: string
-          enum: [ invited, active, left, removed, banned ]
+          enum: [invited, active, left, removed, banned]
         joined:
           $ref: '#/components/schemas/AuditStamp'
         updated:
@@ -1920,7 +1963,7 @@ components:
 
     GroupSnapshot:
       type: object
-      required: [ group, members, activeSessions, memberCount, onlineMemberCount ]
+      required: [group, members, activeSessions, memberCount, onlineMemberCount]
       properties:
         group:
           $ref: '#/components/schemas/Group'
@@ -2009,7 +2052,7 @@ components:
 
     UpsertClientPrincipalRequest:
       type: object
-      required: [ username ]
+      required: [username]
       properties:
         username:
           type: string
@@ -2019,7 +2062,7 @@ components:
           type: string
         status:
           type: string
-          enum: [ active, disabled, deleted ]
+          enum: [active, disabled, deleted]
         authProvider:
           type: string
         externalSubjectId:
@@ -2046,10 +2089,10 @@ components:
       properties:
         status:
           type: string
-          enum: [ active, revoked, retired ]
+          enum: [active, revoked, retired]
         platform:
           type: string
-          enum: [ web, ios, android, desktop, server, unknown ]
+          enum: [web, ios, android, desktop, server, unknown]
         deviceLabel:
           type: string
         appVersion:
@@ -2072,10 +2115,10 @@ components:
       properties:
         presenceState:
           type: string
-          enum: [ online, offline, away, busy ]
+          enum: [online, offline, away, busy]
         transport:
           type: string
-          enum: [ ws, http, rtc, unknown ]
+          enum: [ws, http, rtc, unknown]
         connectionId:
           type: string
         authenticatedAtEpochMs:
@@ -2102,7 +2145,7 @@ components:
       properties:
         presenceState:
           type: string
-          enum: [ online, offline, away, busy ]
+          enum: [online, offline, away, busy]
         lastHeartbeatAtEpochMs:
           type: integer
           format: int64
@@ -2137,7 +2180,7 @@ components:
 
     CreateGroupRequest:
       type: object
-      required: [ groupId, displayName, kind ]
+      required: [groupId, displayName, kind]
       properties:
         groupId:
           type: string
@@ -2149,10 +2192,10 @@ components:
           type: string
         kind:
           type: string
-          enum: [ party, room, team, custom ]
+          enum: [party, room, team, custom]
         joinMode:
           type: string
-          enum: [ invite-only, code, open ]
+          enum: [invite-only, code, open]
         maxMembers:
           type: integer
           format: int64
@@ -2186,13 +2229,13 @@ components:
           type: string
         kind:
           type: string
-          enum: [ party, room, team, custom ]
+          enum: [party, room, team, custom]
         status:
           type: string
-          enum: [ active, archived, deleted ]
+          enum: [active, archived, deleted]
         joinMode:
           type: string
-          enum: [ invite-only, code, open ]
+          enum: [invite-only, code, open]
         maxMembers:
           type: integer
           format: int64
@@ -2218,13 +2261,28 @@ components:
         requestId:
           type: string
 
+    AppointGroupDirectorRequest:
+      type: object
+      properties:
+        heartbeatTtlMs:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Optional heartbeat freshness TTL to store on the director appointment.
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
     SelfUpsertGroupMemberRequest:
       type: object
-      required: [ status ]
+      required: [status]
       properties:
         status:
           type: string
-          enum: [ active, left ]
+          enum: [active, left]
         reason:
           type: string
         traceId:
@@ -2293,7 +2351,7 @@ components:
 
     GraphInfo:
       type: object
-      required: [ graphId, graph, groupGraph, coreNodes ]
+      required: [graphId, graph, groupGraph, coreNodes]
       properties:
         graphId:
           type: string
@@ -2308,7 +2366,7 @@ components:
 
     GraphInfoSnapshot:
       type: object
-      required: [ graphId, predicted, createdAtEpochMs, version ]
+      required: [graphId, predicted, createdAtEpochMs, version]
       properties:
         graphId:
           type: string
@@ -2325,7 +2383,7 @@ components:
 
     CrdtRouteErrorResponse:
       type: object
-      required: [ ok, error ]
+      required: [ok, error]
       properties:
         ok:
           type: boolean
@@ -2335,7 +2393,7 @@ components:
 
     RallarCrdtDocumentRef:
       type: object
-      required: [ applicationId, scope, documentType, documentId ]
+      required: [applicationId, scope, documentType, documentId]
       properties:
         applicationId:
           type: string
@@ -2343,7 +2401,7 @@ components:
           type: string
         scope:
           type: string
-          enum: [ app, principal, room, custom ]
+          enum: [app, principal, room, custom]
         documentType:
           type: string
         documentId:
@@ -2372,7 +2430,7 @@ components:
 
     RallarCrdtClockSummary:
       type: object
-      required: [ maxLamport, replicaClocks ]
+      required: [maxLamport, replicaClocks]
       properties:
         maxLamport:
           type: integer
@@ -2385,7 +2443,7 @@ components:
 
     RallarCrdtCausalFrontier:
       type: object
-      required: [ frontierUpdateIds ]
+      required: [frontierUpdateIds]
       properties:
         frontierUpdateIds:
           type: array
@@ -2399,7 +2457,7 @@ components:
 
     RallarCrdtOperationBatch:
       type: object
-      required: [ kind, operations ]
+      required: [kind, operations]
       properties:
         kind:
           type: string
@@ -2408,7 +2466,7 @@ components:
           type: array
           items:
             type: object
-            required: [ kind, path ]
+            required: [kind, path]
             properties:
               kind:
                 type: string
@@ -2493,7 +2551,7 @@ components:
 
     RallarCrdtSnapshotMetadata:
       type: object
-      required: [ updateCount ]
+      required: [updateCount]
       properties:
         createdByReplicaId:
           type: string
@@ -2561,7 +2619,7 @@ components:
 
     RallarCrdtTrustedAppendMetadata:
       type: object
-      required: [ appendSequence, acceptedAtEpochMs, authorizationScope, acceptedUpdateHash ]
+      required: [appendSequence, acceptedAtEpochMs, authorizationScope, acceptedUpdateHash]
       properties:
         appendSequence:
           type: integer
@@ -2579,13 +2637,13 @@ components:
           type: string
         authorizationScope:
           type: string
-          enum: [ room, principal, app, custom ]
+          enum: [room, principal, app, custom]
         acceptedUpdateHash:
           type: string
 
     RallarCrdtDurableUpdateRecord:
       type: object
-      required: [ document, documentKey, update, append ]
+      required: [document, documentKey, update, append]
       properties:
         document:
           $ref: '#/components/schemas/RallarCrdtDocumentRef'
@@ -2598,7 +2656,7 @@ components:
 
     RallarCrdtUpdatePage:
       type: object
-      required: [ document, records, hasMore ]
+      required: [document, records, hasMore]
       properties:
         document:
           $ref: '#/components/schemas/RallarCrdtDocumentRef'
@@ -2619,7 +2677,7 @@ components:
 
     RallarCrdtCatchUpRequest:
       type: object
-      required: [ document ]
+      required: [document]
       properties:
         protocolVersion:
           type: integer
@@ -2646,7 +2704,7 @@ components:
 
     RallarCrdtCatchUpResponse:
       type: object
-      required: [ protocolVersion, requestId, document, createdAtEpochMs, page ]
+      required: [protocolVersion, requestId, document, createdAtEpochMs, page]
       properties:
         protocolVersion:
           type: integer
@@ -2665,7 +2723,7 @@ components:
 
     RallarCrdtCatchUpApiResponse:
       type: object
-      required: [ ok, result ]
+      required: [ok, result]
       properties:
         ok:
           type: boolean
@@ -2675,11 +2733,11 @@ components:
 
     RallarCrdtRetentionPolicy:
       type: object
-      required: [ mode ]
+      required: [mode]
       properties:
         mode:
           type: string
-          enum: [ retain, redact-after, delete-after ]
+          enum: [retain, redact-after, delete-after]
         ttlMs:
           type: integer
           format: int64
@@ -2725,7 +2783,7 @@ components:
           type: string
         lifecycle:
           type: string
-          enum: [ active, archived, destroyed, quarantined ]
+          enum: [active, archived, destroyed, quarantined]
         createdAtEpochMs:
           type: integer
           format: int64
@@ -2799,10 +2857,10 @@ components:
           type: string
         lifecycle:
           type: string
-          enum: [ active, archived, destroyed, quarantined ]
+          enum: [active, archived, destroyed, quarantined]
         rollout:
           type: string
-          enum: [ disabled, experimental-local, experimental-live, durable-beta, production ]
+          enum: [disabled, experimental-local, experimental-live, durable-beta, production]
         updateCount:
           type: integer
           format: int64
@@ -2833,12 +2891,12 @@ components:
           type: string
         scope:
           type: string
-          enum: [ app, principal, room, custom ]
+          enum: [app, principal, room, custom]
         documentType:
           type: string
         lifecycle:
           type: string
-          enum: [ active, archived, destroyed, quarantined ]
+          enum: [active, archived, destroyed, quarantined]
         limit:
           type: integer
           minimum: 1
@@ -2847,7 +2905,7 @@ components:
 
     RallarCrdtDocumentAdminPage:
       type: object
-      required: [ documents, hasMore ]
+      required: [documents, hasMore]
       properties:
         documents:
           type: array
@@ -2860,7 +2918,7 @@ components:
 
     RallarCrdtDocumentAdminPageApiResponse:
       type: object
-      required: [ ok, result ]
+      required: [ok, result]
       properties:
         ok:
           type: boolean
@@ -2870,14 +2928,14 @@ components:
 
     RallarCrdtDocumentRequest:
       type: object
-      required: [ document ]
+      required: [document]
       properties:
         document:
           $ref: '#/components/schemas/RallarCrdtDocumentRef'
 
     RallarCrdtValidationIssue:
       type: object
-      required: [ path, code, message ]
+      required: [path, code, message]
       properties:
         path:
           type: string
@@ -2888,7 +2946,7 @@ components:
 
     RallarCrdtIntegrityReport:
       type: object
-      required: [ valid, issues, documentKey, checkedUpdateCount, sequenceGaps ]
+      required: [valid, issues, documentKey, checkedUpdateCount, sequenceGaps]
       properties:
         valid:
           type: boolean
@@ -2911,7 +2969,7 @@ components:
 
     RallarCrdtIntegrityReportApiResponse:
       type: object
-      required: [ ok, result ]
+      required: [ok, result]
       properties:
         ok:
           type: boolean
@@ -2921,7 +2979,7 @@ components:
 
     RallarCrdtDebugBundleRedaction:
       type: object
-      required: [ payloadsRedacted ]
+      required: [payloadsRedacted]
       properties:
         payloadsRedacted:
           type: boolean
@@ -2934,7 +2992,7 @@ components:
 
     RallarCrdtBundleIntegrity:
       type: object
-      required: [ bundleHash, documentRefHash, updateHashes, updateCount, sequenceGaps ]
+      required: [bundleHash, documentRefHash, updateHashes, updateCount, sequenceGaps]
       properties:
         bundleHash:
           type: string
@@ -3012,7 +3070,7 @@ components:
 
     RallarCrdtDebugBundleApiResponse:
       type: object
-      required: [ ok, result ]
+      required: [ok, result]
       properties:
         ok:
           type: boolean
@@ -3054,7 +3112,7 @@ components:
 
     RallarCrdtBackupBundleApiResponse:
       type: object
-      required: [ ok, result ]
+      required: [ok, result]
       properties:
         ok:
           type: boolean
@@ -3084,7 +3142,7 @@ components:
 
     RallarCrdtCompactResult:
       type: object
-      required: [ document, documentKey, appendSequence, snapshot ]
+      required: [document, documentKey, appendSequence, snapshot]
       properties:
         document:
           $ref: '#/components/schemas/RallarCrdtDocumentRef'
@@ -3098,7 +3156,7 @@ components:
 
     RallarCrdtCompactApiResponse:
       type: object
-      required: [ ok, result ]
+      required: [ok, result]
       properties:
         ok:
           type: boolean
@@ -3108,13 +3166,13 @@ components:
 
     RallarCrdtLifecycleRequest:
       type: object
-      required: [ document, lifecycle ]
+      required: [document, lifecycle]
       properties:
         document:
           $ref: '#/components/schemas/RallarCrdtDocumentRef'
         lifecycle:
           type: string
-          enum: [ active, archived, destroyed, quarantined ]
+          enum: [active, archived, destroyed, quarantined]
         changedAtEpochMs:
           type: integer
           format: int64
@@ -3129,7 +3187,7 @@ components:
 
     RallarCrdtDocumentMetadataApiResponse:
       type: object
-      required: [ ok, result ]
+      required: [ok, result]
       properties:
         ok:
           type: boolean
@@ -3139,7 +3197,7 @@ components:
 
     RallarCrdtAuditEvent:
       type: object
-      required: [ kind, atEpochMs ]
+      required: [kind, atEpochMs]
       properties:
         kind:
           type: string
@@ -3173,7 +3231,7 @@ components:
 
     RallarCrdtEraseRequest:
       type: object
-      required: [ document ]
+      required: [document]
       properties:
         document:
           $ref: '#/components/schemas/RallarCrdtDocumentRef'
@@ -3183,11 +3241,11 @@ components:
           type: string
         mode:
           type: string
-          enum: [ destroy-document, redact-payloads ]
+          enum: [destroy-document, redact-payloads]
 
     RallarCrdtErasureRequest:
       type: object
-      required: [ document, requestedAtEpochMs, requestedBy, reason, mode ]
+      required: [document, requestedAtEpochMs, requestedBy, reason, mode]
       properties:
         document:
           $ref: '#/components/schemas/RallarCrdtDocumentRef'
@@ -3200,11 +3258,11 @@ components:
           type: string
         mode:
           type: string
-          enum: [ destroy-document, redact-payloads ]
+          enum: [destroy-document, redact-payloads]
 
     RallarCrdtEraseResult:
       type: object
-      required: [ request, auditEvent ]
+      required: [request, auditEvent]
       properties:
         request:
           $ref: '#/components/schemas/RallarCrdtErasureRequest'
@@ -3217,7 +3275,7 @@ components:
 
     RallarCrdtEraseApiResponse:
       type: object
-      required: [ ok, result ]
+      required: [ok, result]
       properties:
         ok:
           type: boolean

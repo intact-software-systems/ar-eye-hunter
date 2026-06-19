@@ -10,13 +10,16 @@ Deno.test('api-v1 queue pub/sub config uses key delivery only for postgres', () 
 });
 
 Deno.test('postgres queue pub/sub bridge publishes key-only envelopes', async () => {
-  const notifications: Array<Readonly<{
-    channel: string;
-    message: QueueBoxPubSubMessage;
-  }>> = [];
+  const notifications: Array<
+    Readonly<{
+      channel: string;
+      message: QueueBoxPubSubMessage;
+    }>
+  > = [];
   const bridge = createPostgresQueuePubSubBridge('publisher-local', {
-    notify: async (channel, message) => {
+    notify: (channel, message) => {
       notifications.push({ channel, message });
+      return Promise.resolve();
     },
     startListening: async () => {
     },
@@ -49,8 +52,7 @@ Deno.test('postgres queue pub/sub bridge publishes key-only envelopes', async ()
 Deno.test('postgres queue pub/sub bridge ignores malformed and wrong-channel payloads', async () => {
   const received: QueueBoxPubSubMessage[] = [];
   const bridge = createPostgresQueuePubSubBridge('publisher-local', {
-    notify: async () => {
-    },
+    notify: () => Promise.resolve(),
     startListening: async (_channel, options) => {
       await options.onMessage({ channel: 'ws-channel' } as QueueBoxPubSubMessage);
       await options.onMessage(

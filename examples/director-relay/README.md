@@ -63,3 +63,8 @@ relay.stop();
 
 Director relay is for low-rate authority messages. Use
 `rallar.realtime.room<T>(...)` for high-rate input/snapshot traffic.
+
+`rallar.director.appoint(...)` uses the dedicated director appointment endpoint,
+not generic room metadata updates. Owners/admins can appoint while online; by
+default Rallar Game also allows an active member to appoint when no owner/admin
+session and no active director session are present.

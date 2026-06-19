@@ -214,6 +214,36 @@ rallar.rooms.onEvent((event) => {
 });
 ```
 
+### Director
+
+`director.appoint(room, options?)` appoints the current browser session as the
+room director through the narrow state API endpoint. It does not call
+`rooms.updateMetadata(...)`, and it does not grant the caller owner/admin
+permissions.
+
+Owners and admins can appoint while their own room session is active. For Rallar
+Game's default browser-director policy, an active member may also appoint when no
+owner/admin session is online and no existing director appointment has an active
+session. `rooms.updateMetadata(...)` remains owner/admin-only for generic group
+metadata changes.
+
+`director.status(room?)` reads the current appointment and returns whether the
+local session is the fresh director. `director.createRelay(...)` builds the
+intent/output/snapshot relay around that appointment.
+
+```ts
+const room = rallar.rooms.session(created.group);
+
+await rallar.director.appoint(room.roomRef, {
+    heartbeatTtlMs: 4_000,
+});
+
+const status = rallar.director.status(room.roomRef);
+if (status.isDirector) {
+    startAuthoritativeLoop();
+}
+```
+
 ### People
 
 `people.state()` returns derived people/client state.

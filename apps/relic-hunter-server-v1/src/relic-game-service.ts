@@ -1,4 +1,4 @@
-import type { Hono } from 'jsr:@hono/hono';
+import type { Hono } from 'jsr:@hono/hono@4.11.9';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import {
   applyRelicCommand,
@@ -89,7 +89,7 @@ export async function installRelicHunterGame(
     );
   }
 
-  async function applyCommand(
+  function applyCommand(
     command: RelicCommand,
     senderId: string,
   ): Promise<RelicPublicSnapshot> {
@@ -118,7 +118,6 @@ export async function installRelicHunterGame(
       value.gameId === context.roomId,
   });
 
-
   rallar.ws.on<RelicCommand>(
     {
       topicId: RELIC_TOPICS.command,
@@ -134,7 +133,7 @@ export async function installRelicHunterGame(
       const game = await games.get(gameId);
       return game ? toPublicRelicSnapshot(game) : undefined;
     },
-    ensureSnapshot: async (gameId) => {
+    ensureSnapshot: (gameId) => {
       return enqueueForGame(gameId, async () => {
         const existing = await games.get(gameId);
         if (existing) {
@@ -146,7 +145,7 @@ export async function installRelicHunterGame(
       });
     },
     applyCommand,
-    reset: async (gameId) => {
+    reset: (gameId) => {
       return enqueueForGame(gameId, async () => {
         const state = await createInitialState(gameId, 'reset');
         await games.set(gameId, state);

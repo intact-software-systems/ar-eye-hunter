@@ -330,6 +330,7 @@ export type RallarGameDiagnostics = Readonly<{
 }>;
 
 export type RallarGameDirectorAppointmentPolicy =
+    | 'metadata-owner-admin-or-member-fallback'
     | 'metadata-owner-admin'
     | 'none'
     | 'custom';
@@ -356,6 +357,7 @@ export type RallarGameDirectorAppointmentContext = Readonly<{
     roomId?: string;
     roomRef?: GroupRef;
     roomState: RallarRoomState;
+    directorStatus: RallarDirectorStatus;
     localPeerId?: string;
     localPrincipalId?: string;
 }>;

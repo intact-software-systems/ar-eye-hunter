@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { Hono } from 'jsr:@hono/hono';
+import { Hono } from 'jsr:@hono/hono@4.11.9';
 import { Temporal } from '@js-temporal/polyfill';
 import {
   CircuitBreaker,
