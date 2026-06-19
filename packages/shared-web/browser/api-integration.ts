@@ -23,18 +23,30 @@ import type {
     GroupSnapshot as GroupStateSnapshot,
 } from '@shared/api/group-types.ts';
 import {
+    type AcceptGroupInviteRequest,
     type AppointGroupDirectorRequest,
+    type BanGroupMemberRequest,
     type ConnectClientSessionRequest,
     type ConnectGroupPresenceSessionRequest,
+    type CreateGroupInviteRequest,
     type CreateGroupRequest,
     DEFAULT_STATE_APPLICATION_ID,
     DEFAULT_STATE_WORKSPACE_ID,
     type DisconnectGroupPresenceSessionRequest,
     type HeartbeatClientSessionRequest,
     type HeartbeatGroupPresenceSessionRequest,
+    type JoinGroupRequest,
+    type RemoveGroupMemberRequest,
+    type RevokeGroupInviteRequest,
+    type RotateGroupJoinCodeRequest,
+    type SetGroupMemberRoleRequest,
     type StateScope,
+    type StateErrorResponse,
+    type TransferGroupOwnershipRequest,
+    type UnbanGroupMemberRequest,
     type UpdateGroupRequest,
     type UpsertGroupMemberRequest,
+    type GroupJoinCodeResponse,
 } from '@shared/api/state-types.ts';
 import type {
     StateEventCursor,
@@ -70,6 +82,8 @@ export type ClientStateEventListRequestOptions =
     StateEventListRequestOptions<ClientEventType>;
 
 export class ApiHttpError extends Error {
+    public readonly policyError?: StateErrorResponse & Readonly<{ code: string }>;
+
     public constructor(
         public readonly method: 'GET' | 'POST' | 'PUT',
         public readonly path: string,
@@ -79,7 +93,18 @@ export class ApiHttpError extends Error {
     ) {
         super(`API ${method} ${path} failed: ${status} ${bodyText}`);
         this.name = 'ApiHttpError';
+        this.policyError = parseApiPolicyError(bodyText);
     }
+}
+
+export function readApiPolicyError(
+    error: unknown,
+): (StateErrorResponse & Readonly<{ code: string }>) | undefined {
+    if (error instanceof ApiHttpError) {
+        return error.policyError;
+    }
+
+    return undefined;
 }
 
 export type WebSocketTicketBackoffState = Readonly<
@@ -352,6 +377,33 @@ async function readTextOrElse(
     } catch {
         return orElse();
     }
+}
+
+function parseApiPolicyError(
+    bodyText: string,
+): (StateErrorResponse & Readonly<{ code: string }>) | undefined {
+    try {
+        const value = JSON.parse(bodyText);
+        if (!isRecord(value)) {
+            return undefined;
+        }
+        if (typeof value.error !== 'string' || typeof value.code !== 'string') {
+            return undefined;
+        }
+
+        return {
+            error: value.error,
+            code: value.code,
+            message: typeof value.message === 'string' ? value.message : undefined,
+            details: isRecord(value.details) ? value.details : undefined,
+        };
+    } catch {
+        return undefined;
+    }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
 }
 
 async function executeHttpRequest<TReq, TRes>(
@@ -697,6 +749,178 @@ export async function appointStateGroupDirector(
         `${toStateScopePath(scope)}/groups/${
             encodeURIComponent(groupId)
         }/director/appoint`,
+        'POST',
+        request,
+        options,
+    );
+}
+
+export async function joinStateGroup(
+    groupId: string,
+    request: JoinGroupRequest,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<GroupStateSnapshot> {
+    return await executeHttpRequest<JoinGroupRequest, GroupStateSnapshot>(
+        readApiBaseUrl(),
+        `${toStateScopePath(scope)}/groups/${encodeURIComponent(groupId)}/join`,
+        'POST',
+        request,
+        options,
+    );
+}
+
+export async function createStateGroupInvite(
+    groupId: string,
+    principalId: string,
+    request: CreateGroupInviteRequest,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<GroupStateSnapshot> {
+    return await executeHttpRequest<CreateGroupInviteRequest, GroupStateSnapshot>(
+        readApiBaseUrl(),
+        `${toStateScopePath(scope)}/groups/${encodeURIComponent(groupId)}/invites/${
+            encodeURIComponent(principalId)
+        }`,
+        'POST',
+        request,
+        options,
+    );
+}
+
+export async function revokeStateGroupInvite(
+    groupId: string,
+    principalId: string,
+    request: RevokeGroupInviteRequest,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<GroupStateSnapshot> {
+    return await executeHttpRequest<RevokeGroupInviteRequest, GroupStateSnapshot>(
+        readApiBaseUrl(),
+        `${toStateScopePath(scope)}/groups/${encodeURIComponent(groupId)}/invites/${
+            encodeURIComponent(principalId)
+        }/revoke`,
+        'POST',
+        request,
+        options,
+    );
+}
+
+export async function acceptStateGroupInvite(
+    groupId: string,
+    request: AcceptGroupInviteRequest,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<GroupStateSnapshot> {
+    return await executeHttpRequest<AcceptGroupInviteRequest, GroupStateSnapshot>(
+        readApiBaseUrl(),
+        `${toStateScopePath(scope)}/groups/${encodeURIComponent(groupId)}/invites/accept`,
+        'POST',
+        request,
+        options,
+    );
+}
+
+export async function rotateStateGroupJoinCode(
+    groupId: string,
+    request: RotateGroupJoinCodeRequest,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<GroupJoinCodeResponse> {
+    return await executeHttpRequest<RotateGroupJoinCodeRequest, GroupJoinCodeResponse>(
+        readApiBaseUrl(),
+        `${toStateScopePath(scope)}/groups/${
+            encodeURIComponent(groupId)
+        }/join-code/rotate`,
+        'POST',
+        request,
+        options,
+    );
+}
+
+export async function removeStateGroupMember(
+    groupId: string,
+    principalId: string,
+    request: RemoveGroupMemberRequest,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<GroupStateSnapshot> {
+    return await executeHttpRequest<RemoveGroupMemberRequest, GroupStateSnapshot>(
+        readApiBaseUrl(),
+        `${toStateScopePath(scope)}/groups/${encodeURIComponent(groupId)}/members/${
+            encodeURIComponent(principalId)
+        }/remove`,
+        'POST',
+        request,
+        options,
+    );
+}
+
+export async function banStateGroupMember(
+    groupId: string,
+    principalId: string,
+    request: BanGroupMemberRequest,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<GroupStateSnapshot> {
+    return await executeHttpRequest<BanGroupMemberRequest, GroupStateSnapshot>(
+        readApiBaseUrl(),
+        `${toStateScopePath(scope)}/groups/${encodeURIComponent(groupId)}/members/${
+            encodeURIComponent(principalId)
+        }/ban`,
+        'POST',
+        request,
+        options,
+    );
+}
+
+export async function unbanStateGroupMember(
+    groupId: string,
+    principalId: string,
+    request: UnbanGroupMemberRequest,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<GroupStateSnapshot> {
+    return await executeHttpRequest<UnbanGroupMemberRequest, GroupStateSnapshot>(
+        readApiBaseUrl(),
+        `${toStateScopePath(scope)}/groups/${encodeURIComponent(groupId)}/members/${
+            encodeURIComponent(principalId)
+        }/unban`,
+        'POST',
+        request,
+        options,
+    );
+}
+
+export async function setStateGroupMemberRole(
+    groupId: string,
+    principalId: string,
+    request: SetGroupMemberRoleRequest,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<GroupStateSnapshot> {
+    return await executeHttpRequest<SetGroupMemberRoleRequest, GroupStateSnapshot>(
+        readApiBaseUrl(),
+        `${toStateScopePath(scope)}/groups/${encodeURIComponent(groupId)}/members/${
+            encodeURIComponent(principalId)
+        }/role`,
+        'PUT',
+        request,
+        options,
+    );
+}
+
+export async function transferStateGroupOwnership(
+    groupId: string,
+    request: TransferGroupOwnershipRequest,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<GroupStateSnapshot> {
+    return await executeHttpRequest<TransferGroupOwnershipRequest, GroupStateSnapshot>(
+        readApiBaseUrl(),
+        `${toStateScopePath(scope)}/groups/${
+            encodeURIComponent(groupId)
+        }/owner/transfer`,
         'POST',
         request,
         options,

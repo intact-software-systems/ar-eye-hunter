@@ -5,7 +5,7 @@ import type {
     ClientPrincipalStatus,
     ClientTransport,
 } from './client-types.ts';
-import type { Group, GroupJoinMode, GroupMemberStatus, GroupRole, GroupStatus, } from './group-types.ts';
+import type { Group, GroupJoinMode, GroupMemberStatus, GroupRole, GroupSnapshot, GroupStatus, } from './group-types.ts';
 
 export const DEFAULT_STATE_APPLICATION_ID = 'rallar-server';
 export const DEFAULT_STATE_WORKSPACE_ID = 'default';
@@ -116,6 +116,54 @@ export type AppointGroupDirectorRequest =
     heartbeatTtlMs?: number;
 }>;
 
+export type JoinGroupRequest =
+    & MutationActorInput
+    & Readonly<{
+    inviteToken?: string;
+    joinCode?: string;
+}>;
+
+export type CreateGroupInviteRequest =
+    & MutationActorInput
+    & Readonly<{
+    invitationExpiresAtEpochMs?: number;
+}>;
+
+export type RevokeGroupInviteRequest = MutationActorInput;
+
+export type AcceptGroupInviteRequest = MutationActorInput;
+
+export type RotateGroupJoinCodeRequest =
+    & MutationActorInput
+    & Readonly<{
+    joinCode?: string;
+    expiresAtEpochMs?: number;
+}>;
+
+export type GroupJoinCodeResponse = Readonly<{
+    joinCode: string;
+    expiresAtEpochMs?: number;
+    snapshot: GroupSnapshot;
+}>;
+
+export type RemoveGroupMemberRequest = MutationActorInput;
+
+export type BanGroupMemberRequest = MutationActorInput;
+
+export type UnbanGroupMemberRequest = MutationActorInput;
+
+export type SetGroupMemberRoleRequest =
+    & MutationActorInput
+    & Readonly<{
+    role: GroupRole;
+}>;
+
+export type TransferGroupOwnershipRequest =
+    & MutationActorInput
+    & Readonly<{
+    newOwnerPrincipalId: string;
+}>;
+
 export type UpsertGroupMemberRequest =
     & MutationActorInput
     & Readonly<{
@@ -153,4 +201,7 @@ export type DisconnectGroupPresenceSessionRequest =
 
 export type StateErrorResponse = Readonly<{
     error: string;
+    code?: string;
+    message?: string;
+    details?: Record<string, unknown>;
 }>;

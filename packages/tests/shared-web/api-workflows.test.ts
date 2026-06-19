@@ -10,11 +10,23 @@ import {
     listStateGroupEvents,
 } from '@shared-web/browser/api-integration.ts';
 import {
+    acceptStateGroupInvite,
+    banStateGroupMember,
     createAndJoinStateGroup,
+    createStateGroupInvite,
     joinStateGroup,
     leaveStateGroup,
     refreshStateHeartbeat,
     refreshStateSnapshots,
+    removeStateGroupMember,
+    revokeStateGroupInvite,
+    rotateStateGroupJoinCode,
+    setStateGroupMemberRole,
+    transferStateGroupOwnership,
+    unbanStateGroupMember,
+    archiveStateGroup,
+    deleteStateGroup,
+    updateStateGroupDetails,
     updateStateGroupMetadata,
 } from '@shared-web/browser/api-workflows.ts';
 
@@ -276,6 +288,48 @@ describe('state API workflows', () => {
         });
     });
 
+    it('passes optional safe create fields through create-and-join', async () => {
+        stubFetch(({ url, method, body }) => {
+            if (method === 'POST' && url.endsWith('/groups')) {
+                const request = body as { groupId: string };
+                return jsonResponse(groupSnapshot(request.groupId));
+            }
+
+            if (
+                method === 'PUT' &&
+                url.endsWith('/groups/rallar/sessions/session-1')
+            ) {
+                return jsonResponse(groupSnapshot('rallar'));
+            }
+
+            return notFoundResponse();
+        });
+
+        await createAndJoinStateGroup(
+            'Rallar',
+            'principal-1',
+            'session-1',
+            undefined,
+            {},
+            'rallar',
+            {
+                description: 'Mission room',
+                joinMode: 'open',
+                maxMembers: 8,
+                maxSessionsPerMember: 2,
+                metadata: { map: 'fjord' },
+            },
+        );
+
+        expect(fetchCalls[0].body).toMatchObject({
+            description: 'Mission room',
+            joinMode: 'open',
+            maxMembers: 8,
+            maxSessionsPerMember: 2,
+            metadata: { map: 'fjord' },
+        });
+    });
+
     it('updates group metadata by reading and merging current metadata', async () => {
         const base = groupSnapshot('group-1');
         const existing = {
@@ -326,6 +380,61 @@ describe('state API workflows', () => {
                 keep: true,
                 rallarDirector: { next: true },
             },
+        });
+    });
+
+    it('updates archives and deletes state groups through low-level workflows', async () => {
+        stubFetch(({ url, method }) => {
+            if (
+                method === 'PUT' &&
+                url.endsWith('/groups/group-1')
+            ) {
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            return notFoundResponse();
+        });
+
+        await updateStateGroupDetails(
+            'group-1',
+            {
+                displayName: 'Renamed',
+                description: 'Mission room',
+                joinMode: 'open',
+                maxMembers: 8,
+                maxSessionsPerMember: 2,
+                metadata: { map: 'fjord' },
+            },
+            'owner-1',
+            'owner-session',
+        );
+        await archiveStateGroup('group-1', {}, 'owner-1', 'owner-session');
+        await deleteStateGroup('group-1', {}, 'owner-1', 'owner-session');
+
+        expect(fetchCalls.map((call) => `${call.method} ${call.url}`)).toEqual([
+            'PUT /api/state/apps/rallar-server/workspaces/default/groups/group-1',
+            'PUT /api/state/apps/rallar-server/workspaces/default/groups/group-1',
+            'PUT /api/state/apps/rallar-server/workspaces/default/groups/group-1',
+        ]);
+        expect(fetchCalls[0].body).toMatchObject({
+            displayName: 'Renamed',
+            description: 'Mission room',
+            joinMode: 'open',
+            maxMembers: 8,
+            maxSessionsPerMember: 2,
+            metadata: { map: 'fjord' },
+            actorPrincipalId: 'owner-1',
+            actorSessionId: 'owner-session',
+        });
+        expect(fetchCalls[1].body).toMatchObject({
+            status: 'archived',
+            actorPrincipalId: 'owner-1',
+            actorSessionId: 'owner-session',
+        });
+        expect(fetchCalls[2].body).toMatchObject({
+            status: 'deleted',
+            actorPrincipalId: 'owner-1',
+            actorSessionId: 'owner-session',
         });
     });
 
@@ -389,21 +498,361 @@ describe('state API workflows', () => {
         expect(createRequestIds[0]).not.toBe(presenceRequestIds[0]);
     });
 
+    it('joins a state group with explicit join intent before connecting presence', async () => {
+        stubFetch(({ url, method, body }) => {
+            if (
+                method === 'POST' &&
+                url.endsWith('/groups/group-1/join')
+            ) {
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            if (
+                method === 'PUT' &&
+                url.endsWith('/groups/group-1/sessions/session-1')
+            ) {
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            return notFoundResponse();
+        });
+
+        await expect(
+            joinStateGroup(
+                'group-1',
+                'principal-1',
+                'session-1',
+                undefined,
+                {},
+                {
+                    inviteToken: 'invite-1',
+                    joinCode: 'code-1',
+                },
+            ),
+        ).resolves.toMatchObject({
+            group: { groupId: 'group-1' },
+        });
+
+        expect(fetchCalls.map((call) => `${call.method} ${call.url}`)).toEqual([
+            'POST /api/state/apps/rallar-server/workspaces/default/groups/group-1/join',
+            'PUT /api/state/apps/rallar-server/workspaces/default/groups/group-1/sessions/session-1',
+        ]);
+        expect(fetchCalls[0].body).toMatchObject({
+            inviteToken: 'invite-1',
+            joinCode: 'code-1',
+            actorPrincipalId: 'principal-1',
+            actorSessionId: 'session-1',
+        });
+    });
+
+    it('surfaces full-room policy codes from join workflows without connecting presence', async () => {
+        stubFetch(({ url, method }) => {
+            if (method === 'POST' && url.endsWith('/groups/group-1/join')) {
+                return jsonResponse(
+                    {
+                        error: 'Forbidden: Group member capacity has been reached.',
+                        code: 'group-full',
+                        message: 'Group member capacity has been reached.',
+                    },
+                    403,
+                );
+            }
+
+            return notFoundResponse();
+        });
+
+        await expect(
+            joinStateGroup('group-1', 'principal-1', 'session-1'),
+        ).rejects.toMatchObject({
+            status: 403,
+            policyError: {
+                code: 'group-full',
+                message: 'Group member capacity has been reached.',
+            },
+        });
+
+        expect(fetchCalls.map((call) => `${call.method} ${call.url}`)).toEqual([
+            'POST /api/state/apps/rallar-server/workspaces/default/groups/group-1/join',
+        ]);
+    });
+
+    it('surfaces session-limit policy codes from join presence workflows', async () => {
+        stubFetch(({ url, method }) => {
+            if (method === 'POST' && url.endsWith('/groups/group-1/join')) {
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            if (
+                method === 'PUT' &&
+                url.endsWith('/groups/group-1/sessions/session-1')
+            ) {
+                return jsonResponse(
+                    {
+                        error: 'Forbidden: Group member session capacity has been reached.',
+                        code: 'member-session-limit-reached',
+                        message: 'Group member session capacity has been reached.',
+                    },
+                    403,
+                );
+            }
+
+            return notFoundResponse();
+        });
+
+        await expect(
+            joinStateGroup('group-1', 'principal-1', 'session-1'),
+        ).rejects.toMatchObject({
+            status: 403,
+            policyError: {
+                code: 'member-session-limit-reached',
+                message: 'Group member session capacity has been reached.',
+            },
+        });
+
+        expect(fetchCalls.map((call) => `${call.method} ${call.url}`)).toEqual([
+            'POST /api/state/apps/rallar-server/workspaces/default/groups/group-1/join',
+            'PUT /api/state/apps/rallar-server/workspaces/default/groups/group-1/sessions/session-1',
+        ]);
+    });
+
+    it('creates and revokes state group invites through low-level workflows', async () => {
+        stubFetch(({ url, method }) => {
+            if (
+                method === 'POST' &&
+                url.endsWith('/groups/group-1/invites/member-1')
+            ) {
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            if (
+                method === 'POST' &&
+                url.endsWith('/groups/group-1/invites/member-1/revoke')
+            ) {
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            return notFoundResponse();
+        });
+
+        await createStateGroupInvite(
+            'group-1',
+            'member-1',
+            { invitationExpiresAtEpochMs: 2_000 },
+            'owner-1',
+            'owner-session',
+        );
+        await revokeStateGroupInvite(
+            'group-1',
+            'member-1',
+            {},
+            'owner-1',
+            'owner-session',
+        );
+
+        expect(fetchCalls.map((call) => `${call.method} ${call.url}`)).toEqual([
+            'POST /api/state/apps/rallar-server/workspaces/default/groups/group-1/invites/member-1',
+            'POST /api/state/apps/rallar-server/workspaces/default/groups/group-1/invites/member-1/revoke',
+        ]);
+        expect(fetchCalls[0].body).toMatchObject({
+            invitationExpiresAtEpochMs: 2_000,
+            actorPrincipalId: 'owner-1',
+            actorSessionId: 'owner-session',
+        });
+        expect(fetchCalls[1].body).toMatchObject({
+            actorPrincipalId: 'owner-1',
+            actorSessionId: 'owner-session',
+        });
+    });
+
+    it('accepts a state group invite before connecting presence', async () => {
+        stubFetch(({ url, method }) => {
+            if (
+                method === 'POST' &&
+                url.endsWith('/groups/group-1/invites/accept')
+            ) {
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            if (
+                method === 'PUT' &&
+                url.endsWith('/groups/group-1/sessions/member-session')
+            ) {
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            return notFoundResponse();
+        });
+
+        await expect(
+            acceptStateGroupInvite('group-1', 'member-1', 'member-session'),
+        ).resolves.toMatchObject({
+            group: { groupId: 'group-1' },
+        });
+
+        expect(fetchCalls.map((call) => `${call.method} ${call.url}`)).toEqual([
+            'POST /api/state/apps/rallar-server/workspaces/default/groups/group-1/invites/accept',
+            'PUT /api/state/apps/rallar-server/workspaces/default/groups/group-1/sessions/member-session',
+        ]);
+        expect(fetchCalls[0].body).toMatchObject({
+            actorPrincipalId: 'member-1',
+            actorSessionId: 'member-session',
+        });
+        expect(fetchCalls[1].body).toMatchObject({
+            principalId: 'member-1',
+            actorPrincipalId: 'member-1',
+            actorSessionId: 'member-session',
+        });
+    });
+
+    it('rotates a state group join code through a low-level workflow', async () => {
+        const response = {
+            joinCode: 'code-1',
+            expiresAtEpochMs: 2_000,
+            snapshot: groupSnapshot('group-1'),
+        };
+        stubFetch(({ url, method }) => {
+            if (
+                method === 'POST' &&
+                url.endsWith('/groups/group-1/join-code/rotate')
+            ) {
+                return jsonResponse(response);
+            }
+
+            return notFoundResponse();
+        });
+
+        await expect(
+            rotateStateGroupJoinCode(
+                'group-1',
+                {
+                    joinCode: 'code-1',
+                    expiresAtEpochMs: 2_000,
+                },
+                'owner-1',
+                'owner-session',
+            ),
+        ).resolves.toEqual(response);
+
+        expect(fetchCalls.map((call) => `${call.method} ${call.url}`)).toEqual([
+            'POST /api/state/apps/rallar-server/workspaces/default/groups/group-1/join-code/rotate',
+        ]);
+        expect(fetchCalls[0].body).toMatchObject({
+            joinCode: 'code-1',
+            expiresAtEpochMs: 2_000,
+            actorPrincipalId: 'owner-1',
+            actorSessionId: 'owner-session',
+        });
+    });
+
+    it('runs membership governance through low-level workflows', async () => {
+        stubFetch(({ url, method }) => {
+            if (
+                method === 'POST' &&
+                url.endsWith('/groups/group-1/members/member-1/remove')
+            ) {
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            if (
+                method === 'POST' &&
+                url.endsWith('/groups/group-1/members/member-1/ban')
+            ) {
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            if (
+                method === 'POST' &&
+                url.endsWith('/groups/group-1/members/member-1/unban')
+            ) {
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            if (
+                method === 'PUT' &&
+                url.endsWith('/groups/group-1/members/member-1/role')
+            ) {
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            if (
+                method === 'POST' &&
+                url.endsWith('/groups/group-1/owner/transfer')
+            ) {
+                return jsonResponse(groupSnapshot('group-1'));
+            }
+
+            return notFoundResponse();
+        });
+
+        await removeStateGroupMember(
+            'group-1',
+            'member-1',
+            {},
+            'owner-1',
+            'owner-session',
+        );
+        await banStateGroupMember(
+            'group-1',
+            'member-1',
+            {},
+            'owner-1',
+            'owner-session',
+        );
+        await unbanStateGroupMember(
+            'group-1',
+            'member-1',
+            {},
+            'owner-1',
+            'owner-session',
+        );
+        await setStateGroupMemberRole(
+            'group-1',
+            'member-1',
+            { role: 'admin' },
+            'owner-1',
+            'owner-session',
+        );
+        await transferStateGroupOwnership(
+            'group-1',
+            { newOwnerPrincipalId: 'member-1' },
+            'owner-1',
+            'owner-session',
+        );
+
+        expect(fetchCalls.map((call) => `${call.method} ${call.url}`)).toEqual([
+            'POST /api/state/apps/rallar-server/workspaces/default/groups/group-1/members/member-1/remove',
+            'POST /api/state/apps/rallar-server/workspaces/default/groups/group-1/members/member-1/ban',
+            'POST /api/state/apps/rallar-server/workspaces/default/groups/group-1/members/member-1/unban',
+            'PUT /api/state/apps/rallar-server/workspaces/default/groups/group-1/members/member-1/role',
+            'POST /api/state/apps/rallar-server/workspaces/default/groups/group-1/owner/transfer',
+        ]);
+        for (const call of fetchCalls) {
+            expect(call.body).toMatchObject({
+                actorPrincipalId: 'owner-1',
+                actorSessionId: 'owner-session',
+            });
+        }
+        expect(fetchCalls[3].body).toMatchObject({ role: 'admin' });
+        expect(fetchCalls[4].body).toMatchObject({
+            newOwnerPrincipalId: 'member-1',
+        });
+    });
+
     it('reuses join workflow request IDs across HTTP command retries', async () => {
         vi.spyOn(crypto, 'randomUUID')
-            .mockReturnValueOnce('member-request' as ReturnType<typeof crypto.randomUUID>)
+            .mockReturnValueOnce('join-request' as ReturnType<typeof crypto.randomUUID>)
             .mockReturnValueOnce('presence-request' as ReturnType<typeof crypto.randomUUID>)
             .mockReturnValue('unused-request' as ReturnType<typeof crypto.randomUUID>);
-        let memberAttempts = 0;
+        let joinAttempts = 0;
         let presenceAttempts = 0;
         stubFetch(({ url, method }) => {
             if (
-                method === 'PUT' &&
-                url.endsWith('/groups/group-1/members/principal-1')
+                method === 'POST' &&
+                url.endsWith('/groups/group-1/join')
             ) {
-                memberAttempts += 1;
-                if (memberAttempts === 1) {
-                    return textResponse('transient member failure', 503);
+                joinAttempts += 1;
+                if (joinAttempts === 1) {
+                    return textResponse('transient join failure', 503);
                 }
 
                 return jsonResponse(groupSnapshot('group-1'));
@@ -432,10 +881,10 @@ describe('state API workflows', () => {
             { command: { maxAttempts: 2 } },
         );
 
-        const memberRequestIds = fetchCalls
+        const joinRequestIds = fetchCalls
             .filter((call) =>
-                call.method === 'PUT' &&
-                call.url.endsWith('/groups/group-1/members/principal-1')
+                call.method === 'POST' &&
+                call.url.endsWith('/groups/group-1/join')
             )
             .map((call) => (call.body as { requestId?: string }).requestId);
         const presenceRequestIds = fetchCalls
@@ -445,13 +894,13 @@ describe('state API workflows', () => {
             )
             .map((call) => (call.body as { requestId?: string }).requestId);
 
-        expect(memberRequestIds).toHaveLength(2);
-        expect(new Set(memberRequestIds).size).toBe(1);
-        expect(memberRequestIds[0]).toContain('member-request');
+        expect(joinRequestIds).toHaveLength(2);
+        expect(new Set(joinRequestIds).size).toBe(1);
+        expect(joinRequestIds[0]).toContain('join-request');
         expect(presenceRequestIds).toHaveLength(2);
         expect(new Set(presenceRequestIds).size).toBe(1);
         expect(presenceRequestIds[0]).toContain('presence-request');
-        expect(memberRequestIds[0]).not.toBe(presenceRequestIds[0]);
+        expect(joinRequestIds[0]).not.toBe(presenceRequestIds[0]);
     });
 
     it('continues leave workflow when disconnect presence has already gone away', async () => {
@@ -659,7 +1108,7 @@ describe('state API workflows', () => {
         });
     });
 
-    it('repairs active membership once when create-and-join presence connect returns member forbidden', async () => {
+    it('surfaces member forbidden from create-and-join presence without raw membership repair', async () => {
         const connectUrls: string[] = [];
         const memberUrls: string[] = [];
         stubFetch(({ url, method }) => {
@@ -699,27 +1148,18 @@ describe('state API workflows', () => {
                 undefined,
                 'group-1',
             ),
-        ).resolves.toMatchObject({
-            group: { groupId: 'group-1' },
-        });
+        ).rejects.toThrow('403');
 
-        expect(connectUrls).toHaveLength(2);
-        expect(memberUrls).toHaveLength(1);
-        const connectRequestIds = fetchCalls
-            .filter((call) =>
-                call.method === 'PUT' &&
-                call.url.endsWith('/groups/group-1/sessions/session-1')
-            )
-            .map((call) => (call.body as { requestId?: string }).requestId);
-        expect(new Set(connectRequestIds).size).toBe(2);
+        expect(connectUrls).toHaveLength(1);
+        expect(memberUrls).toHaveLength(0);
     });
 
-    it('repairs active membership once when join presence connect returns member forbidden', async () => {
+    it('surfaces member forbidden from join presence without raw membership repair', async () => {
         const connectUrls: string[] = [];
-        const memberBodies: unknown[] = [];
+        const joinBodies: unknown[] = [];
         stubFetch(({ url, method, body }) => {
-            if (method === 'PUT' && url.endsWith('/groups/group-1/members/principal-1')) {
-                memberBodies.push(body);
+            if (method === 'POST' && url.endsWith('/groups/group-1/join')) {
+                joinBodies.push(body);
                 return jsonResponse(groupSnapshot('group-1'));
             }
 
@@ -743,16 +1183,13 @@ describe('state API workflows', () => {
 
         await expect(
             joinStateGroup('group-1', 'principal-1', 'session-1'),
-        ).resolves.toMatchObject({
-            group: { groupId: 'group-1' },
-        });
+        ).rejects.toThrow('403');
 
-        expect(connectUrls).toHaveLength(2);
-        expect(memberBodies).toHaveLength(2);
-        expect(memberBodies[1]).toMatchObject({ status: 'active' });
+        expect(connectUrls).toHaveLength(1);
+        expect(joinBodies).toHaveLength(1);
     });
 
-    it('surfaces repeated member forbidden after one presence repair attempt', async () => {
+    it('surfaces repeated member forbidden without presence repair attempts', async () => {
         const connectUrls: string[] = [];
         const memberUrls: string[] = [];
         stubFetch(({ url, method }) => {
@@ -790,8 +1227,8 @@ describe('state API workflows', () => {
             ),
         ).rejects.toThrow('403');
 
-        expect(connectUrls).toHaveLength(2);
-        expect(memberUrls).toHaveLength(1);
+        expect(connectUrls).toHaveLength(1);
+        expect(memberUrls).toHaveLength(0);
     });
 
     it('reuses heartbeat workflow request IDs across HTTP command retries', async () => {
@@ -934,6 +1371,49 @@ describe('state API workflows', () => {
             method: 'GET',
             bodyText: 'temporarily unavailable',
         });
+    });
+
+    it('preserves HTTP error details while exposing parsed policy error codes', async () => {
+        const { readApiPolicyError } = await import(
+            '@shared-web/browser/api-integration.ts'
+        );
+        stubFetch(() =>
+            jsonResponse(
+                {
+                    error: 'Forbidden: Invite required.',
+                    code: 'group-invite-required',
+                    message: 'Invite required.',
+                    details: { groupId: 'room-1' },
+                },
+                403,
+            )
+        );
+
+        await expect(refreshStateSnapshots()).rejects.toMatchObject({
+            status: 403,
+            method: 'GET',
+            bodyText: JSON.stringify({
+                error: 'Forbidden: Invite required.',
+                code: 'group-invite-required',
+                message: 'Invite required.',
+                details: { groupId: 'room-1' },
+            }),
+            policyError: {
+                error: 'Forbidden: Invite required.',
+                code: 'group-invite-required',
+                message: 'Invite required.',
+                details: { groupId: 'room-1' },
+            },
+        });
+
+        try {
+            await refreshStateSnapshots();
+        } catch (error) {
+            expect(readApiPolicyError(error)).toMatchObject({
+                code: 'group-invite-required',
+                message: 'Invite required.',
+            });
+        }
     });
 
     function stubFetch(

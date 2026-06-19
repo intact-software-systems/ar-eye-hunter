@@ -51,8 +51,30 @@ describe('Rallar rooms facade factory', () => {
             create: vi.fn(async () => snapshot),
             createAndSwitch: vi.fn(async () => snapshot),
             join: vi.fn(async () => snapshot),
+            enter: vi.fn(async () => ({ roomId: 'room-1', roomRef } as never)),
+            session: vi.fn(() => ({ roomId: 'room-1', roomRef } as never)),
             leave: vi.fn(async () => snapshot),
+            update: vi.fn(async () => snapshot),
+            archive: vi.fn(async () => snapshot),
+            delete: vi.fn(async () => snapshot),
+            invite: vi.fn(async () => snapshot),
+            acceptInvite: vi.fn(async () => snapshot),
+            removeMember: vi.fn(async () => snapshot),
+            banMember: vi.fn(async () => snapshot),
+            unbanMember: vi.fn(async () => snapshot),
+            setMemberRole: vi.fn(async () => snapshot),
+            transferOwnership: vi.fn(async () => snapshot),
             updateMetadata: vi.fn(async () => snapshot),
+            waitForPresence: vi.fn(async () => ({
+                roomId: 'room-1',
+                activeSessionIds: [],
+                timedOut: false,
+                status: 'ready',
+                ready: [],
+                missing: [],
+                extra: [],
+                observedCount: 0,
+            } as never)),
             current: vi.fn(() => snapshot),
             onChange: vi.fn(() => unsubscribe),
             onEvent: vi.fn(() => unsubscribe),
@@ -80,7 +102,46 @@ describe('Rallar rooms facade factory', () => {
         await expect(
             facade.join(roomRef, { leaveCurrent: false }),
         ).resolves.toBe(snapshot);
+        await expect(
+            facade.enter(roomRef, { leaveCurrent: false }),
+        ).resolves.toMatchObject({ roomId: 'room-1' });
+        expect(facade.session(roomRef)).toMatchObject({ roomId: 'room-1' });
         await expect(facade.leave({ roomRef })).resolves.toBe(snapshot);
+        await expect(
+            facade.update({
+                roomRef,
+                displayName: 'Renamed Room',
+            }),
+        ).resolves.toBe(snapshot);
+        await expect(
+            facade.archive(roomRef, { timeoutMs: 25 }),
+        ).resolves.toBe(snapshot);
+        await expect(
+            facade.delete(roomRef, { timeoutMs: 25 }),
+        ).resolves.toBe(snapshot);
+        await expect(
+            facade.invite(roomRef, 'member-1', {
+                invitationExpiresAtEpochMs: 2_000,
+            }),
+        ).resolves.toBe(snapshot);
+        await expect(
+            facade.acceptInvite(roomRef, { timeoutMs: 25 }),
+        ).resolves.toBe(snapshot);
+        await expect(
+            facade.removeMember(roomRef, 'member-1', { timeoutMs: 25 }),
+        ).resolves.toBe(snapshot);
+        await expect(
+            facade.banMember(roomRef, 'member-1', { timeoutMs: 25 }),
+        ).resolves.toBe(snapshot);
+        await expect(
+            facade.unbanMember(roomRef, 'member-1', { timeoutMs: 25 }),
+        ).resolves.toBe(snapshot);
+        await expect(
+            facade.setMemberRole(roomRef, 'member-1', 'admin', { timeoutMs: 25 }),
+        ).resolves.toBe(snapshot);
+        await expect(
+            facade.transferOwnership(roomRef, 'member-1', { timeoutMs: 25 }),
+        ).resolves.toBe(snapshot);
         await expect(
             facade.updateMetadata(roomRef, { topic: 'maps' }, { timeoutMs: 25 }),
         ).resolves.toBe(snapshot);
@@ -108,7 +169,47 @@ describe('Rallar rooms facade factory', () => {
         expect(operations.join).toHaveBeenCalledWith(roomRef, {
             leaveCurrent: false,
         });
+        expect(operations.enter).toHaveBeenCalledWith(roomRef, {
+            leaveCurrent: false,
+        });
+        expect(operations.session).toHaveBeenCalledWith(roomRef);
         expect(operations.leave).toHaveBeenCalledWith({ roomRef });
+        expect(operations.update).toHaveBeenCalledWith({
+            roomRef,
+            displayName: 'Renamed Room',
+        });
+        expect(operations.archive).toHaveBeenCalledWith(roomRef, {
+            timeoutMs: 25,
+        });
+        expect(operations.delete).toHaveBeenCalledWith(roomRef, {
+            timeoutMs: 25,
+        });
+        expect(operations.invite).toHaveBeenCalledWith(roomRef, 'member-1', {
+            invitationExpiresAtEpochMs: 2_000,
+        });
+        expect(operations.acceptInvite).toHaveBeenCalledWith(roomRef, {
+            timeoutMs: 25,
+        });
+        expect(operations.removeMember).toHaveBeenCalledWith(roomRef, 'member-1', {
+            timeoutMs: 25,
+        });
+        expect(operations.banMember).toHaveBeenCalledWith(roomRef, 'member-1', {
+            timeoutMs: 25,
+        });
+        expect(operations.unbanMember).toHaveBeenCalledWith(roomRef, 'member-1', {
+            timeoutMs: 25,
+        });
+        expect(operations.setMemberRole).toHaveBeenCalledWith(
+            roomRef,
+            'member-1',
+            'admin',
+            { timeoutMs: 25 },
+        );
+        expect(operations.transferOwnership).toHaveBeenCalledWith(
+            roomRef,
+            'member-1',
+            { timeoutMs: 25 },
+        );
         expect(operations.updateMetadata).toHaveBeenCalledWith(
             roomRef,
             { topic: 'maps' },

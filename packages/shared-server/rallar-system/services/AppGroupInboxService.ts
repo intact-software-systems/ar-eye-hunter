@@ -1,10 +1,20 @@
 import type {
+    AcceptGroupInviteRequest,
     AppointGroupDirectorRequest,
     ConnectGroupPresenceSessionRequest,
+    CreateGroupInviteRequest,
     CreateGroupRequest,
     DisconnectGroupPresenceSessionRequest,
     HeartbeatGroupPresenceSessionRequest,
+    JoinGroupRequest,
+    BanGroupMemberRequest,
+    RemoveGroupMemberRequest,
+    RevokeGroupInviteRequest,
+    RotateGroupJoinCodeRequest,
+    SetGroupMemberRoleRequest,
     StateScope,
+    TransferGroupOwnershipRequest,
+    UnbanGroupMemberRequest,
     UpdateGroupRequest,
     UpsertGroupMemberRequest,
 } from '@shared/api/state-types.ts';
@@ -14,6 +24,7 @@ import {
     ResourceInboxResultsRepository
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import type {
+    GroupJoinCodeWritten,
     GroupMutationWritten,
     GroupStateService,
     GroupStateWritten,
@@ -51,6 +62,72 @@ export type GroupDirectorAppointAppInboxPayload = Readonly<{
     scope: StateScope;
     groupId: string;
     request: AppointGroupDirectorRequest;
+}>;
+
+export type GroupJoinAppInboxPayload = Readonly<{
+    scope: StateScope;
+    groupId: string;
+    request: JoinGroupRequest;
+}>;
+
+export type GroupInviteCreateAppInboxPayload = Readonly<{
+    scope: StateScope;
+    groupId: string;
+    principalId: string;
+    request: CreateGroupInviteRequest;
+}>;
+
+export type GroupInviteRevokeAppInboxPayload = Readonly<{
+    scope: StateScope;
+    groupId: string;
+    principalId: string;
+    request: RevokeGroupInviteRequest;
+}>;
+
+export type GroupInviteAcceptAppInboxPayload = Readonly<{
+    scope: StateScope;
+    groupId: string;
+    request: AcceptGroupInviteRequest;
+}>;
+
+export type GroupJoinCodeRotateAppInboxPayload = Readonly<{
+    scope: StateScope;
+    groupId: string;
+    request: RotateGroupJoinCodeRequest;
+}>;
+
+export type GroupMemberRemoveAppInboxPayload = Readonly<{
+    scope: StateScope;
+    groupId: string;
+    principalId: string;
+    request: RemoveGroupMemberRequest;
+}>;
+
+export type GroupMemberBanAppInboxPayload = Readonly<{
+    scope: StateScope;
+    groupId: string;
+    principalId: string;
+    request: BanGroupMemberRequest;
+}>;
+
+export type GroupMemberUnbanAppInboxPayload = Readonly<{
+    scope: StateScope;
+    groupId: string;
+    principalId: string;
+    request: UnbanGroupMemberRequest;
+}>;
+
+export type GroupMemberRoleSetAppInboxPayload = Readonly<{
+    scope: StateScope;
+    groupId: string;
+    principalId: string;
+    request: SetGroupMemberRoleRequest;
+}>;
+
+export type GroupOwnershipTransferAppInboxPayload = Readonly<{
+    scope: StateScope;
+    groupId: string;
+    request: TransferGroupOwnershipRequest;
 }>;
 
 export type GroupMemberUpsertAppInboxPayload = Readonly<{
@@ -146,6 +223,156 @@ export class AppGroupInboxService extends AppInboxService {
                         appointment.scope,
                         appointment.groupId,
                         appointment.request,
+                    );
+
+                await this.publishGroupStateWritten(groupStateWritten);
+
+                return groupStateWritten;
+            },
+        );
+        this.onStateMessage<GroupJoinAppInboxPayload>(
+            AppInboxType.GROUP_JOIN,
+            async (join) => {
+                const groupStateWritten = await this.groupStateService.joinGroup(
+                    join.scope,
+                    join.groupId,
+                    join.request,
+                );
+
+                await this.publishGroupStateWritten(groupStateWritten);
+
+                return groupStateWritten;
+            },
+        );
+        this.onStateMessage<GroupInviteCreateAppInboxPayload>(
+            AppInboxType.GROUP_INVITE_CREATE,
+            async (invite) => {
+                const groupStateWritten =
+                    await this.groupStateService.createGroupInvite(
+                        invite.scope,
+                        invite.groupId,
+                        invite.principalId,
+                        invite.request,
+                    );
+
+                await this.publishGroupStateWritten(groupStateWritten);
+
+                return groupStateWritten;
+            },
+        );
+        this.onStateMessage<GroupInviteRevokeAppInboxPayload>(
+            AppInboxType.GROUP_INVITE_REVOKE,
+            async (invite) => {
+                const groupStateWritten =
+                    await this.groupStateService.revokeGroupInvite(
+                        invite.scope,
+                        invite.groupId,
+                        invite.principalId,
+                        invite.request,
+                    );
+
+                await this.publishGroupStateWritten(groupStateWritten);
+
+                return groupStateWritten;
+            },
+        );
+        this.onStateMessage<GroupInviteAcceptAppInboxPayload>(
+            AppInboxType.GROUP_INVITE_ACCEPT,
+            async (invite) => {
+                const groupStateWritten =
+                    await this.groupStateService.acceptGroupInvite(
+                        invite.scope,
+                        invite.groupId,
+                        invite.request,
+                    );
+
+                await this.publishGroupStateWritten(groupStateWritten);
+
+                return groupStateWritten;
+            },
+        );
+        this.onStateMessage<GroupJoinCodeRotateAppInboxPayload>(
+            AppInboxType.GROUP_JOIN_CODE_ROTATE,
+            async (joinCode) => {
+                const written = await this.groupStateService.rotateGroupJoinCode(
+                    joinCode.scope,
+                    joinCode.groupId,
+                    joinCode.request,
+                );
+
+                await this.publishGroupJoinCodeWritten(written);
+
+                return written;
+            },
+        );
+        this.onStateMessage<GroupMemberRemoveAppInboxPayload>(
+            AppInboxType.GROUP_MEMBER_REMOVE,
+            async (member) => {
+                const groupStateWritten = await this.groupStateService.removeGroupMember(
+                    member.scope,
+                    member.groupId,
+                    member.principalId,
+                    member.request,
+                );
+
+                await this.publishGroupStateWritten(groupStateWritten);
+
+                return groupStateWritten;
+            },
+        );
+        this.onStateMessage<GroupMemberBanAppInboxPayload>(
+            AppInboxType.GROUP_MEMBER_BAN,
+            async (member) => {
+                const groupStateWritten = await this.groupStateService.banGroupMember(
+                    member.scope,
+                    member.groupId,
+                    member.principalId,
+                    member.request,
+                );
+
+                await this.publishGroupStateWritten(groupStateWritten);
+
+                return groupStateWritten;
+            },
+        );
+        this.onStateMessage<GroupMemberUnbanAppInboxPayload>(
+            AppInboxType.GROUP_MEMBER_UNBAN,
+            async (member) => {
+                const groupStateWritten = await this.groupStateService.unbanGroupMember(
+                    member.scope,
+                    member.groupId,
+                    member.principalId,
+                    member.request,
+                );
+
+                await this.publishGroupStateWritten(groupStateWritten);
+
+                return groupStateWritten;
+            },
+        );
+        this.onStateMessage<GroupMemberRoleSetAppInboxPayload>(
+            AppInboxType.GROUP_MEMBER_ROLE_SET,
+            async (member) => {
+                const groupStateWritten = await this.groupStateService.setGroupMemberRole(
+                    member.scope,
+                    member.groupId,
+                    member.principalId,
+                    member.request,
+                );
+
+                await this.publishGroupStateWritten(groupStateWritten);
+
+                return groupStateWritten;
+            },
+        );
+        this.onStateMessage<GroupOwnershipTransferAppInboxPayload>(
+            AppInboxType.GROUP_OWNERSHIP_TRANSFER,
+            async (transfer) => {
+                const groupStateWritten =
+                    await this.groupStateService.transferGroupOwnership(
+                        transfer.scope,
+                        transfer.groupId,
+                        transfer.request,
                     );
 
                 await this.publishGroupStateWritten(groupStateWritten);
@@ -292,6 +519,14 @@ export class AppGroupInboxService extends AppInboxService {
     ): Promise<void> {
         if (groupStateWritten.result.right) {
             await this.publishGroupMutation(groupStateWritten.result.right);
+        }
+    }
+
+    private async publishGroupJoinCodeWritten(
+        written: GroupJoinCodeWritten,
+    ): Promise<void> {
+        if (written.result.right) {
+            await this.publishGroupMutation(written.result.right);
         }
     }
 

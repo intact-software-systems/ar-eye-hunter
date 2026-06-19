@@ -74,6 +74,10 @@ database lifecycle, and deployment settings around these shared services.
 
 - `README.md` describes package ownership, app/server boundaries, timing, and
   storage responsibilities.
+- `../../examples/server-middleware`, `../../examples/server-app-data`,
+  `../../examples/server-room-topics`, and
+  `../../examples/server-authoritative-game` show copyable Rallar Server use
+  cases.
 - `rallar-server-repositories.md` is the current detailed data-flow and
   repository map.
 - `rallar-server-repositories-improvements.md` is a historical hardening log.

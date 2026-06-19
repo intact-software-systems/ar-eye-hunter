@@ -108,6 +108,8 @@ export type {
     RallarRoomSessionRealtimeInput,
     RallarRoomState,
     RallarRoomSummary,
+    RallarRoomSwitchOperation,
+    RallarRoomSwitchPartialFailureError,
     RallarRtcSendInput,
     RallarScopedOperationOptions,
     RallarSetupInput,

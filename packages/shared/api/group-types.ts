@@ -126,6 +126,9 @@ export type GroupEventType =
     | 'member-left'
     | 'member-removed'
     | 'member-banned'
+    | 'member-unbanned'
+    | 'member-role-changed'
+    | 'ownership-transferred'
     | 'session-connected'
     | 'session-heartbeat'
     | 'session-disconnected';

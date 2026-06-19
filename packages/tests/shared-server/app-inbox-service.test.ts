@@ -20,7 +20,17 @@ import {
     AppInboxType,
     type GroupCreateAppInboxPayload,
     type GroupExpiredPresenceSessionsAppInboxPayload,
+    type GroupInviteAcceptAppInboxPayload,
+    type GroupInviteCreateAppInboxPayload,
+    type GroupInviteRevokeAppInboxPayload,
+    type GroupJoinCodeRotateAppInboxPayload,
+    type GroupJoinAppInboxPayload,
+    type GroupMemberBanAppInboxPayload,
+    type GroupMemberRemoveAppInboxPayload,
+    type GroupMemberRoleSetAppInboxPayload,
+    type GroupMemberUnbanAppInboxPayload,
     type GroupMemberUpsertAppInboxPayload,
+    type GroupOwnershipTransferAppInboxPayload,
     type GroupPresenceConnectAppInboxPayload,
     type GroupPresenceDisconnectAppInboxPayload,
     type GroupPresenceHeartbeatAppInboxPayload,
@@ -31,7 +41,9 @@ import {
     GroupStateService,
     type GroupStateWritten,
     GroupWritten,
+    type GroupJoinCodeWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { toResultsDomain } from '@shared-server/postgres/resource-inbox/repository-utils.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
@@ -936,6 +948,508 @@ describe('AppInboxService', () => {
         expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
     });
 
+    it('processes explicit group join through the inbox and publishes the mutation', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const written = createGroupWritten('join-room');
+        const stateWritten = createGroupStateWritten(written);
+        const groupStateService = createGroupStateServiceStub({
+            joinGroup: vi.fn(async () => stateWritten),
+        });
+        const publisher = {
+            publishClientSnapshot: vi.fn(async () => undefined),
+            publishClientEvent: vi.fn(async () => undefined),
+            publishGroupSnapshot: vi.fn(async () => undefined),
+            publishGroupEvent: vi.fn(async () => undefined),
+        };
+        const service = new AppGroupInboxService(
+            reader,
+            queue as never,
+            results as never,
+            groupStateService,
+            publisher,
+            'server-12345678',
+        );
+
+        const result = await processAppInbox<
+            GroupJoinAppInboxPayload,
+            GroupStateWritten
+        >(service, reader, {
+            type: AppInboxType.GROUP_JOIN,
+            resourceId: 'join-request-1',
+            contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:join-room`,
+            senderId: 'alice',
+            data: {
+                scope: SCOPE,
+                groupId: 'join-room',
+                request: {
+                    inviteToken: 'invite-1',
+                    actorPrincipalId: 'alice',
+                    actorSessionId: 'alice-session',
+                    requestId: 'join-request-1',
+                },
+            },
+        });
+
+        expect(result.right).toEqual(stateWritten);
+        expect(groupStateService.joinGroup).toHaveBeenCalledWith(
+            SCOPE,
+            'join-room',
+            {
+                inviteToken: 'invite-1',
+                actorPrincipalId: 'alice',
+                actorSessionId: 'alice-session',
+                requestId: 'join-request-1',
+            },
+        );
+        expect(publisher.publishGroupSnapshot).toHaveBeenCalledWith(
+            written.snapshot,
+            'server-12345678',
+        );
+        expect(publisher.publishGroupEvent).toHaveBeenCalledWith(
+            written.event,
+            'server-12345678',
+        );
+    });
+
+    it('processes group invite workflows through the inbox', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const written = createGroupWritten('invite-room');
+        const stateWritten = createGroupStateWritten(written);
+        const groupStateService = createGroupStateServiceStub({
+            createGroupInvite: vi.fn(async () => stateWritten),
+            revokeGroupInvite: vi.fn(async () => stateWritten),
+            acceptGroupInvite: vi.fn(async () => stateWritten),
+        });
+        const publisher = {
+            publishClientSnapshot: vi.fn(async () => undefined),
+            publishClientEvent: vi.fn(async () => undefined),
+            publishGroupSnapshot: vi.fn(async () => undefined),
+            publishGroupEvent: vi.fn(async () => undefined),
+        };
+        const service = new AppGroupInboxService(
+            reader,
+            queue as never,
+            results as never,
+            groupStateService,
+            publisher,
+            'server-12345678',
+        );
+
+        await processAppInbox<GroupInviteCreateAppInboxPayload, GroupStateWritten>(
+            service,
+            reader,
+            {
+                type: AppInboxType.GROUP_INVITE_CREATE,
+                resourceId: 'invite-create-1',
+                contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:invite-room`,
+                senderId: 'owner-1',
+                data: {
+                    scope: SCOPE,
+                    groupId: 'invite-room',
+                    principalId: 'member-1',
+                    request: {
+                        invitationExpiresAtEpochMs: 2_000,
+                        actorPrincipalId: 'owner-1',
+                        actorSessionId: 'owner-session',
+                        requestId: 'invite-create-1',
+                    },
+                },
+            },
+        );
+        await processAppInbox<GroupInviteRevokeAppInboxPayload, GroupStateWritten>(
+            service,
+            reader,
+            {
+                type: AppInboxType.GROUP_INVITE_REVOKE,
+                resourceId: 'invite-revoke-1',
+                contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:invite-room`,
+                senderId: 'owner-1',
+                data: {
+                    scope: SCOPE,
+                    groupId: 'invite-room',
+                    principalId: 'member-1',
+                    request: {
+                        actorPrincipalId: 'owner-1',
+                        actorSessionId: 'owner-session',
+                        requestId: 'invite-revoke-1',
+                    },
+                },
+            },
+        );
+        await processAppInbox<GroupInviteAcceptAppInboxPayload, GroupStateWritten>(
+            service,
+            reader,
+            {
+                type: AppInboxType.GROUP_INVITE_ACCEPT,
+                resourceId: 'invite-accept-1',
+                contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:invite-room`,
+                senderId: 'member-1',
+                data: {
+                    scope: SCOPE,
+                    groupId: 'invite-room',
+                    request: {
+                        actorPrincipalId: 'member-1',
+                        actorSessionId: 'member-session',
+                        requestId: 'invite-accept-1',
+                    },
+                },
+            },
+        );
+
+        expect(groupStateService.createGroupInvite).toHaveBeenCalledWith(
+            SCOPE,
+            'invite-room',
+            'member-1',
+            {
+                invitationExpiresAtEpochMs: 2_000,
+                actorPrincipalId: 'owner-1',
+                actorSessionId: 'owner-session',
+                requestId: 'invite-create-1',
+            },
+        );
+        expect(groupStateService.revokeGroupInvite).toHaveBeenCalledWith(
+            SCOPE,
+            'invite-room',
+            'member-1',
+            {
+                actorPrincipalId: 'owner-1',
+                actorSessionId: 'owner-session',
+                requestId: 'invite-revoke-1',
+            },
+        );
+        expect(groupStateService.acceptGroupInvite).toHaveBeenCalledWith(
+            SCOPE,
+            'invite-room',
+            {
+                actorPrincipalId: 'member-1',
+                actorSessionId: 'member-session',
+                requestId: 'invite-accept-1',
+            },
+        );
+        expect(publisher.publishGroupSnapshot).toHaveBeenCalledTimes(3);
+        expect(publisher.publishGroupEvent).toHaveBeenCalledTimes(3);
+    });
+
+    it('processes group join-code rotation through the inbox and publishes the mutation', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const written = createGroupWritten('code-room');
+        const codeWritten: GroupJoinCodeWritten = {
+            status: 'ok',
+            result: Either.ofRight({
+                joinCode: 'code-1',
+                expiresAtEpochMs: 2_000,
+                snapshot: written.snapshot,
+                event: written.event,
+            }),
+        };
+        const groupStateService = createGroupStateServiceStub({
+            rotateGroupJoinCode: vi.fn(async () => codeWritten),
+        });
+        const publisher = {
+            publishClientSnapshot: vi.fn(async () => undefined),
+            publishClientEvent: vi.fn(async () => undefined),
+            publishGroupSnapshot: vi.fn(async () => undefined),
+            publishGroupEvent: vi.fn(async () => undefined),
+        };
+        const service = new AppGroupInboxService(
+            reader,
+            queue as never,
+            results as never,
+            groupStateService,
+            publisher,
+            'server-12345678',
+        );
+
+        const result = await processAppInbox<
+            GroupJoinCodeRotateAppInboxPayload,
+            GroupJoinCodeWritten
+        >(service, reader, {
+            type: AppInboxType.GROUP_JOIN_CODE_ROTATE,
+            resourceId: 'rotate-code-1',
+            contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:code-room`,
+            senderId: 'owner-1',
+            data: {
+                scope: SCOPE,
+                groupId: 'code-room',
+                request: {
+                    joinCode: 'code-1',
+                    expiresAtEpochMs: 2_000,
+                    actorPrincipalId: 'owner-1',
+                    actorSessionId: 'owner-session',
+                    requestId: 'rotate-code-1',
+                },
+            },
+        });
+
+        expect(result.right).toEqual(codeWritten);
+        expect(groupStateService.rotateGroupJoinCode).toHaveBeenCalledWith(
+            SCOPE,
+            'code-room',
+            {
+                joinCode: 'code-1',
+                expiresAtEpochMs: 2_000,
+                actorPrincipalId: 'owner-1',
+                actorSessionId: 'owner-session',
+                requestId: 'rotate-code-1',
+            },
+        );
+        expect(publisher.publishGroupSnapshot).toHaveBeenCalledWith(
+            written.snapshot,
+            'server-12345678',
+        );
+        expect(publisher.publishGroupEvent).toHaveBeenCalledWith(
+            written.event,
+            'server-12345678',
+        );
+    });
+
+    it('processes membership governance mutations through the inbox and publishes the mutations', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const written = createGroupStateWritten(createGroupWritten('governed-room'));
+        const groupStateService = createGroupStateServiceStub({
+            removeGroupMember: vi.fn(async () => written),
+            banGroupMember: vi.fn(async () => written),
+            unbanGroupMember: vi.fn(async () => written),
+            setGroupMemberRole: vi.fn(async () => written),
+            transferGroupOwnership: vi.fn(async () => written),
+        });
+        const publisher = {
+            publishClientSnapshot: vi.fn(async () => undefined),
+            publishClientEvent: vi.fn(async () => undefined),
+            publishGroupSnapshot: vi.fn(async () => undefined),
+            publishGroupEvent: vi.fn(async () => undefined),
+        };
+        const service = new AppGroupInboxService(
+            reader,
+            queue as never,
+            results as never,
+            groupStateService,
+            publisher,
+            'server-12345678',
+        );
+
+        await processAppInbox<GroupMemberRemoveAppInboxPayload, GroupStateWritten>(
+            service,
+            reader,
+            {
+                type: AppInboxType.GROUP_MEMBER_REMOVE,
+                resourceId: 'remove-member-1',
+                contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:governed-room`,
+                senderId: 'owner-1',
+                data: {
+                    scope: SCOPE,
+                    groupId: 'governed-room',
+                    principalId: 'member-1',
+                    request: {
+                        actorPrincipalId: 'owner-1',
+                        actorSessionId: 'owner-session',
+                        requestId: 'remove-member-1',
+                    },
+                },
+            },
+        );
+        await processAppInbox<GroupMemberBanAppInboxPayload, GroupStateWritten>(
+            service,
+            reader,
+            {
+                type: AppInboxType.GROUP_MEMBER_BAN,
+                resourceId: 'ban-member-1',
+                contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:governed-room`,
+                senderId: 'owner-1',
+                data: {
+                    scope: SCOPE,
+                    groupId: 'governed-room',
+                    principalId: 'member-1',
+                    request: {
+                        actorPrincipalId: 'owner-1',
+                        actorSessionId: 'owner-session',
+                        requestId: 'ban-member-1',
+                    },
+                },
+            },
+        );
+        await processAppInbox<GroupMemberUnbanAppInboxPayload, GroupStateWritten>(
+            service,
+            reader,
+            {
+                type: AppInboxType.GROUP_MEMBER_UNBAN,
+                resourceId: 'unban-member-1',
+                contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:governed-room`,
+                senderId: 'owner-1',
+                data: {
+                    scope: SCOPE,
+                    groupId: 'governed-room',
+                    principalId: 'member-1',
+                    request: {
+                        actorPrincipalId: 'owner-1',
+                        actorSessionId: 'owner-session',
+                        requestId: 'unban-member-1',
+                    },
+                },
+            },
+        );
+        await processAppInbox<GroupMemberRoleSetAppInboxPayload, GroupStateWritten>(
+            service,
+            reader,
+            {
+                type: AppInboxType.GROUP_MEMBER_ROLE_SET,
+                resourceId: 'role-member-1',
+                contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:governed-room`,
+                senderId: 'owner-1',
+                data: {
+                    scope: SCOPE,
+                    groupId: 'governed-room',
+                    principalId: 'member-1',
+                    request: {
+                        role: 'admin',
+                        actorPrincipalId: 'owner-1',
+                        actorSessionId: 'owner-session',
+                        requestId: 'role-member-1',
+                    },
+                },
+            },
+        );
+        await processAppInbox<GroupOwnershipTransferAppInboxPayload, GroupStateWritten>(
+            service,
+            reader,
+            {
+                type: AppInboxType.GROUP_OWNERSHIP_TRANSFER,
+                resourceId: 'transfer-owner',
+                contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:governed-room`,
+                senderId: 'owner-1',
+                data: {
+                    scope: SCOPE,
+                    groupId: 'governed-room',
+                    request: {
+                        newOwnerPrincipalId: 'member-1',
+                        actorPrincipalId: 'owner-1',
+                        actorSessionId: 'owner-session',
+                        requestId: 'transfer-owner',
+                    },
+                },
+            },
+        );
+
+        expect(groupStateService.removeGroupMember).toHaveBeenCalledWith(
+            SCOPE,
+            'governed-room',
+            'member-1',
+            {
+                actorPrincipalId: 'owner-1',
+                actorSessionId: 'owner-session',
+                requestId: 'remove-member-1',
+            },
+        );
+        expect(groupStateService.banGroupMember).toHaveBeenCalledWith(
+            SCOPE,
+            'governed-room',
+            'member-1',
+            {
+                actorPrincipalId: 'owner-1',
+                actorSessionId: 'owner-session',
+                requestId: 'ban-member-1',
+            },
+        );
+        expect(groupStateService.unbanGroupMember).toHaveBeenCalledWith(
+            SCOPE,
+            'governed-room',
+            'member-1',
+            {
+                actorPrincipalId: 'owner-1',
+                actorSessionId: 'owner-session',
+                requestId: 'unban-member-1',
+            },
+        );
+        expect(groupStateService.setGroupMemberRole).toHaveBeenCalledWith(
+            SCOPE,
+            'governed-room',
+            'member-1',
+            {
+                role: 'admin',
+                actorPrincipalId: 'owner-1',
+                actorSessionId: 'owner-session',
+                requestId: 'role-member-1',
+            },
+        );
+        expect(groupStateService.transferGroupOwnership).toHaveBeenCalledWith(
+            SCOPE,
+            'governed-room',
+            {
+                newOwnerPrincipalId: 'member-1',
+                actorPrincipalId: 'owner-1',
+                actorSessionId: 'owner-session',
+                requestId: 'transfer-owner',
+            },
+        );
+        expect(publisher.publishGroupSnapshot).toHaveBeenCalledTimes(5);
+        expect(publisher.publishGroupEvent).toHaveBeenCalledTimes(5);
+    });
+
+    it('preserves policy denial details in failed app inbox results', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const publisher = {
+            publishClientSnapshot: vi.fn(async () => undefined),
+            publishClientEvent: vi.fn(async () => undefined),
+            publishGroupSnapshot: vi.fn(async () => undefined),
+            publishGroupEvent: vi.fn(async () => undefined),
+        };
+        const service = new AppGroupInboxService(
+            reader,
+            queue as never,
+            results as never,
+            createGroupStateServiceStub({
+                updateGroup: vi.fn(async () => {
+                    throw new GroupPolicyDeniedError({
+                        allowed: false,
+                        code: 'group-archived',
+                        message: 'Group is archived.',
+                        details: { groupId: 'room-1' },
+                    });
+                }),
+            }),
+            publisher,
+            'server-12345678',
+        );
+
+        const result = await processAppInbox<
+            GroupUpdateAppInboxPayload,
+            GroupStateWritten
+        >(service, reader, {
+            type: AppInboxType.GROUP_UPDATE,
+            resourceId: 'update-archived-room',
+            contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:room-1`,
+            senderId: 'alice',
+            data: {
+                scope: SCOPE,
+                groupId: 'room-1',
+                request: {
+                    displayName: 'Archived Room',
+                    actorPrincipalId: 'alice',
+                    requestId: 'update-archived-room',
+                },
+            },
+        });
+
+        expect(JSON.parse(result.left ?? '{}')).toEqual({
+            error: 'Forbidden: Group is archived.',
+            code: 'group-archived',
+            message: 'Group is archived.',
+            details: { groupId: 'room-1' },
+        });
+        expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
+        expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
+    });
+
     it('keeps retryable app inbox handler failures in the queue without a failed result', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
@@ -1076,6 +1590,16 @@ function createGroupStateServiceStub(
         listEvents: vi.fn(),
         createGroup: vi.fn(),
         updateGroup: vi.fn(),
+        createGroupInvite: vi.fn(),
+        revokeGroupInvite: vi.fn(),
+        acceptGroupInvite: vi.fn(),
+        joinGroup: vi.fn(),
+        rotateGroupJoinCode: vi.fn(),
+        removeGroupMember: vi.fn(),
+        banGroupMember: vi.fn(),
+        unbanGroupMember: vi.fn(),
+        setGroupMemberRole: vi.fn(),
+        transferGroupOwnership: vi.fn(),
         upsertMember: vi.fn(),
         connectPresenceSession: vi.fn(),
         heartbeatPresenceSession: vi.fn(),

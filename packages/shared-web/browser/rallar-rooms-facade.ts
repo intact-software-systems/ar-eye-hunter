@@ -1,6 +1,7 @@
 import type {
     GroupEvent,
     GroupRef,
+    GroupRole,
     GroupSnapshot,
 } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -22,6 +23,11 @@ import type {
     RallarRoomSession,
     RallarRoomState,
     RallarRoomSummary,
+    RallarRoomGovernanceOptions,
+    RallarRoomInviteOptions,
+    RallarRoomLifecycleOptions,
+    RallarRoomTargetInput,
+    RallarUpdateRoomInput,
     RallarScopedOperationOptions,
     RallarStateListener,
     RallarUnsubscribe,
@@ -55,6 +61,50 @@ export type RallarRoomsFacade = Readonly<{
     leave(
         input?: string | RallarLeaveRoomOptions,
     ): Promise<GroupSnapshot | undefined>;
+    update(input: RallarUpdateRoomInput): Promise<GroupSnapshot>;
+    archive(
+        room: string | GroupRef | RallarRoomTargetInput,
+        options?: RallarRoomLifecycleOptions,
+    ): Promise<GroupSnapshot>;
+    delete(
+        room: string | GroupRef | RallarRoomTargetInput,
+        options?: RallarRoomLifecycleOptions,
+    ): Promise<GroupSnapshot>;
+    invite(
+        room: string | GroupRef | RallarRoomTargetInput,
+        principalId: string,
+        options?: RallarRoomInviteOptions,
+    ): Promise<GroupSnapshot>;
+    acceptInvite(
+        room: string | GroupRef | RallarRoomTargetInput,
+        options?: RallarScopedOperationOptions,
+    ): Promise<GroupSnapshot>;
+    removeMember(
+        room: string | GroupRef | RallarRoomTargetInput,
+        principalId: string,
+        options?: RallarRoomGovernanceOptions,
+    ): Promise<GroupSnapshot>;
+    banMember(
+        room: string | GroupRef | RallarRoomTargetInput,
+        principalId: string,
+        options?: RallarRoomGovernanceOptions,
+    ): Promise<GroupSnapshot>;
+    unbanMember(
+        room: string | GroupRef | RallarRoomTargetInput,
+        principalId: string,
+        options?: RallarRoomGovernanceOptions,
+    ): Promise<GroupSnapshot>;
+    setMemberRole(
+        room: string | GroupRef | RallarRoomTargetInput,
+        principalId: string,
+        role: GroupRole,
+        options?: RallarRoomGovernanceOptions,
+    ): Promise<GroupSnapshot>;
+    transferOwnership(
+        room: string | GroupRef | RallarRoomTargetInput,
+        principalId: string,
+        options?: RallarRoomGovernanceOptions,
+    ): Promise<GroupSnapshot>;
     updateMetadata(
         room: string | GroupRef,
         patch: Readonly<Record<string, unknown>>,
@@ -122,6 +172,59 @@ export function createRallarRoomsFacade(
         leave: async (
             input,
         ): Promise<GroupSnapshot | undefined> => await operations.leave(input),
+        update: async (
+            input,
+        ): Promise<GroupSnapshot> => await operations.update(input),
+        archive: async (
+            room,
+            options: RallarRoomLifecycleOptions = {},
+        ): Promise<GroupSnapshot> => await operations.archive(room, options),
+        delete: async (
+            room,
+            options: RallarRoomLifecycleOptions = {},
+        ): Promise<GroupSnapshot> => await operations.delete(room, options),
+        invite: async (
+            room,
+            principalId,
+            options: RallarRoomInviteOptions = {},
+        ): Promise<GroupSnapshot> =>
+            await operations.invite(room, principalId, options),
+        acceptInvite: async (
+            room,
+            options: RallarScopedOperationOptions = {},
+        ): Promise<GroupSnapshot> =>
+            await operations.acceptInvite(room, options),
+        removeMember: async (
+            room,
+            principalId,
+            options: RallarRoomGovernanceOptions = {},
+        ): Promise<GroupSnapshot> =>
+            await operations.removeMember(room, principalId, options),
+        banMember: async (
+            room,
+            principalId,
+            options: RallarRoomGovernanceOptions = {},
+        ): Promise<GroupSnapshot> =>
+            await operations.banMember(room, principalId, options),
+        unbanMember: async (
+            room,
+            principalId,
+            options: RallarRoomGovernanceOptions = {},
+        ): Promise<GroupSnapshot> =>
+            await operations.unbanMember(room, principalId, options),
+        setMemberRole: async (
+            room,
+            principalId,
+            role,
+            options: RallarRoomGovernanceOptions = {},
+        ): Promise<GroupSnapshot> =>
+            await operations.setMemberRole(room, principalId, role, options),
+        transferOwnership: async (
+            room,
+            principalId,
+            options: RallarRoomGovernanceOptions = {},
+        ): Promise<GroupSnapshot> =>
+            await operations.transferOwnership(room, principalId, options),
         updateMetadata: async (
             room,
             patch,

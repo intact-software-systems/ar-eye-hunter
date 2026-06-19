@@ -48,7 +48,12 @@ import type {
     GroupSnapshot,
     GroupStatus,
 } from '@shared/api/group-types.ts';
-import { DEFAULT_STATE_WORKSPACE_ID, type StateScope, } from '@shared/api/state-types.ts';
+import {
+    DEFAULT_STATE_WORKSPACE_ID,
+    type CreateGroupRequest,
+    type UpdateGroupRequest,
+    type StateScope,
+} from '@shared/api/state-types.ts';
 import type { StateEventCursor, StateEventPage, } from '@shared/api/state-event-types.ts';
 import {
     RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
@@ -87,6 +92,7 @@ import {
 } from '@shared-web/browser/api-client-config.ts';
 import * as api from '@shared-web/browser/api-integration.ts';
 import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
+import type { StateGroupWorkflowValue } from '@shared-web/browser/api-workflows.ts';
 import { deleteBrowserALRuntimeEntriesForSession } from '@shared-web/browser/browser-al-runtime-stores.ts';
 import * as stateCaches from '@shared-web/browser/data-caches.ts';
 import { createRallarAuthFacade, type RallarAuthFacade, } from '@shared-web/browser/rallar-auth-facade.ts';
@@ -375,6 +381,62 @@ export type RallarCreateRoomInput =
     & Readonly<{
     groupId?: string;
     displayName: string;
+}>
+    & Readonly<
+        Pick<
+            CreateGroupRequest,
+            | 'description'
+            | 'joinMode'
+            | 'maxMembers'
+            | 'maxSessionsPerMember'
+            | 'metadata'
+            | 'expiresAtEpochMs'
+            | 'purgeAfterEpochMs'
+        >
+    >;
+
+export type RallarRoomTargetInput =
+    & RallarScopedOperationOptions
+    & Readonly<{
+    roomId?: string;
+    roomRef?: GroupRef;
+}>;
+
+export type RallarUpdateRoomInput =
+    & RallarRoomTargetInput
+    & Readonly<
+        Pick<
+            UpdateGroupRequest,
+            | 'slug'
+            | 'displayName'
+            | 'description'
+            | 'kind'
+            | 'joinMode'
+            | 'maxMembers'
+            | 'maxSessionsPerMember'
+            | 'metadata'
+            | 'expiresAtEpochMs'
+            | 'purgeAfterEpochMs'
+        >
+    >;
+
+export type RallarRoomLifecycleOptions =
+    & RallarScopedOperationOptions
+    & Readonly<{
+    reason?: string;
+}>;
+
+export type RallarRoomInviteOptions =
+    & RallarScopedOperationOptions
+    & Readonly<{
+    invitationExpiresAtEpochMs?: number;
+    reason?: string;
+}>;
+
+export type RallarRoomGovernanceOptions =
+    & RallarScopedOperationOptions
+    & Readonly<{
+    reason?: string;
 }>;
 
 export type RallarJoinRoomOptions =
@@ -382,12 +444,28 @@ export type RallarJoinRoomOptions =
     & Readonly<{
     roomRef?: GroupRef;
     leaveCurrent?: boolean;
+    inviteToken?: string;
+    joinCode?: string;
 }>;
 
 export type RallarJoinRoomInput =
     & RallarJoinRoomOptions
     & Readonly<{
     roomId?: string;
+}>;
+
+export type RallarRoomSwitchOperation =
+    | 'join'
+    | 'create-and-switch';
+
+export type RallarRoomSwitchPartialFailureError =
+    & Error
+    & Readonly<{
+    name: 'RallarRoomSwitchPartialFailureError';
+    operation: RallarRoomSwitchOperation;
+    joinedRoom: GroupSnapshot;
+    previousRoomRef: GroupRef;
+    leaveError: unknown;
 }>;
 
 export type RallarLeaveRoomOptions =
@@ -1528,6 +1606,50 @@ export type RallarFacade = Readonly<{
         leave(
             input?: string | RallarLeaveRoomOptions,
         ): Promise<GroupSnapshot | undefined>;
+        update(input: RallarUpdateRoomInput): Promise<GroupSnapshot>;
+        archive(
+            room: string | GroupRef | RallarRoomTargetInput,
+            options?: RallarRoomLifecycleOptions,
+        ): Promise<GroupSnapshot>;
+        delete(
+            room: string | GroupRef | RallarRoomTargetInput,
+            options?: RallarRoomLifecycleOptions,
+        ): Promise<GroupSnapshot>;
+        invite(
+            room: string | GroupRef | RallarRoomTargetInput,
+            principalId: string,
+            options?: RallarRoomInviteOptions,
+        ): Promise<GroupSnapshot>;
+        acceptInvite(
+            room: string | GroupRef | RallarRoomTargetInput,
+            options?: RallarScopedOperationOptions,
+        ): Promise<GroupSnapshot>;
+        removeMember(
+            room: string | GroupRef | RallarRoomTargetInput,
+            principalId: string,
+            options?: RallarRoomGovernanceOptions,
+        ): Promise<GroupSnapshot>;
+        banMember(
+            room: string | GroupRef | RallarRoomTargetInput,
+            principalId: string,
+            options?: RallarRoomGovernanceOptions,
+        ): Promise<GroupSnapshot>;
+        unbanMember(
+            room: string | GroupRef | RallarRoomTargetInput,
+            principalId: string,
+            options?: RallarRoomGovernanceOptions,
+        ): Promise<GroupSnapshot>;
+        setMemberRole(
+            room: string | GroupRef | RallarRoomTargetInput,
+            principalId: string,
+            role: GroupRole,
+            options?: RallarRoomGovernanceOptions,
+        ): Promise<GroupSnapshot>;
+        transferOwnership(
+            room: string | GroupRef | RallarRoomTargetInput,
+            principalId: string,
+            options?: RallarRoomGovernanceOptions,
+        ): Promise<GroupSnapshot>;
         updateMetadata(
             room: string | GroupRef,
             patch: Readonly<Record<string, unknown>>,
@@ -2069,6 +2191,25 @@ class BrowserRallarFacade implements RallarFacade {
         enter: async (room, options) => await this.enterRoom(room, options),
         session: (room) => this.createRoomSessionForTarget(room),
         leave: async (input) => await this.leaveRoom(input),
+        update: async (input) => await this.updateRoom(input),
+        archive: async (room, options) =>
+            await this.changeRoomLifecycle(room, 'archived', options),
+        delete: async (room, options) =>
+            await this.changeRoomLifecycle(room, 'deleted', options),
+        invite: async (room, principalId, options) =>
+            await this.inviteRoomMember(room, principalId, options),
+        acceptInvite: async (room, options) =>
+            await this.acceptRoomInvite(room, options),
+        removeMember: async (room, principalId, options) =>
+            await this.governRoomMember(room, principalId, 'remove', options),
+        banMember: async (room, principalId, options) =>
+            await this.governRoomMember(room, principalId, 'ban', options),
+        unbanMember: async (room, principalId, options) =>
+            await this.governRoomMember(room, principalId, 'unban', options),
+        setMemberRole: async (room, principalId, role, options) =>
+            await this.setRoomMemberRole(room, principalId, role, options),
+        transferOwnership: async (room, principalId, options) =>
+            await this.transferRoomOwnership(room, principalId, options),
         updateMetadata: async (room, patch, options) =>
             await this.updateRoomMetadata(room, patch, options),
         waitForPresence: async (room, options) =>
@@ -2175,14 +2316,35 @@ class BrowserRallarFacade implements RallarFacade {
             const ctx = await this.connect(operationOptions);
             const session = this.requireSession();
             const operationScope = this.resolveOperationScope(createInput.scope);
-            const snapshot = await apiWorkflows.createAndJoinStateGroup(
-                createInput.displayName,
-                session.clientId,
-                session.sessionId,
-                operationScope,
-                toRallarWorkflowPolicies(operationOptions),
-                createInput.groupId,
-            );
+            const createOptions = toDefinedRecord({
+                description: createInput.description,
+                joinMode: createInput.joinMode,
+                maxMembers: createInput.maxMembers,
+                maxSessionsPerMember: createInput.maxSessionsPerMember,
+                metadata: createInput.metadata,
+                expiresAtEpochMs: createInput.expiresAtEpochMs,
+                purgeAfterEpochMs: createInput.purgeAfterEpochMs,
+            });
+            const workflowPolicies =
+                toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions);
+            const snapshot = Object.keys(createOptions).length === 0
+                ? await apiWorkflows.createAndJoinStateGroup(
+                    createInput.displayName,
+                    session.clientId,
+                    session.sessionId,
+                    operationScope,
+                    workflowPolicies,
+                    createInput.groupId,
+                )
+                : await apiWorkflows.createAndJoinStateGroup(
+                    createInput.displayName,
+                    session.clientId,
+                    session.sessionId,
+                    operationScope,
+                    workflowPolicies,
+                    createInput.groupId,
+                    createOptions,
+                );
             this.setCurrentRoom(snapshot);
             await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
             return snapshot;
@@ -2205,13 +2367,22 @@ class BrowserRallarFacade implements RallarFacade {
             previousRoomRef &&
             !this.isSameRoomRefOrId(previousRoomRef, snapshot.group)
         ) {
-            await this.leaveRoom({
-                ...leaveOptions,
-                roomId: previousRoomRef.groupId,
-                roomRef: previousRoomRef,
-                clearCurrent: false,
-                scope: toStateScope(previousRoomRef),
-            });
+            try {
+                await this.leaveRoom({
+                    ...leaveOptions,
+                    roomId: previousRoomRef.groupId,
+                    roomRef: previousRoomRef,
+                    clearCurrent: false,
+                    scope: toStateScope(previousRoomRef),
+                });
+            } catch (error) {
+                throw createRoomSwitchPartialFailureError({
+                    operation: 'create-and-switch',
+                    joinedRoom: snapshot,
+                    previousRoomRef,
+                    leaveError: error,
+                });
+            }
         }
 
         return snapshot;
@@ -2255,24 +2426,38 @@ class BrowserRallarFacade implements RallarFacade {
                 session.sessionId,
                 operationScope,
                 toRallarWorkflowPolicies(operationOptions),
+                {
+                    inviteToken: joinInput.options.inviteToken,
+                    joinCode: joinInput.options.joinCode,
+                },
             );
+
+            this.setCurrentRoom(snapshot);
+            await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
 
             if (
                 (joinInput.options.leaveCurrent ?? true) && currentRoomRef &&
                 !this.isSameRoomRefOrId(currentRoomRef, roomRef ?? roomId)
             ) {
-                await this.rooms.leave({
-                    roomId: currentRoomRef.groupId,
-                    roomRef: currentRoomRef,
-                    clearCurrent: false,
-                    scope: toStateScope(currentRoomRef),
-                    signal: operationOptions.signal,
-                    timeoutMs: operationOptions.timeoutMs,
-                });
+                try {
+                    await this.rooms.leave({
+                        roomId: currentRoomRef.groupId,
+                        roomRef: currentRoomRef,
+                        clearCurrent: false,
+                        scope: toStateScope(currentRoomRef),
+                        signal: operationOptions.signal,
+                        timeoutMs: operationOptions.timeoutMs,
+                    });
+                } catch (error) {
+                    throw createRoomSwitchPartialFailureError({
+                        operation: 'join',
+                        joinedRoom: snapshot,
+                        previousRoomRef: currentRoomRef,
+                        leaveError: error,
+                    });
+                }
             }
 
-            this.setCurrentRoom(snapshot);
-            await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
             return snapshot;
         });
     }
@@ -2477,6 +2662,51 @@ class BrowserRallarFacade implements RallarFacade {
         this.throwIfValidationIssues(issues);
     }
 
+    private toRoomTarget(
+        room: string | GroupRef | RallarRoomTargetInput,
+        options: RallarScopedOperationOptions,
+    ): Readonly<{
+        roomId: string;
+        roomRef?: GroupRef;
+        options: RallarScopedOperationOptions;
+    }> {
+        const target = typeof room === 'string'
+            ? {
+                roomId: room,
+                roomRef: undefined,
+                options,
+            }
+            : isGroupRefInput(room)
+                ? {
+                    roomId: room.groupId,
+                    roomRef: room,
+                    options,
+                }
+                : {
+                    roomId: room.roomId ?? room.roomRef?.groupId,
+                    roomRef: room.roomRef,
+                    options: {
+                        ...room,
+                        ...options,
+                    },
+                };
+
+        this.assertValidJoinRoomInput(target);
+        if (!target.roomId) {
+            this.throwMessageValidationIssue(
+                '$.roomId',
+                'missing-room',
+                'Cannot operate on room: room is required.',
+            );
+        }
+
+        return {
+            roomId: target.roomId,
+            roomRef: target.roomRef,
+            options: target.options,
+        };
+    }
+
     private async leaveRoom(
         input?: string | RallarLeaveRoomOptions,
     ): Promise<GroupSnapshot | undefined> {
@@ -2514,6 +2744,244 @@ class BrowserRallarFacade implements RallarFacade {
                 options.clearCurrent ?? true,
             );
 
+            await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
+            return snapshot;
+        });
+    }
+
+    private async updateRoom(input: RallarUpdateRoomInput): Promise<GroupSnapshot> {
+        const request = toDefinedRecord<UpdateGroupRequest>({
+            slug: input.slug,
+            displayName: input.displayName,
+            description: input.description,
+            kind: input.kind,
+            joinMode: input.joinMode,
+            maxMembers: input.maxMembers,
+            maxSessionsPerMember: input.maxSessionsPerMember,
+            metadata: input.metadata,
+            expiresAtEpochMs: input.expiresAtEpochMs,
+            purgeAfterEpochMs: input.purgeAfterEpochMs,
+        });
+        return await this.runRoomTargetMutation(input, input, async (
+            roomId,
+            session,
+            operationScope,
+            policies,
+        ) =>
+            await apiWorkflows.updateStateGroupDetails(
+                roomId,
+                request,
+                session.clientId,
+                session.sessionId,
+                operationScope,
+                policies,
+            )
+        );
+    }
+
+    private async changeRoomLifecycle(
+        room: string | GroupRef | RallarRoomTargetInput,
+        status: 'archived' | 'deleted',
+        options: RallarRoomLifecycleOptions = {},
+    ): Promise<GroupSnapshot> {
+        return await this.runRoomTargetMutation(room, options, async (
+            roomId,
+            session,
+            operationScope,
+            policies,
+        ) => {
+            const request = toDefinedRecord<Omit<UpdateGroupRequest, 'status'>>({
+                reason: options.reason,
+            });
+            return status === 'archived'
+                ? await apiWorkflows.archiveStateGroup(
+                    roomId,
+                    request,
+                    session.clientId,
+                    session.sessionId,
+                    operationScope,
+                    policies,
+                )
+                : await apiWorkflows.deleteStateGroup(
+                    roomId,
+                    request,
+                    session.clientId,
+                    session.sessionId,
+                    operationScope,
+                    policies,
+                );
+        });
+    }
+
+    private async inviteRoomMember(
+        room: string | GroupRef | RallarRoomTargetInput,
+        principalId: string,
+        options: RallarRoomInviteOptions = {},
+    ): Promise<GroupSnapshot> {
+        return await this.runRoomTargetMutation(room, options, async (
+            roomId,
+            session,
+            operationScope,
+            policies,
+        ) =>
+            await apiWorkflows.createStateGroupInvite(
+                roomId,
+                principalId,
+                toDefinedRecord({
+                    invitationExpiresAtEpochMs: options.invitationExpiresAtEpochMs,
+                    reason: options.reason,
+                }),
+                session.clientId,
+                session.sessionId,
+                operationScope,
+                policies,
+            )
+        );
+    }
+
+    private async acceptRoomInvite(
+        room: string | GroupRef | RallarRoomTargetInput,
+        options: RallarScopedOperationOptions = {},
+    ): Promise<GroupSnapshot> {
+        return await this.runRoomTargetMutation(room, options, async (
+            roomId,
+            session,
+            operationScope,
+            policies,
+        ) =>
+            await apiWorkflows.acceptStateGroupInvite(
+                roomId,
+                session.clientId,
+                session.sessionId,
+                operationScope,
+                policies,
+            )
+        );
+    }
+
+    private async governRoomMember(
+        room: string | GroupRef | RallarRoomTargetInput,
+        principalId: string,
+        action: 'remove' | 'ban' | 'unban',
+        options: RallarRoomGovernanceOptions = {},
+    ): Promise<GroupSnapshot> {
+        return await this.runRoomTargetMutation(room, options, async (
+            roomId,
+            session,
+            operationScope,
+            policies,
+        ) => {
+            const request = toDefinedRecord({ reason: options.reason });
+            switch (action) {
+                case 'remove':
+                    return await apiWorkflows.removeStateGroupMember(
+                        roomId,
+                        principalId,
+                        request,
+                        session.clientId,
+                        session.sessionId,
+                        operationScope,
+                        policies,
+                    );
+                case 'ban':
+                    return await apiWorkflows.banStateGroupMember(
+                        roomId,
+                        principalId,
+                        request,
+                        session.clientId,
+                        session.sessionId,
+                        operationScope,
+                        policies,
+                    );
+                case 'unban':
+                    return await apiWorkflows.unbanStateGroupMember(
+                        roomId,
+                        principalId,
+                        request,
+                        session.clientId,
+                        session.sessionId,
+                        operationScope,
+                        policies,
+                    );
+            }
+        });
+    }
+
+    private async setRoomMemberRole(
+        room: string | GroupRef | RallarRoomTargetInput,
+        principalId: string,
+        role: GroupRole,
+        options: RallarRoomGovernanceOptions = {},
+    ): Promise<GroupSnapshot> {
+        return await this.runRoomTargetMutation(room, options, async (
+            roomId,
+            session,
+            operationScope,
+            policies,
+        ) =>
+            await apiWorkflows.setStateGroupMemberRole(
+                roomId,
+                principalId,
+                toDefinedRecord({ role, reason: options.reason }),
+                session.clientId,
+                session.sessionId,
+                operationScope,
+                policies,
+            )
+        );
+    }
+
+    private async transferRoomOwnership(
+        room: string | GroupRef | RallarRoomTargetInput,
+        principalId: string,
+        options: RallarRoomGovernanceOptions = {},
+    ): Promise<GroupSnapshot> {
+        return await this.runRoomTargetMutation(room, options, async (
+            roomId,
+            session,
+            operationScope,
+            policies,
+        ) =>
+            await apiWorkflows.transferStateGroupOwnership(
+                roomId,
+                toDefinedRecord({
+                    newOwnerPrincipalId: principalId,
+                    reason: options.reason,
+                }),
+                session.clientId,
+                session.sessionId,
+                operationScope,
+                policies,
+            )
+        );
+    }
+
+    private async runRoomTargetMutation(
+        room: string | GroupRef | RallarRoomTargetInput,
+        options: RallarScopedOperationOptions,
+        execute: (
+            roomId: string,
+            session: AuthSession,
+            operationScope: StateScope,
+            policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue>,
+        ) => Promise<GroupSnapshot>,
+    ): Promise<GroupSnapshot> {
+        return await this.runAuthAwareOperation(async () => {
+            const target = this.toRoomTarget(room, options);
+            const operationOptions = this.resolveOperationOptions(target.options);
+            const ctx = await this.connect(operationOptions);
+            const session = this.requireSession();
+            const operationScope = target.options.scope ??
+                (target.roomRef
+                    ? toStateScope(target.roomRef)
+                    : this.resolveOperationScope(target.options.scope) ??
+                        api.defaultStateScope());
+            const snapshot = await execute(
+                target.roomId,
+                session,
+                operationScope,
+                toRallarWorkflowPolicies<StateGroupWorkflowValue>(operationOptions),
+            );
             await this.acceptSnapshots(ctx, [], [snapshot], operationScope);
             return snapshot;
         });
@@ -9037,6 +9505,12 @@ function waitForRallarOperation<T>(
     return runRallarCommand(() => promise, options);
 }
 
+function toDefinedRecord<T extends object>(input: T): T {
+    return Object.fromEntries(
+        Object.entries(input).filter(([, value]) => value !== undefined),
+    ) as T;
+}
+
 function hasOwn<T extends object, K extends PropertyKey>(
     value: T,
     key: K,
@@ -9361,6 +9835,31 @@ function toReplayMaxPages(value?: number): number {
     }
 
     return Math.min(value, MAX_RALLAR_REPLAY_MAX_PAGES);
+}
+
+function createRoomSwitchPartialFailureError(
+    input: Readonly<{
+        operation: RallarRoomSwitchOperation;
+        joinedRoom: GroupSnapshot;
+        previousRoomRef: GroupRef;
+        leaveError: unknown;
+    }>,
+): RallarRoomSwitchPartialFailureError {
+    const message = input.leaveError instanceof Error
+        ? input.leaveError.message
+        : String(input.leaveError);
+    return Object.assign(
+        new Error(
+            `Room switch joined ${input.joinedRoom.group.groupId}, but leaving ${input.previousRoomRef.groupId} failed: ${message}`,
+        ),
+        {
+            name: 'RallarRoomSwitchPartialFailureError' as const,
+            operation: input.operation,
+            joinedRoom: input.joinedRoom,
+            previousRoomRef: input.previousRoomRef,
+            leaveError: input.leaveError,
+        },
+    );
 }
 
 function isUnauthorizedApiError(error: unknown): boolean {

@@ -48,6 +48,7 @@ for some Rallar Black Box runs.
 | `RALLAR_API_BASE_URL` | No       | From selected web config                                                                              | Runtime override for `/api/config.apiBaseUrl`. Takes precedence over `API_BASE_URL`. Trailing slash is removed.                       |
 | `API_BASE_URL`        | No       | From selected web config                                                                              | Secondary runtime override for `/api/config.apiBaseUrl`.                                                                              |
 | `RALLAR_WS_BASE_URL`  | No       | Derived from `RALLAR_API_BASE_URL` or `API_BASE_URL` when present, otherwise from selected web config | Runtime override for `/api/config.wsBaseUrl`. Trailing slash is removed.                                                              |
+| `RALLAR_STATE_STRICT_READ_AUTH` | No | Disabled | `1`, `true`, `yes`, or `on` require authenticated REST state reads and apply server-side full-state read policy to client/group list, snapshot, and event reads. Enable for production once callers send auth on read paths. |
 
 ### Database
 

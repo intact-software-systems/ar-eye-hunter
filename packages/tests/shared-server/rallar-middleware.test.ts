@@ -206,7 +206,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
         ).toEqual(['session-a']);
     });
 
-    it('routes group directory broadcasts to open sessions in the same scope', () => {
+    it('does not route full group directory broadcasts to directory-only sessions', () => {
         configureTestCacheRepositories();
 
         const webSocketServer = new JsonWebSocketServer();
@@ -247,7 +247,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
                 .resolveBroadcastRecipients?.('all', message)
                 .map((recipient) => recipient.connectionId)
                 .sort(),
-        ).toEqual(['session-a', 'session-b']);
+        ).toEqual(['session-a']);
     });
 
     it('routes group state broadcasts to each live session for the same principal', () => {

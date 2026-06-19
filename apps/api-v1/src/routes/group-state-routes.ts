@@ -1,11 +1,21 @@
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import type {
+  AcceptGroupInviteRequest,
   AppointGroupDirectorRequest,
+  BanGroupMemberRequest,
   ConnectGroupPresenceSessionRequest,
+  CreateGroupInviteRequest,
   CreateGroupRequest,
   DisconnectGroupPresenceSessionRequest,
   HeartbeatGroupPresenceSessionRequest,
+  JoinGroupRequest,
+  RemoveGroupMemberRequest,
+  RevokeGroupInviteRequest,
+  RotateGroupJoinCodeRequest,
+  SetGroupMemberRoleRequest,
   StateScope,
+  TransferGroupOwnershipRequest,
+  UnbanGroupMemberRequest,
   UpdateGroupRequest,
   UpsertGroupMemberRequest,
 } from '@shared/api/state-types.ts';
@@ -13,13 +23,24 @@ import { getGroupStateService, type GroupStateService } from '../services/group-
 import { requireApiAuthSession as defaultRequireApiAuthSession } from '../services/request-auth-service.ts';
 import { getMiddleware } from '../middleware.ts';
 import type {
+  GroupJoinCodeWritten,
   GroupMutationWritten,
   GroupStateWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import {
   type GroupCreateAppInboxPayload,
   type GroupDirectorAppointAppInboxPayload,
+  type GroupInviteAcceptAppInboxPayload,
+  type GroupInviteCreateAppInboxPayload,
+  type GroupInviteRevokeAppInboxPayload,
+  type GroupJoinCodeRotateAppInboxPayload,
+  type GroupJoinAppInboxPayload,
+  type GroupMemberBanAppInboxPayload,
+  type GroupMemberRemoveAppInboxPayload,
+  type GroupMemberRoleSetAppInboxPayload,
+  type GroupMemberUnbanAppInboxPayload,
   type GroupMemberUpsertAppInboxPayload,
+  type GroupOwnershipTransferAppInboxPayload,
   type GroupPresenceConnectAppInboxPayload,
   type GroupPresenceDisconnectAppInboxPayload,
   type GroupPresenceHeartbeatAppInboxPayload,
@@ -38,8 +59,20 @@ import {
   type StateSyncCacheHydrationInput,
   type StateSyncCacheHydrationResult,
 } from '@shared-server/rallar-system/state-sync-cache-hydration.ts';
+import {
+  canReadGroupSnapshot as canReadFullGroupSnapshot,
+  GroupPolicyDeniedError,
+  isGroupPolicyDeniedError,
+} from '@shared-server/rallar-system/group-policy.ts';
+import {
+  GROUP_POLICY_REASON_CODES,
+  type GroupPolicyDenied,
+  type GroupPolicyReasonCode,
+} from '@shared/api/group-policy-types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+
+const GROUP_POLICY_REASON_CODE_SET = new Set<string>(GROUP_POLICY_REASON_CODES);
 
 export type GroupStateRouteService = Pick<
   GroupStateService,
@@ -54,6 +87,10 @@ export type GroupStateRouteAuthSession = Pick<
   'clientId' | 'sessionId'
 >;
 
+export type ProcessGroupAppInbox = <V, R>(
+  enqueue: AppInboxEnqueueInput<V>,
+) => Promise<R>;
+
 export type GroupStateRouteDependencies = Readonly<{
   getGroupStateService?: () => GroupStateRouteService;
   requireApiAuthSession?: (
@@ -61,6 +98,7 @@ export type GroupStateRouteDependencies = Readonly<{
       header(name: string): string | undefined;
     },
   ) => Promise<GroupStateRouteAuthSession>;
+  processGroupAppInbox?: ProcessGroupAppInbox;
   hydrateStateSyncSnapshotCaches?: (
     input: StateSyncCacheHydrationInput,
   ) => Promise<StateSyncCacheHydrationResult>;
@@ -79,7 +117,12 @@ export function init(
         const authSession = await readStrictReadAuthSession(c.req, deps);
         const snapshots = authSession
           ? (await deps.getGroupStateService().listSnapshots(toScope(c)))
-            .filter((snapshot) => canReadGroupSnapshot(authSession.clientId, snapshot))
+            .filter((snapshot) =>
+              canReadFullGroupSnapshot({
+                snapshot,
+                actor: { principalId: authSession.clientId },
+              }).allowed
+            )
           : await deps.getGroupStateService().listSnapshots(toScope(c));
         hydrateGroupSnapshots(deps, snapshots);
         return c.json(snapshots);
@@ -175,7 +218,7 @@ export function init(
         const requestBody = await readRequestWithRequestId<CreateGroupRequest>(c);
         const request = withActorAndCreator(requestBody, authSession);
         const written = unwrapGroupStateWritten(
-          await processGroupAppInbox<
+          await deps.processGroupAppInbox<
             GroupCreateAppInboxPayload,
             GroupStateWritten
           >({
@@ -215,7 +258,7 @@ export function init(
           authSession,
         );
         const written = unwrapGroupStateWritten(
-          await processGroupAppInbox<
+          await deps.processGroupAppInbox<
             GroupUpdateAppInboxPayload,
             GroupStateWritten
           >({
@@ -249,11 +292,373 @@ export function init(
           authSession,
         );
         const written = unwrapGroupStateWritten(
-          await processGroupAppInbox<
+          await deps.processGroupAppInbox<
             GroupDirectorAppointAppInboxPayload,
             GroupStateWritten
           >({
             type: AppInboxType.GROUP_DIRECTOR_APPOINT,
+            resourceId: request.requestId,
+            contextId: toGroupAppInboxContextId(scope, groupId),
+            senderId: authSession.clientId,
+            data: {
+              scope,
+              groupId,
+              request,
+            },
+          }),
+        );
+
+        return c.json(written.snapshot);
+      } catch (error) {
+        return toErrorResponse(c, error);
+      }
+    },
+  );
+
+  app.post(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/join',
+    async (c) => {
+      try {
+        const authSession = await deps.requireApiAuthSession(c.req);
+        const scope = toScope(c);
+        const groupId = c.req.param('groupId');
+        const request = withActor(
+          await readRequestWithRequestId<JoinGroupRequest>(c),
+          authSession,
+        );
+        const written = unwrapGroupStateWritten(
+          await deps.processGroupAppInbox<
+            GroupJoinAppInboxPayload,
+            GroupStateWritten
+          >({
+            type: AppInboxType.GROUP_JOIN,
+            resourceId: request.requestId,
+            contextId: toGroupAppInboxContextId(scope, groupId),
+            senderId: authSession.clientId,
+            data: {
+              scope,
+              groupId,
+              request,
+            },
+          }),
+        );
+
+        return c.json(written.snapshot);
+      } catch (error) {
+        return toErrorResponse(c, error);
+      }
+    },
+  );
+
+  app.post(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/invites/accept',
+    async (c) => {
+      try {
+        const authSession = await deps.requireApiAuthSession(c.req);
+        const scope = toScope(c);
+        const groupId = c.req.param('groupId');
+        const request = withActor(
+          await readRequestWithRequestId<AcceptGroupInviteRequest>(c),
+          authSession,
+        );
+        const written = unwrapGroupStateWritten(
+          await deps.processGroupAppInbox<
+            GroupInviteAcceptAppInboxPayload,
+            GroupStateWritten
+          >({
+            type: AppInboxType.GROUP_INVITE_ACCEPT,
+            resourceId: request.requestId,
+            contextId: toGroupAppInboxContextId(scope, groupId),
+            senderId: authSession.clientId,
+            data: {
+              scope,
+              groupId,
+              request,
+            },
+          }),
+        );
+
+        return c.json(written.snapshot);
+      } catch (error) {
+        return toErrorResponse(c, error);
+      }
+    },
+  );
+
+  app.post(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/join-code/rotate',
+    async (c) => {
+      try {
+        const authSession = await deps.requireApiAuthSession(c.req);
+        const scope = toScope(c);
+        const groupId = c.req.param('groupId');
+        const request = withActor(
+          await readRequestWithRequestId<RotateGroupJoinCodeRequest>(c),
+          authSession,
+        );
+        const response = unwrapGroupJoinCodeWritten(
+          await deps.processGroupAppInbox<
+            GroupJoinCodeRotateAppInboxPayload,
+            GroupJoinCodeWritten
+          >({
+            type: AppInboxType.GROUP_JOIN_CODE_ROTATE,
+            resourceId: request.requestId,
+            contextId: toGroupAppInboxContextId(scope, groupId),
+            senderId: authSession.clientId,
+            data: {
+              scope,
+              groupId,
+              request,
+            },
+          }),
+        );
+
+        return c.json(response);
+      } catch (error) {
+        return toErrorResponse(c, error);
+      }
+    },
+  );
+
+  app.post(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/invites/:principalId',
+    async (c) => {
+      try {
+        const authSession = await deps.requireApiAuthSession(c.req);
+        const scope = toScope(c);
+        const groupId = c.req.param('groupId');
+        const principalId = c.req.param('principalId');
+        const request = withActor(
+          await readRequestWithRequestId<CreateGroupInviteRequest>(c),
+          authSession,
+        );
+        const written = unwrapGroupStateWritten(
+          await deps.processGroupAppInbox<
+            GroupInviteCreateAppInboxPayload,
+            GroupStateWritten
+          >({
+            type: AppInboxType.GROUP_INVITE_CREATE,
+            resourceId: request.requestId,
+            contextId: toGroupAppInboxContextId(scope, groupId),
+            senderId: authSession.clientId,
+            data: {
+              scope,
+              groupId,
+              principalId,
+              request,
+            },
+          }),
+        );
+
+        return c.json(written.snapshot);
+      } catch (error) {
+        return toErrorResponse(c, error);
+      }
+    },
+  );
+
+  app.post(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/invites/:principalId/revoke',
+    async (c) => {
+      try {
+        const authSession = await deps.requireApiAuthSession(c.req);
+        const scope = toScope(c);
+        const groupId = c.req.param('groupId');
+        const principalId = c.req.param('principalId');
+        const request = withActor(
+          await readRequestWithRequestId<RevokeGroupInviteRequest>(c),
+          authSession,
+        );
+        const written = unwrapGroupStateWritten(
+          await deps.processGroupAppInbox<
+            GroupInviteRevokeAppInboxPayload,
+            GroupStateWritten
+          >({
+            type: AppInboxType.GROUP_INVITE_REVOKE,
+            resourceId: request.requestId,
+            contextId: toGroupAppInboxContextId(scope, groupId),
+            senderId: authSession.clientId,
+            data: {
+              scope,
+              groupId,
+              principalId,
+              request,
+            },
+          }),
+        );
+
+        return c.json(written.snapshot);
+      } catch (error) {
+        return toErrorResponse(c, error);
+      }
+    },
+  );
+
+  app.post(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/members/:principalId/remove',
+    async (c) => {
+      try {
+        const authSession = await deps.requireApiAuthSession(c.req);
+        const scope = toScope(c);
+        const groupId = c.req.param('groupId');
+        const principalId = c.req.param('principalId');
+        const request = withActor(
+          await readRequestWithRequestId<RemoveGroupMemberRequest>(c),
+          authSession,
+        );
+        const written = unwrapGroupStateWritten(
+          await deps.processGroupAppInbox<
+            GroupMemberRemoveAppInboxPayload,
+            GroupStateWritten
+          >({
+            type: AppInboxType.GROUP_MEMBER_REMOVE,
+            resourceId: request.requestId,
+            contextId: toGroupAppInboxContextId(scope, groupId),
+            senderId: authSession.clientId,
+            data: {
+              scope,
+              groupId,
+              principalId,
+              request,
+            },
+          }),
+        );
+
+        return c.json(written.snapshot);
+      } catch (error) {
+        return toErrorResponse(c, error);
+      }
+    },
+  );
+
+  app.post(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/members/:principalId/ban',
+    async (c) => {
+      try {
+        const authSession = await deps.requireApiAuthSession(c.req);
+        const scope = toScope(c);
+        const groupId = c.req.param('groupId');
+        const principalId = c.req.param('principalId');
+        const request = withActor(
+          await readRequestWithRequestId<BanGroupMemberRequest>(c),
+          authSession,
+        );
+        const written = unwrapGroupStateWritten(
+          await deps.processGroupAppInbox<
+            GroupMemberBanAppInboxPayload,
+            GroupStateWritten
+          >({
+            type: AppInboxType.GROUP_MEMBER_BAN,
+            resourceId: request.requestId,
+            contextId: toGroupAppInboxContextId(scope, groupId),
+            senderId: authSession.clientId,
+            data: {
+              scope,
+              groupId,
+              principalId,
+              request,
+            },
+          }),
+        );
+
+        return c.json(written.snapshot);
+      } catch (error) {
+        return toErrorResponse(c, error);
+      }
+    },
+  );
+
+  app.post(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/members/:principalId/unban',
+    async (c) => {
+      try {
+        const authSession = await deps.requireApiAuthSession(c.req);
+        const scope = toScope(c);
+        const groupId = c.req.param('groupId');
+        const principalId = c.req.param('principalId');
+        const request = withActor(
+          await readRequestWithRequestId<UnbanGroupMemberRequest>(c),
+          authSession,
+        );
+        const written = unwrapGroupStateWritten(
+          await deps.processGroupAppInbox<
+            GroupMemberUnbanAppInboxPayload,
+            GroupStateWritten
+          >({
+            type: AppInboxType.GROUP_MEMBER_UNBAN,
+            resourceId: request.requestId,
+            contextId: toGroupAppInboxContextId(scope, groupId),
+            senderId: authSession.clientId,
+            data: {
+              scope,
+              groupId,
+              principalId,
+              request,
+            },
+          }),
+        );
+
+        return c.json(written.snapshot);
+      } catch (error) {
+        return toErrorResponse(c, error);
+      }
+    },
+  );
+
+  app.put(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/members/:principalId/role',
+    async (c) => {
+      try {
+        const authSession = await deps.requireApiAuthSession(c.req);
+        const scope = toScope(c);
+        const groupId = c.req.param('groupId');
+        const principalId = c.req.param('principalId');
+        const request = withActor(
+          await readRequestWithRequestId<SetGroupMemberRoleRequest>(c),
+          authSession,
+        );
+        const written = unwrapGroupStateWritten(
+          await deps.processGroupAppInbox<
+            GroupMemberRoleSetAppInboxPayload,
+            GroupStateWritten
+          >({
+            type: AppInboxType.GROUP_MEMBER_ROLE_SET,
+            resourceId: request.requestId,
+            contextId: toGroupAppInboxContextId(scope, groupId),
+            senderId: authSession.clientId,
+            data: {
+              scope,
+              groupId,
+              principalId,
+              request,
+            },
+          }),
+        );
+
+        return c.json(written.snapshot);
+      } catch (error) {
+        return toErrorResponse(c, error);
+      }
+    },
+  );
+
+  app.post(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/owner/transfer',
+    async (c) => {
+      try {
+        const authSession = await deps.requireApiAuthSession(c.req);
+        const scope = toScope(c);
+        const groupId = c.req.param('groupId');
+        const request = withActor(
+          await readRequestWithRequestId<TransferGroupOwnershipRequest>(c),
+          authSession,
+        );
+        const written = unwrapGroupStateWritten(
+          await deps.processGroupAppInbox<
+            GroupOwnershipTransferAppInboxPayload,
+            GroupStateWritten
+          >({
+            type: AppInboxType.GROUP_OWNERSHIP_TRANSFER,
             resourceId: request.requestId,
             contextId: toGroupAppInboxContextId(scope, groupId),
             senderId: authSession.clientId,
@@ -284,7 +689,7 @@ export function init(
         const request = await readRequestWithRequestId<UpsertGroupMemberRequest>(c);
         assertSelfServiceMemberStatus(request.status);
         const written = unwrapGroupStateWritten(
-          await processGroupAppInbox<
+          await deps.processGroupAppInbox<
             GroupMemberUpsertAppInboxPayload,
             GroupStateWritten
           >({
@@ -324,7 +729,7 @@ export function init(
         assertSelfSession(authSession, sessionId);
         const request = await readRequestWithRequestId<ConnectGroupPresenceSessionRequest>(c);
         const written = unwrapGroupStateWritten(
-          await processGroupAppInbox<
+          await deps.processGroupAppInbox<
             GroupPresenceConnectAppInboxPayload,
             GroupStateWritten
           >({
@@ -365,7 +770,7 @@ export function init(
           c,
         );
         const written = unwrapGroupStateWritten(
-          await processGroupAppInbox<
+          await deps.processGroupAppInbox<
             GroupPresenceHeartbeatAppInboxPayload,
             GroupStateWritten
           >({
@@ -406,7 +811,7 @@ export function init(
           c,
         );
         const written = unwrapGroupStateWritten(
-          await processGroupAppInbox<
+          await deps.processGroupAppInbox<
             GroupPresenceDisconnectAppInboxPayload,
             GroupStateWritten
           >({
@@ -443,6 +848,8 @@ function toGroupStateRouteDependencies(
       getGroupStateService,
     requireApiAuthSession: dependencies.requireApiAuthSession ??
       defaultRequireApiAuthSession,
+    processGroupAppInbox: dependencies.processGroupAppInbox ??
+      defaultProcessGroupAppInbox,
     hydrateStateSyncSnapshotCaches: dependencies.hydrateStateSyncSnapshotCaches ??
       defaultHydrateStateSyncSnapshotCaches,
   };
@@ -487,20 +894,13 @@ function assertCanReadGroupSnapshot(
   principalId: string,
   snapshot: GroupSnapshot,
 ): void {
-  if (!canReadGroupSnapshot(principalId, snapshot)) {
-    throw new Error('Forbidden: only active group members can read group state');
+  const result = canReadFullGroupSnapshot({
+    snapshot,
+    actor: { principalId },
+  });
+  if (!result.allowed) {
+    throw new GroupPolicyDeniedError(result);
   }
-}
-
-function canReadGroupSnapshot(
-  principalId: string,
-  snapshot: GroupSnapshot,
-): boolean {
-  return snapshot.members.some(
-    (member) =>
-      member.principalId === principalId &&
-      member.status === 'active',
-  );
 }
 
 async function readStrictReadAuthSession(
@@ -533,7 +933,7 @@ function hydrateGroupSnapshots(
     .catch((error) => console.warn('Failed to hydrate group state sync snapshot caches', error));
 }
 
-async function processGroupAppInbox<V, R>(
+async function defaultProcessGroupAppInbox<V, R>(
   enqueue: AppInboxEnqueueInput<V>,
 ): Promise<R> {
   const result = await getMiddleware().appGroupInboxService.processEntryUntilCompletion<V, R>(
@@ -542,10 +942,46 @@ async function processGroupAppInbox<V, R>(
 
   return result.fold(
     (error) => {
+      const denial = readAppInboxPolicyDenial(error);
+      if (denial) {
+        throw new GroupPolicyDeniedError(denial);
+      }
       throw new Error(error);
     },
     (value) => value,
   );
+}
+
+function readAppInboxPolicyDenial(value: string): GroupPolicyDenied | undefined {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!isRecord(parsed)) {
+      return undefined;
+    }
+
+    const code = parsed.code;
+    const message = parsed.message;
+    if (
+      typeof code !== 'string' ||
+      !GROUP_POLICY_REASON_CODE_SET.has(code) ||
+      typeof message !== 'string'
+    ) {
+      return undefined;
+    }
+
+    return {
+      allowed: false,
+      code: code as GroupPolicyReasonCode,
+      message,
+      details: isRecord(parsed.details) ? parsed.details : undefined,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 async function readRequestWithRequestId<T extends { requestId?: string }>(c: {
@@ -574,6 +1010,16 @@ function unwrapGroupStateWritten(written: GroupStateWritten): GroupMutationWritt
   return mutation;
 }
 
+function unwrapGroupJoinCodeWritten(written: GroupJoinCodeWritten) {
+  const mutation = written.result.right;
+  if (!mutation) {
+    throw new Error(written.result.left ?? 'Group join code rotation failed');
+  }
+
+  const { event: _event, ...response } = mutation;
+  return response;
+}
+
 function toGroupAppInboxContextId(scope: StateScope, groupId: string): string {
   return [scope.applicationId, scope.workspaceId, groupId]
     .map(encodeURIComponent)
@@ -597,6 +1043,18 @@ function toErrorResponse(
   },
   error: unknown,
 ): Response {
+  if (isGroupPolicyDeniedError(error)) {
+    return c.json(
+      {
+        error: error.message,
+        code: error.denial.code,
+        message: error.denial.message,
+        details: error.denial.details,
+      },
+      error.status,
+    );
+  }
+
   const message = error instanceof Error ? error.message : String(error);
   const status = message.includes('not found')
     ? 404

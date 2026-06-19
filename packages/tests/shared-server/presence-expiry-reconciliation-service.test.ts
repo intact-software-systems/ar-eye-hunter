@@ -24,4 +24,22 @@ describe('enqueuePresenceExpiryReconciliation', () => {
                 .processExpiredPresenceSessionsNoWaiting,
         ).toHaveBeenCalledWith(123_456);
     });
+
+    it('does not enqueue destructive group purge work', async () => {
+        const runtime = {
+            appClientInboxService: {
+                processExpiredSessionsNoWaiting: vi.fn(),
+            },
+            appGroupInboxService: {
+                processExpiredPresenceSessionsNoWaiting: vi.fn(),
+                processPurgeExpiredGroupsNoWaiting: vi.fn(),
+            },
+        };
+
+        enqueuePresenceExpiryReconciliation(runtime as never, 123_456);
+
+        expect(
+            runtime.appGroupInboxService.processPurgeExpiredGroupsNoWaiting,
+        ).not.toHaveBeenCalled();
+    });
 });

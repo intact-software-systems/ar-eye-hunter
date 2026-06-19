@@ -31,6 +31,7 @@ export * from './rallar-system/services/timing.ts';
 export * from './rallar-system/services/ws-lifecycle-service.ts';
 export * from './rallar-system/services/ws-topic-room-authorizer.ts';
 export * from './rallar-system/snapshot-presence.ts';
+export * from './rallar-system/group-policy.ts';
 export * from './rallar-system/state-sync-publisher.ts';
 export * from './rallar-system/state-sync-cache-hydration.ts';
 export * from './rallar-system/ws-system-topics.ts';

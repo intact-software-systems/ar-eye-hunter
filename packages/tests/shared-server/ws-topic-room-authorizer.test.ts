@@ -318,10 +318,272 @@ describe('createGroupRoomWsAuthorizer', () => {
             senderId: 'session-b',
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
-        }))).resolves.toBe(false);
+        }))).resolves.toMatchObject({
+            authorized: false,
+            reason: 'unauthorized',
+            logMessage: expect.stringContaining('member-not-active'),
+        });
         expect(findGroupStateSnapshotByRef(group.group)?.activeSessions).toEqual([]);
     });
+
+    it('rejects archived and deleted room messages with lifecycle policy details', async () => {
+        for (const status of ['archived', 'deleted'] as const) {
+            const group = createGroupSnapshot(
+                `shared-room-${status}`,
+                'app-1',
+                'workspace-b',
+                ['session-b'],
+                3,
+            );
+            const snapshot: GroupSnapshot = {
+                ...group,
+                group: {
+                    ...group.group,
+                    status,
+                },
+            };
+            const authorizer = createGroupRoomWsAuthorizer({
+                findGroupSnapshotById: () => snapshot,
+            });
+            const message = newALBroadcastMessage(
+                'session-b',
+                newALEventRoute('room.chat', snapshot.group.groupId, `msg-${status}`),
+                'room',
+                'chat.message.v1',
+                { text: status },
+            );
+
+            const decision = await Promise.resolve(authorizer({
+                message,
+                roomId: snapshot.group.groupId,
+                senderId: 'session-b',
+                topicId: 'room.chat',
+                typeId: 'chat.message.v1',
+            }));
+
+            expect(decision).toMatchObject({
+                authorized: false,
+                reason: 'unauthorized',
+                logMessage: expect.stringContaining(`group-${status}`),
+            });
+        }
+    });
+
+    it('returns stable policy details for missing live sessions and blocked members', async () => {
+        const cases = [
+            {
+                name: 'missing-session',
+                snapshot: withoutActiveSessions(
+                    createGroupSnapshot(
+                        'room-missing-session',
+                        'app-1',
+                        'workspace-b',
+                        ['session-b'],
+                        3,
+                    ),
+                ),
+                expectedCode: 'member-not-active',
+            },
+            {
+                name: 'removed-member',
+                snapshot: withMemberStatus(
+                    createGroupSnapshot(
+                        'room-removed-member',
+                        'app-1',
+                        'workspace-b',
+                        ['session-b'],
+                        3,
+                    ),
+                    'removed',
+                ),
+                expectedCode: 'member-removed',
+            },
+            {
+                name: 'banned-member',
+                snapshot: withMemberStatus(
+                    createGroupSnapshot(
+                        'room-banned-member',
+                        'app-1',
+                        'workspace-b',
+                        ['session-b'],
+                        3,
+                    ),
+                    'banned',
+                ),
+                expectedCode: 'member-banned',
+            },
+        ] as const;
+
+        for (const { name, snapshot, expectedCode } of cases) {
+            const authorizer = createGroupRoomWsAuthorizer({
+                findGroupSnapshotById: () => snapshot,
+                now: () => 1,
+            });
+            const message = newALBroadcastMessage(
+                'session-b',
+                newALEventRoute('room.chat', snapshot.group.groupId, `msg-${name}`),
+                'room',
+                'chat.message.v1',
+                { text: name },
+            );
+
+            const decision = await Promise.resolve(authorizer({
+                message,
+                roomId: snapshot.group.groupId,
+                senderId: 'session-b',
+                topicId: 'room.chat',
+                typeId: 'chat.message.v1',
+            }));
+
+            expect(decision).toMatchObject({
+                authorized: false,
+                reason: 'unauthorized',
+                logMessage: expect.stringContaining(expectedCode),
+            });
+        }
+    });
+
+    it('refreshes stale active snapshots and rejects a newer banned snapshot with policy details', async () => {
+        configureTestCacheRepositories();
+
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const groupRepository = new GroupStateRepository(runtimeRepository);
+        const staleGroup = createGroupSnapshot(
+            'shared-room',
+            'app-1',
+            'workspace-b',
+            ['session-b'],
+            1,
+        );
+        const currentGroup = withMemberStatus(
+            createGroupSnapshot(
+                'shared-room',
+                'app-1',
+                'workspace-b',
+                ['session-b'],
+                4,
+            ),
+            'banned',
+        );
+        const readThroughCache = createGroupStateSnapshotReadThroughCache({
+            groupsRepository: groupRepository,
+        });
+        await groupRepository.putGroup(staleGroup.group);
+        await groupRepository.putMember(staleGroup.members[0]!);
+        await groupRepository.putPresenceSession(staleGroup.activeSessions[0]!);
+        await expect(readThroughCache.findOrLoadByRef(staleGroup.group)).resolves.toEqual(
+            staleGroup,
+        );
+        await groupRepository.putGroup(currentGroup.group);
+        await groupRepository.putMember(currentGroup.members[0]!);
+        await groupRepository.putPresenceSession(currentGroup.activeSessions[0]!);
+
+        const authorizer = createGroupRoomWsAuthorizer({
+            findGroupSnapshotByRef: async (ref, input) =>
+                await readThroughCache.findOrLoadByRef(ref, {
+                    minSnapshotVersion: input.minSnapshotVersion,
+                }),
+        });
+        const message = {
+            ...newALMulticastMessage(
+                'session-b',
+                newALEventRoute('room.chat', 'shared-room', 'msg-banned'),
+                currentGroup.group,
+                'chat.message.v1',
+                { text: 'refresh banned member' },
+                {
+                    minSnapshotVersion: 4,
+                },
+            ),
+        };
+
+        const decision = await Promise.resolve(authorizer({
+            message,
+            roomId: 'shared-room',
+            senderId: 'session-b',
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+            minSnapshotVersion: 4,
+        }));
+
+        expect(decision).toMatchObject({
+            authorized: false,
+            reason: 'unauthorized',
+            logMessage: expect.stringContaining('member-banned'),
+            serverSnapshotVersion: 4,
+        });
+        expect(findGroupStateSnapshotByRef(currentGroup.group)?.group.snapshotVersion).toBe(
+            4,
+        );
+    });
+
+    it('returns a stable denial when a scoped target does not match the available snapshot', async () => {
+        const workspaceA = createGroupSnapshot(
+            'shared-room',
+            'app-1',
+            'workspace-a',
+            ['session-a'],
+            1,
+        );
+        const workspaceB = createGroupSnapshot(
+            'shared-room',
+            'app-1',
+            'workspace-b',
+            ['session-b'],
+            1,
+        );
+        const authorizer = createGroupRoomWsAuthorizer({
+            findGroupSnapshotById: () => workspaceA,
+            findGroupSnapshotByRef: () => undefined,
+        });
+        const message = newALBroadcastMessage(
+            'session-b',
+            newALEventRoute('room.chat', 'shared-room', 'msg-scope'),
+            'room',
+            'chat.message.v1',
+            { text: 'wrong scope' },
+            {
+                groupRef: workspaceB.group,
+            },
+        );
+
+        const decision = await Promise.resolve(authorizer({
+            message,
+            roomId: 'shared-room',
+            senderId: 'session-b',
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+        }));
+
+        expect(decision).toMatchObject({
+            authorized: false,
+            reason: 'unauthorized',
+            logMessage: expect.stringContaining('scope'),
+        });
+    });
 });
+
+function withoutActiveSessions(snapshot: GroupSnapshot): GroupSnapshot {
+    return {
+        ...snapshot,
+        activeSessions: [],
+        onlineMemberCount: 0,
+    };
+}
+
+function withMemberStatus(
+    snapshot: GroupSnapshot,
+    status: GroupSnapshot['members'][number]['status'],
+): GroupSnapshot {
+    return {
+        ...snapshot,
+        members: snapshot.members.map((member) => ({
+            ...member,
+            status,
+        })),
+        memberCount: status === 'active' ? snapshot.memberCount : 0,
+    };
+}
 
 function createGroupSnapshot(
     groupId: string,

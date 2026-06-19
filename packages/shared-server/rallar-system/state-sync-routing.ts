@@ -1,12 +1,13 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
-import type { GroupEvent, GroupMemberStatus, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import type { WsServerResolvedRecipient } from '@shared/services/WsQueueBoxServerService.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
+import { readGroupVisibility } from './group-policy.ts';
 import {
     isClientSnapshotSessionLive,
     isGroupSnapshotSessionLive,
@@ -48,11 +49,7 @@ export function resolveStateSyncRecipients(
         case 'group':
             return resolveGroupRecipients(webSocketServer, payload.snapshot, options);
         case 'group-directory':
-            return resolveScopeRecipients(
-                webSocketServer,
-                payload.snapshot.group,
-                options,
-            );
+            return resolveGroupRecipients(webSocketServer, payload.snapshot, options);
         case 'group-event': {
             const groupRef = {
                 ...payload.scope,
@@ -115,9 +112,15 @@ function resolveGroupRecipients(
         clientStateSnapshotsRepository.getAllClientStateSnapshots();
     const scopedClientSnapshots = clientSnapshots
         .filter((clientSnapshot) => sameScope(clientSnapshot.principal, snapshot.group));
-    const memberPrincipalIds = new Set(
+    const fullReadPrincipalIds = new Set(
         snapshot.members
-            .filter((member) => shouldReceiveGroupState(member.status))
+            .filter((member) =>
+                readGroupVisibility({
+                    snapshot,
+                    actor: { principalId: member.principalId },
+                    nowEpochMs: now,
+                }) === 'full'
+            )
             .map((member) => member.principalId),
     );
     const scopedSessionIds = new Set(
@@ -131,14 +134,14 @@ function resolveGroupRecipients(
     );
     const clientRecipients = scopedClientSnapshots
         .filter((clientSnapshot) =>
-            memberPrincipalIds.has(clientSnapshot.principal.principalId)
+            fullReadPrincipalIds.has(clientSnapshot.principal.principalId)
         )
         .flatMap((clientSnapshot) =>
             toOpenClientSessionRecipients(webSocketServer, clientSnapshot, options)
         );
     const presenceRecipients = snapshot.activeSessions
         .filter((session) =>
-            memberPrincipalIds.has(session.principalId) &&
+            fullReadPrincipalIds.has(session.principalId) &&
             scopedSessionIds.has(session.sessionId) &&
             isGroupSnapshotSessionLive(session, now) &&
             webSocketServer.connections.get(session.sessionId)?.isOpen
@@ -264,10 +267,6 @@ function parseStateSyncPayload(message: ALMessage):
             ? { kind: 'invalid' }
             : undefined;
     }
-}
-
-function shouldReceiveGroupState(status: GroupMemberStatus): boolean {
-    return status === 'active' || status === 'invited';
 }
 
 function sameScope(

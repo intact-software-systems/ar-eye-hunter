@@ -614,6 +614,346 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join:
+    post:
+      tags: [Group State]
+      summary: Join a group through server-side admission policy
+      description: |
+        Activates the authenticated principal in an `open`, invited, or
+        code-protected group. Invite-only groups require an existing invited
+        member record or a valid invite token. Code groups require a valid join
+        code.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinGroupRequest'
+      responses:
+        '200':
+          description: Updated group snapshot after the join.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/accept:
+    post:
+      tags: [Group State]
+      summary: Accept an existing group invite
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptGroupInviteRequest'
+      responses:
+        '200':
+          description: Updated group snapshot after accepting the invite.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join-code/rotate:
+    post:
+      tags: [Group State]
+      summary: Rotate a group join code
+      description: |
+        Owner/admin workflow for code-protected groups. The plaintext join code
+        is returned only in this response; group state stores verifier metadata.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RotateGroupJoinCodeRequest'
+      responses:
+        '200':
+          description: New join code and updated group snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupJoinCodeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{principalId}:
+    post:
+      tags: [Group State]
+      summary: Invite a principal to a group
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/PrincipalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGroupInviteRequest'
+      responses:
+        '200':
+          description: Updated group snapshot with the invite.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{principalId}/revoke:
+    post:
+      tags: [Group State]
+      summary: Revoke a group invite
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/PrincipalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeGroupInviteRequest'
+      responses:
+        '200':
+          description: Updated group snapshot after revoking the invite.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/remove:
+    post:
+      tags: [Group State]
+      summary: Remove a group member
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/PrincipalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RemoveGroupMemberRequest'
+      responses:
+        '200':
+          description: Updated group snapshot after removal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/ban:
+    post:
+      tags: [Group State]
+      summary: Ban a group member
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/PrincipalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BanGroupMemberRequest'
+      responses:
+        '200':
+          description: Updated group snapshot after banning the member.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/unban:
+    post:
+      tags: [Group State]
+      summary: Unban a group member
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/PrincipalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnbanGroupMemberRequest'
+      responses:
+        '200':
+          description: Updated group snapshot after unbanning the member.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/role:
+    put:
+      tags: [Group State]
+      summary: Set a group member role
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/PrincipalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetGroupMemberRoleRequest'
+      responses:
+        '200':
+          description: Updated group snapshot after the role change.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/transfer:
+    post:
+      tags: [Group State]
+      summary: Transfer group ownership
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferGroupOwnershipRequest'
+      responses:
+        '200':
+          description: Updated group snapshot after ownership transfer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/director/appoint:
     post:
       tags: [Group State]
@@ -1316,12 +1656,39 @@ components:
             $ref: '#/components/schemas/CrdtRouteErrorResponse'
 
   schemas:
+    GroupPolicyReasonCode:
+      type: string
+      enum:
+        - group-policy-denied
+        - group-invite-required
+        - group-code-required
+        - group-code-invalid
+        - group-invite-expired
+        - group-archived
+        - group-deleted
+        - group-not-active
+        - group-full
+        - member-session-limit-reached
+        - member-not-active
+        - member-removed
+        - member-banned
+        - forbidden-role
+        - last-owner
+
     ErrorResponse:
       type: object
       required: [error]
       properties:
         error:
           type: string
+        code:
+          type: string
+          description: Stable machine-readable code when available, including GroupPolicyReasonCode values for group policy denials.
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
 
     ApiConfig:
       type: object
@@ -2014,6 +2381,9 @@ components:
             - member-left
             - member-removed
             - member-banned
+            - member-unbanned
+            - member-role-changed
+            - ownership-transferred
             - session-connected
             - session-heartbeat
             - session-disconnected
@@ -2269,6 +2639,138 @@ components:
           format: int64
           minimum: 1
           description: Optional heartbeat freshness TTL to store on the director appointment.
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    JoinGroupRequest:
+      type: object
+      properties:
+        inviteToken:
+          type: string
+          description: Reserved for token-verifier invite flows; ordinary invite-only groups require an active invited-member record accepted through the invite workflow.
+        joinCode:
+          type: string
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    CreateGroupInviteRequest:
+      type: object
+      properties:
+        invitationExpiresAtEpochMs:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    RevokeGroupInviteRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    AcceptGroupInviteRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    RotateGroupJoinCodeRequest:
+      type: object
+      properties:
+        joinCode:
+          type: string
+        expiresAtEpochMs:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    GroupJoinCodeResponse:
+      type: object
+      required: [joinCode, snapshot]
+      properties:
+        joinCode:
+          type: string
+        expiresAtEpochMs:
+          type: integer
+          format: int64
+        snapshot:
+          $ref: '#/components/schemas/GroupSnapshot'
+
+    RemoveGroupMemberRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    BanGroupMemberRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    UnbanGroupMemberRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    SetGroupMemberRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [owner, admin, member]
+        reason:
+          type: string
+        traceId:
+          type: string
+        requestId:
+          type: string
+
+    TransferGroupOwnershipRequest:
+      type: object
+      required: [newOwnerPrincipalId]
+      properties:
+        newOwnerPrincipalId:
+          type: string
         reason:
           type: string
         traceId:

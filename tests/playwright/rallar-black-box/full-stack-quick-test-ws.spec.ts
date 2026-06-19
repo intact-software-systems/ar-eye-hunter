@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import {
     expectFullStackApiReady,
     loginThroughUi,
+    readBrowserAuthSession,
     readFullStackConfig,
     uniqueSuffix,
 } from './full-stack-helpers.ts';
@@ -42,6 +43,29 @@ test.describe('full-stack Rallar Quick Test WS delivery', () => {
             await expect(quickA).toContainText('completed', { timeout: 30_000 });
 
             const createdGroupId = await quickA.getByRole('textbox', { name: 'Group' }).inputValue();
+            const [sessionA, sessionB] = await Promise.all([
+                readBrowserAuthSession(pageA),
+                readBrowserAuthSession(pageB),
+            ]);
+            const inviteResponse = await request.post(
+                `${config.apiBaseUrl}/api/state/apps/${
+                    encodeURIComponent(config.applicationId)
+                }/workspaces/${encodeURIComponent(config.workspaceId)}/groups/${
+                    encodeURIComponent(createdGroupId)
+                }/invites/${encodeURIComponent(sessionB.clientId)}`,
+                {
+                    headers: {
+                        authorization: `Bearer ${sessionA.accessToken}`,
+                        'x-client-id': sessionA.clientId,
+                        'content-type': 'application/json',
+                    },
+                    data: {
+                        requestId: `quick-invite-${suffix}`,
+                    },
+                },
+            );
+            expect(inviteResponse.ok(), await inviteResponse.text()).toBe(true);
+
             await quickB.getByRole('textbox', { name: 'Group' }).fill(createdGroupId);
             await quickB.getByRole('button', { name: 'Join group', exact: true }).click();
             await expect(quickB).toContainText('completed', { timeout: 30_000 });

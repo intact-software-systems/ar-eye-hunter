@@ -68,6 +68,89 @@ const current = rallar.rooms.current();
 Use `rooms.create(...)` instead when the browser should remain a member of the
 previous current room too.
 
+## Invite-Only Room
+
+```ts
+const created = await rallar.rooms.createAndSwitch({
+    displayName: 'Private Lobby',
+    joinMode: 'invite-only',
+    maxMembers: 8,
+});
+
+await rallar.rooms.invite(created.group, 'bob', {
+    invitationExpiresAtEpochMs: Date.now() + 10 * 60 * 1000,
+});
+```
+
+The invited browser should use the safe accept workflow instead of writing its
+own membership record:
+
+```ts
+await rallar.rooms.acceptInvite('private-lobby');
+```
+
+## Code-Protected Room
+
+Join-code rotation is currently a lower-level workflow helper. The returned
+plaintext code is the value to share; the group snapshot stores only verifier
+metadata.
+
+```ts
+import { rotateStateGroupJoinCode } from '@shared-web/browser/api-workflows.ts';
+
+const scope = { applicationId: 'game', workspaceId: 'default' };
+const session = rallar.session();
+if (!session) {
+    throw new Error('Login required');
+}
+
+const created = await rallar.rooms.createAndSwitch({
+    displayName: 'Code Lobby',
+    joinMode: 'code',
+    scope,
+});
+
+const rotated = await rotateStateGroupJoinCode(
+    created.group.groupId,
+    { expiresAtEpochMs: Date.now() + 30 * 60 * 1000 },
+    session.clientId,
+    session.sessionId,
+    scope,
+);
+
+await rallar.rooms.join(created.group, { joinCode: rotated.joinCode });
+```
+
+Codes are reusable until expiry. Rotate again to invalidate the previous code.
+
+## Room Switch Recovery
+
+`rooms.join(...)` and `rooms.createAndSwitch(...)` first join or create the new
+room, then best-effort leave the old room. If the leave step fails, the new room
+is already current and the error is named
+`RallarRoomSwitchPartialFailureError`.
+
+```ts
+import type { RallarRoomSwitchPartialFailureError } from '@shared-web/browser/rallar.ts';
+
+try {
+    await rallar.rooms.join('arena-2');
+} catch (error) {
+    if (isRoomSwitchPartialFailure(error)) {
+        await rallar.rooms.leave({ roomRef: error.previousRoomRef });
+    } else {
+        throw error;
+    }
+}
+
+function isRoomSwitchPartialFailure(
+    error: unknown,
+): error is RallarRoomSwitchPartialFailureError {
+    return error instanceof Error &&
+        error.name === 'RallarRoomSwitchPartialFailureError';
+}
+```
+
 ## Wait For Room Presence
 
 ```ts

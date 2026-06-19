@@ -12,7 +12,10 @@ import type {
 } from '@shared/api/state-event-types.ts';
 import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
-import { GroupStateWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
+import type {
+    GroupJoinCodeWritten,
+    GroupStateWritten,
+} from '@shared-server/rallar-system/services/group-state-service.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import {
     isLogicallyActiveSession,
@@ -30,6 +33,7 @@ const GROUPS_NAMESPACE = 'group-state:groups';
 const MEMBERS_NAMESPACE = 'group-state:members';
 const SESSIONS_NAMESPACE = 'group-state:sessions';
 const IDEMPOTENT_NAMESPACE = 'group-state:idempotent';
+const JOIN_CODE_IDEMPOTENT_NAMESPACE = 'group-state:join-code-idempotent';
 
 export type GroupStateRepositoryOptions = Readonly<{
     events?: GroupStateEventStore;
@@ -68,6 +72,32 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     ): Promise<GroupStateWritten | undefined> {
         return await this.getValue<GroupStateWritten>(
             IDEMPOTENT_NAMESPACE,
+            this.idempotentGroupKey(ref, requestId),
+        );
+    }
+
+    async addIdempotentGroupJoinCodeWritten(
+        ref: GroupRef,
+        requestId: string,
+        groupJoinCodeWritten: GroupJoinCodeWritten,
+        purgeAfterEpochMs: number = NEVER_EXPIRE_AT_TIMESTAMP,
+    ): Promise<GroupJoinCodeWritten> {
+        await this.putValue(
+            JOIN_CODE_IDEMPOTENT_NAMESPACE,
+            this.idempotentGroupKey(ref, requestId),
+            groupJoinCodeWritten,
+            purgeAfterEpochMs,
+        );
+
+        return groupJoinCodeWritten;
+    }
+
+    async findIdempotentGroupJoinCodeWritten(
+        ref: GroupRef,
+        requestId: string,
+    ): Promise<GroupJoinCodeWritten | undefined> {
+        return await this.getValue<GroupJoinCodeWritten>(
+            JOIN_CODE_IDEMPOTENT_NAMESPACE,
             this.idempotentGroupKey(ref, requestId),
         );
     }

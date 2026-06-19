@@ -15,6 +15,7 @@ import {
     ResourceInboxResultsRepository
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { type RallarTimingDetails, type RallarTimingSink, recordRallarTiming, timeRallarAsync, } from './timing.ts';
+import { isGroupPolicyDeniedError } from '../group-policy.ts';
 
 export const SIMPLER_GROUP_STATE_APP_INBOX_TOPIC = 'app-inbox.group-state';
 export const SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC = 'app-inbox.client-state';
@@ -31,6 +32,16 @@ export enum AppInboxType {
     GROUP_CREATE = 'GROUP_CREATE',
     GROUP_UPDATE = 'GROUP_UPDATE',
     GROUP_DIRECTOR_APPOINT = 'GROUP_DIRECTOR_APPOINT',
+    GROUP_JOIN = 'GROUP_JOIN',
+    GROUP_INVITE_CREATE = 'GROUP_INVITE_CREATE',
+    GROUP_INVITE_REVOKE = 'GROUP_INVITE_REVOKE',
+    GROUP_INVITE_ACCEPT = 'GROUP_INVITE_ACCEPT',
+    GROUP_JOIN_CODE_ROTATE = 'GROUP_JOIN_CODE_ROTATE',
+    GROUP_MEMBER_REMOVE = 'GROUP_MEMBER_REMOVE',
+    GROUP_MEMBER_BAN = 'GROUP_MEMBER_BAN',
+    GROUP_MEMBER_UNBAN = 'GROUP_MEMBER_UNBAN',
+    GROUP_MEMBER_ROLE_SET = 'GROUP_MEMBER_ROLE_SET',
+    GROUP_OWNERSHIP_TRANSFER = 'GROUP_OWNERSHIP_TRANSFER',
     GROUP_MEMBER_UPSERT = 'GROUP_MEMBER_UPSERT',
     GROUP_PRESENCE_CONNECT = 'GROUP_PRESENCE_CONNECT',
     GROUP_PRESENCE_HEARTBEAT = 'GROUP_PRESENCE_HEARTBEAT',
@@ -361,7 +372,8 @@ export class AppInboxService {
                                     { resultStatus: EntityStatus.COMPLETED },
                                 );
                             } catch (error) {
-                                if (!(error instanceof NonRetryableException)) {
+                                const terminalError = toTerminalAppInboxError(error);
+                                if (terminalError === undefined) {
                                     this.recordQueueRetryTiming(enqueue, entry, error);
                                     throw error;
                                 }
@@ -374,7 +386,7 @@ export class AppInboxService {
                                         await this.writeAppInboxResult(
                                             entry,
                                             EntityStatus.FAILED,
-                                            error instanceof Error ? error.message : String(error),
+                                            terminalError,
                                         );
                                     },
                                     { resultStatus: EntityStatus.FAILED },
@@ -526,6 +538,9 @@ function toAppInboxErrorMessage(resource: string): string {
         if (typeof parsed === 'string') {
             return parsed;
         }
+        if (isSerializedPolicyDenial(parsed)) {
+            return JSON.stringify(parsed);
+        }
         if (
             parsed &&
             typeof parsed === 'object' &&
@@ -538,6 +553,40 @@ function toAppInboxErrorMessage(resource: string): string {
     } catch {
         return resource;
     }
+}
+
+function toTerminalAppInboxError(error: unknown): unknown | undefined {
+    if (isGroupPolicyDeniedError(error)) {
+        return {
+            error: error.message,
+            code: error.denial.code,
+            message: error.denial.message,
+            details: error.denial.details,
+        };
+    }
+
+    if (error instanceof NonRetryableException) {
+        return error instanceof Error ? error.message : String(error);
+    }
+
+    return undefined;
+}
+
+function isSerializedPolicyDenial(value: unknown): value is Readonly<{
+    error: string;
+    code: string;
+    message: string;
+}> {
+    return Boolean(
+        value &&
+        typeof value === 'object' &&
+        'error' in value &&
+        typeof value.error === 'string' &&
+        'code' in value &&
+        typeof value.code === 'string' &&
+        'message' in value &&
+        typeof value.message === 'string',
+    );
 }
 
 function toQueueKeyPart(value: string, maxLength: number): string {

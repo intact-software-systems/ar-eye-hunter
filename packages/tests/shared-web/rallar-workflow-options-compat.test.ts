@@ -144,6 +144,110 @@ const mocks = vi.hoisted(() => {
                 _policies?: unknown,
             ) => Promise.reject(new Error('metadata update not mocked')),
         ),
+        updateStateGroupDetails: vi.fn(
+            (
+                _roomId?: unknown,
+                _request?: unknown,
+                _principalId?: unknown,
+                _sessionId?: unknown,
+                _scope?: unknown,
+                _policies?: unknown,
+            ) => Promise.reject(new Error('room update not mocked')),
+        ),
+        archiveStateGroup: vi.fn(
+            (
+                _roomId?: unknown,
+                _request?: unknown,
+                _principalId?: unknown,
+                _sessionId?: unknown,
+                _scope?: unknown,
+                _policies?: unknown,
+            ) => Promise.reject(new Error('room archive not mocked')),
+        ),
+        deleteStateGroup: vi.fn(
+            (
+                _roomId?: unknown,
+                _request?: unknown,
+                _principalId?: unknown,
+                _sessionId?: unknown,
+                _scope?: unknown,
+                _policies?: unknown,
+            ) => Promise.reject(new Error('room delete not mocked')),
+        ),
+        createStateGroupInvite: vi.fn(
+            (
+                _roomId?: unknown,
+                _targetPrincipalId?: unknown,
+                _request?: unknown,
+                _principalId?: unknown,
+                _sessionId?: unknown,
+                _scope?: unknown,
+                _policies?: unknown,
+            ) => Promise.reject(new Error('room invite not mocked')),
+        ),
+        acceptStateGroupInvite: vi.fn(
+            (
+                _roomId?: unknown,
+                _principalId?: unknown,
+                _sessionId?: unknown,
+                _scope?: unknown,
+                _policies?: unknown,
+            ) => Promise.reject(new Error('room invite accept not mocked')),
+        ),
+        removeStateGroupMember: vi.fn(
+            (
+                _roomId?: unknown,
+                _targetPrincipalId?: unknown,
+                _request?: unknown,
+                _principalId?: unknown,
+                _sessionId?: unknown,
+                _scope?: unknown,
+                _policies?: unknown,
+            ) => Promise.reject(new Error('room member remove not mocked')),
+        ),
+        banStateGroupMember: vi.fn(
+            (
+                _roomId?: unknown,
+                _targetPrincipalId?: unknown,
+                _request?: unknown,
+                _principalId?: unknown,
+                _sessionId?: unknown,
+                _scope?: unknown,
+                _policies?: unknown,
+            ) => Promise.reject(new Error('room member ban not mocked')),
+        ),
+        unbanStateGroupMember: vi.fn(
+            (
+                _roomId?: unknown,
+                _targetPrincipalId?: unknown,
+                _request?: unknown,
+                _principalId?: unknown,
+                _sessionId?: unknown,
+                _scope?: unknown,
+                _policies?: unknown,
+            ) => Promise.reject(new Error('room member unban not mocked')),
+        ),
+        setStateGroupMemberRole: vi.fn(
+            (
+                _roomId?: unknown,
+                _targetPrincipalId?: unknown,
+                _request?: unknown,
+                _principalId?: unknown,
+                _sessionId?: unknown,
+                _scope?: unknown,
+                _policies?: unknown,
+            ) => Promise.reject(new Error('room member role not mocked')),
+        ),
+        transferStateGroupOwnership: vi.fn(
+            (
+                _roomId?: unknown,
+                _request?: unknown,
+                _principalId?: unknown,
+                _sessionId?: unknown,
+                _scope?: unknown,
+                _policies?: unknown,
+            ) => Promise.reject(new Error('room owner transfer not mocked')),
+        ),
         loginToApi: vi.fn((_request?: unknown, _options?: unknown) =>
             Promise.resolve(session)
         ),
@@ -207,10 +311,20 @@ vi.mock('@shared-web/browser/api-integration.ts', () => ({
 }));
 
 vi.mock('@shared-web/browser/api-workflows.ts', () => ({
+    acceptStateGroupInvite: mocks.acceptStateGroupInvite,
+    archiveStateGroup: mocks.archiveStateGroup,
+    banStateGroupMember: mocks.banStateGroupMember,
     createAndJoinStateGroup: mocks.createAndJoinStateGroup,
+    createStateGroupInvite: mocks.createStateGroupInvite,
+    deleteStateGroup: mocks.deleteStateGroup,
     joinStateGroup: mocks.joinStateGroup,
     leaveStateGroup: mocks.leaveStateGroup,
     refreshStateSnapshots: mocks.refreshStateSnapshots,
+    removeStateGroupMember: mocks.removeStateGroupMember,
+    setStateGroupMemberRole: mocks.setStateGroupMemberRole,
+    transferStateGroupOwnership: mocks.transferStateGroupOwnership,
+    unbanStateGroupMember: mocks.unbanStateGroupMember,
+    updateStateGroupDetails: mocks.updateStateGroupDetails,
     updateStateGroupMetadata: mocks.updateStateGroupMetadata,
 }));
 
@@ -262,6 +376,36 @@ describe('Rallar workflow options compatibility', () => {
         mocks.leaveStateGroup.mockRejectedValue(new Error('leave not mocked'));
         mocks.updateStateGroupMetadata.mockRejectedValue(
             new Error('metadata update not mocked'),
+        );
+        mocks.updateStateGroupDetails.mockRejectedValue(
+            new Error('room update not mocked'),
+        );
+        mocks.archiveStateGroup.mockRejectedValue(
+            new Error('room archive not mocked'),
+        );
+        mocks.deleteStateGroup.mockRejectedValue(
+            new Error('room delete not mocked'),
+        );
+        mocks.createStateGroupInvite.mockRejectedValue(
+            new Error('room invite not mocked'),
+        );
+        mocks.acceptStateGroupInvite.mockRejectedValue(
+            new Error('room invite accept not mocked'),
+        );
+        mocks.removeStateGroupMember.mockRejectedValue(
+            new Error('room member remove not mocked'),
+        );
+        mocks.banStateGroupMember.mockRejectedValue(
+            new Error('room member ban not mocked'),
+        );
+        mocks.unbanStateGroupMember.mockRejectedValue(
+            new Error('room member unban not mocked'),
+        );
+        mocks.setStateGroupMemberRole.mockRejectedValue(
+            new Error('room member role not mocked'),
+        );
+        mocks.transferStateGroupOwnership.mockRejectedValue(
+            new Error('room owner transfer not mocked'),
         );
         mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes
             .mockReturnValue([]);
@@ -535,6 +679,25 @@ describe('Rallar workflow options compatibility', () => {
         });
     });
 
+    it('passes invite token and join code from room join input into the join workflow', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const snapshot = createGroupSnapshot('room-1', ['session-1']);
+        mocks.joinStateGroup.mockResolvedValue(snapshot);
+
+        await createRallarFacade().rooms.join({
+            roomId: 'room-1',
+            inviteToken: 'invite-1',
+            joinCode: 'code-1',
+        });
+
+        expect(mocks.joinStateGroup.mock.calls[0]?.[5]).toEqual({
+            inviteToken: 'invite-1',
+            joinCode: 'code-1',
+        });
+    });
+
     it('enters a room and returns a room-bound session handle', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
@@ -706,6 +869,42 @@ describe('Rallar workflow options compatibility', () => {
         );
     });
 
+    it('surfaces leave-old failure after create-and-switch while keeping new-room state coherent', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const oldRoom = createGroupSnapshot('old-room', ['session-1']);
+        const newRoom = createGroupSnapshot('new-room', ['session-1']);
+        const leaveError = new Error('leave failed');
+        mockGroupSnapshots([oldRoom, newRoom]);
+        mocks.createAndJoinStateGroup.mockResolvedValue(newRoom);
+        mocks.leaveStateGroup.mockRejectedValueOnce(leaveError);
+        const facade = createRallarFacade();
+
+        await expect(facade.rooms.createAndSwitch({
+            displayName: 'New Room',
+        })).rejects.toMatchObject({
+            name: 'RallarRoomSwitchPartialFailureError',
+            operation: 'create-and-switch',
+            joinedRoom: newRoom,
+            previousRoomRef: oldRoom.group,
+            leaveError,
+        });
+
+        expect(facade.rooms.current()).toBe(newRoom);
+        expect(facade.rooms.state().currentRoomRef).toEqual(newRoom.group);
+        expect(mocks.hydrateStateCaches).toHaveBeenCalledWith(
+            mocks.ctx.middleware.webRtcGroupManager,
+            expect.objectContaining({
+                clientId: 'principal-1',
+                sessionId: 'session-1',
+            }),
+            [],
+            [newRoom],
+            expect.any(Object),
+        );
+    });
+
     it('does not leave the current room when create-and-switch fails before creating', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
@@ -719,6 +918,262 @@ describe('Rallar workflow options compatibility', () => {
         })).rejects.toThrow('create failed');
 
         expect(mocks.leaveStateGroup).not.toHaveBeenCalled();
+    });
+
+    it('surfaces leave-old failure after join while keeping joined-room state coherent', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const oldRoom = createGroupSnapshot('old-room', ['session-1']);
+        const newRoom = createGroupSnapshot('new-room', ['session-1']);
+        const leaveError = new Error('leave failed');
+        mockGroupSnapshots([oldRoom, newRoom]);
+        mocks.joinStateGroup.mockResolvedValue(newRoom);
+        mocks.leaveStateGroup.mockRejectedValueOnce(leaveError);
+        const facade = createRallarFacade();
+
+        await expect(facade.rooms.join('new-room')).rejects.toMatchObject({
+            name: 'RallarRoomSwitchPartialFailureError',
+            operation: 'join',
+            joinedRoom: newRoom,
+            previousRoomRef: oldRoom.group,
+            leaveError,
+        });
+
+        expect(facade.rooms.current()).toBe(newRoom);
+        expect(facade.rooms.state().currentRoomRef).toEqual(newRoom.group);
+    });
+
+    it('passes safe room create fields into the create workflow', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const scope = {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        };
+        const snapshot = createGroupSnapshot('custom-room', ['session-1']);
+        mocks.createAndJoinStateGroup.mockResolvedValue(snapshot);
+
+        await createRallarFacade().rooms.create({
+            groupId: 'custom-room',
+            displayName: 'Custom Room',
+            description: 'Mission lobby',
+            joinMode: 'open',
+            maxMembers: 8,
+            maxSessionsPerMember: 2,
+            metadata: { map: 'fjord' },
+            scope,
+            timeoutMs: 55,
+        });
+
+        expect(mocks.createAndJoinStateGroup).toHaveBeenCalledWith(
+            'Custom Room',
+            'principal-1',
+            'session-1',
+            scope,
+            {
+                command: {
+                    timeoutMs: 55,
+                },
+            },
+            'custom-room',
+            {
+                description: 'Mission lobby',
+                joinMode: 'open',
+                maxMembers: 8,
+                maxSessionsPerMember: 2,
+                metadata: { map: 'fjord' },
+            },
+        );
+    });
+
+    it('runs safe room administration workflows with options and cache hydration', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const roomRef = {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId: 'room-1',
+        };
+        const snapshot = createGroupSnapshot('room-1', ['session-1']);
+        const nextSnapshot = withSnapshotVersion(snapshot, 2);
+        for (const workflow of [
+            mocks.updateStateGroupDetails,
+            mocks.archiveStateGroup,
+            mocks.deleteStateGroup,
+            mocks.createStateGroupInvite,
+            mocks.acceptStateGroupInvite,
+            mocks.removeStateGroupMember,
+            mocks.banStateGroupMember,
+            mocks.unbanStateGroupMember,
+            mocks.setStateGroupMemberRole,
+            mocks.transferStateGroupOwnership,
+        ]) {
+            workflow.mockResolvedValue(nextSnapshot);
+        }
+        const signal = new AbortController().signal;
+        const options = {
+            signal,
+            timeoutMs: 75,
+            maxAttempts: 2,
+        };
+        const facade = createRallarFacade();
+
+        await facade.rooms.update({
+            roomRef,
+            displayName: 'Renamed Room',
+            description: 'Updated',
+            joinMode: 'open',
+            maxMembers: 8,
+            maxSessionsPerMember: 2,
+            metadata: { map: 'fjord' },
+            ...options,
+        });
+        await facade.rooms.archive(roomRef, options);
+        await facade.rooms.delete(roomRef, options);
+        await facade.rooms.invite(roomRef, 'member-1', {
+            invitationExpiresAtEpochMs: 2_000,
+            ...options,
+        });
+        await facade.rooms.acceptInvite(roomRef, options);
+        await facade.rooms.removeMember(roomRef, 'member-1', options);
+        await facade.rooms.banMember(roomRef, 'member-1', options);
+        await facade.rooms.unbanMember(roomRef, 'member-1', options);
+        await facade.rooms.setMemberRole(roomRef, 'member-1', 'admin', options);
+        await facade.rooms.transferOwnership(roomRef, 'member-1', options);
+
+        const scope = {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        };
+        const policies = {
+            command: {
+                signal,
+                timeoutMs: 75,
+                maxAttempts: 2,
+                shouldRetry: expect.any(Function),
+            },
+        };
+        expect(mocks.updateStateGroupDetails).toHaveBeenCalledWith(
+            'room-1',
+            {
+                displayName: 'Renamed Room',
+                description: 'Updated',
+                joinMode: 'open',
+                maxMembers: 8,
+                maxSessionsPerMember: 2,
+                metadata: { map: 'fjord' },
+            },
+            'principal-1',
+            'session-1',
+            scope,
+            policies,
+        );
+        expect(mocks.archiveStateGroup).toHaveBeenCalledWith(
+            'room-1',
+            {},
+            'principal-1',
+            'session-1',
+            scope,
+            policies,
+        );
+        expect(mocks.deleteStateGroup).toHaveBeenCalledWith(
+            'room-1',
+            {},
+            'principal-1',
+            'session-1',
+            scope,
+            policies,
+        );
+        expect(mocks.createStateGroupInvite).toHaveBeenCalledWith(
+            'room-1',
+            'member-1',
+            { invitationExpiresAtEpochMs: 2_000 },
+            'principal-1',
+            'session-1',
+            scope,
+            policies,
+        );
+        expect(mocks.acceptStateGroupInvite).toHaveBeenCalledWith(
+            'room-1',
+            'principal-1',
+            'session-1',
+            scope,
+            policies,
+        );
+        expect(mocks.removeStateGroupMember).toHaveBeenCalledWith(
+            'room-1',
+            'member-1',
+            {},
+            'principal-1',
+            'session-1',
+            scope,
+            policies,
+        );
+        expect(mocks.banStateGroupMember).toHaveBeenCalledWith(
+            'room-1',
+            'member-1',
+            {},
+            'principal-1',
+            'session-1',
+            scope,
+            policies,
+        );
+        expect(mocks.unbanStateGroupMember).toHaveBeenCalledWith(
+            'room-1',
+            'member-1',
+            {},
+            'principal-1',
+            'session-1',
+            scope,
+            policies,
+        );
+        expect(mocks.setStateGroupMemberRole).toHaveBeenCalledWith(
+            'room-1',
+            'member-1',
+            { role: 'admin' },
+            'principal-1',
+            'session-1',
+            scope,
+            policies,
+        );
+        expect(mocks.transferStateGroupOwnership).toHaveBeenCalledWith(
+            'room-1',
+            { newOwnerPrincipalId: 'member-1' },
+            'principal-1',
+            'session-1',
+            scope,
+            policies,
+        );
+        expect(mocks.hydrateStateCaches).toHaveBeenCalledWith(
+            mocks.ctx.middleware.webRtcGroupManager,
+            expect.objectContaining({
+                clientId: 'principal-1',
+                sessionId: 'session-1',
+            }),
+            [],
+            [nextSnapshot],
+            expect.any(Object),
+        );
+    });
+
+    it('rejects mismatched roomId and roomRef in room administration input before network calls', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+
+        await expect(createRallarFacade().rooms.removeMember({
+            roomId: 'room-a',
+            roomRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-b',
+            },
+        }, 'member-1')).rejects.toThrow('roomId must match roomRef.groupId');
+
+        expect(mocks.removeStateGroupMember).not.toHaveBeenCalled();
     });
 
     it('passes custom data-channel lanes into middleware connect', async () => {

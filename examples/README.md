@@ -30,6 +30,12 @@ surfaces. They are documentation examples, not standalone apps.
 
 - [Server Middleware](./server-middleware/README.md): compose
   `createRallarMiddleware` and the server facade.
+- [Server App Data](./server-app-data/README.md): persist app-owned server
+  state with fresh reads and optimistic update helpers.
+- [Server Room Topics](./server-room-topics/README.md): validate, authorize,
+  observe, transform, and fan out custom room-scoped WS topics.
+- [Server Authoritative Game](./server-authoritative-game/README.md): keep
+  match truth on Rallar Server, accept commands, and publish room snapshots.
 - [RallarAI Game Event](./rallar-ai-game-event/README.md): treat generated game
   content as proposal data until validated and accepted.
 - [RallarAI Server With Ollama](./rallar-ai-server-ollama/README.md): keep a

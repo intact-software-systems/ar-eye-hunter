@@ -154,13 +154,16 @@ await rallar.auth.registerAndLogin({
 `rooms.create(input)` creates a group/room, joins it, and makes it current.
 `input` can be a display name string or an object. It does not leave the
 previous current room, so use it when multi-room membership is intentional.
+Object input can include `groupId`, `displayName`, `description`, `joinMode`,
+`maxMembers`, `maxSessionsPerMember`, `metadata`, `expiresAtEpochMs`, and
+`purgeAfterEpochMs`. `joinMode` is one of `open`, `invite-only`, or `code`.
 
 `rooms.createAndSwitch(input)` creates a group/room, makes it current, and then
 leaves the previous current room when it is different. It accepts the same input
 shape as `rooms.create(...)` and is the preferred browser-app helper for "new
 arena, leave the old arena" flows.
 
-`rooms.join(roomIdOrRef, options?)` joins a room. By default it leaves the current room if different. `rooms.join({ roomId })` and `rooms.join({ roomRef })` are also supported; if both are present, `roomId` must match `roomRef.groupId`.
+`rooms.join(roomIdOrRef, options?)` joins a room. By default it leaves the current room if different. `rooms.join({ roomId })` and `rooms.join({ roomRef })` are also supported; if both are present, `roomId` must match `roomRef.groupId`. Pass `joinCode` for code-protected groups. Invite-only membership uses `rooms.acceptInvite(...)`; the `inviteToken` option is reserved for token-verifier invite flows and is not accepted as standalone admission proof. Use `leaveCurrent: false` when the browser should stay in the previous room too.
 
 `rooms.enter(roomIdOrRef, options?)` joins a room and returns a
 `RallarRoomSession` bound to that room.
@@ -172,6 +175,29 @@ default room, or the current room without joining.
 `leave()`, `refresh()`, `message(...)`, and `realtime(...)`.
 
 `rooms.leave(input?)` leaves a room. It can use explicit `roomId`, `roomRef`, the default room, or the current room.
+
+`rooms.update(input)` updates owner/admin-controlled room fields, including
+display metadata, `joinMode`, and capacity limits.
+
+`rooms.archive(room, options?)` marks a room archived through the group update
+policy. Archived groups reject joins, presence, room messaging, invites, and
+member governance mutations.
+
+`rooms.delete(room, options?)` marks a room deleted through the group update
+policy. Deleted groups are treated as non-active by group policy.
+
+`rooms.invite(room, principalId, options?)` creates an invited member record for
+another principal. `rooms.acceptInvite(room, options?)` lets the invited
+principal activate that membership.
+
+`rooms.removeMember(room, principalId, options?)`,
+`rooms.banMember(room, principalId, options?)`,
+`rooms.unbanMember(room, principalId, options?)`,
+`rooms.setMemberRole(room, principalId, role, options?)`, and
+`rooms.transferOwnership(room, principalId, options?)` are the browser-safe
+membership governance workflows. They call server-side policy endpoints instead
+of exposing raw membership mutation. The legacy self-upsert route remains
+limited to self `active` or `left` transitions and ignores role changes.
 
 `rooms.waitForPresence(room, options?)` waits for active room sessions to match
 a readiness expectation. Expectations can be `{ min, max? }`, `{ exact }`, or
@@ -191,6 +217,13 @@ such as `ready`, `partial`, `empty`, `timeout`, `over-capacity`, `aborted`, and
 `rooms.listEventPage(input)` returns a paged event response with cursor metadata.
 
 `rooms.replayEvents(input, listener?)` fetches pages of persisted room events, dedupes events already seen by the facade, and optionally feeds the events to a listener.
+
+Room switching is best effort after a new room is successfully joined or
+created. If joining/creating succeeds but leaving the previous room fails,
+`rooms.join(...)` and `rooms.createAndSwitch(...)` reject with
+`RallarRoomSwitchPartialFailureError`. The error includes `operation`,
+`joinedRoom`, `previousRoomRef`, and `leaveError` so the app can recover while
+knowing that the new room is now current.
 
 ```ts
 const created = await rallar.rooms.createAndSwitch({
@@ -213,6 +246,46 @@ rallar.rooms.onEvent((event) => {
     }
 });
 ```
+
+### Group Policy And State Routes
+
+Group admission, lifecycle, capacity, membership governance, read visibility,
+and room-message authorization decisions live server-side. The pure policy layer
+returns `GroupPolicyResult`, and denial responses surface stable
+`GROUP_POLICY_REASON_CODES`: `group-policy-denied`, `group-invite-required`,
+`group-code-required`, `group-code-invalid`, `group-invite-expired`,
+`group-archived`, `group-deleted`, `group-not-active`, `group-full`,
+`member-session-limit-reached`, `member-not-active`, `member-removed`,
+`member-banned`, `forbidden-role`, and `last-owner`.
+
+REST errors keep the existing `{ error }` shape and may also include `code`,
+`message`, and `details`. Browser workflows preserve the parsed response on
+`ApiHttpError`, so apps can branch on stable policy reason codes without string
+matching `error`.
+
+The group state routes for the policy workflows are:
+
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/accept`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join-code/rotate`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{principalId}`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{principalId}/revoke`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/remove`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/ban`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/unban`
+- `PUT /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/role`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/transfer`
+
+Join-code rotation is currently exposed through lower-level API integration and
+workflow helpers. The plaintext code is returned only by the rotation response;
+the group snapshot stores verifier metadata. Codes are reusable until expiry,
+and rotation invalidates the previous code.
+
+Set `RALLAR_STATE_STRICT_READ_AUTH` to `1`, `true`, `yes`, or `on` on API-v1 to
+require authenticated REST reads and align list/snapshot/event reads with
+full-state group read policy. In strict mode, REST reads, state-sync routing, and
+room messaging authorization all use server-side group policy before exposing
+full group state or allowing room traffic.
 
 ### Director
 

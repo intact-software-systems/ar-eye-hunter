@@ -7,6 +7,7 @@ export * from './al-contracts/al-validation.ts';
 export * from './api/api-config.ts';
 export * from './api/api-type-utils.ts';
 export * from './api/group-director.ts';
+export * from './api/group-policy-types.ts';
 export * from './api/overlay-topology.ts';
 export * from './api/rallar-validation.ts';
 

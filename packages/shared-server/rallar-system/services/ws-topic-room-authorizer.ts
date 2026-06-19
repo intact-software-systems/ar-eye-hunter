@@ -1,12 +1,14 @@
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { isGroupActive, readGroupVersion, } from '@shared/api/group-client-views.ts';
-import type { RallarServerWsRoomAuthorizer } from '../../rallar-facade/ws-topic-router.ts';
+import { readGroupVersion, } from '@shared/api/group-client-views.ts';
+import type {
+    RallarServerWsRoomAuthorizationDecision,
+    RallarServerWsRoomAuthorizer,
+} from '../../rallar-facade/ws-topic-router.ts';
 import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
-import {
-    isSessionInLiveGroupSnapshot,
-    type RallarSnapshotPresenceClock,
-} from '../snapshot-presence.ts';
+import type { RallarSnapshotPresenceClock } from '../snapshot-presence.ts';
+import { canSendRoomMessage } from '../group-policy.ts';
+import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
 
 type MaybePromise<T> = T | Promise<T>;
 
@@ -37,6 +39,15 @@ export function createGroupRoomWsAuthorizer(
         const byIdSnapshot = scopedSnapshot
             ? undefined
             : await options.findGroupSnapshotById?.(input.roomId);
+        if (groupRef && byIdSnapshot && !isSameGroupScope(byIdSnapshot.group, groupRef)) {
+            return {
+                authorized: false,
+                reason: 'unauthorized',
+                logMessage:
+                    `Rejected room message for ${input.roomId}: group scope mismatch.`,
+                serverSnapshotVersion: readGroupVersion(byIdSnapshot),
+            };
+        }
         const snapshot = scopedSnapshot ?? (
             byIdSnapshot && (!groupRef || isSameGroupScope(byIdSnapshot.group, groupRef))
                 ? byIdSnapshot
@@ -71,11 +82,33 @@ export function createGroupRoomWsAuthorizer(
             };
         }
 
-        return isGroupActive(snapshot) &&
-            isSessionInLiveGroupSnapshot(
-                snapshot,
-                input.senderId,
-                options.now?.() ?? Date.now(),
-            );
+        const policyResult = canSendRoomMessage({
+            snapshot,
+            actor: {
+                sessionId: input.senderId,
+            },
+            senderSessionId: input.senderId,
+            minSnapshotVersion,
+            nowEpochMs: options.now?.() ?? Date.now(),
+        });
+        if (!policyResult.allowed) {
+            return toPolicyDeniedDecision(input.roomId, policyResult, serverSnapshotVersion);
+        }
+
+        return true;
+    };
+}
+
+function toPolicyDeniedDecision(
+    roomId: string,
+    denial: GroupPolicyDenied,
+    serverSnapshotVersion?: number,
+): RallarServerWsRoomAuthorizationDecision {
+    return {
+        authorized: false,
+        reason: 'unauthorized',
+        logMessage:
+            `Rejected room message for ${roomId}: ${denial.code}: ${denial.message}`,
+        serverSnapshotVersion,
     };
 }
