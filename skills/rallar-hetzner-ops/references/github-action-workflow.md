@@ -30,8 +30,9 @@ scripts/hetzner/dispatch-distributed-recipe.sh \
 ```
 
 The helper derives `agent_count`, `room_id`, `application_id`, and
-`workspace_id` from the manifest. It refuses diagnostic manifests unless
-`--allow-diagnostic` is supplied.
+`workspace_id` from the manifest. It checks the required repository or
+`production` environment secret names before dispatch and refuses diagnostic
+manifests unless `--allow-diagnostic` is supplied.
 
 ## Common Inputs
 

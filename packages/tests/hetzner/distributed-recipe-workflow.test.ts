@@ -85,6 +85,14 @@ describe('Hetzner distributed recipe workflow', () => {
         const argsFile = path.join(tmp, 'gh-args.txt');
         await writeFile(fakeGh, [
             '#!/usr/bin/env bash',
+            'if [[ "$1 $2" == "secret list" ]]; then',
+            '  if [[ "${3:-}" == "--env" ]]; then',
+            '    printf "%s\\t%s\\n" RALLAR_BLACK_BOX_USERNAME 2026-06-25T00:00:00Z RALLAR_BLACK_BOX_PASSWORD 2026-06-25T00:00:00Z',
+            '  else',
+            '    printf "%s\\t%s\\n" HETZNER_HOST 2026-06-25T00:00:00Z HETZNER_USER 2026-06-25T00:00:00Z HETZNER_SSH_PRIVATE_KEY 2026-06-25T00:00:00Z HETZNER_KNOWN_HOSTS 2026-06-25T00:00:00Z',
+            '  fi',
+            '  exit 0',
+            'fi',
             'printf "%s\\n" "$@" > "${FAKE_GH_ARGS_FILE}"',
             '',
         ].join('\n'));
@@ -135,6 +143,39 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(stdout).toContain('03-rtc-smoke-2-agent.json');
     });
 
+    it('refuses dispatch before workflow run when required GitHub secrets are missing', async () => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-dispatch-missing-secrets-gh-'));
+        const fakeGh = path.join(tmp, 'gh');
+        const argsFile = path.join(tmp, 'gh-args.txt');
+        await writeFile(fakeGh, [
+            '#!/usr/bin/env bash',
+            'if [[ "$1 $2" == "secret list" ]]; then',
+            '  printf "%s\\t%s\\n" HETZNER_HOST 2026-06-25T00:00:00Z HETZNER_USER 2026-06-25T00:00:00Z HETZNER_SSH_PRIVATE_KEY 2026-06-25T00:00:00Z HETZNER_KNOWN_HOSTS 2026-06-25T00:00:00Z',
+            '  exit 0',
+            'fi',
+            'printf "%s\\n" "$@" > "${FAKE_GH_ARGS_FILE}"',
+            '',
+        ].join('\n'));
+        await chmod(fakeGh, 0o755);
+
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        await expect(execFileAsync('bash', [
+            scriptPath,
+            'apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json',
+        ], {
+            cwd: repoRoot,
+            env: {
+                ...process.env,
+                FAKE_GH_ARGS_FILE: argsFile,
+                PATH: `${tmp}${path.delimiter}${process.env.PATH ?? ''}`,
+            },
+        })).rejects.toMatchObject({
+            stderr: expect.stringContaining('Missing required GitHub secret(s): RALLAR_BLACK_BOX_USERNAME, RALLAR_BLACK_BOX_PASSWORD'),
+        });
+
+        await expect(readFile(argsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
     it('refuses diagnostic manifests unless explicitly allowed', async () => {
         const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
         await expect(execFileAsync('bash', [
@@ -153,6 +194,10 @@ describe('Hetzner distributed recipe workflow', () => {
         const argsFile = path.join(tmp, 'gh-args.txt');
         await writeFile(fakeGh, [
             '#!/usr/bin/env bash',
+            'if [[ "$1 $2" == "secret list" ]]; then',
+            '  printf "%s\\t%s\\n" HETZNER_HOST 2026-06-25T00:00:00Z HETZNER_USER 2026-06-25T00:00:00Z HETZNER_SSH_PRIVATE_KEY 2026-06-25T00:00:00Z HETZNER_KNOWN_HOSTS 2026-06-25T00:00:00Z RALLAR_BLACK_BOX_USERNAME 2026-06-25T00:00:00Z RALLAR_BLACK_BOX_PASSWORD 2026-06-25T00:00:00Z',
+            '  exit 0',
+            'fi',
             'printf "%s\\n" "$@" > "${FAKE_GH_ARGS_FILE}"',
             '',
         ].join('\n'));

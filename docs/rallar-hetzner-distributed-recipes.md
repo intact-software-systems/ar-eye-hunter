@@ -78,8 +78,9 @@ scripts/hetzner/dispatch-distributed-recipe.sh \
 
 The helper derives `agent_count`, `room_id`, `application_id`, and
 `workspace_id` from the manifest, creates a sanitized run id, and calls
-`gh workflow run`. It refuses diagnostic manifests unless
-`--allow-diagnostic` is supplied.
+`gh workflow run`. It preflights the required repository or `production`
+environment secrets and refuses diagnostic manifests unless `--allow-diagnostic`
+is supplied.
 
 Manual equivalent:
 

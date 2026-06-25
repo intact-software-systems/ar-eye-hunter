@@ -7,6 +7,15 @@ ROLLOUT_BEFORE_RUN="true"
 ALLOW_DIAGNOSTIC="0"
 RUN_ID=""
 MANIFEST_INPUT=""
+SECRET_ENVIRONMENT="production"
+REQUIRED_GITHUB_SECRETS=(
+  HETZNER_HOST
+  HETZNER_USER
+  HETZNER_SSH_PRIVATE_KEY
+  HETZNER_KNOWN_HOSTS
+  RALLAR_BLACK_BOX_USERNAME
+  RALLAR_BLACK_BOX_PASSWORD
+)
 
 usage() {
   cat <<'USAGE'
@@ -41,6 +50,32 @@ sanitize_run_id() {
     fail "Could not derive a safe run id from: ${value}"
   fi
   printf '%s' "${safe}"
+}
+
+github_secret_names() {
+  {
+    gh secret list
+    gh secret list --env "${SECRET_ENVIRONMENT}" 2>/dev/null || true
+  } | awk '{print $1}' | sort -u
+}
+
+require_github_secrets() {
+  local available_names secret
+  local missing=()
+
+  available_names="$(github_secret_names)"
+  for secret in "${REQUIRED_GITHUB_SECRETS[@]}"; do
+    if ! grep -qx "${secret}" <<<"${available_names}"; then
+      missing+=("${secret}")
+    fi
+  done
+
+  if ((${#missing[@]} > 0)); then
+    local joined
+    printf -v joined '%s, ' "${missing[@]}"
+    joined="${joined%, }"
+    fail "Missing required GitHub secret(s): ${joined}. Set them as repository secrets or ${SECRET_ENVIRONMENT} environment secrets before dispatching ${WORKFLOW_NAME}."
+  fi
 }
 
 while [[ $# -gt 0 ]]; do
@@ -129,6 +164,7 @@ if [[ "${manifest_path}" == */diagnostic/* || "${diagnostic}" == "true" ]]; then
 fi
 
 require_command gh
+require_github_secrets
 
 if [[ -z "${RUN_ID}" ]]; then
   manifest_slug="$(basename "${manifest_path}" .json)"
