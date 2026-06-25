@@ -27,6 +27,38 @@ require_command() {
   fi
 }
 
+run_with_heartbeat() {
+  local label="$1"
+  shift
+
+  local interval="${RALLAR_LONG_COMMAND_HEARTBEAT_SECONDS:-30}"
+  if ! [[ "${interval}" =~ ^[1-9][0-9]*$ ]]; then
+    interval="30"
+  fi
+
+  "$@" &
+  local pid=$!
+
+  while kill -0 "${pid}" 2>/dev/null; do
+    local elapsed=0
+    while [[ "${elapsed}" -lt "${interval}" ]]; do
+      sleep 1
+      if ! kill -0 "${pid}" 2>/dev/null; then
+        break 2
+      fi
+      elapsed=$((elapsed + 1))
+    done
+    echo "  ${label} still running at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  done
+
+  local status
+  set +e
+  wait "${pid}"
+  status=$?
+  set -e
+  return "${status}"
+}
+
 load_env_file() {
   if [[ ! -r "${ENV_FILE}" ]]; then
     echo "Headless worker env file not found: ${ENV_FILE}" >&2
@@ -250,9 +282,9 @@ install_npm_dependencies_if_requested() {
 install_playwright_if_requested() {
   if bool_enabled "${RALLAR_INSTALL_PLAYWRIGHT}"; then
     echo "==> Installing Playwright Chromium system dependencies"
-    npm --prefix "${RALLAR_CHECKOUT_DIR}" exec -- playwright install-deps chromium
+    run_with_heartbeat "Playwright Chromium dependency install" npm --prefix "${RALLAR_CHECKOUT_DIR}" exec -- playwright install-deps chromium
     echo "==> Installing Playwright Chromium for the rallar user"
-    runuser -u rallar -- npm --prefix "${RALLAR_CHECKOUT_DIR}" exec -- playwright install chromium
+    run_with_heartbeat "Rallar Playwright install" runuser -u rallar -- npm --prefix "${RALLAR_CHECKOUT_DIR}" exec -- playwright install chromium
   fi
 }
 

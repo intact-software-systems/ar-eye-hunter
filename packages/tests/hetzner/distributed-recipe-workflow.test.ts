@@ -52,6 +52,38 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(workflow).toContain('exit 0');
     });
 
+    it('configures SSH keepalives for long Hetzner workflow operations', async () => {
+        const distributedWorkflow = await readFile(
+            path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
+            'utf8',
+        );
+        const headlessWorkflow = await readFile(
+            path.join(repoRoot, '.github/workflows/hetzner-headless-browsers.yml'),
+            'utf8',
+        );
+
+        for (const workflow of [distributedWorkflow, headlessWorkflow]) {
+            expect(workflow).toContain('Host *');
+            expect(workflow).toContain('ServerAliveInterval 30');
+            expect(workflow).toContain('ServerAliveCountMax 20');
+            expect(workflow).toContain('TCPKeepAlive yes');
+        }
+    });
+
+    it('keeps the GitHub log alive during quiet Playwright browser installs', async () => {
+        const script = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/09-start-headless-workers.sh'),
+            'utf8',
+        );
+
+        expect(script).toContain('run_with_heartbeat()');
+        expect(script).toContain('${label} still running at');
+        expect(script).toContain('"Rallar Playwright install"');
+        expect(script).toContain(
+            'run_with_heartbeat "Rallar Playwright install" runuser -u rallar -- npm --prefix "${RALLAR_CHECKOUT_DIR}" exec -- playwright install chromium',
+        );
+    });
+
     it('parses the workflow YAML with the same parser used in verification', async () => {
         const workflowPath = path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml');
 

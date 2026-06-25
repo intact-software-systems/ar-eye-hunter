@@ -170,6 +170,13 @@ jobs:
           printf '%s\n' "${HETZNER_SSH_PRIVATE_KEY}" > ~/.ssh/hetzner
           chmod 600 ~/.ssh/hetzner
           printf '%s\n' "${HETZNER_KNOWN_HOSTS}" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<'EOF'
+          Host *
+            ServerAliveInterval 30
+            ServerAliveCountMax 20
+            TCPKeepAlive yes
+          EOF
+          chmod 600 ~/.ssh/config
 
       - name: Copy controller scripts
         shell: bash
