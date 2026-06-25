@@ -37,6 +37,7 @@ export * from './rallar-system/state-sync-cache-hydration.ts';
 export * from './rallar-system/ws-system-topics.ts';
 export * from './http/rate-limit-service.ts';
 export * from './http/request-auth-service.ts';
+export * from './http/production-env-hardening.ts';
 export * from './postgres/PostgresSqlClient.ts';
 export * from './postgres/al-runtime/createPSqlALRuntimeStores.ts';
 export * from './postgres/al-runtime/PSqlInboundAdmissionBackend.ts';

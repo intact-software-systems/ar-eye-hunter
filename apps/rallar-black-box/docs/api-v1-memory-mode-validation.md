@@ -31,6 +31,8 @@ The three-browser RTC script also sets:
 
 ```text
 RALLAR_BLACK_BOX_LIVE_RTC_MATRIX=1
+VITE_RALLAR_API_BASE_URL=http://localhost:18080
+VITE_RALLAR_SPA_BASE_URL=http://localhost:5177
 VITE_RALLAR_APPLICATION_ID=rallar-server
 VITE_RALLAR_ROOM_ID=rallar-bb-memory-live-rtc
 VITE_RALLAR_AGENT_A_USERNAME=alice
@@ -44,8 +46,8 @@ VITE_RALLAR_AGENT_C_PASSWORD=secret
 The Playwright full-stack config then starts API-v1 with:
 
 ```text
-RALLAR_API_BASE_URL=http://localhost:8080
-RALLAR_WS_BASE_URL=ws://localhost:8080
+RALLAR_API_BASE_URL=http://localhost:18080
+RALLAR_WS_BASE_URL=ws://localhost:18080
 RALLAR_SQL_BACKEND=pglite-memory
 RALLAR_PGLITE_DATA_DIR=memory://
 RALLAR_PGLITE_SCHEMA_INIT=auto
@@ -55,8 +57,9 @@ RALLAR_LOGIN_USER_RATE_LIMIT=100
 ```
 
 `RALLAR_API_BASE_URL` and `RALLAR_WS_BASE_URL` are derived from
-`VITE_RALLAR_API_BASE_URL`, so `/api/config` advertises the same HTTP and
-WebSocket port that the SPA uses.
+`VITE_RALLAR_API_BASE_URL`, and API CORS is derived from
+`VITE_RALLAR_SPA_BASE_URL`, so `/api/config` and the browser harness use the
+same isolated local ports.
 
 The existing Postgres-backed scripts still use `RALLAR_BLACK_BOX_API_MODE`
 defaulting to `postgres`.
@@ -89,10 +92,8 @@ transport families without depending on same-page close/reconnect behavior.
 Verified on 2026-06-01 with:
 
 ```sh
-VITE_RALLAR_API_BASE_URL=http://localhost:18080 \
 npm run test:rallar:full-stack:memory -- --project chromium
 
-VITE_RALLAR_API_BASE_URL=http://localhost:18080 \
 npm run test:rallar:full-stack:memory:live-rtc-3 -- --project chromium
 ```
 
@@ -130,6 +131,7 @@ To use another API port:
 
 ```sh
 VITE_RALLAR_API_BASE_URL=http://localhost:18080 \
+VITE_RALLAR_SPA_BASE_URL=http://localhost:5177 \
 npm run test:rallar:full-stack:memory
 ```
 

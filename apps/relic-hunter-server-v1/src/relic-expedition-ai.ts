@@ -16,9 +16,17 @@ import {
 } from '@relic-hunters/mod.ts';
 import {
   createRallarAiMockProvider,
+  defineRallarAiProviderGovernanceMetadata,
+  isRallarAiLiveEvaluationEnabled,
   type RallarAiDiagnosticsSink,
+  type RallarAiEvaluationCase,
+  type RallarAiEvaluationSuiteResult,
   type RallarAiJsonProvider,
   type RallarAiJsonRequest,
+  type RallarAiLiveEvaluationEnvironment,
+  type RallarAiLiveEvaluationRunResult,
+  runRallarAiEvaluationSuite,
+  runRallarAiEvaluationSuiteIfEnabled,
 } from '@shared/rallar-ai/mod.ts';
 import {
   createRallarAiOllamaProvider,
@@ -69,9 +77,27 @@ export type CreateRelicExpeditionInitialStateFactoryOptions = Readonly<{
   onFallback?: (event: RelicAiExpeditionFallbackEvent) => void;
 }>;
 
-const DEFAULT_RELIC_AI_EXPEDITION_TIMEOUT_MS = 15_000;
-const DEFAULT_RELIC_AI_EXPEDITION_OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
-const DEFAULT_RELIC_AI_EXPEDITION_OLLAMA_MODEL = 'llama-test';
+export const DEFAULT_RELIC_AI_EXPEDITION_TIMEOUT_MS = 15_000;
+export const DEFAULT_RELIC_AI_EXPEDITION_OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
+export const DEFAULT_RELIC_AI_EXPEDITION_OLLAMA_MODEL = 'llama-test';
+export const RELIC_EXPEDITION_OLLAMA_PROVIDER_ID = 'relic-expedition-ollama';
+export const RELIC_EXPEDITION_LIVE_OLLAMA_EVALUATION_GATE = 'RALLAR_AI_LIVE_OLLAMA';
+export const RELIC_EXPEDITION_OLLAMA_PROVIDER_GOVERNANCE = defineRallarAiProviderGovernanceMetadata(
+  {
+    providerId: RELIC_EXPEDITION_OLLAMA_PROVIDER_ID,
+    adapterVersion: 'relic-hunter-server-v1/ollama-expedition:1',
+    modelId: DEFAULT_RELIC_AI_EXPEDITION_OLLAMA_MODEL,
+    target: 'server',
+    licenseNotes:
+      'Runs through a private Ollama sidecar; model license follows RELIC_AI_EXPEDITION_OLLAMA_MODEL.',
+    productionAllowed: false,
+    structuredOutput: true,
+    knownLimits: {
+      maxOutputTokens: 1_600,
+      recommendedTimeoutMs: DEFAULT_RELIC_AI_EXPEDITION_TIMEOUT_MS,
+    },
+  },
+);
 
 export function readRelicAiExpeditionEnv(
   env: Readonly<{ get(name: string): string | undefined }>,
@@ -231,6 +257,111 @@ export function createRelicExpeditionAiRequest({
   };
 }
 
+export type CreateRelicExpeditionAiEvaluationCasesOptions = Readonly<{
+  gameId: string;
+  reason: RelicInitialStateReason;
+  seed: string;
+  timeoutMs?: number;
+}>;
+
+export type RunRelicExpeditionDeterministicAiEvaluationOptions =
+  & CreateRelicExpeditionAiEvaluationCasesOptions
+  & Readonly<{
+    mockBlueprint?:
+      | RelicExpeditionBlueprint
+      | ((
+        input: Readonly<{ gameId: string; reason: RelicInitialStateReason; seed: string }>,
+      ) => RelicExpeditionBlueprint);
+  }>;
+
+export type RunRelicExpeditionOllamaLiveEvaluationOptions = Readonly<{
+  env: RallarAiLiveEvaluationEnvironment;
+  gate?: string;
+  cases?: readonly RallarAiEvaluationCase[];
+  provider?: RallarAiJsonProvider;
+  fetch?: RallarAiOllamaFetch;
+  ollamaBaseUrl?: string;
+  ollamaModel?: string;
+  allowedBaseUrls?: readonly string[];
+}>;
+
+export function createRelicExpeditionAiEvaluationCases(
+  options: CreateRelicExpeditionAiEvaluationCasesOptions,
+): readonly RallarAiEvaluationCase[] {
+  return [
+    {
+      caseId: 'expedition-blueprint',
+      request: createRelicExpeditionAiRequest({
+        gameId: options.gameId,
+        reason: options.reason,
+        seed: options.seed,
+        timeoutMs: options.timeoutMs ?? DEFAULT_RELIC_AI_EXPEDITION_TIMEOUT_MS,
+      }),
+      validateResult: (result) => validateExpeditionEvaluationBlueprint(result.value),
+    },
+  ];
+}
+
+export async function runRelicExpeditionDeterministicAiEvaluation(
+  options: RunRelicExpeditionDeterministicAiEvaluationOptions,
+): Promise<RallarAiEvaluationSuiteResult> {
+  return await runRallarAiEvaluationSuite({
+    suiteId: 'relic-expedition-ollama-ci',
+    provider: createProvider({
+      mockBlueprint: options.mockBlueprint,
+    }, 'mock'),
+    cases: createRelicExpeditionAiEvaluationCases(options),
+  });
+}
+
+export async function runRelicExpeditionOllamaLiveEvaluationIfEnabled(
+  options: RunRelicExpeditionOllamaLiveEvaluationOptions,
+): Promise<RallarAiLiveEvaluationRunResult> {
+  const gate = options.gate ?? RELIC_EXPEDITION_LIVE_OLLAMA_EVALUATION_GATE;
+  if (!isRallarAiLiveEvaluationEnabled(options.env, gate)) {
+    return {
+      status: 'skipped',
+      gate,
+      reason: `Relic Ollama live evaluation requires ${gate}=1.`,
+    };
+  }
+
+  const env = readRelicAiExpeditionEnv({
+    get: (name) => options.env[name],
+  });
+  const baseUrl = options.ollamaBaseUrl ?? env.ollamaBaseUrl;
+  const provider = options.provider ?? createRallarAiOllamaProvider({
+    providerId: RELIC_EXPEDITION_OLLAMA_PROVIDER_ID,
+    model: options.ollamaModel ?? env.ollamaModel,
+    baseUrl,
+    allowedBaseUrls: options.allowedBaseUrls ?? [
+      baseUrl,
+      DEFAULT_RELIC_AI_EXPEDITION_OLLAMA_BASE_URL,
+      'http://localhost:11434',
+      'http://[::1]:11434',
+    ],
+    fetch: options.fetch,
+    systemPrompt: [
+      'You generate strict JSON for a turn-based multiplayer castle game.',
+      'The application will reject unsafe, disconnected, or unbalanced data.',
+    ].join(' '),
+  });
+
+  return await runRallarAiEvaluationSuiteIfEnabled({
+    suiteId: 'relic-expedition-ollama-live',
+    provider,
+    cases: options.cases ?? createRelicExpeditionAiEvaluationCases({
+      gameId: 'relic-expedition-live-evaluation',
+      reason: 'ensure',
+      seed: 'relic-expedition-live-evaluation',
+      timeoutMs: env.timeoutMs,
+    }),
+    env: options.env,
+    gate,
+    providerLabel: 'Relic Ollama',
+  });
+}
+
 function createProvider(
   options: CreateRelicExpeditionInitialStateFactoryOptions,
   mode: Exclude<RelicAiExpeditionMode, 'off'>,
@@ -262,6 +393,7 @@ function createProvider(
   }
 
   return createRallarAiOllamaProvider({
+    providerId: RELIC_EXPEDITION_OLLAMA_PROVIDER_ID,
     model: options.ollamaModel ?? DEFAULT_RELIC_AI_EXPEDITION_OLLAMA_MODEL,
     baseUrl: options.ollamaBaseUrl ?? DEFAULT_RELIC_AI_EXPEDITION_OLLAMA_BASE_URL,
     fetch: options.fetch,
@@ -270,6 +402,17 @@ function createProvider(
       'The application will reject unsafe, disconnected, or unbalanced data.',
     ].join(' '),
   });
+}
+
+function validateExpeditionEvaluationBlueprint(
+  blueprint: unknown,
+): readonly string[] {
+  const validation = validateRelicExpeditionBlueprint(blueprint);
+  const visualFit = validateRelicExpeditionVisualFit(blueprint);
+  return [
+    ...validation.errors.map((error) => `blueprint: ${error}`),
+    ...visualFit.errors.map((error) => `visual-fit: ${error}`),
+  ];
 }
 
 function createExpeditionSeed(

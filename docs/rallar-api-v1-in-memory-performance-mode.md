@@ -76,7 +76,9 @@ npm run test:rallar:full-stack:memory:live-rtc-3
 These scripts start API-v1 with PGlite memory persistence, automatic schema
 bootstrap, and local queue pub/sub. They do not require `DATABASE_URL`, Metered
 ICE credentials, or an external Postgres process. The RTC memory script uses the
-static API-v1 fixture users `alice/secret`, `bob/secret`, and `charlie/secret`.
+static API-v1 fixture users `alice/secret`, `bob/secret`, and `charlie/secret`,
+with isolated local defaults `VITE_RALLAR_API_BASE_URL=http://localhost:18080`
+and `VITE_RALLAR_SPA_BASE_URL=http://localhost:5177`.
 The gated RTC baseline validates realtime and `messages.rtc` with fresh
 three-browser agent trios against the same in-memory API-v1 group, which keeps
 the persistence-mode validation independent from same-page close/reconnect

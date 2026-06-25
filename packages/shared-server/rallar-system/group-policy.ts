@@ -58,6 +58,12 @@ export type CanReadGroupSnapshotInput = Readonly<{
     nowEpochMs?: number;
 }>;
 
+export type CanUpdateGroupSnapshotInput = Readonly<{
+    snapshot: GroupSnapshot;
+    actor: GroupPolicyActor;
+    nowEpochMs?: number;
+}>;
+
 export type GroupReadVisibility =
     | 'full'
     | 'invite'
@@ -94,7 +100,7 @@ export type CanSendRoomMessageInput = Readonly<{
     nowEpochMs?: number;
 }>;
 
-const ALLOWED: GroupPolicyResult = { allowed: true };
+const ALLOWED: GroupPolicyResult = {allowed: true};
 
 export class GroupPolicyDeniedError extends Error {
     public override readonly name = 'GroupPolicyDeniedError';
@@ -175,9 +181,7 @@ export function canConnectGroupPresenceSession(
         const liveSessions = input.snapshot.activeSessions.filter((session) =>
             session.principalId === principalId && isLiveSession(session, input.nowEpochMs)
         );
-        const alreadyConnected = liveSessions.some((session) =>
-            session.sessionId === input.sessionId
-        );
+        const alreadyConnected = liveSessions.some((session) => session.sessionId === input.sessionId);
         if (!alreadyConnected && liveSessions.length >= cap) {
             return deny(
                 'member-session-limit-reached',
@@ -247,8 +251,42 @@ export function canReadGroupSnapshot(
     return deny(
         'group-policy-denied',
         'Only active group members can read full group state.',
-        { visibility },
+        {visibility},
     );
+}
+
+export function canUpdateGroupSnapshot(
+    input: CanUpdateGroupSnapshotInput,
+): GroupPolicyResult {
+    const lifecycleDenial = requireActiveGroup(
+        input.snapshot.group,
+        input.nowEpochMs,
+    );
+    if (lifecycleDenial) {
+        return lifecycleDenial;
+    }
+
+    const actorMember = findActorMember(input.snapshot, input.actor);
+    if (!actorMember) {
+        return deny(
+            'member-not-active',
+            'An active group member is required for this operation.',
+        );
+    }
+
+    const memberDenial = denyForPresenceMember(actorMember);
+    if (memberDenial) {
+        return memberDenial;
+    }
+
+    if (actorMember.role !== 'owner' && actorMember.role !== 'admin') {
+        return deny(
+            'forbidden-role',
+            'Only active group owners/admins can update groups.',
+        );
+    }
+
+    return ALLOWED;
 }
 
 export function readGroupVisibility(
@@ -546,9 +584,8 @@ function isLastActiveOwner(
         return false;
     }
 
-    return snapshot.members.filter((entry) =>
-        entry.role === 'owner' && entry.status === 'active'
-    ).length === 1;
+    return snapshot.members.filter((entry) => entry.role === 'owner' && entry.status === 'active')
+        .length === 1;
 }
 
 function removesOwner(action: GroupGovernanceAction): boolean {

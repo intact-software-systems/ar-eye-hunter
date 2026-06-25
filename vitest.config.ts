@@ -1,6 +1,12 @@
 import { defineConfig } from 'vitest/config';
 import path from 'node:path';
 
+const POSTGRES_PRESENCE_EXPIRY_CONCURRENCY_TEST =
+    'packages/tests/shared-server/postgres-presence-expiry-concurrency.test.ts';
+
+const includePostgresPresenceExpiryConcurrency =
+    process.env.RALLAR_POSTGRES_PRESENCE_EXPIRY === '1';
+
 export default defineConfig({
     resolve: {
         alias: {
@@ -16,7 +22,9 @@ export default defineConfig({
     test: {
         include: ['packages/tests/**/*.test.ts'],
         exclude: [
-            'packages/tests/shared-server/postgres-presence-expiry-concurrency.test.ts',
+            ...(includePostgresPresenceExpiryConcurrency
+                ? []
+                : [POSTGRES_PRESENCE_EXPIRY_CONCURRENCY_TEST]),
             'packages/tests/shared-test/scenario-black-box-rtc-config.test.ts',
             'packages/tests/shared-test/execute-black-box-rtc-client-provider.test.ts',
         ],

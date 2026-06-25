@@ -26,6 +26,9 @@ Rallar facade, Rallar browser data stores, and Rallar server middleware.
 - [Rallar CRDT Production Hardening Runbook](./rallar-crdt-production-hardening-runbook.md)
   Operational controls, feature flags, admin inspection, backup/restore,
   corruption recovery, metrics, and domain follow-ups for CRDT deployments.
+- [Production Env Hardening Checklist](./production-env-hardening-checklist.md)
+  Fail-closed environment profile for API-v1, Relic server, and black-box
+  control production deployments.
 - [Rallar Product And Implementation Evaluation](./rallar-product-and-implementation-evaluation.md)
   Current product-level assessment of the browser facade, Rallar Data, Rallar
   Server, apps, tests, and next hardening work.

@@ -21,6 +21,8 @@ type LoginOptions = Readonly<{
   userRepository?: AuthUserRepository;
 }>;
 
+export type AuthStaticClientsMode = 'demo' | 'disabled';
+
 const authorisedClients = authorisedClientsJson as readonly LoginClientData[];
 
 export async function register(
@@ -29,7 +31,7 @@ export async function register(
 ) {
   return await registerAuthUser(request, {
     runtimeRepository: options.runtimeRepository ?? createRuntimeStateRepository(),
-    staticClients: authorisedClients,
+    staticClients: readAuthorisedClients(Deno.env),
     now: options.now,
   });
 }
@@ -40,6 +42,22 @@ export async function login(
 ) {
   return await loginAuthUser(loginRequest, {
     userRepository: options.userRepository ?? createAuthUserRepository(),
-    staticClients: authorisedClients,
+    staticClients: readAuthorisedClients(Deno.env),
   });
+}
+
+export function readAuthStaticClientsMode(env: Pick<Deno.Env, 'get'>): AuthStaticClientsMode {
+  const raw = env.get('AUTH_STATIC_CLIENTS_MODE')?.trim().toLowerCase();
+  if (!raw || raw === 'demo') {
+    return 'demo';
+  }
+  if (raw === 'disabled') {
+    return 'disabled';
+  }
+
+  throw new Error('AUTH_STATIC_CLIENTS_MODE must be demo or disabled.');
+}
+
+function readAuthorisedClients(env: Pick<Deno.Env, 'get'>): readonly LoginClientData[] {
+  return readAuthStaticClientsMode(env) === 'disabled' ? [] : authorisedClients;
 }

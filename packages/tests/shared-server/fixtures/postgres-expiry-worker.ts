@@ -1,6 +1,10 @@
 import postgres from "postgres";
 import type { StateScope } from "@shared/api/state-types.ts";
 import type { PSqlSql } from "@shared-server/postgres/PostgresSqlClient.ts";
+import {
+  createClientStateEventRepository,
+  createGroupStateEventRepository,
+} from "@shared-server/postgres/rallar-system/createStateRepositories.ts";
 import { PSqlRuntimeStateRepository } from "@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts";
 import { createClientStateService } from "@shared-server/rallar-system/services/client-state-service.ts";
 import { createGroupStateService } from "@shared-server/rallar-system/services/group-state-service.ts";
@@ -54,6 +58,7 @@ async function runExpiryWorker(
   if (input.mode === "client") {
     const results = await createClientStateService({
       runtimeRepository,
+      createClientStateEventStore: createClientStateEventRepository,
       syncPublisher: createPublisher(),
       now: () => input.atEpochMs,
       serviceId: `postgres-expiry-worker-${Deno.pid}`,
@@ -71,6 +76,7 @@ async function runExpiryWorker(
 
   const results = await createGroupStateService({
     runtimeRepository,
+    createGroupStateEventStore: createGroupStateEventRepository,
     syncPublisher: createPublisher(),
     now: () => input.atEpochMs,
     serviceId: `postgres-expiry-worker-${Deno.pid}`,

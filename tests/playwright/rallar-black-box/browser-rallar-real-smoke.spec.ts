@@ -126,7 +126,8 @@ test('browser-rallar provider performs live RTC connect and realtime send when c
     });
 
     await page.goto(`/?${query.toString()}`);
-    await expect(page.locator('.control-panel')).toContainText('registered');
+    await expect(page.locator('#panel-local-workbench .control-panel'))
+        .toContainText('registered');
 
     const connectCommandId = `connect-${suffix}`;
     await enqueueCommand(request, runId, agentId, connectCommandId, {

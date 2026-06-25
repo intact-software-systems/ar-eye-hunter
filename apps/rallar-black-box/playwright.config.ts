@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const reuseExistingServer = !process.env.CI;
+
 export default defineConfig({
     testDir: '../../tests/playwright/rallar-black-box',
     timeout: 30_000,
@@ -15,13 +17,13 @@ export default defineConfig({
         {
             command: 'npm --workspace rallar-black-box run dev -- --host 127.0.0.1 --port 5176',
             url: 'http://127.0.0.1:5176',
-            reuseExistingServer: true,
+            reuseExistingServer,
             timeout: 60_000,
         },
         {
             command: 'cd ../rallar-black-box-control-server && deno task start',
             url: 'http://127.0.0.1:5180/health',
-            reuseExistingServer: true,
+            reuseExistingServer,
             timeout: 60_000,
         },
     ],

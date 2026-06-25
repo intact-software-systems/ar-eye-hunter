@@ -820,6 +820,56 @@
       "npm:graphology@0.26.0",
       "npm:postgres@^3.4.9",
       "npm:prisma@^7.8.0"
-    ]
+    ],
+    "links": {
+      "npm:@ar-eye-hunter/relic-hunters@0.1.0": {},
+      "npm:@ar-eye-hunter/shared-graph@0.1.0": {
+        "dependencies": [
+          "npm:@js-temporal/polyfill@~0.5.1",
+          "npm:graphology@0.26.0"
+        ]
+      },
+      "npm:@ar-eye-hunter/shared-server@0.1.0": {},
+      "npm:@ar-eye-hunter/shared-test@0.1.0": {},
+      "npm:@ar-eye-hunter/shared-web@0.1.0": {
+        "dependencies": [
+          "npm:@js-temporal/polyfill@~0.5.1"
+        ]
+      },
+      "npm:ar-eye-hunter-v1@0.1.0": {
+        "dependencies": [
+          "npm:@babylonjs/core@8",
+          "npm:@js-temporal/polyfill@~0.5.1",
+          "npm:@mlc-ai/web-llm@~0.2.84",
+          "npm:graphology@0.26",
+          "npm:react-dom@19",
+          "npm:react@19"
+        ]
+      },
+      "npm:ar-platform-monorepo@0.1.0": {
+        "dependencies": [
+          "npm:@babylonjs/loaders@^9.6.2"
+        ]
+      },
+      "npm:rallar-black-box@0.1.0": {
+        "dependencies": [
+          "npm:@js-temporal/polyfill@~0.5.1",
+          "npm:graphology@0.26",
+          "npm:react-dom@19",
+          "npm:react@19",
+          "npm:sigma@^3.0.3"
+        ]
+      },
+      "npm:relic-hunters-v1@0.1.0": {
+        "dependencies": [
+          "npm:@babylonjs/core@8",
+          "npm:@babylonjs/loaders@^8.56.2",
+          "npm:@js-temporal/polyfill@~0.5.1",
+          "npm:graphology@0.26",
+          "npm:react-dom@19",
+          "npm:react@19"
+        ]
+      }
+    }
   }
 }

@@ -136,6 +136,7 @@ describe('RelicHuntersRuntime', () => {
 
         expect(deps.createRoom).toHaveBeenCalledWith(
             expect.stringMatching(/^Relic Hunters Expedition: .+ #[0-9A-F]{6}/),
+            { joinMode: 'open' },
         );
         expect(deps.createRoom).not.toHaveBeenCalledWith('Relic Hunters Expedition');
         expect(deps.fetchSnapshot).toHaveBeenCalledWith('created-room');
@@ -145,6 +146,18 @@ describe('RelicHuntersRuntime', () => {
             roomState: roomState(),
         });
         expect(hydration.snapshot?.roomId).toBe('room-1');
+    });
+
+    it('creates open Rallar rooms so other hunters can join from the room list', async () => {
+        const deps = runtimeDeps();
+        const runtime = new RelicHuntersRuntime(deps);
+
+        await runtime.createRoom();
+
+        expect(deps.createRoom).toHaveBeenCalledWith(
+            expect.stringMatching(/^Relic Hunters Expedition: .+ #[0-9A-F]{6}/),
+            { joinMode: 'open' },
+        );
     });
 
     it('hydrates a joined room and delegates resets to the game reset transport', async () => {

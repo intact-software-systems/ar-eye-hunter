@@ -139,14 +139,20 @@ type HttpResponseOptions = Readonly<{
     maxBodyChars?: number;
 }>;
 
+type WebSocketTicketResolution = Readonly<{
+    ticket: string;
+    sessionId?: string;
+}>;
+
 const DEFAULT_WS_OPEN_TIMEOUT_MS = 5_000;
 const DEFAULT_HTTP_BODY_LIMIT = 64_000;
 
 const WEBSOCKET_OPEN_STATE = 1;
-const AUTH_PLACEHOLDER_PATTERN = /\{auth\.(clientId|username|sessionId|accessToken|wsTicket)\}/g;
-const CONFIG_PLACEHOLDER_PATTERN = /\{config\.(apiBaseUrl|wsBaseUrl)\}/g;
-const AUTH_PLACEHOLDER_TEST_PATTERN = /\{auth\.(clientId|username|sessionId|accessToken|wsTicket)\}/;
-const CONFIG_PLACEHOLDER_TEST_PATTERN = /\{config\.(apiBaseUrl|wsBaseUrl)\}/;
+const AUTH_PLACEHOLDER_PATTERN = /(?:\{auth\.(clientId|username|sessionId|accessToken|wsTicket)\}|%7Bauth\.(clientId|username|sessionId|accessToken|wsTicket)%7D)/gi;
+const CONFIG_PLACEHOLDER_PATTERN = /(?:\{config\.(apiBaseUrl|wsBaseUrl)\}|%7Bconfig\.(apiBaseUrl|wsBaseUrl)%7D)/gi;
+const AUTH_PLACEHOLDER_TEST_PATTERN = /(?:\{auth\.(clientId|username|sessionId|accessToken|wsTicket)\}|%7Bauth\.(clientId|username|sessionId|accessToken|wsTicket)%7D)/i;
+const CONFIG_PLACEHOLDER_TEST_PATTERN = /(?:\{config\.(apiBaseUrl|wsBaseUrl)\}|%7Bconfig\.(apiBaseUrl|wsBaseUrl)%7D)/i;
+const WS_TICKET_PLACEHOLDER_TEST_PATTERN = /(?:\{auth\.wsTicket\}|%7Bauth\.wsTicket%7D)/i;
 
 const RTC_FAILURE_STATUSES = new Set([
     'no-peers',
@@ -452,14 +458,9 @@ function configProviderMode(config: RallarBlackBoxTestConfig | undefined): strin
     return toStringValue(asRecord(config?.control).providerMode);
 }
 
-function isRallarWebSocketEnvelope(value: unknown): boolean {
+function isStructuredRallarWebSocketEnvelope(value: unknown): boolean {
     const record = asRecord(value);
     return [
-        'applicationId',
-        'workspaceId',
-        'scope',
-        'roomId',
-        'groupId',
         'typeId',
         'topicId',
         'contextId',
@@ -541,7 +542,7 @@ function requiresAuthPlaceholder(value: unknown): boolean {
 
 function requiresWsTicketPlaceholder(value: unknown): boolean {
     if (typeof value === 'string') {
-        return value.includes('{auth.wsTicket}');
+        return WS_TICKET_PLACEHOLDER_TEST_PATTERN.test(value);
     }
 
     if (Array.isArray(value)) {
@@ -560,11 +561,12 @@ function replaceCommandPlaceholdersInString(
     options: Readonly<{
         session?: AuthSession;
         config?: RallarBlackBoxTestConfig;
-        wsTicket?: string;
+        wsTicket?: WebSocketTicketResolution;
     }>,
 ): string {
     return value
-        .replace(CONFIG_PLACEHOLDER_PATTERN, (_match, key: string) => {
+        .replace(CONFIG_PLACEHOLDER_PATTERN, (_match, plainKey: string | undefined, encodedKey: string | undefined) => {
+            const key = plainKey ?? encodedKey;
             const replacement = key === 'apiBaseUrl'
                 ? configApiBaseUrl(options.config)
                 : configWsBaseUrl(options.config);
@@ -574,13 +576,14 @@ function replaceCommandPlaceholdersInString(
 
             return replacement;
         })
-        .replace(AUTH_PLACEHOLDER_PATTERN, (_match, key: string) => {
+        .replace(AUTH_PLACEHOLDER_PATTERN, (_match, plainKey: string | undefined, encodedKey: string | undefined) => {
+            const key = plainKey ?? encodedKey;
             if (key === 'wsTicket') {
-                if (!options.wsTicket) {
+                if (!options.wsTicket?.ticket) {
                     throw new Error('Cannot resolve recipe placeholder {auth.wsTicket} without a websocket ticket.');
                 }
 
-                return options.wsTicket;
+                return options.wsTicket.ticket;
             }
 
             if (!options.session) {
@@ -593,7 +596,7 @@ function replaceCommandPlaceholdersInString(
                 case 'username':
                     return options.session.username;
                 case 'sessionId':
-                    return options.session.sessionId;
+                    return options.wsTicket?.sessionId ?? options.session.sessionId;
                 case 'accessToken':
                     return options.session.accessToken;
                 default:
@@ -607,7 +610,7 @@ function replaceCommandPlaceholders<T>(
     options: Readonly<{
         session?: AuthSession;
         config?: RallarBlackBoxTestConfig;
-        wsTicket?: string;
+        wsTicket?: WebSocketTicketResolution;
     }>,
 ): T {
     if (!requiresAuthPlaceholder(value)) {
@@ -645,7 +648,7 @@ async function requestWebSocketTicket(
     fetchFn: typeof fetch,
     config: RallarBlackBoxTestConfig | undefined,
     session: AuthSession | undefined,
-): Promise<string> {
+): Promise<WebSocketTicketResolution> {
     if (!session) {
         throw new Error('Cannot request websocket ticket without a logged-in Rallar session.');
     }
@@ -667,7 +670,12 @@ async function requestWebSocketTicket(
         throw new Error('Websocket ticket response did not include ticket.');
     }
 
-    return body.ticket;
+    return {
+        ticket: body.ticket,
+        ...(typeof body.sessionId === 'string' && body.sessionId.length > 0
+            ? { sessionId: body.sessionId }
+            : {}),
+    };
 }
 
 function shouldAttachRallarAuth(
@@ -803,6 +811,22 @@ function toWebSocketClosePayload(event: unknown): Record<string, unknown> {
         reason: closeEvent.reason,
         wasClean: closeEvent.wasClean,
     };
+}
+
+function redactedWebSocketUrl(value: string): string {
+    try {
+        const url = new URL(value);
+        if (url.searchParams.has('ticket')) {
+            url.searchParams.set('ticket', '<redacted>');
+        }
+        return url.toString();
+    } catch {
+        return value.replace(/([?&]ticket=)[^&]+/i, '$1<redacted>');
+    }
+}
+
+function errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
 }
 
 function toRallarBrowserEventInput(
@@ -1956,7 +1980,9 @@ class BrowserCommandAdapter {
             this.closeWebSocketResource(connection, socket, undefined, undefined, {
                 detachImmediately: true,
             });
-            throw error;
+            throw new Error(
+                `${errorMessage(error)} url=${redactedWebSocketUrl(url)}`,
+            );
         }
 
         const value = {
@@ -2119,16 +2145,21 @@ class BrowserCommandAdapter {
         const socket = this.webSockets.get(connection);
         const shouldUseRallarSignaling = Boolean(this.rallarRuntime?.sendWs) &&
             configProviderMode(context.config()) === 'browser-rallar' &&
-            isRallarWebSocketEnvelope(command.data);
+            isStructuredRallarWebSocketEnvelope(command.data);
 
-        if (shouldUseRallarSignaling || !socket) {
-            if (this.rallarRuntime?.sendWs) {
-                return await this.sendWebSocketViaRallar(command, context, connection);
-            }
+        if (shouldUseRallarSignaling) {
+            return await this.sendWebSocketViaRallar(command, context, connection);
+        }
+
+        if (!socket) {
             throw new Error('WebSocket connection is not open: ' + connection);
         }
 
-        const data = toWebSocketSendData(command.data);
+        const resolvedData = replaceCommandPlaceholders(command.data, {
+            config: context.config(),
+            session: readOptionalBrowserSession(),
+        });
+        const data = toWebSocketSendData(resolvedData);
         const sendStartedAtEpochMs = Date.now();
         socket.send(data);
         const durationMs = Math.max(0, Date.now() - sendStartedAtEpochMs);

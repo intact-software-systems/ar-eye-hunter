@@ -3,14 +3,18 @@ import {
     createFullStackApiV1WebServer,
     readFullStackApiBaseUrl,
     readFullStackApiServerMode,
+    readFullStackSpaBaseUrl,
+    portFromBaseUrl,
 } from './playwright-full-stack-api-server.ts';
 
 const fullStackEnabled = process.env.RALLAR_BLACK_BOX_FULL_STACK === '1' ||
     process.env.RALLAR_BLACK_BOX_FULL_STACK === 'true';
 const fullStackApiBaseUrl = readFullStackApiBaseUrl();
+const fullStackSpaBaseUrl = readFullStackSpaBaseUrl();
 const fullStackApiServerMode = fullStackEnabled
     ? readFullStackApiServerMode()
     : 'postgres';
+const reuseExistingServer = !process.env.CI;
 
 const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
     ...(fullStackEnabled
@@ -18,20 +22,22 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
             createFullStackApiV1WebServer({
                 mode: fullStackApiServerMode,
                 apiBaseUrl: fullStackApiBaseUrl,
+                spaBaseUrl: fullStackSpaBaseUrl,
+                reuseExistingServer,
             }),
         ]
         : []),
     {
         command:
-            'cd ../.. && npm --workspace rallar-black-box run dev -- --port 5176',
-        url: 'http://localhost:5176',
-        reuseExistingServer: true,
+            `cd ../.. && npm --workspace rallar-black-box run dev -- --port ${portFromBaseUrl(fullStackSpaBaseUrl)} --force`,
+        url: fullStackSpaBaseUrl,
+        reuseExistingServer,
         timeout: 60_000,
     },
     {
         command: 'cd ../rallar-black-box-control-server && deno task start',
         url: 'http://127.0.0.1:5180/health',
-        reuseExistingServer: true,
+        reuseExistingServer,
         timeout: 60_000,
     },
 ];
@@ -45,7 +51,7 @@ export default defineConfig({
     },
     reporter: [['list']],
     use: {
-        baseURL: 'http://localhost:5176',
+        baseURL: fullStackSpaBaseUrl,
         trace: 'on-first-retry',
         screenshot: 'only-on-failure',
     },

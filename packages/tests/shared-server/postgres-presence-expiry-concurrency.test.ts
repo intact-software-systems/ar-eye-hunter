@@ -1,11 +1,16 @@
+import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import type { ClientSessionRef } from "@shared/api/client-types.ts";
 import type { GroupRef } from "@shared/api/group-types.ts";
 import type { StateScope } from "@shared/api/state-types.ts";
 import type { PSqlSql } from "@shared-server/postgres/PostgresSqlClient.ts";
+import {
+  createClientStateEventRepository,
+  createClientStateRepository,
+  createGroupStateEventRepository,
+  createGroupStateRepository,
+} from "@shared-server/postgres/rallar-system/createStateRepositories.ts";
 import { PSqlRuntimeStateRepository } from "@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts";
-import { ClientStateRepository } from "@shared-server/rallar-system/repositories/ClientStateRepository.ts";
-import { GroupStateRepository } from "@shared-server/rallar-system/repositories/GroupStateRepository.ts";
 import { createClientStateService } from "@shared-server/rallar-system/services/client-state-service.ts";
 import { createGroupStateService } from "@shared-server/rallar-system/services/group-state-service.ts";
 import type { StateSyncPublisher } from "@shared-server/rallar-system/state-sync-publisher.ts";
@@ -27,12 +32,10 @@ type PostgresSql =
   & Readonly<{
     end(): Promise<void>;
   }>;
-type PostgresModule = Readonly<{
-  default: (
-    databaseUrl: string,
-    options: Readonly<{ max: number; idle_timeout: number }>,
-  ) => PostgresSql;
-}>;
+type PostgresFactory = (
+  databaseUrl: string,
+  options: Readonly<{ max: number; idle_timeout: number }>,
+) => PostgresSql;
 
 type ExpiryWorkerInput = Readonly<{
   mode: "client" | "group";
@@ -126,9 +129,7 @@ describe("Postgres presence expiry concurrency", () => {
         expect(leftOutput.mode).toBe("client");
         expect(rightOutput.mode).toBe("client");
 
-        const repository = new ClientStateRepository(
-          toRuntimeRepository(setupSql),
-        );
+        const repository = createClientStateRepository(setupSql);
         const session = await repository.findSession(sessionRef);
         const events = await repository.listEvents({
           ...scope,
@@ -231,9 +232,7 @@ describe("Postgres presence expiry concurrency", () => {
         expect(leftOutput.mode).toBe("group");
         expect(rightOutput.mode).toBe("group");
 
-        const repository = new GroupStateRepository(
-          toRuntimeRepository(setupSql),
-        );
+        const repository = createGroupStateRepository(setupSql);
         const session = await repository.findPresenceSession({
           ...groupRef,
           sessionId,
@@ -278,6 +277,7 @@ async function seedExpiredClientSession(
 ): Promise<void> {
   await createClientStateService({
     runtimeRepository: toRuntimeRepository(sql),
+    createClientStateEventStore: createClientStateEventRepository,
     syncPublisher: createPublisher(),
     now: () => atEpochMs - 10_000,
     serviceId: "postgres-expiry-test-setup",
@@ -309,6 +309,7 @@ async function seedExpiredGroupPresenceSession(
 ): Promise<void> {
   const service = createGroupStateService({
     runtimeRepository: toRuntimeRepository(sql),
+    createGroupStateEventStore: createGroupStateEventRepository,
     syncPublisher: createPublisher(),
     now: () => atEpochMs - 10_000,
     serviceId: "postgres-expiry-test-setup",
@@ -375,7 +376,7 @@ async function spawnExpiryWorker(
       "run",
       "-A",
       "--unstable-temporal",
-      "--node-modules-dir=auto",
+      "--node-modules-dir=none",
       "--no-lock",
       "--config",
       ROOT_DENO_CONFIG_PATH,
@@ -457,16 +458,23 @@ async function cleanupRuntimeState(
   applicationId: string,
 ): Promise<void> {
   await sql`
+        delete from client_state_events
+        where application_id = ${applicationId}
+    `;
+  await sql`
+        delete from group_state_events
+        where application_id = ${applicationId}
+    `;
+  await sql`
         delete from runtime_state_store
         where store_key like ${`app=${encodeURIComponent(applicationId)}:%`}
     `;
 }
 
 async function createSql(databaseUrl: string): Promise<PostgresSql> {
-  const postgresSpecifier = "postgres";
-  const postgresModule = await import(postgresSpecifier) as PostgresModule;
+  const postgres = createRequire(import.meta.url)("postgres") as PostgresFactory;
 
-  return postgresModule.default(databaseUrl, { max: 1, idle_timeout: 1 });
+  return postgres(databaseUrl, { max: 1, idle_timeout: 1 });
 }
 
 function toRuntimeRepository(sql: PostgresSql): PSqlRuntimeStateRepository {

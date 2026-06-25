@@ -799,7 +799,10 @@ test('keeps manual form and event filters mounted across tab changes', async ({ 
     const groupInput = manualPanel.getByLabel('Group');
     await groupInput.fill('tab-persist-room');
     await manualPanel.getByRole('button', { name: 'Health' }).click();
-    await expect(manualPanel.getByText('manual-health-1')).toBeVisible();
+    const manualHealthCommand = manualPanel
+        .locator('.manual-command-links')
+        .getByRole('button', { name: 'manual-health-1', exact: true });
+    await expect(manualHealthCommand).toBeVisible();
 
     await page.getByRole('tab', { name: 'Event Stream' }).click();
     const eventPanel = page.locator('#panel-event-stream');

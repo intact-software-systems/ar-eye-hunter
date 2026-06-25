@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import {describe, expect, it} from 'vitest';
 import type {
     Group,
     GroupMember,
@@ -6,7 +6,7 @@ import type {
     GroupPresenceSession,
     GroupSnapshot,
 } from '@shared/mod.ts';
-import { GROUP_POLICY_REASON_CODES } from '@shared/mod.ts';
+import {GROUP_POLICY_REASON_CODES} from '@shared/mod.ts';
 import {
     canActivateGroupMember,
     canChangeGroupLifecycle,
@@ -16,9 +16,10 @@ import {
     canMutateActiveGroup,
     canReadGroupSnapshot,
     canSendRoomMessage,
+    canUpdateGroupSnapshot,
+    type GroupPolicyActor,
     readGroupVisibility,
     shouldPlanGroupPurge,
-    type GroupPolicyActor,
 } from '@shared-server/rallar-system/group-policy.ts';
 
 const NOW = 1_000;
@@ -29,16 +30,16 @@ const ACTOR: GroupPolicyActor = {
 
 describe('group policy helpers', () => {
     it('evaluates join policy from group lifecycle, join mode, member status, and capacity inputs', () => {
-        expect(canJoinGroup({ snapshot: snapshot(), actor: actor('carol') }))
-            .toEqual({ allowed: true });
+        expect(canJoinGroup({snapshot: snapshot(), actor: actor('carol')}))
+            .toEqual({allowed: true});
         expect(canJoinGroup({
-            snapshot: snapshot({ joinMode: 'invite-only' }),
+            snapshot: snapshot({joinMode: 'invite-only'}),
             actor: actor('carol'),
         })).toMatchObject(denied('group-invite-required'));
         expect(canJoinGroup({
             snapshot: snapshot({
                 joinMode: 'invite-only',
-                members: [member('carol', { status: 'invited', invitationExpiresAtEpochMs: NOW - 1 })],
+                members: [member('carol', {status: 'invited', invitationExpiresAtEpochMs: NOW - 1})],
             }),
             actor: actor('carol'),
             nowEpochMs: NOW,
@@ -46,17 +47,17 @@ describe('group policy helpers', () => {
         expect(canJoinGroup({
             snapshot: snapshot({
                 joinMode: 'invite-only',
-                members: [member('carol', { status: 'invited', invitationExpiresAtEpochMs: NOW + 1 })],
+                members: [member('carol', {status: 'invited', invitationExpiresAtEpochMs: NOW + 1})],
             }),
             actor: actor('carol'),
             nowEpochMs: NOW,
-        })).toEqual({ allowed: true });
+        })).toEqual({allowed: true});
         expect(canJoinGroup({
-            snapshot: snapshot({ joinMode: 'code' }),
+            snapshot: snapshot({joinMode: 'code'}),
             actor: actor('carol'),
         })).toMatchObject(denied('group-code-required'));
         expect(canJoinGroup({
-            snapshot: snapshot({ joinMode: 'code' }),
+            snapshot: snapshot({joinMode: 'code'}),
             actor: actor('carol'),
             joinCode: 'wrong',
             expectedJoinCode: 'right',
@@ -65,7 +66,7 @@ describe('group policy helpers', () => {
             snapshot: snapshot({
                 members: [
                     member('alice'),
-                    member('carol', { status: 'removed' }),
+                    member('carol', {status: 'removed'}),
                 ],
             }),
             actor: actor('carol'),
@@ -74,7 +75,7 @@ describe('group policy helpers', () => {
             snapshot: snapshot({
                 members: [
                     member('alice'),
-                    member('carol', { status: 'banned' }),
+                    member('carol', {status: 'banned'}),
                 ],
             }),
             actor: actor('carol'),
@@ -90,24 +91,24 @@ describe('group policy helpers', () => {
 
     it('evaluates presence policy from active membership, lifecycle, and session caps', () => {
         expect(canConnectGroupPresenceSession({
-            snapshot: snapshot({ activeSessions: [session('alice-session', 'alice')] }),
+            snapshot: snapshot({activeSessions: [session('alice-session', 'alice')]}),
             actor: ACTOR,
             sessionId: 'alice-session',
             nowEpochMs: NOW,
-        })).toEqual({ allowed: true });
+        })).toEqual({allowed: true});
         expect(canConnectGroupPresenceSession({
-            snapshot: snapshot({ status: 'archived' }),
+            snapshot: snapshot({status: 'archived'}),
             actor: ACTOR,
             sessionId: 'alice-session',
         })).toMatchObject(denied('group-archived'));
         expect(canConnectGroupPresenceSession({
-            snapshot: snapshot({ status: 'deleted' }),
+            snapshot: snapshot({status: 'deleted'}),
             actor: ACTOR,
             sessionId: 'alice-session',
         })).toMatchObject(denied('group-deleted'));
         expect(canConnectGroupPresenceSession({
             snapshot: snapshot({
-                members: [member('alice', { status: 'left' })],
+                members: [member('alice', {status: 'left'})],
             }),
             actor: ACTOR,
             sessionId: 'alice-session',
@@ -130,12 +131,12 @@ describe('group policy helpers', () => {
                 maxMembers: 2,
                 members: [
                     member('alice'),
-                    member('bob', { status: 'invited' }),
+                    member('bob', {status: 'invited'}),
                 ],
             }),
             targetPrincipalId: 'carol',
             nowEpochMs: NOW,
-        })).toEqual({ allowed: true });
+        })).toEqual({allowed: true});
         expect(canActivateGroupMember({
             snapshot: snapshot({
                 joinMode: 'invite-only',
@@ -148,25 +149,25 @@ describe('group policy helpers', () => {
     });
 
     it('evaluates lifecycle-only mutation policy without admission or capacity checks', () => {
-        expect(canMutateActiveGroup({ group: snapshot({ maxMembers: 1 }).group }))
-            .toEqual({ allowed: true });
+        expect(canMutateActiveGroup({group: snapshot({maxMembers: 1}).group}))
+            .toEqual({allowed: true});
         expect(canMutateActiveGroup({
-            group: snapshot({ expiresAtEpochMs: NOW - 1 }).group,
+            group: snapshot({expiresAtEpochMs: NOW - 1}).group,
             nowEpochMs: NOW,
         })).toMatchObject(denied('group-not-active'));
-        expect(canMutateActiveGroup({ group: snapshot({ status: 'archived' }).group }))
+        expect(canMutateActiveGroup({group: snapshot({status: 'archived'}).group}))
             .toMatchObject(denied('group-archived'));
-        expect(canMutateActiveGroup({ group: snapshot({ status: 'deleted' }).group }))
+        expect(canMutateActiveGroup({group: snapshot({status: 'deleted'}).group}))
             .toMatchObject(denied('group-deleted'));
     });
 
     it('plans purge eligibility from purgeAfterEpochMs without mutating state', () => {
         expect(shouldPlanGroupPurge({
-            group: snapshot({ purgeAfterEpochMs: NOW - 1 }).group,
+            group: snapshot({purgeAfterEpochMs: NOW - 1}).group,
             nowEpochMs: NOW,
         })).toBe(true);
         expect(shouldPlanGroupPurge({
-            group: snapshot({ purgeAfterEpochMs: NOW + 1 }).group,
+            group: snapshot({purgeAfterEpochMs: NOW + 1}).group,
             nowEpochMs: NOW,
         })).toBe(false);
         expect(shouldPlanGroupPurge({
@@ -176,42 +177,42 @@ describe('group policy helpers', () => {
     });
 
     it('classifies read visibility for full state, invite metadata, directory metadata, and hidden groups', () => {
-        expect(readGroupVisibility({ snapshot: snapshot(), actor: ACTOR }))
+        expect(readGroupVisibility({snapshot: snapshot(), actor: ACTOR}))
             .toBe('full');
         expect(readGroupVisibility({
             snapshot: snapshot({
-                members: [member('alice', { status: 'invited' })],
+                members: [member('alice', {status: 'invited'})],
             }),
             actor: ACTOR,
         })).toBe('invite');
         expect(readGroupVisibility({
-            snapshot: snapshot({ joinMode: 'open' }),
+            snapshot: snapshot({joinMode: 'open'}),
             actor: actor('carol'),
         })).toBe('directory');
         expect(readGroupVisibility({
-            snapshot: snapshot({ joinMode: 'invite-only' }),
+            snapshot: snapshot({joinMode: 'invite-only'}),
             actor: actor('carol'),
         })).toBe('none');
         expect(readGroupVisibility({
-            snapshot: snapshot({ members: [member('alice', { status: 'removed' })] }),
+            snapshot: snapshot({members: [member('alice', {status: 'removed'})]}),
             actor: ACTOR,
         })).toBe('none');
         expect(readGroupVisibility({
-            snapshot: snapshot({ members: [member('alice', { status: 'banned' })] }),
+            snapshot: snapshot({members: [member('alice', {status: 'banned'})]}),
             actor: ACTOR,
         })).toBe('none');
         expect(readGroupVisibility({
-            snapshot: snapshot({ status: 'deleted' }),
+            snapshot: snapshot({status: 'deleted'}),
             actor: ACTOR,
         })).toBe('none');
     });
 
     it('evaluates full snapshot reads for active, invited, non-member, removed, banned, and deleted cases', () => {
-        expect(canReadGroupSnapshot({ snapshot: snapshot(), actor: ACTOR }))
-            .toEqual({ allowed: true });
+        expect(canReadGroupSnapshot({snapshot: snapshot(), actor: ACTOR}))
+            .toEqual({allowed: true});
         expect(canReadGroupSnapshot({
             snapshot: snapshot({
-                members: [member('alice', { status: 'invited' })],
+                members: [member('alice', {status: 'invited'})],
             }),
             actor: ACTOR,
         })).toMatchObject(denied('group-policy-denied'));
@@ -220,15 +221,15 @@ describe('group policy helpers', () => {
             actor: actor('carol'),
         })).toMatchObject(denied('group-policy-denied'));
         expect(canReadGroupSnapshot({
-            snapshot: snapshot({ members: [member('alice', { status: 'removed' })] }),
+            snapshot: snapshot({members: [member('alice', {status: 'removed'})]}),
             actor: ACTOR,
         })).toMatchObject(denied('member-removed'));
         expect(canReadGroupSnapshot({
-            snapshot: snapshot({ members: [member('alice', { status: 'banned' })] }),
+            snapshot: snapshot({members: [member('alice', {status: 'banned'})]}),
             actor: ACTOR,
         })).toMatchObject(denied('member-banned'));
         expect(canReadGroupSnapshot({
-            snapshot: snapshot({ status: 'deleted' }),
+            snapshot: snapshot({status: 'deleted'}),
             actor: ACTOR,
         })).toMatchObject(denied('group-deleted'));
     });
@@ -238,14 +239,43 @@ describe('group policy helpers', () => {
             snapshot: snapshot(),
             actor: ACTOR,
             targetStatus: 'archived',
-        })).toEqual({ allowed: true });
+        })).toEqual({allowed: true});
         expect(canChangeGroupLifecycle({
             snapshot: snapshot({
-                members: [member('alice', { role: 'member' })],
+                members: [member('alice', {role: 'member'})],
             }),
             actor: ACTOR,
             targetStatus: 'archived',
         })).toMatchObject(denied('forbidden-role'));
+    });
+
+    it('evaluates group update policy for active owners/admins only', () => {
+        expect(canUpdateGroupSnapshot({
+            snapshot: snapshot(),
+            actor: ACTOR,
+        })).toEqual({allowed: true});
+        expect(canUpdateGroupSnapshot({
+            snapshot: snapshot({
+                members: [member('alice', {role: 'admin'})],
+            }),
+            actor: ACTOR,
+        })).toEqual({allowed: true});
+        expect(canUpdateGroupSnapshot({
+            snapshot: snapshot({
+                members: [member('alice', {role: 'member'})],
+            }),
+            actor: ACTOR,
+        })).toMatchObject(denied('forbidden-role'));
+        expect(canUpdateGroupSnapshot({
+            snapshot: snapshot({
+                members: [member('alice', {role: 'owner', status: 'left'})],
+            }),
+            actor: ACTOR,
+        })).toMatchObject(denied('member-not-active'));
+        expect(canUpdateGroupSnapshot({
+            snapshot: snapshot({status: 'archived'}),
+            actor: ACTOR,
+        })).toMatchObject(denied('group-archived'));
     });
 
     it('evaluates governance actions and protects the last owner', () => {
@@ -254,10 +284,10 @@ describe('group policy helpers', () => {
             actor: ACTOR,
             targetPrincipalId: 'bob',
             action: 'ban',
-        })).toEqual({ allowed: true });
+        })).toEqual({allowed: true});
         expect(canGovernGroupMember({
             snapshot: snapshot({
-                members: [member('alice', { role: 'admin' }), member('bob', { role: 'owner' })],
+                members: [member('alice', {role: 'admin'}), member('bob', {role: 'owner'})],
             }),
             actor: ACTOR,
             targetPrincipalId: 'bob',
@@ -265,7 +295,7 @@ describe('group policy helpers', () => {
         })).toMatchObject(denied('forbidden-role'));
         expect(canGovernGroupMember({
             snapshot: snapshot({
-                members: [member('alice', { role: 'admin' }), member('bob')],
+                members: [member('alice', {role: 'admin'}), member('bob')],
             }),
             actor: ACTOR,
             targetPrincipalId: 'bob',
@@ -281,30 +311,36 @@ describe('group policy helpers', () => {
 
     it('evaluates room message sends for stale snapshots, live sessions, lifecycle, and member status', () => {
         expect(canSendRoomMessage({
-            snapshot: snapshot({ activeSessions: [session('alice-session', 'alice')] }),
+            snapshot: snapshot({activeSessions: [session('alice-session', 'alice')]}),
             actor: ACTOR,
             senderSessionId: 'alice-session',
             nowEpochMs: NOW,
-        })).toEqual({ allowed: true });
+        })).toEqual({allowed: true});
         expect(canSendRoomMessage({
-            snapshot: snapshot({ snapshotVersion: 1, activeSessions: [session('alice-session', 'alice')] }),
+            snapshot: snapshot({
+                snapshotVersion: 1,
+                activeSessions: [session('alice-session', 'alice')],
+            }),
             actor: ACTOR,
             senderSessionId: 'alice-session',
             minSnapshotVersion: 2,
         })).toMatchObject(denied('group-policy-denied'));
         expect(canSendRoomMessage({
-            snapshot: snapshot({ status: 'archived', activeSessions: [session('alice-session', 'alice')] }),
+            snapshot: snapshot({
+                status: 'archived',
+                activeSessions: [session('alice-session', 'alice')],
+            }),
             actor: ACTOR,
             senderSessionId: 'alice-session',
         })).toMatchObject(denied('group-archived'));
         expect(canSendRoomMessage({
-            snapshot: snapshot({ activeSessions: [] }),
+            snapshot: snapshot({activeSessions: []}),
             actor: ACTOR,
             senderSessionId: 'alice-session',
         })).toMatchObject(denied('member-not-active'));
         expect(canSendRoomMessage({
             snapshot: snapshot({
-                members: [member('alice', { status: 'banned' })],
+                members: [member('alice', {status: 'banned'})],
                 activeSessions: [session('alice-session', 'alice')],
             }),
             actor: ACTOR,
@@ -314,11 +350,13 @@ describe('group policy helpers', () => {
 
     it('covers every initial policy reason code with pure helper scenarios', () => {
         const coveredCodes = new Set<GroupPolicyReasonCode>([
-            expectCode(canReadGroupSnapshot({ snapshot: snapshot(), actor: actor('carol') })),
-            expectCode(canJoinGroup({ snapshot: snapshot({ joinMode: 'invite-only' }), actor: actor('carol') })),
-            expectCode(canJoinGroup({ snapshot: snapshot({ joinMode: 'code' }), actor: actor('carol') })),
+            expectCode(canReadGroupSnapshot({snapshot: snapshot(), actor: actor('carol')})),
+            expectCode(
+                canJoinGroup({snapshot: snapshot({joinMode: 'invite-only'}), actor: actor('carol')}),
+            ),
+            expectCode(canJoinGroup({snapshot: snapshot({joinMode: 'code'}), actor: actor('carol')})),
             expectCode(canJoinGroup({
-                snapshot: snapshot({ joinMode: 'code' }),
+                snapshot: snapshot({joinMode: 'code'}),
                 actor: actor('carol'),
                 joinCode: 'wrong',
                 expectedJoinCode: 'right',
@@ -326,18 +364,22 @@ describe('group policy helpers', () => {
             expectCode(canJoinGroup({
                 snapshot: snapshot({
                     joinMode: 'invite-only',
-                    members: [member('carol', { status: 'invited', invitationExpiresAtEpochMs: NOW - 1 })],
+                    members: [member('carol', {status: 'invited', invitationExpiresAtEpochMs: NOW - 1})],
                 }),
                 actor: actor('carol'),
                 nowEpochMs: NOW,
             })),
-            expectCode(canJoinGroup({ snapshot: snapshot({ status: 'archived' }), actor: actor('carol') })),
-            expectCode(canJoinGroup({ snapshot: snapshot({ status: 'deleted' }), actor: actor('carol') })),
+            expectCode(
+                canJoinGroup({snapshot: snapshot({status: 'archived'}), actor: actor('carol')}),
+            ),
+            expectCode(
+                canJoinGroup({snapshot: snapshot({status: 'deleted'}), actor: actor('carol')}),
+            ),
             expectCode(canJoinGroup({
-                snapshot: snapshot({ status: 'paused' as Group['status'] }),
+                snapshot: snapshot({status: 'paused' as Group['status']}),
                 actor: actor('carol'),
             })),
-            expectCode(canJoinGroup({ snapshot: snapshot({ maxMembers: 1 }), actor: actor('carol') })),
+            expectCode(canJoinGroup({snapshot: snapshot({maxMembers: 1}), actor: actor('carol')})),
             expectCode(canConnectGroupPresenceSession({
                 snapshot: snapshot({
                     maxSessionsPerMember: 1,
@@ -348,20 +390,20 @@ describe('group policy helpers', () => {
                 nowEpochMs: NOW,
             })),
             expectCode(canConnectGroupPresenceSession({
-                snapshot: snapshot({ members: [member('alice', { status: 'left' })] }),
+                snapshot: snapshot({members: [member('alice', {status: 'left'})]}),
                 actor: ACTOR,
                 sessionId: 'alice-session',
             })),
             expectCode(canJoinGroup({
-                snapshot: snapshot({ members: [member('alice'), member('carol', { status: 'removed' })] }),
+                snapshot: snapshot({members: [member('alice'), member('carol', {status: 'removed'})]}),
                 actor: actor('carol'),
             })),
             expectCode(canJoinGroup({
-                snapshot: snapshot({ members: [member('alice'), member('carol', { status: 'banned' })] }),
+                snapshot: snapshot({members: [member('alice'), member('carol', {status: 'banned'})]}),
                 actor: actor('carol'),
             })),
             expectCode(canChangeGroupLifecycle({
-                snapshot: snapshot({ members: [member('alice', { role: 'member' })] }),
+                snapshot: snapshot({members: [member('alice', {role: 'member'})]}),
                 actor: ACTOR,
                 targetStatus: 'archived',
             })),
@@ -401,7 +443,9 @@ function actor(principalId: string): GroupPolicyActor {
 }
 
 function snapshot(
-    options: Partial<Group> & Readonly<{
+    options:
+    & Partial<Group>
+        & Readonly<{
         members?: readonly GroupMember[];
         activeSessions?: readonly GroupPresenceSession[];
     }> = {},
@@ -421,11 +465,11 @@ function snapshot(
         metadataVersion: 1,
         rosterVersion: 1,
         presenceVersion: 1,
-        created: { atEpochMs: 1, byServiceId: 'test' },
-        updated: { atEpochMs: 1, byServiceId: 'test' },
+        created: {atEpochMs: 1, byServiceId: 'test'},
+        updated: {atEpochMs: 1, byServiceId: 'test'},
         ...options,
     };
-    const members = options.members ?? [member('alice', { role: 'owner' })];
+    const members = options.members ?? [member('alice', {role: 'owner'})];
     const activeSessions = options.activeSessions ?? [];
 
     return {
@@ -448,8 +492,8 @@ function member(
         principalId,
         role: options.role ?? 'member',
         status: options.status ?? 'active',
-        joined: { atEpochMs: 1, byServiceId: 'test' },
-        updated: { atEpochMs: 1, byServiceId: 'test' },
+        joined: {atEpochMs: 1, byServiceId: 'test'},
+        updated: {atEpochMs: 1, byServiceId: 'test'},
         invitedByPrincipalId: options.invitedByPrincipalId,
         invitationExpiresAtEpochMs: options.invitationExpiresAtEpochMs,
     };

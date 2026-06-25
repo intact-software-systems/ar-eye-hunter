@@ -388,7 +388,8 @@ Run with a provisioned environment:
 ```sh
 RALLAR_BLACK_BOX_FULL_STACK=1 \
 RALLAR_BLACK_BOX_LIVE_RTC_MATRIX=1 \
-VITE_RALLAR_API_BASE_URL=http://localhost:8080 \
+VITE_RALLAR_API_BASE_URL=http://localhost:18081 \
+VITE_RALLAR_SPA_BASE_URL=http://localhost:5178 \
 VITE_RALLAR_ROOM_ID=bb-live-room \
 VITE_RALLAR_AGENT_A_USERNAME=alice \
 VITE_RALLAR_AGENT_A_PASSWORD=secret \

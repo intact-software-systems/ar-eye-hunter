@@ -15,7 +15,7 @@ export type FullStackApiV1WebServer = Readonly<{
 }>;
 
 const DEFAULT_API_BASE_URL = 'http://localhost:8080';
-const TEST_CORS_ORIGINS = 'http://localhost:5176,http://127.0.0.1:5176';
+const DEFAULT_SPA_BASE_URL = 'http://localhost:5176';
 
 export function readFullStackApiServerMode(
     env: EnvReader = process.env,
@@ -42,23 +42,34 @@ export function readFullStackApiBaseUrl(
     return normalizeBaseUrl(env.VITE_RALLAR_API_BASE_URL ?? DEFAULT_API_BASE_URL);
 }
 
+export function readFullStackSpaBaseUrl(
+    env: EnvReader = process.env,
+): string {
+    return normalizeBaseUrl(env.VITE_RALLAR_SPA_BASE_URL ?? DEFAULT_SPA_BASE_URL);
+}
+
 export function createFullStackApiV1WebServer(
     input: Readonly<{
         mode?: FullStackApiServerMode;
         apiBaseUrl?: string;
+        spaBaseUrl?: string;
+        reuseExistingServer?: boolean;
     }> = {},
 ): FullStackApiV1WebServer {
     const mode = input.mode ?? readFullStackApiServerMode();
     const apiBaseUrl = normalizeBaseUrl(
         input.apiBaseUrl ?? readFullStackApiBaseUrl(),
     );
+    const spaBaseUrl = normalizeBaseUrl(
+        input.spaBaseUrl ?? readFullStackSpaBaseUrl(),
+    );
 
     return {
         command: mode === 'memory'
-            ? createMemoryApiCommand(apiBaseUrl)
-            : createPostgresApiCommand(apiBaseUrl),
+            ? createMemoryApiCommand(apiBaseUrl, spaBaseUrl)
+            : createPostgresApiCommand(apiBaseUrl, spaBaseUrl),
         url: `${apiBaseUrl}/api/config`,
-        reuseExistingServer: true,
+        reuseExistingServer: input.reuseExistingServer ?? true,
         timeout: mode === 'memory' ? 120_000 : 90_000,
     };
 }
@@ -82,29 +93,43 @@ export function createFullStackApiUrlEnvBlock(apiBaseUrl: string): string {
     ].join(' ');
 }
 
-function createMemoryApiCommand(apiBaseUrl: string): string {
-    return `cd ../.. && CORS_ORIGINS=${TEST_CORS_ORIGINS} PORT=${portFromBaseUrl(apiBaseUrl)} ${
-        createFullStackApiUrlEnvBlock(apiBaseUrl)
-    } ${createFullStackMemoryEnvBlock()} deno run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
+export function createFullStackSpaCorsOrigins(spaBaseUrl: string): string {
+    const normalizedSpaBaseUrl = normalizeBaseUrl(spaBaseUrl);
+    const url = new URL(normalizedSpaBaseUrl);
+    const origins = [url.origin];
+    if (url.hostname === 'localhost') {
+        url.hostname = '127.0.0.1';
+        origins.push(url.origin);
+    } else if (url.hostname === '127.0.0.1') {
+        url.hostname = 'localhost';
+        origins.push(url.origin);
+    }
+    return origins.join(',');
 }
 
-function createPostgresApiCommand(apiBaseUrl: string): string {
-    return `cd ../.. && CORS_ORIGINS=${TEST_CORS_ORIGINS} PORT=${portFromBaseUrl(apiBaseUrl)} ${
-        createFullStackApiUrlEnvBlock(apiBaseUrl)
-    } deno run --env-file=apps/api-v1/.env.local --env-file=apps/api-v1/.env --env-file=.env --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
-}
-
-function normalizeBaseUrl(value: string): string {
-    return value.endsWith('/') ? value.slice(0, -1) : value;
-}
-
-function portFromBaseUrl(apiBaseUrl: string): number {
+export function portFromBaseUrl(apiBaseUrl: string): number {
     const url = new URL(apiBaseUrl);
     if (url.port) {
         return Number(url.port);
     }
 
     return url.protocol === 'https:' ? 443 : 80;
+}
+
+function createMemoryApiCommand(apiBaseUrl: string, spaBaseUrl: string): string {
+    return `cd ../.. && CORS_ORIGINS=${createFullStackSpaCorsOrigins(spaBaseUrl)} PORT=${portFromBaseUrl(apiBaseUrl)} ${
+        createFullStackApiUrlEnvBlock(apiBaseUrl)
+    } ${createFullStackMemoryEnvBlock()} deno run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
+}
+
+function createPostgresApiCommand(apiBaseUrl: string, spaBaseUrl: string): string {
+    return `cd ../.. && CORS_ORIGINS=${createFullStackSpaCorsOrigins(spaBaseUrl)} PORT=${portFromBaseUrl(apiBaseUrl)} ${
+        createFullStackApiUrlEnvBlock(apiBaseUrl)
+    } deno run --env-file=apps/api-v1/.env.local --env-file=apps/api-v1/.env --env-file=.env --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
+}
+
+function normalizeBaseUrl(value: string): string {
+    return value.endsWith('/') ? value.slice(0, -1) : value;
 }
 
 function toWsBaseUrl(apiBaseUrl: string): string {

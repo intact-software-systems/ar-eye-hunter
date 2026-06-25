@@ -1,5 +1,5 @@
 import { loadSync } from 'jsr:@std/dotenv@0.225.6';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { type Context, Hono } from 'jsr:@hono/hono@4.11.9';
 import { cors } from 'jsr:@hono/hono@4.11.9/cors';
 
 import { createRallarServer } from '../../api-v1/src/create-rallar-server.ts';
@@ -7,6 +7,7 @@ import {
   requireApiAuthSession,
   toAuthErrorResponse,
 } from '../../api-v1/src/services/request-auth-service.ts';
+import { getGroupStateService } from '../../api-v1/src/services/group-state-service.ts';
 import { installRelicHunterGame } from './relic-game-service.ts';
 import {
   createRelicExpeditionInitialStateFactory,
@@ -15,11 +16,27 @@ import {
 import { initRelicSwaggerRoutes } from './relic-swagger-routes.ts';
 import { isRelicCommand, type RelicCommand } from '@relic-hunters/mod.ts';
 import { configuration } from './config-repo.ts';
+import { assertRelicProductionEnv } from '@shared-server/http/production-env-hardening.ts';
+import {
+  authorizeRelicCommand,
+  authorizeRelicReset,
+  authorizeRelicSnapshotRead,
+  readRelicRestAuthMode,
+  RelicRestGroupNotFoundError,
+} from './relic-rest-auth.ts';
+import {
+  DEFAULT_STATE_APPLICATION_ID,
+  DEFAULT_STATE_WORKSPACE_ID,
+} from '@shared/api/state-types.ts';
+import { isGroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 loadEnvironment();
+assertRelicProductionEnv(Deno.env);
 
 const app: Hono = new Hono();
 const port = Number(Deno.env.get('PORT') ?? '8090');
+const relicRestAuthMode = readRelicRestAuthMode(Deno.env);
 const rallar = createRallarServer({
   ws: {
     allowImplicitUserTopics: false,
@@ -75,31 +92,63 @@ app.use('/api/relic/*', async (c, next) => {
 });
 
 app.get('/api/relic/games/:gameId', async (c) => {
-  const gameId = c.req.param('gameId');
-  return c.json(await relicGame.ensureSnapshot(gameId));
+  try {
+    const gameId = c.req.param('gameId');
+    const session = await requireApiAuthSession(c.req);
+    authorizeRelicSnapshotRead({
+      mode: relicRestAuthMode,
+      gameId,
+      session,
+      snapshot: await readRelicGroupSnapshotForPolicy(gameId),
+    });
+    return c.json(await relicGame.ensureSnapshot(gameId));
+  } catch (error) {
+    return relicRestErrorResponse(c, error);
+  }
 });
 
 app.post('/api/relic/games/:gameId/commands', async (c) => {
-  const gameId = c.req.param('gameId');
-  const session = await requireApiAuthSession(c.req);
-  const body = await c.req.json().catch(() => undefined);
-  const command = {
-    ...(typeof body === 'object' && body !== null ? body : {}),
-    gameId,
-    username: session.username,
-  } as RelicCommand;
+  try {
+    const gameId = c.req.param('gameId');
+    const session = await requireApiAuthSession(c.req);
+    authorizeRelicCommand({
+      mode: relicRestAuthMode,
+      gameId,
+      session,
+      snapshot: await readRelicGroupSnapshotForPolicy(gameId),
+    });
+    const body = await c.req.json().catch(() => undefined);
+    const command = {
+      ...(typeof body === 'object' && body !== null ? body : {}),
+      gameId,
+      username: session.username,
+    } as RelicCommand;
 
-  if (!isRelicCommand(command)) {
-    return c.json({ error: 'Invalid relic command' }, 400);
+    if (!isRelicCommand(command)) {
+      return c.json({ error: 'Invalid relic command' }, 400);
+    }
+
+    return c.json(await relicGame.applyCommand(command, session.sessionId));
+  } catch (error) {
+    return relicRestErrorResponse(c, error);
   }
-
-  return c.json(await relicGame.applyCommand(command, session.sessionId));
 });
 
 app.post('/api/relic/games/:gameId/reset', async (c) => {
-  const gameId = c.req.param('gameId');
-  const snapshot = await relicGame.reset(gameId);
-  return c.json(snapshot);
+  try {
+    const gameId = c.req.param('gameId');
+    const session = await requireApiAuthSession(c.req);
+    authorizeRelicReset({
+      mode: relicRestAuthMode,
+      gameId,
+      session,
+      snapshot: await readRelicGroupSnapshotForPolicy(gameId),
+    });
+    const snapshot = await relicGame.reset(gameId);
+    return c.json(snapshot);
+  } catch (error) {
+    return relicRestErrorResponse(c, error);
+  }
 });
 
 rallar.system
@@ -135,6 +184,36 @@ function resolveCorsOrigin(
 
 function isWebSocketUpgradeRequest(path: string, upgrade?: string): boolean {
   return path.startsWith('/api/ws/') && upgrade?.trim().toLowerCase() === 'websocket';
+}
+
+async function readRelicGroupSnapshotForPolicy(
+  gameId: string,
+): Promise<GroupSnapshot | undefined> {
+  if (relicRestAuthMode === 'authenticated') {
+    return undefined;
+  }
+
+  return await getGroupStateService().readSnapshot({
+    applicationId: DEFAULT_STATE_APPLICATION_ID,
+    workspaceId: DEFAULT_STATE_WORKSPACE_ID,
+    groupId: gameId,
+  });
+}
+
+function relicRestErrorResponse(c: Context, error: unknown): Response {
+  if (error instanceof RelicRestGroupNotFoundError) {
+    return c.json({ error: error.message }, error.status);
+  }
+
+  if (isGroupPolicyDeniedError(error)) {
+    return c.json({
+      error: error.message,
+      code: error.denial.code,
+      details: error.denial.details,
+    }, error.status);
+  }
+
+  return toAuthErrorResponse(c, error);
 }
 
 function loadEnvironment(): void {

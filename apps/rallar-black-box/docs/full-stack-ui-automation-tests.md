@@ -185,9 +185,14 @@ npm run test:rallar:full-stack:memory
 npm run test:rallar:full-stack:memory:live-rtc-3
 ```
 
-The memory RTC script provides the static API-v1 fixture users `alice/secret`,
-`bob/secret`, and `charlie/secret`, plus
-`VITE_RALLAR_APPLICATION_ID=rallar-server` and a disposable room seed.
+The memory RTC script provides isolated local defaults
+`VITE_RALLAR_API_BASE_URL=http://localhost:18080` and
+`VITE_RALLAR_SPA_BASE_URL=http://localhost:5177`, the static API-v1 fixture
+users `alice/secret`, `bob/secret`, and `charlie/secret`, plus
+`VITE_RALLAR_APPLICATION_ID=rallar-server` and a disposable room seed. The
+Postgres live RTC scripts use `http://localhost:18081` for API-v1 and
+`http://localhost:5178` for the SPA, with
+`DATABASE_URL=${DATABASE_URL:-postgres://app:app@localhost:5432/appdb}`.
 
 The config always starts the SPA and control server. It starts `apps/api-v1`
 only when `RALLAR_BLACK_BOX_FULL_STACK=1` is set. If a service is already
@@ -236,7 +241,8 @@ Recommended required values:
 ```text
 RALLAR_BLACK_BOX_FULL_STACK=1
 DATABASE_URL=<Postgres connection URL consumed by apps/api-v1>
-VITE_RALLAR_API_BASE_URL=http://localhost:8080
+VITE_RALLAR_API_BASE_URL=http://localhost:18081
+VITE_RALLAR_SPA_BASE_URL=http://localhost:5178
 VITE_RALLAR_APPLICATION_ID=ar-eye-hunter
 VITE_RALLAR_WORKSPACE_ID=default
 VITE_RALLAR_ROOM_ID=<test room/group id>
@@ -389,7 +395,8 @@ const query = new URLSearchParams({
 });
 
 await page.goto(`/?${query.toString()}`);
-await expect(page.locator(".control-panel")).toContainText("registered");
+await expect(page.locator("#panel-local-workbench .control-panel"))
+  .toContainText("registered");
 ```
 
 ## Selector Rules

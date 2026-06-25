@@ -30,6 +30,10 @@ function assertEquals<T>(actual: T, expected: T): void {
 }
 
 Deno.test('control server REST API enforces tokens, queues commands, and exports run artifacts', async () => {
+  if (!(await canBindLoopback())) {
+    return;
+  }
+
   const server = await startControlServer({
     RALLAR_BLACK_BOX_ADMIN_TOKEN: ADMIN_TOKEN,
     RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN: '1',
@@ -126,7 +130,62 @@ Deno.test('control server REST API enforces tokens, queues commands, and exports
   }
 });
 
+Deno.test('control server read token mode protects run, fleet, and distributed GET routes', async () => {
+  if (!(await canBindLoopback())) {
+    return;
+  }
+
+  const server = await startControlServer({
+    RALLAR_BLACK_BOX_ADMIN_TOKEN: ADMIN_TOKEN,
+    RALLAR_BLACK_BOX_REQUIRE_READ_TOKEN: '1',
+  });
+  try {
+    const health = await getJson<HealthResponse>(server.baseUrl, '/health');
+    assertEquals(health.ok, true);
+
+    const openApi = await fetch(`${server.baseUrl}/api/openapi.json`);
+    assertEquals(openApi.status, 200);
+
+    for (const path of ['/runs', '/distributed-runs', '/fleet/reports']) {
+      const unauthorized = await fetch(`${server.baseUrl}${path}`);
+      assertEquals(unauthorized.status, 401);
+
+      const authorized = await fetch(`${server.baseUrl}${path}`, {
+        headers: adminHeaders(),
+      });
+      assertEquals(authorized.status, 200);
+    }
+  } finally {
+    await server.stop();
+  }
+});
+
+Deno.test('control server read token mode fails closed without an auth backend', async () => {
+  if (!(await canBindLoopback())) {
+    return;
+  }
+
+  const server = await startControlServer({
+    RALLAR_BLACK_BOX_REQUIRE_READ_TOKEN: '1',
+  });
+  try {
+    const health = await getJson<HealthResponse>(server.baseUrl, '/health');
+    assertEquals(health.ok, true);
+
+    for (const path of ['/runs', '/distributed-runs', '/fleet/reports']) {
+      const unauthorized = await fetch(`${server.baseUrl}${path}`);
+      assertEquals(unauthorized.status, 401);
+    }
+  } finally {
+    await server.stop();
+  }
+});
+
 Deno.test('control server distributed and fleet APIs validate auth, artifacts, filters, and persisted restore', async () => {
+  if (!(await canBindLoopback())) {
+    return;
+  }
+
   const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-api-' });
   const server = await startControlServer({
     RALLAR_BLACK_BOX_ADMIN_TOKEN: ADMIN_TOKEN,
@@ -264,6 +323,31 @@ Deno.test('control server distributed and fleet APIs validate auth, artifacts, f
     await Deno.remove(storageDir, { recursive: true });
   }
 });
+
+let loopbackBindAvailable: Promise<boolean> | undefined;
+
+function canBindLoopback(): Promise<boolean> {
+  loopbackBindAvailable ??= (async () => {
+    try {
+      const listener = Deno.listen({
+        hostname: '127.0.0.1',
+        port: 0,
+      });
+      listener.close();
+      return true;
+    } catch (error) {
+      if (error instanceof Deno.errors.PermissionDenied) {
+        return false;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes('Operation not permitted')) {
+        return false;
+      }
+      throw error;
+    }
+  })();
+  return loopbackBindAvailable;
+}
 
 async function startControlServer(env: Record<string, string> = {}): Promise<StartedControlServer> {
   const storageDir = env.RALLAR_BLACK_BOX_STORAGE_DIR ?? await Deno.makeTempDir({

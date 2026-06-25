@@ -10,9 +10,11 @@ const exhaustiveWorkers = Number.parseInt(
 );
 const loginUserRateLimit = process.env.RALLAR_LOGIN_USER_RATE_LIMIT ?? '100';
 const fullStackApiBaseUrl = readFullStackApiBaseUrl();
+const reuseExistingServer = !process.env.CI;
 const apiServer = createFullStackApiV1WebServer({
     mode: 'postgres',
     apiBaseUrl: fullStackApiBaseUrl,
+    reuseExistingServer,
 });
 
 const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
@@ -27,13 +29,13 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
         command:
             'cd ../.. && npm --workspace rallar-black-box run dev -- --port 5176',
         url: 'http://localhost:5176',
-        reuseExistingServer: true,
+        reuseExistingServer,
         timeout: 60_000,
     },
     {
         command: 'cd ../rallar-black-box-control-server && deno task start',
         url: 'http://127.0.0.1:5180/health',
-        reuseExistingServer: true,
+        reuseExistingServer,
         timeout: 60_000,
     },
 ];

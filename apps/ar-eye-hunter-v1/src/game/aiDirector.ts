@@ -220,10 +220,11 @@ export function buildAiDirectorContext(
     state: ArenaSimulationState,
     roomId?: string,
 ): AiDirectorContext {
+    const activeEventKind = state.activeEvent?.kind;
     return {
-        roomId,
+        ...(roomId ? { roomId } : {}),
         revision: state.revision,
-        activeEventKind: state.activeEvent?.kind,
+        ...(activeEventKind ? { activeEventKind } : {}),
         waveNumber: state.wave.number,
         wavePhase: state.wave.phase,
         targetCount: state.targets.length,

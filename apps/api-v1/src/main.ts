@@ -8,8 +8,10 @@ import { createStateApiResilienceMiddleware } from './services/state-api-resilie
 import { createHttpTimingMiddleware } from './services/http-timing-middleware.ts';
 import { logDatabaseBackendConfig, logPGliteSchemaInitConfig } from './db/database-config.ts';
 import { logDatabasePubSubConfig } from './db/database-pubsub-config.ts';
+import { assertApiV1ProductionEnv } from '@shared-server/http/production-env-hardening.ts';
 
 const app: Hono = new Hono();
+assertApiV1ProductionEnv(Deno.env);
 const corsOrigins = readCorsOrigins();
 
 logDatabaseBackendConfig();

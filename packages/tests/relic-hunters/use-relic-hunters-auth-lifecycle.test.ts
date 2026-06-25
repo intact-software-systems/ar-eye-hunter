@@ -5,6 +5,12 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarAuthState } from '@shared-web/browser/rallar.ts';
+import {
+    createRelicGame,
+    toPublicRelicSnapshot,
+    type RelicPublicSnapshot,
+} from '@relic-hunters/mod.ts';
+import { fetchRelicSnapshot } from '../../../apps/relic-hunters-v1/src/game/api.ts';
 import { useRelicHunters, type RelicHuntersConnection } from '../../../apps/relic-hunters-v1/src/game/useRelicHunters.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -163,6 +169,33 @@ describe('useRelicHunters auth lifecycle', () => {
         expect(mockRallar.auth.logout).not.toHaveBeenCalled();
     });
 
+    it('clears stale snapshot rejection diagnostics after a newer snapshot is accepted', async () => {
+        let wsMessageHandler:
+            | ((message: { payload: unknown }) => void)
+            | undefined;
+        vi.mocked(fetchRelicSnapshot).mockResolvedValue(relicSnapshot(20));
+        mockRallar.messages.ws.onMessage.mockImplementation((definition, handler) => {
+            if (definition.topicId === 'room.relic.snapshot') {
+                wsMessageHandler = handler;
+            }
+            return vi.fn();
+        });
+
+        await renderHook();
+        await waitForState(() => current?.diagnostics.snapshotReady === true);
+
+        await act(async () => {
+            wsMessageHandler?.({ payload: { snapshot: relicSnapshot(19) } });
+        });
+        expect(current?.diagnostics.lastIgnoredSnapshotReason).toBe('older-updated-at');
+
+        await act(async () => {
+            wsMessageHandler?.({ payload: { snapshot: relicSnapshot(21) } });
+        });
+        expect(current?.diagnostics.lastSnapshotSource).toBe('rallar-ws');
+        expect(current?.diagnostics.lastIgnoredSnapshotReason).toBeUndefined();
+    });
+
     async function renderHook(): Promise<void> {
         root = createRoot(container);
         function Harness() {
@@ -201,6 +234,12 @@ describe('useRelicHunters auth lifecycle', () => {
         ).toBe(true);
     }
 });
+
+function relicSnapshot(updatedAtEpochMs: number): RelicPublicSnapshot {
+    return toPublicRelicSnapshot(
+        createRelicGame('relic-room-1', 'relic-room-1', updatedAtEpochMs),
+    );
+}
 
 function memoryStorage(): Storage {
     const values = new Map<string, string>();
