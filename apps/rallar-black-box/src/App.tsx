@@ -214,6 +214,13 @@ import {
     type DistributedRecipeTargetRow,
 } from './distributed-recipes.ts';
 import {
+    analyzeDistributedRunArtifactFiles,
+    distributedArtifactBundleFromFiles,
+    distributedArtifactSnapshotsFromFiles,
+    type DistributedRunAnalysis,
+    type DistributedRunArtifactFiles,
+} from './distributed-run-artifact-analysis.ts';
+import {
     DISTRIBUTED_RECIPE_PROMPT_TEMPLATES,
     distributedRecipeSchemaContextText,
     redactDistributedRecipePromptVariables,
@@ -7499,6 +7506,34 @@ function RunnerRecipesPanel({
     );
 }
 
+const DISTRIBUTED_ARTIFACT_REQUIRED_FILES = [
+    'distributed-run.json',
+    'control-run.json',
+] as const;
+
+type DistributedArtifactImportStatus = Readonly<{
+    selectedFileCount: number;
+    warningCount: number;
+    requiredFiles: readonly Readonly<{
+        fileName: string;
+        loaded: boolean;
+    }>[];
+}>;
+
+function distributedArtifactImportStatus(
+    files: DistributedRunArtifactFiles,
+    warningCount: number,
+): DistributedArtifactImportStatus {
+    return {
+        selectedFileCount: Object.values(files).filter((value) => value !== undefined).length,
+        warningCount,
+        requiredFiles: DISTRIBUTED_ARTIFACT_REQUIRED_FILES.map((fileName) => ({
+            fileName,
+            loaded: files[fileName] !== undefined,
+        })),
+    };
+}
+
 function RunnerRunsPanel({
     state,
     bootstrap,
@@ -7553,6 +7588,12 @@ function RunnerRunsPanel({
     const [artifactBundle, setArtifactBundle] = useState<
         ControlDistributedRunArtifactBundle | undefined
     >(initialSyntheticSeed?.artifactBundle);
+    const [importedArtifactAnalysis, setImportedArtifactAnalysis] = useState<
+        DistributedRunAnalysis | undefined
+    >();
+    const [importedArtifactStatus, setImportedArtifactStatus] = useState<
+        DistributedArtifactImportStatus | undefined
+    >();
     const [selectedSyntheticSeedId, setSelectedSyntheticSeedId] = useState<
         DistributedRunSeedId | ''
     >(initialSyntheticSeed?.id ?? '');
@@ -7721,6 +7762,8 @@ function RunnerRunsPanel({
             setControlRunId(nextControlRunId ?? '');
             setDistributedControlRun(nextControlRun);
             setArtifactBundle(nextArtifact);
+            setImportedArtifactAnalysis(undefined);
+            setImportedArtifactStatus(undefined);
             setLastDistributedRefresh(Date.now());
             setCompareLeftId((current) =>
                 current || nextDistributedRun?.distributedRunId || '',
@@ -7754,6 +7797,8 @@ function RunnerRunsPanel({
         setSelectedSyntheticSeedId(seed.id);
         setDistributedBusy(undefined);
         setDistributedError(undefined);
+        setImportedArtifactAnalysis(undefined);
+        setImportedArtifactStatus(undefined);
         setDistributedRuns([seed.distributedRun]);
         setSelectedDistributedRun(seed.distributedRun);
         setSelectedDistributedRunId(seed.distributedRun.distributedRunId);
@@ -7779,6 +7824,8 @@ function RunnerRunsPanel({
         setCompareLeftId('');
         setCompareRightId('');
         setDistributedError(undefined);
+        setImportedArtifactAnalysis(undefined);
+        setImportedArtifactStatus(undefined);
         writeDistributedRunSeedToUrl(undefined);
     };
 
@@ -7799,6 +7846,66 @@ function RunnerRunsPanel({
         await refreshDistributedAnalysis(undefined, {
             loadArtifact: true,
         });
+    };
+
+    const handleDistributedArtifactFiles = async (
+        event: ChangeEvent<HTMLInputElement>,
+    ): Promise<void> => {
+        const selectedFiles = Array.from(event.currentTarget.files ?? []);
+        if (selectedFiles.length === 0) {
+            return;
+        }
+        setDistributedBusy('artifact import');
+        setDistributedError(undefined);
+        try {
+            const files: Record<string, string> = {};
+            await Promise.all(selectedFiles.map(async (file) => {
+                files[file.name] = await file.text();
+            }));
+            const generatedAtEpochMs = Date.now();
+            const artifactFiles: DistributedRunArtifactFiles = files;
+            const analysis = analyzeDistributedRunArtifactFiles({
+                files: artifactFiles,
+                generatedAtEpochMs,
+            });
+            const snapshots = distributedArtifactSnapshotsFromFiles(
+                artifactFiles,
+                generatedAtEpochMs,
+            );
+            const bundle = distributedArtifactBundleFromFiles(
+                artifactFiles,
+                generatedAtEpochMs,
+                analysis.distributedRunId,
+            );
+            activeSyntheticSeedRef.current = undefined;
+            setActiveSyntheticSeed(undefined);
+            setSelectedSyntheticSeedId('');
+            setImportedArtifactAnalysis(analysis);
+            setImportedArtifactStatus(distributedArtifactImportStatus(
+                artifactFiles,
+                analysis.parseWarnings.length,
+            ));
+            setDistributedRuns((current) => [
+                snapshots.distributedRun,
+                ...current.filter((item) =>
+                    item.distributedRunId !== snapshots.distributedRun.distributedRunId
+                ),
+            ]);
+            setSelectedDistributedRun(snapshots.distributedRun);
+            setSelectedDistributedRunId(snapshots.distributedRun.distributedRunId);
+            setControlRunId(snapshots.controlRun.runId);
+            setDistributedControlRun(snapshots.controlRun);
+            setArtifactBundle(bundle ?? snapshots.artifactBundle);
+            setLastDistributedRefresh(generatedAtEpochMs);
+            setCompareLeftId(snapshots.distributedRun.distributedRunId);
+            setCompareRightId('');
+            writeDistributedRunSeedToUrl(undefined);
+        } catch (error) {
+            setDistributedError(runnerFriendlyErrorMessage(error));
+        } finally {
+            setDistributedBusy(undefined);
+            event.currentTarget.value = '';
+        }
     };
 
     useEffect(() => {
@@ -7883,6 +7990,8 @@ function RunnerRunsPanel({
     const selectDistributedRun = (distributedRunId: string): void => {
         setSelectedDistributedRunId(distributedRunId);
         setArtifactBundle(undefined);
+        setImportedArtifactAnalysis(undefined);
+        setImportedArtifactStatus(undefined);
         const selected = distributedRuns.find(
             (item) => item.distributedRunId === distributedRunId,
         );
@@ -8013,6 +8122,21 @@ function RunnerRunsPanel({
                     >
                         Copy artifact
                     </button>
+                    <label className="field distributed-artifact-import-field">
+                        <span>Import CI artifact</span>
+                        <input
+                            type="file"
+                            multiple
+                            accept=".json,.jsonl,application/json"
+                            {...({ webkitdirectory: 'true' } as Record<string, string>)}
+                            disabled={Boolean(distributedBusy)}
+                            onChange={(event) =>
+                                void handleDistributedArtifactFiles(event)}
+                        />
+                        <small>
+                            Select the artifact directory, or select all JSON and JSONL files from it.
+                        </small>
+                    </label>
                     {activeSyntheticSeed && (
                         <button
                             type="button"
@@ -8047,6 +8171,12 @@ function RunnerRunsPanel({
                 {analysisReport && (
                     <DistributedRunAnalysisReportPanel
                         report={analysisReport}
+                    />
+                )}
+                {importedArtifactAnalysis && (
+                    <ImportedDistributedArtifactAnalysisPanel
+                        analysis={importedArtifactAnalysis}
+                        status={importedArtifactStatus}
                     />
                 )}
                 {selectedMonitor && (
@@ -9788,6 +9918,193 @@ function DistributedRunAnalysisReportPanel({
     );
 }
 
+function ImportedDistributedArtifactAnalysisPanel({
+    analysis,
+    status,
+}: {
+    analysis: DistributedRunAnalysis;
+    status?: DistributedArtifactImportStatus;
+}) {
+    const failure = analysis.failure;
+    const performance = analysis.performance;
+    const loadedRequiredCount = status?.requiredFiles.filter((file) => file.loaded).length ?? 0;
+    const requiredFileCount = status?.requiredFiles.length ?? DISTRIBUTED_ARTIFACT_REQUIRED_FILES.length;
+    const slowestAgent = performance?.slowestAgents[0];
+    const stateTone = analysis.ok
+        ? 'good'
+        : failure
+        ? 'bad'
+        : distributedRecipeStateTone(analysis.status);
+
+    return (
+        <section className="distributed-subpanel imported-distributed-artifact-analysis">
+            <div className="section-heading">
+                <h3>Imported CI artifact analysis</h3>
+                <span className={`pill ${stateTone}`}>
+                    {analysis.ok ? 'passed' : analysis.status}
+                </span>
+            </div>
+            <div className="distributed-monitor-metrics">
+                <Metric
+                    label="Run"
+                    value={shortRunId(analysis.distributedRunId)}
+                    tone="active"
+                />
+                <Metric
+                    label="Pass"
+                    value={formatPercent(analysis.summary.passRate)}
+                    tone={analysis.summary.passRate >= 1 ? 'good' : 'warn'}
+                />
+                <Metric label="Agents" value={String(analysis.summary.agents)} />
+                <Metric
+                    label="Warnings"
+                    value={String(analysis.parseWarnings.length)}
+                    tone={analysis.parseWarnings.length > 0 ? 'warn' : 'good'}
+                />
+                <Metric
+                    label="Selected files"
+                    value={status ? String(status.selectedFileCount) : '-'}
+                    tone={status ? 'active' : 'muted'}
+                />
+                <Metric
+                    label="Required files"
+                    value={`${loadedRequiredCount}/${requiredFileCount}`}
+                    tone={loadedRequiredCount === requiredFileCount ? 'good' : 'warn'}
+                />
+            </div>
+            <div className="imported-artifact-band">
+                <div className="section-heading compact">
+                    <h4>{failure ? 'Verdict and Fix' : 'Verdict'}</h4>
+                    <span>{failure ? failure.minimalFixArea : 'passed'}</span>
+                </div>
+                {failure ? (
+                    <div className="runner-analysis-first-failure">
+                        <div>
+                            <span className="eyebrow">Focus</span>
+                            <h4>{failure.title}</h4>
+                            <p>{failure.likelyCause}</p>
+                            <small>{failure.nextAction}</small>
+                        </div>
+                        <dl>
+                            <div>
+                                <dt>Fix area</dt>
+                                <dd>{failure.minimalFixArea}</dd>
+                            </div>
+                            <div>
+                                <dt>Evidence</dt>
+                                <dd>{failure.evidenceFile}</dd>
+                            </div>
+                            <div>
+                                <dt>Agents</dt>
+                                <dd>{failure.affectedAgents.join(', ') || '-'}</dd>
+                            </div>
+                            <div>
+                                <dt>Command</dt>
+                                <dd>{failure.commandId ?? '-'}</dd>
+                            </div>
+                            <div>
+                                <dt>Verify</dt>
+                                <dd>{failure.verificationCommand.replaceAll('`', '')}</dd>
+                            </div>
+                        </dl>
+                    </div>
+                ) : (
+                    <div className="runner-analysis-warning success" role="status">
+                        <strong>Performance baseline</strong>
+                        <span>
+                            {performance
+                                ? `${formatDuration(performance.runDurationMs)} run, ${performance.reconnectCount} reconnects, ${performance.exportedEventCount} exported events`
+                                : 'No performance artifact data was loaded.'}
+                        </span>
+                    </div>
+                )}
+            </div>
+            <div className="imported-artifact-band">
+                <div className="section-heading compact">
+                    <h4>Performance Health</h4>
+                    <span>{performance ? `${performance.commandTiming.count} samples` : 'no samples'}</span>
+                </div>
+                <div className="distributed-monitor-metrics">
+                    <Metric
+                        label="P50 command"
+                        value={formatFleetDuration(performance?.commandTiming.p50Ms)}
+                        tone={performance?.commandTiming.p50Ms !== undefined ? 'active' : 'muted'}
+                    />
+                    <Metric
+                        label="P95 command"
+                        value={formatFleetDuration(performance?.commandTiming.p95Ms)}
+                        tone={(performance?.commandTiming.p95Ms ?? 0) > 1_000 ? 'warn' : 'active'}
+                    />
+                    <Metric
+                        label="P99 command"
+                        value={formatFleetDuration(performance?.commandTiming.p99Ms)}
+                        tone={(performance?.commandTiming.p99Ms ?? 0) > 2_000 ? 'warn' : 'active'}
+                    />
+                    <Metric
+                        label="Max command"
+                        value={formatFleetDuration(performance?.commandTiming.maxMs)}
+                        tone={(performance?.commandTiming.maxMs ?? 0) > 2_000 ? 'warn' : 'active'}
+                    />
+                    <Metric
+                        label="Outliers"
+                        value={String(performance?.commandTiming.outlierCount ?? 0)}
+                        tone={(performance?.commandTiming.outlierCount ?? 0) > 0 ? 'warn' : 'good'}
+                    />
+                    <Metric
+                        label="Diagnostics"
+                        value={String(performance?.diagnosticCount ?? 0)}
+                        tone={(performance?.errorDiagnosticCount ?? 0) > 0
+                            ? 'bad'
+                            : (performance?.warningDiagnosticCount ?? 0) > 0
+                            ? 'warn'
+                            : 'good'}
+                    />
+                </div>
+                <div className="imported-artifact-slowest">
+                    <strong>Slowest agent</strong>
+                    <span>
+                        {slowestAgent
+                            ? `${slowestAgent.agentId} - max ${formatFleetDuration(slowestAgent.maxMs)}, avg ${formatFleetDuration(slowestAgent.averageMs)}`
+                            : 'No agent latency rows'}
+                    </span>
+                </div>
+            </div>
+            <div className="imported-artifact-band">
+                <div className="section-heading compact">
+                    <h4>Evidence Quality</h4>
+                    <span>{status?.warningCount ?? analysis.parseWarnings.length} warnings</span>
+                </div>
+                {status && (
+                    <div className="artifact-issue-list compact" role="status">
+                        {status.requiredFiles.map((file) => (
+                            <div
+                                className={`artifact-issue-row ${file.loaded ? 'good' : 'warning'}`}
+                                key={file.fileName}
+                            >
+                                <strong>{file.fileName}</strong>
+                                <span>{file.loaded ? 'loaded' : 'missing'}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+                {analysis.parseWarnings.length > 0 && (
+                    <div className="artifact-issue-list" role="status">
+                        {analysis.parseWarnings.slice(0, 4).map((warning, index) => (
+                            <div
+                                className="artifact-issue-row warning"
+                                key={`${warning.fileName}-${warning.lineNumber ?? 0}-${index}`}
+                            >
+                                <strong>{warning.fileName}</strong>
+                                <span>{warning.message}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </section>
+    );
+}
+
 function RunnerAdvancedPanel({
     state,
     bootstrap,
@@ -11314,16 +11631,35 @@ function scatterCircleClass(point: RtcPerformanceScatterPoint): string {
     return 'muted';
 }
 
+type RtcPercentileMarkers = Readonly<{
+    p50Ms?: number;
+    p95Ms?: number;
+    p99Ms?: number;
+}>;
+
+function rtcPercentileMarkerEntries(
+    percentiles: RtcPercentileMarkers,
+): readonly Readonly<{ label: string; value: number }>[] {
+    return [
+        percentiles.p50Ms !== undefined ? { label: 'P50', value: percentiles.p50Ms } : undefined,
+        percentiles.p95Ms !== undefined ? { label: 'P95', value: percentiles.p95Ms } : undefined,
+        percentiles.p99Ms !== undefined ? { label: 'P99', value: percentiles.p99Ms } : undefined,
+    ].filter((entry): entry is { label: string; value: number } => entry !== undefined);
+}
+
 function RtcLatencyScatterChart({
     points,
+    percentiles,
 }: {
     points: readonly RtcPerformanceScatterPoint[];
+    percentiles: RtcPercentileMarkers;
 }) {
     const width = 280;
     const height = 150;
     const padding = 24;
     const maxDuration = Math.max(1, ...points.map((point) => point.durationMs));
     const lastSequence = Math.max(1, points.length - 1);
+    const markers = rtcPercentileMarkerEntries(percentiles);
 
     return (
         <svg
@@ -11345,7 +11681,26 @@ function RtcLatencyScatterChart({
                 y2={height - padding}
             />
             <text x={padding} y={14}>duration ms</text>
+            <text x={padding + 3} y={height - padding - 4}>0</text>
+            <text x={padding + 3} y={padding + 4}>{Math.round(maxDuration)}ms</text>
             <text x={width - 88} y={height - 6}>sequence</text>
+            {markers.map((marker) => {
+                const y = height - padding -
+                    (marker.value / maxDuration) * (height - padding * 2);
+                return (
+                    <g className="rtc-percentile-marker" key={marker.label}>
+                        <line
+                            x1={padding}
+                            x2={width - padding}
+                            y1={y}
+                            y2={y}
+                        />
+                        <text x={width - padding - 42} y={Math.max(18, y - 3)}>
+                            {marker.label} {Math.round(marker.value)}ms
+                        </text>
+                    </g>
+                );
+            })}
             {points.map((point, index) => {
                 const x = padding +
                     (index / lastSequence) * (width - padding * 2);
@@ -11376,27 +11731,41 @@ function RtcLatencyScatterChart({
 
 function RtcLatencyHistogram({
     buckets,
+    percentiles,
 }: {
     buckets: readonly RtcPerformanceHistogramBucket[];
+    percentiles: RtcPercentileMarkers;
 }) {
     const max = Math.max(1, ...buckets.map((bucket) => bucket.count));
+    const markers = rtcPercentileMarkerEntries(percentiles);
     return (
         <div
-            className="rtc-histogram"
+            className="rtc-histogram-wrap"
             role="img"
             aria-label="Latency distribution histogram"
         >
-            {buckets.map((bucket) => (
-                <div className="rtc-histogram-column" key={bucket.label}>
-                    <span
-                        style={{
-                            height: `${Math.max(8, (bucket.count / max) * 100)}%`,
-                        }}
-                    />
-                    <small>{bucket.label}</small>
-                    <strong>{bucket.count}</strong>
+            <div className="rtc-histogram">
+                {buckets.map((bucket) => (
+                    <div className="rtc-histogram-column" key={bucket.label}>
+                        <span
+                            style={{
+                                height: `${Math.max(8, (bucket.count / max) * 100)}%`,
+                            }}
+                        />
+                        <small>{bucket.label}</small>
+                        <strong>{bucket.count}</strong>
+                    </div>
+                ))}
+            </div>
+            {markers.length > 0 && (
+                <div className="rtc-histogram-percentiles">
+                    {markers.map((marker) => (
+                        <span key={marker.label}>
+                            {marker.label} {formatDuration(marker.value)}
+                        </span>
+                    ))}
                 </div>
-            ))}
+            )}
         </div>
     );
 }
@@ -11522,6 +11891,11 @@ function RtcPerformancePanel({
                     tone={(view.summary.p95Ms ?? 0) > 250 ? 'warn' : 'good'}
                 />
                 <Metric
+                    label="P99"
+                    value={formatDuration(view.summary.p99Ms)}
+                    tone={(view.summary.p99Ms ?? 0) > 500 ? 'warn' : 'active'}
+                />
+                <Metric
                     label="Max"
                     value={formatDuration(view.summary.maxMs)}
                     tone={(view.summary.maxMs ?? 0) > 500 ? 'bad' : 'active'}
@@ -11552,7 +11926,10 @@ function RtcPerformancePanel({
                         <small>duration by command sequence</small>
                     </div>
                     {view.scatter.length > 0 ? (
-                        <RtcLatencyScatterChart points={view.scatter} />
+                        <RtcLatencyScatterChart
+                            points={view.scatter}
+                            percentiles={view.summary}
+                        />
                     ) : (
                         <div className="empty-state">No command latency yet</div>
                     )}
@@ -11563,7 +11940,10 @@ function RtcPerformancePanel({
                         <small>bucketed command durations</small>
                     </div>
                     {view.histogram.length > 0 ? (
-                        <RtcLatencyHistogram buckets={view.histogram} />
+                        <RtcLatencyHistogram
+                            buckets={view.histogram}
+                            percentiles={view.summary}
+                        />
                     ) : (
                         <div className="empty-state">No duration buckets yet</div>
                     )}

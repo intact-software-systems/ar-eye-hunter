@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "distributedRunId": "hetzner-diagnostic-expected-failure-1-agent",
+  "controlRunId": "hetzner-manifest-template-control-run",
+  "displayName": "Expected failure 1-agent",
+  "group": {
+    "applicationId": "rallar-server",
+    "workspaceId": "default",
+    "groupId": "hetzner-headless-room"
+  },
+  "recipes": [
+    {
+      "recipeId": "expected-failure-recipe",
+      "recipe": {
+        "schemaVersion": 1,
+        "recipeId": "expected-failure-recipe",
+        "name": "Expected failure recipe",
+        "continueOnFailure": false,
+        "commands": [
+          {
+            "kind": "http.request",
+            "commandId": "http-invalid-missing-target",
+            "request": {
+              "method": "GET"
+            },
+            "timeoutMs": 1000
+          },
+          {
+            "kind": "stats",
+            "commandId": "expected-failure-stats"
+          }
+        ]
+      },
+      "profile": "negative",
+      "required": true
+    }
+  ],
+  "targetPolicy": {
+    "mode": "all-online-group-members",
+    "expectedParticipantCount": 1
+  },
+  "ackTimeoutMs": 30000,
+  "startMode": "manual",
+  "artifactPolicy": {
+    "retainArtifacts": true,
+    "includeDistributedMetadata": true,
+    "includeEventJsonl": true,
+    "includeResultJsonl": true,
+    "includeFailureBundle": true
+  },
+  "metadata": {
+    "createdBy": "rallar-black-box-spa",
+    "rolePattern": "all-agents",
+    "manifestSuite": "hetzner-distributed",
+    "diagnostic": true,
+    "expectedFailure": true
+  },
+  "description": "Diagnostic run that intentionally fails to verify artifact analyzer fix proposals."
+}

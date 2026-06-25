@@ -366,6 +366,7 @@ describe('rallar-black-box RTC diagnostics', () => {
             commandCount: 3,
             p50Ms: 34,
             p95Ms: 85,
+            p99Ms: 85,
             maxMs: 85,
             failureCount: 0,
         });

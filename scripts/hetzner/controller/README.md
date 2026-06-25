@@ -54,6 +54,15 @@ Run public smoke checks:
 ./03-smoke-controller.sh
 ```
 
+Run a distributed recipe manifest against connected headless browsers and export
+artifacts:
+
+```sh
+RALLAR_DISTRIBUTED_MANIFEST_PATH=/tmp/manifest.json \
+RALLAR_DISTRIBUTED_CONTROL_RUN_ID="${RALLAR_BLACK_BOX_RUN_ID}" \
+./14-run-distributed-recipe.sh
+```
+
 Stop the Rallar API/control services:
 
 ```sh
@@ -632,6 +641,27 @@ Use the optional `control_cors_origins` input only when you need additional
 browser origins for the control server. The workflow always appends `spa_url`
 automatically so `https://blackbox.rallar.intactss.com` can call the control
 HTTP API after frequent headless browser rollouts.
+
+## GitHub Action: Distributed Recipe
+
+The workflow `.github/workflows/hetzner-distributed-recipe.yml` exposes a
+manual action named `Run Hetzner Distributed Recipe`.
+
+It copies a checked-in distributed manifest to the VM, optionally runs
+`08-rollout-controller.sh`, starts headless browsers with
+`09-start-headless-workers.sh`, runs `14-run-distributed-recipe.sh`, copies
+artifacts back to GitHub, runs
+`apps/rallar-black-box/scripts/analyze-distributed-run-artifacts.ts`, and
+uploads both raw artifacts and analysis.
+
+Use `manifest_path` for the repo-relative distributed manifest file. Leave
+`run_id` blank to derive a unique control run id from the GitHub run. The
+workflow sets the distributed `controlRunId` to the same value so target
+resolution uses the newly connected headless agents.
+
+The recipe step may fail, but the workflow still uploads artifacts before the
+final job failure. Read `analysis/fix-proposal.md` for failed runs and
+`analysis/performance.md` for passed runs.
 
 ## Defaults
 

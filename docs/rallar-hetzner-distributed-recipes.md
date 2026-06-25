@@ -1,0 +1,201 @@
+# Rallar Hetzner Distributed Recipes
+
+Use the `Run Hetzner Distributed Recipe` GitHub Action to run a checked-in
+distributed manifest against Hetzner-hosted headless browser agents.
+
+## Workflow
+
+Workflow file:
+
+```text
+.github/workflows/hetzner-distributed-recipe.yml
+```
+
+Typical inputs:
+
+```text
+ref: main
+rollout_before_run: true
+agent_count: 2
+run_id: <blank for GitHub-derived id>
+room_id: hetzner-headless-room
+agent_prefix: controller
+manifest_path: path/to/distributed-manifest.json
+application_id: rallar-server
+workspace_id: default
+register_before_login: false
+install_playwright: true
+wait_for_agents: true
+ready_timeout_seconds: 120
+terminal_timeout_seconds: 300
+stop_after_run: false
+```
+
+## Checked-In Manifests
+
+Use these repo manifests with `manifest_path`. Green manifests are ordered from
+cheapest confidence check to heavier RTC/load baseline:
+
+| Order | Manifest | Agents | Purpose |
+| --- | --- | ---: | --- |
+| 1 | `apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json` | 2 | Control/headless reachability with `health` and `stats`. |
+| 2 | `apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json` | 2 | Loop, parallel, wait, and assert evidence without live RTC dependency. |
+| 3 | `apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json` | 2 | Live RTC connect/send/stats smoke. |
+| 4 | `apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json` | 2 | Browser-rallar provider parity across connect, direct, multicast, broadcast, health, close, and reset. |
+| 5 | `apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json` | 2 | Short 20 Hz RTC realtime performance baseline. |
+| 6 | `apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json` | 3 | Heavier three-agent realtime/load baseline. |
+
+Diagnostic manifests live under
+`apps/rallar-black-box/manifests/hetzner/diagnostic/` and are not part of the
+green run order:
+
+| Manifest | Agents | Purpose |
+| --- | ---: | --- |
+| `diagnostic/barrier-health-2-agent.json` | 2 | Validates synchronized barrier orchestration before start. |
+| `diagnostic/expected-failure-1-agent.json` | 1 | Intentionally fails to verify analyzer fix proposals and artifact capture. |
+
+Regenerate or verify the checked-in JSON from the TypeScript catalog:
+
+```sh
+npx tsx apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts
+npx tsx apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts --check
+```
+
+The manifests use inline recipes so the control server can load them during
+staging without relying on SPA state. They default to
+`applicationId=rallar-server`, `workspaceId=default`, and
+`groupId=hetzner-headless-room`, matching the workflow defaults.
+
+## Dispatching Runs
+
+Recommended first run after the manifests are merged to `main`:
+
+```sh
+scripts/hetzner/dispatch-distributed-recipe.sh \
+  apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json \
+  --ref main
+```
+
+The helper derives `agent_count`, `room_id`, `application_id`, and
+`workspace_id` from the manifest, creates a sanitized run id, and calls
+`gh workflow run`. It refuses diagnostic manifests unless
+`--allow-diagnostic` is supplied.
+
+Manual equivalent:
+
+```sh
+gh workflow run hetzner-distributed-recipe.yml \
+  --ref main \
+  -f manifest_path=apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json \
+  -f agent_count=2 \
+  -f room_id=hetzner-headless-room \
+  -f application_id=rallar-server \
+  -f workspace_id=default \
+  -f ref=main \
+  -f rollout_before_run=true
+```
+
+Required production secrets:
+
+```text
+HETZNER_HOST
+HETZNER_USER
+HETZNER_SSH_PRIVATE_KEY
+HETZNER_KNOWN_HOSTS
+RALLAR_BLACK_BOX_USERNAME
+RALLAR_BLACK_BOX_PASSWORD
+```
+
+Optional:
+
+```text
+RALLAR_BLACK_BOX_CONTROL_TOKEN
+```
+
+## Remote Execution
+
+The workflow copies `scripts/hetzner/controller` and the manifest to the VM,
+then runs:
+
+```text
+08-rollout-controller.sh       # optional
+09-start-headless-workers.sh   # starts N browser agents
+14-run-distributed-recipe.sh   # creates, stages, starts, polls, exports
+```
+
+The workflow sets `RALLAR_DISTRIBUTED_CONTROL_RUN_ID` to the same value as
+`RALLAR_BLACK_BOX_RUN_ID` so the distributed run targets the control run where
+the headless browser agents registered.
+
+## Artifacts
+
+The remote runner writes:
+
+```text
+/tmp/rallar-distributed-runs/<distributedRunId>/
+```
+
+The GitHub workflow uploads that directory and then writes analyzer output under
+`analysis/`. The same summary is appended to the GitHub Actions step summary
+when artifacts were copied.
+
+Important files:
+
+```text
+runner-summary.json
+distributed-run.json
+manifest.json
+control-run.json
+report.json
+results.jsonl
+events.jsonl
+failures.json
+fleet-report.json
+fleet-report-summary.md
+analysis/analysis.json
+analysis/summary.md
+analysis/fix-proposal.md      # failed runs
+analysis/performance.md       # passed runs
+```
+
+## Failure Handling
+
+The recipe step is allowed to fail while the workflow continues long enough to
+copy artifacts and run analysis. The final workflow step fails the job if the
+distributed run did not pass.
+
+For failed runs, start with:
+
+```text
+analysis/fix-proposal.md
+analysis/analysis.json
+```
+
+The proposal reports the likely cause, affected agents or regions, first useful
+evidence, minimal fix area, and a focused verification command.
+
+Malformed optional artifacts and malformed JSONL rows are reported as parse
+warnings in `analysis/analysis.json` and `analysis/summary.md`. A malformed
+`distributed-run.json` remains a hard analysis error.
+
+## Success Handling
+
+For passed runs, start with:
+
+```text
+analysis/performance.md
+analysis/analysis.json
+```
+
+Review pass rate, run duration, command p50/p95/max, reconnect count,
+diagnostic count, exported event count, agent-reported event count, and
+stale/missing/flaky agent counts. If no baseline exists, treat the first clean
+run as the baseline.
+
+## SPA Review
+
+Download the raw distributed artifact from GitHub Actions and import its JSON
+and JSONL files in the `rallar-black-box` Runs panel with `Import CI artifact`.
+The SPA uses the same analysis core as the CLI, then shows the verdict,
+likely cause, next action, minimal fix area, evidence file, warnings, and
+performance baseline beside the live distributed run monitor.

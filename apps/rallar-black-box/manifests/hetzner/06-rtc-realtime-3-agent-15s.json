@@ -1,0 +1,214 @@
+{
+  "schemaVersion": 1,
+  "distributedRunId": "hetzner-rtc-realtime-3-agent-15s",
+  "controlRunId": "hetzner-manifest-template-control-run",
+  "displayName": "RTC realtime 3-agent 15s",
+  "group": {
+    "applicationId": "rallar-server",
+    "workspaceId": "default",
+    "groupId": "hetzner-headless-room"
+  },
+  "recipes": [
+    {
+      "recipeId": "rtc-realtime",
+      "recipe": {
+        "recipeId": "rtc-realtime",
+        "name": "RTC realtime position stream",
+        "description": "Connect RTC and send game-style position updates at 20 Hz for the configured duration.",
+        "continueOnFailure": false,
+        "metadata": {
+          "profile": "rtc-realtime",
+          "rateHz": 20,
+          "intervalMs": 50,
+          "durationSeconds": 15,
+          "frameCount": 300,
+          "group": {
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "groupId": "hetzner-headless-room"
+          }
+        },
+        "commands": [
+          {
+            "kind": "http.request",
+            "commandId": "rtc-realtime-ensure-group",
+            "timeoutMs": 5000,
+            "metadata": {
+              "purpose": "Ensure the backend group exists before RTC room join.",
+              "idempotent": true,
+              "group": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "hetzner-headless-room"
+              }
+            },
+            "request": {
+              "method": "POST",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups",
+              "body": {
+                "requestId": "rtc-realtime:ensure-group:rallar-server:default:hetzner-headless-room",
+                "groupId": "hetzner-headless-room",
+                "displayName": "hetzner-headless-room",
+                "joinMode": "open"
+              }
+            },
+            "response": {
+              "body": "json"
+            }
+          },
+          {
+            "kind": "http.request",
+            "commandId": "rtc-realtime-ensure-member",
+            "timeoutMs": 5000,
+            "metadata": {
+              "purpose": "Ensure the logged-in browser client is an active group member before RTC room join.",
+              "idempotent": true,
+              "group": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "hetzner-headless-room"
+              }
+            },
+            "request": {
+              "method": "PUT",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}",
+              "body": {
+                "requestId": "rtc-realtime:ensure-member:rallar-server:default:hetzner-headless-room:{auth.clientId}",
+                "status": "active"
+              }
+            },
+            "response": {
+              "body": "json"
+            }
+          },
+          {
+            "kind": "rtc.connect",
+            "commandId": "rtc-realtime-connect",
+            "connection": "rtcRealtime",
+            "actor": "{auth.clientId}",
+            "roomId": "hetzner-headless-room",
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "transport": "realtime",
+            "timeoutMs": 10000,
+            "metadata": {
+              "realtime": {
+                "rateHz": 20,
+                "durationSeconds": 15,
+                "frameCount": 300
+              }
+            }
+          },
+          {
+            "kind": "loop",
+            "commandId": "rtc-realtime-position-loop",
+            "count": 300,
+            "intervalMs": 50,
+            "maxCommands": 300,
+            "continueOnFailure": false,
+            "metadata": {
+              "realtime": {
+                "rateHz": 20,
+                "intervalMs": 50,
+                "durationSeconds": 15,
+                "frameCount": 300
+              }
+            },
+            "commands": [
+              {
+                "kind": "rtc.send",
+                "commandId": "rtc-realtime-position",
+                "connection": "rtcRealtime",
+                "transport": "realtime",
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "hetzner-headless-room"
+                },
+                "timeoutMs": 3000,
+                "metadata": {
+                  "realtime": {
+                    "rateHz": 20,
+                    "intervalMs": 50,
+                    "durationSeconds": 15,
+                    "frame": "{loop.iteration}",
+                    "totalFrames": 300
+                  }
+                },
+                "send": {
+                  "roomId": "hetzner-headless-room",
+                  "roomRef": {
+                    "applicationId": "rallar-server",
+                    "workspaceId": "default",
+                    "groupId": "hetzner-headless-room"
+                  },
+                  "openTimeoutMs": 10000,
+                  "data": {
+                    "topic": "room.black-box.rtc-realtime.position",
+                    "typeId": "room.black-box.rtc-realtime.position",
+                    "actor": "{auth.clientId}",
+                    "seq": "{loop.index}",
+                    "rateHz": 20,
+                    "intervalMs": 50,
+                    "durationSeconds": 15,
+                    "totalFrames": 300,
+                    "tMs": "{loop.elapsedMs}",
+                    "position": {
+                      "frame": "{loop.iteration}",
+                      "x": "{loop.index}",
+                      "y": 0,
+                      "z": "{loop.index}",
+                      "headingDeg": "{loop.index}",
+                      "velocityMps": 4
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "kind": "stats",
+            "commandId": "rtc-realtime-stats",
+            "metadata": {
+              "realtime": {
+                "rateHz": 20,
+                "durationSeconds": 15,
+                "frameCount": 300
+              }
+            }
+          }
+        ]
+      },
+      "profile": "rtc",
+      "required": true
+    }
+  ],
+  "targetPolicy": {
+    "mode": "all-online-group-members",
+    "expectedParticipantCount": 3
+  },
+  "ackTimeoutMs": 30000,
+  "startMode": "manual",
+  "artifactPolicy": {
+    "retainArtifacts": true,
+    "includeDistributedMetadata": true,
+    "includeEventJsonl": true,
+    "includeResultJsonl": true,
+    "includeFailureBundle": true
+  },
+  "metadata": {
+    "createdBy": "rallar-black-box-spa",
+    "rolePattern": "all-agents",
+    "manifestSuite": "hetzner-distributed",
+    "diagnostic": false,
+    "expectedFailure": false
+  },
+  "description": "Heavier 20 Hz RTC realtime run for three-agent load and percentile baselines."
+}

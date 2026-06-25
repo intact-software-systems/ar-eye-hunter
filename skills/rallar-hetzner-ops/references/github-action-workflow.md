@@ -1,0 +1,72 @@
+# GitHub Action Workflow
+
+Use `.github/workflows/hetzner-distributed-recipe.yml`.
+
+## Required Inputs
+
+- `manifest_path`: repo path to a distributed run manifest JSON file.
+
+## Manifest Library
+
+Use checked-in manifests under `apps/rallar-black-box/manifests/hetzner/`.
+Run green manifests in this order:
+
+1. `01-health-2-agent.json`
+2. `02-composite-evidence-2-agent.json`
+3. `03-rtc-smoke-2-agent.json`
+4. `04-provider-parity-2-agent.json`
+5. `05-rtc-realtime-2-agent-5s.json`
+6. `06-rtc-realtime-3-agent-15s.json`
+
+Diagnostic manifests under `diagnostic/` require an explicit opt-in because one
+is intentionally failing.
+
+Preferred dispatch helper:
+
+```sh
+scripts/hetzner/dispatch-distributed-recipe.sh \
+  apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json \
+  --ref main
+```
+
+The helper derives `agent_count`, `room_id`, `application_id`, and
+`workspace_id` from the manifest. It refuses diagnostic manifests unless
+`--allow-diagnostic` is supplied.
+
+## Common Inputs
+
+- `agent_count`: number of headless browser agents.
+- `run_id`: optional control run id. Leave blank for `gh-<run>-<attempt>`.
+- `room_id`, `agent_prefix`, `application_id`, `workspace_id`: headless agent
+  scope.
+- `rollout_before_run`: roll out the selected ref before the run.
+- `register_before_login`: use for memory-backed API redeploys with disposable
+  users.
+- `stop_after_run`: stop the headless worker service after artifacts are
+  collected.
+
+## Required Secrets
+
+- `HETZNER_HOST`
+- `HETZNER_USER`
+- `HETZNER_SSH_PRIVATE_KEY`
+- `HETZNER_KNOWN_HOSTS`
+- `RALLAR_BLACK_BOX_USERNAME`
+- `RALLAR_BLACK_BOX_PASSWORD`
+
+Optional:
+
+- `RALLAR_BLACK_BOX_CONTROL_TOKEN`
+
+## Remote Behavior
+
+The workflow copies controller scripts and the manifest to the VM, optionally
+runs `08-rollout-controller.sh`, starts browsers with
+`09-start-headless-workers.sh`, runs `14-run-distributed-recipe.sh`, copies
+artifacts back, analyzes them when available, appends the analyzer markdown to
+the GitHub step summary, uploads artifacts, and fails only after evidence is
+uploaded when the distributed run did not pass.
+
+For passed runs, start with `analysis/performance.md`. For failed runs, start
+with `analysis/analysis.json`, then `analysis/fix-proposal.md`, then the cited
+raw evidence file.

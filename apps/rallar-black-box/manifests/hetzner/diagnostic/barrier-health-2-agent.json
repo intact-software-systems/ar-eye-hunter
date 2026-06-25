@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "distributedRunId": "hetzner-diagnostic-barrier-health-2-agent",
+  "controlRunId": "hetzner-manifest-template-control-run",
+  "displayName": "Barrier health 2-agent",
+  "group": {
+    "applicationId": "rallar-server",
+    "workspaceId": "default",
+    "groupId": "hetzner-headless-room"
+  },
+  "recipes": [
+    {
+      "recipeId": "barrier-health",
+      "recipe": {
+        "schemaVersion": 1,
+        "recipeId": "barrier-health",
+        "name": "Hetzner headless health",
+        "description": "Verifies browser control-agent command dispatch and stats collection.",
+        "continueOnFailure": false,
+        "commands": [
+          {
+            "kind": "health",
+            "commandId": "headless-health",
+            "label": "Headless health"
+          },
+          {
+            "kind": "stats",
+            "commandId": "headless-stats"
+          }
+        ]
+      },
+      "profile": "health",
+      "required": true
+    }
+  ],
+  "targetPolicy": {
+    "mode": "all-online-group-members",
+    "expectedParticipantCount": 2
+  },
+  "ackTimeoutMs": 30000,
+  "barrier": {
+    "enabled": true,
+    "timeoutMs": 15000
+  },
+  "startMode": "manual",
+  "artifactPolicy": {
+    "retainArtifacts": true,
+    "includeDistributedMetadata": true,
+    "includeEventJsonl": true,
+    "includeResultJsonl": true,
+    "includeFailureBundle": true
+  },
+  "metadata": {
+    "createdBy": "rallar-black-box-spa",
+    "rolePattern": "all-agents",
+    "manifestSuite": "hetzner-distributed",
+    "diagnostic": true,
+    "expectedFailure": false
+  },
+  "description": "Diagnostic run that validates synchronized barrier orchestration before start."
+}

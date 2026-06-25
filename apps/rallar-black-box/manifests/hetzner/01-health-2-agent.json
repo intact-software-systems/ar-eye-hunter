@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "distributedRunId": "hetzner-health-2-agent",
+  "controlRunId": "hetzner-manifest-template-control-run",
+  "displayName": "Health 2-agent",
+  "group": {
+    "applicationId": "rallar-server",
+    "workspaceId": "default",
+    "groupId": "hetzner-headless-room"
+  },
+  "recipes": [
+    {
+      "recipeId": "hetzner-health-recipe",
+      "recipe": {
+        "schemaVersion": 1,
+        "recipeId": "hetzner-health-recipe",
+        "name": "Hetzner headless health",
+        "description": "Verifies browser control-agent command dispatch and stats collection.",
+        "continueOnFailure": false,
+        "commands": [
+          {
+            "kind": "health",
+            "commandId": "headless-health",
+            "label": "Headless health"
+          },
+          {
+            "kind": "stats",
+            "commandId": "headless-stats"
+          }
+        ]
+      },
+      "profile": "health",
+      "required": true
+    }
+  ],
+  "targetPolicy": {
+    "mode": "all-online-group-members",
+    "expectedParticipantCount": 2
+  },
+  "ackTimeoutMs": 30000,
+  "startMode": "manual",
+  "artifactPolicy": {
+    "retainArtifacts": true,
+    "includeDistributedMetadata": true,
+    "includeEventJsonl": true,
+    "includeResultJsonl": true,
+    "includeFailureBundle": true
+  },
+  "metadata": {
+    "createdBy": "rallar-black-box-spa",
+    "rolePattern": "all-agents",
+    "manifestSuite": "hetzner-distributed",
+    "diagnostic": false,
+    "expectedFailure": false
+  },
+  "description": "Cheap headless control-agent reachability check using health and stats commands."
+}

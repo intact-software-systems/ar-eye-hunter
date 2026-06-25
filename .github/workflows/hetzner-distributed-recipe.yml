@@ -1,0 +1,389 @@
+name: Run Hetzner Distributed Recipe
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to roll out before the run when rollout_before_run is enabled
+        required: true
+        default: main
+      rollout_before_run:
+        description: Roll out the selected ref before starting browsers and running the recipe
+        type: boolean
+        default: true
+      agent_count:
+        description: Number of headless browser agents to run
+        type: number
+        default: 2
+      run_id:
+        description: Control run id; leave blank to derive one from the GitHub run
+        required: false
+        default: ''
+      room_id:
+        description: Rallar room id for headless agents
+        required: true
+        default: hetzner-headless-room
+      agent_prefix:
+        description: Agent id prefix for headless agents
+        required: true
+        default: controller
+      manifest_path:
+        description: Repo path to a distributed run manifest JSON file
+        required: true
+      application_id:
+        description: Rallar application id for headless agents
+        required: true
+        default: rallar-server
+      workspace_id:
+        description: Rallar workspace id for headless agents
+        required: true
+        default: default
+      register_before_login:
+        description: Register disposable test users before login
+        type: boolean
+        default: false
+      install_playwright:
+        description: Install/update Chromium and Linux dependencies before starting
+        type: boolean
+        default: true
+      npm_ci:
+        description: Run npm ci before starting the headless worker
+        type: boolean
+        default: false
+      wait_for_agents:
+        description: Wait until requested agents are connected in the control server
+        type: boolean
+        default: true
+      ready_timeout_seconds:
+        description: Agent and distributed readiness wait timeout in seconds
+        type: number
+        default: 120
+      terminal_timeout_seconds:
+        description: Distributed recipe terminal-state wait timeout in seconds
+        type: number
+        default: 300
+      stop_after_run:
+        description: Stop the headless worker service after the run
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hetzner-distributed-recipe
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: Run distributed recipe on Hetzner
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Resolve run identifiers
+        id: ids
+        shell: bash
+        env:
+          INPUT_RUN_ID: ${{ inputs.run_id }}
+        run: |
+          set -euo pipefail
+          sanitize() {
+            tr -c 'A-Za-z0-9_.-' '-' | sed -E 's/-+/-/g; s/^-|-$//g'
+          }
+
+          run_id="${INPUT_RUN_ID}"
+          if [[ -z "${run_id}" ]]; then
+            run_id="gh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          fi
+          run_id="$(printf '%s' "${run_id}" | sanitize)"
+          distributed_run_id="dist-${run_id}"
+
+          echo "run_id=${run_id}" >> "${GITHUB_OUTPUT}"
+          echo "distributed_run_id=${distributed_run_id}" >> "${GITHUB_OUTPUT}"
+
+      - name: Validate manifest input
+        shell: bash
+        env:
+          MANIFEST_PATH: ${{ inputs.manifest_path }}
+        run: |
+          set -euo pipefail
+          if [[ ! -r "${MANIFEST_PATH}" ]]; then
+            echo "::error::Manifest path does not exist: ${MANIFEST_PATH}" >&2
+            exit 1
+          fi
+          jq -e '.distributedRunId or true' "${MANIFEST_PATH}" >/dev/null
+
+      - name: Resolve headless credentials
+        shell: bash
+        env:
+          RALLAR_BLACK_BOX_USERNAME_SECRET: ${{ secrets.RALLAR_BLACK_BOX_USERNAME }}
+          RALLAR_BLACK_BOX_PASSWORD_SECRET: ${{ secrets.RALLAR_BLACK_BOX_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${RALLAR_BLACK_BOX_USERNAME_SECRET}" ]]; then
+            printf '::add-mask::%s\n' "${RALLAR_BLACK_BOX_USERNAME_SECRET}"
+          fi
+          if [[ -n "${RALLAR_BLACK_BOX_PASSWORD_SECRET}" ]]; then
+            printf '::add-mask::%s\n' "${RALLAR_BLACK_BOX_PASSWORD_SECRET}"
+          fi
+          if [[ -z "${RALLAR_BLACK_BOX_USERNAME_SECRET}" || -z "${RALLAR_BLACK_BOX_PASSWORD_SECRET}" ]]; then
+            echo "::error::Set production secrets RALLAR_BLACK_BOX_USERNAME and RALLAR_BLACK_BOX_PASSWORD." >&2
+            exit 1
+          fi
+
+          credentials_file="${RUNNER_TEMP}/rallar-headless-credentials.env"
+          {
+            printf 'RALLAR_BLACK_BOX_USERNAME=%q\n' "${RALLAR_BLACK_BOX_USERNAME_SECRET}"
+            printf 'RALLAR_BLACK_BOX_PASSWORD=%q\n' "${RALLAR_BLACK_BOX_PASSWORD_SECRET}"
+          } > "${credentials_file}"
+          chmod 600 "${credentials_file}"
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          HETZNER_SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HETZNER_KNOWN_HOSTS: ${{ secrets.HETZNER_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${HETZNER_SSH_PRIVATE_KEY}" > ~/.ssh/hetzner
+          chmod 600 ~/.ssh/hetzner
+          printf '%s\n' "${HETZNER_KNOWN_HOSTS}" > ~/.ssh/known_hosts
+
+      - name: Copy controller scripts and manifest
+        shell: bash
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          MANIFEST_PATH: ${{ inputs.manifest_path }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
+            'rm -rf /tmp/rallar-controller && mkdir -p /tmp/rallar-controller'
+          scp -i ~/.ssh/hetzner -r scripts/hetzner/controller/. \
+            "${HETZNER_USER}@${HETZNER_HOST}:/tmp/rallar-controller/"
+          scp -i ~/.ssh/hetzner "${MANIFEST_PATH}" \
+            "${HETZNER_USER}@${HETZNER_HOST}:/tmp/rallar-distributed-manifest.json"
+
+      - name: Render remote run env
+        shell: bash
+        env:
+          RALLAR_REPO_REF: ${{ inputs.ref }}
+          RALLAR_ROLLOUT_BEFORE_RUN: ${{ inputs.rollout_before_run }}
+          RALLAR_BLACK_BOX_RUN_ID: ${{ steps.ids.outputs.run_id }}
+          RALLAR_BLACK_BOX_ROOM_ID: ${{ inputs.room_id }}
+          RALLAR_BLACK_BOX_AGENT_PREFIX: ${{ inputs.agent_prefix }}
+          RALLAR_BLACK_BOX_AGENT_COUNT: ${{ inputs.agent_count }}
+          RALLAR_BLACK_BOX_APPLICATION_ID: ${{ inputs.application_id }}
+          RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}
+          RALLAR_BLACK_BOX_REGISTER: ${{ inputs.register_before_login }}
+          RALLAR_BLACK_BOX_CONTROL_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}
+          RALLAR_INSTALL_PLAYWRIGHT: ${{ inputs.install_playwright }}
+          RALLAR_NPM_CI: ${{ inputs.npm_ci }}
+          RALLAR_WAIT_FOR_HEADLESS_WORKERS: ${{ inputs.wait_for_agents }}
+          RALLAR_HEADLESS_READY_TIMEOUT_SECONDS: ${{ inputs.ready_timeout_seconds }}
+          RALLAR_DISTRIBUTED_READY_TIMEOUT_SECONDS: ${{ inputs.ready_timeout_seconds }}
+          RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS: ${{ inputs.terminal_timeout_seconds }}
+          RALLAR_DISTRIBUTED_RUN_ID: ${{ steps.ids.outputs.distributed_run_id }}
+          RALLAR_DISTRIBUTED_CONTROL_RUN_ID: ${{ steps.ids.outputs.run_id }}
+          RALLAR_DISTRIBUTED_MANIFEST_PATH: /tmp/rallar-distributed-manifest.json
+          RALLAR_DISTRIBUTED_ARTIFACT_DIR: /tmp/rallar-distributed-runs
+        run: |
+          set -euo pipefail
+          quote() { printf '%q' "$1"; }
+
+          credentials_file="${RUNNER_TEMP}/rallar-headless-credentials.env"
+          set -a
+          # shellcheck disable=SC1090
+          source "${credentials_file}"
+          set +a
+
+          env_file="${RUNNER_TEMP}/rallar-distributed-recipe.env"
+          {
+            printf 'RALLAR_REPO_REF=%s\n' "$(quote "${RALLAR_REPO_REF}")"
+            printf 'RALLAR_ROLLOUT_BEFORE_RUN=%s\n' "$(quote "${RALLAR_ROLLOUT_BEFORE_RUN}")"
+            printf 'RALLAR_BLACK_BOX_RUN_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_RUN_ID}")"
+            printf 'RALLAR_BLACK_BOX_ROOM_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_ROOM_ID}")"
+            printf 'RALLAR_BLACK_BOX_AGENT_PREFIX=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_PREFIX}")"
+            printf 'RALLAR_BLACK_BOX_AGENT_COUNT=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_COUNT}")"
+            printf 'RALLAR_BLACK_BOX_APPLICATION_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_APPLICATION_ID}")"
+            printf 'RALLAR_BLACK_BOX_WORKSPACE_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_WORKSPACE_ID}")"
+            printf 'RALLAR_BLACK_BOX_USERNAME=%s\n' "$(quote "${RALLAR_BLACK_BOX_USERNAME}")"
+            printf 'RALLAR_BLACK_BOX_PASSWORD=%s\n' "$(quote "${RALLAR_BLACK_BOX_PASSWORD}")"
+            printf 'RALLAR_BLACK_BOX_REGISTER=%s\n' "$(quote "${RALLAR_BLACK_BOX_REGISTER}")"
+            printf 'RALLAR_BLACK_BOX_CONTROL_TOKEN=%s\n' "$(quote "${RALLAR_BLACK_BOX_CONTROL_TOKEN}")"
+            printf 'RALLAR_INSTALL_PLAYWRIGHT=%s\n' "$(quote "${RALLAR_INSTALL_PLAYWRIGHT}")"
+            printf 'RALLAR_NPM_CI=%s\n' "$(quote "${RALLAR_NPM_CI}")"
+            printf 'RALLAR_WAIT_FOR_HEADLESS_WORKERS=%s\n' "$(quote "${RALLAR_WAIT_FOR_HEADLESS_WORKERS}")"
+            printf 'RALLAR_HEADLESS_READY_TIMEOUT_SECONDS=%s\n' "$(quote "${RALLAR_HEADLESS_READY_TIMEOUT_SECONDS}")"
+            printf 'RALLAR_DISTRIBUTED_READY_TIMEOUT_SECONDS=%s\n' "$(quote "${RALLAR_DISTRIBUTED_READY_TIMEOUT_SECONDS}")"
+            printf 'RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS=%s\n' "$(quote "${RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS}")"
+            printf 'RALLAR_DISTRIBUTED_RUN_ID=%s\n' "$(quote "${RALLAR_DISTRIBUTED_RUN_ID}")"
+            printf 'RALLAR_DISTRIBUTED_CONTROL_RUN_ID=%s\n' "$(quote "${RALLAR_DISTRIBUTED_CONTROL_RUN_ID}")"
+            printf 'RALLAR_DISTRIBUTED_MANIFEST_PATH=%s\n' "$(quote "${RALLAR_DISTRIBUTED_MANIFEST_PATH}")"
+            printf 'RALLAR_DISTRIBUTED_ARTIFACT_DIR=%s\n' "$(quote "${RALLAR_DISTRIBUTED_ARTIFACT_DIR}")"
+          } > "${env_file}"
+          chmod 600 "${env_file}"
+
+      - name: Copy remote run env
+        shell: bash
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+        run: |
+          set -euo pipefail
+          scp -i ~/.ssh/hetzner "${RUNNER_TEMP}/rallar-distributed-recipe.env" \
+            "${HETZNER_USER}@${HETZNER_HOST}:/tmp/rallar-distributed-recipe.env"
+
+      - name: Run distributed recipe
+        id: run_recipe
+        continue-on-error: true
+        shell: bash
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
+            bash -s <<'REMOTE'
+          set -euo pipefail
+          cd /tmp/rallar-controller
+          chmod +x *.sh
+          trap 'rm -f /tmp/rallar-distributed-recipe.env' EXIT
+
+          set -a
+          # shellcheck disable=SC1091
+          source /tmp/rallar-distributed-recipe.env
+          set +a
+
+          bool_enabled() {
+            local value="${1:-0}"
+            [[ "${value}" == "1" || "${value}" == "true" || "${value}" == "yes" || "${value}" == "on" ]]
+          }
+
+          if bool_enabled "${RALLAR_ROLLOUT_BEFORE_RUN:-0}"; then
+            ./10-stop-headless-workers.sh || true
+            ./08-rollout-controller.sh
+          fi
+
+          RALLAR_WRITE_HEADLESS_ENV=1 ./09-start-headless-workers.sh
+          ./14-run-distributed-recipe.sh
+          REMOTE
+
+      - name: Copy distributed artifacts
+        if: always()
+        shell: bash
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          DISTRIBUTED_RUN_ID: ${{ steps.ids.outputs.distributed_run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p ".artifacts/hetzner-distributed"
+          scp -i ~/.ssh/hetzner -r \
+            "${HETZNER_USER}@${HETZNER_HOST}:/tmp/rallar-distributed-runs/${DISTRIBUTED_RUN_ID}" \
+            ".artifacts/hetzner-distributed/" || true
+
+      - name: Upload distributed artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hetzner-distributed-${{ steps.ids.outputs.distributed_run_id }}
+          path: .artifacts/hetzner-distributed/${{ steps.ids.outputs.distributed_run_id }}
+          if-no-files-found: warn
+
+      - name: Check distributed artifact availability
+        id: artifact_status
+        if: always()
+        shell: bash
+        env:
+          DISTRIBUTED_RUN_ID: ${{ steps.ids.outputs.distributed_run_id }}
+        run: |
+          set -euo pipefail
+          artifact_dir=".artifacts/hetzner-distributed/${DISTRIBUTED_RUN_ID}"
+          if [[ ! -d "${artifact_dir}" ]]; then
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          echo "available=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Setup Node for analysis
+        if: always() && steps.artifact_status.outputs.available == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies for analysis
+        if: always() && steps.artifact_status.outputs.available == 'true'
+        run: npm ci
+
+      - name: Analyze distributed artifacts
+        if: always() && steps.artifact_status.outputs.available == 'true'
+        shell: bash
+        env:
+          DISTRIBUTED_RUN_ID: ${{ steps.ids.outputs.distributed_run_id }}
+        run: |
+          set -euo pipefail
+          artifact_dir=".artifacts/hetzner-distributed/${DISTRIBUTED_RUN_ID}"
+          if [[ ! -d "${artifact_dir}" ]]; then
+            echo "No artifact directory copied; skipping analysis."
+            exit 0
+          fi
+          npx tsx apps/rallar-black-box/scripts/analyze-distributed-run-artifacts.ts \
+            --artifact-dir "${artifact_dir}" \
+            --out-dir "${artifact_dir}/analysis"
+
+      - name: Publish distributed analysis summary
+        if: always() && steps.artifact_status.outputs.available == 'true'
+        shell: bash
+        env:
+          DISTRIBUTED_RUN_ID: ${{ steps.ids.outputs.distributed_run_id }}
+        run: |
+          set -euo pipefail
+          artifact_dir=".artifacts/hetzner-distributed/${DISTRIBUTED_RUN_ID}"
+          if [[ ! -d "${artifact_dir}" ]]; then
+            echo "No artifact directory copied; skipping summary."
+            exit 0
+          fi
+          if [[ -s "${artifact_dir}/analysis/summary.md" ]]; then
+            cat "${artifact_dir}/analysis/summary.md" >> "${GITHUB_STEP_SUMMARY}"
+          fi
+          if [[ -s "${artifact_dir}/analysis/fix-proposal.md" ]]; then
+            printf '\n' >> "${GITHUB_STEP_SUMMARY}"
+            cat "${artifact_dir}/analysis/fix-proposal.md" >> "${GITHUB_STEP_SUMMARY}"
+          fi
+          if [[ -s "${artifact_dir}/analysis/performance.md" ]]; then
+            printf '\n' >> "${GITHUB_STEP_SUMMARY}"
+            cat "${artifact_dir}/analysis/performance.md" >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Upload distributed analysis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hetzner-distributed-analysis-${{ steps.ids.outputs.distributed_run_id }}
+          path: .artifacts/hetzner-distributed/${{ steps.ids.outputs.distributed_run_id }}/analysis
+          if-no-files-found: warn
+
+      - name: Stop headless browsers
+        if: always() && inputs.stop_after_run
+        shell: bash
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
+            'cd /tmp/rallar-controller && ./10-stop-headless-workers.sh'
+
+      - name: Fail if distributed recipe failed
+        if: always() && steps.run_recipe.outcome != 'success'
+        run: |
+          echo "Distributed recipe failed. Artifacts and analysis were uploaded when available." >&2
+          exit 1

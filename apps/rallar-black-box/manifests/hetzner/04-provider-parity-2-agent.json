@@ -1,0 +1,450 @@
+{
+  "schemaVersion": 1,
+  "distributedRunId": "hetzner-provider-parity-2-agent",
+  "controlRunId": "hetzner-manifest-template-control-run",
+  "displayName": "Provider parity 2-agent",
+  "group": {
+    "applicationId": "rallar-server",
+    "workspaceId": "default",
+    "groupId": "hetzner-headless-room"
+  },
+  "recipes": [
+    {
+      "recipeId": "rallar-provider-parity-recipe",
+      "recipe": {
+        "recipeId": "rallar-provider-parity-recipe",
+        "name": "Rallar provider parity recipe",
+        "description": "Portable connect/send/health/close/reset recipe for visible SPA and black-box runner parity checks.",
+        "continueOnFailure": false,
+        "metadata": {
+          "parity": {
+            "version": 1,
+            "providerMode": "browser-rallar",
+            "transport": "realtime",
+            "connection": "aliceRtc",
+            "roomId": "hetzner-headless-room"
+          },
+          "group": {
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "groupId": "hetzner-headless-room"
+          },
+          "selfContainedSetup": true
+        },
+        "commands": [
+          {
+            "kind": "configure",
+            "commandId": "parity-configure",
+            "label": "Configure provider parity run",
+            "config": {
+              "runId": "rallar-provider-parity-run",
+              "agentId": "visible-agent-local",
+              "environment": "local",
+              "apiBaseUrl": "https://api.rallar.intactss.com",
+              "actor": "{auth.clientId}",
+              "sessionId": "alice-session",
+              "roomId": "hetzner-headless-room",
+              "transport": "realtime",
+              "rallar": {
+                "username": "alice",
+                "apiBaseUrl": "https://api.rallar.intactss.com",
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "scope": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default"
+                },
+                "roomRef": {
+                  "applicationId": "rallar-server",
+                  "workspaceId": "default",
+                  "groupId": "hetzner-headless-room"
+                },
+                "restoreSession": true
+              },
+              "control": {
+                "providerMode": "browser-rallar",
+                "parity": true
+              },
+              "defaults": {
+                "timeoutMs": 5000,
+                "connection": "aliceRtc"
+              }
+            },
+            "metadata": {
+              "parity": {
+                "operation": "configure",
+                "providerSpecificFields": [
+                  "startedAtEpochMs",
+                  "endedAtEpochMs",
+                  "durationMs",
+                  "provider",
+                  "remote",
+                  "health",
+                  "result",
+                  "actual"
+                ]
+              }
+            }
+          },
+          {
+            "kind": "http.request",
+            "commandId": "parity-ensure-group",
+            "timeoutMs": 5000,
+            "metadata": {
+              "purpose": "Ensure the backend group exists before RTC room join.",
+              "idempotent": true,
+              "group": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "hetzner-headless-room"
+              }
+            },
+            "request": {
+              "method": "POST",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups",
+              "body": {
+                "requestId": "provider-parity:ensure-group:rallar-server:default:hetzner-headless-room",
+                "groupId": "hetzner-headless-room",
+                "displayName": "hetzner-headless-room",
+                "joinMode": "open"
+              }
+            },
+            "response": {
+              "body": "json"
+            }
+          },
+          {
+            "kind": "http.request",
+            "commandId": "parity-ensure-member",
+            "timeoutMs": 5000,
+            "metadata": {
+              "purpose": "Ensure the logged-in browser client is an active group member before RTC room join.",
+              "idempotent": true,
+              "group": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "hetzner-headless-room"
+              }
+            },
+            "request": {
+              "method": "PUT",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}",
+              "body": {
+                "requestId": "provider-parity:ensure-member:rallar-server:default:hetzner-headless-room:{auth.clientId}",
+                "status": "active"
+              }
+            },
+            "response": {
+              "body": "json"
+            }
+          },
+          {
+            "kind": "rtc.connect",
+            "commandId": "parity-connect",
+            "label": "Connect provider parity RTC client",
+            "connection": "aliceRtc",
+            "actor": "{auth.clientId}",
+            "roomId": "hetzner-headless-room",
+            "transport": "realtime",
+            "timeoutMs": 5000,
+            "rallar": {
+              "sessionId": "alice-session",
+              "apiBaseUrl": "https://api.rallar.intactss.com",
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "scope": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default"
+              },
+              "roomRef": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "hetzner-headless-room"
+              },
+              "restoreSession": true
+            },
+            "metadata": {
+              "parity": {
+                "operation": "connect",
+                "expectedConnections": [
+                  "aliceRtc"
+                ],
+                "runnerAction": "connect",
+                "providerSpecificFields": [
+                  "startedAtEpochMs",
+                  "endedAtEpochMs",
+                  "durationMs",
+                  "provider",
+                  "remote",
+                  "health",
+                  "result",
+                  "actual"
+                ]
+              }
+            },
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            }
+          },
+          {
+            "kind": "rtc.send",
+            "commandId": "parity-send-direct",
+            "label": "Send provider parity direct payload",
+            "connection": "aliceRtc",
+            "transport": "realtime",
+            "timeoutMs": 5000,
+            "send": {
+              "data": {
+                "topic": "rallar.parity.probe",
+                "deliveryMode": "direct",
+                "roomId": "hetzner-headless-room",
+                "payload": {
+                  "sequence": 1,
+                  "kind": "direct"
+                }
+              },
+              "roomId": "hetzner-headless-room",
+              "peerIds": [
+                "bob-session"
+              ],
+              "roomRef": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "hetzner-headless-room"
+              }
+            },
+            "metadata": {
+              "parity": {
+                "operation": "send.direct",
+                "deliveryMode": "direct",
+                "expectedConnections": [
+                  "aliceRtc"
+                ],
+                "targetPeerIds": [
+                  "bob-session"
+                ],
+                "runnerAction": "send",
+                "providerSpecificFields": [
+                  "startedAtEpochMs",
+                  "endedAtEpochMs",
+                  "durationMs",
+                  "provider",
+                  "remote",
+                  "health",
+                  "result",
+                  "actual"
+                ]
+              }
+            },
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            }
+          },
+          {
+            "kind": "rtc.send",
+            "commandId": "parity-send-multicast",
+            "label": "Send provider parity multicast payload",
+            "connection": "aliceRtc",
+            "transport": "realtime",
+            "timeoutMs": 5000,
+            "send": {
+              "data": {
+                "topic": "rallar.parity.probe",
+                "deliveryMode": "multicast",
+                "roomId": "hetzner-headless-room",
+                "payload": {
+                  "sequence": 2,
+                  "kind": "multicast"
+                }
+              },
+              "roomId": "hetzner-headless-room",
+              "peerIds": [
+                "bob-session",
+                "charlie-session"
+              ],
+              "roomRef": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "hetzner-headless-room"
+              }
+            },
+            "metadata": {
+              "parity": {
+                "operation": "send.multicast",
+                "deliveryMode": "multicast",
+                "expectedConnections": [],
+                "targetPeerIds": [
+                  "bob-session",
+                  "charlie-session"
+                ],
+                "runnerAction": "send",
+                "providerSpecificFields": [
+                  "startedAtEpochMs",
+                  "endedAtEpochMs",
+                  "durationMs",
+                  "provider",
+                  "remote",
+                  "health",
+                  "result",
+                  "actual"
+                ]
+              }
+            },
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            }
+          },
+          {
+            "kind": "rtc.send",
+            "commandId": "parity-send-broadcast",
+            "label": "Send provider parity broadcast payload",
+            "connection": "aliceRtc",
+            "transport": "realtime",
+            "timeoutMs": 5000,
+            "send": {
+              "data": {
+                "topic": "rallar.parity.probe",
+                "deliveryMode": "broadcast",
+                "roomId": "hetzner-headless-room",
+                "payload": {
+                  "sequence": 3,
+                  "kind": "broadcast"
+                }
+              },
+              "roomId": "hetzner-headless-room",
+              "roomRef": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "hetzner-headless-room"
+              }
+            },
+            "metadata": {
+              "parity": {
+                "operation": "send.broadcast",
+                "deliveryMode": "broadcast",
+                "expectedConnections": [],
+                "runnerAction": "send",
+                "providerSpecificFields": [
+                  "startedAtEpochMs",
+                  "endedAtEpochMs",
+                  "durationMs",
+                  "provider",
+                  "remote",
+                  "health",
+                  "result",
+                  "actual"
+                ]
+              }
+            },
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            }
+          },
+          {
+            "kind": "health",
+            "commandId": "parity-health",
+            "label": "Collect provider parity health",
+            "metadata": {
+              "parity": {
+                "operation": "health",
+                "providerSpecificFields": [
+                  "startedAtEpochMs",
+                  "endedAtEpochMs",
+                  "durationMs",
+                  "provider",
+                  "remote",
+                  "health",
+                  "result",
+                  "actual"
+                ]
+              }
+            }
+          },
+          {
+            "kind": "close",
+            "commandId": "parity-close",
+            "label": "Close provider parity runtime",
+            "metadata": {
+              "parity": {
+                "operation": "close",
+                "expectedConnections": [
+                  "aliceRtc"
+                ],
+                "runnerAction": "close",
+                "providerSpecificFields": [
+                  "startedAtEpochMs",
+                  "endedAtEpochMs",
+                  "durationMs",
+                  "provider",
+                  "remote",
+                  "health",
+                  "result",
+                  "actual"
+                ]
+              }
+            }
+          },
+          {
+            "kind": "reset",
+            "commandId": "parity-reset",
+            "label": "Reset provider parity runtime",
+            "metadata": {
+              "parity": {
+                "operation": "reset",
+                "providerSpecificFields": [
+                  "startedAtEpochMs",
+                  "endedAtEpochMs",
+                  "durationMs",
+                  "provider",
+                  "remote",
+                  "health",
+                  "result",
+                  "actual"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "profile": "rtc",
+      "required": true
+    }
+  ],
+  "targetPolicy": {
+    "mode": "all-online-group-members",
+    "expectedParticipantCount": 2
+  },
+  "ackTimeoutMs": 30000,
+  "startMode": "manual",
+  "artifactPolicy": {
+    "retainArtifacts": true,
+    "includeDistributedMetadata": true,
+    "includeEventJsonl": true,
+    "includeResultJsonl": true,
+    "includeFailureBundle": true
+  },
+  "metadata": {
+    "createdBy": "rallar-black-box-spa",
+    "rolePattern": "all-agents",
+    "manifestSuite": "hetzner-distributed",
+    "diagnostic": false,
+    "expectedFailure": false
+  },
+  "description": "Broader browser-rallar provider parity check for connect, direct, multicast, broadcast, health, close, and reset."
+}

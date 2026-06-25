@@ -151,6 +151,7 @@ export type RtcPerformanceView = Readonly<{
         commandCount: number;
         p50Ms?: number;
         p95Ms?: number;
+        p99Ms?: number;
         maxMs?: number;
         connectMs?: number;
         firstPayloadMs?: number;
@@ -987,6 +988,7 @@ export function deriveRtcPerformanceView(input: Readonly<{
             commandCount: scatter.length,
             p50Ms: percentile(durations, 0.5),
             p95Ms: percentile(durations, 0.95),
+            p99Ms: percentile(durations, 0.99),
             maxMs: durations.length > 0 ? Math.max(...durations) : undefined,
             connectMs: input.diagnostics.latency.connectMs,
             firstPayloadMs: input.diagnostics.latency.firstPayloadMs,

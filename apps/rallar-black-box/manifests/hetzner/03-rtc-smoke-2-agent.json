@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "distributedRunId": "hetzner-rtc-smoke-2-agent",
+  "controlRunId": "hetzner-manifest-template-control-run",
+  "displayName": "RTC smoke 2-agent",
+  "group": {
+    "applicationId": "rallar-server",
+    "workspaceId": "default",
+    "groupId": "hetzner-headless-room"
+  },
+  "recipes": [
+    {
+      "recipeId": "rtc-smoke-recipe",
+      "recipe": {
+        "recipeId": "rtc-smoke-recipe",
+        "name": "RTC smoke recipe",
+        "continueOnFailure": false,
+        "metadata": {
+          "profile": "rtc-smoke",
+          "group": {
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "groupId": "hetzner-headless-room"
+          }
+        },
+        "commands": [
+          {
+            "kind": "http.request",
+            "commandId": "rtc-smoke-ensure-group",
+            "timeoutMs": 5000,
+            "metadata": {
+              "purpose": "Ensure the backend group exists before RTC room join.",
+              "idempotent": true,
+              "group": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "hetzner-headless-room"
+              }
+            },
+            "request": {
+              "method": "POST",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups",
+              "body": {
+                "requestId": "rtc-smoke:ensure-group:rallar-server:default:hetzner-headless-room",
+                "groupId": "hetzner-headless-room",
+                "displayName": "hetzner-headless-room",
+                "joinMode": "open"
+              }
+            },
+            "response": {
+              "body": "json"
+            }
+          },
+          {
+            "kind": "http.request",
+            "commandId": "rtc-smoke-ensure-member",
+            "timeoutMs": 5000,
+            "metadata": {
+              "purpose": "Ensure the logged-in browser client is an active group member before RTC room join.",
+              "idempotent": true,
+              "group": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "hetzner-headless-room"
+              }
+            },
+            "request": {
+              "method": "PUT",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}",
+              "body": {
+                "requestId": "rtc-smoke:ensure-member:rallar-server:default:hetzner-headless-room:{auth.clientId}",
+                "status": "active"
+              }
+            },
+            "response": {
+              "body": "json"
+            }
+          },
+          {
+            "kind": "rtc.connect",
+            "commandId": "rtc-connect-alice",
+            "connection": "aliceRtc",
+            "actor": "{auth.clientId}",
+            "roomId": "hetzner-headless-room",
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "transport": "realtime",
+            "timeoutMs": 5000
+          },
+          {
+            "kind": "rtc.send",
+            "commandId": "rtc-send-greeting",
+            "connection": "aliceRtc",
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "transport": "realtime",
+            "send": {
+              "roomId": "hetzner-headless-room",
+              "roomRef": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "hetzner-headless-room"
+              },
+              "data": {
+                "topic": "black-box.smoke",
+                "text": "hello from local workbench",
+                "actor": "{auth.clientId}"
+              }
+            },
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "stats",
+            "commandId": "rtc-stats-snapshot"
+          }
+        ]
+      },
+      "profile": "rtc",
+      "required": true
+    }
+  ],
+  "targetPolicy": {
+    "mode": "all-online-group-members",
+    "expectedParticipantCount": 2
+  },
+  "ackTimeoutMs": 30000,
+  "startMode": "manual",
+  "artifactPolicy": {
+    "retainArtifacts": true,
+    "includeDistributedMetadata": true,
+    "includeEventJsonl": true,
+    "includeResultJsonl": true,
+    "includeFailureBundle": true
+  },
+  "metadata": {
+    "createdBy": "rallar-black-box-spa",
+    "rolePattern": "all-agents",
+    "manifestSuite": "hetzner-distributed",
+    "diagnostic": false,
+    "expectedFailure": false
+  },
+  "description": "Live RTC connect/send/stats smoke against the Hetzner headless room."
+}

@@ -43,6 +43,9 @@
       "@shared-graph/*": [
         "./packages/shared-graph/*"
       ],
+      "@shared-test/*": [
+        "./packages/shared-test/*"
+      ],
       "@shared/*": [
         "./packages/shared/*"
       ],

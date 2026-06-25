@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+WORKFLOW_NAME="hetzner-distributed-recipe.yml"
+REF="main"
+ROLLOUT_BEFORE_RUN="true"
+ALLOW_DIAGNOSTIC="0"
+RUN_ID=""
+MANIFEST_INPUT=""
+
+usage() {
+  cat <<'USAGE'
+Usage: scripts/hetzner/dispatch-distributed-recipe.sh <manifest.json> [options]
+
+Options:
+  --ref <ref>                    Git ref to dispatch. Default: main.
+  --run-id <id>                  Control run id. Default: manifest slug + UTC timestamp.
+  --workflow <name>              Workflow file name. Default: hetzner-distributed-recipe.yml.
+  --rollout-before-run <bool>    Pass rollout_before_run. Default: true.
+  --allow-diagnostic            Allow manifests marked as diagnostic.
+  -h, --help                    Show this help.
+USAGE
+}
+
+fail() {
+  echo "$1" >&2
+  exit 1
+}
+
+require_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    fail "Missing required command: $1"
+  fi
+}
+
+sanitize_run_id() {
+  local value="$1"
+  local safe
+  safe="$(printf '%s' "${value}" | tr -c 'A-Za-z0-9_.-' '-' | sed -E 's/-+/-/g; s/^-|-$//g')"
+  if [[ -z "${safe}" ]]; then
+    fail "Could not derive a safe run id from: ${value}"
+  fi
+  printf '%s' "${safe}"
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --ref)
+      [[ $# -ge 2 ]] || fail "--ref requires a value."
+      REF="$2"
+      shift 2
+      ;;
+    --run-id)
+      [[ $# -ge 2 ]] || fail "--run-id requires a value."
+      RUN_ID="$2"
+      shift 2
+      ;;
+    --workflow)
+      [[ $# -ge 2 ]] || fail "--workflow requires a value."
+      WORKFLOW_NAME="$2"
+      shift 2
+      ;;
+    --rollout-before-run)
+      [[ $# -ge 2 ]] || fail "--rollout-before-run requires a value."
+      ROLLOUT_BEFORE_RUN="$2"
+      shift 2
+      ;;
+    --allow-diagnostic)
+      ALLOW_DIAGNOSTIC="1"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -*)
+      fail "Unknown option: $1"
+      ;;
+    *)
+      if [[ -n "${MANIFEST_INPUT}" ]]; then
+        fail "Only one manifest path can be supplied."
+      fi
+      MANIFEST_INPUT="$1"
+      shift
+      ;;
+  esac
+done
+
+[[ -n "${MANIFEST_INPUT}" ]] || {
+  usage >&2
+  exit 1
+}
+
+require_command git
+require_command jq
+
+repo_root="$(git rev-parse --show-toplevel)"
+
+if [[ -r "${MANIFEST_INPUT}" ]]; then
+  manifest_absolute="$(cd "$(dirname "${MANIFEST_INPUT}")" && pwd -P)/$(basename "${MANIFEST_INPUT}")"
+elif [[ -r "${repo_root}/${MANIFEST_INPUT}" ]]; then
+  manifest_absolute="$(cd "$(dirname "${repo_root}/${MANIFEST_INPUT}")" && pwd -P)/$(basename "${MANIFEST_INPUT}")"
+else
+  fail "Manifest path does not exist: ${MANIFEST_INPUT}"
+fi
+
+case "${manifest_absolute}" in
+  "${repo_root}"/*) manifest_path="${manifest_absolute#"${repo_root}/"}" ;;
+  *) fail "Manifest must be inside the current git repository: ${MANIFEST_INPUT}" ;;
+esac
+
+agent_count="$(jq -r '.targetPolicy.expectedParticipantCount // empty' "${manifest_absolute}")"
+if ! [[ "${agent_count}" =~ ^[1-9][0-9]*$ ]]; then
+  fail "Manifest targetPolicy.expectedParticipantCount must be a positive integer: ${manifest_path}"
+fi
+
+room_id="$(jq -r '.group.groupId // empty' "${manifest_absolute}")"
+application_id="$(jq -r '.group.applicationId // empty' "${manifest_absolute}")"
+workspace_id="$(jq -r '.group.workspaceId // empty' "${manifest_absolute}")"
+[[ -n "${room_id}" ]] || fail "Manifest group.groupId is required: ${manifest_path}"
+[[ -n "${application_id}" ]] || fail "Manifest group.applicationId is required: ${manifest_path}"
+[[ -n "${workspace_id}" ]] || fail "Manifest group.workspaceId is required: ${manifest_path}"
+
+diagnostic="$(jq -r '((.metadata.diagnostic == true) or (.metadata.expectedFailure == true)) | tostring' "${manifest_absolute}")"
+if [[ "${manifest_path}" == */diagnostic/* || "${diagnostic}" == "true" ]]; then
+  if [[ "${ALLOW_DIAGNOSTIC}" != "1" ]]; then
+    fail "Refusing to dispatch diagnostic manifest without --allow-diagnostic: ${manifest_path}"
+  fi
+fi
+
+require_command gh
+
+if [[ -z "${RUN_ID}" ]]; then
+  manifest_slug="$(basename "${manifest_path}" .json)"
+  RUN_ID="${manifest_slug}-$(date -u +%Y%m%dT%H%M%SZ)"
+fi
+safe_run_id="$(sanitize_run_id "${RUN_ID}")"
+
+gh workflow run "${WORKFLOW_NAME}" \
+  --ref "${REF}" \
+  -f "manifest_path=${manifest_path}" \
+  -f "agent_count=${agent_count}" \
+  -f "room_id=${room_id}" \
+  -f "application_id=${application_id}" \
+  -f "workspace_id=${workspace_id}" \
+  -f "rollout_before_run=${ROLLOUT_BEFORE_RUN}" \
+  -f "ref=${REF}" \
+  -f "run_id=${safe_run_id}"
+
+echo "Dispatched ${WORKFLOW_NAME}"
+echo "Manifest : ${manifest_path}"
+echo "Ref      : ${REF}"
+echo "Run ID   : ${safe_run_id}"
+echo "Agents   : ${agent_count}"
+echo "Room     : ${room_id}"
