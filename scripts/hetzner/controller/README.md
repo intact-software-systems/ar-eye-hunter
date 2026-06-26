@@ -313,6 +313,11 @@ it disabled for pre-provisioned or persistent auth users. When registration
 reports that the user already exists, the black-box auth flow falls back to a
 normal login with the same credentials.
 
+The `scripts/hetzner/dispatch-distributed-recipe.sh` helper defaults
+`register_before_login=true` for Hetzner runs because the current controller API
+uses memory-backed auth. Pass `--register-before-login false` only when running
+against a persistent user database.
+
 The GitHub Actions headless browser workflow resolves credentials for
 `action=start` in this order:
 

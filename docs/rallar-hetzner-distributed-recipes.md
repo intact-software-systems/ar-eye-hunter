@@ -77,6 +77,12 @@ scripts/hetzner/dispatch-distributed-recipe.sh \
   --ref main
 ```
 
+The dispatch helper sends `register_before_login=true` by default because the
+Hetzner controller currently uses a memory-backed API and a full rollout clears
+the disposable test user. Override with `--register-before-login false` only
+when the target API already has persistent pre-provisioned users. The raw
+workflow input still defaults to `false` for manual compatibility.
+
 For faster iteration after a successful deploy of the same ref, skip rollout,
 Playwright install, and `npm ci`:
 
@@ -96,7 +102,8 @@ scripts/hetzner/dispatch-distributed-recipe.sh \
   --ref main \
   --rollout-before-run false \
   --install-playwright true \
-  --npm-ci false
+  --npm-ci false \
+  --register-before-login true
 ```
 
 The remote installer writes Chromium into the `rallar` user cache and removes a
@@ -110,9 +117,9 @@ The helper derives `agent_count`, `room_id`, `application_id`, and
 environment secrets and refuses diagnostic manifests unless `--allow-diagnostic`
 is supplied. The `--fast` flag maps to `rollout_before_run=false`,
 `install_playwright=false`, `npm_ci=false`, `wait_for_agents=true`,
-`ready_timeout_seconds=60`, and `terminal_timeout_seconds=180`. Passing only
-`rollout_before_run=false` does not skip Playwright unless
-`install_playwright=false` is also supplied.
+`ready_timeout_seconds=60`, and `terminal_timeout_seconds=180`. The helper also
+defaults `register_before_login=true`. Passing only `rollout_before_run=false`
+does not skip Playwright unless `install_playwright=false` is also supplied.
 
 Manual full-rollout equivalent:
 
@@ -124,6 +131,7 @@ gh workflow run hetzner-distributed-recipe.yml \
   -f room_id=hetzner-headless-room \
   -f application_id=rallar-server \
   -f workspace_id=default \
+  -f register_before_login=true \
   -f ref=main \
   -f rollout_before_run=true
 ```
@@ -138,6 +146,7 @@ gh workflow run hetzner-distributed-recipe.yml \
   -f room_id=hetzner-headless-room \
   -f application_id=rallar-server \
   -f workspace_id=default \
+  -f register_before_login=true \
   -f ref=main \
   -f rollout_before_run=false \
   -f install_playwright=false \

@@ -9,6 +9,7 @@ NPM_CI="false"
 WAIT_FOR_AGENTS="true"
 READY_TIMEOUT_SECONDS="120"
 TERMINAL_TIMEOUT_SECONDS="300"
+REGISTER_BEFORE_LOGIN="true"
 FAST_MODE="0"
 ALLOW_DIAGNOSTIC="0"
 RUN_ID=""
@@ -37,6 +38,7 @@ Options:
   --wait-for-agents <bool>       Pass wait_for_agents. Default: true.
   --ready-timeout-seconds <n>    Pass ready_timeout_seconds. Default: 120.
   --terminal-timeout-seconds <n> Pass terminal_timeout_seconds. Default: 300.
+  --register-before-login <bool> Pass register_before_login. Default: true.
   --fast                         Skip rollout, Playwright install, and npm ci with shorter timeouts.
   --allow-diagnostic            Allow manifests marked as diagnostic.
   -h, --help                    Show this help.
@@ -151,6 +153,11 @@ while [[ $# -gt 0 ]]; do
       WAIT_FOR_AGENTS="$2"
       shift 2
       ;;
+    --register-before-login)
+      [[ $# -ge 2 ]] || fail "--register-before-login requires a value."
+      REGISTER_BEFORE_LOGIN="$2"
+      shift 2
+      ;;
     --ready-timeout-seconds)
       [[ $# -ge 2 ]] || fail "--ready-timeout-seconds requires a value."
       READY_TIMEOUT_SECONDS="$2"
@@ -196,6 +203,7 @@ ROLLOUT_BEFORE_RUN="$(normalize_bool rollout_before_run "${ROLLOUT_BEFORE_RUN}")
 INSTALL_PLAYWRIGHT="$(normalize_bool install_playwright "${INSTALL_PLAYWRIGHT}")"
 NPM_CI="$(normalize_bool npm_ci "${NPM_CI}")"
 WAIT_FOR_AGENTS="$(normalize_bool wait_for_agents "${WAIT_FOR_AGENTS}")"
+REGISTER_BEFORE_LOGIN="$(normalize_bool register_before_login "${REGISTER_BEFORE_LOGIN}")"
 validate_positive_integer ready_timeout_seconds "${READY_TIMEOUT_SECONDS}"
 validate_positive_integer terminal_timeout_seconds "${TERMINAL_TIMEOUT_SECONDS}"
 
@@ -269,6 +277,7 @@ echo "Mode     : ${mode}"
 echo "Run ID   : ${safe_run_id}"
 echo "Agents   : ${agent_count}"
 echo "Room     : ${room_id}"
+echo "Register : ${REGISTER_BEFORE_LOGIN}"
 
 gh workflow run "${WORKFLOW_NAME}" \
   --ref "${REF}" \
@@ -277,6 +286,7 @@ gh workflow run "${WORKFLOW_NAME}" \
   -f "room_id=${room_id}" \
   -f "application_id=${application_id}" \
   -f "workspace_id=${workspace_id}" \
+  -f "register_before_login=${REGISTER_BEFORE_LOGIN}" \
   -f "rollout_before_run=${ROLLOUT_BEFORE_RUN}" \
   -f "install_playwright=${INSTALL_PLAYWRIGHT}" \
   -f "npm_ci=${NPM_CI}" \

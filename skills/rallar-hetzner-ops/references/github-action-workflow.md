@@ -33,6 +33,12 @@ Use that full-rollout form for the first run after a code change or fresh VM
 setup. For repeated runs after the selected ref is already deployed, use the
 fast path:
 
+The dispatch helper defaults `register_before_login=true` because Hetzner runs
+currently target a memory-backed API and full rollout clears disposable auth
+users. Override it with `--register-before-login false` only for persistent
+pre-provisioned users; the workflow input itself still defaults to `false` for
+manual compatibility.
+
 ```sh
 scripts/hetzner/dispatch-distributed-recipe.sh \
   apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json \
@@ -49,7 +55,8 @@ scripts/hetzner/dispatch-distributed-recipe.sh \
   --ref main \
   --rollout-before-run false \
   --install-playwright true \
-  --npm-ci false
+  --npm-ci false \
+  --register-before-login true
 ```
 
 The remote Playwright installer clears stale `__dirlock` files only when no
@@ -63,8 +70,9 @@ The helper derives `agent_count`, `room_id`, `application_id`, and
 manifests unless `--allow-diagnostic` is supplied. `--fast` sets
 `rollout_before_run=false`, `install_playwright=false`, `npm_ci=false`,
 `wait_for_agents=true`, `ready_timeout_seconds=60`, and
-`terminal_timeout_seconds=180`. Passing `rollout_before_run=false` by itself
-does not skip Playwright; also pass `install_playwright=false` or use `--fast`.
+`terminal_timeout_seconds=180`; it also sends `register_before_login=true` by
+default. Passing `rollout_before_run=false` by itself does not skip Playwright;
+also pass `install_playwright=false` or use `--fast`.
 
 ## Common Inputs
 
@@ -80,7 +88,8 @@ does not skip Playwright; also pass `install_playwright=false` or use `--fast`.
 - `ready_timeout_seconds`: agent and distributed readiness timeout.
 - `terminal_timeout_seconds`: distributed recipe terminal-state timeout.
 - `register_before_login`: use for memory-backed API redeploys with disposable
-  users.
+  users; the helper defaults this to `true`, while manual workflow dispatch
+  defaults to `false`.
 - `stop_after_run`: stop the headless worker service after artifacts are
   collected.
 
@@ -94,6 +103,7 @@ gh workflow run hetzner-distributed-recipe.yml \
   -f room_id=hetzner-headless-room \
   -f application_id=rallar-server \
   -f workspace_id=default \
+  -f register_before_login=true \
   -f ref=main \
   -f rollout_before_run=false \
   -f install_playwright=false \

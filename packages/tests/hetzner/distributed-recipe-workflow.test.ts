@@ -121,6 +121,17 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(script).not.toContain('playwright install --with-deps chromium');
     });
 
+    it('derives the headless browser page readiness timeout from the workflow readiness timeout', async () => {
+        const script = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/09-start-headless-workers.sh'),
+            'utf8',
+        );
+
+        expect(script).toContain(
+            'RALLAR_BLACK_BOX_READY_TIMEOUT_MS="${RALLAR_BLACK_BOX_READY_TIMEOUT_MS:-$((RALLAR_HEADLESS_READY_TIMEOUT_SECONDS * 1000))}"',
+        );
+    });
+
     it('keeps Playwright packages aligned past the Node 24 browser-install hang regression', async () => {
         const rootPackage = JSON.parse(await readFile(path.join(repoRoot, 'package.json'), 'utf8'));
         const blackBoxPackage = JSON.parse(
@@ -358,6 +369,8 @@ describe('Hetzner distributed recipe workflow', () => {
             '-f',
             'workspace_id=default',
             '-f',
+            'register_before_login=true',
+            '-f',
             'rollout_before_run=true',
             '-f',
             'install_playwright=true',
@@ -377,6 +390,7 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(stdout).toContain('Dispatched hetzner-distributed-recipe.yml');
         expect(stdout).toContain('03-rtc-smoke-2-agent.json');
         expect(stdout).toContain('Mode     : rollout');
+        expect(stdout).toContain('Register : true');
     });
 
     it('dispatches a fast manifest run without rollout, Playwright install, or npm ci', async () => {
@@ -419,8 +433,10 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(args).toContain('wait_for_agents=true');
         expect(args).toContain('ready_timeout_seconds=60');
         expect(args).toContain('terminal_timeout_seconds=180');
+        expect(args).toContain('register_before_login=true');
         expect(args).toContain('run_id=fast-health');
         expect(stdout).toContain('Mode     : fast');
+        expect(stdout).toContain('Register : true');
     });
 
     it('dispatches custom fast-iteration workflow inputs exactly', async () => {
@@ -450,6 +466,8 @@ describe('Hetzner distributed recipe workflow', () => {
             'yes',
             '--wait-for-agents',
             '0',
+            '--register-before-login',
+            'false',
             '--ready-timeout-seconds',
             '45',
             '--terminal-timeout-seconds',
@@ -470,9 +488,11 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(args).toContain('install_playwright=true');
         expect(args).toContain('npm_ci=true');
         expect(args).toContain('wait_for_agents=false');
+        expect(args).toContain('register_before_login=false');
         expect(args).toContain('ready_timeout_seconds=45');
         expect(args).toContain('terminal_timeout_seconds=90');
         expect(stdout).toContain('Mode     : custom');
+        expect(stdout).toContain('Register : false');
     });
 
     it('rejects invalid timeout inputs before invoking gh', async () => {
@@ -501,6 +521,37 @@ describe('Hetzner distributed recipe workflow', () => {
             },
         })).rejects.toMatchObject({
             stderr: expect.stringContaining('ready_timeout_seconds must be a positive integer'),
+        });
+
+        await expect(readFile(argsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('rejects invalid register-before-login inputs before invoking gh', async () => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-dispatch-invalid-register-gh-'));
+        const fakeGh = path.join(tmp, 'gh');
+        const argsFile = path.join(tmp, 'gh-args.txt');
+        await writeFile(fakeGh, [
+            '#!/usr/bin/env bash',
+            'printf "%s\\n" "$@" > "${FAKE_GH_ARGS_FILE}"',
+            '',
+        ].join('\n'));
+        await chmod(fakeGh, 0o755);
+
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        await expect(execFileAsync('bash', [
+            scriptPath,
+            'apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json',
+            '--register-before-login',
+            'maybe',
+        ], {
+            cwd: repoRoot,
+            env: {
+                ...process.env,
+                FAKE_GH_ARGS_FILE: argsFile,
+                PATH: `${tmp}${path.delimiter}${process.env.PATH ?? ''}`,
+            },
+        })).rejects.toMatchObject({
+            stderr: expect.stringContaining('register_before_login must be a boolean'),
         });
 
         await expect(readFile(argsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
