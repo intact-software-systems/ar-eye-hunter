@@ -315,6 +315,68 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(stdout).toContain('unsafe_bundle=rejected');
     });
 
+    it('builds a non-empty distributed-run create request body from the manifest', async () => {
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/controller/14-run-distributed-recipe.sh');
+
+        const { stdout } = await execFileAsync('bash', [scriptPath], {
+            env: {
+                ...process.env,
+                RALLAR_DISTRIBUTED_SCRIPT_SELF_TEST: 'create-body',
+                RALLAR_DISTRIBUTED_MANIFEST_PATH: path.join(
+                    repoRoot,
+                    'apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json',
+                ),
+            },
+        });
+
+        const body = JSON.parse(stdout);
+        expect(body.manifest.distributedRunId).toBe('hetzner-health-2-agent');
+        expect(body.manifest.recipes[0].recipe.commands).toHaveLength(2);
+    });
+
+    it('preserves failed control POST response bodies for artifact evidence', async () => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-control-post-failure-'));
+        const fakeCurl = path.join(tmp, 'curl');
+        const outputFile = path.join(tmp, 'post-response.json');
+        await writeFile(fakeCurl, [
+            '#!/usr/bin/env bash',
+            'output=""',
+            'while [[ $# -gt 0 ]]; do',
+            '  case "$1" in',
+            '    -o)',
+            '      output="$2"',
+            '      shift 2',
+            '      ;;',
+            '    -w)',
+            '      shift 2',
+            '      ;;',
+            '    *)',
+            '      shift',
+            '      ;;',
+            '  esac',
+            'done',
+            'printf \'{"error":"bad manifest"}\' > "${output}"',
+            'printf "400"',
+            '',
+        ].join('\n'));
+        await chmod(fakeCurl, 0o755);
+
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/controller/14-run-distributed-recipe.sh');
+        const { stderr, stdout } = await execFileAsync('bash', [scriptPath], {
+            env: {
+                ...process.env,
+                PATH: `${tmp}${path.delimiter}${process.env.PATH ?? ''}`,
+                RALLAR_DISTRIBUTED_SCRIPT_SELF_TEST: 'post-failure',
+                RALLAR_DISTRIBUTED_SELF_TEST_OUTPUT_FILE: outputFile,
+            },
+        });
+
+        expect(stderr).toContain('POST /distributed-runs failed with HTTP 400');
+        expect(stderr).toContain('{"error":"bad manifest"}');
+        expect(stdout).toContain('saved_body={"error":"bad manifest"}');
+        await expect(readFile(outputFile, 'utf8')).resolves.toBe('{"error":"bad manifest"}');
+    });
+
     it('dispatches a checked-in manifest with derived GitHub Action inputs', async () => {
         const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-dispatch-gh-'));
         const fakeGh = path.join(tmp, 'gh');

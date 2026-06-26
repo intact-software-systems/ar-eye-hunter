@@ -79,24 +79,66 @@ fi
 
 control_get() {
   local path="$1"
-  curl -fsS "${curl_args[@]}" "$(control_url "${path}")"
+  if ((${#curl_args[@]} > 0)); then
+    curl -fsS "${curl_args[@]}" "$(control_url "${path}")"
+  else
+    curl -fsS "$(control_url "${path}")"
+  fi
 }
 
 control_post() {
   local path="$1"
   local body="${2:-}"
+  local response_file http_code curl_status
+  local post_args
+  response_file="$(mktemp /tmp/rallar-control-post.XXXXXX.json)"
+  post_args=(-sS -o "${response_file}" -w "%{http_code}" -H "Content-Type: application/json" -X POST)
   if [[ -n "${body}" ]]; then
-    curl -fsS "${curl_args[@]}" \
-      -H "Content-Type: application/json" \
-      -X POST \
-      --data-binary "${body}" \
-      "$(control_url "${path}")"
-  else
-    curl -fsS "${curl_args[@]}" \
-      -H "Content-Type: application/json" \
-      -X POST \
-      "$(control_url "${path}")"
+    post_args+=(--data-binary "${body}")
   fi
+
+  set +e
+  if ((${#curl_args[@]} > 0)); then
+    http_code="$(curl "${curl_args[@]}" "${post_args[@]}" "$(control_url "${path}")")"
+  else
+    http_code="$(curl "${post_args[@]}" "$(control_url "${path}")")"
+  fi
+  curl_status=$?
+  set -e
+
+  if [[ -s "${response_file}" ]]; then
+    cat "${response_file}"
+  fi
+
+  if [[ "${curl_status}" -ne 0 ]]; then
+    echo "POST ${path} failed before receiving an HTTP response (curl exit ${curl_status})." >&2
+    if [[ -s "${response_file}" ]]; then
+      echo "Response body:" >&2
+      cat "${response_file}" >&2
+      echo >&2
+    fi
+    rm -f "${response_file}"
+    return "${curl_status}"
+  fi
+
+  if [[ ! "${http_code}" =~ ^[0-9][0-9][0-9]$ ]]; then
+    echo "POST ${path} returned an invalid HTTP status: ${http_code}" >&2
+    rm -f "${response_file}"
+    return 22
+  fi
+
+  if [[ "${http_code}" != 2* ]]; then
+    echo "POST ${path} failed with HTTP ${http_code}." >&2
+    if [[ -s "${response_file}" ]]; then
+      echo "Response body:" >&2
+      cat "${response_file}" >&2
+      echo >&2
+    fi
+    rm -f "${response_file}"
+    return 22
+  fi
+
+  rm -f "${response_file}"
 }
 
 terminal_state() {
@@ -175,8 +217,37 @@ export_artifacts() {
   fi
 }
 
+build_create_body() {
+  local source_manifest_file="$1"
+  jq -n -c --slurpfile manifest "${source_manifest_file}" '{manifest: $manifest[0]}'
+}
+
 run_self_test() {
   require_command jq
+
+  case "${RALLAR_DISTRIBUTED_SCRIPT_SELF_TEST}" in
+    create-body)
+      if [[ -z "${RALLAR_DISTRIBUTED_MANIFEST_PATH}" ]]; then
+        echo "Missing RALLAR_DISTRIBUTED_MANIFEST_PATH for create-body self-test." >&2
+        return 1
+      fi
+      if [[ ! -r "${RALLAR_DISTRIBUTED_MANIFEST_PATH}" ]]; then
+        echo "Distributed manifest not found: ${RALLAR_DISTRIBUTED_MANIFEST_PATH}" >&2
+        return 1
+      fi
+      build_create_body "${RALLAR_DISTRIBUTED_MANIFEST_PATH}"
+      return 0
+      ;;
+    post-failure)
+      local output_file="${RALLAR_DISTRIBUTED_SELF_TEST_OUTPUT_FILE:-/tmp/rallar-control-post-self-test.json}"
+      if control_post "/distributed-runs" '{"manifest":{}}' >"${output_file}"; then
+        echo "Expected control_post to fail." >&2
+        return 1
+      fi
+      printf 'saved_body=%s\n' "$(cat "${output_file}")"
+      return 0
+      ;;
+  esac
 
   local encoded safe_artifact safe_bundle unsafe_bundle
   encoded="$(urlencode "run/with space")"
@@ -194,7 +265,7 @@ run_self_test() {
   printf 'unsafe_bundle=%s\n' "${unsafe_bundle}"
 }
 
-if [[ "${RALLAR_DISTRIBUTED_SCRIPT_SELF_TEST:-0}" == "1" ]]; then
+if [[ "${RALLAR_DISTRIBUTED_SCRIPT_SELF_TEST:-0}" != "0" ]]; then
   run_self_test
   exit 0
 fi
@@ -249,7 +320,7 @@ mkdir -p "${run_artifact_dir}"
 cp "${manifest_file}" "${run_artifact_dir}/manifest.json"
 
 echo "==> Creating distributed run ${distributed_run_id}"
-create_body="$(jq -c --slurpfile manifest "${manifest_file}" '{manifest: $manifest[0]}')"
+create_body="$(build_create_body "${manifest_file}")"
 control_post "/distributed-runs" "${create_body}" >"${run_artifact_dir}/distributed-run.json"
 
 echo "==> Staging distributed run ${distributed_run_id}"
