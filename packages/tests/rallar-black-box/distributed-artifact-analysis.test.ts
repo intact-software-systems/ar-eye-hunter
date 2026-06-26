@@ -338,9 +338,10 @@ describe('Hetzner distributed run artifact analysis', () => {
         expect(analysis.performance?.agentCount).toBe(3);
         expect(analysis.performance?.commandTiming.minMs).toBe(350);
         expect(analysis.performance?.commandTiming.averageMs).toBe(1_125);
+        expect(analysis.performance?.commandTiming.p50Ms).toBe(350);
         expect(analysis.performance?.commandTiming.p95Ms).toBe(1_900);
         expect(analysis.performance?.commandTiming.p99Ms).toBe(1_900);
-        expect(analysis.performance?.commandTiming.spreadRatio).toBe(4.75);
+        expect(analysis.performance?.commandTiming.spreadRatio).toBe(5.43);
         expect(analysis.performance?.commandTiming.outlierCount).toBe(1);
         expect(analysis.performance?.exportedEventCount).toBe(1);
         expect(analysis.performance?.agentReportedEventCount).toBe(15);
@@ -355,6 +356,124 @@ describe('Hetzner distributed run artifact analysis', () => {
         expect(analysis.performanceMarkdown).toContain('Pass rate: 100%');
         expect(analysis.performanceMarkdown).toContain('p99=1900ms');
         expect(analysis.fixProposalMarkdown).toBeUndefined();
+    });
+
+    it('keeps command timing metrics on one linked distributed-command sample set', () => {
+        const analysis = analyzeDistributedRunArtifactFiles({
+            files: {
+                'distributed-run.json': JSON.stringify({
+                    distributedRunId: 'dist-linked-timing',
+                    controlRunId: 'run-linked-timing',
+                    state: 'passed',
+                    startedAtEpochMs: 1_000,
+                    completedAtEpochMs: 3_000,
+                    commandLinks: [
+                        { phase: 'stage', agentId: 'controller-01', commandId: 'stage-1' },
+                        { phase: 'start', agentId: 'controller-01', commandId: 'start-1' },
+                    ],
+                    rollup: {
+                        ok: true,
+                        summary: {
+                            participants: 1,
+                            passedParticipants: 1,
+                            failedParticipants: 0,
+                            blockingFailures: 0,
+                        },
+                    },
+                    manifest: {
+                        group: {
+                            applicationId: 'rallar-server',
+                            workspaceId: 'default',
+                            groupId: 'bb-group',
+                        },
+                    },
+                }),
+                'control-run.json': JSON.stringify({
+                    runId: 'run-linked-timing',
+                    agents: [
+                        { agentId: 'controller-01', connected: true, reconnectCount: 0, receivedEventCount: 0 },
+                    ],
+                    commands: [
+                        {
+                            envelope: {
+                                agentId: 'controller-01',
+                                commandId: 'stage-1',
+                                command: { kind: 'recipe.load' },
+                            },
+                            dispatchedAtEpochMs: 1_100,
+                            completedAtEpochMs: 1_600,
+                        },
+                        {
+                            envelope: {
+                                agentId: 'controller-01',
+                                commandId: 'start-1',
+                                command: { kind: 'recipe.run' },
+                            },
+                            dispatchedAtEpochMs: 1_800,
+                            completedAtEpochMs: 2_800,
+                        },
+                    ],
+                    results: [
+                        {
+                            agentId: 'controller-01',
+                            commandId: 'reset-control-1',
+                            ok: true,
+                            result: { durationMs: 10_000 },
+                        },
+                    ],
+                    events: [],
+                    stats: [],
+                    reports: [],
+                    heartbeats: [],
+                }),
+                'events.jsonl': '',
+                'fleet-report.json': JSON.stringify({
+                    distributedRunId: 'dist-linked-timing',
+                    state: 'passed',
+                    ok: true,
+                    summary: {
+                        agents: 1,
+                        regions: 1,
+                        passed: 1,
+                        failed: 0,
+                        missing: 0,
+                        flaky: 0,
+                        stale: 0,
+                        passRate: 1,
+                        failureGroups: 0,
+                    },
+                    timing: {
+                        commands: { count: 2, minMs: 50, p50Ms: 60, p95Ms: 70, maxMs: 70 },
+                    },
+                }),
+            },
+        });
+
+        expect(analysis.performance?.commandTiming).toMatchObject({
+            count: 2,
+            minMs: 500,
+            p50Ms: 500,
+            p95Ms: 1_000,
+            p99Ms: 1_000,
+            maxMs: 1_000,
+            averageMs: 750,
+            spreadRatio: 2,
+            outlierCount: 1,
+        });
+        expect(analysis.performance?.commandTiming.p99Ms).toBeLessThanOrEqual(
+            analysis.performance?.commandTiming.maxMs ?? 0,
+        );
+        expect(analysis.performance?.commandTiming.outlierCount).toBeLessThanOrEqual(
+            analysis.performance?.commandTiming.count ?? 0,
+        );
+        expect(analysis.performance?.slowestAgents).toEqual([
+            {
+                agentId: 'controller-01',
+                commandCount: 2,
+                averageMs: 750,
+                maxMs: 1_000,
+            },
+        ]);
     });
 
     it('falls back to distributed and control artifacts when fleet report is missing', () => {

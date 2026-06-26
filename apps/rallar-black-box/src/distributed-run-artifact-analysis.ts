@@ -436,7 +436,7 @@ function derivePerformance(
     events: readonly Record<string, unknown>[],
 ): DistributedRunPerformanceAnalysis {
     const agents = arrayRecords(controlRun.agents);
-    const commandTimingSamples = timingSamplesFromControlRun(controlRun);
+    const commandTimingSamples = timingSamplesFromControlRun(distributedRun, controlRun);
     const commandDurations = commandTimingSamples.map(sample => sample.durationMs);
     const commandTiming = timingFromFleetOrValues(readPath(fleetReport, ['timing', 'commands']), commandDurations);
     const diagnosticCounts = diagnosticCountsFromEvents(events);
@@ -651,13 +651,32 @@ function timingFromFleetOrValues(
     values: readonly number[],
 ): DistributedRunPerformanceAnalysis['commandTiming'] {
     const record = asRecord(value);
-    const count = numberValue(record.count) ?? values.length;
-    const minMs = numberValue(record.minMs) ?? (values.length > 0 ? Math.min(...values) : undefined);
-    const p50Ms = numberValue(record.p50Ms) ?? percentile(values, 0.5);
-    const p95Ms = numberValue(record.p95Ms) ?? percentile(values, 0.95);
-    const p99Ms = numberValue(record.p99Ms) ?? percentile(values, 0.99);
-    const maxMs = numberValue(record.maxMs) ?? (values.length > 0 ? Math.max(...values) : undefined);
-    const averageMs = numberValue(record.averageMs) ?? average(values);
+    if (values.length > 0) {
+        const p50Ms = percentile(values, 0.5);
+        const p95Ms = percentile(values, 0.95);
+        const p99Ms = percentile(values, 0.99);
+        return {
+            count: values.length,
+            minMs: Math.min(...values),
+            p50Ms,
+            p95Ms,
+            p99Ms,
+            maxMs: Math.max(...values),
+            averageMs: average(values),
+            spreadRatio: p50Ms !== undefined && p95Ms !== undefined
+                ? roundMetric(p95Ms / Math.max(1, p50Ms))
+                : undefined,
+            outlierCount: outlierCount(values, p50Ms, p95Ms),
+        };
+    }
+
+    const count = numberValue(record.count) ?? 0;
+    const minMs = numberValue(record.minMs);
+    const p50Ms = numberValue(record.p50Ms);
+    const p95Ms = numberValue(record.p95Ms);
+    const p99Ms = numberValue(record.p99Ms);
+    const maxMs = numberValue(record.maxMs);
+    const averageMs = numberValue(record.averageMs);
     const spreadRatio = p50Ms !== undefined && p95Ms !== undefined
         ? roundMetric(p95Ms / Math.max(1, p50Ms))
         : undefined;
@@ -670,7 +689,7 @@ function timingFromFleetOrValues(
         maxMs,
         averageMs,
         spreadRatio,
-        outlierCount: outlierCount(values, p50Ms, p95Ms),
+        outlierCount: numberValue(record.outlierCount) ?? 0,
     };
 }
 
@@ -705,16 +724,23 @@ type CommandTimingSample = Readonly<{
     durationMs: number;
 }>;
 
-function timingSamplesFromControlRun(controlRun: ControlRunSnapshot): readonly CommandTimingSample[] {
+function timingSamplesFromControlRun(
+    distributedRun: ControlDistributedRunSnapshot,
+    controlRun: ControlRunSnapshot,
+): readonly CommandTimingSample[] {
     const samples: CommandTimingSample[] = [];
     const sampledCommandIds = new Set<string>();
+    const linkedCommandIds = linkedDistributedCommandIds(distributedRun);
 
     for (const command of arrayRecords(controlRun.commands)) {
+        const commandId = commandIdFromCommand(command);
+        if (!shouldIncludeTimingSample(commandId, linkedCommandIds)) {
+            continue;
+        }
         const durationMs = commandDurationMs(command);
         if (durationMs === undefined) {
             continue;
         }
-        const commandId = commandIdFromCommand(command);
         if (commandId) {
             sampledCommandIds.add(commandId);
         }
@@ -727,6 +753,9 @@ function timingSamplesFromControlRun(controlRun: ControlRunSnapshot): readonly C
 
     for (const result of arrayRecords(controlRun.results)) {
         const commandId = commandIdFromResult(result);
+        if (!shouldIncludeTimingSample(commandId, linkedCommandIds)) {
+            continue;
+        }
         if (commandId && sampledCommandIds.has(commandId)) {
             continue;
         }
@@ -745,6 +774,21 @@ function timingSamplesFromControlRun(controlRun: ControlRunSnapshot): readonly C
     }
 
     return samples;
+}
+
+function linkedDistributedCommandIds(distributedRun: ControlDistributedRunSnapshot): ReadonlySet<string> {
+    const ids = new Set<string>();
+    for (const link of arrayRecords(distributedRun.commandLinks)) {
+        const commandId = firstString(link.commandId);
+        if (commandId) {
+            ids.add(commandId);
+        }
+    }
+    return ids;
+}
+
+function shouldIncludeTimingSample(commandId: string | undefined, linkedCommandIds: ReadonlySet<string>): boolean {
+    return linkedCommandIds.size === 0 || (commandId !== undefined && linkedCommandIds.has(commandId));
 }
 
 function slowestAgentRows(
