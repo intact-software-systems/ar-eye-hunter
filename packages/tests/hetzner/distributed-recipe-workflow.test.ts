@@ -84,6 +84,22 @@ describe('Hetzner distributed recipe workflow', () => {
         );
     });
 
+    it('installs rollout Playwright browsers into the rallar user cache', async () => {
+        const script = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
+            'utf8',
+        );
+
+        expect(script).toContain('run_with_heartbeat()');
+        expect(script).toContain(
+            'run_with_heartbeat "Playwright Chromium dependency install" npm --prefix "${RALLAR_CHECKOUT_DIR}" exec -- playwright install-deps chromium',
+        );
+        expect(script).toContain(
+            'run_with_heartbeat "Rallar Playwright install" runuser -u rallar -- npm --prefix "${RALLAR_CHECKOUT_DIR}" exec -- playwright install chromium',
+        );
+        expect(script).not.toContain('playwright install --with-deps chromium');
+    });
+
     it('skips the duplicate headless Playwright install after a successful rollout', async () => {
         const distributedWorkflow = await readFile(
             path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
