@@ -8,6 +8,28 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = path.resolve(__dirname, '../../..');
 const execFileAsync = promisify(execFile);
 
+const parseMajorMinorPatch = (version: string): [number, number, number] => {
+    const match = version.match(/^(\d+)\.(\d+)\.(\d+)/);
+    if (!match) {
+        throw new Error(`Unsupported semver version: ${version}`);
+    }
+    return [Number(match[1]), Number(match[2]), Number(match[3])];
+};
+
+const versionAtLeast = (version: string, minimum: string): boolean => {
+    const parsed = parseMajorMinorPatch(version);
+    const min = parseMajorMinorPatch(minimum);
+    for (let i = 0; i < parsed.length; i += 1) {
+        if (parsed[i] > min[i]) {
+            return true;
+        }
+        if (parsed[i] < min[i]) {
+            return false;
+        }
+    }
+    return true;
+};
+
 describe('Hetzner distributed recipe workflow', () => {
     it('encodes remote API path identifiers and separates safe artifact directory names', async () => {
         const script = await readFile(
@@ -97,6 +119,26 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(script).toContain('source "${SCRIPT_DIR}/rallar-playwright-install.sh"');
         expect(script).toContain('install_rallar_playwright_chromium "${RALLAR_CHECKOUT_DIR}"');
         expect(script).not.toContain('playwright install --with-deps chromium');
+    });
+
+    it('keeps Playwright packages aligned past the Node 24 browser-install hang regression', async () => {
+        const rootPackage = JSON.parse(await readFile(path.join(repoRoot, 'package.json'), 'utf8'));
+        const blackBoxPackage = JSON.parse(
+            await readFile(path.join(repoRoot, 'apps/rallar-black-box/package.json'), 'utf8'),
+        );
+        const lock = JSON.parse(await readFile(path.join(repoRoot, 'package-lock.json'), 'utf8'));
+
+        expect(rootPackage.devDependencies['@playwright/test']).not.toContain('1.59');
+        expect(blackBoxPackage.devDependencies.playwright).not.toContain('1.59');
+        expect(blackBoxPackage.devDependencies.playwright).not.toBe('^1.32.0');
+
+        const testVersion = lock.packages['node_modules/@playwright/test'].version;
+        const playwrightVersion = lock.packages['node_modules/playwright'].version;
+        const playwrightCoreVersion = lock.packages['node_modules/playwright-core'].version;
+
+        expect(playwrightVersion).toBe(testVersion);
+        expect(playwrightCoreVersion).toBe(testVersion);
+        expect(versionAtLeast(testVersion, '1.60.0')).toBe(true);
     });
 
     it('removes stale Playwright cache locks in the shared installer self-test', async () => {
