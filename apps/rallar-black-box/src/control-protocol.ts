@@ -290,6 +290,7 @@ function validateRecipe(value: unknown, path: string, depth = 0): ControlCommand
     }
 
     let result = validateKeys(value, [
+        'schemaVersion',
         'recipeId',
         'name',
         'description',
@@ -299,6 +300,9 @@ function validateRecipe(value: unknown, path: string, depth = 0): ControlCommand
     ], path);
     if (!result.ok) {
         return result;
+    }
+    if (value.schemaVersion !== undefined && value.schemaVersion !== 1) {
+        return fail(`${path}.schemaVersion must be 1.`);
     }
     result = validateStringField(value, 'recipeId', path, true);
     if (!result.ok) {

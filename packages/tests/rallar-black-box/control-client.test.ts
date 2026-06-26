@@ -179,6 +179,28 @@ describe('rallar-black-box control client', () => {
         );
         expect(directorCommand.ok).toBe(true);
 
+        const versionedRecipeLoad = parseControlServerMessage(
+            JSON.stringify(commandEnvelope('recipe-load-versioned-1', {
+                kind: 'recipe.load',
+                commandId: 'recipe-load-versioned-1',
+                recipe: {
+                    schemaVersion: 1,
+                    recipeId: 'versioned-health',
+                    commands: [
+                        {
+                            kind: 'health',
+                            commandId: 'versioned-health-1',
+                        },
+                    ],
+                },
+            })),
+            { runId: 'run-1', agentId: 'agent-1' },
+        );
+        expect(versionedRecipeLoad.ok).toBe(true);
+        expect(versionedRecipeLoad.ok ? versionedRecipeLoad.envelope.command.commandId : '').toBe(
+            'recipe-load-versioned-1',
+        );
+
         const invalidRtc = parseControlServerMessage(
             JSON.stringify(commandEnvelope('rtc-invalid-room', {
                 kind: 'rtc.connect',
