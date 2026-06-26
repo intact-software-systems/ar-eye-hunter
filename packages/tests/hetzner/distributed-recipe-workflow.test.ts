@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -70,34 +70,78 @@ describe('Hetzner distributed recipe workflow', () => {
         }
     });
 
-    it('keeps the GitHub log alive during quiet Playwright browser installs', async () => {
-        const script = await readFile(
+    it('uses a shared lock-aware Playwright installer from rollout and headless scripts', async () => {
+        const rolloutScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
+            'utf8',
+        );
+        const headlessScript = await readFile(
             path.join(repoRoot, 'scripts/hetzner/controller/09-start-headless-workers.sh'),
             'utf8',
         );
 
-        expect(script).toContain('run_with_heartbeat()');
-        expect(script).toContain('${label} still running at');
-        expect(script).toContain('"Rallar Playwright install"');
-        expect(script).toContain(
-            'run_with_heartbeat "Rallar Playwright install" runuser -u rallar -- npm --prefix "${RALLAR_CHECKOUT_DIR}" exec -- playwright install chromium',
-        );
+        for (const script of [rolloutScript, headlessScript]) {
+            expect(script).toContain('source "${SCRIPT_DIR}/rallar-playwright-install.sh"');
+            expect(script).toContain('install_rallar_playwright_chromium "${RALLAR_CHECKOUT_DIR}"');
+            expect(script).not.toContain('playwright install-deps chromium');
+            expect(script).not.toContain('playwright install chromium');
+        }
     });
 
-    it('installs rollout Playwright browsers into the rallar user cache', async () => {
+    it('uses the shared Playwright installer during legacy controller bootstrap', async () => {
         const script = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
+            path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
             'utf8',
         );
 
-        expect(script).toContain('run_with_heartbeat()');
-        expect(script).toContain(
-            'run_with_heartbeat "Playwright Chromium dependency install" npm --prefix "${RALLAR_CHECKOUT_DIR}" exec -- playwright install-deps chromium',
-        );
-        expect(script).toContain(
-            'run_with_heartbeat "Rallar Playwright install" runuser -u rallar -- npm --prefix "${RALLAR_CHECKOUT_DIR}" exec -- playwright install chromium',
-        );
+        expect(script).toContain('source "${SCRIPT_DIR}/rallar-playwright-install.sh"');
+        expect(script).toContain('install_rallar_playwright_chromium "${RALLAR_CHECKOUT_DIR}"');
         expect(script).not.toContain('playwright install --with-deps chromium');
+    });
+
+    it('removes stale Playwright cache locks in the shared installer self-test', async () => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-playwright-stale-lock-'));
+        const cacheDir = path.join(tmp, 'ms-playwright');
+        const lockDir = path.join(cacheDir, '__dirlock');
+        await mkdir(lockDir, { recursive: true });
+        const oldDate = new Date(Date.now() - 120_000);
+        await utimes(lockDir, oldDate, oldDate);
+
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/controller/rallar-playwright-install.sh');
+        const { stdout } = await execFileAsync('bash', [scriptPath], {
+            env: {
+                ...process.env,
+                RALLAR_PLAYWRIGHT_INSTALL_SELF_TEST: 'lock-check',
+                RALLAR_PLAYWRIGHT_CACHE_DIR: cacheDir,
+                RALLAR_PLAYWRIGHT_LOCK_STALE_SECONDS: '1',
+                RALLAR_PLAYWRIGHT_LOCK_WAIT_SECONDS: '0',
+            },
+        });
+
+        expect(stdout).toContain('removed stale Playwright lock');
+        await expect(stat(lockDir)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('refuses fresh Playwright cache locks in the shared installer self-test', async () => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-playwright-fresh-lock-'));
+        const cacheDir = path.join(tmp, 'ms-playwright');
+        const lockDir = path.join(cacheDir, '__dirlock');
+        await mkdir(lockDir, { recursive: true });
+
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/controller/rallar-playwright-install.sh');
+        await expect(execFileAsync('bash', [scriptPath], {
+            env: {
+                ...process.env,
+                RALLAR_PLAYWRIGHT_INSTALL_SELF_TEST: 'lock-check',
+                RALLAR_PLAYWRIGHT_CACHE_DIR: cacheDir,
+                RALLAR_PLAYWRIGHT_LOCK_STALE_SECONDS: '600',
+                RALLAR_PLAYWRIGHT_LOCK_WAIT_SECONDS: '0',
+            },
+        })).rejects.toMatchObject({
+            stderr: expect.stringContaining('Playwright lock is not stale yet'),
+        });
+
+        await expect(stat(lockDir)).resolves.toMatchObject({ isDirectory: expect.any(Function) });
     });
 
     it('skips the duplicate headless Playwright install after a successful rollout', async () => {

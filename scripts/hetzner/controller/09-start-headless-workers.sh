@@ -15,6 +15,9 @@ RALLAR_NPM_CI="${RALLAR_NPM_CI:-0}"
 RALLAR_WAIT_FOR_HEADLESS_WORKERS="${RALLAR_WAIT_FOR_HEADLESS_WORKERS:-1}"
 RALLAR_HEADLESS_READY_TIMEOUT_SECONDS="${RALLAR_HEADLESS_READY_TIMEOUT_SECONDS:-75}"
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/rallar-playwright-install.sh"
+
 bool_enabled() {
   local value="${1:-0}"
   [[ "${value}" == "1" || "${value}" == "true" || "${value}" == "yes" || "${value}" == "on" ]]
@@ -281,10 +284,7 @@ install_npm_dependencies_if_requested() {
 
 install_playwright_if_requested() {
   if bool_enabled "${RALLAR_INSTALL_PLAYWRIGHT}"; then
-    echo "==> Installing Playwright Chromium system dependencies"
-    run_with_heartbeat "Playwright Chromium dependency install" npm --prefix "${RALLAR_CHECKOUT_DIR}" exec -- playwright install-deps chromium
-    echo "==> Installing Playwright Chromium for the rallar user"
-    run_with_heartbeat "Rallar Playwright install" runuser -u rallar -- npm --prefix "${RALLAR_CHECKOUT_DIR}" exec -- playwright install chromium
+    install_rallar_playwright_chromium "${RALLAR_CHECKOUT_DIR}"
   fi
 }
 

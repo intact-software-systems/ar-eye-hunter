@@ -8,6 +8,7 @@ fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
+source "${SCRIPT_DIR}/rallar-playwright-install.sh"
 
 RALLAR_REPO_URL="${RALLAR_REPO_URL:-https://github.com/intact-software-systems/ar-eye-hunter.git}"
 RALLAR_REPO_REF="${RALLAR_REPO_REF:-main}"
@@ -62,8 +63,7 @@ runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno \
   "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/src/main.ts"
 
 if [[ "${RALLAR_INSTALL_PLAYWRIGHT}" == "1" || "${RALLAR_INSTALL_PLAYWRIGHT}" == "true" ]]; then
-  echo "==> Installing Playwright Chromium and Linux dependencies"
-  npm --prefix "${RALLAR_CHECKOUT_DIR}" exec -- playwright install --with-deps chromium
+  install_rallar_playwright_chromium "${RALLAR_CHECKOUT_DIR}"
 fi
 
 echo "==> Building rallar-black-box SPA"

@@ -219,6 +219,13 @@ Install Playwright Chromium/dependencies during rollout if needed:
 RALLAR_INSTALL_PLAYWRIGHT=1 ./08-rollout-controller.sh
 ```
 
+Playwright installs are lock-aware. The shared installer writes browser binaries
+into the `rallar` user cache, refuses to remove active installer locks, and
+removes stale `__dirlock` files only after
+`RALLAR_PLAYWRIGHT_LOCK_STALE_SECONDS` seconds (`600` by default). For a
+distributed-recipe repair without app redeploy, dispatch with
+`rollout_before_run=false`, `install_playwright=true`, and `npm_ci=false`.
+
 The deployed SPA receives its default API/control/room values at build time.
 `02-deploy-controller.sh` and `08-rollout-controller.sh` derive these public
 values and inject the matching Vite variables:

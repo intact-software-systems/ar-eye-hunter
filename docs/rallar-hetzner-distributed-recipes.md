@@ -87,6 +87,23 @@ scripts/hetzner/dispatch-distributed-recipe.sh \
   --fast
 ```
 
+If a fast run reports a missing Playwright browser executable, repair the
+browser cache once without redeploying the apps:
+
+```sh
+scripts/hetzner/dispatch-distributed-recipe.sh \
+  apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json \
+  --ref main \
+  --rollout-before-run false \
+  --install-playwright true \
+  --npm-ci false
+```
+
+The remote installer writes Chromium into the `rallar` user cache and removes a
+stale Playwright `__dirlock` only when no active installer process is running
+and the lock is older than `RALLAR_PLAYWRIGHT_LOCK_STALE_SECONDS` seconds
+(`600` by default). After that repair succeeds, use `--fast` again.
+
 The helper derives `agent_count`, `room_id`, `application_id`, and
 `workspace_id` from the manifest, creates a sanitized run id, and calls
 `gh workflow run`. It preflights the required repository or `production`

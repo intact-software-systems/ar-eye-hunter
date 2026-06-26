@@ -19,6 +19,7 @@ RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS="${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS:-}"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
+source "${SCRIPT_DIR}/rallar-playwright-install.sh"
 apply_rallar_public_spa_defaults
 apply_rallar_public_cors_defaults
 
@@ -229,10 +230,7 @@ runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno \
   "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/src/main.ts"
 
 if [[ "${RALLAR_INSTALL_PLAYWRIGHT}" == "1" || "${RALLAR_INSTALL_PLAYWRIGHT}" == "true" ]]; then
-  echo "==> Installing Playwright Chromium system dependencies"
-  run_with_heartbeat "Playwright Chromium dependency install" npm --prefix "${RALLAR_CHECKOUT_DIR}" exec -- playwright install-deps chromium
-  echo "==> Installing Playwright Chromium for the rallar user"
-  run_with_heartbeat "Rallar Playwright install" runuser -u rallar -- npm --prefix "${RALLAR_CHECKOUT_DIR}" exec -- playwright install chromium
+  install_rallar_playwright_chromium "${RALLAR_CHECKOUT_DIR}"
 fi
 
 echo "==> Building rallar-black-box SPA"
