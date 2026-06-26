@@ -304,6 +304,9 @@ jobs:
             echo "Rolling out ${RALLAR_REPO_REF:-main} before ${action}."
             ./10-stop-headless-workers.sh || true
             ./08-rollout-controller.sh
+            echo "Rollout completed; skipping duplicate Playwright install during headless worker start."
+            RALLAR_INSTALL_PLAYWRIGHT=0
+            export RALLAR_INSTALL_PLAYWRIGHT
           fi
 
           case "${action}" in

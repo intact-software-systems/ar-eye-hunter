@@ -276,6 +276,9 @@ jobs:
           if bool_enabled "${RALLAR_ROLLOUT_BEFORE_RUN:-0}"; then
             ./10-stop-headless-workers.sh || true
             ./08-rollout-controller.sh
+            echo "Rollout completed; skipping duplicate Playwright install during headless worker start."
+            RALLAR_INSTALL_PLAYWRIGHT=0
+            export RALLAR_INSTALL_PLAYWRIGHT
           fi
 
           RALLAR_WRITE_HEADLESS_ENV=1 ./09-start-headless-workers.sh

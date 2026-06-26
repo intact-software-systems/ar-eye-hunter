@@ -84,6 +84,23 @@ describe('Hetzner distributed recipe workflow', () => {
         );
     });
 
+    it('skips the duplicate headless Playwright install after a successful rollout', async () => {
+        const distributedWorkflow = await readFile(
+            path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
+            'utf8',
+        );
+        const headlessWorkflow = await readFile(
+            path.join(repoRoot, '.github/workflows/hetzner-headless-browsers.yml'),
+            'utf8',
+        );
+
+        for (const workflow of [distributedWorkflow, headlessWorkflow]) {
+            expect(workflow).toMatch(
+                /\.\/08-rollout-controller\.sh[\s\S]*RALLAR_INSTALL_PLAYWRIGHT=0[\s\S]*export RALLAR_INSTALL_PLAYWRIGHT[\s\S]*RALLAR_WRITE_HEADLESS_ENV=1 \.\/09-start-headless-workers\.sh/,
+            );
+        }
+    });
+
     it('parses the workflow YAML with the same parser used in verification', async () => {
         const workflowPath = path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml');
 
