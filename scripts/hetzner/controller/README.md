@@ -688,6 +688,7 @@ RALLAR_CONTROL_HOST=control.rallar.intactss.com
 RALLAR_BLACKBOX_HOST=blackbox.rallar.intactss.com
 RALLAR_API_CORS_ORIGINS=https://blackbox.rallar.intactss.com,https://ar-eye-hunter.pages.dev,https://relic-hunters-v1.intact-software-systems.workers.dev
 RALLAR_BLACK_BOX_ALLOWED_ORIGINS=https://blackbox.rallar.intactss.com
+RALLAR_CONTROL_HTTP_URL=https://control.rallar.intactss.com
 ```
 
 Override any default by prefixing the deploy command:
@@ -698,6 +699,10 @@ RALLAR_REPO_REF=my-branch ./02-deploy-controller.sh
 
 If `RALLAR_CONTROL_ADMIN_TOKEN` is not set, the deploy script generates one and
 stores it in `/etc/rallar/control-server.env`.
+
+`14-run-distributed-recipe.sh` uses `RALLAR_CONTROL_HTTP_URL` for
+distributed-run admin calls. Keep this on the public HTTPS control origin in
+Hetzner runs; the control server rejects plain HTTP distributed-run mutations.
 
 The deploy and rollout scripts also generate or preserve
 `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET` and write the same value to

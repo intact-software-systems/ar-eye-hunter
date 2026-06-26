@@ -190,6 +190,7 @@ jobs:
           RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}
           RALLAR_BLACK_BOX_REGISTER: ${{ inputs.register_before_login }}
           RALLAR_BLACK_BOX_CONTROL_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}
+          RALLAR_CONTROL_HTTP_URL: https://control.rallar.intactss.com
           RALLAR_INSTALL_PLAYWRIGHT: ${{ inputs.install_playwright }}
           RALLAR_NPM_CI: ${{ inputs.npm_ci }}
           RALLAR_WAIT_FOR_HEADLESS_WORKERS: ${{ inputs.wait_for_agents }}
@@ -224,6 +225,7 @@ jobs:
             printf 'RALLAR_BLACK_BOX_PASSWORD=%s\n' "$(quote "${RALLAR_BLACK_BOX_PASSWORD}")"
             printf 'RALLAR_BLACK_BOX_REGISTER=%s\n' "$(quote "${RALLAR_BLACK_BOX_REGISTER}")"
             printf 'RALLAR_BLACK_BOX_CONTROL_TOKEN=%s\n' "$(quote "${RALLAR_BLACK_BOX_CONTROL_TOKEN}")"
+            printf 'RALLAR_CONTROL_HTTP_URL=%s\n' "$(quote "${RALLAR_CONTROL_HTTP_URL}")"
             printf 'RALLAR_INSTALL_PLAYWRIGHT=%s\n' "$(quote "${RALLAR_INSTALL_PLAYWRIGHT}")"
             printf 'RALLAR_NPM_CI=%s\n' "$(quote "${RALLAR_NPM_CI}")"
             printf 'RALLAR_WAIT_FOR_HEADLESS_WORKERS=%s\n' "$(quote "${RALLAR_WAIT_FOR_HEADLESS_WORKERS}")"

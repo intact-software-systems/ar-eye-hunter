@@ -120,6 +120,8 @@ is supplied. The `--fast` flag maps to `rollout_before_run=false`,
 `ready_timeout_seconds=60`, and `terminal_timeout_seconds=180`. The helper also
 defaults `register_before_login=true`. Passing only `rollout_before_run=false`
 does not skip Playwright unless `install_playwright=false` is also supplied.
+The distributed recipe runner uses `https://control.rallar.intactss.com` for
+control-server admin API calls because distributed-run creation requires TLS.
 
 Manual full-rollout equivalent:
 

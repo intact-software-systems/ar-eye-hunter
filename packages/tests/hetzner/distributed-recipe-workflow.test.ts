@@ -74,6 +74,24 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(workflow).toContain('exit 0');
     });
 
+    it('uses a TLS control URL for distributed-run admin API calls', async () => {
+        const workflow = await readFile(
+            path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
+            'utf8',
+        );
+        const script = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/14-run-distributed-recipe.sh'),
+            'utf8',
+        );
+
+        expect(script).toContain(
+            'RALLAR_CONTROL_HTTP_URL="${RALLAR_CONTROL_HTTP_URL:-https://control.rallar.intactss.com}"',
+        );
+        expect(script).not.toContain('RALLAR_CONTROL_HTTP_URL="${RALLAR_CONTROL_HTTP_URL:-http://127.0.0.1:5180}"');
+        expect(workflow).toContain('RALLAR_CONTROL_HTTP_URL: https://control.rallar.intactss.com');
+        expect(workflow).toContain('printf \'RALLAR_CONTROL_HTTP_URL=%s\\n\' "$(quote "${RALLAR_CONTROL_HTTP_URL}")"');
+    });
+
     it('configures SSH keepalives for long Hetzner workflow operations', async () => {
         const distributedWorkflow = await readFile(
             path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),

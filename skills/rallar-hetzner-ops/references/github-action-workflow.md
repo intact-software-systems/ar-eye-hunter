@@ -73,6 +73,9 @@ manifests unless `--allow-diagnostic` is supplied. `--fast` sets
 `terminal_timeout_seconds=180`; it also sends `register_before_login=true` by
 default. Passing `rollout_before_run=false` by itself does not skip Playwright;
 also pass `install_playwright=false` or use `--fast`.
+The workflow renders `RALLAR_CONTROL_HTTP_URL=https://control.rallar.intactss.com`
+into the remote env so distributed-run admin calls satisfy the control server's
+TLS requirement.
 
 ## Common Inputs
 
