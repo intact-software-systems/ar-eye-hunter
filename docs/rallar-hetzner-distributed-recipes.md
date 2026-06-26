@@ -68,7 +68,8 @@ staging without relying on SPA state. They default to
 
 ## Dispatching Runs
 
-Recommended first run after the manifests are merged to `main`:
+Recommended first run after the manifests are merged to `main`, or whenever the
+controller VM should be redeployed from the selected ref:
 
 ```sh
 scripts/hetzner/dispatch-distributed-recipe.sh \
@@ -76,13 +77,27 @@ scripts/hetzner/dispatch-distributed-recipe.sh \
   --ref main
 ```
 
+For faster iteration after a successful deploy of the same ref, skip rollout,
+Playwright install, and `npm ci`:
+
+```sh
+scripts/hetzner/dispatch-distributed-recipe.sh \
+  apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json \
+  --ref main \
+  --fast
+```
+
 The helper derives `agent_count`, `room_id`, `application_id`, and
 `workspace_id` from the manifest, creates a sanitized run id, and calls
 `gh workflow run`. It preflights the required repository or `production`
 environment secrets and refuses diagnostic manifests unless `--allow-diagnostic`
-is supplied.
+is supplied. The `--fast` flag maps to `rollout_before_run=false`,
+`install_playwright=false`, `npm_ci=false`, `wait_for_agents=true`,
+`ready_timeout_seconds=60`, and `terminal_timeout_seconds=180`. Passing only
+`rollout_before_run=false` does not skip Playwright unless
+`install_playwright=false` is also supplied.
 
-Manual equivalent:
+Manual full-rollout equivalent:
 
 ```sh
 gh workflow run hetzner-distributed-recipe.yml \
@@ -95,6 +110,30 @@ gh workflow run hetzner-distributed-recipe.yml \
   -f ref=main \
   -f rollout_before_run=true
 ```
+
+Manual fast-iteration equivalent:
+
+```sh
+gh workflow run hetzner-distributed-recipe.yml \
+  --ref main \
+  -f manifest_path=apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json \
+  -f agent_count=2 \
+  -f room_id=hetzner-headless-room \
+  -f application_id=rallar-server \
+  -f workspace_id=default \
+  -f ref=main \
+  -f rollout_before_run=false \
+  -f install_playwright=false \
+  -f npm_ci=false \
+  -f wait_for_agents=true \
+  -f ready_timeout_seconds=60 \
+  -f terminal_timeout_seconds=180
+```
+
+Longer term, rollout can become faster by recording VM stamp files for deployed
+git SHA, `package-lock.json` hash, Playwright browser version, SPA build hash,
+and service config hash. That would let the rollout path verify and repair only
+missing or stale runtime pieces instead of always doing a full deploy.
 
 Required production secrets:
 

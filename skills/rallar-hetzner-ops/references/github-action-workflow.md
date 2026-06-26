@@ -29,10 +29,25 @@ scripts/hetzner/dispatch-distributed-recipe.sh \
   --ref main
 ```
 
+Use that full-rollout form for the first run after a code change or fresh VM
+setup. For repeated runs after the selected ref is already deployed, use the
+fast path:
+
+```sh
+scripts/hetzner/dispatch-distributed-recipe.sh \
+  apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json \
+  --ref main \
+  --fast
+```
+
 The helper derives `agent_count`, `room_id`, `application_id`, and
 `workspace_id` from the manifest. It checks the required repository or
 `production` environment secret names before dispatch and refuses diagnostic
-manifests unless `--allow-diagnostic` is supplied.
+manifests unless `--allow-diagnostic` is supplied. `--fast` sets
+`rollout_before_run=false`, `install_playwright=false`, `npm_ci=false`,
+`wait_for_agents=true`, `ready_timeout_seconds=60`, and
+`terminal_timeout_seconds=180`. Passing `rollout_before_run=false` by itself
+does not skip Playwright; also pass `install_playwright=false` or use `--fast`.
 
 ## Common Inputs
 
@@ -41,10 +56,40 @@ manifests unless `--allow-diagnostic` is supplied.
 - `room_id`, `agent_prefix`, `application_id`, `workspace_id`: headless agent
   scope.
 - `rollout_before_run`: roll out the selected ref before the run.
+- `install_playwright`: install/update Chromium and Linux dependencies before
+  starting browsers.
+- `npm_ci`: run `npm ci` before starting the headless worker.
+- `wait_for_agents`: wait until requested agents are connected.
+- `ready_timeout_seconds`: agent and distributed readiness timeout.
+- `terminal_timeout_seconds`: distributed recipe terminal-state timeout.
 - `register_before_login`: use for memory-backed API redeploys with disposable
   users.
 - `stop_after_run`: stop the headless worker service after artifacts are
   collected.
+
+Manual fast-iteration dispatch:
+
+```sh
+gh workflow run hetzner-distributed-recipe.yml \
+  --ref main \
+  -f manifest_path=apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json \
+  -f agent_count=2 \
+  -f room_id=hetzner-headless-room \
+  -f application_id=rallar-server \
+  -f workspace_id=default \
+  -f ref=main \
+  -f rollout_before_run=false \
+  -f install_playwright=false \
+  -f npm_ci=false \
+  -f wait_for_agents=true \
+  -f ready_timeout_seconds=60 \
+  -f terminal_timeout_seconds=180
+```
+
+Longer term, optimize rollout with VM stamp files for deployed git SHA,
+`package-lock.json` hash, Playwright browser version, SPA build hash, and
+service config hash so rollout can verify and repair stale pieces instead of
+always running the full deploy.
 
 ## Required Secrets
 

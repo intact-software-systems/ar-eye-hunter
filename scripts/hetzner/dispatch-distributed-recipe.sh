@@ -4,6 +4,12 @@ set -Eeuo pipefail
 WORKFLOW_NAME="hetzner-distributed-recipe.yml"
 REF="main"
 ROLLOUT_BEFORE_RUN="true"
+INSTALL_PLAYWRIGHT="true"
+NPM_CI="false"
+WAIT_FOR_AGENTS="true"
+READY_TIMEOUT_SECONDS="120"
+TERMINAL_TIMEOUT_SECONDS="300"
+FAST_MODE="0"
 ALLOW_DIAGNOSTIC="0"
 RUN_ID=""
 MANIFEST_INPUT=""
@@ -26,6 +32,12 @@ Options:
   --run-id <id>                  Control run id. Default: manifest slug + UTC timestamp.
   --workflow <name>              Workflow file name. Default: hetzner-distributed-recipe.yml.
   --rollout-before-run <bool>    Pass rollout_before_run. Default: true.
+  --install-playwright <bool>    Pass install_playwright. Default: true.
+  --npm-ci <bool>                Pass npm_ci. Default: false.
+  --wait-for-agents <bool>       Pass wait_for_agents. Default: true.
+  --ready-timeout-seconds <n>    Pass ready_timeout_seconds. Default: 120.
+  --terminal-timeout-seconds <n> Pass terminal_timeout_seconds. Default: 300.
+  --fast                         Skip rollout, Playwright install, and npm ci with shorter timeouts.
   --allow-diagnostic            Allow manifests marked as diagnostic.
   -h, --help                    Show this help.
 USAGE
@@ -50,6 +62,30 @@ sanitize_run_id() {
     fail "Could not derive a safe run id from: ${value}"
   fi
   printf '%s' "${safe}"
+}
+
+normalize_bool() {
+  local key="$1"
+  local value="$2"
+  case "${value}" in
+    true|1|yes|on)
+      printf 'true'
+      ;;
+    false|0|no|off)
+      printf 'false'
+      ;;
+    *)
+      fail "${key} must be a boolean: true, false, 1, 0, yes, no, on, or off. Received: ${value}"
+      ;;
+  esac
+}
+
+validate_positive_integer() {
+  local key="$1"
+  local value="$2"
+  if ! [[ "${value}" =~ ^[1-9][0-9]*$ ]]; then
+    fail "${key} must be a positive integer. Received: ${value}"
+  fi
 }
 
 github_secret_names() {
@@ -100,6 +136,41 @@ while [[ $# -gt 0 ]]; do
       ROLLOUT_BEFORE_RUN="$2"
       shift 2
       ;;
+    --install-playwright)
+      [[ $# -ge 2 ]] || fail "--install-playwright requires a value."
+      INSTALL_PLAYWRIGHT="$2"
+      shift 2
+      ;;
+    --npm-ci)
+      [[ $# -ge 2 ]] || fail "--npm-ci requires a value."
+      NPM_CI="$2"
+      shift 2
+      ;;
+    --wait-for-agents)
+      [[ $# -ge 2 ]] || fail "--wait-for-agents requires a value."
+      WAIT_FOR_AGENTS="$2"
+      shift 2
+      ;;
+    --ready-timeout-seconds)
+      [[ $# -ge 2 ]] || fail "--ready-timeout-seconds requires a value."
+      READY_TIMEOUT_SECONDS="$2"
+      shift 2
+      ;;
+    --terminal-timeout-seconds)
+      [[ $# -ge 2 ]] || fail "--terminal-timeout-seconds requires a value."
+      TERMINAL_TIMEOUT_SECONDS="$2"
+      shift 2
+      ;;
+    --fast)
+      FAST_MODE="1"
+      ROLLOUT_BEFORE_RUN="false"
+      INSTALL_PLAYWRIGHT="false"
+      NPM_CI="false"
+      WAIT_FOR_AGENTS="true"
+      READY_TIMEOUT_SECONDS="60"
+      TERMINAL_TIMEOUT_SECONDS="180"
+      shift
+      ;;
     --allow-diagnostic)
       ALLOW_DIAGNOSTIC="1"
       shift
@@ -120,6 +191,13 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+ROLLOUT_BEFORE_RUN="$(normalize_bool rollout_before_run "${ROLLOUT_BEFORE_RUN}")"
+INSTALL_PLAYWRIGHT="$(normalize_bool install_playwright "${INSTALL_PLAYWRIGHT}")"
+NPM_CI="$(normalize_bool npm_ci "${NPM_CI}")"
+WAIT_FOR_AGENTS="$(normalize_bool wait_for_agents "${WAIT_FOR_AGENTS}")"
+validate_positive_integer ready_timeout_seconds "${READY_TIMEOUT_SECONDS}"
+validate_positive_integer terminal_timeout_seconds "${TERMINAL_TIMEOUT_SECONDS}"
 
 [[ -n "${MANIFEST_INPUT}" ]] || {
   usage >&2
@@ -172,6 +250,26 @@ if [[ -z "${RUN_ID}" ]]; then
 fi
 safe_run_id="$(sanitize_run_id "${RUN_ID}")"
 
+mode="custom"
+if [[ "${ROLLOUT_BEFORE_RUN}" == "true" ]]; then
+  mode="rollout"
+elif [[ "${FAST_MODE}" == "1" &&
+  "${INSTALL_PLAYWRIGHT}" == "false" &&
+  "${NPM_CI}" == "false" &&
+  "${WAIT_FOR_AGENTS}" == "true" &&
+  "${READY_TIMEOUT_SECONDS}" == "60" &&
+  "${TERMINAL_TIMEOUT_SECONDS}" == "180" ]]; then
+  mode="fast"
+fi
+
+echo "Dispatching ${WORKFLOW_NAME}"
+echo "Manifest : ${manifest_path}"
+echo "Ref      : ${REF}"
+echo "Mode     : ${mode}"
+echo "Run ID   : ${safe_run_id}"
+echo "Agents   : ${agent_count}"
+echo "Room     : ${room_id}"
+
 gh workflow run "${WORKFLOW_NAME}" \
   --ref "${REF}" \
   -f "manifest_path=${manifest_path}" \
@@ -180,12 +278,12 @@ gh workflow run "${WORKFLOW_NAME}" \
   -f "application_id=${application_id}" \
   -f "workspace_id=${workspace_id}" \
   -f "rollout_before_run=${ROLLOUT_BEFORE_RUN}" \
+  -f "install_playwright=${INSTALL_PLAYWRIGHT}" \
+  -f "npm_ci=${NPM_CI}" \
+  -f "wait_for_agents=${WAIT_FOR_AGENTS}" \
+  -f "ready_timeout_seconds=${READY_TIMEOUT_SECONDS}" \
+  -f "terminal_timeout_seconds=${TERMINAL_TIMEOUT_SECONDS}" \
   -f "ref=${REF}" \
   -f "run_id=${safe_run_id}"
 
 echo "Dispatched ${WORKFLOW_NAME}"
-echo "Manifest : ${manifest_path}"
-echo "Ref      : ${REF}"
-echo "Run ID   : ${safe_run_id}"
-echo "Agents   : ${agent_count}"
-echo "Room     : ${room_id}"

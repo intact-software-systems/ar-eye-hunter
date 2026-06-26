@@ -200,12 +200,150 @@ describe('Hetzner distributed recipe workflow', () => {
             '-f',
             'rollout_before_run=true',
             '-f',
+            'install_playwright=true',
+            '-f',
+            'npm_ci=false',
+            '-f',
+            'wait_for_agents=true',
+            '-f',
+            'ready_timeout_seconds=120',
+            '-f',
+            'terminal_timeout_seconds=300',
+            '-f',
             'ref=feature/distributed-review-fix',
             '-f',
             'run_id=manual-smoke-run',
         ]);
         expect(stdout).toContain('Dispatched hetzner-distributed-recipe.yml');
         expect(stdout).toContain('03-rtc-smoke-2-agent.json');
+        expect(stdout).toContain('Mode     : rollout');
+    });
+
+    it('dispatches a fast manifest run without rollout, Playwright install, or npm ci', async () => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-dispatch-fast-gh-'));
+        const fakeGh = path.join(tmp, 'gh');
+        const argsFile = path.join(tmp, 'gh-args.txt');
+        await writeFile(fakeGh, [
+            '#!/usr/bin/env bash',
+            'if [[ "$1 $2" == "secret list" ]]; then',
+            '  printf "%s\\t%s\\n" HETZNER_HOST 2026-06-25T00:00:00Z HETZNER_USER 2026-06-25T00:00:00Z HETZNER_SSH_PRIVATE_KEY 2026-06-25T00:00:00Z HETZNER_KNOWN_HOSTS 2026-06-25T00:00:00Z RALLAR_BLACK_BOX_USERNAME 2026-06-25T00:00:00Z RALLAR_BLACK_BOX_PASSWORD 2026-06-25T00:00:00Z',
+            '  exit 0',
+            'fi',
+            'printf "%s\\n" "$@" > "${FAKE_GH_ARGS_FILE}"',
+            '',
+        ].join('\n'));
+        await chmod(fakeGh, 0o755);
+
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        const { stdout } = await execFileAsync('bash', [
+            scriptPath,
+            'apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json',
+            '--ref',
+            'main',
+            '--run-id',
+            'fast-health',
+            '--fast',
+        ], {
+            cwd: repoRoot,
+            env: {
+                ...process.env,
+                FAKE_GH_ARGS_FILE: argsFile,
+                PATH: `${tmp}${path.delimiter}${process.env.PATH ?? ''}`,
+            },
+        });
+
+        const args = (await readFile(argsFile, 'utf8')).trim().split('\n');
+        expect(args).toContain('rollout_before_run=false');
+        expect(args).toContain('install_playwright=false');
+        expect(args).toContain('npm_ci=false');
+        expect(args).toContain('wait_for_agents=true');
+        expect(args).toContain('ready_timeout_seconds=60');
+        expect(args).toContain('terminal_timeout_seconds=180');
+        expect(args).toContain('run_id=fast-health');
+        expect(stdout).toContain('Mode     : fast');
+    });
+
+    it('dispatches custom fast-iteration workflow inputs exactly', async () => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-dispatch-custom-gh-'));
+        const fakeGh = path.join(tmp, 'gh');
+        const argsFile = path.join(tmp, 'gh-args.txt');
+        await writeFile(fakeGh, [
+            '#!/usr/bin/env bash',
+            'if [[ "$1 $2" == "secret list" ]]; then',
+            '  printf "%s\\t%s\\n" HETZNER_HOST 2026-06-25T00:00:00Z HETZNER_USER 2026-06-25T00:00:00Z HETZNER_SSH_PRIVATE_KEY 2026-06-25T00:00:00Z HETZNER_KNOWN_HOSTS 2026-06-25T00:00:00Z RALLAR_BLACK_BOX_USERNAME 2026-06-25T00:00:00Z RALLAR_BLACK_BOX_PASSWORD 2026-06-25T00:00:00Z',
+            '  exit 0',
+            'fi',
+            'printf "%s\\n" "$@" > "${FAKE_GH_ARGS_FILE}"',
+            '',
+        ].join('\n'));
+        await chmod(fakeGh, 0o755);
+
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        const { stdout } = await execFileAsync('bash', [
+            scriptPath,
+            'apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json',
+            '--rollout-before-run',
+            'no',
+            '--install-playwright',
+            'on',
+            '--npm-ci',
+            'yes',
+            '--wait-for-agents',
+            '0',
+            '--ready-timeout-seconds',
+            '45',
+            '--terminal-timeout-seconds',
+            '90',
+            '--run-id',
+            'custom-inputs',
+        ], {
+            cwd: repoRoot,
+            env: {
+                ...process.env,
+                FAKE_GH_ARGS_FILE: argsFile,
+                PATH: `${tmp}${path.delimiter}${process.env.PATH ?? ''}`,
+            },
+        });
+
+        const args = (await readFile(argsFile, 'utf8')).trim().split('\n');
+        expect(args).toContain('rollout_before_run=false');
+        expect(args).toContain('install_playwright=true');
+        expect(args).toContain('npm_ci=true');
+        expect(args).toContain('wait_for_agents=false');
+        expect(args).toContain('ready_timeout_seconds=45');
+        expect(args).toContain('terminal_timeout_seconds=90');
+        expect(stdout).toContain('Mode     : custom');
+    });
+
+    it('rejects invalid timeout inputs before invoking gh', async () => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-dispatch-invalid-timeout-gh-'));
+        const fakeGh = path.join(tmp, 'gh');
+        const argsFile = path.join(tmp, 'gh-args.txt');
+        await writeFile(fakeGh, [
+            '#!/usr/bin/env bash',
+            'printf "%s\\n" "$@" > "${FAKE_GH_ARGS_FILE}"',
+            '',
+        ].join('\n'));
+        await chmod(fakeGh, 0o755);
+
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        await expect(execFileAsync('bash', [
+            scriptPath,
+            'apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json',
+            '--ready-timeout-seconds',
+            '0',
+        ], {
+            cwd: repoRoot,
+            env: {
+                ...process.env,
+                FAKE_GH_ARGS_FILE: argsFile,
+                PATH: `${tmp}${path.delimiter}${process.env.PATH ?? ''}`,
+            },
+        })).rejects.toMatchObject({
+            stderr: expect.stringContaining('ready_timeout_seconds must be a positive integer'),
+        });
+
+        await expect(readFile(argsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
     });
 
     it('refuses dispatch before workflow run when required GitHub secrets are missing', async () => {
