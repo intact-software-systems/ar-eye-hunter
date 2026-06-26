@@ -144,6 +144,80 @@ describe('Hetzner distributed recipe workflow', () => {
         await expect(stat(lockDir)).resolves.toMatchObject({ isDirectory: expect.any(Function) });
     });
 
+    it('does not classify ordinary npm worker processes as active Playwright installers', async () => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-playwright-process-list-'));
+        const processList = path.join(tmp, 'processes.txt');
+        await writeFile(processList, [
+            '12345 999 npm --workspace apps/rallar-black-box run headless:worker -- --playwright-ready',
+            '',
+        ].join('\n'));
+
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/controller/rallar-playwright-install.sh');
+        const { stdout } = await execFileAsync('bash', [scriptPath], {
+            env: {
+                ...process.env,
+                RALLAR_PLAYWRIGHT_INSTALL_SELF_TEST: 'process-check',
+                RALLAR_PLAYWRIGHT_PROCESS_LIST_FILE: processList,
+            },
+        });
+
+        expect(stdout).toContain('activeInstaller=false');
+    });
+
+    it('classifies stale active Playwright installers before clearing cache locks', async () => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-playwright-stale-process-'));
+        const processList = path.join(tmp, 'processes.txt');
+        await writeFile(processList, [
+            '12345 1200 npm --prefix /opt/rallar/ar-eye-hunter exec -- playwright install chromium',
+            '',
+        ].join('\n'));
+
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/controller/rallar-playwright-install.sh');
+        const { stdout } = await execFileAsync('bash', [scriptPath], {
+            env: {
+                ...process.env,
+                RALLAR_PLAYWRIGHT_INSTALL_SELF_TEST: 'process-check',
+                RALLAR_PLAYWRIGHT_ACTIVE_INSTALLER_STALE_SECONDS: '600',
+                RALLAR_PLAYWRIGHT_PROCESS_LIST_FILE: processList,
+            },
+        });
+
+        expect(stdout).toContain('activeInstaller=true');
+        expect(stdout).toContain('staleInstaller=12345');
+    });
+
+    it('refuses stale lock cleanup when a stale Playwright installer is present and termination is disabled', async () => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-playwright-stale-process-lock-'));
+        const cacheDir = path.join(tmp, 'ms-playwright');
+        const lockDir = path.join(cacheDir, '__dirlock');
+        const processList = path.join(tmp, 'processes.txt');
+        await mkdir(lockDir, { recursive: true });
+        await writeFile(processList, [
+            '12345 1200 npm --prefix /opt/rallar/ar-eye-hunter exec -- playwright install chromium',
+            '',
+        ].join('\n'));
+        const oldDate = new Date(Date.now() - 120_000);
+        await utimes(lockDir, oldDate, oldDate);
+
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/controller/rallar-playwright-install.sh');
+        await expect(execFileAsync('bash', [scriptPath], {
+            env: {
+                ...process.env,
+                RALLAR_PLAYWRIGHT_INSTALL_SELF_TEST: 'lock-check',
+                RALLAR_PLAYWRIGHT_CACHE_DIR: cacheDir,
+                RALLAR_PLAYWRIGHT_LOCK_STALE_SECONDS: '1',
+                RALLAR_PLAYWRIGHT_LOCK_WAIT_SECONDS: '0',
+                RALLAR_PLAYWRIGHT_ACTIVE_INSTALLER_STALE_SECONDS: '600',
+                RALLAR_PLAYWRIGHT_TERMINATE_STALE_INSTALLER: 'false',
+                RALLAR_PLAYWRIGHT_PROCESS_LIST_FILE: processList,
+            },
+        })).rejects.toMatchObject({
+            stderr: expect.stringContaining('Stale Playwright installer detected for'),
+        });
+
+        await expect(stat(lockDir)).resolves.toMatchObject({ isDirectory: expect.any(Function) });
+    });
+
     it('skips the duplicate headless Playwright install after a successful rollout', async () => {
         const distributedWorkflow = await readFile(
             path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),

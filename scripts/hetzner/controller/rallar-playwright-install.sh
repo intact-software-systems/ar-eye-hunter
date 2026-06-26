@@ -90,16 +90,145 @@ rallar_playwright_lock_age_seconds() {
   echo $((now - modified))
 }
 
-rallar_playwright_active_installer_exists() {
+rallar_playwright_bool_enabled() {
+  case "${1:-}" in
+    true | TRUE | yes | YES | on | ON | 1) return 0 ;;
+    false | FALSE | no | NO | off | OFF | 0 | "") return 1 ;;
+    *) return 1 ;;
+  esac
+}
+
+rallar_playwright_active_installer_stale_seconds() {
+  local stale_seconds="${RALLAR_PLAYWRIGHT_ACTIVE_INSTALLER_STALE_SECONDS:-${RALLAR_PLAYWRIGHT_LOCK_STALE_SECONDS:-600}}"
+  if ! [[ "${stale_seconds}" =~ ^[0-9]+$ ]]; then
+    rallar_playwright_fail "RALLAR_PLAYWRIGHT_ACTIVE_INSTALLER_STALE_SECONDS must be a non-negative integer. Received: ${stale_seconds}"
+    return 1
+  fi
+  printf '%s' "${stale_seconds}"
+}
+
+rallar_playwright_process_list() {
   local user="$1"
   local uid
 
+  if [[ -n "${RALLAR_PLAYWRIGHT_PROCESS_LIST_FILE:-}" ]]; then
+    cat "${RALLAR_PLAYWRIGHT_PROCESS_LIST_FILE}"
+    return 0
+  fi
+
   uid="$(id -u "${user}" 2>/dev/null)" || return 1
-  if ! command -v pgrep >/dev/null 2>&1; then
+  ps -u "${uid}" -o pid=,etimes=,args= 2>/dev/null || true
+}
+
+rallar_playwright_is_installer_command() {
+  local args="$1"
+
+  [[ "${args}" == *"install-deps"* ]] && return 1
+
+  case "${args}" in
+    *"playwright install"* | *"playwright/cli"*".js install"* | *"playwright-core/cli"*".js install"*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+rallar_playwright_installer_processes() {
+  local user="$1"
+  local line pid age args
+
+  while IFS= read -r line; do
+    [[ -z "${line}" ]] && continue
+    read -r pid age args <<<"${line}"
+    [[ "${pid}" =~ ^[0-9]+$ ]] || continue
+    [[ "${age}" =~ ^[0-9]+$ ]] || continue
+    [[ "${pid}" == "$$" || "${pid}" == "${BASHPID:-}" ]] && continue
+
+    if rallar_playwright_is_installer_command "${args}"; then
+      printf '%s\t%s\t%s\n' "${pid}" "${age}" "${args}"
+    fi
+  done < <(rallar_playwright_process_list "${user}")
+}
+
+rallar_playwright_active_installer_exists() {
+  local user="$1"
+  local processes
+
+  processes="$(rallar_playwright_installer_processes "${user}")"
+  [[ -n "${processes}" ]]
+}
+
+rallar_playwright_terminate_stale_installer() {
+  local pid="$1"
+  local age="$2"
+  local args="$3"
+  local wait_seconds="${RALLAR_PLAYWRIGHT_STALE_INSTALLER_TERM_WAIT_SECONDS:-15}"
+  local waited=0
+  local kill_waited=0
+
+  if ! [[ "${wait_seconds}" =~ ^[0-9]+$ ]]; then
+    rallar_playwright_fail "RALLAR_PLAYWRIGHT_STALE_INSTALLER_TERM_WAIT_SECONDS must be a non-negative integer. Received: ${wait_seconds}"
     return 1
   fi
 
-  pgrep -u "${uid}" -af '(playwright.*install|npm.*playwright|npm.*exec.*playwright|node.*playwright.*install)' >/dev/null 2>&1
+  echo "Terminating stale Playwright installer: pid=${pid} age=${age}s command=${args}"
+
+  if [[ -n "${RALLAR_PLAYWRIGHT_PROCESS_LIST_FILE:-}" ]]; then
+    return 0
+  fi
+
+  if ! kill "${pid}" 2>/dev/null; then
+    if kill -0 "${pid}" 2>/dev/null; then
+      rallar_playwright_fail "Could not signal stale Playwright installer: pid=${pid}"
+      return 1
+    fi
+    return 0
+  fi
+
+  while kill -0 "${pid}" 2>/dev/null && [[ "${waited}" -lt "${wait_seconds}" ]]; do
+    sleep 1
+    waited=$((waited + 1))
+  done
+
+  if kill -0 "${pid}" 2>/dev/null; then
+    echo "Stale Playwright installer did not stop after ${wait_seconds}s; sending SIGKILL: pid=${pid}"
+    kill -KILL "${pid}" 2>/dev/null || true
+    while kill -0 "${pid}" 2>/dev/null && [[ "${kill_waited}" -lt 5 ]]; do
+      sleep 1
+      kill_waited=$((kill_waited + 1))
+    done
+    if kill -0 "${pid}" 2>/dev/null; then
+      rallar_playwright_fail "Stale Playwright installer is still running after SIGKILL: pid=${pid}"
+      return 1
+    fi
+  fi
+}
+
+rallar_playwright_handle_active_installers() {
+  local user="$1"
+  local stale_seconds
+  local processes pid age args
+
+  stale_seconds="$(rallar_playwright_active_installer_stale_seconds)"
+  processes="$(rallar_playwright_installer_processes "${user}")"
+  [[ -z "${processes}" ]] && return 0
+
+  while IFS=$'\t' read -r pid age args; do
+    [[ -z "${pid}" ]] && continue
+    if [[ "${age}" -lt "${stale_seconds}" ]]; then
+      rallar_playwright_fail "Active Playwright installer detected for ${user}: pid=${pid} age=${age}s staleAfter=${stale_seconds}s; refusing to remove Playwright lock."
+      return 1
+    fi
+
+    if ! rallar_playwright_bool_enabled "${RALLAR_PLAYWRIGHT_TERMINATE_STALE_INSTALLER:-true}"; then
+      rallar_playwright_fail "Stale Playwright installer detected for ${user}: pid=${pid} age=${age}s staleAfter=${stale_seconds}s; termination disabled."
+      return 1
+    fi
+
+    rallar_playwright_terminate_stale_installer "${pid}" "${age}" "${args}" || return 1
+  done <<<"${processes}"
 }
 
 rallar_playwright_remove_stale_lock_if_safe() {
@@ -123,10 +252,7 @@ rallar_playwright_remove_stale_lock_if_safe() {
     return 0
   fi
 
-  if rallar_playwright_active_installer_exists "${user}"; then
-    rallar_playwright_fail "Active Playwright installer detected for ${user}; refusing to remove ${lock_path}."
-    return 1
-  fi
+  rallar_playwright_handle_active_installers "${user}" || return 1
 
   waited=0
   while [[ -e "${lock_path}" && "${waited}" -lt "${wait_seconds}" ]]; do
@@ -142,10 +268,7 @@ rallar_playwright_remove_stale_lock_if_safe() {
     return 0
   fi
 
-  if rallar_playwright_active_installer_exists "${user}"; then
-    rallar_playwright_fail "Active Playwright installer detected for ${user}; refusing to remove ${lock_path}."
-    return 1
-  fi
+  rallar_playwright_handle_active_installers "${user}" || return 1
 
   age="$(rallar_playwright_lock_age_seconds "${lock_path}")"
   if [[ "${age}" -lt "${stale_seconds}" ]]; then
@@ -186,6 +309,22 @@ rallar_playwright_self_test() {
   case "${RALLAR_PLAYWRIGHT_INSTALL_SELF_TEST:-}" in
     lock-check)
       rallar_playwright_remove_stale_lock_if_safe
+      ;;
+    process-check)
+      local user="${RALLAR_PLAYWRIGHT_USER:-rallar}"
+      local stale_seconds processes pid age args active="false"
+      stale_seconds="$(rallar_playwright_active_installer_stale_seconds)"
+      processes="$(rallar_playwright_installer_processes "${user}")"
+      if [[ -n "${processes}" ]]; then
+        active="true"
+      fi
+      echo "activeInstaller=${active}"
+      while IFS=$'\t' read -r pid age args; do
+        [[ -z "${pid}" ]] && continue
+        if [[ "${age}" -ge "${stale_seconds}" ]]; then
+          echo "staleInstaller=${pid}"
+        fi
+      done <<<"${processes}"
       ;;
     "")
       rallar_playwright_fail "Source this file from a controller script, or set RALLAR_PLAYWRIGHT_INSTALL_SELF_TEST."
