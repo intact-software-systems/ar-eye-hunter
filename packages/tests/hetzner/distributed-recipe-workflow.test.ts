@@ -188,6 +188,53 @@ describe('Hetzner distributed recipe workflow', () => {
         );
     });
 
+    it('repairs known Deno lockfile drift before the controlled rollout dirty checkout guard', async () => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-rollout-lock-drift-'));
+        const checkoutDir = path.join(tmp, 'checkout');
+        const denoLock = path.join(checkoutDir, 'apps/api-v1/deno.lock');
+        await mkdir(path.dirname(denoLock), { recursive: true });
+        await execFileAsync('git', ['init'], { cwd: checkoutDir });
+        await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: checkoutDir });
+        await execFileAsync('git', ['config', 'user.name', 'Test User'], { cwd: checkoutDir });
+        await writeFile(denoLock, 'clean\n');
+        await execFileAsync('git', ['add', 'apps/api-v1/deno.lock'], { cwd: checkoutDir });
+        await execFileAsync('git', ['commit', '-m', 'seed deno lock'], { cwd: checkoutDir });
+        await writeFile(denoLock, 'dirty\n');
+
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh');
+        const { stdout } = await execFileAsync('bash', [scriptPath], {
+            env: {
+                ...process.env,
+                RALLAR_CHECKOUT_DIR: checkoutDir,
+                RALLAR_ROLLOUT_SCRIPT_SELF_TEST: 'repair-known-drift',
+            },
+        });
+
+        expect(stdout).toContain('repairedKnownDenoLockDrift=true');
+        await expect(readFile(denoLock, 'utf8')).resolves.toBe('clean\n');
+    });
+
+    it('warms Deno caches without mutating checked-in lockfiles', async () => {
+        const deployScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
+            'utf8',
+        );
+        const rolloutScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
+            'utf8',
+        );
+
+        for (const script of [deployScript, rolloutScript]) {
+            expect(script).toContain(
+                'deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/api-v1/deno.json"',
+            );
+            expect(script).toContain(
+                'deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/deno.json"',
+            );
+            expect(script).not.toContain('deno cache --config "${RALLAR_CHECKOUT_DIR}');
+        }
+    });
+
     it('keeps Playwright packages aligned past the Node 24 browser-install hang regression', async () => {
         const rootPackage = JSON.parse(await readFile(path.join(repoRoot, 'package.json'), 'utf8'));
         const blackBoxPackage = JSON.parse(

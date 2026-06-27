@@ -56,10 +56,10 @@ runuser -u rallar -- npm --prefix "${RALLAR_CHECKOUT_DIR}" ci
 
 echo "==> Warming Deno caches"
 runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno \
-  deno cache --config "${RALLAR_CHECKOUT_DIR}/apps/api-v1/deno.json" \
+  deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/api-v1/deno.json" \
   "${RALLAR_CHECKOUT_DIR}/apps/api-v1/src/main.ts"
 runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno \
-  deno cache --config "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/deno.json" \
+  deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/deno.json" \
   "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/src/main.ts"
 
 if [[ "${RALLAR_INSTALL_PLAYWRIGHT}" == "1" || "${RALLAR_INSTALL_PLAYWRIGHT}" == "true" ]]; then

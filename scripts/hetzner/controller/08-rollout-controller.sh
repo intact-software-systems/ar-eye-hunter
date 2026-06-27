@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-if [[ "$(id -u)" != "0" ]]; then
-  echo "Run this script as root." >&2
-  exit 1
-fi
-
 RALLAR_REPO_REF="${RALLAR_REPO_REF:-main}"
 RALLAR_CHECKOUT_DIR="${RALLAR_CHECKOUT_DIR:-/opt/rallar/ar-eye-hunter}"
 RALLAR_API_HOST="${RALLAR_API_HOST:-api.rallar.intactss.com}"
@@ -16,6 +11,69 @@ RALLAR_INSTALL_PLAYWRIGHT="${RALLAR_INSTALL_PLAYWRIGHT:-0}"
 RALLAR_ACME_EMAIL="${RALLAR_ACME_EMAIL:-}"
 RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS="${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS:-86400000}"
 RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS="${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS:-}"
+
+is_known_rollout_generated_lockfile() {
+  case "$1" in
+    apps/api-v1/deno.lock | apps/rallar-black-box-control-server/deno.lock)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+repair_known_rollout_generated_checkout_changes() {
+  local checkout_dir="$1"
+  local status line state file repaired_files=()
+
+  status="$(git -C "${checkout_dir}" status --porcelain)"
+  [[ -z "${status}" ]] && return 0
+
+  while IFS= read -r line; do
+    [[ -z "${line}" ]] && continue
+    state="${line:0:2}"
+    file="${line:3}"
+    if [[ "${state}" == " M" ]] && is_known_rollout_generated_lockfile "${file}"; then
+      repaired_files+=("${file}")
+      continue
+    fi
+    return 0
+  done <<<"${status}"
+
+  [[ "${#repaired_files[@]}" -gt 0 ]] || return 0
+
+  echo "Repairing rollout-generated Deno lockfile drift before controlled rollout:"
+  printf "  %s\n" "${repaired_files[@]}"
+  git -C "${checkout_dir}" checkout -- "${repaired_files[@]}"
+}
+
+run_rollout_self_test() {
+  case "${RALLAR_ROLLOUT_SCRIPT_SELF_TEST:-}" in
+    repair-known-drift)
+      repair_known_rollout_generated_checkout_changes "${RALLAR_CHECKOUT_DIR}"
+      if [[ -n "$(git -C "${RALLAR_CHECKOUT_DIR}" status --porcelain)" ]]; then
+        git -C "${RALLAR_CHECKOUT_DIR}" status --short >&2
+        return 1
+      fi
+      echo "repairedKnownDenoLockDrift=true"
+      ;;
+    *)
+      echo "Unknown RALLAR_ROLLOUT_SCRIPT_SELF_TEST: ${RALLAR_ROLLOUT_SCRIPT_SELF_TEST}" >&2
+      return 2
+      ;;
+  esac
+}
+
+if [[ "${RALLAR_ROLLOUT_SCRIPT_SELF_TEST:-0}" != "0" ]]; then
+  run_rollout_self_test
+  exit 0
+fi
+
+if [[ "$(id -u)" != "0" ]]; then
+  echo "Run this script as root." >&2
+  exit 1
+fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
@@ -175,6 +233,8 @@ if [[ ! -d "${RALLAR_CHECKOUT_DIR}/.git" ]]; then
   exit 1
 fi
 
+repair_known_rollout_generated_checkout_changes "${RALLAR_CHECKOUT_DIR}"
+
 if [[ -n "$(git -C "${RALLAR_CHECKOUT_DIR}" status --porcelain)" ]]; then
   echo "Checkout has local changes; refusing controlled rollout:" >&2
   git -C "${RALLAR_CHECKOUT_DIR}" status --short >&2
@@ -223,10 +283,10 @@ runuser -u rallar -- npm --prefix "${RALLAR_CHECKOUT_DIR}" ci
 
 echo "==> Warming Deno caches"
 runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno \
-  deno cache --config "${RALLAR_CHECKOUT_DIR}/apps/api-v1/deno.json" \
+  deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/api-v1/deno.json" \
   "${RALLAR_CHECKOUT_DIR}/apps/api-v1/src/main.ts"
 runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno \
-  deno cache --config "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/deno.json" \
+  deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/deno.json" \
   "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/src/main.ts"
 
 if [[ "${RALLAR_INSTALL_PLAYWRIGHT}" == "1" || "${RALLAR_INSTALL_PLAYWRIGHT}" == "true" ]]; then

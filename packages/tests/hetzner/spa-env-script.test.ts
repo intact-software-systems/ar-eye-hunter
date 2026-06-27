@@ -55,7 +55,7 @@ describe('Hetzner SPA public env wiring', () => {
         expect(controlConfig.nodeModulesDir).toBe('auto');
         for (const script of [deployScript, rolloutScript]) {
             expect(script).toContain(
-                'deno cache --config "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/deno.json"',
+                'deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/deno.json"',
             );
         }
         expect(deployScript).toContain(
