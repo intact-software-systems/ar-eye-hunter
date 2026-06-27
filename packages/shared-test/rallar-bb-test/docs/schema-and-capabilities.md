@@ -8,6 +8,12 @@ for browser-agent commands and recipes. It sits beside `types.ts`:
   UI validation, control-server documentation, runner handoff, and future
   distributed-run manifests.
 
+Runtime parsing and distributed artifact analysis must stay aligned with these
+schemas. For black-box control/distributed-run behavior, update
+`control-protocol.ts`, `control-snapshots.ts`, `distributed-artifact-analysis.ts`,
+and generated manifest JSON together so the browser agent, CLI analyzer, SPA,
+and Hetzner workflow agree.
+
 ## Schema Catalog
 
 The exported catalog is `RALLAR_BLACK_BOX_SCHEMA_CATALOG`.

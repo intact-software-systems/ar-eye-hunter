@@ -11,7 +11,7 @@ import {
 import {
     analyzeDistributedRunArtifactDirectory,
 } from '../../../apps/rallar-black-box/scripts/analyze-distributed-run-artifacts.ts';
-import { deriveDistributedRunMonitor } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
+import { deriveDistributedRunMonitor } from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
 
 describe('Hetzner distributed run artifact analysis', () => {
     it('uses JSONL fallback evidence consistently for CLI analysis and SPA snapshots', () => {

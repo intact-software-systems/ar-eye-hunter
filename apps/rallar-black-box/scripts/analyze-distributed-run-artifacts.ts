@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import {
     analyzeDistributedRunArtifactFiles,
     type DistributedRunArtifactFiles,
-} from '../src/distributed-run-artifact-analysis.ts';
+} from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 
 async function main(): Promise<void> {
     const args = parseArgs(process.argv.slice(2));

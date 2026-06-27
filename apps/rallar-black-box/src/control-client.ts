@@ -16,7 +16,7 @@ import {
     parseControlServerMessage,
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
     toControlEventEnvelope,
-} from './control-protocol.ts';
+} from '@shared-test/rallar-bb-test/control-protocol.ts';
 
 export type RallarBlackBoxControlConnectionState =
     | 'idle'

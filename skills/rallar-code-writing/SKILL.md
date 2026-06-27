@@ -20,10 +20,11 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
 
 1. Identify the domain boundary first: shared contract, browser facade, server runtime, game rules, AI, motion, graph, or tests.
 2. Reuse existing helpers and package APIs before adding new modules.
-3. Prefer small functions with explicit inputs and return values.
-4. Inject clocks, random IDs, repositories, providers, transports, and side effects through options.
-5. Add or update behavior tests with the code change.
-6. Use the rallar-testing skill to pick targeted checks and package type-checks.
+3. Keep algorithmic behavior in one canonical helper; adapters and bridges should delegate to it rather than reimplementing logic.
+4. Prefer small functions with explicit inputs and return values.
+5. Inject clocks, random IDs, repositories, providers, transports, and side effects through options.
+6. Add or update behavior tests with the code change.
+7. Use the rallar-testing skill to pick targeted checks and package type-checks.
 
 ## Shape Decision
 
@@ -39,6 +40,7 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
 - No broad public export unless it is intentionally part of the package API.
 - No hidden clock, randomness, network, storage, or repository dependency when injection would make tests deterministic.
 - No clever code where named helpers or explicit branches would be easier to review.
+- No parallel implementations of the same algorithm; bridges or adapters need a clear boundary, compatibility, or runtime reason.
 - No app-local duplicate of behavior that already belongs in `packages/**`.
 
 ## Validation

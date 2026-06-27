@@ -3,14 +3,14 @@ import type {
     ControlDistributedRunSnapshot,
     ControlFleetRunReport,
     ControlRunSnapshot,
-} from './control-run-manager.ts';
+} from './control-snapshots.ts';
 import {
     deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,
     deriveRunVerdictView,
     type DistributedRunAnalysisReport,
     type RunVerdictView,
-} from './distributed-recipes.ts';
+} from './distributed-run-monitor.ts';
 
 export type DistributedRunArtifactFiles = Readonly<Record<string, string | undefined>>;
 

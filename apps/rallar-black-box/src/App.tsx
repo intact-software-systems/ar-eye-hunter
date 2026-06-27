@@ -219,7 +219,7 @@ import {
     distributedArtifactSnapshotsFromFiles,
     type DistributedRunAnalysis,
     type DistributedRunArtifactFiles,
-} from './distributed-run-artifact-analysis.ts';
+} from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import {
     DISTRIBUTED_RECIPE_PROMPT_TEMPLATES,
     distributedRecipeSchemaContextText,

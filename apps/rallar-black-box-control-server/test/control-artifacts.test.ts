@@ -6,7 +6,9 @@ import {
   createControlRunArtifactBundle,
 } from '../src/control-artifacts.ts';
 import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../src/control-service.ts';
-import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '../../rallar-black-box/src/control-protocol.ts';
+import {
+  RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+} from '@shared-test/rallar-bb-test/control-protocol.ts';
 
 function assert(condition: unknown, message = 'Assertion failed.'): asserts condition {
   if (!condition) {

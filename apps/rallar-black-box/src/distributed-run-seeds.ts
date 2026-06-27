@@ -17,7 +17,7 @@ import type {
 import type {
     ControlEventEnvelope,
     ControlResultEnvelope,
-} from './control-protocol.ts';
+} from '@shared-test/rallar-bb-test/control-protocol.ts';
 
 export type DistributedRunSeedId =
     | 'passed-clean'

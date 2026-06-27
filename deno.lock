@@ -13,17 +13,17 @@
     "npm:@babylonjs/loaders@^9.6.2": "9.9.1_@babylonjs+core@8.56.2_babylonjs-gltf2interface@8.56.2",
     "npm:@js-temporal/polyfill@~0.5.1": "0.5.1",
     "npm:@mlc-ai/web-llm@~0.2.84": "0.2.84",
-    "npm:@playwright/test@^1.59.1": "1.60.0",
+    "npm:@playwright/test@^1.61.1": "1.61.1",
     "npm:@types/react-dom@19": "19.2.3_@types+react@19.2.15",
     "npm:@types/react@19": "19.2.15",
     "npm:@vitejs/plugin-react@5": "5.2.0_vite@8.0.14__tsx@4.22.3_tsx@4.22.3",
-    "npm:@vitest/ui@^4.0.17": "4.0.18_vitest@4.0.18_happy-dom@20.9.0_tsx@4.22.3",
+    "npm:@vitest/ui@^4.0.17": "4.0.18_vitest@4.0.18_picomatch@4.0.4",
     "npm:eslint@9.26.0": "9.26.0",
     "npm:fake-indexeddb@^6.2.5": "6.2.5",
     "npm:graphology@0.26": "0.26.0_graphology-types@0.24.8",
     "npm:graphology@0.26.0": "0.26.0_graphology-types@0.24.8",
     "npm:happy-dom@^20.9.0": "20.9.0",
-    "npm:playwright@^1.32.0": "1.60.0",
+    "npm:playwright@^1.61.1": "1.61.1",
     "npm:postgres@^3.4.9": "3.4.9",
     "npm:prettier@^3.2.5": "3.8.1",
     "npm:prisma@^7.8.0": "7.8.0_typescript@5.9.3_@types+react@19.2.15_@types+react-dom@19.2.3__@types+react@19.2.15_react@19.2.6_react-dom@19.2.6__react@19.2.6",
@@ -670,8 +670,8 @@
     "@oxc-project/types@0.132.0": {
       "integrity": "sha512-FESMOxil5Se014ui/Eq8fT5uHJo6nIRwH0PfJrZJXs6Gek3ZVFOrpUv3YIZT20m+extU98Hg1Ym72U58rlsxUQ=="
     },
-    "@playwright/test@1.60.0": {
-      "integrity": "sha512-O71yZIbAh/PxDMNGns37GHBIfrVkEVyn+AXyIa5dOTfb4/xNvRWV+Vv/NMbNCtODB/pO7vLlF2OTmMVLhmr7Ag==",
+    "@playwright/test@1.61.1": {
+      "integrity": "sha512-8nKv6+0RJSL9FE4jYOEGXnPeM/Hg12qZpmqzZjRh3qM0Y7c3z1mrOTfFLids72RDQYVh9WpLEfR5WdpNX4fkig==",
       "dependencies": [
         "playwright"
       ],
@@ -1255,19 +1255,6 @@
     },
     "@vitest/spy@4.1.7": {
       "integrity": "sha512-kbkI5LMWakyuTIvs6fUJ5qdIVb1XVKsYJAT4OJ938cHMROYMSfmoQdZy0aaAnjbbc8F61vkoTqz/Az+/HiIu5Q=="
-    },
-    "@vitest/ui@4.0.18_vitest@4.0.18_happy-dom@20.9.0_tsx@4.22.3": {
-      "integrity": "sha512-CGJ25bc8fRi8Lod/3GHSvXRKi7nBo3kxh0ApW4yCjmrWmRmlT53B5E08XRSZRliygG0aVNxLrBEqPYdz/KcCtQ==",
-      "dependencies": [
-        "@vitest/utils@4.0.18",
-        "fflate",
-        "flatted",
-        "pathe",
-        "sirv",
-        "tinyglobby",
-        "tinyrainbow",
-        "vitest@4.0.18_@vitest+ui@4.0.18_happy-dom@20.9.0_picomatch@4.0.4"
-      ]
     },
     "@vitest/ui@4.0.18_vitest@4.0.18_picomatch@4.0.4": {
       "integrity": "sha512-CGJ25bc8fRi8Lod/3GHSvXRKi7nBo3kxh0ApW4yCjmrWmRmlT53B5E08XRSZRliygG0aVNxLrBEqPYdz/KcCtQ==",
@@ -2383,12 +2370,12 @@
         "pathe"
       ]
     },
-    "playwright-core@1.60.0": {
-      "integrity": "sha512-9bW6zvX/m0lEbgTKJ6YppOKx8H3VOPBMOCFh2irXFOT4BbHgrx5hPjwJYLT40Lu+4qtD36qKc/Hn56StUW57IA==",
+    "playwright-core@1.61.1": {
+      "integrity": "sha512-h7Qlt6m4REp25qvIdvbDtVmD4LqVXfpRxhORv9L0jzETM05p4fuPJ3dKyuSXQxDSbXnmS79HAgi9589lGSpLkg==",
       "bin": true
     },
-    "playwright@1.60.0": {
-      "integrity": "sha512-hheHdokM8cdqCb0lcE3s+zT4t4W+vvjpGxsZlDnikarzx8tSzMebh3UiFtgqwFwnTnjYQcsyMF8ei2mCO/tpeA==",
+    "playwright@1.61.1": {
+      "integrity": "sha512-DWnY5o3YbLWK4GovuAVwpqL+1VwGNdUGrRr++8j8PtQQzvAVZUIMjKQ90fY689sEJZJBbZVw1rXaOKSTitkzPQ==",
       "dependencies": [
         "playwright-core"
       ],
@@ -2845,7 +2832,7 @@
         "@vitest/runner@4.0.18",
         "@vitest/snapshot@4.0.18",
         "@vitest/spy@4.0.18",
-        "@vitest/ui@4.0.18_vitest@4.0.18_happy-dom@20.9.0_tsx@4.22.3",
+        "@vitest/ui",
         "@vitest/utils@4.0.18",
         "es-module-lexer@1.7.0",
         "expect-type",
@@ -2860,7 +2847,7 @@
         "why-is-node-running"
       ],
       "optionalPeers": [
-        "@vitest/ui@4.0.18_vitest@4.0.18_happy-dom@20.9.0_tsx@4.22.3",
+        "@vitest/ui",
         "happy-dom"
       ],
       "bin": true
@@ -2874,7 +2861,7 @@
         "@vitest/runner@4.1.7",
         "@vitest/snapshot@4.1.7",
         "@vitest/spy@4.1.7",
-        "@vitest/ui@4.0.18_vitest@4.0.18_picomatch@4.0.4",
+        "@vitest/ui",
         "@vitest/utils@4.1.7",
         "es-module-lexer@2.1.0",
         "expect-type",
@@ -2892,7 +2879,7 @@
         "why-is-node-running"
       ],
       "optionalPeers": [
-        "@vitest/ui@4.0.18_vitest@4.0.18_picomatch@4.0.4",
+        "@vitest/ui",
         "happy-dom"
       ],
       "bin": true
@@ -3319,7 +3306,7 @@
     "packageJson": {
       "dependencies": [
         "npm:@babylonjs/loaders@^9.6.2",
-        "npm:@playwright/test@^1.59.1",
+        "npm:@playwright/test@^1.61.1",
         "npm:@vitest/ui@^4.0.17",
         "npm:eslint@9.26.0",
         "npm:fake-indexeddb@^6.2.5",
@@ -3358,7 +3345,7 @@
             "npm:@types/react@19",
             "npm:@vitejs/plugin-react@5",
             "npm:graphology@0.26",
-            "npm:playwright@^1.32.0",
+            "npm:playwright@^1.61.1",
             "npm:react-dom@19",
             "npm:react@19",
             "npm:sigma@^3.0.3",

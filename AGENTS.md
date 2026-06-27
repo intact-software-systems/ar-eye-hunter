@@ -21,6 +21,9 @@ the repo-local Codex plugin under `skills/**`.
 
 - Treat `packages/**` as the reusable product surface and `apps/**` as
   consumers.
+- Keep Rallar black-box control protocol, distributed-run artifact contracts,
+  reusable recipe fixtures, and artifact analysis in `packages/shared-test`;
+  `apps/rallar-black-box` should consume those contracts for UI/operator flows.
 - Preserve existing public exports and app import paths unless a task explicitly
   asks for a breaking change.
 - Prefer `GroupRef`/`roomRef` when application/workspace scope matters.
@@ -40,4 +43,3 @@ the repo-local Codex plugin under `skills/**`.
 - For game/realtime changes, include the relevant app tests/builds and shared
   package tests.
 - Report commands that passed, failed, or were skipped.
-

@@ -1,70 +1,33 @@
 import type {
   ControlEventEnvelope,
   ControlResultEnvelope,
-} from '../../rallar-black-box/src/control-protocol.ts';
+} from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
+  ControlDistributedRunArtifactBaseFileName,
+  ControlDistributedRunArtifactBundle,
+  ControlDistributedRunArtifactFileName,
   ControlDistributedRunSnapshot,
   ControlQueuedCommandSnapshot,
+  ControlRunArtifactBundle,
+  ControlRunArtifactFileName,
+  ControlRunArtifactSummary,
+  ControlRunFailureBundle,
   ControlRunSnapshot,
-} from './control-service.ts';
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 
 export const CONTROL_ARTIFACT_SCHEMA_VERSION = 1;
 export const CONTROL_DISTRIBUTED_ARTIFACT_SCHEMA_VERSION = 2;
 
-export type ControlRunArtifactFileName =
-  | 'report.json'
-  | 'events.jsonl'
-  | 'failures.json'
-  | 'metadata.json';
-
-export type ControlRunArtifactBundle = Readonly<{
-  artifactSchemaVersion: typeof CONTROL_ARTIFACT_SCHEMA_VERSION;
-  runId: string;
-  generatedAtEpochMs: number;
-  files: Readonly<Record<ControlRunArtifactFileName, string>>;
-}>;
-
-export type ControlDistributedRunArtifactFileName =
-  | 'distributed-run.json'
-  | 'manifest.json'
-  | 'control-run.json'
-  | 'report.json'
-  | 'results.jsonl'
-  | 'events.jsonl'
-  | 'failures.json'
-  | 'metadata.json';
-
-export type ControlDistributedRunArtifactBaseFileName =
-  | 'distributed-run.json'
-  | 'manifest.json'
-  | 'control-run.json';
-
-export type ControlDistributedRunArtifactBundle = Readonly<{
-  artifactSchemaVersion: 1 | typeof CONTROL_DISTRIBUTED_ARTIFACT_SCHEMA_VERSION;
-  distributedRunId: string;
-  generatedAtEpochMs: number;
-  files: Readonly<
-    & Record<ControlDistributedRunArtifactBaseFileName, string>
-    & Partial<Record<ControlDistributedRunArtifactFileName, string>>
-  >;
-}>;
-
-export type ControlRunFailureBundle = Readonly<{
-  summary: ControlRunArtifactSummary;
-  failures: readonly Record<string, unknown>[];
-  outputs: Record<string, unknown>;
-}>;
-
-type ControlRunArtifactSummary = Readonly<{
-  total: number;
-  success: number;
-  failure: number;
-  commandCount: number;
-  eventCount: number;
-  agentCount: number;
-  reportCount: number;
-}>;
+export type {
+  ControlDistributedRunArtifactBaseFileName,
+  ControlDistributedRunArtifactBundle,
+  ControlDistributedRunArtifactFileName,
+  ControlRunArtifactBundle,
+  ControlRunArtifactFileName,
+  ControlRunArtifactSummary,
+  ControlRunFailureBundle,
+};
 
 const CONTROL_ARTIFACT_FILE_NAMES: readonly ControlRunArtifactFileName[] = [
   'report.json',

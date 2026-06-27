@@ -323,7 +323,8 @@ local tooling or the control server.
 - `src/runtime-store.ts`: app state store, bootstrap modes, local command
   execution, and control client integration.
 - `src/control-client.ts`: browser WebSocket control client.
-- `src/control-protocol.ts`: protocol envelopes and command validation.
+- `packages/shared-test/rallar-bb-test/control-protocol.ts`: protocol envelopes
+  and command validation consumed by the app and control server.
 - `src/manual-workbench.ts`: manual UI command builders and received-message
   derivation.
 - `src/rtc-diagnostics.ts`: event-derived RTC diagnostics.

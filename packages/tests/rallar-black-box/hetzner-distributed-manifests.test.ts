@@ -5,7 +5,7 @@ import {
     HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER,
     buildHetznerDistributedManifestCatalog,
 } from '../../../apps/rallar-black-box/src/hetzner-distributed-manifests.ts';
-import { distributedArtifactSnapshotsFromFiles } from '../../../apps/rallar-black-box/src/distributed-run-artifact-analysis.ts';
+import { distributedArtifactSnapshotsFromFiles } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { deriveDistributedRunMonitor } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import { deriveRtcDiagnostics, deriveRtcPerformanceView } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
 import {

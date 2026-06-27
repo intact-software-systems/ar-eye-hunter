@@ -2,7 +2,7 @@ import {
   type ControlCommandEnvelope,
   parseControlClientMessage,
   validateRallarBlackBoxTestCommand,
-} from '../../rallar-black-box/src/control-protocol.ts';
+} from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
   ControlRunSnapshotBounds,
   ControlServerSnapshot,

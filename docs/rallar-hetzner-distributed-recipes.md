@@ -66,6 +66,12 @@ staging without relying on SPA state. They default to
 `applicationId=rallar-server`, `workspaceId=default`, and
 `groupId=hetzner-headless-room`, matching the workflow defaults.
 
+The checked-in Hetzner manifests are generated from shared-test recipe builders
+and shared distributed-run manifest contracts. If a manifest fails validation in
+remote browser agents, check `packages/shared-test/rallar-bb-test/schema.ts`,
+`control-protocol.ts`, and the generated manifest JSON together; these must
+agree before dispatching on `main`.
+
 ## Dispatching Runs
 
 Recommended first run after the manifests are merged to `main`, or whenever the

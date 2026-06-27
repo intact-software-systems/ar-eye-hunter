@@ -1,79 +1,54 @@
+import type { ControlCommandEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
-    ControlCommandEnvelope,
-    ControlEventEnvelope,
-    ControlHeartbeatEnvelope,
-    ControlResultEnvelope,
-} from './control-protocol.ts';
-import type { RallarBlackBoxControlAgentIdentity } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import type {
+    ControlAgentSnapshot,
+    ControlDistributedRunArtifactBundle,
+    ControlDistributedRunCommandLink,
+    ControlDistributedRunCommandPhase,
+    ControlDistributedRunListResponse,
+    ControlDistributedRunSnapshot,
     ControlFleetAgentRunOutcome,
     ControlFleetAggregateReport,
     ControlFleetFailureSignature,
+    ControlFleetReportFilter,
     ControlFleetReportBundle,
     ControlFleetReportsResponse,
     ControlFleetRunReport,
     ControlFleetTimingDistribution,
-} from '@shared-test/rallar-bb-test/fleet-report.ts';
+    ControlQueuedCommandSnapshot,
+    ControlRunArtifactBundle,
+    ControlRunArtifactFileName,
+    ControlRunSnapshot,
+    ControlServerSnapshot,
+    ControlSnapshotBounds,
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type {
+    RallarBlackBoxControlAgentIdentity,
     RallarBlackBoxDistributedRunManifest,
-    RallarBlackBoxDistributedRunRollup,
-    RallarBlackBoxDistributedRunState,
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
 
-export type ControlQueuedCommandSnapshot = Readonly<{
-    envelope: ControlCommandEnvelope;
-    queuedAtEpochMs: number;
-    dispatchedAtEpochMs?: number;
-    completedAtEpochMs?: number;
-    dispatchCount: number;
-}>;
-
-export type ControlAgentSnapshot = Readonly<{
-    runId: string;
-    agentId: string;
-    connected: boolean;
-    registeredAtEpochMs?: number;
-    disconnectedAtEpochMs?: number;
-    lastSeenAtEpochMs?: number;
-    lastHeartbeatAtEpochMs?: number;
-    status?: string;
-    identity?: RallarBlackBoxControlAgentIdentity;
-    connectionSequence: number;
-    reconnectCount: number;
-    receivedResultCount: number;
-    receivedEventCount: number;
-    completedCommandIds: readonly string[];
-    resumeCompletedCommandIds: readonly string[];
-}>;
-
-export type ControlRunSnapshot = Readonly<{
-    runId: string;
-    createdAtEpochMs: number;
-    updatedAtEpochMs: number;
-    agents: readonly ControlAgentSnapshot[];
-    commands: readonly ControlQueuedCommandSnapshot[];
-    results: readonly ControlResultEnvelope[];
-    events: readonly ControlEventEnvelope[];
-    stats: readonly ControlEventEnvelope[];
-    reports: readonly ControlEventEnvelope[];
-    heartbeats: readonly ControlHeartbeatEnvelope[];
-}>;
-
-export type ControlServerSnapshot = Readonly<{
-    runs: readonly ControlRunSnapshot[];
-    distributedRuns?: readonly ControlDistributedRunSnapshot[];
-    fleetReports?: readonly ControlFleetRunReport[];
-}>;
-
-export type ControlSnapshotBounds = Readonly<{
-    commands?: number;
-    results?: number;
-    events?: number;
-    stats?: number;
-    reports?: number;
-    heartbeats?: number;
-}>;
+export type {
+    ControlAgentSnapshot,
+    ControlDistributedRunArtifactBundle,
+    ControlDistributedRunCommandLink,
+    ControlDistributedRunCommandPhase,
+    ControlDistributedRunListResponse,
+    ControlDistributedRunSnapshot,
+    ControlFleetAgentRunOutcome,
+    ControlFleetAggregateReport,
+    ControlFleetFailureSignature,
+    ControlFleetReportBundle,
+    ControlFleetReportFilter,
+    ControlFleetReportsResponse,
+    ControlFleetRunReport,
+    ControlFleetTimingDistribution,
+    ControlQueuedCommandSnapshot,
+    ControlRunArtifactBundle,
+    ControlRunArtifactFileName,
+    ControlRunSnapshot,
+    ControlServerSnapshot,
+    ControlSnapshotBounds,
+};
 
 export type ControlRunManagerStats = Readonly<{
     runCount: number;
@@ -120,100 +95,6 @@ export type ControlRunManagerFetch = (
 export type EnqueueBulkControlCommandResult = Readonly<{
     accepted: true;
     commands: readonly ControlCommandEnvelope[];
-}>;
-
-export type ControlRunArtifactFileName =
-    | 'report.json'
-    | 'events.jsonl'
-    | 'failures.json'
-    | 'metadata.json';
-
-export type ControlRunArtifactBundle = Readonly<{
-    artifactSchemaVersion: number;
-    runId: string;
-    generatedAtEpochMs: number;
-    files: Readonly<Record<ControlRunArtifactFileName, string>>;
-}>;
-
-export type ControlDistributedRunCommandPhase = 'stage' | 'barrier' | 'start' | 'cancel';
-
-export type ControlDistributedRunCommandLink = Readonly<{
-    phase: ControlDistributedRunCommandPhase;
-    agentId: string;
-    commandId: string;
-    recipeId?: string;
-    role?: string;
-    queuedAtEpochMs: number;
-}>;
-
-export type ControlDistributedRunSnapshot = Readonly<{
-    distributedRunId: string;
-    controlRunId: string;
-    manifest: RallarBlackBoxDistributedRunManifest;
-    state: RallarBlackBoxDistributedRunState;
-    createdAtEpochMs: number;
-    updatedAtEpochMs: number;
-    stagedAtEpochMs?: number;
-    barrierStartedAtEpochMs?: number;
-    barrierCompletedAtEpochMs?: number;
-    startedAtEpochMs?: number;
-    cancelledAtEpochMs?: number;
-    completedAtEpochMs?: number;
-    targetAgentIds: readonly string[];
-    commandLinks: readonly ControlDistributedRunCommandLink[];
-    rollup: RallarBlackBoxDistributedRunRollup;
-    error?: Readonly<{
-        code: string;
-        message: string;
-        details?: unknown;
-    }>;
-}>;
-
-export type ControlDistributedRunListResponse = Readonly<{
-    distributedRuns: readonly ControlDistributedRunSnapshot[];
-}>;
-
-export type ControlDistributedRunArtifactBundle = Readonly<{
-    artifactSchemaVersion: 1 | 2 | number;
-    distributedRunId: string;
-    generatedAtEpochMs: number;
-    files: Readonly<
-        Record<
-            'distributed-run.json' | 'manifest.json' | 'control-run.json',
-            string
-        > &
-            Partial<Record<
-                | 'distributed-run.json'
-                | 'manifest.json'
-                | 'control-run.json'
-                | 'report.json'
-                | 'results.jsonl'
-                | 'events.jsonl'
-                | 'failures.json'
-                | 'metadata.json',
-                string
-            >>
-    >;
-}>;
-
-export type {
-    ControlFleetAgentRunOutcome,
-    ControlFleetAggregateReport,
-    ControlFleetFailureSignature,
-    ControlFleetReportBundle,
-    ControlFleetReportsResponse,
-    ControlFleetRunReport,
-    ControlFleetTimingDistribution,
-};
-
-export type ControlFleetReportFilter = Readonly<{
-    region?: string;
-    provider?: string;
-    recipeId?: string;
-    groupId?: string;
-    state?: string;
-    fromEpochMs?: number;
-    toEpochMs?: number;
 }>;
 
 const DEFAULT_CONTROL_HTTP_BASE_URL = 'http://localhost:5180';

@@ -6,13 +6,13 @@ import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types
 import {
     buildDistributedRunManifest,
     type DistributedRecipeCatalogItem,
-} from './distributed-recipes.ts';
+} from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import {
     createRallarBlackBoxProviderParityLiveRecipe,
     createRallarBlackBoxRtcRealtimeRecipe,
     createRallarBlackBoxRtcSmokeRecipe,
     RALLAR_BLACK_BOX_RECIPE_FIXTURES,
-} from './recipe-fixtures.ts';
+} from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
 
 export const HETZNER_DISTRIBUTED_MANIFEST_GROUP: RallarBlackBoxDistributedGroupRef = {
     applicationId: 'rallar-server',

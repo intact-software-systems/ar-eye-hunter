@@ -4,7 +4,7 @@ import {
   parseControlClientMessage,
   parseControlServerMessage,
   RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
-} from '../../rallar-black-box/src/control-protocol.ts';
+} from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
 import type {
   RallarBlackBoxControlAgentIdentity,

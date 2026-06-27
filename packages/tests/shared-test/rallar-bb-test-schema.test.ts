@@ -27,7 +27,7 @@ import {
     buildFlowBuilderRunnerScenario,
 } from '../../../apps/rallar-black-box/src/flow-builder.ts';
 import { manualRecipeSnippet, type ManualActionHistoryEntry } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
-import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '../../../apps/rallar-black-box/src/recipe-fixtures.ts';
+import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '../../shared-test/rallar-bb-test/recipe-fixtures.ts';
 import { RUN_MANAGER_COMMAND_PRESETS } from '../../../apps/rallar-black-box/src/run-manager-presets.ts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));

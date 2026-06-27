@@ -45,6 +45,24 @@ server facade.
   should live in schema, provider, recipe-guide, artifact, runbook, and
   companion-coverage docs.
 
+## Rallar Black Box Contract Ownership
+
+`packages/shared-test/rallar-bb-test` owns the reusable control-agent and
+distributed-run contracts:
+
+- command and recipe schemas;
+- control protocol envelopes and parsers;
+- control run and distributed run snapshot wire types;
+- distributed artifact parsing and analysis;
+- reusable black-box recipe fixtures and builders.
+
+`apps/rallar-black-box` is a consumer and operator UI. It may expose
+compatibility re-exports, but new shared protocol or artifact behavior should
+start in `packages/shared-test`.
+
+`apps/rallar-black-box-control-server` must import shared contracts from
+`@shared-test/rallar-bb-test/*`, not from the SPA source tree.
+
 ## Validation
 
 Common package-focused checks:

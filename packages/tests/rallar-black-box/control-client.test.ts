@@ -10,7 +10,7 @@ import {
     type ControlResultEnvelope,
     parseControlClientMessage,
     parseControlServerMessage,
-} from '../../../apps/rallar-black-box/src/control-protocol.ts';
+} from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 
 type Listener = (event: unknown) => void;
 
@@ -200,6 +200,61 @@ describe('rallar-black-box control client', () => {
         expect(versionedRecipeLoad.ok ? versionedRecipeLoad.envelope.command.commandId : '').toBe(
             'recipe-load-versioned-1',
         );
+
+        const rtcReadinessRecipeLoad = parseControlServerMessage(
+            JSON.stringify(commandEnvelope('recipe-load-rtc-readiness-1', {
+                kind: 'recipe.load',
+                commandId: 'recipe-load-rtc-readiness-1',
+                recipe: {
+                    schemaVersion: 1,
+                    recipeId: 'rtc-readiness',
+                    commands: [
+                        {
+                            kind: 'rtc.connect',
+                            commandId: 'rtc-connect-ready',
+                            connection: 'rtc',
+                            roomId: 'room-1',
+                            applicationId: 'rallar-server',
+                            workspaceId: 'default',
+                            transport: 'realtime',
+                            readiness: {
+                                minReadyPeers: 1,
+                                timeoutMs: 10_000,
+                                intervalMs: 100,
+                            },
+                        },
+                    ],
+                },
+            })),
+            { runId: 'run-1', agentId: 'agent-1' },
+        );
+        expect(rtcReadinessRecipeLoad.ok).toBe(true);
+
+        const invalidRtcReadinessRecipeLoad = parseControlServerMessage(
+            JSON.stringify(commandEnvelope('recipe-load-rtc-readiness-invalid-1', {
+                kind: 'recipe.load',
+                commandId: 'recipe-load-rtc-readiness-invalid-1',
+                recipe: {
+                    schemaVersion: 1,
+                    recipeId: 'rtc-readiness-invalid',
+                    commands: [
+                        {
+                            kind: 'rtc.connect',
+                            commandId: 'rtc-connect-invalid-ready',
+                            connection: 'rtc',
+                            readiness: {
+                                timeoutMs: 0,
+                            },
+                        },
+                    ],
+                },
+            })),
+            { runId: 'run-1', agentId: 'agent-1' },
+        );
+        expect(invalidRtcReadinessRecipeLoad).toEqual({
+            ok: false,
+            error: 'Control command payload is invalid: recipe.load.recipe.commands[0]: rtc.readiness.timeoutMs must be >= 1.',
+        });
 
         const invalidRtc = parseControlServerMessage(
             JSON.stringify(commandEnvelope('rtc-invalid-room', {

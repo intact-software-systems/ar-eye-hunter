@@ -5,8 +5,10 @@ import type {
   ControlHeartbeatEnvelope,
   ControlRegisterEnvelope,
   ControlResultEnvelope,
-} from '../../rallar-black-box/src/control-protocol.ts';
-import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '../../rallar-black-box/src/control-protocol.ts';
+} from '@shared-test/rallar-bb-test/control-protocol.ts';
+import {
+  RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+} from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
   RallarBlackBoxTestCommand,
   RallarBlackBoxTestCommandKind,
@@ -24,10 +26,18 @@ import {
   rollupDistributedRunResult,
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
-import {
-  type ControlDistributedRunArtifactBundle,
-  createControlDistributedRunArtifactBundle,
-} from './control-artifacts.ts';
+import { createControlDistributedRunArtifactBundle } from './control-artifacts.ts';
+import type {
+  ControlAgentSnapshot,
+  ControlDistributedRunArtifactBundle,
+  ControlDistributedRunCommandLink,
+  ControlDistributedRunCommandPhase,
+  ControlDistributedRunSnapshot,
+  ControlQueuedCommandSnapshot,
+  ControlRunSnapshot,
+  ControlRunSnapshotBounds,
+  ControlServerSnapshot,
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
   createControlFleetAggregateReport,
   createControlFleetReportBundle,
@@ -50,15 +60,6 @@ export type EnqueueControlCommandInput = Readonly<{
   deadlineEpochMs?: number;
 }>;
 
-export type ControlRunSnapshotBounds = Readonly<{
-  commands?: number;
-  results?: number;
-  events?: number;
-  stats?: number;
-  reports?: number;
-  heartbeats?: number;
-}>;
-
 export type RallarBlackBoxControlServiceOptions = Readonly<{
   now?: () => number;
   commandIdFactory?: () => string;
@@ -77,89 +78,22 @@ export type ControlRunToken = Readonly<{
   expiresAtEpochMs: number;
 }>;
 
-export type ControlDistributedRunCommandPhase = 'stage' | 'barrier' | 'start' | 'cancel';
-
-export type ControlDistributedRunCommandLink = Readonly<{
-  phase: ControlDistributedRunCommandPhase;
-  agentId: string;
-  commandId: string;
-  recipeId?: string;
-  role?: string;
-  queuedAtEpochMs: number;
-}>;
-
-export type ControlDistributedRunSnapshot = Readonly<{
-  distributedRunId: string;
-  controlRunId: string;
-  manifest: RallarBlackBoxDistributedRunManifest;
-  state: RallarBlackBoxDistributedRunState;
-  createdAtEpochMs: number;
-  updatedAtEpochMs: number;
-  stagedAtEpochMs?: number;
-  barrierStartedAtEpochMs?: number;
-  barrierCompletedAtEpochMs?: number;
-  startedAtEpochMs?: number;
-  cancelledAtEpochMs?: number;
-  completedAtEpochMs?: number;
-  targetAgentIds: readonly string[];
-  commandLinks: readonly ControlDistributedRunCommandLink[];
-  rollup: RallarBlackBoxDistributedRunRollup;
-  error?: Readonly<{
-    code: string;
-    message: string;
-    details?: unknown;
-  }>;
-}>;
+export type {
+  ControlAgentSnapshot,
+  ControlDistributedRunArtifactBundle,
+  ControlDistributedRunCommandLink,
+  ControlDistributedRunCommandPhase,
+  ControlDistributedRunSnapshot,
+  ControlQueuedCommandSnapshot,
+  ControlRunSnapshot,
+  ControlRunSnapshotBounds,
+  ControlServerSnapshot,
+};
 
 export type RallarBlackBoxControlServiceReceiveResult = Readonly<{
   kind: ControlClientEnvelope['kind'];
   runId: string;
   agentId: string;
-}>;
-
-export type ControlQueuedCommandSnapshot = Readonly<{
-  envelope: ControlCommandEnvelope;
-  queuedAtEpochMs: number;
-  dispatchedAtEpochMs?: number;
-  completedAtEpochMs?: number;
-  dispatchCount: number;
-}>;
-
-export type ControlAgentSnapshot = Readonly<{
-  runId: string;
-  agentId: string;
-  connected: boolean;
-  registeredAtEpochMs?: number;
-  disconnectedAtEpochMs?: number;
-  lastSeenAtEpochMs?: number;
-  lastHeartbeatAtEpochMs?: number;
-  status?: string;
-  identity?: RallarBlackBoxControlAgentIdentity;
-  connectionSequence: number;
-  reconnectCount: number;
-  receivedResultCount: number;
-  receivedEventCount: number;
-  completedCommandIds: readonly string[];
-  resumeCompletedCommandIds: readonly string[];
-}>;
-
-export type ControlRunSnapshot = Readonly<{
-  runId: string;
-  createdAtEpochMs: number;
-  updatedAtEpochMs: number;
-  agents: readonly ControlAgentSnapshot[];
-  commands: readonly ControlQueuedCommandSnapshot[];
-  results: readonly ControlResultEnvelope[];
-  events: readonly ControlEventEnvelope[];
-  stats: readonly ControlEventEnvelope[];
-  reports: readonly ControlEventEnvelope[];
-  heartbeats: readonly ControlHeartbeatEnvelope[];
-}>;
-
-export type ControlServerSnapshot = Readonly<{
-  runs: readonly ControlRunSnapshot[];
-  distributedRuns?: readonly ControlDistributedRunSnapshot[];
-  fleetReports?: readonly ControlFleetRunReport[];
 }>;
 
 type StoredCommand = {

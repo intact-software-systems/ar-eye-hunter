@@ -13,6 +13,7 @@
 - Prefer data-in/data-out helpers for validation, parsing, routing, snapshot derivation, topology keys, hashes, diagnostics, policies, and game rules.
 - Normalize data near the boundary, then pass typed values through the rest of the flow.
 - Compose small helpers rather than adding broad manager modules.
+- Keep domain algorithms in a single deterministic implementation; expose adapters, bridges, or facades as translation layers around that implementation.
 - Keep deterministic helpers in shared packages when both apps and packages can reuse them.
 
 ## Stateful Code
@@ -33,6 +34,7 @@
 
 - Search for existing helpers before adding one: scoped group identity, RallarAI schema/provider utilities, state sync routing, motion buffers/gates, game authority, repositories, graph/topology, and test harnesses.
 - Prefer adding a narrow helper in the existing domain folder over creating a new top-level concept.
+- When logic is needed by both apps and packages, move the data-in/data-out helper to the shared domain package instead of copying it locally.
 - Keep app code thin when package code can own reusable behavior.
 
 ## Human Readability

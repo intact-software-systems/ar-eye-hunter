@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/browser-adapter.ts';
-import { createRallarBlackBoxRtcRealtimeRecipe } from '../../../apps/rallar-black-box/src/recipe-fixtures.ts';
+import { createRallarBlackBoxRtcRealtimeRecipe } from '../../shared-test/rallar-bb-test/recipe-fixtures.ts';
 
 function installStorage(): Storage {
     const values = new Map<string, string>();

@@ -6,6 +6,11 @@ it does not open sockets or run browser automation. The control server now uses
 this contract to create distributed-run resources and to enqueue ordinary
 `rallar-bb-test` commands to browser agents.
 
+Control snapshot wire types, distributed artifact bundle types, artifact
+analysis helpers, and reusable recipe fixtures also live under
+`packages/shared-test/rallar-bb-test`. The SPA may re-export compatibility
+symbols, but shared distributed-run behavior should start in this package.
+
 ## Manifest
 
 `RallarBlackBoxDistributedRunManifest` is the JSON shape used to describe one

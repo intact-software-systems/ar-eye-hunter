@@ -24,7 +24,7 @@ import {
     type ControlRunSnapshot,
     type ControlServerSnapshot,
 } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
-import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '../../../apps/rallar-black-box/src/control-protocol.ts';
+import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 
 const runSnapshot: ControlRunSnapshot = {
     runId: 'run-1',

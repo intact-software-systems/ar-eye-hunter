@@ -2,7 +2,7 @@ import type {
   ControlDistributedRunCommandLink,
   ControlDistributedRunSnapshot,
   ControlRunSnapshot,
-} from './control-service.ts';
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { RallarBlackBoxTestRedactionOptions } from '@shared-test/rallar-bb-test/types.ts';
 import {

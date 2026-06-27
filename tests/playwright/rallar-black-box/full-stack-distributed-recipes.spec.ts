@@ -1,10 +1,10 @@
 import {
-    expect,
-    test,
     type APIRequestContext,
     type Browser,
     type BrowserContext,
+    expect,
     type Page,
+    test,
     type TestInfo,
 } from '@playwright/test';
 import {
@@ -15,18 +15,18 @@ import {
     uniqueSuffix,
 } from './full-stack-helpers.ts';
 import {
-    RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
     type ControlCommandEnvelope,
-} from '../../../apps/rallar-black-box/src/control-protocol.ts';
+    RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+} from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import type {
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRunManifest,
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/types.ts';
 import {
+    createRallarBlackBoxRtcRealtimeRecipe,
     RALLAR_BLACK_BOX_RECIPE_FIXTURES,
     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
-    createRallarBlackBoxRtcRealtimeRecipe,
 } from '../../../apps/rallar-black-box/src/recipe-fixtures.ts';
 import {
     deriveDistributedRunMonitor,
@@ -278,8 +278,8 @@ function resolveAgentAuth(prefix: AgentPrefix): AgentAuth | undefined {
     const fallbackUser = prefix === 'A'
         ? config.userA
         : prefix === 'B'
-        ? config.userB
-        : config.userC;
+            ? config.userB
+            : config.userC;
     const genericUsername = prefix === 'A' ? ['VITE_RALLAR_USERNAME'] : [];
     const genericPassword = prefix === 'A' ? ['VITE_RALLAR_PASSWORD'] : [];
     const configuredUsername = firstEnvValue(
@@ -480,11 +480,13 @@ async function openScriptedControlAgent(input: Readonly<{
     });
     await new Promise<void>((resolve, reject) => {
         let timeout: ReturnType<typeof setTimeout>;
+
         function cleanup() {
             clearTimeout(timeout);
             socket.removeEventListener('open', handleOpen);
             socket.removeEventListener('error', handleError);
         }
+
         function handleOpen() {
             socket.send(JSON.stringify({
                 kind: 'register',
@@ -512,10 +514,12 @@ async function openScriptedControlAgent(input: Readonly<{
             cleanup();
             resolve();
         }
+
         function handleError() {
             cleanup();
             reject(new Error(`Scripted control agent ${input.agentId} WebSocket failed.`));
         }
+
         timeout = setTimeout(() => {
             cleanup();
             socket.close();
@@ -1219,9 +1223,9 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
     test.skip(!config.enabled, config.skipReason);
 
     test('runs all-agent ACK through group target resolution and shows artifacts/history', async ({
-        browser,
-        request,
-    }) => {
+                                                                                                      browser,
+                                                                                                      request,
+                                                                                                  }) => {
         test.setTimeout(120_000);
         const suffix = uniqueSuffix();
         const runId = `dist-sim-ack-${suffix}`;
@@ -1287,9 +1291,9 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
     });
 
     test('covers missing target, schema failure, ACK timeout, disconnect, and failure rollup', async ({
-        browser,
-        request,
-    }) => {
+                                                                                                          browser,
+                                                                                                          request,
+                                                                                                      }) => {
         test.setTimeout(180_000);
         const suffix = uniqueSuffix();
         const runId = `dist-sim-negative-${suffix}`;
@@ -1501,9 +1505,9 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
     );
 
     test('runs distributed ACK, WS, and RTC recipes against real browser agents', async ({
-        browser,
-        request,
-    }, testInfo) => {
+                                                                                             browser,
+                                                                                             request,
+                                                                                         }, testInfo) => {
         test.setTimeout(420_000);
         const suffix = `dist-live-${Date.now()}-${Math.random().toString(16).slice(2)}`;
         const runId = `distributed-live-${suffix}`;

@@ -5,10 +5,10 @@ import {
     type RallarBlackBoxTestCommandKind,
     type RallarBlackBoxTestEvent,
     type RallarBlackBoxTestResult,
-} from '@shared-test/rallar-bb-test/types.ts';
+} from './types.ts';
 import type {
     RallarBlackBoxControlAgentIdentity,
-} from '@shared-test/rallar-bb-test/distributed-run.ts';
+} from './distributed-run.ts';
 import {
     type RallarValidationIssue,
     type RallarValidationResult,
@@ -627,7 +627,34 @@ function validateRtcCommand(command: Record<string, unknown>): ControlCommandVal
     ) {
         return fail('rtc.transport must be realtime or messages.rtc.');
     }
+    if (command.kind === 'rtc.connect') {
+        const readiness = validateRtcConnectReadiness(command.readiness);
+        if (!readiness.ok) {
+            return readiness;
+        }
+    }
     return validateObjectField(command, 'rallar', 'rtc');
+}
+
+function validateRtcConnectReadiness(value: unknown): ControlCommandValidationResult {
+    if (value === undefined) {
+        return { ok: true };
+    }
+    if (!isRecord(value)) {
+        return fail('rtc.readiness must be an object.');
+    }
+
+    let result = validateKeys(value, ['minReadyPeers', 'timeoutMs', 'intervalMs'], 'rtc.readiness');
+    if (!result.ok) {
+        return result;
+    }
+    for (const field of ['minReadyPeers', 'timeoutMs', 'intervalMs']) {
+        result = validateIntegerField(value, field, 'rtc.readiness', { minimum: 1 });
+        if (!result.ok) {
+            return result;
+        }
+    }
+    return { ok: true };
 }
 
 function validateDirectorRoomFields(
@@ -915,6 +942,7 @@ export function validateRallarBlackBoxTestCommand(
                     'minSnapshotVersion',
                     'transport',
                     'rallar',
+                    'readiness',
                 ],
                 'rtc.connect',
             );
