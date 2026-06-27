@@ -81,6 +81,14 @@ on:
         description: Register disposable test users before login; useful after memory-backed API redeploys
         type: boolean
         default: false
+      browser_log_level:
+        description: Browser console log verbosity for action=start
+        type: choice
+        default: warning
+        options:
+          - warning
+          - info
+          - debug
       install_playwright:
         description: Install/update Chromium and Linux dependencies before starting
         type: boolean
@@ -186,9 +194,21 @@ jobs:
         run: |
           set -euo pipefail
           ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
-            'rm -rf /tmp/rallar-controller && mkdir -p /tmp/rallar-controller'
+            bash -s <<'REMOTE'
+          set -euo pipefail
+          rallar_script_dir="${HOME}/rallar-controller"
+          rm -rf "${rallar_script_dir}"
+          mkdir -p "${rallar_script_dir}"
+          REMOTE
           scp -i ~/.ssh/hetzner -r scripts/hetzner/controller/. \
-            "${HETZNER_USER}@${HETZNER_HOST}:/tmp/rallar-controller/"
+            "${HETZNER_USER}@${HETZNER_HOST}:~/rallar-controller/"
+          ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
+            bash -s <<'REMOTE'
+          set -euo pipefail
+          rallar_script_dir="${HOME}/rallar-controller"
+          chmod +x "${rallar_script_dir}"/*.sh
+          ln -sf "${rallar_script_dir}/15-logs.sh" /usr/local/bin/rallar-logs
+          REMOTE
 
       - name: Render remote headless env
         shell: bash
@@ -205,6 +225,7 @@ jobs:
           RALLAR_BLACK_BOX_APPLICATION_ID: ${{ inputs.application_id }}
           RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}
           RALLAR_BLACK_BOX_REGISTER: ${{ inputs.register_before_login }}
+          RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: ${{ inputs.browser_log_level }}
           RALLAR_BLACK_BOX_CONTROL_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}
           RALLAR_REPO_REF: ${{ inputs.ref }}
           RALLAR_ROLLOUT_BEFORE_HEADLESS_START: ${{ inputs.rollout_before_start }}
@@ -244,6 +265,7 @@ jobs:
             printf 'RALLAR_BLACK_BOX_USERNAME=%s\n' "$(quote "${RALLAR_BLACK_BOX_USERNAME}")"
             printf 'RALLAR_BLACK_BOX_PASSWORD=%s\n' "$(quote "${RALLAR_BLACK_BOX_PASSWORD}")"
             printf 'RALLAR_BLACK_BOX_REGISTER=%s\n' "$(quote "${RALLAR_BLACK_BOX_REGISTER}")"
+            printf 'RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL=%s\n' "$(quote "${RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL}")"
             printf 'RALLAR_BLACK_BOX_CONTROL_TOKEN=%s\n' "$(quote "${RALLAR_BLACK_BOX_CONTROL_TOKEN}")"
             printf 'RALLAR_REPO_REF=%s\n' "$(quote "${RALLAR_REPO_REF}")"
             printf 'RALLAR_ROLLOUT_BEFORE_HEADLESS_START=%s\n' "$(quote "${RALLAR_ROLLOUT_BEFORE_HEADLESS_START}")"
@@ -279,7 +301,7 @@ jobs:
           set -euo pipefail
           action="$1"
 
-          cd /tmp/rallar-controller
+          cd "${HOME}/rallar-controller"
           chmod +x *.sh
 
           if [[ -r /tmp/rallar-headless-action.env ]]; then

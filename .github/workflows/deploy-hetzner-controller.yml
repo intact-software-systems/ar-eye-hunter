@@ -94,9 +94,21 @@ jobs:
         run: |
           set -euo pipefail
           ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
-            'rm -rf /tmp/rallar-controller && mkdir -p /tmp/rallar-controller'
+            bash -s <<'REMOTE'
+          set -euo pipefail
+          rallar_script_dir="${HOME}/rallar-controller"
+          rm -rf "${rallar_script_dir}"
+          mkdir -p "${rallar_script_dir}"
+          REMOTE
           scp -i ~/.ssh/hetzner -r scripts/hetzner/controller/. \
-            "${HETZNER_USER}@${HETZNER_HOST}:/tmp/rallar-controller/"
+            "${HETZNER_USER}@${HETZNER_HOST}:~/rallar-controller/"
+          ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
+            bash -s <<'REMOTE'
+          set -euo pipefail
+          rallar_script_dir="${HOME}/rallar-controller"
+          chmod +x "${rallar_script_dir}"/*.sh
+          ln -sf "${rallar_script_dir}/15-logs.sh" /usr/local/bin/rallar-logs
+          REMOTE
 
       - name: Sync optional Metered TURN secrets
         shell: bash
@@ -133,7 +145,7 @@ jobs:
             bash -s <<'REMOTE'
           set -euo pipefail
           trap 'rm -f /tmp/rallar-metered-turn.env' EXIT
-          cd /tmp/rallar-controller
+          cd "${HOME}/rallar-controller"
           chmod +x *.sh
           set -a
           # shellcheck disable=SC1091
@@ -199,7 +211,7 @@ jobs:
             bash -s <<'REMOTE'
           set -euo pipefail
           trap 'rm -f /tmp/rallar-controller-rollout.env' EXIT
-          cd /tmp/rallar-controller
+          cd "${HOME}/rallar-controller"
           chmod +x *.sh
           set -a
           # shellcheck disable=SC1091

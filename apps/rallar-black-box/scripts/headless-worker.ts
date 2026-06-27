@@ -71,13 +71,22 @@ async function openAgent(
   const page = await context.newPage();
   page.on("console", (message) => {
     const type = message.type();
-    if (type === "error" || type === "warning") {
-      log(`agent=${agent.agentId} console.${type}: ${message.text()}`);
+    if (shouldLogBrowserConsole(type)) {
+      log(`agent=${agent.agentId} browser.console.${type}: ${message.text()}`);
     }
   });
   page.on("pageerror", (error) => {
-    log(`agent=${agent.agentId} pageerror: ${error.message}`);
+    log(`agent=${agent.agentId} browser.pageerror: ${error.message}`);
   });
+  if (config.browserLogLevel === "debug") {
+    page.on("requestfailed", (request) => {
+      const failure = request.failure()?.errorText ?? "unknown";
+      log(
+        `agent=${agent.agentId} browser.requestfailed: ${request.method()} ` +
+          `${redactUrlForLog(request.url())} ${failure}`,
+      );
+    });
+  }
 
   await page.goto(agent.url, {
     waitUntil: "domcontentloaded",
@@ -223,6 +232,33 @@ function log(message: string): void {
   console.log(
     `[rallar-black-box-worker] ${new Date().toISOString()} ${message}`,
   );
+}
+
+function shouldLogBrowserConsole(type: string): boolean {
+  if (config.browserLogLevel === "debug") {
+    return true;
+  }
+  if (config.browserLogLevel === "info") {
+    return type !== "debug";
+  }
+  return type === "error" || type === "warning";
+}
+
+function redactUrlForLog(value: string): string {
+  try {
+    const url = new URL(value);
+    for (const key of url.searchParams.keys()) {
+      if (/(token|password|secret)/i.test(key)) {
+        url.searchParams.set(key, "[REDACTED]");
+      }
+    }
+    return url.toString();
+  } catch {
+    return value.replace(
+      /((?:token|password|secret)=)[^&\s]+/gi,
+      "$1[REDACTED]",
+    );
+  }
 }
 
 function errorMessage(error: unknown): string {

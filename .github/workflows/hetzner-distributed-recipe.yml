@@ -42,6 +42,14 @@ on:
         description: Register disposable test users before login
         type: boolean
         default: false
+      browser_log_level:
+        description: Browser console log verbosity for headless agents
+        type: choice
+        default: warning
+        options:
+          - warning
+          - info
+          - debug
       install_playwright:
         description: Install/update Chromium and Linux dependencies before starting
         type: boolean
@@ -171,9 +179,21 @@ jobs:
         run: |
           set -euo pipefail
           ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
-            'rm -rf /tmp/rallar-controller && mkdir -p /tmp/rallar-controller'
+            bash -s <<'REMOTE'
+          set -euo pipefail
+          rallar_script_dir="${HOME}/rallar-controller"
+          rm -rf "${rallar_script_dir}"
+          mkdir -p "${rallar_script_dir}"
+          REMOTE
           scp -i ~/.ssh/hetzner -r scripts/hetzner/controller/. \
-            "${HETZNER_USER}@${HETZNER_HOST}:/tmp/rallar-controller/"
+            "${HETZNER_USER}@${HETZNER_HOST}:~/rallar-controller/"
+          ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
+            bash -s <<'REMOTE'
+          set -euo pipefail
+          rallar_script_dir="${HOME}/rallar-controller"
+          chmod +x "${rallar_script_dir}"/*.sh
+          ln -sf "${rallar_script_dir}/15-logs.sh" /usr/local/bin/rallar-logs
+          REMOTE
           scp -i ~/.ssh/hetzner "${MANIFEST_PATH}" \
             "${HETZNER_USER}@${HETZNER_HOST}:/tmp/rallar-distributed-manifest.json"
 
@@ -189,6 +209,7 @@ jobs:
           RALLAR_BLACK_BOX_APPLICATION_ID: ${{ inputs.application_id }}
           RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}
           RALLAR_BLACK_BOX_REGISTER: ${{ inputs.register_before_login }}
+          RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: ${{ inputs.browser_log_level }}
           RALLAR_BLACK_BOX_CONTROL_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}
           RALLAR_CONTROL_HTTP_URL: https://control.rallar.intactss.com
           RALLAR_INSTALL_PLAYWRIGHT: ${{ inputs.install_playwright }}
@@ -224,6 +245,7 @@ jobs:
             printf 'RALLAR_BLACK_BOX_USERNAME=%s\n' "$(quote "${RALLAR_BLACK_BOX_USERNAME}")"
             printf 'RALLAR_BLACK_BOX_PASSWORD=%s\n' "$(quote "${RALLAR_BLACK_BOX_PASSWORD}")"
             printf 'RALLAR_BLACK_BOX_REGISTER=%s\n' "$(quote "${RALLAR_BLACK_BOX_REGISTER}")"
+            printf 'RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL=%s\n' "$(quote "${RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL}")"
             printf 'RALLAR_BLACK_BOX_CONTROL_TOKEN=%s\n' "$(quote "${RALLAR_BLACK_BOX_CONTROL_TOKEN}")"
             printf 'RALLAR_CONTROL_HTTP_URL=%s\n' "$(quote "${RALLAR_CONTROL_HTTP_URL}")"
             printf 'RALLAR_INSTALL_PLAYWRIGHT=%s\n' "$(quote "${RALLAR_INSTALL_PLAYWRIGHT}")"
@@ -261,7 +283,7 @@ jobs:
           ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
             bash -s <<'REMOTE'
           set -euo pipefail
-          cd /tmp/rallar-controller
+          cd "${HOME}/rallar-controller"
           chmod +x *.sh
           trap 'rm -f /tmp/rallar-distributed-recipe.env' EXIT
 
@@ -392,7 +414,7 @@ jobs:
         run: |
           set -euo pipefail
           ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
-            'cd /tmp/rallar-controller && ./10-stop-headless-workers.sh'
+            'cd "${HOME}/rallar-controller" && ./10-stop-headless-workers.sh'
 
       - name: Fail if distributed recipe failed
         if: always() && steps.run_recipe.outcome != 'success'

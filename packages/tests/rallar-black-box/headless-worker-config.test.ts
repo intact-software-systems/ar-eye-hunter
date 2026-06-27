@@ -42,6 +42,7 @@ describe("rallar-black-box headless worker config", () => {
     expect(config.fleetRegion).toBe("eu-north");
     expect(config.fleetProvider).toBe("hetzner");
     expect(config.fleetTags).toEqual(["canary", "rtc"]);
+    expect(config.browserLogLevel).toBe("warning");
     expect(config.agents.map((agent) => agent.agentId)).toEqual([
       "fsn1-worker-01",
       "fsn1-worker-02",
@@ -117,6 +118,45 @@ describe("rallar-black-box headless worker config", () => {
     expect(secondUrl.searchParams.get("rallarRegister")).toBe("1");
     expect(secondUrl.searchParams.get("rallarRestoreSession")).toBe("1");
     expect(secondUrl.searchParams.get("rallarLeaveRoomOnClose")).toBe("1");
+  });
+
+  it("parses browser log levels for headless worker page events", () => {
+    const baseEnv = {
+      RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test",
+      RALLAR_BLACK_BOX_CONTROL_URL: "wss://control.example.test/control",
+      RALLAR_API_BASE_URL: "https://api.example.test",
+      RALLAR_BLACK_BOX_RUN_ID: "run-browser-logs",
+      RALLAR_BLACK_BOX_ROOM_ID: "room-browser-logs",
+      RALLAR_BLACK_BOX_USERNAME: "alice",
+      RALLAR_BLACK_BOX_PASSWORD: "secret",
+    };
+
+    expect(readHeadlessWorkerConfig({ env: baseEnv }).browserLogLevel).toBe(
+      "warning",
+    );
+    expect(readHeadlessWorkerConfig({
+      env: {
+        ...baseEnv,
+        RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: "info",
+      },
+    }).browserLogLevel).toBe("info");
+    expect(readHeadlessWorkerConfig({
+      env: {
+        ...baseEnv,
+        RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: "debug",
+      },
+    }).browserLogLevel).toBe("debug");
+
+    expect(() =>
+      readHeadlessWorkerConfig({
+        env: {
+          ...baseEnv,
+          RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: "verbose",
+        },
+      })
+    ).toThrow(
+      /RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL must be warning, info, or debug/,
+    );
   });
 
   it("reports missing required env and credentials clearly", () => {
