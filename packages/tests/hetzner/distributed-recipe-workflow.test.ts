@@ -327,6 +327,65 @@ describe('Hetzner distributed recipe workflow', () => {
         await expect(stat(lockDir)).resolves.toMatchObject({ isDirectory: expect.any(Function) });
     });
 
+    it('runs the Playwright browser install from the checkout directory after switching users', async () => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-playwright-install-cwd-'));
+        const binDir = path.join(tmp, 'bin');
+        const checkoutDir = path.join(tmp, 'checkout');
+        const controllerDir = path.join(tmp, 'controller');
+        const npmCallsFile = path.join(tmp, 'npm-calls.txt');
+        const runuserCwdFile = path.join(tmp, 'runuser-cwd.txt');
+        const runuserArgsFile = path.join(tmp, 'runuser-args.txt');
+        const fakeNpm = path.join(binDir, 'npm');
+        const fakeRunuser = path.join(binDir, 'runuser');
+        await mkdir(binDir, { recursive: true });
+        await mkdir(checkoutDir);
+        await mkdir(controllerDir);
+        await writeFile(fakeNpm, [
+            '#!/usr/bin/env bash',
+            'printf "cwd=%s args=%s\\n" "$PWD" "$*" >> "${FAKE_NPM_CALLS_FILE}"',
+            '',
+        ].join('\n'));
+        await writeFile(fakeRunuser, [
+            '#!/usr/bin/env bash',
+            'if [[ "${1:-}" != "-u" ]]; then',
+            '  echo "expected runuser -u" >&2',
+            '  exit 91',
+            'fi',
+            'shift 2',
+            'if [[ "${1:-}" == "--" ]]; then',
+            '  shift',
+            'fi',
+            'printf "%s\\n" "$PWD" > "${FAKE_RUNUSER_CWD_FILE}"',
+            'printf "%s\\n" "$*" > "${FAKE_RUNUSER_ARGS_FILE}"',
+            'exec "$@"',
+            '',
+        ].join('\n'));
+        await chmod(fakeNpm, 0o755);
+        await chmod(fakeRunuser, 0o755);
+
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/controller/rallar-playwright-install.sh');
+        const playwrightUser = process.env.USER || process.env.LOGNAME || 'root';
+        const { stdout } = await execFileAsync('bash', [scriptPath], {
+            cwd: controllerDir,
+            env: {
+                ...process.env,
+                FAKE_NPM_CALLS_FILE: npmCallsFile,
+                FAKE_RUNUSER_ARGS_FILE: runuserArgsFile,
+                FAKE_RUNUSER_CWD_FILE: runuserCwdFile,
+                PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+                RALLAR_PLAYWRIGHT_CACHE_DIR: path.join(tmp, 'ms-playwright'),
+                RALLAR_PLAYWRIGHT_INSTALL_SELF_TEST: 'install-command',
+                RALLAR_PLAYWRIGHT_SELF_TEST_CHECKOUT_DIR: checkoutDir,
+                RALLAR_PLAYWRIGHT_USER: playwrightUser,
+            },
+        });
+
+        await expect(readFile(runuserCwdFile, 'utf8')).resolves.toBe(`${checkoutDir}\n`);
+        await expect(readFile(runuserArgsFile, 'utf8')).resolves.toContain('playwright install chromium');
+        await expect(readFile(npmCallsFile, 'utf8')).resolves.toContain(`cwd=${checkoutDir}`);
+        expect(stdout).toContain('selfTestInstall=ok');
+    });
+
     it('skips the duplicate headless Playwright install after a successful rollout', async () => {
         const distributedWorkflow = await readFile(
             path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),

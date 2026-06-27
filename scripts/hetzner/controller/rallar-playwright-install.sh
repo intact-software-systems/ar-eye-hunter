@@ -37,6 +37,20 @@ rallar_playwright_run_with_heartbeat() {
   return "${status}"
 }
 
+rallar_playwright_run_user_command_in_checkout() {
+  local user="$1"
+  local checkout_dir="$2"
+  shift 2
+
+  local home_dir
+  home_dir="$(rallar_playwright_user_home "${user}")"
+
+  (
+    cd -- "${checkout_dir}"
+    runuser -u "${user}" -- env HOME="${home_dir}" "$@"
+  )
+}
+
 rallar_playwright_user_home() {
   local user="$1"
   local home_dir=""
@@ -302,11 +316,22 @@ install_rallar_playwright_chromium() {
   echo "==> Installing Playwright Chromium for the ${user} user"
   rallar_playwright_run_with_heartbeat \
     "Playwright Chromium install for ${user}" \
-    runuser -u "${user}" -- npm --prefix "${checkout_dir}" exec -- playwright install chromium
+    rallar_playwright_run_user_command_in_checkout \
+      "${user}" \
+      "${checkout_dir}" \
+      npm --prefix "${checkout_dir}" exec -- playwright install chromium
 }
 
 rallar_playwright_self_test() {
   case "${RALLAR_PLAYWRIGHT_INSTALL_SELF_TEST:-}" in
+    install-command)
+      if [[ -z "${RALLAR_PLAYWRIGHT_SELF_TEST_CHECKOUT_DIR:-}" ]]; then
+        rallar_playwright_fail "RALLAR_PLAYWRIGHT_SELF_TEST_CHECKOUT_DIR is required for install-command self-test."
+        return 2
+      fi
+      install_rallar_playwright_chromium "${RALLAR_PLAYWRIGHT_SELF_TEST_CHECKOUT_DIR}"
+      echo "selfTestInstall=ok"
+      ;;
     lock-check)
       rallar_playwright_remove_stale_lock_if_safe
       ;;
