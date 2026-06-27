@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+RALLAR_MIN_DENO_VERSION="${RALLAR_MIN_DENO_VERSION:-2.9.0}"
+source "${SCRIPT_DIR}/rallar-deno-runtime.sh"
+
 if [[ "$(id -u)" != "0" ]]; then
   echo "Run this script as root." >&2
   exit 1
@@ -38,9 +42,11 @@ echo "==> Installing Node.js 24.x from NodeSource"
 curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
 apt install -y nodejs
 
-echo "==> Installing Deno into /usr/local/bin"
+echo "==> Installing Deno >= ${RALLAR_MIN_DENO_VERSION} into /usr/local/bin"
 export DENO_INSTALL=/usr/local
 curl -fsSL https://deno.land/install.sh | sh
+hash -r
+require_rallar_min_deno_version
 
 echo "==> Installing Caddy from the official stable apt repository"
 curl -1sLf "https://dl.cloudsmith.io/public/caddy/stable/gpg.key" \

@@ -7,6 +7,7 @@ if [[ "$(id -u)" != "0" ]]; then
 fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/rallar-deno-runtime.sh"
 source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
 source "${SCRIPT_DIR}/rallar-playwright-install.sh"
 
@@ -35,6 +36,7 @@ require_command() {
 require_command git
 require_command npm
 require_command deno
+require_rallar_min_deno_version
 require_command caddy
 require_command openssl
 require_command curl

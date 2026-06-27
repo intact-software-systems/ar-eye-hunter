@@ -235,6 +235,58 @@ describe('Hetzner distributed recipe workflow', () => {
         }
     });
 
+    it('installs latest Deno but enforces 2.9.0 as the minimum Hetzner runtime version', async () => {
+        const installScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/01-install-runtime.sh'),
+            'utf8',
+        );
+        const deployScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
+            'utf8',
+        );
+        const rolloutScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
+            'utf8',
+        );
+
+        expect(installScript).toContain('source "${SCRIPT_DIR}/rallar-deno-runtime.sh"');
+        expect(installScript).toContain('RALLAR_MIN_DENO_VERSION="${RALLAR_MIN_DENO_VERSION:-2.9.0}"');
+        expect(installScript).toContain('curl -fsSL https://deno.land/install.sh | sh');
+        expect(installScript).toContain('require_rallar_min_deno_version');
+        expect(installScript).not.toContain('sh -s "v${RALLAR_MIN_DENO_VERSION}"');
+        expect(installScript).not.toContain('sh -s v2.9.0');
+
+        for (const script of [deployScript, rolloutScript]) {
+            expect(script).toContain('source "${SCRIPT_DIR}/rallar-deno-runtime.sh"');
+            expect(script).toMatch(/require_command deno[\s\S]*require_rallar_min_deno_version/);
+        }
+    });
+
+    it('accepts newer Deno versions while rejecting versions below the Hetzner minimum', async () => {
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/controller/rallar-deno-runtime.sh');
+
+        const { stdout } = await execFileAsync('bash', [scriptPath], {
+            env: {
+                ...process.env,
+                RALLAR_DENO_RUNTIME_SELF_TEST: 'version-check',
+                RALLAR_DENO_SELF_TEST_VERSION: '2.10.0',
+                RALLAR_MIN_DENO_VERSION: '2.9.0',
+            },
+        });
+        expect(stdout).toContain('denoVersionOk=true');
+
+        await expect(execFileAsync('bash', [scriptPath], {
+            env: {
+                ...process.env,
+                RALLAR_DENO_RUNTIME_SELF_TEST: 'version-check',
+                RALLAR_DENO_SELF_TEST_VERSION: '2.8.2',
+                RALLAR_MIN_DENO_VERSION: '2.9.0',
+            },
+        })).rejects.toMatchObject({
+            stderr: expect.stringContaining('Deno 2.9.0 or newer required; found 2.8.2'),
+        });
+    });
+
     it('keeps Playwright packages aligned past the Node 24 browser-install hang regression', async () => {
         const rootPackage = JSON.parse(await readFile(path.join(repoRoot, 'package.json'), 'utf8'));
         const blackBoxPackage = JSON.parse(
