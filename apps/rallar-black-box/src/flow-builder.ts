@@ -627,6 +627,34 @@ function runnerStepForCommand(
                     timeoutMs: command.timeoutMs,
                 },
             };
+        case 'rtc.stream':
+            return {
+                ...base,
+                type: 'rtc.stream',
+                connection: command.connection ?? 'flowRtc',
+                request: {
+                    actor: command.actor,
+                    roomId: command.roomId,
+                    applicationId: command.applicationId,
+                    workspaceId: command.workspaceId,
+                    scope: command.scope,
+                    roomRef: command.roomRef,
+                    minSnapshotVersion: command.minSnapshotVersion,
+                    transport: command.transport,
+                    send: command.send,
+                    count: command.count,
+                    durationMs: command.durationMs,
+                    intervalMs: command.intervalMs,
+                    rateHz: command.rateHz,
+                    maxInFlight: command.maxInFlight,
+                    drainTimeoutMs: command.drainTimeoutMs,
+                    continueOnSendFailure: command.continueOnSendFailure,
+                    progressEveryMs: command.progressEveryMs,
+                    sampleEvery: command.sampleEvery,
+                    thresholds: command.thresholds,
+                    timeoutMs: command.timeoutMs,
+                },
+            };
         case 'health':
             return {
                 ...base,

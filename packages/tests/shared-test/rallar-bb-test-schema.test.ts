@@ -467,6 +467,68 @@ describe('rallar-bb-test capability and schema contract', () => {
         }
     });
 
+    it('validates rtc.stream command contract', () => {
+        expectValid(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+            kind: 'rtc.stream',
+            commandId: 'stream-position',
+            connection: 'rtcRealtime',
+            transport: 'realtime',
+            roomId: 'arena-1',
+            applicationId: 'rallar-server',
+            workspaceId: 'default',
+            count: 100,
+            intervalMs: 50,
+            maxInFlight: 64,
+            drainTimeoutMs: 5_000,
+            send: {
+                roomId: 'arena-1',
+                data: {
+                    topic: 'room.black-box.rtc-realtime.position',
+                    seq: '{stream.index}',
+                    frame: '{stream.iteration}',
+                    tMs: '{stream.elapsedMs}',
+                },
+            },
+            thresholds: {
+                minSendSuccessRatio: 0.99,
+                maxDroppedFrames: 0,
+            },
+        });
+
+        const invalidNumbers = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+            kind: 'rtc.stream',
+            commandId: 'stream-invalid-numbers',
+            count: 0,
+            durationMs: 0,
+            intervalMs: 0,
+            rateHz: 0,
+            maxInFlight: 0,
+            send: {},
+            thresholds: {
+                minSendSuccessRatio: 1.2,
+            },
+        });
+        expect(invalidNumbers.ok).toBe(false);
+        if (!invalidNumbers.ok) {
+            const text = formatJsonSchemaValidationErrors(invalidNumbers.errors);
+            expect(text).toContain('Expected number >=');
+            expect(text).toContain('Expected number <=');
+            expect(text).toContain('Expected number >');
+        }
+
+        const missingBounds = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+            kind: 'rtc.stream',
+            commandId: 'stream-missing-bounds',
+            send: {},
+        });
+        expect(missingBounds.ok).toBe(false);
+        if (!missingBounds.ok) {
+            const text = formatJsonSchemaValidationErrors(missingBounds.errors);
+            expect(text).toContain('rtc.stream requires count or durationMs');
+            expect(text).toContain('rtc.stream requires intervalMs or rateHz');
+        }
+    });
+
     it('validates every shared-test black-box-runner example scenario', () => {
         const exampleNames = readdirSync(runnerExamplesRoot).filter(name => name.endsWith('.json'));
         expect(exampleNames.length).toBeGreaterThan(0);

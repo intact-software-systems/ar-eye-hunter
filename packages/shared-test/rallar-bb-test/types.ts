@@ -9,6 +9,7 @@ export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
     'assert',
     'rtc.connect',
     'rtc.send',
+    'rtc.stream',
     'ws.open',
     'ws.send',
     'ws.close',
@@ -245,6 +246,42 @@ export type RallarBlackBoxTestRtcSendCommand =
     roomRef?: Readonly<Record<string, unknown>>;
     minSnapshotVersion?: number;
     transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
+}>;
+
+export type RallarBlackBoxTestRtcStreamThresholds = Readonly<{
+    minSendSuccessRatio?: number;
+    maxDroppedFrames?: number;
+    maxBackpressureCount?: number;
+    maxP95SendDurationMs?: number;
+    maxP99SendDurationMs?: number;
+    maxAverageStartDriftMs?: number;
+    maxStartDriftMs?: number;
+    maxJitterMs?: number;
+}>;
+
+export type RallarBlackBoxTestRtcStreamCommand =
+    & RallarBlackBoxTestCommandBase<'rtc.stream'>
+    & Readonly<{
+    connection?: string;
+    actor?: string;
+    roomId?: string;
+    applicationId?: string;
+    workspaceId?: string;
+    scope?: Readonly<Record<string, unknown>>;
+    roomRef?: Readonly<Record<string, unknown>>;
+    minSnapshotVersion?: number;
+    transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
+    send: unknown;
+    count?: number;
+    durationMs?: number;
+    intervalMs?: number;
+    rateHz?: number;
+    maxInFlight?: number;
+    drainTimeoutMs?: number;
+    continueOnSendFailure?: boolean;
+    progressEveryMs?: number;
+    sampleEvery?: number;
+    thresholds?: RallarBlackBoxTestRtcStreamThresholds;
 }>;
 
 export type RallarBlackBoxTestWsOpenCommand =
@@ -484,6 +521,7 @@ export type RallarBlackBoxTestCommand =
     | RallarBlackBoxTestAssertCommand
     | RallarBlackBoxTestRtcConnectCommand
     | RallarBlackBoxTestRtcSendCommand
+    | RallarBlackBoxTestRtcStreamCommand
     | RallarBlackBoxTestWsOpenCommand
     | RallarBlackBoxTestWsSendCommand
     | RallarBlackBoxTestWsCloseCommand
@@ -619,6 +657,65 @@ export type RallarBlackBoxTestLoopResultValue = Readonly<{
     results: readonly RallarBlackBoxTestCompositeChildResult[];
 }>;
 
+export type RallarBlackBoxTestRtcStreamFrameObservation = Readonly<{
+    index: number;
+    iteration: number;
+    commandId: string;
+    scheduledAtEpochMs: number;
+    startedAtEpochMs?: number;
+    completedAtEpochMs?: number;
+    startDriftMs?: number;
+    durationMs?: number;
+    ok: boolean;
+    dropped?: boolean;
+    backpressured?: boolean;
+    status?: string;
+    errorCode?: string;
+}>;
+
+export type RallarBlackBoxTestRtcStreamThresholdFailure = Readonly<{
+    name: keyof RallarBlackBoxTestRtcStreamThresholds;
+    category: 'pacing' | 'delivery' | 'backpressure';
+    threshold: number | boolean;
+    actual?: number | boolean;
+    message: string;
+}>;
+
+export type RallarBlackBoxTestRtcStreamResultValue = Readonly<{
+    commandId: string;
+    transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
+    plannedFrames: number;
+    scheduledFrames: number;
+    attemptedFrames: number;
+    completedFrames: number;
+    failedFrames: number;
+    droppedFrames: number;
+    backpressureCount: number;
+    startedAtEpochMs: number;
+    endedAtEpochMs: number;
+    elapsedMs: number;
+    requestedRateHz?: number;
+    achievedScheduleHz?: number;
+    achievedCompletionHz?: number;
+    pacing: Readonly<{
+        intervalMs: number;
+        maxStartDriftMs?: number;
+        averageStartDriftMs?: number;
+        maxJitterMs?: number;
+        lateFrameCount: number;
+    }>;
+    duration: Readonly<{
+        minMs?: number;
+        p50Ms?: number;
+        p95Ms?: number;
+        p99Ms?: number;
+        maxMs?: number;
+        averageMs?: number;
+    }>;
+    thresholdFailures: readonly RallarBlackBoxTestRtcStreamThresholdFailure[];
+    observations: readonly RallarBlackBoxTestRtcStreamFrameObservation[];
+}>;
+
 export type RallarBlackBoxTestParallelGroupResult = Readonly<{
     groupId: string;
     commandCount: number;
@@ -720,6 +817,9 @@ export type RallarBlackBoxTestStatsSnapshot = Readonly<{
         latestPacing?: Omit<RallarBlackBoxTestLoopPacingSummary, 'iterations'>;
         latestSends?: Omit<RallarBlackBoxTestLoopSendSummary, 'observations'>;
         thresholdFailures?: readonly RallarBlackBoxTestLoopThresholdFailure[];
+        streamCount?: number;
+        latestStreamCommandId?: string;
+        latestStream?: Omit<RallarBlackBoxTestRtcStreamResultValue, 'observations'>;
     }>;
 }>;
 

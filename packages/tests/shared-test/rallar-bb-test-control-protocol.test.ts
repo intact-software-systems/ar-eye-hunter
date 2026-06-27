@@ -77,4 +77,73 @@ describe('rallar-bb-test control protocol', () => {
             error: 'Control command payload is invalid: recipe.load.recipe.commands[0]: rtc.readiness.timeoutMs must be >= 1.',
         });
     });
+
+    it('accepts recipe.load containing rtc.stream', () => {
+        const parsed = parseControlServerMessage(
+            JSON.stringify(envelope('recipe-load-rtc-stream-1', {
+                kind: 'recipe.load',
+                commandId: 'recipe-load-rtc-stream-1',
+                recipe: {
+                    schemaVersion: 1,
+                    recipeId: 'rtc-stream',
+                    commands: [
+                        {
+                            kind: 'rtc.stream',
+                            commandId: 'stream-position',
+                            connection: 'rtcRealtime',
+                            transport: 'realtime',
+                            roomId: 'arena-1',
+                            applicationId: 'rallar-server',
+                            workspaceId: 'default',
+                            count: 100,
+                            intervalMs: 50,
+                            maxInFlight: 64,
+                            drainTimeoutMs: 5_000,
+                            send: {
+                                roomId: 'arena-1',
+                                data: {
+                                    topic: 'room.black-box.rtc-realtime.position',
+                                    seq: '{stream.index}',
+                                },
+                            },
+                            thresholds: {
+                                minSendSuccessRatio: 0.99,
+                                maxDroppedFrames: 0,
+                            },
+                        },
+                    ],
+                },
+            })),
+            { runId: 'run-1', agentId: 'agent-1' },
+        );
+
+        expect(parsed.ok).toBe(true);
+    });
+
+    it('rejects malformed rtc.stream in recipe.load', () => {
+        const parsed = parseControlServerMessage(
+            JSON.stringify(envelope('recipe-load-rtc-stream-invalid-1', {
+                kind: 'recipe.load',
+                commandId: 'recipe-load-rtc-stream-invalid-1',
+                recipe: {
+                    schemaVersion: 1,
+                    recipeId: 'rtc-stream-invalid',
+                    commands: [
+                        {
+                            kind: 'rtc.stream',
+                            commandId: 'stream-invalid',
+                            intervalMs: 50,
+                            send: {},
+                        },
+                    ],
+                },
+            })),
+            { runId: 'run-1', agentId: 'agent-1' },
+        );
+
+        expect(parsed).toEqual({
+            ok: false,
+            error: 'Control command payload is invalid: recipe.load.recipe.commands[0]: rtc.stream requires count or durationMs.',
+        });
+    });
 });

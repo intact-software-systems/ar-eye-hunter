@@ -8,6 +8,7 @@ import {
     type RallarBlackBoxTestLoopResultValue,
     type RallarBlackBoxTestParallelResultValue,
     type RallarBlackBoxTestRecipe,
+    type RallarBlackBoxTestRtcStreamResultValue,
     type RallarBlackBoxTestWaitResultValue,
     redactRallarBlackBoxValue,
     selectRallarBlackBoxActiveCommand,
@@ -2049,6 +2050,144 @@ describe('rallar-bb-test', () => {
 
         expect(result.ok).toBe(true);
         expect(sendCallEpochMs[0] - startedAtEpochMs).toBeGreaterThanOrEqual(20);
+    });
+
+    it('executes rtc.stream sends without sequentially blocking frame scheduling', async () => {
+        const sendStarts: number[] = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                connect: async () => ({ connected: true }),
+                send: async (input) => {
+                    sendStarts.push(Date.now());
+                    await sleepMs(80);
+                    return {
+                        status: 'sent',
+                        input,
+                    };
+                },
+                close: async () => ({ closed: true }),
+                health: async () => ({ connected: true }),
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'rtc.stream',
+            commandId: 'stream-position',
+            connection: 'rtc',
+            transport: 'realtime',
+            count: 5,
+            intervalMs: 5,
+            maxInFlight: 64,
+            drainTimeoutMs: 500,
+            send: {
+                data: {
+                    seq: '{stream.index}',
+                    frame: '{stream.iteration}',
+                },
+            },
+        });
+        const value = result.value as RallarBlackBoxTestRtcStreamResultValue;
+        const topics = selectRallarBlackBoxDiagnostics(runtime.state()).map(event => event.topic);
+
+        expect(result.ok).toBe(true);
+        expect(sendStarts).toHaveLength(5);
+        expect(Math.max(...sendStarts) - Math.min(...sendStarts)).toBeLessThan(200);
+        expect(value).toMatchObject({
+            commandId: 'stream-position',
+            plannedFrames: 5,
+            scheduledFrames: 5,
+            attemptedFrames: 5,
+            completedFrames: 5,
+            failedFrames: 0,
+            droppedFrames: 0,
+        });
+        expect(value.duration.p95Ms).toBeGreaterThanOrEqual(70);
+        expect(topics).toEqual(expect.arrayContaining([
+            'rallar.bb.rtc.stream_started',
+            'rallar.bb.rtc.stream_completed',
+        ]));
+    });
+
+    it('fails rtc.stream when max in-flight saturation violates thresholds', async () => {
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                connect: async () => ({ connected: true }),
+                send: async () => {
+                    await sleepMs(60);
+                    return {
+                        status: 'sent',
+                    };
+                },
+                close: async () => ({ closed: true }),
+                health: async () => ({ connected: true }),
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'rtc.stream',
+            commandId: 'stream-saturated',
+            count: 5,
+            intervalMs: 1,
+            maxInFlight: 1,
+            drainTimeoutMs: 500,
+            send: {
+                data: {
+                    seq: '{stream.index}',
+                },
+            },
+            thresholds: {
+                maxDroppedFrames: 0,
+            },
+        });
+        const value = result.value as RallarBlackBoxTestRtcStreamResultValue;
+        const diagnostic = selectRallarBlackBoxDiagnostics(runtime.state())
+            .find(event => event.topic === 'rallar.bb.rtc.stream_failed');
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.code).toBe('RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED');
+        expect(value.droppedFrames).toBeGreaterThan(0);
+        expect(value.thresholdFailures.map(failure => failure.name)).toContain('maxDroppedFrames');
+        expect(diagnostic?.payload).toMatchObject({
+            diagnosticTypeId: 'rallar.bb.rtc.stream_failed',
+            severity: 'error',
+            commandId: 'stream-saturated',
+        });
+    });
+
+    it('samples rtc.stream raw observations without changing aggregate counts', async () => {
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                connect: async () => ({ connected: true }),
+                send: async () => ({ status: 'sent' }),
+                close: async () => ({ closed: true }),
+                health: async () => ({ connected: true }),
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'rtc.stream',
+            commandId: 'stream-sampled',
+            count: 6,
+            intervalMs: 1,
+            sampleEvery: 3,
+            send: {
+                data: {
+                    seq: '{stream.index}',
+                },
+            },
+        });
+        const value = result.value as RallarBlackBoxTestRtcStreamResultValue;
+
+        expect(result.ok).toBe(true);
+        expect(value).toMatchObject({
+            plannedFrames: 6,
+            scheduledFrames: 6,
+            attemptedFrames: 6,
+            completedFrames: 6,
+            failedFrames: 0,
+            droppedFrames: 0,
+        });
+        expect(value.observations.map(observation => observation.index)).toEqual([0, 2, 5]);
     });
 
     it('executes browser-native HTTP requests through the adapter', async () => {

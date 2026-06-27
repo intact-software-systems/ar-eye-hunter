@@ -701,6 +701,7 @@ export function distributedRecipeCommandPreview(
         (sum, command) => sum + effectiveCommandCountForCommand(command),
         0,
     );
+    const hasStreamFrames = recipe.commands.some(command => commandKindsForCommand(command).includes('rtc.stream'));
     const effectiveFrameCount = firstPositiveInteger(
         asRecord(asRecord(recipe.metadata).realtime).frameCount,
         asRecord(recipe.metadata).frameCount,
@@ -713,7 +714,7 @@ export function distributedRecipeCommandPreview(
         labelParts.push(`${effectiveCommandCount} effective operation${effectiveCommandCount === 1 ? '' : 's'}`);
     }
     if (effectiveFrameCount !== undefined) {
-        labelParts.push(`${effectiveFrameCount} frames`);
+        labelParts.push(`${effectiveFrameCount} ${hasStreamFrames ? 'stream ' : ''}frames`);
     }
 
     return {
@@ -817,16 +818,22 @@ function hasRtcConnectReadiness(command: RallarBlackBoxTestCommand): boolean {
 
 function rtcReadinessWarnings(recipe: RallarBlackBoxTestRecipe): readonly string[] {
     const nodes = recipeCommandNodes(recipe.commands);
-    const sends = nodes.filter(node => node.command.kind === 'rtc.send');
+    const sends = nodes.filter(node => node.command.kind === 'rtc.send' || node.command.kind === 'rtc.stream');
     if (sends.length === 0 || nodes.some(node => hasRtcConnectReadiness(node.command))) {
         return [];
     }
 
+    const hasStream = sends.some(node => node.command.kind === 'rtc.stream');
     const warnings = [
-        'RTC send traffic starts without an explicit rtc.connect readiness contract; sends can race signaling and data-channel readiness.',
+        hasStream
+            ? 'RTC stream traffic starts without an explicit rtc.connect readiness contract; frames can race signaling and data-channel readiness.'
+            : 'RTC send traffic starts without an explicit rtc.connect readiness contract; sends can race signaling and data-channel readiness.',
     ];
     if (sends.some(node => node.insideLoop)) {
         warnings.push('Looped RTC sends are especially sensitive to missing ready-peer checks before the first frame.');
+    }
+    if (hasStream) {
+        warnings.push('Streamed RTC frames are especially sensitive to missing ready-peer checks before the first frame.');
     }
     return warnings;
 }
@@ -983,6 +990,22 @@ function analyzeDistributedRecipeCommand(
         const readinessDetail = rtcConnectReadinessDetail(command);
         if (readinessDetail) {
             details.push(readinessDetail);
+        }
+    } else if (command.kind === 'rtc.stream') {
+        const frameCount = effectiveFrameCountForCommand(command);
+        if (frameCount !== undefined) {
+            details.push(`${frameCount} frame${frameCount === 1 ? '' : 's'}`);
+        }
+        if (command.intervalMs !== undefined) {
+            details.push(`interval ${command.intervalMs} ms`);
+        } else if (command.rateHz !== undefined) {
+            details.push(`rate ${command.rateHz} Hz`);
+        }
+        if (command.maxInFlight !== undefined) {
+            details.push(`max in-flight ${command.maxInFlight}`);
+        }
+        if (command.thresholds?.minSendSuccessRatio !== undefined) {
+            details.push(`min success ratio ${command.thresholds.minSendSuccessRatio}`);
         }
     } else if (command.kind === 'wait') {
         waits = [waitPreflight(command, path)];
@@ -1164,6 +1187,12 @@ function commandSummary(command: RallarBlackBoxTestCommand): string {
                 command.connection,
                 roomLabel(command),
             ].filter(Boolean).join(' - ');
+        case 'rtc.stream':
+            return [
+                'stream RTC',
+                command.transport,
+                roomLabel(command),
+            ].filter(Boolean).join(' - ');
         case 'ws.open':
             return ['open WebSocket', command.connection].filter(Boolean).join(' - ');
         case 'ws.send':
@@ -1186,11 +1215,15 @@ function commandSummary(command: RallarBlackBoxTestCommand): string {
 }
 
 function roomLabel(
-    command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect' | 'rtc.send' }>,
+    command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect' | 'rtc.send' | 'rtc.stream' }>,
 ): string | undefined {
     const roomRef = asRecord(command.roomRef);
-    const send = command.kind === 'rtc.send' ? asRecord(command.send) : {};
-    const roomId = command.kind === 'rtc.connect' ? command.roomId : undefined;
+    const send = command.kind === 'rtc.send' || command.kind === 'rtc.stream'
+        ? asRecord(command.send)
+        : {};
+    const roomId = command.kind === 'rtc.connect' || command.kind === 'rtc.stream'
+        ? command.roomId
+        : undefined;
     return String(roomId ?? send.roomId ?? roomRef.groupId ?? roomRef.roomId ?? '') || undefined;
 }
 
@@ -1248,7 +1281,7 @@ function compatibilityWarnings(
     if (liveServiceRequirements.length > 0) {
         warnings.push('Recipe requires live runtime evidence or live services from the selected browser agents.');
     }
-    if (kinds.has('rtc.connect') || kinds.has('rtc.send')) {
+    if (kinds.has('rtc.connect') || kinds.has('rtc.send') || kinds.has('rtc.stream')) {
         warnings.push('RTC recipes require real Rallar signaling, compatible group membership, and at least one peer for delivery checks.');
     }
     if (kinds.has('ws.open') || kinds.has('ws.send')) {
@@ -1284,7 +1317,7 @@ function serviceBadgesForPreflight(
     if (kinds.has('rtc.connect')) {
         badges.push({ label: 'Rallar auth/signaling', tone: 'warn' });
     }
-    if (kinds.has('rtc.send')) {
+    if (kinds.has('rtc.send') || kinds.has('rtc.stream')) {
         badges.push({ label: 'RTC peers', tone: 'warn' });
     }
     if (hasCrdtCommandKind(commandKinds)) {
@@ -1357,6 +1390,10 @@ function effectiveFrameCountForCommand(command: RallarBlackBoxTestCommand): numb
     const frameCount = firstPositiveInteger(realtime.frameCount, metadata.frameCount);
     if (frameCount !== undefined) {
         return frameCount;
+    }
+
+    if (command.kind === 'rtc.stream') {
+        return firstPositiveInteger(command.count);
     }
 
     if (command.kind === 'loop') {

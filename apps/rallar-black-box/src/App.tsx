@@ -9646,6 +9646,13 @@ function formatFleetDuration(value: number | undefined): string {
     return value >= 1000 ? formatRelativeDuration(value) : `${Math.round(value)}ms`;
 }
 
+function formatStreamRate(value: number | undefined): string {
+    if (value === undefined || !Number.isFinite(value)) {
+        return '-';
+    }
+    return `${Math.round(value * 100) / 100}Hz`;
+}
+
 function minDefined(
     left: number | undefined,
     right: number | undefined,
@@ -9930,6 +9937,8 @@ function ImportedDistributedArtifactAnalysisPanel({
     const loadedRequiredCount = status?.requiredFiles.filter((file) => file.loaded).length ?? 0;
     const requiredFileCount = status?.requiredFiles.length ?? DISTRIBUTED_ARTIFACT_REQUIRED_FILES.length;
     const slowestAgent = performance?.slowestAgents[0];
+    const streamTiming = performance?.streamTiming;
+    const slowestStreamAgent = streamTiming?.slowestAgents[0];
     const stateTone = analysis.ok
         ? 'good'
         : failure
@@ -10059,7 +10068,56 @@ function ImportedDistributedArtifactAnalysisPanel({
                             ? 'warn'
                             : 'good'}
                     />
+                    <Metric
+                        label="Stream frames"
+                        value={streamTiming
+                            ? `${streamTiming.completedFrames}/${streamTiming.plannedFrames}`
+                            : '-'}
+                        tone={streamTiming
+                            ? streamTiming.completedFrames >= streamTiming.plannedFrames ? 'good' : 'warn'
+                            : 'muted'}
+                    />
+                    <Metric
+                        label="P50 stream"
+                        value={formatFleetDuration(streamTiming?.duration.p50Ms)}
+                        tone={streamTiming?.duration.p50Ms !== undefined ? 'active' : 'muted'}
+                    />
+                    <Metric
+                        label="P95 stream"
+                        value={formatFleetDuration(streamTiming?.duration.p95Ms)}
+                        tone={(streamTiming?.duration.p95Ms ?? 0) > 1_000 ? 'warn' : 'active'}
+                    />
+                    <Metric
+                        label="P99 stream"
+                        value={formatFleetDuration(streamTiming?.duration.p99Ms)}
+                        tone={(streamTiming?.duration.p99Ms ?? 0) > 2_000 ? 'warn' : 'active'}
+                    />
+                    <Metric
+                        label="Stream drops"
+                        value={String(streamTiming?.droppedFrames ?? 0)}
+                        tone={(streamTiming?.droppedFrames ?? 0) > 0 ? 'bad' : 'good'}
+                    />
+                    <Metric
+                        label="Backpressure"
+                        value={String(streamTiming?.backpressureCount ?? 0)}
+                        tone={(streamTiming?.backpressureCount ?? 0) > 0 ? 'warn' : 'good'}
+                    />
+                    <Metric
+                        label="Achieved Hz"
+                        value={formatStreamRate(streamTiming?.achievedCompletionHz)}
+                        tone={streamTiming?.achievedCompletionHz !== undefined ? 'active' : 'muted'}
+                    />
                 </div>
+                {streamTiming && (
+                    <div className="imported-artifact-slowest">
+                        <strong>Slowest stream agent</strong>
+                        <span>
+                            {slowestStreamAgent
+                                ? `${slowestStreamAgent.agentId} - max ${formatFleetDuration(slowestStreamAgent.maxMs)}, p99 ${formatFleetDuration(slowestStreamAgent.p99Ms)}, frames ${slowestStreamAgent.completedFrames}/${slowestStreamAgent.plannedFrames}`
+                                : 'No stream latency rows'}
+                        </span>
+                    </div>
+                )}
                 <div className="imported-artifact-slowest">
                     <strong>Slowest agent</strong>
                     <span>

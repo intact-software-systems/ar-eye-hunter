@@ -8,6 +8,7 @@ export * from './recipe-fixtures.ts';
 export * from './schema.ts';
 export * from './redaction.ts';
 export * from './composite-results.ts';
+export * from './rtc-stream.ts';
 export * from './diagnostics.ts';
 export * from './runtime.ts';
 export * from './selectors.ts';

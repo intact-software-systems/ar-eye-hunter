@@ -48,6 +48,8 @@ type ManifestCommand = Readonly<{
         timeoutMs?: number;
         intervalMs?: number;
     }>;
+    count?: number;
+    intervalMs?: number;
 }>;
 
 function manifestCommands(manifest: RallarBlackBoxDistributedRunManifest): readonly ManifestCommand[] {
@@ -156,7 +158,7 @@ describe('Hetzner distributed manifest catalog', () => {
 
         for (const entry of buildHetznerDistributedManifestCatalog().filter(candidate => !candidate.diagnostic)) {
             const commands = manifestCommands(entry.manifest);
-            const sendsRtc = commands.some(command => command.kind === 'rtc.send');
+            const sendsRtc = commands.some(command => command.kind === 'rtc.send' || command.kind === 'rtc.stream');
             if (!sendsRtc) {
                 expect(expectedReadyPeers.has(entry.filePath)).toBe(false);
                 continue;
@@ -168,6 +170,39 @@ describe('Hetzner distributed manifest catalog', () => {
                 timeoutMs: 10_000,
                 intervalMs: 100,
             });
+        }
+    });
+
+    it('uses rtc.stream for high-rate realtime Hetzner manifests', () => {
+        const expectedStreams = new Map([
+            ['apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json', 100],
+            ['apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json', 300],
+        ]);
+
+        for (const entry of buildHetznerDistributedManifestCatalog().filter(candidate => !candidate.diagnostic)) {
+            const commands = manifestCommands(entry.manifest);
+            const stream = commands.find(command => command.kind === 'rtc.stream');
+            const highRateLoop = commands.find(command =>
+                command.kind === 'loop' &&
+                typeof command.count === 'number' &&
+                command.count >= 20 &&
+                typeof command.intervalMs === 'number' &&
+                command.intervalMs <= 100 &&
+                (command.commands ?? []).some(child => child.kind === 'rtc.send')
+            );
+
+            if (!expectedStreams.has(entry.filePath)) {
+                expect(stream, entry.filePath).toBeUndefined();
+                continue;
+            }
+
+            expect(stream, entry.filePath).toMatchObject({
+                kind: 'rtc.stream',
+                commandId: 'rtc-realtime-position-stream',
+                count: expectedStreams.get(entry.filePath),
+                intervalMs: 50,
+            });
+            expect(highRateLoop, entry.filePath).toBeUndefined();
         }
     });
 

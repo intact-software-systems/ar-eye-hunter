@@ -28,7 +28,12 @@ export type JsonSchema = Readonly<{
     items?: JsonSchema;
     oneOf?: readonly JsonSchema[];
     anyOf?: readonly JsonSchema[];
+    requiredAnyOf?: readonly Readonly<{
+        properties: readonly string[];
+        message: string;
+    }>[];
     minimum?: number;
+    exclusiveMinimum?: number;
     maximum?: number;
     minItems?: number;
     examples?: readonly unknown[];
@@ -193,6 +198,20 @@ const rtcConnectReadinessSchema: JsonSchema = {
         minReadyPeers: { type: 'integer', minimum: 1 },
         timeoutMs: { type: 'integer', minimum: 1 },
         intervalMs: { type: 'integer', minimum: 1 },
+    },
+    additionalProperties: false,
+};
+const rtcStreamThresholdsSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+        minSendSuccessRatio: { type: 'number', minimum: 0, maximum: 1 },
+        maxDroppedFrames: { type: 'number', minimum: 0 },
+        maxBackpressureCount: { type: 'number', minimum: 0 },
+        maxP95SendDurationMs: { type: 'number', minimum: 0 },
+        maxP99SendDurationMs: { type: 'number', minimum: 0 },
+        maxAverageStartDriftMs: { type: 'number', minimum: 0 },
+        maxStartDriftMs: { type: 'number', minimum: 0 },
+        maxJitterMs: { type: 'number', minimum: 0 },
     },
     additionalProperties: false,
 };
@@ -565,6 +584,44 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         minSnapshotVersion: numberSchema,
         transport: rtcTransportSchema,
     }),
+    'rtc.stream': {
+        ...strictCommandSchema('rtc.stream', ['send'], {
+            connection: stringSchema,
+            actor: stringSchema,
+            roomId: stringSchema,
+            applicationId: stringSchema,
+            workspaceId: stringSchema,
+            scope: recordSchema,
+            roomRef: recordSchema,
+            minSnapshotVersion: numberSchema,
+            transport: rtcTransportSchema,
+            send: anySchema,
+            count: { type: 'integer', minimum: 1 },
+            durationMs: {
+                type: 'integer',
+                minimum: 1,
+                maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs,
+            },
+            intervalMs: { type: 'integer', minimum: 1 },
+            rateHz: { type: 'number', exclusiveMinimum: 0 },
+            maxInFlight: { type: 'integer', minimum: 1 },
+            drainTimeoutMs: { type: 'integer', minimum: 0 },
+            continueOnSendFailure: booleanSchema,
+            progressEveryMs: { type: 'integer', minimum: 1 },
+            sampleEvery: { type: 'integer', minimum: 1 },
+            thresholds: rtcStreamThresholdsSchema,
+        }),
+        requiredAnyOf: [
+            {
+                properties: ['count', 'durationMs'],
+                message: 'rtc.stream requires count or durationMs.',
+            },
+            {
+                properties: ['intervalMs', 'rateHz'],
+                message: 'rtc.stream requires intervalMs or rateHz.',
+            },
+        ],
+    },
     'ws.open': strictCommandSchema('ws.open', [], {
         connection: stringSchema,
         url: stringSchema,
@@ -990,6 +1047,69 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
                 },
             },
             timeoutMs: 5_000,
+        },
+    },
+    {
+        kind: 'rtc.stream',
+        title: 'RTC Stream',
+        description: 'Schedules a bounded RTC/realtime frame stream inside one browser-agent command and records aggregate pacing, delivery, and latency metrics.',
+        requiredFields: ['send'],
+        optionalFields: [
+            'connection',
+            'actor',
+            'roomId',
+            'applicationId',
+            'workspaceId',
+            'scope',
+            'roomRef',
+            'minSnapshotVersion',
+            'transport',
+            'count',
+            'durationMs',
+            'intervalMs',
+            'rateHz',
+            'maxInFlight',
+            'drainTimeoutMs',
+            'continueOnSendFailure',
+            'progressEveryMs',
+            'sampleEvery',
+            'thresholds',
+            'commandId',
+            'label',
+            'timeoutMs',
+            'deadlineEpochMs',
+            'metadata',
+        ],
+        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
+        runtimeSurfaces: ['control-agent', 'black-box-runner-adapter'],
+        liveServiceRequirements: ['active RTC connection', 'Rallar signaling when using browser-rallar or rallar-browser'],
+        artifactExpectations: ['stream started/progress/completed diagnostics', 'aggregate frame delivery metrics', 'p50/p95/p99/max send duration'],
+        example: {
+            kind: 'rtc.stream',
+            commandId: 'stream-rtc-position',
+            connection: 'aliceRtc',
+            transport: 'realtime',
+            roomId: 'bb-group',
+            applicationId: 'rallar-server',
+            workspaceId: 'default',
+            count: 3,
+            intervalMs: 50,
+            maxInFlight: 64,
+            drainTimeoutMs: 5_000,
+            send: {
+                roomId: 'bb-group',
+                data: {
+                    topic: 'schema.example.rtc.stream.position',
+                    seq: '{stream.index}',
+                    frame: '{stream.iteration}',
+                    tMs: '{stream.elapsedMs}',
+                },
+            },
+            thresholds: {
+                minSendSuccessRatio: 0.99,
+                maxDroppedFrames: 0,
+            },
+            timeoutMs: 10_000,
         },
     },
     {
@@ -1827,6 +1947,14 @@ function validateNode(
         errors.push({ path, message: `Expected number >= ${schema.minimum}.` });
     }
 
+    if (
+        typeof schema.exclusiveMinimum === 'number' &&
+        typeof value === 'number' &&
+        value <= schema.exclusiveMinimum
+    ) {
+        errors.push({ path, message: `Expected number > ${schema.exclusiveMinimum}.` });
+    }
+
     if (typeof schema.maximum === 'number' && typeof value === 'number' && value > schema.maximum) {
         errors.push({ path, message: `Expected number <= ${schema.maximum}.` });
     }
@@ -1845,6 +1973,14 @@ function validateNode(
         for (const property of schema.required) {
             if (value[property] === undefined) {
                 errors.push({ path, message: `Missing required property ${property}.` });
+            }
+        }
+    }
+
+    if (schema.requiredAnyOf && isRecord(value)) {
+        for (const requirement of schema.requiredAnyOf) {
+            if (!requirement.properties.some(property => value[property] !== undefined)) {
+                errors.push({ path, message: requirement.message });
             }
         }
     }

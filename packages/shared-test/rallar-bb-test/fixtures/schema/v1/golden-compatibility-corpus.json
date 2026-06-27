@@ -100,6 +100,37 @@
           "timeoutMs": 60000
         },
         {
+          "kind": "rtc.stream",
+          "commandId": "rtc-stream-v1",
+          "connection": "goldenRtc",
+          "transport": "realtime",
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "roomRef": {
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "groupId": "golden-room"
+          },
+          "count": 3,
+          "intervalMs": 50,
+          "maxInFlight": 64,
+          "drainTimeoutMs": 5000,
+          "send": {
+            "roomId": "golden-room",
+            "data": {
+              "topic": "room.golden.compatibility.stream",
+              "seq": "{stream.index}",
+              "frame": "{stream.iteration}",
+              "tMs": "{stream.elapsedMs}"
+            }
+          },
+          "thresholds": {
+            "minSendSuccessRatio": 0.99,
+            "maxDroppedFrames": 0
+          },
+          "timeoutMs": 10000
+        },
+        {
           "kind": "ws.open",
           "commandId": "ws-open-v1",
           "connection": "goldenWs",

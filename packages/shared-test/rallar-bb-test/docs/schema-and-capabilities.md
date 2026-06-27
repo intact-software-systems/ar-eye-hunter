@@ -170,6 +170,33 @@ configured limits. The `stats` command mirrors the latest loop under
 `stats.load` without raw iteration or send observation arrays for SPA and
 artifact summaries.
 
+`rtc.stream` is the high-rate RTC traffic primitive. Use it when a recipe wants
+to model a realtime stream, such as 100 frames at 20 Hz, without expanding that
+stream into hundreds of sequential `rtc.send` commands. A stream command owns
+frame scheduling inside the browser agent, sends frames against a fixed
+wall-clock cadence, and returns one aggregate result with planned, attempted,
+completed, failed, dropped, and backpressured frame counts. It also records
+send duration percentiles (`p50Ms`, `p95Ms`, `p99Ms`, and `maxMs`), achieved
+schedule/completion Hz, pacing drift, jitter, threshold failures, and sampled
+frame observations.
+
+`rtc.stream` differs from `loop` plus `rtc.send`: `loop` intentionally awaits
+each child command and is best for deterministic command-rate workflows,
+retries, and evidence trees. `rtc.stream` schedules frames without waiting for
+the previous frame to finish before scheduling the next one, so it is the right
+shape for realtime performance baselines. Keep using plain `rtc.send` for
+single-message smoke tests, provider parity checks, NACK diagnostics, and flows
+where each send should be a distinct command result.
+
+Stream payloads support stream placeholders after normal config/session
+placeholders are resolved: `{stream.index}`, `{stream.iteration}`,
+`{stream.elapsedMs}`, `{stream.scheduledElapsedMs}`, and
+`{stream.commandId}`. Recipes must provide `count` or `durationMs`, and
+`intervalMs` or `rateHz`. `maxInFlight` bounds memory and backpressure; frames
+above the in-flight limit are recorded as dropped instead of creating unbounded
+promises. `rtc.stream.thresholds` can fail the command when delivery,
+backpressure, latency, drift, or jitter misses configured limits.
+
 Composite conformance coverage lives in `composite-conformance.ts`. It defines
 the representative `loop`, `parallel`, `wait`, `assert`, cancellation, and
 negative delivery recipes plus provider rows for deterministic local,

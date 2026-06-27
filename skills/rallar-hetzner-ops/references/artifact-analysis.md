@@ -22,6 +22,14 @@ diagnostic evidence.
 JSONL rows. Treat warnings as evidence quality issues; only malformed required
 `distributed-run.json` blocks analysis.
 
+For realtime `rtc.stream` manifests, read
+`analysis/analysis.json.performance.streamTiming` and
+`analysis/performance.md` before drawing performance conclusions. The stream
+section reports frame completion, drops, backpressure, p50/p95/p99/max send
+duration, achieved Hz, and slowest stream agents. If a run times out without a
+failed result, `events.jsonl` stream progress can still become the first failure
+evidence instead of falling back to generic distributed-run state.
+
 For local SPA review, download the raw artifact directory from GitHub Actions
 and import its JSON/JSONL files in the `rallar-black-box` Runs panel with
 `Import CI artifact`.

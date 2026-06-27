@@ -64,6 +64,41 @@ export type DistributedRunPerformanceAnalysis = Readonly<{
         spreadRatio?: number;
         outlierCount: number;
     }>;
+    streamTiming?: Readonly<{
+        streamCount: number;
+        plannedFrames: number;
+        scheduledFrames: number;
+        attemptedFrames: number;
+        completedFrames: number;
+        failedFrames: number;
+        droppedFrames: number;
+        backpressureCount: number;
+        sendSuccessRatio?: number;
+        requestedRateHz?: number;
+        achievedScheduleHz?: number;
+        achievedCompletionHz?: number;
+        duration: Readonly<{
+            count: number;
+            minMs?: number;
+            p50Ms?: number;
+            p95Ms?: number;
+            p99Ms?: number;
+            maxMs?: number;
+            averageMs?: number;
+            spreadRatio?: number;
+            outlierCount: number;
+        }>;
+        slowestAgents: readonly Readonly<{
+            agentId: string;
+            streamCount: number;
+            plannedFrames: number;
+            completedFrames: number;
+            averageMs?: number;
+            p95Ms?: number;
+            p99Ms?: number;
+            maxMs?: number;
+        }>[];
+    }>;
     slowestAgents: readonly Readonly<{
         agentId: string;
         commandCount: number;
@@ -348,6 +383,11 @@ function deriveFailure(input: Readonly<{
         };
     }
 
+    const streamFailure = streamTimeoutFailure(input.distributedRun, input.events);
+    if (streamFailure) {
+        return streamFailure;
+    }
+
     const spaAction = input.spaReport?.nextActions[0];
     if (spaAction) {
         const failure = input.spaReport?.firstFailure;
@@ -439,6 +479,8 @@ function derivePerformance(
     const commandTimingSamples = timingSamplesFromControlRun(distributedRun, controlRun);
     const commandDurations = commandTimingSamples.map(sample => sample.durationMs);
     const commandTiming = timingFromFleetOrValues(readPath(fleetReport, ['timing', 'commands']), commandDurations);
+    const streamSamples = streamSamplesFromControlRunAndEvents(controlRun, events);
+    const streamTiming = streamTimingFromSamples(streamSamples);
     const diagnosticCounts = diagnosticCountsFromEvents(events);
     const runDurationMs = durationFromFields(distributedRun, 'startedAtEpochMs', 'completedAtEpochMs') ??
         numberValue(readPath(fleetReport, ['timing', 'run', 'p50Ms']));
@@ -462,6 +504,7 @@ function derivePerformance(
         staleAgentCount: numberValue(readPath(fleetReport, ['summary', 'stale'])) ?? 0,
         flakyAgentCount: numberValue(readPath(fleetReport, ['summary', 'flaky'])) ?? 0,
         commandTiming,
+        streamTiming,
         slowestAgents: slowestAgentRows(commandTimingSamples),
     };
 }
@@ -537,6 +580,12 @@ function renderPerformanceMarkdown(
         `Stale agents: ${performance.staleAgentCount}`,
         `Flaky agents: ${performance.flakyAgentCount}`,
         `Command timing: count=${performance.commandTiming.count}, min=${formatMs(performance.commandTiming.minMs)}, p50=${formatMs(performance.commandTiming.p50Ms)}, p95=${formatMs(performance.commandTiming.p95Ms)}, p99=${formatMs(performance.commandTiming.p99Ms)}, max=${formatMs(performance.commandTiming.maxMs)}, avg=${formatMs(performance.commandTiming.averageMs)}, outliers=${performance.commandTiming.outlierCount}`,
+        performance.streamTiming
+            ? `Stream timing: streams=${performance.streamTiming.streamCount}, frames=${performance.streamTiming.completedFrames}/${performance.streamTiming.plannedFrames}, attempted=${performance.streamTiming.attemptedFrames}, failed=${performance.streamTiming.failedFrames}, dropped=${performance.streamTiming.droppedFrames}, backpressure=${performance.streamTiming.backpressureCount}, p50=${formatMs(performance.streamTiming.duration.p50Ms)}, p95=${formatMs(performance.streamTiming.duration.p95Ms)}, p99=${formatMs(performance.streamTiming.duration.p99Ms)}, max=${formatMs(performance.streamTiming.duration.maxMs)}, achieved=${formatRate(performance.streamTiming.achievedCompletionHz)}`
+            : undefined,
+        performance.streamTiming && performance.streamTiming.slowestAgents.length > 0
+            ? `Slowest stream agents: ${performance.streamTiming.slowestAgents.map((agent) => `${agent.agentId} max=${formatMs(agent.maxMs)} p99=${formatMs(agent.p99Ms)}`).join(', ')}`
+            : undefined,
         performance.slowestAgents.length > 0
             ? `Slowest agents: ${performance.slowestAgents.map((agent) => `${agent.agentId} max=${formatMs(agent.maxMs)} avg=${formatMs(agent.averageMs)}`).join(', ')}`
             : undefined,
@@ -716,6 +765,299 @@ function eventMessage(event: Record<string, unknown>): string | undefined {
         readPath(event, ['payload', 'message']),
         event.message,
     );
+}
+
+type StreamTimingSample = Readonly<{
+    agentId?: string;
+    commandId?: string;
+    summary: Record<string, unknown>;
+    observations: readonly Record<string, unknown>[];
+}>;
+
+function streamSamplesFromControlRunAndEvents(
+    controlRun: ControlRunSnapshot,
+    events: readonly Record<string, unknown>[],
+): readonly StreamTimingSample[] {
+    const samples: StreamTimingSample[] = [];
+    const sampledKeys = new Set<string>();
+    for (const result of arrayRecords(controlRun.results)) {
+        const sample = streamSampleFromResult(result);
+        if (!sample) {
+            continue;
+        }
+        const key = streamSampleKey(sample);
+        sampledKeys.add(key);
+        samples.push(sample);
+    }
+
+    const eventSamples = new Map<string, Readonly<{
+        sample: StreamTimingSample;
+        priority: number;
+        index: number;
+    }>>();
+    events.forEach((event, index) => {
+        const sample = streamSampleFromEvent(event);
+        if (!sample) {
+            return;
+        }
+        const key = streamSampleKey(sample);
+        if (sampledKeys.has(key)) {
+            return;
+        }
+        const priority = streamEventPriority(event);
+        const current = eventSamples.get(key);
+        if (!current || priority > current.priority || (priority === current.priority && index > current.index)) {
+            eventSamples.set(key, { sample, priority, index });
+        }
+    });
+    return [
+        ...samples,
+        ...[...eventSamples.values()].map(entry => entry.sample),
+    ];
+}
+
+function streamSampleFromResult(result: Record<string, unknown>): StreamTimingSample | undefined {
+    const action = firstString(result.action, result.kind, readPath(result, ['result', 'kind']));
+    const summary = streamSummaryRecord(result.result) ?? streamSummaryRecord(result.value);
+    if (!summary && action !== 'rtc.stream') {
+        return undefined;
+    }
+    return {
+        agentId: firstString(result.agentId),
+        commandId: commandIdFromResult(result) ?? firstString(summary?.commandId),
+        summary: summary ?? {},
+        observations: arrayRecords(summary?.observations),
+    };
+}
+
+function streamSampleFromEvent(event: Record<string, unknown>): StreamTimingSample | undefined {
+    const topic = eventTopic(event);
+    if (!topic?.startsWith('rallar.bb.rtc.stream_')) {
+        return undefined;
+    }
+    const summary = streamSummaryFromEvent(event);
+    if (!summary) {
+        return undefined;
+    }
+    return {
+        agentId: firstString(event.agentId),
+        commandId: firstString(event.commandId, summary.commandId),
+        summary,
+        observations: arrayRecords(summary.observations),
+    };
+}
+
+function streamSampleKey(sample: StreamTimingSample): string {
+    return `${sample.agentId ?? 'unknown-agent'}:${sample.commandId ?? firstString(sample.summary.commandId, 'unknown-stream') ?? 'unknown-stream'}`;
+}
+
+function streamEventPriority(event: Record<string, unknown>): number {
+    const topic = eventTopic(event);
+    if (topic === 'rallar.bb.rtc.stream_completed' || topic === 'rallar.bb.rtc.stream_failed') {
+        return 3;
+    }
+    if (topic === 'rallar.bb.rtc.stream_progress') {
+        return 2;
+    }
+    if (topic === 'rallar.bb.rtc.stream_started') {
+        return 1;
+    }
+    return 0;
+}
+
+function streamTimingFromSamples(
+    samples: readonly StreamTimingSample[],
+): DistributedRunPerformanceAnalysis['streamTiming'] {
+    if (samples.length === 0) {
+        return undefined;
+    }
+
+    const durations = samples.flatMap(streamSampleObservationDurations);
+    const plannedFrames = sumStreamNumber(samples, 'plannedFrames');
+    const scheduledFrames = sumStreamNumber(samples, 'scheduledFrames');
+    const attemptedFrames = sumStreamNumber(samples, 'attemptedFrames');
+    const completedFrames = sumStreamNumber(samples, 'completedFrames');
+    const failedFrames = sumStreamNumber(samples, 'failedFrames');
+    const droppedFrames = sumStreamNumber(samples, 'droppedFrames');
+    const backpressureCount = sumStreamNumber(samples, 'backpressureCount');
+
+    return {
+        streamCount: samples.length,
+        plannedFrames,
+        scheduledFrames,
+        attemptedFrames,
+        completedFrames,
+        failedFrames,
+        droppedFrames,
+        backpressureCount,
+        sendSuccessRatio: attemptedFrames > 0
+            ? roundMetric(completedFrames / attemptedFrames)
+            : undefined,
+        requestedRateHz: averageDefined(samples.map(sample => numberValue(sample.summary.requestedRateHz))),
+        achievedScheduleHz: averageDefined(samples.map(sample => numberValue(sample.summary.achievedScheduleHz))),
+        achievedCompletionHz: averageDefined(samples.map(sample => numberValue(sample.summary.achievedCompletionHz))),
+        duration: streamDurationTimingFromSamples(samples, durations),
+        slowestAgents: slowestStreamAgentRows(samples),
+    };
+}
+
+function sumStreamNumber(samples: readonly StreamTimingSample[], key: string): number {
+    return samples.reduce((sum, sample) => sum + (numberValue(sample.summary[key]) ?? 0), 0);
+}
+
+function streamSampleObservationDurations(sample: StreamTimingSample): readonly number[] {
+    return sample.observations
+        .filter(observation => !observation.dropped)
+        .map(observation => numberValue(observation.durationMs))
+        .filter((value): value is number => value !== undefined);
+}
+
+function streamDurationTimingFromSamples(
+    samples: readonly StreamTimingSample[],
+    observationDurations: readonly number[],
+): DistributedRunPerformanceAnalysis['commandTiming'] {
+    if (observationDurations.length > 0) {
+        return timingFromFleetOrValues(undefined, observationDurations);
+    }
+    if (samples.length === 1) {
+        return timingFromFleetOrValues(asRecord(samples[0].summary.duration), []);
+    }
+    return timingFromFleetOrValues(undefined, samples.flatMap(streamSampleSummaryDurations));
+}
+
+function streamSampleSummaryDurations(sample: StreamTimingSample): readonly number[] {
+    const duration = asRecord(sample.summary.duration);
+    return [
+        numberValue(duration.minMs),
+        numberValue(duration.p50Ms),
+        numberValue(duration.p95Ms),
+        numberValue(duration.p99Ms),
+        numberValue(duration.maxMs),
+    ].filter((value): value is number => value !== undefined);
+}
+
+function slowestStreamAgentRows(
+    samples: readonly StreamTimingSample[],
+): NonNullable<DistributedRunPerformanceAnalysis['streamTiming']>['slowestAgents'] {
+    const byAgent = new Map<string, StreamTimingSample[]>();
+    for (const sample of samples) {
+        if (!sample.agentId) {
+            continue;
+        }
+        byAgent.set(sample.agentId, [...(byAgent.get(sample.agentId) ?? []), sample]);
+    }
+    return [...byAgent.entries()]
+        .map(([agentId, agentSamples]) => {
+            const observationDurations = agentSamples.flatMap(streamSampleObservationDurations);
+            const durations = observationDurations.length > 0
+                ? observationDurations
+                : agentSamples.flatMap(streamSampleSummaryDurations);
+            return {
+                agentId,
+                streamCount: agentSamples.length,
+                plannedFrames: sumStreamNumber(agentSamples, 'plannedFrames'),
+                completedFrames: sumStreamNumber(agentSamples, 'completedFrames'),
+                averageMs: average(durations),
+                p95Ms: percentile(durations, 0.95),
+                p99Ms: percentile(durations, 0.99),
+                maxMs: durations.length > 0 ? Math.max(...durations) : undefined,
+            };
+        })
+        .sort((left, right) =>
+            (right.maxMs ?? 0) - (left.maxMs ?? 0) ||
+            (right.averageMs ?? 0) - (left.averageMs ?? 0) ||
+            right.completedFrames - left.completedFrames ||
+            left.agentId.localeCompare(right.agentId)
+        )
+        .slice(0, 5);
+}
+
+function streamTimeoutFailure(
+    distributedRun: ControlDistributedRunSnapshot,
+    events: readonly Record<string, unknown>[],
+): DistributedRunFailureAnalysis | undefined {
+    const state = firstString(distributedRun.state);
+    if (!state || !TERMINAL_FAILURE_STATES.has(state)) {
+        return undefined;
+    }
+    const streamEvent = [...events].reverse().find(event => {
+        const topic = eventTopic(event);
+        return topic === 'rallar.bb.rtc.stream_progress' || topic === 'rallar.bb.rtc.stream_started';
+    });
+    if (!streamEvent) {
+        return undefined;
+    }
+    const summary = streamSummaryFromEvent(streamEvent) ?? {};
+    const commandId = firstString(streamEvent.commandId, summary.commandId);
+    const plannedFrames = numberValue(summary.plannedFrames);
+    const completedFrames = numberValue(summary.completedFrames) ?? 0;
+    const frameSummary = plannedFrames !== undefined
+        ? `${completedFrames} of ${plannedFrames} completed frames`
+        : `${completedFrames} completed frames`;
+    const likelyCause = `RTC stream ${commandId ?? 'unknown-stream'} reached ${frameSummary} before the run stopped.`;
+    const minimalFix = minimalFixArea({
+        category: 'rtc-stream',
+        transport: firstString(streamEvent.transport),
+        text: likelyCause,
+    });
+    return {
+        category: 'rtc-stream',
+        title: 'RTC stream did not finish before the distributed run timed out.',
+        likelyCause,
+        nextAction: 'Inspect stream progress, send duration percentiles, in-flight frames, and RTC diagnostics for the affected agent.',
+        minimalFixArea: minimalFix,
+        verificationCommand: verificationCommand(minimalFix),
+        affectedAgents: maybeStringArray(firstString(streamEvent.agentId)),
+        affectedRegions: [],
+        commandId,
+        evidenceFile: 'events.jsonl',
+    };
+}
+
+function streamSummaryRecord(value: unknown): Record<string, unknown> | undefined {
+    const record = asRecord(value);
+    const candidates = [
+        asRecord(record.value),
+        asRecord(record.payload),
+        asRecord(record.data),
+        record,
+    ];
+    return candidates.find(hasStreamSummaryFields);
+}
+
+function streamSummaryFromEvent(event: Record<string, unknown>): Record<string, unknown> | undefined {
+    const payload = asRecord(event.payload);
+    const value = asRecord(event.value);
+    const candidates = [
+        asRecord(payload.data),
+        asRecord(payload.payload),
+        asRecord(value.data),
+        asRecord(value.payload),
+        payload,
+        value,
+    ];
+    return candidates.find(hasStreamSummaryFields);
+}
+
+function hasStreamSummaryFields(record: Record<string, unknown>): boolean {
+    return numberValue(record.plannedFrames) !== undefined ||
+        numberValue(record.completedFrames) !== undefined ||
+        numberValue(record.scheduledFrames) !== undefined ||
+        Object.keys(asRecord(record.duration)).length > 0;
+}
+
+function eventTopic(event: Record<string, unknown>): string | undefined {
+    return firstString(
+        event.topic,
+        readPath(event, ['payload', 'topic']),
+        readPath(event, ['value', 'topic']),
+        readPath(event, ['payload', 'data', 'topic']),
+        readPath(event, ['value', 'data', 'topic']),
+    );
+}
+
+function averageDefined(values: readonly (number | undefined)[]): number | undefined {
+    return average(values.filter((value): value is number => value !== undefined));
 }
 
 type CommandTimingSample = Readonly<{
@@ -1162,6 +1504,10 @@ function percent(value: number): string {
 
 function formatMs(value: number | undefined): string {
     return value === undefined ? '-' : `${Math.round(value)}ms`;
+}
+
+function formatRate(value: number | undefined): string {
+    return value === undefined ? '-' : `${roundMetric(value)}Hz`;
 }
 
 function safeJson(text: string): unknown {
