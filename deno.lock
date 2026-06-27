@@ -32,9 +32,7 @@
     "npm:sigma@^3.0.3": "3.0.3_graphology-types@0.24.8",
     "npm:tsx@^4.21.0": "4.22.3",
     "npm:typescript@^5.3.3": "5.9.3",
-    "npm:vite@^8.0.11": "8.0.14_tsx@4.22.3",
-    "npm:vitest@^4.0.17": "4.1.7_@vitest+ui@4.0.18__vitest@4.0.18__picomatch@4.0.4_happy-dom@20.9.0_vite@8.0.14__tsx@4.22.3_tsx@4.22.3",
-    "npm:vitest@^4.1.6": "4.1.7_@vitest+ui@4.0.18__vitest@4.0.18__picomatch@4.0.4_happy-dom@20.9.0_vite@8.0.14__tsx@4.22.3_tsx@4.22.3"
+    "npm:vite@^8.0.11": "8.0.14_tsx@4.22.3"
   },
   "jsr": {
     "@hono/hono@4.11.9": {
@@ -3306,8 +3304,9 @@
     "packageJson": {
       "dependencies": [
         "npm:@babylonjs/loaders@^9.6.2",
-        "npm:@playwright/test@^1.61.1",
-        "npm:@vitest/ui@^4.0.17",
+        "npm:@playwright/test@1.61.1",
+        "npm:@vitest/ui@4.0.17",
+        "npm:esbuild@~0.27.7",
         "npm:eslint@9.26.0",
         "npm:fake-indexeddb@^6.2.5",
         "npm:graphology@0.26",
@@ -3316,7 +3315,7 @@
         "npm:tsx@^4.21.0",
         "npm:typescript@^5.3.3",
         "npm:vite@^8.0.11",
-        "npm:vitest@^4.0.17"
+        "npm:vitest@4.0.17"
       ]
     },
     "members": {

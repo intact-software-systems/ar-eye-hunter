@@ -1,14 +1,43 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { RallarAiJsonRequest } from '@shared/rallar-ai/mod.ts';
+import {
+    isRallarAiProviderAllowedInProduction,
+    type RallarAiJsonRequest,
+} from '@shared/rallar-ai/mod.ts';
 
 import {
+    ARENA_WEBLLM_LIVE_EVALUATION_GATE,
+    ARENA_WEBLLM_PROVIDER_GOVERNANCE,
     createWebLlmRallarAiProvider,
+    runArenaWebLlmDeterministicEvaluation,
+    runArenaWebLlmLiveEvaluationIfEnabled,
     type WebLlmChatRequest,
     type WebLlmEngine,
     type WebLlmModule,
 } from '../../../apps/ar-eye-hunter-v1/src/game/webLlmProvider.ts';
+import { DEFAULT_ARENA_WEBLLM_MODEL_ID } from '../../../apps/ar-eye-hunter-v1/src/game/browserAiConfig.ts';
 
 describe('AR Eye Hunter WebLLM RallarAI provider', () => {
+    it('declares app-owned governance metadata for the WebLLM provider', () => {
+        expect(ARENA_WEBLLM_PROVIDER_GOVERNANCE).toMatchObject({
+            providerId: 'ar-eye-hunter-webllm',
+            adapterVersion: 'ar-eye-hunter-v1/webllm-provider:1',
+            modelId: DEFAULT_ARENA_WEBLLM_MODEL_ID,
+            target: 'browser',
+            structuredOutput: true,
+            productionAllowed: false,
+            knownLimits: {
+                maxOutputTokens: 1_200,
+                recommendedTimeoutMs: 4_000,
+            },
+        });
+        expect(
+            isRallarAiProviderAllowedInProduction(
+                ARENA_WEBLLM_PROVIDER_GOVERNANCE,
+                'browser',
+            ),
+        ).toBe(false);
+    });
+
     it('loads one engine, requests JSON mode, and parses JSON results', async () => {
         const requests: WebLlmChatRequest[] = [];
         const engine: WebLlmEngine = {
@@ -109,6 +138,86 @@ describe('AR Eye Hunter WebLLM RallarAI provider', () => {
         during.abort(new Error('cancelled while running'));
 
         await expect(pending).rejects.toThrow('cancelled while running');
+    });
+
+    it('runs deterministic WebLLM evaluation cases in CI without live browser AI', async () => {
+        const report = await runArenaWebLlmDeterministicEvaluation({
+            nowEpochMs: 18_000,
+        });
+
+        expect(report).toMatchObject({
+            suiteId: 'ar-eye-hunter-webllm-ci',
+            providerId: 'ar-eye-hunter-chaos-mock',
+            passed: 1,
+            failed: 0,
+        });
+        expect(report.results[0]).toEqual(
+            expect.objectContaining({
+                caseId: 'ai-director-chaos-event',
+                validationOk: true,
+            }),
+        );
+    });
+
+    it('keeps live WebLLM evaluation behind an explicit opt-in gate', async () => {
+        const skipped = await runArenaWebLlmLiveEvaluationIfEnabled({
+            env: {},
+            nowEpochMs: 18_000,
+            createProvider: () => createWebLlmRallarAiProvider({
+                modelId: 'should-not-load',
+                hasWebGpu: () => false,
+            }),
+        });
+
+        expect(skipped).toEqual(expect.objectContaining({
+            status: 'skipped',
+            gate: ARENA_WEBLLM_LIVE_EVALUATION_GATE,
+        }));
+
+        const ran = await runArenaWebLlmLiveEvaluationIfEnabled({
+            env: { [ARENA_WEBLLM_LIVE_EVALUATION_GATE]: '1' },
+            nowEpochMs: 18_000,
+            createProvider: () => createWebLlmRallarAiProvider({
+                modelId: 'mock-live-webllm',
+                hasWebGpu: () => true,
+                loadWebLlm: async (): Promise<WebLlmModule> => ({
+                    CreateMLCEngine: async () => ({
+                        chat: {
+                            completions: {
+                                create: async () => ({
+                                    choices: [
+                                        {
+                                            message: {
+                                                content: JSON.stringify({
+                                                    event: {
+                                                        kind: 'combo-bounty',
+                                                        headline: 'Live bounty marked',
+                                                        scoreBonus: 150,
+                                                        durationMs: 9000,
+                                                    },
+                                                    urgency: 'medium',
+                                                    reason: 'Keep the live model inside app bounds.',
+                                                }),
+                                            },
+                                        },
+                                    ],
+                                }),
+                            },
+                        },
+                    }),
+                }),
+            }),
+        });
+
+        expect(ran).toEqual(expect.objectContaining({
+            status: 'ran',
+            report: expect.objectContaining({
+                suiteId: 'ar-eye-hunter-webllm-live',
+                providerId: 'ar-eye-hunter-webllm',
+                passed: 1,
+                failed: 0,
+            }),
+        }));
     });
 });
 

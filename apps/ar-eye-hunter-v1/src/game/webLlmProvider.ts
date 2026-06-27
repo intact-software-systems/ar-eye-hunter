@@ -1,9 +1,45 @@
 import {
     createRallarAiJsonResult,
+    defineRallarAiProviderGovernanceMetadata,
+    isRallarAiLiveEvaluationEnabled,
+    runRallarAiEvaluationSuite,
+    runRallarAiEvaluationSuiteIfEnabled,
+    type RallarAiEvaluationCase,
+    type RallarAiEvaluationSuiteResult,
     type RallarAiJsonProvider,
     type RallarAiJsonRequest,
     type RallarAiJsonResult,
+    type RallarAiLiveEvaluationEnvironment,
+    type RallarAiLiveEvaluationRunResult,
 } from '@shared/rallar-ai/mod.ts';
+
+import { DEFAULT_ARENA_WEBLLM_MODEL_ID } from './browserAiConfig.ts';
+import {
+    createAiDirectorMockProvider,
+    createAiDirectorRequest,
+    validateAiDirectorProposalValue,
+} from './aiDirector.ts';
+import {
+    createInitialArenaState,
+    toArenaSnapshot,
+} from './simulation.ts';
+
+export const ARENA_WEBLLM_PROVIDER_ID = 'ar-eye-hunter-webllm';
+export const ARENA_WEBLLM_LIVE_EVALUATION_GATE = 'RALLAR_AI_LIVE_WEBLLM';
+export const ARENA_WEBLLM_PROVIDER_GOVERNANCE =
+    defineRallarAiProviderGovernanceMetadata({
+        providerId: ARENA_WEBLLM_PROVIDER_ID,
+        adapterVersion: 'ar-eye-hunter-v1/webllm-provider:1',
+        modelId: DEFAULT_ARENA_WEBLLM_MODEL_ID,
+        target: 'browser',
+        licenseNotes: 'Runs the selected WebLLM model in the browser; model license follows VITE_RALLAR_WEBLLM_MODEL.',
+        productionAllowed: false,
+        structuredOutput: true,
+        knownLimits: {
+            maxOutputTokens: 1_200,
+            recommendedTimeoutMs: 4_000,
+        },
+    });
 
 export type WebLlmChatMessage = Readonly<{
     role: 'system' | 'user';
@@ -50,12 +86,92 @@ export type CreateWebLlmRallarAiProviderOptions = Readonly<{
     onProgress?: (progress: unknown) => void;
 }>;
 
+export type ArenaWebLlmEvaluationOptions = Readonly<{
+    nowEpochMs?: number;
+    roomId?: string;
+    seed?: number;
+}>;
+
+export type RunArenaWebLlmLiveEvaluationOptions =
+    & ArenaWebLlmEvaluationOptions
+    & Readonly<{
+        env: RallarAiLiveEvaluationEnvironment;
+        gate?: string;
+        modelId?: string;
+        createProvider?: () => RallarAiJsonProvider;
+        loadWebLlm?: () => Promise<WebLlmModule>;
+        hasWebGpu?: () => boolean;
+        onProgress?: (progress: unknown) => void;
+    }>;
+
+export function createArenaWebLlmEvaluationCases(
+    options: ArenaWebLlmEvaluationOptions = {},
+): readonly RallarAiEvaluationCase[] {
+    const nowEpochMs = options.nowEpochMs ?? 18_000;
+    const roomId = options.roomId ?? 'arena-webllm-evaluation';
+    const state = createInitialArenaState(options.seed ?? 7_331, nowEpochMs);
+    const snapshot = toArenaSnapshot(state, roomId, nowEpochMs);
+
+    return [
+        {
+            caseId: 'ai-director-chaos-event',
+            request: createAiDirectorRequest(state, roomId),
+            validateResult: (result) => {
+                const validation = validateAiDirectorProposalValue(
+                    result.value,
+                    snapshot,
+                );
+                return validation.ok ? [] : [validation.reason];
+            },
+        },
+    ];
+}
+
+export async function runArenaWebLlmDeterministicEvaluation(
+    options: ArenaWebLlmEvaluationOptions = {},
+): Promise<RallarAiEvaluationSuiteResult> {
+    return await runRallarAiEvaluationSuite({
+        suiteId: 'ar-eye-hunter-webllm-ci',
+        provider: createAiDirectorMockProvider(),
+        cases: createArenaWebLlmEvaluationCases(options),
+    });
+}
+
+export async function runArenaWebLlmLiveEvaluationIfEnabled(
+    options: RunArenaWebLlmLiveEvaluationOptions,
+): Promise<RallarAiLiveEvaluationRunResult> {
+    const gate = options.gate ?? ARENA_WEBLLM_LIVE_EVALUATION_GATE;
+    if (!isRallarAiLiveEvaluationEnabled(options.env, gate)) {
+        return {
+            status: 'skipped',
+            gate,
+            reason: `AR Eye Hunter WebLLM live evaluation requires ${gate}=1.`,
+        };
+    }
+
+    const provider = options.createProvider?.() ?? createWebLlmRallarAiProvider({
+        modelId: options.modelId ?? DEFAULT_ARENA_WEBLLM_MODEL_ID,
+        loadWebLlm: options.loadWebLlm,
+        hasWebGpu: options.hasWebGpu,
+        onProgress: options.onProgress,
+    });
+
+    return await runRallarAiEvaluationSuiteIfEnabled({
+        suiteId: 'ar-eye-hunter-webllm-live',
+        provider,
+        cases: createArenaWebLlmEvaluationCases(options),
+        env: options.env,
+        gate,
+        providerLabel: 'AR Eye Hunter WebLLM',
+    });
+}
+
 export function createWebLlmRallarAiProvider(
     options: CreateWebLlmRallarAiProviderOptions,
 ): RallarAiJsonProvider {
     let enginePromise: Promise<WebLlmEngine> | undefined;
     const provider: RallarAiJsonProvider = {
-        providerId: options.providerId ?? 'ar-eye-hunter-webllm',
+        providerId: options.providerId ?? ARENA_WEBLLM_PROVIDER_ID,
         source: 'browser',
         modelId: options.modelId,
         capabilities: {

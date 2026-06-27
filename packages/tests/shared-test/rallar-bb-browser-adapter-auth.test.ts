@@ -301,6 +301,155 @@ describe('rallar-bb browser adapter auth', () => {
         ]);
     });
 
+    it('uses the websocket ticket session id when resolving ws.open auth placeholders', async () => {
+        storage.setItem('auth.session', JSON.stringify({
+            clientId: 'alice',
+            accessToken: 'token-1',
+            username: 'alice',
+            sessionId: 'stale-session',
+            expiresAtEpochMs: Date.now() + 60_000,
+        }));
+        const openedSockets: string[] = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            fetch: (async () =>
+                new Response(JSON.stringify({
+                    ticket: 'ticket-rotated',
+                    sessionId: 'ticket-session',
+                    expiresAtEpochMs: Date.now() + 60_000,
+                }), {
+                    status: 200,
+                    headers: {
+                        'content-type': 'application/json',
+                    },
+                })) as typeof fetch,
+            webSocketFactory: (url) => {
+                openedSockets.push(url);
+                return {
+                    readyState: 1,
+                    protocol: '',
+                    url,
+                    send: () => undefined,
+                    close: () => undefined,
+                };
+            },
+        });
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-rotated-ws-ticket',
+            config: {
+                apiBaseUrl: 'https://api.example.test',
+            },
+        });
+        const result = await runtime.execute({
+            kind: 'ws.open',
+            commandId: 'ws-open-rotated-ticket',
+            connection: 'rallarApi',
+            url: '{config.wsBaseUrl}/api/ws/{auth.sessionId}?ticket={auth.wsTicket}',
+        });
+
+        expect(result.ok).toBe(true);
+        expect(openedSockets).toEqual([
+            'wss://api.example.test/api/ws/ticket-session?ticket=ticket-rotated',
+        ]);
+    });
+
+    it('resolves URL-encoded ws.open auth placeholders', async () => {
+        storage.setItem('auth.session', JSON.stringify({
+            clientId: 'alice',
+            accessToken: 'token-1',
+            username: 'alice',
+            sessionId: 'session-1',
+            expiresAtEpochMs: Date.now() + 60_000,
+        }));
+        const openedSockets: string[] = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            fetch: (async () =>
+                new Response(JSON.stringify({
+                    ticket: 'ticket-1',
+                    sessionId: 'session-1',
+                    expiresAtEpochMs: Date.now() + 60_000,
+                }), {
+                    status: 200,
+                    headers: {
+                        'content-type': 'application/json',
+                    },
+                })) as typeof fetch,
+            webSocketFactory: (url) => {
+                openedSockets.push(url);
+                return {
+                    readyState: 1,
+                    protocol: '',
+                    url,
+                    send: () => undefined,
+                    close: () => undefined,
+                };
+            },
+        });
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-encoded-ws-placeholders',
+            config: {
+                apiBaseUrl: 'https://api.example.test',
+            },
+        });
+        const result = await runtime.execute({
+            kind: 'ws.open',
+            commandId: 'ws-open-encoded-placeholders',
+            connection: 'rallarApi',
+            url: 'wss://api.example.test/api/ws/%7Bauth.sessionId%7D?ticket=%7Bauth.wsTicket%7D',
+        });
+
+        expect(result.ok).toBe(true);
+        expect(openedSockets).toEqual([
+            'wss://api.example.test/api/ws/session-1?ticket=ticket-1',
+        ]);
+    });
+
+    it('resolves logged-in auth placeholders in raw ws.send payloads', async () => {
+        storage.setItem('auth.session', JSON.stringify({
+            clientId: 'alice',
+            accessToken: 'token-1',
+            username: 'alice',
+            sessionId: 'session-1',
+            expiresAtEpochMs: Date.now() + 60_000,
+        }));
+        const sent: unknown[] = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            webSocketFactory: (url) => ({
+                readyState: 1,
+                protocol: '',
+                url,
+                send: (data) => {
+                    sent.push(data);
+                },
+                close: () => undefined,
+            }),
+        });
+
+        await runtime.execute({
+            kind: 'ws.open',
+            commandId: 'ws-open-raw-auth-placeholders',
+            connection: 'rallarApi',
+            url: 'wss://api.example.test/ws',
+        });
+        const result = await runtime.execute({
+            kind: 'ws.send',
+            commandId: 'ws-send-raw-auth-placeholders',
+            connection: 'rallarApi',
+            data: {
+                senderId: '{auth.sessionId}',
+                username: '{auth.username}',
+            },
+        });
+
+        expect(result.ok).toBe(true);
+        expect(sent).toEqual([
+            '{"senderId":"session-1","username":"alice"}',
+        ]);
+    });
+
     it('resolves logged-in auth placeholders in RTC send payloads', async () => {
         storage.setItem('auth.session', JSON.stringify({
             clientId: 'alice',

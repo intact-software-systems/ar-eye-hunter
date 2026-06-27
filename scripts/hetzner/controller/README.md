@@ -151,6 +151,12 @@ Also note that API-v1 uses `pglite-memory`; stopping or restarting
 `rallar-api-v1.service` resets API-v1 in-memory data. Control-server snapshots
 are persisted under `/var/lib/rallar-black-box-control`.
 
+The default controller deployment is a controller/demo profile: API-v1 runs
+with in-memory SQL and local ICE unless Metered TURN is configured. Do not treat
+that default as the hardened production profile. For production, enable the
+guardrails in
+[`docs/production-env-hardening-checklist.md`](../../../docs/production-env-hardening-checklist.md).
+
 ## Controlled Rollout
 
 `08-rollout-controller.sh` is intended for routine upgrades after the initial
@@ -266,6 +272,10 @@ VITE_RALLAR_RUNNER_AGENT_COUNT=$RALLAR_BLACK_BOX_AGENT_COUNT
 The audit file `/etc/rallar/black-box-spa.env` records the public values used
 for the last SPA build. Changing these values requires another deploy or
 rollout because Vite embeds them into the static bundle.
+
+Keep `/etc/rallar/black-box-spa.env` non-secret. The black-box SPA exposes only
+`VITE_*` values to the browser bundle; server-only `RALLAR_*` secrets belong in
+systemd env files or root-only secret files, not in SPA build inputs.
 
 ## Headless Browser Workers
 
@@ -393,6 +403,42 @@ For production cross-region RTC tests, configure Metered TURN:
 In GitHub Actions, set both optional secrets `METERED_APP_NAME` and
 `METERED_API_KEY`; the deploy workflow syncs them before rollout. Leaving both
 unset keeps any existing VM secret file in place.
+
+## Hardened Production Profile
+
+The current deploy scripts optimize for a single controller VM and disposable
+validation. Before using this VM profile as production, replace the controller
+defaults with the fail-closed production env profile:
+
+```text
+RALLAR_PRODUCTION_HARDENING=1
+RALLAR_SQL_BACKEND=postgres
+DATABASE_URL=<postgres-secret>
+CORS_ORIGINS=https://blackbox.rallar.intactss.com,https://app.example.test
+RALLAR_STATE_STRICT_READ_AUTH=1
+AUTH_REGISTRATION_MODE=admin
+AUTH_ADMIN_CLIENT_IDS=<runtime-admin-client-ids>
+AUTH_STATIC_CLIENTS_MODE=disabled
+RALLAR_ICE_MODE=metered
+METERED_APP_NAME=<metered-app>
+METERED_API_KEY=<metered-secret>
+RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=<shared-secret>
+RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS=<operator-client-ids>
+RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS=900000
+RALLAR_BLACK_BOX_ALLOWED_ORIGINS=https://blackbox.rallar.intactss.com
+RALLAR_BLACK_BOX_REQUIRE_TLS=1
+RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN=1
+RALLAR_BLACK_BOX_REQUIRE_READ_TOKEN=1
+RALLAR_BLACK_BOX_HTTP_ALLOWED_HOSTS=api.rallar.intactss.com
+RALLAR_BLACK_BOX_WS_ALLOWED_HOSTS=api.rallar.intactss.com,control.rallar.intactss.com
+RALLAR_BLACK_BOX_STORAGE_DIR=/var/lib/rallar-black-box-control
+RALLAR_BLACK_BOX_RETENTION_MAX_RUNS=100
+```
+
+Store secrets in root-owned files with mode `0600`, such as
+`/etc/rallar/api-v1.secrets.env` or service-specific systemd environment files.
+Never put `DATABASE_URL`, `METERED_API_KEY`, `RALLAR_BLACK_BOX_ADMIN_TOKEN`, or
+operator-token secrets into the SPA audit file or any `VITE_*` input.
 
 Stop browsers:
 

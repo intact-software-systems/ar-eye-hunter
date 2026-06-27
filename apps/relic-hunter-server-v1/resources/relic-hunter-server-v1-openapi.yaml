@@ -6,6 +6,11 @@ info:
     Relic Hunters HTTP endpoints owned by `apps/relic-hunter-server-v1`.
     Shared Rallar APIs are documented by the API-v1 OpenAPI document.
 
+    REST auth defaults to `RELIC_REST_AUTH_MODE=authenticated` for local/demo
+    use. Production should set `RELIC_REST_AUTH_MODE=group-policy`; then
+    snapshot reads require full group read permission, commands require room
+    send permission, and reset requires active owner/admin permission.
+
 servers:
   - url: http://localhost:8090
 
@@ -22,7 +27,9 @@ paths:
         Ensures an authoritative Relic Hunters game exists for the requested
         game id and returns the public snapshot. When Relic AI expedition
         generation is enabled, initial map/relic setup may be generated before
-        the snapshot is persisted.
+        the snapshot is persisted. With `RELIC_REST_AUTH_MODE=group-policy`,
+        the caller must be an active group member with full read permission for
+        the matching group id.
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -37,6 +44,8 @@ paths:
                 $ref: '#/components/schemas/RelicPublicSnapshot'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /api/relic/games/{gameId}/commands:
     post:
@@ -46,7 +55,9 @@ paths:
         Applies a gameplay command to the server-owned game state and returns
         the resulting public snapshot. The server derives `gameId` from the path
         and `username` from the authenticated session, overriding those fields if
-        they are present in the request body.
+        they are present in the request body. With
+        `RELIC_REST_AUTH_MODE=group-policy`, the caller must have a live active
+        room session that can send room messages.
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -69,6 +80,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /api/relic/games/{gameId}/reset:
     post:
@@ -77,7 +90,9 @@ paths:
       description: |
         Recreates the authoritative game state for the requested id and returns
         the new public snapshot. When Relic AI expedition generation is enabled,
-        reset can generate a fresh expedition setup.
+        reset can generate a fresh expedition setup. With
+        `RELIC_REST_AUTH_MODE=group-policy`, the caller must be an active group
+        owner/admin.
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -92,6 +107,8 @@ paths:
                 $ref: '#/components/schemas/RelicPublicSnapshot'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /api/relic/openapi.json:
     get:
@@ -149,6 +166,12 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
     Unauthorized:
       description: Missing or invalid authentication credentials.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Authenticated session is not allowed by Relic group policy.
       content:
         application/json:
           schema:

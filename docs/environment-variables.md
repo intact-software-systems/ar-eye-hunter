@@ -4,7 +4,7 @@ This document inventories environment variables used by the apps in this
 repository, plus the repository-level test and infrastructure variables that
 drive those apps.
 
-Last reviewed: 2026-06-02.
+Last reviewed: 2026-06-23.
 
 ## Conventions
 
@@ -17,15 +17,18 @@ Last reviewed: 2026-06-02.
 - Comma-separated variables are trimmed and empty entries are ignored.
 - Values from local `.env` files are intentionally not recorded here. Only
   variable names and behavior are documented.
+- Production guardrails are enabled with `RALLAR_PRODUCTION_HARDENING=1` or
+  `ENVIRONMENT=prod` / `ENVIRONMENT=production`. See
+  [Production Env Hardening Checklist](./production-env-hardening-checklist.md).
 
 ## Environment Files Found
 
 | File                                     | Variables present                                                                                                                         | Notes                                                                                                                                                                                     |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.env`                                   | `VITE_RALLAR_PROVIDER`, `VITE_RALLAR_API_BASE_URL`, `VITE_RALLAR_ROOM_ID`, `VITE_RALLAR_USERNAME`, `VITE_RALLAR_PASSWORD`, `CORS_ORIGINS` | Loaded by `apps/rallar-black-box` because its Vite config sets `envDir` to the repo root. Also passed to API-v1 by some root npm scripts.                                                 |
+| `.env`                                   | `VITE_RALLAR_PROVIDER`, `VITE_RALLAR_API_BASE_URL`, `VITE_RALLAR_ROOM_ID`, `VITE_RALLAR_USERNAME`, `VITE_RALLAR_PASSWORD`, `CORS_ORIGINS` | Read from repo root by some Vite and root scripts. `apps/rallar-black-box` now exposes only `VITE_*` values to the browser bundle. API-v1 may receive this file through root npm scripts.  |
 | `apps/api-v1/.env`                       | `METERED_APP_NAME`, `METERED_API_KEY`, `DATABASE_URL`, `CORS_ORIGINS`                                                                     | Loaded by API-v1 when run from `apps/api-v1`; also passed by root black-box API scripts.                                                                                                  |
 | `apps/api-v1/.env.local`                 | `METERED_APP_NAME`, `METERED_API_KEY`, `DATABASE_URL`, `CORS_ORIGINS`                                                                     | Local override file used by root black-box API scripts and by Relic server startup.                                                                                                       |
-| `apps/rallar-black-box/.env.local`       | `VITE_RALLAR_PROVIDER`, `VITE_RALLAR_API_BASE_URL`, `VITE_RALLAR_ROOM_ID`, `VITE_RALLAR_USERNAME`, `VITE_RALLAR_PASSWORD`, `CORS_ORIGINS` | Present, but current `apps/rallar-black-box/vite.config.ts` uses repo-root `envDir`, so this file is not loaded by Vite unless the config changes or variables are exported by the shell. |
+| `apps/rallar-black-box/.env.local`       | `VITE_RALLAR_PROVIDER`, `VITE_RALLAR_API_BASE_URL`, `VITE_RALLAR_ROOM_ID`, `VITE_RALLAR_USERNAME`, `VITE_RALLAR_PASSWORD`, `CORS_ORIGINS` | Present, but current `apps/rallar-black-box/vite.config.ts` uses repo-root `envDir`, so this file is not loaded by Vite unless the config changes or variables are exported by the shell. Only `VITE_*` values are browser-exposed. |
 | `apps/relic-hunter-server-v1/.env.local` | `METERED_APP_NAME`, `METERED_API_KEY`, `DATABASE_URL`                                                                                     | Loaded explicitly by `apps/relic-hunter-server-v1/src/main.ts`.                                                                                                                           |
 | `apps/relic-hunters-v1/.env`             | `API_BASE_URL`                                                                                                                            | Loaded by Vite for the Relic Hunters browser app.                                                                                                                                         |
 | `apps/relic-hunters-v1/.env.local`       | `API_BASE_URL`                                                                                                                            | Local Vite override for the Relic Hunters browser app.                                                                                                                                    |
@@ -45,10 +48,11 @@ for some Rallar Black Box runs.
 | `PORT`                | No       | `8080`                                                                                                | HTTP listen port. Must be an integer from `1` to `65535`.                                                                             |
 | `CORS_ORIGINS`        | No       | `http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176`             | Allowed browser origins for `/api/*`. Use `*` to reflect any request origin.                                                          |
 | `ENVIRONMENT`         | No       | `dev`                                                                                                 | Selects `resources/web-config-dev.json` or `resources/web-config-prod.json` for `/api/config`. Supported values are `dev` and `prod`. |
+| `RALLAR_PRODUCTION_HARDENING` | No | Disabled | `1`, `true`, `yes`, or `on` enables production startup validation. `ENVIRONMENT=prod` or `production` also enables it. |
 | `RALLAR_API_BASE_URL` | No       | From selected web config                                                                              | Runtime override for `/api/config.apiBaseUrl`. Takes precedence over `API_BASE_URL`. Trailing slash is removed.                       |
 | `API_BASE_URL`        | No       | From selected web config                                                                              | Secondary runtime override for `/api/config.apiBaseUrl`.                                                                              |
 | `RALLAR_WS_BASE_URL`  | No       | Derived from `RALLAR_API_BASE_URL` or `API_BASE_URL` when present, otherwise from selected web config | Runtime override for `/api/config.wsBaseUrl`. Trailing slash is removed.                                                              |
-| `RALLAR_STATE_STRICT_READ_AUTH` | No | Disabled | `1`, `true`, `yes`, or `on` require authenticated REST state reads and apply server-side full-state read policy to client/group list, snapshot, and event reads. Enable for production once callers send auth on read paths. |
+| `RALLAR_STATE_STRICT_READ_AUTH` | No | Disabled | `/api/state/*` is already authenticated. `1`, `true`, `yes`, or `on` additionally applies strict full-state read authorization to client/group list, snapshot, and event reads. |
 
 ### Database
 
@@ -66,6 +70,7 @@ for some Rallar Black Box runs.
 | ------------------------------ | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `AUTH_REGISTRATION_MODE`       | No       | `public` | When set to `admin`, `/api/auth/register` requires an authenticated admin client. Other values behave like public registration.      |
 | `AUTH_ADMIN_CLIENT_IDS`        | No       | `admin`  | Comma-separated client IDs allowed to register users when `AUTH_REGISTRATION_MODE=admin`.                                            |
+| `AUTH_STATIC_CLIENTS_MODE`     | No       | `demo`   | `demo` enables bundled local clients such as `admin/admin`, `user/user`, and tests. `disabled` removes static clients from login and registration conflict checks. |
 | `RALLAR_LOGIN_IP_RATE_LIMIT`   | No       | `30`     | Login attempts per client IP per 60 seconds. Must be a positive integer.                                                             |
 | `RALLAR_LOGIN_USER_RATE_LIMIT` | No       | `5`      | Login attempts per client IP plus username per 60 seconds. Must be a positive integer. Root memory-mode scripts raise this to `100`. |
 
@@ -74,8 +79,8 @@ for some Rallar Black Box runs.
 | Variable                                      | Required | Default      | Usage                                                                                                                                                         |
 | --------------------------------------------- | -------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET`      | Yes for `/api/black-box/control-token` | None         | HMAC secret used by API-v1 to issue short-lived control-server operator tokens. The same value must be configured on the black-box control server.             |
-| `RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS`      | No       | `86400000`   | TTL for logged-in operator tokens. The default is 24 hours and is intended for a browser operator session, not for embedding in URLs or persistent storage.     |
-| `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`        | No       | Any logged-in user | Optional comma-separated allow-list of authenticated client IDs that may request `/api/black-box/control-token`. Empty allows any valid logged-in Rallar user. |
+| `RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS`      | No       | `86400000`   | TTL for logged-in operator tokens. Production hardening requires an explicit positive TTL. Prefer short TTLs and bearer headers.     |
+| `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`        | No       | Any logged-in user | Optional comma-separated allow-list of authenticated client IDs that may request `/api/black-box/control-token`. Production hardening requires an explicit allow-list. |
 
 ### ICE / WebRTC
 
@@ -169,6 +174,7 @@ repositories are used.
 | `PORT`                                  | No       | `8090`                                                              | HTTP listen port. Parsed with `Number(...)`; no range validation is applied here.                                                               |
 | `CORS_ORIGINS`                          | No       | `http://localhost:5173,http://localhost:5174,http://localhost:5175` | Allowed browser origins for `/api/*`. Use `*` to reflect any request origin.                                                                    |
 | `ENVIRONMENT`                           | No       | `dev`                                                               | Selects `resources/web-config-dev.json` or `resources/web-config-prod.json` for the Relic server config. Supported values are `dev` and `prod`. |
+| `RELIC_REST_AUTH_MODE`                  | No       | `authenticated`                                                     | `authenticated` requires login only. `group-policy` requires full group read permission for snapshots, room send permission for commands, and active owner/admin permission for reset. |
 | `RELIC_AI_EXPEDITION_MODE`              | No       | `off`                                                               | Optional server-side expedition setup generation. Supported values: `off`, `mock`, and `ollama`.                                                |
 | `RELIC_AI_EXPEDITION_TIMEOUT_MS`        | No       | `15000`                                                             | Timeout for server-side expedition blueprint generation before procedural fallback. Must be a positive integer.                                  |
 | `RELIC_AI_EXPEDITION_OLLAMA_BASE_URL`   | No       | `http://127.0.0.1:11434`                                            | Private Ollama sidecar base URL used only when `RELIC_AI_EXPEDITION_MODE=ollama`.                                                               |
@@ -182,6 +188,7 @@ variables are relevant too:
 - Database and pub/sub: `RALLAR_SQL_BACKEND`, `DATABASE_URL`,
   `RALLAR_PGLITE_DATA_DIR`, `RALLAR_PGLITE_SCHEMA_INIT`, `RALLAR_DB_PUBSUB`.
 - Auth and rate limits: `AUTH_REGISTRATION_MODE`, `AUTH_ADMIN_CLIENT_IDS`,
+  `AUTH_STATIC_CLIENTS_MODE`, `RALLAR_STATE_STRICT_READ_AUTH`,
   `RALLAR_LOGIN_IP_RATE_LIMIT`, `RALLAR_LOGIN_USER_RATE_LIMIT`.
 - ICE: `RALLAR_ICE_MODE`, `METERED_APP_NAME`, `METERED_API_KEY`,
   `METERED_REGION`.
@@ -193,12 +200,16 @@ variables are relevant too:
   `RALLAR_APP_INBOX_WAIT_JITTER_RATIO`.
 - API config overrides: `RALLAR_API_BASE_URL`, `API_BASE_URL`,
   `RALLAR_WS_BASE_URL`.
+- Black-box operator brokerage when used: `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET`,
+  `RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS`,
+  `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`.
 
 ## apps/rallar-black-box
 
 This is a Vite browser app and workbench. `vite.config.ts` sets
-`envDir` to the repository root and exposes `VITE_*` and `RALLAR_*` variables to
-the client bundle. Treat those values as public.
+`envDir` to the repository root and exposes only `VITE_*` variables to the
+client bundle. Treat `VITE_*` values as public and keep server-only
+`RALLAR_*`, operator, admin, and run-token secrets outside browser builds.
 
 ### Browser Runtime Bootstrap
 
@@ -241,6 +252,7 @@ Query parameters take precedence over environment variables.
 | `RALLAR_BLACK_BOX_FULL_STACK` | No       | Disabled                | `1` or `true` enables API-v1 startup in `apps/rallar-black-box/playwright.full-stack.config.ts`.                                       |
 | `RALLAR_BLACK_BOX_API_MODE`   | No       | `postgres`              | Full-stack API server mode. Supported values: `postgres`, `memory`. Memory mode starts API-v1 without env files or `DATABASE_URL`.     |
 | `VITE_RALLAR_API_BASE_URL`    | No       | `http://localhost:8080` | Full-stack API base URL. The Playwright config derives API-v1 `PORT`, `RALLAR_API_BASE_URL`, and `RALLAR_WS_BASE_URL` from this value. |
+| `VITE_RALLAR_SPA_BASE_URL`    | No       | `http://localhost:5176` | Full-stack SPA base URL. The Playwright config derives the Vite port and API CORS origins from this value.                             |
 
 When `RALLAR_BLACK_BOX_API_MODE=memory`, the Playwright config starts API-v1
 with:
@@ -293,11 +305,13 @@ variables in the shell or through the parent script/process.
 | Variable                                        | Required | Default                           | Usage                                                                                                                                            |
 | ----------------------------------------------- | -------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `PORT`                                          | No       | `5180`                            | HTTP and WebSocket listen port. Parsed with `Number(...)`.                                                                                       |
+| `RALLAR_PRODUCTION_HARDENING`                   | No       | Disabled                          | `1`, `true`, `yes`, or `on` enables production startup validation for black-box control.                                                          |
 | `RALLAR_BLACK_BOX_ALLOWED_COMMANDS`             | No       | All command kinds                 | Comma-separated allow-list of command kinds accepted by the control service.                                                                     |
 | `RALLAR_BLACK_BOX_ALLOWED_ORIGINS`              | No       | No origin restriction             | Comma-separated request origins accepted by the general request policy.                                                                          |
 | `RALLAR_BLACK_BOX_REQUIRE_TLS`                  | No       | Disabled                          | Boolean. Rejects non-HTTPS requests unless `x-forwarded-proto` is `https`.                                                                       |
 | `RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN`            | No       | Disabled                          | Boolean. Requires a valid run token for run/agent operations even when no token has been issued yet.                                             |
-| `RALLAR_BLACK_BOX_ADMIN_TOKEN`                  | No       | None                              | Admin token for creating distributed runs and other admin operations. If unset, admin authorization is open. Set this outside local development. |
+| `RALLAR_BLACK_BOX_REQUIRE_READ_TOKEN`           | No       | Disabled                          | Boolean. When enabled, run, fleet, distributed-run, and artifact GET routes require the same admin/operator authorization as mutations. `/health` and docs remain public. |
+| `RALLAR_BLACK_BOX_ADMIN_TOKEN`                  | No       | None                              | Admin token for creating distributed runs and other admin operations. If unset, admin authorization is open for local use only. Prefer operator tokens plus optional break-glass admin token in production. |
 | `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET`        | No       | None                              | HMAC secret for accepting logged-in operator tokens issued by API-v1. Keep this equal to API-v1 `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET`.        |
 | `RALLAR_BLACK_BOX_RUN_TOKEN_TTL_MS`             | No       | `900000`                          | Default issued run-token TTL in milliseconds. Non-negative integer.                                                                              |
 | `RALLAR_BLACK_BOX_MAX_REQUEST_BYTES`            | No       | `2000000`                         | Max JSON request body size. Non-negative integer.                                                                                                |
@@ -309,6 +323,11 @@ variables in the shell or through the parent script/process.
 | `RALLAR_BLACK_BOX_WS_ALLOWED_ORIGINS`           | No       | No destination origin restriction | Comma-separated origin allow-list for browser `ws.open` commands.                                                                                |
 | `RALLAR_BLACK_BOX_STORAGE_DIR`                  | No       | None                              | Directory for persisted `control-snapshot.json`. If unset, control runs are in-memory only.                                                      |
 | `RALLAR_BLACK_BOX_RETENTION_MAX_RUNS`           | No       | `0`                               | Max retained runs for persistence/cleanup. `0` means no retention cap.                                                                           |
+
+Wildcard CORS, unset admin/operator auth, optional run tokens, optional read
+tokens, in-memory storage, and unbounded retention are local-only defaults.
+Enable `RALLAR_PRODUCTION_HARDENING=1` for production so these settings fail
+closed at startup.
 
 ## Repository-Level Test And Infrastructure Variables
 

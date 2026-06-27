@@ -11,6 +11,12 @@ info:
     no longer part of the active API surface. The authoritative client and group
     model now lives under `/api/state/apps/{applicationId}/workspaces/{workspaceId}`.
 
+    Production deployments should enable `RALLAR_PRODUCTION_HARDENING=1` or
+    `ENVIRONMENT=prod`. The hardened profile requires admin-only registration,
+    `AUTH_STATIC_CLIENTS_MODE=disabled`, strict state read authorization with
+    `RALLAR_STATE_STRICT_READ_AUTH=1`, exact HTTPS CORS origins, Postgres,
+    Metered TURN credentials, and explicit black-box operator-token settings.
+
 servers:
   - url: http://localhost:8080
   - url: http://localhost:8090
@@ -72,7 +78,9 @@ paths:
       description: |
         Creates a runtime-backed user that can subsequently authenticate with
         `/api/auth/login`. Deployments can require an admin auth session for
-        this endpoint with `AUTH_REGISTRATION_MODE=admin`.
+        this endpoint with `AUTH_REGISTRATION_MODE=admin`. In production,
+        disable bundled demo users with `AUTH_STATIC_CLIENTS_MODE=disabled` and
+        configure `AUTH_ADMIN_CLIENT_IDS` with real runtime admin client IDs.
       requestBody:
         required: true
         content:
@@ -153,7 +161,10 @@ paths:
         Issues a short-lived signed token that the rallar-black-box control
         server accepts for distributed-run admin operations. The caller must be
         logged in with a valid API-v1 auth session. The token is bearer-capable
-        while valid and is intended for in-memory browser use only.
+        while valid and is intended for in-memory browser use only. Production
+        deployments should set `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET`,
+        `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`, and an explicit
+        `RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS`.
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -179,6 +190,11 @@ paths:
     get:
       tags: [WebRTC]
       summary: Read ICE servers
+      description: |
+        Returns ICE/TURN configuration for authenticated WebRTC clients.
+        Production deployments should use `RALLAR_ICE_MODE=metered` with
+        `METERED_APP_NAME` and `METERED_API_KEY`; `RALLAR_ICE_MODE=local`
+        returns an empty ICE server list for local/demo validation.
       security:
         - bearerAuth: []
           clientIdHeader: []

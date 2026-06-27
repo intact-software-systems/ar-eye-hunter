@@ -33,8 +33,8 @@ import {
   type GroupInviteAcceptAppInboxPayload,
   type GroupInviteCreateAppInboxPayload,
   type GroupInviteRevokeAppInboxPayload,
-  type GroupJoinCodeRotateAppInboxPayload,
   type GroupJoinAppInboxPayload,
+  type GroupJoinCodeRotateAppInboxPayload,
   type GroupMemberBanAppInboxPayload,
   type GroupMemberRemoveAppInboxPayload,
   type GroupMemberRoleSetAppInboxPayload,
@@ -61,6 +61,7 @@ import {
 } from '@shared-server/rallar-system/state-sync-cache-hydration.ts';
 import {
   canReadGroupSnapshot as canReadFullGroupSnapshot,
+  canUpdateGroupSnapshot,
   GroupPolicyDeniedError,
   isGroupPolicyDeniedError,
 } from '@shared-server/rallar-system/group-policy.ts';
@@ -1148,16 +1149,24 @@ async function assertCanUpdateGroup(
   if (!snapshot) {
     throw new Error(`Group not found: ${groupId}`);
   }
-  const member = snapshot.members.find(
-    (entry) => entry.principalId === principalId,
-  );
-  if (!member || member.status !== 'active') {
+
+  const result = canUpdateGroupSnapshot({
+    snapshot,
+    actor: { principalId },
+  });
+  if (result.allowed) {
+    return;
+  }
+
+  if (result.code === 'member-not-active') {
     throw new Error(
       'Forbidden: only active group owners/admins can update groups',
     );
   }
 
-  if (member.role !== 'owner' && member.role !== 'admin') {
+  if (result.code === 'forbidden-role') {
     throw new Error('Forbidden: only group owners/admins can update groups');
   }
+
+  throw new GroupPolicyDeniedError(result);
 }

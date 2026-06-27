@@ -5,17 +5,105 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      skip_release_gate:
+        description: "Skip release gate validation for this manual deploy"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
   deployments: write
 
 jobs:
+  release-gate:
+    name: Release Gate
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_release_gate != true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: appdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d appdb"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/appdb
+      RALLAR_ICE_MODE: local
+      RALLAR_LOGIN_USER_RATE_LIMIT: "100"
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Cache Deno
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/deno
+            ~/.deno
+          key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock', 'apps/**/deno.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-deno-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run root CI suite
+        run: npm run test:ci
+
+      - name: Build deployable apps
+        run: |
+          npm run build:ar-eye-hunter-v1
+          npm run build:relic-hunters-v1
+          npm run build:rallar
+
+      - name: Check Deno apps
+        run: |
+          (cd apps/api-v1 && deno task check)
+          (cd apps/relic-hunter-server-v1 && deno task check)
+          (cd apps/rallar-black-box-control-server && deno task check)
+
+      - name: Run Postgres migrations
+        run: npm run db:migrate
+
+      - name: Run Postgres full-stack smoke tests
+        run: |
+          npm run test:postgres:presence-expiry
+          npm run test:rallar:full-stack:postgres:rest
+          npm run test:rallar:full-stack:postgres:control
+
   # ----------------------------
   # Web SPA → Cloudflare Pages
   # ----------------------------
   deploy-eye-hunter:
     name: Deploy Eye Hunter Web (Cloudflare Pages)
+    needs: release-gate
+    if: ${{ always() && !cancelled() && (needs.release-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_release_gate == true)) }}
     runs-on: ubuntu-latest
 
     steps:
@@ -25,7 +113,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Install & build web
         working-directory: apps/ar-eye-hunter-v1
@@ -44,6 +132,8 @@ jobs:
   # ----------------------------
   deploy-relic-web:
     name: Deploy Relic Hunter Web (Cloudflare Pages)
+    needs: release-gate
+    if: ${{ always() && !cancelled() && (needs.release-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_release_gate == true)) }}
     runs-on: ubuntu-latest
 
     steps:
@@ -53,7 +143,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Install & build Relic web
         working-directory: apps/relic-hunters-v1
@@ -66,6 +156,8 @@ jobs:
   # ----------------------------
   deploy-rallar-kit:
     name: Deploy Rallar Kit black-box Web (Cloudflare Pages)
+    needs: release-gate
+    if: ${{ always() && !cancelled() && (needs.release-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_release_gate == true)) }}
     runs-on: ubuntu-latest
 
     steps:
@@ -75,7 +167,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Install & build Rallar Kit black-box Web
         working-directory: apps/rallar-black-box
@@ -88,6 +180,8 @@ jobs:
   # ----------------------------
   deploy-api:
     name: Deploy API (Deno Deploy)
+    needs: release-gate
+    if: ${{ always() && !cancelled() && (needs.release-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_release_gate == true)) }}
     runs-on: ubuntu-latest
 
     steps:
@@ -133,6 +227,8 @@ jobs:
 
   deploy-in-memory-api:
     name: Deploy In-Memory API (Deno Deploy)
+    needs: release-gate
+    if: ${{ always() && !cancelled() && (needs.release-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_release_gate == true)) }}
     runs-on: ubuntu-latest
 
     steps:
@@ -160,6 +256,8 @@ jobs:
 
   deploy-relic-api:
     name: Deploy Relic API (Deno Deploy)
+    needs: release-gate
+    if: ${{ always() && !cancelled() && (needs.release-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_release_gate == true)) }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo

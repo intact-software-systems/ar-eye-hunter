@@ -1,14 +1,14 @@
 {
-  "nodeModulesDir": "auto",
+  "nodeModulesDir": "manual",
   "tasks": {
     "fmt": "deno fmt",
     "fmt:check": "deno fmt --check",
     "lint": "deno lint",
-    "test:queue": "deno run -A --unstable-temporal npm:vitest run packages/tests/queue.test.ts",
-    "test:debug": "deno run -A --unstable-temporal npm:vitest run",
-    "qbox": "deno run -A --unstable-temporal npm:vitest run --inspect-brk=127.0.0.1:53287 packages/tests/queue.test.ts --no-file-parallelism",
-    "async": "deno run -A --unstable-temporal npm:vitest run --inspect-brk=127.0.0.1:53287 packages/tests/ComputeAsynctask.test.ts --no-file-parallelism",
-    "engine": "deno run -A --unstable-temporal npm:vitest run --inspect-brk=127.0.0.1:53287 packages/tests/engine.test.ts --no-file-parallelism"
+    "test:queue": "deno run -A --unstable-temporal npm:vitest@4.0.17 run packages/tests/queue.test.ts",
+    "test:debug": "deno run -A --unstable-temporal npm:vitest@4.0.17 run",
+    "qbox": "deno run -A --unstable-temporal npm:vitest@4.0.17 run --inspect-brk=127.0.0.1:53287 packages/tests/queue.test.ts --no-file-parallelism",
+    "async": "deno run -A --unstable-temporal npm:vitest@4.0.17 run --inspect-brk=127.0.0.1:53287 packages/tests/ComputeAsynctask.test.ts --no-file-parallelism",
+    "engine": "deno run -A --unstable-temporal npm:vitest@4.0.17 run --inspect-brk=127.0.0.1:53287 packages/tests/engine.test.ts --no-file-parallelism"
   },
   "imports": {
     "@js-temporal/polyfill": "npm:@js-temporal/polyfill@^0.5.1",

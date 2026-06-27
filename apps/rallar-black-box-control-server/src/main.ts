@@ -38,6 +38,7 @@ import {
   createControlResponseHeaders,
 } from './cors.ts';
 import { verifyRallarBlackBoxOperatorToken } from '@shared-server/http/black-box-operator-token.ts';
+import { assertBlackBoxControlProductionEnv } from '@shared-server/http/production-env-hardening.ts';
 
 const DEFAULT_PORT = 5180;
 const OPEN_STATE = 1;
@@ -46,6 +47,7 @@ type SecurityOptions = Readonly<{
   allowedOrigins: readonly string[];
   requireTls: boolean;
   requireRunToken: boolean;
+  requireReadToken: boolean;
   adminToken?: string;
   operatorTokenSecret?: string;
   runTokenTtlMs: number;
@@ -60,6 +62,8 @@ type SecurityOptions = Readonly<{
   storageDir?: string;
   retentionMaxRuns: number;
 }>;
+
+assertBlackBoxControlProductionEnv(Deno.env);
 
 const security = resolveSecurityOptions();
 const controlService = createRallarBlackBoxControlService({
@@ -110,6 +114,14 @@ async function handleRequest(request: Request): Promise<Response> {
       app: 'rallar-black-box-control-server',
       protocolVersion: 1,
     });
+  }
+
+  if (
+    isRead &&
+    isProtectedControlReadPath(url.pathname) &&
+    !(await authorizeReadRequest(request, url))
+  ) {
+    return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
   }
 
   if (isRead && url.pathname === '/distributed-runs') {
@@ -692,6 +704,7 @@ function resolveSecurityOptions(): SecurityOptions {
     allowedOrigins: envList('RALLAR_BLACK_BOX_ALLOWED_ORIGINS'),
     requireTls: envBoolean('RALLAR_BLACK_BOX_REQUIRE_TLS'),
     requireRunToken: envBoolean('RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN'),
+    requireReadToken: envBoolean('RALLAR_BLACK_BOX_REQUIRE_READ_TOKEN'),
     adminToken: envString('RALLAR_BLACK_BOX_ADMIN_TOKEN'),
     operatorTokenSecret: envString('RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET'),
     runTokenTtlMs: envNumber('RALLAR_BLACK_BOX_RUN_TOKEN_TTL_MS', 15 * 60_000),
@@ -754,6 +767,31 @@ function rejectByRequestPolicy(request: Request, url: URL): Response | undefined
   }
 
   return undefined;
+}
+
+function isProtectedControlReadPath(pathname: string): boolean {
+  return pathname === '/runs' ||
+    pathname.startsWith('/runs/') ||
+    pathname === '/distributed-runs' ||
+    pathname.startsWith('/distributed-runs/') ||
+    pathname === '/fleet/reports' ||
+    pathname.startsWith('/fleet/reports/');
+}
+
+async function authorizeReadRequest(request: Request, url: URL): Promise<boolean> {
+  if (!security.requireReadToken) {
+    return true;
+  }
+
+  if (!hasAdminAuthorizationBackend()) {
+    return false;
+  }
+
+  return await authorizeAdminRequest(request, url);
+}
+
+function hasAdminAuthorizationBackend(): boolean {
+  return Boolean(security.adminToken || security.operatorTokenSecret);
 }
 
 async function authorizeAdminRequest(request: Request, url: URL): Promise<boolean> {

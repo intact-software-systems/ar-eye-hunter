@@ -282,10 +282,12 @@ the group snapshot stores verifier metadata. Codes are reusable until expiry,
 and rotation invalidates the previous code.
 
 Set `RALLAR_STATE_STRICT_READ_AUTH` to `1`, `true`, `yes`, or `on` on API-v1 to
-require authenticated REST reads and align list/snapshot/event reads with
-full-state group read policy. In strict mode, REST reads, state-sync routing, and
-room messaging authorization all use server-side group policy before exposing
-full group state or allowing room traffic.
+align authenticated list/snapshot/event reads with full-state group read
+policy. `/api/state/*` routes already require authentication; strict mode adds
+the narrower server-side read authorization before exposing full group state.
+In strict mode, REST reads, state-sync routing, and room messaging authorization
+all use server-side group policy before exposing full group state or allowing
+room traffic.
 
 ### Director
 

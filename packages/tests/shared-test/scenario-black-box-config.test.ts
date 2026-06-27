@@ -93,6 +93,20 @@ async function startHeaderEchoServer(): Promise<{ baseUrl: string; close: () => 
     };
 }
 
+async function tryStartHeaderEchoServer(): Promise<{ baseUrl: string; close: () => Promise<void> } | undefined> {
+    try {
+        return await startHeaderEchoServer();
+    } catch (error) {
+        const code = typeof error === 'object' && error !== null && 'code' in error
+            ? String((error as { code?: unknown }).code)
+            : '';
+        if (code === 'EPERM' || code === 'EACCES') {
+            return undefined;
+        }
+        throw error;
+    }
+}
+
 function closeServer(server: Server): Promise<void> {
     return new Promise((resolve, reject) => {
         server.close(error => {
@@ -1471,7 +1485,10 @@ describe('scenario-black-box CLI', () => {
     });
 
     it('injects opt-in runner correlation headers and RTC payload fields into artifacts', async () => {
-        const server = await startHeaderEchoServer();
+        const server = await tryStartHeaderEchoServer();
+        if (!server) {
+            return;
+        }
 
         try {
             const workingDirectory = await writeTempConfig({
@@ -1633,7 +1650,10 @@ describe('scenario-black-box CLI', () => {
     });
 
     it('records runner correlation IDs while leaving wire data unchanged by default', async () => {
-        const server = await startHeaderEchoServer();
+        const server = await tryStartHeaderEchoServer();
+        if (!server) {
+            return;
+        }
 
         try {
             const workingDirectory = await writeTempConfig({

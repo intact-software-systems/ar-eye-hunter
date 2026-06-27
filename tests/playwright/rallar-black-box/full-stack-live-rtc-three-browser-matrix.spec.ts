@@ -7,8 +7,10 @@ import {
   test,
   type TestInfo,
 } from "@playwright/test";
+import { openTab } from "./full-stack-helpers.ts";
 
-const SPA_BASE_URL = "http://localhost:5176";
+const SPA_BASE_URL = envValue("VITE_RALLAR_SPA_BASE_URL") ??
+  "http://localhost:5176";
 const CONTROL_BASE_URL = "http://127.0.0.1:5180";
 const CONTROL_WS_URL = "ws://127.0.0.1:5180/control";
 
@@ -269,7 +271,12 @@ async function enqueueCommand(
       },
     },
   );
-  expect(response.status()).toBe(202);
+  expect(
+    response.status(),
+    `Expected command ${commandId} for agent ${agentId} to enqueue: ${
+      await response.text()
+    }`,
+  ).toBe(202);
 }
 
 async function waitForCommandResult(
@@ -321,7 +328,12 @@ async function executeOk(
     command,
     timeout,
   );
-  expect(result.ok).toBe(true);
+  expect(
+    result.ok,
+    `Expected command ${commandId} for agent ${agentId} to succeed: ${
+      JSON.stringify(result)
+    }`,
+  ).toBe(true);
   return result;
 }
 
@@ -388,6 +400,7 @@ async function waitForMessage(
     const run = await fetchRun(request, runId);
     return run.events?.some((event) => isMessageFor(event, input)) ?? false;
   }, {
+    message: `Expected ${input.agentId} to receive ${input.transport} ${input.deliveryMode} ${input.matrixId}`,
     timeout: 60_000,
   }).toBe(true);
 }
@@ -489,10 +502,7 @@ async function openAgent(
     await page.getByRole("button", { name: "Sign in" }).click();
   }
 
-  await expect(page.getByRole("tab", { name: "Local Workbench" })).toBeVisible({
-    timeout: 30_000,
-  });
-  await page.getByRole("tab", { name: "Local Workbench" }).click();
+  await openTab(page, "local-workbench", "black-box-runner");
   await expect(page.locator("#panel-local-workbench .control-panel"))
     .toContainText("registered", { timeout: 30_000 });
 
@@ -733,11 +743,37 @@ async function runWebSocketOpenSendCloseMatrix(
       kind: "ws.send",
       connection,
       data: {
-        topic: "rallar.black-box.live-three-browser.ws",
-        matrixId: `ws-${agent.prefix.toLowerCase()}-${input.suffix}`,
-        agentId: agent.agentId,
-        groupId: input.groupId,
-        runId,
+        id: {
+          v: 2,
+          msgId: `ws-${agent.prefix.toLowerCase()}-${input.suffix}`,
+          ts: 0,
+          senderId: "{auth.sessionId}",
+          sessionId: "{auth.sessionId}",
+          traceId: `ws-${input.suffix}`,
+        },
+        route: {
+          topicId: "app.black-box.live-three-browser.ws",
+          resourceId: `ws-${agent.prefix.toLowerCase()}-${input.suffix}`,
+          contextId: `${applicationId}:${workspaceId}:${input.groupId}`,
+        },
+        targets: {
+          mode: "unicast",
+          toPeerId: "{auth.sessionId}",
+        },
+        delivery: {
+          reliability: "best-effort",
+          ack: "none",
+        },
+        payload: {
+          typeId: "app.black-box.live-three-browser.ws",
+          contentType: "application/json",
+          resource: JSON.stringify({
+            matrixId: `ws-${agent.prefix.toLowerCase()}-${input.suffix}`,
+            agentId: agent.agentId,
+            groupId: input.groupId,
+            runId,
+          }),
+        },
       },
     });
     await executeOk(request, runId, agent.agentId, closeCommandId, {
@@ -811,6 +847,7 @@ async function waitForPeerReadiness(
       asRecord(asRecord(resultValue(result).rallar).rtcStatus).readyPeerIds,
     );
   }, {
+    message: `Expected ${agent.agentId} to see ready peers ${expectedPeerIds.join(", ")} for ${suffix}`,
     timeout: 60_000,
   }).toEqual(expect.arrayContaining(expectedPeerIds));
 }
@@ -828,9 +865,7 @@ async function sendMatrixPayload(
     matrixId: string;
   }>,
 ): Promise<string> {
-  const commandId = `send-${input.deliveryMode}-${
-    input.transport.replace(".", "-")
-  }-${input.suffix}`;
+  const commandId = `send-${input.matrixId}`;
   await executeOk(request, runId, sender.agentId, commandId, {
     kind: "rtc.send",
     connection: `${sender.connection}-${input.transport.replace(".", "-")}`,
@@ -885,29 +920,13 @@ async function runDeliveryMatrix(
   const transportSuffix = `${
     input.transport.replace(".", "-")
   }-${input.suffix}`;
-  await Promise.all([
-    waitForPeerReadiness(
-      request,
-      runId,
-      agentA,
-      [sessions.B, sessions.C],
-      transportSuffix,
-    ),
-    waitForPeerReadiness(
-      request,
-      runId,
-      agentB,
-      [sessions.A, sessions.C],
-      transportSuffix,
-    ),
-    waitForPeerReadiness(
-      request,
-      runId,
-      agentC,
-      [sessions.A, sessions.B],
-      transportSuffix,
-    ),
-  ]);
+  await waitForPeerReadiness(
+    request,
+    runId,
+    agentA,
+    [sessions.B, sessions.C],
+    transportSuffix,
+  );
 
   const directMatrixId = `direct-${input.transport}-${input.suffix}`;
   const multicastMatrixId = `multicast-${input.transport}-${input.suffix}`;
@@ -924,7 +943,7 @@ async function runDeliveryMatrix(
     matrixId: directMatrixId,
     deliveryMode: "direct",
   });
-  await agentB.page.getByRole("tab", { name: "Manual Rallar" }).click();
+  await openTab(agentB.page, "manual-rallar", "black-box-runner");
   await expect(
     agentB.page.locator("#panel-manual-rallar .received-inbox-panel"),
   )
@@ -970,7 +989,7 @@ async function runDeliveryMatrix(
       deliveryMode: "broadcast",
     }),
   ]);
-  await agentC.page.getByRole("tab", { name: "Manual Rallar" }).click();
+  await openTab(agentC.page, "manual-rallar", "black-box-runner");
   await expect(
     agentC.page.locator("#panel-manual-rallar .received-inbox-panel"),
   )
@@ -1032,6 +1051,21 @@ async function runAllDeliveryPermutations(
     C: connectResults[2].sessionId,
   };
   expect(new Set(Object.values(sessions)).size).toBe(3);
+
+  const readinessSuffix = `${slug}-${input.suffix}-all`;
+  await Promise.all(
+    agents.map((agent) =>
+      waitForPeerReadiness(
+        request,
+        runId,
+        agent,
+        agents
+          .filter((candidate) => candidate.agentId !== agent.agentId)
+          .map((candidate) => sessions[candidate.prefix]),
+        readinessSuffix,
+      )
+    ),
+  );
 
   const commandIds = connectResults.map((result) => result.commandId);
   const scenarios: DeliveryScenarioRecord[] = [];
@@ -1594,17 +1628,6 @@ test.describe("full-stack live three-browser RTC matrix", () => {
           suffix,
         }),
       );
-      commandIds.push(
-        ...await runWebSocketOpenSendCloseMatrix(
-          request,
-          runId,
-          realtimeAgents,
-          {
-            groupId,
-            suffix,
-          },
-        ),
-      );
 
       const realtime = await runAllDeliveryPermutations(
         request,
@@ -1624,6 +1647,22 @@ test.describe("full-stack live three-browser RTC matrix", () => {
           realtimeAgents,
           `${suffix}-after-realtime-all`,
         ),
+      );
+
+      const wsAgents = await openAgents("live-all-ws");
+      commandIds.push(
+        ...await runWebSocketOpenSendCloseMatrix(
+          request,
+          runId,
+          wsAgents,
+          {
+            groupId,
+            suffix,
+          },
+        ),
+      );
+      commandIds.push(
+        ...await retireAgents(wsAgents, `${suffix}-after-ws-all`),
       );
 
       const messageAgents = await openAgents("live-all-messages");
@@ -1676,6 +1715,13 @@ test.describe("full-stack live three-browser RTC matrix", () => {
         suffix: `${suffix}-reconnect-c`,
       });
       commandIds.push(reconnectC.commandId);
+      await waitForPeerReadiness(
+        request,
+        runId,
+        messageAgents[1],
+        [reconnectC.sessionId],
+        `${suffix}-reconnect-c`,
+      );
       const reconnectMatrixId = `messages-rtc-reconnect-b-to-c-${suffix}`;
       commandIds.push(
         await sendMatrixPayload(request, runId, messageAgents[1], {

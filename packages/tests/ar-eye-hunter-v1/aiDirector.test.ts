@@ -1,6 +1,7 @@
 import {
     createRallarAiAcceptedResultTracker,
     type RallarAiJsonResult,
+    validateRallarAiJsonValue,
 } from '@shared/rallar-ai/mod.ts';
 import { describe, expect, it } from 'vitest';
 
@@ -163,6 +164,16 @@ describe('AR Eye Hunter AI director', () => {
         expect(layoutRequest.context?.wavePhase).toBe('warmup');
         expect(layoutRequest.context?.hostileCount).toBeGreaterThan(0);
         expect(chaosRequest.prompt).toContain('wave context');
+    });
+
+    it('omits undefined optional fields from AI request context', () => {
+        const now = 16_000;
+        const state = createInitialArenaState(123, now);
+        const request = createAiDirectorRequest(state, undefined);
+
+        expect(Object.hasOwn(request.context ?? {}, 'roomId')).toBe(false);
+        expect(Object.hasOwn(request.context ?? {}, 'activeEventKind')).toBe(false);
+        expect(validateRallarAiJsonValue(request.context)).toEqual([]);
     });
 });
 

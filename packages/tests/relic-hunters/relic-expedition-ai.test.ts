@@ -3,18 +3,46 @@ import {
     createProceduralRelicExpeditionBlueprint,
     type RelicExpeditionBlueprint,
 } from '@relic-hunters/mod.ts';
-import type {
-    RallarAiJsonProvider,
-    RallarAiJsonRequest,
-    RallarAiJsonResult,
+import {
+    isRallarAiProviderAllowedInProduction,
+    type RallarAiEvaluationCase,
+    type RallarAiJsonProvider,
+    type RallarAiJsonRequest,
+    type RallarAiJsonResult,
 } from '@shared/rallar-ai/mod.ts';
 import type { RallarServerAiRallar } from '@shared-server/rallar-ai/mod.ts';
 import {
+    RELIC_EXPEDITION_LIVE_OLLAMA_EVALUATION_GATE,
+    RELIC_EXPEDITION_OLLAMA_PROVIDER_GOVERNANCE,
     createRelicExpeditionInitialStateFactory,
+    createRelicExpeditionAiEvaluationCases,
     readRelicAiExpeditionEnv,
+    runRelicExpeditionDeterministicAiEvaluation,
+    runRelicExpeditionOllamaLiveEvaluationIfEnabled,
 } from '../../../apps/relic-hunter-server-v1/src/relic-expedition-ai.ts';
 
 describe('Relic expedition AI factory', () => {
+    it('declares app-owned governance metadata for the Ollama expedition provider', () => {
+        expect(RELIC_EXPEDITION_OLLAMA_PROVIDER_GOVERNANCE).toMatchObject({
+            providerId: 'relic-expedition-ollama',
+            adapterVersion: 'relic-hunter-server-v1/ollama-expedition:1',
+            modelId: 'llama-test',
+            target: 'server',
+            structuredOutput: true,
+            productionAllowed: false,
+            knownLimits: {
+                maxOutputTokens: 1_600,
+                recommendedTimeoutMs: 15_000,
+            },
+        });
+        expect(
+            isRallarAiProviderAllowedInProduction(
+                RELIC_EXPEDITION_OLLAMA_PROVIDER_GOVERNANCE,
+                'server',
+            ),
+        ).toBe(false);
+    });
+
     it('keeps the current static game when disabled', async () => {
         const factory = createRelicExpeditionInitialStateFactory({
             mode: 'off',
@@ -143,6 +171,73 @@ describe('Relic expedition AI factory', () => {
             ollamaModel: 'llama3.2',
         });
     });
+
+    it('builds deterministic expedition evaluation cases for CI', async () => {
+        const report = await runRelicExpeditionDeterministicAiEvaluation({
+            gameId: 'room-1',
+            reason: 'ensure',
+            seed: 'room-1:ensure:ci',
+            mockBlueprint: createProceduralRelicExpeditionBlueprint({
+                seed: 'room-1:ensure:ci',
+                source: 'mock',
+            }),
+        });
+
+        expect(report).toMatchObject({
+            suiteId: 'relic-expedition-ollama-ci',
+            providerId: 'relic-expedition-mock',
+            passed: 1,
+            failed: 0,
+        });
+        expect(report.results[0]).toEqual(
+            expect.objectContaining({
+                caseId: 'expedition-blueprint',
+                validationOk: true,
+            }),
+        );
+    });
+
+    it('keeps live Ollama expedition evaluation behind an explicit opt-in gate', async () => {
+        const cases = createRelicExpeditionAiEvaluationCases({
+            gameId: 'room-1',
+            reason: 'ensure',
+            seed: 'room-1:ensure:live-test',
+            timeoutMs: 250,
+        }) as readonly RallarAiEvaluationCase<RelicExpeditionBlueprint>[];
+        const liveProvider = createStaticBlueprintProvider(
+            createProceduralRelicExpeditionBlueprint({
+                seed: 'room-1:ensure:live-test',
+                source: 'mock',
+            }),
+        );
+
+        const skipped = await runRelicExpeditionOllamaLiveEvaluationIfEnabled({
+            env: {},
+            cases,
+            provider: liveProvider,
+        });
+
+        expect(skipped).toEqual(expect.objectContaining({
+            status: 'skipped',
+            gate: RELIC_EXPEDITION_LIVE_OLLAMA_EVALUATION_GATE,
+        }));
+
+        const ran = await runRelicExpeditionOllamaLiveEvaluationIfEnabled({
+            env: { [RELIC_EXPEDITION_LIVE_OLLAMA_EVALUATION_GATE]: '1' },
+            cases,
+            provider: liveProvider,
+        });
+
+        expect(ran).toEqual(expect.objectContaining({
+            status: 'ran',
+            report: expect.objectContaining({
+                suiteId: 'relic-expedition-ollama-live',
+                providerId: 'relic-expedition-ollama',
+                passed: 1,
+                failed: 0,
+            }),
+        }));
+    });
 });
 
 function fakeRallar(): RallarServerAiRallar {
@@ -198,6 +293,43 @@ function createAbortAwareProvider(): RallarAiJsonProvider {
                     });
                 }, 50);
             });
+        },
+    };
+}
+
+function createStaticBlueprintProvider(
+    blueprint: RelicExpeditionBlueprint,
+): RallarAiJsonProvider {
+    return {
+        providerId: 'relic-expedition-ollama',
+        source: 'server',
+        modelId: 'llama-test',
+        capabilities: {
+            supportsJsonSchema: true,
+            supportsStreaming: false,
+            supportsCancellation: true,
+            target: 'server',
+        },
+        async generateJson<TValue = unknown, TContext = unknown>(
+            request: RallarAiJsonRequest<TContext>,
+        ): Promise<RallarAiJsonResult<TValue>> {
+            return {
+                protocolVersion: 1,
+                requestId: request.requestId,
+                generationId: 'static-blueprint',
+                dedupeKey: request.dedupeKey,
+                source: 'server',
+                providerId: 'relic-expedition-ollama',
+                modelId: 'llama-test',
+                schemaId: request.schemaId,
+                schemaVersion: request.schemaVersion,
+                schemaHash: 'test',
+                promptHash: 'test',
+                baseStateRevision: request.baseStateRevision,
+                createdAtEpochMs: 1,
+                value: blueprint as TValue,
+                validation: { ok: true, errors: [], issues: [] },
+            };
         },
     };
 }

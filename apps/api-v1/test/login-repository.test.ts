@@ -96,6 +96,72 @@ Deno.test('register rejects usernames reserved by static dev clients', async () 
   );
 });
 
+Deno.test('AUTH_STATIC_CLIENTS_MODE=disabled removes demo clients and frees reserved names', async () => {
+  await withEnv('AUTH_STATIC_CLIENTS_MODE', 'disabled', async () => {
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const registered = await register(
+      {
+        username: 'admin',
+        password: 'secret',
+        displayName: 'Runtime Admin',
+      },
+      {
+        runtimeRepository,
+      },
+    );
+
+    assert.equal(registered.username, 'admin');
+
+    const userRepository = new AuthUserRepository(runtimeRepository);
+    assert.equal(
+      await login(
+        {
+          username: 'admin',
+          password: 'admin',
+        },
+        {
+          userRepository,
+        },
+      ),
+      undefined,
+    );
+
+    const session = await login(
+      {
+        username: 'admin',
+        password: 'secret',
+      },
+      {
+        userRepository,
+      },
+    );
+    assert.ok(session);
+    assert.equal(session.clientId, registered.clientId);
+  });
+});
+
+async function withEnv<T>(
+  key: string,
+  value: string | undefined,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const previous = Deno.env.get(key);
+  try {
+    if (value === undefined) {
+      Deno.env.delete(key);
+    } else {
+      Deno.env.set(key, value);
+    }
+    return await fn();
+  } finally {
+    if (previous === undefined) {
+      Deno.env.delete(key);
+    } else {
+      Deno.env.set(key, previous);
+    }
+  }
+}
+
 class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {
   readonly data = new Map<string, RuntimeStateEntry>();
 

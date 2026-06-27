@@ -75,6 +75,19 @@ Run the local control server in a second terminal:
 npm run dev:rallar:control
 ```
 
+The local control server keeps demo-friendly defaults: wildcard CORS when no
+origins are set, optional run/read tokens, and open admin/operator
+authorization when no admin token or operator secret is configured. Those
+defaults are local-only. Production control deployments should
+set `RALLAR_PRODUCTION_HARDENING=1`,
+`RALLAR_BLACK_BOX_ALLOWED_ORIGINS=<exact https origins>`,
+`RALLAR_BLACK_BOX_REQUIRE_TLS=1`,
+`RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN=1`,
+`RALLAR_BLACK_BOX_REQUIRE_READ_TOKEN=1`, a shared
+`RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET`, destination allow-lists, durable
+storage, and bounded retention. See
+[Production Env Hardening Checklist](../../../docs/production-env-hardening-checklist.md).
+
 Open the SPA in local workbench mode:
 
 ```text
@@ -216,13 +229,21 @@ npm run test:rallar:full-stack:postgres:live-rtc-3
 
 That command is gated by `RALLAR_BLACK_BOX_LIVE_RTC_MATRIX=1` and covers real
 direct, multicast, broadcast, not-yet-in-sync/NACK probing, stale-send failure,
-and control artifact export across `realtime` and `messages.rtc`.
+and control artifact export across `realtime` and `messages.rtc`. The local
+Postgres script defaults to API-v1 on `http://localhost:18081`, the SPA on
+`http://localhost:5178`, and
+`DATABASE_URL=${DATABASE_URL:-postgres://app:app@localhost:5432/appdb}` while
+still allowing those environment variables to be overridden.
 
 For the same three-browser baseline against API-v1 memory mode, run:
 
 ```sh
 npm run test:rallar:full-stack:memory:live-rtc-3
 ```
+
+The memory RTC script defaults to API-v1 on `http://localhost:18080` and the
+SPA on `http://localhost:5177` so it can be run before or after the Postgres
+variant without reusing the wrong API mode.
 
 Run the distributed recipe full-stack slice when you want to validate the
 control-server distributed-run workflow:

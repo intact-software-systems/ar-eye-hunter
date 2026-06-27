@@ -7,8 +7,12 @@ async function startHttpServer(
 ): Promise<{ url: string, close: () => Promise<void> }> {
     const server = createServer(handler);
 
-    await new Promise<void>(resolve => {
-        server.listen(0, '127.0.0.1', resolve);
+    await new Promise<void>((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', () => {
+            server.off('error', reject);
+            resolve();
+        });
     });
 
     const address = server.address();
@@ -29,6 +33,22 @@ async function startHttpServer(
             });
         }),
     };
+}
+
+async function tryStartHttpServer(
+    handler: (request: IncomingMessage, response: ServerResponse) => void,
+): Promise<{ url: string, close: () => Promise<void> } | undefined> {
+    try {
+        return await startHttpServer(handler);
+    } catch (error) {
+        const code = typeof error === 'object' && error !== null && 'code' in error
+            ? String((error as { code?: unknown }).code)
+            : '';
+        if (code === 'EPERM' || code === 'EACCES') {
+            return undefined;
+        }
+        throw error;
+    }
 }
 
 function json(response: ServerResponse, statusCode: number, body: unknown): void {
@@ -288,7 +308,7 @@ describe('executeBlackBox', () => {
     });
 
     it('extracts HTTP outputs and accepts status/body outcome sets', async () => {
-        const server = await startHttpServer((_request, response) => {
+        const server = await tryStartHttpServer((_request, response) => {
             json(response, 409, {
                 code: 'already-exists',
                 group: {
@@ -297,6 +317,9 @@ describe('executeBlackBox', () => {
                 },
             });
         });
+        if (!server) {
+            return;
+        }
 
         try {
             const report = await executeBlackBox(

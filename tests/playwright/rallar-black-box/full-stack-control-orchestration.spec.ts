@@ -35,7 +35,8 @@ test.describe('full-stack control orchestration', () => {
         });
 
         await page.goto(`/?${query.toString()}`);
-        await expect(page.locator('.control-panel')).toContainText('registered');
+        await expect(page.locator('#panel-local-workbench .control-panel'))
+            .toContainText('registered');
 
         await enqueueControlCommand(request, runId, agentId, commandId, {
             kind: 'stats',

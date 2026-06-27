@@ -2375,6 +2375,108 @@ describe('rallar-bb-test', () => {
         )).toBe(true);
     });
 
+    it('keeps ws.send on an open raw socket in browser Rallar provider mode', async () => {
+        class FakeSocket {
+            readonly url: string;
+            readonly protocol = '';
+            readyState = 0;
+            bufferedAmount = 0;
+            readonly sent: unknown[] = [];
+            private readonly listeners = new Map<string, Array<(event: unknown) => void>>();
+
+            constructor(url: string) {
+                this.url = url;
+                queueMicrotask(() => {
+                    this.readyState = 1;
+                    this.emit('open', {});
+                });
+            }
+
+            addEventListener(type: string, listener: (event: unknown) => void): void {
+                this.listeners.set(type, [
+                    ...(this.listeners.get(type) ?? []),
+                    listener,
+                ]);
+            }
+
+            removeEventListener(type: string, listener: (event: unknown) => void): void {
+                this.listeners.set(
+                    type,
+                    (this.listeners.get(type) ?? []).filter(entry => entry !== listener),
+                );
+            }
+
+            send(data: unknown): void {
+                this.sent.push(data);
+                this.emit('message', {
+                    data,
+                });
+            }
+
+            close(code?: number, reason?: string): void {
+                this.readyState = 3;
+                this.emit('close', {
+                    code,
+                    reason,
+                    wasClean: true,
+                });
+            }
+
+            private emit(type: string, event: unknown): void {
+                (this.listeners.get(type) ?? []).forEach(listener => listener(event));
+            }
+        }
+
+        const sockets: FakeSocket[] = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            webSocketFactory: (url) => {
+                const socket = new FakeSocket(url);
+                sockets.push(socket);
+                return socket;
+            },
+            rallarRuntime: {
+                connect: async () => ({ connected: true }),
+                send: async () => ({ sent: true }),
+                sendWs: async () => {
+                    throw new Error('raw socket should handle ws.send while open');
+                },
+                close: async () => ({ closed: true }),
+                health: async () => ({ connected: true }),
+            },
+        });
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-browser-rallar-raw-ws',
+            config: {
+                control: {
+                    providerMode: 'browser-rallar',
+                },
+            },
+        });
+        await runtime.execute({
+            kind: 'ws.open',
+            commandId: 'open-browser-rallar-raw-ws',
+            connection: 'control',
+            url: 'wss://control.example.test/ws',
+        });
+        const sendResult = await runtime.execute({
+            kind: 'ws.send',
+            commandId: 'send-browser-rallar-raw-ws',
+            connection: 'control',
+            data: {
+                groupId: 'room-1',
+                topic: 'rallar.black-box.live-three-browser.ws',
+                text: 'raw socket payload',
+            },
+        });
+
+        expect(sendResult.ok).toBe(true);
+        expect(sockets[0].sent).toEqual([
+            '{"groupId":"room-1","topic":"rallar.black-box.live-three-browser.ws","text":"raw socket payload"}',
+        ]);
+    });
+
     it('cleans up browser WS and Rallar resources after a cancelled recipe', async () => {
         class FakeSocket {
             readonly url: string;

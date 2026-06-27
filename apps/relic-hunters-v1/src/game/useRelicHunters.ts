@@ -182,6 +182,8 @@ export function useRelicHunters(): RelicHuntersConnection {
             snapshotReady: true,
             lastSnapshotSource: source,
             lastAcceptedSnapshot: summarizeRuntimeSnapshot(next, source),
+            lastIgnoredSnapshotReason: undefined,
+            lastIgnoredSnapshot: undefined,
             lastHydratedAtEpochMs: Date.now(),
         }));
         publishSnapshotToRtc(next, source);

@@ -1,6 +1,7 @@
 import {
     rallar,
     type RallarAuthChangeListener,
+    type RallarCreateRoomInput,
     type RallarRoomState,
     type RallarStartResult,
     type RallarSubscriptionScope,
@@ -33,6 +34,7 @@ export const RELIC_ROOM_NAME = 'Relic Hunters Expedition';
 export const RELIC_COMMAND_TRANSPORT = 'rest' as const;
 export const RELIC_SNAPSHOT_TRANSPORT = 'rallar-ws+rtc' as const;
 const RELIC_CURRENT_ROOM_STORAGE_KEY = 'relic.currentRoomId';
+const RELIC_ROOM_JOIN_MODE: NonNullable<RallarCreateRoomInput['joinMode']> = 'open';
 
 export type RelicHuntersRuntimePhase =
     | 'signed-out'
@@ -113,6 +115,8 @@ export type RelicJoinedRoom = Readonly<{
     roomId: string;
 }>;
 
+type RelicCreateRoomOptions = Readonly<Pick<RallarCreateRoomInput, 'joinMode'>>;
+
 export type RelicRuntimeStartResult = Pick<
     RallarStartResult,
     'session' | 'connected' | 'roomState'
@@ -136,7 +140,10 @@ export type RelicHuntersRuntimeDeps = Readonly<{
     onAuthoritySnapshotMessage(handler: (event: RelicServerEvent) => void): () => void;
     authorityStatus(): RallarGameAuthorityClientStatus | undefined;
     publishRtcSnapshot(snapshot: RelicPublicSnapshot): Promise<boolean>;
-    createRoom(displayName: string): Promise<{ group: { groupId: string } }>;
+    createRoom(
+        displayName: string,
+        options?: RelicCreateRoomOptions,
+    ): Promise<{ group: { groupId: string } }>;
     joinRoom(roomId: string): Promise<RelicJoinedRoom>;
     fetchSnapshot(roomId: string): Promise<RelicPublicSnapshot | undefined>;
     sendCommand(roomId: string, command: RelicCommand): Promise<RelicPublicSnapshot | undefined>;
@@ -262,7 +269,9 @@ export class RelicHuntersRuntime {
             seed: createRallarAiRoomNameSeed('relic-hunters'),
             existingNames,
         });
-        const created = await this.deps.createRoom(displayName);
+        const created = await this.deps.createRoom(displayName, {
+            joinMode: RELIC_ROOM_JOIN_MODE,
+        });
         return this.hydrateRoom(created.group.groupId);
     }
 
@@ -384,7 +393,7 @@ function browserRelicRuntimeDeps(): RelicHuntersRuntimeDeps {
         publishRtcSnapshot: async (snapshot) => {
             return authority.publishSnapshotRepair(snapshot);
         },
-        createRoom: (displayName) => rallar.rooms.create({ displayName }),
+        createRoom: (displayName, options) => rallar.rooms.create({ displayName, ...options }),
         joinRoom: (roomId) => rallar.rooms.enter(roomId),
         fetchSnapshot: (roomId) => fetchRelicSnapshot(roomId),
         sendCommand: (roomId, command) => sendRelicCommand(roomId, command),
