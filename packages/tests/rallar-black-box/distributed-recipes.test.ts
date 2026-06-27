@@ -522,6 +522,39 @@ describe('distributed recipes helpers', () => {
         });
     });
 
+    it('treats configured rtc.stream dropped-frame budgets as non-fatal send failures', () => {
+        const strictRecipe = createRallarBlackBoxRtcRealtimeRecipe({
+            durationSeconds: 1,
+            executionMode: 'stream',
+        });
+        const tolerantRecipe = createRallarBlackBoxRtcRealtimeRecipe({
+            durationSeconds: 1,
+            executionMode: 'stream',
+            stream: {
+                maxDroppedFrames: 4,
+            },
+        });
+        const strictStream = strictRecipe.commands.find(command => command.kind === 'rtc.stream') as
+            | Extract<typeof strictRecipe.commands[number], { kind: 'rtc.stream' }>
+            | undefined;
+        const tolerantStream = tolerantRecipe.commands.find(command => command.kind === 'rtc.stream') as
+            | Extract<typeof tolerantRecipe.commands[number], { kind: 'rtc.stream' }>
+            | undefined;
+
+        expect(strictStream).toMatchObject({
+            thresholds: {
+                maxDroppedFrames: 0,
+            },
+        });
+        expect(strictStream).not.toHaveProperty('continueOnSendFailure');
+        expect(tolerantStream).toMatchObject({
+            continueOnSendFailure: true,
+            thresholds: {
+                maxDroppedFrames: 4,
+            },
+        });
+    });
+
     it('builds the RTC smoke fixture with idempotent group and member setup before connect', () => {
         const recipe = createRallarBlackBoxRtcSmokeRecipe({
             group: {

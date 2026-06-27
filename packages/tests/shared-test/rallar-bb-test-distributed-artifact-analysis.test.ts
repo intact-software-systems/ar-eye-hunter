@@ -81,6 +81,230 @@ describe('Hetzner distributed run artifact analysis', () => {
         ]);
     });
 
+    it('uses runner summary and manifest fallbacks when the distributed-run snapshot is empty', () => {
+        const files: DistributedRunArtifactFiles = {
+            'distributed-run.json': '',
+            'runner-summary.json': JSON.stringify({
+                distributedRunId: 'dist-empty-snapshot',
+                controlRunId: 'run-empty-snapshot',
+                state: 'timed-out',
+                ok: false,
+            }),
+            'manifest.json': JSON.stringify({
+                schemaVersion: 1,
+                distributedRunId: 'dist-empty-snapshot',
+                controlRunId: 'run-empty-snapshot',
+                group: {
+                    applicationId: 'rallar-server',
+                    workspaceId: 'default',
+                    groupId: 'hetzner-headless-room',
+                },
+                recipes: [],
+            }),
+            'control-run.json': JSON.stringify({
+                runId: 'run-empty-snapshot',
+                agents: [{ agentId: 'controller-01', connected: true }],
+                commands: [],
+                results: [],
+                events: [],
+                stats: [],
+                reports: [],
+                heartbeats: [],
+            }),
+            'results.jsonl': JSON.stringify({
+                agentId: 'controller-01',
+                commandId: 'rtc-realtime-position-stream',
+                action: 'rtc.stream',
+                status: 'FAILURE',
+                result: {
+                    durationMs: 1_350,
+                    plannedFrames: 100,
+                    completedFrames: 82,
+                    failedFrames: 18,
+                    droppedFrames: 18,
+                    observations: [{ durationMs: 1_350, dropped: false }],
+                },
+                error: {
+                    code: 'RALLAR_BLACK_BOX_RTC_STREAM_SEND_FAILED',
+                    message: 'RTC stream had failed frame sends.',
+                },
+            }),
+            'events.jsonl': JSON.stringify({
+                kind: 'diagnostic',
+                topic: 'rallar.bb.rtc.stream_failed',
+                agentId: 'controller-01',
+                commandId: 'rtc-realtime-position-stream',
+                payload: {
+                    severity: 'error',
+                    message: 'RTC stream had failed frame sends.',
+                },
+            }),
+            'failures.json': JSON.stringify({
+                failures: [{
+                    agentId: 'controller-01',
+                    commandId: 'rtc-realtime-position-stream',
+                    error: {
+                        code: 'RALLAR_BLACK_BOX_RTC_STREAM_SEND_FAILED',
+                        message: 'RTC stream had failed frame sends.',
+                    },
+                }],
+            }),
+        };
+
+        const analysis = analyzeDistributedRunArtifactFiles({ files });
+        const snapshots = distributedArtifactSnapshotsFromFiles(files, 123);
+        const monitor = deriveDistributedRunMonitor({
+            distributedRun: snapshots.distributedRun,
+            controlRun: snapshots.controlRun,
+            artifactBundle: snapshots.artifactBundle,
+        });
+
+        expect(analysis).toMatchObject({
+            distributedRunId: 'dist-empty-snapshot',
+            controlRunId: 'run-empty-snapshot',
+            status: 'timed-out',
+            ok: false,
+            failure: {
+                commandId: 'rtc-realtime-position-stream',
+                evidenceFile: 'results.jsonl',
+            },
+        });
+        expect(analysis.parseWarnings).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                fileName: 'distributed-run.json',
+                message: expect.stringContaining('using runner-summary.json and manifest.json fallback'),
+            }),
+        ]));
+        expect(analysis.performance?.streamTiming).toMatchObject({
+            plannedFrames: 100,
+            completedFrames: 82,
+            droppedFrames: 18,
+        });
+        expect(monitor.artifact).toMatchObject({ status: 'invalid-json' });
+        expect(snapshots.distributedRun.manifest.group).toMatchObject({
+            groupId: 'hetzner-headless-room',
+        });
+    });
+
+    it('uses failed control POST artifacts as failure evidence', () => {
+        const files: DistributedRunArtifactFiles = {
+            'distributed-run.json': '',
+            'runner-summary.json': JSON.stringify({
+                distributedRunId: 'dist-post-failure',
+                controlRunId: 'run-post-failure',
+                state: 'failed',
+                ok: false,
+            }),
+            'manifest.json': JSON.stringify({
+                schemaVersion: 1,
+                distributedRunId: 'dist-post-failure',
+                controlRunId: 'run-post-failure',
+                group: {
+                    applicationId: 'rallar-server',
+                    workspaceId: 'default',
+                    groupId: 'hetzner-headless-room',
+                },
+                recipes: [],
+            }),
+            'control-run.json': JSON.stringify({
+                runId: 'run-post-failure',
+                agents: [],
+                commands: [],
+                results: [],
+                events: [],
+                stats: [],
+                reports: [],
+                heartbeats: [],
+            }),
+            'control-post-create-error.json': JSON.stringify({
+                error: 'bad manifest',
+                message: 'target policy rejected',
+            }),
+            'control-post-error-metadata.json': JSON.stringify({
+                phase: 'create',
+                method: 'POST',
+                path: '/distributed-runs',
+                httpStatus: '400',
+                curlStatus: 0,
+                exitStatus: 22,
+                responseFile: 'control-post-create-error.json',
+            }),
+        };
+
+        const analysis = analyzeDistributedRunArtifactFiles({ files });
+        const bundle = distributedArtifactBundleFromFiles(files, 123);
+
+        expect(analysis.failure).toMatchObject({
+            category: 'control-api',
+            title: 'Control API create request failed.',
+            likelyCause: 'target policy rejected',
+            evidenceFile: 'control-post-create-error.json',
+        });
+        expect(analysis.failure?.nextAction).toContain('POST /distributed-runs returned HTTP 400');
+        expect(analysis.fixProposalMarkdown).toContain('Evidence: control-post-create-error.json');
+        expect(bundle?.files).toMatchObject({
+            'control-post-create-error.json': JSON.stringify({
+                error: 'bad manifest',
+                message: 'target policy rejected',
+            }),
+            'control-post-error-metadata.json': expect.any(String),
+        });
+    });
+
+    it('uses control POST metadata as failure evidence when no response body was saved', () => {
+        const files: DistributedRunArtifactFiles = {
+            'distributed-run.json': '',
+            'runner-summary.json': JSON.stringify({
+                distributedRunId: 'dist-post-network-failure',
+                controlRunId: 'run-post-network-failure',
+                state: 'failed',
+                ok: false,
+            }),
+            'manifest.json': JSON.stringify({
+                schemaVersion: 1,
+                distributedRunId: 'dist-post-network-failure',
+                controlRunId: 'run-post-network-failure',
+                group: {
+                    applicationId: 'rallar-server',
+                    workspaceId: 'default',
+                    groupId: 'hetzner-headless-room',
+                },
+                recipes: [],
+            }),
+            'control-run.json': JSON.stringify({
+                runId: 'run-post-network-failure',
+                agents: [],
+                commands: [],
+                results: [],
+                events: [],
+                stats: [],
+                reports: [],
+                heartbeats: [],
+            }),
+            'control-post-error-metadata.json': JSON.stringify({
+                phase: 'start',
+                method: 'POST',
+                path: '/distributed-runs/dist-post-network-failure/start',
+                httpStatus: null,
+                curlStatus: 7,
+                exitStatus: 7,
+                responseFile: null,
+            }),
+        };
+
+        const analysis = analyzeDistributedRunArtifactFiles({ files });
+
+        expect(analysis.failure).toMatchObject({
+            category: 'control-api',
+            title: 'Control API start request failed.',
+            evidenceFile: 'control-post-error-metadata.json',
+        });
+        expect(analysis.failure?.likelyCause).toContain('curl 7');
+        expect(analysis.failure?.likelyCause).toContain('exit 7');
+        expect(analysis.failure?.nextAction).toContain('POST /distributed-runs/dist-post-network-failure/start');
+        expect(analysis.fixProposalMarkdown).toContain('Evidence: control-post-error-metadata.json');
+    });
+
     it('creates a fix proposal from failed fleet signatures and command evidence', () => {
         const analysis = analyzeDistributedRunArtifactFiles({
             files: {

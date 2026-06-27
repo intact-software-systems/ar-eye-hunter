@@ -142,11 +142,27 @@ export type DistributedRunArtifactSnapshots = Readonly<{
     artifactBundle?: ControlDistributedRunArtifactBundle;
 }>;
 
+type ControlPostFailureArtifact = Readonly<{
+    phase?: string;
+    path?: string;
+    httpStatus?: string;
+    curlStatus?: number;
+    exitStatus?: number;
+    responseFile: string;
+    body: Record<string, unknown>;
+}>;
+
 const TERMINAL_FAILURE_STATES = new Set(['failed', 'timed-out', 'cancelled']);
 
 const DISTRIBUTED_ARTIFACT_FILE_NAMES = new Set([
     'distributed-run.json',
     'manifest.json',
+    'runner-summary.json',
+    'control-post-create-error.json',
+    'control-post-stage-error.json',
+    'control-post-start-error.json',
+    'control-post-request-error.json',
+    'control-post-error-metadata.json',
     'control-run.json',
     'fleet-report.json',
     'report.json',
@@ -164,6 +180,13 @@ const DISTRIBUTED_ARTIFACT_V2_REQUIRED_FILE_NAMES = [
     'metadata.json',
 ] as const;
 
+const CONTROL_POST_ERROR_FILE_NAMES = [
+    'control-post-create-error.json',
+    'control-post-stage-error.json',
+    'control-post-start-error.json',
+    'control-post-request-error.json',
+] as const;
+
 export function analyzeDistributedRunArtifactFiles(
     input: DistributedRunAnalysisInput,
 ): DistributedRunAnalysis {
@@ -173,6 +196,7 @@ export function analyzeDistributedRunArtifactFiles(
         controlRunRecord,
         fleetReport,
         failureBundle,
+        controlPostFailure,
         results,
         events,
     } = parseDistributedRunArtifactFiles(input.files);
@@ -198,7 +222,15 @@ export function analyzeDistributedRunArtifactFiles(
     const performance = derivePerformance(distributedRun, controlRun, fleetReport, events);
     const failure = ok
         ? undefined
-        : deriveFailure({ distributedRun, fleetReport, failureBundle, results, events, spaReport: spa?.report });
+        : deriveFailure({
+            distributedRun,
+            fleetReport,
+            failureBundle,
+            controlPostFailure,
+            results,
+            events,
+            spaReport: spa?.report,
+        });
     const summary = {
         agents: numberValue(readPath(fleetReport, ['summary', 'agents'])) ?? performance.agentCount,
         passRate: numberValue(readPath(fleetReport, ['summary', 'passRate'])) ?? performance.passRate,
@@ -321,14 +353,66 @@ function deriveSpaAnalysis(
     }
 }
 
+function controlPostFailureAnalysis(
+    failure: ControlPostFailureArtifact,
+): DistributedRunFailureAnalysis {
+    const message = controlPostFailureMessage(failure);
+    const phase = failure.phase ?? 'request';
+    const path = failure.path ?? 'unknown path';
+    const status = failure.httpStatus ? ` HTTP ${failure.httpStatus}` : '';
+    const minimalFix = minimalFixArea({
+        category: 'control-api',
+        text: `${phase} ${path} ${message}`,
+    });
+    return {
+        category: 'control-api',
+        title: `Control API ${phase} request failed.`,
+        likelyCause: message,
+        nextAction: `Inspect ${failure.responseFile}; POST ${path} returned${status || ' a failure'} before the distributed run could continue.`,
+        minimalFixArea: minimalFix,
+        verificationCommand: verificationCommand(minimalFix),
+        affectedAgents: [],
+        affectedRegions: [],
+        evidenceFile: failure.responseFile,
+    };
+}
+
+function controlPostFailureMessage(failure: ControlPostFailureArtifact): string {
+    if (Object.keys(failure.body).length === 0) {
+        const details = [
+            failure.httpStatus ? `HTTP ${failure.httpStatus}` : undefined,
+            failure.curlStatus !== undefined ? `curl ${failure.curlStatus}` : undefined,
+            failure.exitStatus !== undefined ? `exit ${failure.exitStatus}` : undefined,
+        ].filter((value): value is string => value !== undefined);
+        return details.length > 0
+            ? `Control API request failed without a response body (${details.join(', ')}).`
+            : 'Control API request failed without a response body.';
+    }
+
+    const error = asRecord(failure.body.error);
+    return firstString(
+        failure.body.message,
+        error.message,
+        failure.body.error,
+        failure.body.detail,
+        failure.body.title,
+        'Control API request failed.',
+    ) ?? 'Control API request failed.';
+}
+
 function deriveFailure(input: Readonly<{
     distributedRun: ControlDistributedRunSnapshot;
     fleetReport: Record<string, unknown>;
     failureBundle: Record<string, unknown>;
+    controlPostFailure?: ControlPostFailureArtifact;
     results: readonly Record<string, unknown>[];
     events: readonly Record<string, unknown>[];
     spaReport?: DistributedRunAnalysisReport;
 }>): DistributedRunFailureAnalysis {
+    if (input.controlPostFailure) {
+        return controlPostFailureAnalysis(input.controlPostFailure);
+    }
+
     const fleetSignature = arrayRecords(input.fleetReport.failureSignatures)[0];
     if (fleetSignature) {
         const failedResult = firstFailedResult(input.results);
@@ -671,6 +755,9 @@ type ParsedDistributedRunArtifactFiles = Readonly<{
     controlRunRecord: Record<string, unknown>;
     fleetReport: Record<string, unknown>;
     failureBundle: Record<string, unknown>;
+    runnerSummary: Record<string, unknown>;
+    manifestRecord: Record<string, unknown>;
+    controlPostFailure?: ControlPostFailureArtifact;
     results: readonly Record<string, unknown>[];
     events: readonly Record<string, unknown>[];
 }>;
@@ -679,17 +766,23 @@ function parseDistributedRunArtifactFiles(
     files: DistributedRunArtifactFiles,
 ): ParsedDistributedRunArtifactFiles {
     const parseWarnings: DistributedRunArtifactParseWarning[] = [];
+    const runnerSummary = parseJsonRecord(files['runner-summary.json'], 'runner-summary.json', parseWarnings);
+    const manifestRecord = parseJsonRecord(files['manifest.json'], 'manifest.json', parseWarnings);
+    const controlPostFailure = parseControlPostFailure(files, parseWarnings);
     return {
         parseWarnings,
-        distributedRunRecord: parseJsonRecord(
+        distributedRunRecord: parseDistributedRunRecord(
             files['distributed-run.json'],
-            'distributed-run.json',
+            runnerSummary,
+            manifestRecord,
             parseWarnings,
-            true,
         ),
         controlRunRecord: parseJsonRecord(files['control-run.json'], 'control-run.json', parseWarnings),
         fleetReport: parseJsonRecord(files['fleet-report.json'], 'fleet-report.json', parseWarnings),
         failureBundle: parseJsonRecord(files['failures.json'], 'failures.json', parseWarnings),
+        runnerSummary,
+        manifestRecord,
+        controlPostFailure,
         results: parseJsonl(files['results.jsonl'], 'results.jsonl', parseWarnings),
         events: parseJsonl(files['events.jsonl'], 'events.jsonl', parseWarnings),
     };
@@ -1221,6 +1314,132 @@ function outlierCount(
         return 0;
     }
     return values.filter(value => value >= p95Ms && value > p50Ms).length;
+}
+
+function parseControlPostFailure(
+    files: DistributedRunArtifactFiles,
+    warnings: DistributedRunArtifactParseWarning[],
+): ControlPostFailureArtifact | undefined {
+    const metadata = parseJsonRecord(
+        files['control-post-error-metadata.json'],
+        'control-post-error-metadata.json',
+        warnings,
+    );
+    const metadataResponseFile = firstString(metadata.responseFile);
+    const responseFile = metadataResponseFile && files[metadataResponseFile] !== undefined
+        ? metadataResponseFile
+        : CONTROL_POST_ERROR_FILE_NAMES.find(fileName => files[fileName] !== undefined);
+    const hasMetadataFailure = Object.keys(metadata).length > 0;
+    if (!responseFile && !hasMetadataFailure) {
+        return undefined;
+    }
+
+    return {
+        phase: firstString(metadata.phase) ?? (responseFile ? controlPostPhaseFromFileName(responseFile) : undefined),
+        path: firstString(metadata.path),
+        httpStatus: firstString(metadata.httpStatus),
+        curlStatus: numberValue(metadata.curlStatus),
+        exitStatus: numberValue(metadata.exitStatus),
+        responseFile: responseFile ?? 'control-post-error-metadata.json',
+        body: responseFile ? parseJsonRecord(files[responseFile], responseFile, warnings) : {},
+    };
+}
+
+function controlPostPhaseFromFileName(fileName: string): string | undefined {
+    const match = fileName.match(/^control-post-(.+)-error\.json$/);
+    return match?.[1];
+}
+
+function parseDistributedRunRecord(
+    text: string | undefined,
+    runnerSummary: Record<string, unknown>,
+    manifestRecord: Record<string, unknown>,
+    warnings: DistributedRunArtifactParseWarning[],
+): Record<string, unknown> {
+    if (!text || text.trim().length === 0) {
+        const fallback = distributedRunRecordFromFallback(runnerSummary, manifestRecord);
+        if (fallback) {
+            warnings.push({
+                fileName: 'distributed-run.json',
+                message: 'distributed-run.json is missing or empty; using runner-summary.json and manifest.json fallback.',
+            });
+            return fallback;
+        }
+        throw new Error('distributed-run.json is required.');
+    }
+
+    try {
+        return asRecord(JSON.parse(text));
+    } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        const fallback = distributedRunRecordFromFallback(runnerSummary, manifestRecord);
+        if (fallback) {
+            warnings.push({
+                fileName: 'distributed-run.json',
+                message: `distributed-run.json is not valid JSON: ${detail}; using runner-summary.json and manifest.json fallback.`,
+            });
+            return fallback;
+        }
+        throw new Error(`distributed-run.json is not valid JSON: ${detail}`);
+    }
+}
+
+function distributedRunRecordFromFallback(
+    runnerSummary: Record<string, unknown>,
+    manifestRecord: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+    if (Object.keys(runnerSummary).length === 0 && Object.keys(manifestRecord).length === 0) {
+        return undefined;
+    }
+
+    const distributedRunId = firstString(
+        runnerSummary.distributedRunId,
+        manifestRecord.distributedRunId,
+        'unknown-distributed-run',
+    ) ?? 'unknown-distributed-run';
+    const controlRunId = firstString(
+        runnerSummary.controlRunId,
+        manifestRecord.controlRunId,
+        distributedRunId,
+    ) ?? distributedRunId;
+    const state = firstString(runnerSummary.state, 'unknown') ?? 'unknown';
+    const ok = booleanValue(runnerSummary.ok) ?? state === 'passed';
+    const blockingFailures = ok ? 0 : 1;
+
+    return {
+        distributedRunId,
+        controlRunId,
+        state,
+        createdAtEpochMs: numberValue(runnerSummary.createdAtEpochMs) ??
+            numberValue(runnerSummary.startedAtEpochMs) ??
+            0,
+        startedAtEpochMs: numberValue(runnerSummary.startedAtEpochMs),
+        completedAtEpochMs: numberValue(runnerSummary.completedAtEpochMs),
+        updatedAtEpochMs: numberValue(runnerSummary.completedAtEpochMs) ??
+            numberValue(runnerSummary.startedAtEpochMs) ??
+            0,
+        targetAgentIds: stringArray(runnerSummary.targetAgentIds),
+        commandLinks: arrayRecords(runnerSummary.commandLinks),
+        manifest: {
+            ...manifestRecord,
+            schemaVersion: numberValue(manifestRecord.schemaVersion) ?? 1,
+            distributedRunId: firstString(manifestRecord.distributedRunId, distributedRunId) ?? distributedRunId,
+            controlRunId: firstString(manifestRecord.controlRunId, controlRunId) ?? controlRunId,
+            group: asRecord(manifestRecord.group),
+            recipes: arrayRecords(manifestRecord.recipes),
+            targetPolicy: asRecord(manifestRecord.targetPolicy),
+            roleAssignments: arrayRecords(manifestRecord.roleAssignments),
+        },
+        rollup: {
+            state,
+            ok,
+            summary: {
+                blockingFailures,
+                ...asRecord(runnerSummary.summary),
+            },
+            failures: arrayRecords(runnerSummary.failures),
+        },
+    };
 }
 
 function parseJsonRecord(

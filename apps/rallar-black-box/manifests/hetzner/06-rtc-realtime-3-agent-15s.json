@@ -130,6 +130,7 @@
             "drainTimeoutMs": 5000,
             "progressEveryMs": 1000,
             "sampleEvery": 1,
+            "continueOnSendFailure": true,
             "thresholds": {
               "minSendSuccessRatio": 0.99,
               "maxDroppedFrames": 60

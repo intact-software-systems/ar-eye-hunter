@@ -71,9 +71,9 @@ on:
         type: number
         default: 300
       stop_after_run:
-        description: Stop the headless worker service after the run
+        description: Stop the headless worker service after artifacts and analysis are collected
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: read
@@ -305,6 +305,7 @@ jobs:
             export RALLAR_INSTALL_PLAYWRIGHT
           fi
 
+          ./10-stop-headless-workers.sh || true
           RALLAR_WRITE_HEADLESS_ENV=1 ./09-start-headless-workers.sh
           ./14-run-distributed-recipe.sh
           REMOTE

@@ -31,6 +31,7 @@ export type RallarBlackBoxRtcRealtimeRecipeOptions = Readonly<{
         progressEveryMs?: number;
         sampleEvery?: number;
         maxDroppedFrames?: number;
+        continueOnSendFailure?: boolean;
     }>;
 }>;
 
@@ -351,6 +352,8 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
     const group = options.group ?? defaultRallarBlackBoxGroup();
     const roomRef = groupRoomRef(group);
     const executionMode = options.executionMode ?? 'loop';
+    const continueOnStreamSendFailure = options.stream?.continueOnSendFailure ??
+        ((options.stream?.maxDroppedFrames ?? 0) > 0 ? true : undefined);
     const sendCommand: RallarBlackBoxTestCommand = {
         kind: 'rtc.send',
         commandId: 'rtc-realtime-position',
@@ -410,6 +413,9 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
         drainTimeoutMs: options.stream?.drainTimeoutMs ?? 5_000,
         progressEveryMs: options.stream?.progressEveryMs ?? 1_000,
         sampleEvery: options.stream?.sampleEvery ?? 1,
+        ...(continueOnStreamSendFailure === undefined
+            ? {}
+            : { continueOnSendFailure: continueOnStreamSendFailure }),
         thresholds: {
             minSendSuccessRatio: 0.99,
             maxDroppedFrames: options.stream?.maxDroppedFrames ?? 0,

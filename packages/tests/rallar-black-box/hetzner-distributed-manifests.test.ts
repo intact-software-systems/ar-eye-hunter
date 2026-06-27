@@ -205,6 +205,7 @@ describe('Hetzner distributed manifest catalog', () => {
             expect(stream, entry.filePath).toMatchObject({
                 kind: 'rtc.stream',
                 commandId: 'rtc-realtime-position-stream',
+                continueOnSendFailure: true,
                 count: expectedStreams.get(entry.filePath)?.frameCount,
                 intervalMs: 50,
                 thresholds: {

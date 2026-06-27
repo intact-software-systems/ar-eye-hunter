@@ -74,6 +74,29 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(workflow).toContain('exit 0');
     });
 
+    it('stops headless browsers by default after distributed artifacts and analysis are uploaded', async () => {
+        const workflow = await readFile(
+            path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
+            'utf8',
+        );
+
+        expect(workflow).toMatch(/stop_after_run:[\s\S]*?default: true/);
+        expect(workflow).toMatch(
+            /name: Upload distributed analysis[\s\S]*name: Stop headless browsers[\s\S]*if: always\(\) && inputs\.stop_after_run/,
+        );
+    });
+
+    it('stops existing headless browsers before starting fresh workers for every distributed recipe run', async () => {
+        const workflow = await readFile(
+            path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
+            'utf8',
+        );
+
+        expect(workflow).toMatch(
+            /if bool_enabled "\$\{RALLAR_ROLLOUT_BEFORE_RUN:-0\}"; then[\s\S]*\.\/08-rollout-controller\.sh[\s\S]*fi[\s\S]*\.\/10-stop-headless-workers\.sh \|\| true[\s\S]*RALLAR_WRITE_HEADLESS_ENV=1 \.\/09-start-headless-workers\.sh/,
+        );
+    });
+
     it('uses a TLS control URL for distributed-run admin API calls', async () => {
         const workflow = await readFile(
             path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
@@ -233,6 +256,22 @@ describe('Hetzner distributed recipe workflow', () => {
             );
             expect(script).not.toContain('deno cache --config "${RALLAR_CHECKOUT_DIR}');
         }
+    });
+
+    it('persists control-server snapshots with an atomic temp-file rename', async () => {
+        const source = await readFile(
+            path.join(repoRoot, 'apps/rallar-black-box-control-server/src/main.ts'),
+            'utf8',
+        );
+
+        expect(source).toContain('snapshotPersistenceBounds: ControlRunSnapshotBounds');
+        expect(source).toContain("RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_EVENTS");
+        expect(source).toContain('controlService.snapshot(security.snapshotPersistenceBounds)');
+        expect(source).toContain('let snapshotPersistSequence = 0');
+        expect(source).toContain('const tempPath = `${path}.tmp-${Deno.pid}-${Date.now()}-${snapshotPersistSequence += 1}`');
+        expect(source).toContain('Deno.writeTextFile(tempPath, payload)');
+        expect(source).toContain('Deno.rename(tempPath, path)');
+        expect(source).not.toContain('Deno.writeTextFile(path, payload)');
     });
 
     it('installs latest Deno but enforces 2.9.0 as the minimum Hetzner runtime version', async () => {
@@ -591,6 +630,97 @@ describe('Hetzner distributed recipe workflow', () => {
         await expect(readFile(outputFile, 'utf8')).resolves.toBe('{"error":"bad manifest"}');
     });
 
+    it('preserves the last valid distributed-run artifact when a later control GET fails', async () => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-control-get-preserve-'));
+        const artifactDir = path.join(tmp, 'artifacts');
+        await mkdir(artifactDir, { recursive: true });
+        await writeFile(path.join(artifactDir, 'distributed-run.json'), JSON.stringify({
+            distributedRunId: 'dist-preserve',
+            controlRunId: 'run-preserve',
+            state: 'running',
+        }));
+
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/controller/14-run-distributed-recipe.sh');
+        const { stderr, stdout } = await execFileAsync('bash', [scriptPath], {
+            env: {
+                ...process.env,
+                RALLAR_DISTRIBUTED_ARTIFACT_DIR: artifactDir,
+                RALLAR_DISTRIBUTED_SCRIPT_SELF_TEST: 'get-preserve',
+            },
+        });
+
+        expect(stderr).toContain('Keeping existing distributed-run.json after failed GET /distributed-runs/dist-preserve');
+        expect(stdout).toContain('preservedState=running');
+        await expect(readFile(path.join(artifactDir, 'distributed-run.json'), 'utf8'))
+            .resolves.toContain('"state":"running"');
+    });
+
+    it('preserves failed control POST response bodies as analyzable artifacts', async () => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-control-post-json-evidence-'));
+        const fakeCurl = path.join(tmp, 'curl');
+        const artifactDir = path.join(tmp, 'artifacts');
+        await mkdir(artifactDir, { recursive: true });
+        await writeFile(fakeCurl, [
+            '#!/usr/bin/env bash',
+            'output=""',
+            'while [[ $# -gt 0 ]]; do',
+            '  case "$1" in',
+            '    -o)',
+            '      output="$2"',
+            '      shift 2',
+            '      ;;',
+            '    -w)',
+            '      shift 2',
+            '      ;;',
+            '    *)',
+            '      shift',
+            '      ;;',
+            '  esac',
+            'done',
+            'printf \'{"error":"bad manifest","message":"target policy rejected"}\' > "${output}"',
+            'printf "400"',
+            '',
+        ].join('\n'));
+        await chmod(fakeCurl, 0o755);
+
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/controller/14-run-distributed-recipe.sh');
+        const { stderr, stdout } = await execFileAsync('bash', [scriptPath], {
+            env: {
+                ...process.env,
+                PATH: `${tmp}${path.delimiter}${process.env.PATH ?? ''}`,
+                RALLAR_DISTRIBUTED_ARTIFACT_DIR: artifactDir,
+                RALLAR_DISTRIBUTED_SCRIPT_SELF_TEST: 'post-json-evidence',
+            },
+        });
+
+        expect(stderr).toContain('Saved failed POST /distributed-runs response body to');
+        expect(stdout).toContain('postErrorBody={"error":"bad manifest","message":"target policy rejected"}');
+        expect(stdout).toContain('postErrorPhase=create');
+        await expect(readFile(path.join(artifactDir, 'control-post-create-error.json'), 'utf8'))
+            .resolves.toBe('{"error":"bad manifest","message":"target policy rejected"}');
+        await expect(readFile(path.join(artifactDir, 'control-post-error-metadata.json'), 'utf8'))
+            .resolves.toContain('"responseFile": "control-post-create-error.json"');
+        await expect(readFile(path.join(artifactDir, 'distributed-run.json'), 'utf8'))
+            .rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('writes distributed-run POST snapshots through temp files before replacing evidence', async () => {
+        const script = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/14-run-distributed-recipe.sh'),
+            'utf8',
+        );
+
+        expect(script).toContain('control_post_json_to_file()');
+        expect(script).toMatch(/control_post_json_to_file\s+\\\s+"\/distributed-runs"/);
+        expect(script).toMatch(/control_post_json_to_file\s+\\\s+"\/distributed-runs\/\$\{distributed_run_path_id\}\/stage"/);
+        expect(script).toMatch(/control_post_json_to_file\s+\\\s+"\/distributed-runs\/\$\{distributed_run_path_id\}\/start"/);
+        expect(script).toContain('control_post_error_file_name()');
+        expect(script).toContain('control-post-error-metadata.json');
+        expect(script).not.toContain('control_post "/distributed-runs" "${create_body}" >"${run_artifact_dir}/distributed-run.json"');
+        expect(script).not.toContain('control_post "/distributed-runs/${distributed_run_path_id}/stage" "{}" >"${run_artifact_dir}/distributed-run.json"');
+        expect(script).not.toContain('control_post "/distributed-runs/${distributed_run_path_id}/start" "{}" >"${run_artifact_dir}/distributed-run.json"');
+    });
+
     it('dispatches a checked-in manifest with derived GitHub Action inputs', async () => {
         const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-dispatch-gh-'));
         const fakeGh = path.join(tmp, 'gh');
@@ -659,6 +789,8 @@ describe('Hetzner distributed recipe workflow', () => {
             '-f',
             'terminal_timeout_seconds=300',
             '-f',
+            'stop_after_run=true',
+            '-f',
             'ref=feature/distributed-review-fix',
             '-f',
             'run_id=manual-smoke-run',
@@ -710,9 +842,11 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(args).toContain('ready_timeout_seconds=60');
         expect(args).toContain('terminal_timeout_seconds=180');
         expect(args).toContain('register_before_login=true');
+        expect(args).toContain('stop_after_run=true');
         expect(args).toContain('run_id=fast-health');
         expect(stdout).toContain('Mode     : fast');
         expect(stdout).toContain('Register : true');
+        expect(stdout).toContain('Stop headless: true');
     });
 
     it('dispatches custom fast-iteration workflow inputs exactly', async () => {
@@ -748,6 +882,8 @@ describe('Hetzner distributed recipe workflow', () => {
             '45',
             '--terminal-timeout-seconds',
             '90',
+            '--stop-after-run',
+            'false',
             '--run-id',
             'custom-inputs',
         ], {
@@ -767,8 +903,48 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(args).toContain('register_before_login=false');
         expect(args).toContain('ready_timeout_seconds=45');
         expect(args).toContain('terminal_timeout_seconds=90');
+        expect(args).toContain('stop_after_run=false');
         expect(stdout).toContain('Mode     : custom');
         expect(stdout).toContain('Register : false');
+        expect(stdout).toContain('Stop headless: false');
+    });
+
+    it('supports keep-headless as an explicit debug opt-out from cleanup', async () => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-dispatch-keep-headless-gh-'));
+        const fakeGh = path.join(tmp, 'gh');
+        const argsFile = path.join(tmp, 'gh-args.txt');
+        await writeFile(fakeGh, [
+            '#!/usr/bin/env bash',
+            'if [[ "$1 $2" == "secret list" ]]; then',
+            '  printf "%s\\t%s\\n" HETZNER_HOST 2026-06-25T00:00:00Z HETZNER_USER 2026-06-25T00:00:00Z HETZNER_SSH_PRIVATE_KEY 2026-06-25T00:00:00Z HETZNER_KNOWN_HOSTS 2026-06-25T00:00:00Z RALLAR_BLACK_BOX_USERNAME 2026-06-25T00:00:00Z RALLAR_BLACK_BOX_PASSWORD 2026-06-25T00:00:00Z',
+            '  exit 0',
+            'fi',
+            'printf "%s\\n" "$@" > "${FAKE_GH_ARGS_FILE}"',
+            '',
+        ].join('\n'));
+        await chmod(fakeGh, 0o755);
+
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        const { stdout } = await execFileAsync('bash', [
+            scriptPath,
+            'apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json',
+            '--fast',
+            '--keep-headless',
+            '--run-id',
+            'debug-keep-headless',
+        ], {
+            cwd: repoRoot,
+            env: {
+                ...process.env,
+                FAKE_GH_ARGS_FILE: argsFile,
+                PATH: `${tmp}${path.delimiter}${process.env.PATH ?? ''}`,
+            },
+        });
+
+        const args = (await readFile(argsFile, 'utf8')).trim().split('\n');
+        expect(args).toContain('stop_after_run=false');
+        expect(args).toContain('run_id=debug-keep-headless');
+        expect(stdout).toContain('Stop headless: false');
     });
 
     it('rejects invalid timeout inputs before invoking gh', async () => {
@@ -828,6 +1004,37 @@ describe('Hetzner distributed recipe workflow', () => {
             },
         })).rejects.toMatchObject({
             stderr: expect.stringContaining('register_before_login must be a boolean'),
+        });
+
+        await expect(readFile(argsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('rejects invalid stop-after-run inputs before invoking gh', async () => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-dispatch-invalid-stop-gh-'));
+        const fakeGh = path.join(tmp, 'gh');
+        const argsFile = path.join(tmp, 'gh-args.txt');
+        await writeFile(fakeGh, [
+            '#!/usr/bin/env bash',
+            'printf "%s\\n" "$@" > "${FAKE_GH_ARGS_FILE}"',
+            '',
+        ].join('\n'));
+        await chmod(fakeGh, 0o755);
+
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        await expect(execFileAsync('bash', [
+            scriptPath,
+            'apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json',
+            '--stop-after-run',
+            'maybe',
+        ], {
+            cwd: repoRoot,
+            env: {
+                ...process.env,
+                FAKE_GH_ARGS_FILE: argsFile,
+                PATH: `${tmp}${path.delimiter}${process.env.PATH ?? ''}`,
+            },
+        })).rejects.toMatchObject({
+            stderr: expect.stringContaining('stop_after_run must be a boolean'),
         });
 
         await expect(readFile(argsFile, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });

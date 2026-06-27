@@ -10,6 +10,7 @@ WAIT_FOR_AGENTS="true"
 READY_TIMEOUT_SECONDS="120"
 TERMINAL_TIMEOUT_SECONDS="300"
 REGISTER_BEFORE_LOGIN="true"
+STOP_AFTER_RUN="true"
 FAST_MODE="0"
 ALLOW_DIAGNOSTIC="0"
 RUN_ID=""
@@ -39,7 +40,9 @@ Options:
   --ready-timeout-seconds <n>    Pass ready_timeout_seconds. Default: 120.
   --terminal-timeout-seconds <n> Pass terminal_timeout_seconds. Default: 300.
   --register-before-login <bool> Pass register_before_login. Default: true.
+  --stop-after-run <bool>        Pass stop_after_run. Default: true.
   --fast                         Skip rollout, Playwright install, and npm ci with shorter timeouts.
+  --keep-headless                Keep browsers running after artifacts and analysis for debugging.
   --allow-diagnostic            Allow manifests marked as diagnostic.
   -h, --help                    Show this help.
 USAGE
@@ -158,6 +161,11 @@ while [[ $# -gt 0 ]]; do
       REGISTER_BEFORE_LOGIN="$2"
       shift 2
       ;;
+    --stop-after-run)
+      [[ $# -ge 2 ]] || fail "--stop-after-run requires a value."
+      STOP_AFTER_RUN="$2"
+      shift 2
+      ;;
     --ready-timeout-seconds)
       [[ $# -ge 2 ]] || fail "--ready-timeout-seconds requires a value."
       READY_TIMEOUT_SECONDS="$2"
@@ -176,6 +184,10 @@ while [[ $# -gt 0 ]]; do
       WAIT_FOR_AGENTS="true"
       READY_TIMEOUT_SECONDS="60"
       TERMINAL_TIMEOUT_SECONDS="180"
+      shift
+      ;;
+    --keep-headless)
+      STOP_AFTER_RUN="false"
       shift
       ;;
     --allow-diagnostic)
@@ -204,6 +216,7 @@ INSTALL_PLAYWRIGHT="$(normalize_bool install_playwright "${INSTALL_PLAYWRIGHT}")
 NPM_CI="$(normalize_bool npm_ci "${NPM_CI}")"
 WAIT_FOR_AGENTS="$(normalize_bool wait_for_agents "${WAIT_FOR_AGENTS}")"
 REGISTER_BEFORE_LOGIN="$(normalize_bool register_before_login "${REGISTER_BEFORE_LOGIN}")"
+STOP_AFTER_RUN="$(normalize_bool stop_after_run "${STOP_AFTER_RUN}")"
 validate_positive_integer ready_timeout_seconds "${READY_TIMEOUT_SECONDS}"
 validate_positive_integer terminal_timeout_seconds "${TERMINAL_TIMEOUT_SECONDS}"
 
@@ -278,6 +291,7 @@ echo "Run ID   : ${safe_run_id}"
 echo "Agents   : ${agent_count}"
 echo "Room     : ${room_id}"
 echo "Register : ${REGISTER_BEFORE_LOGIN}"
+echo "Stop headless: ${STOP_AFTER_RUN}"
 
 gh workflow run "${WORKFLOW_NAME}" \
   --ref "${REF}" \
@@ -293,6 +307,7 @@ gh workflow run "${WORKFLOW_NAME}" \
   -f "wait_for_agents=${WAIT_FOR_AGENTS}" \
   -f "ready_timeout_seconds=${READY_TIMEOUT_SECONDS}" \
   -f "terminal_timeout_seconds=${TERMINAL_TIMEOUT_SECONDS}" \
+  -f "stop_after_run=${STOP_AFTER_RUN}" \
   -f "ref=${REF}" \
   -f "run_id=${safe_run_id}"
 

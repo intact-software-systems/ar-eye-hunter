@@ -433,6 +433,8 @@ RALLAR_BLACK_BOX_HTTP_ALLOWED_HOSTS=api.rallar.intactss.com
 RALLAR_BLACK_BOX_WS_ALLOWED_HOSTS=api.rallar.intactss.com,control.rallar.intactss.com
 RALLAR_BLACK_BOX_STORAGE_DIR=/var/lib/rallar-black-box-control
 RALLAR_BLACK_BOX_RETENTION_MAX_RUNS=100
+RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_EVENTS=1000
+RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_RESULTS=500
 ```
 
 Store secrets in root-owned files with mode `0600`, such as

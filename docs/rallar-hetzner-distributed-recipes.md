@@ -28,7 +28,7 @@ install_playwright: true
 wait_for_agents: true
 ready_timeout_seconds: 120
 terminal_timeout_seconds: 300
-stop_after_run: false
+stop_after_run: true
 ```
 
 ## Checked-In Manifests
@@ -124,8 +124,11 @@ environment secrets and refuses diagnostic manifests unless `--allow-diagnostic`
 is supplied. The `--fast` flag maps to `rollout_before_run=false`,
 `install_playwright=false`, `npm_ci=false`, `wait_for_agents=true`,
 `ready_timeout_seconds=60`, and `terminal_timeout_seconds=180`. The helper also
-defaults `register_before_login=true`. Passing only `rollout_before_run=false`
-does not skip Playwright unless `install_playwright=false` is also supplied.
+defaults `register_before_login=true` and `stop_after_run=true`. Passing only
+`rollout_before_run=false` does not skip Playwright unless
+`install_playwright=false` is also supplied. Pass `--keep-headless` only when
+you intentionally want to leave browser processes running after artifact capture
+for live debugging or back-to-back warm experiments.
 The distributed recipe runner uses `https://control.rallar.intactss.com` for
 control-server admin API calls because distributed-run creation requires TLS.
 
@@ -141,6 +144,7 @@ gh workflow run hetzner-distributed-recipe.yml \
   -f workspace_id=default \
   -f register_before_login=true \
   -f ref=main \
+  -f stop_after_run=true \
   -f rollout_before_run=true
 ```
 
@@ -161,7 +165,8 @@ gh workflow run hetzner-distributed-recipe.yml \
   -f npm_ci=false \
   -f wait_for_agents=true \
   -f ready_timeout_seconds=60 \
-  -f terminal_timeout_seconds=180
+  -f terminal_timeout_seconds=180 \
+  -f stop_after_run=true
 ```
 
 Longer term, rollout can become faster by recording VM stamp files for deployed

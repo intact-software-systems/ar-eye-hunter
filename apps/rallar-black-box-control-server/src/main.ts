@@ -61,6 +61,7 @@ type SecurityOptions = Readonly<{
   wsAllowedOrigins: readonly string[];
   storageDir?: string;
   retentionMaxRuns: number;
+  snapshotPersistenceBounds: ControlRunSnapshotBounds;
 }>;
 
 assertBlackBoxControlProductionEnv(Deno.env);
@@ -74,6 +75,7 @@ const controlService = createRallarBlackBoxControlService({
 });
 const agentSockets = new Map<string, WebSocket>();
 const socketAgents = new WeakMap<WebSocket, { runId: string; agentId: string }>();
+let snapshotPersistSequence = 0;
 
 const port = Number(Deno.env.get('PORT') ?? DEFAULT_PORT);
 const corsOrigins = corsOriginsFromAllowedOrigins(security.allowedOrigins);
@@ -720,6 +722,14 @@ function resolveSecurityOptions(): SecurityOptions {
     wsAllowedOrigins: envList('RALLAR_BLACK_BOX_WS_ALLOWED_ORIGINS'),
     storageDir: envString('RALLAR_BLACK_BOX_STORAGE_DIR'),
     retentionMaxRuns: envNumber('RALLAR_BLACK_BOX_RETENTION_MAX_RUNS', 0),
+    snapshotPersistenceBounds: {
+      commands: envSnapshotLimit('RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_COMMANDS', 500),
+      results: envSnapshotLimit('RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_RESULTS', 500),
+      events: envSnapshotLimit('RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_EVENTS', 1_000),
+      stats: envSnapshotLimit('RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_STATS', 200),
+      reports: envSnapshotLimit('RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_REPORTS', 100),
+      heartbeats: envSnapshotLimit('RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_HEARTBEATS', 100),
+    },
   };
 }
 
@@ -746,6 +756,19 @@ function envBoolean(key: string): boolean {
     normalized === 'true' ||
     normalized === 'yes' ||
     normalized === 'on';
+}
+
+function envSnapshotLimit(key: string, fallback: number): number | undefined {
+  const normalized = (Deno.env.get(key) ?? '').trim().toLowerCase();
+  if (!normalized) {
+    return fallback;
+  }
+  if (normalized === 'all' || normalized === 'unbounded' || normalized === 'none') {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(normalized, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 function rejectByRequestPolicy(request: Request, url: URL): Response | undefined {
@@ -1046,8 +1069,9 @@ function persistControlSnapshot(): void {
   if (!path) {
     return;
   }
+  const tempPath = `${path}.tmp-${Deno.pid}-${Date.now()}-${snapshotPersistSequence += 1}`;
 
-  const snapshot = controlService.snapshot();
+  const snapshot = controlService.snapshot(security.snapshotPersistenceBounds);
   const payload = JSON.stringify(
     {
       schemaVersion: 1,
@@ -1058,8 +1082,12 @@ function persistControlSnapshot(): void {
     2,
   );
   void Deno.mkdir(security.storageDir!, { recursive: true })
-    .then(() => Deno.writeTextFile(path, payload))
+    .then(async () => {
+      await Deno.writeTextFile(tempPath, payload);
+      await Deno.rename(tempPath, path);
+    })
     .catch((error) => {
+      Deno.remove(tempPath).catch(() => undefined);
       console.warn(`Could not persist control snapshot to ${path}: ${errorMessage(error)}`);
     });
 }

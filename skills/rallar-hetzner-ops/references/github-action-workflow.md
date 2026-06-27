@@ -78,7 +78,10 @@ manifests unless `--allow-diagnostic` is supplied. `--fast` sets
 `wait_for_agents=true`, `ready_timeout_seconds=60`, and
 `terminal_timeout_seconds=180`; it also sends `register_before_login=true` by
 default. Passing `rollout_before_run=false` by itself does not skip Playwright;
-also pass `install_playwright=false` or use `--fast`.
+also pass `install_playwright=false` or use `--fast`. The helper and workflow
+default to `stop_after_run=true`, so browser processes are cleaned up after
+artifact capture and analysis. Pass `--keep-headless` only for live debugging or
+intentional warm back-to-back experiments.
 The workflow renders `RALLAR_CONTROL_HTTP_URL=https://control.rallar.intactss.com`
 into the remote env so distributed-run admin calls satisfy the control server's
 TLS requirement.
@@ -100,7 +103,7 @@ TLS requirement.
   users; the helper defaults this to `true`, while manual workflow dispatch
   defaults to `false`.
 - `stop_after_run`: stop the headless worker service after artifacts are
-  collected.
+  collected. Default: `true`.
 
 Manual fast-iteration dispatch:
 
@@ -119,7 +122,8 @@ gh workflow run hetzner-distributed-recipe.yml \
   -f npm_ci=false \
   -f wait_for_agents=true \
   -f ready_timeout_seconds=60 \
-  -f terminal_timeout_seconds=180
+  -f terminal_timeout_seconds=180 \
+  -f stop_after_run=true
 ```
 
 Longer term, optimize rollout with VM stamp files for deployed git SHA,

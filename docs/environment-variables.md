@@ -323,6 +323,12 @@ variables in the shell or through the parent script/process.
 | `RALLAR_BLACK_BOX_WS_ALLOWED_ORIGINS`           | No       | No destination origin restriction | Comma-separated origin allow-list for browser `ws.open` commands.                                                                                |
 | `RALLAR_BLACK_BOX_STORAGE_DIR`                  | No       | None                              | Directory for persisted `control-snapshot.json`. If unset, control runs are in-memory only.                                                      |
 | `RALLAR_BLACK_BOX_RETENTION_MAX_RUNS`           | No       | `0`                               | Max retained runs for persistence/cleanup. `0` means no retention cap.                                                                           |
+| `RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_COMMANDS`    | No       | `500`                             | Max recent command snapshots persisted per run. Use `all`, `unbounded`, or `none` for no cap.                                                    |
+| `RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_RESULTS`     | No       | `500`                             | Max recent result snapshots persisted per run. Use `all`, `unbounded`, or `none` for no cap.                                                     |
+| `RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_EVENTS`      | No       | `1000`                            | Max recent event snapshots persisted per run. Keeps high-volume RTC runs from forcing huge snapshot writes. Use `all`, `unbounded`, or `none` for no cap. |
+| `RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_STATS`       | No       | `200`                             | Max recent stats snapshots persisted per run. Use `all`, `unbounded`, or `none` for no cap.                                                      |
+| `RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_REPORTS`     | No       | `100`                             | Max recent report snapshots persisted per run. Use `all`, `unbounded`, or `none` for no cap.                                                     |
+| `RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_HEARTBEATS`  | No       | `100`                             | Max recent heartbeat snapshots persisted per run. Use `all`, `unbounded`, or `none` for no cap.                                                  |
 
 Wildcard CORS, unset admin/operator auth, optional run tokens, optional read
 tokens, in-memory storage, and unbounded retention are local-only defaults.
