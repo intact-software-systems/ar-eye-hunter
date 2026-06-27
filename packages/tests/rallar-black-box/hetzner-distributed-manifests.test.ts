@@ -175,8 +175,14 @@ describe('Hetzner distributed manifest catalog', () => {
 
     it('uses rtc.stream for high-rate realtime Hetzner manifests', () => {
         const expectedStreams = new Map([
-            ['apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json', 100],
-            ['apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json', 300],
+            ['apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json', {
+                frameCount: 100,
+                maxDroppedFrames: 20,
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json', {
+                frameCount: 300,
+                maxDroppedFrames: 60,
+            }],
         ]);
 
         for (const entry of buildHetznerDistributedManifestCatalog().filter(candidate => !candidate.diagnostic)) {
@@ -199,8 +205,12 @@ describe('Hetzner distributed manifest catalog', () => {
             expect(stream, entry.filePath).toMatchObject({
                 kind: 'rtc.stream',
                 commandId: 'rtc-realtime-position-stream',
-                count: expectedStreams.get(entry.filePath),
+                count: expectedStreams.get(entry.filePath)?.frameCount,
                 intervalMs: 50,
+                thresholds: {
+                    minSendSuccessRatio: 0.99,
+                    maxDroppedFrames: expectedStreams.get(entry.filePath)?.maxDroppedFrames,
+                },
             });
             expect(highRateLoop, entry.filePath).toBeUndefined();
         }

@@ -480,6 +480,110 @@ describe('Hetzner distributed run artifact analysis', () => {
         expect(analysis.performanceMarkdown).toContain('p99=50ms');
     });
 
+    it('keeps failed rtc.stream result summaries available for performance analysis', () => {
+        const analysis = analyzeDistributedRunArtifactFiles({
+            files: {
+                'distributed-run.json': JSON.stringify({
+                    distributedRunId: 'dist-stream-failed',
+                    controlRunId: 'run-stream-failed',
+                    state: 'failed',
+                    startedAtEpochMs: 1_000,
+                    completedAtEpochMs: 8_000,
+                    rollup: {
+                        ok: false,
+                        failures: [
+                            {
+                                kind: 'participant',
+                                key: 'controller-01',
+                                error: {
+                                    code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED',
+                                    message: 'RTC stream did not satisfy configured thresholds.',
+                                },
+                            },
+                        ],
+                        summary: { blockingFailures: 1 },
+                    },
+                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
+                    targetAgentIds: ['controller-01'],
+                }),
+                'control-run.json': JSON.stringify({
+                    runId: 'run-stream-failed',
+                    agents: [{ agentId: 'controller-01', connected: true, reconnectCount: 1, receivedEventCount: 20 }],
+                    commands: [],
+                    results: [],
+                    events: [],
+                    stats: [],
+                    reports: [],
+                    heartbeats: [],
+                }),
+                'results.jsonl': [
+                    JSON.stringify({
+                        agentId: 'controller-01',
+                        commandId: 'rtc-realtime-position-stream',
+                        action: 'rtc.stream',
+                        status: 'FAILURE',
+                        ok: false,
+                        actual: {
+                            code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED',
+                            message: 'RTC stream did not satisfy configured thresholds.',
+                            value: {
+                                commandId: 'rtc-realtime-position-stream',
+                                transport: 'realtime',
+                                plannedFrames: 100,
+                                scheduledFrames: 100,
+                                attemptedFrames: 88,
+                                completedFrames: 88,
+                                failedFrames: 0,
+                                droppedFrames: 12,
+                                backpressureCount: 0,
+                                requestedRateHz: 20,
+                                achievedScheduleHz: 20,
+                                achievedCompletionHz: 17.6,
+                                duration: { minMs: 4, p50Ms: 8, p95Ms: 15, p99Ms: 18, maxMs: 18, averageMs: 9 },
+                                observations: [
+                                    { index: 0, iteration: 1, durationMs: 4, ok: true },
+                                    { index: 1, iteration: 2, durationMs: 8, ok: true },
+                                    { index: 2, iteration: 3, durationMs: 18, ok: true },
+                                    { index: 3, iteration: 4, durationMs: 0, ok: false, dropped: true },
+                                ],
+                                thresholdFailures: [
+                                    {
+                                        name: 'maxDroppedFrames',
+                                        category: 'delivery',
+                                        threshold: 0,
+                                        actual: 12,
+                                    },
+                                ],
+                            },
+                        },
+                    }),
+                ].join('\n'),
+                'events.jsonl': '',
+            },
+        });
+
+        expect(analysis.performance?.streamTiming).toMatchObject({
+            streamCount: 1,
+            plannedFrames: 100,
+            scheduledFrames: 100,
+            attemptedFrames: 88,
+            completedFrames: 88,
+            failedFrames: 0,
+            droppedFrames: 12,
+            sendSuccessRatio: 1,
+            duration: {
+                count: 3,
+                minMs: 4,
+                p50Ms: 8,
+                p95Ms: 18,
+                p99Ms: 18,
+                maxMs: 18,
+            },
+        });
+        expect(analysis.performanceMarkdown).toContain('Stream timing: streams=1, frames=88/100');
+        expect(analysis.performanceMarkdown).toContain('dropped=12');
+    });
+
     it('uses the latest stream event when result JSONL is bounded', () => {
         const analysis = analyzeDistributedRunArtifactFiles({
             files: {

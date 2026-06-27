@@ -223,7 +223,7 @@ export function analyzeDistributedRunArtifactFiles(
     };
     const summaryMarkdown = renderSummaryMarkdown(base);
     const fixProposalMarkdown = failure ? renderFixProposalMarkdown(base) : undefined;
-    const performanceMarkdown = ok ? renderPerformanceMarkdown(base) : undefined;
+    const performanceMarkdown = performance ? renderPerformanceMarkdown(base) : undefined;
 
     return {
         ...base,
@@ -818,7 +818,10 @@ function streamSamplesFromControlRunAndEvents(
 
 function streamSampleFromResult(result: Record<string, unknown>): StreamTimingSample | undefined {
     const action = firstString(result.action, result.kind, readPath(result, ['result', 'kind']));
-    const summary = streamSummaryRecord(result.result) ?? streamSummaryRecord(result.value);
+    const summary = streamSummaryRecord(result.result) ??
+        streamSummaryRecord(result.value) ??
+        streamSummaryRecord(result.actual) ??
+        streamSummaryRecord(result.error);
     if (!summary && action !== 'rtc.stream') {
         return undefined;
     }
@@ -1018,6 +1021,7 @@ function streamSummaryRecord(value: unknown): Record<string, unknown> | undefine
     const record = asRecord(value);
     const candidates = [
         asRecord(record.value),
+        asRecord(asRecord(record.details)?.value),
         asRecord(record.payload),
         asRecord(record.data),
         record,
@@ -1408,18 +1412,20 @@ function commandIdFromResult(result: Record<string, unknown> | undefined): strin
 
 function normalizeResultPayload(result: Record<string, unknown>): Record<string, unknown> {
     const nested = asRecord(result.result);
+    const streamSummary = streamSummaryRecord(result.actual) ?? streamSummaryRecord(result.error);
+    const payload = Object.keys(nested).length > 0 ? nested : streamSummary ?? nested;
     return {
-        ...nested,
-        ...(numberValue(nested.durationMs) === undefined && numberValue(result.durationMs) !== undefined
+        ...payload,
+        ...(numberValue(payload.durationMs) === undefined && numberValue(result.durationMs) !== undefined
             ? { durationMs: numberValue(result.durationMs) }
             : {}),
-        ...(numberValue(nested.startedAtEpochMs) === undefined && numberValue(result.startedAtEpochMs) !== undefined
+        ...(numberValue(payload.startedAtEpochMs) === undefined && numberValue(result.startedAtEpochMs) !== undefined
             ? { startedAtEpochMs: numberValue(result.startedAtEpochMs) }
             : {}),
-        ...(numberValue(nested.endedAtEpochMs) === undefined && numberValue(result.endedAtEpochMs) !== undefined
+        ...(numberValue(payload.endedAtEpochMs) === undefined && numberValue(result.endedAtEpochMs) !== undefined
             ? { endedAtEpochMs: numberValue(result.endedAtEpochMs) }
             : {}),
-        ...(firstString(nested.commandId) === undefined && commandIdFromResult(result)
+        ...(firstString(payload.commandId) === undefined && commandIdFromResult(result)
             ? { commandId: commandIdFromResult(result) }
             : {}),
     };

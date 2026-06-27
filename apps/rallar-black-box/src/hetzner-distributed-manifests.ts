@@ -116,6 +116,9 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
                 readyPeerCount: 1,
                 readyTimeoutMs: 10_000,
                 executionMode: 'stream',
+                stream: {
+                    maxDroppedFrames: 20,
+                },
             }),
             agentCount: 2,
             profiles: ['rtc', 'realtime', 'baseline'],
@@ -132,6 +135,9 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
                 readyPeerCount: 2,
                 readyTimeoutMs: 10_000,
                 executionMode: 'stream',
+                stream: {
+                    maxDroppedFrames: 60,
+                },
             }),
             agentCount: 3,
             profiles: ['rtc', 'realtime', 'load'],

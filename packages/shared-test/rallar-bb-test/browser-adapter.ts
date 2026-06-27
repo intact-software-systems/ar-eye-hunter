@@ -2094,6 +2094,7 @@ class BrowserCommandAdapter {
                 message: message ?? 'RTC stream threshold failed.',
                 details: {
                     thresholdFailures: value.thresholdFailures,
+                    value,
                 },
             }
             : sendFailed
@@ -2103,6 +2104,7 @@ class BrowserCommandAdapter {
                     details: {
                         failedFrames: value.failedFrames,
                         droppedFrames: value.droppedFrames,
+                        value,
                     },
                 }
                 : undefined;

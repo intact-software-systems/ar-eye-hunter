@@ -2146,6 +2146,13 @@ describe('rallar-bb-test', () => {
         expect(result.ok).toBe(false);
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED');
         expect(value.droppedFrames).toBeGreaterThan(0);
+        expect(result.error?.details).toMatchObject({
+            value: {
+                commandId: 'stream-saturated',
+                plannedFrames: 5,
+                droppedFrames: value.droppedFrames,
+            },
+        });
         expect(value.thresholdFailures.map(failure => failure.name)).toContain('maxDroppedFrames');
         expect(diagnostic?.payload).toMatchObject({
             diagnosticTypeId: 'rallar.bb.rtc.stream_failed',

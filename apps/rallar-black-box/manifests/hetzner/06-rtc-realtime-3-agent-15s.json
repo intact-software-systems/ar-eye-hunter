@@ -132,7 +132,7 @@
             "sampleEvery": 1,
             "thresholds": {
               "minSendSuccessRatio": 0.99,
-              "maxDroppedFrames": 0
+              "maxDroppedFrames": 60
             },
             "metadata": {
               "realtime": {
