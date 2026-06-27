@@ -2705,6 +2705,148 @@ h3 {
     font-weight: 800;
 }
 
+.control-agent-board-panel {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    margin: 0 14px 12px;
+    padding: 12px;
+    border: 1px solid #cfdad7;
+    border-radius: 6px;
+    background: #fbfcfb;
+}
+
+.control-agent-board-panel.compact {
+    margin: 0;
+}
+
+.control-agent-board-panel .section-heading {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.control-agent-board-panel .section-heading div {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+.control-agent-board-panel .section-heading p {
+    margin: 0;
+    color: #65746d;
+    font-size: 0.8rem;
+    font-weight: 800;
+}
+
+.control-agent-board-summary {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.control-agent-board-list {
+    display: grid;
+    gap: 8px;
+}
+
+.control-agent-board-row {
+    display: grid;
+    grid-template-columns: minmax(260px, 1.2fr) minmax(220px, 0.8fr) minmax(220px, 0.8fr);
+    gap: 10px;
+    align-items: start;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid #d8e1dc;
+    border-left: 4px solid #8ca49a;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.control-agent-board-row.selectable {
+    grid-template-columns: 22px minmax(260px, 1.2fr) minmax(220px, 0.8fr) minmax(220px, 0.8fr);
+}
+
+.control-agent-board-row.selected {
+    border-left-color: #0c6f7b;
+    background: #f3fbfb;
+}
+
+.control-agent-board-row.synthetic {
+    border-left-color: #96610d;
+    background: #fffaf0;
+}
+
+.control-agent-board-row input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin-top: 2px;
+    accent-color: #0c6f7b;
+}
+
+.control-agent-board-main,
+.control-agent-board-counters,
+.control-agent-board-runs,
+.control-agent-run-chip {
+    display: grid;
+    min-width: 0;
+    gap: 5px;
+}
+
+.control-agent-board-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.control-agent-board-title strong,
+.control-agent-board-main small,
+.control-agent-board-counters span,
+.control-agent-run-chip strong,
+.control-agent-run-chip small {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.control-agent-board-title strong {
+    color: #22322b;
+    font-size: 0.92rem;
+}
+
+.control-agent-board-main small,
+.control-agent-board-counters span,
+.control-agent-run-chip small {
+    color: #65746d;
+    font-size: 0.76rem;
+    font-weight: 800;
+    line-height: 1.25;
+}
+
+.control-agent-board-counters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.control-agent-run-chip {
+    padding: 8px;
+    border: 1px solid #d8e1dc;
+    border-radius: 6px;
+    background: #f7faf8;
+}
+
+.control-agent-run-chip strong {
+    color: #22322b;
+    font-size: 0.82rem;
+}
+
+.control-agent-run-progress {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
 .runner-recipes-toolbar {
     display: grid;
     grid-template-columns: minmax(260px, 1.4fr) minmax(150px, 0.55fr) minmax(150px, 0.55fr) minmax(220px, 0.9fr) minmax(150px, 0.55fr);
@@ -3465,6 +3607,51 @@ h3 {
 
 .fleet-filter-row {
     grid-template-columns: repeat(5, minmax(140px, 1fr));
+}
+
+.fleet-live-panel {
+    display: grid;
+    gap: 10px;
+    margin: 0 14px 12px;
+    padding: 12px;
+    border: 1px solid #c8d8e0;
+    border-left: 4px solid #0c6f7b;
+    border-radius: 6px;
+    background: #f4fafb;
+}
+
+.fleet-live-panel .section-heading,
+.fleet-live-toolbar {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.fleet-live-panel .section-heading div {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+.fleet-live-panel .section-heading p {
+    margin: 0;
+    color: #5d7074;
+    font-size: 0.8rem;
+    font-weight: 800;
+}
+
+.fleet-live-toolbar {
+    align-items: end;
+}
+
+.fleet-live-toolbar .field {
+    min-width: min(360px, 100%);
+}
+
+.fleet-live-panel .control-agent-board-panel {
+    margin: 0;
+    background: #ffffff;
 }
 
 .fleet-summary-grid {
@@ -6000,6 +6187,7 @@ dd {
     .run-manager-artifact-actions,
     .run-manager-artifact-summary,
     .runner-readiness-grid,
+    .control-agent-board-summary,
     .runner-recipes-toolbar,
     .runner-recipes-summary-grid,
     .runner-recipes-layout,
@@ -6016,6 +6204,7 @@ dd {
     .rtc-performance-grid,
     .fleet-toolbar,
     .fleet-filter-row,
+    .fleet-live-toolbar,
     .fleet-summary-grid,
     .fleet-layout,
     .fleet-timing-grid,
@@ -6540,6 +6729,9 @@ dd {
     .runner-recipes-toolbar,
     .runner-agent-grid,
     .runner-agent-meta,
+    .control-agent-board-row,
+    .control-agent-board-row.selectable,
+    .control-agent-board-counters,
     .runner-recipes-layout,
     .runner-runs-layout,
     .run-verdict-main,
@@ -6554,6 +6746,7 @@ dd {
     .rtc-performance-grid,
     .fleet-toolbar,
     .fleet-filter-row,
+    .fleet-live-toolbar,
     .fleet-layout,
     .fleet-timing-grid,
     .fleet-export-row,
@@ -6566,6 +6759,7 @@ dd {
     }
 
     .runner-readiness-grid,
+    .control-agent-board-summary,
     .runner-recipes-summary-grid,
     .runner-result-grid,
     .runner-runs-summary-grid,

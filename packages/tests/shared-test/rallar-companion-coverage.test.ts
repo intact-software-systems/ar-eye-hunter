@@ -31,6 +31,7 @@ describe('Rallar companion coverage boundaries', () => {
             'assert',
             'rtc.connect',
             'rtc.send',
+            "rtc.stream",
             'ws.open',
             'ws.send',
             'ws.close',

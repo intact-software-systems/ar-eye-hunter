@@ -132,7 +132,7 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: true,
         requiresControl: true,
         requiresMedia: false,
-        evidence: ['readiness panel', 'recipe card', 'local run action', 'distributed disabled reason'],
+        evidence: ['readiness panel', 'targetable agents', 'recipe card', 'distributed disabled reason'],
     },
     {
         id: 'runner-runs-results-monitor',
@@ -143,7 +143,7 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: true,
         requiresControl: true,
         requiresMedia: false,
-        evidence: ['run metrics', 'recent command', 'failure focus', 'report panel'],
+        evidence: ['run metrics', 'run participants', 'recent command', 'report panel'],
     },
     {
         id: 'runner-fleet-regional-reporting',
@@ -154,7 +154,7 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: true,
         requiresControl: true,
         requiresMedia: false,
-        evidence: ['agent heatmap', 'region summary', 'failure signatures', 'fleet export'],
+        evidence: ['live fleet', 'agent heatmap', 'region summary', 'fleet export'],
     },
     {
         id: 'runner-builder-primary-flow',

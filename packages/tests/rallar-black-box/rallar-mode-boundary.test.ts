@@ -141,20 +141,28 @@ describe('rallar-black-box Rallar mode boundary', () => {
         const styles = styleSource();
         const recipesPanel = sourceBetween(source, 'function RunnerRecipesPanel', 'function RunnerRunsPanel');
         const runsPanel = sourceBetween(source, 'function RunnerRunsPanel', 'function RunnerFleetPanel');
+        const fleetPanel = sourceBetween(source, 'function RunnerFleetPanel', 'function FleetTimingGroupList');
         const rtcDiagnosticsPanel = sourceBetween(source, 'function RtcDiagnosticsPanel', 'function TopologyGraphPanel');
 
         expect(runsPanel).toContain('RunVerdictPanel');
         expect(runsPanel).toContain('CausalTrailPanel');
         expect(runsPanel).toContain('RtcPerformancePanel');
+        expect(runsPanel).toContain('title="Run Participants"');
+        expect(runsPanel).toContain('monitorAgentProgress: selectedMonitor?.agentProgress');
         expect(runsPanel).toContain('distributedRunSeed');
         expect(runsPanel).toContain('DISTRIBUTED_RUN_SEEDS');
         expect(runsPanel).toContain('Synthetic seed');
         expect(runsPanel).toContain('Synthetic evidence');
         expect(runsPanel).toContain('Clear seed');
+        expect(fleetPanel).toContain('Live Fleet');
+        expect(fleetPanel).toContain('title="Live Fleet Agents"');
+        expect(fleetPanel).toContain('fetchControlServerSnapshot');
         expect(recipesPanel).toContain('resolveBlackBoxControlToken');
         expect(recipesPanel).toContain('brokeredControlToken');
         expect(recipesPanel).toContain('Session control token valid until');
         expect(recipesPanel).toContain('Session control token will be requested when needed.');
+        expect(recipesPanel).toContain('title="Targetable Agents"');
+        expect(recipesPanel).toContain('showConnectedAgents={false}');
         expect(recipesPanel).toContain('const distributedControlToken');
         expect(recipesPanel).toContain('token: distributedControlToken');
         expect(recipesPanel).toContain('controlToken,');
@@ -167,6 +175,12 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(recipesPanel.indexOf('runner-quick-launch-strip')).toBeLessThan(
             recipesPanel.indexOf('RunnerReadinessPanel'),
         );
+        expect(recipesPanel.indexOf('RunnerReadinessPanel')).toBeLessThan(
+            recipesPanel.indexOf('title="Targetable Agents"'),
+        );
+        expect(recipesPanel.indexOf('title="Targetable Agents"')).toBeLessThan(
+            recipesPanel.indexOf('RunnerAgentSetupPanel'),
+        );
         expect(rtcDiagnosticsPanel).toContain('RtcPerformancePanel');
         expect(rtcDiagnosticsPanel.indexOf('RtcPerformancePanel')).toBeLessThan(
             rtcDiagnosticsPanel.indexOf('RtcDiagnosticsTimeseriesPanel'),
@@ -178,6 +192,9 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(styles).toContain('.causal-trail-panel');
         expect(styles).toContain('.rtc-performance-panel');
         expect(styles).toContain('.runner-evidence-first');
+        expect(styles).toContain('.control-agent-board-panel');
+        expect(styles).toContain('.control-agent-board-row');
+        expect(styles).toContain('.fleet-live-panel');
         expect(styles).toContain('.app-shell.mode-black-box-runner .app-mode-switch');
         expect(styles).toContain('.app-shell.mode-black-box-runner .app-mode-copy p');
         expect(styles).toContain('.causal-trail-actions');

@@ -85,6 +85,9 @@ test.describe('exhaustive control server and distributed recipes', () => {
         { timeout: 30_000 },
       );
       await expect(recipes).toContainText(runId, { timeout: 30_000 });
+      await expect(recipes).toContainText(/Targetable Agents|targetable/i, {
+        timeout: 30_000,
+      });
       const guidedDistributedButton = recipes
         .getByRole('button', { name: 'Run on connected agents' })
         .first();
@@ -97,6 +100,15 @@ test.describe('exhaustive control server and distributed recipes', () => {
       await expect(recipes).toContainText(/Distributed run|Targets|Blocking failures/i, {
         timeout: 30_000,
       });
+
+      await openTab(agents[0].page, 'fleet', 'black-box-runner');
+      const fleet = agents[0].page.locator('#panel-fleet');
+      await expect(fleet).toContainText(/Live Fleet|Live Fleet Agents/i, {
+        timeout: 30_000,
+      });
+      await expect(fleet).toContainText(agentAId, { timeout: 30_000 });
+      await expect(fleet).toContainText(/targetable|active runs|no active run|running|passed/i);
+      await expect(fleet).toContainText(/Agent x Run Heatmap|No terminal distributed run reports/i);
 
       await openTab(agents[0].page, 'run-manager', 'black-box-runner');
       await runManager.getByRole('button', { name: 'Load Artifact' }).click();
@@ -118,6 +130,13 @@ test.describe('exhaustive control server and distributed recipes', () => {
         timeout: 90_000,
       });
       await expect(distributed).toContainText(/Composite Drilldowns|Runtime Diagnostics|Historical Runs/i);
+      await openTab(agents[0].page, 'runs', 'black-box-runner');
+      const runs = agents[0].page.locator('#panel-runs');
+      await expect(runs).toContainText(/Run Participants|Distributed Analysis/i, {
+        timeout: 30_000,
+      });
+      await expect(runs).toContainText(agentAId, { timeout: 30_000 });
+      await openTab(agents[0].page, 'distributed-recipes', 'black-box-runner');
       await distributed.getByRole('button', { name: 'Export artifact' }).click();
       await expect(distributed).toContainText(/Artifact|Files|schema/i, { timeout: 60_000 });
       await distributed.getByRole('button', { name: 'Copy artifact' }).click();

@@ -109,6 +109,13 @@ import {
     type ControlServerSnapshot,
 } from './control-run-manager.ts';
 import {
+    deriveControlAgentBoardRows,
+    summarizeControlAgentBoardRows,
+    type ControlAgentBoardRow,
+    type ControlAgentBoardSummary,
+    type ControlAgentRunParticipation,
+} from './control-agent-board.ts';
+import {
     resolveBlackBoxControlToken,
     type BlackBoxControlTokenSession,
 } from './control-operator-token.ts';
@@ -211,7 +218,6 @@ import {
     type DistributedRecipePreflightSummary,
     type DistributedRecipeRolePattern,
     type DistributedRecipeTargetPolicyMode,
-    type DistributedRecipeTargetRow,
 } from './distributed-recipes.ts';
 import {
     analyzeDistributedRunArtifactFiles,
@@ -6138,6 +6144,7 @@ function RunnerAgentSetupPanel({
     connectedAgents,
     launchUrls,
     launchMessage,
+    showConnectedAgents = true,
     onRunIdChange,
     onAgentPrefixChange,
     onAgentCountChange,
@@ -6156,6 +6163,7 @@ function RunnerAgentSetupPanel({
     connectedAgents: ControlRunSnapshot['agents'];
     launchUrls: readonly string[];
     launchMessage?: string;
+    showConnectedAgents?: boolean;
     onRunIdChange(value: string): void;
     onAgentPrefixChange(value: string): void;
     onAgentCountChange(value: number): void;
@@ -6288,7 +6296,7 @@ function RunnerAgentSetupPanel({
                     </dd>
                 </div>
             </dl>
-            {activeAgents.length > 0 ? (
+            {showConnectedAgents && activeAgents.length > 0 ? (
                 <div className="runner-agent-list" aria-label="Connected agents">
                     {activeAgents.map((agent) => (
                         <article
@@ -6311,12 +6319,12 @@ function RunnerAgentSetupPanel({
                         </article>
                     ))}
                 </div>
-            ) : (
+            ) : showConnectedAgents ? (
                 <div className="empty-state">
                     Open an agent tab, sign in there if asked, then Refresh.
                 </div>
-            )}
-            {connectedAgents.length > activeAgents.length && (
+            ) : undefined}
+            {showConnectedAgents && connectedAgents.length > activeAgents.length && (
                 <small className="runner-agent-offline-note">
                     {connectedAgents.length - activeAgents.length} offline agent{connectedAgents.length - activeAgents.length === 1 ? '' : 's'} hidden
                 </small>
@@ -6328,6 +6336,312 @@ function RunnerAgentSetupPanel({
             )}
         </section>
     );
+}
+
+function ControlAgentBoardPanel({
+    title,
+    subtitle,
+    rows,
+    summary,
+    emptyMessage,
+    selectedAgentIds,
+    onToggleAgent,
+    disableUntargetableSelection = false,
+    compact = false,
+}: {
+    title: string;
+    subtitle?: string;
+    rows: readonly ControlAgentBoardRow[];
+    summary: ControlAgentBoardSummary;
+    emptyMessage: string;
+    selectedAgentIds?: ReadonlySet<string>;
+    onToggleAgent?(agentId: string): void;
+    disableUntargetableSelection?: boolean;
+    compact?: boolean;
+}) {
+    return (
+        <section
+            className={`control-agent-board-panel ${compact ? 'compact' : ''}`}
+            aria-label={title}
+        >
+            <div className="section-heading">
+                <div>
+                    <h3>{title}</h3>
+                    {subtitle && <p>{subtitle}</p>}
+                </div>
+                <span
+                    className={`pill ${summary.targetable > 0 ? 'good' : summary.connected > 0 ? 'warn' : 'muted'}`}
+                >
+                    {summary.targetable}/{summary.connected} targetable
+                </span>
+            </div>
+            <div className="control-agent-board-summary">
+                <Metric label="Agents" value={String(summary.total)} />
+                <Metric
+                    label="Connected"
+                    value={String(summary.connected)}
+                    tone={summary.connected > 0 ? 'good' : 'muted'}
+                />
+                <Metric
+                    label="Targetable"
+                    value={String(summary.targetable)}
+                    tone={summary.targetable > 0 ? 'good' : 'bad'}
+                />
+                <Metric
+                    label="Active runs"
+                    value={String(summary.active)}
+                    tone={summary.active > 0 ? 'active' : 'muted'}
+                />
+                <Metric
+                    label="Blocked"
+                    value={String(
+                        summary.stale +
+                            summary.offline +
+                            summary.wrongGroup +
+                            summary.missingIdentity +
+                            summary.missingCapability,
+                    )}
+                    tone={
+                        summary.stale +
+                                summary.offline +
+                                summary.wrongGroup +
+                                summary.missingIdentity +
+                                summary.missingCapability >
+                            0
+                            ? 'warn'
+                            : 'good'
+                    }
+                />
+            </div>
+            <div className="control-agent-board-list">
+                {rows.map((row) => {
+                    const selected = selectedAgentIds?.has(row.agentId) ?? false;
+                    const selectionDisabled =
+                        disableUntargetableSelection && !row.targetable;
+                    return (
+                        <ControlAgentBoardRowView
+                            key={row.agentId}
+                            row={row}
+                            selected={selected}
+                            selectionDisabled={selectionDisabled}
+                            onToggleAgent={onToggleAgent}
+                        />
+                    );
+                })}
+                {rows.length === 0 && (
+                    <div className="empty-state">{emptyMessage}</div>
+                )}
+            </div>
+        </section>
+    );
+}
+
+function ControlAgentBoardRowView({
+    row,
+    selected,
+    selectionDisabled,
+    onToggleAgent,
+}: {
+    row: ControlAgentBoardRow;
+    selected: boolean;
+    selectionDisabled: boolean;
+    onToggleAgent?(agentId: string): void;
+}) {
+    const identity =
+        row.identitySummary ??
+        row.principalId ??
+        row.username ??
+        row.sessionId ??
+        'no identity';
+    const scope =
+        `${row.applicationId ?? '-'}/${row.workspaceId ?? '-'} group ${row.groupId ?? '-'}`;
+    const browser = [
+        row.browserLabel ?? row.browserName,
+        row.browserVersion,
+        row.os,
+    ].filter(Boolean).join(' ');
+    const location = [
+        row.region,
+        row.provider,
+        row.datacenter,
+        row.hostId,
+    ].filter(Boolean).join(' / ');
+    const visibleRuns = controlAgentVisibleParticipations(row);
+
+    return (
+        <article
+            className={`control-agent-board-row ${onToggleAgent ? 'selectable' : ''} ${selected ? 'selected' : ''} ${row.synthetic ? 'synthetic' : ''}`}
+        >
+            {onToggleAgent && (
+                <input
+                    type="checkbox"
+                    checked={selected}
+                    disabled={selectionDisabled}
+                    onChange={() => onToggleAgent(row.agentId)}
+                    aria-label={`Select control agent ${row.agentId}`}
+                />
+            )}
+            <div className="control-agent-board-main">
+                <div className="control-agent-board-title">
+                    <strong>{row.agentId}</strong>
+                    <span
+                        className={`pill ${controlAgentConnectionTone(row)}`}
+                    >
+                        {row.synthetic
+                            ? 'missing'
+                            : row.connected
+                              ? 'connected'
+                              : 'offline'}
+                    </span>
+                    <span
+                        className={`pill ${controlAgentTargetTone(row)}`}
+                    >
+                        {row.targetStatus}
+                    </span>
+                </div>
+                <small>{identity}</small>
+                <small>{scope}</small>
+                {(browser || location) && (
+                    <small>
+                        {[browser, location].filter(Boolean).join(' - ')}
+                    </small>
+                )}
+                {row.crdtSupported !== undefined && (
+                    <small>
+                        CRDT {row.crdtSupported ? 'available' : 'unavailable'}
+                        {row.crdtTransports.length > 0
+                            ? ` - ${row.crdtTransports.join(', ')}`
+                            : ''}
+                    </small>
+                )}
+                <small>{row.targetReason}</small>
+            </div>
+            <div className="control-agent-board-counters">
+                <span>
+                    heartbeat{' '}
+                    {row.heartbeatAgeMs !== undefined
+                        ? formatDuration(row.heartbeatAgeMs)
+                        : formatTime(row.lastHeartbeatAtEpochMs)}
+                </span>
+                <span>{row.reconnectCount} reconnects</span>
+                <span>{row.queuedCommandCount} queued</span>
+                <span>{row.completedCommandCount} done</span>
+                <span>{row.receivedResultCount} results</span>
+                <span>{row.receivedEventCount} events</span>
+            </div>
+            <div className="control-agent-board-runs">
+                {visibleRuns.map((participation) => (
+                    <ControlAgentRunParticipationChip
+                        key={`${row.agentId}-${participation.distributedRunId}-${participation.selected ? 'selected' : 'active'}`}
+                        participation={participation}
+                    />
+                ))}
+                {visibleRuns.length === 0 && (
+                    <span className="pill muted">no active run</span>
+                )}
+            </div>
+        </article>
+    );
+}
+
+function ControlAgentRunParticipationChip({
+    participation,
+}: {
+    participation: ControlAgentRunParticipation;
+}) {
+    return (
+        <div className="control-agent-run-chip">
+            <span
+                className={`pill ${distributedRecipeStateTone(participation.state)}`}
+            >
+                {participation.selected ? 'selected' : 'active'}{' '}
+                {participation.state}
+            </span>
+            <strong>{shortRunId(participation.distributedRunId)}</strong>
+            <small>
+                {[
+                    participation.role,
+                    participation.commandPhases.join('+') || undefined,
+                    `${participation.commandCount} commands`,
+                ].filter(Boolean).join(' - ')}
+            </small>
+            {(participation.readiness ||
+                participation.barrier ||
+                participation.execution) && (
+                <div className="control-agent-run-progress">
+                    {participation.readiness && (
+                        <span
+                            className={`pill ${distributedProgressTone(participation.readiness)}`}
+                        >
+                            ack {participation.readiness}
+                        </span>
+                    )}
+                    {participation.barrier && (
+                        <span
+                            className={`pill ${distributedProgressTone(participation.barrier)}`}
+                        >
+                            barrier {participation.barrier}
+                        </span>
+                    )}
+                    {participation.execution && (
+                        <span
+                            className={`pill ${distributedProgressTone(participation.execution)}`}
+                        >
+                            run {participation.execution}
+                        </span>
+                    )}
+                </div>
+            )}
+            <small>
+                {participation.completedCommandCount ?? 0} completed -{' '}
+                {participation.eventCount ?? 0} events
+                {participation.blockingFailures > 0
+                    ? ` - ${participation.blockingFailures} blocking`
+                    : ''}
+            </small>
+        </div>
+    );
+}
+
+function controlAgentVisibleParticipations(
+    row: ControlAgentBoardRow,
+): readonly ControlAgentRunParticipation[] {
+    const selected = row.selectedRun ? [row.selectedRun] : [];
+    const selectedId = row.selectedRun?.distributedRunId;
+    return [
+        ...selected,
+        ...row.activeRuns.filter((run) => run.distributedRunId !== selectedId),
+    ].slice(0, 3);
+}
+
+function controlAgentConnectionTone(row: ControlAgentBoardRow): string {
+    if (row.synthetic) {
+        return 'muted';
+    }
+    if (row.targetStatus === 'stale') {
+        return 'warn';
+    }
+    return row.connected ? 'good' : 'muted';
+}
+
+function controlAgentTargetTone(row: ControlAgentBoardRow): string {
+    if (row.targetable) {
+        return 'good';
+    }
+    if (
+        row.targetStatus === 'missing-crdt-runtime' ||
+        row.targetStatus === 'missing-crdt-transport'
+    ) {
+        return 'bad';
+    }
+    if (
+        row.targetStatus === 'stale' ||
+        row.targetStatus === 'different-group' ||
+        row.targetStatus === 'missing-identity'
+    ) {
+        return 'warn';
+    }
+    return 'muted';
 }
 
 function RunnerRecipesPanel({
@@ -6476,6 +6790,24 @@ function RunnerRecipesPanel({
                 nowEpochMs: Date.now(),
             }),
         [controlRun, groupRef, recipePreflight],
+    );
+    const recipeAgentRows = useMemo(
+        () =>
+            deriveControlAgentBoardRows({
+                run: controlRun,
+                group: groupRef,
+                requiredCommandKinds: recipePreflight?.commandKinds ?? [],
+                distributedRuns: [
+                    ...(controlSnapshot?.distributedRuns ?? []),
+                    ...(distributedRun ? [distributedRun] : []),
+                ],
+                nowEpochMs: Date.now(),
+            }),
+        [controlRun, controlSnapshot?.distributedRuns, distributedRun, groupRef, recipePreflight],
+    );
+    const recipeAgentSummary = useMemo(
+        () => summarizeControlAgentBoardRows(recipeAgentRows),
+        [recipeAgentRows],
     );
     const targetableRows = targetRows.filter((row) => row.targetable);
     const connectedAgentCount =
@@ -6983,6 +7315,18 @@ function RunnerRecipesPanel({
                 onRefresh={() => void refreshReadiness()}
                 onOpenAgentTabs={openAgentTabs}
             />
+            <ControlAgentBoardPanel
+                title="Targetable Agents"
+                subtitle={
+                    selectedRecipe
+                        ? `${selectedRecipe.title} against ${groupRef.groupId || 'missing group'}`
+                        : 'Select a recipe to resolve connected agents.'
+                }
+                rows={recipeAgentRows}
+                summary={recipeAgentSummary}
+                emptyMessage="No control agents in the selected run. Open agent tabs, wait for registration, then refresh."
+                compact
+            />
             <RunnerAgentSetupPanel
                 runId={agentRunId}
                 agentPrefix={agentPrefix}
@@ -6995,6 +7339,7 @@ function RunnerRecipesPanel({
                 connectedAgents={controlRun?.agents ?? []}
                 launchUrls={agentLaunchUrls}
                 launchMessage={agentLaunchMessage}
+                showConnectedAgents={false}
                 onRunIdChange={(value) => {
                     setAgentRunId(value);
                     setControlRunId(value);
@@ -7623,6 +7968,30 @@ function RunnerRunsPanel({
                 : undefined,
         [artifactBundle, distributedControlRun, selectedDistributedRun],
     );
+    const runParticipantRows = useMemo(
+        () =>
+            selectedDistributedRun
+                ? deriveControlAgentBoardRows({
+                    run: distributedControlRun,
+                    group: selectedDistributedRun.manifest.group,
+                    agentIds: selectedDistributedRun.targetAgentIds,
+                    distributedRuns,
+                    selectedDistributedRun,
+                    monitorAgentProgress: selectedMonitor?.agentProgress ?? [],
+                    nowEpochMs: Date.now(),
+                })
+                : [],
+        [
+            distributedControlRun,
+            distributedRuns,
+            selectedDistributedRun,
+            selectedMonitor?.agentProgress,
+        ],
+    );
+    const runParticipantSummary = useMemo(
+        () => summarizeControlAgentBoardRows(runParticipantRows),
+        [runParticipantRows],
+    );
     const analysisReport = useMemo(
         () =>
             selectedDistributedRun
@@ -8168,6 +8537,16 @@ function RunnerRunsPanel({
                 {selectedDistributedRun && (
                     <DistributedRunSummary run={selectedDistributedRun} />
                 )}
+                {selectedDistributedRun && (
+                    <ControlAgentBoardPanel
+                        title="Run Participants"
+                        subtitle={`${selectedDistributedRun.distributedRunId} participants and live control-agent status`}
+                        rows={runParticipantRows}
+                        summary={runParticipantSummary}
+                        emptyMessage="No target agents recorded for the selected distributed run."
+                        compact
+                    />
+                )}
                 {analysisReport && (
                     <DistributedRunAnalysisReportPanel
                         report={analysisReport}
@@ -8306,9 +8685,11 @@ const DEFAULT_FLEET_FILTERS: FleetFilterState = {
 function RunnerFleetPanel({
     bootstrap,
     control,
+    globalValues,
 }: {
     bootstrap: RallarBlackBoxBootstrapConfig;
     control: RallarBlackBoxControlSnapshot;
+    globalValues: CommandCenterGlobalValues;
 }) {
     const [controlBaseUrl, setControlBaseUrl] = useState(() =>
         controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl)
@@ -8322,6 +8703,12 @@ function RunnerFleetPanel({
     const [response, setResponse] = useState<
         ControlFleetReportsResponse | undefined
     >();
+    const [liveSnapshot, setLiveSnapshot] = useState<
+        ControlServerSnapshot | undefined
+    >();
+    const [liveRunId, setLiveRunId] = useState(
+        control.runId ?? bootstrap.runId ?? '',
+    );
     const [busy, setBusy] = useState<string | undefined>();
     const [error, setError] = useState<string | undefined>();
     const [lastRefresh, setLastRefresh] = useState<number | undefined>();
@@ -8380,6 +8767,45 @@ function RunnerFleetPanel({
     const selectedReport = reports.find(
         (report) => report.distributedRunId === selectedReportId,
     ) ?? reports[0];
+    const liveGroupRef = useMemo(
+        () => ({
+            applicationId: globalValues.applicationId,
+            workspaceId: globalValues.workspaceId,
+            groupId: globalValues.roomId,
+        }),
+        [
+            globalValues.applicationId,
+            globalValues.roomId,
+            globalValues.workspaceId,
+        ],
+    );
+    const liveRunOptions = useMemo(
+        () =>
+            [...(liveSnapshot?.runs ?? [])].sort(
+                (left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs,
+            ),
+        [liveSnapshot],
+    );
+    const liveRun = useMemo(
+        () =>
+            liveRunOptions.find((run) => run.runId === liveRunId) ??
+            liveRunOptions[0],
+        [liveRunId, liveRunOptions],
+    );
+    const liveAgentRows = useMemo(
+        () =>
+            deriveControlAgentBoardRows({
+                run: liveRun,
+                group: liveGroupRef,
+                distributedRuns: liveSnapshot?.distributedRuns ?? [],
+                nowEpochMs: Date.now(),
+            }),
+        [liveGroupRef, liveRun, liveSnapshot?.distributedRuns],
+    );
+    const liveAgentSummary = useMemo(
+        () => summarizeControlAgentBoardRows(liveAgentRows),
+        [liveAgentRows],
+    );
 
     const refreshFleet = async (
         options: Readonly<{ rebuild?: boolean; quiet?: boolean }> = {},
@@ -8399,7 +8825,25 @@ function RunnerFleetPanel({
                     token: controlToken,
                     filter: fleetReportFilterFromUi(filters),
                 });
+            const nextSnapshot = await fetchControlServerSnapshot({
+                baseUrl: controlBaseUrl,
+                token: controlToken,
+                bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
+            });
             setResponse(nextResponse);
+            setLiveSnapshot(nextSnapshot);
+            setLiveRunId((current) => {
+                const knownRunIds = new Set(
+                    nextSnapshot.runs.map((run) => run.runId),
+                );
+                return current && knownRunIds.has(current)
+                    ? current
+                    : [
+                        control.runId,
+                        bootstrap.runId,
+                        nextSnapshot.runs[0]?.runId,
+                    ].find((runId) => runId && knownRunIds.has(runId)) ?? '';
+            });
             setLastRefresh(Date.now());
             setSelectedReportId((current) =>
                 current ||
@@ -8604,6 +9048,52 @@ function RunnerFleetPanel({
                     {error}
                 </div>
             )}
+            <section className="fleet-live-panel" aria-label="Live Fleet">
+                <div className="section-heading">
+                    <div>
+                        <h3>Live Fleet</h3>
+                        <p>
+                            Connected control agents for the selected control
+                            run, with targetability for the current global group.
+                        </p>
+                    </div>
+                    <span>{liveSnapshot ? `${liveRunOptions.length} run(s)` : 'not loaded'}</span>
+                </div>
+                <div className="fleet-live-toolbar">
+                    <label className="field">
+                        <span>Control Run</span>
+                        <select
+                            value={liveRun?.runId ?? liveRunId}
+                            onChange={(event) =>
+                                setLiveRunId(event.target.value)
+                            }
+                        >
+                            <option value="">Select run</option>
+                            {liveRunOptions.map((run) => (
+                                <option key={run.runId} value={run.runId}>
+                                    {run.runId}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <span className="runner-distributed-freshness">
+                        {liveRun
+                            ? `Updated ${formatTime(liveRun.updatedAtEpochMs)}`
+                            : 'Refresh to load control runs'}
+                    </span>
+                </div>
+                <ControlAgentBoardPanel
+                    title="Live Fleet Agents"
+                    subtitle={
+                        liveRun
+                            ? `${liveRun.runId} scoped to ${liveGroupRef.groupId || 'missing group'}`
+                            : 'No control run selected.'
+                    }
+                    rows={liveAgentRows}
+                    summary={liveAgentSummary}
+                    emptyMessage="No live control agents loaded. Refresh the control server or open browser agents."
+                />
+            </section>
             {missingLabelAgents.length > 0 && (
                 <details className="fleet-label-warning">
                     <summary>
@@ -13948,6 +14438,30 @@ function DistributedRecipesPanel({
                 : undefined,
         [artifactBundle, run, selectedDistributedRun],
     );
+    const distributedTargetAgentRows = useMemo(
+        () =>
+            deriveControlAgentBoardRows({
+                run,
+                group: groupRef,
+                requiredCommandKinds: selectedPreflightCommandKinds,
+                distributedRuns,
+                selectedDistributedRun,
+                monitorAgentProgress: selectedMonitor?.agentProgress ?? [],
+                nowEpochMs: Date.now(),
+            }),
+        [
+            distributedRuns,
+            groupRef,
+            run,
+            selectedDistributedRun,
+            selectedMonitor?.agentProgress,
+            selectedPreflightCommandKinds,
+        ],
+    );
+    const distributedTargetAgentSummary = useMemo(
+        () => summarizeControlAgentBoardRows(distributedTargetAgentRows),
+        [distributedTargetAgentRows],
+    );
     const compareLeftRun = useMemo(
         () =>
             distributedRuns.find(
@@ -14804,22 +15318,17 @@ function DistributedRecipesPanel({
                             </label>
                         )}
                     </div>
-                    <div className="distributed-target-list">
-                        {targetRows.map((row) => (
-                            <DistributedTargetRow
-                                key={row.agentId}
-                                row={row}
-                                selected={selectedAgentSet.has(row.agentId)}
-                                disabled={!row.targetable}
-                                onToggle={toggleAgent}
-                            />
-                        ))}
-                        {targetRows.length === 0 && (
-                            <div className="empty-state">
-                                No control agents in selected run
-                            </div>
-                        )}
-                    </div>
+                    <ControlAgentBoardPanel
+                        title="Resolved Targets"
+                        subtitle={`${selectedAgentIds.length}/${targetableRows.length} selected for ${groupRef.groupId || 'missing group'}`}
+                        rows={distributedTargetAgentRows}
+                        summary={distributedTargetAgentSummary}
+                        emptyMessage="No control agents in selected run"
+                        selectedAgentIds={selectedAgentSet}
+                        onToggleAgent={toggleAgent}
+                        disableUntargetableSelection
+                        compact
+                    />
                 </section>
                 <section className="distributed-subpanel">
                     <div className="section-heading">
@@ -16361,57 +16870,6 @@ function formatSignedDuration(ms: number | undefined): string {
 
 function formatSignedNumber(value: number): string {
     return `${value >= 0 ? '+' : ''}${value}`;
-}
-
-function DistributedTargetRow({
-    row,
-    selected,
-    disabled,
-    onToggle,
-}: {
-    row: DistributedRecipeTargetRow;
-    selected: boolean;
-    disabled: boolean;
-    onToggle(agentId: string): void;
-}) {
-    return (
-        <label
-            className={`distributed-target-row ${selected ? 'selected' : ''} ${disabled ? 'disabled' : ''}`}
-        >
-            <input
-                type="checkbox"
-                checked={selected}
-                disabled={disabled}
-                onChange={() => onToggle(row.agentId)}
-                aria-label={`Select distributed target ${row.agentId}`}
-            />
-            <span>
-                <strong>{row.agentId}</strong>
-                <small>
-                    {row.principalId ?? 'no principal'} - heartbeat{' '}
-                    {formatTime(row.lastHeartbeatAtEpochMs)}
-                </small>
-                <small>
-                    {row.applicationId ?? '-'}/{row.workspaceId ?? '-'} group{' '}
-                    {row.groupId ?? '-'}
-                </small>
-                {row.crdtSupported !== undefined && (
-                    <small>
-                        CRDT {row.crdtSupported ? 'available' : 'unavailable'}
-                        {row.crdtTransports && row.crdtTransports.length > 0
-                            ? ` - ${row.crdtTransports.join(', ')}`
-                            : ''}
-                    </small>
-                )}
-            </span>
-            <span
-                className={`pill ${row.targetable ? 'good' : row.status === 'offline' ? 'muted' : 'warn'}`}
-            >
-                {row.status}
-            </span>
-            <small>{row.reason}</small>
-        </label>
-    );
 }
 
 function DistributedRunSummary({
@@ -26903,6 +27361,7 @@ export default function App() {
                             <RunnerFleetPanel
                                 bootstrap={bootstrap}
                                 control={control}
+                                globalValues={globalValues}
                             />
                         )}
                 </section>
